@@ -19,11 +19,16 @@ struct StringPoolStateEntry {
 	StringId id = 0;
 	std::string value;
 	bool tracked = false;
+	bool reachable = false;
 };
 
 struct StringPoolState {
 	// Occupied slots in ascending ID order.
 	std::vector<StringPoolStateEntry> entries;
+	std::vector<StringId> freeIds;
+	size_t slots = 0;
+	int sweep = -1;
+	size_t sweepEnd = 0;
 };
 
 class StringPool {
@@ -48,7 +53,10 @@ public:
 	// independent of reachability: resident image literals remain ROM-backed.
 	void beginReachabilityEpoch();
 	void markReachable(StringId id);
-	void reclaimUnreachable();
+	void markLocalRoots();
+	void beginSweep();
+	size_t sweepStep(size_t words);
+	bool sweeping() const { return m_sweep >= 0; }
 
 private:
 	friend class CPU;
@@ -91,6 +99,8 @@ private:
 	std::unordered_map<std::string_view, StringId, StringKeyHash, StringKeyEq> m_stringMap;
 	std::vector<std::unique_ptr<InternedString>> m_entries;
 	std::vector<bool> m_reachable;
+	int m_sweep = -1;
+	size_t m_sweepEnd = 0;
 };
 
 int compareStringIds(const StringPool* pool, StringId left, StringId right, int* remainingCycles);

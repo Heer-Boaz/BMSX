@@ -28,11 +28,11 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 		systemGlobalNames: ['system', 'system'], globalNames: ['global', 'global'] };
 }
 
-test('runtime GC bills canonical precollection bytes and complete unique root ranges literally', () => {
+test('runtime GC bills actual canonical scans, reclamation and both unique root passes', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	assert.equal(cpu.luaHeap.usedBytes(), 157, '__index7 + __mode6 + Thread(64+8×8) + rootClosure16');
 	cpu.instructionBudgetRemaining = 7; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, -85, 'B157→40words×2, C3×2, S1+G1×3 =92');
+	assert.equal(cpu.instructionBudgetRemaining, -142, 'Thread32×3 + Closure4×2 + roots12×2 + directory17 + text(2+2) =149');
 	assert.equal(cpu.luaHeap.usedBytes(), 157, 'ROM-backed strings and host object shapes are not pool text bytes');
 	const frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, cpu.createTable(2, 3)); //32+16+4×20=128.
@@ -40,7 +40,7 @@ test('runtime GC bills canonical precollection bytes and complete unique root ra
 	frame.top = 2;
 	assert.equal(cpu.luaHeap.usedBytes(), 291);
 	cpu.instructionBudgetRemaining = 7; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, -151, 'B291→73words×2 +12 roots =158; round aggregate once');
+	assert.equal(cpu.instructionBudgetRemaining, -209, 'base149 + Table32×2 + String(1slot+2words) =216');
 	assert.equal(cpu.luaHeap.usedBytes(), 291);
 	assert.equal(cpu.luaHeap.captureState().nextCollectionBytes, 1048576);
 	cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
@@ -64,7 +64,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		frame.registers.setEncoded(0, ValueTag.BuiltinFunction, BuiltinFunctionId.CollectGarbage, null); frame.registers.setNil(7); frame.top = 1;
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, -127, 'CALL32 + primitive4 + literalcollection92, no receiving slots');
+		assert.equal(cpu.instructionBudgetRemaining, -184, 'CALL32 + primitive4 + collection149, no receiving slots');
 		assert.equal(frame.pc, pc + (wide ? 2 : 1) * INSTRUCTION_BYTES); assert.equal(frame.registers.get(7), null);
 		assert.equal(cpu.runUntilDepth(0, 0), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(frame.registers.get(7), null);
@@ -86,7 +86,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const heap = cpu.luaHeap.captureState(); cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: 0 });
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc); frame.registers.setNil(7);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, -119, 'NEWT24 + initialized4 + literal pre-requestcollection92');
+		assert.equal(cpu.instructionBudgetRemaining, -176, 'NEWT24 + initialized4 + pre-request collection149');
 		assert.equal(cpu.luaHeap.usedBytes(), 225, 'request68 is admitted after collection and excluded from B_pre');
 		assert.equal(frame.registers.getTag(0), ValueTag.Table); assert.equal(frame.registers.get(7), null);
 		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
@@ -98,7 +98,7 @@ test('failed allocation retains the collection debit, not pending request bytes'
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	cpu.instructionBudgetRemaining = 1;
 	assert.throws(() => cpu.luaHeap.reserve(PSX_MACHINE_SPEC.ramBytes - BASE_RAM_USED_SIZE + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
-	assert.equal(cpu.instructionBudgetRemaining, -91); assert.equal(cpu.luaHeap.usedBytes(), 157);
+	assert.equal(cpu.instructionBudgetRemaining, -148); assert.equal(cpu.luaHeap.usedBytes(), 157);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted); assert.equal(cpu.instructionBudgetRemaining, -1);
 });
 
@@ -113,19 +113,19 @@ test('all activated image constants and unique namespace slots remain priced acr
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, first.systemSymbols.functionAddresses[0], first.systemImage.functions[0].codeAddress);
 	cpu.collectTrackedHeapBytes(); assert.equal(cpu.luaHeap.usedBytes(), 157);
 	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, -103, 'B157:80 + C(3+4+1)×2:16 + S1/G3×3:12 =108');
+	assert.equal(cpu.instructionBudgetRemaining, -178, 'Thread96 + Closure8 + roots28×2 + directory19 + text4 =183');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
-	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime(); assert.equal(cpu.instructionBudgetRemaining, -103);
+	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime(); assert.equal(cpu.instructionBudgetRemaining, -178);
 });
 
-test('temporary roots survive charged collection; dead precollection bytes still count', () => {
+test('temporary roots survive charged steps; unreachable allocations pay reclamation but no mark scan', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const table = cpu.createTable(), id = cpu.stringPool.intern('é😀');
 	const heap = cpu.luaHeap.captureState(); assert.equal(heap.trackedBytes, 195);
 	cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: 0 }); cpu.instructionBudgetRemaining = 1;
 	cpu.luaHeap.reserve(0, ValueTag.Table, NaN, table, ValueTag.String, id, null);
-	assert.equal(cpu.instructionBudgetRemaining, -109, '2×ceil(195/4)+12 =110');
+	assert.equal(cpu.instructionBudgetRemaining, -167, 'base149 + live Table8×2 + String(1+2) =168');
 	assert.equal(cpu.luaHeap.usedBytes(), 195); assert.equal(cpu.stringPool.toString(id), 'é😀');
 	cpu.instructionBudgetRemaining = 1; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, -109); assert.equal(cpu.luaHeap.usedBytes(), 157);
+	assert.equal(cpu.instructionBudgetRemaining, -159); assert.equal(cpu.luaHeap.usedBytes(), 157);
 });

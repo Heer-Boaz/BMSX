@@ -4,7 +4,6 @@
 
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
-#include "machine/common/numeric.h"
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
@@ -30,24 +29,19 @@ void LuaHeap::reserve(
 	stressHeapAllocation(*this);
 #endif
 	size_t nextBytes = m_trackedBytes + byteCount;
-	if (nextBytes > m_nextCollectionBytes || nextBytes > m_capacityBytes) {
+	if (nextBytes > m_capacityBytes) {
 		collectRuntime(root0, root1, root2);
-		nextBytes = m_trackedBytes + byteCount;
-		if (nextBytes > m_capacityBytes) {
-			throw LuaOutOfMemorySignal{};
-		}
-		if (nextBytes > m_nextCollectionBytes) {
-			m_nextCollectionBytes = std::max(MIN_COLLECTION_BYTES, nextBytes * 2);
-		}
+	} else if (nextBytes > m_nextCollectionBytes) {
+		m_cpu.instructionBudgetRemaining -= static_cast<int>(m_cpu.stepHeap(root0, root1, root2));
+		if (m_cpu.collecting()) m_nextCollectionBytes = m_trackedBytes + GC_ASSIST_BYTES;
 	}
+	nextBytes = m_trackedBytes + byteCount;
+	if (nextBytes > m_capacityBytes) throw LuaOutOfMemorySignal{};
 	m_trackedBytes = nextBytes;
 }
 
 void LuaHeap::collectRuntime(Value root0, Value root1, Value root2) {
-	const size_t cycles = 2 * ceilDiv4(static_cast<int>(m_trackedBytes))
-		+ m_cpu.collectionRootWordCount();
-	m_cpu.instructionBudgetRemaining -= static_cast<int>(cycles);
-	m_cpu.collectHeap(root0, root1, root2);
+	m_cpu.instructionBudgetRemaining -= static_cast<int>(m_cpu.collectHeap(root0, root1, root2));
 }
 
 void LuaHeap::accountTableStorageWork(size_t valueSlots) {
@@ -62,12 +56,10 @@ void LuaHeap::adjustForRestore(size_t previousBytes, size_t restoredBytes) {
 	}
 }
 
-void LuaHeap::finishCollection(size_t liveBytes) {
-	m_trackedBytes = liveBytes;
-	m_nextCollectionBytes = std::max(MIN_COLLECTION_BYTES, liveBytes * 2);
-	if (liveBytes > m_capacityBytes) {
-		throw LuaOutOfMemorySignal{};
-	}
+void LuaHeap::finishCollection() {
+	const size_t liveBytes = m_trackedBytes;
+	m_nextCollectionBytes = std::max(liveBytes + GC_ASSIST_BYTES,
+		std::min(m_capacityBytes - m_capacityBytes / 8, std::max(MIN_COLLECTION_BYTES, liveBytes * 2)));
 }
 
 } // namespace bmsx

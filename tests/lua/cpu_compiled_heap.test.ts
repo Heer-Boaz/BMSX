@@ -1,3 +1,4 @@
+import { utf8ByteLength } from '../../machine/ts/common/utf8';
 import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -242,7 +243,11 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 	const frame = js.rootThread.frameAtDepth(0), pc = image.image.functions[0].codeAddress;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal.exit,
 		range ? CompiledBlockExit.ConcatRange : CompiledBlockExit.Concat);
-	const gcCycles = 2 * ceilDiv4(js.luaHeap.usedBytes()); // No constant or namespace root ranges in this image.
+	const strings = js.stringPool.captureState();
+	// Only the root Thread and closure are objects. The Thread is remarked;
+	// all directory slots and allocated text are examined once at sweep.
+	const gcCycles = 3 * ceilDiv4(64 + js.rootThread.stackRegisters.capacity() * 8) + 2 * 4
+		+ strings.slots + strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
 	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
 	assert.equal(js.instructionBudgetRemaining, -4 * 1024 * 1024 - (range ? 2 : 0) - gcCycles, 'allocation faults retain complete logical text-work and pre-request collection charges');

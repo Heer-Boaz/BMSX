@@ -8,6 +8,7 @@
 namespace bmsx {
 
 struct CallFrame;
+inline constexpr size_t UPVALUE_HEAP_BYTES = 24;
 
 struct Upvalue : GCObject {
 	bool open = false;

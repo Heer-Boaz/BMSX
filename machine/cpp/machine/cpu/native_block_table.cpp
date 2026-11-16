@@ -9,6 +9,18 @@
 
 namespace bmsx {
 
+// R0 is the allocation header. R1, S2 and all cached guest Values stay live.
+void NativeBlockCompiler::emitWriteBarrier() {
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), offsetof(GCObject, gcColor));
+	auto* done = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 3);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R0), offsetof(GCObject, gcColor), SLJIT_IMM, 2);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), offsetof(GCObject, grayHead));
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R0), offsetof(GCObject, grayNext), SLJIT_R3, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R2), 0, SLJIT_R0, 0);
+	sljit_set_label(done, sljit_emit_label(m_compiler));
+}
+
 void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
 	const auto op = static_cast<OpCode>(instruction.op);
 	const bool load = op == OpCode::GETT || op == OpCode::GETI || op == OpCode::GETFIELD || op == OpCode::SELF;
@@ -99,6 +111,7 @@ void NativeBlockCompiler::emitArraySlot(bool load, int value, SlowPath& slow) {
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_S2), 0);
 		return;
 	}
+	emitWriteBarrier();
 	loadHeader(value, SLJIT_R2);
 	sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S2), 0, SLJIT_FR2, 0);
 	auto* nil = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
@@ -170,6 +183,7 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 	} else {
 		loadHeader(value, SLJIT_R2);
 		misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
+		emitWriteBarrier();
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_R1), 0, SLJIT_FR2, 0);
 		auto* done = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		auto* store = sljit_emit_label(m_compiler);

@@ -39,8 +39,10 @@ test('collection removes unreachable text from the intern index and snapshots wi
 		for (let index = 0; index < 128; index += 1) pool.intern(`garbage-${round}-${index}-${suffix}`);
 		assert.equal(cpu.collectTrackedHeapBytes(), baselineBytes);
 		assert.equal(pool.find(`garbage-${round}-0-${suffix}`), undefined);
-		assert.deepEqual(pool.captureState(), baseline,
-			'actual text and snapshot storage return to the permanent CPU roots, not just the RAM counter');
+		assert.deepEqual(pool.captureState().entries, baseline.entries,
+			'actual text returns to the permanent CPU roots, not just the RAM counter');
+		assert.equal(pool.captureState().slots, baseline.slots + 128, 'vacant ID storage is reused, not accumulated each cycle');
+		assert.equal(pool.captureState().freeIds.length, 128);
 	}
 });
 
@@ -48,17 +50,18 @@ test('untracked literals and empty strings are collectible; recycled slots publi
 	const cpu = createCpu(), pool = cpu.stringPool;
 	const baselineTracked = pool.trackedLuaHeapBytes();
 	const old = pool.intern('retired literal', false);
-	pool.intern('');
+	const empty = pool.intern('');
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.find('retired literal'), undefined);
 	assert.equal(pool.find(''), undefined);
 	const replacement = pool.intern('β😀');
-	assert.equal(replacement, old);
+	assert.equal(replacement, empty, 'sweep returns freed IDs in directory order; the last returned slot is reused first');
 	assert.equal(pool.toString(replacement), 'β😀');
 	assert.equal(pool.codepointCount(replacement), 2);
 	assert.equal(pool.codepointAt(replacement, 0), 0x3b2);
 	assert.equal(pool.codepointAt(replacement, 1), 0x1f600);
 	assert.equal(pool.trackedLuaHeapBytes(), baselineTracked + 6);
+	assert.equal(pool.intern('second replacement'), old);
 });
 
 test('promoting an existing untracked entry roots it across reservation-triggered collection', () => {

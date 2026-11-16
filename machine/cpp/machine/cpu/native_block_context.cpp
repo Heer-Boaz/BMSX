@@ -58,6 +58,7 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), instruction.b * sizeof(Upvalue*));
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), fields.open);
 	auto* open = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0);
+	if (store) emitWriteBarrier();
 	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_S2, 0, SLJIT_R0, 0, SLJIT_IMM, fields.value);
 	auto* addressReady = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 	sljit_set_label(open, sljit_emit_label(m_compiler));

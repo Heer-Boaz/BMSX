@@ -87,14 +87,15 @@ void recycleUnicodeAndUntrackedStrings() {
 	auto& pool = cpu.stringPool();
 	const auto baselineTracked = pool.trackedLuaHeapBytes();
 	const auto old = pool.intern("retired literal", false);
-	pool.intern("");
+	const auto empty = pool.intern("");
 	cpu.collectHeap();
 	require(!pool.find("retired literal") && !pool.find(""), "ROM accounting and empty payloads do not imply immortality");
 	const auto replacement = pool.intern("β😀");
-	require(replacement == old, "dead trailing IDs are recycled without growing the pool");
+	require(replacement == empty, "sweep returns directory IDs in order, reused in LIFO order");
 	require(pool.toString(replacement) == "β😀" && pool.codepointCount(replacement) == 2, "recycled slots publish the new Unicode metadata");
 	require(pool.codepointAt(replacement, 0) == 0x3b2u && pool.codepointAt(replacement, 1) == 0x1f600u, "recycled IDs index the new content");
 	require(pool.trackedLuaHeapBytes() == baselineTracked + 6, "new runtime text owns its actual UTF-8 payload bytes");
+	require(pool.intern("second replacement") == old, "other vacant IDs are reused before extending the directory");
 }
 
 void reclaimCodepointIndexes() {

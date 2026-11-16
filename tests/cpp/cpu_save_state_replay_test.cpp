@@ -327,6 +327,7 @@ void reuseSnapshotStorage() {
 		require(std::ranges::equal(recycled.snapshot.objectWords(), retained.snapshot.objectWords()), "object index matches an independent checkpoint");
 	}
 	cpu.setGlobalByKey(key, bmsx::valueNil());
+	cpu.collectHeap(); // Uncollected allocations are now part of incremental-GC state.
 	recycled = cpu.captureRuntimeState(std::move(recycled.snapshot));
 	require(recycled.snapshot.words().data() == words, "shorter capture retains word storage");
 	require(recycled.snapshot.objectWords().data() == objects, "shorter capture retains object index storage");

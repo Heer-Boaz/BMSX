@@ -1,3 +1,4 @@
+import { GcObject, GcKind } from './gc_object';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ProtectedCallContinuation, type CallFrame } from './call_state';
 import type { Closure } from './closure';
@@ -10,10 +11,8 @@ export const THREAD_HEAP_BYTES = 64;
 export const THREAD_STACK_SLOT_BYTES = 8;
 
 /** Retained language execution state. Physical CPU/IRQ/bus state is not thread-local. */
-export class Thread {
+export class Thread extends GcObject {
 	public readonly [VALUE_TAG] = ValueTag.Thread;
-	public hashId = 0;
-	public gcEpoch = 0;
 	public status = ThreadStatus.New;
 	public firstFrame: CallFrame | null = null;
 	public currentFrame: CallFrame | null = null;
@@ -27,7 +26,7 @@ export class Thread {
 	public returnCount = 0;
 	public readonly error = new ValueSlots(1);
 
-	public constructor(public entry: Closure | null) {}
+	public constructor(public entry: Closure | null) { super(GcKind.Thread); }
 
 	/** Prepare the first inactive node; stack growth can collect before entry. */
 	public acquireFrame(): CallFrame {

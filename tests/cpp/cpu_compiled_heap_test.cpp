@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "common/utf8.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/native_block.h"
 #include "machine/devices/irq/controller.h"
@@ -394,7 +395,9 @@ void concatAllocationFault(bool range) {
 	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
 #endif
-	const int gcCycles = 2 * ceilDiv4(static_cast<int>(native.cpu.luaHeap().usedBytes()));
+	const auto strings = native.cpu.stringPool().captureState();
+	int gcCycles = 3 * ceilDiv4(static_cast<int>(64 + native.cpu.rootThread()->stackCapacity * 8)) + 2 * 4 + strings.slots;
+	for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
 	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");

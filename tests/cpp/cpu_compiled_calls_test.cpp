@@ -773,7 +773,8 @@ void protectedReturnPlacementCycles() {
 		thread->protectedCallContinuations.get(failFirst ? 1 : 0).returnCount = failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted;
 		const bool fault = wanted >= static_cast<int>(PSX_MACHINE_SPEC.ramBytes);
 		// The failed success-range admission is followed by protected error-range admission, which also fails.
-		const int gcCycles = fault ? 2 * (2 * ceilDiv4(static_cast<int>(machine.cpu.luaHeap().usedBytes())) + 3) : 0;
+		// Completing the inner return drops its closure before the first scan: four fewer mark words.
+		const int gcCycles = fault ? (failFirst ? 278 : 274) : 0;
 		bool rejected = false;
 		try { require(machine.cpu.runUntilDepth(1, 2) == RunResult::Halted, "protected return completes at caller"); }
 		catch (const LuaOutOfMemorySignal&) { rejected = true; }
@@ -1025,8 +1026,9 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		const auto heap = machine->cpu.luaHeap().captureState();
 		const std::string garbage(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g');
 		machine->cpu.stringPool().intern(garbage);
-		const int gcCycles = 2 * ceilDiv4(static_cast<int>(machine->cpu.luaHeap().usedBytes())) + 4;
-		require(machine->cpu.runUntilDepth(0, gcCycles + callPrefix + BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + 1) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 1
+		require(machine->cpu.runUntilDepth(0, callPrefix) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 2,
+			"the allocation assist completes CALL but not a callee instruction in its exhausted grant");
+		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.activeThread()->frameDepth == 1
 			&& machine->cpu.activeThread()->stackCapacity > capacity && machine->cpu.readFrameRegister(0, 4) == valueNumber(7),
 			"a hot call relocates the stack before a hot callee and return use the new register bases");
 		require(!machine->cpu.stringPool().find(garbage), "callee stack growth actually collects unrooted pressure data");

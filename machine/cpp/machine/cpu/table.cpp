@@ -260,6 +260,7 @@ void Table::allocateStorage(size_t arraySize, size_t hashSize) {
 
 // Storage redistribution must not change the logical boundary hint.
 int Table::rawSet(const Value& key, const Value& value) {
+	writeBarrier();
 	int index = 0;
 	if (getArrayIndex(key, index) && static_cast<size_t>(index) < m_array.size()) {
 		m_array[static_cast<size_t>(index)] = value;
@@ -357,6 +358,7 @@ void Table::set(const Value& key, const Value& value) {
 	if (isNil(key)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	}
+	writeBarrier();
 	int index = 0;
 	bool isArrayKey = getArrayIndex(key, index);
 	if (isArrayKey) {
@@ -399,6 +401,7 @@ Value Table::getInteger(int indexValue) const {
 }
 
 void Table::setInteger(int indexValue, const Value& value) {
+	writeBarrier();
 	const int index = indexValue - 1;
 	if (index >= 0 && index < static_cast<int>(m_array.size())) {
 		setArraySlot(static_cast<size_t>(index), value);
@@ -459,6 +462,7 @@ int Table::setStringKey(StringId key, const Value& value) {
 }
 
 int Table::storeStringKeyWithoutGrowth(Table* table, StringId key, const Value& value) noexcept {
+	table->writeBarrier();
 	const Value keyValue = valueString(key);
 	if (isNil(value)) {
 		table->removeFromHash(keyValue);
@@ -474,6 +478,7 @@ int Table::storeStringKeyWithoutGrowth(Table* table, StringId key, const Value& 
 }
 
 void Table::setStringKeyCached(StringId key, const Value& value, int& predictedSlot) {
+	writeBarrier();
 	if (!isNil(value)
 		&& predictedSlot >= 0
 		&& static_cast<size_t>(predictedSlot) < m_hashSize) {

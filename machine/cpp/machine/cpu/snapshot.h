@@ -11,7 +11,7 @@ namespace bmsx {
 constexpr u32 CPU_SNAPSHOT_VALUE_WORDS = 3;
 // Matches the TS register tag column; native Value uses NaN-boxed tags.
 enum class CpuSnapshotValueTag : u32 { Nil, False, True, Number, String, Table, Closure, BuiltinFunction, Thread };
-enum class CpuSnapshotObjectKind : u32 { Table, Closure, Upvalue, Thread };
+enum class CpuSnapshotObjectKind : u32 { Table, Closure, Upvalue, Thread, Garbage };
 enum CpuSnapshotTable : u32 {
 	SNAP_TABLE_KIND, SNAP_TABLE_HASH_ID, SNAP_TABLE_LENGTH_HINT, SNAP_TABLE_ARRAY_CAPACITY,
 	SNAP_TABLE_HASH_SIZE, SNAP_TABLE_HASH_FREE, SNAP_TABLE_METATABLE,

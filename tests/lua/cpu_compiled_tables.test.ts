@@ -1,3 +1,4 @@
+import { utf8ByteLength } from '../../machine/ts/common/utf8';
 import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -239,7 +240,11 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 		const retained = cpu.createTable(350000);
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, ValueTag.Table, NaN, retained);
 	}
-	const gcCycles = 2 * ceilDiv4(js.luaHeap.usedBytes()) + 3; // One registered global, no image constants.
+	const strings = js.stringPool.captureState();
+	// All allocated objects are live: mark+sweep, one Thread remark and two global-root passes.
+	const gcCycles = 2 * ((js.luaHeap.usedBytes() - js.stringPool.trackedLuaHeapBytes()) / 4)
+		+ (64 + js.rootThread.stackRegisters.capacity() * 8) / 4 + 6 + strings.slots
+		+ strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
 	runCpuParity(js, ref, BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.NEWT]);
 	assert.equal(js.instructionBudgetRemaining, -gcCycles, 'failed NEWT pays prefix/base and collection, but no initialization');
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));

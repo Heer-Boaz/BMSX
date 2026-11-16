@@ -15,6 +15,35 @@ export function installAllocationStress(cpu: CPU): { allocations: number } {
 }
 
 export const gcStressVectors = {
+	incremental_mutations: `
+local retained = {}
+for i = 1, 384 do retained[i] = { value = { i }, [1] = false } end
+local function cell()
+  local captured = false
+  return function(value) captured = value end, function() return captured end
+end
+local change, read = cell()
+local weak = setmetatable({}, { __mode = 'v' })
+for turn = 1, 2 do
+  for i = 1, 384 do
+    local value = { text = 'live:' .. turn .. ':' .. i }
+    local target = retained[i]
+    target.value = value
+    target[1] = value
+    setmetatable(target, { __index = { inherited = value } })
+    change(value)
+    weak[i] = value
+    local pressure = { i, turn }
+    assert(target.value == value and target[1] == value)
+    assert(target.inherited == value and read() == value and pressure[2] == turn)
+  end
+end
+collectgarbage()
+for i = 1, 384 do
+  assert(retained[i].value.text == 'live:2:' .. i)
+  assert(weak[i] == retained[i].value)
+end
+return true`,
 	growth_and_strings: `
 for turn = 1, 72 do
   local t = {}

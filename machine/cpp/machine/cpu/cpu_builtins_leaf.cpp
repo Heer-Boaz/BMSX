@@ -16,6 +16,7 @@ bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& 
 		Table* metatable = nullptr;
 		if (valueIsTable(metatableValue)) metatable = asTable(metatableValue);
 		else if (!isNil(metatableValue)) return false;
+		asTable(target)->writeBarrier();
 		asTable(target)->metatable = metatable;
 		result = target;
 		return true;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { Closure, type Upvalue } from '../../machine/ts/machine/cpu/closure';
+import { Closure, Upvalue } from '../../machine/ts/machine/cpu/closure';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -21,8 +21,8 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 22 }] });
 	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-	const upvalue: Upvalue = { hashId: 100, gcEpoch: 0, open: true, index: 8, frame,
-		valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
+	const upvalue = Object.assign(new Upvalue(), { hashId: 100, open: true, index: 8, frame,
+		valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null });
 	const bound = frame.closure;
 	frame.closure = new Closure(bound.functionAddress, [upvalue], 0, bound.codeAddress,
 		bound.numParams, bound.maxStack, bound.flags, bound.upvalueTableAddress, bound.executionDomainId, bound.recordUpvalueCount, false);

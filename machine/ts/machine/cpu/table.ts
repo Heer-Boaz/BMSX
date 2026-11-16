@@ -1,3 +1,4 @@
+import { GcObject, GcKind } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
@@ -56,10 +57,8 @@ type StoredValuePredicate = (
 	reference: ValueReference,
 ) => boolean;
 
-export class Table {
+export class Table extends GcObject {
 	public readonly [VALUE_TAG] = ValueTag.Table;
-	public hashId = 0;
-	public gcEpoch = 0;
 	private lengthHint = 0;
 	private tags: Uint8Array;
 	private scalars: Float64Array;
@@ -68,6 +67,7 @@ export class Table {
 	private hashSize: number;
 	private hashNext: Int32Array;
 	private hashFree = -1;
+	public gcWeakListed = false;
 	private tableMetatable: Table | null = null;
 
 	private static readonly numberBits = new DataView(new ArrayBuffer(8));
@@ -78,6 +78,7 @@ export class Table {
 		arraySize: number,
 		hashCapacity: number,
 	) {
+		super(GcKind.Table);
 		this.arrayCapacity = arraySize;
 		this.hashSize = hashCapacity;
 		const slotCount = arraySize + (hashCapacity * 2);
@@ -106,6 +107,7 @@ export class Table {
 	}
 
 	public set metatable(metatable: Table | null) {
+		this.writeBarrier();
 		this.tableMetatable = metatable;
 	}
 
@@ -285,6 +287,7 @@ export class Table {
 		if (index < 0 || index >= this.arrayCapacity) {
 			return false;
 		}
+		this.writeBarrier();
 		this.setEncoded(index, valueTag, valueScalar, valueReference);
 		this.updateLengthHint(index, valueTag !== ValueTag.Nil);
 		return true;
@@ -541,6 +544,7 @@ export class Table {
 		valueScalar: number,
 		valueReference: ValueReference,
 	): number {
+		this.writeBarrier();
 		if (valueTag === ValueTag.Nil) {
 			this.removeFromHash(ValueTag.String, key, null);
 			return -1;
@@ -569,6 +573,7 @@ export class Table {
 		valueScalar: number,
 		valueReference: ValueReference,
 	): boolean {
+		this.writeBarrier();
 		if (valueTag !== ValueTag.Nil
 			&& predictedSlot >= 0
 			&& predictedSlot < this.hashSize) {
@@ -897,6 +902,7 @@ export class Table {
 		if (keyTag === ValueTag.Nil) {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		}
+		this.writeBarrier();
 		const arrayIndex = this.getArrayIndex(keyTag, keyScalar);
 		if (arrayIndex >= 0) {
 			if (arrayIndex < this.arrayCapacity) {
@@ -1244,6 +1250,7 @@ export class Table {
 		valueScalar: number,
 		valueReference: ValueReference,
 	): number {
+		this.writeBarrier();
 		const arrayIndex = this.getArrayIndex(keyTag, keyScalar);
 		if (arrayIndex >= 0 && arrayIndex < this.arrayCapacity) {
 			this.setEncoded(arrayIndex, valueTag, valueScalar, valueReference);

@@ -38,7 +38,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 			const tag = registers.tagOperand(a), scalar = registers.scalarOperand(a), reference = registers.referenceOperand(a);
 			return `{const u=frame.closure.upvalues[${b}];if(u.open){if(u.frame===frame) ${registers.exit(exit)}
 				u.frame.registers.setEncoded(u.index,${tag},${scalar},${reference});}
-				else{u.valueTag=${tag};u.valueScalar=${scalar};u.valueReference=${reference};}}`;
+				else{u.writeBarrier();u.valueTag=${tag};u.valueScalar=${scalar};u.valueReference=${reference};}}`;
 		}
 		case OpCode.VARARG: {
 			if (b === 1) return '';

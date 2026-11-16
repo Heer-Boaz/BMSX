@@ -238,6 +238,7 @@ test('CPU snapshots reuse exclusive storage across graph growth, cycles and a sh
 		assert.deepEqual(recycled, retained);
 	}
 	cpu.setGlobalByKey(key, ValueTag.Nil, NaN, null);
+	cpu.collectTrackedHeapBytes(); // Uncollected allocations remain part of GC state.
 	recycled = cpu.captureRuntimeState(recycled.snapshot);
 	assert.equal(recycled.snapshot.words.buffer, words);
 	assert.equal(recycled.snapshot.objectWords.buffer, objects);

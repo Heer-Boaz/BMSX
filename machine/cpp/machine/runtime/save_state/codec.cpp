@@ -176,6 +176,7 @@ template<class Writer> void writeStringPoolStateEntry(Writer& writer, const Stri
 	writer.u32(state.id);
 	writer.string(state.value);
 	writer.boolean(state.tracked);
+	writer.boolean(state.reachable);
 }
 
 StringPoolStateEntry readStringPoolStateEntry(BinaryReader& reader) {
@@ -183,6 +184,7 @@ StringPoolStateEntry readStringPoolStateEntry(BinaryReader& reader) {
 	state.id = reader.u32();
 	state.value = reader.string();
 	state.tracked = reader.boolean();
+	state.reachable = reader.boolean();
 	return state;
 }
 
@@ -191,6 +193,11 @@ template<class Writer> void writeStringPoolState(Writer& writer, const StringPoo
 	for (const auto& value : state.entries) {
 		writeStringPoolStateEntry(writer, value);
 	}
+	writer.u32(static_cast<u32>(state.slots));
+	writer.i32(state.sweep);
+	writer.u32(static_cast<u32>(state.sweepEnd));
+	writer.u32(static_cast<u32>(state.freeIds.size()));
+	writer.u32s(state.freeIds);
 }
 
 StringPoolState readStringPoolState(BinaryReader& reader) {
@@ -200,6 +207,8 @@ StringPoolState readStringPoolState(BinaryReader& reader) {
 	for (u32 index = 0; index < entriesCount; ++index) {
 		state.entries.push_back(readStringPoolStateEntry(reader));
 	}
+	state.slots = reader.u32(); state.sweep = reader.i32(); state.sweepEnd = reader.u32();
+	state.freeIds.resize(reader.u32()); reader.u32s(state.freeIds);
 	return state;
 }
 
@@ -1310,6 +1319,24 @@ CpuSnapshot readCpuSnapshot(BinaryReader& reader) {
 	return CpuSnapshot(std::move(words), std::move(objectWords));
 }
 
+template<class Writer> void writeGcState(Writer& writer, const GcState& state) {
+	writer.u32(static_cast<u32>(state.phase));
+	writer.u32(state.white);
+	writer.i32(state.sweep);
+	for (const auto* values : {&state.allocations, &state.colors, &state.gray, &state.threads, &state.weak}) {
+		writer.u32(static_cast<u32>(values->size()));
+		writer.u32s(*values);
+	}
+}
+GcState readGcState(BinaryReader& reader) {
+	GcState state;
+	state.phase = static_cast<GcPhase>(reader.u32()); state.white = reader.u32(); state.sweep = reader.i32();
+	for (auto* values : {&state.allocations, &state.colors, &state.gray, &state.threads, &state.weak}) {
+		values->resize(reader.u32()); reader.u32s(*values);
+	}
+	return state;
+}
+
 template<class Writer> void writeLuaHeapState(Writer& writer, const LuaHeapState& state) {
 	writer.u64(state.trackedBytes);
 	writer.u64(state.nextCollectionBytes);
@@ -1349,6 +1376,7 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.u32(state.nextObjectHashId);
 	writer.boolean(state.hardHalted);
 	writeLuaHeapState(writer, state.luaHeap);
+	writeGcState(writer, state.gc);
 	writer.u32(state.lastPc);
 	writer.i32(state.haltedUntilIrqThreadRef);
 	writer.i32(state.haltedUntilIrqFrameDepth);
@@ -1407,6 +1435,7 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.nextObjectHashId = reader.u32();
 	state.hardHalted = reader.boolean();
 	state.luaHeap = readLuaHeapState(reader);
+	state.gc = readGcState(reader);
 	state.lastPc = reader.u32();
 	state.haltedUntilIrqThreadRef = reader.i32();
 	state.haltedUntilIrqFrameDepth = reader.i32();

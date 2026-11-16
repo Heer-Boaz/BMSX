@@ -1110,17 +1110,14 @@ Use addressed byte storage for exact device records and payloads.
 
 #### Collection work charge {#sec-cpu-collection-work-charge}
 
-A language-allocation request that invokes collection, and the explicit
-collection primitive, add this charge before collection begins:
+Automatic collection is incremental. An allocation request contributes a step
+before its new storage is admitted; ordinary instructions can execute between
+steps. This allows a cartridge to build and discard small objects without
+paying for a complete pool traversal in a single instruction. An explicit
+collection and an emergency collection before an otherwise over-capacity
+request remain synchronous.
 
-$$
-2 \times \left\lceil B / 4 \right\rceil + 2C + 3(S + G)
-$$
-
-`B` is the language-allocation budget already occupied immediately before
-collection. It includes unreachable allocations not yet reclaimed, but excludes
-the allocation request that triggered this collection. Round the aggregate byte
-count once, not each allocation separately. The occupied-byte counts are:
+The occupied-byte counts used for admission and collection work are:
 
 | Allocation | Occupied budget bytes |
 | --- | --- |
@@ -1130,29 +1127,77 @@ count once, not each allocation separately. The occupied-byte counts are:
 | Thread with `V` reserved Value slots | `64 + 8V` |
 | Allocated String text | UTF-8 byte length |
 
-`C` is the total number of constant Value slots in all activated program images,
-not just the current function's image. `S` and `G` are the numbers of registered
-system-global and cartridge-global slots. Repeated registration of one name
-shares its existing slot. Every constant occupies two 32-bit Value words; each
-global root pair contains one name word and two Value words. These ranges are
-charged even when their Values are nil. Read-only String text supplied by a
-program image does not occupy the language-allocation budget; its constant or
-registered-name root still participates in the root-range charge.
+The collector marks retained objects, remarks roots and modified objects,
+resolves weak references, and then reclaims unmarked objects and Strings.
+Changing a previously scanned Table, its metatable or a closed captured-variable
+cell makes that allocation eligible for another scan. Register and global writes
+do not add a per-write collection charge: roots and retained Thread stacks are
+examined again before reclamation. Allocations created during reclamation
+survive that collection. An object found reachable earlier in the cycle may
+therefore survive until a later collection even if its last reference has gone.
 
-The two-pass pool allowance is a fixed whole-pool work allowance, with one
-additional root-range read allowance. Reserved Thread Value storage is included;
-function-activation control and fixed collector bookkeeping are amortized within
-the pool allowance, not charged by a separate frame-record size. The rule does not prescribe two
-literal traversals of every byte or a worst-case bound on weak-reference
-convergence. It is independent of how many objects survive collection.
+Collection work consumes one cycle per 32-bit work word:
 
-Collection completes within the requesting instruction or primitive before the
-next instruction or pending interrupt is accepted, even when its work spans a
-display-frame boundary. Its full charge is retained if collection or the
-subsequent allocation admission raises the out-of-memory error. Existing
-instruction, primitive, table-storage and result-placement charges remain additional;
-collection does not repeat them. Ordinary allocator management adds no further
-charge.
+| Work | Cycles |
+| --- | --- |
+| Scan one Table, closure, captured-variable cell or Thread | `ceil(occupied allocation bytes / 4)` |
+| Examine one allocation for reclamation, whether kept or freed | `ceil(occupied allocation bytes / 4)` |
+| Read the constant and global root ranges | `2C + 3(S + G)` per pass |
+| Examine a weak-key Table in one dependency-convergence pass | `ceil(occupied Table bytes / 4)` |
+| Clear weak entries and retain surviving String entries in one weak Table | `ceil(occupied Table bytes / 4)` |
+| Examine one String-directory slot, including a vacant slot | `1` |
+| Examine occupied String text for reclamation | `ceil(allocated text bytes / 4)` |
+
+Round each allocation or String's byte count separately. A repeated scan costs
+again; unreachable objects that are not scanned still incur their reclamation
+work. Read-only String text supplied by a program image has no allocated-text
+charge, but its directory slot and constant or registered-name roots still
+participate. Directory slots are reused after reclamation, not removed; their
+high-water extent and reuse order carry across collection cycles.
+
+`C` counts constant Value slots in all activated program images. `S` and `G`
+count registered system-global and cartridge-global slots; repeated registration
+of one name shares its existing slot. Nil slots count too. These root ranges are
+read at the beginning of marking and at the final remark, using the ranges
+present at each pass. Thread storage is scanned initially and at the final
+remark. Function-activation control and fixed collector bookkeeping are included
+in these allowances, not charged by a separate frame-record size.
+
+A step normally stops after **4,096 work cycles**. A single allocation scan is
+indivisible. The final root remark, remaining changed-object scans, weak-key
+convergence and weak-entry clearing are also indivisible. These operations can
+exceed the step target: it is not a maximum instruction latency. Reclamation of
+objects and Strings resumes from its previous position on the next step.
+
+The initial collection threshold is **1 MiB of occupied budget**. A request for
+`R` bytes starts or assists collection when `B + R` exceeds the current
+threshold, where `B` is the occupied budget before admitting the request. While
+a cycle remains active, each assist sets the next threshold to the remaining
+occupied budget plus **256 bytes**, before adding `R`. When the cycle completes,
+let `L` be the remaining occupied budget and `K` the total language-allocation
+capacity. The next threshold is:
+
+$$
+\max\left(L + 256,\ \min\left(K-\lfloor K/8\rfloor,\ \max(1\ \mathrm{MiB},2L)\right)\right).
+$$
+
+The headroom term starts collection before a heavily retained pool fills.
+It does not reserve extra capacity or guarantee that new allocations will fit.
+Without further allocation, an unfinished automatic cycle need not advance.
+
+If a request would exceed capacity, the CPU instead completes any active cycle
+and performs one fresh full cycle before retrying admission. Explicit collection
+does the same; the fresh cycle removes garbage retained only by an earlier scan
+of the interrupted cycle. If the request still does not fit, it raises the
+out-of-memory error without admitting its bytes.
+
+The requesting instruction pays for the work actually completed before it
+continues. The step or explicit collection finishes before the next instruction
+or pending interrupt is accepted, including when it exceeds the current cycle
+grant. Its charge is retained on an allocation failure. Existing instruction,
+primitive, table-storage and result-placement charges remain additional;
+collection does not repeat them. Ordinary allocator management and write-barrier
+bookkeeping add no separate charge.
 
 
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}
@@ -1161,6 +1206,11 @@ The collector reads a Table's metatable member `__mode` directly. A String
 containing lowercase `k` selects weak keys; lowercase `v` selects weak values;
 both select both. Other characters do not select a mode. A missing or non-String
 member selects ordinary strong entries. This lookup does not invoke `__index`.
+
+A change to `__mode` during collection can take effect in that cycle or the
+next. In particular, an object already retained by a strong entry need not be
+reclaimed in the cycle that makes the entry weak. Weak-entry removal and freed
+capacity become observable as collection advances, not at a fixed display frame.
 
 | Mode | Collection effect |
 | --- | --- |

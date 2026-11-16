@@ -185,9 +185,11 @@ Options:
   `cpu_slices` and `cpu_consumed_cycles` are interval deltas of the existing
   CPU-lifetime counters around `CPU::runUntilDepth`. Consumption is emulated
   budget cycles, not retired instructions or host nanoseconds.
-  `gc_collections` and `gc_*_ns` are interval deltas of collection attempts and
-  host monotonic phase timings. Total time encloses roots, graph/ephemeron
-  tracing, weak cleanup, object sweep, string reclamation and final heap
+  `gc_collections` counts collection cycles started in the interval;
+  `gc_*_ns` are interval deltas of host monotonic phase timings. Continuing an
+  incremental cycle can therefore add GC time with zero new collections. Total
+  time encloses roots, graph/ephemeron tracing, weak cleanup, object sweep,
+  string reclamation and final heap
   accounting. Phase timers close on exception unwinding; restore-time heap
   reconstruction is not a guest collection. CPU reset/restore never rewinds
   these counters; loading another runtime starts a new lifetime.

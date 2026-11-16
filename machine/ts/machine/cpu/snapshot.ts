@@ -1,3 +1,4 @@
+import type { GarbageAllocation } from './gc_object';
 import type { Closure, Upvalue } from './closure';
 import type { Table } from './table';
 import type { Thread } from './thread';
@@ -6,7 +7,7 @@ import { ValueTag, type ValueReference } from './value';
 // Snapshot-local word offsets, not a guest ABI. Values are tag + f64/u32
 // payload; references use object ordinals, never host pointers or hash ids.
 export const CPU_SNAPSHOT_VALUE_WORDS = 3;
-export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue, Thread }
+export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue, Thread, Garbage }
 export const enum CpuSnapshotTable {
 	Kind, HashId, LengthHint, ArrayCapacity, HashSize, HashFree, Metatable,
 	Data = 9,
@@ -14,7 +15,7 @@ export const enum CpuSnapshotTable {
 export const enum CpuSnapshotClosure { Kind, HashId, FunctionAddress, Canonical, UpvalueCount, CodeAddress, NumParams, MaxStack, Flags, UpvalueTableAddress, RecordUpvalueCount, ExecutionDomainId, Data }
 export const enum CpuSnapshotUpvalue { Kind, HashId, Open, Index, ThreadRef, FrameIndex, Value }
 export const enum CpuSnapshotThread { Kind, HashId, Index, Size }
-export type CpuSnapshotObject = Table | Closure | Upvalue | Thread;
+export type CpuSnapshotObject = Table | Closure | Upvalue | Thread | GarbageAllocation;
 export type CpuSnapshotValueWriter = (offset: number, tag: ValueTag, scalar: number, reference: ValueReference) => void;
 
 const numberBits = new DataView(new ArrayBuffer(8));

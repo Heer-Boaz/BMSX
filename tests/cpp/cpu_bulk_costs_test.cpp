@@ -1,3 +1,4 @@
+#include "common/utf8.h"
 #include "machine/cpu/cpu.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/native_block.h"
@@ -122,17 +123,26 @@ void rebuildWork(bool scalar) {
    auto* mode = cpu.createTable(0, 1);
    mode->setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v"))); table->metatable = mode;
    table->set(field, valueTable(cpu.createTable())); table->set(other, valueTable(cpu.createTable()));
+   r[1] = valueString(cpu.stringPool().intern("third"));
    const auto heap = cpu.luaHeap().captureState();
-   r[4] = valueTable(cpu.createTable(static_cast<int>((heap.nextCollectionBytes - heap.trackedBytes - 48) / 8)));
-   r[1] = valueString(cpu.stringPool().intern("third")); surcharge = 16; capacity = 4;
+   cpu.stringPool().intern(std::string(heap.nextCollectionBytes - heap.trackedBytes - 16, 'g'));
+   surcharge = 16; capacity = 4;
   } else {
    for (int i = 0; i < 1024; ++i) table->set(valueNumber(i + 0.5), valueNumber(i));
    r[1] = valueNumber(1024.5);
    r[4] = valueTable(cpu.createTable(static_cast<int>((PSX_MACHINE_SPEC.ramBytes - BASE_RAM_USED_SIZE - cpu.luaHeap().usedBytes() - 4096) / 8)));
+   cpu.collectHeap(); // Isolate failed admission from the preceding assist cycle.
    surcharge = 2048; capacity = 1024;
   }
-  const int gcCycles = scenario == "weak-collection" || scenario == "failed-growth"
-   ? 2 * ceilDiv4(static_cast<int>(cpu.luaHeap().usedBytes())) : 0;
+  int gcCycles = 0;
+  if (scenario == "weak-collection" || scenario == "failed-growth") {
+   const auto strings = cpu.stringPool().captureState();
+   gcCycles = strings.slots;
+   for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
+   // Weak graph: Thread96 + Closure8 + weak Table72 + mode26 + dead Values16 + warm Table13.
+   gcCycles += scenario == "weak-collection" ? 231
+    : 2 * ((cpu.luaHeap().usedBytes() - cpu.stringPool().trackedLuaHeapBytes()) / 4) + (64 + cpu.rootThread()->stackCapacity * 8) / 4;
+  }
   const Value key = r[1]; machine.restart();
   if (cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + 1) != RunResult::Yielded
    || cpu.instructionBudgetRemaining != 1 - surcharge - gcCycles || table->storedSlotCount() != capacity

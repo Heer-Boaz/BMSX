@@ -37,6 +37,7 @@ private:
 	void emitLength(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
 	void emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite* skipped);
 	void emitContext(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
+	void emitWriteBarrier();
 	void emitUpvalue(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
 	void emitVararg(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
 	void emitMemory(const DecodedInstruction& instruction, NativeBlockExitSite* exit);

@@ -1,3 +1,4 @@
+import type { GcState } from '../../cpu/gc_heap';
 import type { PendingMemoryKind } from '../../cpu/memory_operation';
 import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
@@ -204,6 +205,7 @@ function writeStringPoolStateEntry(writer: BinarySink, state: StringPoolStateEnt
 	writer.u32(state.id);
 	writer.string(state.value);
 	writer.bool(state.tracked);
+	writer.bool(state.reachable);
 }
 
 function readStringPoolStateEntry(reader: BinaryReader): StringPoolStateEntry {
@@ -211,6 +213,7 @@ function readStringPoolStateEntry(reader: BinaryReader): StringPoolStateEntry {
 		id: reader.u32(),
 		value: reader.string(),
 		tracked: reader.bool(),
+		reachable: reader.bool(),
 	};
 }
 
@@ -219,11 +222,18 @@ function writeStringPoolState(writer: BinarySink, state: StringPoolState): void 
 	for (const value of state.entries) {
 		writeStringPoolStateEntry(writer, value);
 	}
+	writer.u32(state.slots);
+	writer.i32(state.sweep);
+	writer.u32(state.sweepEnd);
+	writer.u32(state.freeIds.length);
+	writer.u32s(state.freeIds);
 }
 
 function readStringPoolState(reader: BinaryReader): StringPoolState {
 	return {
 		entries: reader.array(readStringPoolStateEntry),
+		slots: reader.u32(), sweep: reader.i32(), sweepEnd: reader.u32(),
+		freeIds: Array.from(reader.u32s(reader.u32())),
 	};
 }
 
@@ -1281,6 +1291,7 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(state.nextObjectHashId);
 	writer.bool(state.hardHalted);
 	writeLuaHeapState(writer, state.luaHeap);
+	writeGcState(writer, state.gc);
 	writer.u32(state.lastPc);
 	writer.i32(state.haltedUntilIrqThreadRef);
 	writer.i32(state.haltedUntilIrqFrameDepth);
@@ -1327,6 +1338,7 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 		nextObjectHashId: reader.u32(),
 		hardHalted: reader.bool(),
 		luaHeap: readLuaHeapState(reader),
+		gc: readGcState(reader),
 		lastPc: reader.u32(),
 		haltedUntilIrqThreadRef: reader.i32(),
 		haltedUntilIrqFrameDepth: reader.i32(),
@@ -1411,6 +1423,30 @@ function writeApuOutputState(writer: BinarySink, state: ApuOutputState): void {
 function readApuOutputState(reader: BinaryReader): ApuOutputState {
 	return {
 		voices: reader.array(readApuOutputVoiceState),
+	};
+}
+
+function writeGcState(writer: BinarySink, state: GcState): void {
+	writer.u32(state.phase);
+	writer.u32(state.white);
+	writer.i32(state.sweep);
+	writer.u32(state.allocations.length);
+	writer.u32s(state.allocations);
+	writer.u32(state.colors.length);
+	writer.u32s(state.colors);
+	writer.u32(state.gray.length);
+	writer.u32s(state.gray);
+	writer.u32(state.threads.length);
+	writer.u32s(state.threads);
+	writer.u32(state.weak.length);
+	writer.u32s(state.weak);
+}
+function readGcState(reader: BinaryReader): GcState {
+	return {
+		phase: reader.u32(), white: reader.u32(), sweep: reader.i32(),
+		allocations: Array.from(reader.u32s(reader.u32())), colors: Array.from(reader.u32s(reader.u32())),
+		gray: Array.from(reader.u32s(reader.u32())), threads: Array.from(reader.u32s(reader.u32())),
+		weak: Array.from(reader.u32s(reader.u32())),
 	};
 }
 

@@ -468,9 +468,10 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					apuFaultDetail: 0x1234,
 				},
 				stringPool: {
+					freeIds: [3, 2], slots: 4, sweep: 1, sweepEnd: 4,
 					entries: [
-						{ id: 0, value: 'rom literal', tracked: false },
-						{ id: 1, value: 'runtime literal', tracked: true },
+						{ id: 0, value: 'rom literal', tracked: false, reachable: true },
+						{ id: 1, value: 'runtime literal', tracked: true, reachable: false },
 					],
 				},
 				input: {
@@ -545,6 +546,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				nextObjectHashId: 0xfedcba98,
 				hardHalted: true,
 				luaHeap: { trackedBytes: 2345, nextCollectionBytes: 1048576 },
+				gc: { phase: 2, white: 1, sweep: 0, allocations: [0], colors: [3], gray: [], threads: [], weak: [] },
 				executionCartridgeSlot: 0,
 				programExecutionDomainId: 0,
 				systemGlobals: [
@@ -616,7 +618,8 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
 	);
 
-	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
+	assert.deepEqual(decoded.machineState.machine.stringPool, state.machineState.machine.stringPool);
+	assert.deepEqual(decoded.cpuState.gc, state.cpuState.gc);
 	assert.deepEqual(decoded.machineState.machine.cartridge, state.machineState.machine.cartridge);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.machine.dma, state.machineState.machine.dma);

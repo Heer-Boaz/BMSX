@@ -20,349 +20,16 @@
 #include <cctype>
 #include <stdexcept>
 #include <unordered_set>
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-#include <chrono>
-#endif
 
 namespace bmsx {
 
 // start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
 
 namespace {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-using GcProfileClock = std::chrono::steady_clock;
-
-// Both enclosing and phase intervals close during exception unwinding, so
-// failed collections remain attributable without any per-object clocks.
-class GcPhaseMeasurement {
-public:
-	explicit GcPhaseMeasurement(u64& nanoseconds)
-		: m_nanoseconds(&nanoseconds), m_start(GcProfileClock::now()) {}
-	~GcPhaseMeasurement() {
-		*m_nanoseconds += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-			GcProfileClock::now() - m_start).count());
-	}
-	void phase(u64& nanoseconds) {
-		const auto now = GcProfileClock::now();
-		*m_nanoseconds += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_start).count());
-		m_start = now;
-		m_nanoseconds = &nanoseconds;
-	}
-private:
-	u64* m_nanoseconds;
-	GcProfileClock::time_point m_start;
-};
-#endif
-
 constexpr size_t kClosureHeapBytes = 16;
 constexpr size_t kClosureUpvalueSlotHeapBytes = 8;
-constexpr size_t kUpvalueHeapBytes = 24;
-constexpr uint8_t kTableWeakKeys = 1;
-constexpr uint8_t kTableWeakValues = 2;
-static inline size_t trackedClosureBytes(const Closure& closure) {
-	return closure.trackedHeapBytes;
-}
-
-static inline size_t closureAllocationBytes(size_t upvalueCount) {
-	return sizeof(Closure) + (upvalueCount * sizeof(Upvalue*));
-}
 
 } // namespace
-
-bool GcHeap::markValue(Value v) {
-	if (!valueIsTagged(v)) {
-		return false;
-	}
-	switch (valueTag(v)) {
-		case ValueTag::Thread:
-			return markObject(asThread(v));
-		case ValueTag::Table:
-			return markObject(asTable(v));
-		case ValueTag::Closure:
-			return markClosure(asClosure(v));
-		case ValueTag::BuiltinFunction:
-			return false;
-		case ValueTag::String:
-			m_stringPool.markReachable(asStringId(v));
-			return false;
-		default:
-			return false;
-	}
-}
-
-bool GcHeap::markClosure(Closure* closure) {
-	return markObject(closure);
-}
-
-Closure* GcHeap::allocateClosure(size_t upvalueCount) {
-	const size_t byteCount = closureAllocationBytes(upvalueCount);
-	void* storage = ::operator new(byteCount);
-	auto* closure = new (storage) Closure();
-	closure->type = ObjType::Closure;
-	closure->marked = false;
-	closure->hashId = allocateHashId();
-	closure->next = m_objects;
-	closure->upvalueCount = upvalueCount;
-	closure->upvalues = reinterpret_cast<Upvalue**>(static_cast<uint8_t*>(storage) + sizeof(Closure));
-	for (size_t index = 0; index < upvalueCount; ++index) {
-		closure->upvalues[index] = nullptr;
-	}
-	m_objects = closure;
-	return closure;
-}
-
-GcHeap::~GcHeap() {
-	while (m_objects) {
-		GCObject* object = m_objects;
-		m_objects = object->next;
-		destroyObject(object);
-	}
-}
-
-bool GcHeap::markObject(GCObject* obj) {
-	if (!obj || obj->marked) {
-		return false;
-	}
-	obj->marked = true;
-	m_grayStack.push_back(obj);
-	return true;
-}
-
-uint8_t GcHeap::tableWeakMode(const Table& table) const {
-	if (!table.metatable) {
-		return 0;
-	}
-	const Value modeValue = table.metatable->getStringKey(m_modeKey);
-	if (!valueIsString(modeValue)) {
-		return 0;
-	}
-	const std::string& mode = m_stringPool.toString(asStringId(modeValue));
-	uint8_t weakMode = 0;
-	for (char ch : mode) {
-		switch (ch) {
-			case 'k':
-				weakMode |= kTableWeakKeys;
-				break;
-			case 'v':
-				weakMode |= kTableWeakValues;
-				break;
-		}
-	}
-	return weakMode;
-}
-
-bool GcHeap::valueIsAlive(Value value) const {
-	if (!valueIsTagged(value)) {
-		return true;
-	}
-	switch (valueTag(value)) {
-		case ValueTag::Thread:
-			return asThread(value)->marked;
-		case ValueTag::Table:
-			return asTable(value)->marked;
-		case ValueTag::Closure: {
-			const Closure* closure = asClosure(value);
-			return closure->marked;
-		}
-		default:
-			return true;
-	}
-}
-
-void GcHeap::trace() {
-	while (!m_grayStack.empty()) {
-		GCObject* obj = m_grayStack.back();
-		m_grayStack.pop_back();
-		switch (obj->type) {
-			case ObjType::Thread: {
-				auto* thread = static_cast<Thread*>(obj);
-				markObject(thread->resumer);
-				if (thread->entry != nullptr) markClosure(thread->entry);
-				markValue(thread->error);
-				int liveTop = thread->currentFrame ? thread->currentFrame->stackBase
-					+ std::min(thread->currentFrame->top, thread->currentFrame->stackCapacity) : 0;
-				CallFrame* frame = thread->firstFrame;
-				for (size_t depth = 0; depth < thread->frameDepth; ++depth, frame = frame->next) {
-					markClosure(frame->closure);
-					for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
-						markObject(upvalue);
-						liveTop = std::max(liveTop, frame->stackBase + upvalue->index + 1);
-					}
-				}
-				for (int slot = 0; slot < liveTop; ++slot) markValue(thread->stack[slot]);
-				std::fill(thread->stack + liveTop, thread->stack + thread->stackCapacity, valueNil());
-				thread->trimFrames();
-				break;
-			}
-			case ObjType::Table: {
-				auto* table = static_cast<Table*>(obj);
-				if (table->metatable) {
-					markObject(table->metatable);
-				}
-				const uint8_t weakMode = tableWeakMode(*table);
-				if (weakMode != 0) {
-					m_weakTables.push_back(table);
-					m_weakTableModes.push_back(weakMode);
-					if (weakMode == kTableWeakKeys) {
-						m_ephemeronTables.push_back(table);
-					}
-				}
-				if ((weakMode & kTableWeakKeys) == 0) {
-					table->forEachEntry([this, weakMode](Value key, Value value) {
-						markValue(key);
-						if (weakMode == 0) {
-							markValue(value);
-						}
-					});
-				}
-				break;
-			}
-			case ObjType::Closure: {
-				auto* closure = static_cast<Closure*>(obj);
-				for (size_t index = 0; index < closure->upvalueCount; ++index) {
-					markObject(closure->upvalues[index]);
-				}
-				break;
-			}
-			case ObjType::Upvalue: {
-				auto* upvalue = static_cast<Upvalue*>(obj);
-				if (!upvalue->open) {
-					markValue(upvalue->value);
-				} else {
-					markObject(upvalue->frame->thread);
-				}
-				break;
-			}
-		}
-	}
-}
-
-void GcHeap::convergeEphemerons() {
-	bool changed = false;
-	do {
-		changed = false;
-		for (Table* table : m_ephemeronTables) {
-			table->forEachEntry([this, &changed](Value key, Value value) {
-				if (valueIsAlive(key) && markValue(value)) {
-					changed = true;
-				}
-			});
-		}
-		trace();
-	} while (changed);
-}
-
-void GcHeap::clearWeakTables() {
-	for (size_t index = 0; index < m_weakTables.size(); ++index) {
-		Table* table = m_weakTables[index];
-		const uint8_t weakMode = m_weakTableModes[index];
-		table->clearWeakEntries(
-			(weakMode & kTableWeakKeys) != 0,
-			(weakMode & kTableWeakValues) != 0,
-			[this](Value value) { return valueIsAlive(value); }
-		);
-		table->forEachEntry([this](Value key, Value value) {
-			if (valueIsString(key)) {
-				m_stringPool.markReachable(asStringId(key));
-			}
-			if (valueIsString(value)) {
-				m_stringPool.markReachable(asStringId(value));
-			}
-		});
-	}
-}
-
-void GcHeap::destroyObject(GCObject* object) {
-	switch (object->type) {
-		case ObjType::Thread:
-			m_luaHeap.release(THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stackCapacity * THREAD_STACK_SLOT_BYTES);
-			delete static_cast<Thread*>(object);
-			break;
-		case ObjType::Table:
-			m_luaHeap.release(static_cast<Table*>(object)->trackedHeapBytes());
-			m_tables.destroy(static_cast<Table*>(object));
-			break;
-		case ObjType::Closure:
-			m_luaHeap.release(trackedClosureBytes(*static_cast<Closure*>(object)));
-			static_cast<Closure*>(object)->~Closure();
-			::operator delete(object);
-			break;
-		case ObjType::Upvalue:
-			m_luaHeap.release(kUpvalueHeapBytes);
-			delete static_cast<Upvalue*>(object);
-			break;
-	}
-}
-
-size_t GcHeap::sweep() {
-	size_t liveBytes = 0;
-	GCObject** current = &m_objects;
-	while (*current) {
-		GCObject* object = *current;
-		if (object->marked) {
-			switch (object->type) {
-				case ObjType::Thread: liveBytes += THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stackCapacity * THREAD_STACK_SLOT_BYTES; break;
-				case ObjType::Table: liveBytes += static_cast<Table*>(object)->trackedHeapBytes(); break;
-				case ObjType::Closure: liveBytes += trackedClosureBytes(*static_cast<Closure*>(object)); break;
-				case ObjType::Upvalue: liveBytes += kUpvalueHeapBytes; break;
-			}
-			object->marked = false;
-			current = &object->next;
-			continue;
-		}
-		*current = object->next;
-		destroyObject(object);
-	}
-	return liveBytes;
-}
-
-void GcHeap::finishRestore(u32 nextObjectHashId) {
-	// Snapshot objects were marked while rebuilding, including weak referents.
-	// Reclaim only the discarded host graph; do not perform a guest collection.
-	sweep();
-	m_nextObjectHashId = nextObjectHashId;
-}
-
-size_t GcHeap::collect(
-	Value root0,
-	Value root1,
-	Value root2
-) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	GcPhaseMeasurement measurement(m_cpu.m_diagnosticGcProfile.rootsNanoseconds);
-#endif
-	m_weakTables.clear();
-	m_weakTableModes.clear();
-	m_ephemeronTables.clear();
-	m_stringPool.beginReachabilityEpoch();
-	m_stringPool.markReachable(m_modeKey);
-	m_cpu.markRoots(*this);
-	markValue(root0);
-	markValue(root1);
-	markValue(root2);
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	measurement.phase(m_cpu.m_diagnosticGcProfile.traceNanoseconds);
-#endif
-	trace();
-	convergeEphemerons();
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	measurement.phase(m_cpu.m_diagnosticGcProfile.weakNanoseconds);
-#endif
-	clearWeakTables();
-	m_cpu.pruneStaticClosures();
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	measurement.phase(m_cpu.m_diagnosticGcProfile.sweepNanoseconds);
-#endif
-	const size_t liveBytes = sweep();
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	measurement.phase(m_cpu.m_diagnosticGcProfile.stringReclaimNanoseconds);
-#endif
-	m_stringPool.reclaimUnreachable();
-	m_weakTables.clear();
-	m_weakTableModes.clear();
-	m_ephemeronTables.clear();
-	return liveBytes + m_stringPool.trackedLuaHeapBytes();
-}
 
 BuiltinResultsScratchScope::BuiltinResultsScratchScope(CPU& cpu, BuiltinResults& out) noexcept
 	: m_cpu(&cpu)
@@ -807,7 +474,7 @@ Closure* CPU::staticClosureForRecord(const Closure& record) {
 
 void CPU::pruneStaticClosures() {
 	for (auto entry = m_staticClosuresByAddress.begin(); entry != m_staticClosuresByAddress.end();) {
-		entry->second.remove_if([](const Closure* closure) { return !closure->marked; });
+		entry->second.remove_if([this](const Closure* closure) { return !m_heap.isAlive(closure); });
 		if (entry->second.empty()) entry = m_staticClosuresByAddress.erase(entry);
 		else ++entry;
 	}
@@ -1283,11 +950,20 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	for (const Closure* closure : canonicalClosures) {
 		captureObject(closure);
 	}
+	state.gc = m_heap.captureState(captureObject);
 	// Reserve ordinals at each edge, then drain in ordinal order. Guest graph
 	// depth must not consume the host call stack.
 	for (u32 id = 0; id < pendingObjects.size(); ++id) {
 		const auto* object = pendingObjects[id];
 		u32 offset;
+		if (m_heap.sweepGarbage(object)) {
+			offset = snapshot.reserveWords(3);
+			snapshot.setWord(offset, static_cast<u32>(CpuSnapshotObjectKind::Garbage));
+			snapshot.setWord(offset + 1, object->hashId);
+			snapshot.setWord(offset + 2, static_cast<u32>(m_heap.allocationBytes(object)));
+			snapshot.setObjectWord(id, offset);
+			continue;
+		}
 		switch (object->type) {
 			case ObjType::Thread: {
 				const auto* thread = static_cast<const Thread*>(object);
@@ -1399,13 +1075,22 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
 		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {
+			case CpuSnapshotObjectKind::Garbage: {
+				const auto bytes = snapshot.word(offset + 2);
+				m_luaHeap.restoreAllocate(bytes);
+				auto* object = m_heap.allocate<GarbageAllocation>(ObjType::Garbage, bytes);
+				object->restored = true;
+				object->hashId = snapshot.word(offset + 1);
+				restoredObjects[index] = object;
+				break;
+			}
 			case CpuSnapshotObjectKind::Thread: {
 				if (index != static_cast<size_t>(state.rootThreadRef)) {
 					m_luaHeap.restoreAllocate(THREAD_HEAP_BYTES + state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)].stackCapacity * THREAD_STACK_SLOT_BYTES);
 				}
 				Thread* thread = index == static_cast<size_t>(state.rootThreadRef) ? m_rootThread : m_heap.allocate<Thread>(ObjType::Thread);
 				const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
-				thread->marked = true;
+				thread->restored = true;
 				thread->hashId = snapshot.word(offset + SNAP_THREAD_HASH_ID);
 				thread->resizeStack(saved.stackCapacity);
 				thread->stackTop = 0;
@@ -1421,7 +1106,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
 				m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(arrayCapacity, hashSize));
 				Table* table = m_heap.allocate<Table>(ObjType::Table, m_luaHeap, arrayCapacity, hashSize);
-				table->marked = true;
+				table->restored = true;
 				table->hashId = snapshot.word(offset + SNAP_TABLE_HASH_ID);
 				restoredObjects[index] = table;
 				break;
@@ -1463,15 +1148,15 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				closure->recordUpvalueCount = record.recordUpvalueCount;
 				closure->canonical = canonical;
 				closure->executionDomainId = record.executionDomainId;
-				closure->marked = true;
+				closure->restored = true;
 				closure->hashId = snapshot.word(offset + SNAP_CLOSURE_HASH_ID);
 				restoredObjects[index] = closure;
 				break;
 			}
 			case CpuSnapshotObjectKind::Upvalue: {
-				m_luaHeap.restoreAllocate(kUpvalueHeapBytes);
+				m_luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
 				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
-				upvalue->marked = true;
+				upvalue->restored = true;
 				upvalue->open = false;
 				upvalue->index = snapshot.integer(offset + SNAP_UPVALUE_INDEX);
 				upvalue->frame = nullptr;
@@ -1486,6 +1171,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
 		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {
+			case CpuSnapshotObjectKind::Garbage: break;
 			case CpuSnapshotObjectKind::Thread:
 				break;
 			case CpuSnapshotObjectKind::Table:
@@ -1636,6 +1322,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_yieldRequested = state.yieldRequested;
 	m_hardHalted = state.hardHalted;
 	m_heap.finishRestore(state.nextObjectHashId);
+	m_heap.restoreState(state.gc, restoredObjects);
 	m_luaHeap.restoreState(state.luaHeap);
 }
 
@@ -2862,17 +2549,12 @@ size_t CPU::collectionRootWordCount() const {
 	return words;
 }
 
-void CPU::collectHeap() {
-	collectHeap(valueNil(), valueNil(), valueNil());
+size_t CPU::collectHeap(Value root0, Value root1, Value root2) {
+	return m_heap.collect(root0, root1, root2);
 }
 
-void CPU::collectHeap(Value root0, Value root1, Value root2) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	GcPhaseMeasurement measurement(m_diagnosticGcProfile.totalNanoseconds);
-	++m_diagnosticGcProfile.collections;
-#endif
-	const size_t liveBytes = m_heap.collect(root0, root1, root2);
-	m_luaHeap.finishCollection(liveBytes);
+size_t CPU::stepHeap(Value root0, Value root1, Value root2) {
+	return m_heap.step(root0, root1, root2);
 }
 
 ExecutionDomainId CPU::readFrameExecutionDomain(int frameIndex) const {
@@ -3102,7 +2784,7 @@ Closure* CPU::createClosure(CallFrame& frame) {
 	}
 	const size_t closureHeapBytes = kClosureHeapBytes
 		+ (static_cast<size_t>(functionRecord.upvalueCount) * kClosureUpvalueSlotHeapBytes);
-	m_luaHeap.reserve(closureHeapBytes + (newUpvalueCount * kUpvalueHeapBytes));
+	m_luaHeap.reserve(closureHeapBytes + (newUpvalueCount * UPVALUE_HEAP_BYTES));
 	auto* closure = allocateTrackedClosure(
 		functionRecord.address,
 		functionRecord.upvalueCount
@@ -3139,6 +2821,7 @@ int CPU::closeUpvalues(CallFrame& frame) {
 	frame.openUpvalueHead = nullptr;
 	while (upvalue) {
 		Upvalue* next = upvalue->nextOpen;
+		upvalue->writeBarrier();
 		upvalue->value = frame.registers[static_cast<size_t>(upvalue->index)];
 		upvalue->open = false;
 		upvalue->frame = nullptr;
@@ -3161,6 +2844,7 @@ void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
 		upvalue->frame->registers[upvalue->index] = value;
 		return;
 	}
+	upvalue->writeBarrier();
 	upvalue->value = value;
 }
 

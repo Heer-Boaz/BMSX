@@ -1,6 +1,7 @@
 import { utf8ByteLength, utf8CodepointCount, utf8Compare } from '../../common/utf8';
 import { nextCodePointOffset } from '../../common/utf16';
 import type { LuaHeap } from './lua_heap';
+import { ceilDiv4 } from '../common/numeric';
 import { ValueTag } from './value';
 
 export type StringId = number;
@@ -9,11 +10,16 @@ export type StringPoolStateEntry = {
 	id: StringId;
 	value: string;
 	tracked: boolean;
+	reachable: boolean;
 };
 
 export type StringPoolState = {
 	/** Occupied slots in ascending ID order. */
 	entries: StringPoolStateEntry[];
+	freeIds: StringId[];
+	slots: number;
+	sweep: number;
+	sweepEnd: number;
 };
 
 export class StringPool {
@@ -26,7 +32,9 @@ export class StringPool {
 	private readonly localRoots: StringId[] = [];
 	private readonly localRootBases: number[] = [];
 	private trackedBytes = 0;
-	private reachable = new Uint8Array(0);
+	private reachable: number[] = [];
+	private sweep = -1;
+	private sweepEnd = 0;
 
 	public constructor(private readonly luaHeap: LuaHeap) {}
 
@@ -34,6 +42,7 @@ export class StringPool {
 		const interned = this.byText.get(value) | 0;
 		if (interned !== 0) {
 			const existing = interned - 1;
+			this.markReachable(existing);
 			if (tracked && this.trackedByteLengths[existing] === 0) {
 				const byteLength = utf8ByteLength(this.values[existing]!);
 				this.luaHeap.reserve(byteLength, ValueTag.String, existing);
@@ -98,56 +107,41 @@ export class StringPool {
 	}
 
 	public beginReachabilityEpoch(): void {
-		if (this.reachable.length < this.values.length) {
-			this.reachable = new Uint8Array(this.values.length);
-		} else {
-			this.reachable.fill(0, 0, this.values.length);
-		}
+		this.reachable.fill(0);
+		this.markLocalRoots();
+	}
+	public markLocalRoots(): void {
 		for (const id of this.localRoots) this.reachable[id] = 1;
 	}
-
-	public markReachable(id: StringId): void {
-		this.reachable[id] = 1;
-	}
-
-	public reclaimUnreachable(): void {
-		let reclaimed = 0;
-		this.freeIds.length = 0;
-		for (let id = 0; id < this.values.length; id += 1) {
-			const value = this.values[id];
-			if (value === undefined) {
-				this.freeIds.push(id);
-				continue;
-			}
-			if (this.reachable[id] !== 0) {
-				continue;
-			}
+	public markReachable(id: StringId): void { this.reachable[id] = 1; }
+	public beginSweep(): void { this.sweep = 0; this.sweepEnd = this.values.length; }
+	public sweeping(): boolean { return this.sweep >= 0; }
+	public sweepStep(words: number): number {
+		let work = 0, reclaimed = 0;
+		while (this.sweep < this.sweepEnd && work < words) {
+			const id = this.sweep++, value = this.values[id];
+			++work;
+			if (value === undefined) continue;
+			work += ceilDiv4(this.trackedByteLengths[id]);
+			if (this.reachable[id] !== 0) continue;
 			this.byText.delete(value);
-			this.values[id] = undefined;
-			this.codepointCounts[id] = 0;
+			this.values[id] = undefined; this.codepointCounts[id] = 0;
 			this.codepointBlockOffsets[id] = undefined;
-			reclaimed += this.trackedByteLengths[id];
-			this.trackedByteLengths[id] = 0;
+			reclaimed += this.trackedByteLengths[id]; this.trackedByteLengths[id] = 0;
 			this.freeIds.push(id);
 		}
-		while (this.values.length > 0 && this.values[this.values.length - 1] === undefined) {
-			this.values.pop();
-			this.freeIds.pop();
-		}
-		this.codepointCounts.length = this.values.length;
-		this.codepointBlockOffsets.length = this.values.length;
-		this.trackedByteLengths.length = this.values.length;
-		this.trackedBytes -= reclaimed;
-		this.luaHeap.release(reclaimed);
+		this.trackedBytes -= reclaimed; this.luaHeap.release(reclaimed);
+		if (this.sweep === this.sweepEnd) { this.sweep = -1; this.sweepEnd = 0; }
+		return work;
 	}
 
 	public captureState(): StringPoolState {
 		const entries: StringPoolStateEntry[] = [];
 		for (let id = 0; id < this.values.length; id += 1) {
 			const value = this.values[id];
-			if (value !== undefined) entries.push({ id, value, tracked: this.trackedByteLengths[id] > 0 });
+			if (value !== undefined) entries.push({ id, value, tracked: this.trackedByteLengths[id] > 0, reachable: this.reachable[id] !== 0 });
 		}
-		return { entries };
+		return { entries, freeIds: this.freeIds.slice(), slots: this.values.length, sweep: this.sweep, sweepEnd: this.sweepEnd };
 	}
 
 	public restoreState(state: StringPoolState): void {
@@ -162,12 +156,18 @@ export class StringPool {
 		for (let index = 0; index < state.entries.length; index += 1) {
 			const stateEntry = state.entries[index];
 			this.insert(stateEntry.id, stateEntry.value);
+			this.reachable[stateEntry.id] = stateEntry.reachable ? 1 : 0;
 			if (stateEntry.tracked) {
 				const byteLength = utf8ByteLength(stateEntry.value);
 				this.trackedByteLengths[stateEntry.id] = byteLength;
 				this.trackedBytes += byteLength;
 			}
 		}
+		this.values.length = state.slots; this.reachable.length = state.slots;
+		this.codepointCounts.length = state.slots; this.trackedByteLengths.length = state.slots;
+		this.codepointBlockOffsets.length = state.slots;
+		this.freeIds.length = 0; for (const id of state.freeIds) this.freeIds.push(id);
+		this.sweep = state.sweep; this.sweepEnd = state.sweepEnd;
 		this.luaHeap.adjustForRestore(previousBytes, this.trackedBytes);
 	}
 
@@ -177,6 +177,7 @@ export class StringPool {
 			this.codepointCounts[vacant] = 0;
 			this.trackedByteLengths[vacant] = 0;
 		}
+		this.reachable[id] = 1;
 		this.values[id] = value;
 		const count = utf8CodepointCount(value);
 		this.codepointCounts[id] = count;

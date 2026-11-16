@@ -1,5 +1,7 @@
 #pragma once
 
+#include "machine/cpu/gc_heap.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -156,6 +158,7 @@ struct CpuRuntimeState {
 	u32 nextObjectHashId = 1;
 	bool hardHalted = false;
 	LuaHeapState luaHeap;
+	GcState gc;
 	u32 stringIndexTable = 0;
 	int rootThreadRef = -1;
 	int activeThreadRef = -1;
@@ -192,73 +195,6 @@ enum class AcceptedInterruptKind : uint8_t {
 	NonMaskable = 2,
 };
 
-class GcHeap {
-public:
-	// Strings live in an append-only pool rather than as GC objects, so the heap
-	// reclaims their tracked-byte accounting by marking reachable ids during the
-	// mark phase and dropping the rest after the sweep. The pool outlives the heap
-	// (declared before it in CPU), so a reference is always valid.
-	GcHeap(CPU& cpu, LuaHeap& luaHeap, StringPool& stringPool, StringId modeKey)
-		: m_cpu(cpu)
-		, m_luaHeap(luaHeap)
-		, m_modeKey(modeKey)
-		, m_stringPool(stringPool) {}
-	~GcHeap();
-
-	template <typename T, typename... Args>
-	T* allocate(ObjType type, Args&&... args) {
-		T* obj;
-		if constexpr (std::is_same_v<T, Table>) {
-			obj = m_tables.construct(std::forward<Args>(args)...);
-		} else {
-			obj = new T(std::forward<Args>(args)...);
-		}
-		obj->type = type;
-		obj->marked = false;
-		obj->hashId = allocateHashId();
-		obj->next = m_objects;
-		m_objects = obj;
-		return obj;
-	}
-	Closure* allocateClosure(size_t upvalueCount);
-	template <typename Visitor> void visitThreads(Visitor&& visit) {
-		for (auto* object = m_objects; object; object = object->next)
-			if (object->type == ObjType::Thread) visit(*static_cast<Thread*>(object));
-	}
-
-	uint32_t allocateHashId() { return m_nextObjectHashId++; }
-	u32 nextObjectHashId() const { return m_nextObjectHashId; }
-	void finishRestore(u32 nextObjectHashId);
-	size_t collect(
-		Value root0 = valueNil(),
-		Value root1 = valueNil(),
-		Value root2 = valueNil()
-	);
-	bool markValue(Value v);
-	bool markClosure(Closure* closure);
-	bool markObject(GCObject* obj);
-
-private:
-	uint8_t tableWeakMode(const Table& table) const;
-	bool valueIsAlive(Value value) const;
-	void trace();
-	void convergeEphemerons();
-	void clearWeakTables();
-	size_t sweep();
-	void destroyObject(GCObject* object);
-
-	CPU& m_cpu;
-	LuaHeap& m_luaHeap;
-	GCObject* m_objects = nullptr;
-	std::vector<GCObject*> m_grayStack;
-	std::vector<Table*> m_weakTables;
-	std::vector<uint8_t> m_weakTableModes;
-	std::vector<Table*> m_ephemeronTables;
-	uint32_t m_nextObjectHashId = 1;
-	StringId m_modeKey;
-	StringPool& m_stringPool;
-	ObjectStoragePool<Table> m_tables;
-};
 
 class CPU : public MappedPageInvalidator {
 public:
@@ -339,7 +275,9 @@ public:
 
 	void setExecutionHook(ExecutionHookBinding binding);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget, const Thread* target = nullptr);
-	void collectHeap();
+	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
+	size_t stepHeap(Value root0, Value root1, Value root2);
+	bool collecting() const { return m_heap.active(); }
 	class LocalRootsScope {
 	public:
 		LocalRootsScope(const LocalRootsScope&) = delete;
@@ -434,7 +372,6 @@ private:
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
 	size_t collectionRootWordCount() const;
-	void collectHeap(Value root0, Value root1, Value root2);
 	StringId internExecutionString(
 		ExecutionDomainId executionDomainId,
 		u32 address,

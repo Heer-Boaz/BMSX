@@ -1,4 +1,3 @@
-import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -194,8 +193,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const failFirst = wanted === PSX_MACHINE_SPEC.ramBytes + 1;
 			thread.protectedCallContinuations.peek(failFirst ? 1 : 0).returnCount = failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted;
 			const fault = wanted >= PSX_MACHINE_SPEC.ramBytes;
-			// Failed success-placement and protected error-placement each attempt collection; all pre-pool objects remain roots.
-			const gcCycles = fault ? 2 * (2 * ceilDiv4(cpu.luaHeap.usedBytes()) + 3) : 0;
+			// Both success- and error-placement collect. If the inner return completed,
+			// its closure is already dead at the first scan (four fewer mark words).
+			const gcCycles = fault ? (failFirst ? 278 : 274) : 0;
 			if (fault) assert.throws(() => cpu.runUntilDepth(1, 2), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			else assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const outer = wanted === 0 ? 4 : wanted - 1;

@@ -1,3 +1,4 @@
+#include "common/utf8.h"
 #include "machine/cpu/cpu.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/native_block.h"
@@ -335,7 +336,10 @@ void wideAllocationFailure() {
 		auto& cpu = m->cpu; auto& root = *cpu.activeThread()->frameAtDepth(0); root.registers[8] = valueNumber(73); root.registers[9] = valueNil(); root.top = 9;
 		const auto key = cpu.stringPool().find("retained"); auto* retained = cpu.createTable(350000); cpu.setGlobalByKey(*key, valueTable(retained));
 	}
-	const int gcCycles = 2 * ceilDiv4(static_cast<int>(native.cpu.luaHeap().usedBytes())) + 3;
+	const auto strings = native.cpu.stringPool().captureState();
+	int gcCycles = 2 * ((native.cpu.luaHeap().usedBytes() - native.cpu.stringPool().trackedLuaHeapBytes()) / 4)
+		+ (64 + native.cpu.rootThread()->stackCapacity * 8) / 4 + 6 + strings.slots;
+	for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
 	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::NEWT)]); requireParity(native, scalar);
 	require(native.cpu.instructionBudgetRemaining == -gcCycles, "failed NEWT pays prefix/base and pre-admission GC, but no initialization");
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY

@@ -179,6 +179,7 @@ public:
 	void prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity);
 
 	Table* metatable = nullptr;
+	bool gcWeakListed = false;
 
 private:
 	bool getArraySlot(size_t slot, Value& value) const {
@@ -197,6 +198,7 @@ private:
 		}
 	}
 	void setArraySlot(size_t slot, const Value& value) {
+		writeBarrier();
 		m_array[slot] = value;
 		updateLengthHint(slot, !isNil(value));
 	}

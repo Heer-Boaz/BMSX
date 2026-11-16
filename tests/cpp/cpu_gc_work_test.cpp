@@ -54,8 +54,8 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.luaHeap().usedBytes() == 157, "boot pool is the literal canonical allocation sum, not host object sizes");
 	cpu.instructionBudgetRemaining = 7;
 	cpu.luaHeap().collectRuntime();
-	// B157 => 2*40; C3 =>6; S1+G1 =>6, duplicate names share roots.
-	require(cpu.instructionBudgetRemaining == -85, "runtime collection adds literal92 including complete nil root ranges");
+	// Thread32*3 + Closure4*2 + roots12*2 + directory17 + text(2+2) =149.
+	require(cpu.instructionBudgetRemaining == -142, "runtime collection adds149 for object passes, both root passes and String work");
 	require(cpu.luaHeap().usedBytes() == 157, "readonly ROM String bytes are not charged as allocated text");
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers[0] = valueTable(cpu.createTable(2, 3)); //32+16+80=128.
@@ -64,8 +64,8 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.luaHeap().usedBytes() == 291, "canonical reserved table capacity and UTF8 text bytes agree");
 	cpu.instructionBudgetRemaining = 7;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == -151 && cpu.luaHeap().usedBytes() == 291,
-		"aggregate B291 rounds once to73 words, giving literal158 including roots");
+	require(cpu.instructionBudgetRemaining == -209 && cpu.luaHeap().usedBytes() == 291,
+		"base149 + Table32*2 + String(1+2) =216; each allocation rounds separately");
 	const auto threshold = cpu.luaHeap().captureState();
 	require(threshold.nextCollectionBytes == 1048576, "the existing minimum collection threshold is unchanged");
 	cpu.instructionBudgetRemaining = 123;
@@ -89,8 +89,8 @@ void explicitCollectionAndNoReplay() {
 			frame.top = 1;
 		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining == -127,
-			"explicit primitive retains CALL32+primitive4+collection92 after short grant, without receiving slots");
+			&& generated.cpu.instructionBudgetRemaining == -184,
+			"explicit primitive retains CALL32+primitive4+collection149 after short grant, without receiving slots");
 		require(generated.cpu.readFramePc(0) == generated.rom.textAddress + (wide ? 8 : 4)
 			&& isNil(generated.cpu.readFrameRegister(0, 7)), "collection completes but cannot execute its successor");
 		test::runCpuParity(generated.cpu, scalar.cpu, 0);
@@ -110,8 +110,8 @@ void allocationCollectionAndFailure() {
 			m->cpu.luaHeap().restoreState({before.trackedBytes, 0});
 		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining == -119,
-			"automatic GC bills pre-request92 plus NEWT24 and four initialized Values exactly once");
+			&& generated.cpu.instructionBudgetRemaining == -176,
+			"automatic GC bills pre-request149 plus NEWT24 and four initialized Values exactly once");
 		require(generated.cpu.luaHeap().usedBytes() == 225 && valueIsTable(generated.cpu.readFrameRegister(0, 0))
 			&& isNil(generated.cpu.readFrameRegister(0, 7)), "request68 is admitted after collection, not included in its bill");
 		test::runCpuParity(generated.cpu, scalar.cpu, 2);
@@ -123,8 +123,8 @@ void allocationCollectionAndFailure() {
 	bool failed = false;
 	try { cpu.luaHeap().reserve(4 * 1024 * 1024); }
 	catch (const LuaOutOfMemorySignal&) { failed = true; }
-	require(failed && cpu.instructionBudgetRemaining == -91 && cpu.luaHeap().usedBytes() == 157,
-		"failed oversized admission retains literal92 collection charge, not pending request bytes");
+	require(failed && cpu.instructionBudgetRemaining == -148 && cpu.luaHeap().usedBytes() == 157,
+		"failed oversized admission retains literal149 collection charge, not pending request bytes");
 	cpu.runUntilDepth(0, 1);
 	require(cpu.instructionBudgetRemaining == -1, "out-of-run reserve debt is transient and overwritten by the next run grant");
 }
@@ -149,13 +149,13 @@ void allActivatedImagesAndUniqueGlobals() {
 	cpu.instructionBudgetRemaining = 5;
 	cpu.luaHeap().collectRuntime();
 	// C=3+4+1, S=1, G=3; all activated images remain roots, not only the current system image.
-	require(cpu.instructionBudgetRemaining == -103,
-		"literal108 bills all resident image ranges and unique cross-image slot identities");
+	require(cpu.instructionBudgetRemaining == -178,
+		"literal183 bills both root passes over all resident images and unique namespaces");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	cpu.instructionBudgetRemaining = 5;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == -103, "restored residency and registered ranges reproduce the same collection bill");
+	require(cpu.instructionBudgetRemaining == -178, "restored residency and registered ranges reproduce the same collection bill");
 }
 
 void temporaryRootsAndUnreachablePool() {
@@ -167,20 +167,104 @@ void temporaryRootsAndUnreachablePool() {
 	cpu.luaHeap().restoreState({before.trackedBytes, 0});
 	cpu.instructionBudgetRemaining = 1;
 	cpu.luaHeap().reserve(0, valueTable(table), valueString(id));
-	//2*ceil(195/4)=98, plus12 root words.
-	require(cpu.instructionBudgetRemaining == -109 && cpu.luaHeap().usedBytes() == 195
+	// base149 + live Table8*2 + String(1+2) =168.
+	require(cpu.instructionBudgetRemaining == -167 && cpu.luaHeap().usedBytes() == 195
 		&& cpu.stringPool().toString(id) == "é😀", "all reserve temporary roots survive one charged collection");
 	cpu.instructionBudgetRemaining = 1;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == -109 && cpu.luaHeap().usedBytes() == 157,
-		"bill uses precollection dead bytes, not the surviving pool");
+	require(cpu.instructionBudgetRemaining == -159 && cpu.luaHeap().usedBytes() == 157,
+		"dead Table incurs8 sweep words, not another mark pass; its String incurs3 words");
 }
+
+void incrementalStateAndBarriers() {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	auto* roots = cpu.createTable(1024, 0);
+	cpu.rootThread()->currentFrame->registers[0] = valueTable(roots);
+	cpu.rootThread()->currentFrame->top = 1;
+	const auto field = cpu.stringPool().intern("child");
+	for (int i = 1; i <= 1000; ++i) {
+		auto* item = cpu.createTable(1, 1);
+		item->setStringKey(field, valueBool(false)); roots->setInteger(i, valueTable(item));
+		auto* dead = cpu.createTable(1, 0);
+		dead->setInteger(1, valueTable(cpu.createTable()));
+	}
+	for (int i = 0; i < 320; ++i) cpu.stringPool().intern("dead-" + std::to_string(i) + std::string(256, 'x'));
+	auto* target = asTable(roots->getInteger(1000));
+	require(cpu.stepHeap(valueNil(), valueNil(), valueNil()) >= GC_STEP_WORDS && target->gcColor == 3,
+		"mutations target a black allocation while marking is incomplete");
+	auto* child = cpu.createTable();
+	target->setInteger(1, valueTable(child));
+	target->setStringKey(field, valueTable(child));
+	target->writeBarrier(); target->metatable = cpu.createTable();
+	const auto childId = child->hashId;
+	u32 phases = 0, bornId = 0;
+	for (int step = 0; step < 1000; ++step) {
+		auto state = cpu.captureRuntimeState();
+		phases |= 1u << static_cast<u32>(state.gc.phase);
+		if (state.gc.phase == GcPhase::Sweep && bornId == 0) {
+			auto* born = cpu.createTable(); bornId = born->hashId;
+			auto* frame = cpu.rootThread()->currentFrame;
+			frame->registers[1] = valueTable(born); frame->top = 2;
+			state = cpu.captureRuntimeState();
+		}
+		const auto strings = cpu.stringPool().captureState();
+		cpu.stringPool().restoreState(strings); cpu.restoreRuntimeState(state);
+		const auto after = cpu.captureRuntimeState();
+		require(std::ranges::equal(state.snapshot.words(), after.snapshot.words())
+			&& state.gc.phase == after.gc.phase && state.gc.white == after.gc.white
+			&& state.gc.sweep == after.gc.sweep && state.gc.allocations == after.gc.allocations
+			&& state.gc.colors == after.gc.colors && state.gc.gray == after.gc.gray
+			&& state.gc.threads == after.gc.threads && state.gc.weak == after.gc.weak,
+			"restore preserves collector cursors, queues and dead allocation work, not dead graph pointers");
+		if (!cpu.collecting()) break;
+		cpu.stepHeap(valueNil(), valueNil(), valueNil());
+	}
+	require(phases == 15, "snapshot/restore exercised every collector phase");
+	roots = asTable(cpu.rootThread()->currentFrame->registers[0]);
+	target = asTable(roots->getInteger(1000));
+	require(asTable(target->getInteger(1))->hashId == childId
+		&& asTable(target->getStringKey(field))->hashId == childId && target->metatable,
+		"barriers preserve changed array, hash and metatable edges");
+	require(asTable(cpu.rootThread()->currentFrame->registers[1])->hashId == bornId,
+		"an allocation born during sweep is retained");
+	require(!cpu.stringPool().find("dead-0" + std::string(256, 'x')), "incremental String sweep reclaims dead text");
+	cpu.collectHeap();
+	require(cpu.captureRuntimeState().gc.allocations.size() == 1006,
+		"full collection retains root Thread, closure, roots Table, 1000 children and three new live Tables");
+}
+
+void incrementalSharedWeakMode() {
+	Machine machine(image());
+	auto& cpu = machine.cpu;
+	auto* roots = cpu.createTable(1024, 0);
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers[0] = valueTable(roots);
+	frame.top = 1;
+	for (int i = 1; i <= 1000; ++i) roots->setInteger(i, valueTable(cpu.createTable()));
+	const auto modeKey = cpu.stringPool().intern("__mode");
+	auto* metatable = cpu.createTable(0, 1);
+	metatable->setStringKey(modeKey, valueString(cpu.stringPool().intern("v")));
+	auto* weak = asTable(roots->getInteger(1000));
+	weak->metatable = metatable;
+	auto* child = cpu.createTable();
+	weak->setInteger(1, valueTable(child));
+	cpu.stepHeap(valueNil(), valueNil(), valueNil());
+	require(cpu.captureRuntimeState().gc.phase == GcPhase::Mark && weak->gcColor == 3
+		&& weak->gcWeakListed && child->gcColor != 3, "weak entry has not retained its child before the mode change");
+	metatable->setStringKey(modeKey, valueNil());
+	while (cpu.collecting()) cpu.stepHeap(valueNil(), valueNil(), valueNil());
+	require(weak->getInteger(1) == valueTable(child), "atomic remark observes the shared metatable change");
+	cpu.collectHeap();
+	require(weak->getInteger(1) == valueTable(child), "the newly strong entry retains its child in the next cycle");
+}
+
 }
 
 int main() {
 	try {
 		canonicalPoolAndRootRanges(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
+		incrementalStateAndBarriers(); incrementalSharedWeakMode();
 		std::cout << "guest GC work tests passed\n";
 		return 0;
 	} catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

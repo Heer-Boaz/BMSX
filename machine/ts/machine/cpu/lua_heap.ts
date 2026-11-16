@@ -1,7 +1,7 @@
 import { BASE_RAM_USED_SIZE } from '../../spec/bmsx/memory_map';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
-import { ceilDiv4 } from '../common/numeric';
+import { GC_ASSIST_BYTES } from './gc_heap';
 import {
 	ValueTag,
 	type ValueReference,
@@ -36,26 +36,17 @@ export class LuaHeap {
 		root2Reference: ValueReference = null,
 	): void {
 		let nextBytes = this.trackedBytes + byteCount;
-		if (nextBytes > this.nextCollectionBytes || nextBytes > this.capacityBytes) {
-			this.collectRuntime(
-				root0Tag,
-				root0Scalar,
-				root0Reference,
-				root1Tag,
-				root1Scalar,
-				root1Reference,
-				root2Tag,
-				root2Scalar,
-				root2Reference,
-			);
-			nextBytes = this.trackedBytes + byteCount;
-			if (nextBytes > this.capacityBytes) {
-				throw LUA_OUT_OF_MEMORY_SIGNAL;
-			}
-			if (nextBytes > this.nextCollectionBytes) {
-				this.nextCollectionBytes = Math.max(MIN_COLLECTION_BYTES, nextBytes * 2);
-			}
+		if (nextBytes > this.capacityBytes) {
+			this.collectRuntime(root0Tag, root0Scalar, root0Reference,
+				root1Tag, root1Scalar, root1Reference, root2Tag, root2Scalar, root2Reference);
+		} else if (nextBytes > this.nextCollectionBytes) {
+			this.cpu.instructionBudgetRemaining -= this.cpu.gc.step(
+				root0Tag, root0Scalar, root0Reference,
+				root1Tag, root1Scalar, root1Reference, root2Tag, root2Scalar, root2Reference);
+			if (this.cpu.gc.active()) this.nextCollectionBytes = this.trackedBytes + GC_ASSIST_BYTES;
 		}
+		nextBytes = this.trackedBytes + byteCount;
+		if (nextBytes > this.capacityBytes) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		this.trackedBytes = nextBytes;
 	}
 
@@ -70,9 +61,7 @@ export class LuaHeap {
 		root2Scalar: number = NaN,
 		root2Reference: ValueReference = null,
 	): void {
-		this.cpu.instructionBudgetRemaining -= 2 * ceilDiv4(this.trackedBytes)
-			+ this.cpu.collectionRootWordCount();
-		this.cpu.collectTrackedHeapBytes(
+		this.cpu.instructionBudgetRemaining -= this.cpu.gc.collect(
 			root0Tag, root0Scalar, root0Reference,
 			root1Tag, root1Scalar, root1Reference,
 			root2Tag, root2Scalar, root2Reference,
@@ -96,12 +85,10 @@ export class LuaHeap {
 		this.trackedBytes += restoredBytes - previousBytes;
 	}
 
-	public finishCollection(liveBytes: number): void {
-		this.trackedBytes = liveBytes;
-		this.nextCollectionBytes = Math.max(MIN_COLLECTION_BYTES, liveBytes * 2);
-		if (liveBytes > this.capacityBytes) {
-			throw LUA_OUT_OF_MEMORY_SIGNAL;
-		}
+	public finishCollection(): void {
+		const liveBytes = this.trackedBytes;
+		this.nextCollectionBytes = Math.max(liveBytes + GC_ASSIST_BYTES,
+			Math.min(this.capacityBytes - (this.capacityBytes >>> 3), Math.max(MIN_COLLECTION_BYTES, liveBytes * 2)));
 	}
 
 	public usedBytes(): number {

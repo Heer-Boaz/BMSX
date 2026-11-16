@@ -71,7 +71,9 @@ int main(int argc, char** argv) {
 			|| stressedAllocations <= 32) throw std::runtime_error("GC stress fixture did not finish successfully");
 		const auto bytes = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
 		std::ofstream output(std::string(argv[1]) + ".state", std::ios::binary);
+		output.exceptions(std::ios::failbit | std::ios::badbit);
 		output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+		output.close();
 		std::cout << "GC stress passed: " << stressedAllocations << " allocation boundaries\n";
 		return 0;
 	} catch (const std::exception& error) {

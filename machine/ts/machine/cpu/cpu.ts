@@ -1,3 +1,5 @@
+import { GcHeap, type GcState } from './gc_heap';
+import { GarbageAllocation } from './gc_object';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { luaPow } from '../../spec/blua32/pow';
 import { CART_ROM_BASE } from '../../spec/bmsx/memory_map';
@@ -121,7 +123,7 @@ import {
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
-import { Closure, EMPTY_CLOSURE_UPVALUES, type Upvalue } from './closure';
+import { Closure, EMPTY_CLOSURE_UPVALUES, Upvalue, UPVALUE_HEAP_BYTES } from './closure';
 import { BuiltinArgsView, BuiltinResults, ValueSlots } from './value_slots';
 import {
 	DECODED_DISPATCH_BASE_CYCLES,
@@ -158,7 +160,6 @@ const executionStringDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM
 
 const CLOSURE_HEAP_BYTES = 16;
 const CLOSURE_UPVALUE_SLOT_HEAP_BYTES = 8;
-const UPVALUE_HEAP_BYTES = 24;
 
 // Saved values are u32 offsets into the snapshot word arena. Object references
 // (closureRef/openUpvalues) are ordinals in its object index.
@@ -217,6 +218,7 @@ export type CpuRuntimeState = {
 	nextObjectHashId: number;
 	hardHalted: boolean;
 	luaHeap: LuaHeapState;
+	gc: GcState;
 	stringIndexTable: number;
 	rootThreadRef: number;
 	activeThreadRef: number;
@@ -270,10 +272,6 @@ export type ExecutionHook = (
 	pc: number,
 ) => boolean;
 
-const TABLE_WEAK_KEYS = 1;
-const TABLE_WEAK_VALUES = 2;
-const TABLE_WEAK_KEY_CODE_UNIT = 0x6b;
-const TABLE_WEAK_VALUE_CODE_UNIT = 0x76;
 
 export class CPU implements MappedPageInvalidator {
 	/** Current runUntilDepth grant; consumed by the caller, not checkpoint state. */
@@ -285,6 +283,7 @@ export class CPU implements MappedPageInvalidator {
 	public readonly memory: Memory;
 
 	public readonly luaHeap: LuaHeap;
+	public readonly gc: GcHeap;
 	public readonly stringPool: StringPool;
 	private indexKey!: StringId;
 	private modeKey!: StringId;
@@ -331,118 +330,12 @@ export class CPU implements MappedPageInvalidator {
 	private readonly localRoots: Value[] = [];
 	private localRootScopeDepth = 0;
 	private closureUpvalueWords = new Uint32Array(0);
-	private readonly heapObjectStack: Array<Table | Closure | Thread> = [];
-	private readonly heapUpvalueStack: Upvalue[] = [];
-	private readonly heapWeakTables: Table[] = [];
-	private readonly heapWeakTableModes: number[] = [];
-	private readonly heapEphemeronTables: Table[] = [];
-	private readonly heapSeenImages = new WeakMap<object, number>();
 	private readonly tableScratch = new ValueSlots(2);
 	private readonly tableLookupResult: TableLookupResult = {
 		values: this.tableScratch, slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
 	};
 	private heapEpoch = 0;
-	private heapTableWeakMode = 0;
-	private heapEphemeronChanged = false;
-	private readonly heapStoredValueIsAlive = (
-		tag: ValueTag,
-		_scalar: number,
-		reference: ValueReference,
-	): boolean => {
-		switch (tag) {
-			case ValueTag.Thread:
-			case ValueTag.Table:
-			case ValueTag.Closure:
-				return reference!.gcEpoch === this.heapEpoch;
-			default:
-				return true;
-		}
-	};
-	private readonly visitHeapTableEntry = (
-		keyTag: ValueTag,
-		keyScalar: number,
-		keyReference: ValueReference,
-		valueTag: ValueTag,
-		valueScalar: number,
-		valueReference: ValueReference,
-	): void => {
-		if ((this.heapTableWeakMode & TABLE_WEAK_KEYS) === 0) {
-			this.pushHeapStoredValue(keyTag, keyScalar, keyReference);
-		}
-		if (this.heapTableWeakMode === 0) {
-			this.pushHeapStoredValue(valueTag, valueScalar, valueReference);
-		}
-	};
-	private readonly visitHeapEphemeronEntry = (
-		keyTag: ValueTag,
-		keyScalar: number,
-		keyReference: ValueReference,
-		valueTag: ValueTag,
-		valueScalar: number,
-		valueReference: ValueReference,
-	): void => {
-		if (!this.heapStoredValueIsAlive(keyTag, keyScalar, keyReference)) {
-			return;
-		}
-		switch (valueTag) {
-			case ValueTag.Thread:
-			case ValueTag.Table:
-			case ValueTag.Closure:
-				if (valueReference!.gcEpoch !== this.heapEpoch) {
-					this.heapObjectStack.push(valueReference!);
-					this.heapEphemeronChanged = true;
-				}
-				return;
-			default:
-				this.pushHeapStoredValue(valueTag, valueScalar, valueReference);
-		}
-	};
-	private readonly markWeakEntryStrings = (
-		keyTag: ValueTag,
-		keyScalar: number,
-		_keyReference: ValueReference,
-		valueTag: ValueTag,
-		valueScalar: number,
-		_valueReference: ValueReference,
-	): void => {
-		if (keyTag === ValueTag.String) {
-			this.stringPool.markReachable(keyScalar as StringId);
-		}
-		if (valueTag === ValueTag.String) {
-			this.stringPool.markReachable(valueScalar as StringId);
-		}
-	};
-
-	private pushHeapRegister(registers: ValueSlots, index: number): void {
-		this.pushHeapStoredValue(
-			registers.getTag(index),
-			registers.getScalar(index),
-			registers.getReference(index),
-		);
-	}
-
-	private pushHeapStoredValue(tag: ValueTag, scalar: number, reference: ValueReference): void {
-		switch (tag) {
-			case ValueTag.Nil:
-			case ValueTag.False:
-			case ValueTag.True:
-			case ValueTag.Number:
-			case ValueTag.BuiltinFunction:
-				return;
-			case ValueTag.String:
-				this.stringPool.markReachable(scalar as StringId);
-				return;
-			case ValueTag.Thread:
-			case ValueTag.Table:
-				this.heapObjectStack.push(reference as Table | Thread);
-				return;
-			case ValueTag.Closure: {
-				const closure = reference as Closure;
-				this.heapObjectStack.push(closure);
-				return;
-			}
-		}
-	}
+	private readonly heapSeenImages = new WeakMap<object, number>();
 
 	private readonly executionImagesByDomain: Array<Blua32ExecutionImage | null> =
 		new Array<Blua32ExecutionImage | null>(EXECUTION_DOMAIN_COUNT).fill(null);
@@ -509,6 +402,8 @@ export class CPU implements MappedPageInvalidator {
 		this.rootThread.status = ThreadStatus.Running;
 		this.indexKey = this.stringPool.intern('__index');
 		this.modeKey = this.stringPool.intern('__mode');
+		this.gc = new GcHeap(this, this.modeKey);
+		this.gc.track(this.rootThread);
 		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_UNKNOWN] = this.stringPool.intern('Attempted to get length of an unsupported value.', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_CALL_NON_FUNCTION] = this.stringPool.intern('Attempted to call a non-function value.', false);
@@ -535,6 +430,7 @@ export class CPU implements MappedPageInvalidator {
 		this.luaHeap.reserve(Table.trackedHeapBytesForCapacities(arraySize, hashCapacity));
 		const table = new Table(this.luaHeap, arraySize, hashCapacity);
 		table.hashId = this.allocateObjectHashId();
+		this.gc.track(table);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(table);
 		return table;
 	}
@@ -1149,6 +1045,7 @@ export class CPU implements MappedPageInvalidator {
 			record.codeAddress, record.numParams, record.maxStack, record.flags, record.upvalueTableAddress,
 			record.image.executionDomainId, record.upvalueCount, true);
 		closure.hashId = this.allocateObjectHashId();
+		this.gc.track(closure);
 		closures = this.staticClosuresByAddress.get(record.address);
 		if (closures === undefined) {
 			closures = [];
@@ -3624,21 +3521,17 @@ export class CPU implements MappedPageInvalidator {
 		this.luaHeap.reserve(heapBytes + (newUpvalueCount * UPVALUE_HEAP_BYTES));
 		const closure = new Closure(functionRecord.address, upvalues, heapBytes, functionRecord.codeAddress, functionRecord.numParams, functionRecord.maxStack, functionRecord.flags, functionRecord.upvalueTableAddress, functionRecord.image.executionDomainId, functionRecord.upvalueCount, false);
 		closure.hashId = this.allocateObjectHashId();
+		this.gc.track(closure);
 		for (let index = 0; index < functionRecord.upvalueCount; index += 1) {
 			if (upvalues[index]) {
 				continue;
 			}
-			const upvalue: Upvalue = {
-				hashId: this.allocateObjectHashId(),
-				gcEpoch: 0,
-				open: true,
-				index: upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK,
-				frame,
-				valueTag: ValueTag.Nil,
-				valueScalar: NaN,
-				valueReference: null,
-				nextOpen: null,
-			};
+			const upvalue = new Upvalue();
+			upvalue.hashId = this.allocateObjectHashId();
+			upvalue.open = true;
+			upvalue.index = upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK;
+			upvalue.frame = frame;
+			this.gc.track(upvalue);
 			this.linkOpenUpvalue(frame, upvalue);
 			upvalues[index] = upvalue;
 		}
@@ -3652,6 +3545,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.openUpvalueHead = null;
 		while (upvalue) {
 			const next = upvalue.nextOpen;
+			upvalue.writeBarrier();
 			upvalue.valueTag = frame.registers.getTag(upvalue.index);
 			upvalue.valueScalar = frame.registers.getScalar(upvalue.index);
 			upvalue.valueReference = frame.registers.getReference(upvalue.index);
@@ -3688,6 +3582,7 @@ export class CPU implements MappedPageInvalidator {
 			upvalue.frame!.registers.copySlotFrom(registers, upvalue.index, registerIndex);
 			return;
 		}
+		upvalue.writeBarrier();
 		upvalue.valueTag = registers.getTag(registerIndex);
 		upvalue.valueScalar = registers.getScalar(registerIndex);
 		upvalue.valueReference = registers.getReference(registerIndex);
@@ -3992,6 +3887,7 @@ export class CPU implements MappedPageInvalidator {
 		this.luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES, ValueTag.Closure, NaN, entry);
 		const thread = new Thread(entry);
 		thread.hashId = this.allocateObjectHashId();
+		this.gc.track(thread);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(thread);
 		return thread;
 	}
@@ -4793,12 +4689,18 @@ export class CPU implements MappedPageInvalidator {
 		for (const closure of canonicalClosures) {
 			captureObject(closure, CpuSnapshotObjectKind.Closure);
 		}
+		const gc = this.gc.captureState(object => captureObject(object as CpuSnapshotObject, object.gcKind as number));
 		// Reserve ordinals at each edge, then drain in ordinal order. Guest graph
 		// depth must not consume the host call stack.
 		for (let id = 0; id < pendingObjects.length; id += 1) {
 			const object = pendingObjects[id];
 			const kind = pendingKinds[id];
 			let offset: number;
+			if (this.gc.sweepGarbage(object)) {
+				offset = writer.reserveWords(3); writer.setWord(offset, CpuSnapshotObjectKind.Garbage);
+				writer.setWord(offset + 1, object.hashId); writer.setWord(offset + 2, this.gc.allocationBytes(object));
+				writer.setObjectWord(id, offset); continue;
+			}
 			switch (kind) {
 				case CpuSnapshotObjectKind.Thread: {
 					const thread = object as Thread;
@@ -4867,6 +4769,7 @@ export class CPU implements MappedPageInvalidator {
 			nextObjectHashId: this.nextObjectHashId,
 			hardHalted: this.hardHalted,
 			luaHeap: this.luaHeap.captureState(),
+			gc,
 			stringIndexTable,
 			rootThreadRef, activeThreadRef, completionThreadRef, threads,
 			completionValues,
@@ -4907,6 +4810,13 @@ export class CPU implements MappedPageInvalidator {
 		for (let index = 0; index < snapshot.objectCount; index += 1) {
 			const offset = snapshot.objectWord(index);
 			switch (snapshot.word(offset)) {
+				case CpuSnapshotObjectKind.Garbage: {
+					const bytes = snapshot.word(offset + 2);
+					this.luaHeap.restoreAllocate(bytes);
+					const object = new GarbageAllocation(bytes); object.hashId = snapshot.word(offset + 1);
+					restoredObjects[index] = object;
+					break;
+				}
 				case CpuSnapshotObjectKind.Thread: {
 					const thread = index === state.rootThreadRef ? this.rootThread : new Thread(null);
 					const saved = state.threads[snapshot.word(offset + CpuSnapshotThread.Index)];
@@ -4962,17 +4872,10 @@ export class CPU implements MappedPageInvalidator {
 				}
 				case CpuSnapshotObjectKind.Upvalue:
 					this.luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
-					restoredObjects[index] = {
-						hashId: snapshot.word(offset + CpuSnapshotUpvalue.HashId),
-						gcEpoch: 0,
-						open: false,
-						index: snapshot.int(offset + CpuSnapshotUpvalue.Index),
-						frame: null,
-						valueTag: ValueTag.Nil,
-						valueScalar: NaN,
-						valueReference: null,
-						nextOpen: null,
-					};
+					const upvalue = new Upvalue();
+					upvalue.hashId = snapshot.word(offset + CpuSnapshotUpvalue.HashId);
+					upvalue.index = snapshot.int(offset + CpuSnapshotUpvalue.Index);
+					restoredObjects[index] = upvalue;
 					break;
 			}
 		}
@@ -5151,37 +5054,11 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = state.yieldRequested;
 		this.hardHalted = state.hardHalted;
 		this.nextObjectHashId = state.nextObjectHashId;
+		this.gc.restoreState(state.gc, restoredObjects);
 		this.luaHeap.restoreState(state.luaHeap);
 	}
 
-	private tableWeakMode(table: Table): number {
-		const metatable = table.metatable;
-		if (!metatable) {
-			return 0;
-		}
-		metatable.loadStringKey(this.modeKey, this.tableScratch, 0);
-		if (this.tableScratch.getTag(0) !== ValueTag.String) {
-			this.tableScratch.setNil(0);
-			return 0;
-		}
-		const modeId = this.tableScratch.getStringId(0);
-		this.tableScratch.setNil(0);
-		const mode = this.stringPool.toString(modeId);
-		let weakMode = 0;
-		for (let index = 0; index < mode.length; index += 1) {
-			switch (mode.charCodeAt(index)) {
-				case TABLE_WEAK_KEY_CODE_UNIT:
-					weakMode |= TABLE_WEAK_KEYS;
-					break;
-				case TABLE_WEAK_VALUE_CODE_UNIT:
-					weakMode |= TABLE_WEAK_VALUES;
-					break;
-			}
-		}
-		return weakMode;
-	}
-
-	private pushHeapImage(image: Blua32ExecutionImage): void {
+	public markHeapImage(image: Blua32ExecutionImage): void {
 		if (this.heapSeenImages.get(image) === this.heapEpoch) {
 			return;
 		}
@@ -5191,27 +5068,6 @@ export class CPU implements MappedPageInvalidator {
 				this.stringPool.markReachable(image.constScalars[index] as StringId);
 			}
 		}
-	}
-
-	private traceThread(thread: Thread): void {
-		if (thread.entry !== null) this.heapObjectStack.push(thread.entry);
-		if (thread.resumer !== null) this.heapObjectStack.push(thread.resumer);
-		this.pushHeapRegister(thread.error, 0);
-		let liveTop = thread.currentFrame === null ? 0 : thread.currentFrame.stackBase
-			+ Math.min(thread.currentFrame.top, thread.currentFrame.stackCapacity);
-		for (let frame = thread.currentFrame; frame !== null; frame = frame.previous) {
-			this.pushHeapImage(frame.executionImage);
-			this.heapObjectStack.push(frame.closure);
-			let upvalue = frame.openUpvalueHead;
-			while (upvalue) {
-				this.heapUpvalueStack.push(upvalue);
-				liveTop = Math.max(liveTop, frame.stackBase + upvalue.index + 1);
-				upvalue = upvalue.nextOpen;
-			}
-		}
-		for (let slot = 0; slot < liveTop; ++slot) this.pushHeapRegister(thread.stackRegisters, slot);
-		thread.stackRegisters.clear(thread.stackRegisters.capacity() - liveTop, liveTop);
-		thread.trimFrames();
 	}
 
 	public visitReachableClosures(visitor: (closure: Closure) => void): void {
@@ -5291,188 +5147,49 @@ export class CPU implements MappedPageInvalidator {
 		return words;
 	}
 
-	public collectTrackedHeapBytes(
-		root0Tag: ValueTag = ValueTag.Nil,
-		root0Scalar: number = NaN,
-		root0Reference: ValueReference = null,
-		root1Tag: ValueTag = ValueTag.Nil,
-		root1Scalar: number = NaN,
-		root1Reference: ValueReference = null,
-		root2Tag: ValueTag = ValueTag.Nil,
-		root2Scalar: number = NaN,
-		root2Reference: ValueReference = null,
-	): number {
-		this.heapEpoch += 1;
-		let total = 0;
-		const objectStack = this.heapObjectStack;
-		const upvalueStack = this.heapUpvalueStack;
-		const weakTables = this.heapWeakTables;
-		const weakTableModes = this.heapWeakTableModes;
-		const ephemeronTables = this.heapEphemeronTables;
-		objectStack.length = 0;
-		upvalueStack.length = 0;
-		weakTables.length = 0;
-		weakTableModes.length = 0;
-		ephemeronTables.length = 0;
-		this.stringPool.beginReachabilityEpoch();
-		this.stringPool.markReachable(this.indexKey);
-		this.stringPool.markReachable(this.modeKey);
-		this.stringPool.markReachable(this.errorInErrorHandlingStringId);
-		for (let reason = 0; reason < this.luaFaultErrorStringIds.length; reason += 1) {
-			if (reason !== LUA_FAULT_REASON_EXPLICIT_ERROR) this.stringPool.markReachable(this.luaFaultErrorStringIds[reason]);
-		}
+	public collectTrackedHeapBytes(t0 = ValueTag.Nil, s0 = NaN, r0: ValueReference = null,
+		t1 = ValueTag.Nil, s1 = NaN, r1: ValueReference = null,
+		t2 = ValueTag.Nil, s2 = NaN, r2: ValueReference = null): number {
+		this.gc.collect(t0, s0, r0, t1, s1, r1, t2, s2, r2);
+		return this.luaHeap.usedBytes();
+	}
 
-		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
-			this.stringPool.markReachable(this.systemGlobalNames[slot]);
-			this.pushHeapRegister(this.systemGlobalSlots, slot);
-		}
-		for (let slot = 0; slot < this.globalNames.length; slot += 1) {
-			this.stringPool.markReachable(this.globalNames[slot]);
-			this.pushHeapRegister(this.globalSlots, slot);
-		}
-		if (this.stringIndexTable) {
-			objectStack.push(this.stringIndexTable);
-		}
-		for (let index = 0; index < this.completionValueCount; index += 1) {
-			this.pushHeapRegister(this.completionValueSlots, index);
+	public markHeapRoots(heap: GcHeap): void {
+		++this.heapEpoch;
+		this.stringPool.markReachable(this.modeKey);
+		this.stringPool.markReachable(this.indexKey);
+		this.stringPool.markReachable(this.errorInErrorHandlingStringId);
+		for (let i = 0; i < this.luaFaultErrorStringIds.length; ++i)
+			if (i !== LUA_FAULT_REASON_EXPLICIT_ERROR) this.stringPool.markReachable(this.luaFaultErrorStringIds[i]);
+		heap.markObject(this.stringIndexTable);
+		for (let i = 0; i < this.completionValueCount; ++i) heap.markSlot(this.completionValueSlots, i);
+		for (let i = 0; i < this.builtinResultsScratchIndex; ++i) {
+			const slots = this.builtinResultsScratch.peek(i);
+			for (let j = 0; j < slots.length; ++j) heap.markValue(slots.getTag(j), slots.getScalar(j), slots.getReference(j));
 		}
 		for (const value of this.localRoots) {
 			const tag = valueTag(value);
-			switch (tag) {
-				case ValueTag.String:
-					this.stringPool.markReachable(asStringId(value as StringValue));
-					break;
-				case ValueTag.Table:
-				case ValueTag.Thread:
-				case ValueTag.Closure:
-					this.pushHeapStoredValue(tag, NaN, value as NonNullable<ValueReference>);
-					break;
-			}
+			if (tag === ValueTag.String) this.stringPool.markReachable(asStringId(value as StringValue));
+			else if (tag === ValueTag.Table || tag === ValueTag.Thread || tag === ValueTag.Closure) heap.markObject(value as Table | Closure | Thread);
 		}
-		for (let scratchIndex = 0; scratchIndex < this.builtinResultsScratchIndex; scratchIndex += 1) {
-			const scratch = this.builtinResultsScratch.peek(scratchIndex);
-			for (let valueIndex = 0; valueIndex < scratch.length; valueIndex += 1) {
-				this.pushHeapStoredValue(
-					scratch.getTag(valueIndex),
-					scratch.getScalar(valueIndex),
-					scratch.getReference(valueIndex),
-				);
-			}
+		for (let i = 0; i < this.systemGlobalNames.length; ++i) {
+			this.stringPool.markReachable(this.systemGlobalNames[i]); heap.markSlot(this.systemGlobalSlots, i);
 		}
-		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
-			const image = this.executionImagesByDomain[index];
-			if (image !== null) {
-				this.pushHeapImage(image);
-			}
+		for (let i = 0; i < this.globalNames.length; ++i) {
+			this.stringPool.markReachable(this.globalNames[i]); heap.markSlot(this.globalSlots, i);
 		}
-		objectStack.push(this.rootThread, this.activeThread, this.completionThread);
-		if (this.haltedUntilIrqThread !== null) objectStack.push(this.haltedUntilIrqThread);
-		this.pushHeapStoredValue(root0Tag, root0Scalar, root0Reference);
-		this.pushHeapStoredValue(root1Tag, root1Scalar, root1Reference);
-		this.pushHeapStoredValue(root2Tag, root2Scalar, root2Reference);
-		for (;;) {
-			while (objectStack.length > 0 || upvalueStack.length > 0) {
-				if (upvalueStack.length > 0) {
-					const upvalue = upvalueStack.pop()!;
-					if (upvalue.gcEpoch === this.heapEpoch) {
-						continue;
-					}
-					upvalue.gcEpoch = this.heapEpoch;
-					total += UPVALUE_HEAP_BYTES;
-					if (upvalue.open) {
-						this.pushHeapRegister(upvalue.frame!.registers, upvalue.index);
-						objectStack.push(upvalue.frame!.thread);
-					} else {
-						this.pushHeapStoredValue(
-							upvalue.valueTag,
-							upvalue.valueScalar,
-							upvalue.valueReference,
-						);
-					}
-					continue;
-				}
-				const object = objectStack.pop()!;
-				switch (object[VALUE_TAG]) {
-					case ValueTag.Thread: {
-						const thread = object as Thread;
-						if (thread.gcEpoch === this.heapEpoch) continue;
-						thread.gcEpoch = this.heapEpoch;
-						total += THREAD_HEAP_BYTES + thread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
-						this.traceThread(thread);
-						continue;
-					}
-					case ValueTag.Table: {
-						const table = object as Table;
-						if (table.gcEpoch === this.heapEpoch) {
-							continue;
-						}
-						table.gcEpoch = this.heapEpoch;
-						total += table.getTrackedHeapBytes();
-						if (table.metatable) {
-							objectStack.push(table.metatable);
-						}
-						this.heapTableWeakMode = this.tableWeakMode(table);
-						if (this.heapTableWeakMode !== 0) {
-							weakTables.push(table);
-							weakTableModes.push(this.heapTableWeakMode);
-							if (this.heapTableWeakMode === TABLE_WEAK_KEYS) {
-								ephemeronTables.push(table);
-							}
-						}
-						if ((this.heapTableWeakMode & TABLE_WEAK_KEYS) === 0) {
-							table.forEachStoredEntry(this.visitHeapTableEntry);
-						}
-						continue;
-					}
-					case ValueTag.Closure: {
-						const closure = object as Closure;
-						if (closure.gcEpoch === this.heapEpoch) {
-							continue;
-						}
-						closure.gcEpoch = this.heapEpoch;
-						total += closure.heapBytes;
-						for (let index = 0; index < closure.upvalues.length; index += 1) {
-							upvalueStack.push(closure.upvalues[index]);
-						}
-						continue;
-					}
-				}
-			}
-			this.heapEphemeronChanged = false;
-			for (let index = 0; index < ephemeronTables.length; index += 1) {
-				ephemeronTables[index].forEachStoredEntry(this.visitHeapEphemeronEntry);
-			}
-			if (!this.heapEphemeronChanged) {
-				break;
-			}
-		}
-		for (let index = 0; index < weakTables.length; index += 1) {
-			const weakMode = weakTableModes[index];
-			const table = weakTables[index];
-			table.clearWeakEntries(
-				(weakMode & TABLE_WEAK_KEYS) !== 0,
-				(weakMode & TABLE_WEAK_VALUES) !== 0,
-				this.heapStoredValueIsAlive,
-			);
-			table.forEachStoredEntry(this.markWeakEntryStrings);
-		}
+		for (const image of this.executionImagesByDomain) if (image !== null) this.markHeapImage(image);
+		heap.markObject(this.rootThread); heap.markObject(this.activeThread); heap.markObject(this.completionThread);
+		heap.markObject(this.haltedUntilIrqThread);
+	}
+	public pruneStaticClosures(): void {
 		for (const [address, closures] of this.staticClosuresByAddress) {
 			let write = 0;
-			for (const closure of closures) {
-				if (closure.gcEpoch === this.heapEpoch) closures[write++] = closure;
-			}
+			for (const closure of closures) if (this.gc.isAlive(closure)) closures[write++] = closure;
 			closures.length = write;
 			if (write === 0) this.staticClosuresByAddress.delete(address);
 		}
-		this.stringPool.reclaimUnreachable();
-		total += this.stringPool.trackedLuaHeapBytes();
-		weakTables.length = 0;
-		weakTableModes.length = 0;
-		ephemeronTables.length = 0;
-		this.luaHeap.finishCollection(total);
-		return total;
 	}
-
 }
 
 // end normalized-body-acceptable

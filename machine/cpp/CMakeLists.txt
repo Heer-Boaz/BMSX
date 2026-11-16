@@ -282,6 +282,7 @@ add_library(bmsx_core STATIC
 	machine/cpu/thread.cpp
 	machine/cpu/snapshot.cpp
 	machine/cpu/execution_image.cpp
+	machine/cpu/gc_heap.cpp
 	machine/cpu/lua_heap.cpp
 	machine/cpu/table.cpp
 	machine/cpu/value.cpp

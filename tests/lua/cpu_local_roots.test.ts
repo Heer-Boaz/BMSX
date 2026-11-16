@@ -58,7 +58,7 @@ for (const optLevel of [0, 3] as const) {
 			} finally {
 				cpu.releaseLocalRoots(roots);
 			}
-			const gc = t.mock.method(cpu, 'collectTrackedHeapBytes');
+			const gc = t.mock.method(cpu.gc, 'step');
 			const heap = cpu.luaHeap.captureState();
 			cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: 0 });
 			cpu.beginCompletionCall(closure, args);

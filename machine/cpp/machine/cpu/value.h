@@ -45,13 +45,31 @@ enum class ObjType : uint8_t {
 	Closure,
 	Upvalue,
 	Thread,
+	Garbage,
 };
 
 struct GCObject {
 	ObjType type;
-	bool marked = false;
+	// 0/1 alternate white generations; 2 is queued gray, 3 is scanned black.
+	uint8_t gcColor = 0;
+	bool restored = false;
 	uint32_t hashId = 0;
 	GCObject* next = nullptr;
+	GCObject* previous = nullptr;
+	GCObject* grayNext = nullptr;
+	GCObject** grayHead = nullptr;
+	void writeBarrier() {
+		if (gcColor != 3) return;
+		gcColor = 2;
+		grayNext = *grayHead;
+		*grayHead = this;
+	}
+};
+
+// A sweep snapshot keeps the allocation's retirement work, not dead pointers.
+struct GarbageAllocation : GCObject {
+	explicit GarbageAllocation(size_t bytes) : bytes(bytes) {}
+	size_t bytes;
 };
 
 struct BuiltinFunction {
