@@ -130,36 +130,6 @@ inline u32 sampleGxGpuSoftwareTextureWord(
 	return textureWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + windowedU), static_cast<i32>(pageY + windowedV))];
 }
 
-template<bool RawTextureEnabled, bool SemiTransparencyEnabled>
-inline void writeGxGpuSoftwareTexturedPixel(
-	GxGpuSoftwareState& software,
-	i32 x,
-	i32 y,
-	u32 colorR,
-	u32 colorG,
-	u32 colorB,
-	u32 sampleWord,
-	bool ditherEnabled,
-	u32 blendMode,
-	bool checkMaskBit,
-	bool setMaskBit) {
-	if (sampleWord == 0u) {
-		return;
-	}
-	u32 r5 = sampleWord & 0x1fu;
-	u32 g5 = (sampleWord >> 5u) & 0x1fu;
-	u32 b5 = (sampleWord >> 10u) & 0x1fu;
-	if constexpr (!RawTextureEnabled) {
-		const i32 ditherOffset = ditherEnabled ? gxGpuSoftwareDitherOffset(x, y) : 0;
-		r5 = gxGpuSoftwareTextureModulationChannel5(r5, colorR, ditherOffset);
-		g5 = gxGpuSoftwareTextureModulationChannel5(g5, colorG, ditherOffset);
-		b5 = gxGpuSoftwareTextureModulationChannel5(b5, colorB, ditherOffset);
-	}
-	const u32 sampleMaskBit = sampleWord & 0x8000u;
-	const bool blendEnabled = SemiTransparencyEnabled && sampleMaskBit != 0u;
-	gxGpuSoftwareWriteRenderVramPixel5(software, x, y, r5, g5, b5, blendEnabled, blendMode, checkMaskBit, setMaskBit, sampleMaskBit);
-}
-
 template<u32 TextureMode, typename Draw>
 inline void dispatchGxGpuSoftwareTextureFlags(
 	bool rawTextureEnabled,
@@ -614,50 +584,32 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 				&& edge1.intersect(spanBounds[0], spanBounds[1])
 				&& edge2.intersect(spanBounds[0], spanBounds[1])) {
 				const i32 firstOffset = spanBounds[0];
-				u32 rFixed = rowR + static_cast<u32>(firstOffset) * rStepX;
-				u32 gFixed = rowG + static_cast<u32>(firstOffset) * gStepX;
-				u32 bFixed = rowB + static_cast<u32>(firstOffset) * bStepX;
+				const GxGpuSoftwareColorSpan span = InterpolatesColor
+					? GxGpuSoftwareColorSpan{
+						rowR + static_cast<u32>(firstOffset) * rStepX,
+						rowG + static_cast<u32>(firstOffset) * gStepX,
+						rowB + static_cast<u32>(firstOffset) * bStepX,
+						rStepX, gStepX, bStepX, blendMode, checkMaskBit, setMaskBit}
+					: GxGpuSoftwareColorSpan{
+						r0 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+						g0 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+						b0 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+						0u, 0u, 0u, blendMode, checkMaskBit, setMaskBit};
 				u32 uFixed = rowU + static_cast<u32>(firstOffset) * uStepX;
 				u32 vFixed = rowV + static_cast<u32>(firstOffset) * vStepX;
-				const i32 spanEnd = left + spanBounds[1];
-				for (i32 x = left + firstOffset; x <= spanEnd; x += 1) {
-					const u32 r8 = InterpolatesColor ? (rFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : r0;
-					const u32 g8 = InterpolatesColor ? (gFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : g0;
-					const u32 b8 = InterpolatesColor ? (bFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : b0;
-					const i32 u = static_cast<i32>((uFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
-					const i32 v = static_cast<i32>((vFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
+				auto sampler = [&]() {
 					const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(
 						software, textureWords, clutWords,
-						u,
-						v,
-						pageX,
-						pageY,
-						textureWindowAndX,
-						textureWindowAndY,
-						textureWindowOrX,
-						textureWindowOrY,
-						clutBaseX,
-						clutBaseY);
-					writeGxGpuSoftwareTexturedPixel<RawTextureEnabled, SemiTransparencyEnabled>(
-						software,
-						x,
-						y,
-						r8,
-						g8,
-						b8,
-						sampleWord,
-						DitherEnabled,
-						blendMode,
-						checkMaskBit,
-						setMaskBit);
-					if constexpr (InterpolatesColor) {
-						rFixed += rStepX;
-						gFixed += gStepX;
-						bFixed += bStepX;
-					}
+						static_cast<i32>((uFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu),
+						static_cast<i32>((vFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu),
+						pageX, pageY, textureWindowAndX, textureWindowAndY, textureWindowOrX, textureWindowOrY,
+						clutBaseX, clutBaseY);
 					uFixed += uStepX;
 					vFixed += vStepX;
-				}
+					return sampleWord;
+				};
+				gxGpuSoftwareWriteTexturedSpan<RawTextureEnabled, SemiTransparencyEnabled, InterpolatesColor, DitherEnabled>(
+					software, left + firstOffset, y, spanBounds[1] - firstOffset + 1, span, sampler);
 			}
 		}
 		edge0.advance();
@@ -716,9 +668,11 @@ void drawGxGpuSoftwareTexturedRectangleImpl(
 	const bool checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 	const bool setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
 	const i32 skippedLineParity = static_cast<i32>(commandBuffer.commandSkippedLineParity[commandIndex]);
-	const u32 r8 = colorR8(colorWord);
-	const u32 g8 = colorG8(colorWord);
-	const u32 b8 = colorB8(colorWord);
+	const GxGpuSoftwareColorSpan span{
+		colorR8(colorWord) << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+		colorG8(colorWord) << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+		colorB8(colorWord) << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+		0u, 0u, 0u, blendMode, checkMaskBit, setMaskBit};
 	const i32 uStep = xFlip ? -1 : 1;
 	const i32 vStep = yFlip ? -1 : 1;
 	const i32 firstU = baseU + (left - x0) * uStep;
@@ -734,32 +688,16 @@ void drawGxGpuSoftwareTexturedRectangleImpl(
 			continue;
 		}
 		i32 u = firstU;
-		for (i32 x = left; x < right; x += 1, u += uStep) {
+		auto sampler = [&]() {
 			const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(
-				software, textureWords, clutWords,
-				u,
-				v,
-				pageX,
-				pageY,
-				textureWindowAndX,
-				textureWindowAndY,
-				textureWindowOrX,
-				textureWindowOrY,
-				clutBaseX,
-				clutBaseY);
-			writeGxGpuSoftwareTexturedPixel<RawTextureEnabled, SemiTransparencyEnabled>(
-				software,
-				x,
-				y,
-				r8,
-				g8,
-				b8,
-				sampleWord,
-				false,
-				blendMode,
-				checkMaskBit,
-				setMaskBit);
-		}
+				software, textureWords, clutWords, u, v,
+				pageX, pageY, textureWindowAndX, textureWindowAndY, textureWindowOrX, textureWindowOrY,
+				clutBaseX, clutBaseY);
+			u += uStep;
+			return sampleWord;
+		};
+		gxGpuSoftwareWriteTexturedSpan<RawTextureEnabled, SemiTransparencyEnabled, false, false>(
+			software, left, y, right - left, span, sampler);
 	}
 }
 
