@@ -2,6 +2,8 @@
 
 #include "machine/devices/gx/gpu_command_storage.h"
 #include "render/backend/gx_gpu_render_rules.h"
+#include "render/backend/software/gx_gpu_span.h"
+#include "render/backend/software/gx_gpu_texels.h"
 #include "render/backend/software/gx_gpu_vram.h"
 
 namespace bmsx {
@@ -58,10 +60,6 @@ inline u32 colorB8(u32 colorWord) {
 	return (colorWord >> 16u) & 0xffu;
 }
 
-inline u32 textureWindowCoord(i32 coord, u32 andMask, u32 orMask) {
-	return (static_cast<u32>(coord) & andMask) | orMask;
-}
-
 // Latch source reads at the primitive boundary; this is not a PSX cache model.
 inline u32 latchGxGpuSoftwareTextureReads(GxGpuSoftwareState& software,
 	u32 pageX, u32 pageY, u32 textureMode, u32 clutBaseX, u32 clutBaseY,
@@ -97,66 +95,6 @@ inline u32 latchGxGpuSoftwareTextureReads(GxGpuSoftwareState& software,
 		latched |= 2u;
 	}
 	return latched;
-}
-
-template<u32 TextureMode>
-inline u32 sampleGxGpuSoftwareTextureWord(
-	const GxGpuSoftwareState& software,
-	const u16* textureWords,
-	const u16* clutWords,
-	i32 u,
-	i32 v,
-	u32 pageX,
-	u32 pageY,
-	u32 textureWindowAndX,
-	u32 textureWindowAndY,
-	u32 textureWindowOrX,
-	u32 textureWindowOrY,
-	u32 clutBaseX,
-	u32 clutBaseY) {
-	const u32 windowedU = textureWindowCoord(u, textureWindowAndX, textureWindowOrX);
-	const u32 windowedV = textureWindowCoord(v, textureWindowAndY, textureWindowOrY);
-	if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
-		const u32 textureWord = textureWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + (windowedU / 4u)), static_cast<i32>(pageY + windowedV))];
-		const u32 paletteIndex = (textureWord >> ((windowedU & 3u) << 2u)) & 0x0fu;
-		return clutWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
-	}
-	if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE8) {
-		const u32 textureWord = textureWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + (windowedU / 2u)), static_cast<i32>(pageY + windowedV))];
-		const u32 paletteIndex = (textureWord >> ((windowedU & 1u) << 3u)) & 0xffu;
-		return clutWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
-	}
-	return textureWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + windowedU), static_cast<i32>(pageY + windowedV))];
-}
-
-template<bool RawTextureEnabled, bool SemiTransparencyEnabled>
-inline void writeGxGpuSoftwareTexturedPixel(
-	GxGpuSoftwareState& software,
-	i32 x,
-	i32 y,
-	u32 colorR,
-	u32 colorG,
-	u32 colorB,
-	u32 sampleWord,
-	bool ditherEnabled,
-	u32 blendMode,
-	bool checkMaskBit,
-	bool setMaskBit) {
-	if (sampleWord == 0u) {
-		return;
-	}
-	u32 r5 = sampleWord & 0x1fu;
-	u32 g5 = (sampleWord >> 5u) & 0x1fu;
-	u32 b5 = (sampleWord >> 10u) & 0x1fu;
-	if constexpr (!RawTextureEnabled) {
-		const i32 ditherOffset = ditherEnabled ? gxGpuSoftwareDitherOffset(x, y) : 0;
-		r5 = gxGpuSoftwareTextureModulationChannel5(r5, colorR, ditherOffset);
-		g5 = gxGpuSoftwareTextureModulationChannel5(g5, colorG, ditherOffset);
-		b5 = gxGpuSoftwareTextureModulationChannel5(b5, colorB, ditherOffset);
-	}
-	const u32 sampleMaskBit = sampleWord & 0x8000u;
-	const bool blendEnabled = SemiTransparencyEnabled && sampleMaskBit != 0u;
-	gxGpuSoftwareWriteRenderVramPixel5(software, x, y, r5, g5, b5, blendEnabled, blendMode, checkMaskBit, setMaskBit, sampleMaskBit);
 }
 
 template<u32 TextureMode, typename Draw>
@@ -231,15 +169,19 @@ void drawGxGpuSoftwareRectangle(
 	const bool checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 	const bool setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
 	const i32 skippedLineParity = static_cast<i32>(commandBuffer.commandSkippedLineParity[commandIndex]);
-	const u32 r8 = colorR8(colorWord);
-	const u32 g8 = colorG8(colorWord);
-	const u32 b8 = colorB8(colorWord);
+	const GxGpuSoftwareColorSpan span{
+		colorR8(colorWord) << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+		colorG8(colorWord) << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+		colorB8(colorWord) << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+		0u, 0u, 0u, blendMode, checkMaskBit, setMaskBit};
 	for (i32 y = top; y < bottom; y += 1) {
 		if ((y & 1) == skippedLineParity) {
 			continue;
 		}
-		for (i32 x = left; x < right; x += 1) {
-			gxGpuSoftwareWriteRenderVramPixel(software, x, y, r8, g8, b8, false, blendEnabled, blendMode, checkMaskBit, setMaskBit);
+		if (blendEnabled) {
+			gxGpuSoftwareWriteColorSpan<false, false, true>(software, left, y, right - left, span);
+		} else {
+			gxGpuSoftwareWriteColorSpan<false, false, false>(software, left, y, right - left, span);
 		}
 	}
 }
@@ -367,21 +309,19 @@ void drawGxGpuSoftwareTriangleImpl(
 				&& edge1.intersect(spanBounds[0], spanBounds[1])
 				&& edge2.intersect(spanBounds[0], spanBounds[1])) {
 				const i32 firstOffset = spanBounds[0];
-				u32 rFixed = rowR + static_cast<u32>(firstOffset) * rStepX;
-				u32 gFixed = rowG + static_cast<u32>(firstOffset) * gStepX;
-				u32 bFixed = rowB + static_cast<u32>(firstOffset) * bStepX;
-				const i32 spanEnd = left + spanBounds[1];
-				for (i32 x = left + firstOffset; x <= spanEnd; x += 1) {
-					const u32 r8 = InterpolatesColor ? (rFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : r0;
-					const u32 g8 = InterpolatesColor ? (gFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : g0;
-					const u32 b8 = InterpolatesColor ? (bFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : b0;
-					gxGpuSoftwareWriteRenderVramPixel(software, x, y, r8, g8, b8, DitherEnabled, SemiTransparencyEnabled, blendMode, checkMaskBit, setMaskBit);
-					if constexpr (InterpolatesColor) {
-						rFixed += rStepX;
-						gFixed += gStepX;
-						bFixed += bStepX;
-					}
-				}
+				const GxGpuSoftwareColorSpan span = InterpolatesColor
+					? GxGpuSoftwareColorSpan{
+						rowR + static_cast<u32>(firstOffset) * rStepX,
+						rowG + static_cast<u32>(firstOffset) * gStepX,
+						rowB + static_cast<u32>(firstOffset) * bStepX,
+						rStepX, gStepX, bStepX, blendMode, checkMaskBit, setMaskBit}
+					: GxGpuSoftwareColorSpan{
+						r0 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+						g0 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+						b0 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+						0u, 0u, 0u, blendMode, checkMaskBit, setMaskBit};
+				gxGpuSoftwareWriteColorSpan<InterpolatesColor, DitherEnabled, SemiTransparencyEnabled>(
+					software, left + firstOffset, y, spanBounds[1] - firstOffset + 1, span);
 			}
 		}
 		edge0.advance();
@@ -611,50 +551,32 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 				&& edge1.intersect(spanBounds[0], spanBounds[1])
 				&& edge2.intersect(spanBounds[0], spanBounds[1])) {
 				const i32 firstOffset = spanBounds[0];
-				u32 rFixed = rowR + static_cast<u32>(firstOffset) * rStepX;
-				u32 gFixed = rowG + static_cast<u32>(firstOffset) * gStepX;
-				u32 bFixed = rowB + static_cast<u32>(firstOffset) * bStepX;
+				const GxGpuSoftwareColorSpan span = InterpolatesColor
+					? GxGpuSoftwareColorSpan{
+						rowR + static_cast<u32>(firstOffset) * rStepX,
+						rowG + static_cast<u32>(firstOffset) * gStepX,
+						rowB + static_cast<u32>(firstOffset) * bStepX,
+						rStepX, gStepX, bStepX, blendMode, checkMaskBit, setMaskBit}
+					: GxGpuSoftwareColorSpan{
+						r0 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+						g0 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+						b0 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+						0u, 0u, 0u, blendMode, checkMaskBit, setMaskBit};
 				u32 uFixed = rowU + static_cast<u32>(firstOffset) * uStepX;
 				u32 vFixed = rowV + static_cast<u32>(firstOffset) * vStepX;
-				const i32 spanEnd = left + spanBounds[1];
-				for (i32 x = left + firstOffset; x <= spanEnd; x += 1) {
-					const u32 r8 = InterpolatesColor ? (rFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : r0;
-					const u32 g8 = InterpolatesColor ? (gFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : g0;
-					const u32 b8 = InterpolatesColor ? (bFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu : b0;
-					const i32 u = static_cast<i32>((uFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
-					const i32 v = static_cast<i32>((vFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
+				auto sampler = [&]() {
 					const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(
 						software, textureWords, clutWords,
-						u,
-						v,
-						pageX,
-						pageY,
-						textureWindowAndX,
-						textureWindowAndY,
-						textureWindowOrX,
-						textureWindowOrY,
-						clutBaseX,
-						clutBaseY);
-					writeGxGpuSoftwareTexturedPixel<RawTextureEnabled, SemiTransparencyEnabled>(
-						software,
-						x,
-						y,
-						r8,
-						g8,
-						b8,
-						sampleWord,
-						DitherEnabled,
-						blendMode,
-						checkMaskBit,
-						setMaskBit);
-					if constexpr (InterpolatesColor) {
-						rFixed += rStepX;
-						gFixed += gStepX;
-						bFixed += bStepX;
-					}
+						static_cast<i32>((uFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu),
+						static_cast<i32>((vFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu),
+						pageX, pageY, textureWindowAndX, textureWindowAndY, textureWindowOrX, textureWindowOrY,
+						clutBaseX, clutBaseY);
 					uFixed += uStepX;
 					vFixed += vStepX;
-				}
+					return sampleWord;
+				};
+				gxGpuSoftwareWriteTexturedSpan<RawTextureEnabled, SemiTransparencyEnabled, InterpolatesColor, DitherEnabled>(
+					software, left + firstOffset, y, spanBounds[1] - firstOffset + 1, span, sampler);
 			}
 		}
 		edge0.advance();
@@ -713,9 +635,11 @@ void drawGxGpuSoftwareTexturedRectangleImpl(
 	const bool checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 	const bool setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
 	const i32 skippedLineParity = static_cast<i32>(commandBuffer.commandSkippedLineParity[commandIndex]);
-	const u32 r8 = colorR8(colorWord);
-	const u32 g8 = colorG8(colorWord);
-	const u32 b8 = colorB8(colorWord);
+	const GxGpuSoftwareColorSpan span{
+		colorR8(colorWord) << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+		colorG8(colorWord) << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+		colorB8(colorWord) << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+		0u, 0u, 0u, blendMode, checkMaskBit, setMaskBit};
 	const i32 uStep = xFlip ? -1 : 1;
 	const i32 vStep = yFlip ? -1 : 1;
 	const i32 firstU = baseU + (left - x0) * uStep;
@@ -724,39 +648,17 @@ void drawGxGpuSoftwareTexturedRectangleImpl(
 		static_cast<u32>(firstU) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE, static_cast<u32>(v) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE,
 		static_cast<u32>(uStep) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE, 0u, 0u, static_cast<u32>(vStep) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE,
 		textureWindowAndX, textureWindowOrX, textureWindowAndY, textureWindowOrY);
-	const u16* textureWords = (latched & 1u) != 0u ? software.textureLatchScratch.data() : software.vram.data();
-	const u16* clutWords = (latched & 2u) != 0u ? software.textureLatchScratch.data() : software.vram.data();
+	const GxGpuSoftwareRectangleTexture<TextureMode> texture(software, GxGpuSoftwareTextureSource{
+		(latched & 1u) != 0u ? software.textureLatchScratch.data() : software.vram.data(),
+		(latched & 2u) != 0u ? software.textureLatchScratch.data() : software.vram.data(),
+		pageX, pageY, textureWindowAndX, textureWindowAndY, textureWindowOrX, textureWindowOrY, clutBaseX, clutBaseY}, uStep);
 	for (i32 y = top; y < bottom; y += 1, v += vStep) {
 		if ((y & 1) == skippedLineParity) {
 			continue;
 		}
-		i32 u = firstU;
-		for (i32 x = left; x < right; x += 1, u += uStep) {
-			const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(
-				software, textureWords, clutWords,
-				u,
-				v,
-				pageX,
-				pageY,
-				textureWindowAndX,
-				textureWindowAndY,
-				textureWindowOrX,
-				textureWindowOrY,
-				clutBaseX,
-				clutBaseY);
-			writeGxGpuSoftwareTexturedPixel<RawTextureEnabled, SemiTransparencyEnabled>(
-				software,
-				x,
-				y,
-				r8,
-				g8,
-				b8,
-				sampleWord,
-				false,
-				blendMode,
-				checkMaskBit,
-				setMaskBit);
-		}
+		GxGpuSoftwareRectangleTexels<TextureMode> texels(texture, firstU, v);
+		gxGpuSoftwareWriteTexturedSpan<RawTextureEnabled, SemiTransparencyEnabled, false, false>(
+			software, left, y, right - left, span, texels);
 	}
 }
 

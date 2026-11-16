@@ -3757,6 +3757,58 @@ void testSoftwareTextureWindowPageAndClutEdges() {
 	require(software.vram[bmsx::gxGpuSoftwareVramIndex(software, 61, 600)] == 0x7c00u, "GX-GPU software samples installed upper CLUT storage into an upper draw target");
 }
 
+void testSoftwareTextureAliasSpans() {
+	// Two vectors and a scalar tail must all read the primitive's original
+	// texture and palette, including when both alias the upper VRAM target.
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
+	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
+	constexpr uint8_t opcode = bmsx::GX_GPU_GP0_RECTANGLE_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 1u;
+	for (const uint32_t pageY : {0u, 512u}) {
+		for (const uint32_t mode : {bmsx::GX_GPU_TEXTURE_MODE_PALETTE4, bmsx::GX_GPU_TEXTURE_MODE_PALETTE8, bmsx::GX_GPU_TEXTURE_MODE_DIRECT16}) {
+			for (const uint32_t aliases : {1u, 2u, 3u}) {
+				for (uint32_t u = 0u; u < 4u; ++u) {
+					const uint32_t pageX = (aliases & 1u) != 0u ? 64u : 512u;
+					const uint32_t clutX = (aliases & 2u) != 0u ? 64u : 512u;
+					const uint32_t y = pageY + 32u;
+					for (size_t index = 0u; index < software.vram.size(); ++index) {
+						software.vram[index] = static_cast<uint16_t>((index * 0x9e3779b9u) >> 11u);
+					}
+					const auto source = software.vram;
+					auto expected = source;
+					for (uint32_t row = 0u; row < 2u; ++row) {
+						for (uint32_t pixel = 0u; pixel < 19u; ++pixel) {
+							const uint32_t texelU = u + pixel;
+							uint16_t sample;
+							if (mode == bmsx::GX_GPU_TEXTURE_MODE_DIRECT16) {
+								sample = source[bmsx::gxGpuSoftwareVramIndex(software, pageX + texelU, y + row)];
+							} else {
+								const uint32_t shift = mode == bmsx::GX_GPU_TEXTURE_MODE_PALETTE4 ? 2u : 1u;
+								const uint32_t bits = 16u >> shift;
+								const uint32_t word = source[bmsx::gxGpuSoftwareVramIndex(software, pageX + (texelU >> shift), y + row)];
+								const uint32_t paletteIndex = (word >> ((texelU & ((1u << shift) - 1u)) * bits)) & ((1u << bits) - 1u);
+								sample = source[bmsx::gxGpuSoftwareVramIndex(software, clutX + paletteIndex, y)];
+							}
+							if (sample != 0u) {
+								expected[bmsx::gxGpuSoftwareVramIndex(software, 69u + pixel, y + row)] = sample;
+							}
+						}
+					}
+					commandBuffer.reset();
+					pushSoftwareCommand(commandBuffer, std::array<uint32_t, 4>{
+						(opcode << 24u) | 0x808080u, (y << 16u) | 69u,
+						(((y << 6u) | (clutX >> 4u)) << 16u) | (32u << 8u) | u,
+						(2u << 16u) | 19u,
+					}, 4u, bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, opcode,
+						(mode << 7u) | (pageX >> 6u) | (pageY != 0u ? bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH : 0u),
+						0u, 0u, 1023u | (1023u << 10u), 0u, 0u, bmsx::GX_GPU_SKIPPED_LINE_NONE, 1u);
+					bmsx::executeGxGpuSoftwareCommands(software, commandBuffer, 0u, commandBuffer.presentCommandCount);
+					require(software.vram == expected, "texture/CLUT alias spans retain primitive-boundary reads across vectors and tails");
+				}
+			}
+		}
+	}
+}
+
 void testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap() {
 	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
 	bmsx::GxGpuCommandBuffer commandBuffer(commandBufferDmaHarness.dma);
@@ -5822,6 +5874,7 @@ int main() {
 	testSoftwarePolygonRasterBucketWrap();
 	testSoftwareTexturedPolygonFixedUvGradient();
 	testSoftwareTextureWindowPageAndClutEdges();
+	testSoftwareTextureAliasSpans();
 	testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap();
 	testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState();
 	testSoftwareScanoutConsumesTransfersAndFill();

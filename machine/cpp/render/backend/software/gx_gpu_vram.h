@@ -122,7 +122,7 @@ inline void gxGpuSoftwareWriteRenderVramPixel5(
 	software.vram[index] = static_cast<u16>(color | maskBit);
 }
 
-inline i32 gxGpuSoftwareDitherOffset(i32 x, i32 y) {
+constexpr i32 gxGpuSoftwareDitherOffset(i32 x, i32 y) {
 	switch (((y & 3) << 2) | (x & 3)) {
 		case 0:
 			return -4;
@@ -195,6 +195,36 @@ inline void gxGpuSoftwareWriteRenderVramPixel(
 		checkMaskBit,
 		setMaskBit,
 		0u);
+}
+
+template<bool RawTextureEnabled, bool SemiTransparencyEnabled>
+inline void gxGpuSoftwareWriteTexturedVramPixel(
+	GxGpuSoftwareState& software,
+	i32 x,
+	i32 y,
+	u32 colorR,
+	u32 colorG,
+	u32 colorB,
+	u32 sampleWord,
+	bool ditherEnabled,
+	u32 blendMode,
+	bool checkMaskBit,
+	bool setMaskBit) {
+	if (sampleWord == 0u) {
+		return;
+	}
+	u32 r5 = sampleWord & 0x1fu;
+	u32 g5 = (sampleWord >> 5u) & 0x1fu;
+	u32 b5 = (sampleWord >> 10u) & 0x1fu;
+	if constexpr (!RawTextureEnabled) {
+		const i32 ditherOffset = ditherEnabled ? gxGpuSoftwareDitherOffset(x, y) : 0;
+		r5 = gxGpuSoftwareTextureModulationChannel5(r5, colorR, ditherOffset);
+		g5 = gxGpuSoftwareTextureModulationChannel5(g5, colorG, ditherOffset);
+		b5 = gxGpuSoftwareTextureModulationChannel5(b5, colorB, ditherOffset);
+	}
+	const u32 sampleMaskBit = sampleWord & 0x8000u;
+	const bool blendEnabled = SemiTransparencyEnabled && sampleMaskBit != 0u;
+	gxGpuSoftwareWriteRenderVramPixel5(software, x, y, r5, g5, b5, blendEnabled, blendMode, checkMaskBit, setMaskBit, sampleMaskBit);
 }
 
 } // namespace bmsx
