@@ -2,6 +2,7 @@
 
 #include <cstddef>
 
+#include "common/small_block_pool.h"
 #include "machine/cpu/value.h"
 
 namespace bmsx {
@@ -15,6 +16,9 @@ struct LuaHeapState {
 
 class LuaHeap {
 public:
+	// Host backing only; independent of occupied guest bytes and snapshot state.
+	SmallBlockPool tableStorage;
+
 	LuaHeapState captureState() const { return {m_trackedBytes, m_nextCollectionBytes}; }
 	void restoreState(const LuaHeapState& state) {
 		m_trackedBytes = state.trackedBytes;

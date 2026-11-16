@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <utility>
 
 #include "machine/common/numeric.h"
 #include "machine/cpu/errors.h"
@@ -19,6 +20,10 @@ constexpr int32_t kTableHashNextEnd = -1;
 Table::Table(LuaHeap& luaHeap, size_t arrayCapacity, size_t hashCapacity)
 	: m_luaHeap(luaHeap) {
 	allocateStorage(arrayCapacity, hashCapacity);
+}
+
+Table::~Table() {
+	if (m_storage) m_luaHeap.tableStorage.deallocate(m_storage, trackedHeapBytes() - kTableHeapBytes);
 }
 
 size_t Table::hashCapacity(int hashSize) {
@@ -204,7 +209,10 @@ void Table::resize(
 		m_luaHeap.reserve(resizedBytes - previousBytes, valueTable(this), key, value);
 	}
 	const Span<Value> oldArray = m_array;
-	std::unique_ptr<void, StorageDeleter> oldStorage = std::move(m_storage);
+	const auto releaseOld = [this, previousBytes](void* storage) {
+		m_luaHeap.tableStorage.deallocate(storage, previousBytes - kTableHeapBytes);
+	};
+	std::unique_ptr<void, decltype(releaseOld)> oldStorage(std::exchange(m_storage, nullptr), releaseOld);
 	Value* oldHashKeys = m_hashKeys;
 	Value* oldHashValues = m_hashValues;
 	const size_t oldHashSize = m_hashSize;
@@ -236,16 +244,18 @@ void Table::resize(
 void Table::allocateStorage(size_t arraySize, size_t hashSize) {
 	const size_t valueCount = arraySize + hashSize * 2;
 	const size_t byteCount = valueCount * sizeof(Value) + hashSize * sizeof(int32_t);
-	m_storage.reset(byteCount == 0 ? nullptr : ::operator new(byteCount));
-	Value* values = static_cast<Value*>(m_storage.get());
+	void* storage = byteCount == 0 ? nullptr : m_luaHeap.tableStorage.allocate(byteCount);
+	if (m_storage) m_luaHeap.tableStorage.deallocate(m_storage, trackedHeapBytes() - kTableHeapBytes);
+	m_storage = storage;
+	Value* values = static_cast<Value*>(storage);
 	m_array = {values, arraySize};
 	m_hashSize = hashSize;
 	m_hashKeys = hashSize == 0 ? nullptr : values + arraySize;
 	m_hashValues = hashSize == 0 ? nullptr : m_hashKeys + hashSize;
 	m_hashNext = hashSize == 0 ? nullptr : reinterpret_cast<int32_t*>(m_hashValues + hashSize);
 	m_hashFree = hashSize == 0 ? -1 : static_cast<int>(hashSize) - 1;
-	std::fill_n(values, valueCount, valueNil());
-	std::fill_n(m_hashNext, hashSize, kTableHashNextEnd);
+	std::uninitialized_fill_n(values, valueCount, valueNil());
+	std::uninitialized_fill_n(m_hashNext, hashSize, kTableHashNextEnd);
 }
 
 // Storage redistribution must not change the logical boundary hint.

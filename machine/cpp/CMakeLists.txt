@@ -1110,6 +1110,17 @@ if(BMSX_BUILD_TESTS)
 	target_include_directories(bmsx_object_storage_pool_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 	add_test(NAME bmsx_object_storage_pool_tests COMMAND bmsx_object_storage_pool_tests)
 
+	add_executable(bmsx_small_block_pool_tests ../../tests/cpp/small_block_pool_test.cpp)
+	target_include_directories(bmsx_small_block_pool_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	add_test(NAME bmsx_small_block_pool_tests COMMAND bmsx_small_block_pool_tests)
+	add_executable(bmsx_table_storage_pool_tests ../../tests/cpp/table_storage_pool_test.cpp)
+	target_link_libraries(bmsx_table_storage_pool_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_table_storage_pool_tests COMMAND bmsx_table_storage_pool_tests)
+	if(BMSX_SNESMINI_TARGET)
+		target_link_options(bmsx_small_block_pool_tests PRIVATE -static-libstdc++ -static-libgcc)
+		target_link_options(bmsx_table_storage_pool_tests PRIVATE -static-libstdc++ -static-libgcc)
+	endif()
+
 	add_executable(bmsx_runtime_save_state_codec_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/runtime_save_state_codec_test.cpp
 	)

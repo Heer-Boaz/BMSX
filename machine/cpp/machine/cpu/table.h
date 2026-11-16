@@ -41,6 +41,9 @@ struct TableNativeFieldOffsets {
 class Table : public GCObject {
 public:
 	Table(LuaHeap& luaHeap, size_t arrayCapacity = 0, size_t hashCapacity = 0);
+	~Table();
+	Table(const Table&) = delete;
+	Table& operator=(const Table&) = delete;
 	static size_t hashCapacity(int hashSize);
 	static size_t trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -186,10 +189,6 @@ private:
 		return true;
 	}
 
-	struct StorageDeleter {
-		void operator()(void* ptr) const noexcept { ::operator delete(ptr); }
-	};
-
 	void updateLengthHint(size_t slot, bool present) {
 		if (present) {
 			if (slot == m_lengthHint) ++m_lengthHint;
@@ -252,7 +251,7 @@ private:
 	LuaHeap& m_luaHeap;
 	Span<Value> m_array;
 	u32 m_lengthHint = 0;
-	std::unique_ptr<void, StorageDeleter> m_storage;
+	void* m_storage = nullptr;
 	Value* m_hashKeys = nullptr;
 	Value* m_hashValues = nullptr;
 	int32_t* m_hashNext = nullptr;
