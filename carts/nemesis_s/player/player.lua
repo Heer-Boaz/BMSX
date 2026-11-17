@@ -992,16 +992,16 @@ function player:update_missile(missile)
 		local y<const> = missile.fraction_y + missile.fall_velocity_y_q8
 		missile.fraction_x = x & 0xff
 		missile.fraction_y = y & 0xff
-		missile.x = missile.x + (x >> 8)
-		missile.y = missile.y + (y >> 8)
+		missile.x = missile.x + (x // 0x100)
+		missile.y = missile.y + (y // 0x100)
 	elseif stage:first_solid_tile_offset((missile.x + 8) & 0xff, missile.y + 8, 2) == 2 then
 		missile.sprite = missile.flying_source
 		local x<const> = missile.fraction_x + missile.surface_velocity_x_q8
 		local y<const> = missile.fraction_y + missile.fall_velocity_y_q8
 		missile.fraction_x = x & 0xff
 		missile.fraction_y = y & 0xff
-		missile.x = missile.x + (x >> 8)
-		missile.y = missile.y + (y >> 8)
+		missile.x = missile.x + (x // 0x100)
+		missile.y = missile.y + (y // 0x100)
 	else
 		local sample_x<const> = (missile.x + 8) & 0xff
 		local collision_offset<const> = stage:first_solid_tile_offset(sample_x, missile.y, 2)
@@ -1016,7 +1016,7 @@ function player:update_missile(missile)
 		missile.sprite = missile.flying_source
 		local x<const> = missile.fraction_x + missile.surface_velocity_x_q8
 		missile.fraction_x = x & 0xff
-		missile.x = missile.x + (x >> 8)
+		missile.x = missile.x + (x // 0x100)
 	end
 
 	if missile.x >= playfield_width or missile.y >= weapons_missile_despawn_y then

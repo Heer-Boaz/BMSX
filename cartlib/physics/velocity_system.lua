@@ -82,8 +82,8 @@ function velocity_system:update_fixed_point()
 		local component<const> = fixed_point_components[index]
 		local x<const> = component.fraction_x + component.velocity_x
 		local y<const> = component.fraction_y + component.velocity_y
-		local delta_x<const> = x >> 8
-		local delta_y<const> = y >> 8
+		local delta_x<const> = x // 0x100
+		local delta_y<const> = y // 0x100
 		local committed = true
 		if delta_x ~= 0 or delta_y ~= 0 then
 			local spatial<const> = component.owner
