@@ -46,6 +46,8 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ id: BuiltinFunctionId.GetFrameUpvalue, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.SetFrameUpvalue, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.FrameHeader, cost: BUILTIN_COST_TIER1 },
+	{ id: BuiltinFunctionId.NumberType, cost: BUILTIN_COST_TIER1 },
+	{ id: BuiltinFunctionId.ToInteger, cost: BUILTIN_COST_TIER1 },
 ];
 
 // Borrowed argument windows and reusable return transport belong to builtin

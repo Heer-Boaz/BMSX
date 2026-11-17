@@ -1334,6 +1334,12 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::Type:
 			out.push_back(valueString(m_stringPool.intern(valueTypeNameForLua(args[0]))));
 			break;
+		case BuiltinFunctionId::NumberType:
+			out.push_back(valueIsNumber(args[0])
+				? valueString(m_stringPool.intern(valueIsInteger(args[0]) ? "integer" : "float"))
+				: valueNil());
+			break;
+		case BuiltinFunctionId::ToInteger:
 		case BuiltinFunctionId::SetMetatable:
 		case BuiltinFunctionId::GetMetatable:
 		case BuiltinFunctionId::StringByte: {

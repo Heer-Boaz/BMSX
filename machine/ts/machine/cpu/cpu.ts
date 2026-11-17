@@ -113,7 +113,7 @@ import {
 	ValueTag,
 	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToString,
 	valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, asTable, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread,
-	valueTag,
+	valueTag, valueToInteger,
 	valueTypeNameForLuaTag,
 	type Value,
 } from './value';
@@ -3230,6 +3230,17 @@ export class CPU implements MappedPageInvalidator {
 					out,
 				);
 				break;
+			case BuiltinFunctionId.NumberType: {
+				const tag = args.length > 0 ? args.registers.getTag(args.base) : ValueTag.Nil;
+				out.push(tag === ValueTag.Integer || tag === ValueTag.Float
+					? valueString(this.stringPool.intern(tag === ValueTag.Integer ? 'integer' : 'float')) : valueNil());
+				break;
+			}
+			case BuiltinFunctionId.ToInteger: {
+				const integer = valueToInteger(args.length > 0 ? args.registers.get(args.base) : valueNil());
+				out.push(integer === null ? valueNil() : valueInteger(integer));
+				break;
+			}
 			case BuiltinFunctionId.SetMetatable:
 				this.runBuiltinSetMetatable(args, out);
 				break;

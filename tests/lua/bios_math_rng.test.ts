@@ -25,7 +25,7 @@ test('firmware math RNG state is initialized guest RAM owned by the math module'
 			source,
 		};
 	});
-	const compiled = compileLuaChunkToProgram(parseSource(entrySource, 'entry.lua'), modules, { entrySource });
+	const compiled = compileLuaChunkToProgram(parseSource(entrySource, 'entry.lua'), modules, { entrySource, programDomain: 'system' });
 	const image = encodeCompiledProgramObject(compiled);
 	assert.equal(compiled.moduleProtoMap.has('math'), true);
 	assert.deepEqual(Array.from(image.sections.data.bytes.slice(0, 4)), [0x78, 0x56, 0x34, 0x12]);

@@ -159,7 +159,8 @@ through `select`; selecting one final result leaves those preceding calls
 in place. For `n` ordinary positive selector positions, the selected suffixes
 contain `n + (n - 1) + ... + 1` values in total.
 
-The primitive surcharges are one cycle for `type` or `select`, and two for
+The primitive surcharges are one cycle for `type`, `math.type`,
+`math.tointeger` or `select`, and two for
 `error`, in addition to executed BIOS instructions and ordinary calls. Use
 [CPU cycle accounting](cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries) when
 budgeting a complete operation.

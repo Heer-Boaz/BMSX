@@ -1,11 +1,14 @@
 local trig<const> = require('math/trig')
+local tointeger<const> = __bmsx_tointeger
+local type_name<const> = __bmsx_number_type
+local time_ms<const>: *word = 0x08010228
 
 local pi<const> = 3.141592653589793238462643383279502884
 local half_pi<const> = pi * 0.5
 local deg_per_rad<const> = 180.0 / pi
 local rad_per_deg<const> = pi / 180.0
-local maxinteger<const> = 9007199254740991
-local mininteger<const> = -9007199254740991
+local maxinteger<const> = 0x7fffffff
+local mininteger<const> = 0x80000000
 local huge<const> = 1.0 / 0.0
 local nan<const> = 0.0 / 0.0
 local ln2<const> = 0.69314718055994530942
@@ -13,47 +16,66 @@ local inv_ln2<const> = 1.44269504088896340736
 local ln10<const> = 2.30258509299404568402
 local sqrt_half<const> = 0.70710678118654752440
 local sqrt_two<const> = 1.41421356237309504880
-local exp_overflow_limit<const> = 709.782712893384
-local exp_underflow_limit<const> = -745.133219101941
+local exp_overflow_limit<const> = 88.72283935546875
+local exp_underflow_limit<const> = -103.972076416015625
 local two_pow_16<const> = 65536.0
-local u32_mod<const> = 4294967296.0
 
 data rng_state: word = 0x12345678
 
-local trunc<const> = function(value)
-	if value < 0 then
-		return -((-value) // 1)
-	end
-	return value // 1
-end
-local abs<const> = function(value)
-	if value < 0 then
-		return -value
-	end
-	return value
-end
-
 local floor<const> = function(value)
-	return value // 1
+	local rounded<const> = value // 1
+	return tointeger(rounded) or rounded
 end
 
 local ceil<const> = function(value)
-	return -((-value) // 1)
+	local integer<const> = tointeger(value)
+	if integer ~= nil then return integer end
+	local rounded<const> = -((-value) // 1)
+	return tointeger(rounded) or rounded
+end
+
+local trunc<const> = function(value)
+	if value < 0 then return ceil(value) end
+	return floor(value)
+end
+
+local abs<const> = function(value)
+	local kind<const> = type_name(value)
+	if kind == nil then error('number expected.') end
+	if value < 0 then return -value end
+	if value == 0 and kind == 'float' then return 0.0 end
+	return value
 end
 
 local round<const> = function(value)
-	if value >= 0 then
-		return (value + 0.5) // 1
-	end
-	return -(((-value) + 0.5) // 1)
+	local integer<const> = tointeger(value)
+	if integer ~= nil then return integer end
+	local rounded = trunc(value)
+	local fraction<const> = value - rounded
+	if fraction >= 0.5 then rounded = rounded + 1
+	elseif fraction <= -0.5 then rounded = rounded - 1 end
+	return tointeger(rounded) or rounded
 end
 
 local fmod<const> = function(left, right)
-	return left - (trunc(left / right) * right)
+	if type_name(left) == 'integer' and type_name(right) == 'integer' then
+		local remainder = left % right
+		if remainder ~= 0 and (left < 0) ~= (right < 0) then
+			remainder = remainder - right
+		end
+		return remainder
+	end
+	local negative<const> = left < 0 or (left == 0 and 1.0 / left < 0)
+	left = left + 0.0
+	right = right + 0.0
+	local remainder<const> = abs(left) % abs(right)
+	if negative then return -remainder end
+	return remainder
 end
 
 local modf<const> = function(value)
 	local integer<const> = trunc(value)
+	if value == integer then return integer, 0.0 end
 	return integer, value - integer
 end
 
@@ -98,9 +120,9 @@ local sqrt<const> = function(value)
 		return nan
 	end
 	if value == 0 or value == huge then
-		return value
+		return value * 1.0
 	end
-	local normalized = value
+	local normalized = value + 0.0
 	local scale = 1.0
 	while normalized >= 4.0 do
 		normalized = normalized * 0.25
@@ -133,9 +155,11 @@ local atan_one_arg<const> = function(value)
 end
 
 local atan<const> = function(y, x)
+	y = y * 1.0
 	if x == nil then
 		return atan_one_arg(y)
 	end
+	x = x * 1.0
 	if y ~= y or x ~= x then
 		return nan
 	end
@@ -154,7 +178,7 @@ local atan<const> = function(y, x)
 	if y < 0 then
 		return -half_pi
 	end
-	return 0
+	return 0.0
 end
 
 local asin<const> = function(value)
@@ -251,32 +275,14 @@ local log<const> = function(value, base)
 	return natural / log_e(base)
 end
 
-local tointeger<const> = function(value)
-	if type(value) ~= 'number' or value ~= value or value == huge or value == -huge then
-		return nil
-	end
-	local integer<const> = trunc(value)
-	if integer == value then
-		return integer
-	end
-	return nil
-end
-
-local type_name<const> = function(value)
-	if type(value) ~= 'number' then
-		return nil
-	end
-	if tointeger(value) ~= nil then
-		return 'integer'
-	end
-	return 'float'
-end
-
 local ult<const> = function(left, right)
-	return (left % u32_mod) < (right % u32_mod)
+	-- XOR rotates the signed ordering into unsigned ordering. The bit operation
+	-- admits only Integers and exactly representable integral Floats.
+	return (left ~ 0x80000000) < (right ~ 0x80000000)
 end
 
 local sign<const> = function(value)
+	if type_name(value) == nil then error('number expected.') end
 	if value > 0 then
 		return 1
 	end
@@ -286,37 +292,58 @@ local sign<const> = function(value)
 	return 0
 end
 
-local next_random_unit<const> = function()
-	*rng_state = ((*rng_state * 1664525) + 1013904223) % u32_mod
-	return *rng_state / u32_mod
+-- High word of an unsigned 32-by-32 product. Every partial product and
+-- carry fits one word; no Float conversion or wide guest integer is involved.
+local multiply_high<const> = function(left, right)
+	local left_low<const> = left & 0xffff
+	local left_high<const> = left >> 16
+	local right_low<const> = right & 0xffff
+	local right_high<const> = right >> 16
+	local middle<const> = left_high * right_low + ((left_low * right_low) >> 16)
+	local upper_middle<const> = left_low * right_high + (middle & 0xffff)
+	return left_high * right_high + (middle >> 16) + (upper_middle >> 16)
+end
+
+local next_random_word<const> = function()
+	local state<const> = *rng_state * 1664525 + 1013904223
+	*rng_state = state
+	return state
 end
 
 local random_number<const> = function(lower, upper)
-	local value<const> = next_random_unit()
 	if lower == nil then
-		return value
+		return (next_random_word() >> 8) * 0.000000059604644775390625
 	end
+	local lower_int = 1
+	local upper_int
 	if upper == nil then
-		local upper_int<const> = trunc(lower)
-		if upper_int < 1 then
-			error('random upper bound must be positive.')
+		upper_int = tointeger(lower)
+		if upper_int == nil then error('random bound must be an Integer.') end
+		if upper_int < 1 then error('random upper bound must be positive.') end
+	else
+		lower_int = tointeger(lower)
+		upper_int = tointeger(upper)
+		if lower_int == nil or upper_int == nil then error('random bound must be an Integer.') end
+		if upper_int < lower_int then
+			error('random upper bound must be greater than or equal to lower bound.')
 		end
-		return trunc(value * upper_int) + 1
 	end
-	local lower_int<const> = trunc(lower)
-	local upper_int<const> = trunc(upper)
-	if upper_int < lower_int then
-		error('random upper bound must be greater than or equal to lower bound.')
-	end
-	return lower_int + trunc(value * ((upper_int - lower_int) + 1))
+	local width<const> = upper_int - lower_int + 1
+	local state<const> = next_random_word()
+	-- A wrapped zero width denotes the complete signed Integer interval.
+	if width == 0 then return lower_int + state end
+	return lower_int + multiply_high(state, width)
 end
 
 local randomseed<const> = function(seed)
 	if seed == nil then
-		*rng_state = trunc(os.clock() * 1000) % u32_mod
-		return
+		*rng_state = *time_ms
+	else
+		local integer<const> = tointeger(seed)
+		if integer == nil then error('random seed must be an Integer.') end
+		*rng_state = integer
 	end
-	*rng_state = trunc(seed) % u32_mod
+	return nil
 end
 
 return {

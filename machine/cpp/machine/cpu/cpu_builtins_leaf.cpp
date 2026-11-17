@@ -9,6 +9,11 @@ namespace bmsx {
 // call owner supplies its existing argument error and primitive charge.
 bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept {
 	switch (id) {
+	case BuiltinFunctionId::ToInteger: {
+		i32 integer;
+		result = valueToInteger(args[0], integer) ? valueInteger(integer) : valueNil();
+		return true;
+	}
 	case BuiltinFunctionId::SetMetatable: {
 		const Value target = args[0];
 		if (!valueIsTable(target)) return false;
