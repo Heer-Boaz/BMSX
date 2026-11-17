@@ -171,7 +171,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		preloadModules,
 	});
 	const images = linkTestBlua32Pair(systemCompiled, cartCompiled);
-	return { images, cart: cartCompiled };
+	return { images, cart: cartCompiled, cartSources };
 }
 
 export function createCartlibProgramHarness(cartEntrySource: string, options: CartlibProgramOptions = {}) {

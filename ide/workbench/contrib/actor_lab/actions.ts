@@ -32,8 +32,8 @@ export class ActorLabEditorActions {
 			lifetime.add({ dispose: controller.guest.onDidInvalidate(() => this.quickInput.hide()) });
 			return new TextQuickPickProvider(readActionEffectInstances(controller.sources, controller.guest, domain).items);
 		}, choice => {
-			const actorHashId = (controller.guest.readStringMember(choice.component, 'owner') as import('../../../../machine/ts/machine/cpu/table').Table).hashId;
-			const effectHashId = choice.effect.hashId, componentHashId = choice.component.hashId, key = controller.guest.identity(choice.key);
+			const actorHashId = controller.guest.identityScalar(controller.guest.readStringMember(choice.component, 'owner'), ValueTag.Table);
+			const effectHashId = controller.guest.identityScalar(choice.effect, ValueTag.Table), componentHashId = controller.guest.identityScalar(choice.component, ValueTag.Table), key = controller.guest.identity(choice.key);
 			input.domain = domain;
 			input.follow.stop(); input.stateGraph = undefined; input.navigation = 'actor'; input.inspection = 'outline'; input.historical = false;
 			input.actorHashId = actorHashId;

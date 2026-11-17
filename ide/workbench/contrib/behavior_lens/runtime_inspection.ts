@@ -2,7 +2,7 @@ import type { HostRewind } from '../../../../hosts/common/rewind';
 import type { ResourceDomain } from '../../../common/resource';
 import type { Blua32SourceImage, RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
+import type { Value } from '../../../../machine/ts/machine/cpu/value';
 import { findActionEffectInstance, inspectActionEffectInstance, type ActionEffectInstance } from './action_effect_runtime';
 import { inspectBehaviorTreeInstance } from './behavior_tree_runtime';
 import type { BehaviorInspectionProperty } from './inspection';
@@ -20,8 +20,8 @@ export type BehaviorRuntimeSelection = { readonly componentHashId: number } & (
 );
 
 type ResolvedBehavior = { kind: 'action_effect'; choice: ActionEffectInstance }
-	| { kind: 'state_machine'; machine: StateMachineInstance; state: Table }
-	| { kind: 'behavior_tree'; component: Table };
+	| { kind: 'state_machine'; machine: StateMachineInstance; state: Value }
+	| { kind: 'behavior_tree'; component: Value };
 
 /** One visible inspection lifetime. Guest reads end before returning a property document. */
 export class BehaviorRuntimeInspection {
