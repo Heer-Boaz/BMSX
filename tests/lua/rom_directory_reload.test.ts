@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { asClosure, asInteger, isNil, valueBool, valueInteger, valueNil, valueString } from '../../machine/ts/machine/cpu/value';
+import { asClosure, asInteger, isNil, valueBool, valueTag, valuePayload, valueInteger, valueNil, valueString } from '../../machine/ts/machine/cpu/value';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
@@ -26,6 +27,15 @@ function directory(bytes: Uint8Array, offset: number, entries: RomAsset[]): Uint
 	return result;
 }
 
+const modules = [
+	{ path: 'bootstrap', source: "require('base')\ntable = require('table')\nstring = require('string/base')" },
+	{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
+	...['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/utf8', 'string/float/decode'].map(path => ({
+		path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
+	})),
+	...['cartlib/memory', 'cartlib/bin', 'cartlib/rom_dir'].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),
+].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
+
 for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`raw token lookup and relocated ROM directories retain dependent init (O${optLevel}, ${backend})`, () => {
 	const entrySource = `require('bootstrap')
 local rom_dir<const> = require('cartlib/rom_dir')
@@ -39,14 +49,7 @@ return function(id, system)
     if record == nil then return nil end
     return record.addr, record.len
 end`;
-	const modules = [
-		{ path: 'bootstrap', source: "require('base')\ntable = require('table')\nstring = require('string/base')" },
-		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
-		...['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/utf8', 'string/float/decode'].map(path => ({
-			path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
-		})),
-		...['cartlib/memory', 'cartlib/bin', 'cartlib/rom_dir'].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),
-	].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
+
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry.lua'), modules,
 		{ entrySource, programDomain: 'system', optLevel });
 	const linked = linkTestSystemBlua32(compiled);
@@ -103,4 +106,24 @@ end`;
 	assert.deepEqual(lookup('late'), [valueInteger(CART_ROM_BASE + 0x130), valueInteger(12)]);
 	assert.deepEqual(lookup('removed'), [valueNil()]);
 	assert.deepEqual(lookup('system', true), [valueInteger(0x90), valueInteger(8)]);
+});
+
+const nativeRunner = process.env.BMSX_CPU32_RUNNER;
+for (const optLevel of [0, 3] as const) test(`packed system directory O${optLevel}: native resource lookup matches TS words and cycles`, { skip: !nativeRunner }, () => {
+	const source = readFileSync(new URL('../fixtures/compiler32/asset-lookup.lua', import.meta.url), 'utf8');
+	const program = compileLuaChunkToProgram(parseLuaChunk(source, 'asset-lookup.lua'), modules,
+		{ entrySource: source, programDomain: 'system', optLevel });
+	const linked = linkTestSystemBlua32(program);
+	const entries: RomAsset[] = ['', 'a'.repeat(500), ...Array.from({ length: 96 }, (_, i) => `asset-${i}-texture`)]
+		.map((resid, i) => ({ type: 'image', resid, start: 0x200 + i * 4, end: 0x204 + i * 4 }));
+	const romBytes = directory(linked.romBytes, alignRomAssetOffset(linked.romBytes.length), entries);
+	const { cpu } = createTestBlua32PairCpu({ systemRomBytes: romBytes, cartRomBytes: createTestRuntimeRomPayload() });
+	cpu.installBootPrimitives();
+	const budget = 10_000_000;
+	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+	assert.equal(cpu.readLuaFaultReasonWord(), 0);
+	const results = materializeCpuCompletionValues(cpu);
+	assert.deepEqual(results, [valueInteger(98), valueInteger(entries.reduce((sum, entry) => sum + entry.start!, 0)), valueInteger(392)]);
+	const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`, ...results.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`)].join('\n') + '\n';
+	assert.equal(execFileSync(nativeRunner!, ['--execute-rom', '--boot-primitives', String(budget)], { input: romBytes, encoding: 'utf8' }), expected);
 });
