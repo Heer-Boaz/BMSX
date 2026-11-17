@@ -10,7 +10,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as v from '../../machine/ts/machine/cpu/value';
 
 const bootSource = 'return {pcall=__bmsx_pcall,error=__bmsx_error,select=__bmsx_select}';
-const modules = ['math', 'math/trig'].map(path => {
+const modules = ['math', 'math/trig', 'math/trig/reduce'].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 	return { path, source, chunk: parseLuaChunk(source, `${path}.lua`).chunk };
 });

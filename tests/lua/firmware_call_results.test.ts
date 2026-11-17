@@ -2,41 +2,42 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { asClosure, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
+import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
 
-const cases: { source: string; values: (number | boolean | null)[] }[] = [
+const cases: { source: string; values: Value[] }[] = [
 	{ source: 'return', values: [] },
 	{ source: '', values: [] },
-	{ source: 'return nil', values: [null] },
-	{ source: 'local uninitialized; return uninitialized', values: [null] },
-	{ source: 'return tuple()', values: [7, null, false, 9, null] },
-	{ source: 'return 1, nil, tuple()', values: [1, null, 7, null, false, 9, null] },
-	{ source: 'return tuple(), 0', values: [7, 0] },
-	{ source: 'return (tuple())', values: [7] },
-	{ source: 'return 1, ((tuple()))', values: [1, 7] },
-	{ source: 'return (tuple)()', values: [7, null, false, 9, null] },
-	{ source: 'return (function() return tuple end)()()', values: [7, null, false, 9, null] },
-	{ source: 'return spread(1, tuple())', values: [1, 7, null, false, 9, null] },
-	{ source: 'return spread(tuple(), 2)', values: [7, 2] },
-	{ source: 'return spread(1, (tuple()))', values: [1, 7] },
-	{ source: 'return receiver:spread(1, tuple())', values: [40, 1, 7, null, false, 9, null] },
-	{ source: 'return true and tuple()', values: [7] },
-	{ source: 'local x = tuple(); x = tuple(); return x, tuple()', values: [7, 7, null, false, 9, null] },
+	{ source: 'return nil', values: [valueNil()] },
+	{ source: 'local uninitialized; return uninitialized', values: [valueNil()] },
+	{ source: 'return tuple()', values: [valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()] },
+	{ source: 'return 1, nil, tuple()', values: [valueInteger(1), valueNil(), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()] },
+	{ source: 'return tuple(), 0', values: [valueInteger(7), valueInteger(0)] },
+	{ source: 'return (tuple())', values: [valueInteger(7)] },
+	{ source: 'return 1, ((tuple()))', values: [valueInteger(1), valueInteger(7)] },
+	{ source: 'return (tuple)()', values: [valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()] },
+	{ source: 'return (function() return tuple end)()()', values: [valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()] },
+	{ source: 'return spread(1, tuple())', values: [valueInteger(1), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()] },
+	{ source: 'return spread(tuple(), 2)', values: [valueInteger(7), valueInteger(2)] },
+	{ source: 'return spread(1, (tuple()))', values: [valueInteger(1), valueInteger(7)] },
+	{ source: 'return receiver:spread(1, tuple())', values: [valueInteger(40), valueInteger(1), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()] },
+	{ source: 'return true and tuple()', values: [valueInteger(7)] },
+	{ source: 'local x = tuple(); x = tuple(); return x, tuple()', values: [valueInteger(7), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()] },
 	{ source: 'return select(2, 7)', values: [] },
-	{ source: 'return 1, select(2, 7)', values: [1] },
-	{ source: 'return spread(1, select(2, 7))', values: [1] },
-	{ source: 'return (select(2, 7))', values: [null] },
-	{ source: 'return pcall(tuple)', values: [true, 7, null, false, 9, null] },
-	{ source: 'local t = table.pack(mark(1), spread(mark(2), mark(3))); return trace, t.n, t[1], t[2], t[3], t[4]', values: [123, 4, 1, 2, 3, -3] },
-	{ source: 'return 999, wide()', values: [999, ...Array.from({ length: 260 }, (_, index) => index)] },
+	{ source: 'return 1, select(2, 7)', values: [valueInteger(1)] },
+	{ source: 'return spread(1, select(2, 7))', values: [valueInteger(1)] },
+	{ source: 'return (select(2, 7))', values: [valueNil()] },
+	{ source: 'return pcall(tuple)', values: [valueBool(true), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()] },
+	{ source: 'local t = table.pack(mark(1), spread(mark(2), mark(3))); return trace, t.n, t[1], t[2], t[3], t[4]', values: [valueInteger(123), valueInteger(4), valueInteger(1), valueInteger(2), valueInteger(3), valueInteger(-3)] },
+	{ source: 'return 999, wide()', values: [valueInteger(999), ...Array.from({ length: 260 }, (_, index) => valueInteger(index))] },
 ];
 
 for (const optLevel of [0, 3] as const) test(`firmware O${optLevel}: grouped modf makes format c emit one codepoint`, () => {
-	const modules = ['base', 'table', 'math', 'math/trig', 'string/base', 'string/utf8', 'string/format'].map(path => ({
+	const modules = ['base', 'number/parse', 'number/decimal', 'table', 'math', 'math/trig', 'math/trig/reduce', 'string/base', 'string/utf8', 'string/format'].map(path => ({
 		path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 	}));
 	modules.push({ path: 'format_char_assert', source: readFileSync('tests/carts/bios_format_manual/format_char_assert.lua', 'utf8') });
@@ -54,7 +55,7 @@ return true
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 });
 
 for (const optLevel of [0, 3] as const) for (const { source, values } of cases) {
@@ -69,7 +70,7 @@ wide = function(...) return ${Array.from({ length: 260 }, (_, index) => index).j
 return pcall(assert(load(${JSON.stringify(source)})))
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, ...values]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), ...values]);
 	});
 }
 
@@ -85,7 +86,7 @@ local source<const> = f.chunk(f.block({ f.return_statement({
 return pcall(lua_compiler.compile_syntax(source, '=tuple-syntax'))
 `, { optLevel });
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, 42, 7, null, false, 9, null]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(42), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()]);
 });
 
 for (const optLevel of [0, 3] as const) test(`firmware O${optLevel}: retained tuple forwarding allocates no guest wrappers`, () => {
@@ -95,14 +96,18 @@ forward = function(...) return ... end
 advance = assert(load('for i = 1, 1000 do forward(tuple()) end; return forward(tuple())'))
 `, { optLevel });
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	const closure = cpu.getGlobalByKey(cpu.stringPool.find('advance')!) as Closure;
+	const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('advance')!), cpu.gc);
 	runCompletionClosure(cpu, closure, []);
-	const heap = cpu.collectTrackedHeapBytes(), globals = cpu.globalSlotCount;
+	let heap = cpu.collectTrackedHeapBytes();
+	const globals = cpu.globalSlotCount;
 	for (let iteration = 0; iteration < 2; iteration++) {
 		runCompletionClosure(cpu, closure, []);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [7, null, false, 9, null]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()]);
 		assert.equal(cpu.luaHeap.usedBytes(), heap, 'no transient guest allocation before collection');
-		assert.equal(cpu.collectTrackedHeapBytes(), heap);
+		const previousCapacity = cpu.activeThread.stackRegisters.capacity();
+		const collected = cpu.collectTrackedHeapBytes();
+		assert.equal(collected, heap - (previousCapacity - cpu.activeThread.stackRegisters.capacity()) * THREAD_STACK_SLOT_BYTES);
+		heap = collected;
 		assert.equal(cpu.globalSlotCount, globals);
 	}
 });

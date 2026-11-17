@@ -17,6 +17,7 @@ test('firmware math RNG state is initialized guest RAM owned by the math module'
 	const modules = [
 		{ path: 'math', file: 'machine/bios/math.lua' },
 		{ path: 'math/trig', file: 'machine/bios/math/trig.lua' },
+		{ path: 'math/trig/reduce', file: 'machine/bios/math/trig/reduce.lua' },
 	].map(module => {
 		const source = readFileSync(module.file, 'utf8');
 		return {

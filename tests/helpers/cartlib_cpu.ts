@@ -136,7 +136,7 @@ export function compileCartlibProgram(
 	const systemSources = new Map<string, string>(SYSTEM_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]));
 	for (const module of SYSTEM_STUB_MODULES) systemSources.set(module.path, module.source);
 	for (const module of COROUTINE_FIRMWARE_MODULES) systemSources.set(module.path, module.source);
-	for (const path of ['math', 'math/trig']) systemSources.set(path, readFileSync(`machine/bios/${path}.lua`, 'utf8'));
+	for (const path of ['math', 'math/trig', 'math/trig/reduce']) systemSources.set(path, readFileSync(`machine/bios/${path}.lua`, 'utf8'));
 	const systemModules = Array.from(systemSources, ([path, source]) => ({
 		path, source, chunk: parseLuaChunk(source, `${path}.lua`),
 	}));
