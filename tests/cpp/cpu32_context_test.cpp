@@ -98,6 +98,37 @@ void indexedConstants() {
 			}
 		}
 }
+void methodReceivers() {
+	for (int source : {0, 2, 3, 6})
+		for (int kind = 0; kind < 4; ++kind)
+			for (int grant : {1, 2, 3, 4, 5, 6, 7, 8, 32}) {
+				const std::array program{std::array<int, 4>{static_cast<int>(OpCode::K1), 7, 0, 0},
+					std::array<int, 4>{static_cast<int>(OpCode::SELF), 2, source, 0},
+					std::array<int, 4>{static_cast<int>(OpCode::RET), 2, 3, 0}};
+				const auto image = chunk(program, {std::string("method")});
+				Number32Machine native(image), scalar(image, false);
+				for (auto* machine : {&native, &scalar}) {
+					Value base = kind == 1 ? valueInteger(-1) : kind == 2 ? valueFloatBits(0xffa12345) : valueBool(false);
+					if (kind == 0) {
+						auto* table = machine->cpu.createTable();
+						table->setStringKey(machine->cpu.stringPool().intern("method"), valueInteger(77));
+						base = valueTable(machine->cpu.gcHeap().reference(table));
+					}
+					auto registers = machine->cpu.activeThread()->currentFrame->registers;
+					registers.set(2, valueInteger(811));
+					registers.set(3, valueFloatBits(0x80000000));
+					registers.set(source, base);
+				}
+				test::runCpuParity(native.cpu, scalar.cpu, grant);
+				parity(native, scalar);
+				if (grant == 32 && kind == 0) {
+					requireNative(native.cpu);
+					const auto results = native.cpu.readCompletionValues();
+					require(results.size() == 2 && results.get(0) == valueInteger(77) && valueIsTable(results.get(1)),
+						"SELF returns both the method value and original compact receiver, including aliases");
+				}
+			}
+}
 void controlWords() {
 	for (int field : std::array<int, 6>{COP0_EPC, COP0_BAD_ADDRESS, COP0_LUA_FAULT_REASON, COP0_CAUSE, COP0_EXEC, 7})
 		for (bool user : {false, true})
@@ -295,6 +326,7 @@ void closedBarrierAndDirectoryGrowth() {
 } // namespace
 int main() {
 	try {
+		methodReceivers();
 		std::cerr << "indexed constants\n";
 		indexedConstants();
 		std::cerr << "control words\n";

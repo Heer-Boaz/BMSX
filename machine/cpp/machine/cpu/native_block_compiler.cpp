@@ -299,11 +299,15 @@ void NativeBlockCompiler::emit(
 	case OpCode::GETT:
 	case OpCode::GETI:
 	case OpCode::GETFIELD:
-	case OpCode::SELF:
 	case OpCode::SETT:
 	case OpCode::SETI:
 	case OpCode::SETFIELD:
 	case OpCode::VARARG:
+		emitExit(*slow);
+		break;
+	case OpCode::SELF:
+		emitRawLoad(instruction.b, SLJIT_R0, SLJIT_R1);
+		emitRawStore(instruction.a + 1, SLJIT_R0, SLJIT_R1);
 		emitExit(*slow);
 		break;
 	default:
