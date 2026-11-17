@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { asClosure, valueBool, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { valueToString } from '../../machine/ts/machine/cpu/value';
+import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { compileFrameEvaluationTest, frameEvaluationCases } from '../helpers/frame_evaluation';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
@@ -19,9 +20,9 @@ for (const optLevel of [0, 3] as const) for (const [name, body] of Object.entrie
 			assert.deepEqual(cpu.captureRuntimeState(), saved);
 			if (name === 'completion_injection') {
 				const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
-				cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!) as Closure, [depth - 1]);
+				cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!), cpu.gc), [valueInteger(depth - 1)]);
 				assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
-				assert.deepEqual(materializeCpuCompletionValues(cpu), [true, 43, null, false]);
+				assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(43), valueNil(), valueBool(false)]);
 				assert.equal(cpu.getFrameDepth(), depth); assert.equal(cpu.readFramePc(depth - 1), pc);
 				assert.equal(cpu.isHaltedUntilIrq(), true, 'named evaluation does not consume the retained caller halt');
 			}
@@ -30,7 +31,7 @@ for (const optLevel of [0, 3] as const) for (const [name, body] of Object.entrie
 		}
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1, 'no unhandled guest fault');
 		const values = materializeCpuCompletionValues(cpu);
-		assert.deepEqual(values, [true, true], values.map(value => valueToString(value, cpu.stringPool)).join('\t'));
+		assert.deepEqual(values, [valueBool(true), valueBool(true)], values.map(value => valueToString(value, cpu.stringPool)).join('\t'));
 	});
 }
 
@@ -53,25 +54,29 @@ return exercise(0)
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), name = cpu.stringPool.find('advance')!;
-	cpu.beginCompletionCall(cpu.getGlobalByKey(name) as Closure);
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(name), cpu.gc));
 	assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [10000]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(10000)]);
 	const heap = cpu.collectTrackedHeapBytes(), globals = cpu.globalSlotCount;
 	const strings = cpu.stringPool.captureState(), saved = cpu.captureRuntimeState();
 	for (let iteration = 0; iteration < 2; iteration++) {
 		cpu.stringPool.restoreState(strings); cpu.restoreRuntimeState(saved);
-		cpu.beginCompletionCall(cpu.getGlobalByKey(name) as Closure);
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(name), cpu.gc));
 		assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [20000]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(20000)]);
 		assert.equal(cpu.getFrameDepth(), depth);
 		assert.equal(cpu.luaHeap.usedBytes(), heap, 'no transient guest allocation before explicit collection');
-		assert.equal(cpu.collectTrackedHeapBytes(), heap);
+		const previousCapacity = cpu.activeThread.stackRegisters.capacity();
+		const collected = cpu.collectTrackedHeapBytes();
+		const releasedSlots = previousCapacity - cpu.activeThread.stackRegisters.capacity();
+		assert.equal(collected, heap - releasedSlots * THREAD_STACK_SLOT_BYTES,
+			'collection only releases retired compiler stack capacity');
 		assert.equal(cpu.globalSlotCount, globals);
 		assert.equal(cpu.isHaltedUntilIrq(), true);
 	}
 	cpu.clearHaltUntilIrq();
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
 for (const optLevel of [0, 3] as const) test(`packed names O${optLevel}: completion-call injection retains the selected PC and activation`, () => {
@@ -94,15 +99,15 @@ return park(42)
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
-	cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.find('named_completion_probe')!) as Closure, [depth - 1]);
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('named_completion_probe')!), cpu.gc), [valueInteger(depth - 1)]);
 	assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	assert.equal(cpu.getFrameDepth(), depth);
 	assert.equal(cpu.readFramePc(depth - 1), pc, 'lookup/evaluation did not advance the selected activation');
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	cpu.clearHaltUntilIrq();
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
 for (const optLevel of [0, 3] as const) test(`packed names O${optLevel}: a ROM without diagnostics reports missing coverage`, () => {
@@ -118,7 +123,7 @@ return true
 `, optLevel, false));
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
 for (const optLevel of [0, 3] as const) test(`packed names O${optLevel}: enumerate active depths and evaluate a discovered stopped scope`, () => {
@@ -150,14 +155,14 @@ return exercise(42)
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
-	cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.find('discover_stopped_scope')!) as Closure, [depth - 1]);
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('discover_stopped_scope')!), cpu.gc), [valueInteger(depth - 1)]);
 	assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
 	const values = materializeCpuCompletionValues(cpu);
-	assert.deepEqual(values, [true, true], values.map(value => valueToString(value, cpu.stringPool)).join('\t'));
+	assert.deepEqual(values, [valueBool(true), valueBool(true)], values.map(value => valueToString(value, cpu.stringPool)).join('\t'));
 	assert.equal(cpu.getFrameDepth(), depth);
 	assert.equal(cpu.readFramePc(depth - 1), pc);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	cpu.clearHaltUntilIrq();
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, 43]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(43)]);
 });
