@@ -19,7 +19,7 @@ void NativeBlockCompiler::emitBuiltinCall(const DecodedInstruction& instruction)
 	SlowPath guarded; guarded.exit = &guardedCall; guarded.registers = registerSnapshot();
 	loadHeader(instruction.a, SLJIT_R0);
 	guarded.jumps[guarded.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
-		SLJIT_IMM, valueFromTag(ValueTag::BuiltinFunction) >> 48u);
+		SLJIT_IMM, valueTagHeader(ValueTag::BuiltinFunction));
 	loadPayload(instruction.a, SLJIT_R3, SLJIT_R2);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0,
 		SLJIT_MEM1(SLJIT_R3), offsetof(BuiltinFunction, id));

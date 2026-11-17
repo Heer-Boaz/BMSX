@@ -1,4 +1,5 @@
 #include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_value_emit.h"
 
 #include <bit>
 
@@ -189,11 +190,8 @@ void NativeBlockCompiler::emitScalarStore(MemoryAccessKind kind, int source) {
 	loadOperand(source, SLJIT_FR0);
 	// Preserve numeric bits; only tagged Values decode to canonical numeric NaN.
 	loadHeader(source, SLJIT_R0);
-	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, VALUE_QNAN_MASK >> 48u);
-	auto* number = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, VALUE_QNAN_MASK >> 48u);
-	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, VALUE_ENCODED_TAG_MASK >> 48u);
-	auto* numericNaN = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
-	sljit_emit_fset64(m_compiler, SLJIT_FR0, asNumber(VALUE_QNAN_MASK));
+	const auto [number, numericNaN] = emitNumberHeaderSplit(m_compiler, SLJIT_R0, SLJIT_R1, SLJIT_R0, NumberHeaderJump::NumericNaN);
+	sljit_emit_fset64(m_compiler, SLJIT_FR0, valueNumericNaN());
 	auto* decoded = sljit_emit_label(m_compiler);
 	sljit_set_label(number, decoded); sljit_set_label(numericNaN, decoded);
 	if (kind == MemoryAccessKind::F32LE) sljit_emit_fop1(m_compiler, SLJIT_CONV_F32_FROM_F64, SLJIT_FR0, 0, SLJIT_FR0, 0);

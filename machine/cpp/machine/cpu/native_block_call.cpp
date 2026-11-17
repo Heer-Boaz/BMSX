@@ -4,6 +4,7 @@
 
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/native_execution.h"
+#include "machine/cpu/native_value_emit.h"
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/io.h"
 
@@ -13,8 +14,6 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	const auto thread = Thread::nativeOffsets();
 	const auto function = Closure::nativeFunctionOffsets();
 	constexpr sljit_sw pointerShift = std::countr_zero(sizeof(void*));
-	constexpr sljit_sw tagOffset = std::endian::native == std::endian::little ? 6 : 0;
-	constexpr sljit_sw payloadOffset = sizeof(void*) == 4 && std::endian::native == std::endian::big ? 4 : 0;
 	std::array<sljit_jump*, 24> cold;
 	size_t coldCount = 0;
 	auto* entry = sljit_emit_label(compiler);
@@ -25,11 +24,11 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op2(compiler, SLJIT_SHL, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_IMM, 3);
 	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_S0, 0, SLJIT_R3, 0);
 	// Values stay raw words: tag and pointer payload are independent on ARMhf.
-	sljit_emit_op1(compiler, SLJIT_MOV_U16, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R3), tagOffset);
+	emitValueHeaderLoad(compiler, SLJIT_R1, SLJIT_R3, 0);
 	auto* builtin = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R1, 0,
-		SLJIT_IMM, valueFromTag(ValueTag::BuiltinFunction) >> 48);
+		SLJIT_IMM, valueTagHeader(ValueTag::BuiltinFunction));
 	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
-		SLJIT_IMM, valueFromTag(ValueTag::Closure) >> 48);
+		SLJIT_IMM, valueTagHeader(ValueTag::Closure));
 	// Builtins need no child frame. Only the closure path admits a spare node.
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, caller));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, next));
@@ -37,8 +36,7 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, callee), SLJIT_R1, 0);
 	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R3, 0, SLJIT_IMM, sizeof(Value));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, args), SLJIT_R1, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), payloadOffset);
-	if constexpr (sizeof(void*) == 8) sljit_emit_op2(compiler, SLJIT_AND, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, VALUE_PAYLOAD_MASK);
+	emitValuePayloadLoad(compiler, SLJIT_R3, SLJIT_R3, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, closure), SLJIT_R3, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_S16, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, exitB));
 	auto* fixedArgs = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);

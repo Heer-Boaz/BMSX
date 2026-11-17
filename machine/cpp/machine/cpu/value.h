@@ -149,6 +149,24 @@ inline constexpr Value valueFromTag(ValueTag tag, uint64_t payload = 0) {
 	return VALUE_QNAN_MASK | hi | sign | (payload & VALUE_PAYLOAD_MASK);
 }
 
+// Layout facts for code that inspects a Value without decoding it, notably
+// generated code. The upper 16 bits are the header: a header whose NaN bits
+// are not all set is an ordinary Number; inside the NaN space, zero encoded
+// tag bits mark the canonical numeric NaN and any other bits a tagged kind.
+inline constexpr unsigned VALUE_HEADER_SHIFT = 48u;
+inline constexpr uint16_t valueHeader(Value v) {
+	return static_cast<uint16_t>(v >> VALUE_HEADER_SHIFT);
+}
+inline constexpr uint16_t valueTagHeader(ValueTag tag) {
+	return valueHeader(valueFromTag(tag));
+}
+inline constexpr uint16_t VALUE_NAN_HEADER_BITS = valueHeader(VALUE_QNAN_MASK);
+inline constexpr uint16_t VALUE_TAG_HEADER_BITS = valueHeader(VALUE_ENCODED_TAG_MASK);
+// Byte offsets inside a stored Value: the header halfword and the low 32-bit
+// payload word (a StringId, or the whole pointer on a 32-bit host).
+inline constexpr std::ptrdiff_t VALUE_HEADER_BYTE_OFFSET = std::endian::native == std::endian::little ? 6 : 0;
+inline constexpr std::ptrdiff_t VALUE_LOW_WORD_BYTE_OFFSET = std::endian::native == std::endian::little ? 0 : 4;
+
 inline Value valueFromNumber(double value) {
 	if (value != value) {
 		return VALUE_QNAN_MASK;
@@ -162,6 +180,11 @@ inline double asNumber(Value v) {
 	double out = 0.0;
 	std::memcpy(&out, &v, sizeof(double));
 	return out;
+}
+
+// The one numeric NaN that arithmetic writes and non-Numbers decode to.
+inline double valueNumericNaN() {
+	return asNumber(VALUE_QNAN_MASK);
 }
 
 inline double decodeNumber(Value v) {
@@ -199,7 +222,7 @@ inline Thread* asThread(Value value) {
 	return reinterpret_cast<Thread*>(valuePayload(value));
 }
 inline bool valueIsThread(Value value) {
-	return static_cast<uint16_t>(value >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::Thread) >> 48u);
+	return valueHeader(value) == valueTagHeader(ValueTag::Thread);
 }
 
 inline Value valueBuiltinFunction(BuiltinFunction* fn) {
@@ -207,12 +230,12 @@ inline Value valueBuiltinFunction(BuiltinFunction* fn) {
 }
 
 inline bool isNil(Value v) {
-	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::Nil) >> 48u);
+	return valueHeader(v) == valueTagHeader(ValueTag::Nil);
 }
 
 inline bool isTruthy(Value v) {
-	const uint16_t header = static_cast<uint16_t>(v >> 48u);
-	return header != static_cast<uint16_t>(valueFromTag(ValueTag::Nil) >> 48u) && header != static_cast<uint16_t>(valueFromTag(ValueTag::False) >> 48u);
+	const uint16_t header = valueHeader(v);
+	return header != valueTagHeader(ValueTag::Nil) && header != valueTagHeader(ValueTag::False);
 }
 
 inline uint32_t toU32(double value) {
@@ -269,28 +292,28 @@ inline BuiltinFunction* asBuiltinFunction(Value v) {
 }
 
 inline bool valueIsString(Value v) {
-	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::String) >> 48u);
+	return valueHeader(v) == valueTagHeader(ValueTag::String);
 }
 
 inline bool valueIsBool(Value v) {
-	const uint16_t header = static_cast<uint16_t>(v >> 48u);
-	return header == static_cast<uint16_t>(valueFromTag(ValueTag::False) >> 48u) || header == static_cast<uint16_t>(valueFromTag(ValueTag::True) >> 48u);
+	const uint16_t header = valueHeader(v);
+	return header == valueTagHeader(ValueTag::False) || header == valueTagHeader(ValueTag::True);
 }
 
 inline bool valueToBool(Value v) {
-	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::True) >> 48u);
+	return valueHeader(v) == valueTagHeader(ValueTag::True);
 }
 
 inline bool valueIsTable(Value v) {
-	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::Table) >> 48u);
+	return valueHeader(v) == valueTagHeader(ValueTag::Table);
 }
 
 inline bool valueIsClosure(Value v) {
-	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::Closure) >> 48u);
+	return valueHeader(v) == valueTagHeader(ValueTag::Closure);
 }
 
 inline bool valueIsBuiltinFunction(Value v) {
-	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::BuiltinFunction) >> 48u);
+	return valueHeader(v) == valueTagHeader(ValueTag::BuiltinFunction);
 }
 
 // Instruction equality; hash-key identity also accepts identical NaN keys.

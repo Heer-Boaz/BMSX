@@ -1,4 +1,5 @@
 #include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_value_emit.h"
 
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/string_pool.h"
@@ -52,16 +53,11 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 		loadHeader(instruction.b, SLJIT_R0);
 		loadHeader(instruction.c, SLJIT_R1);
 		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
-			SLJIT_IMM, valueString(0) >> 48u), noLabel);
+			SLJIT_IMM, valueTagHeader(ValueTag::String)), noLabel);
 		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
-			SLJIT_IMM, valueString(0) >> 48u), noLabel);
-#if defined(SLJIT_64BIT_ARCHITECTURE)
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_R1);
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_R2);
-#else
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_REG_PAIR(SLJIT_R0, SLJIT_R1));
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_REG_PAIR(SLJIT_R0, SLJIT_R2));
-#endif
+			SLJIT_IMM, valueTagHeader(ValueTag::String)), noLabel);
+		emitValueLowWordFromFloat(m_compiler, SLJIT_R1, left, SLJIT_R0);
+		emitValueLowWordFromFloat(m_compiler, SLJIT_R2, right, SLJIT_R0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R1, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R2, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.strings));

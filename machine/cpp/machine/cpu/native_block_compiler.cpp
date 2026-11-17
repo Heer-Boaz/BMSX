@@ -140,7 +140,7 @@ void NativeBlockCompiler::emitEntryTableFacts(size_t index, bool materialize) {
 		if (!m_entries[index].tableGuards[slot]) continue;
 		loadHeader(cached.guest, SLJIT_R1);
 		auto* failed = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
-			SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
+			SLJIT_IMM, valueTagHeader(ValueTag::Table));
 		m_admissionFallbacks.push_back({failed, index, registerSnapshot(), materialize});
 	}
 }
@@ -492,8 +492,8 @@ std::array<sljit_jump*, 2> NativeBlockCompiler::falseyJumps(int index) {
 	// representable tagged payloads. Never use floating-point NaN equality.
 	loadHeader(index, SLJIT_R0);
 	return {
-		sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueNil() >> 48u),
-		sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueBool(false) >> 48u),
+		sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueTagHeader(ValueTag::Nil)),
+		sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueTagHeader(ValueTag::False)),
 	};
 }
 
@@ -501,7 +501,7 @@ void NativeBlockCompiler::canonicalizeNumber(sljit_s32 target) {
 	// Arithmetic returns the canonical numeric NaN, never a tagged payload.
 	auto* ordered = sljit_emit_fcmp(m_compiler, SLJIT_ORDERED,
 		target, 0, target, 0);
-	sljit_emit_fset64(m_compiler, target, asNumber(VALUE_QNAN_MASK));
+	sljit_emit_fset64(m_compiler, target, valueNumericNaN());
 	sljit_set_label(ordered, sljit_emit_label(m_compiler));
 }
 
