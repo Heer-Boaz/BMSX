@@ -25,7 +25,6 @@ local toc_entry_collision_start_index<const> = 17
 local toc_entry_collision_end_index<const> = 18
 local op_delete<const> = 1
 local hash_prime<const> = 0x1b3
-local u32_mod<const> = 0x100000000
 local cart_rom_base<const> = 0x10000000
 
 local kind_image<const> = 1
@@ -148,12 +147,14 @@ local hash_id<const> = function(id)
 	local lo = 0x84222325
 	local hi = 0xcbf29ce4
 	for index = 1, #id do
-		local xored_lo<const> = (lo ~ string_lib.byte(id, index)) % u32_mod
-		local lo_mul<const> = xored_lo * hash_prime
-		local carry<const> = lo_mul // u32_mod
-		local hi_mul<const> = hi * hash_prime + carry
-		lo = lo_mul % u32_mod
-		hi = ((hi_mul % u32_mod) + ((xored_lo * 256) % u32_mod)) % u32_mod
+		local xored_lo<const> = lo ~ string_lib.byte(id, index)
+		-- Base-2^16 partial products retain the carry without a wider Number.
+		-- The two stored words wrap naturally under multiplication and addition.
+		local low_product<const> = (xored_lo & 0xffff) * hash_prime
+		local middle_product<const> = (xored_lo >> 16) * hash_prime + (low_product >> 16)
+		local carry<const> = middle_product >> 16
+		lo = xored_lo * hash_prime
+		hi = hi * hash_prime + carry + (xored_lo << 8)
 	end
 	return lo, hi
 end

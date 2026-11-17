@@ -15,7 +15,7 @@ return function(high, low, byte_count)
 	end
 	if exponent > 1150 then return blua32.float_from_bits(sign | 0x7f800000) end
 	if exponent < 873 then return blua32.float_from_bits(sign) end
-	local significand = fraction | 0x100000
+	local significand<const> = fraction | 0x100000
 	local retained
 	local guard
 	local sticky

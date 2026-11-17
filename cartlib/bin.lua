@@ -46,17 +46,12 @@ local read_varuint<const> = function(reader)
 		shift = shift + 7
 	end
 	reader.pos = source
-	-- Bitwise accumulation produces a signed word; BIN lengths and IDs are unsigned.
-	if value < 0 then
-		return value + 0x100000000
-	end
 	return value
 end
 
 local read_varint<const> = function(reader)
 	local raw<const> = read_varuint(reader)
-	-- SHR sign-extends, whereas zigzag removes the low bit without its sign.
-	local value<const> = (raw >> 1) & 0x7fffffff
+	local value<const> = raw >> 1
 	if (raw & 1) == 0 then
 		return value
 	end

@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import { asStringId, type StringValue } from '../../machine/ts/machine/cpu/value';
+import * as v from '../../machine/ts/machine/cpu/value';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { buildRomMetadataSection } from '../../toolchain/ts/rompack/metadata_encode';
@@ -14,7 +13,7 @@ import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } f
 
 const address = DYNAMIC_RAM_BASE + 0x28000;
 
-for (const optLevel of [0, 3] as const) test(`the cartlib BIN reader consumes production values and shared metadata at O${optLevel}`, () => {
+for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`the cartlib BIN reader consumes production values and shared metadata at O${optLevel} (${backend})`, () => {
 	const entrySource = `require('bootstrap')
 local bin<const> = require('cartlib/bin')
 return function(addr) return bin.decode(addr, 'fixture') end,
@@ -24,7 +23,7 @@ function(addr)
 end`;
 	const modules = [
 		{ path: 'bootstrap', source: "require('base')\ntable = require('table')\nstring = require('string/base')" },
-		...['base', 'table', 'string/base', 'string/utf8', 'string/float/decode'].map(path => ({
+		...['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/utf8', 'string/float/decode'].map(path => ({
 			path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 		})),
 		...['cartlib/memory', 'cartlib/bin'].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),
@@ -32,13 +31,13 @@ end`;
 	].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
 	const program = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules,
 		{ entrySource, programDomain: 'system', optLevel });
-	const { cpu, memory } = createTestSystemCpu(linkTestSystemBlua32(program));
+	const { cpu, memory } = createTestSystemCpu(linkTestSystemBlua32(program), backend);
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
-	const [decode, decodeMetadata] = materializeCpuCompletionValues(cpu) as Closure[];
+	const [decode, decodeMetadata] = materializeCpuCompletionValues(cpu).map(value => v.asClosure(value, cpu.gc));
 	const read = (bytes: Uint8Array) => {
 		memory.writeBytes(address, bytes);
-		runCompletionClosure(cpu, decode, [address]);
+		runCompletionClosure(cpu, decode, [v.valueInteger(address)]);
 		return materializeCpuCompletionValues(cpu)[0];
 	};
 	// Both sides of each zigzag width, including the signed-word boundary.
@@ -46,40 +45,45 @@ end`;
 		1048575, -1048576, 1048576, -1048577, 134217727, -134217728,
 		134217728, -134217729, 1073741823, -1073741824, 1073741824, -1073741825,
 		0x7fffffff, -0x80000000];
-	for (const value of integers) assert.equal(read(encodeBinary(value)), value);
-	const sequence = read(encodeBinary(integers)) as Table;
+	for (const value of integers) assert.equal(read(encodeBinary(value)), v.valueInteger(value));
+	const sequence = v.asTable(read(encodeBinary(integers)), cpu.gc);
 	assert.equal(sequence.length(), integers.length);
-	for (const [index, value] of integers.entries()) assert.equal(sequence.getInteger(index + 1), value);
-	for (const value of [null, false, true, 0.25, Math.PI, -0, Infinity, -Infinity, NaN]) {
-		assert.deepEqual(read(encodeBinary(value)), value);
+	for (const [index, value] of integers.entries()) assert.equal(sequence.getInteger(index + 1), v.valueInteger(value));
+	for (const [value, expected] of [[null, v.valueNil()], [false, v.valueBool(false)], [true, v.valueBool(true)],
+		[0.25, v.valueFloat(0.25)], [Math.PI, v.valueFloat(Math.PI)], [-0, v.valueFloatBits(0x80000000)],
+		[Infinity, v.valueFloatBits(0x7f800000)], [-Infinity, v.valueFloatBits(0xff800000)], [NaN, v.valueFloatBits(0x7fc00000)]] as const) {
+		assert.equal(read(encodeBinary(value)), expected);
 	}
 	for (const value of ['', 'ASCII', '雪🙂', 'x'.repeat(128), '雪'.repeat(5500)]) {
-		assert.equal(cpu.stringPool.toString(asStringId(read(encodeBinary(value)) as StringValue)), value);
+		assert.equal(cpu.stringPool.toString(v.asStringId(read(encodeBinary(value)))), value);
 	}
 	for (const id of [0, 127, 128, 0x7fffffff, 0x80000000, 0xffffffff]) {
-		assert.equal((read(encodeBinary({ r: id })) as Table).getStringKey(cpu.stringPool.intern('r')), id);
+		assert.equal(v.asTable(read(encodeBinary({ r: id })), cpu.gc).getStringKey(cpu.stringPool.intern('r')), v.valueInteger(id));
 	}
-	const binary = read(encodeBinary(new Uint8Array([0, 1, 127, 128, 255]))) as Table;
-	assert.deepEqual([1, 2, 3, 4, 5].map(index => binary.getInteger(index)), [0, 1, 127, 128, 255]);
-	const set = read(encodeBinary(new Set([3, 'set value', false]))) as Table;
-	assert.equal(set.getInteger(1), 3);
-	assert.equal(cpu.stringPool.toString(asStringId(set.getInteger(2) as StringValue)), 'set value');
-	assert.equal(set.getInteger(3), false);
-	const mixedRoot = read(encodeBinary({
+	const binary = v.asTable(read(encodeBinary(new Uint8Array([0, 1, 127, 128, 255]))), cpu.gc);
+	assert.deepEqual([1, 2, 3, 4, 5].map(index => binary.getInteger(index)), [0, 1, 127, 128, 255].map(v.valueInteger));
+	const set = v.asTable(read(encodeBinary(new Set([3, 'set value', false]))), cpu.gc);
+	assert.equal(set.getInteger(1), v.valueInteger(3));
+	assert.equal(cpu.stringPool.toString(v.asStringId(set.getInteger(2))), 'set value');
+	assert.equal(set.getInteger(3), v.valueBool(false));
+	const mixedRoot = v.asTable(read(encodeBinary({
 		values: [0, -1, 63, -64, 64, -65, false, 3, null, -4, [5, 8192, -6], 7,
 			'雪🙂', -8, { value: 9 }, 10, 0.25, -11, 0x7fffffff, -0x80000000, 12],
 		after: 77,
-	})) as Table;
-	const mixed = mixedRoot.getStringKey(cpu.stringPool.intern('values')) as Table;
+	})), cpu.gc);
+	const mixed = v.asTable(mixedRoot.getStringKey(cpu.stringPool.intern('values')), cpu.gc);
 	for (const [index, value] of [[1, 0], [2, -1], [3, 63], [4, -64], [5, 64], [6, -65],
-		[7, false], [8, 3], [9, null], [10, -4], [12, 7], [14, -8], [16, 10], [17, 0.25],
-		[18, -11], [19, 0x7fffffff], [20, -0x80000000], [21, 12]] as const) {
-		assert.equal(mixed.getInteger(index), value);
+		[8, 3], [10, -4], [12, 7], [14, -8], [16, 10], [18, -11], [19, 0x7fffffff],
+		[20, -0x80000000], [21, 12]] as const) {
+		assert.equal(mixed.getInteger(index), v.valueInteger(value));
 	}
-	assert.deepEqual([1, 2, 3].map(index => (mixed.getInteger(11) as Table).getInteger(index)), [5, 8192, -6]);
-	assert.equal(cpu.stringPool.toString(asStringId(mixed.getInteger(13) as StringValue)), '雪🙂');
-	assert.equal((mixed.getInteger(15) as Table).getStringKey(cpu.stringPool.intern('value')), 9);
-	assert.equal(mixedRoot.getStringKey(cpu.stringPool.intern('after')), 77,
+	assert.equal(mixed.getInteger(7), v.valueBool(false));
+	assert.equal(mixed.getInteger(9), v.valueNil());
+	assert.equal(mixed.getInteger(17), v.valueFloat(0.25));
+	assert.deepEqual([1, 2, 3].map(index => v.asTable(mixed.getInteger(11), cpu.gc).getInteger(index)), [5, 8192, -6].map(v.valueInteger));
+	assert.equal(cpu.stringPool.toString(v.asStringId(mixed.getInteger(13))), '雪🙂');
+	assert.equal(v.asTable(mixed.getInteger(15), cpu.gc).getStringKey(cpu.stringPool.intern('value')), v.valueInteger(9));
+	assert.equal(mixedRoot.getStringKey(cpu.stringPool.intern('after')), v.valueInteger(77),
 		'batched scalar runs publish the cursor before a following object field');
 	const key = '雪'.repeat(60);
 	const data = { [key]: { count: 0x7fffffff, nested: [true, 'name', { r: 128 }] }, tail: -0x80000000 };
@@ -88,14 +92,15 @@ end`;
 	bytes.set(section.header);
 	bytes.set(section.payloads[0], section.header.length);
 	memory.writeBytes(address, bytes);
-	runCompletionClosure(cpu, decodeMetadata, [address]);
-	const [root, headerLength] = materializeCpuCompletionValues(cpu) as [Table, number];
-	assert.equal(headerLength, section.header.length, 'the first payload starts immediately after the shared names');
-	assert.equal(root.getStringKey(cpu.stringPool.intern('tail')), -0x80000000);
-	const object = root.getStringKey(cpu.stringPool.intern(key)) as Table;
-	assert.equal(object.getStringKey(cpu.stringPool.intern('count')), 0x7fffffff);
-	const nested = object.getStringKey(cpu.stringPool.intern('nested')) as Table;
-	assert.equal(nested.getInteger(1), true);
-	assert.equal(cpu.stringPool.toString(asStringId(nested.getInteger(2) as StringValue)), 'name');
-	assert.equal((nested.getInteger(3) as Table).getStringKey(cpu.stringPool.intern('r')), 128);
+	runCompletionClosure(cpu, decodeMetadata, [v.valueInteger(address)]);
+	const [rootValue, headerLength] = materializeCpuCompletionValues(cpu);
+	const root = v.asTable(rootValue, cpu.gc);
+	assert.equal(headerLength, v.valueInteger(section.header.length), 'the first payload starts immediately after the shared names');
+	assert.equal(root.getStringKey(cpu.stringPool.intern('tail')), v.valueInteger(-0x80000000));
+	const object = v.asTable(root.getStringKey(cpu.stringPool.intern(key)), cpu.gc);
+	assert.equal(object.getStringKey(cpu.stringPool.intern('count')), v.valueInteger(0x7fffffff));
+	const nested = v.asTable(object.getStringKey(cpu.stringPool.intern('nested')), cpu.gc);
+	assert.equal(nested.getInteger(1), v.valueBool(true));
+	assert.equal(cpu.stringPool.toString(v.asStringId(nested.getInteger(2))), 'name');
+	assert.equal(v.asTable(nested.getInteger(3), cpu.gc).getStringKey(cpu.stringPool.intern('r')), v.valueInteger(128));
 });

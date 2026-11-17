@@ -1,6 +1,7 @@
 local syntax<const> = require('compiler/syntax')
 
 local semantic<const> = {}
+local numeric_word_moves<const> = { float_bits = true, float_from_bits = true }
 
 local fail<const> = function(chunk_name, message, node)
 	error('[load:' .. chunk_name .. '] ' .. message .. ' at '
@@ -250,7 +251,7 @@ bind_value = function(state, expression)
 			local base<const> = callee.base
 			if base.kind == syntax.identifier_expression
 				and (base.global_key == 'blua32' or base.environment_key == 'blua32')
-				and (callee.identifier == 'float_bits' or callee.identifier == 'float_from_bits') then
+				and numeric_word_moves[callee.identifier] then
 				if #arguments ~= 1 then fail(state.chunk_name, 'numeric word move expects one argument', expression) end
 				expression.word_move = callee.identifier
 			end
