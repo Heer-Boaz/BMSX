@@ -63,7 +63,10 @@ export class ValueSlots implements ValueWriteTarget {
 		this.words[dst] = source.words[src]; this.tags[dst] = source.tags[src];
 	}
 	public copyRangeFrom(source: ValueSlots, destination: number, first: number, count: number): void {
-		for (let i = 0; i < count; ++i) this.copySlotFrom(source, destination + i, first + i);
+		if (this.words === source.words) {
+			const dst = this.base + destination, src = source.base + first;
+			this.words.copyWithin(dst, src, src + count); this.tags.copyWithin(dst, src, src + count);
+		} else for (let i = 0; i < count; ++i) this.copySlotFrom(source, destination + i, first + i);
 	}
 	public copyWithin(destination: number, source: number, count: number): void {
 		const dst = this.base + destination, src = this.base + source;

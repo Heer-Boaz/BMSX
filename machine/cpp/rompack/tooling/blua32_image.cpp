@@ -246,9 +246,11 @@ auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32Ima
 			case Blua32ConstantTag::True:
 				image.constants.emplace_back(true);
 				break;
-			case Blua32ConstantTag::Number:
-				image.constants.emplace_back(readF64LE(
-					record + BLUA32_CONSTANT_PAYLOAD_OFFSET));
+			case Blua32ConstantTag::Integer:
+				image.constants.emplace_back(static_cast<i32>(readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)));
+				break;
+			case Blua32ConstantTag::Float:
+				image.constants.emplace_back(Blua32FloatConstant{readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)});
 				break;
 			case Blua32ConstantTag::String:
 				image.constants.emplace_back(decodeString(

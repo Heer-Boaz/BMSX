@@ -13,22 +13,22 @@ inline void CPU::executeConcat(CallFrame& frame, int destination, int leftOperan
 	const int rightCount = appendValueString(text, right, m_stringPool);
 	instructionBudgetRemaining -= leftCount + rightCount;
 	const StringId id = m_stringPool.internOwned(std::move(text));
-	frame.registers[destination] = valueString(id);
+	frame.registers.set(destination, valueString(id));
 	frame.top = std::max(frame.top, destination + 1);
 }
 
 inline void CPU::executeConcatRange(CallFrame& frame, int destination, int base, int count) {
 	size_t stringByteCount = 0;
 	for (int index = 0; index < count; ++index) {
-		const Value value = frame.registers[base + index];
+		const Value value = frame.registers.get(base + index);
 		if (valueIsString(value)) stringByteCount += m_stringPool.toString(asStringId(value)).size();
 	}
 	std::string text;
 	text.reserve(stringByteCount);
 	int codepoints = 0;
-	for (int index = 0; index < count; ++index) codepoints += appendValueString(text, frame.registers[base + index], m_stringPool);
+	for (int index = 0; index < count; ++index) codepoints += appendValueString(text, frame.registers.get(base + index), m_stringPool);
 	instructionBudgetRemaining -= count + codepoints;
 	const StringId id = m_stringPool.internOwned(std::move(text));
-	frame.registers[destination] = valueString(id);
+	frame.registers.set(destination, valueString(id));
 	frame.top = std::max(frame.top, destination + 1);
 }

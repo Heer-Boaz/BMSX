@@ -23,25 +23,25 @@ int main() {
 		const auto key = cpu.stringPool().intern("retired");
 		const auto before = cpu.luaHeap().captureState();
 		auto* first = cpu.createTable(3, 4);
-		first->setInteger(3, valueNumber(99));
+		first->setInteger(3, valueInteger(99));
 		first->setStringKey(key, valueBool(false));
 		first->clear();
 		require(cpu.luaHeap().usedBytes() == before.trackedBytes + 32,
 			"retained host blocks do not remain occupied in the guest heap");
 		// Different exact capacities share one rounded host allocation class.
 		auto* second = cpu.createTable(4, 4);
-		require(second->trackedHeapBytes() == 144, "host size classes do not round guest capacities");
+		require(second->trackedHeapBytes() == 108, "host size classes do not round guest capacities");
 		for (int index = 1; index <= 4; ++index)
 			require(isNil(second->getInteger(index)), "reused array slots are initialized to nil");
 		require(isNil(second->getStringKey(key)), "reused hash storage does not retain old keys or values");
-		second->setStringKey(key, valueNumber(73));
-		for (int index = 1; index <= 300; ++index) second->setInteger(index, valueNumber(index));
+		second->setStringKey(key, valueInteger(73));
+		for (int index = 1; index <= 300; ++index) second->setInteger(index, valueInteger(index));
 		for (int index = 1; index <= 300; ++index)
-			require(second->getInteger(index) == valueNumber(index), "growth across the pooling cutoff preserves entries");
-		require(second->getStringKey(key) == valueNumber(73), "mixed array/hash growth preserves the hash entry");
+			require(second->getInteger(index) == valueInteger(index), "growth across the pooling cutoff preserves entries");
+		require(second->getStringKey(key) == valueInteger(73), "mixed array/hash growth preserves the hash entry");
 		const auto beforeRestore = cpu.luaHeap().usedBytes() - second->trackedHeapBytes();
 		second->prepareRestoreStorage(5, 2);
-		require(second->trackedHeapBytes() == 112 && cpu.luaHeap().usedBytes() == beforeRestore + 112,
+		require(second->trackedHeapBytes() == 85 && cpu.luaHeap().usedBytes() == beforeRestore + 85,
 			"restore preparation retains exact non-power-of-two capacities and occupied bytes");
 		for (int index = 1; index <= 5; ++index)
 			require(isNil(second->getInteger(index)), "replacement storage starts fresh after shrinking");

@@ -74,7 +74,7 @@ export type Blua32ExecutionImage = {
 	executionDomainId: ExecutionDomainId;
 	irqFunctionAddress: number;
 	constTags: Uint8Array;
-	constScalars: Float64Array;
+	constWords: Uint32Array;
 	globalSlots: Uint32Array;
 	systemGlobalSlots: Uint32Array;
 	decodedPages: Map<number, DecodedInstructionPage>;

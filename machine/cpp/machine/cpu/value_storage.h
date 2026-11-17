@@ -19,6 +19,14 @@ public:
 	ValueStorage(const ValueStorage&) = delete;
 	ValueStorage& operator=(const ValueStorage&) = delete;
 
+	ValueStorage(ValueStorage&& other) noexcept
+		: m_storage(std::move(other.m_storage)), m_tags(std::exchange(other.m_tags, nullptr)), m_capacity(std::exchange(other.m_capacity, 0)) {}
+	ValueStorage& operator=(ValueStorage&& other) noexcept {
+		m_storage = std::move(other.m_storage);
+		m_tags = std::exchange(other.m_tags, nullptr); m_capacity = std::exchange(other.m_capacity, 0);
+		return *this;
+	}
+
 	size_t capacity() const noexcept { return m_capacity; }
 	size_t byteLength() const noexcept { return m_capacity * VALUE_STORAGE_SLOT_BYTES; }
 	uint32_t* words() noexcept { return reinterpret_cast<uint32_t*>(m_storage.get()); }

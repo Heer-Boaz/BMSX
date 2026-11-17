@@ -89,7 +89,7 @@ enum class RunResult {
 // Host-only configuration. Registers are borrowed; never retain them or execute guest code.
 struct InstructionObserverBinding {
 	std::array<std::unordered_set<u32>, EXECUTION_DOMAIN_COUNT> points;
-	void (*observe)(void*, ExecutionDomainId, u32, const Value*) = nullptr;
+	void (*observe)(void*, ExecutionDomainId, u32, ConstValueSpan) = nullptr;
 	void* context = nullptr;
 };
 
@@ -312,7 +312,7 @@ public:
 	bool completionCallPending() const;
 	bool readFrameReturnsToCompletionLatch(int frameIndex) const;
 	void abortCompletionCall(int frameIndex);
-	auto readCompletionValues() const -> std::span<const Value>;
+	auto readCompletionValues() const -> ConstValueSpan;
 	bool isExceptionFrame(int frameIndex) const;
 	int readExceptionReturnFrameDepth() const;
 	bool isNonMaskableExceptionFrame(int frameIndex) const;
@@ -380,7 +380,7 @@ private:
 		u32 address,
 		u32 byteCount
 	);
-	std::vector<Value> decodeConstantPool(
+	ValueSlots decodeConstantPool(
 		ExecutionDomainId executionDomainId,
 		u32 tableAddress,
 		u32 constantCount
@@ -426,9 +426,7 @@ private:
 	void executeFunctionAddress(u32 functionAddress);
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
-	CallFrame* pushFrame(Closure* closure, const Value* args, size_t argCount,
-		int returnBase, int returnCount, bool returnToCompletionLatch);
-	CallFrame* pushLatchedFrame(Closure* closure, const Value* args, size_t argCount,
+	CallFrame* pushFrame(Closure* closure, BuiltinArgsView args,
 		int returnBase, int returnCount, bool returnToCompletionLatch);
 	Closure* allocateTrackedClosure(u32 functionAddress, size_t upvalueCount);
 	Closure* createClosure(CallFrame& frame);
@@ -441,22 +439,22 @@ private:
 	void executeVararg(CallFrame& frame, int a, int b);
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
 	void linkOpenUpvalue(CallFrame& frame, Upvalue* upvalue);
-	const Value& readUpvalue(Upvalue* upvalue) const;
+	Value readUpvalue(Upvalue* upvalue) const;
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
 	void writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount);
 	void writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values);
 	void setRegister(CallFrame& frame, int index, Value value);
-	Value* ensureRegisterCapacity(CallFrame& frame, int index);
+	ValueSpan ensureRegisterCapacity(CallFrame& frame, int index);
 	bool executeWordStores(CallFrame& frame, u32 address, int source, int count);
 	bool continueWordStores(CallFrame& frame, u32 address, int source, int count);
 	void executeMemoryLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address);
 	bool executeMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address);
 	bool continueMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address);
-	static const Value& readRK(Blua32ExecutionImage& image, Value* registers, int rk) {
+	static Value readRK(Blua32ExecutionImage& image, ConstValueSpan registers, int rk) {
 		if (rk < 0) {
-			return image.constPool[static_cast<size_t>(-1 - rk)];
+			return image.constPool.get(static_cast<size_t>(-1 - rk));
 		}
-		return registers[static_cast<size_t>(rk)];
+		return registers.get(static_cast<size_t>(rk));
 	}
 	Value resolveTableIndex(Table* table, const Value& key);
 	Value resolveTableIntegerIndex(Table* table, int index);
@@ -586,17 +584,18 @@ private:
 
 	ScratchBuffer<BuiltinResults> m_builtinResultScratch;
 	size_t m_builtinResultScratchIndex = 0;
-	std::vector<Value> m_completionValues;
+	ValueSlots m_completionValues{8};
+	size_t m_completionValueCount = 0;
 	std::vector<Value> m_localRoots;
 	int m_localRootScopeDepth = 0;
 
 	std::vector<Upvalue*> m_closureUpvalueScratch;
 	std::vector<u32> m_closureUpvalueWordScratch;
 	std::vector<StringId> m_systemGlobalNames;
-	std::vector<Value> m_systemGlobalValues;
+	ValueSlots m_systemGlobalValues;
 	std::unordered_map<StringId, size_t> m_systemGlobalSlotByKey;
 	std::vector<StringId> m_globalNames;
-	std::vector<Value> m_globalValues;
+	ValueSlots m_globalValues;
 	std::unordered_map<StringId, size_t> m_globalSlotByKey;
 	Table* m_stringIndexTable = nullptr;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)

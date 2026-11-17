@@ -86,9 +86,12 @@ inline NumericOrder compareNumbers(Value left, Value right) {
 	return a < b ? NumericOrder::Less : a > b ? NumericOrder::Greater : a == b ? NumericOrder::Equal : NumericOrder::Unordered;
 }
 inline bool valuesEqual(Value left, Value right) {
-	return valueIsNumber(left) && valueIsNumber(right) ? compareNumbers(left, right) == NumericOrder::Equal : left == right;
+	if (valueIsNumber(left) && valueIsNumber(right)) return compareNumbers(left, right) == NumericOrder::Equal;
+	const auto tag = valueTag(left);
+	return tag <= ValueTag::True ? tag == valueTag(right) : left == right;
 }
 inline Value canonicalTableKey(Value value) {
+	if (valueTag(value) <= ValueTag::True) return valueFromTag(valueTag(value));
 	if (!valueIsFloat(value)) return value;
 	int32_t integer;
 	if (luaFloatToInteger(valuePayload(value), integer)) return valueInteger(integer);

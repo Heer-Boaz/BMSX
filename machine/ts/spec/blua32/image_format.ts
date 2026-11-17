@@ -45,7 +45,7 @@ export const BLUA32_UPVALUE_RECORD_SIZE = 4;
 export const BLUA32_UPVALUE_IN_STACK_MASK = 0x80000000;
 export const BLUA32_UPVALUE_INDEX_MASK = 0x7fffffff;
 
-export const BLUA32_CONSTANT_RECORD_SIZE = 16;
+export const BLUA32_CONSTANT_RECORD_SIZE = 12;
 export const BLUA32_CONSTANT_TAG_OFFSET = 0;
 export const BLUA32_CONSTANT_PAYLOAD_OFFSET = 4;
 export const BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET = 8;
@@ -58,6 +58,7 @@ export const enum Blua32ConstantTag {
 	Nil = 0,
 	False = 1,
 	True = 2,
-	Number = 3,
+	Integer = 3,
 	String = 4,
+	Float = 5,
 }

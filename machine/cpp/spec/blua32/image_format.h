@@ -51,7 +51,7 @@ constexpr uint32_t BLUA32_UPVALUE_RECORD_SIZE = 4u;
 constexpr uint32_t BLUA32_UPVALUE_IN_STACK_MASK = 0x80000000u;
 constexpr uint32_t BLUA32_UPVALUE_INDEX_MASK = 0x7fffffffu;
 
-constexpr uint32_t BLUA32_CONSTANT_RECORD_SIZE = 16u;
+constexpr uint32_t BLUA32_CONSTANT_RECORD_SIZE = 12u;
 constexpr uint32_t BLUA32_CONSTANT_TAG_OFFSET = 0u;
 constexpr uint32_t BLUA32_CONSTANT_PAYLOAD_OFFSET = 4u;
 constexpr uint32_t BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET = 8u;
@@ -64,8 +64,9 @@ enum class Blua32ConstantTag : uint32_t {
 	Nil = 0u,
 	False = 1u,
 	True = 2u,
-	Number = 3u,
+	Integer = 3u,
 	String = 4u,
+	Float = 5u,
 };
 
 } // namespace bmsx

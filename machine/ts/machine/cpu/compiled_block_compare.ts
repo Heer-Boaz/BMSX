@@ -8,15 +8,14 @@ export function emitComparison(page: DecodedInstructionPage, word: number, regis
 	yes: string, no: string): string {
 	const left = page.b[word], right = page.c[word];
 	let source = `{const l=${registers.tagOperand(left)},r0=${registers.tagOperand(right)};let matched=false;`;
+	const numeric = `(l===${ValueTag.Integer}||l===${ValueTag.Float})&&(r0===${ValueTag.Integer}||r0===${ValueTag.Float})`;
 	if (page.ops[word] === OpCode.EQ) {
-		source += `if(l===r0){
-if(l===${ValueTag.Nil}||l===${ValueTag.False}||l===${ValueTag.True}) matched=true;
-else if(l===${ValueTag.Number}||l===${ValueTag.String}||l===${ValueTag.BuiltinFunction}) matched=${registers.scalarOperand(left)}===${registers.scalarOperand(right)};
-else if(l===${ValueTag.Table}||l===${ValueTag.Closure}||l===${ValueTag.Thread}) matched=${registers.referenceOperand(left)}===${registers.referenceOperand(right)};}`;
+		source += `if(${numeric})matched=${registers.numberOperand(left)}===${registers.numberOperand(right)};
+else if(l===r0)matched=l<=${ValueTag.True}||${registers.wordOperand(left)}===${registers.wordOperand(right)};`;
 	} else {
 		const operator = page.ops[word] === OpCode.LT ? '<' : '<=';
-		source += `if(l===${ValueTag.Number}&&r0===${ValueTag.Number}) matched=${registers.scalarOperand(left)}${operator}${registers.scalarOperand(right)};
-else if(l===${ValueTag.String}&&r0===${ValueTag.String}) {const leftId=${registers.scalarOperand(left)},rightId=${registers.scalarOperand(right)};budget-=Math.min(q.codepointCount(leftId),q.codepointCount(rightId));matched=q.compare(leftId,rightId)${operator}0;}`;
+		source += `if(${numeric}) matched=${registers.numberOperand(left)}${operator}${registers.numberOperand(right)};
+else if(l===${ValueTag.String}&&r0===${ValueTag.String}) {const leftId=${registers.wordOperand(left)},rightId=${registers.wordOperand(right)};budget-=Math.min(q.codepointCount(leftId),q.codepointCount(rightId));matched=q.compare(leftId,rightId)${operator}0;}`;
 	}
 	return `${source}if(matched){${yes}}else{${no}}}`;
 }

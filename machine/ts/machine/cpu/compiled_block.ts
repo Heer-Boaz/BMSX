@@ -3,6 +3,8 @@ import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import { DecodedDispatchOp, type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
 import { ValueTag } from './value';
 import type { Memory } from '../memory/memory';
+import { compiledArithmeticSupports, emitArithmetic } from './compiled_block_arithmetic';
+import { MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { emitMemoryAccess, emitWordStores } from './compiled_block_memory';
 import { JavaScriptRegisterCache } from './compiled_block_registers';
 import { emitComparison } from './compiled_block_compare';
@@ -47,6 +49,7 @@ export const enum CompiledBlockExit {
 	ConcatRange,
 	CreateClosure,
 	WriteWords,
+	InvalidOperand,
 }
 
 const sideExitKinds: (CompiledBlockExit | undefined)[] = [];
@@ -113,46 +116,17 @@ export type CompiledBlock = {
 
 type StatementEmitter = (page: DecodedInstructionPage, word: number, image: Blua32ExecutionImage,
 	registers: JavaScriptRegisterCache, exitIndex: number) => string;
-type NumberEmitter = (page: DecodedInstructionPage, word: number, registers: JavaScriptRegisterCache) => string;
-
 const emitters: (StatementEmitter | undefined)[] = new Array(OPCODE_COUNT);
 emitters[OpCode.MOV] = (p, w, _image, r) => r.copy(p.a[w], p.b[w]);
-emitters[OpCode.LOADK] = (p, w, image, r) => {
-	if (image.constTags[p.bx[w]] === ValueTag.Number) return r.writeNumber(p.a[w], `k[${p.bx[w]}]`);
-	return r.writeEncoded(p.a[w], `${image.constTags[p.bx[w]]}`, `k[${p.bx[w]}]`, 'null');
-};
-emitters[OpCode.KNIL] = (p, w, _image, r) => {
-	return r.writeEncoded(p.a[w], `${ValueTag.Nil}`, 'NaN', 'null');
-};
-emitters[OpCode.KFALSE] = (p, w, _image, r) => {
-	return r.writeEncoded(p.a[w], `${ValueTag.False}`, 'NaN', 'null');
-};
-emitters[OpCode.KTRUE] = (p, w, _image, r) => {
-	return r.writeEncoded(p.a[w], `${ValueTag.True}`, 'NaN', 'null');
-};
-emitters[OpCode.NOT] = (p, w, _image, r) => {
-	const truth = r.truthy(p.b[w]);
-	return r.writeEncoded(p.a[w], `${truth}?${ValueTag.False}:${ValueTag.True}`, 'NaN', 'null');
-};
-const numberEmitters: (NumberEmitter | undefined)[] = new Array(OPCODE_COUNT);
-numberEmitters[OpCode.K0] = () => '0';
-numberEmitters[OpCode.K1] = () => '1';
-numberEmitters[OpCode.KM1] = () => '-1';
-numberEmitters[OpCode.KSMI] = (p, w) => `${p.sbx[w]}`;
-numberEmitters[OpCode.UNM] = (p, w, r) => `-(${r.numberOperand(p.b[w])})`;
-numberEmitters[OpCode.BNOT] = (p, w, r) => `~(${r.numberOperand(p.b[w])})`;
-for (const [op, operator] of [
-	[OpCode.ADD, '+'], [OpCode.SUB, '-'], [OpCode.MUL, '*'], [OpCode.DIV, '/'],
-	[OpCode.BAND, '&'], [OpCode.BOR, '|'], [OpCode.BXOR, '^'],
-	[OpCode.SHL, '<<'], [OpCode.SHR, '>>'],
-] as const) {
-	numberEmitters[op] = (p, w, r) => `(${r.numberOperand(p.b[w])})${operator}(${r.numberOperand(p.c[w])})`;
-}
-for (const [op, functionName] of [
-	[OpCode.MOD, 'mod'], [OpCode.FLOORDIV, 'floorDiv'], [OpCode.POW, 'pow'],
-] as const) {
-	numberEmitters[op] = (p, w, r) => `${functionName}(${r.numberOperand(p.b[w])},${r.numberOperand(p.c[w])})`;
-}
+emitters[OpCode.LOADK] = (p, w, image, r) => r.writeEncoded(p.a[w], `${image.constTags[p.bx[w]]}`, `k[${p.bx[w]}]`);
+emitters[OpCode.KNIL] = (p, w, _image, r) => r.writeEncoded(p.a[w], `${ValueTag.Nil}`, '0');
+emitters[OpCode.KFALSE] = (p, w, _image, r) => r.writeEncoded(p.a[w], `${ValueTag.False}`, '0');
+emitters[OpCode.KTRUE] = (p, w, _image, r) => r.writeEncoded(p.a[w], `${ValueTag.True}`, '0');
+emitters[OpCode.NOT] = (p, w, _image, r) => r.writeEncoded(p.a[w], `${r.truthy(p.b[w])}?${ValueTag.False}:${ValueTag.True}`, '0');
+emitters[OpCode.K0] = (p, w, _image, r) => r.writeInteger(p.a[w], '0');
+emitters[OpCode.K1] = (p, w, _image, r) => r.writeInteger(p.a[w], '1');
+emitters[OpCode.KM1] = (p, w, _image, r) => r.writeInteger(p.a[w], '-1');
+emitters[OpCode.KSMI] = (p, w, _image, r) => r.writeInteger(p.a[w], `${p.sbx[w]}`);
 emitters[OpCode.JMP] = () => '';
 emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
 emitters[OpCode.JMPIFNOT] = emitters[OpCode.JMP];
@@ -169,7 +143,7 @@ emitters[OpCode.CLOSURE] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number): boolean {
-	return emitters[op] !== undefined || numberEmitters[op] !== undefined
+	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
 		|| compiledTableSupports(op)
 		|| compiledControlSupports(op)
@@ -226,6 +200,7 @@ export type EmittedJavaScriptBlock = {
 	readonly admissionCycles: number;
 	readonly admissionVarargs: number;
 	readonly openVarargs: number;
+	readonly formatCycles: number;
 };
 
 /** Emit a segment and its precise side exits; the region owns control flow. */
@@ -249,12 +224,12 @@ export function emitJavaScriptBlock(
 	let lastPc = pc;
 	let nextPc = pc;
 	let finalWord = firstWord;
-	let numberLocal = false;
+	let formatCycles = 0;
 	let controlAccess = false;
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
 		const op = page.ops[word];
-		admissionCycles = cycles;
+		admissionCycles = cycles + formatCycles;
 		admissionVarargs = openVarargs;
 		cycles += BASE_CYCLES[op];
 		sourceWords += page.widths[word];
@@ -276,33 +251,40 @@ export function emitJavaScriptBlock(
 				cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 		}
-		const numberEmitter = numberEmitters[op];
+		const arithmetic = compiledArithmeticSupports(op);
+		const needsOperandFault = arithmetic || load || store || words || (control && op === OpCode.MTC0);
+		let numericFault = '';
+		if (needsOperandFault) {
+			const faultIndex = exits.length;
+			exits.push({ exit: CompiledBlockExit.InvalidOperand, resumesFrame: false,
+				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitBx: page.bx[word], exitWord: word,
+				cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
+				linkedBlock: null, previousIncoming: null, nextIncoming: null });
+			numericFault = registers.exit(faultIndex);
+		}
 		if (control) {
-			source.push(emitControl(op, page, word, registers, sideExit === undefined ? null : exitIndex, !controlAccess));
+			source.push(emitControl(op, page, word, registers, sideExit === undefined ? null : exitIndex, !controlAccess, numericFault));
 			controlAccess = true;
 		} else if (compiledContextSupports(op)) {
 			source.push(emitContext(op, page, word, registers, exitIndex));
 		} else if (compiledTableSupports(op)) {
 			source.push(emitTableOperation(op, page, word, registers, exitIndex));
 		} else if (load || store || words) {
-			if (load && !numberLocal) {
-				source.push('let v;');
-				numberLocal = true;
-			}
-			const base = registers.numberOperand(page.b[word]);
-			const address = displaced ? `(((${base})>>>0)+${page.disp[word] * 4})>>>0` : `((${base})>>>0)`;
+			const selector = page.b[word], tag = registers.tagOperand(selector), payload = registers.wordOperand(selector);
+			const base = `ma${word}`;
+			source.push(`const ${base}=${tag}===${ValueTag.Integer}?${payload}:(${tag}===${ValueTag.Float}?fw(${payload}):null);if(${base}===null) ${numericFault}`);
+			const address = displaced ? `(${base}+${page.disp[word] * 4})>>>0` : base;
 			const memoryExit = `{state.memoryAddress=a;${registers.exit(exitIndex)}}`;
-			if (words) source.push(emitWordStores(page, word, address, memoryExit, memory, registers));
-			else source.push(emitMemoryAccess(page, word, address, memoryExit, memory,
-				registers.numberOperand(page.a[word])));
-			if (load) source.push(registers.writeNumber(page.a[word], 'v'));
-		} else if (numberEmitter !== undefined) {
-			source.push(registers.writeNumber(page.a[word], numberEmitter(page, word, registers)));
+			if (words) source.push(emitWordStores(page, word, address, memoryExit, numericFault, memory, registers));
+			else source.push(emitMemoryAccess(page, word, address, memoryExit, numericFault, memory, registers));
+		} else if (arithmetic) {
+			source.push(emitArithmetic(page, word, registers, numericFault));
 		} else {
 			source.push(emitters[op]!(page, word, image, registers, exitIndex));
 		}
 		// The checked exit precedes this instruction's readiness surcharge.
-		if (words) cycles += page.c[word];
+		if (words) formatCycles += page.c[word];
+		if ((load || store) && page.c[word] === MemoryAccessKind.F64LE) formatCycles += 2;
 		if (op === OpCode.LOADNIL) cycles += page.b[word];
 		if (op === OpCode.VARARG && page.b[word] !== 0) cycles += page.b[word] - 1;
 		if (op === OpCode.VARARG && page.b[word] === 0) ++openVarargs;
@@ -362,7 +344,7 @@ export function emitJavaScriptBlock(
 	}
 	return { firstWord, terminal: exits[terminalIndex], exits: exits.slice(firstExit), sourceWords,
 		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex, deferredJumpIndex,
-		admissionCycles, admissionVarargs, openVarargs };
+		admissionCycles, admissionVarargs, openVarargs, formatCycles };
 }
 
 export function finishJavaScriptBlock(page: DecodedInstructionPage, block: EmittedJavaScriptBlock,

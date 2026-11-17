@@ -1,7 +1,9 @@
 import { GcHeap, type GcState } from './gc_heap';
-import { GarbageAllocation } from './gc_object';
+import { GarbageAllocation, GcKind } from './gc_object';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
-import { luaPow } from '../../spec/blua32/pow';
+import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
+import { numberToF32Bits } from '../../common/float32';
+import { ValueStorage } from './value_storage';
 import { CART_ROM_BASE } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
@@ -100,7 +102,7 @@ import {
 } from '../../spec/blua32/execution_domain';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
-import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
+import { luaShiftLeft, luaShiftRight, NumericOrder } from '../../spec/blua32/numeric';
 import {
 	MAPPED_PAGE_BYTE_MASK,
 	MAPPED_PAGE_BYTE_SIZE,
@@ -108,18 +110,12 @@ import {
 import { BuiltinFunctionId, GarbageCollectionOperation, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 import {
 	EMPTY_CALL_ARGS,
-	VALUE_TAG,
 	ValueTag,
-	valueTable, valueClosure, valueNil,
-	materializeValue,
-	storedValueToString,
-	valueFromNumber,
+	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToString,
+	valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, asTable, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread,
 	valueTag,
-	asStringId,
 	valueTypeNameForLuaTag,
 	type Value,
-	type ValueReference,
-	type StringValue,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
@@ -539,172 +535,60 @@ export class CPU implements MappedPageInvalidator {
 	// TODO: Admit function-valued __index through VM call/return continuations in
 	// all indexed-read forms. Table-only resolution is an implementation limitation,
 	// not the intended BLua contract; raw Table storage must not execute guest code.
-	private loadTableIndex(
-		baseTag: ValueTag,
-		baseTable: Table | null,
-		keyTag: ValueTag,
-		keyScalar: number,
-		keyReference: ValueReference,
-		target: ValueSlots,
-		targetIndex: number,
-	): void {
+	private loadTableIndex(base: Value, key: Value, target: ValueSlots, targetIndex: number): void {
 		let table: Table;
-		switch (baseTag) {
-			case ValueTag.Table:
-				table = baseTable!;
-				break;
-			case ValueTag.String:
-				table = this.stringIndexTable!;
-				break;
-			default:
-				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
+		switch (valueTag(base)) {
+			case ValueTag.Table: table = asTable(base, this.gc); break;
+			case ValueTag.String: table = this.stringIndexTable!; break;
+			default: throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
-		if (!table.metatable) {
-			table.load(keyTag, keyScalar, keyReference, target, targetIndex);
-			return;
-		}
+		if (table.metatable === null) { table.load(valueTag(key), valuePayload(key), target, targetIndex); return; }
 		const result = this.tableLookupResult;
-		table.resolveIndex(this.indexKey, keyTag, keyScalar, keyReference, result);
+		table.resolveIndex(this.indexKey, valueTag(key), valuePayload(key), result);
 		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
 		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-		target.copySlotFrom(result.values, targetIndex, 0);
-		result.values.setNil(0);
+		target.copySlotFrom(result.values, targetIndex, 0); result.values.setNil(0);
 	}
-
-	private loadTableIntegerIndex(
-		baseTag: ValueTag,
-		baseTable: Table | null,
-		index: number,
-		target: ValueSlots,
-		targetIndex: number,
-	): void {
+	private loadTableIntegerIndex(base: Value, key: number, target: ValueSlots, targetIndex: number): void {
 		let table: Table;
-		switch (baseTag) {
-			case ValueTag.Table:
-				table = baseTable!;
-				break;
-			case ValueTag.String:
-				table = this.stringIndexTable!;
-				break;
-			default:
-				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
+		switch (valueTag(base)) {
+			case ValueTag.Table: table = asTable(base, this.gc); break;
+			case ValueTag.String: table = this.stringIndexTable!; break;
+			default: throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
-		if (table.metatable) {
-			const result = this.tableLookupResult;
-			table.resolveIntegerIndex(this.indexKey, index, result);
-			this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
-			if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-			target.copySlotFrom(result.values, targetIndex, 0);
-			result.values.setNil(0);
-			return;
-		}
-		table.loadInteger(index, target, targetIndex);
+		if (table.metatable === null) { table.loadInteger(key, target, targetIndex); return; }
+		const result = this.tableLookupResult;
+		table.resolveIntegerIndex(this.indexKey, key, result);
+		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
+		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+		target.copySlotFrom(result.values, targetIndex, 0); result.values.setNil(0);
 	}
-
-	private loadTableFieldIndexCached(
-		page: DecodedInstructionPage,
-		pageOffset: number,
-		baseTag: ValueTag,
-		baseTable: Table | null,
-		key: StringId,
-		target: ValueSlots,
-		targetIndex: number,
-	): void {
+	private loadTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId, target: ValueSlots, targetIndex: number): void {
 		let table: Table;
-		switch (baseTag) {
-			case ValueTag.Table:
-				table = baseTable!;
-				break;
-			case ValueTag.String:
-				table = this.stringIndexTable!;
-				break;
-			default:
-				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
+		switch (valueTag(base)) {
+			case ValueTag.Table: table = asTable(base, this.gc); break;
+			case ValueTag.String: table = this.stringIndexTable!; break;
+			default: throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
-		if (table.metatable) {
-			const result = this.tableLookupResult;
-			table.resolveStringIndexCached(this.indexKey, key, page.tableCacheSlots[pageOffset], result);
-			this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
-			if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-			page.tableCacheSlots[pageOffset] = result.slot;
-			target.copySlotFrom(result.values, targetIndex, 0);
-			result.values.setNil(0);
-			return;
-		}
-		page.tableCacheSlots[pageOffset] = table.loadStringKeyCached(
-			key,
-			page.tableCacheSlots[pageOffset],
-			target,
-			targetIndex,
-		);
+		if (table.metatable === null) { page.tableCacheSlots[pageOffset] = table.loadStringKeyCached(key, page.tableCacheSlots[pageOffset], target, targetIndex); return; }
+		const result = this.tableLookupResult;
+		table.resolveStringIndexCached(this.indexKey, key, page.tableCacheSlots[pageOffset], result);
+		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
+		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+		page.tableCacheSlots[pageOffset] = result.slot;
+		target.copySlotFrom(result.values, targetIndex, 0); result.values.setNil(0);
 	}
-
-	private storeTableIndex(
-		baseTag: ValueTag,
-		baseTable: Table | null,
-		keyTag: ValueTag,
-		keyScalar: number,
-		keyReference: ValueReference,
-		valueTag: ValueTag,
-		valueScalar: number,
-		valueReference: ValueReference,
-	): void {
-		switch (baseTag) {
-			case ValueTag.Table:
-				baseTable!.store(
-					keyTag,
-					keyScalar,
-					keyReference,
-					valueTag,
-					valueScalar,
-					valueReference,
-				);
-				return;
-			default:
-				throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-		}
+	private storeTableIndex(base: Value, key: Value, value: Value): void {
+		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
+		asTable(base, this.gc).set(key, value);
 	}
-
-	private storeTableIntegerIndex(
-		baseTag: ValueTag,
-		baseTable: Table | null,
-		index: number,
-		valueTag: ValueTag,
-		valueScalar: number,
-		valueReference: ValueReference,
-	): void {
-		switch (baseTag) {
-			case ValueTag.Table:
-				baseTable!.storeInteger(index, valueTag, valueScalar, valueReference);
-				return;
-			default:
-				throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-		}
+	private storeTableIntegerIndex(base: Value, index: number, value: Value): void {
+		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
+		asTable(base, this.gc).setInteger(index, value);
 	}
-
-	private storeTableFieldIndexCached(
-		page: DecodedInstructionPage,
-		pageOffset: number,
-		baseTag: ValueTag,
-		baseTable: Table | null,
-		key: StringId,
-		valueTag: ValueTag,
-		valueScalar: number,
-		valueReference: ValueReference,
-	): void {
-		switch (baseTag) {
-			case ValueTag.Table:
-				page.tableCacheSlots[pageOffset] = baseTable!.storeStringKeyCached(
-					key,
-					page.tableCacheSlots[pageOffset],
-					valueTag,
-					valueScalar,
-					valueReference,
-				);
-				return;
-			default:
-				throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-		}
+	private storeTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId, value: Value): void {
+		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
+		page.tableCacheSlots[pageOffset] = asTable(base, this.gc).storeStringKeyCached(key, page.tableCacheSlots[pageOffset], valueTag(value), valuePayload(value));
 	}
 
 	private clearCallStack(): void {
@@ -789,9 +673,7 @@ export class CPU implements MappedPageInvalidator {
 			const primitive = LUA_BOOT_PRIMITIVES[index];
 			this.setSystemGlobalByKey(
 				this.stringPool.intern(primitive.name),
-				ValueTag.BuiltinFunction,
-				primitive.id,
-				null,
+				valueBuiltinFunction(primitive.id),
 			);
 		}
 	}
@@ -829,7 +711,7 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		tableAddress: number,
 		constTags: Uint8Array,
-		constScalars: Float64Array,
+		constWords: Uint32Array,
 	): void {
 		if (constTags.length === 0) {
 			return;
@@ -842,12 +724,6 @@ export class CPU implements MappedPageInvalidator {
 		);
 		const bytes = this.executionTableView.bytes;
 		const byteOffset = this.executionTableView.byteOffset;
-		const numberView = new DataView(
-			bytes.buffer,
-			bytes.byteOffset + byteOffset,
-			this.executionTableView.byteLength,
-		);
-		constScalars.fill(NaN);
 		for (let index = 0; index < constTags.length; index += 1) {
 			const recordOffset = index * BLUA32_CONSTANT_RECORD_SIZE;
 			const recordByteOffset = byteOffset + recordOffset;
@@ -861,16 +737,15 @@ export class CPU implements MappedPageInvalidator {
 				case Blua32ConstantTag.True:
 					constTags[index] = ValueTag.True;
 					break;
-				case Blua32ConstantTag.Number:
-					constTags[index] = ValueTag.Number;
-					constScalars[index] = valueFromNumber(numberView.getFloat64(
-						recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET,
-						true,
-					));
-					break;
+				case Blua32ConstantTag.Integer:
+					constTags[index] = ValueTag.Integer;
+					constWords[index] = readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET); break;
+				case Blua32ConstantTag.Float:
+					constTags[index] = ValueTag.Float;
+					constWords[index] = readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET); break;
 				case Blua32ConstantTag.String:
 					constTags[index] = ValueTag.String;
-					constScalars[index] = this.internExecutionString(
+					constWords[index] = this.internExecutionString(
 						executionDomainId,
 						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET),
 						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET),
@@ -957,13 +832,14 @@ export class CPU implements MappedPageInvalidator {
 			headerBytes,
 			headerByteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 		);
-		const constTags = new Uint8Array(constantCount);
-		const constScalars = new Float64Array(constantCount);
+		const constStorage = new ValueStorage(constantCount);
+		const constTags = constStorage.tags;
+		const constWords = constStorage.words;
 		this.decodeConstantPool(
 			executionDomainId,
 			constantTableAddress,
 			constTags,
-			constScalars,
+			constWords,
 		);
 		const globalSlots = this.registerGlobalNames(
 			executionDomainId,
@@ -981,7 +857,7 @@ export class CPU implements MappedPageInvalidator {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
 			constTags,
-			constScalars,
+			constWords,
 			globalSlots,
 			systemGlobalSlots,
 			decodedPages: new Map(),
@@ -1476,7 +1352,7 @@ export class CPU implements MappedPageInvalidator {
 		this.hardHalted = false;
 		this.yieldRequested = false;
 		const closure = this.staticClosureFromLatch();
-		this.pushLatchedFrame(closure, EMPTY_CALL_ARGS, 0, 0, false);
+		this.pushFrame(closure, EMPTY_CALL_ARGS, 0, 0, false);
 	}
 
 	public beginCompletionCall(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
@@ -1484,7 +1360,7 @@ export class CPU implements MappedPageInvalidator {
 		// frame retains its PC; an unaccepted endpoint access must not follow it.
 		this.abortStalledMemoryWrite();
 		const roots = this.acquireLocalRoots();
-		this.localRoots.push(closure);
+		this.localRoots.push(valueClosure(this.gc.reference(closure)));
 		for (const arg of args) this.localRoots.push(arg);
 		try {
 			this.clearCompletionValues();
@@ -1677,20 +1553,10 @@ export class CPU implements MappedPageInvalidator {
 		this.enterException(this.systemImage, this.systemExceptionFunctionAddress, causeWord, pc);
 	}
 
-	private enterLuaFaultException(
-		reason: number,
-		errorTag: ValueTag,
-		errorScalar: number,
-		errorReference: ValueReference,
-	): void {
+	private enterLuaFaultException(reason: number, error: Value): void {
 		this.cop0Words[COP0_LUA_FAULT_REASON] = reason;
 		this.enterSynchronousException(this.activeThread.currentFrame!, CPU_CAUSE_CODE_TRAP);
-		this.activeThread.currentFrame!.registers.setEncoded(
-			0,
-			errorTag,
-			errorScalar,
-			errorReference,
-		);
+		this.activeThread.currentFrame!.registers.set(0, error);
 	}
 
 	private returnFromException(frame: CallFrame): void {
@@ -1918,32 +1784,14 @@ export class CPU implements MappedPageInvalidator {
 
 	private handleRunLoopError(error: unknown): void {
 		if (error === LUA_OUT_OF_MEMORY_SIGNAL) {
-			const errorStringId = this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY];
-			if (!this.handleThreadError(ValueTag.String, errorStringId, null)) {
-				this.enterLuaFaultException(
-					LUA_FAULT_REASON_OUT_OF_MEMORY,
-					ValueTag.String,
-					errorStringId,
-					null,
-				);
-			}
+			const value = valueString(this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY]);
+			if (!this.handleThreadError(value)) this.enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);
 		} else if (error instanceof LuaThrownValueError) {
-			if (!this.handleThreadError(error.tag, error.scalar, error.reference)) {
-				this.enterLuaFaultException(
-					LUA_FAULT_REASON_EXPLICIT_ERROR,
-					error.tag,
-					error.scalar,
-					error.reference,
-				);
-			}
+			if (!this.handleThreadError(error.value)) this.enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
 		} else if (error instanceof LuaExecutionError) {
-			const errorStringId = this.luaFaultErrorStringIds[error.reason];
-			if (!this.handleThreadError(ValueTag.String, errorStringId, null)) {
-				this.enterLuaFaultException(error.reason, ValueTag.String, errorStringId, null);
-			}
-		} else {
-			throw error;
-		}
+			const value = valueString(this.luaFaultErrorStringIds[error.reason]);
+			if (!this.handleThreadError(value)) this.enterLuaFaultException(error.reason, value);
+		} else throw error;
 	}
 
 	private unwindToDepth(targetDepth: number, chargeCaptures: boolean): void {
@@ -2061,12 +1909,9 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	/** Read a retained closure without calling it or requiring an active frame. */
-	public readClosureUpvalue(closure: Closure, upvalueIndex: number): Value {
-		const upvalue = closure.upvalues[upvalueIndex];
-		if (upvalue.open) {
-			return upvalue.frame!.registers.get(upvalue.index);
-		}
-		return materializeValue(upvalue.valueTag, upvalue.valueScalar, upvalue.valueReference);
+	public readClosureUpvalue(closure: Closure, index: number): Value {
+		const upvalue = this.gc.object(closure.upvalues[index]) as Upvalue;
+		return upvalue.open ? upvalue.frame!.registers.get(upvalue.index) : upvalue.value;
 	}
 
 	public readEpcWord(): number {
@@ -2127,10 +1972,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public setGlobalByKey(
-		key: StringId,
-		tag: ValueTag,
-		scalar: number,
-		reference: ValueReference,
+		key: StringId, value: Value,
 	): void {
 		let slot = this.globalSlotByKey.get(key);
 		if (slot === undefined) {
@@ -2139,20 +1981,17 @@ export class CPU implements MappedPageInvalidator {
 			this.globalSlotByKey.set(key, slot);
 			this.globalNames.push(key);
 		}
-		this.globalSlots.setEncoded(slot, tag, scalar, reference);
+		this.globalSlots.set(slot, value);
 	}
 
 	public setSystemGlobalByKey(
-		key: StringId,
-		tag: ValueTag,
-		scalar: number,
-		reference: ValueReference,
+		key: StringId, value: Value,
 	): void {
 		const slot = this.systemGlobalSlotByKey.get(key);
 		if (slot === undefined) {
 			throw new Error(`System global '${this.stringPool.toString(key)}' has no register slot.`);
 		}
-		this.systemGlobalSlots.setEncoded(slot, tag, scalar, reference);
+		this.systemGlobalSlots.set(slot, value);
 	}
 
 	public getSystemGlobalByKey(key: StringId): Value {
@@ -2174,7 +2013,7 @@ export class CPU implements MappedPageInvalidator {
 
 	public getGlobalByKey(key: StringId): Value {
 		const globalSlot = this.globalSlotByKey.get(key);
-		return globalSlot === undefined ? null : this.globalSlots.get(globalSlot);
+		return globalSlot === undefined ? valueNil() : this.globalSlots.get(globalSlot);
 	}
 
 	private executeFusedNumericPair(
@@ -2188,26 +2027,11 @@ export class CPU implements MappedPageInvalidator {
 		const a = page.a[pageOffset];
 		const rkB = page.b[pageOffset];
 		const rkC = page.c[pageOffset];
-		const leftConstantIndex = -1 - rkB;
-		const left = rkB < 0
-			? image.constTags[leftConstantIndex] === ValueTag.Number
-				? image.constScalars[leftConstantIndex] : NaN
-			: registers.getNumber(rkB);
-		const rightConstantIndex = -1 - rkC;
-		const right = rkC < 0
-			? image.constTags[rightConstantIndex] === ValueTag.Number
-				? image.constScalars[rightConstantIndex] : NaN
-			: registers.getNumber(rkC);
+		const left = this.readRKValue(frame, rkB), right = this.readRKValue(frame, rkC);
 		const isAddShl = op === DecodedDispatchOp.FusedAddShl;
-		let firstResult: number;
-		if (isAddShl) {
-			firstResult = left + right;
-		} else if (op === DecodedDispatchOp.FusedShlBxor) {
-			firstResult = left << (right & 31);
-		} else {
-			firstResult = left >> (right & 31);
-		}
-		this.setRegisterNumberFast(frame, registers, a, firstResult);
+		const firstResult = isAddShl ? valueAdd(left, right) : valueInteger(op === DecodedDispatchOp.FusedShlBxor
+			? luaShiftLeft(integerOperand(left), integerOperand(right)) : luaShiftRight(integerOperand(left), integerOperand(right)));
+		this.setRegisterValueFast(frame, registers, a, firstResult);
 		if (this.instructionBudgetRemaining <= 0) {
 			return;
 		}
@@ -2235,78 +2059,34 @@ export class CPU implements MappedPageInvalidator {
 		];
 		const secondRkB = secondPage.b[secondPageOffset];
 		const secondRkC = secondPage.c[secondPageOffset];
-		const secondLeftConstantIndex = -1 - secondRkB;
-		const secondLeft = secondRkB < 0
-			? image.constTags[secondLeftConstantIndex] === ValueTag.Number
-				? image.constScalars[secondLeftConstantIndex] : NaN
-			: registers.getNumber(secondRkB);
-		const secondRightConstantIndex = -1 - secondRkC;
-		const secondRight = secondRkC < 0
-			? image.constTags[secondRightConstantIndex] === ValueTag.Number
-				? image.constScalars[secondRightConstantIndex] : NaN
-			: registers.getNumber(secondRkC);
-		const secondResult = isAddShl
-			? secondLeft << (secondRight & 31)
-			: secondLeft ^ secondRight;
-		this.setRegisterNumberFast(
-			frame,
-			registers,
-			secondPage.a[secondPageOffset],
-			secondResult,
-		);
+		const secondLeft = integerOperand(this.readRKValue(frame, secondRkB));
+		const secondRight = integerOperand(this.readRKValue(frame, secondRkC));
+		const secondResult = isAddShl ? luaShiftLeft(secondLeft, secondRight) : secondLeft ^ secondRight;
+		this.setRegisterIntegerFast(frame, registers, secondPage.a[secondPageOffset], secondResult);
 	}
 
 	private executeConcat(frame: CallFrame, a: number, rkB: number, rkC: number): void {
-		const registers = frame.registers, image = frame.executionImage;
-		let leftTag: ValueTag;
-		let leftScalar: number;
-		if (rkB < 0) {
-			const constantIndex = -1 - rkB;
-			leftTag = image.constTags[constantIndex];
-			leftScalar = image.constScalars[constantIndex];
-		} else {
-			leftTag = registers.getTag(rkB);
-			leftScalar = registers.getScalar(rkB);
-		}
-		let rightTag: ValueTag;
-		let rightScalar: number;
-		if (rkC < 0) {
-			const constantIndex = -1 - rkC;
-			rightTag = image.constTags[constantIndex];
-			rightScalar = image.constScalars[constantIndex];
-		} else {
-			rightTag = registers.getTag(rkC);
-			rightScalar = registers.getScalar(rkC);
-		}
-		const leftText = storedValueToString(leftTag, leftScalar, this.stringPool);
-		const rightText = storedValueToString(rightTag, rightScalar, this.stringPool);
-		const text = leftText + rightText;
-		this.charge((leftTag === ValueTag.String ? this.stringPool.codepointCount(leftScalar as StringId) : leftText.length)
-			+ (rightTag === ValueTag.String ? this.stringPool.codepointCount(rightScalar as StringId) : rightText.length));
-		const handle = this.stringPool.intern(text);
-		this.setRegisterStringFast(frame, registers, a, handle);
+		const left = this.readRKValue(frame, rkB), right = this.readRKValue(frame, rkC);
+		const l = valueToString(left, this.stringPool), r = valueToString(right, this.stringPool);
+		const count = (valueTag(left) === ValueTag.String ? this.stringPool.codepointCount(valuePayload(left)) : l.length)
+			+ (valueTag(right) === ValueTag.String ? this.stringPool.codepointCount(valuePayload(right)) : r.length);
+		this.charge(count);
+		this.setRegisterStringFast(frame, frame.registers, a, this.stringPool.intern(l + r));
 	}
-
 	private executeConcatRange(frame: CallFrame, a: number, b: number, c: number): void {
-		const registers = frame.registers;
-		let text = '';
-		let codepoints = 0;
-		for (let index = 0; index < c; index += 1) {
-			const registerIndex = b + index;
-			const tag = registers.getTag(registerIndex), scalar = registers.getScalar(registerIndex);
-			const part = storedValueToString(tag, scalar, this.stringPool);
-			text += part;
-			codepoints += tag === ValueTag.String ? this.stringPool.codepointCount(scalar as StringId) : part.length;
+		let text = '', codepoints = 0;
+		for (let i = 0; i < c; ++i) {
+			const value = frame.registers.get(b + i), part = valueToString(value, this.stringPool);
+			text += part; codepoints += valueTag(value) === ValueTag.String ? this.stringPool.codepointCount(valuePayload(value)) : part.length;
 		}
 		this.charge(c + codepoints);
-		const handle = this.stringPool.intern(text);
-		this.setRegisterStringFast(frame, registers, a, handle);
+		this.setRegisterStringFast(frame, frame.registers, a, this.stringPool.intern(text));
 	}
 
 	private executeClosure(frame: CallFrame, a: number, bx: number, c: number): void {
 		const registers = frame.registers;
 		const functionAddress = (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0
-			? registers.getNumber(bx) >>> 0
+			? wordOperand(registers.get(bx))
 			: bx * BLUA32_FUNCTION_ALIGNMENT;
 		if (!this.readFunctionRecordOnBus(
 			this.activeExecutionImage,
@@ -2334,7 +2114,7 @@ export class CPU implements MappedPageInvalidator {
 			case ValueTag.Closure: {
 				const pushed = this.pushFrameFromCaller(
 					frame,
-					registers.getClosure(a),
+					registers.getClosure(a, this.gc),
 					a + 1,
 					argCount,
 					a,
@@ -2399,28 +2179,30 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private executeMemoryLoad(frame: CallFrame, destination: number, kind: MemoryAccessKind, address: number): void {
+		if (kind === MemoryAccessKind.F64LE) this.instructionBudgetRemaining -= 2;
 		if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
 			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, address);
 			return;
 		}
 		const faultSequence = this.memory.readBusFaultSequence();
-		let value: number;
+		let value: Value;
 		switch (kind) {
-			case MemoryAccessKind.Word: value = this.memory.readMappedWord(address); break;
-			case MemoryAccessKind.U8: value = this.memory.readMappedU8(address); break;
-			case MemoryAccessKind.U16LE: value = this.memory.readMappedU16LE(address); break;
-			case MemoryAccessKind.U32LE: value = this.memory.readMappedU32LE(address); break;
-			case MemoryAccessKind.F32LE: value = this.memory.readMappedF32LE(address); break;
-			case MemoryAccessKind.F64LE: value = this.memory.readMappedF64LE(address); break;
+			case MemoryAccessKind.Word: value = valueInteger(this.memory.readMappedWord(address) | 0); break;
+			case MemoryAccessKind.U8: value = valueInteger(this.memory.readMappedU8(address)); break;
+			case MemoryAccessKind.U16LE: value = valueInteger(this.memory.readMappedU16LE(address)); break;
+			case MemoryAccessKind.U32LE: value = valueInteger(this.memory.readMappedU32LE(address) | 0); break;
+			case MemoryAccessKind.F32LE: value = valueFloatBits(this.memory.readMappedU32LE(address)); break;
+			case MemoryAccessKind.F64LE: value = valueFloat(this.memory.readMappedF64LE(address)); break;
 		}
 		if (this.memory.readBusFaultSequence() !== faultSequence) {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 			return;
 		}
-		this.setRegisterNumberFast(frame, frame.registers, destination, value);
+		this.setRegisterValueFast(frame, frame.registers, destination, value);
 	}
 
 	private executeMemoryStore(frame: CallFrame, source: number, kind: MemoryAccessKind, address: number): void {
+		if (kind === MemoryAccessKind.F64LE) this.instructionBudgetRemaining -= 2;
 		if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
 			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, address);
 			return;
@@ -2441,15 +2223,19 @@ export class CPU implements MappedPageInvalidator {
 			this.blockMappedWrite(frame, address);
 			return;
 		}
-		const value = frame.registers.getNumber(source);
+		const value = frame.registers.get(source);
 		const faultSequence = this.memory.readBusFaultSequence();
 		switch (kind) {
-			case MemoryAccessKind.Word: this.memory.writeMappedWord(address, value >>> 0); break;
-			case MemoryAccessKind.U8: this.memory.writeMappedU8(address, value); break;
-			case MemoryAccessKind.U16LE: this.memory.writeMappedU16LE(address, value); break;
-			case MemoryAccessKind.U32LE: this.memory.writeMappedU32LE(address, value); break;
-			case MemoryAccessKind.F32LE: this.memory.writeMappedF32LE(address, value); break;
-			case MemoryAccessKind.F64LE: this.memory.writeMappedF64LE(address, value); break;
+			case MemoryAccessKind.Word: this.memory.writeMappedWord(address, wordOperand(value)); break;
+			case MemoryAccessKind.U8: this.memory.writeMappedU8(address, wordOperand(value)); break;
+			case MemoryAccessKind.U16LE: this.memory.writeMappedU16LE(address, wordOperand(value)); break;
+			case MemoryAccessKind.U32LE: this.memory.writeMappedU32LE(address, wordOperand(value)); break;
+			case MemoryAccessKind.F32LE:
+				if (!valueIsNumber(value)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				this.memory.writeMappedU32LE(address, valueIsFloat(value) ? valuePayload(value) : numberToF32Bits(asInteger(value))); break;
+			case MemoryAccessKind.F64LE:
+				if (!valueIsNumber(value)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				this.memory.writeMappedF64LE(address, valueIsInteger(value) ? asInteger(value) : asFloat(value)); break;
 		}
 		if (this.memory.readBusFaultSequence() !== faultSequence) {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
@@ -2482,7 +2268,7 @@ export class CPU implements MappedPageInvalidator {
 		const faultSequence = this.memory.readBusFaultSequence();
 		let writeAddr = addr;
 		for (let offset = 0; offset < valueCount; offset += 1) {
-			this.memory.writeMappedWord(writeAddr, frame.registers.getNumber(valueBase + offset) >>> 0);
+			this.memory.writeMappedWord(writeAddr, wordOperand(frame.registers.get(valueBase + offset)));
 			if (this.memory.readBusFaultSequence() !== faultSequence) {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 				return;
@@ -2600,7 +2386,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		for (const region of merged) this.compiledCodeCache.retireRegion(page, region);
 		const region = compileJavaScriptRegion(page, plans, frame.executionImage, this.memory, this.stringPool,
-			this.globalSlots, this.systemGlobalSlots, this.cop0Words);
+			this.globalSlots, this.systemGlobalSlots, this.cop0Words, this.gc);
 		this.compiledCodeCache.install(page, region);
 		for (const block of region.entries) {
 			page.dispatchCycles[block.firstWord] = BASE_CYCLES[page.ops[block.firstWord]];
@@ -2647,7 +2433,7 @@ export class CPU implements MappedPageInvalidator {
 			for (;;) {
 				const run = this.compiledRunState;
 				run.remainingCycles = remaining; run.registerTop = registerTop;
-				exit = current.region.exits[current.region.execute(registers, image.constScalars, page, frame, current.entry, run)];
+				exit = current.region.exits[current.region.execute(registers, image.constWords, page, frame, current.entry, run)];
 				remaining = run.remainingCycles; registerTop = run.registerTop;
 				if (exit.exit !== CompiledBlockExit.Continue) break;
 				const target = exit.linkedBlock;
@@ -2673,7 +2459,7 @@ export class CPU implements MappedPageInvalidator {
 					redispatch = true; break;
 				case CompiledBlockExit.ControlBoundary: redispatch = true; break;
 				case CompiledBlockExit.ExecuteFunction:
-					this.executeFunctionAddress(registers.getNumber(exit.exitA) >>> 0); redispatch = true; break;
+					this.executeFunctionAddress(wordOperand(registers.get(exit.exitA))); redispatch = true; break;
 				case CompiledBlockExit.ExceptionReturn: this.returnFromException(frame); redispatch = true; break;
 				case CompiledBlockExit.CreateClosure:
 					this.executeClosure(frame, exit.exitA, exit.exitBx, exit.exitC); redispatch = true; break;
@@ -2690,7 +2476,8 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.SkipInstruction: this.skipNextInstruction(frame); redispatch = true; break;
 				case CompiledBlockExit.Vararg: this.executeVararg(frame, exit.exitA, exit.exitB); break;
 				case CompiledBlockExit.WriteUpvalue:
-					this.copyRegisterToUpvalue(frame.closure.upvalues[exit.exitB], registers, exit.exitA); break;
+					this.copyRegisterToUpvalue(this.gc.object(frame.closure.upvalues[exit.exitB]) as Upvalue, registers, exit.exitA); break;
+				case CompiledBlockExit.InvalidOperand:
 				case CompiledBlockExit.InvalidConstant: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				case CompiledBlockExit.InvalidLength: throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 				case CompiledBlockExit.AllocateTable: {
@@ -2711,21 +2498,13 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.ReadField:
 				case CompiledBlockExit.ReadInteger:
 				case CompiledBlockExit.ReadIndex: {
-					const tag = registers.getTag(exit.exitB), table = registers.getTable(exit.exitB);
+					const base = registers.get(exit.exitB);
 					if (exit.exit === CompiledBlockExit.ReadField) {
-						this.loadTableFieldIndexCached(page, exit.exitWord, tag, table,
-							image.constScalars[exit.exitC] as StringId, registers, exit.exitA);
+						this.loadTableFieldIndexCached(base, page, exit.exitWord, image.constWords[exit.exitC], registers, exit.exitA);
 					} else if (exit.exit === CompiledBlockExit.ReadInteger) {
-						this.loadTableIntegerIndex(tag, table, exit.exitC, registers, exit.exitA);
+						this.loadTableIntegerIndex(base, exit.exitC, registers, exit.exitA);
 					} else {
-						const c = exit.exitC, index = -c - 1;
-						const keyTag = c < 0 ? image.constTags[index] : registers.getTag(c);
-						const keyScalar = c < 0 ? image.constScalars[index] : registers.getScalar(c);
-						if (keyTag === ValueTag.String) {
-							this.loadTableFieldIndexCached(page, exit.exitWord, tag, table, keyScalar as StringId, registers, exit.exitA);
-						} else {
-							this.loadTableIndex(tag, table, keyTag, keyScalar, c < 0 ? null : registers.getReference(c), registers, exit.exitA);
-						}
+						this.loadTableIndex(base, this.readRKValue(frame, exit.exitC), registers, exit.exitA);
 					}
 					this.bumpRegisterTop(frame, exit.exitA);
 					break;
@@ -2733,26 +2512,13 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.WriteField:
 				case CompiledBlockExit.WriteInteger:
 				case CompiledBlockExit.WriteIndex: {
-					const c = exit.exitC;
-					const index = -c - 1;
-					const tag = registers.getTag(exit.exitA), table = registers.getTable(exit.exitA);
-					const valueTag = c < 0 ? image.constTags[index] : registers.getTag(c);
-					const valueScalar = c < 0 ? image.constScalars[index] : registers.getScalar(c);
-					const valueReference = c < 0 ? null : registers.getReference(c);
+					const base = registers.get(exit.exitA), value = this.readRKValue(frame, exit.exitC);
 					if (exit.exit === CompiledBlockExit.WriteField) {
-						this.storeTableFieldIndexCached(page, exit.exitWord, tag, table,
-							image.constScalars[exit.exitB] as StringId, valueTag, valueScalar, valueReference);
+						this.storeTableFieldIndexCached(base, page, exit.exitWord, image.constWords[exit.exitB], value);
 					} else if (exit.exit === CompiledBlockExit.WriteInteger) {
-						this.storeTableIntegerIndex(tag, table, exit.exitB, valueTag, valueScalar, valueReference);
+						this.storeTableIntegerIndex(base, exit.exitB, value);
 					} else {
-						const b = exit.exitB, keyIndex = -b - 1;
-						const keyTag = b < 0 ? image.constTags[keyIndex] : registers.getTag(b);
-						const keyScalar = b < 0 ? image.constScalars[keyIndex] : registers.getScalar(b);
-						if (keyTag === ValueTag.String) {
-							this.storeTableFieldIndexCached(page, exit.exitWord, tag, table, keyScalar as StringId, valueTag, valueScalar, valueReference);
-						} else {
-							this.storeTableIndex(tag, table, keyTag, keyScalar, b < 0 ? null : registers.getReference(b), valueTag, valueScalar, valueReference);
-						}
+						this.storeTableIndex(base, this.readRKValue(frame, exit.exitB), value);
 					}
 					break;
 				}
@@ -2849,16 +2615,16 @@ export class CPU implements MappedPageInvalidator {
 					this.setRegisterBoolFast(frame, registers, a, true);
 					return;
 				case OpCode.K0:
-					this.setRegisterNumberFast(frame, registers, a, 0);
+					this.setRegisterIntegerFast(frame, registers, a, 0);
 					return;
 				case OpCode.K1:
-					this.setRegisterNumberFast(frame, registers, a, 1);
+					this.setRegisterIntegerFast(frame, registers, a, 1);
 					return;
 				case OpCode.KM1:
-					this.setRegisterNumberFast(frame, registers, a, -1);
+					this.setRegisterIntegerFast(frame, registers, a, -1);
 					return;
 				case OpCode.KSMI:
-					this.setRegisterNumberFast(frame, registers, a, page.sbx[pageOffset]);
+					this.setRegisterIntegerFast(frame, registers, a, page.sbx[pageOffset]);
 					return;
 				case OpCode.LOADNIL: {
 					const b = page.b[pageOffset];
@@ -2882,189 +2648,33 @@ export class CPU implements MappedPageInvalidator {
 					this.globalSlots.copySlotFrom(registers, page.bx[pageOffset], a);
 					return;
 				case OpCode.GETI: {
-					const b = page.b[pageOffset];
-					const baseTag = registers.getTag(b);
-					const table = registers.getTable(b);
-					if (baseTag === ValueTag.Table
-						&& table.loadIntegerArrayKey(page.c[pageOffset], registers, a)) {
-						this.bumpRegisterTop(frame, a);
-						return;
-					}
-					this.loadTableIntegerIndex(
-						baseTag,
-						table,
-						page.c[pageOffset],
-						registers,
-						a,
-					);
-					this.bumpRegisterTop(frame, a);
-					return;
+					const base = registers.get(page.b[pageOffset]), index = page.c[pageOffset];
+					if (valueTag(base) !== ValueTag.Table || !asTable(base, this.gc).loadIntegerArrayKey(index, registers, a))
+						this.loadTableIntegerIndex(base, index, registers, a);
+					this.bumpRegisterTop(frame, a); return;
 				}
 				case OpCode.SETI: {
-					const b = page.b[pageOffset];
-					const baseTag = registers.getTag(a);
-					const table = registers.getTable(a);
-					const rkC = page.c[pageOffset];
-					let valueTag: ValueTag;
-					let valueScalar: number;
-					let valueReference: ValueReference;
-					if (rkC < 0) {
-						const constantIndex = -1 - rkC;
-						valueTag = image.constTags[constantIndex];
-						valueScalar = image.constScalars[constantIndex];
-						valueReference = null;
-					} else {
-						valueTag = registers.getTag(rkC);
-						valueScalar = registers.getScalar(rkC);
-						valueReference = registers.getReference(rkC);
-					}
-					if (baseTag === ValueTag.Table
-						&& table.storeIntegerArrayKey(b, valueTag, valueScalar, valueReference)) {
-						return;
-					}
-					this.storeTableIntegerIndex(
-						baseTag,
-						table,
-						b,
-						valueTag,
-						valueScalar,
-						valueReference,
-					);
+					const base = registers.get(a), index = page.b[pageOffset], value = this.readRKValue(frame, page.c[pageOffset]);
+					if (valueTag(base) !== ValueTag.Table || !asTable(base, this.gc).storeIntegerArrayKey(index, valueTag(value), valuePayload(value)))
+						this.storeTableIntegerIndex(base, index, value);
 					return;
 				}
-				case OpCode.GETFIELD: {
-					const b = page.b[pageOffset];
-					this.loadTableFieldIndexCached(
-						page,
-						pageOffset,
-						registers.getTag(b),
-						registers.getTable(b),
-						image.constScalars[page.c[pageOffset]] as StringId,
-						registers,
-						a,
-					);
-					this.bumpRegisterTop(frame, a);
-					return;
-				}
-				case OpCode.SETFIELD: {
-					const b = page.b[pageOffset];
-					const rkC = page.c[pageOffset];
-					let valueTag: ValueTag;
-					let valueScalar: number;
-					let valueReference: ValueReference;
-					if (rkC < 0) {
-						const constantIndex = -1 - rkC;
-						valueTag = image.constTags[constantIndex];
-						valueScalar = image.constScalars[constantIndex];
-						valueReference = null;
-					} else {
-						valueTag = registers.getTag(rkC);
-						valueScalar = registers.getScalar(rkC);
-						valueReference = registers.getReference(rkC);
-					}
-					this.storeTableFieldIndexCached(
-						page,
-						pageOffset,
-						registers.getTag(a),
-						registers.getTable(a),
-						image.constScalars[b] as StringId,
-						valueTag,
-						valueScalar,
-						valueReference,
-					);
-					return;
-				}
+				case OpCode.GETFIELD:
+					this.loadTableFieldIndexCached(registers.get(page.b[pageOffset]), page, pageOffset, image.constWords[page.c[pageOffset]], registers, a);
+					this.bumpRegisterTop(frame, a); return;
+				case OpCode.SETFIELD:
+					this.storeTableFieldIndexCached(registers.get(a), page, pageOffset, image.constWords[page.b[pageOffset]], this.readRKValue(frame, page.c[pageOffset])); return;
 				case OpCode.SELF: {
-					const b = page.b[pageOffset];
-					const baseTag = registers.getTag(b);
-					const baseTable = registers.getTable(b);
-					const key = image.constScalars[page.c[pageOffset]] as StringId;
-					registers.copySlot(a + 1, b);
-					this.bumpRegisterTop(frame, a + 1);
-					this.loadTableFieldIndexCached(
-						page,
-						pageOffset,
-						baseTag,
-						baseTable,
-						key,
-						registers,
-						a,
-					);
-					this.bumpRegisterTop(frame, a);
-					return;
+					const b = page.b[pageOffset], base = registers.get(b), key = image.constWords[page.c[pageOffset]];
+					registers.copySlot(a + 1, b); this.bumpRegisterTop(frame, a + 1);
+					this.loadTableFieldIndexCached(base, page, pageOffset, key, registers, a); this.bumpRegisterTop(frame, a); return;
 				}
-		case OpCode.HALT:
-			this.haltUntilIrq();
-			return;
-				case OpCode.GETT: {
-					const b = page.b[pageOffset];
-					const rkC = page.c[pageOffset];
-					let keyTag: ValueTag;
-					let keyScalar: number;
-					let keyReference: ValueReference;
-					if (rkC < 0) {
-						const constantIndex = -1 - rkC;
-						keyTag = image.constTags[constantIndex];
-						keyScalar = image.constScalars[constantIndex];
-						keyReference = null;
-					} else {
-						keyTag = registers.getTag(rkC);
-						keyScalar = registers.getScalar(rkC);
-						keyReference = registers.getReference(rkC);
-					}
-					this.loadTableIndex(
-						registers.getTag(b),
-						registers.getTable(b),
-						keyTag,
-						keyScalar,
-						keyReference,
-						registers,
-						a,
-					);
-					this.bumpRegisterTop(frame, a);
-					return;
-				}
-				case OpCode.SETT: {
-					const rkB = page.b[pageOffset];
-					const rkC = page.c[pageOffset];
-					let keyTag: ValueTag;
-					let keyScalar: number;
-					let keyReference: ValueReference;
-					if (rkB < 0) {
-						const constantIndex = -1 - rkB;
-						keyTag = image.constTags[constantIndex];
-						keyScalar = image.constScalars[constantIndex];
-						keyReference = null;
-					} else {
-						keyTag = registers.getTag(rkB);
-						keyScalar = registers.getScalar(rkB);
-						keyReference = registers.getReference(rkB);
-					}
-					let valueTag: ValueTag;
-					let valueScalar: number;
-					let valueReference: ValueReference;
-					if (rkC < 0) {
-						const constantIndex = -1 - rkC;
-						valueTag = image.constTags[constantIndex];
-						valueScalar = image.constScalars[constantIndex];
-						valueReference = null;
-					} else {
-						valueTag = registers.getTag(rkC);
-						valueScalar = registers.getScalar(rkC);
-						valueReference = registers.getReference(rkC);
-					}
-					this.storeTableIndex(
-						registers.getTag(a),
-						registers.getTable(a),
-						keyTag,
-						keyScalar,
-						keyReference,
-						valueTag,
-						valueScalar,
-						valueReference,
-					);
-					return;
-				}
+				case OpCode.HALT: this.haltUntilIrq(); return;
+				case OpCode.GETT:
+					this.loadTableIndex(registers.get(page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]), registers, a);
+					this.bumpRegisterTop(frame, a); return;
+				case OpCode.SETT:
+					this.storeTableIndex(registers.get(a), this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset])); return;
 				case OpCode.NEWT: {
 					const arraySize = page.b[pageOffset];
 					const table = this.createTable(arraySize, page.c[pageOffset]);
@@ -3073,68 +2683,45 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.ADD:
+					this.setRegisterValueFast(frame, registers, a, valueAdd(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
 				case OpCode.SUB:
+					this.setRegisterValueFast(frame, registers, a, valueSubtract(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
 				case OpCode.MUL:
+					this.setRegisterValueFast(frame, registers, a, valueMultiply(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
 				case OpCode.DIV:
+					this.setRegisterValueFast(frame, registers, a, valueDivide(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
 				case OpCode.MOD:
+					this.setRegisterValueFast(frame, registers, a, valueModulo(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
 				case OpCode.FLOORDIV:
+					this.setRegisterValueFast(frame, registers, a, valueFloorDivide(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
 				case OpCode.POW:
-				case OpCode.BAND:
-				case OpCode.BOR:
-				case OpCode.BXOR:
-				case OpCode.SHL:
-				case OpCode.SHR:
-				{
-					const rkB = page.b[pageOffset];
-					const rkC = page.c[pageOffset];
-					const left = this.readRKNumber(frame, rkB);
-					const right = this.readRKNumber(frame, rkC);
-					switch (op) {
-						case OpCode.ADD:
-							this.setRegisterNumberFast(frame, registers, a, left + right);
-							return;
-						case OpCode.SUB:
-							this.setRegisterNumberFast(frame, registers, a, left - right);
-							return;
-						case OpCode.MUL:
-							this.setRegisterNumberFast(frame, registers, a, left * right);
-							return;
-						case OpCode.DIV:
-							this.setRegisterNumberFast(frame, registers, a, left / right);
-							return;
-						case OpCode.MOD:
-							this.setRegisterNumberFast(frame, registers, a, luaModulo(left, right));
-							return;
-						case OpCode.FLOORDIV:
-							this.setRegisterNumberFast(frame, registers, a, luaFloorDivide(left, right));
-							return;
-						case OpCode.POW:
-							this.setRegisterNumberFast(frame, registers, a, luaPow(left, right));
-							return;
-						case OpCode.BAND:
-							this.setRegisterNumberFast(frame, registers, a, left & right);
-							return;
-						case OpCode.BOR:
-							this.setRegisterNumberFast(frame, registers, a, left | right);
-							return;
-						case OpCode.BXOR:
-							this.setRegisterNumberFast(frame, registers, a, left ^ right);
-							return;
-						case OpCode.SHL:
-							this.setRegisterNumberFast(frame, registers, a, left << (right & 31));
-							return;
-						case OpCode.SHR:
-							this.setRegisterNumberFast(frame, registers, a, left >> (right & 31));
-							return;
-					}
+					this.setRegisterValueFast(frame, registers, a, valuePower(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
+				case OpCode.BAND: {
+					const left = integerOperand(this.readRKValue(frame, page.b[pageOffset])), right = integerOperand(this.readRKValue(frame, page.c[pageOffset]));
+					this.setRegisterIntegerFast(frame, registers, a, left & right); return;
+				}
+				case OpCode.BOR: {
+					const left = integerOperand(this.readRKValue(frame, page.b[pageOffset])), right = integerOperand(this.readRKValue(frame, page.c[pageOffset]));
+					this.setRegisterIntegerFast(frame, registers, a, left | right); return;
+				}
+				case OpCode.BXOR: {
+					const left = integerOperand(this.readRKValue(frame, page.b[pageOffset])), right = integerOperand(this.readRKValue(frame, page.c[pageOffset]));
+					this.setRegisterIntegerFast(frame, registers, a, left ^ right); return;
+				}
+				case OpCode.SHL: {
+					const left = integerOperand(this.readRKValue(frame, page.b[pageOffset])), right = integerOperand(this.readRKValue(frame, page.c[pageOffset]));
+					this.setRegisterIntegerFast(frame, registers, a, luaShiftLeft(left, right)); return;
+				}
+				case OpCode.SHR: {
+					const left = integerOperand(this.readRKValue(frame, page.b[pageOffset])), right = integerOperand(this.readRKValue(frame, page.c[pageOffset]));
+					this.setRegisterIntegerFast(frame, registers, a, luaShiftRight(left, right)); return;
 				}
 				case OpCode.CONCAT:
 					this.executeConcat(frame, a, page.b[pageOffset], page.c[pageOffset]); return;
 				case OpCode.CONCATN:
 					this.executeConcatRange(frame, a, page.b[pageOffset], page.c[pageOffset]); return;
 				case OpCode.UNM: {
-					const value = registers.getNumber(page.b[pageOffset]);
-					this.setRegisterNumberFast(frame, registers, a, -value);
+					this.setRegisterValueFast(frame, registers, a, valueNegate(registers.get(page.b[pageOffset])));
 					return;
 				}
 				case OpCode.NOT:
@@ -3150,13 +2737,13 @@ export class CPU implements MappedPageInvalidator {
 					switch (registers.getTag(b)) {
 						case ValueTag.String: {
 							const cp = this.stringPool.codepointCount(registers.getStringId(b));
-							this.setRegisterNumberFast(frame, registers, a, cp);
+							this.setRegisterIntegerFast(frame, registers, a, cp);
 							return;
 						}
 						case ValueTag.Table: {
-							const boundary = registers.getTable(b).length(this.tableLengthWork);
+							const boundary = registers.getTable(b, this.gc).length(this.tableLengthWork);
 							this.instructionBudgetRemaining -= this.tableLengthWork.probes * TABLE_LENGTH_PROBE_CYCLES;
-							this.setRegisterNumberFast(frame, registers, a, boundary);
+							this.setRegisterIntegerFast(frame, registers, a, boundary);
 							return;
 						}
 						default:
@@ -3164,8 +2751,8 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				case OpCode.BNOT: {
-					const value = registers.getNumber(page.b[pageOffset]);
-					this.setRegisterNumberFast(frame, registers, a, ~value);
+					const value = integerOperand(registers.get(page.b[pageOffset]));
+					this.setRegisterIntegerFast(frame, registers, a, ~value);
 					return;
 				}
 				case OpCode.EQ: {
@@ -3178,42 +2765,17 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.LT: {
-					const rkB = page.b[pageOffset];
-					const rkC = page.c[pageOffset];
-					let leftTag: ValueTag;
-					let leftScalar: number;
-					if (rkB < 0) {
-						const constantIndex = -1 - rkB;
-						leftTag = image.constTags[constantIndex];
-						leftScalar = image.constScalars[constantIndex];
-					} else {
-						leftTag = registers.getTag(rkB);
-						leftScalar = registers.getScalar(rkB);
-					}
-					let rightTag: ValueTag;
-					let rightScalar: number;
-					if (rkC < 0) {
-						const constantIndex = -1 - rkC;
-						rightTag = image.constTags[constantIndex];
-						rightScalar = image.constScalars[constantIndex];
-					} else {
-						rightTag = registers.getTag(rkC);
-						rightScalar = registers.getScalar(rkC);
-					}
+					const left = this.readRKValue(frame, page.b[pageOffset]), right = this.readRKValue(frame, page.c[pageOffset]);
 					let ok = false;
-					if (leftTag === ValueTag.Number) {
-						ok = rightTag === ValueTag.Number && leftScalar < rightScalar;
-					} else if (leftTag === ValueTag.String) {
-						if (rightTag === ValueTag.String) {
-							this.charge(Math.min(this.stringPool.codepointCount(leftScalar as StringId), this.stringPool.codepointCount(rightScalar as StringId)));
-							ok = this.stringPool.compare(leftScalar as StringId, rightScalar as StringId) < 0;
-						}
+					if (valueIsNumber(left) && valueIsNumber(right)) ok = compareNumbers(left, right) === NumericOrder.Less;
+					else if (valueTag(left) === ValueTag.String && valueTag(right) === ValueTag.String) {
+						const l = valuePayload(left), r = valuePayload(right);
+						this.charge(Math.min(this.stringPool.codepointCount(l), this.stringPool.codepointCount(r)));
+						ok = this.stringPool.compare(l, r) < 0;
 					}
-					if (ok !== (a !== 0)) {
-						this.skipNextInstruction(frame);
-					}
-					return;
+					if (ok !== (a !== 0)) this.skipNextInstruction(frame); return;
 				}
+
 				case OpCode.MFC0: {
 					if (this.isUserMode()) {
 						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
@@ -3222,7 +2784,7 @@ export class CPU implements MappedPageInvalidator {
 					const field = page.b[pageOffset];
 					if (!cop0FieldImplemented(field)) { this.hardHalt(); return; }
 					const value = field === COP0_EXEC ? 0 : this.cop0Words[field];
-					this.setRegisterNumberFast(frame, registers, a, value);
+					this.setRegisterIntegerFast(frame, registers, a, value);
 					return;
 				}
 				case OpCode.MTC0: {
@@ -3230,7 +2792,7 @@ export class CPU implements MappedPageInvalidator {
 						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 						return;
 					}
-					const value = registers.getNumber(a) >>> 0;
+					const value = wordOperand(registers.get(a));
 					switch (page.b[pageOffset]) {
 						case COP0_STATUS: this.cop0Words[COP0_STATUS] = value; return;
 						case COP0_EPC: this.cop0Words[COP0_EPC] = value; return;
@@ -3246,7 +2808,7 @@ export class CPU implements MappedPageInvalidator {
 					this.returnFromException(frame);
 					return;
 				case OpCode.LOADKR: {
-					const constantIndex = registers.getNumber(page.b[pageOffset]) >>> 0;
+					const constantIndex = wordOperand(registers.get(page.b[pageOffset]));
 					if (constantIndex >= image.constTags.length) {
 						throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 					}
@@ -3261,42 +2823,17 @@ export class CPU implements MappedPageInvalidator {
 				}
 
 				case OpCode.LE: {
-					const rkB = page.b[pageOffset];
-					const rkC = page.c[pageOffset];
-					let leftTag: ValueTag;
-					let leftScalar: number;
-					if (rkB < 0) {
-						const constantIndex = -1 - rkB;
-						leftTag = image.constTags[constantIndex];
-						leftScalar = image.constScalars[constantIndex];
-					} else {
-						leftTag = registers.getTag(rkB);
-						leftScalar = registers.getScalar(rkB);
-					}
-					let rightTag: ValueTag;
-					let rightScalar: number;
-					if (rkC < 0) {
-						const constantIndex = -1 - rkC;
-						rightTag = image.constTags[constantIndex];
-						rightScalar = image.constScalars[constantIndex];
-					} else {
-						rightTag = registers.getTag(rkC);
-						rightScalar = registers.getScalar(rkC);
-					}
+					const left = this.readRKValue(frame, page.b[pageOffset]), right = this.readRKValue(frame, page.c[pageOffset]);
 					let ok = false;
-					if (leftTag === ValueTag.Number) {
-						ok = rightTag === ValueTag.Number && leftScalar <= rightScalar;
-					} else if (leftTag === ValueTag.String) {
-						if (rightTag === ValueTag.String) {
-							this.charge(Math.min(this.stringPool.codepointCount(leftScalar as StringId), this.stringPool.codepointCount(rightScalar as StringId)));
-							ok = this.stringPool.compare(leftScalar as StringId, rightScalar as StringId) <= 0;
-						}
+					if (valueIsNumber(left) && valueIsNumber(right)) ok = compareNumbers(left, right) <= NumericOrder.Equal;
+					else if (valueTag(left) === ValueTag.String && valueTag(right) === ValueTag.String) {
+						const l = valuePayload(left), r = valuePayload(right);
+						this.charge(Math.min(this.stringPool.codepointCount(l), this.stringPool.codepointCount(r)));
+						ok = this.stringPool.compare(l, r) <= 0;
 					}
-					if (ok !== (a !== 0)) {
-						this.skipNextInstruction(frame);
-					}
-					return;
+					if (ok !== (a !== 0)) this.skipNextInstruction(frame); return;
 				}
+
 				case OpCode.JMP: {
 					frame.pc = page.bx[pageOffset];
 					return;
@@ -3316,12 +2853,12 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.CLOSURE:
 					this.executeClosure(frame, a, page.bx[pageOffset], page.c[pageOffset]); return;
 				case OpCode.GETUP: {
-					const upvalue = frame.closure.upvalues[page.b[pageOffset]];
+					const upvalue = this.gc.object(frame.closure.upvalues[page.b[pageOffset]]) as Upvalue;
 					this.copyUpvalueToRegister(frame, registers, a, upvalue);
 					return;
 				}
 				case OpCode.SETUP: {
-					const upvalue = frame.closure.upvalues[page.b[pageOffset]];
+					const upvalue = this.gc.object(frame.closure.upvalues[page.b[pageOffset]]) as Upvalue;
 					this.copyRegisterToUpvalue(upvalue, registers, a);
 					return;
 				}
@@ -3342,8 +2879,8 @@ export class CPU implements MappedPageInvalidator {
 					const b = page.b[pageOffset];
 					const c = page.c[pageOffset] as MemoryAccessKind;
 					const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D;
-					const addr = displaced ? ((registers.getNumber(b) >>> 0) + (page.disp[pageOffset] << 2)) >>> 0
-						: this.readRKNumber(frame, b) >>> 0;
+					const addr = displaced ? (wordOperand(registers.get(b)) + (page.disp[pageOffset] << 2)) >>> 0
+						: wordOperand(this.readRKValue(frame, b));
 					if (op === OpCode.LOAD_MEM_D || op === OpCode.LOAD_MEM) this.executeMemoryLoad(frame, a, c, addr);
 					else this.executeMemoryStore(frame, a, c, addr);
 					return;
@@ -3352,8 +2889,8 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.STORE_MEM_WORDS: {
 					const b = page.b[pageOffset];
 					const address = op === OpCode.STORE_MEM_WORDS_D
-						? ((registers.getNumber(b) >>> 0) + (page.disp[pageOffset] << 2)) >>> 0
-						: this.readRKNumber(frame, b) >>> 0;
+						? (wordOperand(registers.get(b)) + (page.disp[pageOffset] << 2)) >>> 0
+						: wordOperand(this.readRKValue(frame, b));
 					this.executeWordStores(frame, address, a, page.c[pageOffset]);
 					return;
 				}
@@ -3375,22 +2912,6 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private pushFrame(
-		closure: Closure,
-		args: ReadonlyArray<Value>,
-		returnBase: number,
-		returnCount: number,
-		returnToCompletionLatch: boolean,
-	): CallFrame | null {
-		return this.pushLatchedFrame(
-			closure,
-			args,
-			returnBase,
-			returnCount,
-			returnToCompletionLatch,
-		);
-	}
-
-	private pushLatchedFrame(
 		closure: Closure,
 		args: ReadonlyArray<Value>,
 		returnBase: number,
@@ -3484,7 +3005,7 @@ export class CPU implements MappedPageInvalidator {
 			this.closureUpvalueWords = new Uint32Array(functionRecord.upvalueCount);
 		}
 		const upvalueWords = this.closureUpvalueWords;
-		const upvalues = new Array<Upvalue>(functionRecord.upvalueCount);
+		const upvalues = new Uint32Array(functionRecord.upvalueCount);
 		const faultSequence = this.memory.readBusFaultSequence();
 		let newUpvalueCount = 0;
 		for (let index = 0; index < functionRecord.upvalueCount; index += 1) {
@@ -3502,7 +3023,7 @@ export class CPU implements MappedPageInvalidator {
 			if ((word & BLUA32_UPVALUE_IN_STACK_MASK) !== 0) {
 				const upvalue = this.findOpenUpvalue(frame, upvalueIndex);
 				if (upvalue) {
-					upvalues[index] = upvalue;
+					upvalues[index] = this.gc.reference(upvalue);
 				} else {
 					newUpvalueCount += 1;
 				}
@@ -3526,7 +3047,7 @@ export class CPU implements MappedPageInvalidator {
 			upvalue.frame = frame;
 			this.gc.track(upvalue);
 			this.linkOpenUpvalue(frame, upvalue);
-			upvalues[index] = upvalue;
+			upvalues[index] = this.gc.reference(upvalue);
 		}
 		this.charge(functionRecord.upvalueCount);
 		return closure;
@@ -3540,8 +3061,7 @@ export class CPU implements MappedPageInvalidator {
 			const next = upvalue.nextOpen;
 			upvalue.writeBarrier();
 			upvalue.valueTag = frame.registers.getTag(upvalue.index);
-			upvalue.valueScalar = frame.registers.getScalar(upvalue.index);
-			upvalue.valueReference = frame.registers.getReference(upvalue.index);
+			upvalue.valueWord = frame.registers.getPayload(upvalue.index);
 			upvalue.open = false;
 			upvalue.frame = null;
 			upvalue.nextOpen = null;
@@ -3563,8 +3083,7 @@ export class CPU implements MappedPageInvalidator {
 			registers.setEncoded(
 				registerIndex,
 				upvalue.valueTag,
-				upvalue.valueScalar,
-				upvalue.valueReference,
+				upvalue.valueWord,
 			);
 		}
 		this.bumpRegisterTop(frame, registerIndex);
@@ -3577,8 +3096,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		upvalue.writeBarrier();
 		upvalue.valueTag = registers.getTag(registerIndex);
-		upvalue.valueScalar = registers.getScalar(registerIndex);
-		upvalue.valueReference = registers.getReference(registerIndex);
+		upvalue.valueWord = registers.getPayload(registerIndex);
 	}
 
 	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
@@ -3650,27 +3168,31 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private setRegisterBoolFast(frame: CallFrame, registers: ValueSlots, index: number, value: boolean): void {
-		registers.setBool(index, value);
+		registers.setBoolean(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterNumberFast(frame: CallFrame, registers: ValueSlots, index: number, value: number): void {
-		registers.setNumber(index, value);
+	private setRegisterValueFast(frame: CallFrame, registers: ValueSlots, index: number, value: Value): void {
+		registers.set(index, value); this.bumpRegisterTop(frame, index);
+	}
+
+	private setRegisterIntegerFast(frame: CallFrame, registers: ValueSlots, index: number, value: number): void {
+		registers.setInteger(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
 	private setRegisterStringFast(frame: CallFrame, registers: ValueSlots, index: number, value: StringId): void {
-		registers.setStringId(index, value);
+		registers.setString(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
 	private setRegisterTableFast(frame: CallFrame, registers: ValueSlots, index: number, value: Table): void {
-		registers.setTable(index, value);
+		registers.setTable(index, this.gc.reference(value));
 		this.bumpRegisterTop(frame, index);
 	}
 
 	private setRegisterClosureFast(frame: CallFrame, registers: ValueSlots, index: number, value: Closure): void {
-		registers.setClosure(index, value);
+		registers.setClosure(index, this.gc.reference(value));
 		this.bumpRegisterTop(frame, index);
 	}
 
@@ -3684,64 +3206,17 @@ export class CPU implements MappedPageInvalidator {
 		registers.setEncoded(
 			registerIndex,
 			image.constTags[constantIndex],
-			image.constScalars[constantIndex],
-			null,
+			image.constWords[constantIndex],
 		);
 		this.bumpRegisterTop(frame, registerIndex);
 	}
 
 
 	private readRKEquals(frame: CallFrame, left: number, right: number): boolean {
-		const image = frame.executionImage;
-		const registers = frame.registers;
-		let leftTag: ValueTag;
-		let leftScalar: number;
-		if (left < 0) {
-			const constantIndex = -1 - left;
-			leftTag = image.constTags[constantIndex];
-			leftScalar = image.constScalars[constantIndex];
-		} else {
-			leftTag = registers.getTag(left);
-			leftScalar = registers.getScalar(left);
-		}
-		let rightTag: ValueTag;
-		let rightScalar: number;
-		if (right < 0) {
-			const constantIndex = -1 - right;
-			rightTag = image.constTags[constantIndex];
-			rightScalar = image.constScalars[constantIndex];
-		} else {
-			rightTag = registers.getTag(right);
-			rightScalar = registers.getScalar(right);
-		}
-		if (leftTag !== rightTag) {
-			return false;
-		}
-		switch (leftTag) {
-			case ValueTag.Nil:
-			case ValueTag.False:
-			case ValueTag.True:
-				return true;
-			case ValueTag.Number:
-				return leftScalar === rightScalar;
-			case ValueTag.String:
-			case ValueTag.BuiltinFunction:
-				return leftScalar === rightScalar;
-			case ValueTag.Table:
-			case ValueTag.Closure:
-			case ValueTag.Thread:
-				return registers.getReference(left) === registers.getReference(right);
-		}
+		return valuesEqual(this.readRKValue(frame, left), this.readRKValue(frame, right));
 	}
-
-	private readRKNumber(frame: CallFrame, rk: number): number {
-		if (rk < 0) {
-			const constantIndex = -1 - rk;
-			return frame.executionImage.constTags[constantIndex] === ValueTag.Number
-				? frame.executionImage.constScalars[constantIndex]
-				: NaN;
-		}
-		return frame.registers.getNumber(rk);
+	private readRKValue(frame: CallFrame, rk: number): Value {
+		return rk < 0 ? valueFromTag(frame.executionImage.constTags[-1 - rk], frame.executionImage.constWords[-1 - rk]) : frame.registers.get(rk);
 	}
 
 	private callBuiltinFunction(id: BuiltinFunctionId, args: BuiltinArgsView, out: BuiltinResults, resultLimit: number): void {
@@ -3771,56 +3246,56 @@ export class CPU implements MappedPageInvalidator {
 				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.String) {
 					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				}
-				const slot = this.globalSlotByKey.get(args.registers.getScalar(args.base));
-				if (slot === undefined) out.push(ValueTag.Nil);
-				else out.push(this.globalSlots.getTag(slot), this.globalSlots.getScalar(slot), this.globalSlots.getReference(slot));
+				const slot = this.globalSlotByKey.get(args.registers.getPayload(args.base));
+				if (slot === undefined) out.push(valueNil());
+				else out.push(this.globalSlots.get(slot));
 				break;
 			}
 			case BuiltinFunctionId.SetGlobal: {
 				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.String) {
 					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				}
-				const key = args.registers.getScalar(args.base);
-				if (args.length < 2) this.setGlobalByKey(key, ValueTag.Nil, NaN, null);
-				else this.setGlobalByKey(key, args.registers.getTag(args.base + 1), args.registers.getScalar(args.base + 1), args.registers.getReference(args.base + 1));
+				const key = args.registers.getPayload(args.base);
+				if (args.length < 2) this.setGlobalByKey(key, valueNil());
+				else this.setGlobalByKey(key, args.registers.get(args.base + 1));
 				break;
 			}
 			case BuiltinFunctionId.Select:
 				this.runBuiltinSelect(args, out, resultLimit);
 				break;
 			case BuiltinFunctionId.FrameCount:
-				out.push(ValueTag.Number, (args.registers.getReference(args.base) as Thread).frameDepth);
+				out.push(valueInteger((args.registers.getThread(args.base, this.gc)).frameDepth));
 				break;
 			case BuiltinFunctionId.FrameHeader: {
-				const thread = args.registers.getReference(args.base) as Thread;
-				const frame = thread.frameAtDepth(args.registers.getScalar(args.base + 1));
-				out.push(ValueTag.Number, frame.functionAddress);
-				out.push(ValueTag.Number, frame.pc);
-				out.push(ValueTag.Number, frame.callSitePc);
-				out.push(frame.returnToCompletionLatch ? ValueTag.True : ValueTag.False);
-				out.push(ValueTag.Number, frame.executionImage.executionDomainId >>> 0);
-				out.push(frame.isExceptionFrame ? ValueTag.True : ValueTag.False);
+				const thread = args.registers.getThread(args.base, this.gc);
+				const frame = thread.frameAtDepth(integerOperand(args.registers.get(args.base + 1)));
+				out.push(valueInteger(frame.functionAddress));
+				out.push(valueInteger(frame.pc));
+				out.push(valueInteger(frame.callSitePc));
+				out.push(valueBool(frame.returnToCompletionLatch));
+				out.push(valueInteger(frame.executionImage.executionDomainId >>> 0));
+				out.push(valueBool(frame.isExceptionFrame));
 				break;
 			}
 			case BuiltinFunctionId.GetFrameRegister:
 			case BuiltinFunctionId.SetFrameRegister: {
-				const thread = args.registers.getReference(args.base) as Thread;
-				const registers = thread.frameAtDepth(args.registers.getScalar(args.base + 1)).registers;
-				const index = args.registers.getScalar(args.base + 2);
-				if (id === BuiltinFunctionId.GetFrameRegister) out.push(registers.getTag(index), registers.getScalar(index), registers.getReference(index));
+				const thread = args.registers.getThread(args.base, this.gc);
+				const registers = thread.frameAtDepth(integerOperand(args.registers.get(args.base + 1))).registers;
+				const index = integerOperand(args.registers.get(args.base + 2));
+				if (id === BuiltinFunctionId.GetFrameRegister) out.push(registers.get(index));
 				else registers.copySlotFrom(args.registers, index, args.base + 3);
 				break;
 			}
 			case BuiltinFunctionId.GetFrameUpvalue:
 			case BuiltinFunctionId.SetFrameUpvalue: {
-				const thread = args.registers.getReference(args.base) as Thread;
-				const closure = thread.frameAtDepth(args.registers.getScalar(args.base + 1)).closure;
-				const upvalue = closure.upvalues[args.registers.getScalar(args.base + 2)];
+				const thread = args.registers.getThread(args.base, this.gc);
+				const closure = thread.frameAtDepth(integerOperand(args.registers.get(args.base + 1))).closure;
+				const upvalue = this.gc.object(closure.upvalues[integerOperand(args.registers.get(args.base + 2))]) as Upvalue;
 				if (id === BuiltinFunctionId.SetFrameUpvalue) this.copyRegisterToUpvalue(upvalue, args.registers, args.base + 3);
 				else if (upvalue.open) {
 					const registers = upvalue.frame!.registers, index = upvalue.index;
-					out.push(registers.getTag(index), registers.getScalar(index), registers.getReference(index));
-				} else out.push(upvalue.valueTag, upvalue.valueScalar, upvalue.valueReference);
+					out.push(registers.get(index));
+				} else out.push(upvalue.value);
 				break;
 			}
 			case BuiltinFunctionId.StringByte:
@@ -3833,29 +3308,29 @@ export class CPU implements MappedPageInvalidator {
 				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Table) {
 					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				}
-				this.stringIndexTable = args.registers.getTable(args.base);
+				this.stringIndexTable = args.registers.getTable(args.base, this.gc);
 				break;
 			case BuiltinFunctionId.CoroutineCreate:
 				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Closure) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				out.push(ValueTag.Thread, NaN, this.createThread(args.registers.getClosure(args.base)));
+				out.push(valueThread(this.gc.reference(this.createThread(args.registers.getClosure(args.base, this.gc)))));
 				break;
 			case BuiltinFunctionId.CoroutineRunning:
-				out.push(ValueTag.Thread, NaN, this.activeThread);
-				out.push(this.activeThread === this.rootThread ? ValueTag.True : ValueTag.False);
+				out.push(valueThread(this.gc.reference(this.activeThread)));
+				out.push(valueBool(this.activeThread === this.rootThread));
 				break;
 			case BuiltinFunctionId.CoroutineStatus:
 			case BuiltinFunctionId.CoroutineClose:
 			case BuiltinFunctionId.CoroutineIsYieldable: {
 				const thread = args.length === 0 && id === BuiltinFunctionId.CoroutineIsYieldable ? this.activeThread
-					: args.length > 0 && args.registers.getTag(args.base) === ValueTag.Thread ? args.registers.getReference(args.base) as Thread : null;
+					: args.length > 0 && args.registers.getTag(args.base) === ValueTag.Thread ? args.registers.getThread(args.base, this.gc) : null;
 				if (thread === null) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				if (id === BuiltinFunctionId.CoroutineIsYieldable) out.push(this.coroutineYieldable(thread) ? ValueTag.True : ValueTag.False);
+				if (id === BuiltinFunctionId.CoroutineIsYieldable) out.push(valueBool(this.coroutineYieldable(thread)));
 				else if (id === BuiltinFunctionId.CoroutineStatus) {
-					out.push(ValueTag.Number, thread.status);
+					out.push(valueInteger(thread.status));
 				} else {
 					const failed = thread.status === ThreadStatus.Failed;
-					out.push(failed ? ValueTag.False : ValueTag.True);
-					if (failed) out.push(thread.error.getTag(0), thread.error.getScalar(0), thread.error.getReference(0));
+					out.push(valueBool(!(failed)));
+					if (failed) out.push(thread.error.get(0));
 					this.closeThread(thread);
 					thread.error.setNil(0);
 				}
@@ -3865,15 +3340,14 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.CoroutineYield:
 				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			case BuiltinFunctionId.CollectGarbage: {
-				if (args.length !== 0 && args.registers.getTag(args.base) !== ValueTag.Number) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				const operation = args.length === 0 ? GarbageCollectionOperation.Collect : args.registers.getScalar(args.base);
+				const operation = args.length === 0 ? GarbageCollectionOperation.Collect : integerOperand(args.registers.get(args.base));
 				switch (operation) {
 					case GarbageCollectionOperation.Collect: this.luaHeap.collectRuntime(); break;
 					case GarbageCollectionOperation.Count:
-						out.push(ValueTag.Number, this.luaHeap.usedBytes());
-						out.push(ValueTag.Number, this.luaHeap.capacity());
+						out.push(valueInteger(this.luaHeap.usedBytes()));
+						out.push(valueInteger(this.luaHeap.capacity()));
 						break;
-					case GarbageCollectionOperation.Step: out.push(this.luaHeap.stepRuntime() ? ValueTag.True : ValueTag.False); break;
+					case GarbageCollectionOperation.Step: out.push(valueBool(this.luaHeap.stepRuntime())); break;
 					default: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				}
 				break;
@@ -3892,7 +3366,7 @@ export class CPU implements MappedPageInvalidator {
 		const thread = new Thread(entry);
 		thread.hashId = this.allocateObjectHashId();
 		this.gc.track(thread);
-		if (this.localRootScopeDepth > 0) this.localRoots.push(thread);
+		if (this.localRootScopeDepth > 0) this.localRoots.push(valueThread(this.gc.reference(thread)));
 		return thread;
 	}
 
@@ -3915,7 +3389,7 @@ export class CPU implements MappedPageInvalidator {
 		const count = decodeValueCount(resumer.returnCount, sourceCount + 1);
 		if (count > 0) {
 			const registers = this.ensureRegisterCapacity(caller, resumer.callBase + count - 1);
-			registers.setBool(resumer.callBase, succeeded);
+			registers.setBoolean(resumer.callBase, succeeded);
 			const copied = Math.min(sourceCount, count - 1);
 			registers.copyRangeFrom(source, resumer.callBase + 1, sourceBase, copied);
 			for (let index = copied + 1; index < count; index += 1) registers.setNil(resumer.callBase + index);
@@ -3940,13 +3414,13 @@ export class CPU implements MappedPageInvalidator {
 		if (argCount === 0 || caller.registers.getTag(callBase + 1) !== ValueTag.Thread) {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
-		const target = caller.registers.getReference(callBase + 1) as Thread;
+		const target = caller.registers.getThread(callBase + 1, this.gc);
 		const exceptionActive = this.readExceptionReturnFrameDepth() !== -1;
 		if (exceptionActive || (target.status !== ThreadStatus.New && target.status !== ThreadStatus.Suspended)) {
 			const results = this.acquireBuiltinResults();
 			try {
-				results.push(ValueTag.False);
-				results.push(ValueTag.String, this.stringPool.intern(exceptionActive ? 'cannot resume coroutine across a hardware exception' : 'cannot resume non-suspended coroutine'));
+				results.push(valueBool(false));
+				results.push(valueString(this.stringPool.intern(exceptionActive ? 'cannot resume coroutine across a hardware exception' : 'cannot resume non-suspended coroutine')));
 				this.writeReturnValuesFromBuiltinResults(caller, callBase, returnCount, results);
 			} finally { this.releaseBuiltinResults(results); }
 			return;
@@ -3969,14 +3443,14 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = true;
 	}
 
-	private handleThreadError(tag: ValueTag, scalar: number, reference: ValueReference): boolean {
-		if (this.handleProtectedCallError(tag, scalar, reference)) return true;
+	private handleThreadError(error: Value): boolean {
+		if (this.handleProtectedCallError(error)) return true;
 		const thread = this.activeThread;
 		if (thread.resumer === null) return false;
 		for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
 			if (frame.isExceptionFrame || frame.returnToCompletionLatch) return false;
 		thread.status = ThreadStatus.Failed;
-		thread.error.setEncoded(0, tag, scalar, reference);
+		thread.error.set(0, error);
 		this.returnToResumer(thread.error, 0, 1, false);
 		return true;
 	}
@@ -4080,7 +3554,7 @@ export class CPU implements MappedPageInvalidator {
 			case ValueTag.Closure: {
 				const frame = this.pushFrameFromCaller(
 					caller,
-					targetRegisters.getClosure(targetRegister),
+					targetRegisters.getClosure(targetRegister, this.gc),
 					argumentBase,
 					argumentCount,
 					0,
@@ -4121,16 +3595,12 @@ export class CPU implements MappedPageInvalidator {
 			if (values.length > 0) {
 				this.finishProtectedCallWithError(
 					continuationIndex,
-					values.getTag(0),
-					values.getScalar(0),
-					values.getReference(0),
+					values.get(0),
 				);
 			} else {
 				this.finishProtectedCallWithError(
 					continuationIndex,
-					ValueTag.Nil,
-					NaN,
-					null,
+					valueNil(),
 				);
 			}
 			return;
@@ -4146,16 +3616,12 @@ export class CPU implements MappedPageInvalidator {
 			if (sourceCount > 0) {
 				this.finishProtectedCallWithError(
 					continuationIndex,
-					source.getTag(sourceBase),
-					source.getScalar(sourceBase),
-					source.getReference(sourceBase),
+					source.get(sourceBase),
 				);
 			} else {
 				this.finishProtectedCallWithError(
 					continuationIndex,
-					ValueTag.Nil,
-					NaN,
-					null,
+					valueNil(),
 				);
 			}
 			return;
@@ -4167,23 +3633,16 @@ export class CPU implements MappedPageInvalidator {
 
 	private finishProtectedCallWithError(
 		continuationIndex: number,
-		errorTag: ValueTag,
-		errorScalar: number,
-		errorReference: ValueReference,
+		error: Value,
 	): void {
 		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
 		const caller = continuation.caller!;
 		const resultCount = decodeValueCount(continuation.returnCount, 2);
 		if (resultCount > 0) {
 			const registers = this.ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
-			registers.setBool(continuation.callBase, false);
+			registers.setBoolean(continuation.callBase, false);
 			if (resultCount > 1) {
-				registers.setEncoded(
-					continuation.callBase + 1,
-					errorTag,
-					errorScalar,
-					errorReference,
-				);
+				registers.set(continuation.callBase + 1, error);
 				for (let index = 2; index < resultCount; index += 1) {
 					registers.setNil(continuation.callBase + index);
 				}
@@ -4203,7 +3662,7 @@ export class CPU implements MappedPageInvalidator {
 		const resultCount = decodeValueCount(continuation.returnCount, values.length + 1);
 		if (resultCount > 0) {
 			const registers = this.ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
-			registers.setBool(continuation.callBase, prefix);
+			registers.setBoolean(continuation.callBase, prefix);
 			const copiedCount = Math.min(values.length, resultCount - 1);
 			if (copiedCount > 0) {
 				values.copyTo(registers, continuation.callBase + 1, copiedCount);
@@ -4230,12 +3689,12 @@ export class CPU implements MappedPageInvalidator {
 			const copiedCount = Math.min(sourceCount, resultCount - 1);
 			if (copiedCount > 0) {
 				if (registers === source) {
-					registers.moveRange(continuation.callBase + 1, sourceBase, copiedCount);
+					registers.copyWithin(continuation.callBase + 1, sourceBase, copiedCount);
 				} else {
 					registers.copyRangeFrom(source, continuation.callBase + 1, sourceBase, copiedCount);
 				}
 			}
-			registers.setBool(continuation.callBase, prefix);
+			registers.setBoolean(continuation.callBase, prefix);
 			for (let index = copiedCount + 1; index < resultCount; index += 1) {
 				registers.setNil(continuation.callBase + index);
 			}
@@ -4257,9 +3716,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private handleProtectedCallError(
-		errorTag: ValueTag,
-		errorScalar: number,
-		errorReference: ValueReference,
+		error: Value,
 	): boolean {
 		for (;;) {
 			if (this.activeThread.protectedCallDepth === 0) {
@@ -4280,16 +3737,12 @@ export class CPU implements MappedPageInvalidator {
 				if (continuation.kind === ProtectedCallKind.XPCallHandler) {
 					this.finishProtectedCallWithError(
 						continuationIndex,
-						ValueTag.String,
-						this.errorInErrorHandlingStringId,
-						null,
+						valueString(this.errorInErrorHandlingStringId),
 					);
 				} else {
 					this.finishProtectedCallWithError(
 						continuationIndex,
-						errorTag,
-						errorScalar,
-						errorReference,
+						error
 					);
 				}
 				return true;
@@ -4298,12 +3751,7 @@ export class CPU implements MappedPageInvalidator {
 			continuation.kind = ProtectedCallKind.XPCallHandler;
 			const handlerRegister = continuation.handlerRegister;
 			const registers = this.ensureRegisterCapacity(caller, continuation.callBase);
-			registers.setEncoded(
-				continuation.callBase,
-				errorTag,
-				errorScalar,
-				errorReference,
-			);
+			registers.set(continuation.callBase, error);
 			this.bumpRegisterTop(caller, continuation.callBase);
 			this.charge(1);
 			try {
@@ -4318,15 +3766,11 @@ export class CPU implements MappedPageInvalidator {
 				return true;
 			} catch (handlerError) {
 				if (handlerError instanceof LuaThrownValueError) {
-					errorTag = handlerError.tag;
-					errorScalar = handlerError.scalar;
-					errorReference = handlerError.reference;
+					error = handlerError.value;
 					continue;
 				}
 				if (handlerError instanceof LuaExecutionError) {
-					errorTag = ValueTag.String;
-					errorScalar = this.luaFaultErrorStringIds[handlerError.reason];
-					errorReference = null;
+					error = valueString(this.luaFaultErrorStringIds[handlerError.reason]);
 					continue;
 				}
 				throw handlerError;
@@ -4335,26 +3779,14 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private runBuiltinNextValue(args: BuiltinArgsView, out: BuiltinResults): void {
-		const registers = args.registers;
-		const base = args.base;
-		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) {
-			throw new LuaExecutionError(LUA_FAULT_REASON_ITERATE_NON_TABLE);
-		}
-		const table = registers.getTable(base);
-		const inspectedSlots = args.length > 1
-			? table.next(
-				registers.getTag(base + 1),
-				registers.getScalar(base + 1),
-				registers.getReference(base + 1),
-				out,
-				0,
-			)
-			: table.next(ValueTag.Nil, NaN, null, out, 0);
-		this.charge(inspectedSlots);
+		const registers = args.registers, base = args.base;
+		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ITERATE_NON_TABLE);
+		const table = registers.getTable(base, this.gc);
+		this.charge(table.next(args.length > 1 ? registers.get(base + 1) : valueNil(), out, 0));
 	}
 
 	private runBuiltinType(tag: ValueTag, out: BuiltinResults): void {
-		out.push(ValueTag.String, this.stringPool.intern(valueTypeNameForLuaTag(tag)));
+		out.push(valueString(this.stringPool.intern(valueTypeNameForLuaTag(tag))));
 	}
 
 	private runBuiltinSetMetatable(args: BuiltinArgsView, out: BuiltinResults): void {
@@ -4362,114 +3794,63 @@ export class CPU implements MappedPageInvalidator {
 		if (args.length === 0 || registers.getTag(args.base) !== ValueTag.Table) {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
-		const target = registers.getTable(args.base);
+		const target = registers.getTable(args.base, this.gc);
 		let metatable: Table | null = null;
 		if (args.length > 1) {
 			const metatableIndex = args.base + 1;
 			const metatableTag = registers.getTag(metatableIndex);
 			if (metatableTag === ValueTag.Table) {
-				metatable = registers.getTable(metatableIndex);
+				metatable = registers.getTable(metatableIndex, this.gc);
 			} else if (metatableTag !== ValueTag.Nil) {
 				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			}
 		}
 		target.metatable = metatable;
-		out.push(ValueTag.Table, NaN, target);
+		out.push(valueTable(this.gc.reference(target)));
 	}
 
 	private runBuiltinGetMetatable(args: BuiltinArgsView, out: BuiltinResults): void {
 		if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Table) {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
-		const metatable = args.registers.getTable(args.base).metatable;
+		const metatable = args.registers.getTable(args.base, this.gc).metatable;
 		if (metatable) {
-			out.push(ValueTag.Table, NaN, metatable);
+			out.push(valueTable(this.gc.reference(metatable)));
 		} else {
-			out.push(ValueTag.Nil);
+			out.push(valueNil());
 		}
 	}
 
 	private runBuiltinRawGet(args: BuiltinArgsView, out: BuiltinResults): void {
-		const registers = args.registers;
-		if (args.length === 0 || registers.getTag(args.base) !== ValueTag.Table) {
-			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		}
-		const table = registers.getTable(args.base);
-		if (args.length > 1) {
-			const keyIndex = args.base + 1;
-			table.load(
-				registers.getTag(keyIndex),
-				registers.getScalar(keyIndex),
-				registers.getReference(keyIndex),
-				out,
-				0,
-			);
-			return;
-		}
-		table.load(ValueTag.Nil, NaN, null, out, 0);
+		const registers = args.registers, base = args.base;
+		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const table = registers.getTable(base, this.gc);
+		if (args.length > 1) table.load(registers.getTag(base + 1), registers.getPayload(base + 1), out, 0);
+		else table.load(ValueTag.Nil, 0, out, 0);
 	}
-
 	private runBuiltinRawSet(args: BuiltinArgsView, out: BuiltinResults): void {
-		const registers = args.registers;
-		const base = args.base;
-		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) {
-			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		}
-		const target = registers.getTable(base);
-		let keyTag = ValueTag.Nil;
-		let keyScalar = NaN;
-		let keyReference: ValueReference = null;
-		if (args.length > 1) {
-			const keyIndex = base + 1;
-			keyTag = registers.getTag(keyIndex);
-			keyScalar = registers.getScalar(keyIndex);
-			keyReference = registers.getReference(keyIndex);
-		}
-		let storedTag = ValueTag.Nil;
-		let storedScalar = NaN;
-		let storedReference: ValueReference = null;
-		if (args.length > 2) {
-			const valueIndex = base + 2;
-			storedTag = registers.getTag(valueIndex);
-			storedScalar = registers.getScalar(valueIndex);
-			storedReference = registers.getReference(valueIndex);
-		}
-		target.store(
-			keyTag,
-			keyScalar,
-			keyReference,
-			storedTag,
-			storedScalar,
-			storedReference,
-		);
-		out.push(ValueTag.Table, NaN, target);
+		const registers = args.registers, base = args.base;
+		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const target = registers.getTable(base, this.gc);
+		target.set(args.length > 1 ? registers.get(base + 1) : valueNil(), args.length > 2 ? registers.get(base + 2) : valueNil());
+		out.push(registers.get(base));
 	}
 
 	private runBuiltinSelect(args: BuiltinArgsView, out: BuiltinResults, resultLimit: number): void {
 		const registers = args.registers;
 		const base = args.base;
 		const count = args.length - 1;
-		let selectorTag = ValueTag.Nil;
-		let selectorScalar = NaN;
-		if (args.length > 0) {
-			selectorTag = registers.getTag(base);
-			selectorScalar = registers.getScalar(base);
+		const selector = args.length > 0 ? registers.get(base) : valueNil();
+		if (valueTag(selector) === ValueTag.String && this.stringPool.toString(valuePayload(selector)) === '#') {
+			out.push(valueInteger(count)); return;
 		}
-		if (selectorTag === ValueTag.String
-			&& this.stringPool.toString(selectorScalar as StringId) === '#') {
-			out.push(ValueTag.Number, count);
-			return;
-		}
-		if (selectorTag !== ValueTag.Number) {
-			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		}
-		const startSelector = selectorScalar | 0;
+		const startSelector = integerOperand(selector);
 		const start = Math.max(startSelector >= 0 ? startSelector : count + startSelector + 1, 1);
 		const available = Math.max(count - start + 1, 0);
 		const produced = resultLimit < 0 ? available : Math.min(available, resultLimit);
 		for (let index = 0; index < produced; index += 1) {
 			const valueIndex = base + start + index;
-			out.push(registers.getTag(valueIndex), registers.getScalar(valueIndex), registers.getReference(valueIndex));
+			out.push(registers.get(valueIndex));
 		}
 	}
 
@@ -4485,17 +3866,14 @@ export class CPU implements MappedPageInvalidator {
 			const positionIndex = base + 1;
 			const positionTag = registers.getTag(positionIndex);
 			if (positionTag !== ValueTag.Nil) {
-				if (positionTag !== ValueTag.Number) {
-					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				}
-				position = registers.getScalar(positionIndex) | 0;
+				position = integerOperand(registers.get(positionIndex));
 			}
 		}
 		if (position < 1 || position > this.stringPool.codepointCount(sourceId)) {
-			out.push(ValueTag.Nil);
+			out.push(valueNil());
 			return;
 		}
-		out.push(ValueTag.Number, this.stringPool.codepointAt(sourceId, position - 1));
+		out.push(valueInteger(this.stringPool.codepointAt(sourceId, position - 1)));
 	}
 
 	private runBuiltinStringChar(args: BuiltinArgsView, out: BuiltinResults): void {
@@ -4504,28 +3882,23 @@ export class CPU implements MappedPageInvalidator {
 		let result = '';
 		for (let index = 0; index < args.length; index += 1) {
 			const valueIndex = args.base + index;
-			if (registers.getTag(valueIndex) !== ValueTag.Number) {
-				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			}
-			const codepoint = registers.getScalar(valueIndex) >>> 0;
+			const codepoint = wordOperand(registers.get(valueIndex));
 			if (codepoint > 0x10ffff || (codepoint >= 0xd800 && codepoint <= 0xdfff)) {
 				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			}
 			result += String.fromCodePoint(codepoint);
 		}
-		out.push(ValueTag.String, this.stringPool.intern(result));
+		out.push(valueString(this.stringPool.intern(result)));
 	}
 
 	private runBuiltinError(args: BuiltinArgsView): never {
 		if (args.length === 0) {
-			throw new LuaThrownValueError(ValueTag.Nil, NaN, null);
+			throw new LuaThrownValueError(valueNil());
 		}
 		const registers = args.registers;
 		const index = args.base;
 		throw new LuaThrownValueError(
-			registers.getTag(index),
-			registers.getScalar(index),
-			registers.getReference(index),
+			registers.get(index)
 		);
 	}
 
@@ -4544,25 +3917,17 @@ export class CPU implements MappedPageInvalidator {
 			pendingKinds.push(kind);
 			return id;
 		};
-		const writeValue: CpuSnapshotValueWriter = (offset, tag, scalar, reference): void => {
-			writer.setWord(offset, tag);
+		const writeValue: CpuSnapshotValueWriter = (offset, value): void => {
+			const tag = valueTag(value); let word = valuePayload(value);
 			switch (tag) {
-				case ValueTag.Number: writer.setNumber(offset + 1, scalar); return;
-				case ValueTag.Nil:
-				case ValueTag.False:
-				case ValueTag.True: writer.setWord(offset + 1, 0); break;
-				case ValueTag.String:
-				case ValueTag.BuiltinFunction: writer.setWord(offset + 1, scalar); break;
-				case ValueTag.Table: writer.setWord(offset + 1, captureObject(reference as Table, CpuSnapshotObjectKind.Table)); break;
-				case ValueTag.Closure: writer.setWord(offset + 1, captureObject(reference as Closure, CpuSnapshotObjectKind.Closure)); break;
-				case ValueTag.Thread: writer.setWord(offset + 1, captureObject(reference as Thread, CpuSnapshotObjectKind.Thread)); break;
+				case ValueTag.Table: word = captureObject(asTable(value, this.gc), CpuSnapshotObjectKind.Table); break;
+				case ValueTag.Closure: word = captureObject(this.gc.object(word) as Closure, CpuSnapshotObjectKind.Closure); break;
+				case ValueTag.Thread: word = captureObject(this.gc.object(word) as Thread, CpuSnapshotObjectKind.Thread); break;
 			}
-			writer.setWord(offset + 2, 0);
+			writer.setWord(offset, tag); writer.setWord(offset + 1, word);
 		};
-		const captureStoredValueState = (tag: ValueTag, scalar: number, reference: ValueReference): number => {
-			const offset = writer.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
-			writeValue(offset, tag, scalar, reference);
-			return offset;
+		const captureStoredValueState = (value: Value): number => {
+			const offset = writer.reserveWords(CPU_SNAPSHOT_VALUE_WORDS); writeValue(offset, value); return offset;
 		};
 
 		const threads: CpuThreadState[] = [];
@@ -4620,8 +3985,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			const stack = new Array<number>(thread.stackTop);
 			for (let slot = 0; slot < thread.stackTop; ++slot) {
-				stack[slot] = captureStoredValueState(thread.stackRegisters.getTag(slot),
-					thread.stackRegisters.getScalar(slot), thread.stackRegisters.getReference(slot));
+				stack[slot] = captureStoredValueState(thread.stackRegisters.get(slot));
 			}
 			const index = threads.length;
 			threads.push({
@@ -4631,7 +3995,7 @@ export class CPU implements MappedPageInvalidator {
 				callBase: thread.callBase, returnCount: thread.returnCount,
 				stackCapacity: thread.stackRegisters.capacity(),
 				stack,
-				error: captureStoredValueState(thread.error.getTag(0), thread.error.getScalar(0), thread.error.getReference(0)),
+				error: captureStoredValueState(thread.error.get(0)),
 				frames, protectedCalls, openUpvalues,
 			});
 			return index;
@@ -4646,9 +4010,7 @@ export class CPU implements MappedPageInvalidator {
 			systemGlobals.push({
 				key: this.systemGlobalNames[slot],
 				value: captureStoredValueState(
-					this.systemGlobalSlots.getTag(slot),
-					this.systemGlobalSlots.getScalar(slot),
-					this.systemGlobalSlots.getReference(slot),
+					this.systemGlobalSlots.get(slot)
 				),
 			});
 		}
@@ -4658,9 +4020,7 @@ export class CPU implements MappedPageInvalidator {
 			globalSlots.push({
 				key: this.globalNames[slot],
 				value: captureStoredValueState(
-					this.globalSlots.getTag(slot),
-					this.globalSlots.getScalar(slot),
-					this.globalSlots.getReference(slot),
+					this.globalSlots.get(slot)
 				),
 			});
 		}
@@ -4669,16 +4029,12 @@ export class CPU implements MappedPageInvalidator {
 		const completionValues = new Array<number>(this.completionValueCount);
 		for (let index = 0; index < this.completionValueCount; index += 1) {
 			completionValues[index] = captureStoredValueState(
-				this.completionValueSlots.getTag(index),
-				this.completionValueSlots.getScalar(index),
-				this.completionValueSlots.getReference(index),
+				this.completionValueSlots.get(index)
 			);
 		}
 
 		const stringIndexTable = captureStoredValueState(
-			this.stringIndexTable ? ValueTag.Table : ValueTag.Nil,
-			NaN,
-			this.stringIndexTable,
+			this.stringIndexTable === null ? valueNil() : valueTable(this.gc.reference(this.stringIndexTable)),
 		);
 
 		// Materialization order affects later object hashes even for an unrooted
@@ -4733,7 +4089,7 @@ export class CPU implements MappedPageInvalidator {
 					writer.setWord(offset + CpuSnapshotClosure.RecordUpvalueCount, closure.recordUpvalueCount);
 					writer.setWord(offset + CpuSnapshotClosure.ExecutionDomainId, closure.executionDomainId);
 					for (let index = 0; index < closure.upvalues.length; index += 1) {
-						writer.setWord(offset + CpuSnapshotClosure.Data + index, captureObject(closure.upvalues[index], CpuSnapshotObjectKind.Upvalue));
+						writer.setWord(offset + CpuSnapshotClosure.Data + index, captureObject(this.gc.object(closure.upvalues[index]) as Upvalue, CpuSnapshotObjectKind.Upvalue));
 					}
 					break;
 				}
@@ -4748,9 +4104,9 @@ export class CPU implements MappedPageInvalidator {
 					writer.setWord(offset + CpuSnapshotUpvalue.FrameIndex, upvalue.open ? upvalue.frame!.thread.frameIndex(upvalue.frame!) : -1);
 					if (upvalue.open) {
 						const registers = upvalue.frame!.registers;
-						writeValue(offset + CpuSnapshotUpvalue.Value, registers.getTag(upvalue.index), registers.getScalar(upvalue.index), registers.getReference(upvalue.index));
+						writeValue(offset + CpuSnapshotUpvalue.Value, registers.get(upvalue.index));
 					} else {
-						writeValue(offset + CpuSnapshotUpvalue.Value, upvalue.valueTag, upvalue.valueScalar, upvalue.valueReference);
+						writeValue(offset + CpuSnapshotUpvalue.Value, upvalue.value);
 					}
 					break;
 				}
@@ -4857,7 +4213,7 @@ export class CPU implements MappedPageInvalidator {
 					const recordUpvalueCount = snapshot.word(offset + CpuSnapshotClosure.RecordUpvalueCount);
 					const count = snapshot.word(offset + CpuSnapshotClosure.UpvalueCount);
 					const canonical = snapshot.word(offset + CpuSnapshotClosure.Canonical) !== 0;
-					const upvalues = canonical ? EMPTY_CLOSURE_UPVALUES : new Array<Upvalue>(count);
+					const upvalues = canonical ? EMPTY_CLOSURE_UPVALUES : new Uint32Array(count);
 					const heapBytes = CLOSURE_HEAP_BYTES + count * CLOSURE_UPVALUE_SLOT_HEAP_BYTES;
 					this.luaHeap.restoreAllocate(heapBytes);
 					const previous = canonical ? previousCanonical.get(functionAddress) : undefined;
@@ -4900,7 +4256,7 @@ export class CPU implements MappedPageInvalidator {
 				case CpuSnapshotObjectKind.Closure: {
 					const closure = restoredObjects[index] as Closure;
 					for (let slot = 0; slot < closure.upvalues.length; slot += 1) {
-						closure.upvalues[slot] = restoredObjects[snapshot.word(offset + CpuSnapshotClosure.Data + slot)] as Upvalue;
+						closure.upvalues[slot] = this.gc.reference(restoredObjects[snapshot.word(offset + CpuSnapshotClosure.Data + slot)]);
 					}
 					break;
 				}
@@ -4908,9 +4264,7 @@ export class CPU implements MappedPageInvalidator {
 					const upvalue = restoredObjects[index] as Upvalue;
 					upvalue.open = snapshot.word(offset + CpuSnapshotUpvalue.Open) !== 0;
 					reader.readValue(offset + CpuSnapshotUpvalue.Value);
-					upvalue.valueTag = reader.tag;
-					upvalue.valueScalar = reader.scalar;
-					upvalue.valueReference = reader.reference;
+					upvalue.value = upvalue.open ? valueNil() : reader.value();
 					break;
 				}
 			}
@@ -4927,7 +4281,7 @@ export class CPU implements MappedPageInvalidator {
 			this.systemGlobalNames.push(entry.key);
 			this.systemGlobalSlotByKey.set(entry.key, slot);
 			reader.readValue(entry.value);
-			this.systemGlobalSlots.setEncoded(slot, reader.tag, reader.scalar, reader.reference);
+			this.systemGlobalSlots.setEncoded(slot, reader.tag, reader.payload);
 		}
 		this.globalSlots.reserveCapacity(state.globalSlots.length);
 		for (let slot = 0; slot < state.globalSlots.length; slot += 1) {
@@ -4935,7 +4289,7 @@ export class CPU implements MappedPageInvalidator {
 			this.globalNames.push(entry.key);
 			this.globalSlotByKey.set(entry.key, slot);
 			reader.readValue(entry.value);
-			this.globalSlots.setEncoded(slot, reader.tag, reader.scalar, reader.reference);
+			this.globalSlots.setEncoded(slot, reader.tag, reader.payload);
 		}
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			if ((state.executionResidencyMask & (1 << index)) !== 0) {
@@ -4955,11 +4309,11 @@ export class CPU implements MappedPageInvalidator {
 			thread.entry = saved.entryRef < 0 ? null : restoredObjects[saved.entryRef] as Closure;
 			thread.resumer = saved.resumerRef < 0 ? null : restoredObjects[saved.resumerRef] as Thread;
 			reader.readValue(saved.error);
-			thread.error.setEncoded(0, reader.tag, reader.scalar, reader.reference);
+			thread.error.setEncoded(0, reader.tag, reader.payload);
 			thread.stackTop = saved.stack.length;
 			for (let slot = 0; slot < saved.stack.length; ++slot) {
 				reader.readValue(saved.stack[slot]);
-				thread.stackRegisters.setEncoded(slot, reader.tag, reader.scalar, reader.reference);
+				thread.stackRegisters.setEncoded(slot, reader.tag, reader.payload);
 			}
 			thread.stackRegisters.clear(thread.stackRegisters.capacity() - thread.stackTop, thread.stackTop);
 			for (let frameIndex = 0; frameIndex < saved.frames.length; frameIndex += 1) {
@@ -5012,9 +4366,7 @@ export class CPU implements MappedPageInvalidator {
 				upvalue.open = true;
 				upvalue.index = snapshot.int(offset + CpuSnapshotUpvalue.Index);
 				upvalue.frame = frame;
-				upvalue.valueTag = ValueTag.Nil;
-				upvalue.valueScalar = NaN;
-				upvalue.valueReference = null;
+				upvalue.value = valueNil();
 				this.linkOpenUpvalue(frame, upvalue);
 			}
 
@@ -5023,7 +4375,7 @@ export class CPU implements MappedPageInvalidator {
 		this.completionThread = restoredObjects[state.completionThreadRef] as Thread;
 		this.threadSwitchRequested = false;
 		reader.readValue(state.stringIndexTable);
-		this.stringIndexTable = reader.reference as Table | null;
+		this.stringIndexTable = reader.tag === ValueTag.Nil ? null : asTable(reader.value(), this.gc);
 		if (state.completionValues.length > this.completionValueSlots.capacity()) {
 			let capacity = this.completionValueSlots.capacity() * 2;
 			while (capacity < state.completionValues.length) {
@@ -5035,9 +4387,7 @@ export class CPU implements MappedPageInvalidator {
 			reader.readValue(state.completionValues[index]);
 			this.completionValueSlots.setEncoded(
 				index,
-				reader.tag,
-				reader.scalar,
-				reader.reference,
+				reader.tag, reader.payload,
 			);
 		}
 		this.completionValueCount = state.completionValues.length;
@@ -5077,7 +4427,7 @@ export class CPU implements MappedPageInvalidator {
 		this.heapSeenImages.set(image, this.heapEpoch);
 		for (let index = 0; index < image.constTags.length; index += 1) {
 			if (image.constTags[index] === ValueTag.String) {
-				this.stringPool.markReachable(image.constScalars[index] as StringId);
+				this.stringPool.markReachable(image.constWords[index] as StringId);
 			}
 		}
 	}
@@ -5086,11 +4436,12 @@ export class CPU implements MappedPageInvalidator {
 		const objects: (Table | Closure | Thread)[] = [];
 		const upvalues: Upvalue[] = [];
 		const seen = new Set<Table | Closure | Thread | Upvalue>();
-		const add = (tag: ValueTag, reference: ValueReference): void => {
-			if (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread) objects.push(reference!);
+		const add = (value: Value): void => {
+			const tag = valueTag(value);
+			if (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread) objects.push(this.gc.object(valuePayload(value)) as Table | Closure | Thread);
 		};
 		const addSlots = (slots: ValueSlots, count: number): void => {
-			for (let index = 0; index < count; index += 1) add(slots.getTag(index), slots.getReference(index));
+			for (let index = 0; index < count; index += 1) add(slots.get(index));
 		};
 		addSlots(this.systemGlobalSlots, this.systemGlobalNames.length);
 		addSlots(this.globalSlots, this.globalNames.length);
@@ -5101,11 +4452,11 @@ export class CPU implements MappedPageInvalidator {
 		for (const versions of this.staticClosuresByAddress.values()) objects.push(...versions);
 		for (const value of this.localRoots) {
 			const tag = valueTag(value);
-			if (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread) objects.push(value as Table | Closure | Thread);
+			if (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread) objects.push(this.gc.object(valuePayload(value)) as Table | Closure | Thread);
 		}
 		for (let index = 0; index < this.builtinResultsScratchIndex; index += 1) {
 			const slots = this.builtinResultsScratch.peek(index);
-			for (let valueIndex = 0; valueIndex < slots.length; valueIndex += 1) add(slots.getTag(valueIndex), slots.getReference(valueIndex));
+			for (let valueIndex = 0; valueIndex < slots.length; valueIndex += 1) add(slots.get(valueIndex));
 		}
 		while (objects.length > 0 || upvalues.length > 0) {
 			if (upvalues.length > 0) {
@@ -5115,27 +4466,27 @@ export class CPU implements MappedPageInvalidator {
 				if (upvalue.open) {
 					objects.push(upvalue.frame!.thread);
 					const slots = upvalue.frame!.registers;
-					add(slots.getTag(upvalue.index), slots.getReference(upvalue.index));
-				} else add(upvalue.valueTag, upvalue.valueReference);
+					add(slots.get(upvalue.index));
+				} else add(upvalue.value);
 				continue;
 			}
 			const object = objects.pop()!;
 			if (seen.has(object)) continue;
 			seen.add(object);
-			switch (object[VALUE_TAG]) {
-				case ValueTag.Closure: {
+			switch (object.gcKind) {
+				case GcKind.Closure: {
 					const closure = object as Closure;
 					visitor(closure);
-					upvalues.push(...closure.upvalues);
+					for (const reference of closure.upvalues) upvalues.push(this.gc.object(reference) as Upvalue);
 					break;
 				}
-				case ValueTag.Table: {
+				case GcKind.Table: {
 					const table = object as Table;
 					if (table.metatable !== null) objects.push(table.metatable);
-					table.forEachStoredEntry((kt, _ks, kr, vt, _vs, vr) => { add(kt, kr); add(vt, vr); });
+					table.forEachStoredEntry((key, value) => { add(key); add(value); });
 					break;
 				}
-				case ValueTag.Thread: {
+				case GcKind.Thread: {
 					const thread = object as Thread;
 					if (thread.entry !== null) objects.push(thread.entry);
 					if (thread.resumer !== null) objects.push(thread.resumer);

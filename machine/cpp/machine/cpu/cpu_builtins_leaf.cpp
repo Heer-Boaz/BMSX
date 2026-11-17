@@ -14,18 +14,18 @@ bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& 
 		if (!valueIsTable(target)) return false;
 		const Value metatableValue = args[1];
 		Table* metatable = nullptr;
-		if (valueIsTable(metatableValue)) metatable = asTable(metatableValue);
+		if (valueIsTable(metatableValue)) metatable = asTable(metatableValue, m_heap);
 		else if (!isNil(metatableValue)) return false;
-		asTable(target)->writeBarrier();
-		asTable(target)->metatable = metatable;
+		asTable(target, m_heap)->writeBarrier();
+		asTable(target, m_heap)->metatable = metatable;
 		result = target;
 		return true;
 	}
 	case BuiltinFunctionId::GetMetatable: {
 		const Value target = args[0];
 		if (!valueIsTable(target)) return false;
-		Table* metatable = asTable(target)->metatable;
-		result = metatable ? valueTable(metatable) : valueNil();
+		Table* metatable = asTable(target, m_heap)->metatable;
+		result = metatable ? valueTable(m_heap.reference(metatable)) : valueNil();
 		return true;
 	}
 	case BuiltinFunctionId::StringByte: {
@@ -35,13 +35,14 @@ bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& 
 		if (args.size() > 1) {
 			const Value positionValue = args[1];
 			if (!isNil(positionValue)) {
-				if (!valueIsNumber(positionValue)) return false;
-				position = toI32(positionValue);
+				i32 integer;
+				if (!valueToInteger(positionValue, integer)) return false;
+				position = integer;
 			}
 		}
 		const StringId sourceId = asStringId(sourceValue);
 		result = position < 1 || position > m_stringPool.codepointCount(sourceId) ? valueNil()
-			: valueNumber(static_cast<double>(m_stringPool.codepointAt(sourceId, static_cast<size_t>(position - 1))));
+			: valueInteger(static_cast<i32>(m_stringPool.codepointAt(sourceId, static_cast<size_t>(position - 1))));
 		return true;
 	}
 	default:

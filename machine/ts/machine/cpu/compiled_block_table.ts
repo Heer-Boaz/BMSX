@@ -18,16 +18,16 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 		const tag = `l${word}`, failure = r.exit(exit);
 		const value = `v${word}`;
 		return `const ${tag}=${r.tagOperand(b)};if(${tag}!==${ValueTag.Table}&&${tag}!==${ValueTag.String}) ${failure}
-			let ${value};if(${tag}===${ValueTag.Table}){${value}=${r.referenceOperand(b)}.length(state.lengthWork);
-			budget-=state.lengthWork.probes*${TABLE_LENGTH_PROBE_CYCLES};}else{${value}=q.codepointCount(${r.scalarOperand(b)});}
-			${r.writeNumber(a, value)}`;
+			let ${value};if(${tag}===${ValueTag.Table}){${value}=h.object(${r.wordOperand(b)}).length(state.lengthWork);
+			budget-=state.lengthWork.probes*${TABLE_LENGTH_PROBE_CYCLES};}else{${value}=q.codepointCount(${r.wordOperand(b)});}
+			${r.writeInteger(a, value)}`;
 	}
 	const load = op === OpCode.GETT || op === OpCode.GETI || op === OpCode.GETFIELD || op === OpCode.SELF;
 	const base = load ? b : a;
 	const key = load ? c : b;
 	const receiver = op === OpCode.SELF ? r.copy(a + 1, b) : '';
 	const failure = r.exit(exit);
-	const value = load ? '' : `${r.tagOperand(c)},${r.scalarOperand(c)},${r.referenceOperand(c)}`;
+	const value = load ? '' : `${r.tagOperand(c)},${r.wordOperand(c)}`;
 	const target = load ? `r,${a}` : value;
 	let access: string;
 	if (op === OpCode.GETI || op === OpCode.SETI) {
@@ -38,15 +38,15 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 			: `{const slot=t.storeStringKeyWithoutGrowth(k[${key}],${target});
 				if(slot===${TABLE_STORE_REQUIRES_GROWTH}) ${failure} p.tableCacheSlots[${word}]=slot;}`}`;
 	} else {
-		access = `const tag=${r.tagOperand(key)},key=${r.scalarOperand(key)};
-			if(tag===${ValueTag.Number}){if(!t.${load ? 'load' : 'store'}NumberArrayKey(key,${target})) ${failure}}
+		access = `const tag=${r.tagOperand(key)},key=${r.wordOperand(key)};
+			if(tag===${ValueTag.Integer}||tag===${ValueTag.Float}){const i=tag===${ValueTag.Integer}?key|0:fi(key);if(i===null||!t.${load ? 'load' : 'store'}IntegerArrayKey(i,${target})) ${failure}}
 			else if(tag!==${ValueTag.String}) ${failure}
 			else if(!t.${load ? 'load' : 'store'}PredictedStringKey(key,p.tableCacheSlots[${word}],${target})) ${load
 				? failure
 				: `{const slot=t.storeStringKeyWithoutGrowth(key,${target});
 					if(slot===${TABLE_STORE_REQUIRES_GROWTH}) ${failure} p.tableCacheSlots[${word}]=slot;}`}`;
 	}
-	const source = `${receiver}if(${r.tagOperand(base)}!==${ValueTag.Table}) ${failure}{const t=${r.referenceOperand(base)};${access}}`;
+	const source = `${receiver}if(${r.tagOperand(base)}!==${ValueTag.Table}) ${failure}{const t=h.object(${r.wordOperand(base)});${access}}`;
 	if (load) {
 		r.discard(a);
 		return source + r.reloadRange(a, a + 1);

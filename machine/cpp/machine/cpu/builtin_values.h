@@ -59,7 +59,7 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 class BuiltinArgsView {
 public:
 	BuiltinArgsView() = default;
-	explicit BuiltinArgsView(ValueSpan slots) : m_slots(slots), m_size(slots.size()) {}
+	explicit BuiltinArgsView(ConstValueSpan slots) : m_slots(slots), m_size(slots.size()) {}
 	BuiltinArgsView(const Value* values, size_t size) : m_values(values), m_size(size) {}
 	BuiltinArgsView(const std::vector<Value>& values) : m_values(values.data()), m_size(values.size()) {}
 	size_t size() const noexcept { return m_size; }
@@ -93,7 +93,7 @@ public:
 	iterator begin() const { return {this, 0}; }
 	iterator end() const { return {this, m_size}; }
 private:
-	ValueSpan m_slots;
+	ConstValueSpan m_slots;
 	const Value* m_values = nullptr;
 	size_t m_size = 0;
 };

@@ -68,9 +68,12 @@ export function compareNumbers(left: Value, right: Value): NumericOrder {
 	return a < b ? NumericOrder.Less : a > b ? NumericOrder.Greater : a === b ? NumericOrder.Equal : NumericOrder.Unordered;
 }
 export function valuesEqual(left: Value, right: Value): boolean {
-	return valueIsNumber(left) && valueIsNumber(right) ? compareNumbers(left, right) === NumericOrder.Equal : left === right;
+	if (valueIsNumber(left) && valueIsNumber(right)) return compareNumbers(left, right) === NumericOrder.Equal;
+	const tag = valueTag(left);
+	return tag <= ValueTag.True ? tag === valueTag(right) : left === right;
 }
 export function canonicalTableKey(value: Value): Value {
+	if (valueTag(value) <= ValueTag.True) return valueFromTag(valueTag(value));
 	if (!valueIsFloat(value)) return value;
 	const integer = luaFloatToInteger(valuePayload(value));
 	if (integer !== null) return valueInteger(integer);

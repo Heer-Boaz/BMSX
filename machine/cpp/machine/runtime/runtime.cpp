@@ -27,7 +27,7 @@ Runtime::Runtime(
 
 Runtime::~Runtime() = default;
 
-auto Runtime::callClosure(Closure& fn, BuiltinArgsView args) -> std::span<const Value> {
+auto Runtime::callClosure(Closure& fn, BuiltinArgsView args) -> ConstValueSpan {
 	CPU& cpu = machine.cpu;
 	if (machine.scheduler.isCpuSliceActive()) {
 		throw std::runtime_error("External Lua closure execution requires a suspended CPU.");
@@ -39,7 +39,7 @@ auto Runtime::callClosure(Closure& fn, BuiltinArgsView args) -> std::span<const 
 	return readCompletionValues();
 }
 
-auto Runtime::readCompletionValues() const -> std::span<const Value> {
+auto Runtime::readCompletionValues() const -> ConstValueSpan {
 	return machine.cpu.readCompletionValues();
 }
 

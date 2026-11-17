@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "common/primitives.h"
-#include "machine/cpu/value.h"
+#include "machine/cpu/value_slots.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/mapped_page.h"
 #include "spec/blua32/execution_domain.h"
@@ -177,7 +177,7 @@ struct Blua32ExecutionImage {
 #endif
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
-	std::vector<Value> constPool;
+	ValueSlots constPool;
 	std::vector<u32> globalSlots;
 	std::vector<u32> systemGlobalSlots;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
