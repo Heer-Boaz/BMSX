@@ -1,8 +1,7 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { Table } from '../../machine/ts/machine/cpu/table';
-import { valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { asClosure, asTable, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { CpuSuspendedRunResult } from '../../machine/ts/machine/runtime/cpu_executor';
 import type { FrameState } from '../../machine/ts/machine/runtime/frame/state';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
@@ -53,7 +52,7 @@ export class GuestFixture {
 	public bind(caseName: string | null): void {
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
 		this.initialized = true;
-		this.beginCall('bind', [cpu.getGlobalByKey(pool.intern(this.suiteSlot)), caseName === null ? null : valueString(pool.intern(caseName))]);
+		this.beginCall('bind', [cpu.getGlobalByKey(pool.intern(this.suiteSlot)), caseName === null ? valueNil() : valueString(pool.intern(caseName))]);
 	}
 
 	/** A physical exception returns first; it is never truncated to admit a host call. */
@@ -96,17 +95,17 @@ export class GuestFixture {
 	/** The compiled context retains recorder roots across history restore. No phase call or heap scan is needed. */
 	public readContext(): Table {
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
-		const execution = cpu.getGlobalByKey(pool.find(EXECUTION_SLOT)!) as Table;
-		return execution.getStringKey(pool.find('context')!) as Table;
+		const execution = asTable(cpu.getGlobalByKey(pool.find(EXECUTION_SLOT)!), cpu.gc);
+		return asTable(execution.getStringKey(pool.find('context')!), cpu.gc);
 	}
 
 	private beginCall(method: 'bind' | 'resume' | 'cancel', args: readonly Value[]): void {
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
 		// Resolve the current guest module, not closures borrowed from an older heap.
-		const execution = cpu.getGlobalByKey(pool.intern(EXECUTION_SLOT)) as Table;
+		const execution = asTable(cpu.getGlobalByKey(pool.intern(EXECUTION_SLOT)), cpu.gc);
 		this.returnThread = cpu.activeThread;
 		this.returnDepth = cpu.getFrameDepth();
-		cpu.beginCompletionCall(execution.getStringKey(pool.intern(method)) as Closure, args);
+		cpu.beginCompletionCall(asClosure(execution.getStringKey(pool.intern(method)), cpu.gc), args);
 		this.callPending = true;
 	}
 }

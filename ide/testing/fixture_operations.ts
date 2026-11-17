@@ -1,5 +1,5 @@
 import type { Table } from '../../machine/ts/machine/cpu/table';
-import { asStringId, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
+import { asFloat, asInteger, asStringId, asTable, isNil, isTruthy, valueInteger, valueIsInteger, type Value } from '../../machine/ts/machine/cpu/value';
 import type { FixtureTarget } from './target';
 import type { TestInput } from './input';
 
@@ -26,27 +26,38 @@ export class FixtureOperations {
 	public get observesPublication(): boolean { return this.wait?.kind === 'boundary'; }
 	public shouldStopAtPublication(): boolean {
 		return this.wait?.kind === 'boundary'
-			&& this.wait.receipt.getStringKey(this.target.runtime.machine.cpu.stringPool.find('reached')!) === true;
+			&& isTruthy(this.wait.receipt.getStringKey(this.target.runtime.machine.cpu.stringPool.find('reached')!));
 	}
 
 	/** The compiled context owns this protocol. Unknown operations are errors, not no-ops. */
 	public accept(values: readonly Value[]): string | undefined {
-		const runtime = this.target.runtime, pool = runtime.machine.cpu.stringPool;
-		const operation = pool.toString(asStringId(values[1] as StringValue));
+		const runtime = this.target.runtime, cpu = runtime.machine.cpu, pool = cpu.stringPool;
+		const operation = pool.toString(asStringId(values[1]));
 		const tick = runtime.frameScheduler.lastTickSequence;
 		switch (operation) {
-			case 'fsm': this.output.observeFsm(values[2] as Table); break;
-			case 'actioneffects': this.output.observeActionEffects(values[2] as Table); break;
+			case 'fsm': this.output.observeFsm(asTable(values[2], cpu.gc)); break;
+			case 'actioneffects': this.output.observeActionEffects(asTable(values[2], cpu.gc)); break;
 			case 'log': this.output.log(tick, values[2]); break;
-			case 'ticks': this.wait = { kind: 'ticks', target: tick + (values[2] as number) }; break;
-			case 'key': this.wait = { kind: 'input', target: this.input.key(pool.toString(asStringId(values[2] as StringValue)), values[3] as boolean, values[4] as number | null) }; break;
-			case 'press': this.wait = { kind: 'input', target: this.input.press(pool.toString(asStringId(values[2] as StringValue)), values[3] as number, values[4] as number | null) }; break;
+			case 'ticks': this.wait = { kind: 'ticks', target: tick + (valueIsInteger(values[2]) ? asInteger(values[2]) : asFloat(values[2])) }; break;
+			case 'key': {
+				const pad = values[4];
+				this.wait = { kind: 'input', target: this.input.key(pool.toString(asStringId(values[2])), isTruthy(values[3]),
+					isNil(pad) ? null : valueIsInteger(pad) ? asInteger(pad) : asFloat(pad)) };
+				break;
+			}
+			case 'press': {
+				const samples = values[3], pad = values[4];
+				this.wait = { kind: 'input', target: this.input.press(pool.toString(asStringId(values[2])),
+					valueIsInteger(samples) ? asInteger(samples) : asFloat(samples),
+					isNil(pad) ? null : valueIsInteger(pad) ? asInteger(pad) : asFloat(pad)) };
+				break;
+			}
 			case 'boundary':
-				this.wait = { kind: 'boundary', receipt: values[2] as Table, deadline: tick + (values[3] as number) };
+				this.wait = { kind: 'boundary', receipt: asTable(values[2], cpu.gc), deadline: tick + (valueIsInteger(values[3]) ? asInteger(values[3]) : asFloat(values[3])) };
 				this.bindingChanged();
 				break;
 			case 'capture': {
-				const label = pool.toString(asStringId(values[2] as StringValue));
+				const label = pool.toString(asStringId(values[2]));
 				this.wait = { kind: 'capture', tick, label };
 				this.output.captureRequested(tick, label);
 				break;
@@ -65,7 +76,7 @@ export class FixtureOperations {
 			case 'input': ready = this.input.samples >= wait.target; break;
 			case 'boundary': {
 				const reached = wait.receipt.getStringKey(runtime.machine.cpu.stringPool.find('reached')!);
-				ready = reached === true || runtime.frameScheduler.lastTickSequence >= wait.deadline;
+				ready = isTruthy(reached) || runtime.frameScheduler.lastTickSequence >= wait.deadline;
 				if (ready) args[1] = reached;
 				break;
 			}
@@ -74,7 +85,7 @@ export class FixtureOperations {
 				if (ready) {
 					const sequence = this.target.presenter.presentationSequence;
 					this.output.captured(sequence, wait.label);
-					args[1] = sequence;
+					args[1] = valueInteger(sequence);
 				}
 				break;
 		}

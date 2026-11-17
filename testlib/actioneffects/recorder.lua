@@ -7,6 +7,15 @@ recorder.__index = recorder
 -- record slot. Kinds and outcomes remain the producer's interned literals;
 -- activity values remain the producer's raw aggregate retain count.
 function recorder.new(component, capacity)
+	-- Round storage to a power of two: the word counter and slot mask then
+	-- wrap together, without a second publication field or a divided cursor.
+	local mask = capacity - 1
+	mask = mask | (mask >> 1)
+	mask = mask | (mask >> 2)
+	mask = mask | (mask >> 4)
+	mask = mask | (mask >> 8)
+	mask = mask | (mask >> 16)
+	capacity = mask + 1
 	local records<const> = {}
 	for i = 1, capacity do
 		records[i] = { 0, 0, '', '', 0 }
@@ -28,7 +37,8 @@ end
 -- suspended Scenario consumer.
 function recorder:record(kind, effect_id, value)
 	local sequence<const> = self[4] + 1
-	local record<const> = self[5][((sequence - 1) % self[3]) + 1]
+	local record<const> = self[5][((sequence - 1) & (self[3] - 1)) + 1]
+	-- A changed slot generation also exposes overwrite before publication.
 	record[1] = sequence
 	record[2] = clock.milliseconds()
 	record[3] = kind

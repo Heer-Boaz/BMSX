@@ -49,7 +49,7 @@ return {
 
 for (const optLevel of [0, 3] as const) {
 for (const workload of ['GEO', 'GPU'] as const)
-test(`O${optLevel}: a fixture drains a held ${workload} fault boundary with bounded device grants before reporting the physical fault`, async () => {
+test(`O${optLevel}: a fixture drains a held ${workload} fault boundary with bounded device/backend service before reporting the physical fault`, async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-fixture-fault-drain-'));
 	const resumed = DYNAMIC_RAM_BASE + 0x4000;
 	try {
@@ -115,6 +115,7 @@ mem[${resumed}] = 2`,
 			assert.notEqual(cpu.readExceptionReturnFrameDepth(), -1);
 			assert.equal(readSupervisorFaultReport(runtime), undefined);
 			const frameState = runtime.frameLoop.captureState(), pc = cpu.readCurrentInstructionPc();
+			const gpuCommands = machine.gxGpu.readDeviceOutput().commandBuffer.executedCommandCount;
 			let advanced = 0;
 			for (let grant = 0; execution.active && machine.systemController.cpuHeld() && grant < 1000; grant++) {
 				target.serviceBackend();
@@ -128,7 +129,11 @@ mem[${resumed}] = 2`,
 				advanced += consumed;
 			}
 			assert.equal(machine.systemController.cpuHeld(), false, 'bounded device grants finish supervisor quiescence');
-			assert.ok(advanced > 0, 'quiescence advances to a future hardware deadline');
+			if (workload === 'GEO') assert.ok(advanced > 0, 'unfinished geometry advances to its hardware deadline');
+			else {
+				assert.ok(gpuCommands > 0, 'completed GPU commands still await actual backend execution');
+				assert.equal(machine.gxGpu.readDeviceOutput().commandBuffer.commandCount, 0, 'backend service retires the real command fence');
+			}
 			assert.deepEqual(runtime.frameLoop.captureState(), frameState, 'fixture grants preserve the game frame owner');
 			for (let grant = 0; execution.active && grant < 1000; grant++) execution.advance();
 			assert.equal(execution.active, false);

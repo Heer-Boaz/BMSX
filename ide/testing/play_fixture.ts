@@ -1,6 +1,6 @@
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
-import { asStringId, valueString, valueToString, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
+import { asStringId, asThread, valueString, valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit } from '../../machine/ts/spec/blua32/execution_domain';
 import type { BuiltFixtureProgram } from './fixture_media';
 import { readSupervisorFaultReport } from '../runtime/fault_state';
@@ -95,14 +95,14 @@ export class PlayFixture {
 			return;
 		}
 		const values = runtime.readCompletionValues();
-		const outcome = cpu.stringPool.toString(asStringId(values[0] as StringValue));
+		const outcome = cpu.stringPool.toString(asStringId(values[0]));
 		if (outcome === 'yielded') {
 			this.args.length = 1;
 			const unsupported = this.operations.accept(values);
 			if (unsupported !== undefined) this.quarantine(`Unsupported fixture operation '${unsupported}'`);
 			return;
 		}
-		if (outcome === 'failed') this.recordFailure(values[1] as Thread, valueToString(values[2], cpu.stringPool), 'failed-thread');
+		if (outcome === 'failed') this.recordFailure(asThread(values[1], cpu.gc), valueToString(values[2], cpu.stringPool), 'failed-thread');
 		if (this.phase === 'setup' && outcome === 'returned') this.ready();
 		else if (this.phase !== 'teardown') this.beginCleanup();
 		else this.finish();

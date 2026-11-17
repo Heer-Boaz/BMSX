@@ -1,6 +1,6 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
-import { valueToString, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { asTable, isNil, valueToString, type Value } from '../../../../machine/ts/machine/cpu/value';
 import { RetainedSequence } from '../../../common/retained_sequence';
 import type { FixtureOutput } from '../../../testing/fixture_operations';
 import { FsmTransitionObservation } from '../../../testing/observations/fsm_transition';
@@ -36,7 +36,7 @@ export class PlayEvidence implements FixtureOutput {
 	}
 	public captured(sequence: number): void { this.capture!.sequence = sequence; this.capture = undefined; this.revision++; }
 	public observeFsm(channel: Table): void {
-		this.fsm = new FsmTransitionObservation(channel, this.runtime.machine.cpu.stringPool,
+		this.fsm = new FsmTransitionObservation(channel, this.runtime.machine.cpu.stringPool, this.runtime.machine.cpu.gc,
 			(sequence, millisecondsWord, tick, lane, previous, target, outcome) => {
 				this.fsmTrace!.facts.push({ sequence, millisecondsWord, tick, lane, previous, target, outcome }); this.revision++;
 			}, 'rolling');
@@ -44,7 +44,7 @@ export class PlayEvidence implements FixtureOutput {
 		this.revision++;
 	}
 	public observeActionEffects(channel: Table): void {
-		this.effects = new ActionEffectObservation(channel, this.runtime.machine.cpu.stringPool, {
+		this.effects = new ActionEffectObservation(channel, this.runtime.machine.cpu.stringPool, this.runtime.machine.cpu.gc, {
 			trigger: (sequence, millisecondsWord, tick, effect, outcome) => {
 				this.effectTrace!.facts.push({ sequence, millisecondsWord, tick, effect, kind: 'trigger', outcome }); this.revision++;
 			},
@@ -62,11 +62,11 @@ export class PlayEvidence implements FixtureOutput {
 	}
 	public drain(): void {
 		if (this.restored) {
-			const pool = this.runtime.machine.cpu.stringPool, context = this.readContext();
+			const cpu = this.runtime.machine.cpu, pool = cpu.stringPool, context = this.readContext();
 			const fsm = context.getStringKey(pool.find('fsm_recorder')!);
 			const effects = context.getStringKey(pool.find('actioneffect_recorder')!);
-			if (fsm !== null) { this.observeFsm(fsm as Table); this.fsm!.discardPublished(); }
-			if (effects !== null) { this.observeActionEffects(effects as Table); this.effects!.discardPublished(); }
+			if (!isNil(fsm)) { this.observeFsm(asTable(fsm, cpu.gc)); this.fsm!.discardPublished(); }
+			if (!isNil(effects)) { this.observeActionEffects(asTable(effects, cpu.gc)); this.effects!.discardPublished(); }
 			this.restored = false;
 		}
 		const tick = this.runtime.frameScheduler.lastTickSequence;

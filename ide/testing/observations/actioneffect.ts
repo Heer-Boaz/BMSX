@@ -1,9 +1,7 @@
 import type { StringPool } from '../../../machine/ts/machine/cpu/string_pool';
-import { Table } from '../../../machine/ts/machine/cpu/table';
-import {
-	asStringId,
-	type StringValue,
-} from '../../../machine/ts/machine/cpu/value';
+import type { Table } from '../../../machine/ts/machine/cpu/table';
+import type { GcHeap } from '../../../machine/ts/machine/cpu/gc_heap';
+import { asInteger, asStringId, asTable, valuePayload } from '../../../machine/ts/machine/cpu/value';
 export type ActionEffectTriggerOutcome = 'accepted' | 'cooldown' | 'required_tag_missing' | 'blocked_tag_present'
 	| 'required_state_missing' | 'blocked_state_present' | 'custom_gate';
 export type ActionEffectActivityKind = 'activate' | 'deactivate';
@@ -40,40 +38,46 @@ export class ActionEffectObservation {
 	public constructor(
 		private readonly channel: Table,
 		private readonly stringPool: StringPool,
+		private readonly heap: GcHeap,
 		private readonly publish: ActionEffectSink,
 		private readonly retention: 'strict' | 'rolling' = 'strict',
 	) {
-		this.capacity = channel.getInteger(CHANNEL_CAPACITY) as number;
-		this.records = channel.getInteger(CHANNEL_RECORDS) as Table;
+		this.capacity = asInteger(channel.getInteger(CHANNEL_CAPACITY));
+		this.records = asTable(channel.getInteger(CHANNEL_RECORDS), heap);
 		this.ownerId = this.readString(channel, CHANNEL_OWNER_ID);
 		this.definitionId = this.readString(channel, CHANNEL_OWNER_DEFINITION_ID);
 	}
 
 	/** A restored live subscription begins at its accepted publication, not an older heap's cursor. */
-	public discardPublished(): void { this.consumedSequence = this.channel.getInteger(CHANNEL_PUBLISHED_SEQUENCE) as number; }
+	public discardPublished(): void { this.consumedSequence = valuePayload(this.channel.getInteger(CHANNEL_PUBLISHED_SEQUENCE)); }
 
 	public drain(observedTick: number): void {
-		const publishedSequence = this.channel.getInteger(
-			CHANNEL_PUBLISHED_SEQUENCE,
-		) as number;
-		if (publishedSequence - this.consumedSequence > this.capacity) {
+		const publishedSequence = valuePayload(this.channel.getInteger(CHANNEL_PUBLISHED_SEQUENCE));
+		let available = (publishedSequence - this.consumedSequence) >>> 0;
+		if (available === 0) return;
+		if (available > this.capacity) {
 			if (this.retention === 'strict') {
 				throw new Error(
 					`ActionEffect recorder '${this.ownerId}' overflowed its ${this.capacity}-record buffer.`,
 				);
 			}
-			const oldest = publishedSequence - this.capacity;
-			this.droppedCount += oldest - this.consumedSequence;
-			this.consumedSequence = oldest;
+			this.droppedCount += available - this.capacity;
+			this.consumedSequence = (publishedSequence - this.capacity) >>> 0;
+			available = this.capacity;
 		}
-		while (this.consumedSequence < publishedSequence) {
-			const producerSequence = this.consumedSequence + 1;
-			const slot = ((producerSequence - 1) % this.capacity) + 1;
-			const record = this.records.getInteger(slot) as Table;
-			const recordSequence = record.getInteger(RECORD_PRODUCER_SEQUENCE) as number;
-			const producerTime = record.getInteger(
-				RECORD_PRODUCER_TIME_MILLISECONDS_WORD,
-			) as number;
+		while (available > 0) {
+			const producerSequence = (this.consumedSequence + 1) >>> 0;
+			const slot = ((producerSequence - 1) & (this.capacity - 1)) + 1;
+			const record = asTable(this.records.getInteger(slot), this.heap);
+			const recordSequence = valuePayload(record.getInteger(RECORD_PRODUCER_SEQUENCE));
+			if (recordSequence !== producerSequence) {
+				if (this.retention === 'strict') throw new Error(`ActionEffect recorder '${this.ownerId}' overflowed its ${this.capacity}-record buffer.`);
+				this.droppedCount++;
+				this.consumedSequence = producerSequence;
+				available--;
+				continue;
+			}
+			const producerTime = valuePayload(record.getInteger(RECORD_PRODUCER_TIME_MILLISECONDS_WORD));
 			const effectId = this.readString(record, RECORD_EFFECT_ID);
 			const kind = this.readString(record, RECORD_KIND) as 'trigger' | ActionEffectActivityKind;
 			if (kind === 'trigger') {
@@ -91,14 +95,15 @@ export class ActionEffectObservation {
 					observedTick,
 					effectId,
 					kind,
-					record.getInteger(RECORD_VALUE) as number,
+					asInteger(record.getInteger(RECORD_VALUE)),
 				);
 			}
 			this.consumedSequence = producerSequence;
+			available--;
 		}
 	}
 
 	private readString(table: Table, index: number): string {
-		return this.stringPool.toString(asStringId(table.getInteger(index) as StringValue));
+		return this.stringPool.toString(asStringId(table.getInteger(index)));
 	}
 }
