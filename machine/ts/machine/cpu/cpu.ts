@@ -4889,7 +4889,7 @@ export class CPU implements MappedPageInvalidator {
 					break;
 			}
 		}
-		const reader = new CpuSnapshotReader(snapshot, restoredObjects);
+		const reader = new CpuSnapshotReader(snapshot, restoredObjects, this.gc);
 		for (let index = 0; index < snapshot.objectCount; index += 1) {
 			const offset = snapshot.objectWord(index);
 			switch (snapshot.word(offset)) {

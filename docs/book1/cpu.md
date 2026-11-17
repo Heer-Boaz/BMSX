@@ -1017,6 +1017,12 @@ Nil is not an admissible key. Reading or writing with a nil key raises `INDEX_NI
 
 Numeric `1`, string `"1"`, and boolean `true` are separate keys. An Integer and a Float with the same exact numerical value address the same mapping: Integer `2` and Float `2.0` are the same key. Integer zero and both Float zero signs address the same key. A canonical numeric NaN is also an admissible key: repeated NaN keys address the same mapping, although ordinary numeric NaN equality is false. Positive and negative infinity are admissible numeric keys.
 
+Insertion stores an exactly integral Float in Integer range as an Integer key.
+This includes both Float zero signs, which become Integer zero. NaN keys use
+word `7FC00000H`, irrespective of the supplied NaN payload or sign. This
+normalization applies to keys, not to stored values: a Float value retains its
+subtype and word bits.
+
 Only positive integral numeric keys from 1 through `7FFFFFFFH` are eligible for array storage. Zero, negative numbers, fractions, NaN, infinities, and larger numbers use hash storage. An eligible numeric key may also reside in hash storage when it lies beyond the allocated array capacity. Numeric key zero has no special indexing role.
 
 A non-nil value establishes a mapping. In particular, `false` is present: it is not a missing entry and does not permit an inherited value to replace it. Assigning nil removes the Table's own mapping. It does not create a retrievable nil-valued entry. An allocated but empty array slot is likewise missing. Deletion does not erase other keys.

@@ -8,9 +8,10 @@
 
 namespace bmsx {
 
-constexpr u32 CPU_SNAPSHOT_VALUE_WORDS = 3;
-// Matches the TS register tag column; native Value uses NaN-boxed tags.
-enum class CpuSnapshotValueTag : u32 { Nil, False, True, Number, String, Table, Closure, BuiltinFunction, Thread };
+constexpr u32 CPU_SNAPSHOT_VALUE_WORDS = 2;
+struct GCObject;
+// The snapshot transports the same explicit tag and one raw payload word.
+using CpuSnapshotValueTag = ValueTag;
 enum class CpuSnapshotObjectKind : u32 { Table, Closure, Upvalue, Thread, Garbage };
 enum CpuSnapshotTable : u32 {
 	SNAP_TABLE_KIND, SNAP_TABLE_HASH_ID, SNAP_TABLE_LENGTH_HINT, SNAP_TABLE_ARRAY_CAPACITY,
@@ -48,18 +49,7 @@ public:
 	u32 word(u32 offset) const { return m_words[offset]; }
 	i32 integer(u32 offset) const { return static_cast<i32>(m_words[offset]); }
 	void setWord(u32 offset, u32 value) { m_words[offset] = value; }
-	void setNumber(u32 offset, f64 value) {
-		u64 bits;
-		std::memcpy(&bits, &value, sizeof(bits));
-		m_words[offset] = static_cast<u32>(bits);
-		m_words[offset + 1] = static_cast<u32>(bits >> 32);
-	}
-	f64 number(u32 offset) const {
-		const u64 bits = static_cast<u64>(m_words[offset]) | (static_cast<u64>(m_words[offset + 1]) << 32);
-		f64 value;
-		std::memcpy(&value, &bits, sizeof(value));
-		return value;
-	}
+
 private:
 	std::vector<u32> m_words;
 	std::vector<u32> m_objects;
@@ -69,13 +59,13 @@ private:
 
 class CpuSnapshotReader {
 public:
-	CpuSnapshotReader(const CpuSnapshot& snapshot, std::span<GCObject* const> objects, std::span<BuiltinFunction> builtins)
-		: snapshot(snapshot), m_objects(objects), m_builtins(builtins) {}
+	CpuSnapshotReader(const CpuSnapshot& snapshot, std::span<GCObject* const> objects, const GcHeap& heap)
+		: snapshot(snapshot), m_objects(objects), m_heap(heap) {}
 	Value readValue(u32 offset) const;
 	const CpuSnapshot& snapshot;
 private:
 	std::span<GCObject* const> m_objects;
-	std::span<BuiltinFunction> m_builtins;
+	const GcHeap& m_heap;
 };
 
 } // namespace bmsx

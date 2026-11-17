@@ -1167,7 +1167,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			}
 		}
 	}
-	const CpuSnapshotReader reader(snapshot, restoredObjects, m_builtinFunctions);
+	const CpuSnapshotReader reader(snapshot, restoredObjects, m_heap);
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
 		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {

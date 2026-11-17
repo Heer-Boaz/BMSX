@@ -12,7 +12,7 @@ Thread::Thread() { resizeStack(8); }
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
 Thread::NativeOffsets Thread::nativeOffsets() {
-	return {offsetof(Thread, currentFrame), offsetof(Thread, frameDepth), offsetof(Thread, stackTop), offsetof(Thread, stack), offsetof(Thread, stackCapacity)};
+	return {offsetof(Thread, currentFrame), offsetof(Thread, frameDepth), offsetof(Thread, stackTop), offsetof(Thread, stackWords), offsetof(Thread, stackTags), offsetof(Thread, stackCapacity)};
 }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -25,19 +25,14 @@ Thread::~Thread() {
 		delete firstFrame;
 		firstFrame = next;
 	}
-	delete[] stack;
 }
 
 void Thread::resizeStack(size_t capacity) {
 	if (capacity == stackCapacity) return;
-	auto* next = new Value[capacity];
-	const size_t retained = std::min(stackCapacity, capacity);
-	std::copy_n(stack, retained, next);
-	std::fill(next + retained, next + capacity, valueNil());
-	delete[] stack;
-	stack = next;
-	stackCapacity = capacity;
-	for (auto* frame = currentFrame; frame; frame = frame->previous) frame->registers = stack + frame->stackBase;
+	stack.resize(capacity);
+	stackWords = stack.words(); stackTags = stack.tags(); stackCapacity = capacity;
+	for (auto* frame = currentFrame; frame; frame = frame->previous)
+		frame->registers = stack.view().subspan(frame->stackBase, frame->stackCapacity);
 }
 
 size_t Thread::shrinkStack() {
@@ -66,6 +61,7 @@ void Thread::leaveFrame() {
 	stackTop = currentFrame ? currentFrame->stackBase + currentFrame->stackCapacity : 0;
 	--frameDepth;
 	// Inactive pointers are not roots; active paths establish them before use.
+	frame->registers = {};
 	frame->decodedPage = nullptr;
 	frame->compilationEntry = true;
 	frame->protectedContinuationIndex = -1;

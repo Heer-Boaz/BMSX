@@ -1,5 +1,7 @@
 #pragma once
 
+#include "machine/cpu/gc_object.h"
+
 #include <cstddef>
 
 #include "common/primitives.h"
@@ -8,16 +10,19 @@
 namespace bmsx {
 
 struct CallFrame;
-inline constexpr size_t UPVALUE_HEAP_BYTES = 24;
+inline constexpr size_t UPVALUE_HEAP_BYTES = 20;
 
 struct Upvalue : GCObject {
 	bool open = false;
 	int index = 0;
 	CallFrame* frame = nullptr;
-	Value value = valueNil();
+	uint32_t valueWord = 0;
+	ValueTag valueKind = ValueTag::Nil;
+	Value value() const { return valueFromTag(valueKind, valueWord); }
+	void setValue(Value value) { valueWord = valuePayload(value); valueKind = valueTag(value); }
 	Upvalue* nextOpen = nullptr;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	struct NativeOffsets { size_t open, index, frame, value; };
+	struct NativeOffsets { size_t open, index, frame, valueWord, valueKind; };
 	static NativeOffsets nativeOffsets();
 #endif
 };
@@ -32,7 +37,7 @@ struct Closure : GCObject {
 	u32 recordUpvalueCount = 0;
 	i32 executionDomainId = 0;
 	size_t upvalueCount = 0;
-	Upvalue** upvalues = nullptr;
+	uint32_t* upvalues = nullptr;
 	size_t trackedHeapBytes = 0;
 	bool canonical = false;
 	bool sameFunction(const Closure& other) const {

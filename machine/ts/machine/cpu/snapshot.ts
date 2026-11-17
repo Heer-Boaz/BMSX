@@ -2,23 +2,22 @@ import type { GarbageAllocation } from './gc_object';
 import type { Closure, Upvalue } from './closure';
 import type { Table } from './table';
 import type { Thread } from './thread';
-import { ValueTag, type ValueReference } from './value';
+import type { GcHeap } from './gc_heap';
+import { ValueTag, valueFromTag, type Value } from './value';
 
-// Snapshot-local word offsets, not a guest ABI. Values are tag + f64/u32
-// payload; references use object ordinals, never host pointers or hash ids.
-export const CPU_SNAPSHOT_VALUE_WORDS = 3;
+// Snapshot-local word offsets, not a guest ABI. Values are a tag and one
+// payload word; references use object ordinals, never heap handles/hash ids.
+export const CPU_SNAPSHOT_VALUE_WORDS = 2;
 export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue, Thread, Garbage }
 export const enum CpuSnapshotTable {
 	Kind, HashId, LengthHint, ArrayCapacity, HashSize, HashFree, Metatable,
-	Data = 9,
+	Data = 8,
 }
 export const enum CpuSnapshotClosure { Kind, HashId, FunctionAddress, Canonical, UpvalueCount, CodeAddress, NumParams, MaxStack, Flags, UpvalueTableAddress, RecordUpvalueCount, ExecutionDomainId, Data }
 export const enum CpuSnapshotUpvalue { Kind, HashId, Open, Index, ThreadRef, FrameIndex, Value }
 export const enum CpuSnapshotThread { Kind, HashId, Index, Size }
 export type CpuSnapshotObject = Table | Closure | Upvalue | Thread | GarbageAllocation;
-export type CpuSnapshotValueWriter = (offset: number, tag: ValueTag, scalar: number, reference: ValueReference) => void;
-
-const numberBits = new DataView(new ArrayBuffer(8));
+export type CpuSnapshotValueWriter = (offset: number, value: Value) => void;
 
 /** Exact active views of exclusively owned buffers. Spare capacity is not state. */
 export class CpuSnapshot {
@@ -28,11 +27,7 @@ export class CpuSnapshot {
 	public objectWord(id: number): number { return this.objectWords[id]; }
 	public word(offset: number): number { return this.words[offset]; }
 	public int(offset: number): number { return this.words[offset] | 0; }
-	public number(offset: number): number {
-		numberBits.setUint32(0, this.words[offset], true);
-		numberBits.setUint32(4, this.words[offset + 1], true);
-		return numberBits.getFloat64(0, true);
-	}
+
 }
 
 /** Capture sink. Reusing a snapshot relinquishes its previous active contents. */
@@ -68,11 +63,6 @@ export class CpuSnapshotWriter {
 	}
 	public setObjectWord(id: number, offset: number): void { this.objects[id] = offset; }
 	public setWord(offset: number, value: number): void { this.words[offset] = value; }
-	public setNumber(offset: number, value: number): void {
-		numberBits.setFloat64(0, value, true);
-		this.words[offset] = numberBits.getUint32(0, true);
-		this.words[offset + 1] = numberBits.getUint32(4, true);
-	}
 	public finish(): CpuSnapshot {
 		this.snapshot.words = this.words.subarray(0, this.size);
 		this.snapshot.objectWords = this.objects.subarray(0, this.count);
@@ -83,21 +73,15 @@ export class CpuSnapshotWriter {
 /** One decoded register value, reused throughout the restore. */
 export class CpuSnapshotReader {
 	public tag = ValueTag.Nil;
-	public scalar = NaN;
-	public reference: ValueReference = null;
-	public constructor(public readonly snapshot: CpuSnapshot, private readonly objects: CpuSnapshotObject[]) {}
+	public payload = 0;
+	public constructor(public readonly snapshot: CpuSnapshot, private readonly objects: CpuSnapshotObject[], private readonly heap: GcHeap) {}
 	public readValue(offset: number): void {
-		const snapshot = this.snapshot;
-		this.tag = snapshot.word(offset);
-		this.scalar = NaN;
-		this.reference = null;
+		this.tag = this.snapshot.word(offset);
+		this.payload = this.snapshot.word(offset + 1);
 		switch (this.tag) {
-			case ValueTag.Number: this.scalar = snapshot.number(offset + 1); break;
-			case ValueTag.String:
-			case ValueTag.BuiltinFunction: this.scalar = snapshot.word(offset + 1); break;
-			case ValueTag.Table:
-			case ValueTag.Thread:
-			case ValueTag.Closure: this.reference = this.objects[snapshot.word(offset + 1)] as ValueReference; break;
+			case ValueTag.Table: case ValueTag.Thread: case ValueTag.Closure:
+				this.payload = this.heap.reference(this.objects[this.payload]); break;
 		}
 	}
+	public value(): Value { return valueFromTag(this.tag, this.payload); }
 }

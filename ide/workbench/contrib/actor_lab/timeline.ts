@@ -1,5 +1,5 @@
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
-import { formatNumber } from '../../../../machine/ts/common/number_format';
+import { formatFloat } from '../../../../machine/ts/common/number_format';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { WorkbenchSlider } from '../../ui/slider';
 import type { ActorNode } from './runtime';
@@ -51,11 +51,11 @@ export class ActorTimelineTransport {
 			} else {
 				const position = guest.readStringMember(entry, 'position_ms') as number;
 				if (changed || this.position !== position || this.duration === null) {
-					this.position = position; this.positionLabel = `${formatNumber(position)} MS`;
+					this.position = position; this.positionLabel = `${formatFloat(position)} MS`;
 					this.labelRevision += 1;
 				}
 				if (changed || this.duration !== duration) {
-					this.duration = duration; this.durationLabel = `${formatNumber(duration)} MS`;
+					this.duration = duration; this.durationLabel = `${formatFloat(duration)} MS`;
 					this.labelRevision += 1;
 					this.slider.setRange(0, duration, 1);
 				}

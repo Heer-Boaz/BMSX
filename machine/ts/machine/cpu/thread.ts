@@ -2,17 +2,15 @@ import { GcObject, GcKind } from './gc_object';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ProtectedCallContinuation, type CallFrame } from './call_state';
 import type { Closure } from './closure';
-import { VALUE_TAG, ValueTag } from './value';
 import { ValueSlots } from './value_slots';
 import { MAPPED_BUS_MASTER_CPU } from '../memory/bus_signals';
 
 export const enum ThreadStatus { New, Running, Normal, Suspended, Dead, Failed }
 export const THREAD_HEAP_BYTES = 64;
-export const THREAD_STACK_SLOT_BYTES = 8;
+export const THREAD_STACK_SLOT_BYTES = 5;
 
 /** Retained language execution state. Physical CPU/IRQ/bus state is not thread-local. */
 export class Thread extends GcObject {
-	public readonly [VALUE_TAG] = ValueTag.Thread;
 	public status = ThreadStatus.New;
 	public firstFrame: CallFrame | null = null;
 	public currentFrame: CallFrame | null = null;

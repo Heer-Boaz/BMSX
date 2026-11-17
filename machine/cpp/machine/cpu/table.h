@@ -1,5 +1,7 @@
 #pragma once
 
+#include "machine/cpu/gc_object.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <limits>

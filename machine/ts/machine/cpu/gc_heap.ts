@@ -3,7 +3,7 @@ import { GcObject, GcKind, GarbageAllocation } from './gc_object';
 import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from './closure';
 import { Table } from './table';
 import { Thread, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
-import { ValueTag, type ValueReference } from './value';
+import { ValueTag, valueTag, valuePayload, scalarValueHash, type Value, type ValueReference } from './value';
 import { ValueSlots } from './value_slots';
 import { ceilDiv4 } from '../common/numeric';
 import type { GcDiagnostics } from './gc_diagnostics';
@@ -49,6 +49,13 @@ export class GcHeap {
 	public reference(object: GcObject): number { return object.referenceId; }
 	/** Consumes a live id produced by this heap; the Value tag supplies its kind. */
 	public object(reference: number): GcObject { return this.references[reference] as GcObject; }
+	public hash(value: Value): number {
+		switch (valueTag(value)) {
+			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread:
+				return Math.imul(this.object(valuePayload(value)).hashId, 2654435761) >>> 0;
+			default: return scalarValueHash(value);
+		}
+	}
 	public track(object: GcObject): void {
 		if (this.freeReference !== 0) {
 			object.referenceId = this.freeReference;

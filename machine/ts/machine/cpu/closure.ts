@@ -1,9 +1,5 @@
 import { GcObject, GcKind } from './gc_object';
-import {
-	VALUE_TAG,
-	ValueTag,
-	type ValueReference,
-} from './value';
+import { ValueTag, valueFromTag, valueTag, valuePayload, type Value } from './value';
 import type { CallFrame } from './call_state';
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 
@@ -12,20 +8,20 @@ export class Upvalue extends GcObject {
 	public index = 0;
 	public frame: CallFrame | null = null;
 	public valueTag = ValueTag.Nil;
-	public valueScalar = NaN;
-	public valueReference: ValueReference = null;
+	public valueWord = 0;
+	public get value(): Value { return valueFromTag(this.valueTag, this.valueWord); }
+	public set value(value: Value) { this.valueTag = valueTag(value); this.valueWord = valuePayload(value); }
 	public nextOpen: Upvalue | null = null;
 	public constructor() { super(GcKind.Upvalue); }
 }
 
-export const EMPTY_CLOSURE_UPVALUES: Upvalue[] = [];
+export const EMPTY_CLOSURE_UPVALUES = new Uint32Array();
 
 export class Closure extends GcObject {
-	public readonly [VALUE_TAG] = ValueTag.Closure;
 
 	public constructor(
 		public functionAddress: number,
-		public upvalues: Upvalue[],
+		public upvalues: Uint32Array,
 		public heapBytes: number,
 		public codeAddress: number,
 		public numParams: number,
@@ -40,4 +36,4 @@ export class Closure extends GcObject {
 	}
 }
 
-export const UPVALUE_HEAP_BYTES = 24;
+export const UPVALUE_HEAP_BYTES = 20;

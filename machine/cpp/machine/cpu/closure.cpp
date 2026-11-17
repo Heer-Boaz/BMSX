@@ -9,7 +9,7 @@ namespace bmsx {
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
 Upvalue::NativeOffsets Upvalue::nativeOffsets() {
-	return {offsetof(Upvalue, open), offsetof(Upvalue, index), offsetof(Upvalue, frame), offsetof(Upvalue, value)};
+	return {offsetof(Upvalue, open), offsetof(Upvalue, index), offsetof(Upvalue, frame), offsetof(Upvalue, valueWord), offsetof(Upvalue, valueKind)};
 }
 
 Closure::NativeFunctionOffsets Closure::nativeFunctionOffsets() {

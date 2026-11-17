@@ -4,7 +4,7 @@
 #include <array>
 
 #include "common/primitives.h"
-#include "machine/cpu/value.h"
+#include "machine/cpu/value_slots.h"
 #include "machine/memory/bus_signals.h"
 
 namespace bmsx {
@@ -39,7 +39,7 @@ struct CallFrame {
 #endif
 	int varargBase = 0;
 	int varargCount = 0;
-	Value* registers = nullptr;
+	ValueSpan registers;
 	int stackBase = 0;
 	int stackCapacity = 0;
 	Closure* closure = nullptr;

@@ -1,7 +1,7 @@
 import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { AnimationKeyViewport } from './key_viewport';
 import type { AnimationTrackSource } from './model';
-import { formatNumber } from '../../../../machine/ts/common/number_format';
+import { formatFloat } from '../../../../machine/ts/common/number_format';
 
 export type AnimationCurveField = 'value' | 'arrive' | 'leave';
 const enum ResolvedFields { Value = 1, Arrive = 2, Leave = 4 }
@@ -60,7 +60,7 @@ export class AnimationCurve {
 		}
 		const padding = this.maximum === this.minimum ? Math.max(1, Math.abs(this.minimum) * 0.1) : (this.maximum - this.minimum) * 0.2;
 		this.minimum -= padding; this.maximum += padding;
-		this.minimumLabel = formatNumber(this.minimum); this.maximumLabel = formatNumber(this.maximum);
+		this.minimumLabel = formatFloat(this.minimum); this.maximumLabel = formatFloat(this.maximum);
 	}
 	public layout(left: number, top: number, right: number, bottom: number): void {
 		if (this.bounds.left === left && this.bounds.top === top && this.bounds.right === right && this.bounds.bottom === bottom) return;

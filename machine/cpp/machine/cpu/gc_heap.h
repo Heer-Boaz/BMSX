@@ -56,6 +56,13 @@ public:
 		return m_references[reference].object;
 #endif
 	}
+	uint32_t hash(Value value) const {
+		switch (valueTag(value)) {
+			case ValueTag::Table: case ValueTag::Closure: case ValueTag::Thread:
+				return object(valuePayload(value))->hashId * 2654435761u;
+			default: return scalarValueHash(value);
+		}
+	}
 	template<class Visitor> void visitThreads(Visitor&& visit) {
 		for (auto* object = m_objects; object; object = object->next)
 			if (object->type == ObjType::Thread) visit(*static_cast<Thread*>(object));
@@ -121,4 +128,9 @@ private:
 	u32 m_freeReference = 0;
 #endif
 };
+
+inline Table* asTable(Value value, const GcHeap& heap) { return static_cast<Table*>(heap.object(valuePayload(value))); }
+inline Closure* asClosure(Value value, const GcHeap& heap) { return static_cast<Closure*>(heap.object(valuePayload(value))); }
+inline Thread* asThread(Value value, const GcHeap& heap) { return static_cast<Thread*>(heap.object(valuePayload(value))); }
+inline uint32_t valueObjectHashId(Value value, const GcHeap& heap) { return heap.object(valuePayload(value))->hashId; }
 } // namespace bmsx

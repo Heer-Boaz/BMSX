@@ -52,16 +52,13 @@ private:
 constexpr uint8_t kTableWeakKeys = 1, kTableWeakValues = 2;
 }
 bool GcHeap::markValue(Value v) {
-	if (!valueIsTagged(v)) {
-		return false;
-	}
 	switch (valueTag(v)) {
 		case ValueTag::Thread:
-			return markObject(asThread(v));
+			return markObject(asThread(v, *this));
 		case ValueTag::Table:
-			return markObject(asTable(v));
+			return markObject(asTable(v, *this));
 		case ValueTag::Closure:
-			return markObject(asClosure(v));
+			return markObject(asClosure(v, *this));
 		case ValueTag::BuiltinFunction:
 			return false;
 		case ValueTag::String:
@@ -111,12 +108,12 @@ Closure* GcHeap::allocateClosure(size_t count) {
 #if UINTPTR_MAX > UINT32_MAX
 	reserveReference();
 #endif
-	void* storage = ::operator new(sizeof(Closure) + count * sizeof(Upvalue*));
+	void* storage = ::operator new(sizeof(Closure) + count * sizeof(u32));
 	auto* closure = new (storage) Closure();
 	closure->type = ObjType::Closure;
 	closure->upvalueCount = count;
-	closure->upvalues = reinterpret_cast<Upvalue**>(static_cast<uint8_t*>(storage) + sizeof(Closure));
-	std::fill_n(closure->upvalues, count, nullptr);
+	closure->upvalues = reinterpret_cast<u32*>(static_cast<uint8_t*>(storage) + sizeof(Closure));
+	std::fill_n(closure->upvalues, count, 0u);
 	track(closure);
 	return closure;
 }
@@ -165,16 +162,13 @@ uint8_t GcHeap::tableWeakMode(const Table& table) const {
 }
 
 bool GcHeap::valueIsAlive(Value value) const {
-	if (!valueIsTagged(value)) {
-		return true;
-	}
 	switch (valueTag(value)) {
 		case ValueTag::Thread:
-			return isAlive(asThread(value));
+			return isAlive(asThread(value, *this));
 		case ValueTag::Table:
-			return isAlive(asTable(value));
+			return isAlive(asTable(value, *this));
 		case ValueTag::Closure: {
-			const Closure* closure = asClosure(value);
+			const Closure* closure = asClosure(value, *this);
 			return isAlive(closure);
 		}
 		default:
@@ -194,7 +188,7 @@ size_t GcHeap::trace(bool atomic) {
 			if (!atomic) m_threads.push_back(thread);
 			markObject(thread->resumer);
 			if (thread->entry != nullptr) markObject(thread->entry);
-			markValue(thread->error);
+			markValue(thread->error());
 			int liveTop = thread->currentFrame ? thread->currentFrame->stackBase
 				+ std::min(thread->currentFrame->top, thread->currentFrame->stackCapacity) : 0;
 			CallFrame* frame = thread->firstFrame;
@@ -205,8 +199,8 @@ size_t GcHeap::trace(bool atomic) {
 					liveTop = std::max(liveTop, frame->stackBase + upvalue->index + 1);
 				}
 			}
-			for (int slot = 0; slot < liveTop; ++slot) markValue(thread->stack[slot]);
-			std::fill(thread->stack + liveTop, thread->stack + thread->stackCapacity, valueNil());
+			for (int slot = 0; slot < liveTop; ++slot) markValue(thread->stack.get(slot));
+			thread->stack.clear(liveTop, thread->stackCapacity - liveTop);
 			thread->trimFrames();
 			break;
 		}
@@ -233,7 +227,7 @@ size_t GcHeap::trace(bool atomic) {
 		case ObjType::Closure: {
 			auto* closure = static_cast<Closure*>(obj);
 			for (size_t index = 0; index < closure->upvalueCount; ++index) {
-				markObject(closure->upvalues[index]);
+				markObject(object(closure->upvalues[index]));
 			}
 			break;
 		}
@@ -241,7 +235,7 @@ size_t GcHeap::trace(bool atomic) {
 		case ObjType::Upvalue: {
 			auto* upvalue = static_cast<Upvalue*>(obj);
 			if (!upvalue->open) {
-				markValue(upvalue->value);
+				markValue(upvalue->value());
 			} else {
 				markObject(upvalue->frame->thread);
 			}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/cpu/gc_heap.h"
+#include "machine/cpu/builtin_values.h"
 
 #include <array>
 #include <cstddef>

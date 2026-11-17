@@ -5,7 +5,6 @@ import { LuaExecutionError } from './errors';
 import type { LuaHeap } from './lua_heap';
 import type { StringId } from './string_pool';
 import {
-	VALUE_TAG,
 	ValueTag,
 	asStringId,
 	materializeValue,
@@ -58,7 +57,6 @@ type StoredValuePredicate = (
 ) => boolean;
 
 export class Table extends GcObject {
-	public readonly [VALUE_TAG] = ValueTag.Table;
 	private lengthHint = 0;
 	private tags: Uint8Array;
 	private scalars: Float64Array;
