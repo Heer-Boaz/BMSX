@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "common/primitives.h"
-#include "machine/cpu/value.h"
+#include "machine/cpu/value_slots.h"
 #include "machine/cpu/native_block_exit.h"
 #include "spec/blua32/opcode.h"
 #include "spec/blua32/cop0.h"
@@ -43,11 +43,11 @@ struct NativeBlockLink {
 };
 
 struct NativeBlockRunState {
-	Value* registers = nullptr;
-	const Value* constants = nullptr;
+	ValueSpan registers;
+	ConstValueSpan constants;
 	CallFrame* frame = nullptr;
-	Value* globalValues = nullptr;
-	Value* systemGlobalValues = nullptr;
+	ValueSpan globalValues;
+	ValueSpan systemGlobalValues;
 	u32* cop0Words = nullptr;
 	u32 constantCount = 0;
 	int remainingCycles = 0;
@@ -81,7 +81,6 @@ using NativeBlockExitHandler = NativeBlockTransition (*)(CPU*, CallFrame*, const
 inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 64u;
 inline constexpr u32 NATIVE_BLOCK_MAX_INSTRUCTIONS = 64u;
 inline constexpr size_t NATIVE_CODE_CACHE_MAX_BYTES = 32u * 1024u * 1024u;
-inline constexpr int NATIVE_BLOCK_REGISTER_CACHE_CAPACITY = 4;
 
 // Semantic helpers with a fixed successor and no frame, image or device change.
 // Ordinary Continue edges use the region's direct branches instead.
@@ -111,9 +110,6 @@ struct NativeBlockExitSite {
 	u32 nextPc = 0;
 	u32 currentPc = 0;
 	u32 lastPc = 0;
-	// Generated exit state: byte offsets into the Value bank, or -1 for
-	// host registers whose contents need no publication at this exit.
-	std::array<i32, NATIVE_BLOCK_REGISTER_CACHE_CAPACITY> registerOffsets{};
 	mutable NativeBlockLink link;
 	// Bound on CPU-side publication for CALL returns and same-frame helpers.
 	// Image-lifetime cells survive retirement of the source or target region.
@@ -283,8 +279,13 @@ inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
 		|| (op == static_cast<u8>(OpCode::MTC0) && (field == COP0_STATUS || field == COP0_EXEC || !cop0FieldImplemented(field)));
 }
 
-inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op, int field, bool controlGuarded) {
+inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op, int field, bool controlGuarded, int c = 0) {
 	switch (static_cast<OpCode>(op)) {
+		case OpCode::MOV: return c == 0 ? NativeBlockExit::Continue : NativeBlockExit::InvalidOperand;
+		case OpCode::ADD: case OpCode::SUB: case OpCode::MUL: case OpCode::DIV:
+		case OpCode::MOD: case OpCode::FLOORDIV: case OpCode::POW: case OpCode::UNM:
+		case OpCode::BAND: case OpCode::BOR: case OpCode::BXOR: case OpCode::SHL:
+		case OpCode::SHR: case OpCode::BNOT: return NativeBlockExit::InvalidOperand;
 		case OpCode::MFC0:
 		case OpCode::MTC0: return controlGuarded && cop0FieldImplemented(field) ? NativeBlockExit::Continue : NativeBlockExit::ControlFault;
 		case OpCode::GETFIELD: return NativeBlockExit::ReadField;
@@ -312,7 +313,7 @@ class NativeBlock {
 public:
 	static std::unique_ptr<NativeBlock> compile(
 		std::span<const NativeBlockInstruction> instructions,
-		const Value* constants,
+		ConstValueSpan constants,
 		size_t& cacheBytes,
 		Memory& memory,
 		StringPool& strings,
@@ -321,7 +322,7 @@ public:
 		const DecodedInstruction* skippedInstruction = nullptr
 	);
 	static std::vector<std::unique_ptr<NativeBlock>> compileRegion(
-		std::span<const NativeBlockSource> sources, const Value* constants,
+		std::span<const NativeBlockSource> sources, ConstValueSpan constants,
 		const NativeCodeBindings& bindings,
 		const NativeBlockExitHandlers& exitHandlers = {}
 	);
@@ -346,8 +347,7 @@ private:
 	friend class CPU;
 	friend class NativeBlockCompiler;
 	void execute(NativeCpuRunState& state) const;
-	static std::unique_ptr<NativeBlock> prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers,
-		bool builtinCall);
+	static std::unique_ptr<NativeBlock> prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers);
 	NativeBlock() = default;
 	void* m_body = nullptr;
 	void* m_linkEntry = nullptr;

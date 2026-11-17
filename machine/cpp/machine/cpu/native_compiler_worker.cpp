@@ -23,7 +23,7 @@ NativeCompilerWorker::~NativeCompilerWorker() {
 	m_thread.join();
 }
 
-void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources, const Value* constants,
+void NativeCompilerWorker::submit(std::span<const NativeBlockSource> sources, ConstValueSpan constants,
 	const NativeCodeBindings& bindings, const NativeBlockExitHandlers& handlers, bool profile) {
 	assert(idle());
 	m_sources.clear();

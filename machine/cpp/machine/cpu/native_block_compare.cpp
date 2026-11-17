@@ -1,78 +1,82 @@
 #include "machine/cpu/native_block_compiler.h"
 #include "machine/cpu/native_value_emit.h"
-
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/string_pool.h"
 
 namespace bmsx {
-
-void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite* skipped) {
+namespace {
+template <OpCode op> u32 compareKernel(const Value* args, const StringPool* strings, int* budget) {
+	const Value a = args[0], b = args[1];
+	if constexpr (op == OpCode::EQ)
+		return valuesEqual(a, b);
+	if (valueIsNumber(a) && valueIsNumber(b)) {
+		const auto order = compareNumbers(a, b);
+		return op == OpCode::LT ? order == NumericOrder::Less : static_cast<int>(order) <= 0;
+	}
+	if (valueIsString(a) && valueIsString(b)) {
+		const int order = compareStringIds(strings, asStringId(a), asStringId(b), budget);
+		return op == OpCode::LT ? order < 0 : order <= 0;
+	}
+	return 0;
+}
+} // namespace
+void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite& taken) {
 	const auto op = static_cast<OpCode>(instruction.op);
-	const auto [left, right] = readOperands(instruction.b, instruction.c);
-	// The owning execution image retains its decoded constant pool for the
-	// lifetime of this region, as with embedded RK headers and string IDs.
-	// With one Number operand, no tagged pair can compare equal or ordered.
-	const bool numericConstant = (instruction.b < 0 && valueIsNumber(m_constants[-instruction.b - 1]))
-		|| (instruction.c < 0 && valueIsNumber(m_constants[-instruction.c - 1]));
-	// Each comparison owns its flags. sljit_emit_fcmp does not promise flags
-	// reusable for a second, different condition on every supported backend.
-	auto* unordered = numericConstant ? nullptr
-		: sljit_emit_fcmp(m_compiler, SLJIT_UNORDERED, left, 0, right, 0);
-	auto* matched = sljit_emit_fcmp(m_compiler, op == OpCode::EQ ? SLJIT_ORDERED_EQUAL
-		: op == OpCode::LT ? SLJIT_ORDERED_LESS : SLJIT_ORDERED_LESS_EQUAL, left, 0, right, 0);
-	const auto emitOutcome = [&](NativeBlockExitSite* exit) {
-		if (m_block->hasFusedJump && exit == &m_block->terminal) {
-			auto& deferred = m_block->sideExits[m_block->sideExits.size() - 2u];
-			SlowPath slow;
-			slow.exit = &deferred;
-			slow.registers = registerSnapshot();
-			slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
-				SLJIT_S4, 0, SLJIT_IMM, deferred.cycles);
-			m_slowPaths.push_back(slow);
+	const int a = knownTag(instruction.b), b = knownTag(instruction.c);
+	sljit_jump* matched;
+	if (a == static_cast<int>(ValueTag::Integer) && b == a) {
+		const auto left = readTyped(instruction.b, ValueTag::Integer, SLJIT_R0),
+				   right = readTyped(instruction.c, ValueTag::Integer, SLJIT_R1);
+		matched = sljit_emit_cmp(m_compiler,
+			(op == OpCode::EQ	   ? SLJIT_EQUAL
+				: op == OpCode::LT ? SLJIT_SIG_LESS
+								   : SLJIT_SIG_LESS_EQUAL) |
+				SLJIT_32,
+			left.reg, 0, right.reg, 0);
+	} else if (a == static_cast<int>(ValueTag::Float) && b == a) {
+		const auto left = readTyped(instruction.b, ValueTag::Float, SLJIT_R0, SLJIT_FR0),
+				   right = readTyped(instruction.c, ValueTag::Float, SLJIT_R1, SLJIT_FR1);
+		matched = sljit_emit_fcmp(m_compiler,
+			(op == OpCode::EQ	   ? SLJIT_ORDERED_EQUAL
+				: op == OpCode::LT ? SLJIT_ORDERED_LESS
+								   : SLJIT_ORDERED_LESS_EQUAL) |
+				SLJIT_32,
+			left.reg, 0, right.reg, 0);
+	} else {
+		constexpr auto args = NativeBlockAbi::helperResultOffset;
+		emitRawLoad(instruction.b, SLJIT_R0, SLJIT_R1);
+		emitValueTransportStore(m_compiler, SLJIT_SP, args, SLJIT_R0, SLJIT_R1);
+		emitRawLoad(instruction.c, SLJIT_R0, SLJIT_R1);
+		emitValueTransportStore(m_compiler, SLJIT_SP, args + sizeof(Value), SLJIT_R0, SLJIT_R1);
+		m_cache.spillCall(false, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
+			offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_SP, 0, SLJIT_IMM, args);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.strings));
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, NativeBlockAbi::state, 0, SLJIT_IMM,
+			offsetof(NativeBlockRunState, remainingCycles));
+		const auto kernel = op == OpCode::EQ   ? &compareKernel<OpCode::EQ>
+							: op == OpCode::LT ? &compareKernel<OpCode::LT>
+											   : &compareKernel<OpCode::LE>;
+		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(kernel));
+		m_cache.spillCall(true, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),
+			offsetof(NativeBlockRunState, remainingCycles));
+		matched = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
+	}
+	const auto state = m_cache.state();
+	const auto outcome = [&](NativeBlockExitSite& exit) {
+		if (m_blocks[m_current]->hasFusedJump && &exit == &m_blocks[m_current]->terminal) {
+			auto& deferred = m_blocks[m_current]->sideExits[m_blocks[m_current]->sideExits.size() - 2];
+			fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM,
+					  deferred.cycles),
+				deferred, m_cache.state());
 		}
 		emitExit(exit);
 	};
-	auto* noLabel = sljit_emit_label(m_compiler);
-	emitOutcome(instruction.a != 0 ? skipped : &m_block->terminal);
-	auto* yesLabel = sljit_emit_label(m_compiler);
-	sljit_set_label(matched, yesLabel);
-	emitOutcome(instruction.a != 0 ? &m_block->terminal : skipped);
-	if (numericConstant) return;
-
-	// Ordered numeric true and false paths have already left. Tagged values
-	// and numeric NaNs use the cold path without materializing the guest bank.
-	sljit_set_label(unordered, sljit_emit_label(m_compiler));
-	if (op == OpCode::EQ) {
-		if (left != SLJIT_FR0) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, left, 0);
-		if (right != SLJIT_FR1) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR1, 0, right, 0);
-		sljit_emit_ijump(m_compiler, SLJIT_FAST_CALL, SLJIT_IMM,
-			reinterpret_cast<sljit_sw>(nativeBlockGate().equalValues));
-		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32,
-			SLJIT_R0, 0, SLJIT_IMM, 0), yesLabel);
-	} else {
-		loadHeader(instruction.b, SLJIT_R0);
-		loadHeader(instruction.c, SLJIT_R1);
-		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
-			SLJIT_IMM, valueTagHeader(ValueTag::String)), noLabel);
-		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
-			SLJIT_IMM, valueTagHeader(ValueTag::String)), noLabel);
-		emitValueLowWordFromFloat(m_compiler, SLJIT_R1, left, SLJIT_R0);
-		emitValueLowWordFromFloat(m_compiler, SLJIT_R2, right, SLJIT_R0);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R1, 0);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R2, 0);
-		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.strings));
-		// Only the logical budget crosses this nonallocating string kernel;
-		// the region's guest register map remains in native registers.
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles), SLJIT_S4, 0);
-		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_S3, 0, SLJIT_IMM, offsetof(NativeBlockRunState, remainingCycles));
-		emitCallSpills(false);
-		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&compareStringIds));
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S4, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles));
-		emitCallSpills(true);
-		sljit_set_label(sljit_emit_cmp(m_compiler, (op == OpCode::LT ? SLJIT_SIG_LESS : SLJIT_SIG_LESS_EQUAL) | SLJIT_32,
-			SLJIT_R0, 0, SLJIT_IMM, 0), yesLabel);
-	}
-	sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), noLabel);
+	outcome(instruction.a != 0 ? taken : m_blocks[m_current]->terminal);
+	sljit_set_label(matched, sljit_emit_label(m_compiler));
+	m_cache.setState(state);
+	outcome(instruction.a != 0 ? m_blocks[m_current]->terminal : taken);
 }
-
 } // namespace bmsx

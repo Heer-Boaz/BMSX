@@ -50,7 +50,7 @@ void NativeCodeRegion::recordPerfMap(ExecutionDomainId domain, u32 slot, u32 fir
 #endif
 
 std::unique_ptr<NativeBlock> NativeBlock::compile(
-	std::span<const NativeBlockInstruction> instructions, const Value* constants,
+	std::span<const NativeBlockInstruction> instructions, ConstValueSpan constants,
 	size_t& cacheBytes, Memory& memory, StringPool& strings, StringId indexKey,
 	const NativeBlockExitHandlers& exitHandlers, const DecodedInstruction* skippedInstruction
 ) {
@@ -61,17 +61,14 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 }
 
 std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
-	std::span<const NativeBlockSource> sources, const Value* constants,
+	std::span<const NativeBlockSource> sources, ConstValueSpan constants,
 	const NativeCodeBindings& bindings, const NativeBlockExitHandlers& exitHandlers
 ) {
 	auto region = std::make_shared<NativeCodeRegion>();
 	std::vector<std::unique_ptr<NativeBlock>> blocks;
 	blocks.reserve(sources.size());
 	for (const auto& source : sources) {
-		const auto& last = *source.instructions.back().decoded;
-		const bool builtinCall = bindings.cpu && last.op == static_cast<u8>(OpCode::CALL)
-			&& last.b >= 1 && last.b <= 3 && static_cast<u32>(last.c) <= 2u;
-		auto block = prepare(source, exitHandlers, builtinCall);
+		auto block = prepare(source, exitHandlers);
 		block->region = region;
 		blocks.push_back(std::move(block));
 	}
@@ -106,8 +103,7 @@ NativeCodeRegion::~NativeCodeRegion() {
 	if (m_cacheBytes) *m_cacheBytes -= codeBytes;
 }
 
-std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers,
-	bool builtinCall) {
+std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers) {
 	const auto instructions = source.instructions;
 	const auto* skippedInstruction = source.skippedInstruction;
 	const u8 skippedInstructionWidth = skippedInstruction ? skippedInstruction->width : 0;
@@ -118,7 +114,7 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 	size_t slowCount = 0;
 	for (const auto& source : instructions) {
 		const auto& instruction = *source.decoded;
-		const auto slow = nativeBlockSlowExit(instruction.op, instruction.b, controlGuarded);
+		const auto slow = nativeBlockSlowExit(instruction.op, instruction.b, controlGuarded, instruction.c);
 		controlGuarded |= instruction.op == static_cast<u8>(OpCode::MFC0) || instruction.op == static_cast<u8>(OpCode::MTC0);
 		slowCount += slow != NativeBlockExit::Continue;
 	}
@@ -127,8 +123,7 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		&& skippedInstruction->op == static_cast<u8>(OpCode::JMP)
 		&& skippedInstruction->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe);
 	block->sideExits.reserve(slowCount + (finalOp == OpCode::JMPIF || finalOp == OpCode::JMPIFNOT
-		|| nativeBlockComparison(static_cast<u8>(finalOp)) ? 1 : 0) + (block->hasFusedJump ? 1 : 0)
-		+ (builtinCall ? 2 : 0));
+		|| nativeBlockComparison(static_cast<u8>(finalOp)) ? 1 : 0) + (block->hasFusedJump ? 1 : 0));
 	auto& terminal = block->terminal;
 	controlGuarded = false;
 	for (const auto& source : instructions) {
@@ -143,7 +138,7 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		terminal.exitA = instruction.a; terminal.exitB = instruction.b; terminal.exitC = instruction.c;
 		terminal.exitBx = instruction.bx;
 		if (op == OpCode::SELF) terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + 2);
-		const auto slow = nativeBlockSlowExit(instruction.op, instruction.b, controlGuarded);
+		const auto slow = nativeBlockSlowExit(instruction.op, instruction.b, controlGuarded, instruction.c);
 		controlGuarded |= op == OpCode::MFC0 || op == OpCode::MTC0;
 		if (slow != NativeBlockExit::Continue) {
 			auto& exit = block->sideExits.emplace_back(terminal);
@@ -160,13 +155,13 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		if (op == OpCode::LOADNIL) terminal.cycles += instruction.b;
 		if (op == OpCode::VARARG && instruction.b != 0) terminal.cycles += instruction.b - 1;
 		if (op == OpCode::VARARG && instruction.b == 0) terminal.registerTop = 0;
-		else if (op == OpCode::VARARG || op == OpCode::LOADNIL) {
+		else if (op == OpCode::VARARG || (op == OpCode::LOADNIL && instruction.b != 0)) {
 			const int count = instruction.b - (op == OpCode::VARARG ? 1 : 0);
 			if (count > 0) terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + count);
 		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b) && slow != NativeBlockExit::WriteField && slow != NativeBlockExit::WriteMemory
 			&& slow != NativeBlockExit::WriteWords
 			&& slow != NativeBlockExit::WriteIndex && slow != NativeBlockExit::WriteInteger
-			&& op != OpCode::MTC0 && op != OpCode::SETUP && op != OpCode::SETGL && op != OpCode::SETSYS) {
+			&& op != OpCode::LOADNIL && op != OpCode::MTC0 && op != OpCode::SETUP && op != OpCode::SETGL && op != OpCode::SETSYS) {
 			terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + 1);
 		}
 	}

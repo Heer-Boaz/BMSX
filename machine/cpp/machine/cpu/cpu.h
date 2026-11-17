@@ -477,8 +477,6 @@ private:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	friend class NativeBlockGate;
 	friend class NativeBlockCompiler;
-	struct NativeFrameOffsets { size_t haltedThread, haltedDepth, activeImage; };
-	static NativeFrameOffsets nativeFrameOffsets();
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, const NativeBlockExitSite* exit,
 		NativeBuiltinCallState* call, BuiltinFunction* function) noexcept;

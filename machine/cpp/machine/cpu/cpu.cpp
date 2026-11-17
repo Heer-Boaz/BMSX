@@ -2029,9 +2029,9 @@ RunResult CPU::runLoop(
 	const NativeBlock* nativeBlock = nullptr;
 	int nativeFirstDispatchCycles = 0;
 	bool forceScalarOnce = false;
-	NativeCpuRunState nativeState{.cpu = this, .targetDepth = targetDepth,
+	NativeCpuRunState nativeState{.state = {}, .cpu = this, .targetDepth = targetDepth,
 		.systemRom = &m_memory.systemRomStorage(),
-		.ram = {m_memory.ramData(), m_memory.ramByteCount()}};
+		.ram = {m_memory.ramData(), m_memory.ramByteCount()}, .error = {}};
 #endif
 	for (;;) {
 		try {
@@ -2333,8 +2333,8 @@ dispatch_native_block: {
 				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
 				nativeState.cartridgeRom = m_memory.cartridgeController().romStorage(nativeState.cartridgeSlot);
 				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(nativeState.cartridgeSlot);
-				nativeState.state = {.registers = registers, .constants = IMAGE.constPool.data(), .frame = frame,
-					.globalValues = m_globalValues.data(), .systemGlobalValues = m_systemGlobalValues.data(),
+				nativeState.state = {.registers = registers, .constants = IMAGE.constPool.view(), .frame = frame,
+					.globalValues = m_globalValues.view(), .systemGlobalValues = m_systemGlobalValues.view(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.capacity()),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top,
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)

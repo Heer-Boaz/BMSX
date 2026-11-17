@@ -19,6 +19,7 @@ enum class NativeBlockExit : u8 {
 	WriteUpvalue,
 	Vararg,
 	InvalidConstant,
+	InvalidOperand,
 	ReadIndex,
 	WriteIndex,
 	ReadInteger,

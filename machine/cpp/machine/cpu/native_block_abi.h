@@ -1,67 +1,59 @@
 #pragma once
 
 #include <algorithm>
-
+#include <array>
 #include "machine/cpu/native_block.h"
-#include "machine/cpu/table.h"
+#include "machine/cpu/native_block_registers.h"
 #include "sljitLir.h"
 
 namespace bmsx {
 
-// The stable CALL gate owns these admission temporaries. They reuse the same
-// host frame as register spills, and are never guest activation storage.
-struct NativeCallScratch {
-	const NativeBlockExitSite* exit;
-	CallFrame* caller;
-	CallFrame* callee;
-	Closure* closure;
-	const Value* args;
-	u32 functionAddress, codeAddress, numParams, maxStack, flags;
-	int argCount, varargBase, varargCount, stackBase, stackTop;
-};
-
-// One native frame spans every linked body, including bodies compiled later.
-// Keep its register banks, helper spill space and host save area identical.
+// Every linked region shares this one native frame. Only the word/tag bases,
+// run state and cycle grant are pinned; the remaining banks own raw payloads.
 struct NativeBlockAbi {
-	static constexpr int registerCacheCapacity = NATIVE_BLOCK_REGISTER_CACHE_CAPACITY;
-	static constexpr int scratchFloats = 3 + std::min(registerCacheCapacity,
-		SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
-	static constexpr int savedFloats = std::min(registerCacheCapacity, SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS);
-	static constexpr int scratches = 4 | SLJIT_ENTER_FLOAT(scratchFloats);
-	static constexpr int saveds = 6 | SLJIT_ENTER_FLOAT(savedFloats);
-	static constexpr int stackBytes = std::max(registerCacheCapacity * sizeof(Value), sizeof(NativeCallScratch));
-	static constexpr int helperResultOffset = registerCacheCapacity * sizeof(Value);
-	static_assert(helperResultOffset + sizeof(TableLookupResult) <= stackBytes);
-	static_assert(helperResultOffset + sizeof(NativeBuiltinCallState) <= stackBytes);
+	static constexpr sljit_s32 words = SLJIT_S0, tags = SLJIT_S1, state = SLJIT_S2, budget = SLJIT_S3;
+	static constexpr int fixedSaved = 4;
+	static constexpr int savedWords = std::min(4, SLJIT_NUMBER_OF_SAVED_REGISTERS - fixedSaved);
+	static constexpr int scratchWords =
+		std::min(4 - savedWords, SLJIT_NUMBER_OF_REGISTERS - SLJIT_NUMBER_OF_SAVED_REGISTERS - 4);
+	static constexpr int wordCount = savedWords + scratchWords;
+	static constexpr int savedFloats = std::min(4, SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS);
+	static constexpr int scratchFloats =
+		3 + std::min(4 - savedFloats, SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
+	static constexpr int floatCount = savedFloats + scratchFloats - 3;
+	static constexpr int registerCacheCapacity = wordCount + floatCount;
+	static constexpr int scratches = (4 + scratchWords) | SLJIT_ENTER_FLOAT(scratchFloats);
+	static constexpr int saveds = (fixedSaved + savedWords) | SLJIT_ENTER_FLOAT(savedFloats);
+	static constexpr int helperResultOffset = registerCacheCapacity * sizeof(u32);
+	static constexpr int stackBytes = helperResultOffset + 64;
 	static constexpr int signature = SLJIT_ARGS2(P, P, P);
+	static constexpr auto wordRegisters = [] {
+		std::array<NativeRegisterHost, wordCount> result{};
+		for (int i = 0; i < wordCount; ++i)
+			result[i] = {i < savedWords ? SLJIT_S(fixedSaved + i) : SLJIT_R(4 + i - savedWords), i < savedWords};
+		return result;
+	}();
+	static constexpr auto floatRegisters = [] {
+		std::array<NativeRegisterHost, floatCount> result{};
+		for (int i = 0; i < floatCount; ++i)
+			result[i] = {i < savedFloats ? SLJIT_FS(i) : SLJIT_FR(3 + i - savedFloats), i < savedFloats};
+		return result;
+	}();
 };
 
+// Cold semantic work returns through this stable allocation. A helper may
+// retire the region it came from; no return address points into that region.
 class NativeBlockGate {
 public:
 	NativeBlockGate();
 	~NativeBlockGate();
 	NativeBlockGate(const NativeBlockGate&) = delete;
 	NativeBlockGate& operator=(const NativeBlockGate&) = delete;
-
 	void* entry;
 	void* exit;
 	void* dispatch;
-	// Both entries consume R0=exit descriptor and retain the native frame.
-	// An internal deadline exit has already charged its segment.
-	std::array<void*, 2> finishSegment;
-	std::array<void*, 2> publishSegment;
-	// Already materialized/charged edges arrive here when unlinked or expired.
 	void* leaveSegment;
-	// Pure raw-Value equality: FR0/FR1 inputs, R0 boolean result. The fast
-	// call preserves every cached FPR and saved GPR; R1/R2/R3 are scratch.
-	void* equalValues;
-
-private:
-	sljit_label* emitCallGate(sljit_compiler* compiler, sljit_label* coldDispatch, sljit_label* returnToCpp);
-	sljit_label* emitReturnGate(sljit_compiler* compiler, sljit_label* coldDispatch);
-	sljit_label* emitEqualityGate(sljit_compiler* compiler);
 };
-
 const NativeBlockGate& nativeBlockGate();
 
 } // namespace bmsx

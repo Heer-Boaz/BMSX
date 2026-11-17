@@ -26,7 +26,7 @@ struct NativeGateProfile {
 inline constexpr auto NATIVE_GATE_EXIT_NAMES = std::to_array<const char*>({
 	"Continue", "ScalarBoundary", "Halt", "Call", "CompletedCall", "Return",
 	"ReadField", "WriteField", "ReadMemory", "WriteMemory", "SkipInstruction",
-	"WriteUpvalue", "Vararg", "InvalidConstant", "ReadIndex", "WriteIndex",
+	"WriteUpvalue", "Vararg", "InvalidConstant", "InvalidOperand", "ReadIndex", "WriteIndex",
 	"ReadInteger", "WriteInteger", "InvalidLength", "AllocateTable", "ControlFault",
 	"ControlBoundary", "ExecuteFunction", "ExceptionReturn", "Concat", "ConcatRange",
 	"CreateClosure", "WriteWords",

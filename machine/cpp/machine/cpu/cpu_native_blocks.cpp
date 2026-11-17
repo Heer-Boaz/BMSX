@@ -227,14 +227,14 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 		pendingJob.instructionCount = static_cast<u32>(instructionCount);
 		pendingJob.invalidated = false;
 		pendingJob.entries.assign(entries.begin(), entries.end());
-		m_nativeCompilerWorker->submit(sources, image.constPool.data(), NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), handlers, profile != nullptr);
+		m_nativeCompilerWorker->submit(sources, image.constPool.view(), NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), handlers, profile != nullptr);
 		return;
 	}
 #else
 	(void)immediate;
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
-	auto blocks = NativeBlock::compileRegion(sources, image.constPool.data(),
+	auto blocks = NativeBlock::compileRegion(sources, image.constPool.view(),
 		NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), handlers);
 	installNativeRegion(image, page, pagePc, source.slot, entries, std::move(blocks), static_cast<u32>(instructionCount));
 }
@@ -323,36 +323,31 @@ void CPU::clearNativeContinuationBindings() {
 	});
 }
 
-NativeBlockTransition CPU::compiledReadFieldExit(CPU* owner, CallFrame* activeFrame, const NativeBlockExitSite* exit) {
-	auto& cpu = *owner;
-	auto& frame = *activeFrame;
-	frame.registers[exit->exitA] = cpu.loadTableFieldIndexCached(exit->tableCacheSlot,
-		frame.registers[exit->exitB], asStringId(frame.executionImage->constPool[exit->exitC]));
-	frame.top = std::max(frame.top, static_cast<int>(exit->exitA) + 1);
+NativeBlockTransition CPU::compiledReadFieldExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
+	frame->registers.set(exit->exitA, owner->loadTableFieldIndexCached(exit->tableCacheSlot,
+		frame->registers.get(exit->exitB), asStringId(frame->executionImage->constPool.get(exit->exitC))));
+	frame->top = std::max(frame->top, static_cast<int>(exit->exitA) + 1);
 	return NativeBlockTransition::NextInstruction;
 }
 
-NativeBlockTransition CPU::compiledWriteFieldExit(CPU* owner, CallFrame* activeFrame, const NativeBlockExitSite* exit) {
-	auto& cpu = *owner;
-	auto& frame = *activeFrame;
-	cpu.storeTableFieldIndexCached(exit->tableCacheSlot, frame.registers[exit->exitA],
-		asStringId(frame.executionImage->constPool[exit->exitB]), cpu.readRK(*frame.executionImage, frame.registers, exit->exitC));
+NativeBlockTransition CPU::compiledWriteFieldExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
+	owner->storeTableFieldIndexCached(exit->tableCacheSlot, frame->registers.get(exit->exitA),
+		asStringId(frame->executionImage->constPool.get(exit->exitB)), owner->readRK(*frame->executionImage, frame->registers, exit->exitC));
 	return NativeBlockTransition::NextInstruction;
 }
 
 NativeBlockTransition CPU::compiledReadIndexExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const int a = exit->exitA;
-	const Value base = frame->registers[exit->exitB];
+	const Value base = frame->registers.get(exit->exitB);
 	const Value key = owner->readRK(*frame->executionImage, frame->registers, exit->exitC);
-	frame->registers[a] = valueIsString(key)
+	frame->registers.set(exit->exitA, valueIsString(key)
 		? owner->loadTableFieldIndexCached(exit->tableCacheSlot, base, asStringId(key))
-		: owner->loadTableIndex(base, key);
-	frame->top = std::max(frame->top, a + 1);
+		: owner->loadTableIndex(base, key));
+	frame->top = std::max(frame->top, static_cast<int>(exit->exitA) + 1);
 	return NativeBlockTransition::NextInstruction;
 }
 
 NativeBlockTransition CPU::compiledWriteIndexExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const Value base = frame->registers[exit->exitA];
+	const Value base = frame->registers.get(exit->exitA);
 	const Value key = owner->readRK(*frame->executionImage, frame->registers, exit->exitB);
 	const Value value = owner->readRK(*frame->executionImage, frame->registers, exit->exitC);
 	if (valueIsString(key)) owner->storeTableFieldIndexCached(exit->tableCacheSlot, base, asStringId(key), value);
@@ -361,14 +356,13 @@ NativeBlockTransition CPU::compiledWriteIndexExit(CPU* owner, CallFrame* frame, 
 }
 
 NativeBlockTransition CPU::compiledReadIntegerExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const int a = exit->exitA;
-	frame->registers[a] = owner->loadTableIntegerIndex(frame->registers[exit->exitB], exit->exitC);
-	frame->top = std::max(frame->top, a + 1);
+	frame->registers.set(exit->exitA, owner->loadTableIntegerIndex(frame->registers.get(exit->exitB), exit->exitC));
+	frame->top = std::max(frame->top, static_cast<int>(exit->exitA) + 1);
 	return NativeBlockTransition::NextInstruction;
 }
 
 NativeBlockTransition CPU::compiledWriteIntegerExit(CPU* owner, CallFrame* frame, const NativeBlockExitSite* exit) {
-	owner->storeTableIntegerIndex(frame->registers[exit->exitA], exit->exitB,
+	owner->storeTableIntegerIndex(frame->registers.get(exit->exitA), exit->exitB,
 		owner->readRK(*frame->executionImage, frame->registers, exit->exitC));
 	return NativeBlockTransition::NextInstruction;
 }

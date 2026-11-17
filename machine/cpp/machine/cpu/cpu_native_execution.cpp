@@ -1,5 +1,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/native_execution.h"
+#include "machine/cpu/value_arithmetic.h"
 
 #include <algorithm>
 
@@ -9,17 +10,6 @@
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
-
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Winvalid-offsetof"
-#endif
-CPU::NativeFrameOffsets CPU::nativeFrameOffsets() {
-	return {offsetof(CPU, m_haltedUntilIrqThread), offsetof(CPU, m_haltedUntilIrqFrameDepth), offsetof(CPU, m_activeExecutionImage)};
-}
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
 
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_memory.inl"
@@ -67,8 +57,8 @@ NativeBuiltinCallOutcome CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, co
 	CallFrame& frame = *state.frame;
 	const int base = exit->exitA;
 	const int argumentCount = decodeValueCount(exit->exitB, std::max(state.registerTop - base - 1, 0));
-	const BuiltinArgsView args(state.registers + base + 1, static_cast<size_t>(argumentCount));
-	BuiltinFunction& function = *asBuiltinFunction(state.registers[base]);
+	const BuiltinArgsView args(state.registers.subspan(base + 1, static_cast<size_t>(argumentCount)));
+	BuiltinFunction& function = cpu.m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(state.registers.get(base)))];
 	NativeBuiltinCallState call{{args[0], args[1]}, state.remainingCycles, state.registerTop};
 	const auto outcome = runNativeBuiltinLeaf(&cpu, exit, &call, &function);
 	if (outcome == NativeBuiltinCallOutcome::Declined) {
@@ -80,7 +70,7 @@ NativeBuiltinCallOutcome CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, co
 
 	// The materialized gate owns publication. Inline body calls instead retain
 	// their live cache until an ordinary instruction boundary needs the bank.
-	if (exit->exitC != 1) frame.registers[base] = call.arguments[0];
+	if (exit->exitC != 1) frame.registers.set(base, call.arguments[0]);
 	frame.top = call.registerTop;
 	frame.pc = exit->nextPc;
 	frame.compilationEntry = true;
@@ -168,7 +158,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::ExecuteFunction:
-			cpu.executeFunctionAddress(toU32(frame->registers[exit->exitA]));
+			cpu.executeFunctionAddress(wordOperand(frame->registers.get(exit->exitA)));
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::ExceptionReturn:
@@ -193,8 +183,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			cpu.executeVararg(*frame, exit->exitA, exit->exitB);
 			break;
 		case NativeBlockExit::WriteUpvalue:
-			cpu.writeUpvalue(frame->closure->upvalues[exit->exitB], frame->registers[exit->exitA]);
+			cpu.writeUpvalue(static_cast<Upvalue*>(cpu.m_heap.object(frame->closure->upvalues[exit->exitB])), frame->registers.get(exit->exitA));
 			break;
+		case NativeBlockExit::InvalidOperand:
 		case NativeBlockExit::InvalidConstant:
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		case NativeBlockExit::InvalidLength:
@@ -214,7 +205,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::AllocateTable: {
 			const int a = exit->exitA;
 			auto* table = cpu.createTable(exit->exitB, exit->exitC);
-			frame->registers[a] = valueTable(table);
+			frame->registers.set(a, valueTable(cpu.m_heap.reference(table)));
 			cpu.instructionBudgetRemaining -= 2 * static_cast<int>(table->storedSlotCount()) - exit->exitB;
 			frame->top = std::max(frame->top, a + 1);
 			break;
@@ -247,6 +238,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			// These helpers neither change frames nor operate a device. Keep the
 			// latched image/bank and avoid resolving their fixed successor again.
 			state.registers = frame->registers;
+			state.globalValues = cpu.m_globalValues.view();
+			state.systemGlobalValues = cpu.m_systemGlobalValues.view();
 			state.remainingCycles = cpu.instructionBudgetRemaining;
 			state.registerTop = frame->top;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -300,13 +293,13 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			&& (frame->executionImage->executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
 				|| pc < CART_ROM_BASE || exit->currentPc >= CART_ROM_BASE)) target->linkFrom(*exit);
 		state.registers = frame->registers;
+		state.globalValues = cpu.m_globalValues.view();
+		state.systemGlobalValues = cpu.m_systemGlobalValues.view();
 		if (transition != NativeBlockTransition::NextInstruction) {
-			state.constants = frame->executionImage->constPool.data();
+			state.constants = frame->executionImage->constPool.view();
 			state.frame = frame;
-			state.globalValues = cpu.m_globalValues.data();
-			state.systemGlobalValues = cpu.m_systemGlobalValues.data();
 			state.cop0Words = cpu.m_cop0Words.data();
-			state.constantCount = static_cast<u32>(frame->executionImage->constPool.size());
+			state.constantCount = static_cast<u32>(frame->executionImage->constPool.capacity());
 		}
 		state.remainingCycles = cpu.instructionBudgetRemaining;
 		state.registerTop = frame->top;

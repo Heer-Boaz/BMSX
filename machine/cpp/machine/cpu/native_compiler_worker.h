@@ -22,7 +22,7 @@ public:
 
 	bool idle() const { return m_state.load(std::memory_order_acquire) == State::Idle; }
 	bool ready() const { return m_state.load(std::memory_order_acquire) == State::Ready; }
-	void submit(std::span<const NativeBlockSource> sources, const Value* constants,
+	void submit(std::span<const NativeBlockSource> sources, ConstValueSpan constants,
 		const NativeCodeBindings& bindings, const NativeBlockExitHandlers& handlers, bool profile = false);
 	void wait();
 	std::vector<std::unique_ptr<NativeBlock>> take();
@@ -41,7 +41,7 @@ private:
 	std::array<DecodedInstruction, DECODED_PAGE_WORDS * 2u> m_decoded;
 	std::array<NativeBlockInstruction, DECODED_PAGE_WORDS> m_instructions;
 	std::vector<NativeBlockSource> m_sources;
-	const Value* m_constants = nullptr; // Image lifetime is owned by the CPU.
+	ConstValueSpan m_constants; // Image lifetime is owned by the CPU.
 	NativeCodeBindings m_bindings;
 	NativeBlockExitHandlers m_handlers;
 	std::vector<std::unique_ptr<NativeBlock>> m_blocks;

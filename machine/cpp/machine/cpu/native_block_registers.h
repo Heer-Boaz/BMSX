@@ -48,6 +48,7 @@ public:
 	void spillCall(bool reload, sljit_sw stackOffset) const;
 
 	const State& state() const { return m_state; }
+	const Binding* binding(int guest) const { const int slot=find(guest); return slot<0?nullptr:&m_state[slot]; }
 	void setState(const State& state);
 	void emitState(const State& state) const;
 	// Guards precede every parallel move. A failure retains the source state;

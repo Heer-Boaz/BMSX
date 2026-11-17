@@ -54,41 +54,41 @@ void liveReferencesAndReuse() {
 	static_assert(offsetof(GCObject, next) == 8, "32-bit objects have no directory id");
 #endif
 	for (auto* object : {static_cast<GCObject*>(cpu.rootThread()), static_cast<GCObject*>(frame.closure),
-		static_cast<GCObject*>(asClosure(frame.registers[1])), static_cast<GCObject*>(asClosure(frame.registers[1])->upvalues[0])})
+		static_cast<GCObject*>(asClosure(frame.registers.get(1),cpu.gcHeap())), static_cast<GCObject*>(cpu.gcHeap().object(asClosure(frame.registers.get(1),cpu.gcHeap())->upvalues[0]))})
 		require(cpu.gcHeap().object(cpu.gcHeap().reference(object)) == object, "threads, closures and upvalues have references at construction");
 	auto* roots = cpu.createTable(512);
-	frame.registers[0] = valueTable(roots); frame.top = 2;
+	frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.top = 2;
 	ValueStorage slots(400);
 	for (size_t i = 0; i < slots.capacity(); ++i) {
-		auto* table = cpu.createTable(); roots->setInteger(static_cast<int>(i + 1), valueTable(table));
+		auto* table = cpu.createTable(); roots->setInteger(static_cast<int>(i + 1), valueTable(cpu.gcHeap().reference(table)));
 		slots.words()[i] = cpu.gcHeap().reference(table); slots.tags()[i] = static_cast<u8>(ValueTag::Table);
 	}
 	cpu.collectHeap();
 	for (size_t i = 0; i < slots.capacity(); ++i)
-		require(cpu.gcHeap().object(slots.words()[i]) == asTable(roots->getInteger(static_cast<int>(i + 1))), "32-bit payloads survive allocation growth and collection");
+		require(cpu.gcHeap().object(slots.words()[i]) == asTable(roots->getInteger(static_cast<int>(i + 1)),cpu.gcHeap()), "32-bit payloads survive allocation growth and collection");
 	checkReferences(cpu);
 	auto* dead = cpu.createTable(); const u32 freeId = cpu.gcHeap().reference(dead), hash = dead->hashId;
 	cpu.collectHeap();
 	auto* replacement = cpu.createTable();
 	require(cpu.gcHeap().reference(replacement) == freeId && replacement->hashId != hash, "a recycled payload id is not a hash identity");
 	require(cpu.gcHeap().object(freeId) == replacement, "recycled ids resolve the replacement object");
-	frame.registers[2] = valueTable(replacement); frame.top = 3;
+	frame.registers.set(2,valueTable(cpu.gcHeap().reference(replacement))); frame.top = 3;
 }
 
 void restoreRebindsWithoutRetainingDiscardedFutures() {
 	Machine machine; auto& cpu = machine.cpu;
 	auto& frame = *cpu.rootThread()->currentFrame;
-	auto* roots = cpu.createTable(4); frame.registers[0] = valueTable(roots); frame.top = 2;
-	for (int i = 1; i <= 4; ++i) roots->setInteger(i, valueTable(cpu.createTable()));
+	auto* roots = cpu.createTable(4); frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.top = 2;
+	for (int i = 1; i <= 4; ++i) roots->setInteger(i, valueTable(cpu.gcHeap().reference(cpu.createTable())));
 	cpu.collectHeap();
 	const auto saved = cpu.captureRuntimeState();
-	const u32 thread = cpu.gcHeap().reference(cpu.rootThread()), canonical = cpu.gcHeap().reference(frame.closure);
+	const u32 threadHash = cpu.rootThread()->hashId, canonicalHash = frame.closure->hashId;
 	u32 peak = 0;
 	for (int iteration = 0; iteration < 64; ++iteration) {
 		for (int i = 0; i < 12; ++i) cpu.createTable();
 		cpu.restoreRuntimeState(saved);
-		require(cpu.gcHeap().object(thread) == cpu.rootThread() && cpu.gcHeap().reference(cpu.rootThread()->currentFrame->closure) == canonical,
-			"restore preserves root and canonical closure registrations");
+		require(cpu.rootThread()->hashId == threadHash && cpu.rootThread()->currentFrame->closure->hashId == canonicalHash,
+			"restore preserves guest root and canonical closure identities");
 		const u32 highest = checkReferences(cpu);
 		if constexpr (sizeof(void*) > sizeof(u32)) {
 			if (iteration < 2) peak = std::max(peak, highest);
@@ -102,10 +102,10 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 
 void incrementalRestore() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
-	auto* roots = cpu.createTable(1024); frame.registers[0] = valueTable(roots); frame.top = 2;
+	auto* roots = cpu.createTable(1024); frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.top = 2;
 	for (int i = 1; i <= 1000; ++i) {
-		roots->setInteger(i, valueTable(cpu.createTable(1, 1)));
-		auto* dead = cpu.createTable(1); dead->setInteger(1, valueTable(cpu.createTable()));
+		roots->setInteger(i, valueTable(cpu.gcHeap().reference(cpu.createTable(1, 1))));
+		auto* dead = cpu.createTable(1); dead->setInteger(1, valueTable(cpu.gcHeap().reference(cpu.createTable())));
 	}
 	std::unordered_set<GcPhase> phases;
 	for (int step = 0; step < 1000; ++step) {
@@ -126,16 +126,16 @@ void incrementalRestore() {
 void builtinIdentitiesStayOutsideTheGcHeap() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
 	auto* functions = cpu.createTable(BUILTIN_FUNCTION_COUNT);
-	frame.registers[0] = valueTable(functions); frame.top = 2;
+	frame.registers.set(0,valueTable(cpu.gcHeap().reference(functions))); frame.top = 2;
 	const auto before = cpu.gcHeap().captureState([&](const GCObject* object) { return cpu.gcHeap().reference(object); });
 	for (size_t i = 0; i < BUILTIN_FUNCTION_COUNT; ++i)
 		functions->setInteger(static_cast<int>(i + 1), cpu.createBuiltinFunction(static_cast<BuiltinFunctionId>(i)));
 	const auto after = cpu.gcHeap().captureState([&](const GCObject* object) { return cpu.gcHeap().reference(object); });
 	require(before.allocations == after.allocations, "builtin functions have CPU-owned ids, not GC registrations");
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
-	functions = asTable(cpu.rootThread()->currentFrame->registers[0]);
+	functions = asTable(cpu.rootThread()->currentFrame->registers.get(0),cpu.gcHeap());
 	for (size_t i = 0; i < BUILTIN_FUNCTION_COUNT; ++i)
-		require(asBuiltinFunction(functions->getInteger(static_cast<int>(i + 1)))->id == static_cast<BuiltinFunctionId>(i),
+		require(asBuiltinFunctionId(functions->getInteger(static_cast<int>(i + 1))) == static_cast<BuiltinFunctionId>(i),
 			"builtin ids survive restore including zero");
 }
 

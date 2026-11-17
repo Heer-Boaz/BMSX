@@ -19,18 +19,18 @@ struct NativeCompilationSource {
 	// those constants is not compilable; executing it remains the CPU's job.
 	bool canEmit(const DecodedInstruction& instruction) const {
 		if (!nativeBlockSupports(instruction.op)
-			|| (instruction.op == static_cast<u8>(OpCode::MOV) && instruction.c != 0)) return false;
+			|| (instruction.op == static_cast<u8>(OpCode::MOV) && instruction.c > static_cast<int>(ValueMoveKind::FloatFromBits))) return false;
 		const u8 rk = OPCODE_RK_OPERANDS[instruction.op];
 		if (((rk & RK_OPERAND_B) != 0u && instruction.b < 0
-				&& static_cast<size_t>(-instruction.b - 1) >= image.constPool.size())
+				&& static_cast<size_t>(-instruction.b - 1) >= image.constPool.capacity())
 			|| ((rk & RK_OPERAND_C) != 0u && instruction.c < 0
-				&& static_cast<size_t>(-instruction.c - 1) >= image.constPool.size())) return false;
+				&& static_cast<size_t>(-instruction.c - 1) >= image.constPool.capacity())) return false;
 		switch (static_cast<OpCode>(instruction.op)) {
-			case OpCode::LOADK: return instruction.bx < image.constPool.size();
+			case OpCode::LOADK: return instruction.bx < image.constPool.capacity();
 			case OpCode::GETFIELD: case OpCode::SELF:
-				return static_cast<size_t>(instruction.c) < image.constPool.size();
+				return static_cast<size_t>(instruction.c) < image.constPool.capacity();
 			case OpCode::SETFIELD:
-				return static_cast<size_t>(instruction.b) < image.constPool.size();
+				return static_cast<size_t>(instruction.b) < image.constPool.capacity();
 			default: return true;
 		}
 	}
