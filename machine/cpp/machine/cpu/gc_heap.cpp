@@ -72,7 +72,31 @@ bool GcHeap::markValue(Value v) {
 	}
 }
 
+#if UINTPTR_MAX > UINT32_MAX
+void GcHeap::reserveReference() {
+	// Admit directory growth before constructing the object. Recycling a
+	// directory slot and binding a constructed object do not allocate.
+	if (m_freeReference == 0 && m_references.size() == m_references.capacity())
+		m_references.reserve(std::max(size_t{64}, m_references.capacity() * 2));
+}
+void GcHeap::releaseReference(GCObject* object) {
+	const u32 reference = object->referenceId;
+	m_references[reference].nextFree = m_freeReference;
+	m_freeReference = reference;
+	object->referenceId = 0;
+}
+#endif
 void GcHeap::track(GCObject* object) {
+#if UINTPTR_MAX > UINT32_MAX
+	if (m_freeReference != 0) {
+		object->referenceId = m_freeReference;
+		m_freeReference = m_references[m_freeReference].nextFree;
+		m_references[object->referenceId].object = object;
+	} else {
+		object->referenceId = static_cast<u32>(m_references.size());
+		m_references.push_back({.object = object});
+	}
+#endif
 	object->gcColor = m_white;
 	object->restored = false;
 	object->grayHead = &m_grayAgain;
@@ -84,6 +108,9 @@ void GcHeap::track(GCObject* object) {
 	m_objects = object;
 }
 Closure* GcHeap::allocateClosure(size_t count) {
+#if UINTPTR_MAX > UINT32_MAX
+	reserveReference();
+#endif
 	void* storage = ::operator new(sizeof(Closure) + count * sizeof(Upvalue*));
 	auto* closure = new (storage) Closure();
 	closure->type = ObjType::Closure;
@@ -292,6 +319,9 @@ void GcHeap::unlink(GCObject* object) {
 	if (object->next) object->next->previous = object->previous;
 }
 void GcHeap::destroyObject(GCObject* object) {
+#if UINTPTR_MAX > UINT32_MAX
+	releaseReference(object);
+#endif
 	switch (object->type) {
 		case ObjType::Garbage:
 			m_luaHeap.release(static_cast<GarbageAllocation*>(object)->bytes);

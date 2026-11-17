@@ -54,6 +54,11 @@ struct GCObject {
 	uint8_t gcColor = 0;
 	bool restored = false;
 	uint32_t hashId = 0;
+#if UINTPTR_MAX > UINT32_MAX
+	// Wide hosts encode object pointers through the owning heap directory.
+	// This identity is independent of hashing and snapshot indices.
+	uint32_t referenceId = 0;
+#endif
 	GCObject* next = nullptr;
 	GCObject* previous = nullptr;
 	GCObject* grayNext = nullptr;

@@ -3,6 +3,9 @@ export const enum GcKind { Table, Closure, Upvalue, Thread, Garbage }
 export type GrayQueue = { grayAgain: GcObject | null };
 export class GcObject {
 	public hashId = 0;
+	// Heap-local payload identity, not a hash id or snapshot object index.
+	public referenceId = 0;
+	public restored = false;
 	// 0/1 alternate white generations; 2 is queued gray, 3 is scanned black.
 	public gcColor = 0;
 	public gcNext: GcObject | null = null;

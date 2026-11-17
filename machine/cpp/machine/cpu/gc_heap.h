@@ -26,6 +26,9 @@ public:
 		: m_cpu(cpu), m_luaHeap(budget), m_modeKey(modeKey), m_stringPool(strings) {}
 	~GcHeap();
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
+#if UINTPTR_MAX > UINT32_MAX
+		reserveReference();
+#endif
 		T* object;
 		if constexpr (std::is_same_v<T, Table>) object = m_tables.construct(std::forward<Args>(args)...);
 		else object = new T(std::forward<Args>(args)...);
@@ -36,6 +39,23 @@ public:
 	Closure* allocateClosure(size_t count);
 	u32 allocateHashId() { return m_nextObjectHashId++; }
 	u32 nextObjectHashId() const { return m_nextObjectHashId; }
+	// A live object reference is a native pointer word on 32-bit hosts, a
+	// heap-local directory id on wider hosts. Neither form is a hash/snapshot id.
+	// The Value tag supplies the kind; only live references from this heap enter.
+	u32 reference(const GCObject* object) const {
+#if UINTPTR_MAX == UINT32_MAX
+		return reinterpret_cast<uintptr_t>(object);
+#else
+		return object->referenceId;
+#endif
+	}
+	GCObject* object(u32 reference) const {
+#if UINTPTR_MAX == UINT32_MAX
+		return reinterpret_cast<GCObject*>(static_cast<uintptr_t>(reference));
+#else
+		return m_references[reference].object;
+#endif
+	}
 	template<class Visitor> void visitThreads(Visitor&& visit) {
 		for (auto* object = m_objects; object; object = object->next)
 			if (object->type == ObjType::Thread) visit(*static_cast<Thread*>(object));
@@ -66,6 +86,14 @@ public:
 	bool markValue(Value value);
 	bool markObject(GCObject* object);
 private:
+#if UINTPTR_MAX > UINT32_MAX
+	union ReferenceSlot {
+		GCObject* object;
+		u32 nextFree;
+	};
+	void reserveReference();
+	void releaseReference(GCObject* object);
+#endif
 	void track(GCObject* object);
 	uint8_t tableWeakMode(const Table& table) const;
 	bool valueIsAlive(Value value) const;
@@ -88,5 +116,9 @@ private:
 	StringId m_modeKey;
 	StringPool& m_stringPool;
 	ObjectStoragePool<Table> m_tables;
+#if UINTPTR_MAX > UINT32_MAX
+	std::vector<ReferenceSlot> m_references{{.object = nullptr}};
+	u32 m_freeReference = 0;
+#endif
 };
 } // namespace bmsx

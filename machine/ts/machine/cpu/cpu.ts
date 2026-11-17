@@ -4817,11 +4817,14 @@ export class CPU implements MappedPageInvalidator {
 					const bytes = snapshot.word(offset + 2);
 					this.luaHeap.restoreAllocate(bytes);
 					const object = new GarbageAllocation(bytes); object.hashId = snapshot.word(offset + 1);
+					this.gc.track(object); object.restored = true;
 					restoredObjects[index] = object;
 					break;
 				}
 				case CpuSnapshotObjectKind.Thread: {
 					const thread = index === state.rootThreadRef ? this.rootThread : new Thread(null);
+					if (index !== state.rootThreadRef) this.gc.track(thread);
+					thread.restored = true;
 					const saved = state.threads[snapshot.word(offset + CpuSnapshotThread.Index)];
 					thread.hashId = snapshot.word(offset + CpuSnapshotThread.HashId);
 					thread.stackRegisters = new ValueSlots(saved.stackCapacity);
@@ -4837,6 +4840,7 @@ export class CPU implements MappedPageInvalidator {
 					const hashSize = snapshot.word(offset + CpuSnapshotTable.HashSize);
 					this.luaHeap.restoreAllocate(Table.trackedHeapBytesForCapacities(arrayCapacity, hashSize));
 					const table = new Table(this.luaHeap, arrayCapacity, hashSize);
+					this.gc.track(table); table.restored = true;
 					table.hashId = snapshot.word(offset + CpuSnapshotTable.HashId);
 					restoredObjects[index] = table;
 					break;
@@ -4861,6 +4865,8 @@ export class CPU implements MappedPageInvalidator {
 						&& item.upvalueTableAddress === upvalueTableAddress && item.recordUpvalueCount === recordUpvalueCount
 						&& item.executionDomainId === executionDomainId && item.hashId === snapshot.word(offset + CpuSnapshotClosure.HashId));
 					const closure = existingIndex < 0 ? new Closure(functionAddress, upvalues, heapBytes, codeAddress, numParams, maxStack, flags, upvalueTableAddress, executionDomainId, recordUpvalueCount, canonical) : previous!.splice(existingIndex, 1)[0];
+					if (existingIndex < 0) this.gc.track(closure);
+					closure.restored = true;
 					closure.hashId = snapshot.word(offset + CpuSnapshotClosure.HashId);
 					if (canonical) {
 						let versions = this.staticClosuresByAddress.get(functionAddress);
@@ -4876,6 +4882,7 @@ export class CPU implements MappedPageInvalidator {
 				case CpuSnapshotObjectKind.Upvalue:
 					this.luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
 					const upvalue = new Upvalue();
+					this.gc.track(upvalue); upvalue.restored = true;
 					upvalue.hashId = snapshot.word(offset + CpuSnapshotUpvalue.HashId);
 					upvalue.index = snapshot.int(offset + CpuSnapshotUpvalue.Index);
 					restoredObjects[index] = upvalue;
@@ -5057,6 +5064,7 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = state.yieldRequested;
 		this.hardHalted = state.hardHalted;
 		this.nextObjectHashId = state.nextObjectHashId;
+		this.gc.finishRestore();
 		this.gc.restoreState(state.gc, restoredObjects);
 		this.luaHeap.restoreState(state.luaHeap);
 	}

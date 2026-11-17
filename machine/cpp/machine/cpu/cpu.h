@@ -225,6 +225,8 @@ public:
 	const StringPool& stringPool() const { return m_stringPool; }
 	LuaHeap& luaHeap() { return m_luaHeap; }
 	const LuaHeap& luaHeap() const { return m_luaHeap; }
+	GcHeap& gcHeap() { return m_heap; }
+	const GcHeap& gcHeap() const { return m_heap; }
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	const DiagnosticGcProfile& diagnosticGcProfile() const { return m_diagnosticGcProfile; }
 #endif

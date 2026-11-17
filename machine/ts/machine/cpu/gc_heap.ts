@@ -25,6 +25,10 @@ export class GcHeap {
 	private phase = GcPhase.Pause;
 	private readonly threads: Thread[] = [];
 	private readonly weak: Table[] = [];
+	// An occupied entry holds its object; a free entry holds the next free id.
+	// The single directory belongs to the heap, never to an individual Value.
+	private readonly references: (GcObject | number)[] = [0];
+	private freeReference = 0;
 	private readonly scratch = new ValueSlots(1);
 	private mode = 0;
 	private changed = false;
@@ -42,11 +46,35 @@ export class GcHeap {
 		if (vt === ValueTag.String) this.cpu.stringPool.markReachable(vs);
 	};
 	public constructor(private readonly cpu: CPU, private readonly modeKey: number) {}
+	public reference(object: GcObject): number { return object.referenceId; }
+	/** Consumes a live id produced by this heap; the Value tag supplies its kind. */
+	public object(reference: number): GcObject { return this.references[reference] as GcObject; }
 	public track(object: GcObject): void {
+		if (this.freeReference !== 0) {
+			object.referenceId = this.freeReference;
+			this.freeReference = this.references[this.freeReference] as number;
+			this.references[object.referenceId] = object;
+		} else {
+			object.referenceId = this.references.length;
+			this.references.push(object);
+		}
+		object.restored = false;
 		object.gcColor = this.white; object.gcOwner = this; object.gcGrayNext = null;
 		object.gcPrevious = null; object.gcNext = this.objects;
 		if (this.objects !== null) this.objects.gcPrevious = object;
 		this.objects = object;
+	}
+	private releaseReference(object: GcObject): void {
+		const reference = object.referenceId;
+		this.references[reference] = this.freeReference;
+		this.freeReference = reference;
+		object.referenceId = 0;
+	}
+	private unlink(object: GcObject): void {
+		if (object.gcPrevious !== null) object.gcPrevious.gcNext = object.gcNext;
+		else this.objects = object.gcNext;
+		if (object.gcNext !== null) object.gcNext.gcPrevious = object.gcPrevious;
+		object.gcNext = null; object.gcPrevious = null; object.gcGrayNext = null;
 	}
 	public active(): boolean { return this.phase !== GcPhase.Pause; }
 	public isAlive(object: GcObject): boolean { return object.gcColor !== this.white; }
@@ -213,9 +241,8 @@ export class GcHeap {
 						const object = this.sweep; this.sweep = object.gcNext;
 						const bytes = this.allocationBytes(object); work += ceilDiv4(bytes);
 						if (this.sweepGarbage(object)) {
-							if (object.gcPrevious !== null) object.gcPrevious.gcNext = object.gcNext; else this.objects = object.gcNext;
-							if (object.gcNext !== null) object.gcNext.gcPrevious = object.gcPrevious;
-							object.gcNext = null; object.gcPrevious = null; object.gcGrayNext = null;
+							this.unlink(object);
+							this.releaseReference(object);
 							this.cpu.luaHeap.release(bytes);
 						} else {
 							object.gcColor = this.white;
@@ -255,6 +282,17 @@ export class GcHeap {
 		for (const object of this.threads) state.threads.push(ref(object));
 		for (const object of this.weak) state.weak.push(ref(object));
 		return state;
+	}
+	public finishRestore(): void {
+		for (let object = this.objects; object !== null;) {
+			const next = object.gcNext;
+			if (object.restored) object.restored = false;
+			else {
+				this.unlink(object);
+				this.releaseReference(object);
+			}
+			object = next;
+		}
 	}
 	public restoreState(state: GcState, objects: GcObject[]): void {
 		this.phase = state.phase; this.white = state.white; this.objects = null;
