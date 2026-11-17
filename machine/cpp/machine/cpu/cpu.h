@@ -424,6 +424,7 @@ private:
 		MappedBusSignals busSignals
 	);
 	void executeFunctionAddress(u32 functionAddress);
+	void executeControlWrite(CallFrame& frame, int source, int field);
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
 	CallFrame* pushFrame(Closure* closure, BuiltinArgsView args,

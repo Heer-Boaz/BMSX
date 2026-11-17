@@ -27,6 +27,7 @@ struct CallFrame;
 class CPU;
 class Memory;
 class StringPool;
+class GcHeap;
 class NativeBlock;
 class NativeBlockGate;
 class NativeBlockCompiler;
@@ -46,6 +47,7 @@ struct NativeBlockRunState {
 	ValueSpan registers;
 	ConstValueSpan constants;
 	CallFrame* frame = nullptr;
+	GcHeap* heap = nullptr;
 	ValueSpan globalValues;
 	ValueSpan systemGlobalValues;
 	u32* cop0Words = nullptr;
@@ -254,7 +256,7 @@ inline constexpr bool nativeBlockHasContinuation(u8 op, int field) {
 		case OpCode::NEWT: case OpCode::CONCAT: case OpCode::CONCATN:
 		case OpCode::CLOSURE: case OpCode::CALL: case OpCode::LEN:
 			return true;
-		case OpCode::MTC0: return field == COP0_STATUS;
+		case OpCode::MTC0: return cop0FieldImplemented(field) && field != COP0_EXEC;
 		default: return false;
 	}
 }
@@ -286,8 +288,8 @@ inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op, int field, bool cont
 		case OpCode::MOD: case OpCode::FLOORDIV: case OpCode::POW: case OpCode::UNM:
 		case OpCode::BAND: case OpCode::BOR: case OpCode::BXOR: case OpCode::SHL:
 		case OpCode::SHR: case OpCode::BNOT: return NativeBlockExit::InvalidOperand;
-		case OpCode::MFC0:
-		case OpCode::MTC0: return controlGuarded && cop0FieldImplemented(field) ? NativeBlockExit::Continue : NativeBlockExit::ControlFault;
+		case OpCode::MFC0: return controlGuarded && cop0FieldImplemented(field) ? NativeBlockExit::Continue : NativeBlockExit::ControlFault;
+		case OpCode::MTC0: return NativeBlockExit::WriteControl;
 		case OpCode::GETFIELD: return NativeBlockExit::ReadField;
 		case OpCode::SELF: return NativeBlockExit::ReadField;
 		case OpCode::SETFIELD: return NativeBlockExit::WriteField;

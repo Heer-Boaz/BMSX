@@ -236,6 +236,20 @@ void NativeBlockCompiler::emit(
 	case OpCode::UNM:
 		emitNumeric(instruction, *slow);
 		break;
+	case OpCode::LOADKR:
+		emitConstantIndex(instruction, *slow);
+		break;
+	case OpCode::GETUP:
+	case OpCode::SETUP:
+		emitUpvalue(instruction, slow);
+		break;
+	case OpCode::MFC0:
+	case OpCode::MTC0:
+		emitControl(instruction, slow);
+		break;
+	case OpCode::LEN:
+		emitLength(instruction, *slow);
+		break;
 	case OpCode::GETGL:
 	case OpCode::SETGL:
 	case OpCode::GETSYS:
@@ -279,7 +293,6 @@ void NativeBlockCompiler::emit(
 	case OpCode::SETT:
 	case OpCode::SETI:
 	case OpCode::SETFIELD:
-	case OpCode::SETUP:
 	case OpCode::VARARG:
 		emitExit(*slow);
 		break;

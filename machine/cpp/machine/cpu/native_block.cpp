@@ -175,7 +175,7 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		case OpCode::CONCATN: terminal.exit = NativeBlockExit::ConcatRange; break;
 		case OpCode::CLOSURE: terminal.exit = NativeBlockExit::CreateClosure; break;
 		case OpCode::MTC0: terminal.exit = instructions.back().decoded->b == COP0_EXEC
-			? NativeBlockExit::ExecuteFunction : instructions.back().decoded->b == COP0_STATUS
+			? NativeBlockExit::WriteControl : instructions.back().decoded->b == COP0_STATUS
 			? NativeBlockExit::ControlBoundary : NativeBlockExit::Continue; break;
 		case OpCode::RFE: terminal.exit = NativeBlockExit::ExceptionReturn; break;
 		default: terminal.exit = NativeBlockExit::Continue; break;

@@ -1,5 +1,8 @@
 #include "machine/cpu/native_block_compiler.h"
 #include "machine/cpu/execution_image.h"
+#include "machine/cpu/native_value_emit.h"
+#include "machine/cpu/call_state.h"
+#include "machine/cpu/closure.h"
 
 namespace bmsx {
 void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction) {
@@ -21,6 +24,61 @@ void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction) {
 	if (!store)
 		emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
 }
+void NativeBlockCompiler::emitConstantIndex(const DecodedInstruction& instruction, NativeBlockExitSite& invalid) {
+	emitWordOperand(instruction.b, invalid);
+	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, m_constants.size()),
+		invalid, m_cache.state());
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_R0, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
+		offsetof(NativeBlockRunState, constants) + ConstValueSpan::wordsOffset());
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R2), 2);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
+		offsetof(NativeBlockRunState, constants) + ConstValueSpan::tagsOffset());
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R2), 0);
+	emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
+}
+
+void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, NativeBlockExitSite* openWrite) {
+	sljit_emit_op1(
+		m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, closure));
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), Closure::nativeUpvaluesOffset());
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), instruction.b * sizeof(u32));
+#if UINTPTR_MAX > UINT32_MAX
+	sljit_emit_op1(
+		m_compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+#endif
+	emitObjectReference(m_compiler, SLJIT_R2, SLJIT_R2, SLJIT_R3);
+	const auto fields = Upvalue::nativeOffsets();
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), fields.open);
+	auto* open = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
+	if (instruction.op == static_cast<u8>(OpCode::SETUP)) {
+		fault(open, *openWrite, m_cache.state());
+		emitRawLoad(instruction.a, SLJIT_R0, SLJIT_R1);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), fields.valueWord, SLJIT_R0, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R2), fields.valueKind, SLJIT_R1, 0);
+		emitGcWriteBarrier(m_compiler, SLJIT_R2, SLJIT_R0, SLJIT_R1);
+		return;
+	}
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), fields.valueWord);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), fields.valueKind);
+	auto* ready = sljit_emit_jump(m_compiler, SLJIT_JUMP);
+	sljit_set_label(open, sljit_emit_label(m_compiler));
+	// Open cells can alias any active register window in the shared stack.
+	// Publish the dirty snapshot only on this branch; the closed path stays local.
+	m_cache.emitState(m_cache.state());
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), fields.index);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), fields.frame);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2),
+		offsetof(CallFrame, registers) + ValueSpan::wordsOffset());
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R3), 2);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2),
+		offsetof(CallFrame, registers) + ValueSpan::tagsOffset());
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R3), 0);
+	sljit_set_label(ready, sljit_emit_label(m_compiler));
+	emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
+}
+
 void NativeBlockCompiler::emitNilRange(int first, int count) {
 	if (count == 0)
 		return;

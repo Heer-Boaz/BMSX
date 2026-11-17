@@ -5,6 +5,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/number32_cpu_fixture.h"
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
@@ -16,31 +17,7 @@ void require(bool condition, const char* text) {
 	if (!condition)
 		throw std::runtime_error(text);
 }
-struct Machine {
-	test::Blua32TestRom rom;
-	Memory memory;
-	IrqController irq;
-	ExecutionAddressSpace addresses;
-	CPU cpu;
-	Machine(test::Blua32TestImage image, bool prepare = true)
-		: rom([&] {
-			  auto encoded = test::encodeBlua32TestRom(RomImageDomain::System, image);
-			  // Physical backing includes the full final page, so precompilation
-			  // is exercised even for a four-instruction numeric fixture.
-			  encoded.bytes.resize((encoded.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~size_t{MAPPED_PAGE_BYTE_MASK});
-			  return encoded;
-		  }()),
-		  memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes), irq(memory),
-		  addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		if (prepare)
-			cpu.prepareSystemNativeCode();
-#else
-		(void)prepare;
-#endif
-	}
-};
+using test::Number32Machine;
 test::Blua32TestImage operation(OpCode op, u32 selector = 1) {
 	test::Blua32TestImage image;
 	if (op == OpCode::EQ || op == OpCode::LT || op == OpCode::LE) {
@@ -107,7 +84,7 @@ void scalarNumbers() {
 		valueFloatBits(0x80000000), valueFloatBits(0x7f800000), valueFloatBits(0xff800000), valueFloatBits(0x7fa12345)};
 	for (OpCode op : {OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW,
 			 OpCode::BAND, OpCode::BOR, OpCode::BXOR, OpCode::SHL, OpCode::SHR}) {
-		Machine m(operation(op));
+		Number32Machine m(operation(op));
 		Closure* closure = m.cpu.activeThread()->currentFrame->closure;
 		bool first = true;
 		for (Value a : values)
@@ -136,7 +113,7 @@ void scalarNumbers() {
 #endif
 	}
 	for (Value bad : {valueNil(), valueBool(true), valueString(0)}) {
-		Machine m(operation(OpCode::ADD));
+		Number32Machine m(operation(OpCode::ADD));
 		auto registers = m.cpu.activeThread()->currentFrame->registers;
 		registers.set(0, bad);
 		registers.set(1, valueInteger(1));
@@ -153,7 +130,7 @@ void unaryAndCompare() {
 				 valueFloatBits(0xffc00000), valueFloatBits(0x80000000)}) {
 			if (op == OpCode::BNOT && !valueIsInteger(value))
 				continue;
-			Machine m(operation(op));
+			Number32Machine m(operation(op));
 			m.cpu.activeThread()->currentFrame->registers.set(0, value);
 			m.cpu.runUntilDepth(0, 100);
 			const auto expected = op == OpCode::UNM ? valueNegate(value) : valueInteger(~asInteger(value));
@@ -164,7 +141,7 @@ void unaryAndCompare() {
 		valueFloatBits(0x4f000000), valueFloatBits(0x7fa12345), valueFloatBits(0x80000000), valueInteger(0),
 		valueFromTag(ValueTag::True, 1), valueFromTag(ValueTag::True, 2), valueNil()};
 	for (auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) {
-		Machine m(operation(op));
+		Number32Machine m(operation(op));
 		auto* closure = m.cpu.activeThread()->currentFrame->closure;
 		bool first = true;
 		for (Value a : values)
@@ -192,7 +169,7 @@ void wordMoves() {
 			for (int target : {0, 2}) {
 				auto image = operation(OpCode::MOV);
 				writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), target, 0, static_cast<u8>(kind));
-				Machine m(image);
+				Number32Machine m(image);
 				const Value source = kind == ValueMoveKind::FloatBits ? valueFloatBits(word) : valueInteger(word);
 				m.cpu.activeThread()->currentFrame->registers.set(0, source);
 				m.cpu.runUntilDepth(0, 1);
@@ -210,7 +187,7 @@ void wordMoves() {
 				 kind == ValueMoveKind::FloatBits ? valueInteger(1) : valueFloat(1)}) {
 			auto image = operation(OpCode::MOV);
 			writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 2, 0, static_cast<u8>(kind));
-			Machine m(image);
+			Number32Machine m(image);
 			auto regs = m.cpu.activeThread()->currentFrame->registers;
 			regs.set(0, bad);
 			regs.set(2, valueInteger(917));
@@ -224,7 +201,7 @@ void wordMoves() {
 	}
 	for (u32 kind : {3, 255, 256, 257, 258, 511, 512, 16384, MAX_EXT_REGISTER_BC}) {
 		auto image = operation(OpCode::MOV, kind);
-		Machine m(image);
+		Number32Machine m(image);
 		m.cpu.activeThread()->currentFrame->registers.set(2, valueInteger(917));
 		m.cpu.runUntilDepth(0, 1);
 		require(m.cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION,
@@ -273,7 +250,7 @@ void typedNativeOperands() {
 					static_cast<u8>(((b >> 6) & 7) << 3) | ((c >> 6) & 7));
 				writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 2, 2, 0);
 				writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-				Machine m(image);
+				Number32Machine m(image);
 				require(m.cpu.runUntilDepth(0, 1000) == RunResult::Halted, "typed operand function returns");
 				const auto results = m.cpu.readCompletionValues();
 				if (results.size() != 1 || results.get(0) != expected) {
@@ -320,7 +297,7 @@ void typedNativeComparisons() {
 					const int b = form & 1 ? -1 : 0, c = form & 2 ? -2 : 1;
 					writeInstruction(image.text, 2, static_cast<u8>(op), 1, static_cast<u8>(b), static_cast<u8>(c),
 						static_cast<u8>(((b >> 6) & 7) << 3) | ((c >> 6) & 7));
-					Machine m(image);
+					Number32Machine m(image);
 					m.cpu.runUntilDepth(0, 100);
 					const auto order = compareNumbers(left, right);
 					const bool expected = op == OpCode::EQ	 ? order == NumericOrder::Equal
@@ -356,7 +333,7 @@ void nativeOperandFaultPrefix() {
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 2, 0, 1);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 2, 2, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	Machine m(image);
+	Number32Machine m(image);
 	m.cpu.activeThread()->currentFrame->registers.set(2, valueInteger(917));
 	m.cpu.runUntilDepth(0, 5);
 	require(m.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT,
@@ -374,7 +351,7 @@ void memoryWords() {
 		{MemoryAccessKind::Word, MemoryAccessKind::U32LE, MemoryAccessKind::F32LE, MemoryAccessKind::F64LE}) {
 		auto image = operation(OpCode::LOAD_MEM);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOAD_MEM), 2, 0, static_cast<u8>(kind));
-		Machine m(image);
+		Number32Machine m(image);
 		const u32 address = DYNAMIC_RAM_BASE + 0x200;
 		m.memory.writeMappedU32LE(address, kind == MemoryAccessKind::F32LE ? 0xffa12345u : 0xffffffffu);
 		if (kind == MemoryAccessKind::F64LE)
@@ -393,7 +370,7 @@ void memoryWords() {
 	for (auto kind : {MemoryAccessKind::Word, MemoryAccessKind::F32LE, MemoryAccessKind::F64LE}) {
 		auto image = operation(OpCode::STORE_MEM);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::STORE_MEM), 2, 0, static_cast<u8>(kind));
-		Machine m(image);
+		Number32Machine m(image);
 		const u32 address = DYNAMIC_RAM_BASE + 0x300;
 		auto regs = m.cpu.activeThread()->currentFrame->registers;
 		regs.set(0, valueInteger(address));
@@ -408,7 +385,7 @@ void memoryWords() {
 	for (auto op : {OpCode::LOAD_MEM, OpCode::STORE_MEM}) {
 		auto image = operation(op);
 		writeInstruction(image.text, 0, static_cast<u8>(op), 2, 0, static_cast<u8>(MemoryAccessKind::F64LE));
-		Machine m(image);
+		Number32Machine m(image);
 		m.cpu.activeThread()->currentFrame->registers.set(0, valueInteger(DYNAMIC_RAM_BASE + 1));
 		m.cpu.runUntilDepth(0, 1);
 		require(m.cpu.instructionBudgetRemaining == -4, "even alignment faults retain the started F64 format charge");
@@ -475,7 +452,7 @@ test::Blua32TestImage regionImage(const std::string& name) {
 }
 void scalarRegions() {
 	for (const char* name : {"chain", "memory", "table", "words", "control", "loop"}) {
-		Machine m(regionImage(name));
+		Number32Machine m(regionImage(name));
 		auto r = m.cpu.activeThread()->currentFrame->registers;
 		r.set(0, valueInteger(3));
 		r.set(1, valueInteger(2));
@@ -534,8 +511,8 @@ void typedLoopBoundaries() {
 	// guarded public entries and the retained integer/F32 backedge maps.
 	for (int variant = 0; variant < 3; ++variant)
 		for (int grant = 1; grant <= 100; ++grant) {
-			Machine scalar(regionImage("typed-loop"), false), native(regionImage("typed-loop"));
-			const auto execute = [&](Machine& m) {
+			Number32Machine scalar(regionImage("typed-loop"), false), native(regionImage("typed-loop"));
+			const auto execute = [&](Number32Machine& m) {
 				auto* frame = m.cpu.activeThread()->currentFrame;
 				for (int i = 0; i < 24; ++i)
 					frame->registers.set(i, valueInteger(900 + i));
@@ -592,7 +569,7 @@ void typedLoopBoundaries() {
 
 void constantsGlobalsAndRestore() {
 	auto image = constantImage();
-	Machine m(image);
+	Number32Machine m(image);
 	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("saved"), valueFloatBits(0xffa54321));
 	m.cpu.setSystemGlobalByKey(*m.cpu.stringPool().find("system"), valueInteger(INT32_MIN));
 	auto *graph = m.cpu.createTable(), *child = m.cpu.createTable();

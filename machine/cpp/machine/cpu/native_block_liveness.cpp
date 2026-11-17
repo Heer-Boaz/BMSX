@@ -14,6 +14,12 @@ bool retainsRegisters(OpCode op) {
 	case OpCode::LOADNIL:
 	case OpCode::NOT:
 	case OpCode::LOADK:
+	case OpCode::LOADKR:
+	case OpCode::GETUP:
+	case OpCode::SETUP:
+	case OpCode::LEN:
+	case OpCode::MFC0:
+	case OpCode::MTC0:
 	case OpCode::KNIL:
 	case OpCode::KFALSE:
 	case OpCode::KTRUE:

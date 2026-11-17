@@ -14,6 +14,7 @@ void NativeBlockCompiler::beginBlock(size_t index) {
 	m_instruction = 0;
 	m_prefixCycles = m_prefixTop = 0;
 	m_terminal = false;
+	m_controlPrivilegeGuarded = false;
 	auto& entry = m_entries[index];
 	entry.planned = true;
 	m_cache.setState({});

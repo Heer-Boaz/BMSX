@@ -34,6 +34,7 @@ enum class NativeBlockExit : u8 {
 	ConcatRange,
 	CreateClosure,
 	WriteWords,
+	WriteControl,
 	Count,
 };
 

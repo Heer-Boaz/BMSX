@@ -13,6 +13,7 @@ namespace bmsx {
 
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_memory.inl"
+#include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* owner, const NativeBlockExitSite* exit,
@@ -152,6 +153,10 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::ControlFault:
 			if (cpu.isUserMode()) cpu.enterSynchronousException(*frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 			else cpu.hardHalt();
+			transition = NativeBlockTransition::Redispatch;
+			break;
+		case NativeBlockExit::WriteControl:
+			cpu.executeControlWrite(*frame, exit->exitA, exit->exitB);
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::ControlBoundary:

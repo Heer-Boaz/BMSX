@@ -46,6 +46,7 @@ template <OpCode op> u32 numericKernel(const Value* args, Value* out) noexcept {
 		return error.reason;
 	}
 }
+u32 wordKernel(const Value* value,u32* out) noexcept { return valueToWord(*value,*out); }
 using Kernel = u32 (*)(const Value*, Value*) noexcept;
 Kernel kernelFor(OpCode op) {
 	switch (op) {
@@ -61,6 +62,27 @@ Kernel kernelFor(OpCode op) {
 	}
 }
 } // namespace
+
+void NativeBlockCompiler::emitWordOperand(int selector,NativeBlockExitSite& invalid) {
+	if(knownTag(selector)==static_cast<int>(ValueTag::Integer)) {
+		const auto source=readTyped(selector,ValueTag::Integer);
+		if(source.reg!=SLJIT_R0)sljit_emit_op1(m_compiler,SLJIT_MOV32,SLJIT_R0,0,source.reg,0);
+		return;
+	}
+	emitRawLoad(selector,SLJIT_R0,SLJIT_R1);
+	auto* integer=knownTag(selector)<0?sljit_emit_cmp(m_compiler,SLJIT_EQUAL|SLJIT_32,
+		SLJIT_R1,0,SLJIT_IMM,static_cast<u8>(ValueTag::Integer)):nullptr;
+	constexpr sljit_sw input=NativeBlockAbi::helperResultOffset, output=input+sizeof(Value);
+	emitValueTransportStore(m_compiler,SLJIT_SP,input,SLJIT_R0,SLJIT_R1);
+	const auto state=m_cache.state();m_cache.spillCall(false,0);
+	sljit_emit_op2(m_compiler,SLJIT_ADD,SLJIT_R0,0,SLJIT_SP,0,SLJIT_IMM,input);
+	sljit_emit_op2(m_compiler,SLJIT_ADD,SLJIT_R1,0,SLJIT_SP,0,SLJIT_IMM,output);
+	sljit_emit_icall(m_compiler,SLJIT_CALL,SLJIT_ARGS2(32,P,P),SLJIT_IMM,SLJIT_FUNC_ADDR(wordKernel));
+	m_cache.spillCall(true,0);
+	fault(sljit_emit_cmp(m_compiler,SLJIT_EQUAL|SLJIT_32,SLJIT_R0,0,SLJIT_IMM,0),invalid,state);
+	sljit_emit_op1(m_compiler,SLJIT_MOV32,SLJIT_R0,0,SLJIT_MEM1(SLJIT_SP),output);
+	if(integer)sljit_set_label(integer,sljit_emit_label(m_compiler));
+}
 
 void NativeBlockCompiler::emitNumericKernel(
 	const DecodedInstruction& instruction, NativeBlockExitSite& invalid, int resultTag) {

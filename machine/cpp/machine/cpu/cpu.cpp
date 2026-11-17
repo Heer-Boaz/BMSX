@@ -2004,6 +2004,7 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_memory.inl"
+#include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
 template <bool RootBoundary, bool Instrumented>
@@ -2333,7 +2334,7 @@ dispatch_native_block: {
 				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
 				nativeState.cartridgeRom = m_memory.cartridgeController().romStorage(nativeState.cartridgeSlot);
 				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(nativeState.cartridgeSlot);
-				nativeState.state = {.registers = registers, .constants = IMAGE.constPool.view(), .frame = frame,
+				nativeState.state = {.registers = registers, .constants = IMAGE.constPool.view(), .frame = frame, .heap = &m_heap,
 					.globalValues = m_globalValues.view(), .systemGlobalValues = m_systemGlobalValues.view(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.capacity()),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top,

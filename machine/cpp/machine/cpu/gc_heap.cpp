@@ -73,9 +73,26 @@ bool GcHeap::markValue(Value v) {
 void GcHeap::reserveReference() {
 	// Admit directory growth before constructing the object. Recycling a
 	// directory slot and binding a constructed object do not allocate.
-	if (m_freeReference == 0 && m_references.size() == m_references.capacity())
+	if (m_freeReference == 0 && m_references.size() == m_references.capacity()) {
 		m_references.reserve(std::max(size_t{64}, m_references.capacity() * 2));
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		m_referenceBase = m_references.data();
+#endif
+	}
 }
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
+size_t GcHeap::nativeReferencesOffset() {
+	static_assert(sizeof(ReferenceSlot) == sizeof(void*));
+	return offsetof(GcHeap, m_referenceBase);
+}
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+#endif
 void GcHeap::releaseReference(GCObject* object) {
 	const u32 reference = object->referenceId;
 	m_references[reference].nextFree = m_freeReference;

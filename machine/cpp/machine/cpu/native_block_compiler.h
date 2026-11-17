@@ -39,6 +39,11 @@ private:
 	void emitFloatCanonicalization(sljit_s32 reg);
 	void emitContext(const DecodedInstruction& instruction);
 	void emitNilRange(int first, int count);
+	void emitWordOperand(int selector, NativeBlockExitSite& invalid);
+	void emitConstantIndex(const DecodedInstruction&, NativeBlockExitSite&);
+	void emitUpvalue(const DecodedInstruction&, NativeBlockExitSite*);
+	void emitControl(const DecodedInstruction&, NativeBlockExitSite*);
+	void emitLength(const DecodedInstruction&, NativeBlockExitSite&);
 	void emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite& taken);
 	size_t regionEntryIndex(u32 pc) const;
 	void analyzeEntryLiveness();
@@ -85,6 +90,7 @@ private:
 	size_t m_current = 0, m_instruction = 0;
 	int m_prefixCycles = 0, m_prefixTop = 0;
 	bool m_terminal = false;
+	bool m_controlPrivilegeGuarded = false;
 };
 
 } // namespace bmsx

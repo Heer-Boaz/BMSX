@@ -60,6 +60,9 @@ public:
 		return m_references[reference].object;
 #endif
 	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && UINTPTR_MAX > UINT32_MAX
+	static size_t nativeReferencesOffset();
+#endif
 	uint32_t hash(Value value) const {
 		switch (valueTag(value)) {
 			case ValueTag::Table: case ValueTag::Closure: case ValueTag::Thread:
@@ -128,6 +131,11 @@ private:
 	ObjectStoragePool<Table> m_tables;
 #if UINTPTR_MAX > UINT32_MAX
 	std::vector<ReferenceSlot> m_references{{.object = nullptr}};
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// Published address of this owner's current directory allocation. Native
+	// code reloads it; reserve/restore never leave cached directory pointers.
+	ReferenceSlot* m_referenceBase = m_references.data();
+#endif
 	u32 m_freeReference = 0;
 #endif
 };

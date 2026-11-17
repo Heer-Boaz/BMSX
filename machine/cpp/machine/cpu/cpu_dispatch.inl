@@ -450,23 +450,7 @@ DISPATCH_LABEL(MFC0) {
 }
 
 DISPATCH_LABEL(MTC0) {
-	const int a = decoded->a;
-	const int b = decoded->b;
-	if (isUserMode()) {
-		enterSynchronousException(FRAME, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
-		DISPATCH_CONTINUE();
-	}
-	const u32 value = wordOperand(REG(a));
-	switch (b) {
-		case COP0_STATUS: m_cop0Words[COP0_STATUS] = value; break;
-		case COP0_EPC: m_cop0Words[COP0_EPC] = value; break;
-		case COP0_EXEC: executeFunctionAddress(value); DISPATCH_CONTINUE();
-		case COP0_BAD_ADDRESS:
-		case COP0_LUA_FAULT_REASON:
-		case COP0_CAUSE:
-			break;
-		default: hardHalt(); break;
-	}
+	executeControlWrite(FRAME,decoded->a,decoded->b);
 	DISPATCH_CONTINUE();
 }
 
