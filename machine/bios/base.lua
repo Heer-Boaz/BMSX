@@ -1,4 +1,3 @@
-local byte<const> = __bmsx_string_byte
 local vm_next<const> = __bmsx_next
 local vm_type<const> = __bmsx_type
 local vm_setmetatable<const> = __bmsx_setmetatable
@@ -12,196 +11,7 @@ local vm_xpcall<const> = __bmsx_xpcall
 local vm_collect_garbage<const> = __bmsx_collect_garbage
 local console<const> = require('tty/console')
 
-local ascii_tab<const> = 9
-local ascii_carriage_return<const> = 13
-local ascii_space<const> = 32
-local ascii_plus<const> = 43
-local ascii_minus<const> = 45
-local ascii_dot<const> = 46
-local ascii_digit_0<const> = 48
-local ascii_digit_9<const> = 57
-local ascii_upper_a<const> = 65
-local ascii_upper_e<const> = 69
-local ascii_upper_x<const> = 88
-local ascii_upper_z<const> = 90
-local ascii_lower_a<const> = 97
-local ascii_lower_e<const> = 101
-local ascii_lower_x<const> = 120
-local ascii_lower_z<const> = 122
-
-local is_space<const> = function(code)
-	return code == ascii_space or (code >= ascii_tab and code <= ascii_carriage_return)
-end
-
-local skip_spaces<const> = function(text, index, length)
-	while index <= length and is_space(byte(text, index)) do
-		index = index + 1
-	end
-	return index
-end
-
-local digit_value<const> = function(code)
-	if code >= ascii_digit_0 and code <= ascii_digit_9 then
-		return code - ascii_digit_0
-	end
-	if code >= ascii_upper_a and code <= ascii_upper_z then
-		return code - ascii_upper_a + 10
-	end
-	if code >= ascii_lower_a and code <= ascii_lower_z then
-		return code - ascii_lower_a + 10
-	end
-	return nil
-end
-
-local decimal_scale<const> = function(value, exponent)
-	while exponent > 0 do
-		value = value * 10
-		exponent = exponent - 1
-	end
-	while exponent < 0 do
-		value = value / 10
-		exponent = exponent + 1
-	end
-	return value
-end
-
-local parse_based_integer<const> = function(text, base)
-	local length<const> = #text
-	local index = skip_spaces(text, 1, length)
-	if index > length then
-		return nil
-	end
-	local sign = 1
-	local code<const> = byte(text, index)
-	if code == ascii_minus then
-		sign = -1
-		index = index + 1
-	elseif code == ascii_plus then
-		index = index + 1
-	end
-	local value = 0
-	local digit_count = 0
-	while index <= length do
-		local digit<const> = digit_value(byte(text, index))
-		if digit == nil or digit >= base then
-			break
-		end
-		value = value * base + digit
-		digit_count = digit_count + 1
-		index = index + 1
-	end
-	if digit_count == 0 then
-		return nil
-	end
-	index = skip_spaces(text, index, length)
-	if index <= length then
-		return nil
-	end
-	return sign * value
-end
-
-local parse_decimal<const> = function(text)
-	local length<const> = #text
-	local index = skip_spaces(text, 1, length)
-	if index > length then
-		return nil
-	end
-	local sign = 1
-	local code = byte(text, index)
-	if code == ascii_minus then
-		sign = -1
-		index = index + 1
-	elseif code == ascii_plus then
-		index = index + 1
-	end
-	if index + 1 <= length and byte(text, index) == ascii_digit_0 then
-		code = byte(text, index + 1)
-		if code == ascii_upper_x or code == ascii_lower_x then
-			index = index + 2
-			local hex_value = 0
-			local hex_digit_count = 0
-			while index <= length do
-				local digit<const> = digit_value(byte(text, index))
-				if digit == nil or digit >= 16 then
-					break
-				end
-				hex_value = hex_value * 16 + digit
-				hex_digit_count = hex_digit_count + 1
-				index = index + 1
-			end
-			if hex_digit_count == 0 then
-				return nil
-			end
-			index = skip_spaces(text, index, length)
-			if index <= length then
-				return nil
-			end
-			return sign * hex_value
-		end
-	end
-	local value = 0
-	local digit_count = 0
-	while index <= length do
-		local digit<const> = digit_value(byte(text, index))
-		if digit == nil or digit > 9 then
-			break
-		end
-		value = value * 10 + digit
-		digit_count = digit_count + 1
-		index = index + 1
-	end
-	if index <= length and byte(text, index) == ascii_dot then
-		index = index + 1
-		local divisor = 10
-		while index <= length do
-			local digit<const> = digit_value(byte(text, index))
-			if digit == nil or digit > 9 then
-				break
-			end
-			value = value + digit / divisor
-			divisor = divisor * 10
-			digit_count = digit_count + 1
-			index = index + 1
-		end
-	end
-	if digit_count == 0 then
-		return nil
-	end
-	if index <= length then
-		code = byte(text, index)
-		if code == ascii_upper_e or code == ascii_lower_e then
-			index = index + 1
-			local exponent_sign = 1
-			code = byte(text, index)
-			if code == ascii_minus then
-				exponent_sign = -1
-				index = index + 1
-			elseif code == ascii_plus then
-				index = index + 1
-			end
-			local exponent = 0
-			local exponent_digit_count = 0
-			while index <= length do
-				local digit<const> = digit_value(byte(text, index))
-				if digit == nil or digit > 9 then
-					break
-				end
-				exponent = exponent * 10 + digit
-				exponent_digit_count = exponent_digit_count + 1
-				index = index + 1
-			end
-			if exponent_digit_count == 0 then
-				return nil
-			end
-			value = decimal_scale(value, exponent * exponent_sign)
-		end
-	end
-	index = skip_spaces(text, index, length)
-	if index <= length then
-		return nil
-	end
-	return sign * value
-end
+local numeric_parse<const> = require('number/parse')
 
 next = vm_next
 type = vm_type
@@ -247,7 +57,7 @@ tonumber = function(value, base)
 		if value_type ~= 'string' then
 			return nil
 		end
-		return parse_decimal(value)
+		return numeric_parse.number(value)
 	end
 	if value_type ~= 'string' then
 		error('bad argument #1 to tonumber (string expected)')
@@ -259,7 +69,7 @@ tonumber = function(value, base)
 	if integer_base < 2 or integer_base > 36 then
 		error('bad argument #2 to tonumber (base out of range)')
 	end
-	return parse_based_integer(value, integer_base)
+	return numeric_parse.based_integer(value, integer_base & -1)
 end
 
 

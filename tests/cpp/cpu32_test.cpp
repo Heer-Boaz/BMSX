@@ -229,12 +229,12 @@ void tableHeap() {
 }
 }
 int main(int argc, char** argv) {
-	if((argc==2 || (argc==3 && std::string(argv[2])=="--boot-primitives")) && std::string(argv[1])=="--execute-rom") {
+	if((argc==2 || ((argc==3 || argc==4) && std::string(argv[2])=="--boot-primitives")) && std::string(argv[1])=="--execute-rom") {
 		const std::vector<u8> bytes(std::istreambuf_iterator<char>(std::cin),{});
 		Memory memory(MemoryInit{bytes,test::cartridgeSlots()},PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory);ExecutionAddressSpace addresses(memory);CPU cpu(memory,irq,addresses);cpu.reset();
-		if (argc == 3) cpu.installBootPrimitives();
-		cpu.runUntilDepth(0,100000);auto results=cpu.readCompletionValues();
+		if (argc >= 3) cpu.installBootPrimitives();
+		cpu.runUntilDepth(0, argc == 4 ? std::stoi(argv[3]) : 100000);auto results=cpu.readCompletionValues();
 		std::cout<<"budget "<<cpu.instructionBudgetRemaining<<" fault "<<cpu.readLuaFaultReasonWord()<<"\n";
 		for(size_t i=0;i<results.size();++i) {
 			const auto value=results.get(i);

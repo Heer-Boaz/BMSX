@@ -1,3 +1,5 @@
+local number_type<const> = __bmsx_number_type
+local float_bits<const> = __bmsx_float_bits
 local bytecode<const> = require('compiler/bytecode')
 local isa<const> = require('bmsx/blua32')
 local semantic<const> = require('compiler/semantic')
@@ -59,12 +61,18 @@ local is_number_literal<const> = function(expression)
 end
 
 local add_constant<const> = function(state, value)
-	local index = state.program.constant_index_by_value[value]
+	local indices = state.program.constant_index_by_value
+	local key = value
+	if number_type(value) == 'float' then
+		indices = state.program.float_constant_index_by_bits
+		key = float_bits(value)
+	end
+	local index = indices[key]
 	if index == nil then
 		local const_pool<const> = state.program.const_pool
 		index = #const_pool + 1
 		const_pool[index] = value
-		state.program.constant_index_by_value[value] = index
+		indices[key] = index
 	end
 	state.direct_constant_by_index[index] = true
 	return index
@@ -155,9 +163,9 @@ prepare_value_operands = function(state, expression)
 	end
 	local value<const> = expression.constant_value
 	if is_number_literal(expression)
+		and number_type(value) == 'integer'
 		and value >= isa.min_signed_bx
-		and value <= isa.max_signed_bx
-		and value % 1 == 0 then
+		and value <= isa.max_signed_bx then
 		expression.immediate_number = value
 		if value ~= 0 and value ~= 1 and value ~= -1 then
 			return
@@ -1885,6 +1893,7 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register, environme
 	local program<const> = {
 		const_pool = {},
 		constant_index_by_value = {},
+		float_constant_index_by_bits = {},
 		environment = environment,
 		external_scope = external_scope,
 	}

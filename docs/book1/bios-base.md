@@ -283,7 +283,12 @@ example, `tonumber('0xffffffff')` and `tonumber('ffffffff', 16)` both return
 Integer −1. The conversion and its result subtype do not depend on how many
 digits were needed to spell that word.
 
-There is no fixed total cycle count for `assert`, `rawequal`, `tostring`, or `tonumber`: their executed operations, result handling, conversions, and parsing work contribute to the cost. `type` adds one cycle, separate from call and return instruction costs, with no additional per-argument or per-result charge.
+There is no fixed total cycle count for `assert`, `rawequal`, `tostring`, or
+`tonumber`: their executed operations, result handling, conversions and parsing
+work contribute to the cost. The String-codepoint primitive adds two cycles;
+extracting or constructing a Float word adds one. These charges are separate
+from ordinary call and return costs. `type` adds one cycle with no additional
+per-argument or per-result charge.
 
 ## Table and metatable access {#sec-bios-base-table-and-metatable-access}
 

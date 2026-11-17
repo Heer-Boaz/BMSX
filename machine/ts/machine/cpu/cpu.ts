@@ -3236,6 +3236,12 @@ export class CPU implements MappedPageInvalidator {
 					? valueString(this.stringPool.intern(tag === ValueTag.Integer ? 'integer' : 'float')) : valueNil());
 				break;
 			}
+			case BuiltinFunctionId.FloatBits:
+				out.push(valueInteger(args.length > 0 ? args.registers.getPayload(args.base) | 0 : 0));
+				break;
+			case BuiltinFunctionId.FloatFromBits:
+				out.push(valueFloatBits(args.length > 0 ? args.registers.getPayload(args.base) : 0));
+				break;
 			case BuiltinFunctionId.ToInteger: {
 				const integer = valueToInteger(args.length > 0 ? args.registers.get(args.base) : valueNil());
 				out.push(integer === null ? valueNil() : valueInteger(integer));

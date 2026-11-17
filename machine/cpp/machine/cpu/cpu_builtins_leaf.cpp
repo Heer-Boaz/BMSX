@@ -9,6 +9,12 @@ namespace bmsx {
 // call owner supplies its existing argument error and primitive charge.
 bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept {
 	switch (id) {
+	case BuiltinFunctionId::FloatBits:
+		result = valueInteger(static_cast<i32>(valuePayload(args[0])));
+		return true;
+	case BuiltinFunctionId::FloatFromBits:
+		result = valueFloatBits(valuePayload(args[0]));
+		return true;
 	case BuiltinFunctionId::ToInteger: {
 		i32 integer;
 		result = valueToInteger(args[0], integer) ? valueInteger(integer) : valueNil();

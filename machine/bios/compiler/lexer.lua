@@ -1,3 +1,5 @@
+local numeric_parse<const> = require('number/parse')
+local huge<const> = 1.0 / 0.0
 local byte<const> = __bmsx_string_byte
 local char<const> = __bmsx_string_char
 local concat<const> = require('table').concat
@@ -127,6 +129,18 @@ local scan_digits<const> = function(state)
 	end
 end
 
+local scan_exponent<const> = function(state, line, column)
+	advance(state)
+	if state.index <= state.length then
+		local sign<const> = state.current_code
+		if sign == ascii_plus or sign == ascii_minus then advance(state) end
+	end
+	if state.index > state.length or not is_digit(state.current_code) then
+		fail(state, 'invalid numeric literal exponent', line, column)
+	end
+	scan_digits(state)
+end
+
 local scan_decimal_number<const> = function(state, line, column)
 	scan_digits(state)
 	if state.index < state.length
@@ -137,30 +151,27 @@ local scan_decimal_number<const> = function(state, line, column)
 	end
 	if state.index <= state.length then
 		local code<const> = state.current_code
-		if code == ascii_upper_e or code == ascii_lower_e then
-			advance(state)
-			if state.index <= state.length then
-				local sign<const> = state.current_code
-				if sign == ascii_plus or sign == ascii_minus then
-					advance(state)
-				end
-			end
-			if state.index > state.length or not is_digit(state.current_code) then
-				fail(state, 'invalid numeric literal exponent', line, column)
-			end
-			scan_digits(state)
-		end
+		if code == ascii_upper_e or code == ascii_lower_e then scan_exponent(state, line, column) end
 	end
 end
 
-local scan_hex_integer<const> = function(state, line, column)
+local scan_hex_number<const> = function(state, line, column)
 	advance(state)
 	advance(state)
-	if state.index > state.length or not is_hex_digit(state.current_code) then
-		fail(state, 'hexadecimal literal requires digits', line, column)
-	end
+	local digits = 0
 	while state.index <= state.length and is_hex_digit(state.current_code) do
+		advance(state); digits = digits + 1
+	end
+	if state.index < state.length and state.current_code == ascii_dot
+		and is_hex_digit(byte(state.source, state.index + 1)) then
 		advance(state)
+		while state.index <= state.length and is_hex_digit(state.current_code) do
+			advance(state); digits = digits + 1
+		end
+	end
+	if digits == 0 then fail(state, 'hexadecimal literal requires digits', line, column) end
+	if state.index <= state.length and (state.current_code == 80 or state.current_code == 112) then
+		scan_exponent(state, line, column)
 	end
 end
 
@@ -169,7 +180,7 @@ local scan_number<const> = function(state, line, column)
 	if state.current_code == ascii_digit_0 and state.index < state.length then
 		local prefix<const> = byte(state.source, state.index + 1)
 		if prefix == ascii_upper_x or prefix == ascii_lower_x then
-			scan_hex_integer(state, line, column)
+			scan_hex_number(state, line, column)
 		else
 			scan_decimal_number(state, line, column)
 		end
@@ -177,7 +188,11 @@ local scan_number<const> = function(state, line, column)
 		scan_decimal_number(state, line, column)
 	end
 	local text<const> = sub(state.source, start, state.index - 1)
-	return tonumber(text)
+	local value<const> = numeric_parse.literal(text)
+	if value == huge then
+		fail(state, 'numeric literal is not finite', line, column)
+	end
+	return value
 end
 
 local escaped_code_by_code<const> = {

@@ -1339,6 +1339,8 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 				? valueString(m_stringPool.intern(valueIsInteger(args[0]) ? "integer" : "float"))
 				: valueNil());
 			break;
+		case BuiltinFunctionId::FloatBits:
+		case BuiltinFunctionId::FloatFromBits:
 		case BuiltinFunctionId::ToInteger:
 		case BuiltinFunctionId::SetMetatable:
 		case BuiltinFunctionId::GetMetatable:
