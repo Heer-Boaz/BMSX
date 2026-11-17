@@ -1,3 +1,4 @@
+import { ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
 // start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
 // start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
 import { LexicalDeclarationKind } from './compiler/declaration_kind';
@@ -5538,7 +5539,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.compileRequireExpression(requireBinding, target, resultCount);
 			return;
 		}
-		if (this.compileBlua32ClosureCall(expression, target, resultCount)) {
+		if (this.compileBlua32ValueCall(expression, target, resultCount)) {
 			return;
 		}
 		const methodName = expression.method?.name;
@@ -5603,7 +5604,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 	}
 
-	private compileBlua32ClosureCall(
+	private compileBlua32ValueCall(
 		expression: LuaCallExpression,
 		target: number,
 		resultCount: number,
@@ -5625,6 +5626,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		if (callee.member.name === 'trace' || callee.member.name === 'trace_sink') {
 			throw new Error(`blua32.${callee.member.name} is a statement-only compiler intrinsic.`);
+		}
+		if (callee.member.name === 'float_bits' || callee.member.name === 'float_from_bits') {
+			if (expression.arguments.length !== 1) throw new Error(`blua32.${callee.member.name} expects one argument.`);
+			this.compileExpressionInto(expression.arguments[0], target, 1);
+			this.emitABC(OpCode.MOV, target, target, callee.member.name === 'float_bits' ? ValueMoveKind.FloatBits : ValueMoveKind.FloatFromBits);
+			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
+			return true;
 		}
 		if (callee.member.name !== 'closure') {
 			throw new Error(`Unknown blua32 operation '${callee.member.name}'.`);
@@ -5661,6 +5669,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (expression.kind === LuaSyntaxKind.VarargExpression) return true;
 		if (expression.kind !== LuaSyntaxKind.CallExpression) return false;
 		if (this.resolveRequireModuleBinding(expression)) return false;
+		if (expression.method === null && expression.callee.kind === LuaSyntaxKind.MemberExpression) {
+			const base = expression.callee.base;
+			if (base.kind === LuaSyntaxKind.IdentifierExpression) {
+				const reference = getResolvedIdentifierReference(this.semantics, base);
+				if (reference.kind === 'reserved_intrinsic' && reference.ref.name === 'blua32') return false;
+			}
+		}
 		if (this.program.optLevel >= 2) {
 			const protoIndex = this.resolveCallProtoIndex(expression);
 			if (protoIndex !== null && this.program.protoReturnsOne(protoIndex)) {

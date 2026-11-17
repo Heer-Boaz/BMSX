@@ -1,3 +1,4 @@
+import { ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, decodeValueCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import type {
@@ -139,7 +140,7 @@ const removeNoOps = (set: InstructionSet): InstructionSet => {
 			continue;
 		}
 		const instruction = instructions[i];
-		if (instruction.op === OpCode.MOV && instruction.a === instruction.b) {
+		if (instruction.op === OpCode.MOV && instruction.c === ValueMoveKind.Copy && instruction.a === instruction.b) {
 			keep[i] = false;
 			removed += 1;
 			continue;
@@ -405,7 +406,7 @@ const computeBlockConstantIn = (
 				}
 				switch (instruction.op) {
 					case OpCode.MOV: {
-						const source = constants.get(instruction.b);
+						const source = instruction.c === ValueMoveKind.Copy ? constants.get(instruction.b) : undefined;
 						if (source) {
 							recordRegisterConstant(constants, context, instruction.a, source);
 						} else {
@@ -616,7 +617,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 
 			switch (instruction.op) {
 				case OpCode.MOV: {
-					const source = constants.get(instruction.b);
+					const source = instruction.c === ValueMoveKind.Copy ? constants.get(instruction.b) : undefined;
 					if (source) {
 						recordRegisterConstant(constants, context, instruction.a, source);
 					} else {
@@ -838,6 +839,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				switch (instruction.op) {
 					case OpCode.MOV: {
 						rewriteCopyInstructionOperand(instruction, 'b', copies);
+						if (instruction.c !== ValueMoveKind.Copy) break;
 						const constant = constants.get(instruction.b);
 						if (constant && constant.kind !== ConstValueKind.String) {
 							replaceWithConst(instruction, instruction.a, constant.value, context);
@@ -940,6 +942,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 
 			switch (instruction.op) {
 				case OpCode.MOV: {
+					if (instruction.c !== ValueMoveKind.Copy) { killRegister(constants, copies, instruction.a); break; }
 					const constant = constants.get(instruction.b);
 					if (constant) {
 						setConst(constants, copies, instruction.a, constant);
@@ -1311,7 +1314,7 @@ const applyClosureTransferForInlining = (
 ): void => {
 	switch (instruction.op) {
 		case OpCode.MOV: {
-			if (closureWrittenRegisters.has(instruction.a)
+			if (instruction.c !== ValueMoveKind.Copy || closureWrittenRegisters.has(instruction.a)
 				|| closureWrittenRegisters.has(instruction.b)) {
 				closures.delete(instruction.a);
 				return;

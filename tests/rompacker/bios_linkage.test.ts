@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeLE32 } from '../../machine/ts/common/endian';
+import * as v from '../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { BiosFunction, BIOS_FUNCTION_MODULE_PATHS } from '../../machine/ts/spec/bmsx/bios';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -36,7 +37,7 @@ for (const optLevel of [0, 3] as const) {
 		const fixture = buildPublicBiosFixture(PUBLIC_BIOS_PROBE_SOURCE, optLevel);
 		const { cpu } = createTestSystemCpu({ romBytes: fixture.rom });
 		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [v.valueBool(true), v.valueBool(true)]);
 	});
 
 	test(`cartridge linker uses the same raw BIOS bytes as guest calls (O${optLevel})`, () => {
@@ -67,6 +68,6 @@ return sine(0x40000000), decode(0x3fa00000, 0, 4), origin, extent, *cartridge_va
 			system.linked.layout.header.bssAddress + system.linked.layout.header.bssByteCount);
 		const { cpu } = createTestBlua32PairCpu({ systemRomBytes: system.rom, cartRomBytes: writeTestBlua32Rom(cart.linked) });
 		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [65536, 1.25, 0x02d002c0, 0x00fc0140, 17]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [v.valueInteger(65536), v.valueFloat(1.25), v.valueInteger(0x02d002c0), v.valueInteger(0x00fc0140), v.valueInteger(17)]);
 	});
 }

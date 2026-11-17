@@ -18,7 +18,8 @@ struct NativeCompilationSource {
 	// Emission specializes constant operands. A source word that cannot bind
 	// those constants is not compilable; executing it remains the CPU's job.
 	bool canEmit(const DecodedInstruction& instruction) const {
-		if (!nativeBlockSupports(instruction.op)) return false;
+		if (!nativeBlockSupports(instruction.op)
+			|| (instruction.op == static_cast<u8>(OpCode::MOV) && instruction.c != 0)) return false;
 		const u8 rk = OPCODE_RK_OPERANDS[instruction.op];
 		if (((rk & RK_OPERAND_B) != 0u && instruction.b < 0
 				&& static_cast<size_t>(-instruction.b - 1) >= image.constPool.size())

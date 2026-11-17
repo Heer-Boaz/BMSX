@@ -978,7 +978,10 @@ then position 34. These are one-based continuation positions, not lengths.
 
 Each call begins in little-endian order with maximum alignment 8. `pack` and `packsize` start at zero-based offset 0. `unpack` begins at the source offset selected by `pos`.
 
-Only the following whitespace is ignored between format tokens: space and codepoints 9–13. A numeric suffix consists of consecutive ASCII decimal digits. There is no sign, decimal point, separator, or internal whitespace in a suffix. The suffix reader has no general digit-count or numeric upper bound; the individual options below impose their own restrictions.
+Only the following whitespace is ignored between format tokens: space and codepoints 9–13. A numeric suffix consists of consecutive ASCII decimal digits. There is no sign, decimal point, separator, or internal whitespace in a suffix. Leading zeroes do not impose a digit-count limit. The mathematical suffix
+value must fit a nonnegative Integer (0 through 2147483647); a larger value
+raises `string.pack format count out of range.` Individual options below
+impose their further restrictions.
 
 
 In the tables, `A` is the current maximum alignment, and all widths and alignments count packet units. Defaults are fixed, not inferred from a machine word size.
@@ -1006,14 +1009,14 @@ In the tables, `A` is the current maximum alignment, and all widths and alignmen
 | `X` | Align for a following field | Padding only; see below | Determined by lookahead | 0 / 0 |
 
 
-`[N]` marks an optional suffix in this table; the square brackets are not format characters. The `f`, `d`, `n`, and `z` options do not read a width suffix. `cN` has no parser-imposed maximum width.
+`[N]` marks an optional suffix in this table; the square brackets are not format characters. The `f`, `d`, `n`, and `z` options do not read a width suffix. `cN` uses the full nonnegative Integer width range.
 
 | Control | Effect |
 | --- | --- |
 | `<` | Select little-endian numeric order. |
 | `>` | Select big-endian numeric order. |
 | `=` | Select the fixed default: little-endian order. |
-| `!N` | Set maximum alignment to positive decimal `N`. The suffix is required. It need not be a power of two; there is no upper-bound check in this control. |
+| `!N` | Set maximum alignment to positive decimal `N`. The suffix is required. It need not be a power of two; the maximum is 2147483647. |
 
 Controls consume neither packet units nor arguments and return no data values. Every other option is unsupported. Parsing and field processing are interleaved; there is no separate up-front format-validation pass.
 
@@ -1180,8 +1183,9 @@ otherwise:            sign * (1 + m / S) * 2^(e - B)
 ```
 
 
-Source digits are not validated as octets. NaN payloads are reduced to a Float
-NaN. The formulas identify the value represented by the input field; for a
+Source digits are not validated as octets. Each four-unit word retains the low
+32 bits of its base-256 accumulation; carries beyond that word do not enter a
+neighboring word. Binary64 NaN payloads are reduced to a canonical Float NaN. The formulas identify the value represented by the input field; for a
 binary64 field the final rounding is to binary32, not to a binary64 Number.
 
 ### Unpack positions, bounds, and results {#sec-bios-string-unpack-positions-bounds-and-results}
@@ -1242,9 +1246,11 @@ The packing module directly reports the following messages, with the capitalizat
 | Condition | Message |
 | --- | --- |
 | Integer input fails the integer-value test | `string.pack integer value must be an integer.` |
-| Integer input exceeds the safe Number integer interval | `string.pack integer value exceeds safe integer range.` |
 | Integer input does not fit its field width | `string.pack integer value out of range.` |
-| Accumulated unsigned input exceeds the safe integer interval | `string.unpack integer exceeds safe integer range.` |
+| Decoded integer is outside the signed-result or unsigned-word range | `string.unpack integer exceeds safe integer range.` |
+| A decimal format suffix exceeds the nonnegative Integer range | `string.pack format count out of range.` |
+| The total returned by `packsize` exceeds 2147483647 | `string.packsize size out of range.` |
+| A floating field input is not a Number | `string.pack float value must be a number.` |
 | Missing or nonpositive `!N` suffix | `string.pack alignment must be a positive integer.` |
 | Explicit `i`/`I` width outside 1–8 | `string.pack invalid integer size.` |
 | Missing `c` width | `string.pack expected a size for c format.` |

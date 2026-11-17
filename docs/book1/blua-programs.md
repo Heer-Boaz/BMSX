@@ -1027,7 +1027,8 @@ defines saved state and entry privilege.
 
 ### Intrinsic calls: `blua32` {#sec-blua-programs-intrinsic-calls-blua32}
 
-The complete intrinsic operation set is `closure`, `trace`, and `trace_sink`. Use a direct dotted
+The complete intrinsic operation set is `closure`, `float_bits`,
+`float_from_bits`, `trace`, and `trace_sink`. Use a direct dotted
 call on `blua32`; alias calls and colon-method calls do not provide intrinsic access. Unknown
 operation names are rejected.
 
@@ -1037,6 +1038,25 @@ of program state. A subject identifies the observed object, a named channel
 selects the observation, and a bound sink receives the payload values. A
 compilation can retain selected channels or erase their statements and operand
 evaluation. Keep required program work outside these optional observations.
+
+#### `blua32.float_bits(value)` and `blua32.float_from_bits(word)` {#sec-blua-programs-float-word-intrinsics}
+
+Each form takes exactly one argument and produces one result. `float_bits`
+requires a Float and returns its raw binary32 word as an Integer.
+`float_from_bits` requires an Integer and returns the Float with those word
+bits. They are reinterpreting register moves, not numerical conversions:
+
+```lua
+local minus_zero = blua32.float_from_bits(0x80000000)
+local word = blua32.float_bits(minus_zero) -- Integer word 80000000H
+```
+
+Both zero signs and all NaN payload bits are preserved. A wrong subtype raises
+`INVALID_ARGUMENT`. They emit the corresponding [numeric word move](cpu.md#sec-cpu-numeric-word-moves),
+without a function call or temporary memory. The forms are permitted in static
+functions as well as ordinary functions. Further requested results are nil;
+when the result is discarded, argument evaluation and subtype admission still
+occur. Like the other intrinsics, these names are not first-class functions.
 
 #### `blua32.closure(function_address)` {#sec-blua-programs-blua32closurefunction_address}
 

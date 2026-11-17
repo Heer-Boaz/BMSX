@@ -6,7 +6,17 @@ DISPATCH_LABEL(WIDE) {
 DISPATCH_LABEL(MOV) {
 	const int a = decoded->a;
 	const int b = decoded->b;
-	SET_REGISTER_FAST(a, REG(b));
+	const auto kind = static_cast<ValueMoveKind>(decoded->c);
+	if (kind == ValueMoveKind::Copy) { SET_REGISTER_FAST(a, REG(b)); }
+	else if (kind == ValueMoveKind::FloatBits || kind == ValueMoveKind::FloatFromBits) {
+		const Value value = REG(b);
+		const ValueTag source = kind == ValueMoveKind::FloatBits ? ValueTag::Float : ValueTag::Integer;
+		if (valueTag(value) != source) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		SET_REGISTER_FAST(a, valueFromTag(kind == ValueMoveKind::FloatBits ? ValueTag::Integer : ValueTag::Float, valuePayload(value)));
+	} else {
+		enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		DISPATCH_CONTINUE();
+	}
 	DISPATCH_NEXT();
 }
 

@@ -1,5 +1,4 @@
 local number_type<const> = __bmsx_number_type
-local float_bits<const> = __bmsx_float_bits
 local bytecode<const> = require('compiler/bytecode')
 local isa<const> = require('bmsx/blua32')
 local semantic<const> = require('compiler/semantic')
@@ -65,7 +64,7 @@ local add_constant<const> = function(state, value)
 	local key = value
 	if number_type(value) == 'float' then
 		indices = state.program.float_constant_index_by_bits
-		key = float_bits(value)
+		key = blua32.float_bits(value)
 	end
 	local index = indices[key]
 	if index == nil then
@@ -145,7 +144,7 @@ prepare_value_operands = function(state, expression)
 		return
 	end
 	if kind == syntax.call_expression then
-		prepare_value_operands(state, expression.callee)
+		if expression.word_move == nil then prepare_value_operands(state, expression.callee) end
 		local method_name<const> = expression.method_name
 		if method_name ~= nil then
 			expression.method_constant_index = add_constant(state, method_name)
@@ -197,7 +196,7 @@ materialize_wide_immediates = function(state, expression)
 		return
 	end
 	if kind == syntax.call_expression then
-		materialize_wide_immediates(state, expression.callee)
+		if expression.word_move == nil then materialize_wide_immediates(state, expression.callee) end
 		local arguments<const> = expression.arguments
 		for index = 1, #arguments do
 			materialize_wide_immediates(state, arguments[index])
@@ -602,6 +601,13 @@ local emit_call_expression<const> = function(
 	result_operand
 )
 	local temporary_base<const> = state.free_register
+	if expression.word_move ~= nil then
+		local source<const> = emit_value(state, instruction_words, expression.arguments[1], target, target_is_temporary)
+		local mode<const> = expression.word_move == 'float_bits' and isa.move_float_bits or isa.move_float_from_bits
+		bytecode.emit_abc(instruction_words, isa.op_mov, target, source, mode)
+		state.free_register = temporary_base
+		return target
+	end
 	local use_target<const> = target_is_temporary
 		and target >= state.temporary_register_base
 		and target + 1 == temporary_base
@@ -661,7 +667,7 @@ local emit_call_expression<const> = function(
 		local argument_target<const> = reserve_register(state)
 		local argument<const> = arguments[index]
 		if index == argument_count and argument.kind == syntax.call_expression
-			and argument.expands_results then
+			and argument.expands_results and argument.word_move == nil then
 			emit_call_expression(state, instruction_words, argument, argument_target, true, 0)
 			argument_operand = 0
 		else
@@ -1156,7 +1162,7 @@ local emit_return_statement<const> = function(state, instruction_words, statemen
 		local target_register<const> = return_target + index - 1
 		local expression<const> = expressions[index]
 		if index == expression_count and expression.kind == syntax.call_expression
-			and expression.expands_results then
+			and expression.expands_results and expression.word_move == nil then
 			-- The final call owns the last temporary and sets the physical top.
 			-- RET forwards the prefix and tuple without moving or packing it.
 			emit_call_expression(state, instruction_words, expression, target_register, true, 0)

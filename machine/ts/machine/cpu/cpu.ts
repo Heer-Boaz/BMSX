@@ -1,3 +1,4 @@
+import { ValueMoveKind } from '../../spec/blua32/instruction_format';
 import { GcHeap, type GcState } from './gc_heap';
 import { GarbageAllocation, GcKind } from './gc_object';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
@@ -1174,7 +1175,7 @@ export class CPU implements MappedPageInvalidator {
 			return true;
 		}
 		if (instructionCacheable && this.executionBackend === CpuExecutionBackend.JavaScript
-			&& compiledBlockSupports(page.ops[pageOffset])) {
+			&& compiledBlockSupports(page.ops[pageOffset], page.c[pageOffset])) {
 			if (page.compiledBlocks === null) page.compiledBlocks = new CompiledBlockPage();
 			page.compiledBlocks.visits[pageOffset] = 0;
 			page.dispatchOps[pageOffset] = DecodedDispatchOp.CompiledWarm;
@@ -2331,7 +2332,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			const op = page.ops[cursor];
 			if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0
-				|| page.dispatchOps[cursor] === DecodedDispatchOp.Observe || !compiledBlockSupports(op)) continue;
+				|| page.dispatchOps[cursor] === DecodedDispatchOp.Observe || !compiledBlockSupports(op, page.c[cursor])) continue;
 			if (roots[cursor] === 0 && binding.writeWatches !== null && cache.visits[cursor] + 1 < COMPILED_BLOCK_THRESHOLD) continue;
 			available[cursor] = 1;
 			const successor = cursor + page.widths[cursor], successorPc = (pagePc + successor * INSTRUCTION_BYTES) >>> 0;
@@ -2598,9 +2599,16 @@ export class CPU implements MappedPageInvalidator {
 				case DecodedDispatchOp.ReservedMemory:
 					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;
-				case OpCode.MOV:
-					this.copyRegisterFast(frame, registers, a, page.b[pageOffset]);
+				case OpCode.MOV: {
+					const kind = page.c[pageOffset], b = page.b[pageOffset];
+					if (kind === ValueMoveKind.Copy) this.copyRegisterFast(frame, registers, a, b);
+					else if (kind === ValueMoveKind.FloatBits || kind === ValueMoveKind.FloatFromBits) {
+						const sourceTag = kind === ValueMoveKind.FloatBits ? ValueTag.Float : ValueTag.Integer;
+						if (registers.getTag(b) !== sourceTag) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+						this.setRegisterValueFast(frame, registers, a, valueFromTag(kind === ValueMoveKind.FloatBits ? ValueTag.Integer : ValueTag.Float, registers.getPayload(b)));
+					} else this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;
+				}
 				case OpCode.LOADK: {
 					this.setRegisterConstantFast(frame, registers, a, image, page.bx[pageOffset]);
 					return;
@@ -3236,12 +3244,6 @@ export class CPU implements MappedPageInvalidator {
 					? valueString(this.stringPool.intern(tag === ValueTag.Integer ? 'integer' : 'float')) : valueNil());
 				break;
 			}
-			case BuiltinFunctionId.FloatBits:
-				out.push(valueInteger(args.length > 0 ? args.registers.getPayload(args.base) | 0 : 0));
-				break;
-			case BuiltinFunctionId.FloatFromBits:
-				out.push(valueFloatBits(args.length > 0 ? args.registers.getPayload(args.base) : 0));
-				break;
 			case BuiltinFunctionId.ToInteger: {
 				const integer = valueToInteger(args.length > 0 ? args.registers.get(args.base) : valueNil());
 				out.push(integer === null ? valueNil() : valueInteger(integer));

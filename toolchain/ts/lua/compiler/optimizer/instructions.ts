@@ -1,3 +1,4 @@
+import { ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, decodeValueCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import { cloneSourceRange } from '../source_range';
@@ -203,6 +204,7 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 };
 
 export const isPureInstruction = (instruction: Instruction): boolean => {
+	if (instruction.op === OpCode.MOV && instruction.c !== ValueMoveKind.Copy) return false;
 	switch (instruction.op) {
 		case OpCode.MOV:
 		case OpCode.KNIL:

@@ -1,5 +1,4 @@
 local byte<const> = __bmsx_string_byte
-local from_bits<const> = __bmsx_float_from_bits
 local decimal_float<const> = require('number/decimal')
 local parse<const> = {}
 
@@ -176,7 +175,7 @@ local hexadecimal<const> = function(text, first, last)
 	if not point and not has_exponent then return based(text, first, last, 16) end
 	if leading_bits == 0 then return 0.0 end
 	local binary_exponent = (significant_digits - 1) * 4 + leading_bits - 1 + exponent - fractional_digits * 4
-	if binary_exponent > 127 then return from_bits(0x7f800000) end
+	if binary_exponent > 127 then return blua32.float_from_bits(0x7f800000) end
 	if binary_exponent < -150 then return 0.0 end
 	local retained_bits = 24
 	if binary_exponent < -126 then retained_bits = binary_exponent + 150 end
@@ -191,10 +190,10 @@ local hexadecimal<const> = function(text, first, last)
 			significand = significand + 1
 		end
 	end
-	if binary_exponent < -126 then return from_bits(significand) end
+	if binary_exponent < -126 then return blua32.float_from_bits(significand) end
 	if significand == 0x1000000 then significand = significand >> 1; binary_exponent = binary_exponent + 1 end
-	if binary_exponent > 127 then return from_bits(0x7f800000) end
-	return from_bits(((binary_exponent + 127) << 23) | (significand & 0x7fffff))
+	if binary_exponent > 127 then return blua32.float_from_bits(0x7f800000) end
+	return blua32.float_from_bits(((binary_exponent + 127) << 23) | (significand & 0x7fffff))
 end
 
 function parse.number(text)

@@ -1,61 +1,33 @@
-module<const>
-local positive_infinity<const> = 1 / 0
-local f32_mantissa_bits<const> = 23
-local f32_exponent_bits<const> = 8
-local f32_byte_count<const> = 4
-local f64_mantissa_bits<const> = 52
-local f64_exponent_bits<const> = 11
+local number_type<const> = __bmsx_number_type
 
 return function(value, byte_count)
-	local mantissa_bits<const> = byte_count == f32_byte_count and f32_mantissa_bits or f64_mantissa_bits
-	local exponent_bits<const> = byte_count == f32_byte_count and f32_exponent_bits or f64_exponent_bits
-	local sign = 0
-	if value < 0 or (value == 0 and 1 / value < 0) then
-		sign = 1
-		value = -value
+	local kind<const> = number_type(value)
+	if kind == nil then error('string.pack float value must be a number.') end
+	if byte_count == 4 then
+		if kind == 'integer' then value = value * 1.0 end
+		return blua32.float_bits(value)
 	end
-	local exponent_max<const> = (2 ^ exponent_bits) - 1
-	local exponent_bias<const> = (2 ^ (exponent_bits - 1)) - 1
-	local mantissa_scale<const> = 2 ^ mantissa_bits
-	local exponent = 0
-	local mantissa = 0
-	if value ~= value then
-		exponent = exponent_max
-		mantissa = 1
-	elseif value == positive_infinity then
-		exponent = exponent_max
-	elseif value ~= 0 then
-		while value >= 2 do
-			value = value / 2
-			exponent = exponent + 1
-		end
-		while value < 1 do
-			value = value * 2
-			exponent = exponent - 1
-		end
-		exponent = exponent + exponent_bias
-		if exponent <= 0 then
-			mantissa = (value / (2 ^ (1 - exponent))) * mantissa_scale
-			exponent = 0
-		elseif exponent >= exponent_max then
-			mantissa = 0
-			exponent = exponent_max
-		else
-			mantissa = (value - 1) * mantissa_scale
-		end
-		local integral<const> = mantissa // 1
-		local fraction<const> = mantissa - integral
-		mantissa = integral
-		if fraction > 0.5 or (fraction == 0.5 and integral % 2 ~= 0) then
-			mantissa = mantissa + 1
-		end
-		if mantissa >= mantissa_scale then
-			mantissa = 0
-			exponent = exponent + 1
-		end
+	if kind == 'integer' then
+		if value == 0 then return 0, 0 end
+		local sign = 0
+		if value < 0 then sign = 0x80000000; value = -value end
+		local exponent = 31
+		while (value & 0x80000000) == 0 do value = value << 1; exponent = exponent - 1 end
+		return sign | ((exponent + 1023) << 20) | ((value >> 11) & 0xfffff), value << 21
 	end
-	if mantissa_bits == f32_mantissa_bits then
-		return sign * (2 ^ 31) + exponent * (2 ^ 23) + mantissa
+	local word<const> = blua32.float_bits(value)
+	local sign<const> = word & 0x80000000
+	local exponent = (word >> 23) & 0xff
+	local fraction = word & 0x7fffff
+	if exponent == 0xff then
+		if fraction ~= 0 then return 0x7ff80000, 0 end
+		return sign | 0x7ff00000, 0
 	end
-	return sign * (2 ^ 31) + exponent * (2 ^ 20) + (mantissa // (2 ^ 32)), mantissa % (2 ^ 32)
+	if exponent == 0 then
+		if fraction == 0 then return sign, 0 end
+		exponent = 1
+		while (fraction & 0x800000) == 0 do fraction = fraction << 1; exponent = exponent - 1 end
+		fraction = fraction & 0x7fffff
+	end
+	return sign | ((exponent + 896) << 20) | (fraction >> 3), fraction << 29
 end

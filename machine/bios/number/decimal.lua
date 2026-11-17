@@ -3,8 +3,6 @@
 -- exact adjacent-float midpoints, as in double-conversion's Strtof:
 -- https://github.com/google/double-conversion/blob/master/double-conversion/strtod.cc
 local byte<const> = __bmsx_string_byte
-local bits<const> = __bmsx_float_bits
-local from_bits<const> = __bmsx_float_from_bits
 
 rodata power_ten_data: f32[11] = {
 	1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0,
@@ -82,13 +80,13 @@ end
 return function(text, first, last_nonzero, point, significant_digits, prefix, prefix_digits, exponent)
 	if first == 0 then return 0.0 end
 	local order<const> = significant_digits + exponent
-	if order > 39 then return from_bits(0x7f800000) end
+	if order > 39 then return blua32.float_from_bits(0x7f800000) end
 	if order < -45 then return 0.0 end
 	if significant_digits == prefix_digits and prefix <= 16777216 and exponent >= -10 and exponent <= 10 then
 		return scale(prefix * 1.0, exponent)
 	end
 	local estimate<const> = scale(prefix * 1.0, exponent + significant_digits - prefix_digits)
-	local candidate = bits(estimate)
+	local candidate = blua32.float_bits(estimate)
 	if candidate == 0x7f800000 then candidate = 0x7f7fffff end
 	-- Scratch belongs to this call, not shared BSS: an interrupt can parse too.
 	local limbs<const> = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
@@ -96,12 +94,12 @@ return function(text, first, last_nonzero, point, significant_digits, prefix, pr
 		local upper<const> = compare_midpoint(text, first, last_nonzero, point, order, candidate, limbs)
 		if upper > 0 or (upper == 0 and (candidate & 1) ~= 0) then
 			candidate = candidate + 1
-			if candidate == 0x7f800000 then return from_bits(candidate) end
+			if candidate == 0x7f800000 then return blua32.float_from_bits(candidate) end
 		elseif candidate == 0 then
 			return 0.0
 		else
 			local lower<const> = compare_midpoint(text, first, last_nonzero, point, order, candidate - 1, limbs)
-			if lower > 0 or (lower == 0 and (candidate & 1) == 0) then return from_bits(candidate) end
+			if lower > 0 or (lower == 0 and (candidate & 1) == 0) then return blua32.float_from_bits(candidate) end
 			candidate = candidate - 1
 		end
 	end

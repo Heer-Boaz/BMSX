@@ -481,7 +481,7 @@ The constant and copy instructions move complete values or create a specific val
 
 | Mnemonic | Opcode | Operands and specified domain | Result | Nominal cycles |
 |-------------|-------:|----------------------------|--------------------------------------------|--------:|
-| MOV | `01H` | A destination; B source register; C unused | `R[A] = R[B]`, preserving the complete value | 2 |
+| MOV | `01H` | A destination; B source register; C move kind | Copy or reinterpret the numeric payload as specified below | 2 |
 | LOADK | `02H` | A destination; Bx identifies an existing constant | `R[A] = K[Bx]`, preserving the constant's value kind | 2 |
 | LOADNIL | `03H` | A first register; B register count; C unused | For B>0, set exactly `R[A]` through `R[A+B−1]` to nil and raise frame top to at least A+B without lowering it. B=0 changes neither slots nor top. | 2 |
 | KNIL | `05H` | A destination; B and C unused | `R[A] = nil` | 2 |
@@ -494,6 +494,22 @@ The constant and copy instructions move complete values or create a specific val
 | LOADKR | `35H` | A destination; B source register; C unused | Convert `R[B]` to unsigned 32-bit index i, then `R[A] = K[i]`, preserving the constant's value kind. An index outside the pool raises `INVALID_ARGUMENT` (10) before the destination is written. B is not an RK operand. | 2 |
 
 
+
+### Numeric word moves {#sec-cpu-numeric-word-moves}
+
+`MOV A, B, 0` copies the complete value unchanged. The two other move kinds
+transfer a Number's word without arithmetic or memory access:
+
+| C | Required source | Result |
+|---|---|---|
+| 1 | Float | Integer containing the Float's complete binary32 word |
+| 2 | Integer | Float whose binary32 word is the Integer's complete word |
+
+These transfers preserve both zero signs and every NaN bit, including a
+signaling NaN. They do not round, canonicalize, allocate or access the bus.
+A source of the wrong subtype raises `INVALID_ARGUMENT` without changing
+the destination. Values of C other than 0, 1 and 2 are reserved encodings and
+raise Reserved Instruction. All three defined forms cost two cycles.
 
 ### Arithmetic {#sec-cpu-arithmetic}
 

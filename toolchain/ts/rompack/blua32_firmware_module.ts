@@ -1,4 +1,5 @@
 import {
+	ValueMoveKind,
 	CLOSURE_ADDRESS_REGISTER_WIDE_C,
 	EXT_A_BITS,
 	EXT_B_BITS,
@@ -63,6 +64,8 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\tupvalue_in_stack_mask = 0x${BLUA32_UPVALUE_IN_STACK_MASK.toString(16)},`,
 	`\top_wide = ${OpCode.WIDE},`,
 	`\top_mov = ${OpCode.MOV},`,
+	`\tmove_float_bits = ${ValueMoveKind.FloatBits},`,
+	`\tmove_float_from_bits = ${ValueMoveKind.FloatFromBits},`,
 	`\top_knil = ${OpCode.KNIL},`,
 	`\top_kfalse = ${OpCode.KFALSE},`,
 	`\top_ktrue = ${OpCode.KTRUE},`,

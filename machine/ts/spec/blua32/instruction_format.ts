@@ -1,3 +1,5 @@
+export const enum ValueMoveKind { Copy = 0, FloatBits = 1, FloatFromBits = 2 }
+
 export const INSTRUCTION_BYTES = 4;
 
 export const MAX_OP_BITS = 6;

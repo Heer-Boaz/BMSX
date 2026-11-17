@@ -18,7 +18,7 @@ const modules = paths.map(path => ({ path, source: readFileSync(`machine/bios/${
 // Console output is outside this CPU/loader fixture, as in firmware_call_results.
 modules.push({ path: 'tty/console', source: 'return {write=function() end,end_line=function() end}' },
 	{ path: 'bmsx/blua32', source: BLUA32_FIRMWARE_MODULE_SOURCE },
-	{ path: 'test/raw', source: 'return {encode=__bmsx_float_bits,decode=__bmsx_float_from_bits}' });
+	{ path: 'test/raw', source: 'return {encode=function(value) return blua32.float_bits(value) end,decode=function(word) return blua32.float_from_bits(word) end}' });
 const parsedModules = modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`).chunk }));
 const budget = 10000000;
 function run(source: string, optLevel: 0 | 3, backend: CpuExecutionBackend) {
@@ -124,4 +124,27 @@ for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaS
 		const actual: v.Value[] = [];cpu.readCompletionValues(actual);
 		assert.deepEqual(actual,[v.valueFloatBits(parseHexFloat32Bits(text))],text);
 	}
+});
+
+for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript]) {
+ test(`BIOS load ${backend}: nested word moves produce one result`, () => {
+  const {results}=run(`require('base');local api<const> = require('compiler/api')
+local f<const> = assert(api.load('return blua32.float_bits(blua32.float_from_bits(0xffa12345))'))
+return f()`,3,backend);
+  assert.deepEqual(results,[v.valueInteger(0xffa12345)]);
+ });
+ test(`BIOS load ${backend}: a local namespace is not a word move intrinsic`, () => {
+  const {results}=run(`require('base');local api<const> = require('compiler/api')
+local g<const> = assert(api.load('return function(blua32) return blua32.float_bits(4) end'))
+return g()({float_bits=function(value) return value+1 end})`,3,backend);
+  assert.deepEqual(results,[v.valueInteger(5)]);
+ });
+}
+
+const wordMovesSource = readFileSync(new URL('../fixtures/compiler32/word-moves-load.lua', import.meta.url),'utf8');
+for (const opt of [0,3] as const) test(`BIOS word moves O${opt}: C++ executes runtime-compiled moves and namespace shadowing`, {skip: !native}, () => {
+ const {image,cpu,results} = run(wordMovesSource,opt,CpuExecutionBackend.Interpreter);
+ assert.deepEqual(results,[v.valueInteger(0xffa12345),v.valueInteger(5),v.valueFloatBits(0x80000000),v.valueInteger(0x40000000)]);
+ const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`,...results.map(value=>`${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n')+'\n';
+ assert.equal(execFileSync(native!,['--execute-rom','--boot-primitives',String(budget)],{input:image.romBytes,encoding:'utf8'}),expected);
 });

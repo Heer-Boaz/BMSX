@@ -1,3 +1,4 @@
+import { ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { evaluateNumberBinary, numberConstantValue } from '../../number';
 import { LuaBinaryOperator } from '../../syntax/ast';
 // start repeated-sequence-acceptable -- SSA optimizer keeps instruction rewrites inline for compile-time throughput and readable opcode cases.
@@ -390,6 +391,7 @@ const evaluateSccpDef = (
 				constVal: constValueForOptimization(null, context.constIndex(null)),
 			};
 		case OpCode.MOV: {
+			if (instruction.c !== ValueMoveKind.Copy) return { kind: SCCP_OVERDEFINED, constVal: null };
 			if (!uses || uses.length === 0) {
 				throw new Error('[ProgramOptimizer] Missing MOV operand.');
 			}
@@ -867,6 +869,7 @@ const computeValueNumbers = (
 				const instruction = instructions[def.index];
 				switch (instruction.op) {
 					case OpCode.MOV: {
+						if (instruction.c !== ValueMoveKind.Copy) break;
 						const uses = usesForInstruction(def.index);
 						if (uses.length === 0) {
 							throw new Error('[ProgramOptimizer] Missing MOV operand.');
@@ -1027,6 +1030,7 @@ const isControlFlowInstruction = (instruction: Instruction): boolean => {
 };
 
 const isHoistableInstruction = (instruction: Instruction): boolean => {
+	if (instruction.op === OpCode.MOV && instruction.c !== ValueMoveKind.Copy) return false;
 	switch (instruction.op) {
 		case OpCode.MOV:
 		case OpCode.KNIL:
@@ -2035,6 +2039,7 @@ export const applyGlobalOptimizations = (
 					const instruction = instructions[def.index];
 					switch (instruction.op) {
 						case OpCode.MOV: {
+							if (instruction.c !== ValueMoveKind.Copy) break;
 							const slots = instrUses[def.index] ?? EMPTY_USE_SLOTS;
 							if (slots.length === 0) {
 								throw new Error('[ProgramOptimizer] Missing MOV operand.');

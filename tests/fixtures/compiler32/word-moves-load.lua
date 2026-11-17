@@ -1,0 +1,7 @@
+require('base')
+local api<const> = require('compiler/api')
+local f<const> = assert(api.load('return blua32.float_bits(blua32.float_from_bits(0xffa12345))'))
+local g<const> = assert(api.load('return function(blua32) return blua32.float_bits(4) end'))
+local word<const> = f()
+local shadowed<const> = g()({float_bits=function(value) return value+1 end})
+return word,shadowed,blua32.float_from_bits(0x80000000),blua32.float_bits(2.0)

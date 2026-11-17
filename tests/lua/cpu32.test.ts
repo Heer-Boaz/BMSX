@@ -10,13 +10,13 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { OpCode, BASE_CYCLES } from '../../machine/ts/spec/blua32/opcode';
-import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
+import { LUA_FAULT_REASON_INVALID_ARGUMENT, CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../machine/ts/spec/blua32/cop0';
 import { cartridgeSlots } from '../helpers/cartridge';
 import * as v from '../../machine/ts/machine/cpu/value';
 import * as n from '../../machine/ts/machine/cpu/value_arithmetic';
 import { luaShiftLeft, luaShiftRight } from '../../machine/ts/spec/blua32/numeric';
 const runner = process.env.BMSX_CPU32_RUNNER;
-function createMachine(op: OpCode, kind: MemoryAccessKind | undefined, backend: CpuExecutionBackend): CPU {
+function createMachine(op: OpCode, kind: number | undefined, backend: CpuExecutionBackend): CPU {
 	// The same public program records are loaded by both real CPU owners.
 	// This bypasses neither runtime nor instruction decoding; only the frontend
 	// compiler, whose literal typing is a separate cutover gate.
@@ -59,6 +59,21 @@ test(`${backend}: operand faults retain their charge and do not publish a destin
 		cpu.runUntilDepth(0,BASE_CYCLES[OpCode.ADD]);
 		assert.equal(cpu.readLuaFaultReasonWord(),LUA_FAULT_REASON_INVALID_ARGUMENT);
 		assert.equal(cpu.readFrameRegister(0,2),v.valueInteger(917));
+	}
+});
+
+test(`${backend}: numeric MOV kinds preserve payloads and reject reserved selectors`, { skip: !runner }, () => {
+	for (const kind of [1,2,3,255,256,257,258,511,512,16384,32767]) {
+		const cpu = createMachine(OpCode.MOV, kind, backend);
+		const regs = cpu.activeThread.currentFrame!.registers;
+		regs.set(0, kind === 1 ? v.valueFloatBits(0xffa12345) : v.valueInteger(0xffa12345));
+		regs.setInteger(2,917);
+		cpu.runUntilDepth(0,1);
+		assert.equal(cpu.instructionBudgetRemaining,-1);
+		if (kind > 2) {
+			assert.equal(cpu.readCauseWord(),CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			assert.equal(cpu.readFrameRegister(0,2),v.valueInteger(917));
+		} else assert.equal(cpu.readFrameRegister(0,2),kind===1?v.valueInteger(0xffa12345):v.valueFloatBits(0xffa12345));
 	}
 });
 

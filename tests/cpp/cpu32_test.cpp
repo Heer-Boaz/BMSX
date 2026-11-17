@@ -23,7 +23,7 @@ struct Machine {
 		memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), addresses(memory), cpu(memory, irq, addresses) { cpu.reset(); }
 };
-test::Blua32TestImage operation(OpCode op) {
+test::Blua32TestImage operation(OpCode op, u32 selector = 1) {
 	test::Blua32TestImage image;
 	if (op == OpCode::EQ || op == OpCode::LT || op == OpCode::LE) {
 		image.text.resize(7 * INSTRUCTION_BYTES);
@@ -37,11 +37,13 @@ test::Blua32TestImage operation(OpCode op) {
 		image.functions={{.firstWord=0,.wordCount=6,.numParams=3,.maxStack=8},{.firstWord=6,.wordCount=1,.maxStack=8}};
 		image.exceptionFunctionIndex=1; return image;
 	}
-	image.text.resize(3 * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(op), 2, 0, 1);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::RET), 2, 2, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	image.functions = {{.firstWord=0, .wordCount=2, .numParams=3, .maxStack=8}, {.firstWord=2, .wordCount=1, .maxStack=8}};
+	const u32 prefix = op == OpCode::MOV && selector > MAX_BASE_OPERAND_BC ? 1u : 0u;
+	image.text.resize((3 + prefix) * INSTRUCTION_BYTES);
+	if (prefix) writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, static_cast<u8>(selector >> BASE_OPERAND_BC_BITS));
+	writeInstruction(image.text, prefix, static_cast<u8>(op), 2, 0, static_cast<u8>(selector), static_cast<u8>((selector >> MAX_OPERAND_BITS) & 7));
+	writeInstruction(image.text, prefix + 1, static_cast<u8>(OpCode::RET), 2, 2, 0);
+	writeInstruction(image.text, prefix + 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord=0, .wordCount=2 + prefix, .numParams=3, .maxStack=8}, {.firstWord=2 + prefix, .wordCount=1, .maxStack=8}};
 	image.exceptionFunctionIndex = 1;
 	return image;
 }
@@ -107,6 +109,44 @@ void unaryAndCompare() {
 		}
 	}
 }
+void wordMoves() {
+	for (auto kind : {ValueMoveKind::Copy, ValueMoveKind::FloatBits, ValueMoveKind::FloatFromBits}) {
+		for (u32 word : {0u, 0x80000000u, 0x7fa12345u, 0xffa12345u, 0xffffffffu}) {
+			for (int target : {0, 2}) {
+				auto image = operation(OpCode::MOV);
+				writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), target, 0, static_cast<u8>(kind));
+				Machine m(image);
+				const Value source = kind == ValueMoveKind::FloatBits ? valueFloatBits(word) : valueInteger(word);
+				m.cpu.activeThread()->currentFrame->registers.set(0, source);
+				m.cpu.runUntilDepth(0, 1);
+				const Value expected = kind == ValueMoveKind::FloatFromBits ? valueFloatBits(word) : kind == ValueMoveKind::FloatBits ? valueInteger(word) : source;
+				require(m.cpu.readFrameRegister(0, target) == expected, "MOV changes only the selected tag, including aliased operands and signaling NaNs");
+				require(m.cpu.instructionBudgetRemaining == -1, "all MOV kinds cost two cycles");
+			}
+		}
+	}
+	for (auto kind : {ValueMoveKind::FloatBits, ValueMoveKind::FloatFromBits}) {
+		for (Value bad : {valueNil(), valueBool(true), valueString(0), kind == ValueMoveKind::FloatBits ? valueInteger(1) : valueFloat(1)}) {
+			auto image = operation(OpCode::MOV);
+			writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 2, 0, static_cast<u8>(kind));
+			Machine m(image); auto regs = m.cpu.activeThread()->currentFrame->registers;
+			regs.set(0, bad); regs.set(2, valueInteger(917));
+			m.cpu.runUntilDepth(0, 1);
+			require(m.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT, "word reinterpretation requires its exact numeric subtype");
+			require(m.cpu.readFrameRegister(0, 2) == valueInteger(917), "failed word move leaves the destination intact");
+			require(m.cpu.instructionBudgetRemaining == -1, "failed word move retains its started charge");
+		}
+	}
+	for (u32 kind : {3, 255, 256, 257, 258, 511, 512, 16384, MAX_EXT_REGISTER_BC}) {
+		auto image = operation(OpCode::MOV, kind);
+		Machine m(image); m.cpu.activeThread()->currentFrame->registers.set(2, valueInteger(917));
+		m.cpu.runUntilDepth(0, 1);
+		require(m.cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION, "unknown MOV kinds take Reserved Instruction");
+		require(m.cpu.readFrameRegister(0, 2) == valueInteger(917), "reserved word move publishes no value");
+		require(m.cpu.instructionBudgetRemaining == -1, "reserved word move retains its started charge");
+	}
+}
+
 void memoryWords() {
 	for(auto kind:{MemoryAccessKind::Word,MemoryAccessKind::U32LE,MemoryAccessKind::F32LE,MemoryAccessKind::F64LE}) {
 		auto image=operation(OpCode::LOAD_MEM); writeInstruction(image.text,0,static_cast<u8>(OpCode::LOAD_MEM),2,0,static_cast<u8>(kind));
@@ -244,8 +284,7 @@ int main(int argc, char** argv) {
 		return 0;
 	}
 	if ((argc == 3 || argc == 4) && std::string(argv[1]) == "--rom") {
-		auto image=operation(static_cast<OpCode>(std::stoul(argv[2])));
-		if(argc==4)writeInstruction(image.text,0,static_cast<u8>(std::stoul(argv[2])),2,0,static_cast<u8>(std::stoul(argv[3])));
+		auto image=operation(static_cast<OpCode>(std::stoul(argv[2])),argc==4?std::stoul(argv[3]):1);
 		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System,image);
 		std::cout.write(reinterpret_cast<const char*>(rom.bytes.data()), rom.bytes.size()); return 0;
 	}
@@ -257,6 +296,6 @@ int main(int argc, char** argv) {
 		const auto rom=test::encodeBlua32TestRom(RomImageDomain::System,constantImage());
 		std::cout.write(reinterpret_cast<const char*>(rom.bytes.data()),rom.bytes.size());return 0;
 	}
-	try { scalarNumbers(); unaryAndCompare(); memoryWords(); scalarRegions(); constantsGlobalsAndRestore(); tableHeap(); std::cout<<"CPU32 scalar, compact roots, snapshots and Table tests passed\n"; return 0; }
+	try { scalarNumbers(); unaryAndCompare(); wordMoves(); memoryWords(); scalarRegions(); constantsGlobalsAndRestore(); tableHeap(); std::cout<<"CPU32 scalar, compact roots, snapshots and Table tests passed\n"; return 0; }
 	catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

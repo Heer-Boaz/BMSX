@@ -247,7 +247,8 @@ DecodedDebugInstruction decodeInstructionAtPcInternal(const Blua32ImageLayout& i
 std::string formatInstructionText(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, const Blua32SymbolsImage* symbols, int pcWidth) {
 	switch (decoded.op) {
 		case OpCode::MOV:
-			return "MOV r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
+			return "MOV r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b)
+				+ (decoded.c == 0 ? "" : ", " + std::to_string(decoded.c));
 		case OpCode::KNIL:
 			return "KNIL r" + std::to_string(decoded.a);
 		case OpCode::KFALSE:
@@ -369,7 +370,7 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, const Blua32SymbolsImage* symbols, int pcWidth) {
 	switch (decoded.op) {
 		case OpCode::MOV:
-			return {registerOperand("dst", decoded.a), registerOperand("src", decoded.b)};
+			return {registerOperand("dst", decoded.a), registerOperand("src", decoded.b), plainOperand("move kind", formatInteger(decoded.c))};
 		case OpCode::KNIL:
 			return {registerOperand("dst", decoded.a)};
 		case OpCode::KFALSE:

@@ -1,4 +1,4 @@
-import { INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
+import { ValueMoveKind, INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import { DecodedDispatchOp, type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
 import { ValueTag } from './value';
@@ -142,7 +142,8 @@ emitters[OpCode.CONCATN] = emitters[OpCode.JMP];
 emitters[OpCode.CLOSURE] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
-export function compiledBlockSupports(op: number): boolean {
+export function compiledBlockSupports(op: number, c: number): boolean {
+	if (op === OpCode.MOV && c > ValueMoveKind.FloatFromBits) return false;
 	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
 		|| compiledTableSupports(op)
@@ -252,7 +253,8 @@ export function emitJavaScriptBlock(
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 		}
 		const arithmetic = compiledArithmeticSupports(op);
-		const needsOperandFault = arithmetic || load || store || words || (control && op === OpCode.MTC0);
+		const bitMove = op === OpCode.MOV && page.c[word] !== ValueMoveKind.Copy;
+		const needsOperandFault = bitMove || arithmetic || load || store || words || (control && op === OpCode.MTC0);
 		let numericFault = '';
 		if (needsOperandFault) {
 			const faultIndex = exits.length;
@@ -262,7 +264,12 @@ export function emitJavaScriptBlock(
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 			numericFault = registers.exit(faultIndex);
 		}
-		if (control) {
+		if (bitMove) {
+			const b = page.b[word], kind = page.c[word];
+			const from = kind === ValueMoveKind.FloatBits ? ValueTag.Float : ValueTag.Integer;
+			const to = kind === ValueMoveKind.FloatBits ? ValueTag.Integer : ValueTag.Float;
+			source.push(`if(${registers.tagOperand(b)}!==${from}) ${numericFault}${registers.writeEncoded(page.a[word], `${to}`, registers.wordOperand(b))}`);
+		} else if (control) {
 			source.push(emitControl(op, page, word, registers, sideExit === undefined ? null : exitIndex, !controlAccess, numericFault));
 			controlAccess = true;
 		} else if (compiledContextSupports(op)) {

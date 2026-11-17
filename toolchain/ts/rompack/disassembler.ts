@@ -336,7 +336,7 @@ const buildInstructionOperands = (
 	const { op, a, b, c, bx, sbx, pc } = decoded;
 	switch (op) {
 		case OpCode.MOV:
-			return [registerOperand('a', 'dst', a), registerOperand('b', 'src', b)];
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'src', b), plainOperand('c', 'move kind', formatInteger(c))];
 		case OpCode.KNIL:
 			return [registerOperand('a', 'dst', a)];
 		case OpCode.KFALSE:
@@ -528,7 +528,7 @@ const formatInstruction = (
 	const { op, a, b, c, bx, sbx, pc } = decoded;
 	switch (op) {
 		case OpCode.MOV:
-			return `MOV r${a}, r${b}`;
+			return `MOV r${a}, r${b}${c === 0 ? "" : `, ${c}`}`;
 		case OpCode.KNIL:
 			return `KNIL r${a}`;
 		case OpCode.KFALSE:
