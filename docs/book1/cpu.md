@@ -46,11 +46,23 @@ these lifetimes across DMA, geometry, drawing and sound.
 
 A CPU register holds a language value, not an unconditionally interpreted 32-bit word. The value kinds are nil, false, true, Number, String, Table, Closure, BuiltinFunction, and Thread. Copying a register or loading a constant preserves its value kind: copying false does not turn it into zero, and copying a Table preserves the reference to that Table.
 
-An ordinary Number is a double-precision floating-point value. It can carry fractional values, signed zero, infinities, and NaN. Arithmetic does not implicitly wrap it to 32 bits or give it a fixed-point interpretation. A raw 32-bit word, by contrast, is a pattern of 32 bits. The bitwise and shift instructions perform a word conversion at their inputs and return the signed 32-bit interpretation as an ordinary Number; they do not change how other Numbers are stored or calculated.
+Number has two subtypes. An Integer is a signed two's-complement 32-bit value;
+its range is −2147483648 through 2147483647. A Float is an IEEE 754 binary32
+value, including fractions, signed zero, infinities and NaN. Copying a Number
+preserves its subtype. Integer arithmetic wraps to 32 bits; floating arithmetic
+rounds to binary32. An Integer and a Float with the same numerical value compare
+equal, but their subtypes remain distinct.
 
-Numeric operand reads are not general value conversions. A Number supplies its numeric value; any other value kind supplies NaN. In particular, a numeric string is not parsed, and a boolean is not converted to zero or one. Numeric results remain Numbers, including results that are NaN.
+A raw word is a pattern of 32 bits. Loading a word into an Integer preserves
+all its bits; bit 31 is the Integer sign bit. Thus the word `FFFFFFFFH` is
+Integer −1. Bitwise operations act on those bits. Memory addresses and device
+ports use the word bits, not the signed comparison of the Integer carrying
+them.
 
-This distinction matters when choosing operations in BLua. Use ordinary arithmetic when fractions and non-wrapping numeric results are wanted. Use bitwise operations when the calculation concerns flags, masks, or particular word bits. Use the truth rules for conditions rather than assuming that a numeric zero is false.
+Arithmetic requires Number operands. A different kind raises
+`INVALID_ARGUMENT` (10); a numeric String is not parsed and a Boolean is not
+converted. Use explicit numeric conversion when a program accepts text. Use
+the truth rules for conditions rather than assuming that numeric zero is false.
 
 ### Values and register notation {#sec-cpu-values-and-register-notation}
 
@@ -134,39 +146,37 @@ provide assigned byte addresses; they are not CPU register allocations.
 
 ```lua
 module<entry>
-rodata operands: f64[3] = { -7, 3, 2147483648 }
+rodata operands: i32[2] = { -7, 3 }
 rodata bytes: u8[4] = { 0x78, 0x56, 0x34, 0x12 }
 bss word_result: word
 bss rounded: f32
 
-local numbers<const>: *f64 = operands
+local numbers<const>: *i32 = operands
 local halves<const>: *u16 = bytes
 local whole<const>: *u32 = bytes
 local quotient = numbers[0] / numbers[1]
 local floor_quotient = numbers[0] // numbers[1]
-*word_result = numbers[2]
-*rounded = numbers[2] + 1
+*word_result = 0x80000000
+*rounded = 16777216.0 + 1.0
 ```
 
 | Expression or stored result | Value | Reason |
 | --- | --- | --- |
-| `quotient` | −7/3, approximately −2.3333333333333335 | Number division retains a fraction. |
-| `floor_quotient` | −3 | Floor division rounds downward. |
+| `quotient` | approximately −2.33333325 | `/` produces a Float. |
+| `floor_quotient` | Integer −3 | Integer floor division rounds downward. |
 | `numbers[0] % numbers[1]` | 2 | A nonzero remainder follows the divisor's sign. |
 | `-numbers[0] % -numbers[1]` | −2 | Reversing the signs changes the remainder's sign. |
-| `*word_result` | `80000000H`, read as 2147483648 | A word store retains raw low 32 bits. |
-| `numbers[2] \| 0` | −2147483648 | Bitwise output uses signed-word interpretation. |
-| `numbers[2] >> 1` | −1073741824 | Right shift preserves the sign bit. |
-| `1 << 32`, `1 << -1` | 1, −2147483648 | Shift counts retain their low five bits. |
-| `-1.75 \| 0` | −1 | Word conversion truncates toward zero. |
+| `*word_result` | Integer −2147483648, word `80000000H` | A word load retains all 32 bits. |
+| `*word_result >> 1` | Integer 1073741824 | Right shift fills the top bit with zero. |
+| `1 << 32`, `8 << -1` | 0, 4 | Wide shifts produce zero; negative counts reverse direction. |
 | `halves[0]`, `halves[1]` | `5678H`, `1234H` | Halfword reads are little-endian. |
 | `*whole` | `12345678H` | The same four bytes form one word. |
-| `*rounded` | 2147483648 | The f32 store rounds 2147483649. |
+| `*rounded` | Float 16777216.0 | The binary32 addition rounds before the store. |
 
-Arithmetic Number results do not wrap at the signed-word boundary. A stored
-word, a signed bitwise result and an f32 value are different representations.
-Finite printed Numbers are rounded text, not an exact substitute for those
-stored values. See the Number-to-text rules below.
+Integer arithmetic wraps at the word boundary; Float arithmetic rounds at
+binary32 precision. The bits of the stored word are unchanged by its signed
+Integer interpretation. Finite Float text is not necessarily a lossless
+substitute for its binary32 value.
 
 ## Instruction words and execution resources {#sec-cpu-instruction-words-and-execution-resources}
 
@@ -178,7 +188,7 @@ stored values. See the Number-to-text rules below.
 | Opcode field | 6 bits, 64 opcode identities including the WIDE prefix |
 | Instruction word | 32 bits, four bytes, little-endian |
 | Instruction length | One word; two words with one WIDE prefix |
-| Numeric value | Double-precision Number, distinct from other language values |
+| Numeric value | Integer or binary32 Float Number, distinct from other language values |
 | Data word and CP0 word | 32 bits; scalar data transfers are little-endian |
 | Frame registers | Logical value slots relative to the current call frame; the function record supplies its parameter count and maximum stack allocation |
 | Register/count encoding | Format-dependent limits below, not a fixed physical register allocation or unlimited recursion guarantee |
@@ -467,7 +477,7 @@ defines their place in the execution budget.
 ### Constants and copies {#sec-cpu-constants-and-copies}
 
 
-The constant and copy instructions move complete values or create a specific value kind. K0, K1, KM1, and KSMI create Numbers, not a separate integer kind. LOADNIL's B operand is a count: for example, A=4 and B=3 write nil to R4, R5, and R6, not through R7.
+The constant and copy instructions move complete values or create a specific value kind. K0, K1, KM1, and KSMI create Integer Numbers. LOADNIL's B operand is a count: for example, A=4 and B=3 write nil to R4, R5, and R6, not through R7.
 
 | Mnemonic | Opcode | Operands and specified domain | Result | Nominal cycles |
 |-------------|-------:|----------------------------|--------------------------------------------|--------:|
@@ -477,7 +487,7 @@ The constant and copy instructions move complete values or create a specific val
 | KNIL | `05H` | A destination; B and C unused | `R[A] = nil` | 2 |
 | KFALSE | `06H` | A destination; B and C unused | `R[A] = false` | 2 |
 | KTRUE | `07H` | A destination; B and C unused | `R[A] = true` | 2 |
-| K0 | `08H` | A destination; B and C unused | Number +0 in `R[A]` | 2 |
+| K0 | `08H` | A destination; B and C unused | Integer 0 in `R[A]` | 2 |
 | K1 | `09H` | A destination; B and C unused | Number 1 in `R[A]` | 2 |
 | KM1 | `0AH` | A destination; B and C unused | Number −1 in `R[A]` | 2 |
 | KSMI | `0BH` | A destination; signed immediate sBx within the encoding range above | Number equal to sBx in `R[A]` | 2 |
@@ -487,9 +497,39 @@ The constant and copy instructions move complete values or create a specific val
 
 ### Arithmetic {#sec-cpu-arithmetic}
 
-ADD, SUB, MUL, DIV, MOD, FLOORDIV, and POW read two numeric operands through RK B and RK C and write a Number to R[A]. They do not saturate or apply integer-word wrapping. A non-Number operand supplies NaN rather than causing an arithmetic type fault.
+ADD, SUB, MUL, DIV, MOD, FLOORDIV, and POW read two Number operands through
+RK B and RK C. UNM reads one Number from R[B]. A non-Number operand raises
+`INVALID_ARGUMENT` (10) without writing the destination.
 
-DIV is ordinary floating-point division. FLOORDIV instead rounds the quotient downward, not toward zero: dividing −7 by 3 gives a floor quotient of −3, and dividing 7 by −3 also gives −3. The result is still a Number, not a different integer value kind. MOD adjusts a nonzero remainder to agree with the divisor's sign for finite inputs and a nonzero divisor: −7 modulo 3 is 2, whereas 7 modulo −3 is −2. A zero remainder keeps the sign of the initial remainder; it is not forced to the divisor's sign.
+ADD, SUB, MUL, MOD and FLOORDIV use Integer arithmetic when both operands are
+Integers. Integer ADD, SUB and MUL retain the low 32 bits, interpreted as a
+signed result. Integer UNM likewise wraps: negating −2147483648 produces
+−2147483648. Integer FLOORDIV rounds the quotient toward negative infinity;
+integer MOD satisfies `a = (a // b) * b + a % b` in word arithmetic, with a
+nonzero remainder having the divisor's sign. Dividing an Integer by zero with
+FLOORDIV or MOD raises `INVALID_ARGUMENT` without writing the destination.
+The overflow case `−2147483648 // −1` wraps to −2147483648; its remainder is
+zero.
+
+If either operand of ADD, SUB, MUL, MOD or FLOORDIV is a Float, the other
+operand is converted to binary32 and the result is a Float. DIV and POW always
+convert both operands to binary32 and produce a Float. Floating UNM produces a
+Float. Conversion and arithmetic use round-to-nearest, ties-to-even, with
+gradual underflow; a subnormal value is not flushed to zero. A Float preserves
+its zero sign and infinities according to the operation's rules. An arithmetic
+NaN result is the quiet NaN word `7FC00000H`. This rule applies after each
+ADD, SUB, MUL, DIV, MOD, FLOORDIV and POW, not merely when a value is stored.
+Float UNM instead toggles bit 31 and preserves the other 31 bits, including a
+NaN's payload and quiet/signaling bit. Copying a Float preserves all 32 bits.
+For example, negating a canonical arithmetic NaN produces `FFC00000H`; copying
+that value retains the negative NaN word.
+
+FLOORDIV rounds a floating quotient toward negative infinity. Floating MOD
+starts with the truncation-based remainder `r`: when `r > 0` and the divisor
+is negative, or `r < 0` and the divisor is positive, its result is `r + b`;
+otherwise its result is `r`, including its zero sign. Floating division by
+zero uses the binary32 infinity and NaN results, rather than the integer
+zero-divisor fault.
 
 
 DIV has a fixed execution budget of 31 cycles; FLOORDIV adds one cycle for
@@ -502,7 +542,9 @@ charges do not change for special operands, nonfinite results or a result that
 can be determined without the general arithmetic path. ADD, SUB and MUL retain
 the two-cycle nominal charge.
 
-DIV, MOD, and FLOORDIV have no separate zero-divisor or nonfinite-operand guard. They use the arithmetic operations stated below, and their results remain Numbers. Do not assume a checked integer-divide trap, substitute a saturated result, or apply the finite-input quotient-and-remainder rules to every nonfinite case.
+The nominal charge of each arithmetic opcode is the same for Integer and
+Float operands. The faulting attempt retains its base charge; the exception
+does not publish a destination result.
 
 | Mnemonic | Opcode | Operands | Number result in R[A] | Nominal cycles |
 |---|---:|---|---|---:|
@@ -510,30 +552,34 @@ DIV, MOD, and FLOORDIV have no separate zero-divisor or nonfinite-operand guard.
 | SUB | `12H` | Numeric reads of RK(B), RK(C) | left − right | 2 |
 | MUL | `13H` | Numeric reads of RK(B), RK(C) | left × right | 2 |
 | DIV | `14H` | Numeric reads of RK(B), RK(C) | left divided by right | 32 |
-| MOD | `15H` | Numeric reads of RK(B), RK(C) | Start with the floating-point remainder r. If r>0 and right<0, or r<0 and right>0, return r+right; otherwise return r. | 34 |
-| FLOORDIV | `16H` | Numeric reads of RK(B), RK(C) | Set q to left/right and t to q truncated toward zero. Return t−1 if t>q; otherwise return t. | 33 |
+| MOD | `15H` | Numeric reads of RK(B), RK(C) | Remainder with the divisor's sign, using the subtype rules above | 34 |
+| FLOORDIV | `16H` | Numeric reads of RK(B), RK(C) | Quotient rounded toward negative infinity, using the subtype rules above | 33 |
 | POW | `17H` | Numeric reads of RK(B), RK(C) | left raised to the power right, with the special cases below | 128 |
-| UNM | `1FH` | Numeric read of R[B], not RK(B); C unused | Negation of the operand, including its zero sign | 2 |
+| UNM | `1FH` | Numeric read of R[B], not RK(B); C unused | Negation in the operand's subtype | 2 |
 
 
 
 ### Bitwise operations and shifts {#sec-cpu-bitwise-operations-and-shifts}
 
-Each bitwise input is converted to a 32-bit word by truncating its Number toward zero and reducing the integer modulo 2³². Positive zero, negative zero, NaN, infinities, and fractions of magnitude below one become the zero word. Large finite values wrap modulo 2³² rather than saturating. A non-Number numeric operand first supplies NaN and therefore becomes the zero word in these operations.
+Each bitwise operand must be an Integer or a Float whose value is an exact
+integer in the signed 32-bit range. Such a Float converts to the equivalent
+Integer. A fraction, infinity, NaN, out-of-range Float or non-Number raises
+`INVALID_ARGUMENT` (10), without writing the destination.
 
-The output word is interpreted as a signed 32-bit integer and written as a Number. For example, the word with all 32 bits set becomes Number −1. A left shift of 1 by 31 produces −2147483648. SHR is an arithmetic, sign-extending right shift: shifting −8 right by one produces −4, not a large positive value.
-
-
-Shift counts undergo the same word conversion and then use only their low five bits. A count of 32 therefore acts as zero, and a count of −1 acts as 31. Negative counts do not reverse the shift direction, and large counts do not saturate.
+The operation uses the Integer's 32 bits and writes an Integer. For example,
+the word with all bits set is Integer −1; shifting 1 left by 31 produces
+−2147483648. Both shift directions fill vacated positions with zero. A negative
+shift count reverses the direction; a magnitude of 32 or more produces zero.
+Thus `−8 >> 1` is 2147483644, `8 << −1` is 4, and `1 << 32` is zero.
 
 | Mnemonic | Opcode | Operands | Result in R[A] | Nominal cycles |
 |---|---:|---|---|---:|
-| BAND | `18H` | Word conversions of numeric reads of RK(B), RK(C) | Signed Number interpretation of the 32-bit AND | 2 |
-| BOR | `19H` | Word conversions of numeric reads of RK(B), RK(C) | Signed Number interpretation of the 32-bit OR | 2 |
-| BXOR | `1AH` | Word conversions of numeric reads of RK(B), RK(C) | Signed Number interpretation of the 32-bit exclusive OR | 2 |
-| SHL | `1BH` | Left word from RK(B); count from the low five bits of the word converted from RK(C) | Shift left, discard bits leaving the 32-bit word, then write its signed Number interpretation | 2 |
-| SHR | `1CH` | Left word from RK(B); count from the low five bits of the word converted from RK(C) | Sign-extending right shift of the signed 32-bit left operand, written as a Number | 2 |
-| BNOT | `22H` | Word conversion of the numeric read of R[B], not RK(B); C unused | Complement all 32 bits, then write the signed Number interpretation | 2 |
+| BAND | `18H` | Integer-converted RK(B) and RK(C) | Integer with the 32-bit AND result | 2 |
+| BOR | `19H` | Integer-converted RK(B) and RK(C) | Integer with the 32-bit OR result | 2 |
+| BXOR | `1AH` | Integer-converted RK(B) and RK(C) | Integer with the 32-bit exclusive-OR result | 2 |
+| SHL | `1BH` | Integer-converted RK(B) and RK(C) | Shift the left word left by the signed count, reversing direction for a negative count | 2 |
+| SHR | `1CH` | Integer-converted RK(B) and RK(C) | Shift the left word right by the signed count, reversing direction for a negative count | 2 |
+| BNOT | `22H` | Integer-converted R[B], not RK(B); C unused | Integer with all 32 bits complemented | 2 |
 
 
 
@@ -576,11 +622,11 @@ only its three base cycles.
 | NaN | `nan` |
 | Positive infinity | `inf` |
 | Negative infinity | `-inf` |
-| Finite Number | Default six-significant-digit conversion below; +0 becomes `0`, and −0 becomes `-0` |
+| Finite Number | Default Integer or Float conversion below |
 
 
 
-Concatenating a Table therefore does not serialize its entries, and concatenating a function does not print its contents or identity. Use concatenation to assemble readable text, but do not assume that its text distinguishes every language value. Finite Number formatting is shared numeric formatting, not a conversion to a 32-bit word.
+Concatenating a Table therefore does not serialize its entries, and concatenating a function does not print its contents or identity. Use concatenation to assemble readable text, but do not assume that its text distinguishes every language value. Number formatting is numeric formatting, not a conversion to a raw device word.
 
 ### Comparisons and conditional execution {#sec-cpu-comparisons-and-conditional-execution}
 
@@ -614,7 +660,7 @@ whether the operands are the same String. EQ and comparisons involving other
 value kinds have no text-length surcharge. The comparison completes, including
 its skip decision, before the CPU accepts a pending interrupt.
 
-Equality respects value kinds. Different kinds are unequal; there is no numeric-string or boolean-number equality conversion. Numbers use numeric equality, so NaN is unequal even to itself, while +0 and −0 are equal. Table, Closure, and Thread equality is reference identity rather than a comparison of their contents.
+Equality respects value kinds. Different kinds are unequal; there is no numeric-string or boolean-number equality conversion. Integer and Float are subtypes of Number and compare by their exact numerical values. NaN is unequal even to itself; Integer zero and both Float zero signs compare equal. Table, Closure, and Thread equality is reference identity rather than a comparison of their contents.
 
 | Matching operand kinds | EQ predicate |
 |---|---|
@@ -628,7 +674,7 @@ Equality respects value kinds. Different kinds are unequal; there is no numeric-
 
 
 
-Ordering is defined for two Numbers or two Strings. Numbers use numeric less-than or less-than-or-equal comparison. Strings use lexical UTF-8 order. Mixed kinds and all other kind combinations produce a false predicate rather than a comparison type fault. Equality of Tables can therefore test whether two values refer to the same Table, but LT and LE do not provide an ordering of Tables.
+Ordering is defined for two Numbers or two Strings. Numbers use numeric less-than or less-than-or-equal comparison. A mixed Integer/Float comparison compares their exact represented values: it does not first round the Integer to binary32. Thus Integer 16777217 is greater than Float 16777216.0. NaN is unordered. Strings use lexical UTF-8 order. Mixed value kinds and all other kind combinations produce a false predicate rather than a comparison type fault. Equality of Tables can therefore test whether two values refer to the same Table, but LT and LE do not provide an ordering of Tables.
 
 | Mnemonic | Opcode | Operands | Predicate and control effect | Nominal cycles |
 |---|---:|---|---|---:|
@@ -642,23 +688,31 @@ Ordering is defined for two Numbers or two Strings. Numbers use numeric less-tha
 
 ### POW: exponentiation {#sec-cpu-pow-exponentiation}
 
-POW computes a Number base `x` raised to a Number exponent `y`, written here as `x^y`. Its result is a Number, including when the result is a signed zero, an infinity, or NaN. In this section, `+0` and `-0` are distinct zeros; `+infinity` and `-infinity` have their usual signs. NaN means a not-a-number result, without a promise to preserve an operand's NaN payload.
+POW converts its Number operands to binary32 and computes a Float base `x`
+raised to a Float exponent `y`, written here as `x^y`. Its result is a Float,
+including when it is a signed zero, an infinity, or NaN. Integer operands are
+rounded to binary32 before the cases below are selected. In this section,
+`+0` and `-0` are distinct Float zeros; `+infinity` and `-infinity` have their
+usual signs. NaN means a not-a-number result, without a promise to preserve an
+operand's NaN payload.
 
 #### Order of special cases {#sec-cpu-order-of-special-cases}
 
 Apply these rules in order. The order matters when more than one description appears to fit.
 
 1. **Either zero exponent produces `+1`.** For every base, `x^(+0)` and `x^(-0)` are `+1`. This includes zero, infinity, and NaN bases.
-2. **Otherwise, either NaN operand produces NaN.** Consequently, `NaN^0` is `+1`, but `1^NaN` is NaN.
-3. **An infinite exponent uses the base's magnitude.** For a non-NaN base, the following table applies before the rules for finite exponents.
+2. **A positive-one base produces `+1`.** This includes `1^NaN`.
+3. **Otherwise, either NaN operand produces NaN.** Consequently, `NaN^0` is `+1`.
+4. **An infinite exponent uses the base's magnitude.** For a non-NaN base, the following table applies before the rules for finite exponents.
 
 | Base magnitude | Exponent `+infinity` | Exponent `-infinity` |
 |---|---|---|
 | `abs(x) < 1`, including either zero | `+0` | `+infinity` |
-| `abs(x) = 1`, meaning `+1` or `-1` | NaN | NaN |
+| `abs(x) = 1`, meaning `+1` or `-1` | `+1` | `+1` |
 | `abs(x) > 1`, including either infinity | `+infinity` | `+0` |
 
-The base's sign does not change these infinite-exponent results. In particular, neither `1^(+infinity)` nor `(-1)^(-infinity)` is `1`. Every zero and infinity produced by this table is positive.
+The base's sign does not change these infinite-exponent results. Every zero
+and infinity produced by this table is positive.
 
 #### Finite, nonzero exponents {#sec-cpu-finite-nonzero-exponents}
 
@@ -707,7 +761,7 @@ Several exponents have particularly direct meanings. The earlier zero-exponent a
 |---|---|
 | `+1` | The base unchanged, including `-0` and `-infinity`. |
 | `-1` | The reciprocal `1/x`, preserving the reciprocal's sign: `-0` becomes `-infinity`, and `-infinity` becomes `-0`. |
-| `+2` | The Number product `x*x`. Either zero becomes `+0`; either infinity becomes `+infinity`. A finite product can overflow, become subnormal, or round to `+0`. |
+| `+2` | The binary32 product `x*x`, after conversion of the base. Either zero becomes `+0`; either infinity becomes `+infinity`. A finite product can overflow, become subnormal, or round to `+0`. |
 | `+0.5` | For a positive finite base, the positive square root. The special-base table gives `+0` for either zero and `+infinity` for either infinity; a negative finite, nonzero base produces NaN. |
 
 
@@ -715,9 +769,12 @@ In particular, `(-0)^0.5` does **not** preserve the base's negative-zero sign.
 
 #### Represented exponent parity {#sec-cpu-represented-exponent-parity}
 
-Oddness and evenness refer to the exponent Number actually supplied. Numbers use binary64 precision. From `2^52` upward, every representable finite exponent is integral. From magnitude `2^53` upward, every representable finite exponent is even: no odd exponent exists at that precision.
-
-The largest positive representable odd integer is `2^53 - 1`, or `9007199254740991`. Therefore `(-1)^(2^53 - 1)` is `-1`, whereas `(-1)^(2^53)` is `+1`. The same parity distinction applies to the corresponding negative exponents. Sign selection cannot recover an intended odd integer that the supplied Number cannot represent.
+Oddness and evenness refer to the exponent after conversion to binary32. From
+`2^23` upward every representable finite Float is integral. From magnitude
+`2^24` upward every representable finite Float is even. The largest positive
+representable odd exponent is `2^24 - 1`, or `16777215`; `(-1)^16777215`
+is `-1`, while `(-1)^16777216` is `+1`. In particular, an Integer exponent
+`16777217` rounds to Float `16777216.0` before POW selects its result.
 
 #### Range limits and subnormal results {#sec-cpu-range-limits-and-subnormal-results}
 
@@ -727,79 +784,68 @@ The following are exact result examples, not decimal display approximations:
 
 | Expression | Result |
 |---|---|
-| `2^(-1074)` | `2^(-1074)`, the smallest positive subnormal Number |
-| `2^(-1075)` | `+0` |
-| `2^1024` | `+infinity` |
-| `(-2)^1025` | `-infinity` |
-| `(-2)^(-1075)` | `-0` |
+| `2^(-149)` | `2^(-149)`, the smallest positive subnormal Float |
+| `2^(-150)` | `+0` |
+| `2^128` | `+infinity` |
+| `(-2)^129` | `-infinity` |
+| `(-2)^(-151)` | `-0` |
 
 These exact examples do not establish a universal correct-rounding or error guarantee for other finite powers.
 
 ### Default Number-to-text conversion {#sec-cpu-default-number-to-text-conversion}
 
-Concatenating a Number with a String uses the default Number-to-text conversion. For example, `'' .. 1.234565` produces `1.23456`. Both `CONCAT` and `CONCATN` use this ordinary conversion; neither supplies a format string, precision, field width, padding, or notation choice. The rules below describe that default conversion, not a configurable formatting operation.
-
-The precision target is **six significant decimal digits**, not six decimal places and not a requirement to display six digits. Fractional trailing zeros disappear. Thus `0.0001` has fewer visible digits, while a small value can have several zeros after the decimal point before its significant digits begin. Integer trailing zeros remain part of the printed integer.
+Concatenation converts a Number to text using its subtype. Integer text is an
+exact signed decimal integer. Float text is a seven-significant-digit decimal
+rendering of the represented binary32 value. For example, Integer `1000000`
+produces `1000000`, while Float `2.0` produces `2.0`. These rules also apply
+to default value-to-text conversion outside concatenation.
 
 #### Sign, zero, and the integer shortcut {#sec-cpu-sign-zero-and-the-integer-shortcut}
 
-Positive zero becomes `0`; negative zero becomes `-0`. Neither goes through normalization. For every other finite value, conversion works on the positive magnitude and prefixes one `-` if the input was negative. Positive inputs have no leading `+`.
+An Integer is written in base ten without leading zeros, preceded by `-` if
+negative. Integer zero is `0`; the minimum Integer is `-2147483648`. No
+scientific notation or floating-point conversion is used for an Integer.
 
-An exact integer magnitude **strictly below 1000000** is printed directly as a decimal integer, without normalization or rounding. For example, `999999` becomes `999999`, and `-999999` becomes `-999999`. The strict limit matters: `1000000` takes the normalized path and becomes `1e+06`.
+Float positive and negative zero are `0.0` and `-0.0`. Float NaN is `nan`;
+positive and negative infinity are `inf` and `-inf`. Other negative Floats
+have a leading `-` followed by the formatted positive magnitude. There is no
+leading `+` on positive values.
 
 #### Normalization and rounding {#sec-cpu-normalization-and-rounding}
 
-For all remaining finite inputs, let *n* initially be the positive magnitude and let the decimal exponent *e* initially be zero. Perform the following operations in the stated order, using ordinary Number arithmetic at each multiplication. The powers in the table steps are fixed Number constants, not exponentiation operations requested by the program.
-
-1. **Normalize the magnitude.** Use the descending stage order
-   **256, 128, 64, 32, 16, 8, 4, 2, 1**.
-
-   If the initial *n* is at least 10, visit each stage *k*. Whenever the current *n* is at least 10<sup>*k*</sup>, multiply *n* by the Number constant 10<sup>−*k*</sup> and add *k* to *e*. After the table stages, while *n* is still at least 10, multiply it by `0.1` and increment *e*.
-
-   If the initial *n* is below 1, visit the same descending stages instead. Whenever the current *n* is below 10<sup>−*k*</sup>, multiply *n* by the Number constant 10<sup>*k*</sup> and subtract *k* from *e*. After the table stages, while *n* is still below 1, multiply it by `10` and decrement *e*.
-
-   An initial magnitude in [1, 10) needs neither branch. These operations normalize a computed Number; they are not exact real-number decimal normalization.
-
-2. **Scale and round.** Multiply the computed *n* by `100000`. Round this computed result to the nearest integer: a fractional part below `0.5` rounds down, one above `0.5` rounds up, and exactly `0.5` selects the even integer. This produces the rounded digit integer used to construct the text.
-
-3. **Apply a carry before choosing notation.** If the rounded integer is `1000000`, replace it with `100000` and increment *e*. Both the digit buffer and the exponent now include the rounding carry.
-
-Nearest-even applies to the **computed normalized and scaled Number**, not directly to the original input's mathematical decimal expansion. This distinction is observable: `123456.5` prints `123457`, not `123456`. In contrast, `1.234565` prints `1.23456`, and `1.234575` prints `1.23458`. Do not substitute an ideal six-significant-digit decimal-rounding rule for the ordered Number operations above.
+For a finite nonzero Float, consider the exact value represented by its
+binary32 bits. Round its decimal magnitude to seven significant decimal digits,
+to nearest with ties to an even last digit. If that rounding produces an
+additional leading digit, adjust the decimal exponent before selecting the
+notation. This is decimal rounding of the represented value; it does not
+perform intermediate binary32 multiplications or divisions.
 
 #### Choosing and spelling the notation {#sec-cpu-choosing-and-spelling-the-notation}
 
-Use the exponent **after the carry**. Fixed notation is selected exactly when
-
-**−4 ≤ *e* < 6**.
-
-In fixed notation, the decimal point position is *e* + 1, counted from the start of the six-digit buffer. A positive position places that many digits before the point; insert a point only when the position is below six. A position of zero or less produces `0.`, followed by the required leading fractional zeros and then the six-digit buffer. Remove trailing fractional zeros, then remove the decimal point if no fractional digits remain. Do not remove integer trailing zeros.
-
-All other exponents use scientific notation. Place the point after the first digit of the six-digit buffer, then trim fractional zeros and an empty decimal point in the same way. Append lowercase `e`, an explicit `+` or `-`, and the exponent magnitude. Exponent magnitudes below 100 use exactly two digits, including a leading zero when needed; larger magnitudes use three digits. Examples of exponent suffixes are `e+06`, `e-05`, and `e-324`.
-
-The notation boundary is therefore not merely a comparison of the original magnitude with `0.0001` or `1000000`. Rounding can move the exponent across a boundary: `0.00009999995` prints `0.0001`, while `999999.5` prints `1e+06`.
-
+Let `e` be the decimal exponent of the rounded value when its leading digit is
+placed immediately before the decimal point. Use fixed notation when
+`−4 <= e < 7`, otherwise use scientific notation. Remove fractional trailing
+zeros and an empty decimal point. In fixed notation append `.0` if no decimal
+point remains; this distinguishes Float text from Integer text. Scientific
+notation uses lowercase `e`, an explicit exponent sign and at least two
+exponent digits. It needs no appended `.0`.
 
 #### Number-to-text examples {#sec-cpu-number-to-text-examples}
 
-Each row gives a Number input and its resulting text. The same conversion is obtained by using that input in `'' .. input`.
-
 | Number input | Resulting text |
 | --- | --- |
-| positive zero / negative zero | `0` / `-0` |
-| `0.0000999999` | `9.99999e-05` |
-| `0.0001` | `0.0001` |
-| `0.00001` | `1e-05` |
-| `0.00009999995` | `0.0001` |
-| `999999` | `999999` |
-| `999999.5` / `1000000` | `1e+06` / `1e+06` |
-| `1.234565` / `1.234575` | `1.23456` / `1.23458` |
-| `123456.5` / `123457.5` | `123457` / `123458` |
-| `2147483648` | `2.14748e+09` |
-| `5e-324` | `4.94066e-324` |
-| `1.7976931348623157e308` | `1.79769e+308` |
+| Integer 0 / Integer 1000000 | `0` / `1000000` |
+| Float +0 / Float −0 | `0.0` / `-0.0` |
+| Float `2.0` | `2.0` |
+| Float `0.1` | `0.1` |
+| Float `1000000.0` | `1000000.0` |
+| Float `10000000.0` | `1e+07` |
+| Smallest positive subnormal Float | `1.401298e-45` |
+| Largest finite Float | `3.402823e+38` |
+| NaN / positive infinity / negative infinity | `nan` / `inf` / `-inf` |
 
-
-The output is not a lossless serialization: distinct inputs such as `999999.5` and `1000000` produce the same text. Nonfinite Numbers bypass the finite conversion described above: NaN becomes `nan`, positive infinity becomes `inf`, and negative infinity becomes `-inf`.
+Seven digits are intended for readable output, not lossless serialization:
+separate Float values can produce the same text.
 
 ## Calls, closures, globals, and tables {#sec-cpu-calls-closures-globals-and-tables}
 
@@ -969,7 +1015,7 @@ Nil is not an admissible key. Reading or writing with a nil key raises `INDEX_NI
 | Table, closure, thread | The same reference matches; separate objects do not match by contents. |
 | Builtin function | The same builtin identity matches. |
 
-Numeric `1`, string `"1"`, and boolean `true` are separate keys. Positive zero and negative zero address the same key. A canonical numeric NaN is also an admissible key: repeated NaN keys address the same mapping, although ordinary numeric NaN equality is false. Positive and negative infinity are admissible numeric keys.
+Numeric `1`, string `"1"`, and boolean `true` are separate keys. An Integer and a Float with the same exact numerical value address the same mapping: Integer `2` and Float `2.0` are the same key. Integer zero and both Float zero signs address the same key. A canonical numeric NaN is also an admissible key: repeated NaN keys address the same mapping, although ordinary numeric NaN equality is false. Positive and negative infinity are admissible numeric keys.
 
 Only positive integral numeric keys from 1 through `7FFFFFFFH` are eligible for array storage. Zero, negative numbers, fractions, NaN, infinities, and larger numbers use hash storage. An eligible numeric key may also reside in hash storage when it lies beyond the allocated array capacity. Numeric key zero has no special indexing role.
 
@@ -982,11 +1028,10 @@ integer keys. A boundary is a nonnegative integer `L` for which both conditions
 hold:
 
 - `L` is zero, or `t[L]` is non-nil;
-- `L` is `2^53 - 1`, or `t[L + 1]` is nil.
+- `L` is `2^31 - 1`, or `t[L + 1]` is nil.
 
 These tests read only the Table's own mappings, not inherited entries. `false`
-is present. The terminal boundary is the largest binary64 integer whose
-successor is also exactly representable. Keys outside this sequence range
+is present. The terminal boundary is the largest positive Integer. Keys outside this sequence range
 remain ordinary hash keys and do not extend the length beyond that boundary.
 
 A **sequence** has exactly the keys 1 through `n` in this range, with no holes;
@@ -1009,12 +1054,16 @@ integer key is held in hash storage. Other writes leave it unchanged. Storage
 redistribution retains the seed. Weak-entry collection can remove an entry without repairing the seed.
 The seed is therefore a search starting point, not a cached length.
 
-The length search uses these steps, with terminal boundary `M = 2^53 - 1`:
+The length search uses these steps, with terminal boundary `M = 2^31 - 1`.
+The mathematical calculations of candidate bounds in this procedure do not
+wrap as Integer instructions; they are limited to `M` before a key is tested.
 
 1. Set `low` to the saved seed. If `low` is nonzero, test its own presence.
    If it is absent, set `high = low`, set `low = 0`, and continue at step 4.
+   If `low = M` and is present, return `M`.
 2. Test the own presence of `low + 1`. If absent, return `low`. Otherwise
-   increment `low` by one and set `high = 2 × low`.
+   increment `low` by one. If it is `M`, return it; otherwise set
+   `high = min(2 × low, M)`.
 3. Test the own presence of `high`. While present, assign `low = high`;
    if `low = M`, return it. Otherwise set `high = min(2 × low, M)` and repeat
    this step. When `high` is absent, continue at step 4.
@@ -1121,11 +1170,18 @@ The occupied-byte counts used for admission and collection work are:
 
 | Allocation | Occupied budget bytes |
 | --- | --- |
-| Table with array capacity `A` and hash capacity `H` | `32 + 8A + 20H` |
-| Closure with `U` captured-variable references | `16 + 8U` |
-| Captured-variable cell | `24` |
-| Thread with `V` reserved Value slots | `64 + 8V` |
+| Table with array capacity `A` and hash capacity `H` | `32 + 5A + 14H` |
+| Closure with `U` captured-variable references | `16 + 4U` |
+| Captured-variable cell | `20` |
+| Thread with `V` reserved Value slots | `64 + 5V` |
 | Allocated String text | UTF-8 byte length |
+
+A reserved Value slot occupies four payload bytes and one kind byte, regardless
+of its current value. A hash node holds a key slot, a value slot and a four-byte
+chain link; a closure's captured-variable reference occupies four bytes. These
+fixed sizes apply to Integer and Float Numbers as well as reference values.
+They are capacity charges: replacing one kind with another does not allocate
+another slot or change its occupied-byte charge.
 
 The collector marks retained objects, incrementally remarks roots and modified
 objects in a second pass, resolves weak references in a final atomic remark,
@@ -1371,7 +1427,7 @@ surcharges and error behavior.
 Use runtime operands when the distinction between Number values matters:
 
 ```lua
-local values = { -0, 3, -3, 0.5 }
+local values = { -0.0, 3, -3, 0.5 }
 local negative_zero = values[1] ^ values[2]
 local positive_zero = values[1] ^ values[4]
 local reciprocal = 1 / negative_zero
@@ -1395,15 +1451,15 @@ Additional runtime-operand examples follow directly from the POW reference:
 
 | Expression | Result |
 | --- | --- |
-| `(-0)^3`, `(-0)^0.5` | Negative zero, positive zero |
-| `(-0)^(-3)` | Negative infinity |
+| `(-0.0)^3`, `(-0.0)^0.5` | Negative zero, positive zero |
+| `(-0.0)^(-3)` | Negative infinity |
 | `(-infinity)^0.5`, `(-infinity)^(-3)` | Positive infinity, negative zero |
-| `(-1)^infinity`, `(-2)^0.5` | NaN |
+| `(-1)^infinity`, `(-2)^0.5` | 1, NaN |
 | `NaN^0` | 1 |
-| `(-1)^9007199254740991` | −1 |
-| `(-1)^9007199254740992` | 1 |
-| `2^(-1074)` | Smallest positive subnormal Number |
-| `(-2)^(-1075)` | Negative zero |
+| `(-1)^16777215` | −1 |
+| `(-1)^16777217` | 1, because the Integer exponent rounds to binary32 |
+| `2^(-149)` | Smallest positive subnormal Float |
+| `(-2)^(-151)` | Negative zero |
 
 Here infinity and NaN denote Number operands, not additional source keywords.
 
@@ -1416,9 +1472,10 @@ parent again. `rawget(child, 'answer')` is then `nil`. Function-valued
 ## Memory transfers {#sec-cpu-memory-transfers}
 
 Memory instructions transfer numeric scalars between frame registers and
-byte-addressed storage. Word and U32LE loads produce unsigned 32-bit integer
-Numbers. Floating loads interpret the stored IEEE bit pattern. The format
-selector determines the byte width and conversion in the following table.
+byte-addressed storage. Word and U32LE loads preserve the complete word in an
+Integer Number. Floating loads interpret the stored IEEE bit pattern. The
+format selector determines the byte width and conversion in the following
+table.
 
 
 ### Scalar formats {#sec-cpu-scalar-formats}
@@ -1428,16 +1485,24 @@ The `C` operand of a scalar load or store selects one of six formats:
 
 | `C` | Format | Bytes | Loaded register value | Store conversion | Required address alignment |
 |---|---|---:|---|---|---:|
-| 0 | `Word` | 4 | Unsigned 32-bit integer Number | Convert to unsigned 32-bit integer | 4 bytes |
+| 0 | `Word` | 4 | Integer with the 32 loaded bits | Store the low 32 integer bits | 4 bytes |
 | 1 | `U8` | 1 | Integer Number, 0–255 | Store the low 8 integer bits | 1 byte |
 | 2 | `U16LE` | 2 | Integer Number, 0–65535 | Store the low 16 integer bits | 2 bytes |
-| 3 | `U32LE` | 4 | Unsigned 32-bit integer Number | Convert to unsigned 32-bit integer | 4 bytes |
-| 4 | `F32LE` | 4 | Number decoded from IEEE single precision | Round the numeric value to IEEE single precision and store its bits | 4 bytes |
-| 5 | `F64LE` | 8 | Number decoded from IEEE double precision | Store the numeric value's IEEE double-precision bits | **4 bytes** |
+| 3 | `U32LE` | 4 | Integer with the 32 loaded bits | Store the low 32 integer bits | 4 bytes |
+| 4 | `F32LE` | 4 | Float decoded from IEEE binary32 | Convert the Number to binary32 and store its bits | 4 bytes |
+| 5 | `F64LE` | 8 | Float decoded from binary64 and rounded to binary32 | Encode the Number as binary64 | **4 bytes** |
 
 
 
-All multi-byte formats are little-endian: the least significant byte occupies the lowest address. `Word` and `U32LE` transfer the same numeric data, but identify the access differently in bus-fault metadata. Floating-point transfers decode or encode floating-point bits; they are not integer conversions of the floating-point number. No guarantee of preserving every NaN payload is made.
+All multi-byte formats are little-endian: the least significant byte occupies
+the lowest address. `Word` and `U32LE` transfer the same data bits, but
+identify the access differently in bus-fault metadata. `FFFFFFFFH` loads as
+Integer −1, and storing it writes the same word. The `F64LE` format is an
+external data representation, not a double-precision Number subtype: loading
+rounds its value to binary32. Storing an Integer or Float encodes its exact
+finite value as binary64. An F32LE Float load or store copies its 32-bit word,
+including NaN payloads and either zero sign. F64LE conversion does not promise preservation of NaN
+payload bits; a converted NaN load produces `7FC00000H`.
 
 A scalar load or store with C greater than 5 is a reserved instruction. It
 raises `ReservedInstruction` (exception code 10, Cause `00000028H`) with EPC at
@@ -1446,7 +1511,12 @@ access. BadAddress and the Memory fault record are unchanged. The normal
 three-cycle base charge still applies. In counted word stores, C is a word count,
 not a scalar-format selector.
 
-Address conversion and integer-store conversion truncate toward zero and retain the unsigned low 32 bits. Non-numeric register values take the numeric-conversion path through NaN and become zero on this integer path. Numeric NaN and infinities also become zero on this integer path. Floating-point stores use numeric conversion instead, so a non-numeric register value becomes NaN. A fractional address is converted before its alignment is checked.
+Address conversion and integer-store conversion use an Integer's raw bits.
+For a finite Float, they truncate toward zero and retain the low 32 bits.
+A non-Number, NaN or infinity raises `INVALID_ARGUMENT` (10) for these
+conversions. A floating store accepts either Number subtype and raises the
+same exception for a non-Number. A fractional address is converted before its
+alignment is checked.
 
 `F64LE` is two ordered 32-bit transfers, not one indivisible eight-byte transfer. The low half is accessed at the starting address, then the high half four bytes later. Four-byte alignment is sufficient; eight-byte alignment is not required.
 
@@ -1484,12 +1554,17 @@ including that register's side effects.
 
 `R[A+i] → (start + 4 × i) modulo 2^32`, for `i = 0 … C-1`.
 
-Each register is converted to an unsigned 32-bit integer. The starting address must be four-byte aligned, even when `C` is zero. A zero count otherwise performs no writes and adds no sequence surcharge.
+Each register is converted to a raw 32-bit word by the conversion above. The starting address must be four-byte aligned, even when `C` is zero. A zero count otherwise performs no writes and adds no sequence surcharge.
 
 Before writing anything, the instruction scans the counted span's IO overlap in increasing address order and waits on the first not-ready word. This preflight happens before the sequence surcharge as well as before any write. Consequently, a later not-ready IO word can defer the instruction before an earlier word would otherwise commit or fault. The readiness span is computed without 32-bit wrap; the actual write addresses wrap modulo `2^32`. Do not treat this as readiness preflight for IO reached only by wrapping into low addresses.
 
 Once preflight succeeds, the instruction charges one additional cycle per
-counted 32-bit word: `C` cycles. It then attempts the words in increasing `i` order and checks for a new bus fault after every word. The first such fault stops the sequence and raises `DataBusError`. Earlier successful words remain written; later words are not attempted. The full sequence surcharge has already been charged even if a later word faults.
+counted 32-bit word: `C` cycles. It converts and attempts the words in
+increasing `i` order, checking for a new bus fault after every word. An invalid
+source Number conversion raises `INVALID_ARGUMENT`; a new bus fault raises
+`DataBusError`. Either stops the sequence. Earlier successful words remain
+written; later words are not attempted. The full sequence surcharge has
+already been charged even if a later word faults.
 
 A blocked attempt writes nothing. The CPU retains the decoded span and its
 effective start address; a matching ready edge repeats the readiness preflight,
@@ -1514,7 +1589,10 @@ partial effects.
 
 
 
-`F64LE` uses the same listed scalar-memory cost as the other scalar formats; it adds no per-half transfer surcharge. Neither this cost nor the counted-store surcharge specifies a device's electrical bandwidth.
+An `F64LE` scalar load or store adds two cycles to the listed base charge for
+its second word transfer. This format surcharge is charged once when the
+instruction starts, including when it later blocks or faults. Neither this
+cost nor the counted-store surcharge specifies a device's electrical bandwidth.
 
 ## Branches {#sec-cpu-branches}
 
@@ -1574,8 +1652,8 @@ are selected instruction base charges, not a complete timing table:
 
 | Instruction | Base charge |
 | --- | --- |
-| Scalar `LOAD_MEM` and `STORE_MEM` | 3 cycles |
-| Scalar displaced forms `LOAD_MEM_D` and `STORE_MEM_D` | 3 cycles |
+| Scalar `LOAD_MEM` and `STORE_MEM` | 3 cycles; F64LE adds 2 |
+| Scalar displaced forms `LOAD_MEM_D` and `STORE_MEM_D` | 3 cycles; F64LE adds 2 |
 | `ADD`, `SUB`, `MUL` | 2 cycles |
 | `DIV` | 32 cycles |
 | `FLOORDIV` | 33 cycles |
@@ -1666,11 +1744,11 @@ For `MFC0` and `MTC0`, `A` names the value register and `B` is the raw CP0 field
 
 | Field number | Name | `MFC0` result | `MTC0` effect in supervisor mode |
 |---:|---|---|---|
-| 8 | `BadAddress` | Raw unsigned word as a Number | Ignored |
-| 9 | `LuaFaultReason` | Raw unsigned word as a Number | Ignored |
-| 12 | `Status` | Raw unsigned word as a Number | Replace the complete word, without masking |
-| 13 | `Cause` | Raw unsigned word as a Number | Ignored |
-| 14 | `EPC` | Raw unsigned word as a Number | Replace the complete word, without an alignment check |
+| 8 | `BadAddress` | Raw word as an Integer | Ignored |
+| 9 | `LuaFaultReason` | Raw word as an Integer | Ignored |
+| 12 | `Status` | Raw word as an Integer | Replace the complete word, without masking |
+| 13 | `Cause` | Raw word as an Integer | Ignored |
+| 14 | `EPC` | Raw word as an Integer | Replace the complete word, without an alignment check |
 | 15 | `EXEC` | Zero | Replace execution with the addressed static function |
 
 
@@ -1719,7 +1797,7 @@ A successful `EXEC` clears the active call stack, selects the function's image, 
 
 | Opcode | Instruction and operands | Effect | Nominal cost |
 |---|---|---|---:|
-| `26H` | `MFC0 A, B` | Supervisor only: copy CP0 field `B` into `R[A]` as an unsigned-word Number; EXEC reads zero; unknown fields hard-halt | 2 |
+| `26H` | `MFC0 A, B` | Supervisor only: copy CP0 field `B` into `R[A]` as an Integer with the same raw word bits; EXEC reads zero; unknown fields hard-halt | 2 |
 | `27H` | `MTC0 A, B` | Supervisor only: convert `R[A]` to an unsigned word and apply the CP0 field's write behavior; EXEC replaces execution; unknown fields hard-halt | 2 |
 | `34H` | `RFE` | Supervisor only: return from the current exception frame using active EPC and the Status restoration above; a non-exception frame hard-halts | 2 |
 | `3FH` | `HALT` | Consume a retained interrupt event, or record the current thread/frame-depth HALT condition | 2 |

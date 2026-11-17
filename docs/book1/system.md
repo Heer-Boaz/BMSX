@@ -68,13 +68,13 @@ shorter than one complete 2^32-millisecond wrap.
 ```lua
 local time_ms<const>: *word = 0x08010228
 local start<const> = *time_ms
-while ((*time_ms - start) % 0x100000000) < 100 do
+while math.ult(*time_ms - start, 100) do
 end
 local finish<const> = *time_ms
-local elapsed<const> = (finish - start) % 0x100000000
+local elapsed<const> = finish - start
 ```
 
-`elapsed` is at least 100 milliseconds, not necessarily exactly 100.
+For this interval, `elapsed` is at least 100 milliseconds, not necessarily exactly 100.
 For `start = FFFFFFF0H` and `finish = 00000054H`, the wrapping distance is
 100 milliseconds. A HALT-based wait additionally needs an enabled interrupt
 route and must recheck its time predicate after each wake-up; advancing
@@ -98,19 +98,25 @@ registers.
 
 Use aligned word reads for these registers. Writes are read-only-access faults. The reads are independent samples, not an atomic snapshot of all three quantities.
 
-`FRAME_MS_Q16` describes the currently programmed beam period. Divide its unsigned word by `00010000H` to express the reported value in milliseconds. The refresh value used to form this report is first truncated to whole millionths of a hertz; the Q16 period is then truncated and reduced to its low 32 bits. A sufficiently long period can therefore wrap the reported word without shortening the programmed beam period.
+`FRAME_MS_Q16` describes the currently programmed beam period. Its upper 16
+bits are whole milliseconds and its lower 16 bits are the fractional part.
+For a raw word `frame_ms_q16`, the expression
+`(frame_ms_q16 >> 16) + (frame_ms_q16 & 0xffff) / 65536.0` converts those
+fields to a Float in milliseconds. The refresh value used to form this report
+is first truncated to whole millionths of a hertz; the Q16 period is then
+truncated and reduced to its low 32 bits. A sufficiently long period can
+therefore wrap the reported word without shortening the programmed beam period.
 
 `CYCLES_PER_FRAME` is a whole-period cycle count, not the number of cycles remaining until the next VBlank. Fractional beam timing can make successive counts differ by one cycle. Reprogramming a beam-timing word with different bits immediately changes operational timing and restarts the beam; writing identical bits does not. These SYSTEM words describe programmed timing, not confirmation that a new image has been presented. When beam timing is stopped, both frame-timing words are zero; `TIME_MS` is not stopped with them.
 
 ### Software timing {#sec-system-software-timing}
 
-For two raw `TIME_MS` samples, compute elapsed milliseconds modulo 2^32.
-In BLua, use `(current - start) % 0x100000000` for the nonnegative wrapping
-distance. A bitwise `& 0xffffffff` instead returns a signed 32-bit result and
-cannot represent distances from `80000000H` through `FFFFFFFFH` as nonnegative
-Numbers. The modulo result measures the interval only
-when the actual elapsed time is shorter than one complete 2^32-millisecond
-period. A zero result is valid when both samples fall in the same millisecond.
+For two raw `TIME_MS` samples, Integer subtraction computes the elapsed word
+modulo 2^32. A distance whose high bit is set is represented by a negative
+Integer; use `math.ult` to compare raw distances as unsigned words. The result
+measures the interval only when the actual elapsed time is shorter than one
+complete 2^32-millisecond period. A zero result is valid when both samples
+fall in the same millisecond.
 `os.difftime` is ordinary subtraction, not wrapping hardware-time arithmetic.
 
 ## Diagnostic text output {#sec-system-diagnostic-text-output}

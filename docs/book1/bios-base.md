@@ -202,7 +202,7 @@ An omitted argument converts as nil; surplus arguments are ignored.
 | Negative infinity | `-inf` |
 | Positive infinity | `inf` |
 
-The category words are literal text, not addresses, names, or structural dumps. Number conversion uses the CPU chapter's **default Number-to-String formatter**. Positive and negative zero are preserved as `0` and `-0`; exact integer magnitudes strictly below `1000000` use the formatter's integer shortcut. Consult that formatter's contract for finite normalization and rounding. `tostring` has no formatting argument and does not offer a precision or notation selector.
+The category words are literal text, not addresses, names, or structural dumps. Number conversion uses the CPU chapter's **default Number-to-String formatter**. An Integer is written exactly in signed decimal. Float positive and negative zero are `0.0` and `-0.0`; finite nonzero Floats use the formatter's seven-significant-digit rule. `tostring` has no formatting argument and does not offer a precision or notation selector.
 
 ### `tonumber(value [, base])` {#sec-bios-base-tonumbervalue-base}
 
@@ -244,7 +244,7 @@ The decimal form may end with an exponent introduced by `e` or `E`. The exponent
 
 #### Explicit-base String form {#sec-bios-base-explicit-base-string-form}
 
-The supported bases are integer Numbers from `2` through `36`, inclusive. After leading whitespace and an optional sign, this form reads one or more digits valid for that base, then permits only trailing whitespace and the end of the String. It does not accept a fractional point or provide a separate exponent syntax.
+The supported bases are Numbers with exact integral values from `2` through `36`, inclusive. After leading whitespace and an optional sign, this form reads one or more digits valid for that base, then permits only trailing whitespace and the end of the String. It does not accept a fractional point or provide a separate exponent syntax.
 
 No prefix is stripped in the explicit-base form. In particular, selecting base sixteen does not give `0x` or `0X` special treatment: their characters are processed by the same digit rules as every other character. Letters such as `e` are digits when their values fit the chosen base, not exponent markers. Use the default form, rather than an explicit base, when requesting decimal fractions or decimal exponents.
 
@@ -259,14 +259,29 @@ For a nonnil base, the installed function performs these operations in order:
 4. Parse the String using that base, returning a Number or `nil`.
 
 Supply the base as a Number. The String-value check precedes its arithmetic
-and range checks; a numeric String supplied as the base fails the integer
-comparison. Error reporting uses the current global `error`, and kind checks
-use current `type`. [Protected calls](coroutines.md#sec-coroutines) receive a raised value.
+and range checks; floor division of a non-Number base raises
+`INVALID_ARGUMENT`, including for a numeric String. Error reporting uses the
+current global `error`, and kind checks use current `type`.
+[Protected calls](coroutines.md#sec-coroutines) receive a raised value.
 
 
 #### Arithmetic and execution cost {#sec-bios-base-arithmetic-and-execution-cost}
 
-The explicit-base parser accumulates each digit as `value * base + digit`, using Number arithmetic. Decimal integer accumulation starts at `0` and processes digits left to right as `value = value * 10 + digit`. Fractional scanning starts with divisor `10`; each digit contributes `digit / divisor` to the current value, after which the divisor is multiplied by `10`. It does not collect all fractional digits for one final division. Exponent magnitude likewise starts at `0` and accumulates left to right as `exponent = exponent * 10 + digit`. Its signed magnitude controls repeated multiplication or division by ten, changing the exponent by one step each time. After scaling and successful trailing-whitespace/end validation, the decimal parser applies the leading sign as `sign * value`. These successive operations are not a single ideal decimal conversion: rounding and range behavior follow the arithmetic actually performed. Exponent scaling has no iteration cap or finite-value rejection. Very large parsed exponents do not carry a termination or bounded-running-time guarantee.
+The default decimal form returns an Integer when its spelling has neither a
+decimal point nor an exponent and its signed value fits the Integer range.
+Otherwise it returns a Float: round the signed mathematical decimal value
+directly to binary32, to nearest with ties to even. A magnitude beyond the
+Float range rounds to infinity, and underflow retains the sign of zero. For
+example, `tonumber('-2147483648')` is the minimum Integer,
+`tonumber('2147483648')` is a Float, and `tonumber('-0.0')` is Float negative
+zero. The sign belongs to this String conversion; it is not a separate source
+unary operator.
+
+The default prefixed hexadecimal form and the explicit-base form return an
+Integer formed from the low 32 bits of the signed mathematical result. For
+example, `tonumber('0xffffffff')` and `tonumber('ffffffff', 16)` both return
+Integer −1. The conversion and its result subtype do not depend on how many
+digits were needed to spell that word.
 
 There is no fixed total cycle count for `assert`, `rawequal`, `tostring`, or `tonumber`: their executed operations, result handling, conversions, and parsing work contribute to the cost. `type` adds one cycle, separate from call and return instruction costs, with no additional per-argument or per-result charge.
 

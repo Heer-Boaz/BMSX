@@ -113,7 +113,10 @@ For example, when `L` is 4:
 | `1.9, 2.9` | `1, 2` |
 
 
-A non-`nil`, nonnumber bound, including a numeric-looking String, produces NaN in the floor division; it is not parsed as a number. NaN is neither positive nor negative, so it normalizes like zero: to 1 for a start bound or `L` for an end bound. There is no table-library argument error for this case.
+A non-`nil` bound must be a Number. Floor division of another kind raises
+`INVALID_ARGUMENT`; a numeric-looking String is not parsed. A Float NaN is a
+Number: it is neither positive nor negative and therefore normalizes like zero,
+to 1 for a start bound or `L` for an end bound.
 
 Bounds are not clamped to the default interval. The selected interval is inclusive and is empty when the normalized end precedes the normalized start. No finite-value or range-size cap is applied. Very large or infinite endpoints have no termination or resource-use guarantee.
 
@@ -172,9 +175,14 @@ can prevent the recursive interval from shrinking.
 | `table.insert(target, value)` | Assigns `value` to `target[#target + 1]`. | No results. |
 | `table.insert(target, position, value, ...)` | Inserts at `position // 1`, shifting the selected keys upward as described below. Arguments after `value` are ignored. | No results. |
 
-Exactly one argument after `target` selects the append form. A lone explicit `nil` therefore means “append `nil`,” not “position omitted.” Every other trailing argument count selects the positional form. The signatures above require at least one argument after `target`. An indirect call such as `pcall(table.insert, target)` nevertheless reaches the positional form with no trailing arguments; both selected arguments are then `nil`, so the position arithmetic produces NaN. With a separate value, an explicit `nil` position is still passed to `// 1`.
+Exactly one argument after `target` selects the append form. A lone explicit `nil` therefore means “append `nil`,” not “position omitted.” Every other trailing argument count selects the positional form. The signatures above require at least one argument after `target`. An indirect call such as `pcall(table.insert, target)` reaches the positional form with a nil position and raises `INVALID_ARGUMENT` in the position arithmetic. With a separate value, an explicit `nil` position is also passed to `// 1`.
 
-Use a finite numeric position. This arithmetic does not parse numeric Strings, and a nonnumeric position produces NaN rather than an upfront library argument error. With a NaN position, the descending shift loop has no comparison-driven exit: it can make earlier shift writes without reaching the final insertion. A reached fault or other interruption is separate from normal completion.
+Use a finite numeric position. The position arithmetic does not parse Strings;
+another value kind raises `INVALID_ARGUMENT` before the length snapshot or any
+shift writes. A Float NaN remains a Number: the descending shift loop has no
+comparison-driven exit and can write earlier positions without reaching the
+final insertion. A reached fault or other interruption is separate from normal
+completion.
 
 For a positional insertion with a finite numeric position:
 
@@ -223,7 +231,16 @@ Removal first takes the length snapshot `L`. It then selects `p` using the table
 3. Always assign `nil` to `target[L]`.
 4. Return the retained result.
 
-Use a finite numeric explicit position. A nonnil nonnumeric position produces NaN without an upfront argument error. The shift then repeatedly reads and writes the NaN key; its comparison does not terminate the loop. It does not reach the final tail clear or returned result by normal loop termination. A reached fault or other interruption remains possible. Positions are neither checked nor clamped. Zero and negative positions refer to actual keys, not positions relative to the end. They can therefore cause shifting through zero or negative keys. A position above `L` skips the shifting but **still clears key `L`**:
+Use a finite numeric explicit position. A nonnil non-Number raises
+`INVALID_ARGUMENT` after the length snapshot and before the element read. A
+Float NaN remains a Number: the shift repeatedly reads and writes the NaN key
+and its comparison does not terminate the loop. It does not reach the final
+tail clear or returned result by normal loop termination. A reached fault or
+other interruption remains possible. Positions are neither checked nor
+clamped. Zero and negative positions refer to actual keys, not positions
+relative to the end. They can therefore cause shifting through zero or
+negative keys. A position above `L` skips the shifting but **still clears key
+`L`**:
 
 ```lua
 local values = {10, 20, 30}

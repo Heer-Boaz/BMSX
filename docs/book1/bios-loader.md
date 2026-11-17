@@ -352,7 +352,24 @@ There are no long comments or long quoted strings. LF advances the source line; 
 | Decimal exponent | `1e3`, `2.5E-2`; `e` or `E` may be followed by a sign, then must have decimal digits. |
 | Hexadecimal integer | `0x2a`, `0X2A`; at least one hexadecimal digit is required. |
 
-A leading sign is an operator, not part of the numeric literal. These spellings do not specify additional numeric range or rounding guarantees.
+A leading sign is an operator, not part of the numeric literal. Within the
+forms listed here, Integer and Float selection, binary32 rounding and literal
+range follow the [BLua literal rules](blua-programs.md#sec-blua-programs-number-spellings).
+A decimal spelling without a fraction or exponent produces an Integer when
+its positive value fits the Integer range; a larger decimal spelling produces
+a Float. A hexadecimal integer supplies its low 32 bits as an Integer.
+Fraction and exponent spellings produce Floats. A literal that would produce
+an infinite Float is rejected.
+
+The resulting subtype and Float zero sign are observable in loaded programs,
+just as in linked programs:
+
+```lua
+local chunk = assert(load('return 2, 2.0, -0.0'))
+local a, b, c = chunk()
+-- math.type(a) is 'integer'; math.type(b) and math.type(c) are 'float'.
+-- a == b, but 1.0 / c is -math.huge.
+```
 
 
 ### Quoted strings {#sec-bios-loader-quoted-strings}

@@ -54,13 +54,15 @@ Calendar-year and ISO-week-year fields can differ at a year boundary:
 
 ## `os.clock()` — sampled time in seconds {#sec-bios-os-osclock-sampled-time-in-seconds}
 
-`os.clock()` returns one Number: the current sampled millisecond word divided by 1000. Use it when a seconds value with millisecond granularity is more useful than the whole-second result of `os.time()`.
+`os.clock()` returns one Float in seconds. Interpret the current millisecond
+word as an unsigned value, convert it to Float, then divide by `1000.0`.
+The conversion and division follow the CPU's binary32 rounding rules.
 
-The sampled word contains whole milliseconds modulo 2³². `os.clock()`
-therefore ranges from 0 through 4294967.295 seconds and wraps to zero with
-that word. Decimal millisecond fractions are rounded to Number precision.
-The counter measures system time, including intervals when a particular
-program is not executing.
+The sampled word contains whole milliseconds modulo 2³² and wraps to zero.
+Float rounding means that not every millisecond remains distinguishable at
+large sampled times. Use the raw SYSTEM word for an interval that needs the
+counter's full precision. The counter measures system time, including
+intervals when a particular program is not executing.
 
 For example, two readings can be subtracted to measure a span within the same uninterrupted counter range:
 
@@ -77,7 +79,12 @@ an interval must span it; `os.difftime` also performs ordinary subtraction.
 
 ## `os.time([date_table])` — whole seconds or civil conversion {#sec-bios-os-ostimedate_table-whole-seconds-or-civil-conversion}
 
-`os.time()` and `os.time(nil)` return one Number: the sampled millisecond word divided by 1000 with floor division. The result is a whole-second value in the range 0 through 4294967. Its wrap is still the wrap of the underlying 2³²-millisecond word, not a 2³²-second interval. This call takes its own sample; it does not reuse a preceding `os.clock()` reading.
+`os.time()` and `os.time(nil)` return one Integer: interpret the sampled
+millisecond word as unsigned, then divide by 1000 and discard the remainder.
+The result is a whole-second value in the range 0 through 4294967. Its wrap
+is still the wrap of the underlying 2³²-millisecond word, not a 2³²-second
+interval. This call takes its own sample; it does not reuse a preceding
+`os.clock()` reading.
 
 Supply a date Table for civil conversion. The result is a whole-second
 timestamp, and the same Table receives normalized calendar fields. Nil
@@ -347,7 +354,7 @@ Only `nil` selects a default. An omitted parameter is `nil` on an ordinary call.
 | A format beginning with `!` | Remove exactly one leading `!` before selecting the result kind. |
 | Format exactly `"*t"` after that removal | Return a fresh Table. |
 | Any other accepted format | Return a String. |
-| `timestamp == nil` | Read the word at address `08010228H` in this call and use that value `// 1000`. |
+| `timestamp == nil` | Read the word at address `08010228H` in this call, interpret it as unsigned and divide by 1000, discarding the remainder. |
 | Explicit timestamp | Apply the integer and range checks below. |
 
 
@@ -552,16 +559,10 @@ A zero codepoint is not a String terminator. An embedded literal zero is copied 
 Padding operates on the complete text returned by the current global `tostring`. For example, zero-prepending the text of `-1` to a minimum length of four produces `00-1`, not `-001`. A padding width is a minimum total text length, not a fixed digit count.
 
 
-With the supplied `tostring`, numbers use the shared numeric-text conversion:
-
-- Zero has signed-zero handling.
-- Integral magnitudes strictly below `1,000,000` use complete ordinary decimal integer text.
-- Other finite values are normalized to a decimal exponent and rounded to six significant digits, with ties to even.
-- After rounding, fixed form is selected when the adjusted exponent is at least `-4` and below `6`; otherwise scientific form is selected.
-- Scientific form uses lowercase `e`, an explicit exponent sign, and at least two exponent digits. Trailing fractional zeros and a trailing decimal point are removed.
-
-
-The formatter pads that result unchanged. `%Y`, `%G` and `%C` can therefore contain rounded scientific text for large years or centuries. `%Y` is padded to a minimum length of four, not constrained to four decimal digits. Calendar arithmetic uses Number operations, including at the extremes of the accepted timestamp range.
+With the supplied `tostring`, Integer values use exact signed decimal text;
+Float values follow the [CPU Number-to-text rules](cpu.md#sec-cpu-number-to-text-examples).
+The formatter pads that result unchanged. `%Y` is padded to a minimum length
+of four, not constrained to four decimal digits.
 
 ### Library bindings and execution cost {#sec-bios-os-library-bindings-and-execution-cost}
 

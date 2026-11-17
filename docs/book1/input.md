@@ -262,13 +262,10 @@ it, so skipped controller samples can miss movement.
 ### Signed 16.16 values {#sec-input-signed-1616-values}
 
 Interpret a signed 16.16 word as a signed 32-bit integer divided by 65536.
-Whole-word loads return an unsigned Number, so recover the sign before using
-that Number as an axis or position:
-
-| Loaded word `w` | Signed integer | Numeric value |
-|---|---|---|
-| `00000000H`–`7FFFFFFFH` | `w` | `w / 65536` |
-| `80000000H`–`FFFFFFFFH` | `w − 4294967296` | `(w − 4294967296) / 65536` |
+A BLua whole-word load already returns an Integer with the word's bits, so
+its sign is the sign of the fixed-point value. For a loaded word `w`,
+`w / 65536.0` produces a Float approximation; the Integer-to-Float conversion
+and division follow the CPU rounding rules.
 
 | Raw word | Numeric value |
 | --- | --- |
@@ -282,10 +279,12 @@ Thus `FFFF8000H` is −0.5, not 65535.5. The same decoded +0.5 means
 half-travel on a stick or trigger, half a pixel in a pointer position, and
 half a scroll step in the wheel word.
 
-The representation has a quantum of `1/65536` and a range of −32768 through
-`32767 + 65535/65536`. Stick and trigger operating ranges are given above; pointer
-positions use raster coordinates. The controller retains the attachment's words
-unchanged. Apply any additional calibration or dead zone in the program.
+The word representation has a quantum of `1/65536` and a range of −32768
+through `32767 + 65535/65536`. A Float cannot retain every one of those
+fractions at every magnitude; keep the word when its exact bits are needed.
+Stick and trigger operating ranges are given above; pointer positions use
+raster coordinates. The controller retains the attachment's words unchanged.
+Apply any additional calibration or dead zone in the program.
 
 ## Pad output commands {#sec-input-pad-output-commands}
 
