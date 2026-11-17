@@ -1,4 +1,5 @@
 #include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_value_emit.h"
 
 #include <bit>
 #include <limits>
@@ -41,7 +42,7 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 	if (receiverFact.kind != RegisterValueKind::Table) {
 		loadHeader(base, SLJIT_R0);
 		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
-			SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
+			SLJIT_IMM, valueTagHeader(ValueTag::Table));
 		const int slot = base < 0 ? -1 : findRegister(base);
 		if (slot >= 0) m_registers[slot].value = {RegisterValueKind::Table, 0};
 	} else if (receiverFact.entrySource >= 0) {
@@ -66,13 +67,11 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 		emitStringSlot(load, instruction.c, slow);
 	} else {
 		loadHeader(key, SLJIT_R1);
-		auto* string = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, valueString(0) >> 48u);
+		auto* string = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, valueTagHeader(ValueTag::String));
 		// A Number can have an ordinary IEEE header or the numeric NaN header.
 		// Every other guest kind takes its typed index exit, not an FP cast.
-		sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, VALUE_QNAN_MASK >> 48u);
-		auto* number = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, VALUE_QNAN_MASK >> 48u);
-		sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, VALUE_ENCODED_TAG_MASK >> 48u);
-		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0);
+		const auto [number, tagged] = emitNumberHeaderSplit(m_compiler, SLJIT_R1, SLJIT_R2, SLJIT_R2, NumberHeaderJump::TaggedKind);
+		slow.jumps[slow.count++] = tagged;
 		sljit_set_label(number, sljit_emit_label(m_compiler));
 		sljit_emit_fset64(m_compiler, SLJIT_FR1, 1.0);
 		slow.jumps[slow.count++] = sljit_emit_fcmp(m_compiler, SLJIT_UNORDERED_OR_LESS, SLJIT_FR0, 0, SLJIT_FR1, 0);
@@ -96,15 +95,14 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 // R0: actual Table; R1: zero-based array slot; FR2: raw stored Value.
 void NativeBlockCompiler::emitArraySlot(bool load, int value, SlowPath& slow) {
 	const auto fields = Table::nativeFieldOffsets();
-	constexpr sljit_sw headerOffset = std::endian::native == std::endian::little ? 6 : 0;
 	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL,
 		SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.arraySize);
 	sljit_emit_op2(m_compiler, SLJIT_SHL, SLJIT_S2, 0, SLJIT_R1, 0, SLJIT_IMM, 3);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), fields.arrayData);
 	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_R2, 0);
 	if (load) {
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_S2), headerOffset);
-		auto* present = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
+		emitValueHeaderLoad(m_compiler, SLJIT_R2, SLJIT_S2, 0);
+		auto* present = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueTagHeader(ValueTag::Nil));
 		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL,
 			SLJIT_MEM1(SLJIT_R0), fields.metatable, SLJIT_IMM, 0);
 		sljit_set_label(present, sljit_emit_label(m_compiler));
@@ -114,7 +112,7 @@ void NativeBlockCompiler::emitArraySlot(bool load, int value, SlowPath& slow) {
 	emitWriteBarrier();
 	loadHeader(value, SLJIT_R2);
 	sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S2), 0, SLJIT_FR2, 0);
-	auto* nil = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
+	auto* nil = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueTagHeader(ValueTag::Nil));
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), fields.lengthHint);
 	auto* retained = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_R2, 0);
 	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 1);
@@ -135,21 +133,19 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 	const auto fields = Table::nativeFieldOffsets();
 	std::array<sljit_jump*, 5> misses;
 	size_t missCount = 0;
-	constexpr sljit_sw headerOffset = std::endian::native == std::endian::little ? 6 : 0;
-	constexpr sljit_sw payloadOffset = std::endian::native == std::endian::little ? 0 : 4;
 	sljit_emit_op1(m_compiler, SLJIT_MOV_S32, SLJIT_R1, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&slow.exit->tableCacheSlot));
 	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.hashSize);
 	sljit_emit_op2(m_compiler, SLJIT_SHL, SLJIT_S2, 0, SLJIT_R1, 0, SLJIT_IMM, 3);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.keys);
 	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_S2, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), headerOffset);
-	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueString(0) >> 48u);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), payloadOffset);
+	emitValueHeaderLoad(m_compiler, SLJIT_R2, SLJIT_R1, 0);
+	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueTagHeader(ValueTag::String));
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), VALUE_LOW_WORD_BYTE_OFFSET);
 	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_R3, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.values);
 	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_S2, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), headerOffset);
-	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
+	emitValueHeaderLoad(m_compiler, SLJIT_R2, SLJIT_R1, 0);
+	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueTagHeader(ValueTag::Nil));
 	if (load) {
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_R1), 0);
 		auto* done = sljit_emit_jump(m_compiler, SLJIT_JUMP);
@@ -182,7 +178,7 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 		sljit_set_label(done, sljit_emit_label(m_compiler));
 	} else {
 		loadHeader(value, SLJIT_R2);
-		misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
+		misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueTagHeader(ValueTag::Nil));
 		emitWriteBarrier();
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_R1), 0, SLJIT_FR2, 0);
 		auto* done = sljit_emit_jump(m_compiler, SLJIT_JUMP);
@@ -211,9 +207,9 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 
 void NativeBlockCompiler::emitLength(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
 	loadHeader(instruction.b, SLJIT_R0);
-	auto* string = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueString(0) >> 48u);
+	auto* string = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueTagHeader(ValueTag::String));
 	SlowPath slow; slow.exit = exit; slow.registers = registerSnapshot();
-	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
+	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueTagHeader(ValueTag::Table));
 	loadPayload(instruction.b, SLJIT_R0, SLJIT_R1);
 	sljit_get_local_base(m_compiler, SLJIT_R1, 0, NativeBlockAbi::helperResultOffset);
 	emitCallSpills(false);

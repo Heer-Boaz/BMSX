@@ -1,4 +1,5 @@
 #include "machine/cpu/native_block_compiler.h"
+#include "machine/cpu/native_value_emit.h"
 
 #include <algorithm>
 #include <bit>
@@ -159,22 +160,19 @@ void NativeBlockCompiler::emitCallSpills(bool reload) {
 
 void NativeBlockCompiler::loadHeader(int selector, sljit_s32 target) {
 	if (selector < 0) {
-		sljit_emit_op1(m_compiler, SLJIT_MOV, target, 0, SLJIT_IMM, m_constants[-selector - 1] >> 48u);
+		sljit_emit_op1(m_compiler, SLJIT_MOV, target, 0, SLJIT_IMM, valueHeader(m_constants[-selector - 1]));
 		return;
 	}
 	const int slot = findRegister(selector);
 	if (slot >= 0) {
 		m_registers[slot].lastUse = ++m_registerClock;
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, cachedFloatRegister(slot), target);
-		sljit_emit_op2(m_compiler, SLJIT_LSHR, target, 0, target, 0, SLJIT_IMM, sizeof(sljit_sw) * 8u - 16u);
+		emitValueHeaderFromFloat(m_compiler, target, cachedFloatRegister(slot));
 		return;
 	}
-	constexpr sljit_sw offset = std::endian::native == std::endian::little ? 6 : 0;
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, target, 0,
-		SLJIT_MEM1(SLJIT_S0), static_cast<sljit_sw>(selector) * sizeof(Value) + offset);
+	emitValueHeaderLoad(m_compiler, target, SLJIT_S0, static_cast<sljit_sw>(selector) * sizeof(Value));
 }
 
-void NativeBlockCompiler::loadPayload(int selector, sljit_s32 target, [[maybe_unused]] sljit_s32 scratch) {
+void NativeBlockCompiler::loadPayload(int selector, sljit_s32 target, sljit_s32 scratch) {
 	if (selector < 0) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV, target, 0, SLJIT_IMM,
 			static_cast<sljit_sw>(valuePayload(m_constants[-selector - 1])));
@@ -183,22 +181,10 @@ void NativeBlockCompiler::loadPayload(int selector, sljit_s32 target, [[maybe_un
 	const int slot = findRegister(selector);
 	if (slot >= 0) {
 		m_registers[slot].lastUse = ++m_registerClock;
-#if defined(SLJIT_64BIT_ARCHITECTURE)
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, cachedFloatRegister(slot), target);
-#else
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, cachedFloatRegister(slot), SLJIT_REG_PAIR(scratch, target));
-#endif
-	} else {
-		sljit_sw offset = static_cast<sljit_sw>(selector) * sizeof(Value);
-#if defined(SLJIT_32BIT_ARCHITECTURE)
-		if constexpr (std::endian::native == std::endian::big) offset += 4;
-#endif
-		sljit_emit_op1(m_compiler, SLJIT_MOV, target, 0, SLJIT_MEM1(SLJIT_S0),
-			offset);
+		emitValuePayloadFromFloat(m_compiler, target, cachedFloatRegister(slot), scratch);
+		return;
 	}
-#if defined(SLJIT_64BIT_ARCHITECTURE)
-	sljit_emit_op2(m_compiler, SLJIT_AND, target, 0, target, 0, SLJIT_IMM, VALUE_PAYLOAD_MASK);
-#endif
+	emitValuePayloadLoad(m_compiler, target, SLJIT_S0, static_cast<sljit_sw>(selector) * sizeof(Value));
 }
 
 } // namespace bmsx
