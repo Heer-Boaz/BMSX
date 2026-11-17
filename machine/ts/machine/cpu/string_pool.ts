@@ -2,7 +2,7 @@ import { utf8ByteLength, utf8CodepointCount, utf8Compare } from '../../common/ut
 import { nextCodePointOffset } from '../../common/utf16';
 import type { LuaHeap } from './lua_heap';
 import { ceilDiv4 } from '../common/numeric';
-import { ValueTag } from './value';
+import { valueString } from './value';
 
 export type StringId = number;
 
@@ -45,7 +45,7 @@ export class StringPool {
 			this.markReachable(existing);
 			if (tracked && this.trackedByteLengths[existing] === 0) {
 				const byteLength = utf8ByteLength(this.values[existing]!);
-				this.luaHeap.reserve(byteLength, ValueTag.String, existing);
+				this.luaHeap.reserve(byteLength, valueString(existing));
 				this.trackStringEntry(existing, byteLength);
 			}
 			if (this.localRootBases.length !== 0) this.localRoots.push(existing);

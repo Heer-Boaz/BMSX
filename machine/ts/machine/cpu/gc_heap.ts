@@ -3,8 +3,9 @@ import { GcObject, GcKind, GarbageAllocation } from './gc_object';
 import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from './closure';
 import { Table } from './table';
 import { Thread, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
-import { ValueTag, valueTag, valuePayload, scalarValueHash, type Value, type ValueReference } from './value';
+import { ValueTag, valueTag, valuePayload, scalarValueHash, valueNil, type Value } from './value';
 import { ValueSlots } from './value_slots';
+import type { LuaHeap } from './lua_heap';
 import { ceilDiv4 } from '../common/numeric';
 import type { GcDiagnostics } from './gc_diagnostics';
 
@@ -32,20 +33,22 @@ export class GcHeap {
 	private readonly scratch = new ValueSlots(1);
 	private mode = 0;
 	private changed = false;
-	private readonly traceEntry = (kt: ValueTag, ks: number, kr: ValueReference, vt: ValueTag, vs: number, vr: ValueReference): void => {
-		this.markValue(kt, ks, kr);
-		if (this.mode === 0) this.markValue(vt, vs, vr);
+	private readonly traceEntry = (key: Value, value: Value): void => {
+		this.markValue(key);
+		if (this.mode === 0) this.markValue(value);
 	};
-	private readonly alive = (tag: ValueTag, _scalar: number, ref: ValueReference): boolean =>
-		tag !== ValueTag.Table && tag !== ValueTag.Closure && tag !== ValueTag.Thread || this.isAlive(ref!);
-	private readonly ephemeronEntry = (kt: ValueTag, ks: number, kr: ValueReference, vt: ValueTag, vs: number, vr: ValueReference): void => {
-		if (this.alive(kt, ks, kr) && this.markValue(vt, vs, vr)) this.changed = true;
+	private readonly alive = (value: Value): boolean => {
+		const tag = valueTag(value);
+		return tag !== ValueTag.Table && tag !== ValueTag.Closure && tag !== ValueTag.Thread || this.isAlive(this.object(valuePayload(value)));
 	};
-	private readonly weakStrings = (kt: ValueTag, ks: number, _kr: ValueReference, vt: ValueTag, vs: number): void => {
-		if (kt === ValueTag.String) this.cpu.stringPool.markReachable(ks);
-		if (vt === ValueTag.String) this.cpu.stringPool.markReachable(vs);
+	private readonly ephemeronEntry = (key: Value, value: Value): void => {
+		if (this.alive(key) && this.markValue(value)) this.changed = true;
 	};
-	public constructor(private readonly cpu: CPU, private readonly modeKey: number) {}
+	private readonly weakStrings = (key: Value, value: Value): void => {
+		if (valueTag(key) === ValueTag.String) this.cpu.stringPool.markReachable(valuePayload(key));
+		if (valueTag(value) === ValueTag.String) this.cpu.stringPool.markReachable(valuePayload(value));
+	};
+	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, private readonly modeKey: number) {}
 	public reference(object: GcObject): number { return object.referenceId; }
 	/** Consumes a live id produced by this heap; the Value tag supplies its kind. */
 	public object(reference: number): GcObject { return this.references[reference] as GcObject; }
@@ -93,16 +96,14 @@ export class GcHeap {
 		object.gcColor = 2; object.gcGrayNext = this.gray; this.gray = object;
 		return true;
 	}
-	public markValue(tag: ValueTag, scalar: number, ref: ValueReference): boolean {
-		switch (tag) {
-			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return this.markObject(ref!);
-			case ValueTag.String: this.cpu.stringPool.markReachable(scalar); break;
+	public markValue(value: Value): boolean {
+		switch (valueTag(value)) {
+			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return this.markObject(this.object(valuePayload(value)));
+			case ValueTag.String: this.cpu.stringPool.markReachable(valuePayload(value)); break;
 		}
 		return false;
 	}
-	public markSlot(slots: ValueSlots, index: number): void {
-		this.markValue(slots.getTag(index), slots.getScalar(index), slots.getReference(index));
-	}
+	public markSlot(slots: ValueSlots, index: number): void { this.markValue(slots.get(index)); }
 	public allocationBytes(object: GcObject): number {
 		switch (object.gcKind) {
 			case GcKind.Table: return (object as Table).getTrackedHeapBytes();
@@ -140,12 +141,12 @@ export class GcHeap {
 				break;
 			}
 			case GcKind.Closure:
-				for (const upvalue of (object as Closure).upvalues) this.markObject(upvalue);
+				for (const upvalue of (object as Closure).upvalues) this.markObject(this.object(upvalue));
 				break;
 			case GcKind.Upvalue: {
 				const upvalue = object as Upvalue;
 				if (upvalue.open) this.markObject(upvalue.frame!.thread);
-				else this.markValue(upvalue.valueTag, upvalue.valueScalar, upvalue.valueReference);
+				else this.markValue(upvalue.value);
 				break;
 			}
 			case GcKind.Thread: {
@@ -170,19 +171,19 @@ export class GcHeap {
 		return work;
 	}
 	/** Called with the current trace queue empty; mutations stay separate until this pass. */
-	private remark(t0: ValueTag, s0: number, r0: ValueReference, t1: ValueTag, s1: number, r1: ValueReference, t2: ValueTag, s2: number, r2: ValueReference): number {
+	private remark(t0: Value, t1: Value, t2: Value): number {
 		this.diagnostics?.phase('rootsNanoseconds');
 		for (const thread of this.threads) thread.writeBarrier();
 		for (const table of this.weak) table.writeBarrier();
 		this.threads.length = 0;
 		this.gray = this.grayAgain; this.grayAgain = null;
 		this.cpu.markHeapRoots(this); this.cpu.stringPool.markLocalRoots();
-		this.markValue(t0, s0, r0); this.markValue(t1, s1, r1); this.markValue(t2, s2, r2);
+		this.markValue(t0); this.markValue(t1); this.markValue(t2);
 		return this.cpu.collectionRootWordCount();
 	}
-	private atomic(t0: ValueTag, s0: number, r0: ValueReference, t1: ValueTag, s1: number, r1: ValueReference, t2: ValueTag, s2: number, r2: ValueReference): number {
+	private atomic(t0: Value, t1: Value, t2: Value): number {
 		this.diagnostics?.beginAtomic();
-		let work = this.remark(t0, s0, r0, t1, s1, r1, t2, s2, r2);
+		let work = this.remark(t0, t1, t2);
 		this.diagnostics?.phase('traceNanoseconds');
 		while (this.gray !== null) work += this.trace(true);
 		do {
@@ -206,12 +207,12 @@ export class GcHeap {
 		this.white ^= 1; this.sweep = this.objects; this.phase = GcPhase.Sweep;
 		return work;
 	}
-	public step(t0 = ValueTag.Nil, s0 = NaN, r0: ValueReference = null, t1 = ValueTag.Nil, s1 = NaN, r1: ValueReference = null, t2 = ValueTag.Nil, s2 = NaN, r2: ValueReference = null, growingStack: Thread | null = null): number {
+	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingStack: Thread | null = null): number {
 		this.diagnostics?.beginStep();
-		try { return this.stepWork(t0, s0, r0, t1, s1, r1, t2, s2, r2, growingStack); }
+		try { return this.stepWork(t0, t1, t2, growingStack); }
 		finally { this.diagnostics?.endStep(); }
 	}
-	private stepWork(t0: ValueTag, s0: number, r0: ValueReference, t1: ValueTag, s1: number, r1: ValueReference, t2: ValueTag, s2: number, r2: ValueReference, growingStack: Thread | null): number {
+	private stepWork(t0: Value, t1: Value, t2: Value, growingStack: Thread | null): number {
 		let work = 0;
 		if (this.phase === GcPhase.Pause) {
 			if (this.diagnostics !== null) ++this.diagnostics.collections;
@@ -221,7 +222,7 @@ export class GcHeap {
 		}
 		if (this.phase === GcPhase.Mark || this.phase === GcPhase.MarkAgain) {
 			this.diagnostics?.phase('rootsNanoseconds');
-			this.markValue(t0, s0, r0); this.markValue(t1, s1, r1); this.markValue(t2, s2, r2);
+			this.markValue(t0); this.markValue(t1); this.markValue(t2);
 			this.cpu.stringPool.markLocalRoots();
 		}
 		while (work < GC_STEP_WORDS && this.active()) {
@@ -232,7 +233,7 @@ export class GcHeap {
 					while (this.gray !== null && work < GC_STEP_WORDS) work += this.trace(false);
 					if (work < GC_STEP_WORDS) {
 						if (this.phase === GcPhase.Mark) {
-							work += this.remark(t0, s0, r0, t1, s1, r1, t2, s2, r2);
+							work += this.remark(t0, t1, t2);
 							this.phase = GcPhase.MarkAgain;
 						} else {
 							this.phase = GcPhase.Atomic;
@@ -241,7 +242,7 @@ export class GcHeap {
 					}
 					break;
 				case GcPhase.Atomic:
-					return this.atomic(t0, s0, r0, t1, s1, r1, t2, s2, r2);
+					return this.atomic(t0, t1, t2);
 				case GcPhase.Sweep:
 					this.diagnostics?.phase('sweepNanoseconds');
 					while (this.sweep !== null && work < GC_STEP_WORDS) {
@@ -250,14 +251,14 @@ export class GcHeap {
 						if (this.sweepGarbage(object)) {
 							this.unlink(object);
 							this.releaseReference(object);
-							this.cpu.luaHeap.release(bytes);
+							this.budget.release(bytes);
 						} else {
 							object.gcColor = this.white;
 							if (object.gcKind === GcKind.Thread && object !== growingStack) {
 								const thread = object as Thread;
 								const released = thread.shrinkStack();
-								this.cpu.luaHeap.release(released * THREAD_STACK_SLOT_BYTES);
-								if (released !== 0) work += thread.stackRegisters.capacity() * 4;
+								this.budget.release(released * THREAD_STACK_SLOT_BYTES);
+								if (released !== 0) work += 2 * ceilDiv4(thread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES);
 							}
 						}
 					}
@@ -267,18 +268,18 @@ export class GcHeap {
 					this.diagnostics?.phase('stringReclaimNanoseconds');
 					work += this.cpu.stringPool.sweepStep(GC_STEP_WORDS - work);
 					if (!this.cpu.stringPool.sweeping()) {
-						this.phase = GcPhase.Pause; this.cpu.luaHeap.finishCollection();
+						this.phase = GcPhase.Pause; this.budget.finishCollection();
 					}
 					break;
 			}
 		}
 		return work;
 	}
-	public collect(t0 = ValueTag.Nil, s0 = NaN, r0: ValueReference = null, t1 = ValueTag.Nil, s1 = NaN, r1: ValueReference = null, t2 = ValueTag.Nil, s2 = NaN, r2: ValueReference = null, growingStack: Thread | null = null): number {
+	public collect(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingStack: Thread | null = null): number {
 		if (this.diagnostics !== null) ++this.diagnostics.fullCollections;
 		let work = 0;
-		while (this.active()) work += this.step(t0, s0, r0, t1, s1, r1, t2, s2, r2, growingStack);
-		do { work += this.step(t0, s0, r0, t1, s1, r1, t2, s2, r2, growingStack); } while (this.active());
+		while (this.active()) work += this.step(t0, t1, t2, growingStack);
+		do { work += this.step(t0, t1, t2, growingStack); } while (this.active());
 		return work;
 	}
 	public captureState(ref: (object: GcObject) => number): GcState {

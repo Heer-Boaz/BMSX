@@ -27,7 +27,7 @@ namespace bmsx {
 
 namespace {
 constexpr size_t kClosureHeapBytes = 16;
-constexpr size_t kClosureUpvalueSlotHeapBytes = 8;
+constexpr size_t kClosureUpvalueSlotHeapBytes = 4;
 
 } // namespace
 
@@ -134,7 +134,7 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 	m_luaHeap.reserve(Table::trackedHeapBytesForCapacities(static_cast<size_t>(arraySize), hashCapacity));
 	Table* table = m_heap.allocate<Table>(
 		ObjType::Table,
-		m_luaHeap,
+		m_heap,
 		static_cast<size_t>(arraySize),
 		hashCapacity
 	);
@@ -1105,7 +1105,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
 				const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
 				m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(arrayCapacity, hashSize));
-				Table* table = m_heap.allocate<Table>(ObjType::Table, m_luaHeap, arrayCapacity, hashSize);
+				Table* table = m_heap.allocate<Table>(ObjType::Table, m_heap, arrayCapacity, hashSize);
 				table->restored = true;
 				table->hashId = snapshot.word(offset + SNAP_TABLE_HASH_ID);
 				restoredObjects[index] = table;

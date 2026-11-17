@@ -1210,7 +1210,7 @@ Collection work consumes one cycle per 32-bit work word:
 | Clear weak entries and retain surviving String entries in one weak Table | `ceil(occupied Table bytes / 4)` |
 | Examine one String-directory slot, including a vacant slot | `1` |
 | Examine occupied String text for reclamation | `ceil(allocated text bytes / 4)` |
-| Copy retained Thread storage when shrinking from `V` to `V/2` slots | `4 × (V/2)` |
+| Copy retained Thread storage when shrinking from `V` to `V/2` slots | `2 × ceil(5 × (V/2) / 4)` |
 
 Round each allocation or String's byte count separately. A repeated scan costs
 again; unreachable objects that are not scanned still incur their reclamation

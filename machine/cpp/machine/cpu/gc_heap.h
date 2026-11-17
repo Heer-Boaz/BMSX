@@ -2,6 +2,7 @@
 
 #include <vector>
 #include "common/object_storage_pool.h"
+#include "common/small_block_pool.h"
 #include "machine/cpu/table.h"
 #include "machine/cpu/thread.h"
 #include "machine/cpu/closure.h"
@@ -23,8 +24,11 @@ struct GcState {
 class GcHeap {
 public:
 	GcHeap(CPU& cpu, LuaHeap& budget, StringPool& strings, StringId modeKey)
-		: m_cpu(cpu), m_luaHeap(budget), m_modeKey(modeKey), m_stringPool(strings) {}
+		: budget(budget), m_cpu(cpu), m_modeKey(modeKey), m_stringPool(strings) {}
 	~GcHeap();
+	LuaHeap& budget;
+	// Host backing lifetime follows the allocations, not the guest byte ledger.
+	SmallBlockPool tableStorage;
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
 #if UINTPTR_MAX > UINT32_MAX
 		reserveReference();
@@ -110,7 +114,6 @@ private:
 	void destroyObject(GCObject* object);
 	void unlink(GCObject* object);
 	CPU& m_cpu;
-	LuaHeap& m_luaHeap;
 	GCObject* m_objects = nullptr;
 	GCObject* m_gray = nullptr;
 	GCObject* m_grayAgain = nullptr;

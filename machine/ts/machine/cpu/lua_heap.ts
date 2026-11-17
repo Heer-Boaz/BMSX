@@ -4,10 +4,7 @@ import type { CPU } from './cpu';
 import type { Thread } from './thread';
 import { GC_ASSIST_BYTES } from './gc_heap';
 import { shiftRightSigned } from '../common/numeric';
-import {
-	ValueTag,
-	type ValueReference,
-} from './value';
+import { valueNil, type Value } from './value';
 
 const MIN_COLLECTION_BYTES = 1024 * 1024;
 
@@ -27,25 +24,15 @@ export class LuaHeap {
 
 	public reserve(
 		byteCount: number,
-		root0Tag: ValueTag = ValueTag.Nil,
-		root0Scalar: number = NaN,
-		root0Reference: ValueReference = null,
-		root1Tag: ValueTag = ValueTag.Nil,
-		root1Scalar: number = NaN,
-		root1Reference: ValueReference = null,
-		root2Tag: ValueTag = ValueTag.Nil,
-		root2Scalar: number = NaN,
-		root2Reference: ValueReference = null,
+		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(),
 		growingStack: Thread | null = null,
 	): void {
 		let nextBytes = this.trackedBytes + byteCount;
 		if (nextBytes > this.capacityBytes) {
-			this.collectRuntime(root0Tag, root0Scalar, root0Reference,
-				root1Tag, root1Scalar, root1Reference, root2Tag, root2Scalar, root2Reference, growingStack);
+			this.collectRuntime(root0, root1, root2, growingStack);
 		} else if (nextBytes > this.nextCollectionBytes) {
 			const work = this.cpu.gc.step(
-				root0Tag, root0Scalar, root0Reference,
-				root1Tag, root1Scalar, root1Reference, root2Tag, root2Scalar, root2Reference, growingStack);
+				root0, root1, root2, growingStack);
 			this.cpu.instructionBudgetRemaining -= work;
 			this.creditStep(work);
 		}
@@ -55,21 +42,11 @@ export class LuaHeap {
 	}
 
 	public collectRuntime(
-		root0Tag: ValueTag = ValueTag.Nil,
-		root0Scalar: number = NaN,
-		root0Reference: ValueReference = null,
-		root1Tag: ValueTag = ValueTag.Nil,
-		root1Scalar: number = NaN,
-		root1Reference: ValueReference = null,
-		root2Tag: ValueTag = ValueTag.Nil,
-		root2Scalar: number = NaN,
-		root2Reference: ValueReference = null,
+		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(),
 		growingStack: Thread | null = null,
 	): void {
 		this.cpu.instructionBudgetRemaining -= this.cpu.gc.collect(
-			root0Tag, root0Scalar, root0Reference,
-			root1Tag, root1Scalar, root1Reference,
-			root2Tag, root2Scalar, root2Reference, growingStack,
+			root0, root1, root2, growingStack,
 		);
 	}
 

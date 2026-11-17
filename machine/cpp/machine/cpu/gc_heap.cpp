@@ -318,24 +318,24 @@ void GcHeap::destroyObject(GCObject* object) {
 #endif
 	switch (object->type) {
 		case ObjType::Garbage:
-			m_luaHeap.release(static_cast<GarbageAllocation*>(object)->bytes);
+			budget.release(static_cast<GarbageAllocation*>(object)->bytes);
 			delete static_cast<GarbageAllocation*>(object);
 			break;
 		case ObjType::Thread:
-			m_luaHeap.release(THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stackCapacity * THREAD_STACK_SLOT_BYTES);
+			budget.release(THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stackCapacity * THREAD_STACK_SLOT_BYTES);
 			delete static_cast<Thread*>(object);
 			break;
 		case ObjType::Table:
-			m_luaHeap.release(static_cast<Table*>(object)->trackedHeapBytes());
+			budget.release(static_cast<Table*>(object)->trackedHeapBytes());
 			m_tables.destroy(static_cast<Table*>(object));
 			break;
 		case ObjType::Closure:
-			m_luaHeap.release(static_cast<Closure*>(object)->trackedHeapBytes);
+			budget.release(static_cast<Closure*>(object)->trackedHeapBytes);
 			static_cast<Closure*>(object)->~Closure();
 			::operator delete(object);
 			break;
 		case ObjType::Upvalue:
-			m_luaHeap.release(UPVALUE_HEAP_BYTES);
+			budget.release(UPVALUE_HEAP_BYTES);
 			delete static_cast<Upvalue*>(object);
 			break;
 	}
@@ -400,8 +400,8 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 						if (object->type == ObjType::Thread && object != growingStack) {
 							auto* thread = static_cast<Thread*>(object);
 							const size_t released = thread->shrinkStack();
-							m_luaHeap.release(released * THREAD_STACK_SLOT_BYTES);
-							if (released != 0) work += thread->stackCapacity * 4;
+							budget.release(released * THREAD_STACK_SLOT_BYTES);
+							if (released != 0) work += 2 * ceilDiv4(thread->stackCapacity * THREAD_STACK_SLOT_BYTES);
 						}
 					}
 				}
@@ -419,7 +419,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 				work += m_stringPool.sweepStep(GC_STEP_WORDS - work);
 				if (!m_stringPool.sweeping()) {
 					m_phase = GcPhase::Pause;
-					m_luaHeap.finishCollection();
+					budget.finishCollection();
 				}
 				break;
 			}

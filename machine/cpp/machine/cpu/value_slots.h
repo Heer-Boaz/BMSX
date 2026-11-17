@@ -10,6 +10,9 @@ class ValueSpan {
 public:
 	ValueSpan() = default;
 	ValueSpan(uint32_t* words, uint8_t* tags, size_t size) : m_words(words), m_tags(tags), m_size(size) {}
+	static constexpr size_t wordsOffset() { return offsetof(ValueSpan, m_words); }
+	static constexpr size_t tagsOffset() { return offsetof(ValueSpan, m_tags); }
+	static constexpr size_t sizeOffset() { return offsetof(ValueSpan, m_size); }
 	size_t size() const { return m_size; }
 	uint32_t* words() const { return m_words; }
 	uint8_t* tags() const { return m_tags; }

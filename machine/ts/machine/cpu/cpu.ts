@@ -110,13 +110,13 @@ import {
 	EMPTY_CALL_ARGS,
 	VALUE_TAG,
 	ValueTag,
+	valueTable, valueClosure, valueNil,
 	materializeValue,
 	storedValueToString,
 	valueFromNumber,
 	valueTag,
 	asStringId,
 	valueTypeNameForLuaTag,
-	BUILTIN_FUNCTIONS,
 	type Value,
 	type ValueReference,
 	type StringValue,
@@ -124,7 +124,8 @@ import {
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
 import { Closure, EMPTY_CLOSURE_UPVALUES, Upvalue, UPVALUE_HEAP_BYTES } from './closure';
-import { BuiltinArgsView, BuiltinResults, ValueSlots } from './value_slots';
+import { ValueSlots } from './value_slots';
+import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
 import {
 	DECODED_DISPATCH_BASE_CYCLES,
 	DECODED_PAGE_WORDS,
@@ -159,7 +160,7 @@ import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKin
 const executionStringDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 const CLOSURE_HEAP_BYTES = 16;
-const CLOSURE_UPVALUE_SLOT_HEAP_BYTES = 8;
+const CLOSURE_UPVALUE_SLOT_HEAP_BYTES = 4;
 
 // Saved values are u32 offsets into the snapshot word arena. Object references
 // (closureRef/openUpvalues) are ordinals in its object index.
@@ -402,7 +403,7 @@ export class CPU implements MappedPageInvalidator {
 		this.rootThread.status = ThreadStatus.Running;
 		this.indexKey = this.stringPool.intern('__index');
 		this.modeKey = this.stringPool.intern('__mode');
-		this.gc = new GcHeap(this, this.modeKey);
+		this.gc = new GcHeap(this, this.luaHeap, this.modeKey);
 		this.gc.track(this.rootThread);
 		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_UNKNOWN] = this.stringPool.intern('Attempted to get length of an unsupported value.', false);
@@ -428,10 +429,10 @@ export class CPU implements MappedPageInvalidator {
 	public createTable(arraySize: number = 0, hashSize: number = 0): Table {
 		const hashCapacity = Table.hashCapacity(hashSize);
 		this.luaHeap.reserve(Table.trackedHeapBytesForCapacities(arraySize, hashCapacity));
-		const table = new Table(this.luaHeap, arraySize, hashCapacity);
+		const table = new Table(this.gc, arraySize, hashCapacity);
 		table.hashId = this.allocateObjectHashId();
 		this.gc.track(table);
-		if (this.localRootScopeDepth > 0) this.localRoots.push(table);
+		if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(this.gc.reference(table)));
 		return table;
 	}
 
@@ -459,8 +460,8 @@ export class CPU implements MappedPageInvalidator {
 			nextCapacity = 8;
 		}
 		// Admission must not shrink the allocation whose growth it is admitting.
-		this.luaHeap.reserve((nextCapacity - stack.capacity()) * THREAD_STACK_SLOT_BYTES, ValueTag.Closure, NaN, closure,
-			ValueTag.Nil, NaN, null, ValueTag.Nil, NaN, null, this.activeThread);
+		this.luaHeap.reserve((nextCapacity - stack.capacity()) * THREAD_STACK_SLOT_BYTES, valueClosure(this.gc.reference(closure)),
+			valueNil(), valueNil(), this.activeThread);
 		this.activeThread.resizeStack(nextCapacity);
 	}
 
@@ -3887,7 +3888,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public createThread(entry: Closure): Thread {
-		this.luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES, ValueTag.Closure, NaN, entry);
+		this.luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES, valueClosure(this.gc.reference(entry)));
 		const thread = new Thread(entry);
 		thread.hashId = this.allocateObjectHashId();
 		this.gc.track(thread);
@@ -4839,7 +4840,7 @@ export class CPU implements MappedPageInvalidator {
 					const arrayCapacity = snapshot.word(offset + CpuSnapshotTable.ArrayCapacity);
 					const hashSize = snapshot.word(offset + CpuSnapshotTable.HashSize);
 					this.luaHeap.restoreAllocate(Table.trackedHeapBytesForCapacities(arrayCapacity, hashSize));
-					const table = new Table(this.luaHeap, arrayCapacity, hashSize);
+					const table = new Table(this.gc, arrayCapacity, hashSize);
 					this.gc.track(table); table.restored = true;
 					table.hashId = snapshot.word(offset + CpuSnapshotTable.HashId);
 					restoredObjects[index] = table;
@@ -5158,10 +5159,8 @@ export class CPU implements MappedPageInvalidator {
 		return words;
 	}
 
-	public collectTrackedHeapBytes(t0 = ValueTag.Nil, s0 = NaN, r0: ValueReference = null,
-		t1 = ValueTag.Nil, s1 = NaN, r1: ValueReference = null,
-		t2 = ValueTag.Nil, s2 = NaN, r2: ValueReference = null): number {
-		this.gc.collect(t0, s0, r0, t1, s1, r1, t2, s2, r2);
+	public collectTrackedHeapBytes(root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {
+		this.gc.collect(root0, root1, root2);
 		return this.luaHeap.usedBytes();
 	}
 
@@ -5176,13 +5175,9 @@ export class CPU implements MappedPageInvalidator {
 		for (let i = 0; i < this.completionValueCount; ++i) heap.markSlot(this.completionValueSlots, i);
 		for (let i = 0; i < this.builtinResultsScratchIndex; ++i) {
 			const slots = this.builtinResultsScratch.peek(i);
-			for (let j = 0; j < slots.length; ++j) heap.markValue(slots.getTag(j), slots.getScalar(j), slots.getReference(j));
+			for (let j = 0; j < slots.length; ++j) heap.markValue(slots.get(j));
 		}
-		for (const value of this.localRoots) {
-			const tag = valueTag(value);
-			if (tag === ValueTag.String) this.stringPool.markReachable(asStringId(value as StringValue));
-			else if (tag === ValueTag.Table || tag === ValueTag.Thread || tag === ValueTag.Closure) heap.markObject(value as Table | Closure | Thread);
-		}
+		for (const value of this.localRoots) heap.markValue(value);
 		for (let i = 0; i < this.systemGlobalNames.length; ++i) {
 			this.stringPool.markReachable(this.systemGlobalNames[i]); heap.markSlot(this.systemGlobalSlots, i);
 		}

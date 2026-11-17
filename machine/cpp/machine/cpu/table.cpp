@@ -2,28 +2,26 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
-#include <utility>
 
 #include "machine/common/numeric.h"
 #include "machine/cpu/errors.h"
-#include "machine/cpu/lua_heap.h"
+#include "machine/cpu/gc_heap.h"
 
 namespace bmsx {
 
 namespace {
 constexpr size_t kTableHeapBytes = 32;
-constexpr size_t kTableArraySlotHeapBytes = 8;
-constexpr size_t kTableHashSlotHeapBytes = 20;
+constexpr size_t kTableArraySlotHeapBytes = 5;
+constexpr size_t kTableHashSlotHeapBytes = 14;
 constexpr int32_t kTableHashNextEnd = -1;
 } // namespace
-Table::Table(LuaHeap& luaHeap, size_t arrayCapacity, size_t hashCapacity)
-	: m_luaHeap(luaHeap) {
+Table::Table(GcHeap& heap, size_t arrayCapacity, size_t hashCapacity)
+	: m_heap(heap) {
 	allocateStorage(arrayCapacity, hashCapacity);
 }
 
 Table::~Table() {
-	if (m_storage) m_luaHeap.tableStorage.deallocate(m_storage, trackedHeapBytes() - kTableHeapBytes);
+	if (m_values.words()) m_heap.tableStorage.deallocate(m_values.words(), trackedHeapBytes() - kTableHeapBytes);
 }
 
 size_t Table::hashCapacity(int hashSize) {
@@ -47,10 +45,8 @@ size_t Table::trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCap
 #endif
 TableNativeFieldOffsets Table::nativeFieldOffsets() {
 	return {offsetof(Table, m_hashSize),
-		offsetof(Table, m_hashKeys), offsetof(Table, m_hashValues),
-		offsetof(Table, m_array) + offsetof(Span<Value>, data_),
-		offsetof(Table, m_array) + offsetof(Span<Value>, size_),
-		offsetof(Table, m_lengthHint), offsetof(Table, metatable)};
+		offsetof(Table, m_values) + ValueSpan::wordsOffset(), offsetof(Table, m_values) + ValueSpan::tagsOffset(),
+		offsetof(Table, m_arraySize), offsetof(Table, m_lengthHint), offsetof(Table, metatable)};
 }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -58,22 +54,28 @@ TableNativeFieldOffsets Table::nativeFieldOffsets() {
 #endif
 
 bool Table::getArrayIndex(const Value& key, int& outIndex) const {
-	if (!valueIsNumber(key)) {
-		return false;
-	}
-	return getNumberArrayIndex(asNumber(key), outIndex);
+	i32 integer;
+	if (!valueToInteger(key, integer) || integer <= 0) return false;
+	outIndex = integer - 1;
+	return true;
 }
 
-bool Table::hasIntegerKey(uint64_t key) const {
-	if (key <= m_array.size()) {
-		return !isNil(m_array[static_cast<size_t>(key - 1)]);
+Table* Table::metatableIndexTable(StringId indexKey) const {
+	if (!metatable) return nullptr;
+	const Value indexer = metatable->getStringKey(indexKey);
+	return valueIsTable(indexer) ? asTable(indexer, m_heap) : nullptr;
+}
+
+bool Table::hasIntegerKey(u32 key) const {
+	if (key <= m_arraySize) {
+		return !isNil(m_values.get(static_cast<size_t>(key - 1)));
 	}
-	const int nodeIndex = findNodeIndex(valueNumber(static_cast<double>(key)));
-	return nodeIndex >= 0 && !isNil(m_hashValues[static_cast<size_t>(nodeIndex)]);
+	const int nodeIndex = findNodeIndex(valueInteger(static_cast<i32>(key)));
+	return nodeIndex >= 0 && !isNil(m_values.get(hashValueSlot(static_cast<size_t>(nodeIndex))));
 }
 
 size_t Table::hashValue(const Value& key) const {
-	return ValueHash{}(key);
+	return m_heap.hash(key);
 }
 
 bool Table::keyEquals(const Value& a, const Value& b) const {
@@ -85,17 +87,17 @@ int Table::findNodeIndex(const Value& key, bool matchDead) const {
 		return -1;
 	}
 	const bool collectableKey = matchDead && (valueIsTable(key) || valueIsClosure(key) || valueIsThread(key));
-	const uint32_t deadKeyHashId = collectableKey ? valueObjectHashId(key) : 0;
+	const uint32_t deadKeyHashId = collectableKey ? valueObjectHashId(key, m_heap) : 0;
 	const size_t mask = m_hashSize - 1;
 	int index = static_cast<int>(hashValue(key) & mask);
 	while (index >= 0) {
 		const size_t slot = static_cast<size_t>(index);
-		const Value nodeKey = m_hashKeys[slot];
+		const Value nodeKey = m_values.get(hashKeySlot(slot));
 		if ((!isNil(nodeKey) && keyEquals(nodeKey, key))
 			|| (isNil(nodeKey)
 				&& collectableKey
-				&& valueIsNumber(m_hashValues[slot])
-				&& asNumber(m_hashValues[slot]) == static_cast<double>(deadKeyHashId))) {
+				&& valueTag(m_values.get(hashValueSlot(slot))) == ValueTag::DeadKey
+				&& valuePayload(m_values.get(hashValueSlot(slot))) == deadKeyHashId)) {
 			return index;
 		}
 		index = m_hashNext[slot];
@@ -105,7 +107,7 @@ int Table::findNodeIndex(const Value& key, bool matchDead) const {
 
 int Table::findNextLiveHashIndex(size_t start) const {
 	for (size_t index = start; index < m_hashSize; ++index) {
-		if (!isNil(m_hashKeys[index]) && !isNil(m_hashValues[index])) {
+		if (!isNil(m_values.get(hashKeySlot(index))) && !isNil(m_values.get(hashValueSlot(index)))) {
 			return static_cast<int>(index);
 		}
 	}
@@ -120,7 +122,7 @@ int Table::findStringNodeIndex(StringId key) const {
 	int index = static_cast<int>(hashValue(keyValue) & (m_hashSize - 1u));
 	while (index >= 0) {
 		const size_t slot = static_cast<size_t>(index);
-		if (m_hashKeys[slot] == keyValue) {
+		if (m_values.get(hashKeySlot(slot)) == keyValue) {
 			return index;
 		}
 		index = m_hashNext[slot];
@@ -130,8 +132,8 @@ int Table::findStringNodeIndex(StringId key) const {
 
 int Table::getFreeIndex() {
 	for (int i = m_hashFree; i >= 0; --i) {
-		if (isNil(m_hashKeys[static_cast<size_t>(i)])
-			&& isNil(m_hashValues[static_cast<size_t>(i)])) {
+		if (isNil(m_values.get(hashKeySlot(static_cast<size_t>(i))))
+			&& isNil(m_values.get(hashValueSlot(static_cast<size_t>(i))))) {
 			m_hashFree = i - 1;
 			return i;
 		}
@@ -142,7 +144,7 @@ int Table::getFreeIndex() {
 
 void Table::rehash(const Value& key, const Value& value) {
 	size_t totalKeys = 0;
-	std::array<size_t, sizeof(size_t) * 8u> counts{};
+	std::array<u32, 32> counts{};
 	size_t countBins = 0;
 
 	auto countIntegerKey = [&counts, &countBins](size_t index) {
@@ -154,15 +156,15 @@ void Table::rehash(const Value& key, const Value& value) {
 		counts[log] += 1;
 	};
 
-	for (size_t i = 0; i < m_array.size(); ++i) {
-		if (!isNil(m_array[i])) {
+	for (size_t i = 0; i < m_arraySize; ++i) {
+		if (!isNil(m_values.get(i))) {
 			totalKeys += 1;
 			countIntegerKey(i + 1);
 		}
 	}
 	for (size_t i = 0; i < m_hashSize; ++i) {
-		const Value key = m_hashKeys[i];
-		if (!isNil(key) && !isNil(m_hashValues[i])) {
+		const Value key = m_values.get(hashKeySlot(i));
+		if (!isNil(key) && !isNil(m_values.get(hashValueSlot(i)))) {
 			totalKeys += 1;
 			int index = 0;
 			if (getArrayIndex(key, index)) {
@@ -193,7 +195,7 @@ void Table::rehash(const Value& key, const Value& value) {
 
 	size_t hashKeys = totalKeys - arrayKeys;
 	size_t hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
-	m_luaHeap.accountTableStorageWork(m_array.size() + 2 * m_hashSize);
+	m_heap.budget.accountTableStorageWork(m_arraySize + 2 * m_hashSize);
 	resize(arraySize, hashSize, key, value);
 }
 
@@ -206,64 +208,66 @@ void Table::resize(
 	const size_t previousBytes = trackedHeapBytes();
 	const size_t resizedBytes = trackedHeapBytesForCapacities(newArraySize, newHashSize);
 	if (resizedBytes > previousBytes) {
-		m_luaHeap.reserve(resizedBytes - previousBytes, valueTable(this), key, value);
+		m_heap.budget.reserve(resizedBytes - previousBytes, valueTable(m_heap.reference(this)), key, value);
 	}
-	const Span<Value> oldArray = m_array;
+	const ValueSpan oldValues = m_values;
+	const size_t oldArraySize = m_arraySize;
 	const auto releaseOld = [this, previousBytes](void* storage) {
-		m_luaHeap.tableStorage.deallocate(storage, previousBytes - kTableHeapBytes);
+		m_heap.tableStorage.deallocate(storage, previousBytes - kTableHeapBytes);
 	};
-	std::unique_ptr<void, decltype(releaseOld)> oldStorage(std::exchange(m_storage, nullptr), releaseOld);
-	Value* oldHashKeys = m_hashKeys;
-	Value* oldHashValues = m_hashValues;
+	std::unique_ptr<void, decltype(releaseOld)> oldStorage(m_values.words(), releaseOld);
+	m_values = {};
 	const size_t oldHashSize = m_hashSize;
 
 	allocateStorage(newArraySize, newHashSize);
-	m_luaHeap.accountTableStorageWork(newArraySize + 2 * newHashSize);
+	m_heap.budget.accountTableStorageWork(newArraySize + 2 * newHashSize);
 
 	size_t relocatedSlots = 0;
-	for (size_t i = 0; i < oldArray.size(); ++i) {
-		if (!isNil(oldArray[i])) {
-			const int destination = rawSet(valueNumber(static_cast<double>(i + 1)), oldArray[i]);
+	for (size_t i = 0; i < oldArraySize; ++i) {
+		if (!isNil(oldValues.get(i))) {
+			const int destination = rawSet(valueInteger(static_cast<i32>(i + 1)), oldValues.get(i));
 			relocatedSlots += destination < 0 ? 1u : 2u;
 		}
 	}
 	for (size_t i = 0; i < oldHashSize; ++i) {
-		const Value key = oldHashKeys[i];
-		if (!isNil(key) && !isNil(oldHashValues[i])) {
-			const int destination = rawSet(key, oldHashValues[i]);
+		const Value key = oldValues.get(oldArraySize + i);
+		if (!isNil(key) && !isNil(oldValues.get(oldArraySize + oldHashSize + i))) {
+			const int destination = rawSet(key, oldValues.get(oldArraySize + oldHashSize + i));
 			relocatedSlots += destination < 0 ? 1u : 2u;
 		}
 	}
-	m_luaHeap.accountTableStorageWork(oldArray.size() + 2 * oldHashSize + relocatedSlots);
+	m_heap.budget.accountTableStorageWork(oldArraySize + 2 * oldHashSize + relocatedSlots);
 	oldStorage.reset();
 	if (resizedBytes < previousBytes) {
-		m_luaHeap.release(previousBytes - resizedBytes);
+		m_heap.budget.release(previousBytes - resizedBytes);
 	}
 }
 
 void Table::allocateStorage(size_t arraySize, size_t hashSize) {
 	const size_t valueCount = arraySize + hashSize * 2;
-	const size_t byteCount = valueCount * sizeof(Value) + hashSize * sizeof(int32_t);
-	void* storage = byteCount == 0 ? nullptr : m_luaHeap.tableStorage.allocate(byteCount);
-	if (m_storage) m_luaHeap.tableStorage.deallocate(m_storage, trackedHeapBytes() - kTableHeapBytes);
-	m_storage = storage;
-	Value* values = static_cast<Value*>(storage);
-	m_array = {values, arraySize};
+	const size_t byteCount = valueCount * 5 + hashSize * sizeof(i32);
+	void* storage = byteCount == 0 ? nullptr : m_heap.tableStorage.allocate(byteCount);
+	if (m_values.words()) m_heap.tableStorage.deallocate(m_values.words(), trackedHeapBytes() - kTableHeapBytes);
+	auto* words = static_cast<u32*>(storage);
+	m_hashNext = hashSize == 0 ? nullptr : reinterpret_cast<i32*>(words + valueCount);
+	auto* tags = valueCount == 0 ? nullptr : reinterpret_cast<uint8_t*>(words + valueCount + hashSize);
+	m_values = {words, tags, valueCount};
+	m_arraySize = arraySize;
 	m_hashSize = hashSize;
-	m_hashKeys = hashSize == 0 ? nullptr : values + arraySize;
-	m_hashValues = hashSize == 0 ? nullptr : m_hashKeys + hashSize;
-	m_hashNext = hashSize == 0 ? nullptr : reinterpret_cast<int32_t*>(m_hashValues + hashSize);
 	m_hashFree = hashSize == 0 ? -1 : static_cast<int>(hashSize) - 1;
-	std::uninitialized_fill_n(values, valueCount, valueNil());
-	std::uninitialized_fill_n(m_hashNext, hashSize, kTableHashNextEnd);
+	if (valueCount != 0) {
+		std::fill_n(words, valueCount, u32{0});
+		std::fill_n(tags, valueCount, uint8_t{0});
+	}
+	std::fill_n(m_hashNext, hashSize, kTableHashNextEnd);
 }
 
 // Storage redistribution must not change the logical boundary hint.
 int Table::rawSet(const Value& key, const Value& value) {
 	writeBarrier();
 	int index = 0;
-	if (getArrayIndex(key, index) && static_cast<size_t>(index) < m_array.size()) {
-		m_array[static_cast<size_t>(index)] = value;
+	if (getArrayIndex(key, index) && static_cast<size_t>(index) < m_arraySize) {
+		m_values.set(static_cast<size_t>(index), value);
 		return -1;
 	}
 	return insertHash(key, value);
@@ -285,10 +289,10 @@ int Table::insertHashWithoutGrowth(const Value& key, const Value& value) noexcep
 	size_t mask = m_hashSize - 1;
 	int mainIndex = static_cast<int>(hashValue(key) & mask);
 	const size_t mainSlot = static_cast<size_t>(mainIndex);
-	const Value mainKey = m_hashKeys[mainSlot];
-	if (isNil(mainKey) || isNil(m_hashValues[mainSlot])) {
-		m_hashKeys[mainSlot] = key;
-		m_hashValues[mainSlot] = value;
+	const Value mainKey = m_values.get(hashKeySlot(mainSlot));
+	if (isNil(mainKey) || isNil(m_values.get(hashValueSlot(mainSlot)))) {
+		m_values.set(hashKeySlot(mainSlot), key);
+		m_values.set(hashValueSlot(mainSlot), value);
 		return mainIndex;
 	}
 	int freeIndex = getFreeIndex();
@@ -298,21 +302,21 @@ int Table::insertHashWithoutGrowth(const Value& key, const Value& value) noexcep
 	const size_t freeSlot = static_cast<size_t>(freeIndex);
 	int mainIndexOfOccupied = static_cast<int>(hashValue(mainKey) & mask);
 	if (mainIndexOfOccupied != mainIndex) {
-		m_hashKeys[freeSlot] = mainKey;
-		m_hashValues[freeSlot] = m_hashValues[mainSlot];
+		m_values.set(hashKeySlot(freeSlot), mainKey);
+		m_values.set(hashValueSlot(freeSlot), m_values.get(hashValueSlot(mainSlot)));
 		m_hashNext[freeSlot] = m_hashNext[mainSlot];
 		int prev = mainIndexOfOccupied;
 		while (m_hashNext[static_cast<size_t>(prev)] != mainIndex) {
 			prev = m_hashNext[static_cast<size_t>(prev)];
 		}
 		m_hashNext[static_cast<size_t>(prev)] = freeIndex;
-		m_hashKeys[mainSlot] = key;
-		m_hashValues[mainSlot] = value;
+		m_values.set(hashKeySlot(mainSlot), key);
+		m_values.set(hashValueSlot(mainSlot), value);
 		m_hashNext[mainSlot] = kTableHashNextEnd;
 		return mainIndex;
 	}
-	m_hashKeys[freeSlot] = key;
-	m_hashValues[freeSlot] = value;
+	m_values.set(hashKeySlot(freeSlot), key);
+	m_values.set(hashValueSlot(freeSlot), value);
 	m_hashNext[freeSlot] = m_hashNext[mainSlot];
 	m_hashNext[mainSlot] = freeIndex;
 	return freeIndex;
@@ -320,43 +324,45 @@ int Table::insertHashWithoutGrowth(const Value& key, const Value& value) noexcep
 
 void Table::removeFromHash(const Value& key) {
 	const int existingIndex = findNodeIndex(key);
-	if (existingIndex < 0 || isNil(m_hashValues[static_cast<size_t>(existingIndex)])) {
+	if (existingIndex < 0 || isNil(m_values.get(hashValueSlot(static_cast<size_t>(existingIndex))))) {
 		return;
 	}
 	markHashNodeDead(static_cast<size_t>(existingIndex));
 }
 
 void Table::markHashNodeDead(size_t index) {
-	if (valueIsTable(m_hashKeys[index])
-		|| valueIsThread(m_hashKeys[index])
-		|| valueIsClosure(m_hashKeys[index])) {
-		const uint32_t hashId = valueObjectHashId(m_hashKeys[index]);
-		m_hashKeys[index] = valueNil();
-		m_hashValues[index] = valueNumber(static_cast<double>(hashId));
+	if (valueIsTable(m_values.get(hashKeySlot(index)))
+		|| valueIsThread(m_values.get(hashKeySlot(index)))
+		|| valueIsClosure(m_values.get(hashKeySlot(index)))) {
+		const uint32_t hashId = valueObjectHashId(m_values.get(hashKeySlot(index)), m_heap);
+		m_values.set(hashKeySlot(index), valueNil());
+		m_values.set(hashValueSlot(index), valueFromTag(ValueTag::DeadKey, hashId));
 	} else {
-		m_hashValues[index] = valueNil();
+		m_values.set(hashValueSlot(index), valueNil());
 	}
 }
 
-Value Table::get(const Value& key) const {
+Value Table::get(const Value& rawKey) const {
+	const Value key = canonicalTableKey(rawKey);
 	if (isNil(key)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	}
 	int index = 0;
 	if (getArrayIndex(key, index)) {
-		if (index < static_cast<int>(m_array.size())) {
-			return m_array[static_cast<size_t>(index)];
+		if (index < static_cast<int>(m_arraySize)) {
+			return m_values.get(static_cast<size_t>(index));
 		}
 	}
 
 	int nodeIndex = findNodeIndex(key);
 	if (nodeIndex >= 0) {
-		return m_hashValues[static_cast<size_t>(nodeIndex)];
+		return m_values.get(hashValueSlot(static_cast<size_t>(nodeIndex)));
 	}
 	return valueNil();
 }
 
-void Table::set(const Value& key, const Value& value) {
+void Table::set(const Value& rawKey, const Value& value) {
+	const Value key = canonicalTableKey(rawKey);
 	if (isNil(key)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	}
@@ -365,7 +371,7 @@ void Table::set(const Value& key, const Value& value) {
 	bool isArrayKey = getArrayIndex(key, index);
 	if (isArrayKey) {
 		const size_t idx = static_cast<size_t>(index);
-		if (idx < m_array.size()) {
+		if (idx < m_arraySize) {
 			setArraySlot(idx, value);
 			return;
 		}
@@ -379,10 +385,10 @@ void Table::set(const Value& key, const Value& value) {
 	int nodeIndex = findNodeIndex(key, true);
 	if (nodeIndex >= 0) {
 		const size_t slot = static_cast<size_t>(nodeIndex);
-		if (isNil(m_hashKeys[slot])) {
-			m_hashKeys[slot] = key;
+		if (isNil(m_values.get(hashKeySlot(slot)))) {
+			m_values.set(hashKeySlot(slot), key);
 		}
-		m_hashValues[slot] = value;
+		m_values.set(hashValueSlot(slot), value);
 		if (isArrayKey) updateLengthHint(static_cast<size_t>(index), true);
 		return;
 	}
@@ -391,44 +397,44 @@ void Table::set(const Value& key, const Value& value) {
 }
 
 Value Table::getInteger(int indexValue) const {
-	const int index = indexValue - 1;
-	if (index >= 0 && index < static_cast<int>(m_array.size())) {
-		return m_array[static_cast<size_t>(index)];
+	const u32 index = static_cast<u32>(indexValue) - 1u;
+	if (index < m_arraySize) {
+		return m_values.get(static_cast<size_t>(index));
 	}
-	const int nodeIndex = findNodeIndex(valueNumber(static_cast<double>(indexValue)));
+	const int nodeIndex = findNodeIndex(valueInteger(indexValue));
 	if (nodeIndex >= 0) {
-		return m_hashValues[static_cast<size_t>(nodeIndex)];
+		return m_values.get(hashValueSlot(static_cast<size_t>(nodeIndex)));
 	}
 	return valueNil();
 }
 
 void Table::setInteger(int indexValue, const Value& value) {
 	writeBarrier();
-	const int index = indexValue - 1;
-	if (index >= 0 && index < static_cast<int>(m_array.size())) {
+	const u32 index = static_cast<u32>(indexValue) - 1u;
+	if (index < m_arraySize) {
 		setArraySlot(static_cast<size_t>(index), value);
 		return;
 	}
-	const Value key = valueNumber(static_cast<double>(indexValue));
+	const Value key = valueInteger(indexValue);
 	if (isNil(value)) {
 		removeFromHash(key);
-		if (index >= 0) updateLengthHint(static_cast<size_t>(index), false);
+		if (indexValue > 0) updateLengthHint(static_cast<size_t>(index), false);
 		return;
 	}
 	const int nodeIndex = findNodeIndex(key);
 	if (nodeIndex >= 0) {
-		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
-		if (index >= 0) updateLengthHint(static_cast<size_t>(index), true);
+		m_values.set(hashValueSlot(static_cast<size_t>(nodeIndex)), value);
+		if (indexValue > 0) updateLengthHint(static_cast<size_t>(index), true);
 		return;
 	}
 	rawSet(key, value);
-	if (index >= 0) updateLengthHint(static_cast<size_t>(index), true);
+	if (indexValue > 0) updateLengthHint(static_cast<size_t>(index), true);
 }
 
 Value Table::getStringKey(StringId key) const {
 	const int nodeIndex = findStringNodeIndex(key);
 	if (nodeIndex >= 0) {
-		return m_hashValues[static_cast<size_t>(nodeIndex)];
+		return m_values.get(hashValueSlot(static_cast<size_t>(nodeIndex)));
 	}
 	return valueNil();
 }
@@ -436,16 +442,16 @@ Value Table::getStringKey(StringId key) const {
 Value Table::getStringKeyCached(StringId key, int& predictedSlot) const {
 	if (predictedSlot >= 0 && static_cast<size_t>(predictedSlot) < m_hashSize) {
 		const size_t slot = static_cast<size_t>(predictedSlot);
-		if (valueIsString(m_hashKeys[slot])
-			&& asStringId(m_hashKeys[slot]) == key
-			&& !isNil(m_hashValues[slot])) {
-			return m_hashValues[slot];
+		if (valueIsString(m_values.get(hashKeySlot(slot)))
+			&& asStringId(m_values.get(hashKeySlot(slot))) == key
+			&& !isNil(m_values.get(hashValueSlot(slot)))) {
+			return m_values.get(hashValueSlot(slot));
 		}
 	}
 	const int nodeIndex = findStringNodeIndex(key);
-	if (nodeIndex >= 0 && !isNil(m_hashValues[static_cast<size_t>(nodeIndex)])) {
+	if (nodeIndex >= 0 && !isNil(m_values.get(hashValueSlot(static_cast<size_t>(nodeIndex))))) {
 		predictedSlot = nodeIndex;
-		return m_hashValues[static_cast<size_t>(nodeIndex)];
+		return m_values.get(hashValueSlot(static_cast<size_t>(nodeIndex)));
 	}
 	predictedSlot = -1;
 	return valueNil();
@@ -473,7 +479,7 @@ int Table::storeStringKeyWithoutGrowth(Table* table, StringId key, const Value& 
 	}
 	const int nodeIndex = table->findStringNodeIndex(key);
 	if (nodeIndex >= 0) {
-		table->m_hashValues[static_cast<size_t>(nodeIndex)] = value;
+		table->m_values.set(table->hashValueSlot(static_cast<size_t>(nodeIndex)), value);
 		return nodeIndex;
 	}
 	const int inserted = table->insertHashWithoutGrowth(keyValue, value);
@@ -486,105 +492,111 @@ void Table::setStringKeyCached(StringId key, const Value& value, int& predictedS
 		&& predictedSlot >= 0
 		&& static_cast<size_t>(predictedSlot) < m_hashSize) {
 		const size_t slot = static_cast<size_t>(predictedSlot);
-		if (valueIsString(m_hashKeys[slot])
-			&& asStringId(m_hashKeys[slot]) == key
-			&& !isNil(m_hashValues[slot])) {
-			m_hashValues[slot] = value;
+		if (valueIsString(m_values.get(hashKeySlot(slot)))
+			&& asStringId(m_values.get(hashKeySlot(slot))) == key
+			&& !isNil(m_values.get(hashValueSlot(slot)))) {
+			m_values.set(hashValueSlot(slot), value);
 			return;
 		}
 	}
 	predictedSlot = setStringKey(key, value);
 }
 
-double Table::length(const Table* table, u32* work) noexcept {
-	// Binary64's largest integer with a distinct, exactly representable successor.
-	constexpr uint64_t maxBoundary = (uint64_t{1} << 53) - 1;
-	uint64_t low = table->m_lengthHint;
-	uint64_t high;
+i32 Table::length(const Table* table, u32* work) noexcept {
+	constexpr u32 maxBoundary = 0x7fffffffu;
+	u32 low = table->m_lengthHint, high;
 	u32 probes = low == 0 ? 0 : 1;
 	if (low != 0 && !table->hasIntegerKey(low)) {
 		high = low;
 		low = 0;
+	} else if (low == maxBoundary) {
+		if (work) *work = probes;
+		return static_cast<i32>(low);
 	} else {
 		++probes;
 		if (!table->hasIntegerKey(low + 1)) {
 			if (work) *work = probes;
-			return static_cast<double>(low);
+			return static_cast<i32>(low);
 		}
 		++low;
-		high = low * 2;
+		if (low == maxBoundary) {
+			if (work) *work = probes;
+			return static_cast<i32>(low);
+		}
+		high = std::min(low * 2, maxBoundary);
 		for (;;) {
 			++probes;
 			if (!table->hasIntegerKey(high)) break;
 			low = high;
 			if (low == maxBoundary) {
 				if (work) *work = probes;
-				return static_cast<double>(low);
+				return static_cast<i32>(low);
 			}
 			high = std::min(low * 2, maxBoundary);
 		}
 	}
 	while (high - low > 1) {
-		const uint64_t middle = low + (high - low) / 2;
+		const u32 middle = low + ((high - low) >> 1);
 		++probes;
 		if (table->hasIntegerKey(middle)) low = middle;
 		else high = middle;
 	}
 	if (work) *work = probes;
-	return static_cast<double>(low);
+	return static_cast<i32>(low);
 }
 
 void Table::clear() {
 	const size_t previousBytes = trackedHeapBytes();
 	m_lengthHint = 0;
 	allocateStorage(0, 0);
-	m_luaHeap.release(previousBytes - trackedHeapBytes());
+	m_heap.budget.release(previousBytes - trackedHeapBytes());
 }
 
 bool Table::loadStoredEntry(size_t slot, Value& key, Value& value) const {
-	if (slot < m_array.size()) {
-		if (isNil(m_array[slot])) return false;
-		key = valueNumber(static_cast<double>(slot + 1));
-		value = m_array[slot];
+	if (slot < m_arraySize) {
+		if (isNil(m_values.get(slot))) return false;
+		key = valueInteger(static_cast<i32>(slot + 1));
+		value = m_values.get(slot);
 		return true;
 	}
-	const size_t hashIndex = slot - m_array.size();
-	if (isNil(m_hashKeys[hashIndex]) || isNil(m_hashValues[hashIndex])) return false;
-	key = m_hashKeys[hashIndex];
-	value = m_hashValues[hashIndex];
+	const size_t hashIndex = slot - m_arraySize;
+	if (isNil(m_values.get(hashKeySlot(hashIndex))) || isNil(m_values.get(hashValueSlot(hashIndex)))) return false;
+	key = m_values.get(hashKeySlot(hashIndex));
+	value = m_values.get(hashValueSlot(hashIndex));
 	return true;
 }
 
-size_t Table::nextEntry(const Value& after, Value& key, Value& value) const {
+size_t Table::nextEntry(const Value& rawAfter, Value& key, Value& value) const {
+	const Value after = canonicalTableKey(rawAfter);
 	size_t arrayStart = 0;
 	size_t hashStart = 0;
 	if (!isNil(after)) {
 		int index = 0;
 		if (getArrayIndex(after, index)
-			&& index < static_cast<int>(m_array.size())) {
+			&& index < static_cast<int>(m_arraySize)) {
 			arrayStart = static_cast<size_t>(index + 1);
 		} else {
 			const int nodeIndex = findNodeIndex(after, true);
 			if (nodeIndex < 0) {
 				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_NEXT_KEY);
 			}
-			arrayStart = m_array.size();
+			arrayStart = m_arraySize;
 			hashStart = static_cast<size_t>(nodeIndex + 1);
 		}
 	}
-	for (size_t i = arrayStart; i < m_array.size(); ++i) {
-		if (!isNil(m_array[i])) {
-			key = valueNumber(static_cast<double>(i + 1));
-			value = m_array[i];
+	for (size_t i = arrayStart; i < m_arraySize; ++i) {
+		if (!isNil(m_values.get(i))) {
+			key = valueInteger(static_cast<i32>(i + 1));
+			value = m_values.get(i);
 			return i - arrayStart + 1;
 		}
 	}
-	const size_t arraySlots = m_array.size() - arrayStart;
+	const size_t arraySlots = m_arraySize - arrayStart;
 	const int hashIndex = findNextLiveHashIndex(hashStart);
 	if (hashIndex >= 0) {
 		const size_t slot = static_cast<size_t>(hashIndex);
-		key = m_hashKeys[slot];
-		value = m_hashValues[slot];
+		key = m_values.get(hashKeySlot(slot));
+		value = m_values.get(hashValueSlot(slot));
 		return arraySlots + 2 * (slot - hashStart + 1);
 	}
 	key = valueNil();
@@ -592,7 +604,7 @@ size_t Table::nextEntry(const Value& after, Value& key, Value& value) const {
 }
 
 u32 Table::captureSnapshot(CpuSnapshot& snapshot, const CpuSnapshotValueWriter& writeValue) const {
-	const u32 arrayCapacity = static_cast<u32>(m_array.size());
+	const u32 arrayCapacity = static_cast<u32>(m_arraySize);
 	const u32 hashSize = static_cast<u32>(m_hashSize);
 	const u32 offset = snapshot.reserveWords(SNAP_TABLE_DATA + arrayCapacity * CPU_SNAPSHOT_VALUE_WORDS + hashSize * (2 * CPU_SNAPSHOT_VALUE_WORDS + 1));
 	snapshot.setWord(offset + SNAP_TABLE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Table));
@@ -601,15 +613,15 @@ u32 Table::captureSnapshot(CpuSnapshot& snapshot, const CpuSnapshotValueWriter& 
 	snapshot.setWord(offset + SNAP_TABLE_ARRAY_CAPACITY, arrayCapacity);
 	snapshot.setWord(offset + SNAP_TABLE_HASH_SIZE, hashSize);
 	snapshot.setWord(offset + SNAP_TABLE_HASH_FREE, static_cast<u32>(m_hashFree));
-	writeValue(offset + SNAP_TABLE_METATABLE, metatable ? valueTable(metatable) : valueNil());
+	writeValue(offset + SNAP_TABLE_METATABLE, metatable ? valueTable(m_heap.reference(metatable)) : valueNil());
 	u32 cursor = offset + SNAP_TABLE_DATA;
-	for (Value value : m_array) {
-		writeValue(cursor, value);
+	for (size_t index = 0; index < m_arraySize; ++index) {
+		writeValue(cursor, m_values.get(index));
 		cursor += CPU_SNAPSHOT_VALUE_WORDS;
 	}
 	for (size_t index = 0; index < m_hashSize; ++index) {
-		writeValue(cursor, m_hashKeys[index]);
-		writeValue(cursor + CPU_SNAPSHOT_VALUE_WORDS, m_hashValues[index]);
+		writeValue(cursor, m_values.get(hashKeySlot(index)));
+		writeValue(cursor + CPU_SNAPSHOT_VALUE_WORDS, m_values.get(hashValueSlot(index)));
 		snapshot.setWord(cursor + 2 * CPU_SNAPSHOT_VALUE_WORDS, static_cast<u32>(m_hashNext[index]));
 		cursor += 2 * CPU_SNAPSHOT_VALUE_WORDS + 1;
 	}
@@ -620,33 +632,33 @@ void Table::restoreSnapshot(const CpuSnapshotReader& reader, u32 offset) {
 	const auto& snapshot = reader.snapshot;
 	const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
 	const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
-	if (m_array.size() != arrayCapacity || m_hashSize != hashSize) prepareRestoreStorage(arrayCapacity, hashSize);
+	if (m_arraySize != arrayCapacity || m_hashSize != hashSize) prepareRestoreStorage(arrayCapacity, hashSize);
 	m_lengthHint = snapshot.word(offset + SNAP_TABLE_LENGTH_HINT);
 	m_hashFree = snapshot.integer(offset + SNAP_TABLE_HASH_FREE);
 	const Value savedMetatable = reader.readValue(offset + SNAP_TABLE_METATABLE);
-	metatable = isNil(savedMetatable) ? nullptr : asTable(savedMetatable);
+	metatable = isNil(savedMetatable) ? nullptr : asTable(savedMetatable, m_heap);
 	u32 cursor = offset + SNAP_TABLE_DATA;
-	for (Value& value : m_array) {
-		value = reader.readValue(cursor);
+	for (size_t index = 0; index < m_arraySize; ++index) {
+		m_values.set(index, reader.readValue(cursor));
 		cursor += CPU_SNAPSHOT_VALUE_WORDS;
 	}
 	for (size_t index = 0; index < m_hashSize; ++index) {
-		m_hashKeys[index] = reader.readValue(cursor);
-		m_hashValues[index] = reader.readValue(cursor + CPU_SNAPSHOT_VALUE_WORDS);
+		m_values.set(hashKeySlot(index), reader.readValue(cursor));
+		m_values.set(hashValueSlot(index), reader.readValue(cursor + CPU_SNAPSHOT_VALUE_WORDS));
 		m_hashNext[index] = snapshot.integer(cursor + 2 * CPU_SNAPSHOT_VALUE_WORDS);
 		cursor += 2 * CPU_SNAPSHOT_VALUE_WORDS + 1;
 	}
 }
 
 size_t Table::trackedHeapBytes() const {
-	return trackedHeapBytesForCapacities(m_array.size(), m_hashSize);
+	return trackedHeapBytesForCapacities(m_arraySize, m_hashSize);
 }
 
 void Table::prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity) {
 	const size_t previousBytes = trackedHeapBytes();
 	m_lengthHint = 0;
 	allocateStorage(arrayCapacity, hashCapacity);
-	m_luaHeap.adjustForRestore(previousBytes, trackedHeapBytes());
+	m_heap.budget.adjustForRestore(previousBytes, trackedHeapBytes());
 }
 
 
