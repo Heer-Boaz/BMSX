@@ -1,4 +1,5 @@
-import { numberToF32Bits, encodeSignedFix16 } from '../../../machine/ts/machine/common/numeric';
+import { numberToF32Bits } from '../../../machine/ts/common/float32';
+import { encodeSignedFix16 } from '../../../machine/ts/machine/common/numeric';
 import { GEO_SCRATCH_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import * as io from '../../../machine/ts/spec/bmsx/io';
 import * as geo from '../../../machine/ts/machine/devices/geometry/contracts';

@@ -1,3 +1,4 @@
+#include "common/float32.h"
 #include "machine/common/numeric.h"
 #include "machine/machine.h"
 #include "machine/devices/geometry/overlap2d.h"

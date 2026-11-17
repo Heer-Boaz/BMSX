@@ -1,3 +1,4 @@
+#include "common/float32.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/native_block.h"

@@ -1,4 +1,4 @@
-import { f32BitsToNumber, numberToF32Bits } from '../../common/numeric';
+import { f32BitsToNumber, numberToF32Bits } from '../../../common/float32';
 import type { Memory } from '../../memory/memory';
 import type { MemoryWordCounters } from '../../memory/word_counters';
 import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';

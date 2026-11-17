@@ -72,18 +72,6 @@ inline auto ceilDiv4(int value) -> int {
 	return (value + 3) >> 2;
 }
 
-inline auto f32BitsToNumber(u32 bits) -> f32 {
-	f32 value = 0.0F;
-	std::memcpy(&value, &bits, sizeof(value));
-	return value;
-}
-
-inline auto numberToF32Bits(f32 value) -> u32 {
-	u32 bits = 0U;
-	std::memcpy(&bits, &value, sizeof(bits));
-	return bits;
-}
-
 inline auto saturateI32(i64 value) -> i32 {
 	if (value < static_cast<i64>(std::numeric_limits<i32>::min())) {
 		return std::numeric_limits<i32>::min();
