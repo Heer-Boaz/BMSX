@@ -1,11 +1,11 @@
-import { luaPow } from '../../../../../machine/ts/spec/blua32/pow';
+import { integerConstant, evaluateNumberUnary, evaluateNumberBinary, numberConstantValue, type NumberConstant } from '../../number';
+import { LuaUnaryOperator, LuaBinaryOperator } from '../../syntax/ast';
 // start normalized-body-acceptable -- Value-folding helpers mirror opcode cases; sharing them would hide the rewrite intent.
 import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
 import { MAX_SIGNED_BX, MIN_SIGNED_BX } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { utf8CodepointCount, utf8Compare } from '../../../../../machine/ts/common/utf8';
 import type { ProgramConstant } from '../program';
 import type { Instruction, OptimizationContext } from './index';
-import { luaFloorDivide, luaModulo } from '../../../../../machine/ts/spec/blua32/numeric';
 
 export const enum ConstValueKind {
 	Nil,
@@ -17,7 +17,7 @@ export const enum ConstValueKind {
 export type ConstValue =
 	| { kind: ConstValueKind.Nil; value: null; constIndex: number }
 	| { kind: ConstValueKind.Boolean; value: boolean; constIndex: number }
-	| { kind: ConstValueKind.Number; value: number; constIndex: number }
+	| { kind: ConstValueKind.Number; value: NumberConstant; constIndex: number }
 	| { kind: ConstValueKind.String; value: string; constIndex: number };
 
 export const constValueForOptimization = (value: ProgramConstant, constIndex: number): ConstValue => {
@@ -51,14 +51,10 @@ export const getImmediateConstValue = (instruction: Instruction, context: Optimi
 			return constValueForOptimization(false, context.constIndex(false));
 		case OpCode.KTRUE:
 			return constValueForOptimization(true, context.constIndex(true));
-		case OpCode.K0:
-			return constValueForOptimization(0, context.constIndex(0));
-		case OpCode.K1:
-			return constValueForOptimization(1, context.constIndex(1));
-		case OpCode.KM1:
-			return constValueForOptimization(-1, context.constIndex(-1));
-		case OpCode.KSMI:
-			return constValueForOptimization(instruction.b, context.constIndex(instruction.b));
+		case OpCode.K0: case OpCode.K1: case OpCode.KM1: case OpCode.KSMI: {
+			const value = integerConstant(instruction.op === OpCode.K0 ? 0 : instruction.op === OpCode.K1 ? 1 : instruction.op === OpCode.KM1 ? -1 : instruction.b);
+			return constValueForOptimization(value, context.constIndex(value));
+		}
 		default:
 			return null;
 	}
@@ -120,8 +116,9 @@ export const replaceWithConst = (instruction: Instruction, target: number, value
 		case ConstValueKind.Number:
 			break;
 	}
-	if (Number.isInteger(constant.value) && !Object.is(constant.value, -0)) {
-		if (constant.value === 0) {
+	if (constant.value.kind === 'integer') {
+		const integer = constant.value.word | 0;
+		if (integer === 0) {
 			instruction.op = OpCode.K0;
 			instruction.a = target;
 			instruction.b = 0;
@@ -129,7 +126,7 @@ export const replaceWithConst = (instruction: Instruction, target: number, value
 			instruction.format = 'ABC';
 			return constant;
 		}
-		if (constant.value === 1) {
+		if (integer === 1) {
 			instruction.op = OpCode.K1;
 			instruction.a = target;
 			instruction.b = 0;
@@ -137,7 +134,7 @@ export const replaceWithConst = (instruction: Instruction, target: number, value
 			instruction.format = 'ABC';
 			return constant;
 		}
-		if (constant.value === -1) {
+		if (integer === -1) {
 			instruction.op = OpCode.KM1;
 			instruction.a = target;
 			instruction.b = 0;
@@ -145,10 +142,10 @@ export const replaceWithConst = (instruction: Instruction, target: number, value
 			instruction.format = 'ABC';
 			return constant;
 		}
-		if (constant.value >= MIN_SIGNED_BX && constant.value <= MAX_SIGNED_BX) {
+		if (integer >= MIN_SIGNED_BX && integer <= MAX_SIGNED_BX) {
 			instruction.op = OpCode.KSMI;
 			instruction.a = target;
-			instruction.b = constant.value;
+			instruction.b = integer;
 			instruction.c = 0;
 			instruction.format = 'ABx';
 			return constant;
@@ -162,68 +159,47 @@ export const replaceWithConst = (instruction: Instruction, target: number, value
 	return constant;
 };
 
-export const evaluateUnary = (op: OpCode, value: ConstValue): ProgramConstant | null => {
+export const evaluateUnary = (op: OpCode, value: ConstValue): ProgramConstant | undefined => {
 	switch (op) {
 		case OpCode.UNM:
-			return value.kind === ConstValueKind.Number ? -value.value : null;
+			return value.kind === ConstValueKind.Number ? evaluateNumberUnary(LuaUnaryOperator.Negate, value.value) : undefined;
 		case OpCode.BNOT:
-			return value.kind === ConstValueKind.Number ? ~value.value : null;
+			return value.kind === ConstValueKind.Number ? evaluateNumberUnary(LuaUnaryOperator.BitwiseNot, value.value) : undefined;
 		case OpCode.NOT:
 			return value.kind === ConstValueKind.Nil
 				|| (value.kind === ConstValueKind.Boolean && !value.value);
 		case OpCode.LEN:
 			return value.kind === ConstValueKind.String
-				? utf8CodepointCount(value.value)
-				: null;
+				? integerConstant(utf8CodepointCount(value.value))
+				: undefined;
 		default:
-			return null;
+			return undefined;
 	}
 };
 
-export const evaluateBinary = (op: OpCode, left: ConstValue, right: ConstValue): ProgramConstant | null => {
-	if (left.kind !== ConstValueKind.Number || right.kind !== ConstValueKind.Number) {
-		return null;
-	}
-	switch (op) {
-		case OpCode.ADD:
-			return left.value + right.value;
-		case OpCode.SUB:
-			return left.value - right.value;
-		case OpCode.MUL:
-			return left.value * right.value;
-		case OpCode.DIV:
-			return left.value / right.value;
-		case OpCode.MOD:
-			return luaModulo(left.value, right.value);
-		case OpCode.FLOORDIV:
-			return luaFloorDivide(left.value, right.value);
-		case OpCode.POW:
-			return luaPow(left.value, right.value);
-		case OpCode.BAND:
-			return left.value & right.value;
-		case OpCode.BOR:
-			return left.value | right.value;
-		case OpCode.BXOR:
-			return left.value ^ right.value;
-		case OpCode.SHL:
-			return left.value << (right.value & 31);
-		case OpCode.SHR:
-			return left.value >> (right.value & 31);
-		default:
-			return null;
-	}
+const binaryOperators: Partial<Record<OpCode, LuaBinaryOperator>> = {
+	[OpCode.ADD]: LuaBinaryOperator.Add, [OpCode.SUB]: LuaBinaryOperator.Subtract, [OpCode.MUL]: LuaBinaryOperator.Multiply,
+	[OpCode.DIV]: LuaBinaryOperator.Divide, [OpCode.MOD]: LuaBinaryOperator.Modulus, [OpCode.FLOORDIV]: LuaBinaryOperator.FloorDivide,
+	[OpCode.POW]: LuaBinaryOperator.Exponent, [OpCode.BAND]: LuaBinaryOperator.BitwiseAnd, [OpCode.BOR]: LuaBinaryOperator.BitwiseOr,
+	[OpCode.BXOR]: LuaBinaryOperator.BitwiseXor, [OpCode.SHL]: LuaBinaryOperator.ShiftLeft, [OpCode.SHR]: LuaBinaryOperator.ShiftRight,
+};
+export const evaluateBinary = (op: OpCode, left: ConstValue, right: ConstValue): ProgramConstant | undefined => {
+	if (left.kind !== ConstValueKind.Number || right.kind !== ConstValueKind.Number) return undefined;
+	const operator = binaryOperators[op];
+	return operator === undefined ? null : evaluateNumberBinary(operator, left.value, right.value);
 };
 
 export const evaluateComparison = (op: OpCode, left: ConstValue, right: ConstValue): boolean | null => {
 	switch (op) {
 		case OpCode.EQ:
-			return left.value === right.value;
+			return left.kind === ConstValueKind.Number && right.kind === ConstValueKind.Number
+				? numberConstantValue(left.value) === numberConstantValue(right.value) : left.value === right.value;
 		case OpCode.LT:
 		case OpCode.LE:
 			if (left.kind === ConstValueKind.Number && right.kind === ConstValueKind.Number) {
 				return op === OpCode.LT
-					? left.value < right.value
-					: left.value <= right.value;
+					? numberConstantValue(left.value) < numberConstantValue(right.value)
+					: numberConstantValue(left.value) <= numberConstantValue(right.value);
 			}
 			if (left.kind === ConstValueKind.String && right.kind === ConstValueKind.String) {
 				const order = utf8Compare(left.value, right.value);

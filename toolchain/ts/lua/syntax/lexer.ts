@@ -1,3 +1,4 @@
+import { parseNumberConstant } from '../number';
 import { OwnedSourceText } from '../../text/owned_source_text';
 import { LuaSourceLocations } from './source_locations';
 import { createLuaSourceUnit, type LuaSourceUnitPlacement } from './source_layout';
@@ -304,8 +305,8 @@ export class LuaLexer {
 			this.scanDecimalExponent();
 		}
 		const lexeme = this.currentLexeme();
-		const parsed = Number(lexeme);
-		if (!Number.isFinite(parsed)) {
+		const parsed = parseNumberConstant(lexeme);
+		if (parsed === null) {
 			throw new LuaLexicalError('[LuaLexer] Numeric literal is not finite.');
 		}
 		this.pushToken(LuaTokenType.Number, parsed, lexeme);
@@ -373,7 +374,7 @@ export class LuaLexer {
 						digits += this.advance();
 					}
 					const value = Number.parseInt(digits, 10);
-					if (!Number.isFinite(value) || value > 255) {
+					if (value > 255) {
 						throw new LuaLexicalError('[LuaLexer] Invalid decimal escape sequence.');
 					}
 					return String.fromCharCode(value);
@@ -430,8 +431,8 @@ export class LuaLexer {
 			this.consumeDigits();
 		}
 		const lexeme = this.currentLexeme();
-		const parsed = this.parseHexLiteral(lexeme);
-		if (!Number.isFinite(parsed)) {
+		const parsed = parseNumberConstant(lexeme);
+		if (parsed === null) {
 			throw new LuaLexicalError('[LuaLexer] Numeric literal is not finite.');
 		}
 		this.pushToken(LuaTokenType.Number, parsed, lexeme);
@@ -535,28 +536,6 @@ export class LuaLexer {
 		return this.source.charAt(index) || '\0';
 	}
 
-		private parseHexLiteral(lexeme: string): number {
-			const match = /^0[xX]([0-9A-Fa-f]*)(?:\.([0-9A-Fa-f]*))?(?:[pP]([+-]?[0-9]+))?$/.exec(lexeme);
-			const integerPart = match[1];
-			const fractionalPart = match[2];
-			const exponentPart = match[3];
-			if (integerPart.length === 0 && (fractionalPart === undefined || fractionalPart.length === 0)) {
-				throw new LuaLexicalError('[LuaLexer] Hexadecimal literal requires digits.');
-			}
-		let value = 0;
-		for (let index = 0; index < integerPart.length; index += 1) {
-			value = value * 16 + Number.parseInt(integerPart.charAt(index), 16);
-		}
-		let fraction = 0;
-			if (fractionalPart !== undefined) {
-				for (let index = 0; index < fractionalPart.length; index += 1) {
-					const digit = Number.parseInt(fractionalPart.charAt(index), 16);
-					fraction += digit / Math.pow(16, index + 1);
-				}
-			}
-			const exponent = exponentPart === undefined ? 0 : Number.parseInt(exponentPart, 10);
-		return (value + fraction) * Math.pow(2, exponent);
-	}
 
 	private pushToken(type: LuaTokenType, literal: LuaTokenLiteral, lexeme = this.currentLexeme()): void {
 		const start = this.tokenStartIndex - this.unit.offset;

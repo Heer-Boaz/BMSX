@@ -1,3 +1,5 @@
+import { integerConstant, type NumberConstant } from '../lua/number';
+import type { ProgramConstant } from '../lua/compiler/program';
 import { inlineCallSiteChainsEqual } from '../lua/compiler/inline_debug';
 import { LexicalDeclarationKind, StaticDeclarationKind } from '../lua/compiler/declaration_kind';
 import type { SourceRange } from '../lua/source_range';
@@ -135,7 +137,7 @@ export type Blua32LinkBaseline = {
 	captureSources?: LuaSourceCorrespondence;
 };
 
-type ObjectConstant = null | boolean | number | string;
+type ObjectConstant = ProgramConstant;
 
 type FunctionRecordLayout = {
 	protoIndexBySlot: number[];
@@ -357,16 +359,16 @@ function resolveConstValueRelocation(
 	bssAddress: number,
 	rodataSymbols: ReadonlyArray<ProgramRodataSymbol>,
 	rodataAddress: number,
-): number {
+): NumberConstant {
 	switch (reloc.kind) {
 		case 'data_addr':
-			return dataAddress + dataSymbols[reloc.symbolIndex].offset + reloc.addend;
+			return integerConstant(dataAddress + dataSymbols[reloc.symbolIndex].offset + reloc.addend);
 		case 'data_lma_addr':
-			return dataLoadAddress + dataSymbols[reloc.symbolIndex].offset + reloc.addend;
+			return integerConstant(dataLoadAddress + dataSymbols[reloc.symbolIndex].offset + reloc.addend);
 		case 'bss_addr':
-			return bssAddress + bssSymbols[reloc.symbolIndex].offset + reloc.addend;
+			return integerConstant(bssAddress + bssSymbols[reloc.symbolIndex].offset + reloc.addend);
 		case 'rodata_addr':
-			return rodataAddress + rodataSymbols[reloc.symbolIndex].offset + reloc.addend;
+			return integerConstant(rodataAddress + rodataSymbols[reloc.symbolIndex].offset + reloc.addend);
 		case 'link_value':
 			return evaluateProgramLinkValueExpression(reloc.expression);
 	}
@@ -922,7 +924,6 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		}
 	}
 
-	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 	const stringAddress = input.loadAddress + stringTableOffset;
 	for (let index = 0; index < constants.length; index += 1) {
 		const value = constants[index];
@@ -939,8 +940,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET, stringAddress + stringRecord.offset);
 			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET, stringRecord.bytes.byteLength);
 		} else {
-			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag.Number);
-			view.setFloat64(recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET, value, true);
+			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_TAG_OFFSET, value.kind === 'integer' ? Blua32ConstantTag.Integer : Blua32ConstantTag.Float);
+			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET, value.word);
 		}
 	}
 
@@ -1162,24 +1163,16 @@ export function applyBlua32LinkValues(
 	values: ReadonlyMap<string, number>,
 ): void {
 	const constantTableOffset = linked.layout.header.constantTableAddress - linked.layout.address;
-	const view = new DataView(
-		linked.bytes.buffer,
-		linked.bytes.byteOffset,
-		linked.bytes.byteLength,
-	);
+
 	for (let index = 0; index < relocs.length; index += 1) {
 		const reloc = relocs[index];
 		if (reloc.kind !== 'link_value' || reloc.modulePath !== modulePath) {
 			continue;
 		}
 		const value = evaluateProgramLinkValueExpression(reloc.expression, values);
-		view.setFloat64(
-			constantTableOffset
-				+ reloc.constIndex * BLUA32_CONSTANT_RECORD_SIZE
-				+ BLUA32_CONSTANT_PAYLOAD_OFFSET,
-			value,
-			true,
-		);
+		const record = constantTableOffset + reloc.constIndex * BLUA32_CONSTANT_RECORD_SIZE;
+		writeLE32(linked.bytes, record + BLUA32_CONSTANT_TAG_OFFSET, value.kind === 'integer' ? Blua32ConstantTag.Integer : Blua32ConstantTag.Float);
+		writeLE32(linked.bytes, record + BLUA32_CONSTANT_PAYLOAD_OFFSET, value.word);
 		linked.layout.constants[reloc.constIndex] = value;
 	}
 }

@@ -40,7 +40,7 @@ import {
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import type { ProgramMetadata, Proto, UpvalueDesc } from '../../toolchain/ts/lua/compiler/program';
+import type { ProgramConstant, ProgramMetadata, Proto, UpvalueDesc } from '../../toolchain/ts/lua/compiler/program';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -110,7 +110,7 @@ export type TestBlua32Function = {
 export type TestBlua32Source = {
 	text: Uint8Array;
 	functions: ReadonlyArray<TestBlua32Function>;
-	constants?: ReadonlyArray<null | boolean | number | string>;
+	constants?: ReadonlyArray<ProgramConstant>;
 	globalNames?: ReadonlyArray<string>;
 	systemGlobalNames?: ReadonlyArray<string>;
 	constRelocs?: ReadonlyArray<ProgramImageConstReloc>;

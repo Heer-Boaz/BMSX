@@ -435,7 +435,7 @@ const computeBlockConstantIn = (
 						const operand = constants.get(instruction.b);
 						if (operand) {
 							const result = evaluateUnary(instruction.op, operand);
-							if (result !== null) {
+							if (result !== undefined) {
 								recordRegisterConstant(
 									constants,
 									context,
@@ -464,7 +464,7 @@ const computeBlockConstantIn = (
 						const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 						if (left && right) {
 							const result = evaluateBinary(instruction.op, left, right);
-							if (result !== null) {
+							if (result !== undefined) {
 								recordRegisterConstant(
 									constants,
 									context,
@@ -580,7 +580,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				const operand = constants.get(instruction.b);
 				if (operand) {
 					const result = evaluateUnary(instruction.op, operand);
-					if (result !== null) {
+					if (result !== undefined) {
 						const folded = replaceWithConst(instruction, instruction.a, result, context);
 						recordRegisterConstant(constants, context, instruction.a, folded);
 						continue;
@@ -606,7 +606,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 				if (left && right) {
 					const result = evaluateBinary(instruction.op, left, right);
-					if (result !== null) {
+					if (result !== undefined) {
 						const folded = replaceWithConst(instruction, instruction.a, result, context);
 						recordRegisterConstant(constants, context, instruction.a, folded);
 						continue;
@@ -971,7 +971,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const operand = constants.get(instruction.b);
 					if (operand) {
 						const result = evaluateUnary(instruction.op, operand);
-						if (result !== null) {
+						if (result !== undefined) {
 							setConst(
 								constants,
 								copies,
@@ -1000,7 +1000,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 					if (left && right) {
 						const result = evaluateBinary(instruction.op, left, right);
-						if (result !== null) {
+						if (result !== undefined) {
 							setConst(
 								constants,
 								copies,

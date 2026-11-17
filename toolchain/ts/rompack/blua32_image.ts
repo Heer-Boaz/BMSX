@@ -1,3 +1,5 @@
+import type { ProgramConstant } from '../lua/compiler/program';
+import { integerConstant } from '../lua/number';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import {
 	Blua32ConstantTag,
@@ -144,7 +146,7 @@ export type Blua32FunctionRecord = {
 	upvalues: Blua32UpvalueRecord[];
 };
 
-export type Blua32EncodedConstant = null | boolean | number | string;
+export type Blua32EncodedConstant = ProgramConstant;
 
 export type Blua32ImageLayout = {
 	address: number;
@@ -304,8 +306,11 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 			case Blua32ConstantTag.True:
 				constants[index] = true;
 				break;
-			case Blua32ConstantTag.Number:
-				constants[index] = view.getFloat64(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true);
+			case Blua32ConstantTag.Integer:
+				constants[index] = integerConstant(view.getInt32(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true));
+				break;
+			case Blua32ConstantTag.Float:
+				constants[index] = { kind: 'float', word: view.getUint32(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true) };
 				break;
 			case Blua32ConstantTag.String:
 				constants[index] = decodeString(

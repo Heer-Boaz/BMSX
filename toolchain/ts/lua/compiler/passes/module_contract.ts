@@ -1,3 +1,4 @@
+import { integerConstant } from '../../number';
 import type { LuaChunk, LuaExpression } from '../../syntax/ast';
 import type { LuaSemanticFrontend, LuaSemanticFrontendFile } from '../../semantic/frontend';
 import { findLuaModuleExport } from '../../semantic/module_bindings';
@@ -128,7 +129,7 @@ const buildModuleCompileInfo = (
 				expression: {
 					kind: 'export',
 					exportPath,
-					value,
+					value: integerConstant(value),
 				},
 			});
 		}

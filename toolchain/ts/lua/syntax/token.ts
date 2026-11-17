@@ -1,3 +1,4 @@
+import type { NumberConstant } from '../number';
 import type { LuaSyntaxSpan } from './source_locations';
 
 export const enum LuaTokenType {
@@ -78,7 +79,7 @@ export function isLuaTrivia(type: LuaTokenType): boolean {
 	return type >= LuaTokenType.WhitespaceTrivia && type <= LuaTokenType.MultiLineCommentTrivia;
 }
 
-export type LuaTokenLiteral = number | string | boolean;
+export type LuaTokenLiteral = NumberConstant | string | boolean;
 
 /** A token is a lexical-block-relative span, not a node wrapping another span. */
 export type LuaToken = LuaSyntaxSpan & {

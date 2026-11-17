@@ -1,3 +1,4 @@
+import { integerConstant, type NumberConstant } from '../number';
 import { LuaBinaryOperator, LuaSyntaxKind, LuaUnaryOperator, type LuaExpression } from '../syntax/ast';
 import type { Decl, FileSemanticData, LuaSemanticWorkspaceSnapshot, SymbolID } from '../semantic/model';
 import { writtenSourceExpression } from '../semantic/written_sources';
@@ -45,13 +46,13 @@ export class StaticConstants implements StaticNumericContext<FileSemanticData, E
 			case LuaSyntaxKind.IndexExpression:
 				return this.bindings.value(file, expression);
 			case LuaSyntaxKind.SizeOfExpression:
-				return { kind: 'number', value: this.types.resolve(file.file, expression.typeRef).size };
+				return { kind: 'number', value: integerConstant(this.types.resolve(file.file, expression.typeRef).size) };
 			case LuaSyntaxKind.OffsetOfExpression:
-				return { kind: 'number', value: this.types.offsetOf(file.file, expression) };
+				return { kind: 'number', value: integerConstant(this.types.offsetOf(file.file, expression)) };
 			case LuaSyntaxKind.UnaryExpression: {
 				if (expression.operator === LuaUnaryOperator.Length) {
 					const count = this.storageLength(file, expression.operand);
-					if (count !== undefined) return { kind: 'number', value: count };
+					if (count !== undefined) return { kind: 'number', value: integerConstant(count) };
 				}
 				const operand = this.evaluate(file, expression.operand);
 				return operand === undefined ? undefined : evaluateStaticUnaryOperator(expression.operator, operand);
@@ -70,7 +71,7 @@ export class StaticConstants implements StaticNumericContext<FileSemanticData, E
 	}
 
 	/** Numeric initializer admission is narrower than general constant folding. */
-	public evaluateNumeric(file: FileSemanticData, expression: LuaExpression): number | undefined {
+	public evaluateNumeric(file: FileSemanticData, expression: LuaExpression): NumberConstant | undefined {
 		const value = evaluateStaticNumeric(this, file, expression);
 		return value?.kind === 'number' ? value.value : undefined;
 	}

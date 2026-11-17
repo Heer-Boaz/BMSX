@@ -1,3 +1,4 @@
+import type { NumberConstant } from '../number';
 import type { OptimizationLevel } from './optimizer';
 import type { LexicalDeclarationKind } from './declaration_kind';
 import type { ProgramWordRange } from './word_range';
@@ -6,7 +7,7 @@ import type { OpCode } from '../../../../machine/ts/spec/blua32/opcode';
 import type { TraceStatementSelection } from './trace_statement';
 import type { ProgramStaticScopes } from './static_debug';
 
-export type ProgramConstant = null | boolean | number | string;
+export type ProgramConstant = null | boolean | NumberConstant | string;
 
 export type ProgramInitParticipant = {
 	functionId: string;

@@ -2,7 +2,8 @@ import { extractSourceRangeText } from './source_text';
 import { CLOSURE_ADDRESS_REGISTER_FLAG, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP, decodeValueCount } from '../../../machine/ts/spec/blua32/opcode';
 import { OPCODE_NAMES } from '../lua/opcode_metadata';
-import { formatNumber } from '../../../machine/ts/common/number_format';
+import { formatInteger } from '../../../machine/ts/common/number_format';
+import { numberConstantText } from '../lua/number';
 import {
 	type Blua32EncodedConstant,
 	type Blua32ImageLayout,
@@ -94,7 +95,7 @@ const formatBlua32Value = (constant: Blua32EncodedConstant): string => {
 		case true:
 			return 'true';
 	}
-	return typeof constant === 'string' ? JSON.stringify(constant) : formatNumber(constant);
+	return typeof constant === 'string' ? JSON.stringify(constant) : numberConstantText(constant);
 };
 
 const formatSourceConst = (
@@ -349,7 +350,7 @@ const buildInstructionOperands = (
 		case OpCode.KM1:
 			return [registerOperand('a', 'dst', a)];
 		case OpCode.KSMI:
-			return [registerOperand('a', 'dst', a), plainOperand('bx', 'imm', formatNumber(sbx))];
+			return [registerOperand('a', 'dst', a), plainOperand('bx', 'imm', formatInteger(sbx))];
 		case OpCode.LOADK:
 			return [registerOperand('a', 'dst', a), plainOperand('bx', 'const', formatSourceConst(source, bx, options))];
 		case OpCode.LOADKR:
@@ -541,7 +542,7 @@ const formatInstruction = (
 		case OpCode.KM1:
 			return `KM1 r${a}`;
 		case OpCode.KSMI:
-			return `KSMI r${a}, ${formatNumber(sbx)}`;
+			return `KSMI r${a}, ${formatInteger(sbx)}`;
 		case OpCode.LOADK:
 			return `LOADK r${a}, ${formatSourceConst(source, bx, options)}`;
 		case OpCode.LOADKR:

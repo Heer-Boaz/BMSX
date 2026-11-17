@@ -1,3 +1,4 @@
+import { numberConstantValue } from '../number';
 import { MemoryAccessKind } from '../../../../machine/ts/spec/blua32/memory_access_kind';
 import { LuaSyntaxKind, type LuaOffsetOfExpression, type LuaTypeReference } from '../syntax/ast';
 import type { LuaSyntaxSpan } from '../syntax/source_locations';
@@ -93,10 +94,10 @@ export class StructTypes {
 				dimensions.push(inferredOuterLength);
 			} else {
 				const value = this.constants.evaluate(file, expression);
-				if (value?.kind !== 'number' || !Number.isInteger(value.value) || value.value <= 0) {
+				if (value?.kind !== 'number' || !Number.isInteger(numberConstantValue(value.value)) || numberConstantValue(value.value) <= 0) {
 					throw new StaticSourceError('Struct array length must be a positive compile-time integer.', path, expression.span);
 				}
-				dimensions.push(value.value);
+				dimensions.push(numberConstantValue(value.value));
 			}
 		}
 		return makeStructResolvedType(typeRef.name, primitive === undefined ? layout!.size : primitive.size,

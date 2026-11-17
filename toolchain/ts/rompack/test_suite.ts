@@ -1,3 +1,4 @@
+import { numberConstantValue } from '../lua/number';
 import { LuaSyntaxError } from '../lua/errors';
 import { toLuaModulePath } from '../lua/module_path';
 import { findLuaModuleExport } from '../lua/semantic/module_bindings';
@@ -84,10 +85,10 @@ export function discoverGuestTestSuite(chunk: LuaChunk, sourcePath: string): Gue
 			if (!names.has(name)) {
 				throw new LuaSyntaxError(`Phase cycle budget names unknown test '${name}'.`, sourcePath, fieldRange.start.line, fieldRange.start.column);
 			}
-			if (value.kind !== LuaSyntaxKind.NumericLiteralExpression || !Number.isSafeInteger(value.value) || value.value <= 0) {
+			if (value.kind !== LuaSyntaxKind.NumericLiteralExpression || !Number.isInteger(numberConstantValue(value.value)) || numberConstantValue(value.value) <= 0) {
 				throw new LuaSyntaxError(`Phase cycle budget for test '${name}' must be a positive integer literal.`, sourcePath, fieldRange.start.line, fieldRange.start.column);
 			}
-			budgets.set(name, value.value);
+			budgets.set(name, numberConstantValue(value.value));
 		});
 		if (budgets.size !== phaseCycles.value.fields.length) {
 			throw new LuaSyntaxError('Phase cycle budgets must have static test names.', sourcePath, phaseCycles.range.start.line, phaseCycles.range.start.column);

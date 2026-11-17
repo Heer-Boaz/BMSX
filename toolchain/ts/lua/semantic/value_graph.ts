@@ -1,3 +1,4 @@
+import { type NumberConstant } from '../number';
 import type { ScopeID } from './scope_facts';
 import type { FileSemanticData, SymbolID } from './model';
 import {
@@ -38,7 +39,7 @@ let nextOwnedValueId = 1;
 
 export type SemanticLiteralValue =
 	| { kind: 'string'; value: string }
-	| { kind: 'number'; value: number }
+	| { kind: 'number'; value: NumberConstant }
 	| { kind: 'boolean'; value: boolean }
 	| { kind: 'nil'; value: null };
 
@@ -252,7 +253,7 @@ function semanticLiteralValueKey(literal: SemanticLiteralValue): string {
 		case 'string':
 			return `s\0${literal.value.length}\0${literal.value}`;
 		case 'number':
-			return `n\0${literal.value}`;
+			return `n\0${literal.value.kind}\0${literal.value.word}`;
 		case 'boolean':
 			return literal.value ? 'b:true' : 'b:false';
 		case 'nil':
@@ -413,12 +414,10 @@ export function semanticValueSourcesEqual(
 			}
 			break;
 		case 'literal':
-			if (right.root.kind !== 'literal'
-				|| left.root.literal.kind !== right.root.literal.kind
-				|| (left.root.literal.value !== right.root.literal.value
-					&& !Object.is(left.root.literal.value, right.root.literal.value))) {
-				return false;
-			}
+			if (right.root.kind !== 'literal' || left.root.literal.kind !== right.root.literal.kind) return false;
+			if (left.root.literal.kind === 'number' && right.root.literal.kind === 'number') {
+				if (left.root.literal.value.kind !== right.root.literal.value.kind || left.root.literal.value.word !== right.root.literal.value.word) return false;
+			} else if (left.root.literal.value !== right.root.literal.value) return false;
 			break;
 		case 'unknown':
 			if (right.root.kind !== 'unknown') {

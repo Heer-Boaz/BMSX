@@ -6,6 +6,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 
 namespace {
@@ -228,6 +229,19 @@ void tableHeap() {
 }
 }
 int main(int argc, char** argv) {
+	if(argc==2&&std::string(argv[1])=="--execute-rom") {
+		const std::vector<u8> bytes(std::istreambuf_iterator<char>(std::cin),{});
+		Memory memory(MemoryInit{bytes,test::cartridgeSlots()},PSX_MACHINE_SPEC.ramBytes);
+		IrqController irq(memory);ExecutionAddressSpace addresses(memory);CPU cpu(memory,irq,addresses);cpu.reset();
+		cpu.runUntilDepth(0,100000);auto results=cpu.readCompletionValues();
+		std::cout<<"budget "<<cpu.instructionBudgetRemaining<<" fault "<<cpu.readLuaFaultReasonWord()<<"\n";
+		for(size_t i=0;i<results.size();++i) {
+			const auto value=results.get(i);
+			if(valueIsString(value))std::cout<<"S "<<cpu.stringPool().toString(asStringId(value))<<"\n";
+			else std::cout<<std::hex<<static_cast<unsigned>(valueTag(value))<<' '<<valuePayload(value)<<"\n";
+		}
+		return 0;
+	}
 	if ((argc == 3 || argc == 4) && std::string(argv[1]) == "--rom") {
 		auto image=operation(static_cast<OpCode>(std::stoul(argv[2])));
 		if(argc==4)writeInstruction(image.text,0,static_cast<u8>(std::stoul(argv[2])),2,0,static_cast<u8>(std::stoul(argv[3])));

@@ -1,3 +1,4 @@
+import { evaluateNumberBinary, evaluateNumberUnary } from '../../number';
 import {
 	LuaSyntaxKind,
 	LuaUnaryOperator,
@@ -12,7 +13,6 @@ import {
 	type LuaTableConstructorExpression,
 	type LuaUnaryExpression,
 } from '../../syntax/ast';
-import { evaluateStaticNumberBinaryOperator } from '../../static/scalar';
 import type { LuaSemanticFrontendFile } from '../../semantic/frontend';
 import {
 	getBoundDeclaration,
@@ -64,9 +64,9 @@ const evaluateModuleConstLiteral = (
 				return undefined;
 			}
 			const operand = evaluateModuleConstLiteral(unary.operand, constValuesBySymbol, semantics);
-			return operand !== undefined && operand.kind === 'number'
-				? { kind: 'number', value: -operand.value }
-				: undefined;
+			if (operand?.kind !== 'number') return undefined;
+			const value = evaluateNumberUnary(unary.operator, operand.value);
+			return value === undefined ? undefined : { kind: 'number', value };
 		}
 		case LuaSyntaxKind.BinaryExpression: {
 			const binary = expression as LuaBinaryExpression;
@@ -75,7 +75,7 @@ const evaluateModuleConstLiteral = (
 			if (left?.kind !== 'number' || right?.kind !== 'number') {
 				return undefined;
 			}
-			const value = evaluateStaticNumberBinaryOperator(binary.operator, left.value, right.value);
+			const value = evaluateNumberBinary(binary.operator, left.value, right.value);
 			return value === undefined ? undefined : { kind: 'number', value };
 		}
 		default:

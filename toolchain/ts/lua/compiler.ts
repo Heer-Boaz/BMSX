@@ -43,7 +43,7 @@ import {
 	type LuaGotoStatement,
 } from './syntax/ast';
 import { OpCode, decodeValueCount, encodeFixedValueCount } from '../../../machine/ts/spec/blua32/opcode';
-import { formatNumber } from '../../../machine/ts/common/number_format';
+import { integerConstant, numberConstantKey, numberConstantValue, numberConstantInteger, numberConstantText, type NumberConstant } from './number';
 import type { SourcePosition, SourceRange } from './source_range';
 import { sourceRangesEqual } from './source_range';
 import type { LuaCaptureLayout } from './compiler/capture_layout';
@@ -310,7 +310,7 @@ type LocalBinding = {
 	kind: LocalBindingKind;
 	constValue: ProgramConstant | null;
 	hasConstValue: boolean;
-	constNumberValue: number;
+	constNumberValue: NumberConstant;
 	hasConstNumberValue: boolean;
 	constBooleanValue: boolean;
 	hasConstBooleanValue: boolean;
@@ -440,14 +440,13 @@ const MAX_DISPLACED_MEMORY_BYTE_OFFSET = MAX_DISPLACED_MEMORY_WORD_OFFSET << 2;
 const MAX_SPECIALIZED_TABLE_OPERAND = MAX_EXT_REGISTER_BC;
 
 const isSmallSignedImmediate = (value: number): boolean =>
-	Number.isInteger(value) && value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX;
+	value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX;
 
-const NEGATIVE_ZERO_CONSTANT = Symbol('negative-zero');
 
 class ProgramBuilder {
 	public readonly constPool: ProgramConstant[];
 	public readonly optLevel: OptimizationLevel;
-	private readonly constSlotByValue: Map<ProgramConstant | typeof NEGATIVE_ZERO_CONSTANT, number>;
+	private readonly constSlotByValue: Map<null | boolean | string | number, number>;
 	private readonly systemGlobalNameSet: Set<string>;
 	private readonly systemGlobalNames: string[] = [];
 	private readonly systemGlobalSlotByName: Map<string, number> = new Map();
@@ -534,7 +533,8 @@ class ProgramBuilder {
 	}
 
 	public constIndex(value: ProgramConstant): number {
-		const key = Object.is(value, -0) ? NEGATIVE_ZERO_CONSTANT : value;
+		const key = typeof value === 'string' || typeof value === 'boolean' ? value
+			: value === null ? null : numberConstantKey(value);
 		const slot = this.constSlotByValue.get(key);
 		if (slot) {
 			return slot - 1;
@@ -551,7 +551,7 @@ class ProgramBuilder {
 		addend: number,
 	): number {
 		const index = this.constPool.length;
-		this.constPool.push(0);
+		this.constPool.push(integerConstant(0));
 		this.relocatedConstIndices.add(index);
 		this.constValueRelocs.push({
 			constIndex: index,
@@ -572,7 +572,7 @@ class ProgramBuilder {
 			return slot - 1;
 		}
 		const index = this.constPool.length;
-		this.constPool.push(0);
+		this.constPool.push(integerConstant(0));
 		this.relocatedConstIndices.add(index);
 		this.linkValueRelocSlotByKey.set(key, index + 1);
 		this.constValueRelocs.push({
@@ -1269,14 +1269,14 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private exportRootSymbolHandleResolved = false;
 	private exportRootSymbolHandleCache: string | null = null;
 	private compileTimeValue: ProgramConstant = null;
-	private compileTimeNumberValue = 0;
+	private compileTimeNumberValue: NumberConstant = null;
 	private compileTimeHasNumberValue = false;
 	private compileTimeBooleanValue = false;
 	private compileTimeHasBooleanValue = false;
 	private compileTimeRelocValue: RelocatableConstExportValue | null = null;
 	private readonly initializerFlags: number[] = [];
 	private readonly initializerValues: ProgramConstant[] = [];
-	private readonly initializerNumberValues: number[] = [];
+	private readonly initializerNumberValues: NumberConstant[] = [];
 	private readonly initializerBooleanValues: boolean[] = [];
 	private readonly initializerRelocValues: Array<RelocatableConstExportValue | null> = [];
 	private readonly initializerValueRegs: number[] = [];
@@ -1517,10 +1517,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				const valueReg = this.allocTemp();
 				this.emitLoadDataLmaAddress(srcReg, dataInit, -dataInit.offset);
 				this.emitLoadDataAddress(dstReg, dataInit, -dataInit.offset);
-				this.emitLoadConst(countReg, dataByteCount >> 2);
-				this.emitLoadConst(zeroReg, 0);
-				this.emitLoadConst(wordBytesReg, 4);
-				this.emitLoadConst(oneReg, 1);
+				this.emitLoadConst(countReg, integerConstant(dataByteCount >> 2));
+				this.emitLoadConst(zeroReg, integerConstant(0));
+				this.emitLoadConst(wordBytesReg, integerConstant(4));
+				this.emitLoadConst(oneReg, integerConstant(1));
 				const loopStart = this.code.length;
 				this.emitABC(OpCode.EQ, 1, countReg, zeroReg);
 				const jumpOut = this.emitJumpPlaceholder();
@@ -1543,15 +1543,15 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				const zeroCount = batchCount !== 0 ? 8 : tailCount;
 				const zeroBase = this.allocTempBlock(zeroCount);
 				for (let index = 0; index < zeroCount; index += 1) {
-					this.emitLoadConst(zeroBase + index, 0);
+					this.emitLoadConst(zeroBase + index, integerConstant(0));
 				}
 				if (batchCount !== 0) {
 					const countReg = this.allocTemp();
 					const strideReg = this.allocTemp();
 					const oneReg = this.allocTemp();
-					this.emitLoadConst(countReg, batchCount);
-					this.emitLoadConst(strideReg, 32);
-					this.emitLoadConst(oneReg, 1);
+					this.emitLoadConst(countReg, integerConstant(batchCount));
+					this.emitLoadConst(strideReg, integerConstant(32));
+					this.emitLoadConst(oneReg, integerConstant(1));
 					const loopStart = this.code.length;
 					this.emitABC(OpCode.STORE_MEM_WORDS, zeroBase, addrReg, 8);
 					this.emitABC(OpCode.ADD, addrReg, addrReg, strideReg);
@@ -1644,9 +1644,9 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			const addrReg = this.allocTemp();
 			const flagsReg = this.allocTemp();
 			const zeroReg = this.allocTemp();
-			this.emitLoadConst(addrReg, IO_IRQ_FLAGS);
+			this.emitLoadConst(addrReg, integerConstant(IO_IRQ_FLAGS));
 			this.emitABC(OpCode.LOAD_MEM, flagsReg, addrReg, MemoryAccessKind.Word);
-			this.emitLoadConst(zeroReg, 0);
+			this.emitLoadConst(zeroReg, integerConstant(0));
 			this.emitABC(OpCode.EQ, 1, flagsReg, zeroReg);
 			const jumpOut = this.emitJumpPlaceholder();
 			const callBase = this.allocTempBlock(2);
@@ -2118,7 +2118,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
-		constNumberValue = 0,
+		constNumberValue: NumberConstant = null,
 		hasConstNumberValue = false,
 		constBooleanValue = false,
 		hasConstBooleanValue = false,
@@ -2185,7 +2185,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
-		constNumberValue = 0,
+		constNumberValue: NumberConstant = null,
 		hasConstNumberValue = false,
 		constBooleanValue = false,
 		hasConstBooleanValue = false,
@@ -3080,12 +3080,9 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			case true:
 				break;
 			default:
-				if (
-					Number.isInteger(keyValue)
-					&& keyValue >= 1
-					&& keyValue <= MAX_SPECIALIZED_TABLE_OPERAND
-				) {
-					this.emitABC(OpCode.GETI, target, tableReg, keyValue);
+				const integer = numberConstantInteger(keyValue);
+				if (integer !== null && integer >= 1 && integer <= MAX_SPECIALIZED_TABLE_OPERAND) {
+					this.emitABC(OpCode.GETI, target, tableReg, integer);
 					return;
 				}
 		}
@@ -3108,12 +3105,9 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			case true:
 				break;
 			default:
-				if (
-					Number.isInteger(keyValue)
-					&& keyValue >= 1
-					&& keyValue <= MAX_SPECIALIZED_TABLE_OPERAND
-				) {
-					this.emitABC(OpCode.SETI, tableReg, keyValue, valueReg, RK_C);
+				const integer = numberConstantInteger(keyValue);
+				if (integer !== null && integer >= 1 && integer <= MAX_SPECIALIZED_TABLE_OPERAND) {
+					this.emitABC(OpCode.SETI, tableReg, integer, valueReg, RK_C);
 					return;
 				}
 		}
@@ -3175,26 +3169,14 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.emitABx(OpCode.LOADK, target, this.program.constIndex(value));
 			return;
 		}
-		if (value === 0) {
-			if (Object.is(value, -0)) {
-				this.emitABx(OpCode.LOADK, target, this.program.constIndex(value));
-			} else {
-				this.emitABC(OpCode.K0, target, 0, 0);
+		if (value.kind === 'integer') {
+			const integer = value.word | 0;
+			if (integer === 0 || integer === 1 || integer === -1) {
+				this.emitABC(integer === 0 ? OpCode.K0 : integer === 1 ? OpCode.K1 : OpCode.KM1, target, 0, 0); return;
 			}
-			return;
+			if (isSmallSignedImmediate(integer)) { this.emitABx(OpCode.KSMI, target, integer); return; }
 		}
-		if (value === 1) {
-			this.emitABC(OpCode.K1, target, 0, 0);
-			return;
-		}
-		if (value === -1) {
-			this.emitABC(OpCode.KM1, target, 0, 0);
-			return;
-		}
-		if (isSmallSignedImmediate(value)) {
-			this.emitABx(OpCode.KSMI, target, value);
-			return;
-		}
+
 		const index = this.program.constIndex(value);
 		this.emitABx(OpCode.LOADK, target, index);
 	}
@@ -3256,7 +3238,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		return true;
 	}
 
-	private setCompileTimeNumberValue(value: number): boolean {
+	private setCompileTimeNumberValue(value: NumberConstant): boolean {
 		this.compileTimeValue = value;
 		this.compileTimeNumberValue = value;
 		this.compileTimeHasNumberValue = true;
@@ -3345,10 +3327,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			case LuaSyntaxKind.BinaryExpression:
 				return this.evaluateCompileTimeBinaryExpression(expression as LuaBinaryExpression);
 			case LuaSyntaxKind.SizeOfExpression:
-				return this.setCompileTimeNumberValue(this.program.types.resolve(this.moduleId, (expression as LuaSizeOfExpression).typeRef).size);
+				return this.setCompileTimeNumberValue(integerConstant(this.program.types.resolve(this.moduleId, (expression as LuaSizeOfExpression).typeRef).size));
 			case LuaSyntaxKind.OffsetOfExpression: {
 				const offsetOf = expression as LuaOffsetOfExpression;
-				return this.setCompileTimeNumberValue(this.program.types.offsetOf(this.moduleId, offsetOf));
+				return this.setCompileTimeNumberValue(integerConstant(this.program.types.offsetOf(this.moduleId, offsetOf)));
 			}
 			default:
 				return false;
@@ -3367,11 +3349,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			case LuaUnaryOperator.Length: {
 				const arrayLength = this.resolveStaticStorageArrayLength(expression.operand);
 				if (arrayLength !== undefined) {
-					return this.setCompileTimeNumberValue(arrayLength);
+					return this.setCompileTimeNumberValue(integerConstant(arrayLength));
 				}
 				return this.evaluateCompileTimeExpression(expression.operand)
 					&& typeof this.compileTimeValue === 'string'
-					&& this.setCompileTimeNumberValue(utf8CodepointCount(this.compileTimeValue));
+					&& this.setCompileTimeNumberValue(integerConstant(utf8CodepointCount(this.compileTimeValue)));
 			}
 			case LuaUnaryOperator.BitwiseNot: {
 				const value = evaluateStaticNumeric(this, undefined, expression);
@@ -3386,7 +3368,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 	private evaluateCompileTimeNumber(expression: LuaExpression): number | undefined {
 		const value = evaluateStaticNumeric(this, undefined, expression);
-		return value?.kind === 'number' ? value.value : undefined;
+		return value?.kind === 'number' ? numberConstantValue(value.value) : undefined;
 	}
 
 	public resolveNumeric(_scope: void, expression: LuaIdentifierExpression | LuaMemberExpression | LuaIndexExpression): CompileTimeNumericValue | undefined {
@@ -3502,7 +3484,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const leftHasNumber = this.compileTimeHasNumberValue;
 		let leftText: string;
 		if (leftHasNumber) {
-			leftText = formatNumber(leftNumber);
+			leftText = numberConstantText(leftNumber);
 		} else if (typeof left === 'string') {
 			leftText = left;
 		} else {
@@ -3511,7 +3493,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (!this.evaluateCompileTimeExpression(rightExpression)) return false;
 		let rightText: string;
 		if (this.compileTimeHasNumberValue) {
-			rightText = formatNumber(this.compileTimeNumberValue);
+			rightText = numberConstantText(this.compileTimeNumberValue);
 		} else if (typeof this.compileTimeValue === 'string') {
 			rightText = this.compileTimeValue;
 		} else {
@@ -3533,7 +3515,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			return;
 		}
 		if (leftHasNumber) {
-			return this.compileTimeHasNumberValue && leftNumber === this.compileTimeNumberValue;
+			return this.compileTimeHasNumberValue && numberConstantValue(leftNumber) === numberConstantValue(this.compileTimeNumberValue);
 		}
 		if (typeof left === 'string') {
 			return typeof this.compileTimeValue === 'string' && left === this.compileTimeValue;
@@ -3551,7 +3533,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const leftHasNumber = this.compileTimeHasNumberValue;
 		if (!this.evaluateCompileTimeExpression(expression.right)) return;
 		if (leftHasNumber && this.compileTimeHasNumberValue) {
-			return this.evaluateCompileTimeNumberOrStringRelational(expression.operator, leftNumber, this.compileTimeNumberValue);
+			return this.evaluateCompileTimeNumberOrStringRelational(expression.operator, numberConstantValue(leftNumber), numberConstantValue(this.compileTimeNumberValue));
 		}
 		if (typeof left === 'string' && typeof this.compileTimeValue === 'string') {
 			return this.evaluateCompileTimeNumberOrStringRelational(
@@ -3692,17 +3674,16 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			rodataConstRelocs.push({ byteOffset, constIndex });
 			return;
 		}
-		const value = this.evaluateCompileTimeNumber(expression);
-		if (value === undefined) {
-			throw new Error(`${sectionName} primitive initializer must be a compile-time number.`);
-		}
+		const numeric = evaluateStaticNumeric(this, undefined, expression);
+		if (numeric?.kind !== 'number') throw new Error(`${sectionName} primitive initializer must be a compile-time number.`);
+		const value = numberConstantValue(numeric.value);
 		switch (access.memoryKind) {
 			case MemoryAccessKind.F32LE:
-				out.setFloat32(byteOffset, value, true);
+				if (numeric.value.kind === 'float') out.setUint32(byteOffset, numeric.value.word, true);
+				else out.setFloat32(byteOffset, value, true);
 				return;
 			case MemoryAccessKind.F64LE:
-				out.setFloat64(byteOffset, value, true);
-				return;
+				out.setFloat64(byteOffset, value, true); return;
 		}
 		if (!Number.isInteger(value)) {
 			throw new Error(`${sectionName} primitive initializer must be a compile-time integer.`);
@@ -3868,7 +3849,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				}
 			}
 			let constValue: ProgramConstant | null = null;
-			let initializerNumberValue = 0;
+			let initializerNumberValue: NumberConstant = null;
 			let initializerHasNumberValue = false;
 			let initializerBooleanValue = false;
 			let initializerHasBooleanValue = false;
@@ -4398,10 +4379,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (statement.step) {
 			this.compileExpressionInto(statement.step, stepReg, 1);
 		} else {
-			this.emitLoadConst(stepReg, 1);
+			this.emitLoadConst(stepReg, integerConstant(1));
 		}
 		const loopStart = this.code.length;
-		const zeroConst = this.program.constIndex(0);
+		const zeroConst = this.program.constIndex(integerConstant(0));
 		const zeroOperand = this.encodeConstOperand(zeroConst);
 		this.emitABC(OpCode.LT, 0, zeroOperand, stepReg, RK_B | RK_C);
 		const jumpToNegativeCheck = this.emitJumpPlaceholder();
@@ -4643,11 +4624,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					this.compileIndexExpression(expression, target);
 					return;
 				case LuaSyntaxKind.SizeOfExpression:
-					this.emitLoadConst(target, this.program.types.resolve(this.moduleId, (expression as LuaSizeOfExpression).typeRef).size);
+					this.emitLoadConst(target, integerConstant(this.program.types.resolve(this.moduleId, (expression as LuaSizeOfExpression).typeRef).size));
 					return;
 				case LuaSyntaxKind.OffsetOfExpression: {
 					const offsetOf = expression as LuaOffsetOfExpression;
-					this.emitLoadConst(target, this.program.types.offsetOf(this.moduleId, offsetOf));
+					this.emitLoadConst(target, integerConstant(this.program.types.offsetOf(this.moduleId, offsetOf)));
 					return;
 				}
 				case LuaSyntaxKind.VarargExpression:
@@ -4772,7 +4753,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				if (arrayIndex <= MAX_SPECIALIZED_TABLE_OPERAND) {
 					this.emitABC(OpCode.SETI, target, arrayIndex, valueReg, RK_C);
 				} else {
-					const keyConst = this.program.constIndex(arrayIndex);
+					const keyConst = this.program.constIndex(integerConstant(arrayIndex));
 					this.emitTableSetConst(target, keyConst, valueReg);
 				}
 				arrayIndex += 1;
@@ -4830,10 +4811,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private getNumericConstIndex(expression: LuaExpression): number | undefined {
-		const numberValue = this.evaluateCompileTimeNumber(expression);
-		if (numberValue || numberValue === 0) {
-			return this.program.constIndex(numberValue);
-		}
+		const value = evaluateStaticNumeric(this, undefined, expression);
+		return value?.kind === 'number' ? this.program.constIndex(value.value) : undefined;
 	}
 
 	private compileDisplacedAddress(expression: LuaExpression): { baseReg: number; byteOffset: number } | null {
@@ -4935,7 +4914,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		let offsetReg = indexReg;
 		if (scale !== 1) {
 			offsetReg = this.allocTemp();
-			this.emitABC(OpCode.MUL, offsetReg, indexReg, this.encodeConstOperand(this.program.constIndex(scale)), RK_C);
+			this.emitABC(OpCode.MUL, offsetReg, indexReg, this.encodeConstOperand(this.program.constIndex(integerConstant(scale))), RK_C);
 		}
 		const baseReg = this.emitOffsetAddress(base.baseReg, base.byteOffset);
 		const nextBaseReg = this.allocTemp();
@@ -5125,7 +5104,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				this.emitABC(OpCode.MOV, target, address.baseReg, 0);
 			}
 		} else {
-			this.emitABC(OpCode.ADD, target, address.baseReg, this.encodeConstOperand(this.program.constIndex(address.byteOffset)), RK_C);
+			this.emitABC(OpCode.ADD, target, address.baseReg, this.encodeConstOperand(this.program.constIndex(integerConstant(address.byteOffset))), RK_C);
 		}
 		if (resultCount > 1) {
 			this.emitLoadNil(target + 1, resultCount - 1);
@@ -5141,7 +5120,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			return baseReg;
 		}
 		const addrReg = this.allocTemp();
-		const offsetOperand = this.encodeConstOperand(this.program.constIndex(byteOffset));
+		const offsetOperand = this.encodeConstOperand(this.program.constIndex(integerConstant(byteOffset)));
 		this.emitABC(OpCode.ADD, addrReg, baseReg, offsetOperand, RK_C);
 		return addrReg;
 	}
@@ -5223,7 +5202,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (expression.operator === LuaUnaryOperator.Length) {
 			const arrayLength = this.resolveStaticStorageArrayLength(expression.operand);
 			if (arrayLength !== undefined) {
-				this.emitLoadConst(target, arrayLength);
+				this.emitLoadConst(target, integerConstant(arrayLength));
 				if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
 				return;
 			}

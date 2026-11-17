@@ -1,3 +1,5 @@
+import { evaluateNumberBinary, numberConstantValue } from '../../number';
+import { LuaBinaryOperator } from '../../syntax/ast';
 // start repeated-sequence-acceptable -- SSA optimizer keeps instruction rewrites inline for compile-time throughput and readable opcode cases.
 // start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
 import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
@@ -412,7 +414,7 @@ const evaluateSccpDef = (
 			const operand = getSccpOperand(instruction, 'b', uses[0], context, valueKind, valueConst);
 			if (operand.kind === SCCP_CONST && operand.constVal) {
 				const result = evaluateUnary(instruction.op, operand.constVal);
-				if (result !== null) {
+				if (result !== undefined) {
 					return {
 						kind: SCCP_CONST,
 						constVal: constValueForOptimization(result, context.constIndex(result)),
@@ -456,7 +458,7 @@ const evaluateSccpDef = (
 				throw new Error('[ProgramOptimizer] Missing SCCP constants.');
 			}
 			const result = evaluateBinary(instruction.op, left.constVal, right.constVal);
-			if (result !== null) {
+			if (result !== undefined) {
 				return {
 					kind: SCCP_CONST,
 					constVal: constValueForOptimization(result, context.constIndex(result)),
@@ -1499,7 +1501,7 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 			}
 			const zeroIndex = -1 - lt0.b;
 			const zeroValue = constPoolValueForOptimization(context, zeroIndex);
-			if (!zeroValue || zeroValue.value !== 0) {
+			if (zeroValue?.kind !== ConstValueKind.Number || numberConstantValue(zeroValue.value) !== 0) {
 				continue;
 			}
 			if (ltPos.b < 0 || ltPos.c < 0 || ltNeg.b < 0 || ltNeg.c < 0) {
@@ -1586,22 +1588,22 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 				continue;
 			}
 			const start = startConst.value;
-			const limit = limitConst.value;
-			const step = stepConst.value;
+			const limit = numberConstantValue(limitConst.value);
+			const step = numberConstantValue(stepConst.value);
 			if (step === 0) {
 				continue;
 			}
 			let iterations = 0;
 			let loopValue = start;
 			if (step > 0) {
-				while (iterations <= maxUnroll && loopValue <= limit) {
+				while (iterations <= maxUnroll && numberConstantValue(loopValue) <= limit) {
 					iterations += 1;
-					loopValue += step;
+					loopValue = evaluateNumberBinary(LuaBinaryOperator.Add, loopValue, stepConst.value)!;
 				}
 			} else {
-				while (iterations <= maxUnroll && loopValue >= limit) {
+				while (iterations <= maxUnroll && numberConstantValue(loopValue) >= limit) {
 					iterations += 1;
-					loopValue += step;
+					loopValue = evaluateNumberBinary(LuaBinaryOperator.Add, loopValue, stepConst.value)!;
 				}
 			}
 			if (iterations === 0 || iterations > maxUnroll) {

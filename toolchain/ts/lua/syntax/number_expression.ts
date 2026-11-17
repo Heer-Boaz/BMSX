@@ -1,3 +1,4 @@
+import { numberConstantValue, evaluateNumberUnary } from '../number';
 import { LuaBinaryOperator, LuaSyntaxKind, LuaUnaryOperator, type LuaExpression, type LuaNumericLiteralExpression } from './ast';
 
 /** The actual numeric token behind a literal, optionally under unary negation. */
@@ -11,7 +12,7 @@ export function luaNumericLiteral(expression: LuaExpression): LuaNumericLiteralE
 /** Literal syntax only; human scalar entry does not admit arithmetic. */
 export function readLuaNumberLiteral(expression: LuaExpression): number | null {
 	const literal = luaNumericLiteral(expression);
-	return literal === null ? null : expression.kind === LuaSyntaxKind.UnaryExpression ? -literal.value : literal.value;
+	return literal === null ? null : numberConstantValue(expression.kind === LuaSyntaxKind.UnaryExpression ? evaluateNumberUnary(LuaUnaryOperator.Negate, literal.value)! : literal.value);
 }
 
 /** Read the closed Number-source format below, not arbitrary Lua expressions. */
@@ -48,5 +49,5 @@ export function formatLuaNumberExpression(value: number, grouped = true): string
 	if (value !== value) return grouped ? '(0 / 0)' : '0/0';
 	if (value === Infinity) return grouped ? '(1 / 0)' : '1/0';
 	if (value === -Infinity) return grouped ? '(-1 / 0)' : '-1/0';
-	return Object.is(value, -0) ? '-0' : String(value);
+	return Object.is(value, -0) ? '-0.0' : String(value);
 }
