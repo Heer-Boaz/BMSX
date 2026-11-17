@@ -1,4 +1,5 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName, toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { blua32FunctionIndexAtAddress, type Blua32UpvalueRecord } from '../../toolchain/ts/rompack/blua32_image';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
@@ -169,7 +170,9 @@ export function readRuntimeLuaModuleCapture(
 		if (upvalueIndex !== -1) return NOT_IN_SCOPE;
 		upvalueIndex = index;
 	}
-	return upvalueIndex === -1 ? NOT_IN_SCOPE : { kind: 'value', value: guest.readClosureUpvalue(closure, upvalueIndex) };
+	return upvalueIndex === -1 ? NOT_IN_SCOPE : {
+		kind: 'value', value: guest.cpu.readClosureUpvalue(asClosure(closure, guest.cpu.gc), upvalueIndex),
+	};
 }
 
 /** A closure's current mapped call target, never its presumed allocation/registration site. */
@@ -244,7 +247,7 @@ export function readRuntimeLuaValue(
 		const definition = { ...analysis.chunk.locations.range(binding.declaration.span), path: record.module_path };
 		const declaration = installedImage.symbols.metadata.staticScopes.declarations.find(entry => sourceRangesEqual(entry.definition, definition));
 		if (declaration === undefined) return NOT_LOADED;
-		return declaration.kind === StaticDeclarationKind.Type ? NOT_RUNTIME_VALUE : guest.readStringPath(declaration.address!, parts, 1);
+		return declaration.kind === StaticDeclarationKind.Type ? NOT_RUNTIME_VALUE : guest.readStringPath(valueInteger(declaration.address!), parts, 1);
 	}
 	if (binding.kind === 'global' || binding.kind === 'declaration' && binding.declaration.isGlobal) {
 		if (installedImage === null) return NOT_LOADED;
@@ -253,7 +256,7 @@ export function readRuntimeLuaValue(
 			const index = statics.globals.find(index => statics.declarations[index].name === name);
 			if (index !== undefined) {
 				const declaration = statics.declarations[index];
-				return declaration.kind === StaticDeclarationKind.Type ? NOT_RUNTIME_VALUE : guest.readStringPath(declaration.address!, parts, 1);
+				return declaration.kind === StaticDeclarationKind.Type ? NOT_RUNTIME_VALUE : guest.readStringPath(valueInteger(declaration.address!), parts, 1);
 			}
 		}
 		const registerFile = installedImage.globalRegisterFileByName.get(name);

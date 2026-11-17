@@ -585,7 +585,8 @@ function describeSuspendedGuestValueForInspector(
 				lines: [inspection.formatValue(value)],
 				valueType: 'boolean',
 			};
-		case SuspendedGuestValueKind.Number:
+		case SuspendedGuestValueKind.Integer:
+		case SuspendedGuestValueKind.Float:
 			return {
 				lines: [inspection.formatValue(value)],
 				valueType: 'number',

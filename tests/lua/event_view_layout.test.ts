@@ -1,7 +1,7 @@
 import { RuntimeInstructionObservers } from '../../ide/runtime/instruction_observers';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { asClosure, valueInteger, valueTable } from '../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { SCROLLBAR_WIDTH } from '../../ide/common/constants';
 import { editorViewState } from '../../ide/editor/ui/view/state';
@@ -26,8 +26,8 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', count = 200, capacity 
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	const history = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu), capacity);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
-	const emit = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
-	cpu.beginCompletionCall(emit, [count]);
+	const emit = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), cpu.gc);
+	cpu.beginCompletionCall(emit, [valueInteger(count)]);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
 	const input = new EventViewerInput(history);
 	const projected = input.projection.update(history, '');
@@ -142,7 +142,7 @@ test('an appended event does not transiently clamp a reader near the bottom thro
 	layoutEventViewer(input, bounds, projected);
 	input.viewport.scrollbar.setScroll(input.viewport.scrollbar.getMaximumScroll() - 0.5);
 	const readingPosition = input.viewport.scrollTop;
-	cpu.beginCompletionCall(emit, [1]);
+	cpu.beginCompletionCall(emit, [valueInteger(1)]);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
 	assert.equal(input.projection.update(history, ''), true);
 	layoutEventViewer(input, bounds, true);
@@ -236,13 +236,13 @@ test('visible event preparation invalidates geometry and membership without reta
 	input.filter = '';
 	view.update(input, layoutEventViewer(input, { ...compact, right: 135 }, input.projection.update(history, input.filter)), true);
 	assert.equal(view.rows[0].label, labels[0], 'same surviving snapshot keeps its already prepared label after filtering');
-	cpu.beginCompletionCall(emit, [4]); assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+	cpu.beginCompletionCall(emit, [valueInteger(4)]); assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
 	assert.equal(input.projection.update(history, ''), true); assert.equal(input.projection.removed, 4);
 	view.update(input, layoutEventViewer(input, { ...compact, right: 135 }, true), true);
 	assert.equal(input.projection.rows[0].sequence, 4);
 	assert.equal(view.rows[0].label, labels[4], 'eviction remaps visible indices to the actual surviving sequence');
 	history.clear();
-	cpu.beginCompletionCall(emit, [1]); assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+	cpu.beginCompletionCall(emit, [valueInteger(1)]); assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
 	assert.equal(input.projection.update(history, ''), true);
 	view.update(input, layoutEventViewer(input, { ...compact, right: 135 }, true), true);
 	assert.notEqual(view.rows[0].label, labels[0]); assert.equal(view.rows.length, 1);
@@ -301,8 +301,8 @@ for (const variant of ['tiny', 'msx'] as const) {
 }
 
 test('Event Details keeps actual snapshot-budget warnings inline rather than hiding them with scalar help', t => {
-	const { history, cpu } = fixture(t, 'tiny', 1), slots = new ValueSlots(1), reader = new GuestValueSnapshot(cpu.stringPool);
-	slots.setStringId(0, cpu.stringPool.intern('x'.repeat(VALUE_SNAPSHOT_CHARACTERS + 1))); reader.begin();
+	const { history, cpu } = fixture(t, 'tiny', 1), slots = new ValueSlots(1), reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc);
+	slots.setString(0, cpu.stringPool.intern('x'.repeat(VALUE_SNAPSHOT_CHARACTERS + 1))); reader.begin();
 	const payload = reader.read(slots, 0); assert.ok(payload.kind === 'string'); assert.equal(payload.omitted, true);
 	const record = { ...history.at(history.firstSequence), payload }, properties = eventProperties(record);
 	const warning = properties.find(property => property.label === 'Payload')!;
@@ -316,14 +316,14 @@ test('Event Details keeps actual snapshot-budget warnings inline rather than hid
 });
 
 test('compact Event Details keeps an omitted stored key visible even when its captured value is complete', t => {
-	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(cpu.stringPool), slots = new ValueSlots(1);
+	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), slots = new ValueSlots(1);
 	const payload = cpu.createTable(0, 1);
-	payload.setStringKey(cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), 7);
-	slots.set(0, payload); reader.begin();
+	payload.setStringKey(cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), valueInteger(7));
+	slots.setTable(0, cpu.gc.reference(payload)); reader.begin();
 	const snapshot = reader.read(slots, 0); assert.ok(snapshot.kind === 'table');
 	assert.equal(snapshot.omitted, false); assert.equal(snapshot.entries.length, 1);
 	assert.ok(snapshot.entries[0].key.kind === 'string'); assert.equal(snapshot.entries[0].key.omitted, true);
-	assert.deepEqual(snapshot.entries[0].value, { kind: 'number', value: 7 });
+	assert.deepEqual(snapshot.entries[0].value, { kind: 'integer', value: 7 });
 	const properties = eventProperties({ ...history.at(history.firstSequence), payload: snapshot });
 	const child = properties.find(property => property.label.includes('[truncated key]'))!;
 	assert.equal(child.warning, true, 'a clipped compact key label must not erase captured key-omission provenance');
@@ -335,14 +335,14 @@ test('compact Event Details keeps an omitted stored key visible even when its ca
 });
 
 test('Event Details carries actual omitted-key identity into descendants without blaming retained sibling values', t => {
-	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(cpu.stringPool), slots = new ValueSlots(1);
-	const payload = cpu.createTable(0, 1), nested = cpu.createTable(1, 0); nested.set(1, 7);
-	payload.setStringKey(cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), nested);
-	slots.set(0, payload); reader.begin();
+	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), slots = new ValueSlots(1);
+	const payload = cpu.createTable(0, 1), nested = cpu.createTable(1, 0); nested.setInteger(1, valueInteger(7));
+	payload.setStringKey(cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), valueTable(cpu.gc.reference(nested)));
+	slots.setTable(0, cpu.gc.reference(payload)); reader.begin();
 	const snapshot = reader.read(slots, 0); assert.ok(snapshot.kind === 'table');
 	assert.equal(snapshot.omitted, false); assert.ok(snapshot.entries[0].key.kind === 'string'); assert.equal(snapshot.entries[0].key.omitted, true);
 	const child = snapshot.entries[0].value; assert.ok(child.kind === 'table'); assert.equal(child.omitted, false);
-	assert.deepEqual(child.entries[0], { key: { kind: 'number', value: 1 }, value: { kind: 'number', value: 7 } });
+	assert.deepEqual(child.entries[0], { key: { kind: 'integer', value: 1 }, value: { kind: 'integer', value: 7 } });
 	const properties = eventProperties({ ...history.at(history.firstSequence), payload: snapshot });
 	const partialPath = properties.filter(property => property.label.startsWith('Payload['));
 	assert.equal(partialPath.length, 2);
@@ -351,8 +351,8 @@ test('Event Details carries actual omitted-key identity into descendants without
 		assert.notEqual(row.descriptionDisplay, 'disclosure');
 	}
 	const completeChildren = cpu.createTable(VALUE_SNAPSHOT_ENTRIES + 1, 0);
-	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES + 1; index++) completeChildren.set(index, index);
-	slots.set(0, completeChildren); reader.begin();
+	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES + 1; index++) completeChildren.setInteger(index, valueInteger(index));
+	slots.setTable(0, cpu.gc.reference(completeChildren)); reader.begin();
 	const omittedTable = reader.read(slots, 0); assert.ok(omittedTable.kind === 'table'); assert.equal(omittedTable.omitted, true);
 	const retained = eventProperties({ ...history.at(history.firstSequence), payload: omittedTable });
 	assert.equal(retained.find(row => row.label === 'Payload')!.warning, true);

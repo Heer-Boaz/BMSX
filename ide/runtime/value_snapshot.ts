@@ -1,5 +1,7 @@
 import type { StringPool } from '../../machine/ts/machine/cpu/string_pool';
-import type { Table } from '../../machine/ts/machine/cpu/table';
+import type { GcHeap } from '../../machine/ts/machine/cpu/gc_heap';
+import { f32BitsToNumber } from '../../machine/ts/common/float32';
+import { formatInteger, formatFloat } from '../../machine/ts/common/number_format';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import type { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -8,7 +10,8 @@ import type { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 export type ValueSnapshot =
 	| { readonly kind: 'nil' }
 	| { readonly kind: 'boolean'; readonly value: boolean }
-	| { readonly kind: 'number'; readonly value: number | '-0' | 'nan' | 'inf' | '-inf' }
+	| { readonly kind: 'integer'; readonly value: number }
+	| { readonly kind: 'float'; readonly bits: number }
 	| { readonly kind: 'string'; readonly value: string; readonly omitted: boolean }
 	| { readonly kind: 'table'; readonly id: number; readonly entries: readonly ValueSnapshotEntry[]; readonly omitted: boolean }
 	| { readonly kind: 'reference' | 'function' | 'thread'; readonly id: number }
@@ -31,7 +34,7 @@ export class GuestValueSnapshot {
 	private remainingEntries = 0;
 	private remainingCharacters = 0;
 	private remainingSlots = 0;
-	public constructor(private readonly pool: StringPool) {}
+	public constructor(private readonly pool: StringPool, private readonly heap: GcHeap) {}
 	public begin(): void {
 		this.visited.clear();
 		this.remainingEntries = VALUE_SNAPSHOT_ENTRIES;
@@ -44,17 +47,12 @@ export class GuestValueSnapshot {
 			case ValueTag.Nil: return NIL;
 			case ValueTag.False: return FALSE;
 			case ValueTag.True: return TRUE;
-			case ValueTag.Number: {
-				const value = values.getScalar(index);
-				// JSON numbers cannot carry these IEEE values. Encode them explicitly,
-				// rather than silently turning them into null/zero at the tool boundary.
-				if (value - value !== 0) {
-					return { kind: 'number', value: value !== value ? 'nan' : value < 0 ? '-inf' : 'inf' };
-				}
-				return { kind: 'number', value: Object.is(value, -0) ? '-0' : value };
-			}
+			case ValueTag.Integer: return { kind: 'integer', value: values.getInteger(index) };
+			// Raw binary32 words survive JSON, including NaN payload/sign and -0.
+			// Decode only for presentation, not on the observed guest's path.
+			case ValueTag.Float: return { kind: 'float', bits: values.getPayload(index) };
 			case ValueTag.String: {
-				const text = this.pool.toString(values.getScalar(index));
+				const text = this.pool.toString(values.getStringId(index));
 				const length = Math.min(text.length, this.remainingCharacters);
 				this.remainingCharacters -= length;
 				// A substring can retain the entire guest string's backing storage,
@@ -64,11 +62,11 @@ export class GuestValueSnapshot {
 				for (let offset = 0; offset < length; offset++) units[offset] = text.charCodeAt(offset);
 				return { kind: 'string', value: String.fromCharCode(...units), omitted: length < text.length };
 			}
-			case ValueTag.Closure: return { kind: 'function', id: values.getReference(index)!.hashId };
-			case ValueTag.Thread: return { kind: 'thread', id: values.getReference(index)!.hashId };
-			case ValueTag.BuiltinFunction: return { kind: 'builtin', id: values.getScalar(index) };
+			case ValueTag.Closure: return { kind: 'function', id: values.getClosure(index, this.heap).hashId };
+			case ValueTag.Thread: return { kind: 'thread', id: values.getThread(index, this.heap).hashId };
+			case ValueTag.BuiltinFunction: return { kind: 'builtin', id: values.getBuiltinFunctionId(index) };
 		}
-		const table = values.getReference(index) as Table, id = table.hashId;
+		const table = values.getTable(index, this.heap), id = table.hashId;
 		if (this.visited.has(id)) return { kind: 'reference', id };
 		if (depth === VALUE_SNAPSHOT_DEPTH) return { kind: 'table', id, entries: NO_ENTRIES, omitted: true };
 		this.visited.add(id);
@@ -92,7 +90,9 @@ export class GuestValueSnapshot {
 export function formatValueSnapshot(value: ValueSnapshot): string {
 	switch (value.kind) {
 		case 'nil': return 'nil';
-		case 'boolean': case 'number': return String(value.value);
+		case 'boolean': return String(value.value);
+		case 'integer': return formatInteger(value.value);
+		case 'float': return formatFloat(f32BitsToNumber(value.bits));
 		case 'string': return JSON.stringify(value.value);
 		default: return `${value.kind} #${value.id}`;
 	}

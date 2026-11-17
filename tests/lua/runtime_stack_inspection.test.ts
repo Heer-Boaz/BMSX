@@ -18,7 +18,7 @@ import { composeLuaSource } from '../../toolchain/ts/lua/compiler/source_map';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { asClosure } from '../../machine/ts/machine/cpu/value';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
@@ -169,7 +169,7 @@ return value, folded`, level);
 	assert.deepEqual(shadowed.map(entry => entry.definition!.start.line), [1, 4]);
 	assert.deepEqual(shadowed.map(entry => inspection.read(entry.value.reference!, 0, 1).entries[0].value.display), ['11', '22']);
 	const folded = values.entries.find(entry => entry.key.display === 'folded')!.value;
-	assert.equal(folded.kind, level === 0 ? 'number' : 'unavailable');
+	assert.equal(folded.kind, level === 0 ? 'integer' : 'unavailable');
 	assert.equal(reads.mock.callCount(), values.entries.filter(entry => entry.value.kind !== 'unavailable').length,
 		'unavailable bindings never read a stale register');
 });
@@ -242,7 +242,7 @@ return run(false)`, level);
 	assert.deepEqual(shadowed.map(entry => entry.definition!.start.line), [3, 6]);
 	const folded = locals.find(entry => entry.key.display === 'folded')!;
 	assert.equal(folded.isConst, false, 'constant propagation is not a const declaration');
-	assert.equal(folded.value.kind, level === 0 ? 'number' : 'unavailable');
+	assert.equal(folded.value.kind, level === 0 ? 'integer' : 'unavailable');
 	assert.equal(locals.find(entry => entry.key.display === 'parameter')!.isConst, false);
 	assert.equal(reads.mock.callCount(), locals.filter(entry => entry.value.kind !== 'unavailable').length);
 	const capture = inspection.read(scopes[1].reference!, 0, 100).entries.find(entry => entry.key.display === 'captured')!;
@@ -288,8 +288,8 @@ return run(42)`, level);
 	const frame = inspection.readStack(0, 100).frames.find(frame => frame.functionName === 'run')!;
 	const scope = inspection.frameScopes(frame.reference).scopes[0];
 	const value = inspection.read(scope.reference!, 0, 100).entries.find(entry => entry.key.display === 'x')!.value;
-	assert.ok(value.kind === 'unavailable' || value.kind === 'number', JSON.stringify(value));
-	if (value.kind === 'number') assert.equal(value.display, '42');
+	assert.ok(value.kind === 'unavailable' || value.kind === 'integer', JSON.stringify(value));
+	if (value.kind === 'integer') assert.equal(value.display, '42');
 });
 
 test('installed symbols own stack/scopes despite source edits; fault diagnostics do not substitute the captured fault stack', t => {
@@ -485,7 +485,7 @@ test('manual frame contexts retain only installed source identity and expire acr
 test('a debugger completion root does not invent a guest call site in its suspended caller', () => {
 	const f = fixture('function park() halt_until_irq end\npark()', 0), cpu = f.runtime.machine.cpu;
 	const depth = cpu.getFrameDepth(), suspendedPc = cpu.readFramePc(depth - 1);
-	cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('park')) as Closure);
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('park')), cpu.gc));
 	assert.equal(cpu.runUntilDepth(depth, 1000), RunResult.Halted);
 	assert.equal(readRuntimeStackFrames(cpu, f.sources)[depth - 1].tracePc, suspendedPc);
 });

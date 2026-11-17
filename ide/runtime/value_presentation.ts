@@ -1,5 +1,4 @@
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import { valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { asTable, valueNil, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { STORED_ENTRIES_PREVIEW_LIMIT, type SuspendedGuestSession, type SuspendedGuestValue } from './suspended_guest';
 
@@ -71,15 +70,15 @@ export class SuspendedValuePresentation {
 	private capturePreview(value: SuspendedGuestValue): void {
 		const index = this.capture(value);
 		if (valueTag(value) !== ValueTag.Table) { this.setEntryCount(index, 0); return; }
-		const table = value as Table, entry = this.entry ??= new ValueSlots(2);
+		const table = asTable(value, this.guest.cpu.gc), entry = this.entry ??= new ValueSlots(2);
 		let count = 0;
-		table.next(ValueTag.Nil, NaN, null, entry, 0);
+		table.next(valueNil(), entry, 0);
 		try {
 			while (entry.getTag(0) !== ValueTag.Nil && count < STORED_ENTRIES_PREVIEW_LIMIT) {
 				this.setEntryCount(this.capture(entry.get(0)), 0);
 				this.setEntryCount(this.capture(entry.get(1)), 0);
 				count++;
-				table.next(entry.getTag(0), entry.getScalar(0), entry.getReference(0), entry, 0);
+				table.next(entry.get(0), entry, 0);
 			}
 			this.setEntryCount(index, entry.getTag(0) !== ValueTag.Nil ? count + 1 : count);
 		} finally { entry.clear(2); }
