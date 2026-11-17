@@ -368,12 +368,15 @@ if(BMSX_NATIVE_GATE_PROFILE)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_NATIVE_GATE_PROFILE=1)
 endif()
 
-if(BMSX_ENABLE_NATIVE_BLOCKS)
+if(BMSX_ENABLE_NATIVE_BLOCKS OR BMSX_BUILD_TESTS)
 	add_library(bmsx_sljit STATIC ../../third_party/sljit/sljit_src/sljitLir.c)
 	set_target_properties(bmsx_sljit PROPERTIES POSITION_INDEPENDENT_CODE ON)
 	target_include_directories(bmsx_sljit PUBLIC ../../third_party/sljit/sljit_src)
 	target_compile_definitions(bmsx_sljit PUBLIC SLJIT_CONFIG_AUTO=1 SLJIT_VERBOSE=0
 		SLJIT_DEBUG=$<IF:$<CONFIG:Debug>,1,0>)
+endif()
+
+if(BMSX_ENABLE_NATIVE_BLOCKS)
 	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp machine/cpu/native_block_abi.cpp
 		machine/cpu/native_block_memory.cpp machine/cpu/native_block_registers.cpp machine/cpu/native_block_register_plan.cpp
 		machine/cpu/native_block_register_edges.cpp machine/cpu/native_block_compare.cpp machine/cpu/native_block_compare_gate.cpp
@@ -725,6 +728,13 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_sat_intervals_test.cpp)
 	target_link_libraries(bmsx_geometry_sat_intervals_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_geometry_sat_intervals_tests COMMAND bmsx_geometry_sat_intervals_tests)
+	add_executable(bmsx_native_register_cache_tests
+		../../tests/cpp/native_register_cache_test.cpp
+		machine/cpu/native_block_registers.cpp)
+	target_include_directories(bmsx_native_register_cache_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	target_link_libraries(bmsx_native_register_cache_tests PRIVATE bmsx_sljit)
+	add_test(NAME bmsx_native_register_cache_tests COMMAND bmsx_native_register_cache_tests)
+
 	set(BMSX_TEST_ROM_SOURCE
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
 	)
