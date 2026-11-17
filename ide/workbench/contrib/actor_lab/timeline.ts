@@ -1,4 +1,4 @@
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
+import { numberToHost, isNil, ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import { formatFloat } from '../../../../machine/ts/common/number_format';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { WorkbenchSlider } from '../../ui/slider';
@@ -36,20 +36,22 @@ export class ActorTimelineTransport {
 		}
 		if (readback || this.entryHashId !== node.hashId) {
 			const entry = node.value!;
-			const program = guest.readStringMember(entry, 'program') as Table;
-			const changed = this.entryHashId !== node.hashId || this.programHashId !== program.hashId;
+			const program = guest.readStringMember(entry, 'program');
+			const programHashId = guest.identityScalar(program, ValueTag.Table);
+			const changed = this.entryHashId !== node.hashId || this.programHashId !== programHashId;
 			if (changed) {
 				this.clear();
-				this.entryHashId = node.hashId; this.programHashId = program.hashId;
+				this.entryHashId = node.hashId; this.programHashId = programHashId;
 				this.labelRevision += 1;
 			}
-			const duration = guest.readStringMember(program, 'duration_ms') as number | null;
+			const durationValue = guest.readStringMember(program, 'duration_ms');
+			const duration = isNil(durationValue) ? null : numberToHost(durationValue);
 			if (duration === null) {
 				// Parameterized frame builders acquire their duration when played.
 				if (this.duration !== null || changed) this.labelRevision += 1;
 				this.slider.enabled = false; this.duration = duration; this.positionLabel = 'PLAY TO BUILD FRAMES'; this.durationLabel = '';
 			} else {
-				const position = guest.readStringMember(entry, 'position_ms') as number;
+				const position = numberToHost(guest.readStringMember(entry, 'position_ms'));
 				if (changed || this.position !== position || this.duration === null) {
 					this.position = position; this.positionLabel = `${formatFloat(position)} MS`;
 					this.labelRevision += 1;

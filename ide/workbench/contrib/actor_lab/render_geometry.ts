@@ -1,8 +1,7 @@
 import type { Affine2 } from '../../../common/affine2';
 import { ActorWorldGeometry } from './world_geometry';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
-import { valueTag, ValueTag } from '../../../../machine/ts/machine/cpu/value';
+import { numberToHost, isNil, valueIsNumber, valueTag, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 
@@ -23,47 +22,48 @@ export class ActorRenderGeometry {
 	public readonly quads = new ScratchBuffer<ActorRenderQuad>(() => ({ domain: 0, hashId: 0, label: '',
 		localX: 0, localY: 0, parentHashId: 0, parentXX: 1, parentXY: 0, parentYX: 0, parentYY: 1,
 		ox: 0, oy: 0, ax: 0, ay: 0, bx: 0, by: 0, idTag: ValueTag.Nil, idScalar: 0, definitionTag: ValueTag.Nil, definitionScalar: 0 }));
-	public capture(visual: Table, kind: ActorVisualKind, domain: ResourceDomain, guest: SuspendedGuestSession): void {
+	public capture(visual: Value, kind: ActorVisualKind, domain: ResourceDomain, guest: SuspendedGuestSession): void {
 		if (kind === 'models') { this.world.captureModels(visual, domain, guest); return; }
 		let left = 0, top = 0, width: number, height: number;
 		if (kind === 'text') {
 			if (guest.isTruthy(guest.readStringMember(visual, '_layout_empty'))) return;
-			left = guest.readStringMember(visual, '_layout_left') as number;
-			top = guest.readStringMember(visual, '_layout_top') as number;
-			width = (guest.readStringMember(visual, '_layout_right') as number) - left;
-			height = (guest.readStringMember(visual, '_layout_bottom') as number) - top;
+			left = numberToHost(guest.readStringMember(visual, '_layout_left'));
+			top = numberToHost(guest.readStringMember(visual, '_layout_top'));
+			width = numberToHost(guest.readStringMember(visual, '_layout_right')) - left;
+			height = numberToHost(guest.readStringMember(visual, '_layout_bottom')) - top;
 		} else if (kind === 'surface') {
 			const source = guest.readStringMember(visual, '_source');
-			width = guest.readStringMember(source, 'width') as number; height = guest.readStringMember(source, 'height') as number;
+			width = numberToHost(guest.readStringMember(source, 'width')); height = numberToHost(guest.readStringMember(source, 'height'));
 		} else {
-			width = guest.readStringMember(visual, kind === 'sprite' ? 'source_width' : kind === 'region' ? 'region_width' : 'width') as number;
-			height = guest.readStringMember(visual, kind === 'sprite' ? 'source_height' : kind === 'region' ? 'region_height' : 'height') as number;
+			width = numberToHost(guest.readStringMember(visual, kind === 'sprite' ? 'source_width' : kind === 'region' ? 'region_width' : 'width'));
+			height = numberToHost(guest.readStringMember(visual, kind === 'sprite' ? 'source_height' : kind === 'region' ? 'region_height' : 'height'));
 		}
 		const pose = this.pose;
-		const xx = pose.xx = guest.readStringMember(visual, 'wxx') as number, xy = pose.xy = guest.readStringMember(visual, 'wxy') as number;
-		const yx = pose.yx = guest.readStringMember(visual, 'wyx') as number, yy = pose.yy = guest.readStringMember(visual, 'wyy') as number;
-		pose.ox = guest.readStringMember(visual, 'wox') as number; pose.oy = guest.readStringMember(visual, 'woy') as number;
-		const quad = this.quads.get(this.quads.length), owner = guest.readStringMember(visual, 'owner') as Table;
+		const xx = pose.xx = numberToHost(guest.readStringMember(visual, 'wxx')), xy = pose.xy = numberToHost(guest.readStringMember(visual, 'wxy'));
+		const yx = pose.yx = numberToHost(guest.readStringMember(visual, 'wyx')), yy = pose.yy = numberToHost(guest.readStringMember(visual, 'wyy'));
+		pose.ox = numberToHost(guest.readStringMember(visual, 'wox')); pose.oy = numberToHost(guest.readStringMember(visual, 'woy'));
+		const quad = this.quads.get(this.quads.length), owner = guest.readStringMember(visual, 'owner');
+		const ownerHashId = guest.identityScalar(owner, ValueTag.Table);
 		const id = guest.readStringMember(owner, 'id'), definition = guest.readStringMember(owner, 'definition_id');
 		const idTag = valueTag(id), idScalar = guest.identityScalar(id, idTag);
 		const definitionTag = valueTag(definition), definitionScalar = guest.identityScalar(definition, definitionTag);
-		if (quad.hashId !== owner.hashId || quad.idTag !== idTag || quad.idScalar !== idScalar
+		if (quad.hashId !== ownerHashId || quad.idTag !== idTag || quad.idScalar !== idScalar
 			|| quad.definitionTag !== definitionTag || quad.definitionScalar !== definitionScalar) {
 			const name = guest.formatValue(id);
-			quad.label = definitionTag === ValueTag.Nil ? idTag === ValueTag.Number ? `#${name}` : name
+			quad.label = definitionTag === ValueTag.Nil ? valueIsNumber(id) ? `#${name}` : name
 				: `${guest.formatValue(definition)} #${name}`;
 			quad.idTag = idTag; quad.idScalar = idScalar; quad.definitionTag = definitionTag; quad.definitionScalar = definitionScalar;
 		}
-		quad.domain = domain; quad.hashId = owner.hashId;
-		quad.localX = guest.readStringMember(owner, 'ox') as number; quad.localY = guest.readStringMember(owner, 'oy') as number;
-		const parent = guest.readStringMember(owner, 'parent') as Table | null;
-		quad.parentHashId = parent === null ? 0 : parent.hashId;
+		quad.domain = domain; quad.hashId = ownerHashId;
+		quad.localX = numberToHost(guest.readStringMember(owner, 'ox')); quad.localY = numberToHost(guest.readStringMember(owner, 'oy'));
+		const parent = guest.readStringMember(owner, 'parent');
+		quad.parentHashId = isNil(parent) ? 0 : guest.identityScalar(parent, ValueTag.Table);
 		// draw() has resolved the same hierarchy used by this visual. Capture the
 		// parent basis with the image, not later from an already advanced heap.
-		quad.parentXX = parent === null ? 1 : guest.readStringMember(parent, 'wxx') as number;
-		quad.parentXY = parent === null ? 0 : guest.readStringMember(parent, 'wxy') as number;
-		quad.parentYX = parent === null ? 0 : guest.readStringMember(parent, 'wyx') as number;
-		quad.parentYY = parent === null ? 1 : guest.readStringMember(parent, 'wyy') as number;
+		quad.parentXX = isNil(parent) ? 1 : numberToHost(guest.readStringMember(parent, 'wxx'));
+		quad.parentXY = isNil(parent) ? 0 : numberToHost(guest.readStringMember(parent, 'wxy'));
+		quad.parentYX = isNil(parent) ? 0 : numberToHost(guest.readStringMember(parent, 'wyx'));
+		quad.parentYY = isNil(parent) ? 1 : numberToHost(guest.readStringMember(parent, 'wyy'));
 		quad.ox = pose.ox + xx * left + yx * top;
 		quad.oy = pose.oy + xy * left + yy * top;
 		quad.ax = xx * width; quad.ay = xy * width; quad.bx = yx * height; quad.by = yy * height;

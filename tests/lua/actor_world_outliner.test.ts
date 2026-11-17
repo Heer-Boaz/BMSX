@@ -1,3 +1,4 @@
+import { asClosure, ValueTag } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
@@ -42,10 +43,10 @@ return true`, { optLevel: 3, modules: WORLD_CPU_MODULES });
 	const { runtime, cpu } = eventHistoryRuntime(images);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const guest = new SuspendedGuestSession(runtime), outliner = new ActorWorldOutliner(), tree = outliner.tree;
-	const world = guest.global('subject_world') as Table;
-	const parent = (guest.global('parent') as Table).hashId, child = (guest.global('child') as Table).hashId,
-		other = (guest.global('other') as Table).hashId;
-	const call = (name: string) => { runCompletionClosure(cpu, guest.global(name) as Closure, []); };
+	const world = guest.global('subject_world');
+	const parent = guest.identityScalar(guest.global('parent'), ValueTag.Table), child = guest.identityScalar(guest.global('child'), ValueTag.Table),
+		other = guest.identityScalar(guest.global('other'), ValueTag.Table);
+	const call = (name: string) => { runCompletionClosure(cpu, asClosure(guest.global(name), cpu.gc), []); };
 	const row = (id: number) => tree.rows.find(item => item.element.hashId === id)!;
 	assert.equal(outliner.update(guest, world, child), true);
 	tree.updateLayout(0, 0, 200, 200, 20, 12);
@@ -81,7 +82,7 @@ return true`, { optLevel: 3, modules: WORLD_CPU_MODULES });
 	assert.equal(outliner.update(guest, world, child), true);
 	assert.equal(tree.rows.length, 3);
 	assert.ok(outliner.readActor(guest, world, parent) === undefined);
-	for (const item of tree.rows) assert.equal(outliner.readActor(guest, world, item.element.hashId)!.hashId, item.element.hashId,
+	for (const item of tree.rows) assert.equal(guest.identityScalar(outliner.readActor(guest, world, item.element.hashId)!, ValueTag.Table), item.element.hashId,
 		'dense-array removal rebinds swapped slots rather than following an old index');
 	call('rename');
 	assert.equal(outliner.update(guest, world, child), true);

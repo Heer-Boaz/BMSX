@@ -1,4 +1,4 @@
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
+import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
@@ -15,10 +15,10 @@ export function readActorChoices(sources: RuntimeInstalledSourceState, guest: Su
 	const actors = readRuntimeActors(sources, guest, domain), choices: ActorChoice[] = [];
 	if (actors.status !== 'available') return choices;
 	for (let i = 1, length = actors.objects.length(); i <= length; i++) {
-		const actor = actors.objects.getInteger(i) as Table;
+		const actor = actors.objects.getInteger(i);
 		choices.push({ label: guest.formatValue(guest.readStringMember(actor, 'id')),
 			description: guest.formatValue(guest.readStringMember(actor, 'definition_id')),
-			detail: `CART ${actors.domain}`, domain: actors.domain, hashId: actor.hashId });
+			detail: `CART ${actors.domain}`, domain: actors.domain, hashId: guest.identityScalar(actor, ValueTag.Table) });
 	}
 	return choices;
 }
@@ -38,7 +38,7 @@ export class ActorProjection {
 		const { input, guest } = this;
 		const world = runtimeWorld(this.sources, guest, input.domain);
 		const worldChanged = input.worldOutliner.update(guest, world, input.actorHashId);
-		input.worldHashId = world?.hashId;
+		input.worldHashId = world === undefined ? undefined : guest.identityScalar(world, ValueTag.Table);
 		const actor = input.worldOutliner.readActor(guest, world, input.actorHashId);
 		const wasPresent = input.actorPresent;
 		input.actorPresent = actor !== undefined;

@@ -1,6 +1,5 @@
 // Consumes the same-build cartlib layout in docs/cartlib_inspection_contract.md.
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
-import type { Value } from '../../../../machine/ts/machine/cpu/value';
+import { asTable, isNil, numberToHost, valueNil, valuesEqual, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import { createFsmStatePath } from '../../../../toolchain/ts/cartlib/fsm/state_path';
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
@@ -16,39 +15,39 @@ export type ActorNode = {
 	readonly label: string;
 	readonly children: ActorNode[];
 	/** Borrowed only between CPU slices. Display identity survives, guest handles do not. */
-	value: Table | null;
-	receiver: Table | null;
-	component: Table | null;
+	value: Value | null;
+	receiver: Value | null;
+	component: Value | null;
 	key: Value;
 	active: boolean;
 	readonly stateKeys: readonly string[];
 	readonly path?: string;
 };
 
-export function runtimeWorld(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): Table | undefined {
+export function runtimeWorld(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): Value | undefined {
 	const world = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/world/world');
-	return world.kind === 'value' && world.value !== null ? world.value as Table : undefined;
+	return world.kind === 'value' && !isNil(world.value) ? world.value : undefined;
 }
 
 /** The ordinary global registerfile is shared: mounted ROMs are not separate worlds. */
 export function readRuntimeActors(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
 	const world = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/world/world');
 	if (world.kind === 'unavailable') return { domain, status: world.reason } as const;
-	if (world.value === null) return { domain, status: 'uninitialized' } as const;
-	return { domain, status: 'available', objects: guest.readStringMember(world.value, '_objects') as Table } as const;
+	if (isNil(world.value)) return { domain, status: 'uninitialized' } as const;
+	return { domain, status: 'available', objects: asTable(guest.readStringMember(world.value, '_objects'), guest.cpu.gc) } as const;
 }
 
-export function findRuntimeActor(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, hashId: number): Table | undefined {
+export function findRuntimeActor(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, hashId: number): Value | undefined {
 	return findWorldActor(guest, runtimeWorld(sources, guest, domain), hashId);
 }
 
 /** Lookup from an already resolved World; callers can retain its scalar identity separately. */
-export function findWorldActor(guest: SuspendedGuestSession, world: Table | undefined, hashId: number): Table | undefined {
+export function findWorldActor(guest: SuspendedGuestSession, world: Value | undefined, hashId: number): Value | undefined {
 	if (world === undefined) return;
-	const objects = guest.readStringMember(world, '_objects') as Table;
+	const objects = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
 	for (let i = 1, length = objects.length(); i <= length; i += 1) {
-		const actor = objects.getInteger(i) as Table;
-		if (actor.hashId === hashId) return actor;
+		const actor = objects.getInteger(i);
+		if (guest.identityScalar(actor, ValueTag.Table) === hashId) return actor;
 	}
 }
 
@@ -78,7 +77,7 @@ export class ActorRuntimeTree {
 	private activityChanged = false;
 	private borrowed = false;
 	private readonly kinds: number[] = [];
-	public update(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, actor: Table | undefined): boolean {
+	public update(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, actor: Value | undefined): boolean {
 		this.changed = false;
 		this.activityChanged = false;
 		this.borrowed = actor !== undefined;
@@ -87,22 +86,25 @@ export class ActorRuntimeTree {
 		} else {
 			const id = guest.readStringMember(actor, 'id');
 			const root = this.node(guest, null, 0, 'actor', actor, actor, null, id, guest.isTruthy(guest.readStringMember(actor, 'active')));
-			const components = guest.readStringMember(actor, '_components') as Table;
+			const components = asTable(guest.readStringMember(actor, '_components'), guest.cpu.gc);
 			const componentCount = components.length();
 			this.kinds.length = componentCount + 1;
 			this.kinds.fill(-1);
-			const classes = guest.readStringMember(actor, '_components_by_class') as Table;
+			const classes = asTable(guest.readStringMember(actor, '_components_by_class'), guest.cpu.gc);
 			for (let i = 0; i < COMPONENT_TYPES.length; i += 1) {
 				const type = readRuntimeLuaModuleExport(sources, guest, domain, COMPONENT_TYPES[i][0]);
-				if (type.kind !== 'value' || type.value === null) continue;
-				const bucket = classes.get(type.value) as Table | null;
-				if (bucket !== null) for (let j = 1, length = bucket.length(); j <= length; j += 1) {
-					const index = guest.readStringMember(bucket.getInteger(j), '_owner_component_index') as number;
-					this.kinds[index] = i;
+				if (type.kind !== 'value' || isNil(type.value)) continue;
+				const bucketValue = classes.get(type.value);
+				if (!isNil(bucketValue)) {
+					const bucket = asTable(bucketValue, guest.cpu.gc);
+					for (let j = 1, length = bucket.length(); j <= length; j += 1) {
+						const index = numberToHost(guest.readStringMember(bucket.getInteger(j), '_owner_component_index'));
+						this.kinds[index] = i;
+					}
 				}
 			}
 			for (let i = 1; i <= componentCount; i += 1) {
-				const component = components.getInteger(i) as Table;
+				const component = components.getInteger(i);
 				const type = this.kinds[i];
 				const id = guest.readStringMember(component, type === 1 ? 'tree_id' : 'id');
 				const branch = this.node(guest, root, i - 1, type === 1 ? 'tree' : 'component', component, component, component, id,
@@ -110,17 +112,17 @@ export class ActorRuntimeTree {
 					type === -1 ? 'COMPONENT' : COMPONENT_TYPES[type][1]);
 				let count = 0;
 				if (type === 0) {
-					const machines = guest.readStringMember(component, '_machines') as Table;
+					const machines = asTable(guest.readStringMember(component, '_machines'), guest.cpu.gc);
 					for (let index = 1, length = machines.length(); index <= length; index++) {
-						const machine = machines.getInteger(index) as Table;
+						const machine = machines.getInteger(index);
 						const node = this.node(guest, branch, count++, 'machine', machine, machine, component, guest.readStringMember(machine, 'localdef_id'),
 							branch.active && guest.isTruthy(guest.readStringMember(component, '_started')));
 						this.states(guest, node, machine, component);
 					}
 				} else if (type === 2 || type === 3) {
 					guest.visitTableEntries(guest.readStringMember(component, type === 2 ? '_entries_by_id' : 'effects'), (key, value) => {
-						this.node(guest, branch, count++, type === 2 ? 'timeline' : 'effect', value as Table, component, component, key,
-							type === 2 ? guest.isTruthy(guest.readStringMember(value, 'playing')) : (guest.readStringMember(value, 'active_count') as number) > 0);
+						this.node(guest, branch, count++, type === 2 ? 'timeline' : 'effect', value, component, component, key,
+							type === 2 ? guest.isTruthy(guest.readStringMember(value, 'playing')) : numberToHost(guest.readStringMember(value, 'active_count')) > 0);
 					});
 				}
 				this.finishChildren(branch, count, type === 2 || type === 3);
@@ -133,22 +135,23 @@ export class ActorRuntimeTree {
 		return this.changed;
 	}
 
-	private node(guest: SuspendedGuestSession, parent: RetainedActorNode | null, index: number, kind: ActorNode['kind'], value: Table, receiver: Table,
-		component: Table | null, key: Value, active: boolean, prefix = ''): RetainedActorNode {
+	private node(guest: SuspendedGuestSession, parent: RetainedActorNode | null, index: number, kind: ActorNode['kind'], value: Value, receiver: Value,
+		component: Value | null, key: Value, active: boolean, prefix = ''): RetainedActorNode {
+		const hashId = guest.identityScalar(value, ValueTag.Table);
 		const siblings = parent === null ? this.members : parent.members;
 		let node = siblings[index];
-		if (node === undefined || node.hashId !== value.hashId || node.kind !== kind || node.prefix !== prefix || !guest.matchesIdentity(key, node.keyIdentity)) {
+		if (node === undefined || node.hashId !== hashId || node.kind !== kind || node.prefix !== prefix || !guest.matchesIdentity(key, node.keyIdentity)) {
 			let previous = index + 1;
 			for (; previous < siblings.length; previous++) {
 				const candidate = siblings[previous];
-				if (candidate.hashId === value.hashId && candidate.kind === kind && candidate.prefix === prefix && guest.matchesIdentity(key, candidate.keyIdentity)) break;
+				if (candidate.hashId === hashId && candidate.kind === kind && candidate.prefix === prefix && guest.matchesIdentity(key, candidate.keyIdentity)) break;
 			}
 			if (previous < siblings.length) node = siblings[previous];
 			else {
 				const name = guest.formatValue(key);
 				const stateKeys = kind === 'state' ? [...parent!.stateKeys, name] : NO_KEYS;
 				const label = prefix === '' ? name : `${prefix} ${name}`;
-				node = { kind, hashId: value.hashId, keyIdentity: guest.identity(key), name, prefix, label, children: [], members: [], childrenDirty: false,
+				node = { kind, hashId, keyIdentity: guest.identity(key), name, prefix, label, children: [], members: [], childrenDirty: false,
 					value, receiver, component, key, active, stateKeys, path: kind === 'state' ? createFsmStatePath(true, 0, stateKeys)?.text : undefined };
 				previous = siblings.length;
 			}
@@ -188,16 +191,16 @@ export class ActorRuntimeTree {
 		this.roots.length = 0; this.members.length = 0;
 	}
 
-	private states(guest: SuspendedGuestSession, parent: RetainedActorNode, machine: Table, component: Table): void {
+	private states(guest: SuspendedGuestSession, parent: RetainedActorNode, machine: Value, component: Value): void {
 		const state = parent.value!;
-		const children = guest.readStringMember(state, 'states') as Table;
-		const ids = guest.readStringMember(state, 'state_ids') as Table;
+		const children = asTable(guest.readStringMember(state, 'states'), guest.cpu.gc);
+		const ids = asTable(guest.readStringMember(state, 'state_ids'), guest.cpu.gc);
 		const current = guest.readStringMember(state, 'current_id');
 		const stateCount = ids.length();
 		for (let i = 1; i <= stateCount; i += 1) {
 			const id = ids.getInteger(i);
-			const child = children.get(id) as Table;
-			const active = parent.active && (current === id || guest.isTruthy(guest.readStringMember(guest.readStringMember(child, 'definition'), 'is_concurrent')));
+			const child = children.get(id);
+			const active = parent.active && (valuesEqual(current, id) || guest.isTruthy(guest.readStringMember(guest.readStringMember(child, 'definition'), 'is_concurrent')));
 			const node = this.node(guest, parent, i - 1, 'state', child, machine, component, id, active);
 			this.states(guest, node, machine, component);
 		}
@@ -209,7 +212,7 @@ export class ActorRuntimeTree {
 function releaseActorBorrows(nodes: readonly ActorNode[], start: number): void {
 	for (let index = start; index < nodes.length; index++) {
 		const node = nodes[index];
-		node.value = null; node.receiver = null; node.component = null; node.key = null;
+		node.value = null; node.receiver = null; node.component = null; node.key = valueNil();
 		releaseActorBorrows(node.children, 0);
 	}
 }

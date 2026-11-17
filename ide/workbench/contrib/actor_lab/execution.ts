@@ -1,7 +1,5 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import type { Closure } from '../../../../machine/ts/machine/cpu/closure';
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
-import { valueString, valueTag, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { asClosure, isNil, numberToHost, valueFloat, valueNil, valueString, valueTag, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../../machine/ts/spec/bmsx/io';
 import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { HostRewind } from '../../../../hosts/common/rewind';
@@ -108,10 +106,10 @@ export class ActorExecutionService {
 				if (world === undefined) {
 					this.finish(operation, { status: 'rejected', values: [], tags: [], reason: 'World changed before actor invocation.' }); return;
 				}
-				return { request: { domain, closure: this.guest.readStringMember(world, 'request_mutation_boundary') as Closure, args: () => [world] },
+				return { request: { domain, closure: asClosure(this.guest.readStringMember(world, 'request_mutation_boundary'), this.runtime.machine.cpu.gc), args: () => [world] },
 					condition: values => {
-						const receipt = values[0] as Table, key = this.runtime.machine.cpu.stringPool.find('reached')!;
-						return () => receipt.getStringKey(key) === true;
+						const receipt = values[0];
+						return () => this.guest.isTruthy(this.guest.readStringMember(receipt, 'reached'));
 					} };
 			},
 			prepare: () => {
@@ -137,7 +135,7 @@ export class ActorExecutionService {
 			}
 			this.runtime.machine.cpu.readCompletionValues(this.values);
 			const result: ActorExecutionResult = { status: 'completed', values: this.values.map(value => this.guest.previewValue(value, 1, 8)),
-				tags: this.values.map(valueTag), spawnedActorHashId: request.kind === 'spawn' ? (this.values[0] as Table).hashId : undefined };
+				tags: this.values.map(valueTag), spawnedActorHashId: request.kind === 'spawn' ? this.guest.identityScalar(this.values[0], ValueTag.Table) : undefined };
 			this.values.length = 0; operation.outcome = result;
 		}, error => { if (operation.result === undefined) this.finish(operation, { status: 'host-error', values: [], tags: [], reason: String(error) }); });
 		return operation;
@@ -160,7 +158,7 @@ export class ActorExecutionService {
 			prepare: () => {
 				const world = this.world(domain, worldHashId);
 				if (world === undefined) return;
-				return { domain, closure: this.guest.readStringMember(world, 'render') as Closure, args: () => [world] };
+				return { domain, closure: asClosure(this.guest.readStringMember(world, 'render'), this.runtime.machine.cpu.gc), args: () => [world] };
 			},
 		}, () => {}, completed => {
 			if (!completed) { finished(false); return; }
@@ -170,34 +168,34 @@ export class ActorExecutionService {
 			}, failed);
 		}, failed);
 	}
-	private world(domain: ResourceDomain, hashId: number): Table | undefined {
+	private world(domain: ResourceDomain, hashId: number): Value | undefined {
 		const world = runtimeWorld(this.sources, this.guest, domain);
-		return world?.hashId === hashId ? world : undefined;
+		return world !== undefined && this.guest.identityScalar(world, ValueTag.Table) === hashId ? world : undefined;
 	}
-	private prepare(request: ActorInvocation, world: Table): RuntimeGuestCall | undefined {
+	private prepare(request: ActorInvocation, world: Value): RuntimeGuestCall | undefined {
 		const cpu = this.runtime.machine.cpu, guest = this.guest;
 		if (request.kind === 'position') {
 			const actor = findRuntimeActor(this.sources, guest, request.target.domain, request.target.actorHashId);
-			if (actor === undefined || guest.readStringMember(actor, 'ox') !== request.fromX || guest.readStringMember(actor, 'oy') !== request.fromY) return;
-			const parent = guest.readStringMember(actor, 'parent') as Table | null;
-			if ((parent === null ? 0 : parent.hashId) !== request.parentHashId) return;
+			if (actor === undefined || numberToHost(guest.readStringMember(actor, 'ox')) !== request.fromX || numberToHost(guest.readStringMember(actor, 'oy')) !== request.fromY) return;
+			const parent = guest.readStringMember(actor, 'parent');
+			if ((isNil(parent) ? 0 : guest.identityScalar(parent, ValueTag.Table)) !== request.parentHashId) return;
 			const object = readRuntimeLuaModuleExport(this.sources, guest, request.target.domain, 'cartlib/world/object_2d');
 			if (object.kind !== 'value') return;
 			const setter = guest.readStringMember(actor, 'set_position');
 			if (setter !== guest.readStringMember(object.value, 'set_position')) return;
-			return { domain: request.target.domain, closure: setter as Closure, args: () => [actor, request.x, request.y] };
+			return { domain: request.target.domain, closure: asClosure(setter, cpu.gc), args: () => [actor, valueFloat(request.x), valueFloat(request.y)] };
 		}
 		if (request.kind === 'spawn') {
 			const module = readRuntimeLuaModuleExport(this.sources, guest, request.domain, 'cartlib/world/prefab');
-			if (module.kind !== 'value' || module.value === null) return;
+			if (module.kind !== 'value' || isNil(module.value)) return;
 			const definitions = readRuntimeLuaModuleCapture(this.sources, guest, request.domain, 'cartlib/world/prefab', guest.readStringMember(module.value, 'define'), 'definitions');
 			if (definitions.kind !== 'value') return;
-			let id: Value = null;
+			let id = valueNil();
 			guest.visitTableEntries(definitions.value, (key, definition) => {
 				if (guest.matchesIdentity(key, request.definitionId) && guest.matchesIdentity(definition, request.definition)) id = key;
 			});
-			if (id === null) return;
-			return { domain: request.domain, closure: guest.readStringMember(world, 'spawn') as Closure,
+			if (isNil(id)) return;
+			return { domain: request.domain, closure: asClosure(guest.readStringMember(world, 'spawn'), cpu.gc),
 				args: () => {
 					const args: Value[] = [world, id];
 					for (const literal of request.args) args.push(literal(cpu));
@@ -218,15 +216,15 @@ export class ActorExecutionService {
 			if (node.kind === 'state') leading.push(valueString(cpu.stringPool.intern(node.path!)));
 			else if (action.keyed) leading.push(node.key);
 		} else if (request.kind === 'scrub') {
-			if (node.kind !== 'timeline' || (guest.readStringMember(node.value, 'program') as Table).hashId !== request.programHashId) return;
-			method = 'scrub_time'; leading.push(node.key, request.time);
+			if (node.kind !== 'timeline' || guest.identityScalar(guest.readStringMember(node.value!, 'program'), ValueTag.Table) !== request.programHashId) return;
+			method = 'scrub_time'; leading.push(node.key, valueFloat(request.time));
 		} else if (request.kind === 'event') {
-			receiver = guest.readStringMember(tree.roots[0].value, 'events') as Table;
+			receiver = guest.readStringMember(tree.roots[0].value!, 'events');
 			method = 'emit'; leading.push(valueString(cpu.stringPool.intern(request.name)));
 		} else method = request.method;
 		const closure = guest.readStringMember(receiver, method);
 		if (valueTag(closure) !== ValueTag.Closure || request.kind === 'method' && !guest.matchesIdentity(closure, request.identity)) return;
-		return { domain: target.domain, closure: closure as Closure, args: () => {
+		return { domain: target.domain, closure: asClosure(closure, cpu.gc), args: () => {
 			const args: Value[] = [receiver, ...leading];
 			if (request.kind === 'action' || request.kind === 'method') for (const literal of request.args) args.push(literal(cpu));
 			else if (request.kind === 'event') args.push(request.payload(cpu));

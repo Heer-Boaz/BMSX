@@ -43,6 +43,8 @@ export function valueIsThread(value: Value): boolean { return valueTag(value) ==
 export function valueIsBuiltinFunction(value: Value): boolean { return valueTag(value) === ValueTag.BuiltinFunction; }
 export function asInteger(value: Value): number { return value | 0; }
 export function asFloat(value: Value): number { return f32BitsToNumber(valuePayload(value)); }
+/** Host inspection of a guest Number, without the rounding of Float promotion. */
+export function numberToHost(value: Value): number { return valueIsInteger(value) ? asInteger(value) : asFloat(value); }
 export function asStringId(value: Value): StringId { return valuePayload(value); }
 export function asBuiltinFunctionId(value: Value): BuiltinFunctionId { return valuePayload(value); }
 export function asTable(value: Value, heap: GcHeap): Table { return heap.object(valuePayload(value)) as Table; }

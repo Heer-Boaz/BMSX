@@ -1,5 +1,4 @@
-import { valueTag, ValueTag, type StringValue } from '../../../../machine/ts/machine/cpu/value';
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
+import { valueTag, ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { inspectActionEffectInstance } from '../behavior_lens/action_effect_runtime';
@@ -36,19 +35,19 @@ export function inspectActorNode(
 		// private bookkeeping do not become duplicate expandable World trees.
 		guest.visitTableEntries(value, (key, item) => {
 			if (valueTag(key) !== ValueTag.String) { properties.entry('member', key, item); return; }
-			const name = guest.stringText(key as StringValue);
+			const name = guest.stringText(key);
 			if (name.startsWith('_') || name === 'world' || name === 'scene') return;
 			properties.field('instance', name, ACTOR_LABELS[name] ?? name, item);
 		});
 	} else if (node.kind === 'timeline') {
 		for (const [key, label] of TIMELINE_FIELDS) properties.field('instance', key, label, guest.readStringMember(value, key));
-		const program = guest.readStringMember(value, 'program') as Table;
+		const program = guest.readStringMember(value, 'program');
 		guest.visitTableEntries(program, (key, item) => properties.entry('program', key, item, PROGRAM_PRESENTATION));
 	} else {
 		properties.field('instance', 'id', 'ID', guest.readStringMember(value, 'id'));
 		properties.field('instance', 'enabled', 'Enabled', guest.readStringMember(value, 'enabled'));
 		guest.visitTableEntries(value, (key, item) => {
-			const name = valueTag(key) === ValueTag.String ? guest.stringText(key as StringValue) : '';
+			const name = valueTag(key) === ValueTag.String ? guest.stringText(key) : '';
 			if (name === 'id' || name === 'enabled') return;
 			properties.entry('member', key, item, name.startsWith('_') ? INTERNAL_MEMBER : name === 'owner' ? ACTOR_REFERENCE : undefined);
 		});

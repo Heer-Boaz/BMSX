@@ -1,3 +1,4 @@
+import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
 import type { CPU } from '../../../../machine/ts/machine/cpu/cpu';
 import type { HostRewind } from '../../../../hosts/common/rewind';
@@ -135,7 +136,7 @@ export class ActorLabController {
 
 	public captureSelection(input: ActorLabInput): ActorLabNavigationSelection {
 		const world = input.actorHashId === 0 ? undefined : runtimeWorld(this.sources, this.guest, input.domain);
-		return new ActorLabNavigationSelection(input, world?.hashId, this.navigationGeneration);
+		return new ActorLabNavigationSelection(input, world === undefined ? undefined : this.guest.identityScalar(world, ValueTag.Table), this.navigationGeneration);
 	}
 
 	public restoreSelection(input: ActorLabInput, selection: ActorLabNavigationSelection, font: BFont): void {
@@ -148,7 +149,7 @@ export class ActorLabController {
 		input.outline.selectionIndex = -1;
 		const target = selection.target;
 		const world = target === undefined || selection.generation !== this.navigationGeneration ? undefined : runtimeWorld(this.sources, this.guest, target.domain);
-		const available = world !== undefined && world.hashId === target!.worldHashId;
+		const available = world !== undefined && this.guest.identityScalar(world, ValueTag.Table) === target!.worldHashId;
 		input.actorHashId = available ? target!.actorHashId : 0;
 		if (target !== undefined) input.domain = target.domain;
 		input.dirty = true;
@@ -175,7 +176,7 @@ export class ActorLabController {
 	public activityScope(input: ActorLabInput): ActorTarget | undefined {
 		const selected = this.selected(input);
 		if (selected === undefined) return;
-		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, selected);
+		const target = captureActorTarget(input.domain, this.guest.identityScalar(runtimeWorld(this.sources, this.guest, input.domain)!, ValueTag.Table), input.runtime.roots, selected);
 		let length = target.path.length;
 		if (selected.kind === 'state') while (target.path[length - 1].kind !== 'machine') length--;
 		else if (selected.kind === 'timeline' || selected.kind === 'effect') length--;
@@ -206,7 +207,7 @@ export class ActorLabController {
 
 	public openStateGraph(input: ActorLabInput, font: BFont): boolean {
 		const selected = this.selected(input)!;
-		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, selected);
+		const target = captureActorTarget(input.domain, this.guest.identityScalar(runtimeWorld(this.sources, this.guest, input.domain)!, ValueTag.Table), input.runtime.roots, selected);
 		let length = target.path.length;
 		while (target.path[length - 1].kind !== 'machine') length--;
 		const machineTarget = { ...target, path: target.path.slice(0, length) };
