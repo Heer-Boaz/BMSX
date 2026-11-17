@@ -14,9 +14,9 @@ public:
 	NativeBlockCompiler(ConstValueSpan constants, std::span<const std::unique_ptr<NativeBlock>> blocks,
 		const NativeCodeBindings& bindings, std::span<const NativeBlockSource> sources);
 	~NativeBlockCompiler();
-	void beginBlock(size_t index, bool inheritRegisters);
+	void beginBlock(size_t index);
 	void emit(const DecodedInstruction& instruction, NativeBlockExitSite* slow, NativeBlockExitSite* taken);
-	void endBlock(bool fallthrough);
+	void endBlock();
 	void* finish(size_t& codeBytes);
 
 private:
@@ -30,7 +30,8 @@ private:
 	NativeRegisterCache::Operand readTyped(
 		int selector, ValueTag tag, sljit_s32 wordScratch = SLJIT_R0, sljit_s32 floatScratch = SLJIT_FR0);
 	int knownTag(int selector) const;
-	void fault(sljit_jump* jump, NativeBlockExitSite& exit, const State& state);
+	void fault(sljit_jump* jump, NativeBlockExitSite& exit, const State& state, bool charged = false);
+	void emitLeave(NativeBlockExitSite& exit, bool charged);
 	void emitWordMove(const DecodedInstruction& instruction, NativeBlockExitSite* invalid);
 	void emitNumeric(const DecodedInstruction& instruction, NativeBlockExitSite& invalid);
 	void emitNumericKernel(const DecodedInstruction& instruction, NativeBlockExitSite& invalid, int resultTag);
@@ -40,6 +41,8 @@ private:
 	void emitNilRange(int first, int count);
 	void emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite& taken);
 	size_t regionEntryIndex(u32 pc) const;
+	void analyzeEntryLiveness();
+	bool entryReads(size_t entry, int guest) const;
 
 	sljit_compiler* m_compiler;
 	NativeRegisterCache m_cache;
@@ -47,7 +50,15 @@ private:
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
 	const NativeCodeBindings& m_bindings;
 	std::span<const NativeBlockSource> m_sources;
-	std::vector<sljit_label*> m_entries;
+	struct Entry {
+		State registers{};
+		sljit_label* guarded = nullptr;
+		sljit_label* proven = nullptr;
+		bool planned = false;
+	};
+	std::vector<Entry> m_entries;
+	size_t m_liveWordCount = 0;
+	std::vector<u64> m_entryLive;
 	struct Branch {
 		sljit_jump* jump;
 		size_t target;
@@ -62,11 +73,13 @@ private:
 		sljit_jump* jump;
 		NativeBlockExitSite* exit;
 		State state;
+		bool charged;
 	};
 	std::vector<SlowPath> m_slow;
 	struct Admission {
 		sljit_jump* jump;
 		u32 pc;
+		State state;
 	};
 	std::vector<Admission> m_admissions;
 	size_t m_current = 0, m_instruction = 0;

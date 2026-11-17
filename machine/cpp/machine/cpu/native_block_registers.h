@@ -28,7 +28,11 @@ public:
 		int nextUse = std::numeric_limits<int>::max();
 	};
 	using State = std::array<Binding, capacity>;
-	struct Operand { sljit_s32 reg; ValueTag tag; int slot; };
+	struct Operand {
+		sljit_s32 reg;
+		ValueTag tag;
+		int slot;
+	};
 
 	NativeRegisterCache(sljit_compiler* compiler, sljit_s32 words, sljit_s32 tags,
 		std::span<const NativeRegisterHost> integers, std::span<const NativeRegisterHost> floats);
@@ -48,13 +52,17 @@ public:
 	void spillCall(bool reload, sljit_sw stackOffset) const;
 
 	const State& state() const { return m_state; }
-	const Binding* binding(int guest) const { const int slot=find(guest); return slot<0?nullptr:&m_state[slot]; }
+	const Binding* binding(int guest) const {
+		const int slot = find(guest);
+		return slot < 0 ? nullptr : &m_state[slot];
+	}
 	void setState(const State& state);
 	void emitState(const State& state) const;
-	// Guards precede every parallel move. A failure retains the source state;
-	// success establishes the target map without a guest-memory roundtrip for
-	// retained dirty payloads. Scratch registers belong to neither cache bank.
-	void transferTo(const State& target, sljit_label* failure, sljit_s32 integerScratch, sljit_s32 floatScratch);
+	// Guards precede every parallel move. Returned branches retain the source
+	// map on failure; success establishes the target map without a guest-memory
+	// roundtrip for retained dirty payloads. Scratch belongs to neither bank.
+	using GuardBranches = std::array<sljit_jump*, capacity>;
+	GuardBranches transferTo(const State& target, sljit_s32 integerScratch, sljit_s32 floatScratch);
 
 private:
 	int find(int guest) const;

@@ -289,7 +289,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		// stable except a system-image edge from shared memory into the selectable
 		// cartridge window. Cartridge source pages already have physical identity;
 		// cartridge execution domains additionally pin every instruction fetch.
-		if (continuing && !exit->link.target
+		// An internal typed-edge admission miss has no rewritable branch.
+		// Only emitted external continuations participate in cross-region linking.
+		if (continuing && exit->link.patchAddress != 0 && !exit->link.target
 			&& (frame->executionImage->executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
 				|| pc < CART_ROM_BASE || exit->currentPc >= CART_ROM_BASE)) target->linkFrom(*exit);
 		state.registers = frame->registers;

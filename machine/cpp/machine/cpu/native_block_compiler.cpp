@@ -6,20 +6,12 @@
 #include "spec/blua32/instruction_format.h"
 
 namespace bmsx {
-namespace {
-const NativeBlockExitSite scalarBoundary = [] {
-	NativeBlockExitSite result;
-	result.exit = NativeBlockExit::ScalarBoundary;
-	return result;
-}();
-} // namespace
 
 NativeBlockCompiler::NativeBlockCompiler(ConstValueSpan constants, std::span<const std::unique_ptr<NativeBlock>> blocks,
 	const NativeCodeBindings& bindings, std::span<const NativeBlockSource> sources)
 	: m_compiler(sljit_create_compiler(nullptr)), m_cache(m_compiler, NativeBlockAbi::words, NativeBlockAbi::tags,
 													  NativeBlockAbi::wordRegisters, NativeBlockAbi::floatRegisters),
-	  m_constants(constants), m_blocks(blocks), m_bindings(bindings), m_sources(sources),
-	  m_entries(blocks.size(), nullptr) {
+	  m_constants(constants), m_blocks(blocks), m_bindings(bindings), m_sources(sources), m_entries(blocks.size()) {
 	if (!m_compiler)
 		throw std::bad_alloc();
 	sljit_set_context(m_compiler, 0, NativeBlockAbi::signature, NativeBlockAbi::scratches, NativeBlockAbi::saveds,
@@ -31,6 +23,7 @@ NativeBlockCompiler::NativeBlockCompiler(ConstValueSpan constants, std::span<con
 	for (const auto& block : blocks)
 		exits += block->sideExits.size();
 	m_slow.reserve(exits * 2);
+	analyzeEntryLiveness();
 }
 NativeBlockCompiler::~NativeBlockCompiler() {
 	sljit_free_compiler(m_compiler);
@@ -40,18 +33,6 @@ size_t NativeBlockCompiler::regionEntryIndex(u32 pc) const {
 		if (m_blocks[index]->firstPc == pc)
 			return index;
 	return m_blocks.size();
-}
-void NativeBlockCompiler::beginBlock(size_t index, bool) {
-	m_current = index;
-	m_instruction = 0;
-	m_prefixCycles = m_prefixTop = 0;
-	m_terminal = false;
-	m_cache.setState({});
-	m_entries[index] = sljit_emit_label(m_compiler);
-	const int prefix = m_blocks[index]->admissionCycles;
-	auto* shortGrant =
-		sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM, prefix);
-	m_admissions.push_back({shortGrant, m_blocks[index]->firstPc});
 }
 int NativeBlockCompiler::knownTag(int selector) const {
 	if (selector < 0)
@@ -97,9 +78,9 @@ void NativeBlockCompiler::emitConstant(int guest, Value value) {
 	} else
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_IMM, valuePayload(value));
 }
-void NativeBlockCompiler::fault(sljit_jump* jump, NativeBlockExitSite& exit, const State& state) {
+void NativeBlockCompiler::fault(sljit_jump* jump, NativeBlockExitSite& exit, const State& state, bool charged) {
 	if (jump)
-		m_slow.push_back({jump, &exit, state});
+		m_slow.push_back({jump, &exit, state, charged});
 }
 void NativeBlockCompiler::emitWordMove(const DecodedInstruction& instruction, NativeBlockExitSite* invalid) {
 	const auto mode = static_cast<ValueMoveKind>(instruction.c);
@@ -130,47 +111,6 @@ void NativeBlockCompiler::emitWordMove(const DecodedInstruction& instruction, Na
 	const auto target = m_cache.write(instruction.a, required == ValueTag::Float ? ValueTag::Integer : ValueTag::Float);
 	sljit_emit_fcopy(m_compiler, required == ValueTag::Float ? SLJIT_COPY32_FROM_F32 : SLJIT_COPY32_TO_F32,
 		required == ValueTag::Float ? source.reg : target.reg, required == ValueTag::Float ? target.reg : source.reg);
-}
-void NativeBlockCompiler::emitTop(int extent) {
-	if (extent == 0)
-		return;
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
-		offsetof(NativeBlockRunState, registerTop));
-	auto* retained = sljit_emit_cmp(m_compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, extent);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
-		offsetof(NativeBlockRunState, registerTop), SLJIT_IMM, extent);
-	sljit_set_label(retained, sljit_emit_label(m_compiler));
-}
-void NativeBlockCompiler::emitScalarBoundary(u32 pc, int cycles, int top) {
-	m_cache.publish();
-	emitTop(top);
-	if (cycles)
-		sljit_emit_op2(
-			m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, cycles);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, scalarPc),
-		SLJIT_IMM, pc);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&scalarBoundary));
-	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM, reinterpret_cast<sljit_sw>(nativeBlockGate().leaveSegment));
-	m_terminal = true;
-}
-void NativeBlockCompiler::emitExit(NativeBlockExitSite& exit) {
-	m_cache.publish();
-	emitTop(exit.registerTop);
-	sljit_emit_op2(
-		m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit));
-	if (exit.exit == NativeBlockExit::Continue) {
-		auto* expired =
-			sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM, 0);
-		const size_t target = regionEntryIndex(exit.nextPc);
-		if (target != m_blocks.size())
-			m_branches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), target});
-		else
-			m_external.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP | SLJIT_REWRITABLE_JUMP), &exit.link});
-		sljit_set_label(expired, sljit_emit_label(m_compiler));
-	}
-	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM, reinterpret_cast<sljit_sw>(nativeBlockGate().leaveSegment));
-	m_terminal = true;
 }
 void NativeBlockCompiler::emit(
 	const DecodedInstruction& instruction, NativeBlockExitSite* slow, NativeBlockExitSite* taken) {
@@ -354,7 +294,7 @@ void NativeBlockCompiler::emit(
 	} else if (OPCODE_WRITES_REGISTER_A[instruction.op])
 		m_prefixTop = std::max(m_prefixTop, static_cast<int>(instruction.a) + 1);
 }
-void NativeBlockCompiler::endBlock(bool) {
+void NativeBlockCompiler::endBlock() {
 	if (!m_terminal)
 		emitExit(m_blocks[m_current]->terminal);
 }
@@ -362,15 +302,15 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 	for (const auto& slow : m_slow) {
 		sljit_set_label(slow.jump, sljit_emit_label(m_compiler));
 		m_cache.setState(slow.state);
-		emitExit(*slow.exit);
+		emitLeave(*slow.exit, slow.charged);
 	}
 	for (const auto& admission : m_admissions) {
 		sljit_set_label(admission.jump, sljit_emit_label(m_compiler));
-		m_cache.setState({});
+		m_cache.setState(admission.state);
 		emitScalarBoundary(admission.pc, 0, 0);
 	}
 	for (const auto& branch : m_branches)
-		sljit_set_label(branch.jump, m_entries[branch.target]);
+		sljit_set_label(branch.jump, m_entries[branch.target].proven);
 	for (const auto& branch : m_external)
 		sljit_set_target(branch.jump, reinterpret_cast<sljit_uw>(nativeBlockGate().leaveSegment));
 	void* code = sljit_generate_code(m_compiler, 0, nullptr);
@@ -379,7 +319,7 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 	codeBytes = sljit_get_generated_code_size(m_compiler);
 	for (size_t index = 0; index < m_blocks.size(); ++index) {
 		m_blocks[index]->m_body = m_blocks[index]->m_linkEntry =
-			reinterpret_cast<void*>(sljit_get_label_addr(m_entries[index]));
+			reinterpret_cast<void*>(sljit_get_label_addr(m_entries[index].guarded));
 	}
 	for (const auto& branch : m_external) {
 		branch.link->patchAddress = sljit_get_jump_addr(branch.jump);

@@ -8,6 +8,7 @@
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <tuple>
 
 namespace {
 using namespace bmsx;
@@ -21,7 +22,7 @@ struct Machine {
 	IrqController irq;
 	ExecutionAddressSpace addresses;
 	CPU cpu;
-	Machine(test::Blua32TestImage image)
+	Machine(test::Blua32TestImage image, bool prepare = true)
 		: rom([&] {
 			  auto encoded = test::encodeBlua32TestRom(RomImageDomain::System, image);
 			  // Physical backing includes the full final page, so precompilation
@@ -33,7 +34,10 @@ struct Machine {
 		  addresses(memory), cpu(memory, irq, addresses) {
 		cpu.reset();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		cpu.prepareSystemNativeCode();
+		if (prepare)
+			cpu.prepareSystemNativeCode();
+#else
+		(void)prepare;
 #endif
 	}
 };
@@ -444,6 +448,10 @@ test::Blua32TestImage regionImage(const std::string& name) {
 	else if (name == "loop")
 		program = {{OpCode::MOV, 8, 0, 0}, {OpCode::ADD, 2, 2, 1}, {OpCode::SUB, 0, 0, 1}, {OpCode::LE, 0, 0, 3},
 			{OpCode::JMP, 0, 63, 60, 255}, {OpCode::RET, 2, 2, 0}};
+	else if (name == "typed-loop")
+		program = {{OpCode::LOADK, 0, 0, 0}, {OpCode::K1, 1, 0, 0}, {OpCode::K0, 2, 0, 0}, {OpCode::LOADK, 3, 0, 1},
+			{OpCode::LOADK, 4, 0, 2}, {OpCode::K0, 5, 0, 0}, {OpCode::ADD, 2, 2, 1}, {OpCode::ADD, 3, 3, 4},
+			{OpCode::SUB, 0, 0, 1}, {OpCode::LE, 0, 0, 5}, {OpCode::JMP, 0, 63, 59, 255}, {OpCode::RET, 2, 3, 0}};
 	else if (name == "memory")
 		program = {{OpCode::LOAD_MEM, 2, 0, static_cast<u32>(MemoryAccessKind::F64LE)}, {OpCode::MOV, 6, 2, 0},
 			{OpCode::STORE_MEM, 2, 1, static_cast<u32>(MemoryAccessKind::F64LE)},
@@ -460,6 +468,8 @@ test::Blua32TestImage regionImage(const std::string& name) {
 		{.firstWord = static_cast<u32>(program.size()), .wordCount = 1, .maxStack = 8}};
 	image.exceptionFunctionIndex = 1;
 	image.constants = {std::string("field")};
+	if (name == "typed-loop")
+		image.constants = {i32{3}, Blua32FloatConstant{0x3f800000}, Blua32FloatConstant{0x3e800000}};
 	image.globalNames = {"saved"};
 	return image;
 }
@@ -518,6 +528,68 @@ void scalarRegions() {
 			require(results.get(0) == valueInteger(3), "word-addressed backward jump");
 	}
 }
+void typedLoopBoundaries() {
+	// A cold reference CPU visits each loop entry fewer than the native threshold.
+	// The second CPU has the identical physical image precompiled, including
+	// guarded public entries and the retained integer/F32 backedge maps.
+	for (int variant = 0; variant < 3; ++variant)
+		for (int grant = 1; grant <= 100; ++grant) {
+			Machine scalar(regionImage("typed-loop"), false), native(regionImage("typed-loop"));
+			const auto execute = [&](Machine& m) {
+				auto* frame = m.cpu.activeThread()->currentFrame;
+				for (int i = 0; i < 24; ++i)
+					frame->registers.set(i, valueInteger(900 + i));
+				if (variant != 0) {
+					frame->pc += 6 * INSTRUCTION_BYTES;
+					frame->registers.set(0, variant == 1 ? valueInteger(3) : valueFloat(3));
+					frame->registers.set(1, variant == 1 ? valueInteger(1) : valueFloat(1));
+					frame->registers.set(2, variant == 1 ? valueInteger(0) : valueFloat(0));
+					frame->registers.set(3, valueFloatBits(0x3f800000));
+					frame->registers.set(4, valueFloatBits(0x3e800000));
+					frame->registers.set(5, valueInteger(0));
+				}
+				const auto result = m.cpu.runUntilDepth(0, grant);
+				const bool active = m.cpu.activeThread()->currentFrame == frame;
+				std::array<Value, 24> registers{};
+				if (active)
+					for (int i = 0; i < 24; ++i)
+						registers[i] = frame->registers.get(i);
+				std::vector<Value> values;
+				const auto completed = m.cpu.readCompletionValues();
+				for (size_t i = 0; i < completed.size(); ++i)
+					values.push_back(completed.get(i));
+				return std::tuple{result, m.cpu.instructionBudgetRemaining, active ? frame->pc : 0,
+					active ? frame->top : 0, registers, values, m.cpu.readCauseWord(), m.cpu.readLuaFaultReasonWord(),
+					m.cpu.lastPc};
+			};
+			const auto expected = execute(scalar), actual = execute(native);
+			if (actual != expected) {
+				std::cerr << "typed loop variant " << variant << " grant " << grant << '\n';
+				throw std::runtime_error("native integer/F32 jump maps match the interpreter at every grant boundary");
+			}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			require(scalar.cpu.readNativeCompilationProfile().codeBytes == 0,
+				"cold loop reference executes only the interpreter");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			if (grant == 100) {
+				require(native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::Return)].entries != 0,
+					"typed loop completes through generated code");
+				if (variant != 2)
+					require(native.cpu.nativeGateProfile()
+									.exits[static_cast<size_t>(NativeBlockExit::ScalarBoundary)]
+									.entries == 0,
+						"matching integer/F32 loop proofs never fall back to the interpreter");
+				else
+					require(native.cpu.nativeGateProfile()
+									.exits[static_cast<size_t>(NativeBlockExit::ScalarBoundary)]
+									.entries != 0,
+						"a changed public entry subtype declines its stale proof");
+			}
+#endif
+#endif
+		}
+}
+
 void constantsGlobalsAndRestore() {
 	auto image = constantImage();
 	Machine m(image);
@@ -622,6 +694,7 @@ int main(int argc, char** argv) {
 		nativeOperandFaultPrefix();
 		memoryWords();
 		scalarRegions();
+		typedLoopBoundaries();
 		constantsGlobalsAndRestore();
 		tableHeap();
 		std::cout << "CPU32 typed execution, compact roots, snapshots and Table tests passed\n";
