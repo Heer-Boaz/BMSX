@@ -250,6 +250,16 @@ void NativeBlockCompiler::emit(
 	case OpCode::LEN:
 		emitLength(instruction, *slow);
 		break;
+	case OpCode::LOAD_MEM:
+	case OpCode::LOAD_MEM_D:
+	case OpCode::STORE_MEM:
+	case OpCode::STORE_MEM_D:
+		emitMemory(instruction, *slow);
+		break;
+	case OpCode::STORE_MEM_WORDS:
+	case OpCode::STORE_MEM_WORDS_D:
+		emitExit(*slow);
+		break;
 	case OpCode::GETGL:
 	case OpCode::SETGL:
 	case OpCode::GETSYS:

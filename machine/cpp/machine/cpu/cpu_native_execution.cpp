@@ -196,15 +196,19 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::InvalidLength:
 			throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 		case NativeBlockExit::ReadMemory:
-			cpu.executeMemoryLoad(*frame, exit->exitA, static_cast<MemoryAccessKind>(exit->exitC), state.memoryAddress);
+			cpu.executeMemoryLoad(*frame, exit->exitA, static_cast<MemoryAccessKind>(exit->exitC),
+				wordOperand(readRK(*frame->executionImage, frame->registers, exit->exitB)) + exit->exitBx);
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::WriteMemory:
-			cpu.executeMemoryStore(*frame, exit->exitA, static_cast<MemoryAccessKind>(exit->exitC), state.memoryAddress);
+			cpu.executeMemoryStore(*frame, exit->exitA, static_cast<MemoryAccessKind>(exit->exitC),
+				wordOperand(readRK(*frame->executionImage, frame->registers, exit->exitB)) + exit->exitBx);
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::WriteWords:
-			cpu.executeWordStores(*frame, state.memoryAddress, exit->exitA, exit->exitC);
+			cpu.executeWordStores(*frame,
+				wordOperand(readRK(*frame->executionImage, frame->registers, exit->exitB)) + exit->exitBx,
+				exit->exitA, exit->exitC);
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::AllocateTable: {

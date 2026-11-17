@@ -55,7 +55,6 @@ struct NativeBlockRunState {
 	int remainingCycles = 0;
 	int registerTop = 0;
 	u32 scalarPc = 0;
-	u32 memoryAddress = 0;
 	void* exitCode = nullptr;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticNativeOpcodeCounts diagnosticOpcodes;

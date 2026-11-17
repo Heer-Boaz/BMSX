@@ -2180,7 +2180,6 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private executeMemoryLoad(frame: CallFrame, destination: number, kind: MemoryAccessKind, address: number): void {
-		if (kind === MemoryAccessKind.F64LE) this.instructionBudgetRemaining -= 2;
 		if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
 			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, address);
 			return;
@@ -2203,7 +2202,6 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private executeMemoryStore(frame: CallFrame, source: number, kind: MemoryAccessKind, address: number): void {
-		if (kind === MemoryAccessKind.F64LE) this.instructionBudgetRemaining -= 2;
 		if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
 			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, address);
 			return;
@@ -2886,6 +2884,7 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.STORE_MEM: {
 					const b = page.b[pageOffset];
 					const c = page.c[pageOffset] as MemoryAccessKind;
+					if (c === MemoryAccessKind.F64LE) this.instructionBudgetRemaining -= 2;
 					const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D;
 					const addr = displaced ? (wordOperand(registers.get(b)) + (page.disp[pageOffset] << 2)) >>> 0
 						: wordOperand(this.readRKValue(frame, b));

@@ -137,6 +137,10 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		terminal.nextPc = op == OpCode::JMP ? instruction.bx : source.pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
 		terminal.exitA = instruction.a; terminal.exitB = instruction.b; terminal.exitC = instruction.c;
 		terminal.exitBx = instruction.bx;
+		if (op == OpCode::LOAD_MEM_D || op == OpCode::STORE_MEM_D || op == OpCode::STORE_MEM_WORDS_D)
+			terminal.exitBx = static_cast<u32>(instruction.disp) << 2u;
+		else if (op == OpCode::LOAD_MEM || op == OpCode::STORE_MEM || op == OpCode::STORE_MEM_WORDS)
+			terminal.exitBx = 0;
 		if (op == OpCode::SELF) terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + 2);
 		const auto slow = nativeBlockSlowExit(instruction.op, instruction.b, controlGuarded, instruction.c);
 		controlGuarded |= op == OpCode::MFC0 || op == OpCode::MTC0;

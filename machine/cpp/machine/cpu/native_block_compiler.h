@@ -44,6 +44,7 @@ private:
 	void emitUpvalue(const DecodedInstruction&, NativeBlockExitSite*);
 	void emitControl(const DecodedInstruction&, NativeBlockExitSite*);
 	void emitLength(const DecodedInstruction&, NativeBlockExitSite&);
+	void emitMemory(const DecodedInstruction&, NativeBlockExitSite&);
 	void emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite& taken);
 	size_t regionEntryIndex(u32 pc) const;
 	void analyzeEntryLiveness();

@@ -115,6 +115,38 @@ test(`${backend}: scalar memory loads/stores retain raw words and charge the ext
 		assert.equal(cpu.instructionBudgetRemaining,-4);
 	}
 });
+test(`${backend}: started F64 transfers retain the format charge when address conversion faults`, { skip: !runner }, () => {
+	for (const op of [OpCode.LOAD_MEM, OpCode.LOAD_MEM_D, OpCode.STORE_MEM, OpCode.STORE_MEM_D]) {
+		for (const bad of [v.valueNil(), v.valueBool(true), v.valueFloatBits(0x7fc00000), v.valueFloatBits(0x7f800000)]) {
+			const cpu = machine(op, MemoryAccessKind.F64LE), closure = cpu.activeThread.currentFrame!.closure;
+			const owner = cpu.activeThread.currentFrame!.executionImage;
+			for (let i = 0; i < 12; ++i) {
+				if (i !== 0) cpu.beginCompletionCall(closure);
+				const r = cpu.activeThread.currentFrame!.registers;
+				r.setInteger(0, DYNAMIC_RAM_BASE + 0x300); r.setInteger(2, 917);
+				assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+			}
+			let generated = 0;
+			if (backend === CpuExecutionBackend.JavaScript) {
+				const page = owner.compiledCodeLookup!.find(closure.codeAddress, 0)!;
+				assert.ok(page.compiledBlocks);
+				for (const region of new Set(page.compiledBlocks.entries.filter(block => block !== null).map(block => block.region))) {
+					const execute = region.execute;
+					Object.defineProperty(region, 'execute', { value: (...args: Parameters<typeof execute>) => { ++generated; return execute(...args); } });
+				}
+			}
+			cpu.beginCompletionCall(closure);
+			const r = cpu.activeThread.currentFrame!.registers;
+			r.set(0, bad); r.setInteger(2, 917);
+			const grant = 32;
+			cpu.runUntilDepth(0, grant);
+			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+			assert.equal(cpu.instructionBudgetRemaining, grant - 5 - BASE_CYCLES[OpCode.HALT], 'started transfer plus the real exception handler HALT');
+			assert.equal(r.get(2), v.valueInteger(917));
+			if (backend === CpuExecutionBackend.JavaScript) assert.ok(generated > 0, 'the fault must occur in generated execution');
+		}
+	}
+});
 
 test(`${backend}: CPU snapshot rebuilds compact globals, raw Float registers and cyclic heap references`, { skip: !runner }, () => {
 	const rom=new Uint8Array(execFileSync(runner!,['--rom-constants']));

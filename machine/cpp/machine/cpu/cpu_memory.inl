@@ -2,7 +2,6 @@
 // dispatcher: a device access can fault, block or retire its executing source.
 
 inline void CPU::executeMemoryLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address) {
-	if (kind == MemoryAccessKind::F64LE) instructionBudgetRemaining -= 2;
 	if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(kind)]) != 0u) {
 		enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, address);
 		return;
@@ -27,7 +26,6 @@ inline void CPU::executeMemoryLoad(CallFrame& frame, int destination, MemoryAcce
 }
 
 inline bool CPU::executeMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address) {
-	if (kind == MemoryAccessKind::F64LE) instructionBudgetRemaining -= 2;
 	if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(kind)]) != 0u) {
 		enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, address);
 		return true;

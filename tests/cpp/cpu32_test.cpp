@@ -390,6 +390,20 @@ void memoryWords() {
 		m.cpu.runUntilDepth(0, 1);
 		require(m.cpu.instructionBudgetRemaining == -4, "even alignment faults retain the started F64 format charge");
 	}
+	for (auto op : {OpCode::LOAD_MEM, OpCode::LOAD_MEM_D, OpCode::STORE_MEM, OpCode::STORE_MEM_D})
+		for (Value address : {valueNil(), valueBool(true), valueFloatBits(0x7fc00000), valueFloatBits(0x7f800000)}) {
+			Number32Machine m(operation(op, static_cast<u32>(MemoryAccessKind::F64LE)));
+			auto regs = m.cpu.activeThread()->currentFrame->registers;
+			regs.set(0, address);
+			regs.set(2, valueInteger(917));
+			m.cpu.runUntilDepth(0, 1);
+			require(m.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT,
+				"F64 address conversion reports the operand fault");
+			require(m.cpu.instructionBudgetRemaining == -4,
+				"F64 charges its second transfer before even address conversion can fail");
+			require(m.cpu.readFrameRegister(0, 2) == valueInteger(917),
+				"address conversion faults do not touch the value slot");
+		}
 }
 
 test::Blua32TestImage constantImage() {

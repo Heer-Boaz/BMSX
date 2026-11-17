@@ -277,6 +277,7 @@ export function emitJavaScriptBlock(
 		} else if (compiledTableSupports(op)) {
 			source.push(emitTableOperation(op, page, word, registers, exitIndex));
 		} else if (load || store || words) {
+			if (!words && page.c[word] === MemoryAccessKind.F64LE) source.push('budget-=2;');
 			const selector = page.b[word], tag = registers.tagOperand(selector), payload = registers.wordOperand(selector);
 			const base = `ma${word}`;
 			source.push(`const ${base}=${tag}===${ValueTag.Integer}?${payload}:(${tag}===${ValueTag.Float}?fw(${payload}):null);if(${base}===null) ${numericFault}`);

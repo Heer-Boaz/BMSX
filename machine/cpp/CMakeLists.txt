@@ -379,7 +379,7 @@ endif()
 if(BMSX_ENABLE_NATIVE_BLOCKS)
 	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp machine/cpu/native_block_abi.cpp
 		machine/cpu/native_block_registers.cpp machine/cpu/native_block_numeric.cpp machine/cpu/native_block_compare.cpp
-		machine/cpu/closure.cpp machine/cpu/native_block_context.cpp machine/cpu/native_block_control.cpp machine/cpu/native_block_length.cpp machine/cpu/native_block_edges.cpp machine/cpu/native_block_liveness.cpp
+		machine/cpu/closure.cpp machine/cpu/native_block_context.cpp machine/cpu/native_block_control.cpp machine/cpu/native_block_length.cpp machine/cpu/native_block_memory.cpp machine/cpu/native_block_edges.cpp machine/cpu/native_block_liveness.cpp
 		machine/cpu/cpu_native_blocks.cpp machine/cpu/cpu_native_execution.cpp machine/cpu/cpu_native_prepare.cpp)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)
 	target_link_libraries(bmsx_core PRIVATE bmsx_sljit)
@@ -1153,6 +1153,9 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_cpu32_context_tests ../../tests/cpp/cpu32_context_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu32_context_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu32_context_tests COMMAND bmsx_cpu32_context_tests)
+	add_executable(bmsx_cpu32_memory_tests ../../tests/cpp/cpu32_memory_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu32_memory_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu32_memory_tests COMMAND bmsx_cpu32_memory_tests)
 	add_executable(bmsx_value32_tests ../../tests/cpp/value32_test.cpp
 		machine/cpu/thread.cpp machine/cpu/closure.cpp)
 	target_include_directories(bmsx_value32_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -1176,6 +1179,7 @@ if(BMSX_BUILD_TESTS)
 		target_link_options(bmsx_small_block_pool_tests PRIVATE -static-libstdc++ -static-libgcc)
 		target_link_options(bmsx_cpu32_tests PRIVATE -static-libstdc++ -static-libgcc)
 		target_link_options(bmsx_cpu32_context_tests PRIVATE -static-libstdc++ -static-libgcc)
+		target_link_options(bmsx_cpu32_memory_tests PRIVATE -static-libstdc++ -static-libgcc)
 		target_link_options(bmsx_value32_tests PRIVATE -static-libstdc++ -static-libgcc)
 		target_link_options(bmsx_numeric32_tests PRIVATE -static-libstdc++ -static-libgcc)
 		target_link_options(bmsx_value_storage_tests PRIVATE -static-libstdc++ -static-libgcc)

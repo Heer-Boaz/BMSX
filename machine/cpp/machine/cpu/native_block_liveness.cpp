@@ -20,6 +20,10 @@ bool retainsRegisters(OpCode op) {
 	case OpCode::LEN:
 	case OpCode::MFC0:
 	case OpCode::MTC0:
+	case OpCode::LOAD_MEM:
+	case OpCode::LOAD_MEM_D:
+	case OpCode::STORE_MEM:
+	case OpCode::STORE_MEM_D:
 	case OpCode::KNIL:
 	case OpCode::KFALSE:
 	case OpCode::KTRUE:

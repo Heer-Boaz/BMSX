@@ -49,7 +49,7 @@ ${alignment === 0 ? '' : `if((a&${alignment})!==0) ${exit}`}
 if(o>=${IO_SLOT_COUNT * IO_WORD_SIZE}&&o<=m.byteLength-${width}){const d=m; ${read}}
 else if(a<=${SYSTEM_ROM_SIZE - width}){o=a; ${emitRomStorageRead('s', read, width, exit)}}
 else {o=(a-${CART_ROM_BASE})>>>0; if(o>${CART_ROM_SIZE - width}) ${exit}
-if(c.selectedSlot()===0){${slot0}}else{${slot1}}}${kind === MemoryAccessKind.F64LE ? 'budget-=2;' : ''}${result}}`;
+if(c.selectedSlot()===0){${slot0}}else{${slot1}}}${result}}`;
 	}
 	const watches = `||g[o>>>${MAPPED_PAGE_BYTE_SHIFT}]!==0`
 		+ (width === 8 ? `||g[(o+4)>>>${MAPPED_PAGE_BYTE_SHIFT}]!==0` : '');
@@ -58,7 +58,7 @@ if(${alignment === 0 ? '' : `(a&${alignment})!==0||`}o<${IO_SLOT_COUNT * IO_WORD
 	const tag = registers.tagOperand(a), value = registers.wordOperand(a);
 	let conversion: string;
 	if (kind === MemoryAccessKind.F32LE) conversion = `const mt=${tag},mw=${value};if(mt!==${ValueTag.Integer}&&mt!==${ValueTag.Float}) ${numericFault}const v=mt===${ValueTag.Integer}?fb(mw|0):mw;`;
-	else if (kind === MemoryAccessKind.F64LE) conversion = `budget-=2;const mt=${tag},mw=${value};if(mt!==${ValueTag.Integer}&&mt!==${ValueTag.Float}) ${numericFault}const v=mt===${ValueTag.Integer}?mw|0:bf(mw);`;
+	else if (kind === MemoryAccessKind.F64LE) conversion = `const mt=${tag},mw=${value};if(mt!==${ValueTag.Integer}&&mt!==${ValueTag.Float}) ${numericFault}const v=mt===${ValueTag.Integer}?mw|0:bf(mw);`;
 	else conversion = `const v=${tag}===${ValueTag.Integer}?${value}:(${tag}===${ValueTag.Float}?fw(${value}):null);if(v===null) ${numericFault}`;
 	return `${guard}${conversion}m.set${viewMethods[kind]}(o,v${endian});}`;
 }
