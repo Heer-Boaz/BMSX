@@ -1,13 +1,32 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { StringValue } from '../../machine/ts/machine/cpu/value';
+import { asStringId, valueBool, valueIsString } from '../../machine/ts/machine/cpu/value';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 
 for (const optLevel of [0, 3] as const) {
+	test(`BIOS table.concat owns conversion independently of global tostring (O${optLevel})`, () => {
+		const {cpu} = createCartlibProgramHarness(`
+local function execute()
+ local saved<const> = tostring
+ local calls = 0
+ tostring = function() calls = calls + 1; return 'changed' end
+ assert(table.concat({'é',12,nil,false},'|',1,4) == 'é|12||false')
+ assert(table.concat({true,{}},false,1,2) == 'truefalsetable')
+ assert(string.sub('éabc',1,3) == 'éab')
+ assert(calls == 0, 'implicit tostring calls')
+ assert(tostring(12) == 'changed')
+ assert(calls == 1, 'explicit tostring conversion')
+ tostring = saved
+end
+observed_ok,observed_error = pcall(execute)
+`, {optLevel});
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_ok')), valueBool(true));
+	});
 	test(`BIOS table.unpack preserves counts, nils, bounds and ordered index effects (O${optLevel})`, () => {
 		const {cpu} = createCartlibProgramHarness(`
 local function execute()
@@ -29,10 +48,10 @@ assert(negative.n==3 and negative[1]==22 and negative[3]==44, 'negative bounds')
 local fractional<const> = table.pack(table.unpack(small,1.9,2.9))
 assert(fractional.n==2 and fractional[1]==11 and fractional[2]==22, 'fractional bounds')
 assert(select('#',table.unpack(small,3,2))==0, 'empty range')
-local large<const> = 9007199254740991
+local large<const> = 2147483646
 local edge<const> = {[large]=11,[large+1]=22}
 local edge_values<const> = table.pack(table.unpack(edge,large,large+1))
-assert(edge_values.n==2 and edge_values[1]==11 and edge_values[2]==22, 'binary64 adjacent integer boundary')
+assert(edge_values.n==2 and edge_values[1]==11 and edge_values[2]==22, 'adjacent Integer keys at the positive boundary')
 local parent = {}
 for i=1,12 do parent[i]=i*3 end
 parent[5]=nil
@@ -48,7 +67,7 @@ observed_ok,observed_error=pcall(execute)
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
 		assert.equal(cpu.getFrameDepth(), 0);
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_ok')), true);
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_ok')), valueBool(true));
 	});
 	test(`BIOS table.unpack observes inherited indices in ascending order (O${optLevel})`, () => {
 		const {cpu, images} = createCartlibProgramHarness(`
@@ -74,16 +93,16 @@ unpack_ok,unpack_error=pcall(table.unpack,faulting,1,12)
 		const visited: number[] = [];
 		cpu.setInstructionObserver({ points: [new Set(keyRegisterByPc.keys()), new Set(), new Set()], observe(_domain, pc, registers) {
 			const operands = keyRegisterByPc.get(pc)!;
-			if (registers.get(operands.table) === cpu.getGlobalByKey(target)) visited.push(registers.getNumber(operands.key));
+			if (registers.get(operands.table) === cpu.getGlobalByKey(target)) visited.push(registers.getInteger(operands.key));
 		}});
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
 		assert.equal(cpu.getFrameDepth(), 0);
 		assert.deepEqual(visited, [...Array.from({length:16}, (_,i) => i+1), ...Array.from({length:9}, (_,i) => i+1)]);
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('unpack_ok')), false);
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('unpack_ok')), valueBool(false));
 		const error = cpu.getGlobalByKey(cpu.stringPool.intern('unpack_error'));
-		assert.ok(error instanceof StringValue);
-		assert.equal(cpu.stringPool.toString(error.id), 'Metatable __index loop detected.');
+		assert.ok(valueIsString(error));
+		assert.equal(cpu.stringPool.toString(asStringId(error)), 'Metatable __index loop detected.');
 	});
 
 	test(`BIOS UTF-8 decode keeps Unicode, boundary and malformed-input behavior (O${optLevel})`, () => {

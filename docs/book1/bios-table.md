@@ -63,8 +63,8 @@ order. Each assignment takes effect when reached, and preceding assignments
 remain visible if a later operation raises an error. Pack creates a new
 Table; concat and unpack do not themselves assign into the target. A callback
 or a deliberately replaced public dependency can still have its own effects.
-The library's public fields and the `select`/`tostring` globals it uses are
-ordinary mutable bindings, not permanently reserved operations.
+The library's public fields and the `select` global used by pack and unpack
+are ordinary mutable bindings, not permanently reserved operations.
 
 The functions execute ordinary instructions. Loops, tuple forwarding,
 conversions, temporary Strings and comparison callbacks contribute work; a
@@ -149,18 +149,20 @@ Unpacking uses a recursive call chain whose depth grows linearly with the number
 table.concat(target [, separator [, start [, end]]]) -> text
 ```
 
-`table.concat` returns exactly one String, joining the selected positions in ascending order without changing the target. Each position is read by ordinary indexing. A `nil` value contributes an empty String; every other value is converted with the current global `tostring`. Separators remain between adjacent positions even when one or both positions read as `nil`.
+`table.concat` returns exactly one String, joining the selected positions in ascending order without changing the target. Each position is read by ordinary indexing. A `nil` value contributes an empty String; every other value uses the language value-to-text conversion. Separators remain between adjacent positions even when one or both positions read as `nil`.
 
 
-An omitted or explicitly `nil` separator is the empty String. Any other separator is converted with `tostring`, so the installed `tostring` accepts values other than Strings here as well. This conversion happens before the selected values are read, even for a single-position interval where no separator is inserted. An empty interval instead returns an empty String before converting the separator or reading any positions.
+An omitted or explicitly `nil` separator is the empty String. Any other separator uses the same language value-to-text conversion, including values other than Strings. This conversion happens before the selected values are read, even for a single-position interval where no separator is inserted. An empty interval instead returns an empty String before converting the separator or reading any positions.
 
 ```lua
 table.concat(packed, '|', 1, packed.n) -- "10||30|"
 table.concat({true, {}, nil, 7}, false, 1, 4)
--- "truefalsetablefalsefalse7" with the installed tostring.
+-- "truefalsetablefalsefalse7".
 ```
 
-These conversions use the live global `tostring`, not a permanently captured formatter. Replacing it can change both separator and value conversion.
+Strings retain their contents. Other values use the conversion specified
+for [CPU concatenation](cpu.md#sec-cpu-truth-length-and-text). Replacing the
+global `tostring` does not change either separator or value conversion.
 
 Concatenation divides the selected interval at `(first + last) // 2`, joins
 the two halves and inserts the separator between them. It creates intermediate

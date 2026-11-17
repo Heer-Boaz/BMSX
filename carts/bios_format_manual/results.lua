@@ -13,11 +13,11 @@ struct bios_format_manual_result
 	unsigned_match: word
 	special_match: word
 	fixed_large_match: word
-	empty_integer_length: word
+	integer_error: word
 	nul_length: word
 	nul_codepoint: word
 	nul_trailing_codepoint: word
-	nonnumeric_width_match: word
+	width_error: word
 	incomplete_error: word
 	unsupported_error: word
 end

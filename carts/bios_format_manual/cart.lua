@@ -32,24 +32,23 @@ local special<const> = string.format('%+F/%e', 1 / 0, 0 / 0)
 local large<const> = string.format('%.0f', 1000000)
 result.float_match = floating == '1.25/1.3e+01/100.' and 1 or 0
 result.special_match = special == '+INF/nan' and 1 or 0
-result.fixed_large_match = large == '1e+06' and 1 or 0
+result.fixed_large_match = large == '1000000' and 1 or 0
 print('Format numbers', floating, special, large)
 
--- Quoting emits visible escapes; %c retains both modf results in this BIOS.
+-- Quoting emits visible escapes; %c selects only the integer modf result.
 local quoted<const> = string.format('%q', 'A\t"')
 local nul<const> = string.format('%c', 0)
 result.quote_match = quoted == '"A\\t\\""' and 1 or 0
 result.nul_length = #nul
 result.nul_codepoint = string.byte(nul)
-result.nul_trailing_codepoint = string.byte(nul, 2)
+result.nul_trailing_codepoint = string.byte(nul, 2) or -1
 print('Format text', quoted, result.nul_length, result.nul_codepoint,
 	result.nul_trailing_codepoint)
 
--- These branches do not parse numeric text or impose a common type check.
-result.empty_integer_length = #string.format('%d')
-result.nonnumeric_width_match = string.format('%*s', '5', 'go') == 'go' and 1 or 0
-print('Format argument paths', result.empty_integer_length,
-	result.nonnumeric_width_match)
+-- Numeric fields require Numbers; missing values and numeric text are errors.
+result.integer_error = not pcall(string.format, '%d') and 1 or 0
+result.width_error = not pcall(string.format, '%*s', '5', 'go') and 1 or 0
+print('Format argument paths', result.integer_error, result.width_error)
 
 local incomplete_ok<const>, incomplete_error<const> = pcall(string.format, '%')
 local unsupported_ok<const>, unsupported_error<const> =

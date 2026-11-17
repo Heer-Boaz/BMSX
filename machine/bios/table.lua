@@ -56,7 +56,7 @@ concat_range = function(target, separator, first, last)
 		if value == nil then
 			return ''
 		end
-		return tostring(value)
+		return '' .. value
 	end
 	local midpoint<const> = (first + last) // 2
 	return concat_range(target, separator, first, midpoint) .. separator .. concat_range(target, separator, midpoint + 1, last)
@@ -72,7 +72,7 @@ table.concat = function(target, separator_arg, start_arg, end_arg)
 	end
 	local separator = ''
 	if separator_arg ~= nil then
-		separator = tostring(separator_arg)
+		separator = '' .. separator_arg
 	end
 	return concat_range(target, separator, start_index, end_index)
 end

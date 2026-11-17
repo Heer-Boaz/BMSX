@@ -441,8 +441,10 @@ local floating = string.format('%.2f/%.1e/%#.3g',
     1.25, 12.5, 100)                                 -- '1.25/1.3e+01/100.'
 ```
 
-`string.format('%.0f', 1000000)` returns `'1000000'`: its whole-number piece
-is an Integer and uses the ordinary Integer-to-text conversion.
+`string.format('%.0f', 1000000)` returns `'1000000'`. Floating conversions
+use the binary32 value; `%d` instead preserves every Integer digit.
+For example, `string.format('%d/%.0f', 16777217, 16777217)` returns
+`'16777217/16777216'`.
 
 ### Conversion syntax and argument order {#sec-bios-string-conversion-syntax-and-argument-order}
 
@@ -462,17 +464,25 @@ Each component except `%` and the final conversion is optional. The dot belongs 
 | Modifiers | Any order and repetition of `l`, `L`, `h`. They are ignored and do not change the numeric representation. |
 | Conversion | Exactly one of `s c d i u o x X f F e E g G q`. |
 
-Decimal fields are accumulated by multiplying the previous value by ten and adding the next digit. There is no field digit-count or numeric cap. There is no positional `$` syntax. No additional conversion is supplied for `a`, `A`, `p` or `n`; a percent reached after parsing flags, width or precision is not the `%%` escape.
+Decimal width and precision fields must fit a nonnegative Integer (at most
+`2147483647`). A larger field raises an error instead of wrapping. There is no positional `$` syntax. No additional conversion is supplied for `a`, `A`, `p` or `n`; a percent reached after parsing flags, width or precision is not the `%%` escape.
 
 Arguments are selected sequentially: width `*` first, precision `*` second, then one value for a recognized conversion. An unsupported conversion does not select a conversion value, although its stars have already selected their arguments. There is no argument-count preflight or too-many-arguments error. With the installed argument-selection function, an exhausted argument list supplies Nil to a scalar selection; an omitted `format` is also Nil.
 
-A star uses the first result of `math.modf`. For finite Numbers this truncates toward zero. A negative width enables left alignment and uses the negated width. A precision is retained only when its truncated value is nonnegative; a negative or NaN precision is absent. A non-Number star argument raises an error in `math.modf`; it is not parsed as numeric text.
+A star takes a Number, truncates toward zero and requires the result to fit
+an Integer. A negative width enables left alignment and uses its magnitude;
+`-2147483648` cannot be used as a width because that magnitude is not an
+Integer. A negative precision is absent. Nonfinite or out-of-range values
+raise an error. Numeric text is not accepted in place of a Number.
 
 ### Flags, signs and padding {#sec-bios-string-flags-signs-and-padding}
 
 Width is a minimum, never a truncation limit. Padding measures the combined codepoint lengths of sign, base prefix and content. If padding is needed, `-` appends spaces and overrides `0`. Otherwise `0` inserts zeros after the sign and base prefix; ordinary padding inserts spaces before both.
 
-For signed conversions, a value less than zero selects `-`; otherwise `+` selects `+`, then space selects one leading space. Thus `+` overrides space. Sign selection does not inspect a negative-zero sign bit.
+For signed integer conversions, a negative Integer selects `-`. Floating
+conversions retain the sign of negative zero and negative infinity; NaN is
+printed without a negative sign. Otherwise `+` selects `+`, then space
+selects one leading space. Thus `+` overrides space.
 
 | Conversion group | Flag and precision effects |
 | --- | --- |
@@ -489,8 +499,9 @@ For signed conversions, a value less than zero selects `-`; otherwise `+` select
 **`%c` — one codepoint.** Takes the integer component from `math.modf` and
 passes that one value to `string.char`. Conversion to an unsigned 32-bit word
 truncates and wraps. A word above `10FFFFH` or within `D800H`–`DFFFH` raises the
-codepoint error. NaN and either infinity convert to codepoint zero; a
-non-Number raises an error in `math.modf` before reaching `string.char`.
+codepoint error. NaN and either infinity raise `INVALID_ARGUMENT` at word
+conversion; a non-Number raises an error in `math.modf` before reaching
+`string.char`.
 
 `string.format('%c', 0)` contains one NUL codepoint. Both
 `string.format('%c', 65)` and `string.format('%c', 65.75)` produce `'A'`.
@@ -514,53 +525,64 @@ Every other codepoint is copied unchanged. Width applies after quoting. Precisio
 
 ### Integer conversions {#sec-bios-string-integer-conversions}
 
-`%d` and `%i` take the first `math.modf` result. Finite fractions truncate toward zero, and a negative integer is formatted using its positive magnitude and a separate minus sign. These conversions do not impose a 32-bit word limit.
+`%d` and `%i` accept an Integer or a finite Float whose truncation toward
+zero fits an Integer. They print signed decimal, including the full range
+`-2147483648` through `2147483647`. A non-Number, nonfinite value or
+out-of-range truncated value raises an error.
 
-`%u`, `%o`, `%x` and `%X` take that same first result, apply a bitwise AND with `FFFFFFFFH`, and interpret the result as an unsigned 32-bit magnitude. `%u` uses decimal, `%o` octal, and `%x`/`%X` hexadecimal with lowercase/uppercase letters.
+`%u`, `%o`, `%x` and `%X` admit the argument in the same way, then interpret
+its 32 bits as an unsigned word. `%u` uses decimal, `%o` octal, and `%x`/`%X`
+hexadecimal with lowercase/uppercase letters. Thus Integer `-1` prints as
+`4294967295`, `37777777777`, `ffffffff` or `FFFFFFFF`, respectively. There
+is no intermediate positive Number representing `2^32 - 1`.
 
-Zero initially produces one `0`. Other magnitudes are converted by repeated remainder and floor division in the selected base. Integer precision adds leading zeros to the requested minimum digit count. Precision zero clears the digits when the magnitude is zero.
-
-For `#` octal, empty digits are restored to one `0`; otherwise a leading `0` is added only if the first digit is not already zero. For `#` hexadecimal, `0x` or `0X` is added only for a nonzero magnitude. The common width rules then place sign, prefix and padding.
-
-A signed NaN magnitude produces no initial digits; sign flags, precision and width can still add text. A non-Number raises an error in `math.modf`. Unsigned conversion of NaN or either infinity raises `INVALID_ARGUMENT` at the integer bitwise conversion. Either infinity in signed integer conversion produces a positive-infinite magnitude; repeated base division then fails to make progress toward completion.
+Integer precision adds leading zeros to the requested minimum digit count.
+Precision zero clears the digits when the word is zero. For `#` octal,
+empty digits are restored to one `0`; otherwise a leading `0` is added only
+if the first digit is not already zero. For `#` hexadecimal, `0x` or `0X`
+is added only for a nonzero word. The common width rules then place sign,
+prefix and padding.
 
 ### Floating conversions {#sec-bios-string-floating-conversions}
 
-`f`/`F` select fixed construction, `e`/`E` scientific construction, and `g`/`G` general construction. Numeric Strings are not parsed as Numbers.
+`f`/`F` select fixed decimal, `e`/`E` scientific notation, and `g`/`G` general
+notation. An Integer argument is first rounded to Float. A Float argument
+keeps its binary32 value. Numeric Strings and other non-Numbers raise an
+error; they are not parsed as numeric text.
 
-A Number NaN is handled before construction as `nan` or `NAN`; either infinity is handled as `inf` or `INF`. Sign selection is separate, so negative infinity receives a minus sign and nonnegative special values may receive `+` or space. For other arguments, sign is selected from the original value and a value less than zero is negated to obtain the magnitude.
+Finite values are rounded from their exact stored binary32 value to the
+requested decimal position. Rounding chooses the nearest value, with an
+exact half rounded away from zero. For example, `%.1f` formats `1.25` as
+`1.3` and `-1.25` as `-1.3`. Precision can exceed the significant decimal
+digits of a Float: subsequent digits describe that stored value, not the
+original source numeral.
 
-Non-Number arguments do not match the initial Number-special cases. Their
-comparisons with the numeric constants are false; when the selected
-construction reaches arithmetic, it raises `INVALID_ARGUMENT` rather than
-producing Number NaN.
+**Fixed (`f`, `F`).** Precision defaults to six and specifies the number of
+digits after the decimal point. Precision zero omits the point unless `#`
+is present. Large whole parts are written in full, not scientific notation.
 
+**Scientific (`e`, `E`).** Precision defaults to six and specifies the
+number of digits after the decimal point. A nonzero mantissa has one digit
+before the point. Rounding a mantissa through ten increments the exponent.
+The suffix is `e` or `E`, an explicit sign and at least two decimal exponent
+digits. Zero has exponent zero. Precision zero omits the point unless `#`
+is present.
 
-**Fixed construction (`f`, `F`).** Precision defaults to six; explicit zero is retained. For magnitude `v` and precision `p`, construct `scale` by starting at one and multiplying by ten `p` times, then calculate:
+**General (`g`, `G`).** Precision defaults to six significant digits;
+explicit zero means one. First round to that number of significant digits.
+Use scientific notation if the resulting exponent is below -4 or at least
+the significant-digit count; otherwise use fixed notation. Without `#`,
+omit trailing fractional zeros and an unneeded point. Integer place zeros
+are never stripped: `%g` of `100000` is `100000`, not `1`. With `#`, retain
+the requested significant digits and the decimal point.
 
-```text
-rounded  = first modf result of (v * scale + 0.5)
-whole    = rounded // scale
-fraction = rounded % scale
-```
+NaN is `nan` or `NAN`; infinity is `inf` or `INF`. Negative infinity and
+negative zero retain their minus sign; sign flags apply to other values,
+including NaN. Width and zero-padding apply after constructing this text.
 
-
-Convert `whole` with the current `tostring`. When `p > 0`, append a dot and `tostring(fraction)`, padding that fraction text on the left with zeros to at least `p` codepoints. At precision zero, append a dot only for `#`.
-
-**Scientific construction (`e`, `E`).** Precision also defaults to six. Zero uses fixed construction followed by exponent zero. Otherwise repeatedly divide the magnitude by ten while it is at least ten, or multiply it by ten while it is positive and below one, tracking the exponent from zero. Round the resulting mantissa using the same multiply-plus-half and first-`modf` operation. If the rounded value is at least `10 * scale`, divide it by ten using floor division and increment the exponent. Construct the whole/fraction text as above, then append `e` or `E`, an explicit exponent sign, and the current `tostring` of the absolute exponent, left-padded with zeros to at least two codepoints. Two is a minimum, not an exponent limit.
-
-**General construction (`g`, `G`).** Precision defaults to six significant digits; explicit zero becomes one. Determine the decimal exponent from the unrounded magnitude, using exponent zero for zero. If the exponent is below −4 or at least the significant-digit precision, select scientific construction with precision one less than the significant-digit count. Otherwise select fixed construction with precision `significant − exponent − 1`. The choice is not repeated after rounding.
-
-Without `#`, detach the first `e`/`E` suffix, remove every trailing zero from the preceding text, remove a trailing dot if present, and reattach the suffix. This stripping does not require a decimal point: it can remove integer trailing zeros as well. `#` skips stripping. `G` then applies ASCII-only uppercasing to the resulting text. Stripping and uppercasing use the Table-length boundary rule above.
-
-**Default numeric text dependency.** The whole, fraction and exponent text pieces above use `tostring`; precision does not substitute an arbitrary-length decimal writer. Under the installed default, Nil becomes `nil`, Booleans become `false` or `true`, Tables become `table`, Threads become `thread`, function values become `function`, and Strings retain their contents. Number specials become `nan`, `-inf` or `inf`.
-
-For finite Numbers, the default conversion distinguishes the Integer and
-Float subtypes as specified by the [CPU Number-to-text rules](cpu.md#sec-cpu-number-to-text-examples).
-Its Float rounding is distinct from the formatter's multiply-plus-half
-rounding. Consequently, requested floating precision does not guarantee that
-every intermediate text piece is plain fixed decimal digits, or that every
-requested decimal digit is accurate.
+Numeric conversions produce their own decimal digits, independently of
+replacing the global `tostring`. The `%s` and `%q` conversions still call
+that global as specified above.
 
 ### Errors, completed work and limits {#sec-bios-string-errors-completed-work-and-limits}
 
@@ -579,15 +601,16 @@ String or count. Length and codepoint errors retain their ordinary texts.
 
 
 The formatter keeps its original character, substring, repetition,
-concatenation and truncation functions. Its `tostring`, `select` and `error`
-calls use current globals. Replacing a saved helper's public field leaves
+concatenation and numeric conversion functions. Its `%s`/`%q` `tostring`,
+`select` and `error` calls use current globals. Replacing a saved helper's public field leaves
 the saved function in place; that helper can still use current globals of its
 own.
 
-Choose finite widths and precisions appropriate to the output. Large
-padding and decimal precision create more text and require more processing.
-Positive-infinite precision prevents the scaling loop from progressing;
-positive-infinite width can prevent repetition from completing.
+Choose widths and precisions appropriate to the output. Large padding and
+decimal precision require more text storage and processing; they remain
+subject to the language-storage budget. A field or numeric result length
+that exceeds the nonnegative Integer range raises an error. No partial
+result is returned.
 
 ## Pattern language {#sec-bios-string-pattern-language}
 
