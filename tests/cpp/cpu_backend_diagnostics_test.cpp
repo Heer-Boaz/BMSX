@@ -176,9 +176,9 @@ test::Blua32TestImage mixedImage() {
 
 void initializeStrings(Fixture& fixture) {
 	auto& cpu=fixture.runtime.machine.cpu;
-	fixture.frame().registers[4]=valueString(cpu.stringPool().intern(std::string("a\0雪",5)));
-	fixture.frame().registers[5]=valueString(cpu.stringPool().intern("tail"));
-	fixture.frame().registers[7]=valueBool(true);
+	fixture.frame().registers.set(4, valueString(cpu.stringPool().intern(std::string("a\0雪",5))));
+	fixture.frame().registers.set(5, valueString(cpu.stringPool().intern("tail")));
+	fixture.frame().registers.set(7, valueBool(true));
 }
 
 std::vector<u8> mixedGrants() {
@@ -189,10 +189,10 @@ std::vector<u8> mixedGrants() {
 		std::cout<<"mixed grant="<<grant<<" consumed="<<measured.consumed
 			<<" result="<<static_cast<int>(measured.result)<<'\n';
 	}
-	require(asTable(generated.frame().registers[0])->getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueNumber(1),
+	require(asTable(generated.frame().registers.get(0), generated.runtime.machine.cpu.gcHeap())->getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(1),
 		"mixed work actually performs the field write");
-	require(generated.frame().registers[3]==generated.frame().registers[6],"CONCAT and CONCATN produce identical complete strings");
-	require(isNil(generated.frame().registers[8]),"a compiled but untaken suffix never creates its table");
+	require(generated.frame().registers.get(3)==generated.frame().registers.get(6),"CONCAT and CONCATN produce identical complete strings");
+	require(isNil(generated.frame().registers.get(8)),"a compiled but untaken suffix never creates its table");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const auto& p=generated.runtime.machine.cpu.diagnosticExecutionProfile();
 	requireCounts({p.nativeOpcodes.newt+p.interpreterOpcodes.newt,p.nativeOpcodes.call+p.interpreterOpcodes.call,
@@ -212,7 +212,7 @@ void scalarBoundaryRetry() {
 	const auto zero=runPair(generated,scalar,0);
 	require(zero.consumed==0,"an exhausted entry executes no instruction");
 	[[maybe_unused]] const auto shortGrant=runPair(generated,scalar,1);
-	require(generated.frame().registers[1]==valueNumber(1) && isNil(generated.frame().registers[0]),
+	require(generated.frame().registers.get(1)==valueInteger(1) && isNil(generated.frame().registers.get(0)),
 		"the insufficient prefix grant executes only the scalar K1, not the unadmitted NEWT suffix");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	require(shortGrant.nativeCycles==0,"ScalarBoundary refunds the unexecuted native entry before scalar retry");
@@ -238,14 +238,17 @@ void tableWrites() {
 		for(auto* fixture : {&generated,&scalar}) {
 			auto& cpu=fixture->runtime.machine.cpu;
 			auto* table=cpu.createTable(0,2);
-			table->setStringKey(cpu.stringPool().intern("field"),valueNumber(11));
-			fixture->frame().registers[0]=valueTable(table); fixture->frame().registers[2]=valueNumber(73);
+			table->setStringKey(cpu.stringPool().intern("field"),valueInteger(11));
+			fixture->frame().registers.set(0, valueTable(cpu.gcHeap().reference(table))); fixture->frame().registers.set(2, valueInteger(73));
 		}
 		runPair(generated,scalar,32); // Bind the real generated field-cache fast path.
 		for(auto* fixture : {&generated,&scalar}) {
 			fixture->restart();
-			if(route==1) fixture->frame().registers[0]=valueTable(fixture->runtime.machine.cpu.createTable(0,0));
-			if(route==2) fixture->frame().registers[0]=valueNumber(19);
+			if(route==1) {
+				auto& cpu=fixture->runtime.machine.cpu;
+				fixture->frame().registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(0,0))));
+			}
+			if(route==2) fixture->frame().registers.set(0, valueInteger(19));
 		}
 		[[maybe_unused]] const auto measured=runPair(generated,scalar,32);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
@@ -255,7 +258,7 @@ void tableWrites() {
 #endif
 #endif
 		if(route==2) require(generated.runtime.machine.cpu.readLuaFaultReasonWord()!=0,"invalid table target actually enters the language-fault boundary");
-		else require(asTable(generated.frame().registers[0])->getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueNumber(73),
+		else require(asTable(generated.frame().registers.get(0), generated.runtime.machine.cpu.gcHeap())->getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(73),
 			"both field fast and growth paths perform the actual write");
 	}
 }
@@ -300,7 +303,7 @@ void fetchAndCallFaults() {
 		writeInstruction(image.text,1,static_cast<u8>(OpCode::HALT),0,0,0);
 		Fixture generated(image,false),scalar(image,true);
 		for(auto* fixture : {&generated,&scalar}) {
-			fixture->frame().registers[0]=valueNumber(17);
+			fixture->frame().registers.set(0, valueInteger(17));
 			if(fetch) fixture->runtime.machine.cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,
 				fixture->rom.functionAddresses[0],IO_IRQ_FLAGS);
 		}
@@ -346,7 +349,7 @@ void lazyCompilation() {
 	writeInstruction(image.text,1,static_cast<u8>(OpCode::SETFIELD),0,0,2);
 	writeInstruction(image.text,2,static_cast<u8>(OpCode::JMP),0,63,61,255);
 	Fixture generated(image,false,false),scalar(image,true,false);
-	for(auto* fixture : {&generated,&scalar}) fixture->frame().registers[2]=valueNumber(73);
+	for(auto* fixture : {&generated,&scalar}) fixture->frame().registers.set(2, valueInteger(73));
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	generated.runtime.machine.cpu.setNativeCompilationProfiling(true);
 #endif
