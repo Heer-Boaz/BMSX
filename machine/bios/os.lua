@@ -286,8 +286,17 @@ local format_civil_time<const> = function(format, year, month, day, hour, min, s
 	return output
 end
 
+-- TIME_MS is unsigned. Both halfwords scale exactly; their sum rounds
+-- once to the Float millisecond count before the seconds conversion.
 os.clock = function()
-	return *time_ms / 1000
+	local word<const> = *time_ms
+	return ((word >> 16) * 65536.0 + (word & 0xffff)) / 1000.0
+end
+
+-- 1000 = 8 * 125. Drop the low three bits before signed division so
+-- the quotient is exact even when the sampled word has bit 31 set.
+local sampled_seconds<const> = function()
+	return (*time_ms >> 3) // 125
 end
 
 os.time = function(date_table)
@@ -302,7 +311,7 @@ os.time = function(date_table)
 		set_date_table(date_table, timestamp)
 		return timestamp
 	end
-	return *time_ms // 1000
+	return sampled_seconds()
 end
 
 os.date = function(format, timestamp)
@@ -310,7 +319,7 @@ os.date = function(format, timestamp)
 	if string.sub(bmsx_format, 1, 1) == '!' then
 		bmsx_format = string.sub(bmsx_format, 2)
 	end
-	local time_value<const> = timestamp == nil and *time_ms // 1000 or require_time_value(timestamp)
+	local time_value<const> = timestamp == nil and sampled_seconds() or require_time_value(timestamp)
 	if bmsx_format == '*t' then
 		return set_date_table({}, time_value)
 	end
