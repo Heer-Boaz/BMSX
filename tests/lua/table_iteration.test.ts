@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { asClosure, asTable, valueBool, valueInteger, valueNil, valueTable, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
@@ -21,9 +19,9 @@ for (const optLevel of [0, 3] as const) {
 				assert.equal(cpu.readExceptionReturnFrameDepth(), -1, `guest assertion failed in ${name}`);
 				if (name === 'checkpoint_after_delete') {
 					const key = cpu.getGlobalByKey(cpu.stringPool.find('checkpoint_key')!);
-					if (key !== null) {
-						const table = cpu.getGlobalByKey(cpu.stringPool.find('checkpoint_table')!) as Table;
-						assert.equal(table.get(key), null);
+					if (key !== valueNil()) {
+						const table = asTable(cpu.getGlobalByKey(cpu.stringPool.find('checkpoint_table')!), cpu.gc);
+						assert.equal(table.get(key), valueNil());
 						deletedContinuationObserved = true;
 					}
 				}
@@ -34,15 +32,15 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(result, RunResult.Halted);
 			const values = [];
 			cpu.readCompletionValues(values);
-			assert.deepEqual(values, [true]);
+			assert.deepEqual(values, [valueBool(true)]);
 			if (name === 'checkpoint_after_delete') assert.equal(deletedContinuationObserved, true);
 			if (name === 'delete_reinsert_churn') {
-				const kernel = cpu.getGlobalByKey(cpu.stringPool.find('churn_kernel')!) as Closure;
-				const keys = cpu.getGlobalByKey(cpu.stringPool.find('churn_keys')!) as Table;
-				const table = cpu.getGlobalByKey(cpu.stringPool.find('churn_values')!) as Table;
+				const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('churn_kernel')!), cpu.gc);
+				const keys = asTable(cpu.getGlobalByKey(cpu.stringPool.find('churn_keys')!), cpu.gc);
+				const table = asTable(cpu.getGlobalByKey(cpu.stringPool.find('churn_values')!), cpu.gc);
 				assert.equal(table.storedSlotCount, 32);
-				const bucket = (keys.get(1) as Table).hashId & 31;
-				for (let index = 2; index <= 32; index++) assert.equal((keys.get(index) as Table).hashId & 31, bucket);
+				const bucket = asTable(keys.getInteger(1), cpu.gc).hashId & 31;
+				for (let index = 2; index <= 32; index++) assert.equal(asTable(keys.getInteger(index), cpu.gc).hashId & 31, bucket);
 				const profile = profileWarmGuestKernel(cpu, kernel, 128);
 				assert.equal(profile.reservations, 0);
 				assert.equal(profile.reservedBytes, 0);
@@ -63,14 +61,15 @@ test('zero-valued object identity remains a deleted-key continuation', () => {
 	const key = cpu.createTable();
 	assert.equal(key.hashId, 0);
 	const table = cpu.createTable(0, 64);
-	table.set(key, 9);
-	for (let index = 1; index <= 8; index++) table.setStringKey(cpu.stringPool.intern(`other_${index}`), index);
+	const keyValue = valueTable(cpu.gc.reference(key));
+	table.set(keyValue, valueInteger(9));
+	for (let index = 1; index <= 8; index++) table.setStringKey(cpu.stringPool.intern(`other_${index}`), valueInteger(index));
 	const continuation = new ValueSlots(2);
-	table.next(ValueTag.Table, NaN, key, continuation, 0);
+	table.next(keyValue, continuation, 0);
 	assert.notEqual(continuation.getTag(0), ValueTag.Nil);
 	const expected = continuation.get(0);
-	table.set(key, null);
-	table.next(ValueTag.Table, NaN, key, continuation, 0);
+	table.set(keyValue, valueNil());
+	table.next(keyValue, continuation, 0);
 	assert.notEqual(continuation.getTag(0), ValueTag.Nil);
 	assert.equal(continuation.get(0), expected);
 });

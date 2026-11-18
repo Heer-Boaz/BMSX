@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { linkTestSystemBlua32 } from './blua32';
-import { COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
+import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
 
 /** Actual BIOS pairs/next and collectable keys, shared by both CPU runtimes. */
 export function compileTableIterationTest(body: string, optLevel: 0 | 3) {
@@ -12,9 +12,8 @@ coroutine = require('coroutine')
 ${body}`;
 	const modules = [
 		{ path: 'table_iteration_boot', source: 'collectgarbage = __bmsx_collect_garbage' },
-		...['base', 'number/parse', 'number/decimal', 'table'].map(path => ({
-			path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
-		})),
+		...BASE_FIRMWARE_MODULES,
+		{ path: 'table', source: readFileSync('machine/bios/table.lua', 'utf8') },
 		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
 		...COROUTINE_FIRMWARE_MODULES,
 	];
@@ -55,7 +54,7 @@ for _, count in ipairs({1,7,8,9,14,15,16,31,64}) do
   else assert(values[index] == index) end
  end
 end
-local large<const> = 9007199254740991
+local large<const> = 0x7ffffffe
 local edge<const> = {[large]=11,[large+1]=22}
 local pair<const> = table.pack(table.unpack(edge,large,large+1))
 assert(pair.n==2 and pair[1]==11 and pair[2]==22)
@@ -63,7 +62,7 @@ return true`,
 
 	mixed_current_deletion: `
 local function capture(value) return function() return value end end
-local keys<const> = { false, true, 0, -1, 0.25, 0xffffffff, 'field', next }
+local keys<const> = { false, true, 0, -1, 0.25, 0x80000000, 'field', next }
 for index = 1, 16 do
  keys[#keys + 1] = index
  keys[#keys + 1] = 'field_' .. index

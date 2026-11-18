@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
-import { BUILTIN_FUNCTIONS, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
+import { asTable, valueTable, valueBuiltinFunction, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ValueStorage } from '../../machine/ts/machine/cpu/value_storage';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -31,16 +32,17 @@ function checkDirectory(cpu: CPU): number {
 
 test('32-bit object payloads survive directory growth and collection', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
-	for (const object of [cpu.rootThread, frame.closure, frame.registers.getClosure(1), frame.registers.getClosure(1).upvalues[0]])
+	const captured = frame.registers.getClosure(1, cpu.gc);
+	for (const object of [cpu.rootThread, frame.closure, captured, cpu.gc.object(captured.upvalues[0])])
 		assert.equal(cpu.gc.object(cpu.gc.reference(object)), object);
 	const roots = cpu.createTable(512), slots = new ValueStorage(400);
-	frame.registers.setTable(0, roots); frame.top = 2;
+	frame.registers.setTable(0, cpu.gc.reference(roots)); frame.top = 2;
 	for (let i = 0; i < slots.capacity; ++i) {
-		const object = cpu.createTable(); roots.setInteger(i + 1, object);
+		const object = cpu.createTable(); roots.setInteger(i + 1, valueTable(cpu.gc.reference(object)));
 		slots.words[i] = cpu.gc.reference(object); slots.tags[i] = ValueTag.Table;
 	}
 	cpu.collectTrackedHeapBytes();
-	for (let i = 0; i < slots.capacity; ++i) assert.equal(cpu.gc.object(slots.words[i]), roots.getInteger(i + 1));
+	for (let i = 0; i < slots.capacity; ++i) assert.equal(cpu.gc.object(slots.words[i]), asTable(roots.getInteger(i + 1), cpu.gc));
 	checkDirectory(cpu);
 });
 
@@ -62,8 +64,8 @@ test('equally initialized CPUs have independent object directories', () => {
 
 test('restore registers identities before edges and releases discarded future ids', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, roots = cpu.createTable(4);
-	frame.registers.setTable(0, roots); frame.top = 2;
-	for (let i = 1; i <= 4; ++i) roots.setInteger(i, cpu.createTable());
+	frame.registers.setTable(0, cpu.gc.reference(roots)); frame.top = 2;
+	for (let i = 1; i <= 4; ++i) roots.setInteger(i, valueTable(cpu.gc.reference(cpu.createTable())));
 	cpu.collectTrackedHeapBytes();
 	const saved = cpu.captureRuntimeState(), thread = cpu.gc.reference(cpu.rootThread), canonical = cpu.gc.reference(frame.closure);
 	let peak = 0;
@@ -81,10 +83,10 @@ test('restore registers identities before edges and releases discarded future id
 
 test('incremental GC and phase-preserving restore keep the directory synchronized', () => {
 	const cpu = machine(), roots = cpu.createTable(1024), frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, roots); frame.top = 2;
+	frame.registers.setTable(0, cpu.gc.reference(roots)); frame.top = 2;
 	for (let i = 1; i <= 1000; ++i) {
-		roots.setInteger(i, cpu.createTable(1, 1));
-		const dead = cpu.createTable(1); dead.setInteger(1, cpu.createTable());
+		roots.setInteger(i, valueTable(cpu.gc.reference(cpu.createTable(1, 1))));
+		const dead = cpu.createTable(1); dead.setInteger(1, valueTable(cpu.gc.reference(cpu.createTable())));
 	}
 	const phases = new Set<GcPhase>();
 	for (let step = 0; step < 1000; ++step) {
@@ -100,12 +102,12 @@ test('incremental GC and phase-preserving restore keep the directory synchronize
 
 test('builtin functions retain their own ids outside the GC directory', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, functions = cpu.createTable(BUILTIN_FUNCTIONS.length);
-	frame.registers.setTable(0, functions); frame.top = 2;
+	frame.registers.setTable(0, cpu.gc.reference(functions)); frame.top = 2;
 	const before = cpu.gc.captureState(object => cpu.gc.reference(object));
-	for (const builtin of BUILTIN_FUNCTIONS) functions.setInteger(builtin.id + 1, builtin);
+	for (const builtin of BUILTIN_FUNCTIONS) functions.setInteger(builtin.id + 1, valueBuiltinFunction(builtin.id));
 	const after = cpu.gc.captureState(object => cpu.gc.reference(object));
 	assert.deepEqual(after.allocations, before.allocations);
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
-	const restored = cpu.rootThread.currentFrame!.registers.getTable(0);
-	for (const builtin of BUILTIN_FUNCTIONS) assert.equal(restored.getInteger(builtin.id + 1), builtin);
+	const restored = cpu.rootThread.currentFrame!.registers.getTable(0, cpu.gc);
+	for (const builtin of BUILTIN_FUNCTIONS) assert.equal(restored.getInteger(builtin.id + 1), valueBuiltinFunction(builtin.id));
 });

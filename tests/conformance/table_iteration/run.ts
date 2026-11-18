@@ -3,10 +3,11 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { valueBool } from '../../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
-import { decodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileTableIterationTest, tableIterationVectors } from '../../helpers/table_iteration';
 
@@ -37,10 +38,10 @@ try {
 			assert.deepEqual(cpu.captureRuntimeState(), snapshot);
 		}
 		assert.equal(result, RunResult.Halted);
-		assert.deepEqual(runtime.readCompletionValues(), [true]);
+		assert.deepEqual(runtime.readCompletionValues(), [valueBool(true)]);
 		assert.equal(spawnSync('build-cpp-tests/bmsx_coroutine_runner', [path], { stdio: 'inherit' }).status, 0);
-		const native = decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.state`)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-		assert.deepEqual(native, captureRuntimeSaveState(runtime), `${name} O${optLevel}: complete TS/C++ table state parity`);
+		const native = readFileSync(`${path}.state`);
+		assert.equal(Buffer.compare(native, encodeRuntimeSaveState(captureRuntimeSaveState(runtime))), 0, `${name} O${optLevel}: complete TS/C++ table state parity`);
 	}
 	rmSync(directory, { recursive: true });
 	console.log('TABLE-ITERATION-PARITY:PASS (deletion, collection, physical continuations and churn)');
