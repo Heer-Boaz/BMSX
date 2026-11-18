@@ -12,6 +12,7 @@ struct bios_loader_manual_result
 	mode_value: f64
 	bare_count: word
 	fallthrough_count: word
+	explicit_nil_count: word
 	expanded_count: word
 	single_count: word
 	factory_value: f64

@@ -94,7 +94,7 @@ setglobal('bios_base_manual_counter', nil)
 result.global_cleared = getglobal('bios_base_manual_counter') == nil and 1 or 0
 print('Global cleared', getglobal('bios_base_manual_counter'))
 
--- print separates arguments with tabs, including nil; its fallthrough returns one nil.
+-- print separates arguments with tabs, including nil; its documented result is one nil.
 result.print_count = select('#', print('Print tuple', nil, 7))
 print('Print result count', result.print_count)
 result.completed = 1

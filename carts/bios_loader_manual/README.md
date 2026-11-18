@@ -69,7 +69,7 @@ Load modes	42	nil	attempt to load a text chunk (mode is 'b')
 Load false mode	nil	Attempted to get length of an unsupported value.
 Load false environment	nil	false	Attempted to index field on a non-table value.
 Load source error	nil	[load:manual.invalid] unexpected character at 1:8
-Load nil results	1	nil	1	nil
+Load result counts	0	0	1
 Load result expansion	3	1	3	nil	9
 Load syntax factory	42
 Load generated symbol	7
@@ -91,7 +91,7 @@ mode fails during length, whereas a false environment compiles and fails only
 when the generated indexing is invoked. Source failure is returned by `load`;
 direct syntax failure is caught by an explicit `pcall`.
 
-Bare return and fallthrough each return one nil. The last unparenthesized call
+Bare return and fallthrough produce no results; explicit `return nil` produces one. The last unparenthesized call
 expands three results, including the middle nil; parentheses request one result.
 Factory examples use a fresh syntax occurrence at every use and share only the
 generated-symbol key. They compile to 42 and 7 without manual ABI encoders.

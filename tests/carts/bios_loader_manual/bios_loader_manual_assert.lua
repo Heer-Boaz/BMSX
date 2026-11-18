@@ -40,8 +40,9 @@ return {
 			assert(observations.invalid_chunk == nil)
 			assert(observations.invalid_error ==
 				'[load:manual.invalid] unexpected character at 1:8')
-			assert(result.bare_count == 1)
-			assert(result.fallthrough_count == 1)
+			assert(result.bare_count == 0)
+			assert(result.fallthrough_count == 0)
+			assert(result.explicit_nil_count == 1)
 			assert(result.expanded_count == 3)
 			assert(result.single_count == 1)
 			assert(observations.first == 3)

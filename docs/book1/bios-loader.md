@@ -510,8 +510,8 @@ An ordinary call evaluates its callee before evaluating its arguments. A method 
 | Final return expression | An unparenthesized call forwards its result tuple after any preceding return values. |
 | Earlier return expression | A call supplies one result. |
 | Parenthesized call | Does not expand its result tuple. |
-| Bare `return` | Returns one `nil` result. |
-| Function fallthrough | Returns one `nil` result. |
+| Bare `return` | Returns zero results. |
+| Function fallthrough | Returns zero results. |
 
 
 For example, `return a, f()` forwards the results of `f` after `a`; `return a, (f())` uses one result from `f`. Likewise, `g(a, f())` expands the final call, while `g(a, (f()))` does not.
@@ -697,11 +697,11 @@ All 27 factory callables return one value. `compile_syntax` also returns exactly
 | Constructed use | Result handling |
 |---|---|
 | Call used in a single-value expression position | Requests one result. |
-| Call statement | Requests one result and discards it; the statement returns no language value. |
+| Call statement | Requests zero results; the statement returns no language value. |
 | Final argument of another call | Expands the call's result tuple only when the final node is a call expression with truthy `expands_results`. |
 | Final expression of a return list | Uses the same call-kind and `expands_results` rule for tuple expansion. |
 | Fixed return list without a final expanding call | Returns its expression count. |
-| Empty return, or function fallthrough | Returns **one nil value**. |
+| Empty return, or function fallthrough | Returns zero results. An explicit `return nil` supplies one nil. |
 
 `call_expression` sets `expands_results = true`. To represent a final call restricted to one result, set that owned call node's `expands_results` field to `false` before compilation. There is no separate factory callable for this operation.
 

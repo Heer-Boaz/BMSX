@@ -83,6 +83,7 @@ print = function(...)
 		console.write(text)
 	end
 	console.end_line()
+	return nil
 end
 
 

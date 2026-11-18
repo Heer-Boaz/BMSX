@@ -1251,8 +1251,8 @@ Thus `condition and 1 or 0` yields numeric `1` for a true-valued condition and n
 
 A newline alone does not terminate `return`. An expressionless return is
 recognized only before `end`, `else`, `elseif`, `until`, or end of source;
-`return;` is not its accepted spelling. An expressionless source return supplies
-one nil, not zero results.
+`return;` is not its accepted spelling. An expressionless return or reaching the end of the function supplies zero
+results. Write `return nil` to supply one nil.
 
 A parenthesized call or variable-argument expression supplies exactly one
 result. Extra results are discarded; a call returning no values supplies nil.
