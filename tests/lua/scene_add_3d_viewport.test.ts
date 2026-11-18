@@ -89,7 +89,7 @@ test('a 3D pointer placement publishes once, retains preview geometry and is rem
 	f.control.handlePointer(pointer(f.x, f.y), false);
 	const expected = f.ground(), ghost = f.view.placementGeometry.scene.instances[0], mesh = ghost.mesh;
 	assert.ok(ghost); assert.equal(ghost.ox, expected.x); assert.equal(ghost.oy, 0); assert.equal(ghost.oz, expected.z);
-	// Exact world coordinates are the pointer-to-source contract. 3D placement
+	// World coordinates enter source as binary32, without pixel snapping. 3D placement
 	// must not inherit 2D's pixel snapping or assert incidental widget geometry.
 	assert.ok(expected.x !== Math.round(expected.x) && expected.z !== Math.round(expected.z));
 	f.click();
@@ -97,11 +97,11 @@ test('a 3D pointer placement publishes once, retains preview geometry and is rem
 	assert.equal(f.context.subject!.objects.length, 1); assert.equal(f.model.canUndo, true);
 	const selected = f.context.selection!; assert.ok(selected.kind === 'member' && selected.entry.kind === 'object');
 	const pose = f.context.selectedLocalTransform!; assert.ok(pose.family === '3d');
-	assert.equal(pose.ox, expected.x); assert.equal(pose.oy, 0); assert.equal(pose.oz, expected.z);
+	assert.equal(pose.ox, Math.fround(expected.x)); assert.equal(pose.oy, 0); assert.equal(pose.oz, Math.fround(expected.z));
 	assert.equal(readLuaSourceRange(f.model.buffer, f.context.document!.analysis.chunk.locations.range(selected.entry.field.span)),
-		`{ member_id = 'mesh', definition_id = 'mesh', position = { x = ${expected.x}, y = 0, z = ${expected.z} } }`);
+		`{ member_id = 'mesh', definition_id = 'mesh', position = { x = ${Math.fround(expected.x)}, y = 0, z = ${Math.fround(expected.z)} } }`);
 	const committed = f.model.buffer.getText(), draw = f.view.geometry.scene.instances[0];
-	assert.equal(draw.mesh, mesh); assert.equal(draw.ox, ghost.ox); assert.equal(draw.oy, ghost.oy); assert.equal(draw.oz, ghost.oz);
+	assert.equal(draw.mesh, mesh); assert.equal(draw.ox, Math.fround(ghost.ox)); assert.equal(draw.oy, ghost.oy); assert.equal(draw.oz, Math.fround(ghost.oz));
 	assert.equal(f.view.placementPreview, undefined); assert.equal(f.view.placementGeometry.scene.instances.length, 0);
 	f.control.handlePointer(pointer(f.x, f.y, 0, 0, PointerButton.Primary), false);
 	assert.equal(f.model.buffer.getText(), committed); assert.equal(changes, 1); assert.equal(pointerCapture.active, false);
@@ -131,7 +131,7 @@ test('same-family camera zoom and pan keep Add armed and move its ghost along th
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false); assert.equal(placed, 0);
 	f.click(wheelX, wheelY); assert.equal(placed, 1);
 	const pose = f.context.selectedLocalTransform!; assert.ok(pose.family === '3d');
-	assert.equal(pose.ox, point.x); assert.equal(pose.oz, point.z);
+	assert.equal(pose.ox, Math.fround(point.x)); assert.equal(pose.oz, Math.fround(point.z));
 });
 
 for (const miss of ['parallel', 'behind'] as const) test(`${miss} ground ray cannot insert a source member, and Escape still cancels`, t => {

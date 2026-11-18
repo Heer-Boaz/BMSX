@@ -1,4 +1,4 @@
-import { numberConstantValue, evaluateNumberUnary } from '../number';
+import { numberConstantValue, numberConstantFromHost, evaluateNumberUnary, type NumberConstant } from '../number';
 import { LuaBinaryOperator, LuaSyntaxKind, LuaUnaryOperator, type LuaExpression, type LuaNumericLiteralExpression } from './ast';
 
 /** The actual numeric token behind a literal, optionally under unary negation. */
@@ -43,11 +43,24 @@ export function readLuaEncodedNumber(expression: LuaExpression): number | null {
 
 /** A self-contained Lua expression for every Number, without ambient globals.
  * Non-finite values have no numeric token spelling; arithmetic preserves their
- * runtime representation. Ordinary finite values retain round-trip precision.
+ * runtime representation. Host-authored values first enter the 32-bit Number
+ * model; the emitted syntax retains that subtype and round-trip precision.
  * Ungrouped output is for standalone expressions such as table-field values. */
 export function formatLuaNumberExpression(value: number, grouped = true): string {
-	if (value !== value) return grouped ? '(0 / 0)' : '0/0';
+	return formatLuaNumberConstant(numberConstantFromHost(value), grouped);
+}
+
+/** Source for an already typed constant; integral Floats remain Float literals. */
+export function formatLuaNumberConstant(constant: NumberConstant, grouped = true): string {
+	const value = numberConstantValue(constant);
+	if (value !== value) {
+		if ((constant.word & 0x80000000) !== 0) return grouped ? '(-(0 / 0))' : '-(0/0)';
+		return grouped ? '(0 / 0)' : '0/0';
+	}
 	if (value === Infinity) return grouped ? '(1 / 0)' : '1/0';
 	if (value === -Infinity) return grouped ? '(-1 / 0)' : '-1/0';
-	return Object.is(value, -0) ? '-0.0' : String(value);
+	if (Object.is(value, -0)) return '-0.0';
+	if (constant.kind === 'integer') return value === -0x80000000 ? '0x80000000' : String(value);
+	const text = String(value);
+	return /[.eE]/.test(text) ? text : text + '.0';
 }

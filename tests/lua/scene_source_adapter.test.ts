@@ -169,7 +169,7 @@ test('scene position edit changes only its canonical written coordinate and shar
 		assert.equal((reparsedObject.position!.value as LuaTableConstructorExpression).fields[0].value.kind, LuaSyntaxKind.NumericLiteralExpression);
 		const x = (reparsedObject.position!.value as LuaTableConstructorExpression).fields[0].value;
 		if (x.kind === LuaSyntaxKind.NumericLiteralExpression) {
-			assert.equal(x.value, 65536);
+			assert.deepEqual(x.value, { kind: 'integer', word: 65536 });
 		}
 	}
 	model.undo();

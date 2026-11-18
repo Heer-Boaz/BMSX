@@ -152,9 +152,10 @@ test('perspective world-axis move edits the declared 3D origin, never the editor
 	const f = fixture(t, `{member_id='mesh',definition_id='node3'}`); f.select(0);
 	const camera = f.view.camera.capture(), { x, y } = f.start(0);
 	f.move(x + 13, y + 7); const preview = { ...f.view.transformPreview!.worlds.get(f.view.selected!)! };
+	assert.ok(preview.family === '3d');
 	f.release(x + 13, y + 7); const entry = f.context.subject!.objects[0]; assert.ok(entry.kind === 'object');
 	const world = f.context.spatialScene!.worlds.get(entry)!;
-	assert.deepEqual(world, preview);
+	assert.deepEqual(world, { ...preview, ox: Math.fround(preview.ox), oy: Math.fround(preview.oy), oz: Math.fround(preview.oz) });
 	assert.deepEqual(f.view.camera.capture(), { ...camera, space: { ...camera.space, reading: 'manual' } });
 	assert.equal(world.family, '3d'); assert.notEqual(world.ox, 0); assert.equal(world.oy, 0); assert.equal(world.oz, 0);
 	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);

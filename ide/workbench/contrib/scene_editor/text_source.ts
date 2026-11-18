@@ -64,7 +64,7 @@ export function readSceneTextInputs(reader: LuaSourceReader, fonts: SceneFontSou
 		if (lines[index].length > 0 && (x !== undefined && index >= x.length || y !== undefined && index >= y.length || width !== undefined && index >= width.length)) return;
 		rows.push({ text: lines[index], x: x?.[index], y: y?.[index], width: width?.[index] });
 	}
-	return { font, rows, lineHeight, centerBlockWidth, backgroundColor };
+	return { font, rows, lineHeight, centerBlockWidth, backgroundColor: backgroundColor === undefined ? undefined : backgroundColor >>> 0 };
 }
 
 /** cartlib's word-wrap contract over codepoints; slices borrow one decoded source string. */

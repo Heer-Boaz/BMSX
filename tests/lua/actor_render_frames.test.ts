@@ -1,3 +1,4 @@
+import { isNil, valueBool } from '../../machine/ts/machine/cpu/value';
 import { GX_GPU_STATUS_GPU_IDLE } from '../../machine/ts/machine/devices/gx/gpu';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -31,7 +32,7 @@ test('Actor picking retains the published game image, not later guest pose or a 
 	for (let i = 0; i < 100; i++) assert.equal(picker.pick(0, sequence, x + (i % 2) * 0.1, y)?.hashId, runner.hashId);
 	assert.equal(read.mock.callCount(), 0);
 	read.mock.restore();
-	assert.notEqual(visual, null);
+	assert.equal(isNil(visual), false);
 	await f.frame();
 	assert.equal(presenter.gameFrameSequence, sequence, 'paused UI repaint holds the image');
 	assert.deepEqual(Array.from(frame.quads, quad => ({ ...quad })), observed);
@@ -65,7 +66,7 @@ for (const pageCount of [1, 2]) test(`moving actors are picked in the completed 
 	}
 	assert.equal(ide.boots.start('workspace').result!.status, 'reset');
 	editor.interaction.setActive(false); ide.transport.resumeHere();
-	await f.until(() => ide.guest.global('studio_test_ready') === true);
+	await f.until(() => ide.guest.global('studio_test_ready') === valueBool(true));
 	const runner = readActorChoices(sources, ide.guest, 0).find(actor => actor.label === 'runner')!;
 	const controller = editor.actorLab, picker = controller.viewportPicker, presenter = controller.viewport.presenter;
 	const observed = () => {
@@ -116,7 +117,7 @@ test('ordinary cart initialization renders pickable dynamic text and sprite visu
 	})` }]);
 	assert.equal(ide.boots.start('workspace').result!.status, 'reset');
 	editor.interaction.setActive(false); ide.transport.resumeHere();
-	await f.until(() => ide.guest.global('studio_test_ready') === true);
+	await f.until(() => ide.guest.global('studio_test_ready') === valueBool(true));
 	const choices = readActorChoices(sources, ide.guest, 0), picker = editor.actorLab.viewportPicker;
 	await f.until(() => picker.frame.quads.length >= 6);
 	ide.transport.pause(); editor.interaction.setActive(true);

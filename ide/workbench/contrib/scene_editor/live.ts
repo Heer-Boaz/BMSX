@@ -1,5 +1,5 @@
 import type { CPU } from '../../../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
+import { asInteger, asTable, isNil, ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import { toLuaModulePath } from '../../../../toolchain/ts/lua/module_path';
 import { sourceRangesEqual } from '../../../../toolchain/ts/lua/source_range';
 import type { ResourceDomain } from '../../../common/resource';
@@ -82,20 +82,22 @@ export class SceneLiveService {
 			status = 'not-live';
 			const world = runtimeWorld(this.sources, guest, installation.domain);
 			if (world === undefined) continue;
-			const objects = guest.readStringMember(world, '_objects') as Table;
+			const worldHashId = guest.identityScalar(world, ValueTag.Table);
+			const objects = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
 			for (let index = 1, length = objects.length(); index <= length; index++) {
-				const actor = objects.getInteger(index) as Table, scene = guest.readStringMember(actor, 'scene') as Table | null;
-				if (scene === null) continue;
-				const plan = guest.readStringMember(scene, 'definition') as Table;
-				if (!plans.has(plan.hashId)) continue;
+				const actor = objects.getInteger(index), scene = guest.readStringMember(actor, 'scene');
+				if (isNil(scene)) continue;
+				const plan = guest.readStringMember(scene, 'definition');
+				if (!plans.has(guest.identityScalar(plan, ValueTag.Table))) continue;
 				const id = guest.readStringMember(actor, 'scene_member_id');
-				if (id === null) continue; // Procedural children have no authored member occurrence.
-				const member = (guest.readStringMember(plan, 'members_by_id') as Table).get(id);
-				const memberIndex = guest.readStringMember(member, 'index') as number;
+				if (isNil(id)) continue; // Procedural children have no authored member occurrence.
+				const member = asTable(guest.readStringMember(plan, 'members_by_id'), guest.cpu.gc).get(id);
+				const memberIndex = asInteger(guest.readStringMember(member, 'index'));
 				if (selection?.kind === 'member' && memberIndex !== selection.index + 1) continue;
-				members.push({ domain: installation.domain, worldHashId: world.hashId, sceneHashId: scene.hashId, actorHashId: actor.hashId,
+				const sceneHashId = guest.identityScalar(scene, ValueTag.Table), actorHashId = guest.identityScalar(actor, ValueTag.Table);
+				members.push({ domain: installation.domain, worldHashId, sceneHashId, actorHashId,
 					memberIndex, generation: this.generation, label: guest.formatValue(id),
-					description: guest.formatValue(guest.readStringMember(actor, 'id')), detail: `Slot ${installation.domain} · Scene #${scene.hashId} · Actor #${actor.hashId}` });
+					description: guest.formatValue(guest.readStringMember(actor, 'id')), detail: `Slot ${installation.domain} · Scene #${sceneHashId} · Actor #${actorHashId}` });
 			}
 		}
 		return { members, status: members.length > 0 ? 'available' : status };
@@ -106,14 +108,14 @@ export class SceneLiveService {
 		const guest = this.guest, world = runtimeWorld(this.sources, guest, domain);
 		const actor = findWorldActor(guest, world, actorHashId);
 		if (actor === undefined) return;
-		const scene = guest.readStringMember(actor, 'scene') as Table | null;
+		const scene = guest.readStringMember(actor, 'scene');
 		const id = guest.readStringMember(actor, 'scene_member_id');
-		if (scene === null || id === null) return; // Procedural actors have no authored member.
-		const plan = guest.readStringMember(scene, 'definition') as Table;
-		const registration = this.observations[domain + 1]?.plans.get(plan.hashId);
+		if (isNil(scene) || isNil(id)) return; // Procedural actors have no authored member.
+		const plan = guest.readStringMember(scene, 'definition');
+		const registration = this.observations[domain + 1]?.plans.get(guest.identityScalar(plan, ValueTag.Table));
 		if (registration === undefined) return;
-		const memberIndex = guest.readStringMember((guest.readStringMember(plan, 'members_by_id') as Table).get(id), 'index') as number;
-		const member: SceneLiveIdentity = { domain, actorHashId, worldHashId: world!.hashId, sceneHashId: scene.hashId,
+		const memberIndex = asInteger(guest.readStringMember(asTable(guest.readStringMember(plan, 'members_by_id'), guest.cpu.gc).get(id), 'index'));
+		const member: SceneLiveIdentity = { domain, actorHashId, worldHashId: guest.identityScalar(world!, ValueTag.Table), sceneHashId: guest.identityScalar(scene, ValueTag.Table),
 			memberIndex, generation: this.generation };
 		const contextId = domain === -1 ? this.sources.systemContextId : this.sources.cartridgeSlots[domain]!.contextId;
 		let result: SceneLiveSource | undefined;
@@ -134,14 +136,15 @@ export class SceneLiveService {
 	public isCurrent(member: SceneLiveIdentity): boolean {
 		if (member.generation !== this.generation) return false;
 		const world = runtimeWorld(this.sources, this.guest, member.domain);
-		if (world?.hashId !== member.worldHashId) return false;
-		const objects = this.guest.readStringMember(world, '_objects') as Table;
+		if (world === undefined || this.guest.identityScalar(world, ValueTag.Table) !== member.worldHashId) return false;
+		const objects = asTable(this.guest.readStringMember(world, '_objects'), this.cpu.gc);
 		for (let index = 1, length = objects.length(); index <= length; index++) {
-			const actor = objects.getInteger(index) as Table;
-			if (actor.hashId !== member.actorHashId) continue;
-			const scene = this.guest.readStringMember(actor, 'scene') as Table | null;
-			return scene?.hashId === member.sceneHashId
-				&& ((this.guest.readStringMember(scene, '_members_by_index') as Table).getInteger(member.memberIndex) as Table | null)?.hashId === actor.hashId;
+			const actor = objects.getInteger(index);
+			if (this.guest.identityScalar(actor, ValueTag.Table) !== member.actorHashId) continue;
+			const scene = this.guest.readStringMember(actor, 'scene');
+			if (isNil(scene) || this.guest.identityScalar(scene, ValueTag.Table) !== member.sceneHashId) return false;
+			const indexed = asTable(this.guest.readStringMember(scene, '_members_by_index'), this.cpu.gc).getInteger(member.memberIndex);
+			return !isNil(indexed) && this.guest.identityScalar(indexed, ValueTag.Table) === member.actorHashId;
 		}
 		return false;
 	}

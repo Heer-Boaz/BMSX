@@ -4,12 +4,13 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
 import { captureActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
 import { findRuntimeActor } from '../../ide/workbench/contrib/actor_lab/runtime';
-import type { Table } from '../../machine/ts/machine/cpu/table';
+import { numberToHost, valueBool, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createLiveStudioFixture } from '../helpers/live_studio';
+import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
 
 for (const pages of [1, 2]) test(`a visible initialized visual shares position history with its ${pages}-page runtime image`, async t => {
 	const f = await createLiveStudioFixture(t), { editor, ide, sources } = f;
@@ -23,7 +24,7 @@ for (const pages of [1, 2]) test(`a visible initialized visual shares position h
 	}
 	assert.equal(ide.boots.start('workspace').result!.status, 'reset');
 	editor.interaction.setActive(false); ide.transport.resumeHere();
-	await f.until(() => ide.guest.global('studio_test_ready') === true);
+	await f.until(() => ide.guest.global('studio_test_ready') === valueBool(true));
 	const actor = readActorChoices(sources, ide.guest, 0).find(item => item.label === 'dynamic-caption')!;
 	const controller = editor.actorLab, frame = controller.viewportPicker.frame;
 	await f.until(() => Array.from(frame.quads).some(quad => quad.hashId === actor.hashId));
@@ -64,7 +65,7 @@ for (const pages of [1, 2]) test(`a visible initialized visual shares position h
 	controller.inspectActor(input, 0, actor.hashId); controller.refresh(input);
 	const timeline = input.runtime.roots[0].children.flatMap(node => node.children).find(node => node.kind === 'timeline')!;
 	const scrub = ide.actorExecution.start({ kind: 'scrub', target: captureActorTarget(0, input.worldHashId!, input.runtime.roots, timeline),
-		programHashId: (ide.guest.readStringMember(timeline.value, 'program') as Table).hashId, time: 500 });
+		programHashId: ide.guest.identityScalar(ide.guest.readStringMember(timeline.value!, 'program'), ValueTag.Table), time: 500 });
 	await f.until(() => scrub.result !== undefined);
 	assert.equal(scrub.result!.status, 'completed');
 	assert.equal(liveX(), 88, 'scrubbing redraws the actual initialized visual while the game stays paused');
@@ -79,13 +80,26 @@ for (const pages of [1, 2]) test(`a visible initialized visual shares position h
 	f.native.apply([{ type: 'key', code: 'AltLeft', down: true }, { type: 'pointer', x: startX, y: startY },
 		{ type: 'button', button: 'primary', down: true }, { type: 'pointer', x: startX + 24 * scaleX, y: startY + 16 * scaleY }]);
 	assert.equal(source.buffer.getText(), original, 'pointer motion does not mutate source or run Lua');
+	let changes = SourceChangeMap.unchanged(original.length);
+	const releaseChanges = source.onDidChangeContent(event => { changes = changes.append(event.changes); });
+	t.after(releaseChanges);
 	f.native.apply([{ type: 'button', button: 'primary', down: false }, { type: 'key', code: 'AltLeft', down: false }]);
+	releaseChanges();
 	const moved = authoring.selectedLocalTransform!;
 	assert.notEqual(moved.ox, 16);
-	await f.until(() => liveX() === moved.ox + 72 && ide.actorExecution.active === undefined);
+	// The guest composes this binary32 position with its presentation offset.
+	await f.until(() => liveX() === Math.fround(moved.ox + 72) && ide.actorExecution.active === undefined);
+	assert.equal(numberToHost(ide.guest.readStringMember(findRuntimeActor(sources, ide.guest, 0, actor.hashId)!, 'ox')), moved.ox);
 	assert.equal(Array.from(frame.quads).find(quad => quad.hashId === actor.hashId)!.oy, moved.oy);
 	assert.notEqual(moved.oy, 120);
-	assert.equal(source.buffer.getText(), original.replace('x = 16, y = 120', `x = ${moved.ox}, y = ${moved.oy}`), 'a live drag changes only member-position literals');
+	// Source integrity is about the edited tokens, not a unique decimal spelling
+	// for the resulting Float32. No other member field, trivia or caller may change.
+	const positionStart = original.indexOf('x = 16, y = 120');
+	assert.ok(positionStart >= 0);
+	assert.deepEqual(Array.from(changes.changes(), span => [span.oldStart, span.oldEnd]),
+		[[positionStart + 4, positionStart + 6], [positionStart + 12, positionStart + 15]]);
+	const movedSource = source.buffer.getText();
+	for (const gap of changes.gaps()) assert.equal(movedSource.slice(gap.newStart, gap.newStart + gap.length), original.slice(gap.oldStart, gap.oldStart + gap.length));
 	editor.commands.execute('save', livePane.commandTarget);
 	const save = ide.textFileSaves.latestOperation(source)!;
 	assert.ok(save !== undefined, 'the live-image command uses the shared source Save owner');
@@ -96,7 +110,7 @@ for (const pages of [1, 2]) test(`a visible initialized visual shares position h
 	assert.equal(source.buffer.getText(), original, 'one Undo restores both authored axes');
 	controller.refresh(input);
 	const instance = input.runtime.roots[0].children.flatMap(node => node.children).find(node => node.kind === 'timeline')!;
-	assert.equal(ide.guest.readStringMember(instance.value, 'position_ms'), 500, 'position edits and Undo do not advance the timeline');
+	assert.equal(numberToHost(ide.guest.readStringMember(instance.value!, 'position_ms')), 500, 'position edits and Undo do not advance the timeline');
 	const restored = ide.sceneLive.source(0, actor.hashId, ide.sceneSources)!;
 	assert.equal(restored.model, source); assert.equal(restored.member.actorHashId, actor.hashId);
 	source.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- intervening source edit\n' }]); source.undo();
@@ -121,7 +135,7 @@ test('runtime source correspondence survives duplicate registry IDs but not proc
 	scene:spawn('studio_test.actor', { id = 'procedural' })` }]);
 	assert.equal(ide.boots.start('workspace').result!.status, 'reset');
 	editor.interaction.setActive(false); ide.transport.resumeHere();
-	await f.until(() => ide.guest.global('studio_test_ready') === true);
+	await f.until(() => ide.guest.global('studio_test_ready') === valueBool(true));
 	ide.transport.pause(); editor.interaction.setActive(true);
 	const actors = readActorChoices(sources, ide.guest, 0);
 	const runner = actors.find(item => item.label === 'runner')!, replacement = actors.find(item => item.label === 'replacement')!;
@@ -138,8 +152,9 @@ test('runtime source correspondence survives duplicate registry IDs but not proc
 test('Undo queued during a live position write settles the latest source on the same runtime', async t => {
 	const f = await createLiveStudioFixture(t), { ide, sources, editor } = f;
 	const actor = readActorChoices(sources, ide.guest, 0).find(item => item.label === 'studio_test.first')!;
-	const binding = ide.scenePositions.bind(ide.scenePositions.source(0, actor.hashId)!)!, model = binding.authoring.workingCopy;
-	const original = model.buffer.getText();
+	const binding = ide.scenePositions.bind(ide.scenePositions.source(0, actor.hashId)!);
+	assert.ok(binding, 'a matching authored position binds to the ordinary initialized actor');
+	const model = binding.authoring.workingCopy, original = model.buffer.getText();
 	assert.equal(binding.authoring.captureLocalPosition()!.apply('x', 40), true);
 	await f.frame();
 	const write = binding.operation!; assert.ok(write !== undefined);
@@ -163,7 +178,7 @@ test('a member change before World admission retires a queued position-only writ
 	await f.until(() => write.result !== undefined);
 	assert.equal(write.invoked, false, 'a queued source edit cannot outlive its authored member correspondence');
 	assert.equal(binding.linked, false);
-	assert.equal(ide.guest.readStringMember(findRuntimeActor(sources, ide.guest, 0, actor.hashId)!, 'ox'), 16);
+	assert.equal(numberToHost(ide.guest.readStringMember(findRuntimeActor(sources, ide.guest, 0, actor.hashId)!, 'ox')), 16);
 	assert.equal(model.buffer.getText().includes("member_id = 'renamed'"), true, 'authored changes are retained');
 });
 
@@ -179,13 +194,13 @@ test('a controller-owned physical position rejects the live source write without
 	await f.until(() => operation.result !== undefined);
 	assert.equal(binding.authoring.captureLocalPosition()!.apply('x', 210), true);
 	await f.until(() => !binding.linked);
-	const x = ide.guest.readStringMember(findRuntimeActor(sources, ide.guest, 0, actor.hashId)!, 'ox');
+	const x = numberToHost(ide.guest.readStringMember(findRuntimeActor(sources, ide.guest, 0, actor.hashId)!, 'ox'));
 	assert.notEqual(x, 200, 'ordinary controller code ran at World admission');
 	assert.notEqual(x, 210, 'the source edit did not overwrite a controller-owned pose');
 	assert.equal(ide.scenePositions.find(0, actor.hashId), binding, 'the canonical source history remains reachable');
 	model.undo(); await f.frame();
 	assert.equal(model.buffer.getText(), original);
-	assert.equal(ide.guest.readStringMember(findRuntimeActor(sources, ide.guest, 0, actor.hashId)!, 'ox'), x, 'source Undo is not a rollback of controller execution');
+	assert.equal(numberToHost(ide.guest.readStringMember(findRuntimeActor(sources, ide.guest, 0, actor.hashId)!, 'ox')), x, 'source Undo is not a rollback of controller execution');
 	assert.equal(ide.boots.start('workspace').result!.status, 'reset');
 	assert.equal(binding.attached, false);
 	assert.equal(ide.scenePositions.find(0, actor.hashId), undefined);

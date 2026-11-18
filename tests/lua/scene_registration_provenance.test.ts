@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
+import { asInteger, asTable } from '../../machine/ts/machine/cpu/value';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { SceneRegistrationProvenance } from '../../ide/workbench/contrib/scene_editor/registration_provenance';
@@ -42,11 +42,11 @@ last = scenes.instantiate('same')
 	cpu.setInstructionObserver(provenance);
 	try { assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted); }
 	finally { cpu.setInstructionObserver(null); }
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('registration_visits')!), 15);
+	assert.equal(asInteger(cpu.getGlobalByKey(cpu.stringPool.find('registration_visits')!)), 15);
 	assert.equal(provenance.plans.size, 4, 'failed compilation has no plan publication');
 	const plans = ['first', 'second', 'third', 'last'].map(name => {
-		const scene = cpu.getGlobalByKey(cpu.stringPool.find(name)!) as Table;
-		return scene.getStringKey(cpu.stringPool.find('definition')!) as Table;
+		const scene = asTable(cpu.getGlobalByKey(cpu.stringPool.find(name)!), cpu.gc);
+		return asTable(scene.getStringKey(cpu.stringPool.find('definition')!), cpu.gc);
 	});
 	assert.equal(new Set(plans.map(plan => plan.hashId)).size, 4, 'plan identity survives repeated registry keys');
 	for (let index = 0; index < plans.length; index++) {

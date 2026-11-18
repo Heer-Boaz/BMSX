@@ -29,7 +29,7 @@ export class SceneRegistrationProvenance implements InstructionObserverBinding {
 	}
 	public observe(_domain: ExecutionDomainId, pc: number, registers: ValueSlots): void {
 		const instruction = this.stores!.get(pc)!;
-		const plan = registers.getTable(signExtend(instruction.c, instruction.rkBitsC));
+		const plan = registers.getTable(signExtend(instruction.c, instruction.rkBitsC), this.cpu.gc);
 		const calls: SourceRange[] = [];
 		let callPc = pc;
 		for (let frame = this.cpu.getFrameDepth() - 1; frame >= 0; frame--) {

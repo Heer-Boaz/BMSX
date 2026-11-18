@@ -11,6 +11,11 @@ import { LuaBinaryOperator, LuaUnaryOperator } from './syntax/ast';
 /** Compile-time Numbers retain their subtype and raw payload, including NaN signs. */
 export type NumberConstant = { readonly kind: 'integer' | 'float'; readonly word: number };
 export function integerConstant(value: number): NumberConstant { return { kind: 'integer', word: value >>> 0 }; }
+/** Host-authored scalars enter the language as int32 or binary32, never binary64. */
+export function numberConstantFromHost(value: number): NumberConstant {
+	return value === (value | 0) && !Object.is(value, -0)
+		? integerConstant(value) : { kind: 'float', word: luaFloatResultBits(value) };
+}
 /** Exact map identity; numerically equal Integer/Float constants remain distinct. */
 export function numberConstantKey(value: NumberConstant): number { return value.word + (value.kind === 'float' ? 0x1_0000_0000 : 0); }
 export function numberConstantValue(value: NumberConstant): number { return value.kind === 'integer' ? value.word | 0 : f32BitsToNumber(value.word); }
