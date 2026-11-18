@@ -1936,8 +1936,8 @@ budgetconstanten:
 
 **Omvang van de buffer.** De grootste post is de lijst met mogelijke
 contactresultaten. Bij 64 colliders kost ruimte voor alle 2.016 mogelijke
-contacten, met 36 bytes per resultaat, 72,4 KiB inclusief instances en
-samenvatting. Een spel kan een kleinere resultaatbuffer opgeven. GEO meldt
+contacten, met 36 bytes per resultaat, 70,875 KiB. Met 64 instances en de
+samenvatting erbij is de hele buffer 72,39 KiB. Een spel kan een kleinere resultaatbuffer opgeven. GEO meldt
 `RESULT_CAPACITY` zodra een daadwerkelijke treffer niet meer past.
 
 Een aparte GEO-RAM is voor de huidige opdrachten niet nodig. De Seibu-COP uit
@@ -1956,8 +1956,9 @@ de cartridge zelf declareert. Bereken `K` per ROM opnieuw zodra dat zo is
 32-bit payload het adres van haar record. Een RAM-record heeft een adres in
 `08000000H`–`083FFFFFH`. ROM-strings staan in 12.9. Captured-variable-cellen
 zijn geen taalwaarden; ze worden alleen vanuit closures en threads gerefereerd.
-Dit vervangt de huidige hostafhankelijke referentie: een pointer op ARM32, een
-directory-index op 64-bit hosts.
+Dit vervangt de huidige referentie, die op pointerbreedte kiest: een
+hostpointer op 32-bit native hosts zoals ARM32, een directory-index op bredere
+hosts. TS en C++ geven de nieuwe referentie dezelfde betekenis.
 
 **Bereik.** Een recordtoegang blijft binnen de RAM-bank. Ze wordt **niet**
 begrensd tot haar allocatie: daarvoor zou de grootte van de allocatie nodig
@@ -2128,14 +2129,25 @@ wordt in de fase van het GC-beheer vastgelegd.
 functieprototype en bindt haar eigen upvalue-cellen volgens de lexicale scope.
 Het prototype is het bestaande functierecord. `CALL` gebruikt de gegevens van
 dat prototype: codeadres, parameters, maxStack en vlaggen. De omvang van een
-closure volgt uit haar indeling: `S(12 + 4U)`.
+closure volgt uit haar indeling: `S(12 + 4U)`. Dat is vóór afronding vier bytes
+minder dan de huidige charge `16 + 4U`. De `4U` zijn de verwijzingen naar
+upvalue-cellen. Twee closures die dezelfde variabele vangen, verwijzen naar
+dezelfde afzonderlijk gealloceerde cel.
 
-**De garantie over herschrijven vervalt.** Een functierecord herschrijven
-terwijl closures of actieve frames het gebruiken, is een programmafout. Dat
-ligt in lijn met de vaste `Proto` in Lua. De runtimes blijven wel
-deterministisch: een cache met prototypegegevens van een record in RAM hangt
-aan dezelfde schrijfwatches als gedecodeerde code (O1). Voor records in ROM
-speelt dit niet.
+**Stabiel prototype, geen emulatorcache.** Een gepubliceerd prototype blijft
+stabiel zolang closures het gebruiken. Wie een *nog gebruikt* record
+tussentijds overschrijft, krijgt geen garantie over het doel, de framegrootte
+of de captures van bestaande closures. Dat ligt in lijn met de vaste `Proto` in
+Lua.
+
+Een cache van gedecodeerde prototypegegevens is daarentegen alleen een
+eigenschap van de emulator. Een schrijfmelding mag die cache ongeldig maken. Het
+concrete geval is `load`: zodra een oud codeblok vrij is, kan de BIOS-arena
+hetzelfde RAM-adres voor een nieuwe functie gebruiken. De volgende constructie
+ziet dan het nieuwe prototype. Daarvoor volstaat de algemene melding van het
+werkelijk geschreven RAM-bereik aan de schrijfwatches (O1). Voor records in ROM
+speelt dit niet. Hot Resume blijft de expliciete bewerking die levende closures
+aan een nieuwe revisie koppelt.
 
 Waar de garantie vandaan kwam:
 
@@ -2302,7 +2314,7 @@ De getallen komen uit de programmaheaders van de huidige beelden (`dist/`,
 | Na het beheergebied (`K`) | 2.973.696 B (2,84 MiB) | 2.990.080 B (2,85 MiB) |
 
 Zonder de GEO-reservering (12.3) groeit `K` met 512 KiB, min de GEO-buffer van
-de cartridge. Met een buffer voor 64 colliders (72,4 KiB) komt dat uit op
+de cartridge. Met een buffer voor 64 colliders (72,39 KiB) komt dat uit op
 ongeveer 3,27 MiB voor Nemesis. Bereken `K` per ROM opnieuw zodra de cartridge
 haar buffer declareert.
 
@@ -2353,11 +2365,11 @@ Offsets van runtime-eigen records blijven in dit voorstel.
 | `book1/memory.md` | Addressed buffers and program storage | GEO-buffers horen in de statische opslag van de cartridge; gevolg van schrijven in het heapgebied | GEO |
 | `book1/geo.md` | Launching and observing a job | Buffers komen uit de cartridge, niet uit een systeemreservering; dimensionering van de resultaatbuffer met `RESULT_CAPACITY` | GEO |
 | `book1/cpu.md` | Resourcetabel (taalbudget van 3,5 MiB) | Wordt: het heapgebied in hoofd-RAM | Tabellen (`K` wordt de capaciteit) |
-| `book1/cpu.md` | Language allocation and lifetime | Allocaties hebben een RAM-adres. Spiegeling per toegang; recordinhoud gereserveerd; schrijven door het programma is een programmafout | Infrastructuur |
+| `book1/cpu.md` | Language allocation and lifetime | Allocaties hebben een RAM-adres. Spiegeling per toegang; recordinhoud gereserveerd; schrijven door het programma is een programmafout | Tabellen |
 | `book1/cpu.md` | Collection work charge | Bezetting volgens size classes; tarieven per bewerking (O2); `K` in de drempelformule; versnippering bij toelating; de framezin | Per objectsoort, met haar fase |
 | `book1/cpu.md` | Closures and captured variables | Gedeeld prototype; geen garantie bij herschrijven van een levend record | Closures |
-| `book1/cpu.md` | EXEC en Execution domains | EXEC zet de vloer en wijst af bij overlap; socketbinding van cartridgestrings | Infrastructuur, strings |
-| `book1/blua-programs.md` | Language execution storage and byte RAM; Values are not byte buffers | Taalwaarden hebben records in RAM, maar hun indeling is geen programmeerinterface. Kopiëren behoudt identiteit | Infrastructuur |
+| `book1/cpu.md` | Reset, hard halt, EXEC en Execution domains | Reset en EXEC zetten de vloer; EXEC wijst af bij overlap; socketbinding van cartridgestrings | Infrastructuur, strings |
+| `book1/blua-programs.md` | Language execution storage and byte RAM; Values are not byte buffers | Taalwaarden hebben records in RAM, maar hun indeling is geen programmeerinterface. Kopiëren behoudt identiteit | Tabellen |
 | `book1/program-images.md` | BLua32 executable image | De velden `44H`–`50H` worden gelezen (vloer), later ook `30H`/`34H` (stringtabel) | Infrastructuur, strings |
 | `book1/program-images.md` | Constant and name records | Tag 4 en het naamrecord verwijzen naar stringrecords; recordindeling, ROM-stringtabel en FNV-1a erbij; samen met de byte-strings | Strings |
 | `book1/program-images.md` | Function and upvalue records | "Rewriting a record changes the data bound by a later construction" vervalt; het record is het gedeelde prototype | Closures |
