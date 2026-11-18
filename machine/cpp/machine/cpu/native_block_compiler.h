@@ -5,6 +5,7 @@
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/native_block_abi.h"
 #include "machine/cpu/native_block_registers.h"
+#include "spec/blua32/memory_access_kind.h"
 #include "sljitLir.h"
 
 namespace bmsx {
@@ -49,6 +50,9 @@ private:
 	void emitStringSlot(bool load, int value, NativeBlockExitSite&);
 	void emitTableSlotTransfer(bool load, int value);
 	void emitLength(const DecodedInstruction&, NativeBlockExitSite&);
+	// R2 is the host address; result is a word in R0 or external binary64 in FR0.
+	void emitBackingLoad(MemoryAccessKind kind, bool unaligned);
+	void emitRomReads();
 	void emitMemory(const DecodedInstruction&, NativeBlockExitSite&);
 	void emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite& taken);
 	size_t regionEntryIndex(u32 pc) const;
@@ -88,6 +92,14 @@ private:
 		bool charged;
 	};
 	std::vector<SlowPath> m_slow;
+	struct RomRead {
+		sljit_jump* ramMiss;
+		sljit_label* result;
+		NativeBlockExitSite* bus;
+		State registers;
+		u32 width;
+	};
+	std::vector<RomRead> m_romReads;
 	struct Admission {
 		sljit_jump* jump;
 		u32 pc;

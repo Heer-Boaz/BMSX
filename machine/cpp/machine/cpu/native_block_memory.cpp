@@ -8,6 +8,83 @@
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
+void NativeBlockCompiler::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {
+	const auto move = kind == MemoryAccessKind::U8 ? SLJIT_MOV32_U8 : kind == MemoryAccessKind::U16LE ? SLJIT_MOV32_U16 : SLJIT_MOV32;
+	if (kind != MemoryAccessKind::F64LE) {
+		if (unaligned && kind != MemoryAccessKind::U8)
+			sljit_emit_mem(m_compiler, move | SLJIT_MEM_UNALIGNED, SLJIT_R0, SLJIT_MEM1(SLJIT_R2), 0);
+		else
+			sljit_emit_op1(m_compiler, move, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), 0);
+		if constexpr (std::endian::native == std::endian::big)
+			if (kind != MemoryAccessKind::U8)
+				sljit_emit_op1(m_compiler, kind == MemoryAccessKind::U16LE ? SLJIT_REV32_U16 : SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+		return;
+	}
+	const auto alignment = unaligned ? SLJIT_MEM_UNALIGNED : SLJIT_MEM_ALIGNED_32;
+	if constexpr (std::endian::native == std::endian::little)
+		sljit_emit_fmem(m_compiler, SLJIT_MOV_F64 | alignment, SLJIT_FR0, SLJIT_MEM1(SLJIT_R2), 0);
+	else {
+		for (int i = 0; i < 2; ++i) {
+			const auto reg = i == 0 ? SLJIT_R0 : SLJIT_R1;
+			if (unaligned) sljit_emit_mem(m_compiler, SLJIT_MOV32 | SLJIT_MEM_UNALIGNED, reg, SLJIT_MEM1(SLJIT_R2), i * 4);
+			else sljit_emit_op1(m_compiler, SLJIT_MOV32, reg, 0, SLJIT_MEM1(SLJIT_R2), i * 4);
+			sljit_emit_op1(m_compiler, SLJIT_REV32, reg, 0, reg, 0);
+		}
+#if defined(SLJIT_64BIT_ARCHITECTURE)
+		sljit_emit_op2(m_compiler, SLJIT_SHL, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 32);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_R0, 0);
+		sljit_emit_op2(m_compiler, SLJIT_OR, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R1, 0);
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_TO_F64, SLJIT_FR0, SLJIT_R0);
+#else
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_TO_F64, SLJIT_FR0, SLJIT_REG_PAIR(SLJIT_R1, SLJIT_R0));
+#endif
+	}
+}
+
+void NativeBlockCompiler::emitRomReads() {
+	for (const auto& read : m_romReads) {
+		const auto kind = static_cast<MemoryAccessKind>(read.bus->exitC);
+		sljit_set_label(read.ramMiss, sljit_emit_label(m_compiler));
+		auto* system = sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, SYSTEM_ROM_SIZE - read.width);
+		sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE);
+		auto* other = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, CART_ROM_SIZE - read.width);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R1, 0);
+		// SELECT belongs to the ordinary data bus, not the closure's execution domain.
+		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.cartridgeRom[0]));
+		if (m_bindings.cartridgeRom[0] != m_bindings.cartridgeRom[1]) {
+			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_bindings.cartridgeSelection));
+			sljit_emit_op2u(m_compiler, SLJIT_AND32 | SLJIT_SET_Z, SLJIT_R3, 0, SLJIT_IMM, 1);
+			sljit_emit_select(m_compiler, SLJIT_NOT_ZERO, SLJIT_R2, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.cartridgeRom[1]), SLJIT_R2);
+		}
+		sljit_jump* empty = nullptr;
+		if (!m_bindings.cartridgeRom[0] || !m_bindings.cartridgeRom[1])
+			empty = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0);
+		auto* cartridge = sljit_emit_jump(m_compiler, SLJIT_JUMP);
+		sljit_set_label(system, sljit_emit_label(m_compiler));
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R0, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.systemRom));
+		sljit_set_label(cartridge, sljit_emit_label(m_compiler));
+		// ROM replacement changes the span, not the address of its descriptor.
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R1, 0, SLJIT_IMM, read.width);
+		auto* tail = sljit_emit_cmp(m_compiler, SLJIT_GREATER, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Span<const u8>, size_));
+		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Span<const u8>, data_));
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_R1, 0);
+		emitBackingLoad(kind, true);
+		sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), read.result);
+		if (empty) {
+			sljit_set_label(empty, sljit_emit_label(m_compiler));
+			if (kind == MemoryAccessKind::F64LE) sljit_emit_fset64(m_compiler, SLJIT_FR0, 0);
+			else sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, 0);
+			sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), read.result);
+		}
+		auto* bus = sljit_emit_label(m_compiler);
+		sljit_set_label(other, bus);
+		sljit_set_label(tail, bus);
+		m_cache.setState(read.registers);
+		emitLeave(*read.bus, false);
+	}
+}
+
 void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, NativeBlockExitSite& slow) {
 	const auto kind = static_cast<MemoryAccessKind>(instruction.c);
 	const bool load = slow.exit == NativeBlockExit::ReadMemory;
@@ -33,13 +110,12 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 		sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, alignment);
 		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0), slow, m_cache.state());
 	}
-	// Only ordinary backed RAM is direct. Mapped devices, ROM selection,
-	// partial spans and writes to code remain with the bus/CPU owners.
+	// Keep ordinary RAM on the fall-through path. MMIO always goes to the bus.
 	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 		IO_SLOT_COUNT * IO_WORD_SIZE), slow, m_cache.state());
-	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
-		m_bindings.ramBytes - width), slow, m_cache.state());
+	auto* ramMiss = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, m_bindings.ramBytes - width);
+	if (!load) fault(ramMiss, slow, m_cache.state());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R1, 0);
 	if (!load) {
 		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R3, 0, SLJIT_R1, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
@@ -57,33 +133,15 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.ram));
 	const auto move = kind == MemoryAccessKind::U8 ? SLJIT_MOV32_U8 : kind == MemoryAccessKind::U16LE ? SLJIT_MOV32_U16 : SLJIT_MOV32;
 	if (load) {
+		emitBackingLoad(kind, false);
+		m_romReads.push_back({ramMiss, sljit_emit_label(m_compiler), &slow, m_cache.state(), width});
 		if (kind != MemoryAccessKind::F64LE) {
-			sljit_emit_op1(m_compiler, move, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), 0);
-			if constexpr (std::endian::native == std::endian::big)
-				if (width != 1)
-					sljit_emit_op1(m_compiler, width == 2 ? SLJIT_REV32_U16 : SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
 			const auto target = m_cache.write(instruction.a, kind == MemoryAccessKind::F32LE ? ValueTag::Float : ValueTag::Integer);
 			if (target.tag == ValueTag::Float)
 				sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, target.reg, SLJIT_R0);
 			else
 				sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R0, 0);
 		} else {
-			if constexpr (std::endian::native == std::endian::little)
-				sljit_emit_fmem(m_compiler, SLJIT_MOV_F64 | SLJIT_MEM_ALIGNED_32, SLJIT_FR0, SLJIT_MEM1(SLJIT_R2), 0);
-			else {
-				sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), 0);
-				sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), 4);
-				sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
-				sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R1, 0, SLJIT_R1, 0);
-#if defined(SLJIT_64BIT_ARCHITECTURE)
-				sljit_emit_op2(m_compiler, SLJIT_SHL, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 32);
-				sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_R0, 0);
-				sljit_emit_op2(m_compiler, SLJIT_OR, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R1, 0);
-				sljit_emit_fcopy(m_compiler, SLJIT_COPY_TO_F64, SLJIT_FR0, SLJIT_R0);
-#else
-				sljit_emit_fcopy(m_compiler, SLJIT_COPY_TO_F64, SLJIT_FR0, SLJIT_REG_PAIR(SLJIT_R1, SLJIT_R0));
-#endif
-			}
 			sljit_emit_fop1(m_compiler, SLJIT_CONV_F32_FROM_F64, SLJIT_FR0, 0, SLJIT_FR0, 0);
 			emitFloatCanonicalization(SLJIT_FR0);
 			const auto target = m_cache.write(instruction.a, ValueTag::Float);

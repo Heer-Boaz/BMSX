@@ -326,6 +326,7 @@ void NativeBlockCompiler::endBlock() {
 		emitExit(m_blocks[m_current]->terminal);
 }
 void* NativeBlockCompiler::finish(size_t& codeBytes) {
+	emitRomReads();
 	for (const auto& slow : m_slow) {
 		sljit_set_label(slow.jump, sljit_emit_label(m_compiler));
 		m_cache.setState(slow.state);
