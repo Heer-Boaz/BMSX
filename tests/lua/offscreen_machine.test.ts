@@ -56,7 +56,7 @@ while true do end`, 'offscreen_readback_grant', optLevel));
 
 	for (const extraPeriods of [0, 2]) {
 		test(`O${optLevel}: readback at VBlank preserves bounded completion and ${extraPeriods} periods of carry`, t => {
-			const system = linkTestSystemBlua32(compileLuaSource('while true do end', 'offscreen_same_edge', optLevel));
+			const system = linkTestSystemBlua32(compileLuaSource('while true do halt_until_irq end', 'offscreen_same_edge', optLevel));
 			const baseline = new OffscreenMachine(system.romBytes, [null, null], PSX_MACHINE_SPEC, new TestInput());
 			const target = new OffscreenMachine(system.romBytes, [null, null], PSX_MACHINE_SPEC, new TestInput());
 			t.after(() => { baseline.dispose(); target.dispose(); });
