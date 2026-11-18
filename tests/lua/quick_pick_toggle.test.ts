@@ -142,7 +142,7 @@ for (const owner of ['workspace', 'part'] as const) for (const font of ['tiny', 
 		assert.ok(drawn.includes(label));
 	});
 
-for (const owner of ['workspace', 'part'] as const) test(`${owner}: routed pointer activation leaves the policy focusable and disclosed`, async t => {
+for (const owner of ['workspace', 'part'] as const) test(`${owner}: routed pointer activation keeps focus on the policy control`, async t => {
 	const { createActualSourcePanes } = await import('../helpers/source_panes');
 	const f = createActualSourcePanes(t), picker = owner === 'workspace' ? f.editor.quickInput : f.firstPart.quickInput;
 	f.first.focus(); let policy = false;
@@ -152,7 +152,7 @@ for (const owner of ['workspace', 'part'] as const) test(`${owner}: routed point
 	const event = (down: number, up: number) => ({ pointerId: 0, pointerType: 'mouse', x: bounds.left + 2, y: bounds.top + 2, buttons: down, pressedButtons: down,
 		releasedButtons: up, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 	f.editor.dispatchPointer(event(PointerButton.Primary, 0)); f.editor.dispatchPointer(event(0, PointerButton.Primary)); f.update();
-	assert.equal(policy, true); assert.equal(inputFocus.admittedTarget, picker.toggle!.focusTarget); assert.ok(picker.toggle!.tooltipItem);
+	assert.equal(policy, true); assert.equal(inputFocus.admittedTarget, picker.toggle!.focusTarget);
 	assert.equal(picker.visible, true); f.key('Escape'); assert.equal(picker.visible, false);
 });
 

@@ -51,20 +51,20 @@ for (const placement of ['default', 'side'] as const)
 			readLocation: () => ready.promise,
 		} });
 		assert.equal(replaced, true);
+		const focusAfterReplacement = inputFocus.admittedTarget;
 		ready.resolve({ model: f.model, modelVersion: f.model.version });
 		assert.equal(await pending, undefined);
 		assert.ok(reference.model.activeTab === newer, 'the newer reference opening remains active');
 		const currentGroups = f.editor.editorParts.groups;
 		assert.equal(currentGroups.length, groups.length, 'superseded navigation creates no receiving group');
 		assert.ok(currentGroups.every((group, index) => group === groups[index]), 'existing group identities and order remain unchanged');
-		assert.ok(f.main.primary === f.primary, 'superseded navigation retains the Main source producer');
-		assert.ok(inputFocus.admittedTarget === f.origin, 'superseded navigation retains the invoking hierarchy focus');
+		assert.ok(inputFocus.admittedTarget === focusAfterReplacement, 'the stale navigation cannot steal focus from the newer opening');
 		assert.equal(f.editor.editorParts.groups.some(group => group.model.tabs.some(input =>
 			input instanceof CodeEditorInput && input.workingCopy === f.model)), false);
 	});
 
 test('reusing a third-group Source cannot activate after its separately requested reference is replaced during handoff', async t => {
-	const f = await fixture(t), reference = f.firstGroup, receiver = f.secondGroup;
+	const f = await fixture(t), reference = f.firstGroup, receiver = f.firstPart.splitGroup(f.firstGroup, 'right');
 	const existing = new CodeEditorInput(f.model);
 	receiver.openEditor(existing, { pinned: true });
 	f.main.focusPrimary('hierarchy');

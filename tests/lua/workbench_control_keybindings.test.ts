@@ -336,10 +336,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} runtime Timelin
 	f.key('Home'); f.key('Home', KeyModifier.none, false); f.key('Enter'); f.key('Enter', KeyModifier.none, false);
 	assert.equal(timeline.requested, false); assert.equal(timeline.visible, false); assert.ok(inputFocus.target === content);
 	const frameX = (game.previewBounds.left + game.previewBounds.right) / 2, frameY = (game.previewBounds.top + game.previewBounds.bottom) / 2;
-	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: frameX, y: frameY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
-		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
-	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: frameX, y: frameY, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
-		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
+	f.editor.commands.execute('actorLab.controlGame', f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget);
 	const guest = inputFocus.target!, binding = guest.guestInput;
 	assert.ok(binding !== undefined);
 	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: frameX, y: frameY, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,

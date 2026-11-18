@@ -52,8 +52,8 @@ function utility(t: TestContext, f: Fixture) {
 test('document title right-click and Escape retain chrome focus instead of reacquiring the active Game viewport', t => {
 	const f = createActualSourcePanes(t), window = f.firstPart.window!;
 	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
-	const game = f.editor.actorLab.resolveInput(); f.firstGroup.openEditor(game); f.update(); f.firstPart.focus(); const chrome = inputFocus.target;
-	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
+	const game = f.editor.actorLab.resolveInput(); f.firstGroup.openEditor(game); f.update(); f.firstPart.focus();
+	f.editor.commands.execute('actorLab.controlGame', f.firstGroup.panes.activePane!.commandTarget);
 	assert.ok(inputFocus.target?.guestInput?.recipient === f.host.input);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	rightClickTitle(f, window);

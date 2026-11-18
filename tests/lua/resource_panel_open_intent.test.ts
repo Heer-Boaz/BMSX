@@ -210,8 +210,8 @@ test('a Scene removed while accepting the outgoing draft cannot open a neighbori
 });
 
 test('the scoped side shortcut is not reserved while a real game viewport owns input', t => {
-	const f = fixture(t); f.panel.hide(); const game = f.editor.actorLab.resolveInput(); f.firstGroup.openEditor(game); f.firstGroup.focus(); f.update(); const chrome = inputFocus.target;
-	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
+	const f = fixture(t); f.panel.hide(); const game = f.editor.actorLab.resolveInput(); f.firstGroup.openEditor(game); f.firstGroup.focus(); f.update();
+	f.editor.commands.execute('actorLab.controlGame', f.firstGroup.panes.activePane!.commandTarget);
 	const guest = inputFocus.target; assert.ok(guest?.guestInput !== undefined && f.editor.guestInputRecipient === f.host.input);
 	const open = t.mock.method(f.editor.navigation, 'openResource');
 	for (const code of ['Enter', 'NumpadEnter']) {

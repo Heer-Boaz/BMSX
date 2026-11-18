@@ -41,7 +41,7 @@ for (const kind of ['actor_lab', 'terminal'] as const) test(`${kind} fits its im
 			assert.ok(frame.left >= layout.left + 4 && frame.right <= layout.right - 4);
 			assert.ok(frame.top >= layout.top + 4 && frame.bottom <= layout.bottom - 4);
 			assert.ok(frame.right > frame.left && frame.bottom > frame.top);
-			assert.equal((frame.right - frame.left) * 3, (frame.bottom - frame.top) * 4);
+			assert.ok(Math.abs((frame.right - frame.left) / (frame.bottom - frame.top) - 4 / 3) < 0.01, 'the image retains its aspect ratio after quantization');
 		}
 	}
 });

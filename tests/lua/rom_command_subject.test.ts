@@ -110,12 +110,12 @@ test('focused Main primary does not acquire a ROM capability from its own active
 	const f = fixture(t), resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.pane.commandTarget), true);
-	const main = f.editor.mainWorkspace.primary!, group = f.editor.editorParts.main.activeGroup;
+	const main = f.editor.mainWorkspace.primary!, group = f.firstGroup;
 	const input = new RomInspectorInput(f.input.snapshot); group.openEditor(input, { pinned: true }); f.update();
 	const pane = group.panes.activePane; assert.ok(pane instanceof RomInspectorPane);
-	f.editor.commands.execute('romInspector.structure', pane.commandTarget); f.update(); main.focus();
+	f.editor.commands.execute('romInspector.structure', pane.commandTarget); f.update(); f.editor.mainWorkspace.focusPrimary('hierarchy');
 	const target = inputFocus.admittedTarget; assert.ok(target !== null && main.scope.contains(target.scope));
-	assert.ok(f.editor.editorParts.activeGroup === group && group.model.activeTab === input);
+	assert.ok(group.model.activeTab === input);
 	assert.equal(input.model.mode, 'structure'); assert.equal(target.resolveCommand('romInspector.structure'), undefined);
 	assert.equal(f.editor.commands.isEnabled('romInspector.structure', target), false);
 	assert.equal(f.editor.commands.isActive('romInspector.structure', target), false);

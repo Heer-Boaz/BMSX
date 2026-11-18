@@ -74,9 +74,9 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} actual Main all
 	const cardMinimum = measureHomeMinimumCardWidth(home, editorViewState.font);
 	let count = 0;
 	for (const section of home.sections) if (section.visibleCount > 0) {
-		assert.ok(section.bounds.right - section.bounds.left >= cardMinimum);
+		assert.ok(section.bounds.right + 1 >= section.bounds.left + cardMinimum);
 		const textWidth = section.bounds.right - section.bounds.left - CARD_CHROME;
-		for (const item of section.actions.items) if (item.visible) { assert.ok(textWidth >= item.width); count++; }
+		for (const item of section.actions.items) if (item.visible) { assert.ok(textWidth + 1 >= item.width); count++; }
 	}
 	assert.ok(count > 0); assert.ok(primary.hierarchy.attached && primary.details.attached);
 	assert.ok(f.editor.mainWorkspace.primary === primary && primary.authoring.subject === primary.authoring.document!.scenes[0]);

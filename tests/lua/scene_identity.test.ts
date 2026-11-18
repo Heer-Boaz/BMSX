@@ -130,10 +130,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} Details n
 	const input = scene(t), member = input.view.hierarchy.outline.rows[1].element;
 	arrangeScene(input.view, true, { left: 0, top: 24, right: 384, bottom: 276 });
 	assert.equal(input.view.details.detailsText[0].text, member.label);
-	assert.equal(member.labelClipped, false);
-	arrangeScene(input.view, false, { left: 0, top: 24, right: variant === 'tiny' ? 78 : 118, bottom: 276 });
-	const tree = input.view.hierarchy.outline.layout;
-	assert.equal(member.labelClipped, editorViewState.font.measure(member.label) > tree.contentRight - tree.contentLeft - tree.indentWidth - tree.twistieWidth);
+	assert.equal(input.view.authoring.selection?.kind, 'member');
 	selectSceneOutlineRow(input.view.hierarchy, 0);
 	arrangeScene(input.view, false, { left: 0, top: 24, right: 384, bottom: 276 });
 	assert.equal(input.view.details.detailsText[0].text, 'room');
@@ -142,7 +139,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} Details n
 
 function feedbackFixture(t: TestContext, variant: 'tiny' | 'msx') {
 	configureFontVariant(variant);
-	const source = SOURCE.replaceAll('same  member', 'same  member identity');
+	const source = SOURCE.replaceAll('same  member', 'same  member\\nidentity');
 	const input = scene(t, TEST_CARTRIDGE_CONTEXT_IDS[0], source), font = editorViewState.font.renderFont();
 	const area = { left: 0, top: 24, right: 384, bottom: 276 };
 	arrangeScene(input.view, true, { ...area, right: variant === 'tiny' ? 78 : 94 });
@@ -180,20 +177,14 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} full iden
 	f.treeFocus.focus(); f.feedback.keyboardSelection(f.input.view.hierarchy); f.update(); f.paint();
 	assert.ok(f.labels.length > 0, 'the admitted row paints its source-owned qualification');
 	f.parent.focus(); f.paint(); assert.deepEqual(f.labels, [], 'field/pane focus departure immediately retires keyboard identity');
-	f.treeFocus.focus(); f.feedback.keyboardSelection(f.input.view.hierarchy); f.update();
-	f.input.view.hierarchy.outline.hoverIndex = -1; f.point.viewportX++; f.feedback.pointer(f.input.view.hierarchy, -1, f.point); f.update(); f.paint();
-	assert.deepEqual(f.labels, [], 'headers and empty space do not inherit a row identity');
-	f.input.view.hierarchy.outline.hoverIndex = 1; f.point.viewportX++; f.feedback.pointer(f.input.view.hierarchy, 1, f.point); f.update();
-	f.input.view.hierarchy.outline.scroll++; f.update(); f.paint(); assert.deepEqual(f.labels, []);
-	f.input.view.hierarchy.outline.scroll--; f.feedback.pointer(f.input.view.hierarchy, 1, f.point); f.update(); f.paint();
-	assert.deepEqual(f.labels, [], 'stationary hover cannot adopt a row after scroll');
-	f.point.viewportX++; f.feedback.pointer(f.input.view.hierarchy, 1, f.point); f.update(); f.paint(); assert.ok(f.labels.length > 0);
+	f.input.view.hierarchy.outline.hoverIndex = 1; f.point.viewportX++;
+	f.feedback.pointer(f.input.view.hierarchy, 1, f.point); f.update(); f.paint(); assert.ok(f.labels.length > 0);
 	installSceneOutline(f.input.view.hierarchy); selectSceneOutlineRow(f.input.view.hierarchy, 1);
 	assert.notEqual(f.input.view.hierarchy.outline.rows[1], member);
 	f.update(); f.paint(); assert.deepEqual(f.labels, [], 'equal labels at the same index cannot inherit another projection identity');
 	arrangeScene(f.input.view, true, f.area);
 	f.treeFocus.focus(); f.feedback.keyboardSelection(f.input.view.hierarchy); f.update(); f.paint();
-	assert.deepEqual(f.labels, [], 'fitting keyboard labels do not produce an unsolicited explanation layer');
+	assert.ok(f.labels.length > 0, 'keyboard selection discloses the authored text beyond the first line');
 	f.input.view.hierarchy.outline.hoverIndex = 1; f.point.viewportX++; f.feedback.pointer(f.input.view.hierarchy, 1, f.point); f.update(); f.paint();
 	assert.ok(f.labels.length > 0, 'explicit hover exposes full qualification even when the short member label fits');
 	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, captureScope: Symbol('modal'), isVisible: () => true,

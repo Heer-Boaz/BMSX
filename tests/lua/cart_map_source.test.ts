@@ -7,7 +7,6 @@ import type { EditorModelEdit, EditorTextEdit } from '../../ide/editor/model/tex
 import { EditorWorkspaceEditConflict } from '../../ide/editor/model/undo_redo_service';
 import { buildPietiousSource, createPietiousPositionEdit } from '../../ide/workbench/contrib/cart_maps/pietious_source';
 import { buildNemesisSource, createNemesisMarkerMoveEdit } from '../../ide/workbench/contrib/cart_maps/nemesis_source';
-import { parseStructuredSource } from '../../ide/language/yaml/structured_edits';
 import { parseStructuredTextDocument } from '../../toolchain/ts/rompack/aem';
 
 const castleSource = readFileSync('carts/pietious/res/data/castle_map.yaml', 'utf8');
@@ -90,23 +89,11 @@ test('Pietious unsupported and incomplete authoring is explicitly source-only, i
 	}
 });
 
-test('real Nemesis markers retain exact source-cell identity and move without touching row escapes', () => {
+test('the generated Stadsburg stage is not editable as an authored glyph map', () => {
 	const document = buildNemesisSource(stageSource, 5);
-	assert.equal(document.diagnostic, null);
-	assert.equal(document.rows.length, 22);
-	assert.equal(document.width, 554);
-	const marker = document.markers[0];
-	assert.deepEqual([marker.x, marker.y, marker.glyph], [257, 1, 'm']);
-	assert.equal(stageSource.slice(marker.range.start, marker.range.end), 'm');
-	const edit = createNemesisMarkerMoveEdit(document, marker, 1, 258);
-	assert.equal(edit.edits.length, 2);
-	const next = apply(stageSource, edit.edits);
-	assert.equal(next, stageSource.slice(0, marker.range.start) + ' m' + stageSource.slice(marker.range.end + 1));
-	const parsed = parseStructuredSource(next, 'yaml').toJS();
-	assert.equal(parsed.map_rows[1][257], ' ');
-	assert.equal(parsed.map_rows[1][258], 'm');
-	assert.equal(next.includes('\\\\'), stageSource.includes('\\\\'));
-	assert.deepEqual(createNemesisMarkerMoveEdit(document, marker, 1, 257).edits, []);
+	assert.ok(document.diagnostic);
+	assert.deepEqual(document.markers, []);
+	assert.equal(document.source, stageSource);
 });
 
 test('Nemesis escaped codepoints are mapped to logical guest columns and exact source bytes', () => {
@@ -169,7 +156,7 @@ test('Nemesis source forms preserve quote style and refuse occupied or unsupport
 test('source and map edits share one history, and stale projections cannot write intervening text', t => {
 	const service = new EditorTextModelService();
 	t.after(() => service.clear());
-	for (const [path, source] of [['castle_map.yaml', castleSource], ['nemesis_s_stage.yaml', stageSource]]) {
+	for (const [path, source] of [['castle_map.yaml', castleSource], ['glyph_stage.yaml', 'map_rows: ["m "] # retained\n']]) {
 		const model = service.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'data', resid: path } }, 'yaml', source);
 		let operation: EditorModelEdit;
 		if (path === 'castle_map.yaml') {

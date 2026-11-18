@@ -280,8 +280,8 @@ test('an owned floating inspector retains semantic document ancestry without bor
 test('a guest viewport cannot use focused-view resize authority or change the physical machine through these UI commands', async t => {
 	const f = await fixture(t), { editor, group } = f;
 	const right = f.parts.main.splitGroup(group, 'right'); right.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
-	group.openEditor(f.editor.actorLab.resolveInput()); f.update(); group.panes.activePane!.focus(); const chrome = inputFocus.target;
-	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
+	group.openEditor(f.editor.actorLab.resolveInput()); f.update(); group.panes.activePane!.focus();
+	f.editor.commands.execute('actorLab.controlGame', group.panes.activePane!.commandTarget);
 	const guest = inputFocus.admittedTarget!; assert.ok(guest.guestInput !== undefined);
 	const binding = guest.guestInput, ratios = f.parts.main.arrangement.splits.map(split => split.split.ratio);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;

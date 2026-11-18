@@ -94,7 +94,7 @@ test('command word positions explain abbreviations without marking equivalent se
 
 test('highlighted labels own prefix clipping and ellipsis, with retained proportional run geometry', t => {
 	configureFontVariant('tiny');
-	t.mock.method(editorViewState.font, 'advance', (char: string) => char === 'W' ? 9 : char === '…' ? 6 : 2);
+	t.mock.method(editorViewState.font.renderFont(), 'advance', (char: string) => char === 'W' ? 9 : char === '…' ? 6 : 2);
 	const label = new HighlightedLabel();
 	label.layout('WiWiWi', 30); // 33 px full text; one 6 px ellipsis leaves a 24 px body.
 	assert.equal(label.visibleEnd, 4); assert.equal(label.marker, '…');
@@ -105,7 +105,7 @@ test('highlighted labels own prefix clipping and ellipsis, with retained proport
 		{ start: 3, end: 4, x: 20, highlighted: false },
 	]);
 	const first = label.runs.peek(0);
-	t.mock.method(editorViewState.font, 'advance', () => assert.fail('changing highlights remeasured text'));
+	t.mock.method(editorViewState.font.renderFont(), 'advance', () => assert.fail('changing highlights remeasured text'));
 	label.beginHighlights(); label.addHighlight(0, 2); label.endHighlights();
 	assert.equal(label.runs.peek(0), first);
 	assert.deepEqual([...label.runs], [
@@ -162,7 +162,7 @@ test('shared picker consumes provider spans, updates them without text queries a
 			}
 		}
 	}
-	t.mock.method(editorViewState.font, 'advance', () => assert.fail('warm picker measured text'));
+	t.mock.method(editorViewState.font.renderFont(), 'advance', () => assert.fail('warm picker measured text'));
 	for (let frame = 0; frame < 1000; frame += 1) picker.update();
 	assert.equal(calls, 2, 'layout, selection, fonts, themes and idle never query the provider again');
 });

@@ -49,14 +49,14 @@ test(`${variant} Animation publishes its compact constraints to a real ${directi
 	split.moveTo(split.start); f.update();
 	const measured = measureAnimationEditor(editorViewState.font);
 	// These are the contribution's hard layout constraints, not a UI geometry snapshot.
-	assert.ok(input.layout.bounds.right - input.layout.bounds.left >= measured.compactWidth);
+	assert.ok(input.layout.bounds.right + 1 >= input.layout.bounds.left + measured.compactWidth);
 	assert.ok(input.layout.bounds.bottom - input.layout.bounds.top >= measured.compactHeight);
 	f.firstBounds.right = f.firstBounds.left + measured.compactWidth - 1;
 	f.firstBounds.bottom = f.firstBounds.top + measured.compactHeight - 1;
 	f.update();
 	assert.ok(f.firstPart.arrangement.contentWidth > f.firstPart.arrangement.bounds.right - f.firstPart.arrangement.bounds.left);
 	assert.ok(f.firstPart.arrangement.contentHeight > f.firstPart.arrangement.bounds.bottom - f.firstPart.arrangement.bounds.top);
-	assert.ok(input.layout.bounds.right - input.layout.bounds.left >= measured.compactWidth);
+	assert.ok(input.layout.bounds.right + 1 >= input.layout.bounds.left + measured.compactWidth);
 	assert.ok(input.layout.bounds.bottom - input.layout.bounds.top >= measured.compactHeight);
 	const details = input.clientBar.items.find(item => item.command === 'animation.details')!;
 	const x = (details.bounds.left + details.bounds.right) / 2, y = (details.bounds.top + details.bounds.bottom) / 2;

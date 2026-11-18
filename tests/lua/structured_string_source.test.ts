@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { Scalar } from 'yaml';
 import type { EditorTextEdit } from '../../ide/editor/model/text_model';
@@ -100,8 +99,8 @@ test('new double-quoted fragments encode only their own escapes', () => {
 	assert.equal(scalar(next).value, 'a"\\\nz');
 });
 
-test('canonical Nemesis rows map all cells and a move changes only the two authored cell spans', () => {
-	const source = readFileSync('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8');
+test('escaped rows map all cells and a move changes only the two authored cell spans', () => {
+	const source = 'map_rows:\n  - " m   "\n  - "\\u0061\\\\m  " # keep spelling\n';
 	const document = parseStructuredSource(source, 'yaml');
 	const rows = document.get('map_rows') as { items: Scalar<string>[] };
 	const mappings = rows.items.map(row => mapStructuredStringSource(row)!);

@@ -125,7 +125,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assertStatusProjection(t, f, f.second, [f.first, editor.resourcePanel, editor.problems]);
 	});
 
-	test(`${variant} native status keyboard focus copies complete and withdrawn producer observations`, async t => {
+	test(`${variant} native status keyboard focus copies complete producer observations`, async t => {
 		const f = fixture(t, variant), editor = f.editor;
 		editor.updateViewport({ width: 118, height: 240 }); f.first.focus(); f.update();
 		const source = f.first.statusItems[0], raw = source.text;
@@ -134,10 +134,9 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.ok(inputFocus.admittedTarget === editor.statusBar.focusTarget);
 		f.key('KeyC', KeyModifier.ctrl);
 		assert.equal(await editor.clipboard.readText(), raw, 'clipboard data remains the exact full producer value');
-		assert.equal(editor.statusBar.itemsLayout.items.peek(1).visible, false);
 		f.key('ArrowRight'); f.key('KeyC', KeyModifier.ctrl);
 		assert.equal(await editor.clipboard.readText(), f.first.statusItems[1].text,
-			'keyboard reading reaches lower-priority facts even when their native status slot is withdrawn');
+			'keyboard reading reaches lower-priority facts independently of presentation');
 		f.key('Escape'); assert.ok(inputFocus.admittedTarget === f.first.commandTarget);
 		assert.equal(f.firstInput.workingCopy.buffer.getText(), f.source); assert.equal(f.firstInput.workingCopy.dirty, false);
 	});

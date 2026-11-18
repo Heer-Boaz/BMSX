@@ -134,8 +134,7 @@ test('closing the last minimized host keeps workspace navigation admitted with n
 test('foreground status discovery does not replace the live guest attachment or execute a frame', t => {
 	const f = createStatusFixture(t), parts = f.editor.editorParts, game = f.editor.actorLab.resolveInput();
 	parts.main.activeGroup.openEditor(game); parts.minimize(f.firstPart); parts.minimize(f.secondPart); f.update();
-	const frame = game.previewBounds, preview = { x: (frame.left + frame.right) / 2, y: (frame.top + frame.bottom) / 2 };
-	pointer(f, preview, true, 0); pointer(f, preview, false, 1);
+	f.editor.commands.execute('actorLab.controlGame', parts.main.activeGroup.panes.activePane!.commandTarget);
 	const guest = inputFocus.target!, binding = guest.guestInput!, scope = guest.scope;
 	assert.ok(binding !== undefined && binding.recipient === f.host.input);
 	const active = parts.activePart, cycles = f.host.runtime.machine.scheduler.nowCycles, button = statusButton(t, f);
@@ -167,7 +166,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} restore allocat
 			assert.equal(context.right, hint.left); assert.equal(hint.right, layout.bounds.right);
 			assert.ok(layout.bounds.left <= restore.left && restore.left <= restore.right && restore.right <= layout.bounds.right);
 			assert.ok(context.left <= context.right && hint.left <= hint.right);
-			assert.equal(restore.right - restore.left, Math.min(requestedWidth, layout.bounds.right - fault.right));
+			assert.equal(restore.right, Math.min(restore.left + requestedWidth, layout.bounds.right));
 			assert.equal(restore.top, layout.connection.top); assert.equal(restore.bottom, layout.connection.bottom);
 			for (let repeat = 0; repeat < 20; repeat++) {
 				const retained = getWorkbenchStatusLayout(guest, failed, requestedWidth);

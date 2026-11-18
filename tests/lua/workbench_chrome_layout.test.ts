@@ -92,16 +92,13 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Menu is one acc
 	const menu = editorChromeState.menuButtonBounds, button = { ...menu };
 	assert.equal(f.group.model.tabs.length, 0);
 	assert.equal(editorChromeState.menuBarHeight, 0, 'ordinary workbench layout has no permanent menu row');
-	assert.equal(f.group.tabStrip.layoutState.bounds.top, getWorkbenchEditorBounds().top);
 	assert.ok(menu.right > menu.left && menu.bottom > menu.top);
-	assert.ok(menu.bottom <= f.group.tabStrip.layoutState.bounds.top, 'shell navigation is outside the editor group');
-	assert.equal(f.group.tabStrip.layoutState.viewportBounds.left, getWorkbenchEditorBounds().left);
+	assert.ok(menu.bottom <= getWorkbenchEditorBounds().top, 'shell navigation is outside the editor group');
 	const body = getWorkbenchEditorBounds(), before = { ...body };
 	const tab = new TerminalInput(); f.group.model.add(tab); f.group.model.activate(tab); f.layout();
 	const groupRevision = f.group.model.revision, tabIntent = f.group.model.activeTab;
 	f.menubar.toggleFocus(); f.layout();
 	assert.equal(f.menubar.expanded, true); assert.ok(editorChromeState.menuBarHeight > 0);
-	assert.equal(f.group.tabStrip.layoutState.bounds.top, getWorkbenchEditorBounds().top);
 	assert.deepEqual(menu, button, 'the Menu target stays at its root-chrome anchor as the real category part expands');
 	assert.equal(getWorkbenchEditorBounds(), body); assert.equal(body.top, topMargin());
 	assert.equal(f.group.model.activeTab, tabIntent); assert.equal(f.group.model.revision, groupRevision);

@@ -873,8 +873,8 @@ test('a mixed Source, Scene and active Game group docks without transferring gue
 	source.openEditor(game); f.update();
 	const oldPane = source.panes.activePane; assert.ok(oldPane instanceof ActorLabEditorPane);
 	f.editor.commands.execute('runtime.resume', oldPane.commandTarget);
-	f.firstPart.focus(); const chrome = inputFocus.target;
-	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
+	f.firstPart.focus();
+	f.editor.commands.execute('actorLab.controlGame', oldPane.commandTarget);
 	const guest = inputFocus.target!, guestInteraction = guest.scope.interaction!;
 	assert.ok(guest.guestInput?.recipient === f.host.input); assert.equal(f.host.execution.paused, false);
 	const models = [f.firstInput.workingCopy, scene.workingCopy];

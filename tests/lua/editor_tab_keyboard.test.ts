@@ -180,8 +180,7 @@ test('roving to and activating a Game tab never grants guest keys until its actu
 	assert.equal(strip.focusedInput === game && f.group.model.activeTab === f.firstInput, true); assert.equal(f.editor.guestInputRecipient, null);
 	f.key('Enter'); assert.ok(f.group.model.activeTab === game && inputFocus.target === strip.focusTarget); assert.equal(f.editor.guestInputRecipient, null);
 	f.key('Escape'); assert.ok(inputFocus.target === f.group.panes.activePane!.commandTarget); assert.equal(f.editor.guestInputRecipient, null);
-	const chrome = inputFocus.target;
-	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined); const guest = inputFocus.target; assert.ok(guest?.guestInput !== undefined && f.editor.guestInputRecipient === f.host.input);
+	f.editor.commands.execute('actorLab.controlGame', f.group.panes.activePane!.commandTarget); const guest = inputFocus.target; assert.ok(guest?.guestInput !== undefined && f.editor.guestInputRecipient === f.host.input);
 	f.key('ArrowLeft'); f.key('Tab'); assert.ok(inputFocus.target === guest && f.group.model.activeTab === game);
 	f.key('F1', KeyModifier.shift); assert.equal(f.editor.guestInputRecipient, null);
 });

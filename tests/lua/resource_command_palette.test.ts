@@ -121,7 +121,7 @@ test('closing the secondary editor host revokes the fixed Palette catalog even w
 for (const origin of ['Files', 'Source'] as const) test(`replacing Go to File with Palette preserves its prepared ${origin} origin rather than the shared picker field`, async t => {
 	const f = fixture(t); if (origin === 'Files') f.panel.setFocused(true); else f.first.focus();
 	const prepared = inputFocus.admittedTarget; assert.ok(prepared !== null);
-	f.key('Comma', KeyModifier.ctrl); assert.equal(f.editor.quickInput.visible, true);
+	f.key('KeyP', KeyModifier.ctrl); assert.equal(f.editor.quickInput.visible, true);
 	assert.ok(f.editor.quickInput.invocationOrigin === prepared && inputFocus.admittedTarget === f.editor.quickInput.field.focusTarget);
 	palette(f); assert.ok(f.editor.quickInput.invocationOrigin === prepared);
 	assert.ok(f.editor.quickInput.invocationOrigin !== f.editor.quickInput.field.focusTarget);

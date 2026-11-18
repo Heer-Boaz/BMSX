@@ -162,10 +162,7 @@ test('Format Document remains ordinary input at the real Game viewport rather th
 	const f = fixture(t);
 	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
 	f.editor.editorParts.main.activeGroup.openEditor(f.editor.actorLab.resolveInput()); f.update();
-	const chrome = inputFocus.target;
-	for (let count = 0; count < 20 && inputFocus.target?.guestInput === undefined; count++) {
-		f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop');
-	}
+	f.editor.commands.execute('actorLab.controlGame', f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget);
 	const guest = inputFocus.target!;
 	assert.ok(guest.guestInput !== undefined && guest.guestInput.recipient === f.host.input);
 	for (const event of [new KeyInputEvent('AltLeft', KeyModifier.alt), new KeyInputEvent('ShiftLeft', MODIFIERS),

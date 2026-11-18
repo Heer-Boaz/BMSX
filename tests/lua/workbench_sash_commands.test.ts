@@ -175,8 +175,8 @@ for (const admission of ['hidden Activity', 'floating Activity', 'modal', 'guest
 				lifetimeOwner: main.surface, captureScope: Symbol('sizing decision'), isVisible: () => true,
 				getBounds: () => area, getClip: () => area, draw() {} }); t.after(() => modal.dispose());
 		} else {
-			f.group.openEditor(f.editor.actorLab.resolveInput()); f.update(); f.group.panes.activePane!.focus(); const chrome = inputFocus.target;
-			do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
+			f.group.openEditor(f.editor.actorLab.resolveInput()); f.update(); f.group.panes.activePane!.focus();
+			f.editor.commands.execute('actorLab.controlGame', f.group.panes.activePane!.commandTarget);
 			origin = inputFocus.admittedTarget!; assert.ok(origin.guestInput !== undefined);
 		}
 		f.update(); const focused = inputFocus.admittedTarget, ratio = split.ratio, files = editor.resourcePanel.split.requestedSize;

@@ -67,7 +67,8 @@ test('native viewport picking falls through a transparent image to the actual re
 	const f = await fixture(t), scene = f.client.authoring.subject!, picture = f.view.canvas.items[1];
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	for (const [u, v, expected] of [[0.1875, 0.1875, scene.objects[0]], [0.6, 0.6, scene.objects[1]]] as const) {
-		const x = picture.x + picture.xx * u + picture.yx * v, y = picture.y + picture.xy * u + picture.yy * v;
+		// Choose an integral pointer position inside the intended texel, not its edge.
+		const x = Math.round(picture.x + picture.xx * u + picture.yx * v), y = Math.round(picture.y + picture.xy * u + picture.yy * v);
 		assert.ok(pickViewportCanvas(f.view.canvas.items, x, y) === expected);
 		for (const down of [true, false]) {
 			f.host.clock.advance(10);

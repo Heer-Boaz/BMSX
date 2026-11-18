@@ -1,3 +1,5 @@
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
+import { setImmediate } from 'node:timers/promises';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -68,7 +70,7 @@ function fixture(t: TestContext, source = ALL_CONTENT_SOURCE, additionalSources:
 }
 
 test('the real project tree activates all authored kinds and reveals each retained document after unrelated MRU changes', async t => {
-	const f = fixture(t), parts = f.editor.editorParts, chosen = parts.activeGroup;
+	const f = fixture(t), parts = f.editor.editorParts;
 	const nodes = f.definitions();
 	assert.deepEqual(new Set(nodes.map(node => node.element.content.kind)),
 		new Set(['scene', 'behavior_tree', 'state_machine', 'action_effect', 'progression', 'input', 'animation']));
@@ -76,8 +78,9 @@ test('the real project tree activates all authored kinds and reveals each retain
 	assert.equal(editorTextModelService.get(f.resource), undefined, 'project discovery does not open every source working copy');
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const secondScene = nodes.filter(node => node.element.content.kind === 'scene')[1];
-	const sceneGroup = f.activate(secondScene), scene = sceneGroup.model.activeTab;
-	assert.ok(sceneGroup === chosen); assert.ok(scene instanceof SceneEditorInput);
+	f.activate(secondScene); await setImmediate(); f.update();
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	const scene = primary.input; assert.ok(scene instanceof SceneEditorInput);
 	assert.deepEqual(scene.view.authoring.selectionRange, secondScene.element.content.range);
 	const sceneRoot = scene.view.hierarchy.outline.rows[scene.view.hierarchy.outline.selectionIndex];
 	assert.equal(sceneRoot.element.kind, 'scene');
@@ -116,17 +119,18 @@ test('the real project tree activates all authored kinds and reveals each retain
 				assert.equal(input.consumerPath, entry.definition.consumer?.file); assert.ok(input.document !== undefined);
 				break;
 		}
-		const part = parts.partForGroup(group), total = group.model.tabs.length;
+		const total = group.model.tabs.length;
 		const unrelated = parts.createDocument();
 		unrelated.activeGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.secondInput.workingCopy.resource));
-		parts.minimize(part); unrelated.focus(); f.update();
-		assert.ok(parts.activeGroup !== group); assert.equal(part.window!.model.minimized, true);
+		unrelated.focus(); f.update();
+		assert.ok(parts.activeGroup !== group);
 		assert.ok(f.activate(node) === group);
 		assert.ok(group.model.activeTab === input); assert.equal(group.model.tabs.length, total);
-		assert.equal(part.window!.model.minimized, false);
-		assert.ok(sceneGroup.model.tabs.includes(scene)); assert.deepEqual(scene.view.authoring.selectionRange, sceneSelection);
+		assert.deepEqual(scene.view.authoring.selectionRange, sceneSelection);
 	}
-	assert.ok(f.activate(secondScene) === sceneGroup); assert.ok(sceneGroup.model.activeTab === scene);
+	f.activate(secondScene); await setImmediate(); f.update();
+	const reopened = f.editor.mainWorkspace.primary;
+	assert.ok(reopened instanceof ScenePrimaryClient && reopened.input.workingCopy === scene.workingCopy);
 	assert.deepEqual(scene.view.authoring.selectionRange, sceneSelection, 'reopening the same scene preserves its selected member');
 	assert.equal(scene.workingCopy.buffer.getText(), ALL_CONTENT_SOURCE);
 	assert.equal(scene.workingCopy.dirty, false);

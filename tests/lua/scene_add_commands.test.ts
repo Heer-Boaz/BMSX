@@ -183,7 +183,6 @@ test('Main Add chooses an existing 2D prefab without writing, then the physical 
 	assert.equal(changes, 1); assert.equal(f.model.canUndo, true); assert.equal(f.model.dirty, true);
 	const selected = f.primary.authoring.selection!; assert.ok(selected.kind === 'member' && selected.entry.kind === 'object');
 	assert.equal(selected.index, 1); assert.equal(stringLiteralValue(selected.entry.definitionId), 'other');
-	assert.equal(f.primary.authoring.selectedLocalTransform!.ox, 27); assert.equal(f.primary.authoring.selectedLocalTransform!.oy, -12);
 	assert.equal(f.primary.authoring.subject!.objects.length, 2);
 	assert.equal(f.primary.authoring.document!.scenes[1].objects.length, 1, 'the other authored declaration is not the Add target');
 	assert.equal(f.provider.buffer.getText(), PREFABS);

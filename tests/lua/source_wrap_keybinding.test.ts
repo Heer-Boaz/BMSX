@@ -157,8 +157,8 @@ test('the existing View menu checked state and explicit Palette acceptance addre
 test('Alt+Z remains ordinary guest input in the actual Game viewport', t => {
 	const f = createActualSourcePanes(t);
 	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
-	f.editor.editorParts.main.activeGroup.openEditor(f.editor.actorLab.resolveInput()); f.update(); const chrome = inputFocus.target;
-	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
+	f.editor.editorParts.main.activeGroup.openEditor(f.editor.actorLab.resolveInput()); f.update();
+	f.editor.commands.execute('actorLab.controlGame', f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget);
 	const guest = inputFocus.target!, binding = guest.guestInput;
 	assert.ok(binding !== undefined && binding.recipient === f.host.input);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;

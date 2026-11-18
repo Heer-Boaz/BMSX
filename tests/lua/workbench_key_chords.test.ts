@@ -6,7 +6,6 @@ import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/comm
 import { editorFeedbackState, showEditorMessage, updateEditorMessage } from '../../ide/common/feedback_state';
 import { InputFocusScope, InputFocusService, inputFocus } from '../../ide/input/focus';
 import { EditorCommandKeybindingController } from '../../ide/input/keyboard/global_bindings';
-import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { getWorkbenchWorkArea } from '../../ide/workbench/common/layout';
 
@@ -220,10 +219,7 @@ test('a pending window prefix preserves actual native word selection and the exi
 test('the actual guest recipient bypasses window prefixes and arrows before any chord is admitted', t => {
 	const f = createActualSourcePanes(t), game = f.editor.actorLab.resolveInput(), model = f.firstInput.workingCopy;
 	f.firstGroup.openEditor(game); f.update();
-	const bounds = game.previewBounds, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
-		pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
-		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: down ? 0 : 1 });
+	f.editor.commands.execute('actorLab.controlGame', f.firstGroup.panes.activePane!.commandTarget);
 	const guest = inputFocus.target!, binding = guest.guestInput!;
 	assert.ok(binding !== undefined && binding.recipient === f.host.input);
 	const source = model.buffer.getText(), version = model.version, cycles = f.host.runtime.machine.scheduler.nowCycles;

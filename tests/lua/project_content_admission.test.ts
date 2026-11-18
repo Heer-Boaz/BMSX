@@ -1,3 +1,5 @@
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
+import { setImmediate } from 'node:timers/promises';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -125,7 +127,7 @@ test('an accepted transient returning focus within its invoking group still open
 });
 
 for (const kind of KINDS) for (const edit of ['move', 'remove'] as const)
-	test(`${kind} activation consumes source settled by the actual departing field (${edit})`, t => {
+	test(`${kind} activation consumes source settled by the actual departing field (${edit})`, async t => {
 		const f = fixture(t, kind), range = { ...f.entry.range };
 		const draft = f.draft(() => f.model.pushEditOperations(edit === 'move'
 			? [{ offset: 0, deleteLength: 0, text: '-- admitted field\n' }]
@@ -139,8 +141,16 @@ for (const kind of KINDS) for (const edit of ['move', 'remove'] as const)
 			assert.ok(inputFocus.target === f.panel.focusTarget);
 			return;
 		}
+		if (kind === 'scene') {
+			await setImmediate(); f.update();
+			const primary = f.editor.mainWorkspace.primary;
+			assert.ok(primary instanceof ScenePrimaryClient && primary.input.workingCopy === f.model);
+			assert.deepEqual(primary.authoring.selectionRange, f.entry.range);
+			assert.equal(f.entry.range.start, range.start + '-- admitted field\n'.length);
+			return;
+		}
 		const group = f.editor.editorParts.activeGroup, input = group.model.activeTab;
-		assert.ok(group === f.firstGroup, 'all authored kinds retain the invoking group');
+		assert.ok(group === f.firstGroup);
 		assert.ok(input instanceof SceneEditorInput || input instanceof BehaviorLensInput || input instanceof LuaProgramInput || input instanceof AnimationEditorInput);
 		assert.ok(input.workingCopy === f.model);
 		assert.equal(f.entry.range.start, range.start + '-- admitted field\n'.length);

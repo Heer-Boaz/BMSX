@@ -31,7 +31,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const kind of ['info', 'suc
 			let glyph: GlyphRenderSubmission | undefined;
 			for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
 				const candidate = frame.commandRefs[index] as GlyphRenderSubmission;
-				if (candidate.items === 'SEVERITY') glyph = candidate;
+				if (typeof candidate.items === 'string' && candidate.items.length > 3 && message.text.startsWith(candidate.items.replace(/…$/, ''))) glyph = candidate;
 			}
 			assert.ok(glyph); ink.push(glyph.color);
 			assert.equal(glyph.color, resolveThemeTokenColor(colors.STATUS_MESSAGE_TEXT_COLORS[kind]));

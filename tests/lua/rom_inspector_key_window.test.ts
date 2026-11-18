@@ -198,7 +198,7 @@ test('controller recreation retains placement and open state per snapshot withou
 });
 
 test('closed keys do no label measurement or hidden client painting before or after their first attachment', t => {
-	const f = fixture(t), font = editorViewState.font;
+	const f = fixture(t), font = editorViewState.font.renderFont();
 	let measurements = 0;
 	const measure = font.measure.bind(font), advance = font.advance.bind(font);
 	t.mock.method(font, 'measure', (text: string) => { measurements++; return measure(text); });

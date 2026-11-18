@@ -244,8 +244,8 @@ test('guest viewport input keeps F6 and Shift+F6 while Shift+F1 alone returns to
 	const f = await fixture(t), game = f.editor.actorLab.resolveInput();
 	f.editor.updateViewport({ width: 1200, height: 800 });
 	f.group.openEditor(game); f.update();
-	const pane = f.group.panes.activePane!; pane.focus(); const chrome = inputFocus.target;
-	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
+	const pane = f.group.panes.activePane!; pane.focus();
+	f.editor.commands.execute('actorLab.controlGame', pane.commandTarget);
 	const guest = inputFocus.admittedTarget!; assert.ok(guest.guestInput !== undefined);
 	const binding = guest.guestInput, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	for (const modifiers of [KeyModifier.none, KeyModifier.shift]) {
@@ -254,7 +254,9 @@ test('guest viewport input keeps F6 and Shift+F6 while Shift+F1 alone returns to
 		assert.equal(down.consumed, false); assert.equal(up.consumed, false);
 		assert.ok(inputFocus.admittedTarget === guest && guest.guestInput === binding);
 	}
-	f.key('F1', KeyModifier.shift); assert.ok(inputFocus.admittedTarget === pane.commandTarget);
+	f.key('F1', KeyModifier.shift);
+	assert.equal(f.editor.guestInputRecipient, null);
+	assert.ok(pane.commandTarget.scope.contains(inputFocus.admittedTarget!.scope));
 	f.key('F6'); assert.ok(f.primary.details.scope.contains(inputFocus.admittedTarget!.scope));
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
