@@ -312,6 +312,75 @@ void selfAndNilFaults() {
 		"nil-key writes trap without mutating the table or a later read destination");
 }
 
+// Reuse the same SELF, CALL and RET sites as a script switches between an
+// inherited method and an instance override. Each method returns (self, field).
+void methodCallReturnsOriginalReceiver() {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::SELF), 4, 4, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::CALL), 4, 2, 3);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::MOV), 3, 5, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	for (u32 i = 0; i < 2; ++i) {
+		writeInstruction(image.text, 16 + 2 * i, static_cast<u8>(OpCode::GETFIELD), 1, 0, 1 + i);
+		writeInstruction(image.text, 17 + 2 * i, static_cast<u8>(OpCode::RET), 0, 3, 0);
+	}
+	image.functions = {{.firstWord=0, .wordCount=8, .maxStack=8}, {.firstWord=16, .wordCount=2, .numParams=1, .maxStack=2},
+		{.firstWord=18, .wordCount=2, .numParams=1, .maxStack=2}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
+		{3, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+	image.constants = {std::string("method"), std::string("fromParent"), std::string("fromOwn")};
+	CpuMachine native(image), scalar(image, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.cpu.prepareSystemNativeCode();
+#endif
+	test::runCpuParity(native.cpu, scalar.cpu, 2 * BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]);
+	const Value inherited = valueFloatBits(0xffc01234u), overridden = valueInteger(-37);
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto& r = cpu.activeThread()->currentFrame->registers;
+		auto* obj = cpu.createTable(0, 4); auto* parent = cpu.createTable(0, 1); auto* meta = cpu.createTable(0, 1);
+		parent->setStringKey(*cpu.stringPool().find("method"), r.get(0));
+		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(parent)));
+		obj->metatable = meta;
+		obj->setStringKey(*cpu.stringPool().find("fromParent"), inherited);
+		obj->setStringKey(*cpu.stringPool().find("fromOwn"), overridden);
+		r.set(2, valueTable(cpu.gcHeap().reference(obj)));
+	}
+	for (const bool step : {false, true}) for (const bool own : {false, true, false}) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu; auto& r = cpu.activeThread()->currentFrame->registers;
+			asTable(r.get(2), cpu.gcHeap())->setStringKey(*cpu.stringPool().find("method"), own ? r.get(1) : valueNil());
+			r.set(4, r.get(2)); r.set(3, valueNil());
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 4 * INSTRUCTION_BYTES);
+		}
+		if (step) {
+			test::runCpuParity(native.cpu, scalar.cpu, 1);
+			test::runCpuParity(native.cpu, scalar.cpu, 1);
+			requireParity(native, scalar);
+			require(native.cpu.getFrameDepth() == 2 && native.cpu.readFrameRegister(1, 0) == native.cpu.readFrameRegister(0, 2),
+				"method receives the instance, not the table which supplied the closure");
+			test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
+			requireParity(native, scalar);
+			require(isNil(native.cpu.readFrameRegister(0, 3)), "RET stops at the requested depth before the caller consumes the result");
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, 200); requireParity(native, scalar);
+		require(native.cpu.getFrameDepth() == 1 && native.cpu.readFrameRegister(0, 4) == native.cpu.readFrameRegister(0, 2)
+			&& native.cpu.readFrameRegister(0, 5) == (own ? overridden : inherited)
+			&& native.cpu.readFrameRegister(0, 3) == native.cpu.readFrameRegister(0, 5),
+			"the selected closure returns both the original receiver and its exact tagged field to the caller");
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& page = *native.cpu.activeThread()->currentFrame->decodedPage;
+	const auto first = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	// SELF, its CALL continuation and both methods share this mapped page.
+	for (const auto word : {4u, 5u, 16u, 18u}) test::waitForNativeEntry(native.cpu, page, first + word);
+#endif
+}
+
 void wideAllocationFailure() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 7, 0, 0);
@@ -404,7 +473,7 @@ void stringStoreGrowthRoots(bool generic) {
 int main() {
 	try {
 		stringReadChainBoundaries();
-		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); wideAllocationFailure(); stringStoreGrowthRoots(false); stringStoreGrowthRoots(true);
+		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); wideAllocationFailure(); stringStoreGrowthRoots(false); stringStoreGrowthRoots(true);
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }
