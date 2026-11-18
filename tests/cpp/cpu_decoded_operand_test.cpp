@@ -63,13 +63,13 @@ void signedRkBoundaries() {
 				static_cast<u8>(((rawB >> 6u) & 7u) << 3u | ((rawC >> 6u) & 7u)));
 			writeInstruction(image.text, wide ? 2 : 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 			image.functions = {{.firstWord = 0, .wordCount = static_cast<u32>(wide ? 3 : 2), .maxStack = static_cast<u32>(limit)}};
-			for (int i = 0; i < limit; ++i) image.constants.emplace_back(i + 0.25);
+			for (int i = 0; i < limit; ++i) image.constants.emplace_back(Blua32FloatConstant{numberToF32Bits(i + 0.25f)});
 			CpuMachine machine(image, instrumented);
-			Value* registers = machine.cpu.activeThread()->frameAtDepth(0)->registers;
-			for (int i = 0; i < limit; ++i) registers[i] = valueNumber(-(i + 0.75));
+			auto registers = machine.cpu.activeThread()->frameAtDepth(0)->registers;
+			for (int i = 0; i < limit; ++i) registers.set(i, valueFloat(-(i + 0.75)));
 			const auto operand = [](int selector) { return selector < 0 ? (-1 - selector) + 0.25 : -(selector + 0.75); };
 			require(machine.cpu.runUntilDepth(0, 1) == RunResult::Yielded, "an RK instruction retains its nominal charge");
-			require(machine.cpu.readFrameRegister(0, 0) == valueNumber(operand(b) + operand(c)), "narrow and WIDE RK boundaries select the correct register or constant");
+			require(machine.cpu.readFrameRegister(0, 0) == valueFloat(operand(b) + operand(c)), "narrow and WIDE RK boundaries select the correct register or constant");
 		}
 	}
 }
@@ -92,16 +92,16 @@ void rawFieldsAndInlineCaches() {
 		writeInstruction(image.text, 11, static_cast<u8>(OpCode::SELF), 4, 1, 63, 7);
 		writeInstruction(image.text, 12, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 13, .maxStack = 32768}};
-		image.constants.resize(32768, 0.0);
-		image.constants[16383] = 101.5;
+		image.constants.resize(32768, i32{0});
+		image.constants[16383] = Blua32FloatConstant{numberToF32Bits(101.5f)};
 		image.constants[32767] = std::string("field-key");
 		CpuMachine machine(image, instrumented);
 		auto& cpu = machine.cpu;
 		// Keep growth work separate from the operand and inline-cache base charges.
 		Table* table = cpu.createTable(0, 2);
-		Value* registers = cpu.activeThread()->frameAtDepth(0)->registers;
-		registers[1] = valueTable(table);
-		registers[32767] = valueNumber(91.5);
+		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+		registers.set(1, valueTable(cpu.gcHeap().reference(table)));
+		registers.set(32767, valueFloat(91.5));
 		const u32 pc = cpu.readFramePc(0);
 		for (int pass = 0; pass < 2; ++pass) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
@@ -109,9 +109,9 @@ void rawFieldsAndInlineCaches() {
 				+ BASE_CYCLES[static_cast<u8>(OpCode::GETI)] + BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)]
 				+ BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::SELF)];
 			require(cpu.runUntilDepth(0, charge) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "raw-field and cached-field instructions preserve their charges");
-			require(cpu.readFrameRegister(0, 0) == valueNumber(91.5), "raw B retains its unsigned 15-bit register index");
-			for (int destination : {2, 3, 4}) require(cpu.readFrameRegister(0, destination) == valueNumber(101.5), "raw integer/string keys and signed RK values remain independent of inline caches");
-			require(cpu.readFrameRegister(0, 5) == valueTable(table), "SELF preserves the original table");
+			require(cpu.readFrameRegister(0, 0) == valueFloat(91.5), "raw B retains its unsigned 15-bit register index");
+			for (int destination : {2, 3, 4}) require(cpu.readFrameRegister(0, destination) == valueFloat(101.5), "raw integer/string keys and signed RK values remain independent of inline caches");
+			require(cpu.readFrameRegister(0, 5) == valueTable(cpu.gcHeap().reference(table)), "SELF preserves the original table");
 		}
 	}
 }
@@ -122,11 +122,11 @@ void rewrittenPayloadVariants() {
 		image.text.resize(INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 4}};
-		image.constants = {std::string("field"), 73.5};
+		image.constants = {std::string("field"), Blua32FloatConstant{numberToF32Bits(73.5f)}};
 		CpuMachine machine(image, instrumented);
 		auto& cpu = machine.cpu;
-		cpu.activeThread()->frameAtDepth(0)->registers[1] = valueTable(cpu.createTable());
-		cpu.activeThread()->frameAtDepth(0)->registers[2] = valueNumber(81.5);
+		cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(cpu.gcHeap().reference(cpu.createTable())));
+		cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueFloat(81.5));
 		std::array<u8, 2u * INSTRUCTION_BYTES> code{};
 		for (const OpCode op : {OpCode::KSMI, OpCode::SETFIELD, OpCode::JMP, OpCode::GETFIELD, OpCode::LOADK, OpCode::KSMI}) {
 			const u32 raw = op == OpCode::KSMI ? static_cast<u32>(MIN_SIGNED_BX) & MAX_EXT_BX : op == OpCode::JMP ? 3u : 1u;
@@ -137,9 +137,9 @@ void rewrittenPayloadVariants() {
 			machine.memory.writeBytes(DYNAMIC_RAM_BASE, code.data(), code.size());
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(op)]) == RunResult::Yielded, "rewritten instruction executes at its actual charge");
-			if (op == OpCode::KSMI) require(cpu.readFrameRegister(0, 0) == valueNumber(MIN_SIGNED_BX), "rewritten KSMI retains all 26 signed bits");
-			if (op == OpCode::GETFIELD) require(cpu.readFrameRegister(0, 3) == valueNumber(81.5), "rewritten field opcode initializes its prediction instead of reading the previous branch payload");
-			if (op == OpCode::LOADK) require(cpu.readFrameRegister(0, 0) == valueNumber(73.5), "rewritten unsigned Bx is independent of the previous inline cache");
+			if (op == OpCode::KSMI) require(cpu.readFrameRegister(0, 0) == valueInteger(MIN_SIGNED_BX), "rewritten KSMI retains all 26 signed bits");
+			if (op == OpCode::GETFIELD) require(cpu.readFrameRegister(0, 3) == valueFloat(81.5), "rewritten field opcode initializes its prediction instead of reading the previous branch payload");
+			if (op == OpCode::LOADK) require(cpu.readFrameRegister(0, 0) == valueFloat(73.5), "rewritten unsigned Bx is independent of the previous inline cache");
 			require(cpu.readFramePc(0) == DYNAMIC_RAM_BASE + (op == OpCode::JMP ? 20u : 8u), "rewritten branch keeps its precomputed absolute target");
 		}
 	}
@@ -155,9 +155,9 @@ void wideDisplacementsKeepTheirOwnOperandLanes() {
 		CpuMachine machine(image, instrumented);
 		const u32 address = DYNAMIC_RAM_BASE + 0x1000u;
 		machine.memory.writeMappedU32LE(address, 0x12345678u);
-		machine.cpu.activeThread()->frameAtDepth(0)->registers[4095] = valueNumber(address - (255u << 2u));
+		machine.cpu.activeThread()->frameAtDepth(0)->registers.set(4095, valueInteger(address - (255u << 2u)));
 		require(machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM_D)]) == RunResult::Yielded && machine.cpu.instructionBudgetRemaining == 0, "WIDE displaced load retains its scalar charge");
-		require(machine.cpu.readFrameRegister(0, 4095) == valueNumber(0x12345678u), "EXT is displacement, not ABC register extension; WIDE A/B retain all12bits");
+		require(machine.cpu.readFrameRegister(0, 4095) == valueInteger(0x12345678u), "EXT is displacement, not ABC register extension; WIDE A/B retain all12bits");
 	}
 }
 
@@ -170,10 +170,11 @@ void wideDisplacedStoreCountRemainsUnsigned() {
 		image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4096}};
 		CpuMachine machine(image, instrumented);
 		const u32 address = DYNAMIC_RAM_BASE + 0x4000u;
-		Value* registers = machine.cpu.activeThread()->frameAtDepth(0)->registers;
-		registers[0] = valueNumber(0x10203040u);
-		registers[4094] = valueNumber(0xa1b2c3d4u);
-		registers[4095] = valueNumber(address - (255u << 2u));
+		auto registers = machine.cpu.activeThread()->frameAtDepth(0)->registers;
+		for (int i = 1; i < 4094; ++i) registers.set(i, valueInteger(i));
+		registers.set(0, valueInteger(0x10203040u));
+		registers.set(4094, valueInteger(0xa1b2c3d4u));
+		registers.set(4095, valueInteger(address - (255u << 2u)));
 		const int charge = BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_WORDS_D)] + 4095;
 		require(machine.cpu.runUntilDepth(0, charge) == RunResult::Yielded && machine.cpu.instructionBudgetRemaining == 0, "WIDE counted store retains its complete count surcharge");
 		require(machine.memory.readMappedWord(address) == 0x10203040u && machine.memory.readMappedWord(address + 4094u * 4u) == 0xa1b2c3d4u, "WIDE displacement B/C remain raw unsigned12-bit register/count fields");
