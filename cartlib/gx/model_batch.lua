@@ -201,7 +201,7 @@ local queue_triangle<const> = function(batch, primitive, component_id, reflected
 	for index = 1, count do
 		local scale<const> = focal / sz[index]
 		words[index] = gp0.pair16(center_x + sx[index]*scale, center_y + sy[index]*scale)
-		if texture ~= nil then batch.clip_uv[index] = gp0.uv(su[index]/sz[index], sv[index]/sz[index]) end
+		if texture ~= nil then batch.clip_uv[index] = gp0.uv(su[index] // sz[index], sv[index] // sz[index]) end
 	end
 	for index = 2, count - 1 do
 		local face<const> = queue_face(batch, primitive, component_id, reflected,

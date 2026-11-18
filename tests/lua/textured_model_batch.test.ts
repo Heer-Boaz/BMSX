@@ -1,10 +1,8 @@
+import { valueNil, asTable, asClosure, valueInteger, asStringId } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import type { StringValue } from '../../machine/ts/machine/cpu/value';
 import { packModelAsset } from '../../toolchain/ts/rompack/model_asset';
 import { prepareModelTextures } from '../../scripts/rompacker/model_textures';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
@@ -17,7 +15,7 @@ for (const optLevel of [0, 3] as const) test(`textured model binding, affine cli
 	imported.textures.push({ source: 0 }); imported.materials[1].baseColorTexture = 2;
 	const textures = await prepareModelTextures(imported);
 	const bytes = packModelAsset(imported, textures).buffer, storage = new Uint8Array((bytes.length + 3) & ~3); storage.set(bytes);
-	const view = new DataView(storage.buffer), words = Array.from({ length: storage.length / 4 }, (_, index) => view.getUint32(index * 4, true));
+	const view = new DataView(storage.buffer), words = Array.from({ length: storage.length / 4 }, (_, index) => view.getInt32(index * 4, true));
 	// Real resource binding, atlas LRU and batch. Substitute only ROM lookup,
 	// residency storage/upload and the DMA packet boundary, not rendering math.
 	const modules = [
@@ -92,10 +90,10 @@ return failed
 	const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 	const [failure] = materializeCpuCompletionValues(cpu);
-	assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
-	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')) as Table;
-	const profile = profileWarmGuestKernel(cpu, probe.getStringKey(cpu.stringPool.find('steady')) as Closure, 128);
+	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
+	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')), cpu.gc);
+	const profile = profileWarmGuestKernel(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('steady')), cpu.gc), 128);
 	assert.equal(profile.reservations, 0, 'warm clipping/order/residency paths allocate no guest heap');
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [4]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(4)]);
 	t.diagnostic(JSON.stringify(profile));
 });
