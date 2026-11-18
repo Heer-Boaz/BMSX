@@ -43,6 +43,10 @@ private:
 	void emitConstantIndex(const DecodedInstruction&, NativeBlockExitSite&);
 	void emitUpvalue(const DecodedInstruction&, NativeBlockExitSite*);
 	void emitControl(const DecodedInstruction&, NativeBlockExitSite*);
+	void emitTableAccess(const DecodedInstruction&, NativeBlockExitSite&);
+	void emitArraySlot(bool load, int value, NativeBlockExitSite&);
+	void emitStringSlot(bool load, int value, NativeBlockExitSite&);
+	void emitTableSlotTransfer(bool load, int value);
 	void emitLength(const DecodedInstruction&, NativeBlockExitSite&);
 	void emitMemory(const DecodedInstruction&, NativeBlockExitSite&);
 	void emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite& taken);

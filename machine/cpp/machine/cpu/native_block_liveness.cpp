@@ -5,10 +5,11 @@
 
 namespace bmsx {
 namespace {
-// A semantic exit publishes the whole cache and re-enters through a public
-// entry. Only instructions actually retaining registers can pass live proofs
-// to their native successor. This is compile-time control-flow analysis.
-bool retainsRegisters(OpCode op) {
+// Decide which uses should specialize an incoming edge. Table operations
+// consume arbitrary word/tag pairs: their hits keep the current register
+// bank, but are not a reason to propagate one caller's types to other entries.
+// Semantic exits also stop propagation because they publish the whole bank.
+bool propagatesEntryFacts(OpCode op) {
 	switch (op) {
 	case OpCode::MOV:
 	case OpCode::LOADNIL:
@@ -87,7 +88,7 @@ void NativeBlockCompiler::analyzeEntryLiveness() {
 		for (const auto& item : m_sources[index].instructions) {
 			const auto& instruction = *item.decoded;
 			const auto op = static_cast<OpCode>(instruction.op);
-			if (!retainsRegisters(op)) {
+			if (!propagatesEntryFacts(op)) {
 				continuing = false;
 				break;
 			}
