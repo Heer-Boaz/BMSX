@@ -150,7 +150,7 @@ VRAM-leesfunctie uit de console moet verdwijnen.
 | GPU-texturecoherentie | Automatische zichtbaarheid van iedere VRAM-write is geen behoudseis | Texturecache of expliciete textureopslag, capaciteit en laad-/invalidatieregels |
 | GPU-readback | Eenvoudig geordend leespad beoordelen; dubbele context-snapshots niet verplicht | Functieomvang, wachttijd en afhandeling bij contextovername |
 | CPU-timing | Vaste nominale werkklassen met expliciete volumekosten als proef, met C++-/assemblyachtige prestatie-intentie voor normaal BLua-gebruik | Spelvalidatie en beoordeling van de proef; fysieke CPU en kwalificatie blijven afzonderlijk |
-| CPU-taalopslag | De taalheap wordt records in het publieke hoofd-RAM van 4 MiB, inclusief constantenpools, globals, frames en beheer; de GEO-scratchreservering vervalt ([§12](#sec-proposal-language-heap)) | O1–O7 besloten; handleidingen en runtimes volgen per fase |
+| CPU-taalopslag | De taalheap wordt records in het publieke hoofd-RAM van 4 MiB, inclusief constantenpools, globals, frames en beheer; de GEO-scratchreservering vervalt ([§12](#sec-proposal-language-heap)) | O1–O7 besloten; fasen 1–3 uitgevoerd |
 | APU-bron en stereoplaatsing | Mono als standaard; onafhankelijke niveaus links en rechts | Programmeringsinterface, representatie en compatibiliteit |
 | APU-belasting | Garantie op basis van werkelijk haalbare belasting onderzoeken | Garantiedomein, eventuele stemlimiet en gedrag bij bereiken daarvan |
 | APU-broncontrole | Bestandsgroottecontrole vervangen door fysiek busgedrag onderzoeken | Exacte adres-, lege-kaart-, BADP- en foutregels en compatibiliteit |
@@ -1790,10 +1790,9 @@ Verdere fysieke contracten vragen hun eigen uitwerking en besluit.
 
 ## 12. CPU: de taalheap in hoofd-RAM {#sec-proposal-language-heap}
 
-**Status: richting gekozen op 18 november 2026 (B1–B9). Na de review van
-dezelfde dag zijn O1–O7 besloten, en de GEO-scratchreservering vervalt als
-richting. Handleidingen en runtimes zijn nog niet gewijzigd; ze veranderen per
-fase samen (12.14).**
+**Status: richting gekozen op 18 november 2026 (B1–B9, O1–O7). Fasen 1–3
+zijn uitgevoerd. De vaste GEO-scratchreservering is verwijderd; de taalwaarden
+verhuizen pas vanaf fase 4 naar het heapgebied. Zie 12.14.**
 
 Tabellen, closures, captured-variable-cellen, threads met hun frames, strings,
 constantenpools, globals en het beheer van de taalruntime worden records in
@@ -1833,8 +1832,9 @@ staat los van dit voorstel.
 
 **Bevestigd door de gebruiker:**
 
-- **Het hoofd-RAM blijft 4 MiB** als uitgangspunt. Dat geldt ook na de correctie
-  van `K` naar ongeveer 2,84 MiB, zie 12.11. De taalheap valt binnen dat RAM.
+- **Het hoofd-RAM blijft 4 MiB** als uitgangspunt. De taalheap valt
+  binnen dat RAM; `K` hangt af van de statische opslag van het actieve beeld
+  (12.11).
 - **De `pairs`-volgorde mag veranderen.** [`next`](book1/bios-base.md#sec-bios-base-traversal-argument-selection-globals-and-output)
   belooft nu al alleen "array slots in ascending order, followed by live hash
   slots, according to the Table's current storage". Een andere hashverdeling
@@ -1921,13 +1921,12 @@ wordt beschreven.
 
 ### 12.3 De GEO-scratchreservering vervalt
 
-**Richting uit de review.** De vaste reservering van 512 KiB op
-`[08040000H, 080C0000H)` vervalt. GEO krijgt bron- en doeladressen van het
+**Uitgevoerd in fase 3.** De vaste reservering van 512 KiB op
+`[08040000H, 080C0000H)` is verwijderd. GEO krijgt bron- en doeladressen van het
 programma ([GEO](book1/geo.md)). Geen apparaat en geen runtime-eigenaar hangt
-aan dat vaste adres. De enige gebruikers zijn studiosoftware en de bouw- en
-budgetconstanten:
+aan dat vaste adres. De oude gebruikers zijn hieronder verantwoord:
 
-| Gebruiker | Nu | Daarna |
+| Gebruiker | Voor fase 3 | Na fase 3 |
 |---|---|---|
 | `cartlib/collision/collision_2d.lua` | Vast adres `08040000H` en 512 KiB voor instances, resultaten en samenvatting | De cartridge reserveert de buffer in haar eigen BSS en geeft adres en capaciteit aan `cartlib` |
 | `carts/bare_metal_cart/cart.lua` | Gebruikt `08040000H` als textuurbuffer | Eigen BSS-buffer |
@@ -1947,8 +1946,8 @@ lokale rekenbuffers: de polygon- en clippingarrays van `OVERLAP2D` beslaan in
 C++ samen 6 KiB.
 
 **Gevolg voor `K`.** Het heapgebied groeit met 512 KiB, min de GEO-buffer die
-de cartridge zelf declareert. Bereken `K` per ROM opnieuw zodra dat zo is
-(12.11).
+de cartridge zelf declareert, gerekend met de op pagina’s afgeronde
+heapvloer. De nieuwe waarden staan in 12.11.
 
 ### 12.4 Adressering en spiegeling
 
@@ -2305,22 +2304,21 @@ en builtins.
 
 ### 12.11 Capaciteit bij 4 MiB
 
-De getallen komen uit de programmaheaders van de huidige beelden (`dist/`,
-16 november 2026), met de huidige GEO-reservering:
+**Uitgevoerd in fase 3.** De onderstaande waarden komen uit de herbouwde
+programmaheaders. De I/O-reservering is 256 KiB; system-DATA/BSS loopt van
+`08040000H` tot `08085CC4H` (exclusief einde). De CPU rondt het einde van
+de statische opslag naar boven af op 4 KiB. `K` is de ruimte vanaf die vloer
+tot `083FC000H`, exclusief het beheergebied van 16 KiB. Debug- en release-ROM
+hebben per beeld dezelfde statische indeling.
 
-| | Nemesis | Pietious |
-|---|---:|---:|
-| I/O- en GEO-reservering | 768 KiB | 768 KiB |
-| System-DATA/BSS (`080C0000H`–`08105CC4H`) | 285.892 B | 285.892 B |
-| Cartridge-BSS | 131.224 B | 114.840 B |
-| Vloer, afgerond op 4 KiB | `08126000H` | `08122000H` |
-| Heapgebied | 2.990.080 B (2,85 MiB) | 3.006.464 B (2,87 MiB) |
-| Na het beheergebied (`K`) | 2.973.696 B (2,84 MiB) | 2.990.080 B (2,85 MiB) |
-
-Zonder de GEO-reservering (12.3) groeit `K` met 512 KiB, min de GEO-buffer van
-de cartridge. Met een buffer voor 64 colliders (72,39 KiB) komt dat uit op
-ongeveer 3,27 MiB voor Nemesis. Bereken `K` per ROM opnieuw zodra de cartridge
-haar buffer declareert.
+| Beeld | Einde statische opslag (exclusief) | Heapvloer | `K` in bytes |
+|---|---:|---:|---:|
+| system/bmsx-bios | `08085CC4H` | `08086000H` | 3.629.056 |
+| nemesis_s | `080ADD5CH` | `080AE000H` | 3.465.216 |
+| pietious | `080A9D5CH` | `080AA000H` | 3.481.600 |
+| cartlib_test | `08091CDCH` | `08092000H` | 3.579.904 |
+| bare_metal_cart | `080AF4D0H` | `080B0000H` | 3.457.024 |
+| studio_test | `08089CD8H` | `0808A000H` | 3.612.672 |
 
 Ter vergelijking:
 
@@ -2329,9 +2327,9 @@ Ter vergelijking:
   1.048.400 bytes voor Starcatch (zie de bijlage);
 - de Pietious-heap telde bij de rewindmeting 22,8k objecten.
 
-**Tijdens de infrastructuurfase** houdt `LuaHeap` zijn capaciteit van 3,5 MiB.
-Die wordt dan ontkoppeld van `BASE_RAM_USED_SIZE`, want die constante hangt aan
-de GEO-reservering.
+**Tot fase 4** houdt `LuaHeap` zijn afzonderlijke capaciteit van 3,5 MiB.
+De fase-3-getallen zijn fysieke ruimte, nog geen meting van het beschikbare
+taalbudget.
 
 **Meting.** De gameplaypiek wordt gemeten met de nieuwe boekhouding zodra die
 beschikbaar is, vanaf de tabelfase. De keuze voor 4 MiB wacht daar niet op.
@@ -2403,9 +2401,9 @@ al "outside reserved storage". Het heapgebied valt onder die regel zodra
 
    Vóór de gespiegelde edits komen de representatietabel en de hete
    callsites.
-3. **GEO-reservering weg.** Geheugenkaart, linker, `cartlib`, de bare-metal-demo
-   en `memory.md`/`geo.md`. Deze stap staat los van de heapfasen, maar komt
-   vóór de tabelfase, zodat `K` meteen de definitieve indeling volgt.
+3. **GEO-reservering weg — uitgevoerd.** Geheugenkaart, linker, `cartlib`,
+   de bare-metal-demo en de handleidingen gebruiken programma-eigen buffers.
+   `K` is opnieuw bepaald uit de gebouwde ROM’s (12.11).
 4. **Tabellen.** `K` wordt de capaciteit; de gameplaypiek wordt gemeten met de
    nieuwe boekhouding.
 5. **Closures en captured-variable-cellen**, met de prototypes (O5).
