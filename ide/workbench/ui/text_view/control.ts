@@ -147,14 +147,15 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 		}
 		let top = bounds.top;
 		if (this.findVisible) {
-			const bottom = Math.min(bounds.bottom, top + lineHeight + 8);
+			const fullBarBottom = top + lineHeight + 8;
+			const bottom = Math.min(bounds.bottom, fullBarBottom);
 			write_rect_bounds(this.findBar, bounds.left, top, bounds.right, bottom);
 			const closeSize = Math.max(lineHeight + 4, WORKBENCH_ICON_SIZE + 6);
 			const right = Math.max(bounds.left, bounds.right - 3);
 			write_rect_bounds(this.findCloseBounds, Math.max(bounds.left, right - closeSize), top + 2, right, Math.max(top + 2, bottom - 2));
 			const showCount = this.findCloseBounds.left - bounds.left >= this.countWidth + font.advance('M') * 8 + 16;
 			write_rect_bounds(this.findBounds, bounds.left + 3, top + 2, Math.max(bounds.left + 3, this.findCloseBounds.left - (showCount ? this.countWidth + 8 : 3)), Math.max(top + 2, bottom - 2));
-			this.arrangeFindFocus(bottom - top >= lineHeight + 8 && this.findBounds.right - this.findBounds.left > 6);
+			this.arrangeFindFocus(bottom === fullBarBottom && this.findBounds.right - this.findBounds.left > 6);
 			if (this.findArranged) {
 				this.findViewport.layout(this.findField, this.findBounds, editorViewState.inlineFieldMetricsRef, font);
 			}
