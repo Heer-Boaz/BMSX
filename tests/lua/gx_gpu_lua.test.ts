@@ -80,38 +80,11 @@ import {
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
 
-const MODE_SELECTOR_ADDRESS = 0x08040000;
 const PCRTC_SENTINEL_BASE = 0xa5000000;
 const SYSTEM_TEXTURE_UPLOAD_ADDRESS = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 0x100;
 const SYSTEM_BOOT_SOURCE = `
 math = require('math')
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
-`;
-const CART_ENTRY_SOURCE = `
-local gx_display<const> = require('cartlib/gx/display')
-local mode_selector<const>: *word = ${MODE_SELECTOR_ADDRESS}
-if *mode_selector == 0 then
-	gx_display.reset_256x192()
-elseif *mode_selector == 1 then
-	gx_display.reset_256x212()
-elseif *mode_selector == 2 then
-	gx_display.reset_256x240()
-elseif *mode_selector == 3 then
-	gx_display.reset_320x240()
-elseif *mode_selector == 4 then
-	gx_display.reset_368x240()
-elseif *mode_selector == 5 then
-	gx_display.reset_512x240()
-elseif *mode_selector == 6 then
-	gx_display.reset_640x240()
-elseif *mode_selector == 7 then
-	gx_display.reset_640x480i()
-elseif *mode_selector == 8 then
-	gx_display.reset_640x448i()
-else
-	gx_display.reset_640x512i()
-end
-return gx_display.size()
 `;
 const BIOS_ENTRY_SOURCE = `
 local bios_gpu<const> = require('gpu/gpu')
@@ -190,12 +163,6 @@ const systemCompiled = compileLuaChunkToProgram(
 	systemModules,
 	{ entrySource: SYSTEM_BOOT_SOURCE, optLevel: 3, programDomain: 'system' },
 );
-const cartCompiled = compileLuaChunkToProgram(
-	parseLuaChunk(CART_ENTRY_SOURCE, 'cart.lua'),
-	cartModules,
-	{ entrySource: CART_ENTRY_SOURCE, optLevel: 3, programDomain: 'cart' },
-);
-const gxImages = linkTestBlua32Pair(systemCompiled, cartCompiled);
 const biosCompiled = compileLuaChunkToProgram(
 	parseLuaChunk(BIOS_ENTRY_SOURCE, 'bios.lua'),
 	biosModules,
@@ -210,6 +177,7 @@ const biosResetCompiled = compileLuaChunkToProgram(
 const biosResetImage = linkTestSystemBlua32(biosResetCompiled);
 
 type OutputMode = {
+	reset: string;
 	preset: readonly [number, number, number, number, number, number, number, number];
 	timing: readonly [number, number, number, number, number, number, number, number];
 	interlaced: boolean;
@@ -217,37 +185,49 @@ type OutputMode = {
 };
 
 const OUTPUT_MODES: readonly OutputMode[] = [
-	{ preset: GX_GPU_DISPLAY_PRESET_256X192_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ preset: GX_GPU_DISPLAY_PRESET_256X212_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ preset: GX_GPU_DISPLAY_PRESET_256X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ preset: GX_GPU_DISPLAY_PRESET_320X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ preset: GX_GPU_DISPLAY_PRESET_368X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ preset: GX_GPU_DISPLAY_PRESET_512X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ preset: GX_GPU_DISPLAY_PRESET_640X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ preset: GX_GPU_DISPLAY_PRESET_640X480I_NTSC_WORDS, timing: GX_GPU_DISPLAY_TIMING_NTSC_WORDS, interlaced: true, refreshUfpsScaled: 59_940_059 },
-	{ preset: GX_GPU_DISPLAY_PRESET_640X448I_NTSC_WORDS, timing: GX_GPU_DISPLAY_TIMING_NTSC_WORDS, interlaced: true, refreshUfpsScaled: 59_940_059 },
-	{ preset: GX_GPU_DISPLAY_PRESET_640X512I_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: true, refreshUfpsScaled: 50_000_000 },
+	{ reset: 'reset_256x192', preset: GX_GPU_DISPLAY_PRESET_256X192_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ reset: 'reset_256x212', preset: GX_GPU_DISPLAY_PRESET_256X212_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ reset: 'reset_256x240', preset: GX_GPU_DISPLAY_PRESET_256X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ reset: 'reset_320x240', preset: GX_GPU_DISPLAY_PRESET_320X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ reset: 'reset_368x240', preset: GX_GPU_DISPLAY_PRESET_368X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ reset: 'reset_512x240', preset: GX_GPU_DISPLAY_PRESET_512X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ reset: 'reset_640x240', preset: GX_GPU_DISPLAY_PRESET_640X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ reset: 'reset_640x480i', preset: GX_GPU_DISPLAY_PRESET_640X480I_NTSC_WORDS, timing: GX_GPU_DISPLAY_TIMING_NTSC_WORDS, interlaced: true, refreshUfpsScaled: 59_940_059 },
+	{ reset: 'reset_640x448i', preset: GX_GPU_DISPLAY_PRESET_640X448I_NTSC_WORDS, timing: GX_GPU_DISPLAY_TIMING_NTSC_WORDS, interlaced: true, refreshUfpsScaled: 59_940_059 },
+	{ reset: 'reset_640x512i', preset: GX_GPU_DISPLAY_PRESET_640X512I_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: true, refreshUfpsScaled: 50_000_000 },
 ];
 
-function runCartMode(modeIndex: number): { memory: Memory; cpu: CPU; initialWords: Uint32Array } {
-	const { memory, cpu } = createTestBlua32PairCpu(gxImages);
+function createCartModeCpu(reset: string) {
+	const entrySource = `
+local gx_display<const> = require('cartlib/gx/display')
+gx_display.${reset}()
+return gx_display.size()
+`;
+	const cartCompiled = compileLuaChunkToProgram(
+		parseLuaChunk(entrySource, 'cart.lua'),
+		cartModules,
+		{ entrySource, optLevel: 3, programDomain: 'cart' },
+	);
+	return createTestBlua32PairCpu(linkTestBlua32Pair(systemCompiled, cartCompiled));
+}
+
+function runCartMode(reset: string): { memory: Memory; cpu: CPU; initialWords: Uint32Array } {
+	const { memory, cpu } = createCartModeCpu(reset);
 	const initialWords = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
 	for (let wordIndex = 0; wordIndex < initialWords.length; wordIndex += 1) {
 		const word = (PCRTC_SENTINEL_BASE | wordIndex) >>> 0;
 		initialWords[wordIndex] = word;
 		memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(wordIndex), word);
 	}
-	memory.writeMappedU32LE(MODE_SELECTOR_ADDRESS, modeIndex);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	return { memory, cpu, initialWords };
 }
 
 test('GX cart SDK programs every public display preset from the exact raw PCRTC words', () => {
-	for (let modeIndex = 0; modeIndex < OUTPUT_MODES.length; modeIndex += 1) {
-		const expected = OUTPUT_MODES[modeIndex]!;
+	for (const expected of OUTPUT_MODES) {
 		const width = expected.preset[GX_GPU_DISPLAY_PRESET_WIDTH_WORD];
 		const height = expected.preset[GX_GPU_DISPLAY_PRESET_HEIGHT_WORD];
-		const { memory, cpu, initialWords } = runCartMode(modeIndex);
+		const { memory, cpu, initialWords } = runCartMode(expected.reset);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(width), valueInteger(height)]);
 		const words = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
 		for (let wordIndex = 0; wordIndex < words.length; wordIndex += 1) {
@@ -284,7 +264,7 @@ test('GX cart SDK programs every public display preset from the exact raw PCRTC 
 });
 
 test('GX cart SDK holds SMODE1 reset until every timing latch is programmed', () => {
-	const { memory, cpu } = createTestBlua32PairCpu(gxImages);
+	const { memory, cpu } = createCartModeCpu('reset_320x240');
 	const timingWrites: number[] = [];
 	const recordTimingWrite = (writes: number[], address: number, word: number): void => {
 		writes.push(address, word);
@@ -303,7 +283,6 @@ test('GX cart SDK holds SMODE1 reset until every timing latch is programmed', ()
 	]) {
 		memory.mapIoWrite(gxGpuPcrtcRegisterAddress(wordIndex), timingWrites, recordTimingWrite);
 	}
-	memory.writeMappedU32LE(MODE_SELECTOR_ADDRESS, 3);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(timingWrites, [
 		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW), GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SMODE1_SETUP_LOW_WORD],
