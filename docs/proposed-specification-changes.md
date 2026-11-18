@@ -2017,10 +2017,14 @@ interne adreseenheid die alleen de lage 22 adresbits aanstuurt.
   - Met de controle vooraf schatten we voor het snelle pad één extra
     ARMv7-instructie per object. Dat is een schatting, nog geen meting.
 
-**JIT-ABI (B8).** De RAM-basis staat in een vast sljit-register. De gewone
-`LOAD_MEM`- en `STORE_MEM`-paden gebruiken nu een immediate host-pointer en
-stappen in de infrastructuurfase ook over op dat register. Dat is de eerste
-gebruiker.
+**JIT-ABI (B8).** De RAM-basis staat in een vast sljit-register (S4) waar de
+woordcache daardoor geen register verliest: op x86-64 en AArch64. Op ARMv7 zou
+een vast register de cache van vier naar drie woordregisters brengen. Een
+meting op de SNES Mini gaf daar ongeveer 2 tot 5 % meer CPU-tijd per frame.
+ARMv7 laadt de basis daarom per RAM-toegang uit het al vastgezette
+`state`-register. Eén helper (`emitRamAddress`) kiest tussen de twee vormen.
+`LOAD_MEM` en `STORE_MEM` zijn de eerste gebruikers; recordtoegangen gebruiken
+vanaf de tabelfase dezelfde helper.
 
 ### 12.5 Records
 
