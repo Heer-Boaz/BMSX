@@ -7,6 +7,8 @@ local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 
 bss geometry: word[32]
+bss overlap_workspace: word[32]
+collision.use_workspace(overlap_workspace, sizeof(word[32]))
 local pool<const> = geometry_pool.new(geometry, 64, 2)
 prefab.define({ def_id = 'cartlib_test.flipped_sprite', class = object_2d,
 	position = { x = 10, y = 20 },

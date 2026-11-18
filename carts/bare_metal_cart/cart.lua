@@ -45,9 +45,9 @@ local screen_width<const> = 320
 local screen_height<const> = 240
 local scene_vram_x<const> = 0
 local scene_vram_y<const> = 256
-local texture_addr<const> = 0x08040000
 local texture_width<const> = 64
 local texture_height<const> = 64
+bss texture_pixels: word[texture_width * texture_height]
 local texture_vram_x<const> = 512
 local texture_vram_y<const> = 256
 local frame_upload_pixel_count<const> = screen_width * screen_height
@@ -149,6 +149,7 @@ local arrow_right_was_down = false
 local sprite_x = 136
 local sprite_y = 96
 local sprite_step<const> = 4
+local sprite_half_size<const> = 24
 local angle_count<const> = 128
 local angle_mask<const> = 127
 local tunnel_phase = 0
@@ -391,7 +392,7 @@ local upload_texture<const> = function()
 	*gp0 = gp0_cpu_to_vram
 	*gp0 = xy(texture_vram_x, texture_vram_y)
 	*gp0 = wh(texture_width, texture_height)
-	local pixels<const>: *word = texture_addr
+	local pixels<const>: *word = texture_pixels
 	local pixel_index = 0
 	while pixel_index < texture_width * texture_height do
 		local lo<const> = direct16_from_rgb888(pixels[pixel_index])
@@ -485,7 +486,7 @@ local gte_write_lighting_matrices<const> = function()
 end
 
 local build_texture<const> = function()
-	local pixels<const>: *word = texture_addr
+	local pixels<const>: *word = texture_pixels
 	local py = 0
 	local wi = 0
 	while py < texture_height do
@@ -599,17 +600,17 @@ local update_input<const> = function()
 	if key_down(key_s) then
 		sprite_y = sprite_y + step
 	end
-	if sprite_x < 24 then
-		sprite_x = 24
+	if sprite_x < sprite_half_size then
+		sprite_x = sprite_half_size
 	end
-	if sprite_x > screen_width - 24 then
-		sprite_x = screen_width - 24
+	if sprite_x > screen_width - sprite_half_size then
+		sprite_x = screen_width - sprite_half_size
 	end
-	if sprite_y < 24 then
-		sprite_y = 24
+	if sprite_y < sprite_half_size then
+		sprite_y = sprite_half_size
 	end
-	if sprite_y > screen_height - 24 then
-		sprite_y = screen_height - 24
+	if sprite_y > screen_height - sprite_half_size then
+		sprite_y = screen_height - sprite_half_size
 	end
 end
 
@@ -673,7 +674,7 @@ local draw_affine_tunnel<const> = function()
 end
 
 local draw_sprite<const> = function()
-	draw_tunnel_quad(sprite_x, sprite_y, 24, 24, sprite_sin_q12, sprite_cos_q12, texture_command_tunnel_a)
+	draw_tunnel_quad(sprite_x, sprite_y, sprite_half_size, sprite_half_size, sprite_sin_q12, sprite_cos_q12, texture_command_tunnel_a)
 	gpu_line(sprite_x - 30, sprite_y, sprite_x + 30, sprite_y, color_grid_hot)
 	gpu_line(sprite_x, sprite_y - 30, sprite_x, sprite_y + 30, color_grid_hot)
 end

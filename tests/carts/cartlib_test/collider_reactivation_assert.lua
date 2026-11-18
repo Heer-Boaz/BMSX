@@ -1,11 +1,14 @@
 local object_2d<const> = require('cartlib/world/object_2d')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local collision_2d<const> = require('cartlib/collision/collision_2d')
 local geometry_pool<const> = require('cartlib/collision/geometry_pool')
 local overlap_2d_system<const> = require('cartlib/collision/overlap_2d_system')
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 
 bss geometry: word[32]
+bss overlap_workspace: word[32]
+collision_2d.use_workspace(overlap_workspace, sizeof(word[32]))
 local pool<const> = geometry_pool.new(geometry, 64, 2)
 local definition_id<const> = 'cartlib_test.overlap_actor'
 prefab.define({

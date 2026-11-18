@@ -7,8 +7,6 @@ local irq_source<const> = require('cartlib/irq/source')
 
 local geo_overlap_candidate_param0<const> = 0x00000001 | 0x00000000 | 0x00000000 | 0x00000000
 local geo_overlap_full_pass_param0<const> = 0x00000002 | 0x00000004 | 0x00000000 | 0x00000000
-local geo_overlap_scratch_base<const> = 0x08040000
-local geo_overlap_scratch_end<const> = geo_overlap_scratch_base + 0x00080000
 local geo_pair_bytes<const> = 0x0000000c
 local geo_result_bytes<const> = 0x00000024
 local geo_summary_bytes<const> = 0x00000010
@@ -23,7 +21,10 @@ struct geo_overlap_instance
 	source_index: word
 end
 local geo_instance_bytes<const> = sizeof(geo_overlap_instance)
-local geo_instance_capacity<const> = (geo_overlap_scratch_end - geo_overlap_scratch_base - geo_summary_bytes) // geo_instance_bytes
+-- A cart supplies the BSS span that GEO overlap passes and pair queries stage
+-- instances, pairs, contacts and the summary in; see use_workspace.
+local workspace_base = 0
+local workspace_end = 0
 
 struct geo_overlap_pair
 	instance_a: word
@@ -92,7 +93,7 @@ local raise_geo_fault<const> = function(label)
 end
 
 -- Exact geometry belongs to the collider's retained cache or immutable asset.
--- Per-pass scratch owns only instance/candidate/result records.
+-- The workspace holds only per-pass instance, candidate and result records.
 local stage_geo_overlap_instance<const> = function(collider, shape_ref, tx, ty, instance_addr, source_index)
 	local instance<const>: *geo_overlap_instance = instance_addr
 	instance->shape = shape_ref
@@ -228,14 +229,22 @@ local function init_geo_irq<init>()
 end
 init_geo_irq()
 
+-- GEO stages each pass's instances first; the remaining bytes bound the
+-- contacts one pass can report before GEO raises RESULT_CAPACITY.
+function collision_2d.use_workspace(base, byte_count)
+	workspace_base = base
+	workspace_end = base + byte_count
+end
+
 function collision_2d.collect_overlaps(colliders, collider_count, pairs)
-	local instance_base<const> = geo_overlap_scratch_base
+	local instance_base<const> = workspace_base
+	local instance_capacity<const> = (workspace_end - instance_base - geo_summary_bytes) // geo_instance_bytes
 	local instance_count = 0
 	for i = 1, collider_count do
 		local collider<const> = colliders[i]
 		local shape_ref<const> = collider:resolve_shape()
 		if shape_ref ~= nil then
-			if instance_count == geo_instance_capacity then error('GEO overlap scratch capacity exceeded') end
+			if instance_count >= instance_capacity then error('GEO overlap workspace capacity exceeded') end
 			stage_geo_overlap_instance(collider, shape_ref, collider.wox, collider.woy,
 				instance_base + instance_count * geo_instance_bytes, i - 1)
 			instance_count = instance_count + 1
@@ -244,11 +253,10 @@ function collision_2d.collect_overlaps(colliders, collider_count, pairs)
 	if instance_count < 2 then return 0 end
 	local instance_end<const> = instance_base + instance_count * geo_instance_bytes
 	local max_pair_count<const> = (instance_count * (instance_count - 1)) // 2
-	local scratch_for_results<const> = geo_overlap_scratch_end - instance_end - geo_summary_bytes
-	local scratch_result_capacity<const> = scratch_for_results // geo_result_bytes
+	local workspace_result_capacity<const> = (workspace_end - instance_end - geo_summary_bytes) // geo_result_bytes
 	local result_capacity = max_pair_count
-	if scratch_result_capacity < result_capacity then
-		result_capacity = scratch_result_capacity
+	if workspace_result_capacity < result_capacity then
+		result_capacity = workspace_result_capacity
 	end
 	local result_base<const> = instance_end
 	local summary_base<const> = result_base + result_capacity * geo_result_bytes
@@ -266,8 +274,11 @@ function collision_2d.collides(a, b, delta_x, delta_y)
 	if shape_b == nil then return nil end
 	local tx, ty = a.wox, a.woy
 	if delta_x ~= nil then tx, ty = tx + delta_x, ty + delta_y end
-	local instance_base<const> = geo_overlap_scratch_base
+	local instance_base<const> = workspace_base
 	local instance_end<const> = instance_base + geo_instance_bytes * 2
+	if instance_end + geo_pair_bytes + geo_result_bytes + geo_summary_bytes > workspace_end then
+		error('GEO overlap workspace capacity exceeded')
+	end
 	stage_geo_overlap_instance(a, shape_a, tx, ty, instance_base, 0)
 	stage_geo_overlap_instance(b, shape_b, b.wox, b.woy, instance_base + geo_instance_bytes, 1)
 	local pair_base<const> = instance_end

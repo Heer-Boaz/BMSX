@@ -1,6 +1,7 @@
 -- Pietious owns bounded retained collision output storage. Source geometry is
 -- measured once from this cart's actual ROM bindings, never from live visuals.
 local pool<const> = require('cartlib/collision/geometry_pool')
+local collision_2d<const> = require('cartlib/collision/collision_2d')
 local sprite_shape<const> = require('cartlib/collision/sprite_shape')
 local shape<const> = require('cartlib/collision/collision_shape')
 local assets<const> = require('bmsx/assets')
@@ -44,6 +45,10 @@ end
 bss sprite_geometry: word[16384]
 bss area_geometry: word[4096]
 bss boss_geometry: word[4096]
+-- GEO overlap passes stage their colliders (24 bytes each) and contacts (36
+-- bytes each) here: 32 KiB holds 256 colliders with 739 contacts per pass.
+bss geo_overlap_workspace: word[8192]
+collision_2d.use_workspace(geo_overlap_workspace, 8192 * 4)
 
 return {
 	sprite = pool.new(sprite_geometry, sprite_slot_bytes, 65536 // sprite_slot_bytes),

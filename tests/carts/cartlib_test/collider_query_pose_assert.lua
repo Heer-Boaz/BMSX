@@ -6,6 +6,8 @@ local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 
 bss geometry: word[32]
+bss overlap_workspace: word[32]
+collision.use_workspace(overlap_workspace, sizeof(word[32]))
 local pool<const> = geometry_pool.new(geometry, 64, 2)
 prefab.define({ def_id = 'cartlib_test.query_body', class = object_2d,
 	transform = { xx = 1, xy = 0, yx = 1, yy = 1, ox = 10, oy = 10 },
