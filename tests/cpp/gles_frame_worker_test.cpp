@@ -103,7 +103,7 @@ struct Script {
 	}
 	void constant(unsigned reg, u32 word) {
 		const u32 index = static_cast<u32>(image.constants.size());
-		image.constants.emplace_back(static_cast<f64>(word));
+		image.constants.emplace_back(static_cast<i32>(word));
 		code.push_back(packInstructionWord(static_cast<u8>(OpCode::LOADK), reg, (index >> 6u) & 63u, index & 63u, index >> 12u));
 	}
 	void write(u32 address, u32 word) {

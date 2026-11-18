@@ -52,8 +52,8 @@ auto makeSupervisorSystemImage(
 	bmsx::test::Blua32TestImage image;
 	image.text.resize(16u * bmsx::INSTRUCTION_BYTES);
 	image.constants = {
-		static_cast<bmsx::f64>(bmsx::IO_SYS_BUS_FAULT_CODE - bmsx::IO_WORD_SIZE),
-		static_cast<bmsx::f64>(bmsx::test::blua32TestFunctionAddress(
+		static_cast<bmsx::i32>(bmsx::IO_SYS_BUS_FAULT_CODE - bmsx::IO_WORD_SIZE),
+		static_cast<bmsx::i32>(bmsx::test::blua32TestFunctionAddress(
 			bmsx::RomImageDomain::Cartridge,
 			cartridgeEntryFunction
 		)),
@@ -96,7 +96,7 @@ auto makeSupervisorCartImage() -> bmsx::test::Blua32TestImage {
 	bmsx::test::Blua32TestImage image;
 	image.text.resize(12u * bmsx::INSTRUCTION_BYTES);
 	image.constants = {
-		static_cast<bmsx::f64>(UNMAPPED_ADDRESS),
+		static_cast<bmsx::i32>(UNMAPPED_ADDRESS),
 	};
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
@@ -151,7 +151,7 @@ auto makeDecodedPairSystemImage() -> bmsx::test::Blua32TestImage {
 auto makeCartridgeSelectionSwitchImage(bmsx::OpCode result) -> bmsx::test::Blua32TestImage {
 	bmsx::test::Blua32TestImage image;
 	image.text.resize(5u * bmsx::INSTRUCTION_BYTES);
-	image.constants = {static_cast<bmsx::f64>(bmsx::IO_CART_SELECT)};
+	image.constants = {static_cast<bmsx::i32>(bmsx::IO_CART_SELECT)};
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::K0), 1, 0, 0);
@@ -241,9 +241,9 @@ void testManualNmiAndSaveStateReturn() {
 	machine.cpu.restoreRuntimeState(active);
 	require(machine.cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "MFC0 consumes one instruction before RFE");
 	require(machine.cpu.readLastExecutionDomain() == bmsx::SYSTEM_EXECUTION_DOMAIN_ID, "system exception execution replaces the last-instruction domain");
-	require(bmsx::asNumber(machine.cpu.readFrameRegister(1, 0)) == bmsx::CPU_CAUSE_NMI, "MFC0 reads the raw CAUSE latch");
+	require(machine.cpu.readFrameRegister(1, 0) == bmsx::valueInteger(bmsx::CPU_CAUSE_NMI), "MFC0 reads the raw CAUSE latch");
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "RFE resumes and completes the retained user frame");
-	require(machine.cpu.readCompletionValues().size() == 1u && bmsx::asNumber(machine.cpu.readCompletionValues()[0]) == 1.0, "RFE resumes at EPC");
+	require(machine.cpu.readCompletionValues().size() == 1u && machine.cpu.readCompletionValues().get(0) == bmsx::valueInteger(1), "RFE resumes at EPC");
 	require(machine.cpu.captureRuntimeState().statusWord == bmsx::CPU_STATUS_CART_ENTRY, "RFE pops the raw STATUS mode stack");
 }
 
@@ -285,7 +285,7 @@ void testPrivilegeVectorRoutingAndCp0Fault() {
 		fault.epcWord += bmsx::INSTRUCTION_BYTES;
 		machine.cpu.restoreRuntimeState(fault);
 		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "edited EPC skips the faulting instruction on RFE");
-		require(machine.cpu.readCompletionValues().size() == 1u && bmsx::asNumber(machine.cpu.readCompletionValues()[0]) == 1.0, "fault handler resumes the selected user instruction");
+		require(machine.cpu.readCompletionValues().size() == 1u && machine.cpu.readCompletionValues().get(0) == bmsx::valueInteger(1), "fault handler resumes the selected user instruction");
 	}
 
 	{
@@ -304,23 +304,35 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 		{"irq"}
 	));
 	const bmsx::StringId irqKey = machine.cpu.stringPool().intern("irq");
-	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueNumber(11.0));
-	machine.cpu.setGlobalByKey(irqKey, bmsx::valueNumber(22.0));
+	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueInteger(11));
+	machine.cpu.setGlobalByKey(irqKey, bmsx::valueInteger(22));
 
 	machine.cpu.replaceExecutionImage(
 		machine.executionAddressSpace.resolveSystemDomain()
 	);
 	const bmsx::CpuRuntimeState saved = machine.cpu.captureRuntimeState();
-	require(saved.systemGlobals.size() == 1u && saved.systemGlobals[0].key == irqKey && saved.snapshot.number(saved.systemGlobals[0].value + 1) == 11.0, "media remount preserves the system registerfile");
-	require(saved.globalSlots.size() == 1u && saved.globalSlots[0].key == irqKey && saved.snapshot.number(saved.globalSlots[0].value + 1) == 22.0, "media remount preserves the ordinary global registerfile");
-	require(bmsx::asNumber(machine.cpu.getGlobalByKey(irqKey)) == 22.0, "ordinary global lookup does not expose the system slot");
+	require(saved.systemGlobals.size() == 1u
+		&& saved.systemGlobals[0].key == irqKey
+		&& saved.snapshot.word(saved.systemGlobals[0].value) == static_cast<bmsx::u32>(bmsx::ValueTag::Integer)
+		&& saved.snapshot.word(saved.systemGlobals[0].value + 1) == 11u,
+		"media remount preserves the system registerfile");
+	require(saved.globalSlots.size() == 1u
+		&& saved.globalSlots[0].key == irqKey
+		&& saved.snapshot.word(saved.globalSlots[0].value) == static_cast<bmsx::u32>(bmsx::ValueTag::Integer)
+		&& saved.snapshot.word(saved.globalSlots[0].value + 1) == 22u,
+		"media remount preserves the ordinary global registerfile");
+	require(machine.cpu.getGlobalByKey(irqKey) == bmsx::valueInteger(22), "ordinary global lookup does not expose the system slot");
 
-	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueNumber(33.0));
-	machine.cpu.setGlobalByKey(irqKey, bmsx::valueNumber(44.0));
+	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueInteger(33));
+	machine.cpu.setGlobalByKey(irqKey, bmsx::valueInteger(44));
 	machine.cpu.restoreRuntimeState(saved);
 	const bmsx::CpuRuntimeState restored = machine.cpu.captureRuntimeState();
-	require(restored.systemGlobals.size() == 1u && restored.systemGlobals[0].key == irqKey && restored.snapshot.number(restored.systemGlobals[0].value + 1) == 11.0, "save-state restores the system registerfile independently");
-	require(bmsx::asNumber(machine.cpu.getGlobalByKey(irqKey)) == 22.0, "save-state restores the ordinary global independently");
+	require(restored.systemGlobals.size() == 1u
+		&& restored.systemGlobals[0].key == irqKey
+		&& restored.snapshot.word(restored.systemGlobals[0].value) == static_cast<bmsx::u32>(bmsx::ValueTag::Integer)
+		&& restored.snapshot.word(restored.systemGlobals[0].value + 1) == 11u,
+		"save-state restores the system registerfile independently");
+	require(machine.cpu.getGlobalByKey(irqKey) == bmsx::valueInteger(22), "save-state restores the ordinary global independently");
 }
 
 void testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage() {
@@ -409,10 +421,10 @@ void testStringOrderingMatchesUtf8CodepointOrder() {
 	CpuTestMachine machine(std::move(image));
 
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "string comparison completes");
-	const std::span<const bmsx::Value> values = machine.cpu.readCompletionValues();
+	const bmsx::ConstValueSpan values = machine.cpu.readCompletionValues();
 	require(values.size() == 2u, "string comparison returns both order results");
-	require(!bmsx::isTruthy(values[0]), "U+10000 sorts after U+E000 in UTF-8 order");
-	require(bmsx::isTruthy(values[1]), "U+E000 sorts before U+10000 in UTF-8 order");
+	require(!bmsx::isTruthy(values.get(0)), "U+10000 sorts after U+E000 in UTF-8 order");
+	require(bmsx::isTruthy(values.get(1)), "U+E000 sorts before U+10000 in UTF-8 order");
 }
 
 void testMappedFetchCrossesFunctionRecordMetadata() {
@@ -434,9 +446,9 @@ void testMappedFetchCrossesFunctionRecordMetadata() {
 		machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
 		"mapped fetch crosses function-record metadata"
 	);
-	const std::span<const bmsx::Value> values = machine.cpu.readCompletionValues();
+	const bmsx::ConstValueSpan values = machine.cpu.readCompletionValues();
 	require(
-		values.size() == 1u && bmsx::asNumber(values[0]) == 1.0,
+		values.size() == 1u && values.get(0) == bmsx::valueInteger(1),
 		"WIDE consumes its mapped body and execution reaches the following mapped RET"
 	);
 	require(machine.cpu.getFrameDepth() == 0, "mapped RET completes the original call frame");
@@ -488,7 +500,7 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 		{.firstWord = 5u, .wordCount = 2u},
 	};
 	system.constants = {
-		static_cast<bmsx::f64>(bmsx::test::blua32TestFunctionAddress(
+		static_cast<bmsx::i32>(bmsx::test::blua32TestFunctionAddress(
 			bmsx::RomImageDomain::Cartridge,
 			0u
 		)),
@@ -628,7 +640,7 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 		"fused pair publishes its second guest PC"
 	);
 	require(
-		bmsx::asNumber(fused.cpu.readFrameRegister(0, 3)) == 3.0,
+		fused.cpu.readFrameRegister(0, 3) == bmsx::valueInteger(3),
 		"fused pair commits its second numeric result"
 	);
 	const auto expectedColdDispatch =
@@ -658,7 +670,7 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 		"budget exhaustion retains the first guest PC"
 	);
 	require(
-		bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 2)) == 2.0,
+		budgeted.cpu.readFrameRegister(0, 2) == bmsx::valueInteger(2),
 		"budget exhaustion commits the first numeric result"
 	);
 	require(
@@ -666,11 +678,11 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 		"normal execution completes all decoded pairs"
 	);
 	require(
-		bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 3)) == 3.0
-			&& bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 4)) == 4.0
-			&& bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 5)) == 8.0
-			&& bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 6)) == 4.0
-			&& bmsx::asNumber(budgeted.cpu.readFrameRegister(0, 7)) == 5.0,
+		budgeted.cpu.readFrameRegister(0, 3) == bmsx::valueInteger(3)
+			&& budgeted.cpu.readFrameRegister(0, 4) == bmsx::valueInteger(4)
+			&& budgeted.cpu.readFrameRegister(0, 5) == bmsx::valueInteger(8)
+			&& budgeted.cpu.readFrameRegister(0, 6) == bmsx::valueInteger(4)
+			&& budgeted.cpu.readFrameRegister(0, 7) == bmsx::valueInteger(5),
 		"decoded pairs preserve the raw arithmetic results"
 	);
 
@@ -704,7 +716,7 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 void testMappedRamFunctionExecution() {
 	bmsx::test::Blua32TestImage systemImage;
 	systemImage.text.resize(9u * bmsx::INSTRUCTION_BYTES);
-	systemImage.constants = {static_cast<bmsx::f64>(RAM_FUNCTION_ADDRESS)};
+	systemImage.constants = {static_cast<bmsx::i32>(RAM_FUNCTION_ADDRESS)};
 	std::span<bmsx::u8> systemCode(systemImage.text);
 	bmsx::writeInstruction(systemCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
@@ -798,8 +810,8 @@ void testMappedRamFunctionExecution() {
 		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
 		"ROM creates a closure for a mapped RAM function record"
 	);
-	bmsx::Closure* directClosure = bmsx::asClosure(cpu.readCompletionValues()[0]);
-	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues()[1]);
+	bmsx::Closure* directClosure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
+	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
 	require(
 		directClosure->functionAddress == RAM_FUNCTION_ADDRESS
 			&& closure->functionAddress == RAM_FUNCTION_ADDRESS,
@@ -811,9 +823,9 @@ void testMappedRamFunctionExecution() {
 		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
 		"RAM code calls a ROM function and returns"
 	);
-	const std::span<const bmsx::Value> romResults = cpu.readCompletionValues();
+	const bmsx::ConstValueSpan romResults = cpu.readCompletionValues();
 	require(
-		romResults.size() == 1u && bmsx::asNumber(romResults[0]) == 1.0,
+		romResults.size() == 1u && romResults.get(0) == bmsx::valueInteger(1),
 		"the RAM to ROM call returns the ROM result"
 	);
 
@@ -827,9 +839,9 @@ void testMappedRamFunctionExecution() {
 		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
 		"the same RAM closure executes after its code changes"
 	);
-	const std::span<const bmsx::Value> changedResults = cpu.readCompletionValues();
+	const bmsx::ConstValueSpan changedResults = cpu.readCompletionValues();
 	require(
-		changedResults.size() == 1u && bmsx::asNumber(changedResults[0]) == 0.0,
+		changedResults.size() == 1u && changedResults.get(0) == bmsx::valueInteger(0),
 		"the decoder observes rewritten mapped RAM instructions"
 	);
 }
@@ -848,9 +860,9 @@ void testCartridgeInstructionFetchRetainsExecSlot() {
 		machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
 		"slot-1 cartridge execution returns after changing the data selection"
 	);
-	const std::span<const bmsx::Value> result = machine.cpu.readCompletionValues();
+	const bmsx::ConstValueSpan result = machine.cpu.readCompletionValues();
 	require(
-		result.size() == 1u && bmsx::asNumber(result[0]) == 1.0,
+		result.size() == 1u && result.get(0) == bmsx::valueInteger(1),
 		"instruction fetch remains on the CP0.EXEC-latched cartridge socket"
 	);
 	require(
@@ -884,7 +896,7 @@ void testBoundClosureRetainsCartridgeSocket() {
 		cpu.beginCompletionCall(*closure);
 		require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted,
 			"bound closure returns despite subsequent socket selection");
-		require(bmsx::asNumber(cpu.readCompletionValues()[0]) == ((i & 1) ? 0.0 : 1.0),
+		require(cpu.readCompletionValues().get(0) == bmsx::valueInteger(((i & 1) ? 0 : 1)),
 			"closure instruction fetch uses its creation socket");
 	}
 }
@@ -988,7 +1000,7 @@ void testUserIrqInSystemCalleeUsesCartVector(bool restore, bool nested, bool sel
 		system.functions.push_back({.firstWord = 4u, .wordCount = 2u});
 	}
 	system.constants = {
-		static_cast<bmsx::f64>(
+		static_cast<bmsx::i32>(
 			bmsx::CART_ROM_BASE
 				+ bmsx::BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET
 		),
@@ -1055,7 +1067,7 @@ void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
 		{.firstWord = 4u, .wordCount = 2u},
 	};
 	system.constants = {
-		static_cast<bmsx::f64>(
+		static_cast<bmsx::i32>(
 			bmsx::CART_ROM_BASE
 				+ bmsx::BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET
 		),
@@ -1244,19 +1256,19 @@ void testBoundClosureArguments() {
 		{.firstWord = 4u, .wordCount = 4u, .numParams = 1u, .maxStack = 2u, .staticClosure = false, .upvalues = {{true, 0u}}},
 		{.firstWord = 8u, .wordCount = 1u},
 	};
-	image.constants = {7.0};
+	image.constants = {7};
 	image.irqFunctionIndex = 2u;
 	image.exceptionFunctionIndex = 2u;
 	image.closureRelocations = {{2u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u)}};
 	CpuTestMachine machine(std::move(image));
 	auto& cpu = machine.cpu;
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "capture factory returns");
-	auto* closure = bmsx::asClosure(cpu.readCompletionValues()[0]);
-	for (const auto [argument, expected] : {std::pair{3.0, 10.0}, std::pair{5.0, 15.0}}) {
-		const std::array args{bmsx::valueNumber(argument)};
+	auto* closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
+	for (const auto [argument, expected] : {std::pair{3, 10}, std::pair{5, 15}}) {
+		const std::array args{bmsx::valueInteger(argument)};
 		cpu.beginCompletionCall(*closure, {args.data(), args.size()});
 		require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "bound-closure call returns");
-		require(bmsx::asNumber(cpu.readCompletionValues()[0]) == expected, "arguments update the original capture");
+		require(cpu.readCompletionValues().get(0) == bmsx::valueInteger(expected), "arguments update the original capture");
 	}
 }
 
@@ -1338,11 +1350,11 @@ void testMappedBusErrorsEnterTheSystemExceptionVector() {
 	require(loadFault.epcWord == machine.cartRom.textAddress + 9u * bmsx::INSTRUCTION_BYTES, "mapped load EPC identifies the physical faulting instruction");
 	require(loadFault.badAddressWord == 0u, "DBE leaves BAD_ADDRESS unchanged");
 	require(loadFault.threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "mapped load selects the system exception vector");
-	require(bmsx::asNumber(machine.cpu.readFrameRegister(0, 1)) == 1.0, "faulting load does not commit its destination register");
+	require(machine.cpu.readFrameRegister(0, 1) == bmsx::valueInteger(1), "faulting load does not commit its destination register");
 	loadFault.epcWord += bmsx::INSTRUCTION_BYTES;
 	machine.cpu.restoreRuntimeState(loadFault);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "RFE can skip the faulting mapped load");
-	require(machine.cpu.readCompletionValues().size() == 1u && bmsx::asNumber(machine.cpu.readCompletionValues()[0]) == 1.0, "mapped load resume retains the destination value");
+	require(machine.cpu.readCompletionValues().size() == 1u && machine.cpu.readCompletionValues().get(0) == bmsx::valueInteger(1), "mapped load resume retains the destination value");
 
 	machine.memory.writeMappedU32LE(bmsx::IO_SYS_BUS_FAULT_ACK, 1u);
 	machine.memory.readMappedU8(UNMAPPED_ADDRESS);
@@ -1454,7 +1466,7 @@ void testInstructionFetchExceptionsEnterTheSystemVector() {
 		);
 
 		require(machine.cpu.runUntilDepth(0, 10) == bmsx::RunResult::Halted, "faulting WIDE body fetch enters the exception handler");
-		require(bmsx::asNumber(machine.cpu.readFrameRegister(0, 0)) == 2.0, "fusion lookahead does not raise the successor fetch fault before the preceding instruction executes");
+		require(machine.cpu.readFrameRegister(0, 0) == bmsx::valueInteger(2), "fusion lookahead does not raise the successor fetch fault before the preceding instruction executes");
 		require(machine.cpu.readCauseWord() == bmsx::CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, "faulting WIDE body fetch latches IBE");
 		require(machine.cpu.readEpcWord() == prefixPc, "faulting WIDE body fetch retains the prefix PC in EPC");
 		require(machine.cpu.readBadAddressWord() == 0u, "WIDE-body IBE leaves BAD_ADDRESS unchanged");
@@ -1471,8 +1483,8 @@ void testMappedMemoryAlignmentContract() {
 	bmsx::test::Blua32TestImage image;
 	image.text.resize(6u * bmsx::INSTRUCTION_BYTES);
 	image.constants = {
-		static_cast<bmsx::f64>(BYTE_ADDRESS),
-		static_cast<bmsx::f64>(F64_ADDRESS),
+		static_cast<bmsx::i32>(BYTE_ADDRESS),
+		static_cast<bmsx::i32>(F64_ADDRESS),
 	};
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
@@ -1493,8 +1505,8 @@ void testMappedMemoryAlignmentContract() {
 	machine.memory.writeMappedF64LE(F64_ADDRESS, F64_VALUE);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "aligned mapped loads complete");
 	require(machine.cpu.readCompletionValues().size() == 2u, "aligned mapped loads return both values");
-	require(bmsx::asNumber(machine.cpu.readCompletionValues()[0]) == 0x5a, "byte access accepts an odd address");
-	require(bmsx::asNumber(machine.cpu.readCompletionValues()[1]) == F64_VALUE, "f64 access accepts four-byte alignment");
+	require(machine.cpu.readCompletionValues().get(0) == bmsx::valueInteger(0x5a), "byte access accepts an odd address");
+	require(machine.cpu.readCompletionValues().get(1) == bmsx::valueFloat(static_cast<float>(F64_VALUE)), "f64 access accepts four-byte alignment");
 }
 
 void testAddressErrorsPrecedeMappedMemoryBusCycles() {
@@ -1521,7 +1533,7 @@ void testAddressErrorsPrecedeMappedMemoryBusCycles() {
 		const bmsx::u32 instructionCount = memoryInstruction + 2u;
 		bmsx::test::Blua32TestImage image;
 		image.text.resize(instructionCount * bmsx::INSTRUCTION_BYTES);
-		image.constants = {static_cast<bmsx::f64>(FAULT_ADDRESS)};
+		image.constants = {static_cast<bmsx::i32>(FAULT_ADDRESS)};
 		std::span<bmsx::u8> code(image.text);
 		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
 		bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
@@ -1558,7 +1570,7 @@ void testAddressErrorsPrecedeMappedMemoryBusCycles() {
 		require(state.badAddressWord == FAULT_ADDRESS, testCase.name);
 		require(state.threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[0], testCase.name);
 		require(machine.memory.readBusFaultSequence() == faultSequence, testCase.name);
-		require(bmsx::asNumber(machine.cpu.readFrameRegister(0, 1)) == 1.0, testCase.name);
+		require(machine.cpu.readFrameRegister(0, 1) == bmsx::valueInteger(1), testCase.name);
 		require(machine.memory.readMappedU32LE(ALIGNED_ADDRESS) == 0x11223344u, testCase.name);
 		require(machine.memory.readMappedU32LE(ALIGNED_ADDRESS + 4u) == 0x55667788u, testCase.name);
 		require(machine.memory.readMappedU32LE(ALIGNED_ADDRESS + 8u) == 0x99aabbccu, testCase.name);
@@ -1569,9 +1581,9 @@ auto makeProtectedCallImage() -> bmsx::test::Blua32TestImage {
 	bmsx::test::Blua32TestImage image;
 	image.text.resize(41u * bmsx::INSTRUCTION_BYTES);
 	image.constants = {
-		static_cast<bmsx::f64>(3.0),
-		static_cast<bmsx::f64>(4.0),
-		static_cast<bmsx::f64>(42.0),
+		static_cast<bmsx::i32>(3),
+		static_cast<bmsx::i32>(4),
+		static_cast<bmsx::i32>(42),
 	};
 	image.systemGlobalNames = {"pcall", "xpcall", "error"};
 	std::span<bmsx::u8> code(image.text);
@@ -1657,34 +1669,34 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	require(state.threads[0].protectedCalls.size() == 1u, "save state should retain the active protected call");
 	machine.cpu.restoreRuntimeState(state);
 	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "restored pcall should complete");
-	require(machine.cpu.readCompletionValues().size() == 3u && bmsx::isTruthy(machine.cpu.readCompletionValues()[0]), "pcall should return success");
-	require(bmsx::asNumber(machine.cpu.readCompletionValues()[1]) == 3.0 && bmsx::asNumber(machine.cpu.readCompletionValues()[2]) == 4.0, "pcall should preserve multiple results");
+	require(machine.cpu.readCompletionValues().size() == 3u && bmsx::isTruthy(machine.cpu.readCompletionValues().get(0)), "pcall should return success");
+	require(machine.cpu.readCompletionValues().get(1) == bmsx::valueInteger(3) && machine.cpu.readCompletionValues().get(2) == bmsx::valueInteger(4), "pcall should preserve multiple results");
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 2u);
 	machine.cpu.reset();
 	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "xpcall error path should complete");
-	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues()[0]), "xpcall should return failure");
-	require(bmsx::asNumber(machine.cpu.readCompletionValues()[1]) == 42.0, "xpcall handler should receive the thrown Lua value");
+	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues().get(0)), "xpcall should return failure");
+	require(machine.cpu.readCompletionValues().get(1) == bmsx::valueInteger(42), "xpcall handler should receive the thrown Lua value");
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 6u);
 	machine.cpu.reset();
 	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "invalid xpcall handler should be caught by the outer pcall");
-	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues()[0]), "xpcall should validate its handler before running the body");
-	require(bmsx::valueIsString(machine.cpu.readCompletionValues()[1]), "invalid xpcall handler should return a Lua error value");
+	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues().get(0)), "xpcall should validate its handler before running the body");
+	require(bmsx::valueIsString(machine.cpu.readCompletionValues().get(1)), "invalid xpcall handler should return a Lua error value");
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 7u);
 	machine.cpu.reset();
 	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "xpcall handler failure should complete");
-	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues()[0]), "xpcall handler failure should return failure");
-	require(bmsx::valueIsString(machine.cpu.readCompletionValues()[1]), "xpcall handler failure should return the Lua error-in-handler value");
-	require(machine.cpu.stringPool().toString(bmsx::asStringId(machine.cpu.readCompletionValues()[1])) == "error in error handling", "xpcall should hide the handler's replacement error");
+	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues().get(0)), "xpcall handler failure should return failure");
+	require(bmsx::valueIsString(machine.cpu.readCompletionValues().get(1)), "xpcall handler failure should return the Lua error-in-handler value");
+	require(machine.cpu.stringPool().toString(bmsx::asStringId(machine.cpu.readCompletionValues().get(1))) == "error in error handling", "xpcall should hide the handler's replacement error");
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 5u);
 	machine.cpu.reset();
 	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "nested pcall should complete");
 	require(machine.cpu.readCompletionValues().size() == 4u, "nested pcall should preserve the open result sequence");
-	require(bmsx::isTruthy(machine.cpu.readCompletionValues()[0]) && bmsx::isTruthy(machine.cpu.readCompletionValues()[1]), "nested pcall should prefix both success values");
-	require(bmsx::asNumber(machine.cpu.readCompletionValues()[2]) == 3.0 && bmsx::asNumber(machine.cpu.readCompletionValues()[3]) == 4.0, "nested pcall should preserve child results");
+	require(bmsx::isTruthy(machine.cpu.readCompletionValues().get(0)) && bmsx::isTruthy(machine.cpu.readCompletionValues().get(1)), "nested pcall should prefix both success values");
+	require(machine.cpu.readCompletionValues().get(2) == bmsx::valueInteger(3) && machine.cpu.readCompletionValues().get(3) == bmsx::valueInteger(4), "nested pcall should preserve child results");
 }
 
 void testSparseInstructionObservation() {
@@ -1700,10 +1712,10 @@ void testSparseInstructionObservation() {
 		bmsx::InstructionObserverBinding observer;
 		observer.points[0].insert(pc);
 		observer.context = &seen;
-		observer.observe = [](void* context, bmsx::ExecutionDomainId domain, bmsx::u32, const bmsx::Value* registers) {
+		observer.observe = [](void* context, bmsx::ExecutionDomainId domain, bmsx::u32, bmsx::ConstValueSpan registers) {
 			++*static_cast<int*>(context);
 			require(domain == bmsx::SYSTEM_EXECUTION_DOMAIN_ID, "observer receives physical execution domain");
-			require(bmsx::asNumber(registers[2]) == 2.0, "observation precedes original instruction");
+			require(registers.get(2) == bmsx::valueInteger(2), "observation precedes original instruction");
 		};
 		machine.cpu.setInstructionObserver(std::move(observer));
 		if (instrumented) machine.cpu.setExecutionHook({
@@ -1725,7 +1737,7 @@ void testSparseInstructionObservation() {
 		const int budget = instrumented ? 2 : 8;
 		require(machine.cpu.runUntilDepth(0, budget) == bmsx::RunResult::Yielded, "original costs preserved");
 		require(machine.cpu.instructionBudgetRemaining == 0, "observer costs no guest cycles");
-		require(seen == 1 && bmsx::asNumber(machine.cpu.readFrameRegister(0, 3)) == 3.0, "original op executes once");
+		require(seen == 1 && machine.cpu.readFrameRegister(0, 3) == bmsx::valueInteger(3), "original op executes once");
 		machine.cpu.setInstructionObserver({});
 		machine.cpu.runUntilDepth(0, 18);
 		require(seen == 1, "removal invalidates cached observer");
