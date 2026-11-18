@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -22,7 +23,7 @@ for (const operation of [OpCode.NEWT, OpCode.GETI]) test(`same-frame helper cont
 	writeInstruction(code, 2, OpCode.JMP, 0, 63, 61, 255);
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(sourcePc, code);
-		if (operation === OpCode.GETI) cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.createTable());
+		if (operation === OpCode.GETI) cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.gc.reference(cpu.createTable()));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], sourcePc);
 		cpu.runUntilDepth(0, 4096);
 	}
@@ -52,7 +53,7 @@ for (const operation of [OpCode.NEWT, OpCode.GETI]) test(`same-frame helper cont
 	assert.deepEqual(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 	assert.notEqual(exit.linkedBlock, successor);
 	assert.equal(exit.linkedBlock, lookup.find(targetPc, 0)!.compiledBlocks!.entries[0]);
-	assert.equal(generated.cpu.readFrameRegister(0, 1), 13);
+	assert.equal(generated.cpu.readFrameRegister(0, 1), valueInteger(13));
 	const saved = generated.cpu.captureRuntimeState();
 	generated.cpu.restoreRuntimeState(saved);
 	scalar.cpu.restoreRuntimeState(scalar.cpu.captureRuntimeState());
