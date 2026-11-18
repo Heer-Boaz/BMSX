@@ -48,6 +48,20 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	return { control, model, actions, bounds, update, press, pointer };
 }
 
+test('Find can take focus when its full bar fits at fractional text metrics', t => {
+	const { control, bounds } = fixture(t, 'tiny');
+	const lineHeight = 8.2;
+	bounds.top = 128;
+	bounds.bottom = bounds.top + lineHeight + 8;
+	control.update(bounds, editorViewState.font, lineHeight);
+	control.openFind();
+	assert.equal(inputFocus.admittedTarget, control.findField.focusTarget);
+
+	bounds.bottom -= 1;
+	control.update(bounds, editorViewState.font, lineHeight);
+	assert.equal(inputFocus.admittedTarget, control.focusTarget);
+});
+
 for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} local Find splices into and out of a callback focus boundary without replacing the view owner`, t => {
 		const f = fixture(t, variant);
