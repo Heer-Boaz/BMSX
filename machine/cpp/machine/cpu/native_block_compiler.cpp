@@ -308,14 +308,20 @@ void NativeBlockCompiler::emit(
 		emitTableAccess(instruction, *slow);
 		break;
 	case OpCode::VARARG:
-		emitExit(*slow);
+		emitVararg(instruction, *slow);
 		break;
 	default:
 		emitScalarBoundary(source.pc, m_prefixCycles, m_prefixTop);
 		return;
 	}
 	m_prefixCycles += instruction.baseCycles + (op == OpCode::LOADNIL ? instruction.b : 0);
-	if (op == OpCode::LOADNIL) {
+	if (op == OpCode::VARARG) {
+		if (instruction.b == 0) m_prefixTop = 0;
+		else if (instruction.b > 1) {
+			m_prefixCycles += instruction.b - 1;
+			m_prefixTop = std::max(m_prefixTop, instruction.a + instruction.b - 1);
+		}
+	} else if (op == OpCode::LOADNIL) {
 		if (instruction.b != 0)
 			m_prefixTop = std::max(m_prefixTop, static_cast<int>(instruction.a) + instruction.b);
 	} else if (OPCODE_WRITES_REGISTER_A[instruction.op])

@@ -22,6 +22,9 @@ struct NativeCallScratch {
 // Every linked region shares this one native frame. Only the word/tag bases,
 // run state and cycle grant are pinned; the remaining banks own raw payloads.
 struct NativeBlockAbi {
+	// S0/S1 = slot planes, R0/R1 = signed indices relative to those bases.
+	// R2 is the copy count; R3 is the nil tail when padding is requested.
+	static void emitFramePlacement(sljit_compiler*, bool moveFormals, bool pad);
 	static constexpr sljit_s32 words = SLJIT_S0, tags = SLJIT_S1, state = SLJIT_S2, budget = SLJIT_S3;
 	static constexpr int fixedSaved = 4;
 	static constexpr int savedWords = std::min(4, SLJIT_NUMBER_OF_SAVED_REGISTERS - fixedSaved);
@@ -68,8 +71,6 @@ public:
 private:
 	static sljit_label* emitCallGate(sljit_compiler*, sljit_label* cold, sljit_label* returned);
 	static sljit_label* emitReturnGate(sljit_compiler*, sljit_label* cold);
-	// S0/S1 = thread planes, R0/R1 = absolute source/destination, R2/R3 = copied/missing.
-	static void emitFramePlacement(sljit_compiler*, bool moveFormals);
 	// Input: R0 = PC. Output: R3 = live entry; R2 is scratch.
 	static void emitCodeLookup(sljit_compiler*, sljit_label* declined);
 	static void emitFrameEntry(sljit_compiler*, sljit_sw targetSlot);

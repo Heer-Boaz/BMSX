@@ -24,10 +24,10 @@ void NativeBlockGate::emitCodeLookup(sljit_compiler* compiler, sljit_label* cold
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0), coldDispatch);
 }
 
-void NativeBlockGate::emitFramePlacement(sljit_compiler* compiler, bool moveFormals) {
+void NativeBlockAbi::emitFramePlacement(sljit_compiler* compiler, bool moveFormals, bool pad) {
 	// Both spans belong to one thread. Fixed arguments already occupy the
 	// destination; moved vararg formals are disjoint. Ordinary return values
-	// move downward (destination is the CALL slot, below its argument window).
+	// move downward; saved varargs end before the register window.
 	sljit_jump* aliased = moveFormals ? sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_R1, 0) : nullptr;
 	auto* empty = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0);
 	auto* copy = sljit_emit_label(compiler);
@@ -47,6 +47,7 @@ void NativeBlockGate::emitFramePlacement(sljit_compiler* compiler, bool moveForm
 		sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
 	}
 	sljit_set_label(empty, sljit_emit_label(compiler));
+	if (!pad) return;
 	auto* full = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
 	auto* fill = sljit_emit_label(compiler);
 	static_assert(valueNil() == 0);

@@ -122,7 +122,7 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_R2, 0, SLJIT_R3, 0);
 	sljit_set_label(fit, sljit_emit_label(compiler));
 	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
-	emitFramePlacement(compiler, false);
+	NativeBlockAbi::emitFramePlacement(compiler, false, true);
 
 	// Retire the exact same owner fields as Thread::leaveFrame. Active roots
 	// change only after all returned words have reached the caller's window.

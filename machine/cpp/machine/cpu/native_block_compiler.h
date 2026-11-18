@@ -39,6 +39,7 @@ private:
 	void emitNumericKernel(const DecodedInstruction& instruction, NativeBlockExitSite& invalid, int resultTag);
 	void emitFloatInput(int selector, sljit_s32 destination);
 	void emitFloatCanonicalization(sljit_s32 reg);
+	void emitVararg(const DecodedInstruction&, NativeBlockExitSite& growth);
 	void emitContext(const DecodedInstruction& instruction);
 	void emitNilRange(int first, int count);
 	void emitWordOperand(int selector, NativeBlockExitSite& invalid);

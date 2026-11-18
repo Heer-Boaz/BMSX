@@ -79,6 +79,40 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 	emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
 }
 
+void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, NativeBlockExitSite& growth) {
+	const bool open = instruction.b == 0;
+	const int first = instruction.a, fixed = instruction.b - 1;
+	if (fixed == 0) return;
+	auto* c = m_compiler;
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, varargCount));
+	if (open) {
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R2, 0, SLJIT_IMM, first);
+		auto* empty = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
+		fault(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, stackCapacity)),
+			growth, m_cache.state());
+		sljit_set_label(empty, sljit_emit_label(c));
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop), SLJIT_R1, 0);
+		sljit_emit_op2(c, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_R2, 0);
+		// The runtime extent can be zero. Dirty slots outside it must survive.
+		m_cache.publishRange(first, std::numeric_limits<int>::max());
+		m_cache.discardRange(first, std::numeric_limits<int>::max());
+	} else {
+		fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, stackCapacity),
+			SLJIT_IMM, first + fixed), growth, m_cache.state());
+		m_cache.discardRange(first, first + fixed);
+		auto* fits = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, fixed);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, fixed);
+		sljit_set_label(fits, sljit_emit_label(c));
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R3, 0, SLJIT_IMM, fixed, SLJIT_R2, 0);
+	}
+	sljit_emit_op1(c, SLJIT_MOV_S32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, stackBase));
+	sljit_emit_op1(c, SLJIT_MOV_S32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, varargBase));
+	sljit_emit_op2(c, SLJIT_SUB, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R1, 0);
+	sljit_emit_op1(c, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM, first);
+	NativeBlockAbi::emitFramePlacement(c, false, !open);
+}
+
 void NativeBlockCompiler::emitNilRange(int first, int count) {
 	if (count == 0)
 		return;
