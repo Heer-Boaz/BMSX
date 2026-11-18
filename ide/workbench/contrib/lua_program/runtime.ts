@@ -1,5 +1,4 @@
-import { valueTag, ValueTag, valueTypeNameForLuaTag } from '../../../../machine/ts/machine/cpu/value';
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
+import { asInteger, asTable, canonicalTableKey, isNil, valueTag, ValueTag, valueTypeNameForLuaTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
@@ -19,11 +18,11 @@ const INPUT_FIELDS = ['clock_source', 'source_program', 'program', 'binding_latc
 const INPUT_DESCRIPTIONS = ['Guest clock source.', 'Authored input program before runtime compilation.', 'Installed input evaluation program.',
 	'Current binding latch values.', 'Last evaluated guest input frame.', 'Custom matcher results.', 'Commands queued by input evaluation.', 'Events queued by input evaluation.'] as const;
 
-function progressionRuntimes(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): Table | undefined {
+function progressionRuntimes(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): Value | undefined {
 	const module = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/progression');
-	if (module.kind !== 'value' || module.value === null) return;
+	if (module.kind !== 'value' || isNil(module.value)) return;
 	const captured = readRuntimeLuaModuleCapture(sources, guest, domain, 'cartlib/progression', guest.readStringMember(module.value, 'mount'), 'runtime_by_ctx');
-	if (captured.kind === 'value') return captured.value as Table;
+	if (captured.kind === 'value') return captured.value;
 }
 
 export function readProgramInstances(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, kind: LuaProgramInput['programKind']): ProgramInstanceChoice[] {
@@ -68,11 +67,11 @@ export class LuaProgramRuntimeProjection {
 			return;
 		}
 		if (identity === undefined || domain === undefined) { input.status = 'Choose a live instance. Authored programs are not runtime contexts.'; return; }
-		let instance: Table | undefined;
+		let instance: Value | undefined;
 		if (input.programKind === 'progression') {
 			const runtimes = progressionRuntimes(this.sources, this.guest, domain);
 			if (runtimes !== undefined) this.guest.visitTableEntries(runtimes, (ctx, rt) => {
-				if (this.guest.matchesIdentity(ctx, identity)) instance = rt as Table;
+				if (this.guest.matchesIdentity(ctx, identity)) instance = rt;
 			});
 		} else visitRuntimeComponents(this.sources, this.guest, domain,
 			'cartlib/input/actioneffect/actioneffect_component', component => { if (this.guest.matchesIdentity(component, identity)) instance = component; });
@@ -94,20 +93,22 @@ export class LuaProgramRuntimeProjection {
 			input.status = `LIVE INPUT / ${input.instanceLabel} / compiled program, latch state and queued commands`;
 			return;
 		}
-		const program = guest.readStringMember(instance, 'program') as Table;
-		const state = guest.readStringMember(instance, 'state') as Table;
-		const revision = guest.readStringMember(state, 'revision') as number;
-		const changedProgram = input.programHashId !== program.hashId || input.stateHashId !== state.hashId;
+		const program = guest.readStringMember(instance, 'program');
+		const programHashId = guest.identityScalar(program, ValueTag.Table);
+		const state = guest.readStringMember(instance, 'state');
+		const stateHashId = guest.identityScalar(state, ValueTag.Table);
+		const revision = asInteger(guest.readStringMember(state, 'revision'));
+		const changedProgram = input.programHashId !== programHashId || input.stateHashId !== stateHashId;
 		const changedState = changedProgram || input.stateRevision !== revision;
 		if (changedProgram) {
-			input.programHashId = program.hashId;
-			input.stateHashId = state.hashId;
+			input.programHashId = programHashId;
+			input.stateHashId = stateHashId;
 			input.live.roots.length = 0;
 			this.stateRows.length = 0;
 			this.receipts.clear(); this.receiptRows.length = 0;
 			const keys = guest.readStringMember(guest.readStringMember(state, 'program'), 'key2idx');
 			guest.visitTableEntries(keys, (key, slot) => {
-				this.stateRows.push({ slot: slot as number, element: this.append(input, guest.formatValue(key), '') });
+				this.stateRows.push({ slot: asInteger(slot), element: this.append(input, guest.formatValue(key), '') });
 			});
 			guest.visitTableEntries(guest.readStringMember(program, 'rules_by_event'), (event, rules) => {
 				guest.visitTableEntries(rules, (_index, rule) => {
@@ -115,7 +116,7 @@ export class LuaProgramRuntimeProjection {
 					const element = this.append(input, `${guest.formatValue(id)} / ${guest.formatValue(event)}`, '',
 						guest.previewValue(rule, 3, 32));
 					if (guest.isTruthy(guest.readStringMember(rule, 'apply_once'))) {
-						const identity = guest.identity(id);
+						const identity = guest.identity(canonicalTableKey(id));
 						let byScalar = this.receipts.get(identity.tag);
 						if (byScalar === undefined) { byScalar = new Map(); this.receipts.set(identity.tag, byScalar); }
 						let rows = byScalar.get(identity.scalar);
@@ -128,11 +129,13 @@ export class LuaProgramRuntimeProjection {
 			rebuildWorkbenchTreeRows(input.live, null);
 			input.live.textDirty = true;
 		}
-		const values = guest.readStringMember(state, 'values') as Table;
-		if (changedState) for (const row of this.stateRows) this.setValue(input, row.element, guest.formatValue(values.getInteger(row.slot)));
+		if (changedState) {
+			const values = asTable(guest.readStringMember(state, 'values'), guest.cpu.gc);
+			for (const row of this.stateRows) this.setValue(input, row.element, guest.formatValue(values.getInteger(row.slot)));
+		}
 		for (const row of this.receiptRows) row.applied = false;
 		guest.visitTableEntries(guest.readStringMember(state, 'apply_done'), (id, value) => {
-			const tag = valueTag(id), rows = this.receipts.get(tag)?.get(guest.identityScalar(id, tag));
+			const key = canonicalTableKey(id), tag = valueTag(key), rows = this.receipts.get(tag)?.get(guest.identityScalar(key, tag));
 			if (rows !== undefined) for (const row of rows) row.applied = guest.isTruthy(value);
 		});
 		for (const row of this.receiptRows) this.setValue(input, row.element, row.applied ? 'apply_once: done' : 'apply_once: pending');

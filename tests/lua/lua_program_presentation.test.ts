@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test, { afterEach, type TestContext } from 'node:test';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
@@ -35,7 +36,7 @@ function fixture(t: TestContext) {
 for (const retained of [false, true]) for (const valid of [false, true])
 	test(`Lua Program Live ${retained ? 'retained instance' : 'instance chooser'} uses ordinary ${valid ? 'valid' : 'invalid'} draft blur`, t => {
 		const f = fixture(t), model = f.input.workingCopy, version = model.version;
-		if (retained) f.input.instance = f.editor.luaPrograms.guest.identity(1);
+		if (retained) f.input.instance = f.editor.luaPrograms.guest.identity(valueInteger(1));
 		const draft = f.draft(valid ? '31' : '(');
 		let changes = 0;
 		t.after(model.onDidChangeContent(() => { changes++; }));
