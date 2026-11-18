@@ -25,7 +25,7 @@ for (let pass = 0; pass <= warmupPasses; ++pass) {
 	// Re-enter through the ordinary call owner; never restore guest state or
 	// clear executable caches between passes. V8 tiering may still continue.
 	if (pass !== 0) cpu.beginCompletionCallInExecutionDomain(image.executionDomainId, functionAddress);
-	for (let index = 0; index < wordCount; ++index) cpu.rootThread.frameAtDepth(0).registers.setNumber(8 + index, 0x20000000 | (index & 65535));
+	for (let index = 0; index < wordCount; ++index) cpu.rootThread.frameAtDepth(0).registers.setInteger(8 + index, 0x20000000 | (index & 65535));
 	result = RunResult.Yielded; cycles = slices = maxDeadlineOverrunCycles = 0;
 	const start = performance.now();
 	while (result === RunResult.Yielded) {

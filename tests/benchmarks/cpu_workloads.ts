@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -22,8 +23,8 @@ export function* cpuWorkloads(iterations: number, optLevel: OptimizationLevel): 
 	const sources: Record<string, string> = {
 		pointer_scaled: `local pointer<const>: *u16 = ${DYNAMIC_RAM_BASE + 0x1000}
 local zero_pointer<const>: *u16 = 0
-local values = {0, -0.0, 4.9406564584124654e-324, -4.9406564584124654e-324,
-1.7976931348623157e308, -1.7976931348623157e308, 1/0, -1/0, 0/0, false}
+local values = {0, -0.0, 0x1p-149, -0x1p-149,
+0x1.fffffep127, -0x1.fffffep127, 1/0, -1/0, 0/0, 0x40000001}
 for i = 1, 10 do
 local x = values[i]
 local actual = &zero_pointer[x * 2]
@@ -188,7 +189,7 @@ return t.a, t.b`;
 		writeInstruction(text, 7, OpCode.LT, 1, 2, 1);
 		writeInstruction(text, 8, OpCode.JMP, 0, 63, 59, 255); // back to WIDE, not its body
 		writeInstruction(text, 9, OpCode.RET, 2, 1, 0);
-		const { romBytes } = linkRawTestSystemBlua32({ text, constants: [loops, WORD_SPAN_ADDRESS],
+		const { romBytes } = linkRawTestSystemBlua32({ text, constants: [integerConstant(loops), integerConstant(WORD_SPAN_ADDRESS)],
 			systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
 			functions: [{ firstWord: 0, wordCount: 10, maxStack: 8 + wordCount }] });
 		const backed = new Uint8Array((romBytes.length + MAPPED_PAGE_BYTE_SIZE - 1) & -MAPPED_PAGE_BYTE_SIZE);

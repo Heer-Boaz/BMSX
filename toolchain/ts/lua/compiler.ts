@@ -4887,26 +4887,25 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				readOnly: base.readOnly,
 			};
 		}
-		// For a typed view, the layout supplies the outer stride multiplication.
-		// Consecutive positive power-of-two scales are exact in binary64 even for
-		// subnormals and overflow, so combine them before emitting the index.
-		// Other factors keep the source evaluation order and rounding unchanged.
+		// An Integer factor preserves the index subtype. Fuse only if its
+		// positive power-of-two product is still a signed Integer: a Float
+		// index must see the same magnitude, not a wrapped negative word.
 		let indexValue = indexExpression;
 		let scale = stride;
 		if (stride > 1 && stride <= 0x40000000 && (stride | 0) === stride
 			&& (stride & (stride - 1)) === 0 && indexExpression.kind === LuaSyntaxKind.BinaryExpression) {
 			const binary = indexExpression as LuaBinaryExpression;
 			if (binary.operator === LuaBinaryOperator.Multiply) {
-				let factor = this.evaluateCompileTimeNumber(binary.right);
+				let factor = evaluateStaticNumeric(this, undefined, binary.right);
 				let operand = binary.left;
 				if (factor === undefined) {
-					factor = this.evaluateCompileTimeNumber(binary.left);
+					factor = evaluateStaticNumeric(this, undefined, binary.left);
 					operand = binary.right;
 				}
-				if (factor !== undefined && factor >= 1 && factor <= 0x40000000
-					&& (factor | 0) === factor && (factor & (factor - 1)) === 0) {
+				if (factor?.kind === 'number' && factor.value.kind === 'integer' && factor.value.word !== 0
+					&& (factor.value.word & (factor.value.word - 1)) === 0 && stride * factor.value.word <= 0x7fffffff) {
 					indexValue = operand;
-					scale *= factor;
+					scale *= factor.value.word;
 				}
 			}
 		}
