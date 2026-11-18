@@ -67,7 +67,7 @@ struct Images {
 		writeInstruction(bios.text, 1, static_cast<u8>(OpCode::LOAD_MEM), 0, 0, static_cast<u8>(MemoryAccessKind::U32LE));
 		writeInstruction(bios.text, 2, static_cast<u8>(OpCode::MTC0), 0, COP0_EXEC, 0);
 		writeInstruction(bios.text, 3, static_cast<u8>(OpCode::RET), 0, 1, 0);
-		bios.constants = {static_cast<f64>(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET)};
+		bios.constants = {static_cast<i32>(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET)};
 		bios.functions = {{.firstWord=0, .wordCount=3, .maxStack=4}, {.firstWord=3, .wordCount=1}};
 		bios.irqFunctionIndex = bios.exceptionFunctionIndex = 1;
 		system = test::encodeBlua32TestRom(RomImageDomain::System, bios);
@@ -78,7 +78,7 @@ struct Images {
 			writeInstruction(cart.text, 1, static_cast<u8>(OpCode::LOADK), 1, 0, 0);
 			writeInstruction(cart.text, 2, static_cast<u8>(OpCode::ADD), 0, 0, 1);
 			writeInstruction(cart.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
-			cart.constants = {static_cast<f64>(slot + 1)};
+			cart.constants = {static_cast<i32>(slot + 1)};
 			cart.functions = {{.firstWord=0, .wordCount=4, .maxStack=4}};
 			cards[slot] = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cart);
 		}
@@ -171,7 +171,7 @@ void gateRanges() {
 	base &= ~std::uintptr_t{1};
 #endif
 	std::cout << "gate";
-	for (void* entry : {gate.exit, gate.dispatch, gate.equalValues, gate.finishSegment[0], gate.finishSegment[1], gate.leaveSegment}) {
+	for (void* entry : {gate.exit, gate.dispatch, gate.leaveSegment}) {
 		auto address = reinterpret_cast<std::uintptr_t>(entry);
 #if defined(SLJIT_CONFIG_ARM_THUMB2) && SLJIT_CONFIG_ARM_THUMB2
 		address &= ~std::uintptr_t{1};
@@ -181,7 +181,7 @@ void gateRanges() {
 	std::cout << '\n';
 #if defined(BMSX_NATIVE_PERF_MAP)
 	const auto ranges = readMap();
-	constexpr std::array names{"entry", "return_to_cpp", "dispatch", "cold_dispatch", "ret", "call", "equal", "materialize_scratch", "materialize_saved", "leave"};
+	constexpr std::array names{"entry", "return_to_cpp", "dispatch", "cold_dispatch", "declined", "call", "ret", "leave"};
 	std::uintptr_t next = base;
 	for (const char* name : names) {
 		const auto symbol = std::string("bmsx_native_gate_") + name;
