@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -119,28 +119,25 @@ test('sparse snapshots reproduce the canonical free-ID order after partial reuse
 test('reusing an unreachable deleted string-key ID cannot resurrect its old mapping', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	const root = pool.intern('table root', false), table = cpu.createTable(0, 8);
-	cpu.setGlobalByKey(root, ValueTag.Table, NaN, table);
+	cpu.setGlobalByKey(root, valueTable(cpu.gc.reference(table)));
 	const removed = pool.intern('removed key');
-	table.setStringKey(removed, 19);
-	table.setStringKey(removed, null);
+	table.setStringKey(removed, valueInteger(19));
+	table.setStringKey(removed, valueNil());
 	const retained = pool.intern('retained key');
-	table.setStringKey(retained, 23);
+	table.setStringKey(retained, valueInteger(23));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.find('removed key'), undefined);
 	const replacement = pool.intern('replacement key');
 	assert.equal(replacement, removed);
-	assert.equal(table.getStringKey(replacement), null);
-	table.setStringKey(replacement, 29);
-	assert.equal(table.get(valueString(replacement)), 29);
-	assert.equal(table.getStringKey(retained), 23);
+	assert.equal(table.getStringKey(replacement), valueNil());
+	table.setStringKey(replacement, valueInteger(29));
+	assert.equal(table.get(valueString(replacement)), valueInteger(29));
+	assert.equal(table.getStringKey(retained), valueInteger(23));
 	const entry = new ValueSlots(2), keys: string[] = [];
-	let keyTag: ValueTag = ValueTag.Nil, keyScalar = NaN;
-	for (table.next(keyTag, keyScalar, null, entry, 0); entry.getTag(0) !== ValueTag.Nil;
-		table.next(keyTag, keyScalar, null, entry, 0)) {
+	for (table.next(entry.get(0), entry, 0); entry.getTag(0) !== ValueTag.Nil;
+		table.next(entry.get(0), entry, 0)) {
 		assert.equal(entry.getTag(0), ValueTag.String);
-		keyTag = ValueTag.String;
-		keyScalar = entry.getStringId(0);
-		keys.push(pool.toString(keyScalar));
+		keys.push(pool.toString(entry.getStringId(0)));
 	}
 	assert.deepEqual(keys.sort(), ['replacement key', 'retained key']);
 });

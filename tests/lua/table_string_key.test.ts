@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { ValueTag, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
 import { TABLE_STORE_REQUIRES_GROWTH, TableLookupStatus, type TableLookupResult } from '../../machine/ts/machine/cpu/table';
@@ -23,7 +23,8 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 	const strings = cpu.createTable(0, 4);
 	const object = cpu.createTable();
 	object.hashId = 0;
-	const values: Value[] = [false, -0, 5.25, NaN, Infinity, object, valueString(keys[0]), null];
+	const objectKey = valueTable(cpu.gc.reference(object));
+	const values: Value[] = [valueBool(false), valueFloatBits(0x80000000), valueFloat(5.25), valueFloatBits(0xffc01234), valueFloat(Infinity), objectKey, valueString(keys[0]), valueNil()];
 	const slots = new ValueSlots(2);
 	let prediction = 0;
 	const compare = () => {
@@ -51,9 +52,9 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 		}
 	};
 	compare();
-	for (const key of [0, false, object]) {
-		generic.set(key, 19);
-		strings.set(key, 19);
+	for (const key of [valueInteger(0), valueBool(false), objectKey]) {
+		generic.set(key, valueInteger(19));
+		strings.set(key, valueInteger(19));
 	}
 	for (let n = 0; n < 256; n += 1) {
 		const key = keys[(n * 7) & 15];
@@ -62,21 +63,21 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 		slots.set(0, value);
 		if ((n & 1) === 0) {
 			const before = strings.getTrackedHeapBytes();
-			const slot = strings.storeStringKeyWithoutGrowth(key, slots.getTag(0), slots.getScalar(0), slots.getReference(0));
+			const slot = strings.storeStringKeyWithoutGrowth(key, slots.getTag(0), slots.getPayload(0));
 			assert.equal(strings.getTrackedHeapBytes(), before, 'bounded mutation reserves no storage');
 			if (slot === TABLE_STORE_REQUIRES_GROWTH)
-				strings.storeStringKey(key, slots.getTag(0), slots.getScalar(0), slots.getReference(0));
+				strings.storeStringKey(key, slots.getTag(0), slots.getPayload(0));
 		} else {
-			prediction = strings.storeStringKeyCached(key, prediction, slots.getTag(0), slots.getScalar(0), slots.getReference(0));
+			prediction = strings.storeStringKeyCached(key, prediction, slots.getTag(0), slots.getPayload(0));
 		}
 		if ((n & 15) === 0) {
-			generic.setInteger((n >> 4) + 1, n);
-			strings.setInteger((n >> 4) + 1, n);
+			generic.setInteger((n >> 4) + 1, valueInteger(n));
+			strings.setInteger((n >> 4) + 1, valueInteger(n));
 		}
 		compare();
 	}
-	generic.set(object, null);
-	strings.set(object, null);
+	generic.set(objectKey, valueNil());
+	strings.set(objectKey, valueNil());
 	compare();
 	generic.clear();
 	strings.clear();
@@ -89,30 +90,30 @@ test('known string lookup follows changing inherited fields and preserves false 
 	const key = cpu.stringPool.intern('field');
 	const indexKey = cpu.stringPool.intern('__index');
 	const parent = cpu.createTable(0, 2);
-	parent.setStringKey(key, false);
+	parent.setStringKey(key, valueBool(false));
 	const metatable = cpu.createTable(0, 1);
-	metatable.setStringKey(indexKey, parent);
+	metatable.setStringKey(indexKey, valueTable(cpu.gc.reference(parent)));
 	const child = cpu.createTable();
 	child.metatable = metatable;
 	const slots = new ValueSlots(1);
 	const result: TableLookupResult = { values: slots, slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved };
 	child.resolveStringIndex(indexKey, key, result);
 	assert.equal(result.status, TableLookupStatus.Resolved);
-	assert.equal(slots.get(0), false);
+	assert.equal(slots.get(0), valueBool(false));
 	child.resolveStringIndexCached(indexKey, key, -1, result);
 	let prediction = result.slot;
 	assert.equal(result.extraVisits, 1);
 	assert.ok(prediction >= 0);
-	assert.equal(slots.get(0), false);
-	parent.storeStringKey(key, ValueTag.Nil, NaN, null);
+	assert.equal(slots.get(0), valueBool(false));
+	parent.storeStringKey(key, ValueTag.Nil, 0);
 	child.resolveStringIndexCached(indexKey, key, prediction, result);
 	prediction = result.slot;
 	assert.equal(prediction, -1);
-	assert.equal(slots.get(0), null);
-	parent.storeStringKey(key, ValueTag.Number, -0, null);
+	assert.equal(slots.get(0), valueNil());
+	parent.storeStringKey(key, ValueTag.Float, 0x80000000);
 	child.resolveStringIndex(indexKey, key, result);
 	assert.equal(result.status, TableLookupStatus.Resolved);
-	assert.equal(slots.get(0), -0);
+	assert.equal(slots.get(0), valueFloatBits(0x80000000));
 });
 
 
@@ -120,18 +121,18 @@ test('rejected string-store growth retains the exhausted cursor for allocating c
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 1), present = cpu.stringPool.intern('full'), missing = cpu.stringPool.intern('new');
-	table.setStringKey(present, 73);
+	table.setStringKey(present, valueInteger(73));
 	const beforeWriter = new CpuSnapshotWriter(new CpuSnapshot());
 	const beforeOffset = table.captureSnapshot(beforeWriter, () => {}), before = beforeWriter.finish();
-	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Number, 19, null), TABLE_STORE_REQUIRES_GROWTH);
+	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Integer, 19), TABLE_STORE_REQUIRES_GROWTH);
 	const afterWriter = new CpuSnapshotWriter(new CpuSnapshot());
 	const afterOffset = table.captureSnapshot(afterWriter, () => {}), after = afterWriter.finish();
 	assert.equal(before.word(beforeOffset + CpuSnapshotTable.HashFree), 0);
 	assert.equal(after.int(afterOffset + CpuSnapshotTable.HashFree), -1);
-	assert.equal(table.getStringKey(present), 73); assert.equal(table.getStringKey(missing), null);
-	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Number, 19, null), TABLE_STORE_REQUIRES_GROWTH);
-	table.setStringKey(present, null);
-	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Number, 19, null), 0);
+	assert.equal(table.getStringKey(present), valueInteger(73)); assert.equal(table.getStringKey(missing), valueNil());
+	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Integer, 19), TABLE_STORE_REQUIRES_GROWTH);
+	table.setStringKey(present, valueNil());
+	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Integer, 19), 0);
 	assert.equal(table.storedSlotCount, 1);
-	assert.equal(table.getStringKey(missing), 19);
+	assert.equal(table.getStringKey(missing), valueInteger(19));
 });

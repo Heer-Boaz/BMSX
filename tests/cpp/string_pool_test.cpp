@@ -149,9 +149,9 @@ void retainNestedMaterializationRoots() {
 		require(!pool.find("inner string") && pool.find("outer string") == outerId, "inner roots retire without releasing the outer phase");
 		auto* table = cpu.createTable();
 		const auto key = pool.intern("nested key");
-		table->setStringKey(key, valueNumber(7));
+		table->setStringKey(key, valueInteger(7));
 		cpu.collectHeap();
-		require(asNumber(table->getStringKey(key)) == 7, "the same CPU materialization phase owns tables and strings");
+		require(table->getStringKey(key) == valueInteger(7), "the same CPU materialization phase owns tables and strings");
 	}
 	cpu.collectHeap();
 	require(!pool.find("outer string") && !pool.find("nested key"), "CPU scope retirement releases string roots");
@@ -185,18 +185,18 @@ void reuseDeletedStringKeyId() {
 	auto& pool = cpu.stringPool();
 	const auto root = pool.intern("table root", false);
 	auto* table = cpu.createTable(0, 8);
-	cpu.setGlobalByKey(root, valueTable(table));
+	cpu.setGlobalByKey(root, valueTable(cpu.gcHeap().reference(table)));
 	const auto removed = pool.intern("removed key");
-	table->setStringKey(removed, valueNumber(19));
+	table->setStringKey(removed, valueInteger(19));
 	table->setStringKey(removed, valueNil());
 	const auto retained = pool.intern("retained key");
-	table->setStringKey(retained, valueNumber(23));
+	table->setStringKey(retained, valueInteger(23));
 	cpu.collectHeap();
 	require(!pool.find("removed key"), "dead hash nodes do not own their former string text");
 	const auto replacement = pool.intern("replacement key");
 	require(replacement == removed && isNil(table->getStringKey(replacement)), "recycled IDs do not resurrect removed mappings");
-	table->setStringKey(replacement, valueNumber(29));
-	require(asNumber(table->getStringKey(replacement)) == 29 && asNumber(table->getStringKey(retained)) == 23, "a new mapping coexists with retained keys");
+	table->setStringKey(replacement, valueInteger(29));
+	require(table->getStringKey(replacement) == valueInteger(29) && table->getStringKey(retained) == valueInteger(23), "a new mapping coexists with retained keys");
 	Value key = valueNil(), value = valueNil();
 	std::vector<std::string> keys;
 	for (table->nextEntry(key, key, value); !isNil(key); table->nextEntry(key, key, value)) {
@@ -228,8 +228,8 @@ void admitExternalArgumentsAcrossStackGrowth() {
 		cpu.reset();
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the real image returns a dynamic callee");
 		const auto completion = cpu.readCompletionValues();
-		require(valueIsClosure(completion[0]), "call admission receives an actual guest closure");
-		auto* closure = asClosure(completion[0]);
+		require(valueIsClosure(completion.get(0)), "call admission receives an actual guest closure");
+		auto* closure = asClosure(completion.get(0), cpu.gcHeap());
 		const std::string text(4096, 'a');
 		const auto id = cpu.stringPool().intern(text);
 		const std::array args{valueString(id)};
@@ -239,13 +239,13 @@ void admitExternalArgumentsAcrossStackGrowth() {
 		require(cpu.stringPool().find(text) == id, "stack growth cannot collect incoming host arguments");
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the admitted callee returns normally");
 		const auto result = cpu.readCompletionValues();
-		require(result.size() == 1 && valueIsString(result[0]) && asStringId(result[0]) == id, "the real call preserves the original string ID");
+		require(result.size() == 1 && valueIsString(result.get(0)) && asStringId(result.get(0)) == id, "the real call preserves the original string ID");
 		require(cpu.stringPool().toString(id) == text, "the result owns its original payload");
-		const BuiltinArgsView forwarded(result.data(), result.size());
+		const BuiltinArgsView forwarded(result);
 		cpu.beginCompletionCall(*closure, forwarded);
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "completion-latch arguments can be admitted as the next call's input");
 		const auto forwardedResult = cpu.readCompletionValues();
-		require(forwardedResult.size() == 1 && asStringId(forwardedResult[0]) == id, "admission consumes its retained argument copy before clearing the old latch");
+		require(forwardedResult.size() == 1 && asStringId(forwardedResult.get(0)) == id, "admission consumes its retained argument copy before clearing the old latch");
 }
 } // namespace
 
