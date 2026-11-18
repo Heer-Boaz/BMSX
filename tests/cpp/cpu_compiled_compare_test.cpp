@@ -46,7 +46,7 @@ void numericRkComparisonsBelongToTheirExecutionImage() {
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::KTRUE), 1, 0, 0);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 4}};
-	image.constants = {0.0};
+	image.constants = {i32{0}};
 	auto stringImage = image; stringImage.constants = {std::string("same-slot")};
 	const auto cart = test::encodeBlua32TestRom(RomImageDomain::Cartridge, stringImage);
 	const auto replacement = test::encodeBlua32TestRom(RomImageDomain::System, stringImage);
@@ -57,14 +57,14 @@ void numericRkComparisonsBelongToTheirExecutionImage() {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, domain,
 				domain == SYSTEM_EXECUTION_DOMAIN_ID ? machine->rom.functionAddresses[0] : cart.functionAddresses[0], DYNAMIC_RAM_BASE);
-			machine->cpu.activeThread()->currentFrame->registers[0] = valueString(machine->cpu.stringPool().intern("same-slot"));
+			machine->cpu.activeThread()->currentFrame->registers.set(0, valueString(machine->cpu.stringPool().intern("same-slot")));
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 1024);
 		const auto& frame = *native.cpu.activeThread()->currentFrame;
-		require(frame.registers[1] == valueBool(domain == 0) && frame.pc == DYNAMIC_RAM_BASE,
+		require(frame.registers.get(1) == valueBool(domain == 0) && frame.pc == DYNAMIC_RAM_BASE,
 			"the same RAM instruction and RK index use the activation's Number or String pool, not another resident image");
 		const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()), "both image-local comparisons match complete scalar state");
+		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "both image-local comparisons match complete scalar state");
 		owners[domain == 0 ? 1 : 0] = frame.executionImage;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		test::waitForNativeEntry(native.cpu, *frame.decodedPage, 0);
@@ -79,10 +79,10 @@ void numericRkComparisonsBelongToTheirExecutionImage() {
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.installSystemRom(replacement.bytes);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, replacement.functionAddresses[0], DYNAMIC_RAM_BASE);
-		machine->cpu.activeThread()->currentFrame->registers[0] = valueString(machine->cpu.stringPool().intern("same-slot"));
+		machine->cpu.activeThread()->currentFrame->registers.set(0, valueString(machine->cpu.stringPool().intern("same-slot")));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 4);
-	require(native.cpu.activeThread()->currentFrame->registers[1] == valueBool(false),
+	require(native.cpu.activeThread()->currentFrame->registers.get(1) == valueBool(false),
 		"replacing raw ROM bytes does not mutate an already activated numeric constant pool");
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.replaceExecutionImage(machine->addresses.resolveSystemDomain());
@@ -91,10 +91,10 @@ void numericRkComparisonsBelongToTheirExecutionImage() {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, replacement.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 1024);
-	require(native.cpu.activeThread()->currentFrame->registers[1] == valueBool(true),
+	require(native.cpu.activeThread()->currentFrame->registers.get(1) == valueBool(true),
 		"image replacement recompiles the same RK index as String rather than retaining numeric specialization");
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()), "the relocated replacement preserves full scalar state");
+	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "the relocated replacement preserves full scalar state");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& frame = *native.cpu.activeThread()->currentFrame;
 	test::waitForNativeEntry(native.cpu, *frame.decodedPage, 0);
@@ -123,8 +123,8 @@ void changingSkippedBytesRetireResolvedEdges() {
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		frame.registers[0] = valueNumber(0); frame.registers[1] = valueNumber(1);
-		frame.registers[2] = valueNumber(73); frame.registers[6] = valueNumber(1);
+		frame.registers.set(0, valueInteger(0)); frame.registers.set(1, valueInteger(1));
+		frame.registers.set(2, valueInteger(73)); frame.registers.set(6, valueInteger(1));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		machine->cpu.runUntilDepth(0, 800);
 	}
@@ -144,11 +144,11 @@ void changingSkippedBytesRetireResolvedEdges() {
 		writeInstruction(replacement, 0, static_cast<u8>(wide ? OpCode::WIDE : OpCode::K0), 0, 0, 0);
 		for (auto* machine : {&native, &scalar}) {
 			machine->memory.writeBytes(DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES, replacement.data(), replacement.size());
-			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.top = 0; frame.registers[2] = valueNumber(73);
+			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.top = 0; frame.registers.set(2, valueInteger(73));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 			machine->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::EQ)]);
 			require(frame.pc == DYNAMIC_RAM_BASE + (wide ? 4u : 3u) * INSTRUCTION_BYTES
-				&& frame.registers[2] == valueNumber(73) && frame.registers[3] == valueNumber(2) && frame.top == 4,
+				&& frame.registers.get(2) == valueInteger(73) && frame.registers.get(3) == valueInteger(2) && frame.top == 4,
 				"only a taken comparison skip decodes the current complete successor without executing it");
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -187,7 +187,7 @@ void maximumLengthSkipDependencyRetires() {
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(0); frame.registers[1] = valueNumber(1);
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(0)); frame.registers.set(1, valueInteger(1));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 8192);
@@ -206,7 +206,7 @@ void maximumLengthSkipDependencyRetires() {
 #endif
 	test::runCpuParity(native.cpu, scalar.cpu, 8192);
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
+	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
 		&& native.cpu.lastPc == scalar.cpu.lastPc,
 		"updated WIDE skip dependencies preserve guest state at the admitted boundary");
 }
@@ -226,11 +226,11 @@ void resolvedComparisonLinksBothPaths() {
 #endif
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-		for (int reg = 0; reg < 5; ++reg) machine->cpu.activeThread()->frameAtDepth(0)->registers[reg] = valueNumber(reg == 1 ? 1 : 0);
+		for (int reg = 0; reg < 5; ++reg) machine->cpu.activeThread()->frameAtDepth(0)->registers.set(reg, valueInteger(reg == 1 ? 1 : 0));
 	}
 	for (const int value : {0, 1}) {
 		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(value);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(value));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 2048);
@@ -240,7 +240,7 @@ void resolvedComparisonLinksBothPaths() {
 	test::waitForFixtureWorkerRequests(native.cpu);
 	for (int pass = 0; pass < 3; ++pass) for (const int value : {0, 1}) {
 		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(value);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(value));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 2048);
@@ -261,12 +261,12 @@ void resolvedComparisonLinksBothPaths() {
 #endif
 	for (const int value : {0, 1}) for (int grant = 1; grant <= 32; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(value);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(value));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
+		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
 			&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc() && native.cpu.lastPc == scalar.cpu.lastPc,
 			"linked comparisons retain the full state and charge of each admitted segment");
 	}
@@ -279,9 +279,9 @@ void resolvedComparisonLinksBothPaths() {
 		InstructionObserverBinding observer;
 		observer.points[0].insert(DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
 		observer.context = &observations[index++];
-		observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<u32*>(context); };
+		observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) { ++*static_cast<u32*>(context); };
 		machine->cpu.setInstructionObserver(std::move(observer));
-		machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(0);
+		machine->cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(0));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 512);
@@ -337,8 +337,8 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 #endif
 			for (auto* machine : {&native, &scalar}) {
 				machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-				auto* r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
-				for (int reg = 0; reg < 8; ++reg) r[reg] = valueNumber(reg == 1 ? 1 : reg == 2 ? 7 : 0);
+				auto& r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
+				for (int reg = 0; reg < 8; ++reg) r.set(reg, valueInteger(reg == 1 ? 1 : reg == 2 ? 7 : 0));
 			}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 			// Heat the comparison alone first: an exhausted one-cycle grant never
@@ -352,7 +352,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 #endif
 			for (const int value : {6, 7, 8}) {
 				for (auto* machine : {&native, &scalar}) {
-					machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(value);
+					machine->cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(value));
 					machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 				}
 				test::runCpuParity(native.cpu, scalar.cpu, 1024);
@@ -403,14 +403,14 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 				}
 				for (const bool strings : {false, true}) {
 					for (auto* machine : {&native, &scalar}) {
-						auto* r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
+						auto& r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
 						if (strings) {
 							const auto left = machine->cpu.stringPool().intern(expected ? "aaaaaa" : "zzzzzz");
 							const auto right = machine->cpu.stringPool().intern(op == OpCode::EQ && expected ? "aaaaaa" : "mmmmmm");
-							r[0] = valueString(left); r[2] = valueString(right);
+							r.set(0, valueString(left)); r.set(2, valueString(right));
 						} else {
-							r[0] = valueNumber(op == OpCode::EQ ? (expected ? 7 : 6) : (expected ? 6 : 8));
-							r[2] = valueNumber(7);
+							r.set(0, valueInteger(op == OpCode::EQ ? (expected ? 7 : 6) : (expected ? 6 : 8)));
+							r.set(2, valueInteger(7));
 						}
 						machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0],
 							DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES);
@@ -424,15 +424,15 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 						"an exhausted compare must defer its fused JMP at direct and linked entries");
 				}
 			}
-			for (auto* machine : {&native, &scalar}) machine->cpu.activeThread()->frameAtDepth(0)->registers[2] = valueNumber(7);
+			for (auto* machine : {&native, &scalar}) machine->cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueInteger(7));
 			for (const int value : {6, 7, 8}) for (int grant = 1; grant <= 16; ++grant) {
 				for (auto* machine : {&native, &scalar}) {
-					machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(value);
+					machine->cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(value));
 					machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 				}
 				test::runCpuParity(native.cpu, scalar.cpu, grant);
 				const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-				require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
+				require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
 					&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc() && native.cpu.lastPc == scalar.cpu.lastPc,
 					"paired comparison/JMP preserves register state and the complete admitted charge");
 			}
@@ -451,7 +451,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 						machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + entered * INSTRUCTION_BYTES);
 					test::runCpuParity(native.cpu, scalar.cpu, 64);
 					const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-					require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()), "independent entries preserve the full machine state");
+					require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "independent entries preserve the full machine state");
 				}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				require(page.nativeBlocks->entries[entered] && page.nativeBlocks->entries[0],
@@ -473,7 +473,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 #endif
 			test::runCpuParity(native.cpu, scalar.cpu, 1024);
 			const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-			require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()), "the rewritten paired jump executes exactly the new target");
+			require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "the rewritten paired jump executes exactly the new target");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 			test::waitForFixtureWorkerRequests(native.cpu);
@@ -507,7 +507,7 @@ void pairedJumpLinksAcrossPages() {
 #endif
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-		for (int reg = 0; reg < 5; ++reg) machine->cpu.activeThread()->frameAtDepth(0)->registers[reg] = valueNumber(reg == 1 ? 1 : 0);
+		for (int reg = 0; reg < 5; ++reg) machine->cpu.activeThread()->frameAtDepth(0)->registers.set(reg, valueInteger(reg == 1 ? 1 : 0));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
@@ -547,7 +547,7 @@ void pairedJumpLinksAcrossPages() {
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()), "a paired cross-page jump sees the rewritten target");
+	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "a paired cross-page jump sees the rewritten target");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	test::waitForFixtureWorkerRequests(native.cpu);
@@ -576,11 +576,11 @@ void pairedJumpFaultsOnlyOnTheNextGrant() {
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(start, image.text.data(), image.text.size());
-		auto* r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
-		r[0] = valueNumber(1); r[1] = valueNumber(1); r[2] = valueNumber(0); r[3] = valueNumber(0);
+		auto& r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
+		r.set(0, valueInteger(1)); r.set(1, valueInteger(1)); r.set(2, valueInteger(0)); r.set(3, valueInteger(0));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
 		machine->cpu.runUntilDepth(0, 1024);
-		r[0] = valueNumber(0); machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+		r.set(0, valueInteger(0)); machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
 		require(machine->cpu.runUntilDepth(0, 4) == RunResult::Yielded && machine->cpu.readFramePc(0) == end
 			&& machine->cpu.readCurrentInstructionPc() == start + INSTRUCTION_BYTES && machine->cpu.activeThread()->frameDepth == 1,
 			"a paired JMP completes without speculatively fetching its unmapped target beyond the grant");
@@ -619,7 +619,7 @@ void skipFetchBoundaries() {
 		for (auto* machine : {&native, &scalar}) {
 			machine->memory.writeBytes(pc, code.data(), word * INSTRUCTION_BYTES);
 			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-			frame.registers[0] = frame.registers[1] = valueNumber(0);
+			frame.registers.set(0, valueInteger(0)); frame.registers.set(1, valueInteger(0));
 			for (u32 visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8u; ++visit) {
 				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
 				require(machine->cpu.runUntilDepth(0, 1) == RunResult::Yielded && frame.pc == nextPc
@@ -634,7 +634,7 @@ void skipFetchBoundaries() {
 			"a boundary comparison enters generated machine code rather than remaining a cold scalar opcode");
 #endif
 		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frameAtDepth(0)->registers[1] = valueNumber(1);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueInteger(1));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
 			require(machine->cpu.runUntilDepth(0, 1) == RunResult::Yielded && machine->cpu.readEpcWord() == nextPc
 				&& machine->memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED

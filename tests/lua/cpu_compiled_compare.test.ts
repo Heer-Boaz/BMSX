@@ -4,7 +4,8 @@ import { runCpuParity } from '../helpers/cpu_execution';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Blua32ExecutionImage } from '../../machine/ts/machine/cpu/execution_image';
-import { createBuiltinFunction, StringValue, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueBuiltinFunction, valueClosure, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable, valueThread, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -31,10 +32,12 @@ function comparisonImage(op: OpCode, expected: boolean, left = 0, right = 1, con
 
 function values(cpu: CPU): Value[] {
 	const closure = cpu.rootThread.frameAtDepth(0).closure;
-	return [null, false, true, 0, -0, 1, -1, 0.25, NaN, Infinity, -Infinity,
-		...['', 'a', 'a\0b', '\ue000', '\u{10000}', 'é'].map(text => StringValue.fromId(cpu.stringPool.intern(text))),
-		cpu.createTable(0, 0), cpu.createTable(0, 0), closure, cpu.rootThread, cpu.createThread(closure),
-		createBuiltinFunction(BuiltinFunctionId.Type), createBuiltinFunction(BuiltinFunctionId.Next)];
+	return [valueNil(), valueBool(false), valueBool(true), valueInteger(0), valueFloat(-0), valueInteger(1), valueInteger(-1),
+		valueInteger(16777217), valueFloat(16777216), valueFloat(1), valueFloat(0.25), valueFloatBits(0xffc01234), valueFloat(Infinity), valueFloat(-Infinity),
+		...['', 'a', 'a\0b', '\ue000', '\u{10000}', 'é'].map(text => valueString(cpu.stringPool.intern(text))),
+		valueTable(cpu.gc.reference(cpu.createTable())), valueTable(cpu.gc.reference(cpu.createTable())), valueClosure(cpu.gc.reference(closure)),
+		valueThread(cpu.gc.reference(cpu.rootThread)), valueThread(cpu.gc.reference(cpu.createThread(closure))),
+		valueBuiltinFunction(BuiltinFunctionId.Type), valueBuiltinFunction(BuiltinFunctionId.Next)];
 }
 
 for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const expected of [false, true]) {
@@ -65,13 +68,13 @@ for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const expected of [fals
 }
 
 test('comparison RK constants agree after each admitted segment, including short grants', () => {
-	const constants = [null, false, true, -0, NaN, Infinity, 0.25, '', 'a\0b', '\ue000', '\u{10000}'];
+	const constants = [null, false, true, ...[-0, NaN, Infinity, 0.25].map(numberConstantFromHost), '', 'a\0b', '\ue000', '\u{10000}'];
 	for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const selectors of [[-1, 1], [0, -2], [-10, -11]]) {
 		const image = comparisonImage(op, true, selectors[0], selectors[1], constants);
 		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 		const entry = image.image.functions[0].codeAddress;
 		runCpuParity(machines[0].cpu, machines[1].cpu, 800);
-		for (let grant = 1; grant <= 31; ++grant) for (const value of [null, false, NaN, -0, 0.25, Infinity]) {
+		for (let grant = 1; grant <= 31; ++grant) for (const value of [valueNil(), valueBool(false), valueFloatBits(0xffc01234), valueFloat(-0), valueFloat(0.25), valueFloat(Infinity)]) {
 			for (const { cpu } of machines) {
 				const current = cpu.rootThread.frameAtDepth(0); current.registers.set(0, value); current.registers.set(1, value);
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
@@ -91,7 +94,7 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 	writeInstruction(text, 4, OpCode.KTRUE, 1, 0, 0);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const source = { text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 4 }] };
-	const images = linkRawTestBlua32Pair({ ...source, constants: [0] }, { ...source, constants: ['same-slot'] });
+	const images = linkRawTestBlua32Pair({ ...source, constants: [integerConstant(0)] }, { ...source, constants: ['same-slot'] });
 	const replacement = linkRawTestSystemBlua32({ ...source, constants: ['same-slot'] });
 	const machines = [createTestBlua32PairCpu(images, CpuExecutionBackend.JavaScript),
 		createTestBlua32PairCpu(images, CpuExecutionBackend.Interpreter)];
@@ -101,11 +104,11 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 		for (const { cpu } of machines) {
 			cpu.writeFrameExecution(0, domain, domain === SYSTEM_EXECUTION_DOMAIN_ID
 				? images.systemSymbols.functionAddresses[0] : images.cartSymbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-			cpu.rootThread.frameAtDepth(0).registers.set(0, StringValue.fromId(cpu.stringPool.intern('same-slot')));
+			cpu.rootThread.frameAtDepth(0).registers.set(0, valueString(cpu.stringPool.intern('same-slot')));
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 1024);
 		const frame = machines[0].cpu.rootThread.frameAtDepth(0);
-		assert.equal(frame.registers.get(1), domain === 0,
+		assert.equal(frame.registers.get(1), valueBool(domain === 0),
 			'the same physical RAM instruction and RK index consume the activation-owned Number or String pool');
 		assert.equal(frame.pc, DYNAMIC_RAM_BASE);
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
@@ -121,10 +124,10 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 	for (const { cpu, memory } of machines) {
 		memory.installSystemRom(replacement.romBytes);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, replacement.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-		cpu.rootThread.frameAtDepth(0).registers.set(0, StringValue.fromId(cpu.stringPool.intern('same-slot')));
+		cpu.rootThread.frameAtDepth(0).registers.set(0, valueString(cpu.stringPool.intern('same-slot')));
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 4);
-	assert.equal(machines[0].cpu.rootThread.frameAtDepth(0).registers.get(1), false,
+	assert.equal(machines[0].cpu.rootThread.frameAtDepth(0).registers.get(1), valueBool(false),
 		'replacing ROM bytes does not mutate an activated Number constant pool');
 	assert.equal(systemPage.compiledBlocks!.entries[0], systemBlock);
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
@@ -138,7 +141,7 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 	runCpuParity(machines[0].cpu, machines[1].cpu, 1024);
 	const frame = machines[0].cpu.rootThread.frameAtDepth(0);
 	assert.notEqual(frame.executionImage, systemOwner);
-	assert.equal(frame.registers.get(1), true, 'the recompiled comparison consumes String K0 rather than the old numeric specialization');
+	assert.equal(frame.registers.get(1), valueBool(true), 'the recompiled comparison consumes String K0 rather than the old numeric specialization');
 	assert.ok(frame.decodedPage!.compiledBlocks!.entries[0]);
 	assert.equal(cartPage.compiledBlocks!.entries[0], cartBlock, 'the unrelated image retains its warmed RAM code');
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
@@ -151,11 +154,11 @@ test('EQ ignores unused Nil/boolean scalar payloads without rewriting either sou
 		cpu.runUntilDepth(0, 800);
 		for (const kind of [ValueTag.Nil, ValueTag.False, ValueTag.True]) {
 			const frame = cpu.rootThread.frameAtDepth(0);
-			frame.registers.setEncoded(0, kind, 1, null); frame.registers.setEncoded(1, kind, 2, null);
+			frame.registers.setEncoded(0, kind, 1); frame.registers.setEncoded(1, kind, 2);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.K0] + BASE_CYCLES[OpCode.EQ]);
 			assert.equal(frame.pc, image.image.functions[0].codeAddress + 4 * INSTRUCTION_BYTES);
-			assert.equal(frame.registers.getScalar(0), 1); assert.equal(frame.registers.getScalar(1), 2);
+			assert.equal(frame.registers.getPayload(0), 1); assert.equal(frame.registers.getPayload(1), 2);
 		}
 	}
 });
@@ -172,8 +175,8 @@ test('resolved comparison skips retire when their fetched WIDE width changes', (
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1); frame.registers.setNumber(2, 73);
-		frame.registers.setNumber(6, 1);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, 0); frame.registers.setInteger(1, 1); frame.registers.setInteger(2, 73);
+		frame.registers.setInteger(6, 1);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, 800);
 	}
@@ -185,11 +188,11 @@ test('resolved comparison skips retire when their fetched WIDE width changes', (
 		writeInstruction(replacement, 0, wide ? OpCode.WIDE : OpCode.K0, 0, 0, 0);
 		for (const { cpu, memory } of machines) {
 			memory.writeBytes(DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES, replacement);
-			const frame = cpu.rootThread.frameAtDepth(0); frame.top = 0; frame.registers.setNumber(2, 73);
+			const frame = cpu.rootThread.frameAtDepth(0); frame.top = 0; frame.registers.setInteger(2, 73);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.EQ]);
 			assert.equal(frame.pc, DYNAMIC_RAM_BASE + (wide ? 4 : 3) * INSTRUCTION_BYTES);
-			assert.equal(frame.registers.getNumber(2), 73); assert.equal(frame.top, 4);
+			assert.equal(frame.registers.getInteger(2), 73); assert.equal(frame.top, 4);
 		}
 		assert.equal(page.compiledBlocks!.entries[0], null, 'the resolved edge must not retain its old width');
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
@@ -214,7 +217,7 @@ test('a maximum-length compiled comparison retains both words of its skipped WID
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, 0); frame.registers.setInteger(1, 1);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 8192);
@@ -241,11 +244,11 @@ test('both resolved comparison paths stay in one region and return their full cy
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const registers = cpu.rootThread.frameAtDepth(0).registers;
-		for (let i = 0; i < 5; ++i) registers.setNumber(i, i === 1 ? 1 : 0);
+		for (let i = 0; i < 5; ++i) registers.setInteger(i, i === 1 ? 1 : 0);
 	}
 	for (const value of [0, 1]) {
 		for (const { cpu } of machines) {
-			cpu.rootThread.frameAtDepth(0).registers.setNumber(0, value);
+			cpu.rootThread.frameAtDepth(0).registers.setInteger(0, value);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 2048);
@@ -261,7 +264,7 @@ test('both resolved comparison paths stay in one region and return their full cy
 	assert.equal(skipped.linkedBlock, null);
 	for (const value of [0, 1]) for (let grant = 1; grant <= 32; ++grant) {
 		for (const { cpu } of machines) {
-			cpu.rootThread.frameAtDepth(0).registers.setNumber(0, value);
+			cpu.rootThread.frameAtDepth(0).registers.setInteger(0, value);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, grant);
@@ -271,7 +274,7 @@ test('both resolved comparison paths stay in one region and return their full cy
 	for (const [index, { cpu }] of machines.entries()) {
 		cpu.setInstructionObserver({ points: [new Set([DYNAMIC_RAM_BASE + INSTRUCTION_BYTES]), new Set(), new Set()],
 			observe: () => { ++observations[index]; } });
-		cpu.rootThread.frameAtDepth(0).registers.setNumber(0, 0);
+		cpu.rootThread.frameAtDepth(0).registers.setInteger(0, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	assert.equal(cache.entries[0], null, 'adding an observer retires the region that consumed the JMP');
@@ -296,7 +299,7 @@ for (const [currentWide, skippedWide] of [[false, false], [true, false], [false,
 		if (skippedWide) writeInstruction(code, word, OpCode.WIDE, 0, 0, 0);
 		for (const { cpu, memory } of machines) {
 			memory.writeBytes(pc, code);
-			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 0);
+			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, 0); frame.registers.setInteger(1, 0);
 			for (let visit = 0; visit < 10; ++visit) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 				assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
@@ -306,7 +309,7 @@ for (const [currentWide, skippedWide] of [[false, false], [true, false], [false,
 		const page = machines[0].cpu.rootThread.frameAtDepth(0).decodedPage!;
 		assert.ok(page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2], 'the boundary comparison really executed generated code');
 		for (const { cpu, memory } of machines) {
-			cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 1);
+			cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 			assert.equal(cpu.readEpcWord(), nextPc);
@@ -342,11 +345,11 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 			for (const { cpu, memory } of machines) {
 				memory.writeBytes(DYNAMIC_RAM_BASE, text);
 				const r = cpu.rootThread.frameAtDepth(0).registers;
-				for (let reg = 0; reg < 8; ++reg) r.setNumber(reg, reg === 1 ? 1 : reg === 2 ? 7 : 0);
+				for (let reg = 0; reg < 8; ++reg) r.setInteger(reg, reg === 1 ? 1 : reg === 2 ? 7 : 0);
 			}
 			for (const value of [6, 7, 8]) {
 				for (const { cpu } of machines) {
-					cpu.rootThread.frameAtDepth(0).registers.setNumber(0, value);
+					cpu.rootThread.frameAtDepth(0).registers.setInteger(0, value);
 					cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 				}
 				runCpuParity(machines[0].cpu, machines[1].cpu, 1024);
@@ -376,11 +379,11 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 					for (const { cpu } of machines) {
 						const r = cpu.rootThread.frameAtDepth(0).registers;
 						if (strings) {
-							r.setStringId(0, cpu.stringPool.intern(expected ? 'aaaaaa' : 'zzzzzz'));
-							r.setStringId(2, cpu.stringPool.intern(op === OpCode.EQ && expected ? 'aaaaaa' : 'mmmmmm'));
+							r.setString(0, cpu.stringPool.intern(expected ? 'aaaaaa' : 'zzzzzz'));
+							r.setString(2, cpu.stringPool.intern(op === OpCode.EQ && expected ? 'aaaaaa' : 'mmmmmm'));
 						} else {
-							r.setNumber(0, op === OpCode.EQ ? (expected ? 7 : 6) : (expected ? 6 : 8));
-							r.setNumber(2, 7);
+							r.setInteger(0, op === OpCode.EQ ? (expected ? 7 : 6) : (expected ? 6 : 8));
+							r.setInteger(2, 7);
 						}
 						cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0],
 							DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES);
@@ -395,10 +398,10 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 						'ordered string comparison charges all six codepoints before deciding whether JMP can start');
 				}
 			}
-			for (const { cpu } of machines) cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 7);
+			for (const { cpu } of machines) cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 7);
 			for (const value of [6, 7, 8]) for (let grant = 1; grant <= 16; ++grant) {
 				for (const { cpu } of machines) {
-					cpu.rootThread.frameAtDepth(0).registers.setNumber(0, value);
+					cpu.rootThread.frameAtDepth(0).registers.setInteger(0, value);
 					cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 				}
 				runCpuParity(machines[0].cpu, machines[1].cpu, grant);
@@ -442,7 +445,7 @@ test('a paired JMP chains to another physical page and unlinks when that target 
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		for (let reg = 0; reg < 5; ++reg) cpu.rootThread.frameAtDepth(0).registers.setNumber(reg, reg === 1 ? 1 : 0);
+		for (let reg = 0; reg < 5; ++reg) cpu.rootThread.frameAtDepth(0).registers.setInteger(reg, reg === 1 ? 1 : 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 2048);
@@ -475,12 +478,12 @@ test('a paired JMP defers the target fetch until positive budget remains', () =>
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(start, text);
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setNumber(0, 1); r.setNumber(1, 1); r.setNumber(2, 0); r.setNumber(3, 0);
+		r.setInteger(0, 1); r.setInteger(1, 1); r.setInteger(2, 0); r.setInteger(3, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 1024);
 	for (const { cpu } of machines) {
-		cpu.rootThread.frameAtDepth(0).registers.setNumber(0, 0); cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+		cpu.rootThread.frameAtDepth(0).registers.setInteger(0, 0); cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 	}
 	for (const { cpu } of machines) {
 		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.EQ]), RunResult.Yielded);
