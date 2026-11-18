@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -71,8 +72,8 @@ test('access-path misses wake only for their own kind, base and operand', () => 
 	const terms = createTerms();
 	const template = terms.root({ kind: 'global', symbolKey: 'template' });
 	const base = terms.root({ kind: 'global', symbolKey: 'base' });
-	const key = terms.root({ kind: 'literal', literal: { kind: 'number', value: 7 } });
-	const otherKey = terms.root({ kind: 'literal', literal: { kind: 'number', value: 8 } });
+	const key = terms.root({ kind: 'literal', literal: { kind: 'number', value: integerConstant(7) } });
+	const otherKey = terms.root({ kind: 'literal', literal: { kind: 'number', value: integerConstant(8) } });
 	const name = terms.nameId('member');
 	const create: ((base: TermID) => TermID)[] = [
 		base => terms.member(base, name),
@@ -107,7 +108,7 @@ test('access-path misses wake only for their own kind, base and operand', () => 
 test('existing interned access identities need no dependency on further paths', () => {
 	const terms = createTerms();
 	const base = terms.root({ kind: 'global', symbolKey: 'base' });
-	const key = terms.root({ kind: 'literal', literal: { kind: 'number', value: 7 } });
+	const key = terms.root({ kind: 'literal', literal: { kind: 'number', value: integerConstant(7) } });
 	const paths = [terms.member(base, terms.nameId('fixed')), terms.index(base, key),
 		terms.element(base), terms.call(base), terms.instance(base), terms.metatable(base)];
 	const queries = new SemanticQueryEvaluation(terms.dependencies);
@@ -115,15 +116,15 @@ test('existing interned access identities need no dependency on further paths', 
 	for (const path of paths) assert.equal(terms.retainedAccessWithBase(path, base), path);
 	queries.end(0);
 	terms.member(base, terms.nameId('new_field'));
-	terms.index(base, terms.root({ kind: 'literal', literal: { kind: 'number', value: 8 } }));
+	terms.index(base, terms.root({ kind: 'literal', literal: { kind: 'number', value: integerConstant(8) } }));
 	assert.equal(queries.isCurrent(0), true);
 });
 
 test('an indexed-path collection remains dependent on later indices but not other path kinds', () => {
 	const terms = createTerms();
 	const base = terms.root({ kind: 'global', symbolKey: 'base' });
-	const firstKey = terms.root({ kind: 'literal', literal: { kind: 'number', value: 7 } });
-	const secondKey = terms.root({ kind: 'literal', literal: { kind: 'number', value: 8 } });
+	const firstKey = terms.root({ kind: 'literal', literal: { kind: 'number', value: integerConstant(7) } });
+	const secondKey = terms.root({ kind: 'literal', literal: { kind: 'number', value: integerConstant(8) } });
 	const queries = new SemanticQueryEvaluation(terms.dependencies);
 	queries.begin(0);
 	assert.deepEqual(terms.indices(base), []);
@@ -148,7 +149,7 @@ test('unknown index keys follow element-path creation, not concrete indices', ()
 	queries.begin(0);
 	assert.equal(terms.retainedIndex(base, terms.unknown()), undefined);
 	queries.end(0);
-	terms.index(base, terms.root({ kind: 'literal', literal: { kind: 'number', value: 7 } }));
+	terms.index(base, terms.root({ kind: 'literal', literal: { kind: 'number', value: integerConstant(7) } }));
 	assert.equal(queries.isCurrent(0), true);
 	const element = terms.index(base, terms.unknown());
 	assert.equal(queries.isCurrent(0), false);

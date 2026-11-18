@@ -1,9 +1,8 @@
+import { ValueTag, asClosure, asTable, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
 	BLUA32_FUNCTION_MAX_STACK_OFFSET,
@@ -143,31 +142,31 @@ function inspectInstalledKernel(cpu: CPU, image: Blua32ImageLayout, closure: Clo
 for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware kernels have coarse, allocation-free datapaths (O${optLevel})`, t => {
 	const { cpu, images } = createCartlibProgramHarness(fixture, { optLevel, modules: WORLD_CPU_MODULES });
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-	const exports = probe.getStringKey(cpu.stringPool.find('kernels')!) as Table;
+	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+	const exports = asTable(probe.getStringKey(cpu.stringPool.find('kernels')!), cpu.gc);
 	const kernels: ReturnType<typeof inspectInstalledKernel>[] = [];
 	for (const name of ['resolve','write_origin2','write_origin3','write_local2','write_local3','evaluate2','evaluate3','visual']) {
-		const closure = exports.getStringKey(cpu.stringPool.find(name)!) as Closure;
+		const closure = asClosure(exports.getStringKey(cpu.stringPool.find(name)!), cpu.gc);
 		const inspected = inspectInstalledKernel(cpu, images.cartImage, closure, name);
 		assert.equal(inspected.methodLookups, 0, `${name}: coefficient work uses direct fields, not method dispatch`);
 		assert.ok(inspected.calls.length <= (name.startsWith('evaluate') ? 0 : 1), `${name}: only one coarse invalidate/evaluate/resolve boundary`);
 		kernels.push(inspected);
 	}
-	const compile = probe.getStringKey(cpu.stringPool.find('compile')!) as Closure;
+	const compile = asClosure(probe.getStringKey(cpu.stringPool.find('compile')!), cpu.gc);
 	const compileBefore = cpu.collectTrackedHeapBytes();
 	cpu.beginCompletionCall(compile);
 	assert.equal(cpu.runUntilDepth(0, 100_000_000), RunResult.Halted);
 	const compileCycles = 100_000_000 - cpu.instructionBudgetRemaining;
 	const compileAllocatedBytes = cpu.luaHeap.usedBytes() - compileBefore;
 	const compileRetainedBytes = cpu.collectTrackedHeapBytes() - compileBefore;
-	const entries = probe.getStringKey(cpu.stringPool.find('entries')!) as Table;
+	const entries = asTable(probe.getStringKey(cpu.stringPool.find('entries')!), cpu.gc);
 	const groups = [];
 	for (let index = 1; index <= 4; index += 1) {
-		const entry = entries.getInteger(index) as Table;
-		const program = entry.getStringKey(cpu.stringPool.find('program')!) as Table;
-		const tracks = program.getStringKey(cpu.stringPool.find('tracks')!) as Table;
-		const runners = tracks.getStringKey(cpu.stringPool.find('spatial_runners')!) as Table;
-		const closure = runners.getInteger(1) as Closure;
+		const entry = asTable(entries.getInteger(index), cpu.gc);
+		const program = asTable(entry.getStringKey(cpu.stringPool.find('program')!), cpu.gc);
+		const tracks = asTable(program.getStringKey(cpu.stringPool.find('tracks')!), cpu.gc);
+		const runners = asTable(tracks.getStringKey(cpu.stringPool.find('spatial_runners')!), cpu.gc);
+		const closure = asClosure(runners.getInteger(1), cpu.gc);
 		assert.ok(!images.cartImage.functions.some(fn => fn.address === closure.functionAddress), 'inspect actual RAM firmware output, not an AOT stand-in');
 		const group = inspectInstalledKernel(cpu, images.cartImage, closure, `spatial-group-${index}`);
 		assert.equal(group.calls.length, 1, 'one publication per group, independent of two/six/twelve coefficient width');
@@ -176,7 +175,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 		kernels.push(group);
 		for (const [owner, callback] of [[`values-${index}`, tracks.getStringKey(cpu.stringPool.find('play_value_runner')!)],
 			['timeline.evaluate_play', program.getStringKey(cpu.stringPool.find('evaluate_play')!)]] as const) {
-			const inspected = inspectInstalledKernel(cpu, images.cartImage, callback as Closure, owner);
+			const inspected = inspectInstalledKernel(cpu, images.cartImage, asClosure(callback, cpu.gc), owner);
 			assert.equal(inspected.calls.length, 1, `${owner}: one group/values boundary, not one call per coefficient`);
 			assert.equal(inspected.methodLookups, 0);
 			// The production evaluation factory shares one shape-specialized
@@ -186,14 +185,21 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 	}
 	const sites = new Map(kernels.flatMap(kernel => kernel.calls.map(call => [call.pc, { ...call, owner: kernel.owner }] as const)));
 	const readSites = new Map(kernels.flatMap(kernel => kernel.reads.map(read => [read.pc, { ...read, owner: kernel.owner }] as const)));
-	const coefficientOwners = probe.getStringKey(cpu.stringPool.find('coefficient_owners')!) as Table;
+	const coefficientOwners = asTable(probe.getStringKey(cpu.stringPool.find('coefficient_owners')!), cpu.gc);
 	const actualOwners = new Set(Array.from({ length: 5 }, (_, index) => coefficientOwners.getInteger(index + 1)));
 	const coefficients = ['xx','xy','xz','yx','yy','yz','zx','zy','zz','ox','oy','oz'];
 	const coefficientFields = new Set(['','w','attachment_','presentation_','_local_'].flatMap(prefix => coefficients.map(field => prefix + field)));
 	const directReads = new Map<string, number>();
 	const observed = new Map<string, Map<number, number>>();
-	cpu.setInstructionObserver({ points: [new Set(), new Set([...sites.keys(), ...readSites.keys()]), new Set()], observe(domain, pc, registers) {
-		assert.equal(domain, 0);
+	// ROM kernels bind the cartridge bus. Generated RAM kernels inherit the
+	// firmware compiler's bus; register observations belong to that domain.
+	const points = [new Set<number>(), new Set<number>(), new Set<number>()] as const;
+	for (const kernel of kernels) {
+		const domainPoints = points[kernel.closure.executionDomainId + 1];
+		for (const { pc } of kernel.calls) domainPoints.add(pc);
+		for (const { pc } of kernel.reads) domainPoints.add(pc);
+	}
+	cpu.setInstructionObserver({ points, observe(_domain, pc, registers) {
 		const read = readSites.get(pc);
 		if (read !== undefined) {
 			const frame = cpu.activeThread.frameAtDepth(cpu.activeThread.frameDepth - 1);
@@ -211,40 +217,40 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 			}
 			if (coefficientFields.has(field as string)) {
 				assert.equal(registers.getTag(read.tableSlot), ValueTag.Table);
-				assert.ok(actualOwners.has(registers.getTable(read.tableSlot)), `${read.owner}: coefficient ${field} must be on the actual component/node, not a nested view`);
+				assert.ok(actualOwners.has(registers.get(read.tableSlot)), `${read.owner}: coefficient ${field} must be on the actual component/node, not a nested view`);
 				directReads.set(read.owner, (directReads.get(read.owner) || 0) + 1);
 			}
 			return;
 		}
 		const site = sites.get(pc)!;
 		assert.equal(registers.getTag(site.calleeSlot), ValueTag.Closure);
-		const callee = registers.getClosure(site.calleeSlot).functionAddress;
+		const callee = registers.getClosure(site.calleeSlot, cpu.gc).functionAddress;
 		let callees = observed.get(site.owner);
 		if (callees === undefined) { callees = new Map(); observed.set(site.owner, callees); }
 		callees.set(callee, (callees.get(callee) || 0) + 1);
 	} });
 	try {
-		for (const name of ['run2','run3','visual','tick']) runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find(name)!) as Closure, [8]);
-		for (let index = 1; index <= 4; index += 1) runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find('sample')!) as Closure, [8, index]);
+		for (const name of ['run2','run3','visual','tick']) runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find(name)!), cpu.gc), [valueInteger(8)]);
+		for (let index = 1; index <= 4; index += 1) runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('sample')!), cpu.gc), [valueInteger(8), valueInteger(index)]);
 	} finally { cpu.setInstructionObserver(null); }
 	for (const owner of ['evaluate2','evaluate3','visual','spatial-group-1']) assert.ok(directReads.get(owner)! > 0, `${owner}: exercise real flat coefficient reads`);
 	for (let index = 1; index <= 4; index += 1) {
-		const entry = entries.getInteger(index) as Table;
-		const writer = (entry.getStringKey(cpu.stringPool.find('channel_writers')!) as Table).getInteger(1) as Closure;
+		const entry = asTable(entries.getInteger(index), cpu.gc);
+		const writer = asClosure(asTable(entry.getStringKey(cpu.stringPool.find('channel_writers')!), cpu.gc).getInteger(1), cpu.gc);
 		const calls = observed.get(`spatial-group-${index}`)!;
 		assert.equal(calls.size, 1);
 		assert.ok(calls.has(writer.functionAddress), 'the sole group call must be its admitted substantive writer');
 	}
 	const measurements = [];
 	for (const name of ['run2','run3','visual','tick']) {
-		const profile = profileWarmGuestKernel(cpu, probe.getStringKey(cpu.stringPool.find(name)!) as Closure, 256);
+		const profile = profileWarmGuestKernel(cpu, asClosure(probe.getStringKey(cpu.stringPool.find(name)!), cpu.gc), 256);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);
 		assert.equal(profile.retainedAfter, profile.retainedBefore);
 		measurements.push({ owner: name, ...profile });
 	}
-	runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find('check')!) as Closure, []);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+	runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('check')!), cpu.gc), []);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	const addressOwners = new Map(kernels.map(kernel => [kernel.closure.functionAddress, kernel.owner]));
 	const callOwners = [...observed].map(([owner, targets]) => ({ owner, targets: [...targets].map(([address, calls]) => {
 		const index = images.cartImage.functions.findIndex(fn => fn.address === address);

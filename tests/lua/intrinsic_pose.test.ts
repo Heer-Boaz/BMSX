@@ -1,7 +1,6 @@
+import { asClosure, asTable, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
@@ -121,7 +120,7 @@ local assert<const> = function(value) assertion_index=assertion_index+1; if not 
 ` + behavior.source + '\nreturn first_failure',
 			{ optLevel, modules: WORLD_CPU_MODULES });
 		assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu),[0],behavior.name);
+		assert.deepEqual(materializeCpuCompletionValues(cpu),[0].map(valueInteger),behavior.name);
 	});
 }
 
@@ -147,8 +146,8 @@ probe={run=function(count)
 end}
 `, { optLevel: 3, modules: WORLD_CPU_MODULES });
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-	const measured = profileWarmGuestKernel(cpu, probe.getStringKey(cpu.stringPool.find('run')!) as Closure, 256);
+	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+	const measured = profileWarmGuestKernel(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('run')!), cpu.gc), 256);
 	assert.equal(measured.reservations, 0); assert.equal(measured.reservedBytes, 0);
 	assert.equal(measured.retainedAfter, measured.retainedBefore);
 	t.diagnostic(JSON.stringify(measured));

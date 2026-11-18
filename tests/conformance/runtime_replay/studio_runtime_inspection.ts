@@ -1,3 +1,4 @@
+import { valueInteger, valueBool, numberToHost } from '../../../machine/ts/machine/cpu/value';
 import { RUNTIME_INSPECTION_CALLBACKS_SOURCE, RUNTIME_INSPECTION_CART_SOURCE } from '../../helpers/runtime_inspection_fixture';
 import { RUNTIME_INSPECTION_TREES_SOURCE } from '../../helpers/runtime_inspection_bt_fixture';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
@@ -44,21 +45,21 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		'inspection: recursive hover does not execute guest code or write source');
 	harness.toggleLuaBreakpoint(callbacks.resource.path, recursiveStop);
 	await press('F5');
-	await until(() => tasks.ready && ide.debugger.source.stop !== undefined && ide.editor.isActive && guest.global('inspection_init_count') === 0,
+	await until(() => tasks.ready && ide.debugger.source.stop !== undefined && ide.editor.isActive && guest.global('inspection_init_count') === valueInteger(0),
 		'inspection: initialized libraries before the first registration');
 	await testEmptyDefinitionCatalog(test);
 	await openRuntimeTreePicker(test, 0);
 	await press('Escape');
 	harness.toggleLuaBreakpoint(model.resource.path, beforeRegistration);
 	await press('F5');
-	await until(() => tasks.ready && ide.debugger.source.stop !== undefined && ide.editor.isActive && guest.global('inspection_init_count') === 1,
+	await until(() => tasks.ready && ide.debugger.source.stop !== undefined && ide.editor.isActive && guest.global('inspection_init_count') === valueInteger(1),
 		'inspection: actual registrations before creating instances');
 	await testActorlessDefinitionCatalog(test);
 	await openRuntimeTreePicker(test, 0);
 	await press('Escape');
 	harness.toggleLuaBreakpoint(model.resource.path, beforeInstances);
 	await press('F5');
-	await until(() => guest.global('inspection_fsm_ready') === true, 'inspection: effect and FSM instances are attached');
+	await until(() => guest.global('inspection_fsm_ready') === valueBool(true), 'inspection: effect and FSM instances are attached');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 
@@ -72,7 +73,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		const tooltip = harness.getHover(row, column)!;
 		check(harness.getHover(row, column) === tooltip, 'inspection: repeated stationary hover retains its projection');
 		check(model.version === version && cycles() === position && runtime.machine.cpu.luaHeap.usedBytes() === heap
-			&& guest.global('inspection_callback_count') === 0, 'inspection: read does not mutate source, heap, clock or execute callbacks');
+			&& guest.global('inspection_callback_count') === valueInteger(0), 'inspection: read does not mutate source, heap, clock or execute callbacks');
 	};
 	inspect('inspection_effect.definition.period_ms');
 	inspect('inspection_effect.cooldown_until_ms');
@@ -100,7 +101,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	harness.toggleLuaBreakpoint(btLibrary.source_path, btRebindStop);
 	const media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Run: Hot Resume');
-	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive && guest.global('inspection_init_count') === 2, 'inspection: unchanged init stops inside first component rebind');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive && guest.global('inspection_init_count') === valueInteger(2), 'inspection: unchanged init stops inside first component rebind');
 	check(!initialInspector.visible, 'inspection: execution ends the previous instance inspection');
 	check(ide.sources.currentBlua32Media === media, 'inspection: no-change init is not a new source installation');
 	check(harness.getActiveCodeContext()!.model.resource.path === library.source_path
@@ -179,7 +180,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	check(test.ide.editor.actionPrompt.visible, 'inspection: invalid source uses ordinary compilation gate');
 	await press('Enter');
 	await until(() => tasks.ready, 'inspection: compile rejection completes');
-	check(cycles() === beforeFailure && guest.global('inspection_init_count') === 2 && ide.sources.currentBlua32Media === media,
+	check(cycles() === beforeFailure && guest.global('inspection_init_count') === valueInteger(2) && ide.sources.currentBlua32Media === media,
 		'inspection: failed compilation leaves the installed definition untouched');
 	model.undo();
 	inspect('inspection_effect.definition.period_ms');
@@ -190,7 +191,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await runPaletteCommand('Run: Hot Resume');
 	check(test.ide.editor.actionPrompt.visible, 'inspection: changed definition uses Save/Hot Resume');
 	await press('Enter');
-	await until(() => tasks.ready && guest.global('inspection_init_count') === 3 && !runtime.completionCallPending(),
+	await until(() => tasks.ready && guest.global('inspection_init_count') === valueInteger(3) && !runtime.completionCallPending(),
 		'inspection: changed source installs and rebinds both instances');
 	check(ide.sources.currentBlua32Media !== media, 'inspection: source installation replaces the debug image');
 	await press('ControlRight', 'ShiftRight');
@@ -211,7 +212,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await until(() => history.latestCycles > history.earliestCycles + runtime.timing.cpuHz * 2 && tasks.ready, 'inspection: continuous history contains multiple checkpoints');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
-	const latestTick = guest.global('inspection_tick') as number;
+	const latestTick = numberToHost(guest.global('inspection_tick'));
 	inspect('inspection_tick');
 	const rewindInspector = await openRuntimeEffectInspector(test, 'second', 48);
 	const retainedEffect = rewindInspector.model.rows[0].element;
@@ -220,11 +221,11 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	check(rewindInspector.visible && rewindInspector.model.rows[0].element === retainedEffect,
 		'inspection: history refreshes the retained instance document');
 	check(sourcePane(test).code.hoverTooltip === null, 'inspection: restore ends the old hover lifetime');
-	const restoredTick = guest.global('inspection_tick') as number;
+	const restoredTick = numberToHost(guest.global('inspection_tick'));
 	check(restoredTick < latestTick, 'inspection: rewind selected an older heap');
 	inspect('inspection_tick');
 	inspect('inspection_effect.definition.period_ms');
-	check(guest.global('inspection_callback_count') === 0, 'inspection: readback never invoked a callback');
+	check(guest.global('inspection_callback_count') === valueInteger(0), 'inspection: readback never invoked a callback');
 	await openRuntimeEffectInspector(test, 'first', 48);
 	await openRuntimeEffectPicker(test);
 	rewind.seekTo(history.latestCycles); await settle();
@@ -272,7 +273,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		test.movePointer(codePositionBounds(test, row, column));
 		await until(() => sourcePane(test).code.hoverTooltip !== null && sourcePane(test).code.hoverTooltip.bubbleBounds !== null, 'inspection: physical Alt-hover paints the current runtime value');
 	}
-	check(cycles() === position && model.version === version && guest.global('inspection_callback_count') === 0,
+	check(cycles() === position && model.version === version && guest.global('inspection_callback_count') === valueInteger(0),
 		'inspection: theme and pointer do not mutate guest or source');
 	console.info('STUDIO: actual ActionEffect/FSM/BT instances, retained definitions and blackboards, rebind/binding stops, imported callbacks, no-change init, source divergence, compile failure and rewind inspection PASS');
 	return { hostFrames: test.observations.hostFrames, initCount: 3, restoredTick, latestTick,

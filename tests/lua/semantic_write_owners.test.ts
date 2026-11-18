@@ -1,3 +1,5 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -26,14 +28,14 @@ test('each write belongs to its executing function, not the captured declaration
 	for (const [index, value] of [11, 22].entries()) {
 		assert.deepEqual(summaries.list()[index].aliases, [{
 			target,
-			source: summaries.terms.compileSource(literalValueSource({ kind: 'number', value })),
+			source: summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(value) })),
 			relation: 'value',
 		}]);
 	}
 	const demand = new SemanticDemandIndex([file], summaries);
 	assert.deepEqual(demand.aliases.filter(alias => alias.target === target), [{
 		target,
-		source: summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 0 })),
+		source: summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(0) })),
 		relation: 'value',
 	}]);
 });
@@ -94,7 +96,7 @@ test('member replacement summaries contain their own values rather than a module
 	for (const [index, value] of [11, 22].entries()) {
 		const summary = summaries.list()[index];
 		assert.equal(summary.writes.length, 1);
-		assert.equal(summary.writes[0].value, summaries.terms.compileSource(literalValueSource({ kind: 'number', value })));
+		assert.equal(summary.writes[0].value, summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(value) })));
 	}
 });
 
@@ -113,9 +115,9 @@ test('nested writes do not acquire the outer function that declared their destin
 	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const target = summaries.terms.compileSource(declarationValueSource(selected.id));
 	assert.deepEqual(summaries.list()[0].aliases.filter(alias => alias.target === target).map(alias => alias.source),
-		[summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 11 }))]);
+		[summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(11) }))]);
 	assert.deepEqual(summaries.list()[1].aliases.filter(alias => alias.target === target).map(alias => alias.source),
-		[summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 0 }))]);
+		[summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(0) }))]);
 });
 
 test('a module write stays a module effect even when a function first named the member', () => {
@@ -136,9 +138,9 @@ test('a module write stays a module effect even when a function first named the 
 	assert.deepEqual(demand.aliases.filter(alias => alias.target === bodyTarget), [],
 		'the body definition does not own the later module write');
 	assert.deepEqual(demand.aliases.filter(alias => alias.target === moduleTarget).map(alias => alias.source),
-		[summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 22 }))]);
+		[summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(22) }))]);
 	assert.deepEqual(summaries.list()[0].aliases.filter(alias => alias.target === bodyTarget).map(alias => alias.source),
-		[summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 11 }))]);
+		[summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(11) }))]);
 });
 
 test('the public resolver sees a module replacement after a function introduced the field', () => {
@@ -171,18 +173,18 @@ test('instantiation publishes only the selected function writes, with compiled B
 	const query = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('literal setters contain no calls'));
 	const selected = file.decls.find(entry => entry.name === 'selected')!;
 	const target = summaries.terms.compileSource(declarationValueSource(selected.id));
-	assert.equal(query.values.target(query.values.first(target)), summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 0 })));
+	assert.equal(query.values.target(query.values.first(target)), summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(0) })));
 	assert.equal(query.values.next(query.values.first(target)), 0);
 	query.instantiate(file.callValues[0], summaries.list()[0].id, 0, 0, [], undefined);
 	const left = query.values.next(query.values.first(target));
-	assert.equal(query.values.target(left), summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 11 })));
+	assert.equal(query.values.target(left), summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(11) })));
 	assert.equal(query.values.next(left), 0, 'the other body must not have published its value');
 	query.instantiate(file.callValues[1], summaries.list()[1].id, 0, 0, [], undefined);
 	const right = query.values.next(left);
-	assert.equal(query.values.target(right), summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 22 })));
+	assert.equal(query.values.target(right), summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(22) })));
 	assert.equal(query.values.next(right), 0);
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, file.file), [], {
 		entrySource: source, programDomain: 'system', optLevel: 0,
 	});
-	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [11, 22]);
+	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [valueInteger(11), valueInteger(22)]);
 });

@@ -1,4 +1,4 @@
-import type { Value } from '../../../machine/ts/machine/cpu/value';
+import { type Value, valueBool, valueNil } from '../../../machine/ts/machine/cpu/value';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { typeSourceText } from './studio_scene_authoring';
@@ -51,12 +51,12 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 	};
 	await reload();
 	const rebuiltRoom = guest.readStringMember(castle(), 'room');
-	check(rebuiltRoom !== originalRoom && guest.readStringMember(originalRoom, 'world') === null
-		&& guest.readStringMember(guest.readStringMember(originalRoom, 'scene'), 'closed') === true,
+	check(rebuiltRoom !== originalRoom && guest.readStringMember(originalRoom, 'world') === valueNil()
+		&& guest.readStringMember(guest.readStringMember(originalRoom, 'scene'), 'closed') === valueBool(true),
 		'room recreation tears down the outgoing scene');
 	check(guest.readStringMember(castle(), 'level') === originalLevel && guest.readStringMember(member('rock_002_01'), 'x') === originalRockX,
 		'explicit reload reuses the loaded level and its unchanged YAML placement');
-	check(member('enemy_002_01') !== enemy && guest.readStringMember(enemy, 'world') === null,
+	check(member('enemy_002_01') !== enemy && guest.readStringMember(enemy, 'world') === valueNil(),
 		'transient enemies are recreated, not carried over');
 	check(guest.readStringMember(castle(), 'session') === session && guest.readStringMember(castle(), 'player') === player
 		&& guest.readStringMember(player, 'status') === status && guest.readStringMember(status, 'health') === health
@@ -64,7 +64,7 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 		'reload retains the actual session, health and player pose');
 	check(guest.readStringMember(player, 'room') === rebuiltRoom, 'travelling player binds to the reconstructed room');
 	await reload();
-	check(guest.readStringMember(rebuiltRoom, 'world') === null, 'a second UI reload also releases its previous room');
+	check(guest.readStringMember(rebuiltRoom, 'world') === valueNil(), 'a second UI reload also releases its previous room');
 	await test.capture?.('reloaded-room');
 	await test.runMenuCommand('pause');
 	check(lab.interaction.running && !test.execution.userPaused, 'Run Resume resumes the live Actor Lab preview');

@@ -1,3 +1,4 @@
+import { valueNil, valueBool, valueInteger, numberToHost } from '../../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import { openScene, editPosition, editOption, focusOption } from './studio_scene_authoring';
 import { selectMember } from './studio_scene_source';
@@ -11,9 +12,9 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	const { guest, runtime, press, until, runMenuCommand } = test;
 	const registered = (id: string) => {
 		const registry = guest.global(buildModuleExportSlotName('cartlib/registry', []));
-		if (registry === null) return null; // The BIOS is still booting the cart.
+		if (registry === valueNil()) return null; // The BIOS is still booting the cart.
 		const entries = guest.readStringMember(registry, '_entries_by_id');
-		return entries === null ? null : guest.readStringMember(entries, id);
+		return entries === valueNil() ? null : guest.readStringMember(entries, id);
 	};
 	const roomMember = (key: string) => {
 		const room = guest.readStringMember(registered('c'), 'room');
@@ -22,7 +23,7 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	};
 	const world = () => guest.global(buildModuleExportSlotName('cartlib/world/world', []));
 	const space = () => guest.formatValue(guest.readStringMember(world(), 'active_space_id'));
-	const playing = () => space() === 'main' && guest.readStringMember(world(), 'gameplay_clock_running') === true;
+	const playing = () => space() === 'main' && guest.readStringMember(world(), 'gameplay_clock_running') === valueBool(true);
 	// Gameplay samples at the cart cadence, unlike the IDE's host-frame input.
 	// Hold a press through the requested transition; release across a complete
 	// guest update before pressing the same key again.
@@ -33,7 +34,7 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 		const releaseEnd = test.cycles() + runtime.timing.cpuHz * runtime.timing.frameDurationMs * 2 / 1000;
 		await until(() => test.cycles() >= releaseEnd, `${key}: release reaches the cart`);
 	};
-	await until(() => registered('d') !== null && !runtime.completionCallPending(), 'boot the actual Pietious intro');
+	await until(() => registered('d') !== valueNil() && !runtime.completionCallPending(), 'boot the actual Pietious intro');
 	const originalLogo = registered('intro.logo');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
@@ -66,35 +67,35 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	await press('ControlLeft', 'KeyS');
 	await until(() => !effects.workingCopy.dirty, 'save the original effect visibility');
 	await editPosition(test, await openScene(test, 'inventory', 12), 3, 0, 136);
-	check(guest.readStringMember(originalLogo, 'x') === 40, 'saving placement leaves the outgoing world untouched');
+	check(guest.readStringMember(originalLogo, 'x') === valueInteger(40), 'saving placement leaves the outgoing world untouched');
 	await test.capture?.('inventory-editor');
 	await runMenuCommand('reboot');
 	await until(() => test.tasks.ready && test.harness.isCartActive()
-		&& registered('d') !== null && registered('intro.logo') !== originalLogo
+		&& registered('d') !== valueNil() && registered('intro.logo') !== originalLogo
 		&& !runtime.completionCallPending(), 'saved scenes boot a new Pietious world');
-	check(guest.readStringMember(registered('intro.logo'), 'x') === 48, 'intro uses the edited logo anchor');
+	check(guest.readStringMember(registered('intro.logo'), 'x') === valueInteger(48), 'intro uses the edited logo anchor');
 	const backgroundColor = guest.readStringMember(registered('intro.background'), 'color');
 	check(backgroundColor === 0xff305070, `scene construction uses the edited background color: actual=${backgroundColor}`);
-	check(guest.readStringMember(guest.readStringMember(registered('pietolon'), 'status'), 'spawn_x') === 168, 'respawn anchor comes from the player scene');
-	check(guest.readStringMember(registered('effects.victory_caption'), 'x') === 16,
+	check(guest.readStringMember(guest.readStringMember(registered('pietolon'), 'status'), 'spawn_x') === valueInteger(168), 'respawn anchor comes from the player scene');
+	check(guest.readStringMember(registered('effects.victory_caption'), 'x') === valueInteger(16),
 		'the director retains the edited victory caption placement');
 	check(guest.formatValue(guest.readStringMember(registered('effects.victory_caption'), 'text')) === 'Scene victory!',
 		'caption construction uses the edited string expression');
 	const logo = guest.readStringMember(registered('intro.logo'), 'sprite_component');
-	check(guest.readStringMember(logo, 'region_width') === 160, 'nested region option reaches the actual sprite component');
-	await until(() => guest.readStringMember(logo, 'visible') === true
-		&& (guest.readStringMember(logo, 'region_height') as number) >= 24, 'the edited logo reveals normally');
+	check(guest.readStringMember(logo, 'region_width') === valueInteger(160), 'nested region option reaches the actual sprite component');
+	await until(() => guest.readStringMember(logo, 'visible') === valueBool(true)
+		&& numberToHost(guest.readStringMember(logo, 'region_height')) >= 24, 'the edited logo reveals normally');
 	await test.capture?.('intro');
 	await act('AltRight', () => space() === 'narrative', 'normal confirm enters the story');
 	await act('AltRight', () => space() === 'title', 'normal confirm and the audio fade reach the title');
 	await act('AltRight', playing, 'the title starts actual gameplay');
-	check(guest.readStringMember(registered('pietolon'), 'x') === 168, 'in-game restart retains the authored starting point');
+	check(guest.readStringMember(registered('pietolon'), 'x') === valueInteger(168), 'in-game restart retains the authored starting point');
 	test.setKey('ArrowRight', true);
-	await until(() => guest.readStringMember(registered('c'), 'current_room_number') === 2,
+	await until(() => guest.readStringMember(registered('c'), 'current_room_number') === valueInteger(2),
 		'walk from the initial room into the YAML-authored room');
 	test.setKey('ArrowRight', false);
-	await until(() => playing() && roomMember('rock_002_01') !== null, 'room admission publishes its placed actors');
-	check(guest.readStringMember(roomMember('rock_002_01'), 'x') === 104, 'room admission keeps the canonical YAML rock placement');
+	await until(() => playing() && roomMember('rock_002_01') !== valueNil(), 'room admission publishes its placed actors');
+	check(guest.readStringMember(roomMember('rock_002_01'), 'x') === valueInteger(104), 'room admission keeps the canonical YAML rock placement');
 	// State admission precedes draw submission. Advance one complete two-VBlank
 	// update/render pair and its scanout before capturing the game view.
 	for (let frame = 0; frame < 4; frame += 1) await test.frame();
@@ -102,14 +103,14 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	await testPietiousRoomReload(test, () => registered('c'), roomMember);
 	await act('ShiftLeft', () => space() === 'item', 'ordinary inventory input opens the composed screen');
 	const halo = registered('inventory.halo');
-	check(guest.readStringMember(halo, 'x') === 136 && guest.readStringMember(halo, 'visible') === true,
+	check(guest.readStringMember(halo, 'x') === valueInteger(136) && guest.readStringMember(halo, 'visible') === valueBool(true),
 		'inventory entry preserves the independently authored halo placement');
 	for (let frame = 0; frame < 4; frame += 1) await test.frame();
 	await test.capture?.('inventory');
-	await act('Enter', () => playing() && guest.readStringMember(registered('c'), 'current_room_number') === 1,
+	await act('Enter', () => playing() && guest.readStringMember(registered('c'), 'current_room_number') === valueInteger(1),
 		'Enter activates the real halo and returns to the first room');
-	check(guest.readStringMember(registered('pietolon'), 'x') === 168, 'halo returns to the authored player anchor');
-	check(roomMember('rock_002_01') === null, 'room departure disposes the outgoing scene actor');
+	check(guest.readStringMember(registered('pietolon'), 'x') === valueInteger(168), 'halo returns to the authored player anchor');
+	check(roomMember('rock_002_01') === valueNil(), 'room departure disposes the outgoing scene actor');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	const reopened = await openScene(test, 'intro', 2);

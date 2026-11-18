@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { Table, TableLookupStatus, TABLE_STORE_REQUIRES_GROWTH } from '../../machine/ts/machine/cpu/table';
+import { TABLE_STORE_REQUIRES_GROWTH, TableLookupStatus } from '../../machine/ts/machine/cpu/table';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';

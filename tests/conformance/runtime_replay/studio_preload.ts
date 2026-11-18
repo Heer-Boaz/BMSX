@@ -1,4 +1,4 @@
-import type { Table } from '../../../machine/ts/machine/cpu/table';
+import { asTable, valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import { traceSinkFieldName } from '../../../toolchain/ts/lua/compiler/trace_statement';
 import { PRELOAD_TRACE_CHANNELS } from '../../helpers/preload_source_fixture';
@@ -17,13 +17,13 @@ export async function runStudioPreload(test: StudioFixture) {
 	const recorded = (expectedType: string) => {
 		const current = moduleValue('observation');
 		const actor = guest.readStringMember(moduleValue('game'), 'actor');
-		const bindings = guest.readStringMember(current, 'completed_bindings') as Table;
+		const bindings = asTable(guest.readStringMember(current, 'completed_bindings'), guest.cpu.gc);
 		const program = bindings.get(actor);
-		const programs = guest.readStringMember(current, 'programs') as Table;
+		const programs = asTable(guest.readStringMember(current, 'programs'), guest.cpu.gc);
 		const capture = programs.get(program);
 		const nodes = guest.readStringMember(capture, 'nodes');
-		const types = guest.readStringMember(nodes, 'type') as Table;
-		check(guest.readStringMember(capture, 'node_count') === 2 && guest.formatValue(types.getInteger(1)) === expectedType,
+		const types = asTable(guest.readStringMember(nodes, 'type'), guest.cpu.gc);
+		check(guest.readStringMember(capture, 'node_count') === valueInteger(2) && guest.formatValue(types.getInteger(1)) === expectedType,
 			`preload: actual completed compilation retains ${expectedType}, including erased single-child structure`);
 		return program;
 	};
@@ -34,7 +34,7 @@ export async function runStudioPreload(test: StudioFixture) {
 		check(!image.layout.constants.includes(traceSinkFieldName('fixture.tick')),
 			'preload: unrelated tick statement remains erased');
 	};
-	check(registrations() === 1, 'preload: first registration occurred before entry');
+	check(registrations() === valueInteger(1), 'preload: first registration occurred before entry');
 	let previousProgram = recorded('sequence'); configuration();
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT preload.tree');
@@ -44,7 +44,7 @@ export async function runStudioPreload(test: StudioFixture) {
 	await press('Enter'); await press('Escape');
 
 	await runPaletteCommand('Run: Hot Resume');
-	await until(() => tasks.ready && registrations() === 2 && !runtime.completionCallPending(), 'preload: no-change init recompiles the BT');
+	await until(() => tasks.ready && registrations() === valueInteger(2) && !runtime.completionCallPending(), 'preload: no-change init recompiles the BT');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
 	check(moduleValue('observation') === observation && guest.readStringMember(moduleValue('game'), 'actor') === actor,
 		'preload: init retains observation and actor identities');
@@ -58,14 +58,14 @@ export async function runStudioPreload(test: StudioFixture) {
 	const beforeFailure = ide.sources.currentBlua32Media, failurePosition = cycles();
 	await runPaletteCommand('Run: Hot Resume'); await press('Enter');
 	await until(() => tasks.ready, 'preload: invalid source is rejected by the normal compiler');
-	check(ide.sources.currentBlua32Media === beforeFailure && cycles() === failurePosition && registrations() === 2
+	check(ide.sources.currentBlua32Media === beforeFailure && cycles() === failurePosition && registrations() === valueInteger(2)
 		&& moduleValue('observation') === observation, 'preload: failed compilation neither installs settings nor resets observation');
 	recorded('sequence');
 	model.undo();
 	await runPaletteCommand('Run: Hot Resume');
 	check(test.ide.editor.actionPrompt.visible, 'preload: changed source goes through Save/Hot Resume');
 	await press('Enter');
-	await until(() => tasks.ready && registrations() === 3 && !runtime.completionCallPending(), 'preload: changed module installed and rebound');
+	await until(() => tasks.ready && registrations() === valueInteger(3) && !runtime.completionCallPending(), 'preload: changed module installed and rebound');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
 	configuration(); program = recorded('selector');
 	check(getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied', 'preload: changed authored source matches the live installation');
@@ -80,7 +80,7 @@ export async function runStudioPreload(test: StudioFixture) {
 	await press('Enter');
 	await until(() => tasks.ready && cycles() > runtime.timing.cpuHz * 13, 'preload: reboot completes');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
-	check(registrations() === 1 && moduleValue('observation') !== observation, 'preload: cold startup creates a new recorder before registration');
+	check(registrations() === valueInteger(1) && moduleValue('observation') !== observation, 'preload: cold startup creates a new recorder before registration');
 	configuration(); recorded('sequence');
 	check(getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied', 'preload: source Undo matches the rebooted installation');
 	await runMenuCommand('pause');

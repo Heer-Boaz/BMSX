@@ -1,10 +1,8 @@
+import { valueNil, asTable, asClosure, asStringId } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import type { StringValue } from '../../machine/ts/machine/cpu/value';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
@@ -162,11 +160,11 @@ for (const optLevel of [0, 3] as const) {
 			const { cpu } = createCartlibProgramHarness(setup + fixture, { optLevel, modules });
 			assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
 			const [failure] = materializeCpuCompletionValues(cpu);
-			assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
+			assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 			if (optLevel === 3) {
-				const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
+				const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 				for (const lane of name === 'plain' ? ['run', 'affine'] : ['run']) {
-					const kernel = probe.getStringKey(cpu.stringPool.find(lane)!) as Closure;
+					const kernel = asClosure(probe.getStringKey(cpu.stringPool.find(lane)!), cpu.gc);
 					const profile = profileWarmGuestKernel(cpu, kernel, 256);
 					assert.equal(profile.reservations, 0);
 					assert.equal(profile.reservedBytes, 0);

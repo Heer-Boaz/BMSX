@@ -1,3 +1,4 @@
+import { asClosure } from '../../machine/ts/machine/cpu/value';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -5,7 +6,6 @@ import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import { api } from '../../ide/runtime/overlay_api';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
@@ -54,7 +54,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', withSource = f
 	const history = new RuntimeGteHistory(runtime, sources, 2), input = new GteDebuggerInput(history);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	const issue = () => {
-		cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.find('issue')!) as Closure, []);
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), cpu.gc), []);
 		assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	};
 	input.update(); input.select(input.selected.sequence);

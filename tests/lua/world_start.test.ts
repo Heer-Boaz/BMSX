@@ -1,8 +1,7 @@
+import { asClosure, asTable, valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import { IO_SYS_FRAME_MS_Q16 } from '../../machine/ts/spec/bmsx/io';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
@@ -58,7 +57,7 @@ assert(activated == 3 and delivered == 3, 'repeated start duplicated component a
 return true
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true],
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)],
 			'construction must not activate or schedule objects before the complete initial World is addressable and bound');
 	});
 
@@ -237,8 +236,8 @@ end
 `, { optLevel, modules });
 		cpu.memory.writeIoU32(IO_SYS_FRAME_MS_Q16, 20 * 0x10000);
 		assert.equal(cpu.runUntilDepth(0, 25_000_000), RunResult.Halted);
-		const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-		const repeat = probe.getStringKey(cpu.stringPool.find('repeat_start')!) as Closure;
+		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+		const repeat = asClosure(probe.getStringKey(cpu.stringPool.find('repeat_start')!), cpu.gc);
 		runCompletionClosure(cpu, repeat, []);
 		const before = cpu.captureRuntimeState().nextObjectHashId;
 		const bytes = cpu.luaHeap.usedBytes();

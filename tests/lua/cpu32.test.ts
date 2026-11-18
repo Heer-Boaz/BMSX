@@ -1,3 +1,4 @@
+import { OPCODE_NAMES } from '../../toolchain/ts/lua/opcode_metadata';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { execFileSync } from 'node:child_process';
@@ -47,7 +48,7 @@ test(`${backend}: real scalar CPU opcodes transport Integer/Float words through 
 			regs.set(0,a); regs.set(1,b); regs.setInteger(2,917);
 			assert.equal(cpu.runUntilDepth(0,1000),RunResult.Halted);
 			const result: v.Value[]=[]; cpu.readCompletionValues(result);
-			assert.deepEqual(result,[expected],`${OpCode[op]} ${v.valueTag(a)}:${v.valuePayload(a)} ${v.valueTag(b)}:${v.valuePayload(b)}`);
+			assert.deepEqual(result,[expected],`${OPCODE_NAMES[op]} ${v.valueTag(a)}:${v.valuePayload(a)} ${v.valueTag(b)}:${v.valuePayload(b)}`);
 		}
 		if(backend===CpuExecutionBackend.JavaScript) assert.ok(owner.compiledCodeLookup?.find(closure.codeAddress,0), 'numeric cases must exercise installed generated regions');
 	}

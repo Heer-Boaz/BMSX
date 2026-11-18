@@ -1,8 +1,9 @@
+import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { afterTest } from '../helpers/test_cleanup';
-import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_SYSTEM_CONTEXT_ID, createTestRuntime, createTestRuntimeSourceState, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/event_history';
@@ -30,7 +31,6 @@ import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { eventClipboardText } from '../../ide/workbench/contrib/events/presentation';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 import { InputChannel } from '../../hosts/common/input/channel';
@@ -39,7 +39,7 @@ import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/
 import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/action_prompt_view';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { HostAudioOutput } from '../../hosts/common/audio_output';
-import { HostExecutionControl } from '../../hosts/common/execution_control';
+import { HostExecutionControl, HostPauseReason } from '../../hosts/common/execution_control';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { HostRewind } from '../../hosts/common/rewind';
 import { createRuntimeDebuggerState } from '../../ide/runtime/debugger_state';
@@ -57,7 +57,6 @@ import type { HotResumeAdmissionResult, HotResumeOperation, HotResumeResult } fr
 import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library';
 import { ImagePreviewCache } from '../../ide/workbench/ui/image_preview';
 import { ImagePreviewOverlay } from '../../ide/workbench/ui/image_preview_overlay';
-import { createTestRuntimeSourceState, createTestSystemImageRuntimeSourceState, createTestRuntime } from '../helpers/runtime_sources';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -76,7 +75,6 @@ import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { insertValue, selectAll, setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
-import { HostPauseReason } from '../../hosts/common/execution_control';
 import { ConversationObserverInput } from '../../ide/workbench/contrib/conversations/editor_input';
 import { ObservedConversation } from '../../ide/workbench/services/assistant/observed_conversation';
 import { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
@@ -141,9 +139,9 @@ function eventFixture(t: TestContext) {
 	const observed = eventHistoryRuntime(eventImages), f = fixture(t, undefined, observed);
 	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
 	assert.equal(observed.cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	const emitFunction = observed.cpu.getGlobalByKey(observed.cpu.stringPool.find('emit_for_viewer')!) as Closure;
+	const emitFunction = asClosure(observed.cpu.getGlobalByKey(observed.cpu.stringPool.find('emit_for_viewer')!), observed.cpu.gc);
 	const emit = (count: number) => {
-		observed.cpu.beginCompletionCall(emitFunction, [count]);
+		observed.cpu.beginCompletionCall(emitFunction, [valueInteger(count)]);
 		assert.equal(observed.cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	};
 	emit(4);

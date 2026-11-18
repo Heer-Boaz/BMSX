@@ -1,3 +1,4 @@
+import { ValueTag, valueBuiltinFunction, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -5,11 +6,6 @@ import assert from 'node:assert/strict';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import {
-	createBuiltinFunction,
-	ValueTag,
-	valueString,
-} from '../../machine/ts/machine/cpu/value';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import {
 	createTestSystemCpu,
@@ -33,26 +29,28 @@ function createCpuWithProgram(source: string): CPU {
 
 function collectHeapDeltaAfterRun(source: string): { before: number; after: number } {
 	const cpu = createCpuWithProgram(source);
-	const before = cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	return { before, after: cpu.collectTrackedHeapBytes() };
+	const after = cpu.collectTrackedHeapBytes();
+	cpu.setGlobalByKey(cpu.stringPool.find('saved')!, valueNil());
+	return { before: cpu.collectTrackedHeapBytes(), after };
 }
 
 test('tracked heap bytes include rooted tables', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
 	const key = cpu.stringPool.intern('state');
+	cpu.setGlobalByKey(key, valueNil());
 
 	const before = cpu.collectTrackedHeapBytes();
 
 	const table = cpu.createTable(2, 2);
-	table.set(1, 11);
-	table.set(valueString(cpu.stringPool.intern('hp')), 7);
-	cpu.setGlobalByKey(key, ValueTag.Table, NaN, table);
+	table.setInteger(1, valueInteger(11));
+	table.setStringKey(key, valueInteger(7));
+	cpu.setGlobalByKey(key, valueTable(cpu.gc.reference(table)));
 
 	const afterTable = cpu.collectTrackedHeapBytes();
 	assert.ok(afterTable > before, `expected table bytes to increase heap usage (${afterTable} <= ${before})`);
 
-	cpu.setGlobalByKey(key, ValueTag.Nil, NaN, null);
+	cpu.setGlobalByKey(key, valueNil());
 
 	const afterCleanup = cpu.collectTrackedHeapBytes();
 	assert.ok(afterCleanup < afterTable, `expected cleanup to drop rooted heap usage (${afterCleanup} >= ${afterTable})`);
@@ -61,16 +59,16 @@ test('tracked heap bytes include rooted tables', () => {
 
 test('builtin primitives are static VM slots outside Lua heap accounting', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-	const next = createBuiltinFunction(BuiltinFunctionId.Next);
+	const next = valueBuiltinFunction(BuiltinFunctionId.Next);
 	const before = cpu.collectTrackedHeapBytes();
 
-	assert.equal(createBuiltinFunction(BuiltinFunctionId.Next), next);
+	assert.equal(valueBuiltinFunction(BuiltinFunctionId.Next), next);
 	assert.equal(cpu.collectTrackedHeapBytes(), before);
 });
 
 test('builtin primitive save-state uses VM id instead of stable global path', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-	cpu.setGlobalByKey(cpu.stringPool.intern('foo'), ValueTag.BuiltinFunction, BuiltinFunctionId.Next, null);
+	cpu.setGlobalByKey(cpu.stringPool.intern('foo'), valueBuiltinFunction(BuiltinFunctionId.Next));
 
 	const state = cpu.captureRuntimeState();
 	const snapshot = state.snapshot;
@@ -83,7 +81,7 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	restoredCpu.restoreRuntimeState(state);
 	assert.equal(
 		restoredCpu.getGlobalByKey(restoredCpu.stringPool.intern('foo')),
-		createBuiltinFunction(BuiltinFunctionId.Next),
+		valueBuiltinFunction(BuiltinFunctionId.Next),
 	);
 });
 
@@ -110,7 +108,7 @@ test('runtime string materialization tracks RAM even when the same text exists i
 	// an untracked literal.
 	const runtimeString = cpu.stringPool.intern('rom literal');
 	assert.equal(runtimeString, literal);
-	cpu.setGlobalByKey(cpu.stringPool.intern('held', false), ValueTag.String, runtimeString, null);
+	cpu.setGlobalByKey(cpu.stringPool.intern('held', false), valueString(runtimeString));
 
 	assert.ok(cpu.collectTrackedHeapBytes() > before);
 });
@@ -122,11 +120,12 @@ test('unreachable runtime strings are reclaimed by the heap collector', () => {
 
 	// No VM value owns this text. Collection must free the intern entry as
 	// well as its RAM debit; stale text must not accumulate in save states.
-	cpu.stringPool.intern('transient garbage string');
+	const reclaimed = cpu.stringPool.intern('transient garbage string');
 
 	assert.equal(cpu.collectTrackedHeapBytes(), before);
 	assert.equal(cpu.stringPool.find('transient garbage string'), undefined);
-	assert.deepEqual(cpu.stringPool.captureState(), strings);
+	assert.deepEqual(cpu.stringPool.captureState().entries, strings.entries);
+	assert.equal(cpu.stringPool.intern('new runtime string'), reclaimed);
 });
 
 test('non-capturing const functions materialize as static proto references', () => {
@@ -167,7 +166,7 @@ test('non-const function materialization allocates a runtime closure', () => {
 		'local f = function()',
 		'	return 7',
 		'end',
-		'return f',
+		'saved = f',
 	].join('\n'));
 
 	assert.ok(heap.after > heap.before);
@@ -179,7 +178,7 @@ test('captured closures allocate tracked closure and upvalue state', () => {
 		'local f = function()',
 		'	return x',
 		'end',
-		'return f',
+		'saved = f',
 	].join('\n'));
 
 	assert.ok(heap.after > heap.before);

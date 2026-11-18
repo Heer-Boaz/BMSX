@@ -1,8 +1,9 @@
+import { valueInteger, asTable, asClosure } from '../../machine/ts/machine/cpu/value';
+import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test_harness';
 
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
@@ -22,34 +23,18 @@ return first_failed_assertion`;
 	const { cpu, images } = createCartlibProgramHarness(source, { optLevel, modules: WORLD_CPU_MODULES });
 	const initialHeap = cpu.luaHeap.usedBytes();
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [0], 'all guest spatial contract assertions must pass');
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)], 'all guest spatial contract assertions must pass');
 	const allocated = cpu.luaHeap.usedBytes() - initialHeap;
 	const retained = cpu.collectTrackedHeapBytes() - initialHeap;
 	return { cpu, codeBytes: images.cartImage.textBytes.byteLength, allocated, retained };
 }
 
 function measureWarmKernel(cpu: CPU, run: Closure, iterations: number) {
-	runCompletionClosure(cpu, run, [64]);
-	const heap = cpu.luaHeap;
-	const before = cpu.collectTrackedHeapBytes();
-	const reserve = heap.reserve;
-	let reservations = 0;
-	let reservedBytes = 0;
-	heap.reserve = function (bytes, tag0, scalar0, reference0, tag1, scalar1, reference1, tag2, scalar2, reference2) {
-		reserve.call(heap, bytes, tag0, scalar0, reference0, tag1, scalar1, reference1, tag2, scalar2, reference2);
-		reservations += 1;
-		reservedBytes += bytes;
-	};
-	let cycles: number;
-	try {
-		cycles = runCompletionClosure(cpu, run, [iterations]);
-	} finally {
-		heap.reserve = reserve;
-	}
-	assert.equal(reservations, 0, 'successful reservations expose transient allocation even if collection hides it');
-	assert.equal(reservedBytes, 0);
-	assert.equal(heap.usedBytes(), before);
-	return { iterations, cycles, reservations, reservedBytes };
+	const profile = profileWarmGuestKernel(cpu, run, iterations, 50_000_000);
+	assert.equal(profile.reservations, 0, 'successful reservations expose transient allocation even if collection hides it');
+	assert.equal(profile.reservedBytes, 0);
+	assert.equal(profile.retainedAfter, profile.retainedBefore);
+	return profile;
 }
 
 const fixture = `
@@ -573,11 +558,11 @@ probe = {
 	end,
 }
 `, 3);
-	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-	const run = probe.getStringKey(cpu.stringPool.find('run')!) as Closure;
+	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+	const run = asClosure(probe.getStringKey(cpu.stringPool.find('run')!), cpu.gc);
 	const measured = measureWarmKernel(cpu, run, 2048);
-	runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find('check')!) as Closure, []);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [0]);
+	runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('check')!), cpu.gc), []);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 	t.diagnostic(JSON.stringify({ ...measured, codeBytes, allocated, retained }));
 });
 
@@ -602,16 +587,16 @@ probe = {
 	end,
 }
 `, 3);
-	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-	const read = probe.getStringKey(cpu.stringPool.find('read')!) as Closure;
-	const shallow = probe.getStringKey(cpu.stringPool.find('shallow')!) as Table;
-	const deep = probe.getStringKey(cpu.stringPool.find('deep')!) as Table;
-	runCompletionClosure(cpu, read, [shallow, 32]);
-	runCompletionClosure(cpu, read, [deep, 32]);
-	const shallowCycles = runCompletionClosure(cpu, read, [shallow, 2048]);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [2 * 2048]);
-	const deepCycles = runCompletionClosure(cpu, read, [deep, 2048]);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [129 * 2048]);
+	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+	const read = asClosure(probe.getStringKey(cpu.stringPool.find('read')!), cpu.gc);
+	const shallow = probe.getStringKey(cpu.stringPool.find('shallow')!);
+	const deep = probe.getStringKey(cpu.stringPool.find('deep')!);
+	runCompletionClosure(cpu, read, [shallow, valueInteger(32)]);
+	runCompletionClosure(cpu, read, [deep, valueInteger(32)]);
+	const shallowCycles = runCompletionClosure(cpu, read, [shallow, valueInteger(2048)]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [2 * 2048].map(valueInteger));
+	const deepCycles = runCompletionClosure(cpu, read, [deep, valueInteger(2048)]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [129 * 2048].map(valueInteger));
 	assert.equal(deepCycles, shallowCycles, 'a clean read must not traverse its ancestors');
 	t.diagnostic(JSON.stringify({ iterations: 2048, shallowCycles, deepCycles }));
 });
@@ -664,12 +649,12 @@ probe = {
 	end,
 }
 `, 3);
-	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
+	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 	for (const lane of ['root', 'basis'] as const) {
-		const run = probe.getStringKey(cpu.stringPool.find(`run_${lane}`)!) as Closure;
+		const run = asClosure(probe.getStringKey(cpu.stringPool.find(`run_${lane}`)!), cpu.gc);
 		const measured = measureWarmKernel(cpu, run, 2048);
-		runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find(`check_${lane}`)!) as Closure, []);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [0]);
+		runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find(`check_${lane}`)!), cpu.gc), []);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 		t.diagnostic(JSON.stringify({ lane, ...measured, codeBytes, allocated, retained }));
 	}
 });

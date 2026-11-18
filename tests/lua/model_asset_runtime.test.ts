@@ -1,9 +1,9 @@
+import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
+import { asClosure, asTable, valueBool, valueFloat, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -92,7 +92,8 @@ for (const optLevel of [0, 3] as const) test(`model geometry binds ROM streams o
 	const modules = [
 		{ path: 'bootstrap', source: "require('base')\ntable = require('table')\nstring = require('string/base')" },
 		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
-		...['base', 'table', 'string/base', 'string/utf8', 'string/float/decode'].map(path => ({
+		...BASE_FIRMWARE_MODULES,
+		...['table', 'string/base', 'string/utf8', 'string/float/decode'].map(path => ({
 			path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 		})),
 		...['cartlib/memory', 'cartlib/bin', 'cartlib/rom_dir', 'cartlib/gx/model_asset'].map(path => ({
@@ -113,26 +114,28 @@ for (const optLevel of [0, 3] as const) test(`model geometry binds ROM streams o
 	const { cpu, memory } = createTestBlua32PairCpu({ systemRomBytes, cartRomBytes: initial.bytes });
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')) as Table;
-	const read = probe.getStringKey(cpu.stringPool.find('read')) as Closure;
+	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')), cpu.gc);
+	const read = asClosure(probe.getStringKey(cpu.stringPool.find('read')), cpu.gc);
 	const observe = () => {
 		runCompletionClosure(cpu, read, []);
 		return materializeCpuCompletionValues(cpu);
 	};
 	const expected = (same: boolean, address: number, x: number) => [
-		same, true, address, 3, 4, 0, 2, 2, 3, 9, 3, 5121, 0, x, -2.5, 3.75, 9,
-		2, 1, 0x1234, 0xabcd, 0xffff, 0x12345678, 0x80000001, 0xffffffff,
-		0, 0, 0, 0xffffffff, 5123, 5125, true, true, 60, 8, 28, 12, 12, 16,
+		valueBool(same), valueBool(true), ...[address, 3, 4, 0, 2, 2, 3, 9, 3, 5121, 0].map(valueInteger),
+		...[x, -2.5, 3.75, 9].map(valueFloat),
+		...[2, 1, 0x1234, 0xabcd, 0xffff, 0x12345678, 0x80000001, 0xffffffff,
+			0, 0, 0, 0xffffffff, 5123, 5125].map(valueInteger),
+		valueBool(true), valueBool(true), ...[60, 8, 28, 12, 12, 16].map(valueInteger),
 	];
 	assert.deepEqual(observe(), expected(false, initial.address, 1.25));
 	assert.deepEqual(observe(), expected(true, initial.address, 1.25));
-	const steady = probe.getStringKey(cpu.stringPool.find('steady')) as Closure;
+	const steady = asClosure(probe.getStringKey(cpu.stringPool.find('steady')), cpu.gc);
 	const profile = profileWarmGuestKernel(cpu, steady, 512);
 	assert.equal(profile.reservations, 0, 'warm resource resolution and typed reads allocate no guest heap');
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [512 * 10.25]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueFloat(512 * 10.25)]);
 	const replacement = modelCartridge(6.5, 0x800);
 	memory.cartridgeController.installRom(0, replacement.bytes);
-	runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find('reload')) as Closure, []);
+	runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('reload')), cpu.gc), []);
 	assert.deepEqual(observe(), expected(false, replacement.address, 6.5));
 	assert.deepEqual(observe(), expected(true, replacement.address, 6.5));
 });

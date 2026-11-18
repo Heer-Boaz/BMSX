@@ -1,3 +1,4 @@
+import { valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OffscreenExecution } from '../../ide/workbench/services/execution/offscreen_execution';
@@ -46,9 +47,9 @@ ready = true
 while true do halt_until_irq end`, optLevel);
 		t.after(() => target.dispose());
 		const cpu = target.runtime.machine.cpu, ready = cpu.stringPool.intern('ready'), interrupted = cpu.stringPool.intern('interrupted');
-		await target.runUntil(() => cpu.getGlobalByKey(ready) === true);
+		await target.runUntil(() => cpu.getGlobalByKey(ready) === valueBool(true));
 		cpu.requestNonMaskableInterrupt();
-		await target.runUntil(() => cpu.getGlobalByKey(interrupted) === true);
-		assert.equal(cpu.getGlobalByKey(interrupted), true);
+		await target.runUntil(() => cpu.getGlobalByKey(interrupted) === valueBool(true));
+		assert.equal(cpu.getGlobalByKey(interrupted), valueBool(true));
 	});
 }

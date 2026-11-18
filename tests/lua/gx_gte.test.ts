@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
@@ -150,7 +151,7 @@ function installGtePlusBurstProgram(
 	const image = linkRawTestSystemBlua32({
 		text: code,
 		functions: [{ firstWord: 0, wordCount: instructionCount, maxStack: words.length + 1 }],
-		constants: [IO_GX_GTE_PLUS_BASE, ...words],
+		constants: [IO_GX_GTE_PLUS_BASE, ...words].map(integerConstant),
 		functionIds: ['gte_plus_burst'],
 	});
 	cpu.memory.installSystemRom(image.romBytes);
@@ -334,7 +335,7 @@ test('GX-GTE observation preserves guest CPU state, heap and cycles and exposes 
 	writeInstruction(code, 4, OpCode.RET, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text: code,
 		functions: [{ firstWord: 0, wordCount: 5, maxStack: 2 }],
-		constants: [IO_GX_GTE_COMMAND, GTE_SF | GX_GTE_FN_RTPS], functionIds: ['observed_gte_store'] });
+		constants: [IO_GX_GTE_COMMAND, GTE_SF | GX_GTE_FN_RTPS].map(integerConstant), functionIds: ['observed_gte_store'] });
 	const baseline = createGte(), observed = createGte();
 	for (const { cpu, gte } of [baseline, observed]) {
 		cpu.memory.installSystemRom(image.romBytes);
@@ -676,7 +677,7 @@ test('GX-GTE+ observation preserves real CPU interlock/retry cycles, heap and co
 	writeInstruction(code, 4, OpCode.RET, 0, 0, 0);
 	const commandAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE;
 	const image = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 5, maxStack: 2 }],
-		constants: [commandAddress, 1], functionIds: ['observed_plus_interlock'] });
+		constants: [commandAddress, 1].map(integerConstant), functionIds: ['observed_plus_interlock'] });
 	const baseline = createGte(), observed = createGte();
 	for (const { cpu } of [baseline, observed]) { cpu.memory.installSystemRom(image.romBytes); cpu.reset(); }
 	const firstIssue = 2 * BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.STORE_MEM_D];
@@ -1546,7 +1547,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   writeInstruction(text, 4, OpCode.K1, 3, 0, 0);
   writeInstruction(text, 5, OpCode.LOAD_MEM, 4, 2, MemoryAccessKind.Word);
   writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
-  const image = linkRawTestSystemBlua32({text, constants: [IO_GX_GTE_COMMAND,GX_GTE_FN_RTPT,IO_GX_GTE_DATA0], functions:[{firstWord:0,wordCount:7,maxStack:5}]});
+  const image = linkRawTestSystemBlua32({text, constants: [IO_GX_GTE_COMMAND,GX_GTE_FN_RTPT,IO_GX_GTE_DATA0].map(integerConstant), functions:[{firstWord:0,wordCount:7,maxStack:5}]});
   const { cpu } = createTestSystemCpu(image, backend);
   const scheduler = new DeviceScheduler(cpu);
   const gte = new GxGte(cpu.memory,cpu,scheduler);

@@ -1,3 +1,4 @@
+import { asClosure } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -8,7 +9,6 @@ import {
 	type RuntimeDebuggerCompletionResult,
 } from '../../ide/runtime/debugger_plans';
 import { compileCoroutineTest } from '../helpers/coroutine';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -167,7 +167,7 @@ function completionFixture() {
 	});
 	const { cpu } = createTestSystemCpu(image);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
+	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
 	return { cpu, closure };
 }
 
@@ -249,7 +249,7 @@ halt_until_irq`, 0));
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const thread = cpu.activeThread, depth = cpu.getFrameDepth();
-	cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('probe')) as Closure);
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));
 	const plans = new RuntimeDebuggerPlanManager();
 	const events: RuntimeDebuggerCompletionResult[] = [];
 	plans.pushCompletionBatch(thread, depth, [SYSTEM_EXECUTION_DOMAIN_ID], result => events.push(result));

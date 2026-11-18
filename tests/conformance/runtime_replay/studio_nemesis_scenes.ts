@@ -1,6 +1,6 @@
+import { valueInteger, valueNil, asTable, numberToHost } from '../../../machine/ts/machine/cpu/value';
 import { openScene, editPosition } from './studio_scene_authoring';
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
-import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 import { nemesisTitle, reachNemesisTitle } from './studio_nemesis_navigation';
@@ -19,7 +19,7 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	await reachNemesisTitle(test);
 	const oldTitle = nemesisTitle(test);
 	const originalSelector = member('selector');
-	check(guest.readStringMember(originalSelector, 'x') === 80, 'unmodified selector starts at its authored position');
+	check(guest.readStringMember(originalSelector, 'x') === valueInteger(80), 'unmodified selector starts at its authored position');
 	await test.capture?.('title-before');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
@@ -36,7 +36,7 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	check(menu.view.details.properties[0].descriptor.value === 88, 'ordinary Redo restores the edit');
 	await press('ControlLeft', 'KeyS');
 	await until(() => !menu.workingCopy.dirty, 'save title through the product workspace API');
-	check(guest.readStringMember(originalSelector, 'x') === 80,
+	check(guest.readStringMember(originalSelector, 'x') === valueInteger(80),
 		'source editing and saving do not secretly patch a live object');
 	await test.capture?.('title-editor');
 	const hangar = await openScene(test, 'hangar');
@@ -58,44 +58,44 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	// Stage actors are authored by the YAML map, not scene-library registrations.
 	await test.capture?.('gameplay-editor');
 	await runMenuCommand('reboot');
-	await until(() => tasks.ready && harness.isCartActive() && world() !== null
-		&& (guest.readStringMember(world(), '_objects') as Table).length() >= 4
+	await until(() => tasks.ready && harness.isCartActive() && world() !== valueNil()
+		&& asTable(guest.readStringMember(world(), '_objects'), guest.cpu.gc).length() >= 4
 		&& !runtime.completionCallPending(), 'Reboot installs the saved scene sources and publishes the root composition');
 	check(nemesisTitle(test) !== oldTitle, 'cold reboot created a fresh controller');
 	const intro = guest.readStringMember(registered('nemesis_s.intro'), 'presentation');
-	check(guest.readStringMember(guest.readStringMember(guest.readStringMember(intro, 'members'), 'logo'), 'x') === 44,
+	check(guest.readStringMember(guest.readStringMember(guest.readStringMember(intro, 'members'), 'logo'), 'x') === valueInteger(44),
 		'rebooted intro consumes the separately authored logo placement');
 	await press('Space');
 	await until(() => space() === 'story'
-		&& guest.readStringMember(registered('nemesis_s.story'), 'presentation') !== null
+		&& guest.readStringMember(registered('nemesis_s.story'), 'presentation') !== valueNil()
 		&& !runtime.completionCallPending(), 'normal confirm admits the edited story composition');
 	const story = guest.readStringMember(registered('nemesis_s.story'), 'presentation');
-	check(guest.readStringMember(guest.readStringMember(guest.readStringMember(story, 'members'), 'primary_caption'), 'y') === 148,
+	check(guest.readStringMember(guest.readStringMember(guest.readStringMember(story, 'members'), 'primary_caption'), 'y') === valueInteger(148),
 		'normal story playback consumes the edited caption position');
 	await reachNemesisTitle(test);
-	check(guest.readStringMember(member('selector'), 'x') === 88,
+	check(guest.readStringMember(member('selector'), 'x') === valueInteger(88),
 		'the actual rebooted title consumes the edited scene, not the old placement');
 	await test.capture?.('title-after');
 	await press('Space');
-	await until(() => presentation() !== null && member('ship') !== null, 'confirmation naturally enters the hangar scene');
-	check(guest.readStringMember(member('ship'), 'x') === 56
-		&& guest.readStringMember(member('ship'), 'start_y') === 125,
+	await until(() => presentation() !== valueNil() && member('ship') !== valueNil(), 'confirmation naturally enters the hangar scene');
+	check(guest.readStringMember(member('ship'), 'x') === valueInteger(56)
+		&& guest.readStringMember(member('ship'), 'start_y') === valueInteger(125),
 		'the actual takeoff uses both edited ship coordinates');
-	await until(() => guest.readStringMember(member('ship'), 'y') === 69,
+	await until(() => guest.readStringMember(member('ship'), 'y') === valueInteger(69),
 		'lift animates relative to edited y=125, reaching 125-56');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	await press('ControlRight', 'ShiftRight');
 	await test.capture?.('hangar-after');
-	check(guest.readStringMember(member('ship'), 'x') === 56 && guest.readStringMember(member('ship'), 'y') === 69,
+	check(guest.readStringMember(member('ship'), 'x') === valueInteger(56) && guest.readStringMember(member('ship'), 'y') === valueInteger(69),
 		'game view displays the authored placement during the takeoff sequence');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	check(!ide.editor.isActive, 'Run Resume returns directly to gameplay');
 	await until(() => space() === 'main', 'takeoff completes into gameplay');
-	check(presentation() === null, 'gameplay releases the presentation scene');
+	check(presentation() === valueNil(), 'gameplay releases the presentation scene');
 	const player = registered('nemesis_s.player.1');
-	check(guest.readStringMember(guest.readStringMember(player, 'start_point'), 'x') === 88,
+	check(guest.readStringMember(guest.readStringMember(player, 'start_point'), 'x') === valueInteger(88),
 		'player admission and respawn share the edited scene start point');
 	const stage = registered('nemesis_s.stage');
 	await press('ControlRight', 'ShiftRight');
@@ -110,7 +110,7 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 		&& !runtime.completionCallPending(), 'Hot Resume retains an already running gameplay scene');
 	check(registered('nemesis_s.stage') === stage && registered('nemesis_s.player.1') === player,
 		'live source installation preserves the stage and player');
-	await until(() => (guest.readStringMember(stage, 'actor_spawn_index') as number) > 1
+	await until(() => numberToHost(guest.readStringMember(stage, 'actor_spawn_index')) > 1
 		&& !runtime.completionCallPending(), 'ordinary play reaches the YAML-authored enemy formation');
 	await test.capture?.('gameplay');
 	await press('ControlRight', 'ShiftRight');

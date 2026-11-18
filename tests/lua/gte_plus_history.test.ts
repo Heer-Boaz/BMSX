@@ -1,7 +1,7 @@
+import { asClosure } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { IO_GX_GTE_COMMAND, IO_GX_GTE_PLUS_BASE } from '../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { GX_GTE_PLUS_ADD_XY, GX_GTE_PLUS_COMMAND, GX_GTE_PLUS_CYCLES } from '../../machine/ts/machine/devices/gx/gte';
@@ -38,7 +38,7 @@ test('PLUS history retains accepted operands separately from later writable inpu
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const invoke = (name: string) => {
 		const start = runtime.machine.scheduler.nowCycles;
-		cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.find(name)!) as Closure, []);
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find(name)!), cpu.gc), []);
 		assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 		runtime.machine.scheduler.advanceTo(start + BUDGET - cpu.instructionBudgetRemaining);
 	};

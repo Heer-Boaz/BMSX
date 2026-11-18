@@ -1,3 +1,5 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
+import { valueNil, valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -45,7 +47,7 @@ function original:second() self.field = 33 end`, 'writers.lua');
 	for (let write = query.writes.firstName(name); write !== 0; write = query.writes.nextName(write)) {
 		writes.push(query.writes.value(write));
 	}
-	assert.deepEqual(writes, [11, 22, 33].map(value => summaries.terms.compileSource(literalValueSource({ kind: 'number', value }))));
+	assert.deepEqual(writes, [11, 22, 33].map(value => summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(value) }))));
 });
 
 for (const rhs of ['11', 'outside', 'function() return 11 end']) {
@@ -69,7 +71,7 @@ return original.field, selected`;
 		assert.equal(query.writes.firstName(field), 0);
 		assert.equal(query.frames.count, 0);
 		const initial = query.values.first(target);
-		assert.equal(query.values.target(initial), summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 0 })));
+		assert.equal(query.values.target(initial), summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(0) })));
 		assert.equal(query.values.next(initial), 0);
 
 		// Broad source navigation is an explicit, separate request. It must use
@@ -78,14 +80,14 @@ return original.field, selected`;
 		assert.notEqual(query.writes.firstName(field), 0);
 		const projected = query.values.next(initial);
 		assert.notEqual(projected, 0);
-		assert.equal(query.values.target(projected), summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 22 })));
+		assert.equal(query.values.target(projected), summaries.terms.compileSource(literalValueSource({ kind: 'number', value: integerConstant(22) })));
 		assert.equal(query.values.next(projected), 0);
 		assert.equal(query.frames.count, 0, 'a source projection is not an instantiated call');
 		const revision = query.getRevision();
 		query.projectName(field);
 		query.demandEffectName(field);
 		assert.equal(query.getRevision(), revision, 'repeated demand retains existing facts');
-		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, level), [null, 0]);
+		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, level), [valueNil(), valueInteger(0)]);
 	});
 }
 
@@ -117,7 +119,7 @@ return original.field, actual.field`;
 		assert.equal(query.values.next(input), 0, 'only the actual receiver flows into this frame');
 		assert.equal(query.writes.nextName(write), 0, 'no projected write on the declaring receiver');
 		assert.equal(query.frames.count, 1);
-		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, level), [null, 22]);
+		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, level), [valueNil(), valueInteger(22)]);
 	});
 }
 
@@ -183,7 +185,7 @@ function original:read() return self.field.token end`;
 				: query.member(appendValueMember(receiver, 'field'), name), [name === 'field' ? field.id : token.id]);
 		}
 		const execution = `${source}\nfactory()\noriginal:configure()\nreturn original:read()`;
-		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(execution, file.file, level), [true]);
+		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(execution, file.file, level), [valueBool(true)]);
 	});
 }
 

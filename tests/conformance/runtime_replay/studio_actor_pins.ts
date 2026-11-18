@@ -1,3 +1,4 @@
+import { valueBool } from '../../../machine/ts/machine/cpu/value';
 import { inputFocus } from '../../../ide/input/focus';
 import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
 import { ACTOR_TOOLS_SOURCE } from '../../helpers/actor_tools_fixture';
@@ -13,7 +14,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 	source.pushEditOperations([{ offset: 0, deleteLength: source.buffer.length,
 		text: ACTOR_TOOLS_SOURCE.replace('\tworld:update()', '\tactor_tool_first.health = actor_tool_first.health + 1\n\tworld:update()') }]);
 	await runPaletteCommand('Run: Reboot'); await press('Enter');
-	await until(() => guest.global('actor_tool_ready') === true && test.tasks.ready, 'actor pins: real World constructs two actors');
+	await until(() => guest.global('actor_tool_ready') === valueBool(true) && test.tasks.ready, 'actor pins: real World constructs two actors');
 	const ready = runtime.frameScheduler.lastTickSequence;
 	await until(() => runtime.frameScheduler.lastTickSequence >= ready + 4 && test.tasks.ready, 'actor pins: retain physical frame history');
 	await press('ControlRight', 'ShiftRight');
