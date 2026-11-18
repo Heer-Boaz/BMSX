@@ -286,8 +286,10 @@ void NativeBlockCompiler::emit(
 	case OpCode::LE:
 		emitComparison(instruction, *taken);
 		break;
-	case OpCode::HALT:
 	case OpCode::CALL:
+		emitBuiltinCall(instruction);
+		break;
+	case OpCode::HALT:
 	case OpCode::RET:
 	case OpCode::NEWT:
 	case OpCode::CONCAT:

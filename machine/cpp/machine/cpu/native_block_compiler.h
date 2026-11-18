@@ -24,6 +24,7 @@ private:
 	void emitExit(NativeBlockExitSite& exit);
 	void emitScalarBoundary(u32 pc, int cycles, int top);
 	void emitTop(int extent);
+	void emitBuiltinCall(const DecodedInstruction& instruction);
 	void emitConstant(int guest, Value value);
 	void emitRawLoad(int selector, sljit_s32 word, sljit_s32 tag);
 	void emitRawStore(int guest, sljit_s32 word, sljit_s32 tag);

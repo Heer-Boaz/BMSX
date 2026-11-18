@@ -27,51 +27,53 @@ CPU::NativeFrameOffsets CPU::nativeFrameOffsets() {
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
 
+NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit) noexcept {
+	const int base = exit->exitA;
+	const int receiving = exit->exitC == 1 ? 0 : 1;
+	if (static_cast<u32>(exit->exitC) > 2u || (receiving && base >= state->frame->stackCapacity))
+		return NativeBuiltinCallOutcome::Declined;
+	const int count = decodeValueCount(exit->exitB, std::max(state->registerTop - base - 1, 0));
+	const BuiltinArgsView args(state->registers.subspan(base + 1, static_cast<size_t>(count)));
+	const auto& function = cpu->m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(state->registers.get(base)))];
+	Value result;
+	if (!cpu->executeBuiltinLeaf(function.id, args, result)) return NativeBuiltinCallOutcome::Declined;
+	if (receiving) state->registers.set(base, result);
+	state->registerTop = base + receiving;
+	state->remainingCycles -= static_cast<int>(function.cycleBase) + receiving;
+	if (state->remainingCycles <= 0 || cpu->m_hardHalted || cpu->m_yieldRequested || cpu->m_threadSwitchRequested
+		|| cpu->m_memoryWriteBlocked || cpu->m_nonMaskableInterruptPending
+		|| ((cpu->m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+			&& cpu->m_irqController.hasAssertedMaskableInterruptLine()) || cpu->isHaltedUntilIrq())
+		return NativeBuiltinCallOutcome::CompletedStop;
+	return NativeBuiltinCallOutcome::CompletedResume;
+}
+
 NativeBuiltinCallOutcome CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
 	auto& cpu = *run->cpu;
+	auto& state = run->state;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	++cpu.m_nativeGateProfile.builtinAttempts;
 #endif
-	auto& state = run->state;
-	CallFrame& frame = *state.frame;
-	const int base = exit->exitA;
-	const int argumentCount = decodeValueCount(exit->exitB, std::max(state.registerTop - base - 1, 0));
-	const BuiltinArgsView args(state.registers.subspan(base + 1, static_cast<size_t>(argumentCount)));
-	BuiltinFunction& function = cpu.m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(state.registers.get(base)))];
-	const int receiving = exit->exitC == 1 ? 0 : 1;
-	Value result;
-	if (static_cast<u32>(exit->exitC) > 2u || (receiving && base >= frame.stackCapacity)
-		|| !cpu.executeBuiltinLeaf(function.id, args, result)) {
+	auto completion = runNativeBuiltinLeaf(&cpu, &state, exit);
+	if (completion == NativeBuiltinCallOutcome::Declined) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		++cpu.m_nativeGateProfile.builtinDeclines;
 #endif
-		return NativeBuiltinCallOutcome::Declined;
+		return completion;
 	}
-
-	// The leaf cannot allocate or run guest code. Its arguments already
-	// occupy the compact frame; publish only the result and completed grant.
-	if (receiving) frame.registers.set(base, result);
-	state.registerTop = frame.top = base + receiving;
+	CallFrame& frame = *state.frame;
+	frame.top = state.registerTop;
 	frame.pc = exit->nextPc;
 	frame.compilationEntry = true;
 	cpu.m_currentInstructionPc = exit->currentPc;
 	cpu.m_lastExecutionDomainId = frame.executionImage->executionDomainId;
 	cpu.lastPc = exit->lastPc;
-	state.remainingCycles -= static_cast<int>(function.cycleBase) + receiving;
 	cpu.instructionBudgetRemaining = state.remainingCycles;
-	if (state.remainingCycles <= 0 || cpu.m_hardHalted || cpu.m_yieldRequested || cpu.m_threadSwitchRequested
-		|| cpu.m_memoryWriteBlocked || cpu.m_nonMaskableInterruptPending
-		|| ((cpu.m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-			&& cpu.m_irqController.hasAssertedMaskableInterruptLine())
-		|| cpu.isHaltedUntilIrq() || static_cast<int>(cpu.m_activeThread->frameDepth) <= run->targetDepth) {
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-		++cpu.m_nativeGateProfile.builtinStops;
-#endif
-		return NativeBuiltinCallOutcome::CompletedStop;
+	if (completion == NativeBuiltinCallOutcome::CompletedResume) {
+		void* const* continuation = exit->continuationCells[run->cartridgeSlot];
+		if (!continuation || !*continuation || static_cast<int>(cpu.m_activeThread->frameDepth) <= run->targetDepth)
+			completion = NativeBuiltinCallOutcome::CompletedStop;
 	}
-	void* const* const continuation = exit->continuationCells[run->cartridgeSlot];
-	const auto completion = continuation && *continuation
-		? NativeBuiltinCallOutcome::CompletedResume : NativeBuiltinCallOutcome::CompletedStop;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	if (completion == NativeBuiltinCallOutcome::CompletedResume) ++cpu.m_nativeGateProfile.builtinResumes;
 	else ++cpu.m_nativeGateProfile.builtinStops;

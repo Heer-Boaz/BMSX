@@ -123,7 +123,7 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		&& skippedInstruction->op == static_cast<u8>(OpCode::JMP)
 		&& skippedInstruction->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe);
 	block->sideExits.reserve(slowCount + (finalOp == OpCode::JMPIF || finalOp == OpCode::JMPIFNOT
-		|| nativeBlockComparison(static_cast<u8>(finalOp)) ? 1 : 0) + (block->hasFusedJump ? 1 : 0));
+		|| nativeBlockComparison(static_cast<u8>(finalOp)) ? 1 : 0) + (block->hasFusedJump ? 1 : 0) + (finalOp == OpCode::CALL ? 1 : 0));
 	auto& terminal = block->terminal;
 	controlGuarded = false;
 	for (const auto& source : instructions) {

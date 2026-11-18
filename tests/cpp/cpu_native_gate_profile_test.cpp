@@ -65,7 +65,7 @@ struct Machine {
 			InstructionObserverBinding observer;
 			observer.points[0].insert(r.textAddress + INSTRUCTION_BYTES);
 			observer.context = &observed;
-			observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<int*>(context); };
+			observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) { ++*static_cast<int*>(context); };
 			cpu.setInstructionObserver(std::move(observer));
 		}
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
@@ -75,16 +75,16 @@ struct Machine {
 	}
 	void builtin(bool invalid = false) {
 		auto& frame = *cpu.rootThread()->currentFrame;
-		frame.registers[0] = cpu.createBuiltinFunction(BuiltinFunctionId::StringByte);
-		frame.registers[1] = invalid ? valueNumber(17) : valueString(cpu.stringPool().intern("Az"));
-		frame.registers[2] = valueNumber(2);
+		frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
+		frame.registers.set(1, invalid ? valueInteger(17) : valueString(cpu.stringPool().intern("Az")));
+		frame.registers.set(2, valueInteger(2));
 		frame.top = 3;
 	}
 	void closure() {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[2], rom.textAddress + MAPPED_PAGE_BYTE_SIZE);
-		const auto value = valueClosure(cpu.rootThread()->currentFrame->closure);
+		const auto value = valueClosure(cpu.gcHeap().reference(cpu.rootThread()->currentFrame->closure));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-		cpu.rootThread()->currentFrame->registers[12] = value;
+		cpu.rootThread()->currentFrame->registers.set(12, value);
 	}
 };
 
@@ -120,8 +120,8 @@ void simpleExits() {
 		const auto rom = image(operation, operation == OpCode::LOADKR ? 1 : 0, 0);
 		Machine generated(rom, false), scalar(rom, true);
 		for (auto* m : {&generated, &scalar}) {
-			m->cpu.rootThread()->currentFrame->registers[0] = valueNumber(3);
-			m->cpu.rootThread()->currentFrame->registers[1] = valueNumber(100000);
+			m->cpu.rootThread()->currentFrame->registers.set(0, valueInteger(3));
+			m->cpu.rootThread()->currentFrame->registers.set(1, valueInteger(100000));
 		}
 		parity(generated, scalar, operation == OpCode::ADD ? 1 : 100);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -129,7 +129,7 @@ void simpleExits() {
 			&& row(generated, NativeBlockExit::Halt).returns == 1, "real HALT returns from dispatch once");
 		if (operation == OpCode::ADD) require(row(generated, NativeBlockExit::ScalarBoundary).entries == 1
 			&& row(generated, NativeBlockExit::ScalarBoundary).returns == 1
-			&& generated.cpu.readFrameRegister(0, 0) == valueNumber(6), "early scalar admission is counted and executes the opcode only once");
+			&& generated.cpu.readFrameRegister(0, 0) == valueInteger(6), "early scalar admission is counted and executes the opcode only once");
 		if (operation == OpCode::NEWT) require(row(generated, NativeBlockExit::AllocateTable).entries == 1
 			&& row(generated, NativeBlockExit::AllocateTable).resumes == 1, "a real allocating helper resumes its installed native successor");
 		if (operation == OpCode::LOADKR) require(row(generated, NativeBlockExit::InvalidConstant).entries == 1
@@ -186,7 +186,7 @@ void warmClosureAndSnapshot() {
 	const auto before = generated.cpu.nativeGateProfile();
 #endif
 	parity(generated, scalar, loopCycles);
-	require(generated.cpu.readFramePc(0) == rom.textAddress && generated.cpu.getGlobalByKey(generated.cpu.stringPool().intern("marker")) == valueNumber(1),
+	require(generated.cpu.readFramePc(0) == rom.textAddress && generated.cpu.getGlobalByKey(generated.cpu.stringPool().intern("marker")) == valueInteger(1),
 		"the actual second closure iteration reaches its guest marker and loop boundary");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& after = generated.cpu.nativeGateProfile();

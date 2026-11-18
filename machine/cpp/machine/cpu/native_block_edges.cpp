@@ -65,14 +65,17 @@ void NativeBlockCompiler::emitLeave(NativeBlockExitSite& exit, bool charged) {
 }
 
 void NativeBlockCompiler::emitExit(NativeBlockExitSite& exit) {
-	const size_t target = exit.exit == NativeBlockExit::Continue ? regionEntryIndex(exit.nextPc) : m_blocks.size();
+	const bool completed = exit.exit == NativeBlockExit::CompletedCall;
+	const size_t target = (completed || exit.exit == NativeBlockExit::Continue) ? regionEntryIndex(exit.nextPc) : m_blocks.size();
 	if (target != m_blocks.size()) {
 		const auto source = m_cache.state();
-		emitTop(exit.registerTop);
-		sljit_emit_op2(
-			m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
-		fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM, 0),
-			exit, source, true);
+		if (!completed) {
+			emitTop(exit.registerTop);
+			sljit_emit_op2(
+				m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
+			fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, NativeBlockAbi::budget, 0, SLJIT_IMM, 0),
+				exit, source, true);
+		}
 		auto& entry = m_entries[target];
 		if (!entry.planned) {
 			entry.planned = true;
