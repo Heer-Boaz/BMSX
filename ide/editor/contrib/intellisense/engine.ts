@@ -15,6 +15,7 @@ import {
 } from '../../../runtime/suspended_guest';
 import { listLuaBuiltinDescriptors } from '../../../runtime/lua_builtins';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import { formatValueSnapshot } from '../../../runtime/value_snapshot';
 import { readRuntimeLuaValue } from '../../../runtime/lua_inspection';
 import type { LuaDefinitionLocation, LuaMemberCompletion, LuaSymbolEntry } from '../../../../toolchain/ts/lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
@@ -56,10 +57,20 @@ export function buildMemberCompletionItems(
 	column: number,
 ): LuaCompletionItem[] {
 	const frameDepth = runtime.machine.cpu.getFrameDepth();
-	if (frameDepth === 0) return [];
-	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, identity, runtime.machine.cpu.readFrameExecutionDomain(frameDepth - 1), chain, line, column);
-	if (resolved.kind !== 'value' || guest.kind(resolved.value) !== SuspendedGuestValueKind.Table) return [];
-	const response = buildSuspendedGuestTableMemberCompletionEntries(guest, resolved.value, operator);
+	if (frameDepth === 0 && fault.faultSnapshot === null) return [];
+	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, identity, fault.faultSnapshot !== null
+		? fault.lastCpuFaultExecutionDomainId : runtime.machine.cpu.readFrameExecutionDomain(frameDepth - 1), chain, line, column);
+	let response: LuaMemberCompletion[];
+	if (resolved.kind === 'snapshot' && resolved.value.kind === 'table') {
+		const registry = new Map<string, LuaMemberCompletion>();
+		for (const { key, value } of resolved.value.entries) {
+			if (key.kind === 'string' && !key.omitted) registerTableMemberCompletion(registry, key.value,
+				value.kind === 'function' || value.kind === 'builtin', operator);
+		}
+		response = sortedTableMemberCompletions(registry);
+	} else if (resolved.kind === 'value' && guest.kind(resolved.value) === SuspendedGuestValueKind.Table) {
+		response = buildSuspendedGuestTableMemberCompletionEntries(guest, resolved.value, operator);
+	} else return [];
 	if (response.length === 0) {
 		return [];
 	}
@@ -456,10 +467,16 @@ export function inspectLuaRuntimeExpression(
 	const chain = parseLuaIdentifierChain(expression);
 	if (chain === null) return null;
 	const frameDepth = runtime.machine.cpu.getFrameDepth();
-	if (frameDepth === 0) return { expression, lines: [RUNTIME_UNAVAILABLE_LABELS.not_loaded], valueType: 'unknown', state: 'unavailable' };
-	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, identity, runtime.machine.cpu.readFrameExecutionDomain(frameDepth - 1), chain, line, column);
+	if (frameDepth === 0 && fault.faultSnapshot === null) return { expression, lines: [RUNTIME_UNAVAILABLE_LABELS.not_loaded], valueType: 'unknown', state: 'unavailable' };
+	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, identity, fault.faultSnapshot !== null
+		? fault.lastCpuFaultExecutionDomainId : runtime.machine.cpu.readFrameExecutionDomain(frameDepth - 1), chain, line, column);
 	if (resolved.kind === 'unavailable') {
 		return { expression, lines: [RUNTIME_UNAVAILABLE_LABELS[resolved.reason]], valueType: 'unknown', state: 'unavailable' };
+	}
+	if (resolved.kind === 'snapshot') {
+		const value = resolved.value;
+		const valueType = value.kind === 'integer' || value.kind === 'float' ? 'number' : value.kind === 'builtin' ? 'function' : value.kind;
+		return { expression, lines: [formatValueSnapshot(value)], valueType, state: 'value' };
 	}
 	const formatted = describeSuspendedGuestValueForInspector(guest, resolved.value);
 	return { expression, lines: formatted.lines, valueType: formatted.valueType, state: 'value' };
@@ -470,6 +487,7 @@ const RUNTIME_UNAVAILABLE_LABELS = {
 	not_loaded: 'unavailable: not loaded',
 	not_in_scope: 'unavailable in the suspended stack',
 	not_runtime_value: 'struct type: not a runtime value',
+	not_captured: 'unavailable: not captured at fault',
 	not_a_table: 'unavailable: member parent is not a table',
 } as const;
 

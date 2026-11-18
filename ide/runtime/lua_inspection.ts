@@ -13,7 +13,8 @@ import { isLuaStaticDeclaration } from '../../toolchain/ts/lua/semantic/static_d
 import { sourcePositionInRange } from '../../toolchain/ts/lua/semantic/source_range';
 import { sourceRangesEqual, type SourceRange } from '../../toolchain/ts/lua/source_range';
 import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type ResourceIdentity } from '../common/resource';
-import type { RuntimeFaultState } from './fault_state';
+import type { ValueSnapshot } from './value_snapshot';
+import type { RuntimeCpuFaultFrame, RuntimeFaultState } from './fault_state';
 import { Blua32GlobalRegisterFile, type Blua32SourceImage, type RuntimeSourceState, type RuntimeInstalledSourceState } from './sources';
 import { readBlua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import type { SuspendedGuestRead, SuspendedGuestSession, SuspendedGuestValue, RuntimeFunctionLocationBuffer } from './suspended_guest';
@@ -212,6 +213,19 @@ export class RuntimeLuaFunctionSourceCache {
 	}
 }
 
+type CapturedRead = { kind: 'snapshot'; value: ValueSnapshot } | { kind: 'unavailable'; reason: 'not_captured' | 'not_a_table' };
+function readCapturedPath(frame: RuntimeCpuFaultFrame, value: ValueSnapshot, parts: readonly string[]): CapturedRead {
+	for (let i = 1; ; i++) {
+		if (value.kind === 'reference') value = frame.tables.get(value.id)!;
+		if (i === parts.length) return { kind: 'snapshot', value };
+		if (value.kind !== 'table') return { kind: 'unavailable', reason: 'not_a_table' };
+		const entry = value.entries.find(({ key }) => key.kind === 'string' && !key.omitted && key.value === parts[i]);
+		// Fault previews capture stored fields, not every slot or inherited member.
+		if (!entry) return { kind: 'unavailable', reason: 'not_captured' };
+		value = entry.value;
+	}
+}
+
 /** Read a written binding from its installed debug location; never evaluate Lua or infer a value. */
 export function readRuntimeLuaValue(
 	runtime: Runtime,
@@ -224,7 +238,7 @@ export function readRuntimeLuaValue(
 	parts: readonly string[],
 	line: number,
 	column: number,
-): RuntimeLuaInspectionValue {
+): RuntimeLuaInspectionValue | CapturedRead {
 	const image = domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
 	if (image === null || image.sourceContextId !== identity.contextId) return NOT_LOADED;
 	const record = sources.catalog.resolveLuaSource(identity)!.record;
@@ -261,6 +275,7 @@ export function readRuntimeLuaValue(
 		}
 		const registerFile = installedImage.globalRegisterFileByName.get(name);
 		if (registerFile === undefined) return NOT_LOADED;
+		if (fault.faultSnapshot !== null) return { kind: 'unavailable', reason: 'not_captured' };
 		const root = registerFile === Blua32GlobalRegisterFile.System ? guest.systemGlobal(name) : guest.global(name);
 		return guest.readStringPath(root, parts, 1);
 	}
@@ -299,8 +314,8 @@ export function readRuntimeLuaValue(
 			if (context === null || context.path !== definition.path
 				|| !sourcePositionInRange(context.start.line, context.start.column, slot.scope)
 				|| !blua32SlotLiveAtPc(slot.liveWordRanges, image.layout.functions[functionIndex].codeAddress, pc)) return NOT_IN_SCOPE;
-			const value = captured === undefined ? cpu.readFrameRegister(frameIndex, slot.registerIndex) : captured.registers[slot.registerIndex];
-			return guest.readStringPath(value, parts, 1);
+			if (captured !== undefined) return readCapturedPath(captured, captured.registers[slot.registerIndex], parts);
+			return guest.readStringPath(cpu.readFrameRegister(frameIndex, slot.registerIndex), parts, 1);
 		}
 		for (const slot of symbols.metadata.outerBindingsByFunction[functionIndex]) {
 			const local = symbols.metadata.lexicalDeclarations[slot.declarationIndex];
@@ -308,9 +323,9 @@ export function readRuntimeLuaValue(
 			if (slot.inlineCallSites.length !== 0 && (range === null || resolveInlineLocalContextRange(slot, range, inlineSites) === null)) continue;
 			const location = slot.location;
 			if (location === null || !blua32SlotLiveAtPc(slot.liveWordRanges, image.layout.functions[functionIndex].codeAddress, pc)) return NOT_IN_SCOPE;
-			const value = location.inStack
-				? captured === undefined ? cpu.readFrameRegister(frameIndex, location.index) : captured.registers[location.index]
-				: captured === undefined ? cpu.readFrameUpvalue(frameIndex, location.index) : captured.upvalues[location.index];
+			if (captured !== undefined) return readCapturedPath(captured,
+				location.inStack ? captured.registers[location.index] : captured.upvalues[location.index], parts);
+			const value = location.inStack ? cpu.readFrameRegister(frameIndex, location.index) : cpu.readFrameUpvalue(frameIndex, location.index);
 			return guest.readStringPath(value, parts, 1);
 		}
 	}

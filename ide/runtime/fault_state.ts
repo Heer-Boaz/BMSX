@@ -12,10 +12,9 @@ import {
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type {
-	SuspendedGuestSession,
-	SuspendedGuestValue,
-} from './suspended_guest';
+import type { SuspendedGuestSession } from './suspended_guest';
+import { GuestValueSnapshot, type ValueSnapshot } from './value_snapshot';
+import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import type { Blua32SourceImage, RuntimeInstalledSourceState } from './sources';
 import type { ResourceIdentity } from '../common/resource';
 import {
@@ -77,8 +76,9 @@ export type RuntimeCpuFaultFrame = {
 	readonly codeAddress: number;
 	readonly codeByteCount: number;
 	readonly tracePc: number;
-	readonly registers: readonly SuspendedGuestValue[];
-	readonly upvalues: readonly SuspendedGuestValue[];
+	readonly registers: readonly ValueSnapshot[];
+	readonly tables: GuestValueSnapshot['tables'];
+	readonly upvalues: readonly ValueSnapshot[];
 };
 
 export type RuntimeFaultState = {
@@ -137,7 +137,11 @@ function captureRuntimeCpuFaultFrames(
 	const cpu = runtime.machine.cpu;
 	const memory = runtime.machine.memory;
 	const frames = new Array<RuntimeCpuFaultFrame>(frameDepth);
-	for (let frameIndex = 0; frameIndex < frameDepth; frameIndex += 1) {
+	const snapshot = new GuestValueSnapshot(cpu.stringPool, cpu.gc);
+	snapshot.begin();
+	const slot = new ValueSlots(1);
+	// Spend the bounded table/string preview budget at the fault site first.
+	for (let frameIndex = frameDepth - 1; frameIndex >= 0; frameIndex--) {
 		const executionDomainId = cpu.readFrameExecutionDomain(frameIndex);
 		const image = executionDomainId === -1 ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[executionDomainId];
 		if (!image) {
@@ -152,14 +156,16 @@ function captureRuntimeCpuFaultFrames(
 			(functionAddress + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET) >>> 0,
 		);
 		const registerCount = cpu.getFrameRegisterCount(frameIndex);
-		const registers = new Array<SuspendedGuestValue>(registerCount);
+		const registers = new Array<ValueSnapshot>(registerCount);
 		for (let registerIndex = 0; registerIndex < registerCount; registerIndex += 1) {
-			registers[registerIndex] = cpu.readFrameRegister(frameIndex, registerIndex);
+			slot.set(0, cpu.readFrameRegister(frameIndex, registerIndex));
+			registers[registerIndex] = snapshot.read(slot, 0);
 		}
 		const upvalueCount = cpu.getFrameUpvalueCount(frameIndex);
-		const upvalues = new Array<SuspendedGuestValue>(upvalueCount);
+		const upvalues = new Array<ValueSnapshot>(upvalueCount);
 		for (let upvalueIndex = 0; upvalueIndex < upvalueCount; upvalueIndex += 1) {
-			upvalues[upvalueIndex] = cpu.readFrameUpvalue(frameIndex, upvalueIndex);
+			slot.set(0, cpu.readFrameUpvalue(frameIndex, upvalueIndex));
+			upvalues[upvalueIndex] = snapshot.read(slot, 0);
 		}
 		frames[frameIndex] = {
 			executionDomainId,
@@ -176,6 +182,7 @@ function captureRuntimeCpuFaultFrames(
 					? lastPc
 					: cpu.readFramePc(frameIndex),
 			registers,
+			tables: snapshot.tables,
 			upvalues,
 		};
 	}

@@ -5,10 +5,8 @@ import {
 } from '../../toolchain/ts/rompack/disassembler';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import {
-	type SuspendedGuestSession,
-	type SuspendedGuestValue,
-} from '../runtime/suspended_guest';
+import type { SuspendedGuestSession } from '../runtime/suspended_guest';
+import { formatValueSnapshot, type ValueSnapshot } from '../runtime/value_snapshot';
 import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import {
 	recordSupervisorFault,
@@ -24,16 +22,13 @@ import {
 	IO_SYS_SUPERVISOR_FAULT_LUA_REASON,
 } from '../../machine/ts/spec/bmsx/io';
 
-const EMPTY_REGISTER_VALUES: readonly SuspendedGuestValue[] = [];
-
 function formatInstructionOperandDebug(
-	session: SuspendedGuestSession,
 	operand: InstructionOperandDebugInfo,
-	registers: ReadonlyArray<SuspendedGuestValue>,
+	registers: ReadonlyArray<ValueSnapshot>,
 ): string {
 	let text = `${operand.label}=${operand.text}`;
 	if (operand.registerIndex >= 0 && operand.registerIndex < registers.length) {
-		text += `(${session.formatValue(registers[operand.registerIndex])})`;
+		text += `(${formatValueSnapshot(registers[operand.registerIndex])})`;
 	}
 	return text;
 }
@@ -46,12 +41,10 @@ function logFaultInstruction(
 	logOutput: LogOutput,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
-	session: SuspendedGuestSession,
 ): void {
 	const snapshot = fault.lastCpuFaultSnapshot;
 	const executionDomainId = fault.lastCpuFaultExecutionDomainId;
 	const pc = fault.lastCpuFaultPc;
-	let registers = EMPTY_REGISTER_VALUES;
 	let faultFrame: RuntimeCpuFaultFrame | null = null;
 	for (let frameIndex = snapshot.length - 1; frameIndex >= 0; frameIndex -= 1) {
 		const frame = snapshot[frameIndex];
@@ -61,7 +54,6 @@ function logFaultInstruction(
 		if (pc >= frame.codeAddress
 			&& pc < frame.codeAddress + frame.codeByteCount) {
 			faultFrame = frame;
-			registers = frame.registers;
 			break;
 		}
 	}
@@ -88,7 +80,7 @@ function logFaultInstruction(
 		);
 	}
 	const operandSummary = instruction.operands
-		.map(operand => formatInstructionOperandDebug(session, operand, registers))
+		.map(operand => formatInstructionOperandDebug(operand, faultFrame.registers))
 		.join(' ');
 	logOutput.log(
 		LogLevel.Error,
@@ -117,5 +109,5 @@ export function handleSupervisorFault(
 		+ ` bad=${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS), 8)}`
 		+ ` lua=${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_LUA_REASON), 8)}`,
 	);
-	logFaultInstruction(logOutput, fault, runtime, session);
+	logFaultInstruction(logOutput, fault, runtime);
 }
