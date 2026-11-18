@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { integerConstant } from '../../toolchain/ts/lua/number';
+import { valueBool, valueFloatBits, valueInteger, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { DECODED_PAGE_WORDS } from '../../machine/ts/machine/cpu/execution_image';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -35,7 +36,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			{ firstWord: 0, wordCount: 8, maxStack: 8 },
 			{ firstWord: DECODED_PAGE_WORDS, wordCount: 3, numParams: 2, maxStack: 8 },
 			{ firstWord: DECODED_PAGE_WORDS + 32, wordCount: 3, numParams: 2, maxStack: 1024 },
-		], constants: [3, 4], closureRelocations: [{ wordIndex: 1, functionAddress: record }] });
+		], constants: [integerConstant(3), integerConstant(4)], closureRelocations: [{ wordIndex: 1, functionAddress: record }] });
 		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 		// Supplied fixed arguments already occupy the callee window: no placement surcharge.
 		const callEntryCycles = BASE_CYCLES[OpCode.MOV] + 2 * BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.CALL];
@@ -55,7 +56,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		}
 		for (const { cpu } of machines) {
 			cpu.runUntilDepth(1, 100);
-			cpu.rootThread.frameAtDepth(0).registers.setNumber(3, 99);
+			cpu.rootThread.frameAtDepth(0).registers.setInteger(3, 99);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 			assert.equal(cpu.runUntilDepth(0, callEntryCycles), RunResult.Yielded);
 			assert.equal(cpu.getFrameDepth(), 2);
@@ -63,12 +64,12 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			assert.equal(cpu.instructionBudgetRemaining, 0);
 			assert.equal(cpu.runUntilDepth(1, 50), RunResult.Halted);
 			assert.equal(cpu.instructionBudgetRemaining, 50 - BASE_CYCLES[OpCode.ADD] - BASE_CYCLES[OpCode.MOV] - BASE_CYCLES[OpCode.RET] - 2);
-			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(3), 99, 'a compiled RET must not execute a compiled caller beyond the requested depth');
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(3), valueInteger(99), 'a compiled RET must not execute a compiled caller beyond the requested depth');
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		for (const { cpu, memory } of machines) {
 			const capacity = cpu.rootThread.stackRegisters.capacity();
-			const previous = cpu.rootThread.frameAtDepth(0).registers.getClosure(0);
+			const previous = cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc);
 			memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 			cpu.runUntilDepth(0, callEntryCycles);
@@ -77,28 +78,28 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
 			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + callEntryCycles);
 			assert.ok(cpu.rootThread.stackRegisters.capacity() > capacity, 'new closure observes the rewritten record');
-			assert.notEqual(cpu.rootThread.frameAtDepth(0).registers.getClosure(0), previous);
+			assert.notEqual(cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc), previous);
 			assert.equal(cpu.runUntilDepth(1, 50), RunResult.Halted);
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		for (const { cpu, memory } of machines) {
-			const old = cpu.rootThread.frameAtDepth(0).registers.getClosure(0);
+			const old = cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 			cpu.runUntilDepth(0, callEntryCycles);
 			assert.equal(cpu.getFrameDepth(), 2);
 			const state = cpu.captureRuntimeState();
 			memory.writeBytes(record, image.romBytes.subarray(image.symbols.functionAddresses[2], image.symbols.functionAddresses[2] + BLUA32_FUNCTION_RECORD_SIZE));
 			cpu.restoreRuntimeState(state);
-			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getClosure(0), old, 'restore retains the bound closure even after its record changes');
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc), old, 'restore retains the bound closure even after its record changes');
 			assert.equal(cpu.rootThread.currentFrame!.closure, old, 'active frame restores its original bound closure');
 			assert.equal(cpu.rootThread.currentFrame!.executionImage.executionDomainId, old.executionDomainId);
 			cpu.runUntilDepth(1, 50);
-			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(4), 7, 'existing closure retains the old entry');
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(4), valueInteger(7), 'existing closure retains the old entry');
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
 			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + callEntryCycles);
 			assert.equal(cpu.runUntilDepth(1, 50), RunResult.Halted);
-			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(4), -1, 'new closure binds the changed entry');
-			assert.notEqual(cpu.rootThread.frameAtDepth(0).registers.getClosure(0), old);
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(4), valueInteger(-1), 'new closure binds the changed entry');
+			assert.notEqual(cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc), old);
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		const word = new Uint8Array(4);
@@ -145,7 +146,7 @@ test('CALL shares supplied argument slots without clearing them', () => {
 		assert.ok(thread.stackRegisters.capacity() >= 16, 'the argument address lies inside retained allocation, not outside its backing');
 		// CALL R7,B=2 reads one argument from absolute slot 8, which is also
 		// the next callee window. No frame expansion or active-slot write occurs.
-		thread.stackRegisters.setNumber(8, 63);
+		thread.stackRegisters.setInteger(8, 63);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 3);
@@ -153,12 +154,12 @@ test('CALL shares supplied argument slots without clearing them', () => {
 		assert.equal(cpu.getFrameDepth(), 2);
 		assert.equal(cpu.rootThread.currentFrame!.pc, calleeEntry);
 		assert.equal(cpu.rootThread.currentFrame!.stackBase, 8);
-		assert.equal(cpu.rootThread.currentFrame!.registers.get(0), 63,
+		assert.equal(cpu.rootThread.currentFrame!.registers.get(0), valueInteger(63),
 			'activation keeps the supplied argument in its original slot');
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
-	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(7), 63,
+	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(7), valueInteger(63),
 		'the callee returns the original argument through the shared result window');
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 });
@@ -205,12 +206,13 @@ for (const { numParams, maxStack, argCount } of [
 			const argumentsByMachine = machines.map(({ cpu }) => {
 				const thread = cpu.rootThread;
 				const caller = thread.frameAtDepth(0);
-				const closure = caller.registers.getClosure(0);
-				const args: Value[] = [-0, NaN, valueString(cpu.stringPool.intern('call-initialization')), false, true, closure].slice(0, argCount);
+				const closure = caller.registers.getClosure(0, cpu.gc);
+				const closureValue = caller.registers.get(0);
+				const args: Value[] = [valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueString(cpu.stringPool.intern('call-initialization')), valueBool(false), valueBool(true), closureValue].slice(0, argCount);
 				assert.equal(thread.stackTop, 8);
 				assert.equal(caller.stackCapacity, 8);
 				assert.ok(thread.stackRegisters.capacity() >= 32);
-				for (let index = 8; index < 32; ++index) thread.stackRegisters.set(index, closure);
+				for (let index = 8; index < 32; ++index) thread.stackRegisters.set(index, closureValue);
 				if (completion) cpu.beginCompletionCall(closure, args);
 				else {
 					for (let index = 0; index < args.length; ++index) caller.registers.set(index + 1, args[index]);
@@ -237,8 +239,7 @@ for (const { numParams, maxStack, argCount } of [
 				for (let index = 0; index < argCount; ++index) assert.equal(callee.registers.get(index), argumentsByMachine[machineIndex][index],
 					'argument movement preserves number identity, value tags and references');
 				for (let index = argCount; index < numParams; ++index) {
-					assert.equal(callee.registers.get(index), null, 'missing formals are nil');
-					assert.equal(callee.registers.getReference(index), null, 'cleared slots do not retain stale references');
+					assert.equal(callee.registers.get(index), valueNil(), 'missing formals are nil');
 				}
 				cpu.collectTrackedHeapBytes();
 				const state = cpu.captureRuntimeState();
@@ -278,9 +279,9 @@ test('CALL retains varargs below the relocated fixed-parameter window', () => {
 		assert.equal(thread.frameAtDepth(0).stackCapacity, 8);
 		assert.equal(thread.stackTop, 8);
 		assert.ok(thread.stackRegisters.capacity() >= 16);
-		thread.stackRegisters.setNumber(8, 71);
-		thread.stackRegisters.setNumber(9, 72);
-		thread.stackRegisters.setNumber(10, 73);
+		thread.stackRegisters.setInteger(8, 71);
+		thread.stackRegisters.setInteger(9, 72);
+		thread.stackRegisters.setInteger(10, 73);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 3);
@@ -290,16 +291,16 @@ test('CALL retains varargs below the relocated fixed-parameter window', () => {
 		assert.equal(callee.stackBase, 11);
 		assert.equal(callee.stackCapacity, 4);
 		assert.equal(callee.top, 1);
-		assert.equal(callee.registers.getNumber(0), 71);
+		assert.equal(callee.registers.get(0), valueInteger(71));
 		assert.equal(callee.varargBase, 9);
 		assert.equal(callee.varargCount, 2);
-		assert.equal(thread.stackRegisters.get(8), null, 'moved fixed parameters do not retain duplicate roots');
-		assert.equal(thread.stackRegisters.getNumber(9), 72);
-		assert.equal(thread.stackRegisters.getNumber(10), 73);
-		callee.registers.setNumber(0, 99);
-		assert.equal(thread.stackRegisters.getNumber(10), 73, 'working parameter writes cannot alter saved extras');
+		assert.equal(thread.stackRegisters.get(8), valueNil(), 'moved fixed parameters do not retain duplicate roots');
+		assert.equal(thread.stackRegisters.get(9), valueInteger(72));
+		assert.equal(thread.stackRegisters.get(10), valueInteger(73));
+		callee.registers.setInteger(0, 99);
+		assert.equal(thread.stackRegisters.get(10), valueInteger(73), 'working parameter writes cannot alter saved extras');
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
-	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(7), 99);
+	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(7), valueInteger(99));
 });

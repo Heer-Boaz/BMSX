@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { integerConstant } from '../../toolchain/ts/lua/number';
+import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
+import { valueFloat, valueInteger, type Value } from '../../machine/ts/machine/cpu/value';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -80,20 +83,22 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 			machine(bytes, cartridgeSlots(card), CpuExecutionBackend.Interpreter)];
 		for (const { cpu } of machines) {
 			const frame = cpu.rootThread.frameAtDepth(0);
-			frame.registers.setNumber(1, DYNAMIC_RAM_BASE + 0x1000 - (displaced ? 1020 : 0));
-			frame.registers.setNumber(2, 1); cpu.runUntilDepth(0, 999);
+			frame.registers.setInteger(1, DYNAMIC_RAM_BASE + 0x1000 - (displaced ? 1020 : 0));
+			frame.registers.setInteger(2, 1); cpu.runUntilDepth(0, 999);
 		}
 		const frame = machines[0].cpu.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 		const block = page.compiledBlocks!.entries[(image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 		assert.equal(block.sourceWords, 5);
-		frame.registers.setNumber(1, 4 - (displaced ? 1020 : 0));
-		assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: 1, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } })].nextPc, image.image.functions[0].codeAddress,
+		const probe = new ValueSlots(frame.stackCapacity);
+		probe.setInteger(1, 4 - (displaced ? 1020 : 0));
+		probe.setInteger(2, 1);
+		const run = { remainingCycles: block.admissionCycles + 1, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
+		const exit = block.region.execute(probe, frame.executionImage.constWords, page, frame, block.entry, run);
+		assert.equal(block.region.exits[exit].nextPc, image.image.functions[0].codeAddress,
 			'a backed system-ROM load and dependent arithmetic do not return through the bus owner');
-		machines[1].cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 4 - (displaced ? 1020 : 0));
-		machines[1].cpu.runUntilDepth(0, 9);
 		for (const address of [4, data, data + 4, CART_ROM_BASE, CART_ROM_BASE + 4]) for (let grant = 1; grant <= 17; ++grant) {
 			for (const { cpu } of machines) {
-				cpu.rootThread.frameAtDepth(0).registers.setNumber(1, address - (displaced ? 1020 : 0));
+				cpu.rootThread.frameAtDepth(0).registers.setInteger(1, address - (displaced ? 1020 : 0));
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 			}
 			runCpuParity(machines[0].cpu, machines[1].cpu, grant);
@@ -114,7 +119,7 @@ test('ROM replacement, data selection, reset and restore keep a generated RAM en
 	for (const [index, { cpu, memory }] of machines.entries()) {
 		const frame = cpu.rootThread.frameAtDepth(0);
 		memory.writeBytes(DYNAMIC_RAM_BASE, source.text);
-		frame.registers.setNumber(1, data); frame.registers.setNumber(2, 1);
+		frame.registers.setInteger(1, data); frame.registers.setInteger(2, 1);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, 999);
 		const page = frame.decodedPage!, block = index === 0 ? page.compiledBlocks!.entries[0] : null;
@@ -122,20 +127,20 @@ test('ROM replacement, data selection, reset and restore keep a generated RAM en
 		const replacement = new Uint8Array(bytes.byteLength + 17).subarray(17);
 		replacement.set(bytes); writeLE32(replacement, data, 44);
 		memory.installSystemRom(replacement); cpu.runUntilDepth(0, 9);
-		assert.equal(frame.registers.getNumber(0), 44);
+		assert.equal(frame.registers.get(0), valueInteger(44));
 		if (index === 0) assert.equal(page.compiledBlocks!.entries[0], block);
-		frame.registers.setNumber(1, CART_ROM_BASE);
+		frame.registers.setInteger(1, CART_ROM_BASE);
 		for (const select of [0xfffffffe, 0xffffffff, 0, 1]) {
 			memory.writeMappedWord(IO_CART_SELECT, select); cpu.runUntilDepth(0, 9);
-			assert.equal(frame.registers.getNumber(0), (select & 1) === 0 ? 22 : 33);
+			assert.equal(frame.registers.get(0), valueInteger((select & 1) === 0 ? 22 : 33));
 		}
 		writeLE32(replacement, data, 55);
 		memory.cartridgeController.installRom(1, replacement.subarray(data, data + 16)); cpu.runUntilDepth(0, 9);
-		assert.equal(frame.registers.getNumber(0), 55);
+		assert.equal(frame.registers.get(0), valueInteger(55));
 		if (index === 0) assert.equal(page.compiledBlocks!.entries[0], block);
 		const saved = memory.cartridgeController.captureState();
-		memory.cartridgeController.reset(); cpu.runUntilDepth(0, 9); assert.equal(frame.registers.getNumber(0), 22);
-		memory.cartridgeController.restoreState(saved); cpu.runUntilDepth(0, 9); assert.equal(frame.registers.getNumber(0), 55);
+		memory.cartridgeController.reset(); cpu.runUntilDepth(0, 9); assert.equal(frame.registers.get(0), valueInteger(22));
+		memory.cartridgeController.restoreState(saved); cpu.runUntilDepth(0, 9); assert.equal(frame.registers.get(0), valueInteger(55));
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 });
@@ -146,16 +151,16 @@ test('an empty ROM bus does not hide F64 cross-region reads or high-half faults'
 	const machines = [machine(image.romBytes, slots, CpuExecutionBackend.JavaScript), machine(image.romBytes, slots, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		const frame = cpu.rootThread.frameAtDepth(0);
-		frame.registers.setNumber(1, CART_ROM_BASE); frame.registers.setNumber(2, 1);
-		cpu.runUntilDepth(0, 999); assert.equal(frame.registers.getNumber(0), 0);
-		memory.writeMappedWord(IO_CART_SELECT, 1); cpu.runUntilDepth(0, 9); assert.equal(frame.registers.getNumber(0), 0);
+		frame.registers.setInteger(1, CART_ROM_BASE); frame.registers.setInteger(2, 1);
+		cpu.runUntilDepth(0, 999); assert.equal(frame.registers.get(0), valueFloat(0));
+		memory.writeMappedWord(IO_CART_SELECT, 1); cpu.runUntilDepth(0, 9); assert.equal(frame.registers.get(0), valueFloat(0));
 		memory.writeMappedWord(IO_CART_SELECT, 0); memory.writeMappedWord(CART_RAM_BASE, 0x3ff00000);
-		frame.registers.setNumber(1, CART_ROM_END - 4); cpu.runUntilDepth(0, 9);
-		assert.equal(frame.registers.getNumber(0), 1, 'the high word comes from cartridge RAM, not ROM padding');
-		frame.registers.setNumber(0, 73); frame.registers.setNumber(1, SYSTEM_ROM_SIZE - 4); frame.top = 0;
+		frame.registers.setInteger(1, CART_ROM_END - 4); cpu.runUntilDepth(0, 9);
+		assert.equal(frame.registers.get(0), valueFloat(1), 'the high word comes from cartridge RAM, not ROM padding');
+		frame.registers.setInteger(0, 73); frame.registers.setInteger(1, SYSTEM_ROM_SIZE - 4); frame.top = 0;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
-		assert.equal(frame.registers.getNumber(0), 73); assert.equal(frame.top, 0);
+		assert.equal(frame.registers.get(0), valueInteger(73)); assert.equal(frame.top, 0);
 		assert.equal(cpu.captureRuntimeState().epcWord, image.image.functions[0].codeAddress);
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
@@ -169,7 +174,7 @@ test('data SELECT does not change the physical socket supplying executable instr
 	writeInstruction(text, 1, OpCode.LOAD_MEM, 0, 0, MemoryAccessKind.Word);
 	writeInstruction(text, 2, OpCode.MTC0, 0, COP0_EXEC, 0);
 	writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
-	const launcher = { text, constants: [CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET],
+	const launcher = { text, constants: [integerConstant(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET)],
 		functions: [{ firstWord: 0, wordCount: 3 }, { firstWord: 3, wordCount: 1 }], exceptionFunctionIndex: 1 };
 	const pair0 = linkRawTestBlua32Pair(launcher, source0), pair1 = linkRawTestBlua32Pair(launcher, source1);
 	const data = (Math.max(pair0.cartRomBytes.byteLength, pair1.cartRomBytes.byteLength) + 3) & ~3;
@@ -182,13 +187,13 @@ test('data SELECT does not change the physical socket supplying executable instr
 		const frame = cpu.rootThread.frameAtDepth(0);
 		assert.equal(frame.executionImage.executionDomainId, 0);
 		assert.equal(frame.pc, pair0.cartImage.functions[0].codeAddress);
-		frame.registers.setNumber(1, CART_ROM_BASE + data); frame.registers.setNumber(2, 1);
+		frame.registers.setInteger(1, CART_ROM_BASE + data); frame.registers.setInteger(2, 1);
 		memory.writeMappedWord(IO_CART_SELECT, 1);
 		cpu.runUntilDepth(0, 999);
-		assert.equal(frame.registers.getNumber(0), 33, 'even the first instruction fetch uses the execution socket');
+		assert.equal(frame.registers.get(0), valueInteger(33), 'even the first instruction fetch uses the execution socket');
 		for (const select of [0, 1, 0xfffffffe, 0xffffffff]) {
 			memory.writeMappedWord(IO_CART_SELECT, select); cpu.runUntilDepth(0, 9);
-			assert.equal(frame.registers.getNumber(0), (select & 1) === 0 ? 22 : 33);
+			assert.equal(frame.registers.get(0), valueInteger((select & 1) === 0 ? 22 : 33));
 			assert.equal(frame.executionImage.executionDomainId, 0);
 		}
 	}
@@ -211,7 +216,7 @@ test('a cached instruction binding follows SELECT when EXEC has not overridden i
 		for (const select of [1, 0xfffffffe, 0xffffffff, 0]) {
 			memory.writeMappedWord(IO_CART_SELECT, select);
 			assert.equal(cpu.runUntilDepth(0, 768), RunResult.Yielded);
-			assert.equal(frame.registers.getNumber(1), (select & 1) === 0 ? 1 : 0);
+			assert.equal(frame.registers.get(1), valueInteger((select & 1) === 0 ? 1 : 0));
 			if ((select & 1) === 0) assert.equal(frame.decodedPage, firstPage, 'physical code is retained, not retired by a bus-selection change');
 		}
 	}
@@ -235,9 +240,9 @@ test('warm continuations resolve the live instruction socket after an in-block M
 		machine(image.romBytes, cartridgeSlots(cards[0], cards[1]), CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		const frame = cpu.rootThread.frameAtDepth(0);
-		frame.registers.setNumber(2, IO_CART_SELECT);
+		frame.registers.setInteger(2, IO_CART_SELECT);
 		for (const slot of [0, 1]) {
-			memory.writeMappedWord(IO_CART_SELECT, slot); frame.registers.setNumber(4, slot);
+			memory.writeMappedWord(IO_CART_SELECT, slot); frame.registers.setInteger(4, slot);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], CART_ROM_BASE);
 			cpu.runUntilDepth(0, 10000);
 		}
@@ -248,11 +253,11 @@ test('warm continuations resolve the live instruction socket after an in-block M
 		for (const { cpu, memory } of machines) {
 			const frame = cpu.rootThread.frameAtDepth(0);
 			memory.writeMappedWord(IO_CART_SELECT, slot);
-			frame.registers.setNumber(0, 1 - slot); frame.registers.setNumber(4, slot ^ 1);
+			frame.registers.setInteger(0, 1 - slot); frame.registers.setInteger(4, slot ^ 1);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
 			assert.equal(cpu.runUntilDepth(0, 11), RunResult.Yielded);
-			assert.equal(frame.registers.getNumber(3), 1 - slot);
-			assert.equal(frame.registers.getNumber(6), slot, 'the first instruction after the mux write comes from the newly selected ROM');
+			assert.equal(frame.registers.get(3), valueInteger(1 - slot));
+			assert.equal(frame.registers.get(6), valueInteger(slot), 'the first instruction after the mux write comes from the newly selected ROM');
 			assert.equal(frame.pc, CART_ROM_BASE); assert.equal(cpu.instructionBudgetRemaining, 0);
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
@@ -262,9 +267,9 @@ test('warm continuations resolve the live instruction socket after an in-block M
 	const replacement = cards[1].slice(); writeInstruction(replacement, second + 2, OpCode.KSMI, 5, 0, 7);
 	for (const { cpu, memory } of machines) {
 		memory.cartridgeController.installRom(1, replacement); memory.writeMappedWord(IO_CART_SELECT, 1);
-		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(4, 1);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(4, 1);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
-		cpu.runUntilDepth(0, 11); assert.equal(frame.registers.getNumber(6), 7);
+		cpu.runUntilDepth(0, 11); assert.equal(frame.registers.get(6), valueInteger(7));
 	}
 	assert.equal(lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, 1), page);
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
@@ -276,7 +281,7 @@ for (const cartridgeBound of [false, true]) test(`cross-page links follow the in
 	writeInstruction(launcherText, 1, OpCode.LOAD_MEM, 0, 0, MemoryAccessKind.Word);
 	writeInstruction(launcherText, 2, OpCode.MTC0, 0, COP0_EXEC, 0);
 	writeInstruction(launcherText, 3, OpCode.HALT, 0, 0, 0);
-	const launcher = { text: launcherText, constants: [CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET],
+	const launcher = { text: launcherText, constants: [integerConstant(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET)],
 		functions: [{ firstWord: 0, wordCount: 3, maxStack: 8 }, { firstWord: 3, wordCount: 1 }], exceptionFunctionIndex: 1 };
 	const text = new Uint8Array(3 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.KSMI, 3, 0, 11); writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
@@ -303,7 +308,7 @@ for (const cartridgeBound of [false, true]) test(`cross-page links follow the in
 	for (const { cpu, memory } of machines) {
 		if (cartridgeBound) cpu.runUntilDepth(0, 7);
 		memory.writeBytes(DYNAMIC_RAM_BASE, ram);
-		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(5, IO_CART_SELECT); frame.registers.setNumber(4, 73);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(5, IO_CART_SELECT); frame.registers.setInteger(4, 73);
 		for (const slot of [0, 1]) {
 			memory.writeMappedWord(IO_CART_SELECT, slot); cpu.writeFrameExecution(0, domain, functionAddress, DYNAMIC_RAM_BASE);
 			cpu.runUntilDepth(0, 1200);
@@ -323,8 +328,8 @@ for (const cartridgeBound of [false, true]) test(`cross-page links follow the in
 			memory.writeMappedWord(IO_CART_SELECT, select); cpu.writeFrameExecution(0, domain, functionAddress, DYNAMIC_RAM_BASE);
 			assert.equal(cpu.runUntilDepth(0, 11), RunResult.Yielded);
 			const frame = cpu.rootThread.frameAtDepth(0);
-			assert.equal(frame.registers.getNumber(0), select); assert.equal(frame.registers.getNumber(2), select);
-			assert.equal(frame.registers.getNumber(3), !cartridgeBound && (select & 1) !== 0 ? 22 : 11);
+			assert.equal(frame.registers.get(0), valueInteger(select)); assert.equal(frame.registers.get(2), valueInteger(select));
+			assert.equal(frame.registers.get(3), valueInteger(!cartridgeBound && (select & 1) !== 0 ? 22 : 11));
 			assert.equal(frame.pc, DYNAMIC_RAM_BASE); assert.equal(cpu.instructionBudgetRemaining, 0);
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
@@ -334,7 +339,7 @@ for (const cartridgeBound of [false, true]) test(`cross-page links follow the in
 	for (const block of returns) assert.equal(block.terminal.linkedBlock, null, 'rewriting shared RAM unlinks incoming edges from every socket');
 	for (const { cpu } of machines) {
 		cpu.writeFrameExecution(0, domain, functionAddress, DYNAMIC_RAM_BASE); cpu.runUntilDepth(0, 1200);
-		assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(0), 73);
+		assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(0), valueInteger(73));
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 });
@@ -359,7 +364,7 @@ for (const ramRecord of [false, true]) {
 			{ firstWord: 0, wordCount: 3, maxStack: 8 },
 			{ firstWord: 3, wordCount: 5, maxStack: 8 },
 			{ firstWord: 8, wordCount: 1 }, { firstWord: 9, wordCount: 2, maxStack: 8 },
-		], constants: [CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET, 11],
+		], constants: [integerConstant(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET), integerConstant(11)],
 			exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 4, functionAddress: record }] };
 		const text = new Uint8Array(10 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
@@ -374,10 +379,10 @@ for (const ramRecord of [false, true]) {
 		writeInstruction(text, 9, OpCode.RET, 0, 2, 0);
 		const source = { text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 8 },
 			{ firstWord: 6, wordCount: 2, maxStack: 8 }, { firstWord: 8, wordCount: 2, maxStack: 8 }],
-			constants: [0, 22, 44], closureRelocations: [{ wordIndex: 1,
+			constants: [integerConstant(0), integerConstant(22), integerConstant(44)], closureRelocations: [{ wordIndex: 1,
 				functionAddress: blua32TestFunctionAddress(ramRecord ? 0 : CART_ROM_BASE, 1) }] };
 		const pair = linkRawTestBlua32Pair(system, source);
-		const other = linkRawTestBlua32Pair(system, { ...source, constants: [0, 33, 55] });
+		const other = linkRawTestBlua32Pair(system, { ...source, constants: [integerConstant(0), integerConstant(33), integerConstant(55)] });
 		const otherRecord = other.cartSymbols.functionAddresses[1] - CART_ROM_BASE;
 		writeLE32(other.cartRomBytes, otherRecord + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, other.cartImage.functions[2].codeAddress);
 		writeLE32(other.cartRomBytes, otherRecord + BLUA32_FUNCTION_MAX_STACK_OFFSET, 12);
@@ -398,7 +403,7 @@ for (const ramRecord of [false, true]) {
 		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
 		const entry = pair.cartImage.functions[0].codeAddress + 2 * INSTRUCTION_BYTES;
 		for (const { cpu } of machines) {
-			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(3), ramRecord ? 11 : 22);
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(3), valueInteger(ramRecord ? 11 : 22));
 			cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], entry);
 		}
 		const root = machines[0].cpu.rootThread.frameAtDepth(0);
@@ -407,7 +412,7 @@ for (const ramRecord of [false, true]) {
 		for (let grant = 1; grant <= 128; ++grant) {
 			runCpuParity(machines[0].cpu, machines[1].cpu, grant);
 			assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
-			assert.equal(machines[0].cpu.rootThread.frameAtDepth(0).registers.getNumber(3), ramRecord ? 11 : 22);
+			assert.equal(machines[0].cpu.rootThread.frameAtDepth(0).registers.get(3), valueInteger(ramRecord ? 11 : 22));
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
 		for (const { cpu } of machines) cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], entry);
@@ -429,7 +434,7 @@ for (const ramRecord of [false, true]) {
 			'the callee body is generated as well as its caller');
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
-		for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(0), ramRecord ? 11 : 22,
+		for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(0), valueInteger(ramRecord ? 11 : 22),
 			'the result uses the constants of the closure-bound execution image');
 	});
 }
@@ -461,28 +466,28 @@ test('closure records bind their selected socket and survive cross-domain calls 
 		const closures = [];
 		for (const slot of [0, 1]) {
 			memory.writeMappedWord(IO_CART_SELECT, slot);
-			frame.registers.setNumber(1, record);
+			frame.registers.setInteger(1, record);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, pair.systemSymbols.functionAddresses[0], entry);
 			cpu.runUntilDepth(0, 2);
-			closures.push(frame.registers.getClosure(0));
+			closures.push(frame.registers.getClosure(0, cpu.gc));
 		}
 		assert.notEqual(closures[0], closures[1]);
 		assert.equal(closures[0].executionDomainId, 0);
 		assert.equal(closures[1].executionDomainId, 1);
 		assert.equal(closures[0].codeAddress, pair.cartImage.functions[0].codeAddress);
 		assert.equal(closures[1].codeAddress, pair.cartImage.functions[1].codeAddress);
-		frame.registers.setClosure(0, closures[0]);
-		frame.registers.setClosure(1, closures[1]);
+		frame.registers.setClosure(0, cpu.gc.reference(closures[0]));
+		frame.registers.setClosure(1, cpu.gc.reference(closures[1]));
 		const state = cpu.captureRuntimeState();
 		cpu.restoreRuntimeState(state);
 		for (const slot of [0, 1]) {
 			memory.writeMappedWord(IO_CART_SELECT, 1 - slot);
-			const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(slot);
+			const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(slot, cpu.gc);
 			cpu.beginCompletionCall(closure);
 			cpu.runUntilDepth(1, 100);
-			const result: import('../../machine/ts/machine/cpu/value').Value[] = [];
+			const result: Value[] = [];
 			cpu.readCompletionValues(result);
-			assert.deepEqual(result, [slot === 0 ? 11 : 22]);
+			assert.deepEqual(result, [valueInteger(slot === 0 ? 11 : 22)]);
 		}
 	}
 });
