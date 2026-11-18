@@ -4,7 +4,8 @@ import { runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { Closure, Upvalue } from '../../machine/ts/machine/cpu/closure';
-import { ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
+import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
+import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -33,29 +34,29 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	const block = page.compiledBlocks!.entries[entry]!;
 	assert.equal(block.sourceWords, 8);
 	for (const cpu of [js, ref]) for (let i = 0; i < 257; ++i) {
-		cpu.setGlobalByKey(cpu.stringPool.intern(`grown-${i}`), ValueTag.Number, i, null);
+		cpu.setGlobalByKey(cpu.stringPool.intern(`grown-${i}`), valueInteger(i));
 	}
-	for (const value of [null, false, true, -0, NaN, Infinity, 'text'] as const) {
+	for (const value of [valueNil(), valueBool(false), valueBool(true), valueInteger(-1), valueFloat(-0), valueFloatBits(0xffa12345), valueFloat(Infinity), 'text'] as const) {
 		for (const cpu of [js, ref]) {
 			const r = cpu.rootThread.frameAtDepth(0).registers;
 			r.set(12, value === 'text' ? valueString(cpu.stringPool.intern(value)) : value);
-			cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.getTag(12), r.getScalar(12), r.getReference(12));
-			cpu.setSystemGlobalByKey(cpu.stringPool.intern('shared'), ValueTag.Number, 73, null);
+			cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.get(12));
+			cpu.setSystemGlobalByKey(cpu.stringPool.intern('shared'), valueInteger(73));
 		}
 		runCpuParity(js, ref, loopCycles);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.get(12));
-		assert.equal(js.getGlobalByKey(js.stringPool.find('copied')!), 73);
+		assert.equal(js.getGlobalByKey(js.stringPool.find('copied')!), valueInteger(73));
 		assert.equal(frame.top, 3, 'global stores do not extend top to the source register');
 	}
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setTable(12, cpu.createTable(0, 0));
-		cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.getTag(12), r.getScalar(12), r.getReference(12));
+		r.setTable(12, cpu.gc.reference(cpu.createTable(0, 0)));
+		cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.get(12));
 	}
 	runCpuParity(js, ref, loopCycles);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
-	assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.getTable(12));
+	assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.get(12));
 	assert.ok(page.compiledBlocks!.entries[entry] === block, 'growing the bank does not retire or strand the compiled consumer');
 	const saved = js.captureRuntimeState();
 	js.restoreRuntimeState(saved);
@@ -71,22 +72,27 @@ for (const alias of [false, true]) test(`compiled LOADNIL and LOADKR preserve ki
 	writeInstruction(text, 4, OpCode.LOADKR, destination, 2, 0);
 	writeInstruction(text, 5, OpCode.MOV, 3, destination, 0);
 	writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
-	const constants = [null, false, true, 'literal', -0, NaN, Infinity, 11];
+	const constants = [null, false, true, 'literal', numberConstantFromHost(-0), numberConstantFromHost(NaN), numberConstantFromHost(Infinity), integerConstant(7)];
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 16 }], constants });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	for (const cpu of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 0); cpu.runUntilDepth(0, 700); }
+	for (const cpu of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 7); cpu.runUntilDepth(0, 700); }
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(page.compiledBlocks!.entries[entry]!.sourceWords, 7);
-	for (const input of [0, 1.9, 2.9, 3, 4, 5, 6, 7, 4294967296, NaN, Infinity, -Infinity, -0]) {
+	const expected = [valueNil(), valueBool(false), valueBool(true), valueString(js.stringPool.find('literal')!),
+		valueFloat(-0), valueFloat(NaN), valueFloat(Infinity), valueInteger(7)];
+	for (const [input, index] of [
+		[valueInteger(0), 0], [valueFloat(1.9), 1], [valueFloat(2.9), 2], [valueInteger(3), 3],
+		[valueInteger(4), 4], [valueInteger(5), 5], [valueInteger(6), 6], [valueInteger(7), 7],
+		[valueFloat(4294967296), 0], [valueFloat(-0), 0],
+	] as const) {
 		for (const cpu of [js, ref]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
-			cpu.rootThread.frameAtDepth(0).registers.setNumber(2, input);
+			cpu.rootThread.frameAtDepth(0).registers.set(2, input);
 		}
-		runCpuParity(js, ref, 16);
+		runCpuParity(js, ref, 2 * BASE_CYCLES[OpCode.K1] + 2 * BASE_CYCLES[OpCode.LOADNIL] + BASE_CYCLES[OpCode.LOADKR] + BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP]);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
-		const constant = constants[input >>> 0];
-		assert.equal(frame.registers.get(3), constant === 'literal' ? valueString(js.stringPool.find(constant)!) : constant);
+		assert.equal(frame.registers.get(3), expected[index]);
 		assert.equal(frame.registers.getTag(8), ValueTag.Nil);
 		assert.equal(frame.registers.getTag(9), ValueTag.Nil);
 		assert.equal(frame.top, 10, 'zero-count nil fill does not extend top');
@@ -94,28 +100,28 @@ for (const alias of [false, true]) test(`compiled LOADNIL and LOADKR preserve ki
 });
 
 test('a hot WIDE LOADKR fault publishes its prefix before trapping without writing the destination', () => {
-	for (const bad of [8, -1, 4294967295]) {
+	for (const bad of [valueInteger(8), valueInteger(-1), valueFloat(Infinity), valueFloat(-Infinity), valueFloatBits(0xffa12345), valueNil()]) {
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(text, 0, OpCode.K1, 7, 0, 0);
 		writeInstruction(text, 1, OpCode.WIDE, 1, 1, 0);
 		writeInstruction(text, 2, OpCode.LOADKR, 0, 1, 0); // R256 = K[U32(R513)], not RK[513].
 		writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 514 }], constants: [11] });
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 514 }], constants: [integerConstant(11)] });
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-		for (const cpu of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.setNumber(513, 0); cpu.runUntilDepth(0, 300); }
+		for (const cpu of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.setInteger(513, 0); cpu.runUntilDepth(0, 300); }
 		const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 		const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 		assert.equal(page.compiledBlocks!.entries[entry]!.exits[0].exit, CompiledBlockExit.InvalidConstant);
 		for (const cpu of [js, ref]) {
-			cpu.rootThread.frameAtDepth(0).registers.setNumber(256, 73);
-			cpu.rootThread.frameAtDepth(0).registers.setNumber(513, bad);
+			cpu.rootThread.frameAtDepth(0).registers.setInteger(256, 73);
+			cpu.rootThread.frameAtDepth(0).registers.set(513, bad);
 			cpu.rootThread.frameAtDepth(0).top = 0;
 		}
 		runCpuParity(js, ref, 3);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 		assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
-		assert.equal(frame.registers.getNumber(256), 73);
+		assert.equal(frame.registers.get(256), valueInteger(73));
 		assert.equal(frame.top, 8, 'the trapping load did not extend top');
 	}
 });
@@ -136,39 +142,42 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const frame = cpu.rootThread.frameAtDepth(0);
-		const open = Object.assign(new Upvalue(), { hashId: 100, open: true, index: 0, frame, valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null });
-		const closed = Object.assign(new Upvalue(), { hashId: 101, open: false, index: 0, frame: null, valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null });
+		const open = new Upvalue(), closed = new Upvalue();
+		open.hashId = 100; open.open = true; open.frame = frame;
+		closed.hashId = 101;
+		cpu.gc.track(open); cpu.gc.track(closed);
 		const bound = frame.closure;
-		frame.closure = new Closure(bound.functionAddress, [open, closed], 0, bound.codeAddress,
+		frame.closure = new Closure(bound.functionAddress, Uint32Array.of(cpu.gc.reference(open), cpu.gc.reference(closed)), 0, bound.codeAddress,
 			bound.numParams, bound.maxStack, bound.flags, bound.upvalueTableAddress, bound.executionDomainId, bound.recordUpvalueCount, false);
+		cpu.gc.track(frame.closure);
 		cpu.runUntilDepth(0, 50 * loopCycles);
 	}
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const region = page.compiledBlocks!.entries[entry]!.region;
 	assert.equal(region.entries[0].sourceWords, 9);
-	for (const value of [null, false, true, -0, NaN, 'upvalue'] as const) {
+	for (const value of [valueNil(), valueBool(false), valueBool(true), valueInteger(0), valueFloat(-0), valueFloatBits(0x7fa12345), 'upvalue'] as const) {
 		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.set(12,
 			value === 'upvalue' ? valueString(cpu.stringPool.intern(value)) : value);
 		runCpuParity(js, ref, loopCycles);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
-		assert.equal(frame.registers.getNumber(3), 10, 'SETUP invalidates the earlier cached alias of R0');
-		assert.equal(frame.registers.getNumber(4), 9);
+		assert.equal(frame.registers.get(3), valueInteger(10), 'SETUP invalidates the earlier cached alias of R0');
+		assert.equal(frame.registers.get(4), valueInteger(9));
 		assert.equal(frame.registers.get(6), frame.registers.get(12));
 		assert.equal(frame.top, 7, 'SETUP does not extend top to its source register');
 	}
-	const upvalue = frame.closure.upvalues[0];
-	upvalue.open = false; upvalue.frame = null; upvalue.valueTag = ValueTag.Number; upvalue.valueScalar = 1;
+	const upvalue = js.gc.object(frame.closure.upvalues[0]) as Upvalue;
+	upvalue.open = false; upvalue.frame = null; upvalue.value = valueInteger(1);
 	const r = frame.registers, setEncoded = r.setEncoded.bind(r), writes = new Uint32Array(16);
-	r.setEncoded = (index, tag, scalar, reference) => { ++writes[index]; setEncoded(index, tag, scalar, reference); };
+	r.setEncoded = (index, tag, word) => { ++writes[index]; setEncoded(index, tag, word); };
 	const block = page.compiledBlocks!.entries[entry]!, run = {
 		remainingCycles: block.region.entries.reduce((cycles, entry) => cycles + entry.terminal.cycles, 0), registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 },
 	};
-	const exit = block.region.exits[block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, run)];
+	const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, run)];
 	assert.equal(exit.nextPc, image.image.functions[0].codeAddress); assert.equal(run.remainingCycles, 0);
 	assert.equal(writes[0], 1, 'an ordinary closed-cell write does not publish unrelated local definitions');
 	assert.equal(writes[2], 1, 'a pending numeric source is forwarded to the upvalue without an intermediate writeback');
-	assert.equal(r.getNumber(3), 2);
+	assert.equal(r.get(3), valueInteger(2));
 });
 
 test('an empty compiled open VARARG changes top without touching or growing the destination range', () => {
@@ -178,11 +187,11 @@ test('an empty compiled open VARARG changes top without touching or growing the 
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 4 }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		cpu.rootThread.frameAtDepth(0).registers.setNumber(0, 73); cpu.runUntilDepth(0, 600);
+		cpu.rootThread.frameAtDepth(0).registers.setInteger(0, 73); cpu.runUntilDepth(0, 600);
 	}
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	const frame = js.rootThread.frameAtDepth(0);
-	assert.equal(frame.top, 31); assert.equal(frame.stackCapacity, 4); assert.equal(frame.registers.getNumber(0), 73);
+	assert.equal(frame.top, 31); assert.equal(frame.stackCapacity, 4); assert.equal(frame.registers.get(0), valueInteger(73));
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 2);
 });
@@ -222,8 +231,8 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 			assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const root = cpu.rootThread.frameAtDepth(0);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES);
-			root.registers.setClosure(0, closure);
-			for (let i = 0; i < count; ++i) root.registers.set(i + 1, i === 0 ? false : i === 1 ? null : i);
+			root.registers.setClosure(0, cpu.gc.reference(closure));
+			for (let i = 0; i < count; ++i) root.registers.set(i + 1, i === 0 ? valueBool(false) : i === 1 ? valueNil() : valueInteger(i));
 			root.top = count + 1;
 			assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
 			assert.equal(cpu.rootThread.frameAtDepth(1).varargCount, count);
