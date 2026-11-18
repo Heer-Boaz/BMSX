@@ -1,3 +1,4 @@
+import { valueBool, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -91,8 +92,8 @@ return run(6)
 `;
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [7]);
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [7]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [valueInteger(7)]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(7)]);
 	assert.doesNotMatch(disassembleEntry(optimized), /\bCALL\b/);
 });
 
@@ -108,8 +109,8 @@ return forward()
 `;
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [3, 4]);
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [3, 4]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [valueInteger(3), valueInteger(4)]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(3), valueInteger(4)]);
 	assert.match(disassembleEntry(optimized), /\bCALL\b/);
 });
 
@@ -126,7 +127,7 @@ held.value = held.value + receiver:mix(leaf(2), leaf(3))
 return held.value, leaf(1) + leaf(4), receiver:mix(leaf(5), (leaf(6)))
 `;
 	for (const optLevel of [0, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [333, 60, 514]);
+		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [valueInteger(333), valueInteger(60), valueInteger(514)]);
 	}
 });
 
@@ -143,7 +144,7 @@ captured = captured + 1
 return reader(), first, callee(reader()), captured
 `;
 	for (const optLevel of [0, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [42, 170, 174, 42]);
+		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [valueInteger(42), valueInteger(170), valueInteger(174), valueInteger(42)]);
 	}
 });
 
@@ -205,7 +206,7 @@ return first, second, sequence, only, missing
 	for (const optLevel of [0, 3] as const) {
 		assert.deepEqual(
 			runCompiledLua(source, INLINE_TEST_PATH, optLevel),
-			[1, 2, 3, 7, null],
+			[valueInteger(1), valueInteger(2), valueInteger(3), valueInteger(7), valueNil()],
 		);
 	}
 });
@@ -222,8 +223,8 @@ return result, total
 `;
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [7, 7]);
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [7, 7]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [valueInteger(7), valueInteger(7)]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(7), valueInteger(7)]);
 	assert.doesNotMatch(disassembleEntry(optimized), /\bCALL\b/);
 });
 
@@ -246,7 +247,7 @@ return caller()
 		[image.image.functions[callerProtoIndex].address],
 	);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [7]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(7)]);
 	assert.match(callerDisassembly, /\bCALL\b/);
 });
 
@@ -271,8 +272,8 @@ return nested()
 	const nestedProtoIndex = compiled.metadata.protoIds.findIndex(id => id.startsWith(`${outerProtoId}/anon:`));
 	const nestedParentCapture = compiled.program.protos[nestedProtoIndex].upvalueDescs.find(desc => !desc.inStack)!;
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [22]);
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [22]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [valueInteger(22)]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(22)]);
 	const outerBindings = compiled.metadata.upvalueBindingsByProto[outerProtoIndex];
 	assert.deepEqual(outerBindings.map(index => compiled.metadata.lexicalDeclarations[index].name), ['retained']);
 	const nestedBindings = compiled.metadata.upvalueBindingsByProto[nestedProtoIndex];
@@ -306,7 +307,7 @@ return current()
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 	const disassembly = disassembleEntry(optimized);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [2]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(2)]);
 	assert.match(disassembly, /\bCALL\b/, 'the post-mutation dynamic call must remain a CALL');
 });
 
@@ -324,7 +325,7 @@ return current(), replace
 `;
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3).slice(0, 1), [1]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3).slice(0, 1), [valueInteger(1)]);
 	assert.match(disassembleEntry(optimized), /\bCALL\b/);
 });
 
@@ -351,7 +352,7 @@ local direct<const> = increment(4)
 return escaped == increment, escaped(5), direct
 `;
 	for (const optLevel of [0, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [true, 6, 5]);
+		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [valueBool(true), valueInteger(6), valueInteger(5)]);
 	}
 });
 
@@ -365,7 +366,7 @@ return first(9, 10)
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 	const disassembly = disassembleEntry(optimized);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [9, 10]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(9), valueInteger(10)]);
 	assert.match(disassembly, /\bCALL\b/);
 });
 
@@ -405,5 +406,5 @@ return run(42)`;
 	for (const slot of compiled.metadata.localSlotsByProto[runIndex]) {
 		if (slot.registerIndex >= maxStack) assert.deepEqual(slot.liveWordRanges, [], 'the same rule applies to eliminated inline locals');
 	}
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [42]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(42)]);
 });

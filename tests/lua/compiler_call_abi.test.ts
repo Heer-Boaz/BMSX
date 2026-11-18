@@ -1,3 +1,4 @@
+import { valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
@@ -36,7 +37,7 @@ test('fixed call arguments are produced in adjacent slots, not copied through a 
 	// be materialized directly in the callee's shared parameter slots.
 	assert.match(disassembly, /KSMI r2, 7[\s\S]*KSMI r3, 11[\s\S]*CALL r1, 2, \*/);
 	assert.doesNotMatch(disassembly, /MOV r[23],/);
-	assert.deepEqual(runCompiledLua('local f = function(a, b) return a + b end\nreturn f(7, 11)'), [18]);
+	assert.deepEqual(runCompiledLua('local f = function(a, b) return a + b end\nreturn f(7, 11)'), [valueInteger(18)]);
 });
 
 for (const optLevel of [0, 3] as const) test(`empty return, fallthrough and discarded calls use the zero-value contract (O${optLevel})`, () => {
@@ -50,7 +51,7 @@ implicit()
 local uninitialized
 return uninitialized, pack(empty()), pack(implicit()), pack(nilvalue())
 `;
-	assert.deepEqual(runCompiledLua(source, 'zero-value-results.lua', optLevel), [null, null, null, null]);
+	assert.deepEqual(runCompiledLua(source, 'zero-value-results.lua', optLevel), [valueNil(), valueNil(), valueNil(), valueNil()]);
 	const compiled = compileLuaSource(source, 'zero-value-results.lua', optLevel);
 	const image = linkTestSystemBlua32(compiled);
 	const disassembly = disassembleTestBlua32Functions(image, [image.vectors.entryFunctionAddress]);
