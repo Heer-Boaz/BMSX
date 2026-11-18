@@ -35,7 +35,7 @@ test::Blua32TestImage returnImage(OpCode op = OpCode::RET, u8 a = 0, u8 b = 2, u
 	image.text.resize(INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(op), a, b, c);
 	image.functions = {{.firstWord = 0, .wordCount = 1}};
-	image.constants = {11.0, 29.0};
+	image.constants = {11, 29};
 	return image;
 }
 
@@ -64,19 +64,19 @@ void equalityUsesValueKindsInsteadOfUnusedPayloads() {
 	for (const auto kind : {ValueTag::Nil, ValueTag::False, ValueTag::True}) {
 		CpuMachine machine(image);
 		auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
-		frame.registers[0] = valueFromTag(kind, 1);
-		frame.registers[1] = valueFromTag(kind, 2);
-		frame.registers[2] = valueNumber(0);
-		require(machine.cpu.runUntilDepth(0, 20) == RunResult::Halted && frame.registers[2] == valueNumber(0),
+		frame.registers.set(0, valueFromTag(kind, 1));
+		frame.registers.set(1, valueFromTag(kind, 2));
+		frame.registers.set(2, valueInteger(0));
+		require(machine.cpu.runUntilDepth(0, 20) == RunResult::Halted && frame.registers.get(2) == valueInteger(0),
 			"EQ consumes Nil/boolean kinds without treating their unused payload bits as another value");
 	}
 	CpuMachine machine(image);
-	BuiltinFunction left{BuiltinFunctionId::Type}, right{BuiltinFunctionId::Type};
 	auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
-	frame.registers[0] = valueBuiltinFunction(&left); frame.registers[1] = valueBuiltinFunction(&right);
-	frame.registers[2] = valueNumber(0);
-	require(machine.cpu.runUntilDepth(0, 20) == RunResult::Halted && frame.registers[2] == valueNumber(0),
-		"EQ compares builtin identifiers instead of the host address of their descriptors");
+	frame.registers.set(0, machine.cpu.createBuiltinFunction(BuiltinFunctionId::Type));
+	frame.registers.set(1, valueBuiltinFunction(BuiltinFunctionId::Type));
+	frame.registers.set(2, valueInteger(0));
+	require(machine.cpu.runUntilDepth(0, 20) == RunResult::Halted && frame.registers.get(2) == valueInteger(0),
+		"EQ compares builtin identifiers from independent producers");
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -90,10 +90,10 @@ void nativeFieldGuardsAndRawSlotAccess() {
 	const StringId key = machine.cpu.stringPool().intern("native-field");
 	const StringId other = machine.cpu.stringPool().intern("other-field");
 	Table* table = machine.cpu.createTable(0, 2);
-	int slot = table->setStringKey(key, valueNumber(1));
-	const int otherSlot = table->setStringKey(other, valueNumber(2));
+	int slot = table->setStringKey(key, valueInteger(1));
+	const int otherSlot = table->setStringKey(other, valueInteger(2));
 	table->getStringKeyCached(key, slot);
-	const std::array constants{valueNumber(7), valueString(key)};
+	ValueSlots constants(2); constants.set(0, valueInteger(7)); constants.set(1, valueString(key));
 	size_t bytes = 0;
 	for (const bool store : {false, true}) {
 		DecodedInstruction field;
@@ -104,57 +104,58 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		NativeBlockExitHandlers handlers{};
 		handlers[static_cast<size_t>(NativeBlockExit::ReadField)] = &fieldSlowExitMarker;
 		handlers[static_cast<size_t>(NativeBlockExit::WriteField)] = &fieldSlowExitMarker;
-		auto block = NativeBlock::compile(source, constants.data(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"), handlers);
-		std::array registers{valueTable(table), valueTable(table)};
+		auto block = NativeBlock::compile(source, constants.view(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"), handlers);
+		ValueSlots registers(2);
+		registers.set(0, valueTable(machine.cpu.gcHeap().reference(table))); registers.set(1, valueTable(machine.cpu.gcHeap().reference(table)));
 		if (store) {
 			require(block->sideExits[0].exitC == -1, "native field exits keep signed RK selectors");
-			require(block->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
-				&& table->getStringKey(key) == constants[0], "a native field store updates the real hash slot without a helper");
+			require(block->run(nativeRunState = {.registers = registers.view(), .constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
+				&& table->getStringKey(key) == constants.get(0), "a native field store updates the real hash slot without a helper");
 		} else {
-			for (Value value : {valueNumber(-0.0), VALUE_QNAN_MASK, Value{0x7ff0000000000001ULL},
-				valueBool(false), valueBool(true), valueString(other), valueTable(table)}) {
+			for (Value value : {valueFloatBits(0x80000000u), valueFloatBits(0x7fc00000u), valueFloatBits(0xffa12345u),
+				valueBool(false), valueBool(true), valueString(other), valueTable(machine.cpu.gcHeap().reference(table))}) {
 				table->setStringKey(key, value);
-				require(block->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
-					&& registers[0] == value, "native cached field loads preserve every raw value and reference bit");
+				require(block->run(nativeRunState = {.registers = registers.view(), .constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
+					&& registers.get(0) == value, "native cached field loads preserve every raw value and reference bit");
 			}
 			DecodedInstruction alias = field;
 			alias.a = alias.b;
 			const std::array aliasSource{NativeBlockInstruction{&alias, 0x1000u}};
-			auto aliasBlock = NativeBlock::compile(aliasSource, constants.data(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"));
-			table->setStringKey(key, valueNumber(-0.0));
-			require(aliasBlock->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = aliasBlock->terminal.cycles})->exit == NativeBlockExit::Continue
-				&& registers[1] == valueNumber(-0.0), "a cached field result can replace its own table receiver");
-			registers[1] = valueTable(table);
+			auto aliasBlock = NativeBlock::compile(aliasSource, constants.view(), bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"));
+			table->setStringKey(key, valueFloatBits(0x80000000u));
+			require(aliasBlock->run(nativeRunState = {.registers = registers.view(), .constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = aliasBlock->terminal.cycles})->exit == NativeBlockExit::Continue
+				&& registers.get(1) == valueFloatBits(0x80000000u), "a cached field result can replace its own table receiver");
+			registers.set(1, valueTable(machine.cpu.gcHeap().reference(table)));
 		}
 		for (int prediction : {-1, otherSlot, 100000}) {
 			block->sideExits[0].tableCacheSlot = prediction;
-			const auto* exit = block->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = block->terminal.cycles});
+			const auto* exit = block->run(nativeRunState = {.registers = registers.view(), .constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles});
 			require(exit->exit == NativeBlockExit::Continue
-				&& (store ? table->getStringKey(key) == constants[0] : registers[0] == table->getStringKey(key)),
+				&& (store ? table->getStringKey(key) == constants.get(0) : registers.get(0) == table->getStringKey(key)),
 				"stale predictions complete actual read resolution and allocation-free stores in the native frame");
 			require(block->sideExits[0].tableCacheSlot == slot, "returning field operations repair their actual slot prediction");
 		}
 		block->sideExits[0].tableCacheSlot = slot;
-		registers[store ? 0 : 1] = valueBool(false);
-		require(block->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = block->terminal.cycles})->handler == &fieldSlowExitMarker,
+		registers.set(store ? 0 : 1, valueBool(false));
+		require(block->run(nativeRunState = {.registers = registers.view(), .constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->handler == &fieldSlowExitMarker,
 			"a non-table field receiver is rejected before any native pointer access");
-		registers[0] = registers[1] = valueTable(table);
+		registers.set(0, valueTable(machine.cpu.gcHeap().reference(table))); registers.set(1, valueTable(machine.cpu.gcHeap().reference(table)));
 		table->setStringKey(key, valueNil());
-		const auto* deletedExit = block->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = block->terminal.cycles});
+		const auto* deletedExit = block->run(nativeRunState = {.registers = registers.view(), .constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles});
 		require(deletedExit->exit == NativeBlockExit::Continue
-			&& (store ? table->getStringKey(key) == constants[0] : isNil(registers[0])),
+			&& (store ? table->getStringKey(key) == constants.get(0) : isNil(registers.get(0))),
 			"a deleted own slot is restored without growth or resolved to its actual missing read result");
-		slot = table->setStringKey(key, valueNumber(1));
+		slot = table->setStringKey(key, valueInteger(1));
 		block->sideExits[0].tableCacheSlot = slot;
 		if (!store) {
 			table->metatable = machine.cpu.createTable(0, 0);
-			require(block->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue,
+			require(block->run(nativeRunState = {.registers = registers.view(), .constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue,
 				"a live own field bypasses inheritance even when the table has a metatable");
 			table->setStringKey(key, valueNil());
-			require(block->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
-				&& isNil(registers[0]), "an empty live metatable resolves to nil without a semantic side exit");
+			require(block->run(nativeRunState = {.registers = registers.view(), .constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
+				&& isNil(registers.get(0)), "an empty live metatable resolves to nil without a semantic side exit");
 			table->metatable = nullptr;
-			slot = table->setStringKey(key, valueNumber(1));
+			slot = table->setStringKey(key, valueInteger(1));
 		}
 	}
 	require(bytes == 0, "native field blocks release their executable cache bytes");
@@ -178,8 +179,8 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	for (auto* machine : {&native, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		Table* table = machine->cpu.createTable(0, 1);
-		frame.registers[0] = valueTable(table); frame.registers[1] = valueNumber(1);
-		table->setStringKey(machine->cpu.stringPool().intern("field"), valueNumber(0));
+		frame.registers.set(0, valueTable(machine->cpu.gcHeap().reference(table))); frame.registers.set(1, valueInteger(1));
+		table->setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
 		const int loopCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
@@ -201,10 +202,10 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 		"field hits and arithmetic are compiled together through the loop branch");
 	for (auto* machine : {&native, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		asTable(frame.registers[0])->setStringKey(machine->cpu.stringPool().intern("field"), valueNumber(0));
-		frame.registers[4] = valueNumber(0);
+		asTable(frame.registers.get(0), machine->cpu.gcHeap())->setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
+		frame.registers.set(4, valueInteger(0));
 	}
-	require(loop->run(nativeRunState = {.registers = nativeFrame.registers, .constants = nativeFrame.executionImage->constPool.data(), .remainingCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]
+	require(loop->run(nativeRunState = {.registers = nativeFrame.registers, .constants = nativeFrame.executionImage->constPool.view(), .heap = &native.cpu.gcHeap(), .remainingCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)]})->nextPc == native.rom.textAddress,
 		"ordinary read and write hits reach the final native branch without a host side exit");
@@ -226,7 +227,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	}
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu; auto& frame = *cpu.activeThread()->frameAtDepth(0);
-		frame.registers[0] = valueBool(false); frame.top = 0;
+		frame.registers.set(0, valueBool(false)); frame.top = 0;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
 		require(cpu.runUntilDepth(0, 100) == RunResult::Halted, "a native field miss reaches the normal synchronous fault owner");
 		require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NON_TABLE
@@ -241,12 +242,12 @@ void nativeFieldStoreMissKeepsSignedConstantSelectors() {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETFIELD), 0, 0, 62, 7); // RK(C) = K[1].
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 1}};
-	image.constants = {std::string("field"), 7.0};
+	image.constants = {std::string("field"), 7};
 	CpuMachine machine(image);
 	Table* table = machine.cpu.createTable(0, 1);
-	machine.cpu.activeThread()->frameAtDepth(0)->registers[0] = valueTable(table);
+	machine.cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueTable(machine.cpu.gcHeap().reference(table)));
 	const StringId key = machine.cpu.stringPool().intern("field");
-	table->setStringKey(key, valueNumber(1));
+	table->setStringKey(key, valueInteger(1));
 	machine.cpu.runUntilDepth(0, (NATIVE_BLOCK_COMPILATION_THRESHOLD + 8)
 		* (BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)]));
 	const auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
@@ -255,7 +256,7 @@ void nativeFieldStoreMissKeepsSignedConstantSelectors() {
 	require(block && block->sideExits[0].exitC == -2, "compiled field maps retain signed constant selectors");
 	table->setStringKey(key, valueNil());
 	require(machine.cpu.runUntilDepth(0, 3) == RunResult::Yielded
-		&& table->getStringKey(key) == valueNumber(7) && machine.cpu.readLuaFaultReasonWord() == 0,
+		&& table->getStringKey(key) == valueInteger(7) && machine.cpu.readLuaFaultReasonWord() == 0,
 		"a generated store miss re-creates a deleted field from the correct raw RK constant");
 }
 
@@ -372,7 +373,7 @@ void nativeCodeUsesCachedWordsAtPartialRomTails() {
 	test::waitForNativeEntry(cpu, page, (pc & MAPPED_PAGE_BYTE_MASK) >> 2u);
 	require(page.nativeBlocks && page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) >> 2u],
 		"a partial ROM page can compile its already decoded instruction prefix");
-	require(cpu.readFramePc(0) == pc && cpu.readFrameRegister(0, 1) == valueNumber(2)
+	require(cpu.readFramePc(0) == pc && cpu.readFrameRegister(0, 1) == valueInteger(2)
 		&& machine.memory.readBusFaultSequence() == faultSequence,
 		"cached native admission never probes the unbacked ROM tail");
 }
@@ -440,7 +441,7 @@ void nativeCodeRetiresOnWritesAndObservation() {
 	machine.memory.writeBytes(pc + INSTRUCTION_BYTES, image.text.data() + INSTRUCTION_BYTES, INSTRUCTION_BYTES);
 	require(!page.nativeBlocks, "a source-word write retires native dependencies before their next execution");
 	for (int warmup = 0; warmup < 16; ++warmup) cpu.runUntilDepth(0, 64);
-	require(cpu.readFrameRegister(0, 1) == valueNumber(0),
+	require(cpu.readFrameRegister(0, 1) == valueInteger(0),
 		"rewritten source bytes replace the previously generated arithmetic");
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	test::waitForFixtureWorkerRequests(cpu);
@@ -455,8 +456,8 @@ void nativeCodeRetiresOnWritesAndObservation() {
 	InstructionObserverBinding binding;
 	binding.context = &observations;
 	binding.points[0].insert(pc + INSTRUCTION_BYTES);
-	binding.observe = [](void* context, ExecutionDomainId domain, u32, const Value* registers) {
-		require(domain == SYSTEM_EXECUTION_DOMAIN_ID && registers[0] == valueNumber(1),
+	binding.observe = [](void* context, ExecutionDomainId domain, u32, ConstValueSpan registers) {
+		require(domain == SYSTEM_EXECUTION_DOMAIN_ID && registers.get(0) == valueInteger(1),
 			"observation sees the exact state before the formerly compiled instruction");
 		++*static_cast<int*>(context);
 	};
@@ -535,7 +536,7 @@ void nativeHaltCommitsItsThreadAndFrameLatch() {
 		cpu.requestNonMaskableInterrupt();
 		require(cpu.enterPendingInterrupt() && !cpu.isHaltedUntilIrq(), "an accepted NMI releases native HALT");
 		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && cpu.getFrameDepth() == 0
-			&& cpu.readCompletionValues()[0] == valueNumber(7),
+			&& cpu.readCompletionValues().get(0) == valueInteger(7),
 			"RFE resumes at the instruction following native WIDE HALT");
 	}
 }
@@ -570,7 +571,7 @@ void nativeTerminalAtPageBoundaryTracksItsBody() {
 	require(!head.nativeBlocks, "changing a generated terminal body retires the preceding page's native entry");
 	cpu.clearHaltUntilIrq();
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
-	require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueNumber(-1),
+	require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueInteger(-1),
 		"the rewritten WIDE body replaces the generated HALT semantics");
 }
 
@@ -601,7 +602,7 @@ void nativeWritesPreserveIndependentBlocks() {
 		image.text.data() + 9u * INSTRUCTION_BYTES, INSTRUCTION_BYTES);
 	require(page.nativeBlocks->entries[0].get() == preserved && !page.nativeBlocks->entries[8],
 		"a source write retires exactly the overlapping generated dependencies");
-	require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && cpu.readFrameRegister(0, 1) == valueNumber(0),
+	require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && cpu.readFrameRegister(0, 1) == valueInteger(0),
 		"the changed region executes its new source without invalidating independent code");
 }
 
@@ -669,7 +670,7 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 		require(test::runCpuParity(native.cpu, scalar.cpu, 5) == RunResult::Yielded, "generated RET preserves the consumed cycle boundary");
 		for (auto* machine : {&native, &scalar}) {
 			require(machine->cpu.getFrameDepth() == 1, "a generated return resumes its caller");
-			machine->cpu.activeThread()->frameAtDepth(0)->registers[4] = valueNumber(77);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers.set(4, valueInteger(77));
 		}
 		require(test::runCpuParity(native.cpu, scalar.cpu, 100) == RunResult::Halted,
 			"a failing native call unwinds through the normal Lua-fault owner");
@@ -677,7 +678,7 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 			auto& cpu = machine->cpu;
 			require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_CALL_NON_FUNCTION
 				&& cpu.readEpcWord() == machine->rom.textAddress + 3u * INSTRUCTION_BYTES
-				&& cpu.readFrameRegister(0, 6) == valueNumber(1),
+				&& cpu.readFrameRegister(0, 6) == valueInteger(1),
 				"native call failure commits its exact faulting PC and preserves the caller continuation");
 		}
 		require(native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
@@ -745,7 +746,7 @@ void nativeCallUsesItsClosureBoundFunctionRecord() {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES);
 		source.armed = true;
 		require(cpu.runUntilDepth(0, 100) == RunResult::Yielded && source.writes == 0
-			&& source.armed && cpu.readFrameRegister(0, 6) == valueNumber(1),
+			&& source.armed && cpu.readFrameRegister(0, 6) == valueInteger(1),
 			"a call uses its closure-bound function record without rereading the mapped source");
 		if (!instrumented) require(page.nativeBlocks && page.nativeBlocks->entries[2],
 			"no function-record reread means no source-write invalidation");
@@ -803,67 +804,69 @@ void compactAndPaddedRomFunctionRecordsAgree() {
 		const int cycles = BASE_CYCLES[static_cast<size_t>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<size_t>(OpCode::CALL)]
 			+ 2 * (BASE_CYCLES[static_cast<size_t>(OpCode::RET)] + 1) + BASE_CYCLES[static_cast<size_t>(OpCode::K1)];
 		require(cpu.runUntilDepth(0, cycles) == RunResult::Halted, "compact and padded calls complete");
-		require(cpu.readCompletionValues().size() == 1u && cpu.readCompletionValues()[0] == valueNumber(1), "compact and padded ROM calls return the same guest value");
+		require(cpu.readCompletionValues().size() == 1u && cpu.readCompletionValues().get(0) == valueInteger(1), "compact and padded ROM calls return the same guest value");
 		require(cpu.instructionBudgetRemaining == 0, "direct record reads preserve exact call and return charges");
 		require(memory.readBusFaultSequence() == 0u, "backed record reads do not invent a bus transaction fault");
 	}
 }
 
 void stringBytePositions() {
-	struct Case { std::string source; Value position; u8 arguments; Value expected; };
+	struct Case { std::string source; Value position; u8 arguments; Value expected; bool faults = false; };
 	const std::string unicode("Aé雪\0😀Z", 12);
 	for (const bool instrumented : {false, true}) {
 		for (const Case& testCase : {
-			Case{unicode, valueNil(), 1, valueNumber(65)},
-			Case{unicode, valueNil(), 2, valueNumber(65)},
-			Case{unicode, valueNumber(2), 2, valueNumber(233)},
-			Case{unicode, valueNumber(3), 2, valueNumber(0x96ea)},
-			Case{unicode, valueNumber(4), 2, valueNumber(0)},
-			Case{unicode, valueNumber(5), 2, valueNumber(0x1f600)},
-			Case{unicode, valueNumber(6), 2, valueNumber(90)},
-			Case{unicode, valueNumber(7), 2, valueNil()},
+			Case{unicode, valueNil(), 1, valueInteger(65)},
+			Case{unicode, valueNil(), 2, valueInteger(65)},
+			Case{unicode, valueInteger(2), 2, valueInteger(233)},
+			Case{unicode, valueInteger(3), 2, valueInteger(0x96ea)},
+			Case{unicode, valueInteger(4), 2, valueInteger(0)},
+			Case{unicode, valueInteger(5), 2, valueInteger(0x1f600)},
+			Case{unicode, valueInteger(6), 2, valueInteger(90)},
+			Case{unicode, valueInteger(7), 2, valueNil()},
 			Case{"", valueNil(), 1, valueNil()},
-			Case{"abc", valueNumber(0), 2, valueNil()},
-			Case{"abc", valueNumber(-1), 2, valueNil()},
-			Case{"abc", valueNumber(2.9), 2, valueNumber(98)},
-			Case{"abc", valueNumber(4294967298.0), 2, valueNumber(98)},
-			Case{"abc", valueNumber(std::numeric_limits<f64>::quiet_NaN()), 2, valueNil()},
-			Case{"abc", valueNumber(std::numeric_limits<f64>::infinity()), 2, valueNil()},
-			Case{std::string(4096, 'a'), valueNumber(4096), 2, valueNumber(97)},
+			Case{"abc", valueInteger(0), 2, valueNil()},
+			Case{"abc", valueInteger(-1), 2, valueNil()},
+			Case{"abc", valueFloat(2.9f), 2, valueInteger(98)},
+			Case{std::string(511, 'a') + "Z", valueFloat(0x1p32f + 512.f), 2, valueInteger(90)},
+			Case{"abc", valueFloatBits(0xffa12345u), 2, valueNil(), true},
+			Case{"abc", valueFloatBits(0x7f800000u), 2, valueNil(), true},
+			Case{std::string(4096, 'a'), valueInteger(4096), 2, valueInteger(97)},
 		}) {
 			auto image = returnImage(OpCode::CALL, 0, encodeFixedValueCount(testCase.arguments), 2);
 			image.text.resize(2 * INSTRUCTION_BYTES);
 			writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 			image.functions[0].wordCount = 2;
 			image.functions[0].maxStack = 3;
+			image.functions.push_back({.firstWord = 1, .wordCount = 1}); image.exceptionFunctionIndex = 1;
 			CpuMachine machine(image);
 			auto& cpu = machine.cpu;
 			if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-			Value* registers = cpu.activeThread()->frameAtDepth(0)->registers;
-			registers[0] = cpu.createBuiltinFunction(BuiltinFunctionId::StringByte);
-			registers[1] = valueString(cpu.stringPool().intern(testCase.source));
-			registers[2] = testCase.position;
+			auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+			registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
+			registers.set(1, valueString(cpu.stringPool().intern(testCase.source)));
+			registers.set(2, testCase.position);
 			require(cpu.runUntilDepth(0, 100) == RunResult::Halted, "string.byte executes in both dispatch modes");
-			require(cpu.readFrameRegister(0, 0) == testCase.expected, "string.byte preserves scalar, default and signed-word position semantics");
+			if (testCase.faults) require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+				&& cpu.readEpcWord() == machine.rom.textAddress, "nonfinite position faults at CALL");
+			else require(cpu.readCauseWord() == 0 && cpu.readFrameRegister(0, 0) == testCase.expected,
+				"string.byte preserves scalar, default and signed-word position semantics");
 		}
 	}
 }
 
 void loadKrIndices() {
-	const f64 infinity = std::numeric_limits<f64>::infinity();
-	const f64 nan = std::numeric_limits<f64>::quiet_NaN();
-	for (const auto [input, expected] : {std::pair{0.0, 11.0}, {1.9, 29.0}, {4294967296.0, 11.0}, {nan, 11.0}, {infinity, 11.0}, {-infinity, 11.0}, {-0.0, 11.0}}) {
+	for (const auto [input, expected] : {std::pair{valueInteger(0), 11}, {valueFloat(1.9f), 29}, {valueFloat(0x1p32f), 11}, {valueFloat(-0.f), 11}}) {
 		CpuMachine machine(returnImage(OpCode::LOADKR, 0, 0, 0));
-		machine.cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(input);
+		machine.cpu.activeThread()->frameAtDepth(0)->registers.set(0, input);
 		machine.cpu.runUntilDepth(0, 1);
-		require(asNumber(machine.cpu.readFrameRegister(0, 0)) == expected, "LOADKR word conversion");
+		require(machine.cpu.readFrameRegister(0, 0) == valueInteger(expected), "LOADKR word conversion");
 	}
-	for (const f64 input : {2.0, -1.0, 4294967295.0}) {
+	for (const Value input : {valueInteger(2), valueInteger(-1), valueFloatBits(0x7fc12345u), valueFloatBits(0x7f800000u), valueFloatBits(0xff800000u)}) {
 		CpuMachine machine(returnImage(OpCode::LOADKR, 0, 0, 0));
-		machine.cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(input);
+		machine.cpu.activeThread()->frameAtDepth(0)->registers.set(0, input);
 		const u32 pc = machine.cpu.readFramePc(0);
 		machine.cpu.runUntilDepth(0, 1);
-		require(machine.cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP, "LOADKR range fault");
+		require(machine.cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP, "LOADKR word or range fault");
 		require(machine.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT, "LOADKR argument reason");
 		require(machine.cpu.readEpcWord() == pc, "LOADKR fault EPC");
 	}
@@ -890,9 +893,9 @@ void wideSignedImmediatesKeepTheirRange() {
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 		const u32 pc = cpu.readFramePc(0);
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "WIDE KSMI consumes one physical instruction charge");
-		require(cpu.readFrameRegister(0, 0) == valueNumber(immediate), "all signed immediate bits survive decoded storage");
+		require(cpu.readFrameRegister(0, 0) == valueInteger(immediate), "all signed immediate bits survive decoded storage");
 		require(cpu.readFramePc(0) == pc + 2 * INSTRUCTION_BYTES && cpu.lastPc == pc + INSTRUCTION_BYTES, "instruction length remains independent of the immediate bits");
-		require(cpu.runUntilDepth(0, 2) == RunResult::Halted && cpu.readCompletionValues()[0] == valueNumber(immediate), "the immediate survives ordinary completion");
+		require(cpu.runUntilDepth(0, 2) == RunResult::Halted && cpu.readCompletionValues().get(0) == valueInteger(immediate), "the immediate survives ordinary completion");
 	}
 }
 
@@ -913,17 +916,17 @@ void returnRangesSurviveCallerStackGrowth() {
 			auto& cpu = machine.cpu;
 			if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 			Table* table = cpu.createTable(0, 0);
-			cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(91);
-			cpu.activeThread()->frameAtDepth(0)->registers[1] = valueTable(table);
+			cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(91));
+			cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(cpu.gcHeap().reference(table)));
 			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]) == RunResult::Yielded && cpu.getFrameDepth() == 2, "prepare a real nested return");
 			CallFrame& callee = *cpu.activeThread()->frameAtDepth(1);
-			const Value samples[] = {valueNumber(-0.0), valueNil(), valueBool(false), valueString(cpu.stringPool().intern("result")), valueTable(table)};
-			for (int i = 0; i < produced; ++i) callee.registers[5 + i] = samples[i % 5];
+			const Value samples[] = {valueFloatBits(0x80000000u), valueNil(), valueBool(false), valueString(cpu.stringPool().intern("result")), valueTable(cpu.gcHeap().reference(table))};
+			for (int i = 0; i < produced; ++i) callee.registers.set(5 + i, samples[i % 5]);
 			callee.top = 5 + produced;
 			require(cpu.runUntilDepth(1, 2) == RunResult::Halted && cpu.getFrameDepth() == 1, "RET stops before the caller continuation");
 			const int targetCount = requested == 0 ? produced : requested;
 			require(cpu.getFrameRegisterCount(0) == 2 + targetCount, "result placement sets the exact top, including an empty open range");
-			require(cpu.readFrameRegister(0, 0) == valueNumber(91) && cpu.readFrameRegister(0, 1) == valueTable(table), "return preserves slots before its destination");
+			require(cpu.readFrameRegister(0, 0) == valueInteger(91) && cpu.readFrameRegister(0, 1) == valueTable(cpu.gcHeap().reference(table)), "return preserves slots before its destination");
 			for (int i = 0; i < targetCount; ++i) {
 				require(cpu.readFrameRegister(0, 2 + i) == (i < produced ? samples[i % 5] : valueNil()), "shifted source slots retain values and fixed results truncate or nil-pad");
 			}
@@ -946,17 +949,17 @@ void builtinReturnRangesSurviveDestinationGrowth() {
 		Table* table = cpu.createTable(1, 0);
 		const Value text = valueString(cpu.stringPool().intern("result"));
 		if (kind == 2) table->setInteger(1, text);
-		Value* registers = cpu.activeThread()->frameAtDepth(0)->registers;
-		registers[0] = valueNumber(91); registers[1] = valueBool(true);
-		registers[2] = cpu.createBuiltinFunction(kind == 0 ? BuiltinFunctionId::Select : BuiltinFunctionId::Next);
-		registers[3] = kind == 0 ? valueNumber(1) : valueTable(table);
-		registers[4] = valueNil();
+		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+		registers.set(0, valueInteger(91)); registers.set(1, valueBool(true));
+		registers.set(2, cpu.createBuiltinFunction(kind == 0 ? BuiltinFunctionId::Select : BuiltinFunctionId::Next));
+		registers.set(3, kind == 0 ? valueInteger(1) : valueTable(cpu.gcHeap().reference(table)));
+		registers.set(4, valueNil());
 		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && cpu.readCauseWord() == 0u, "builtin result transfer finishes without a machine fault");
 		const int targetCount = requested == 0 ? kind : requested;
 		require(cpu.getFrameRegisterCount(0) == 2 + targetCount, "builtin results set exact top after open and fixed calls");
-		require(cpu.readFrameRegister(0, 0) == valueNumber(91) && cpu.readFrameRegister(0, 1) == valueBool(true), "builtin result growth preserves preceding slots");
+		require(cpu.readFrameRegister(0, 0) == valueInteger(91) && cpu.readFrameRegister(0, 1) == valueBool(true), "builtin result growth preserves preceding slots");
 		for (int i = 0; i < targetCount; ++i) {
-			const Value expected = kind == 2 && i < 2 ? (i == 0 ? valueNumber(1) : text) : valueNil();
+			const Value expected = kind == 2 && i < 2 ? (i == 0 ? valueInteger(1) : text) : valueNil();
 			require(cpu.readFrameRegister(0, 2 + i) == expected, "builtin-owned results survive growth, truncate and nil-pad");
 		}
 	}
@@ -974,9 +977,9 @@ void instructionBoundaryResynchronizesAfterFetchOrObservation() {
 		image.exceptionFunctionIndex = 1;
 		CpuMachine machine(image);
 		auto& cpu = machine.cpu;
-		Value* interruptedRegisters = cpu.activeThread()->frameAtDepth(0)->registers;
-		interruptedRegisters[6] = valueNumber(0);
-		interruptedRegisters[7] = valueNumber(99);
+		auto& interruptedRegisters = cpu.activeThread()->frameAtDepth(0)->registers;
+		interruptedRegisters.set(6, valueInteger(0));
+		interruptedRegisters.set(7, valueInteger(99));
 		struct Edge { IrqController& irq; u32 instruction; int count = 0; } edge{machine.irq, readLE32(image.text.data())};
 		u32 pc = cpu.readFramePc(0);
 		if (mappedFetch) {
@@ -992,7 +995,7 @@ void instructionBoundaryResynchronizesAfterFetchOrObservation() {
 			InstructionObserverBinding observer;
 			observer.points[0].insert(pc);
 			observer.context = &edge;
-			observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) {
+			observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) {
 				auto& event = *static_cast<Edge*>(context);
 				++event.count;
 				event.irq.raise(IRQ_GPU);
@@ -1004,7 +1007,7 @@ void instructionBoundaryResynchronizesAfterFetchOrObservation() {
 		if (mappedFetch) {
 			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "the rejected MMIO fetch consumes one fetch-fault cycle");
 			require(edge.count == 0 && cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
-				&& cpu.readEpcWord() == pc && interruptedRegisters[6] == valueNumber(0),
+				&& cpu.readEpcWord() == pc && interruptedRegisters.get(6) == valueInteger(0),
 				"MMIO fetch faults before the device read or instruction execution");
 			require(machine.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED
 				&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == pc
@@ -1015,8 +1018,8 @@ void instructionBoundaryResynchronizesAfterFetchOrObservation() {
 		require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)]) == RunResult::Yielded, "fetch/observer edge preserves instruction grant");
 		require(edge.count == 1 && cpu.activeThread()->frameDepth == 2, "device edge enters the IRQ frame before the next instruction");
 		require(cpu.readCauseWord() == CPU_CAUSE_IRQ && cpu.readEpcWord() == pc + INSTRUCTION_BYTES, "interrupt saves the next physical PC");
-		require(cpu.activeThread()->frameAtDepth(0)->registers[6] == valueNumber(99), "the fetched or observed instruction completes before accepting the edge");
-		require(cpu.activeThread()->currentFrame->registers[0] == valueNumber(1), "IRQ execution uses its own frame register base");
+		require(cpu.activeThread()->frameAtDepth(0)->registers.get(6) == valueInteger(99), "the fetched or observed instruction completes before accepting the edge");
+		require(cpu.activeThread()->currentFrame->registers.get(0) == valueInteger(1), "IRQ execution uses its own frame register base");
 	}
 }
 
@@ -1117,7 +1120,7 @@ void instructionFetchRejectsCartridgeMmio() {
 		memory.cartridgeController().writeU32(pc, readLE32(instruction.data()), mappedBusSignalsForCartridgeSlot(0));
 		if (!wide) {
 			auto* frame = cpu.activeThread()->frameAtDepth(0);
-			frame->registers[0] = valueNumber(0); frame->registers[1] = valueNumber(0);
+			frame->registers.set(0, valueInteger(0)); frame->registers.set(1, valueInteger(0));
 			for (unsigned visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 2u; ++visit) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], pc);
 				require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && frame->pc == CART_MMIO_BASE,
@@ -1131,7 +1134,7 @@ void instructionFetchRejectsCartridgeMmio() {
 					"the non-skipping comparison warmed an actual native block");
 			}
 #endif
-			frame->registers[1] = valueNumber(1);
+			frame->registers.set(1, valueInteger(1));
 		}
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], pc);
 		require(cpu.runUntilDepth(0, wide ? 1 : 2) == RunResult::Yielded,
@@ -1189,9 +1192,9 @@ void cachedFetchCrossesWidePagesAndObservesCodeWrites() {
 			require(cpu.runUntilDepth(0, 8) == RunResult::Yielded, "two cross-page loops exhaust exactly eight guest cycles");
 			require(cpu.instructionBudgetRemaining == 0 && cpu.readCauseWord() == 0u, "cached WIDE fetch preserves cycle charge without an exception");
 			require(cpu.readFramePc(0) == pc && cpu.lastPc == pc + 4 * INSTRUCTION_BYTES, "backward branches preserve physical next/last PC");
-			require(cpu.readFrameRegister(0, 0) == valueNumber(phase == 2 ? -1 : 1), "code writes invalidate a cached prefix page");
-			require(cpu.readFrameRegister(0, 1) == valueNumber(phase == 0 ? 66 : 79), "a body-only write invalidates a WIDE prefix in the preceding page");
-			require(cpu.readFrameRegister(0, 2) == valueNumber(1), "execution continues after the cross-page WIDE");
+			require(cpu.readFrameRegister(0, 0) == valueInteger(phase == 2 ? -1 : 1), "code writes invalidate a cached prefix page");
+			require(cpu.readFrameRegister(0, 1) == valueInteger(phase == 0 ? 66 : 79), "a body-only write invalidates a WIDE prefix in the preceding page");
+			require(cpu.readFrameRegister(0, 2) == valueInteger(1), "execution continues after the cross-page WIDE");
 		}
 	}
 }
@@ -1206,13 +1209,13 @@ void rewrittenInstructionRetainsItsOwnCycleCharge() {
 		const u32 pc = DYNAMIC_RAM_BASE + 0x4000u;
 		const u32 destination = pc + 0x100u;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
-		cpu.activeThread()->frameAtDepth(0)->registers[1] = valueNumber(destination);
+		cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueInteger(destination));
 		int observations = 0;
 		if (observed) {
 			InstructionObserverBinding observer;
 			observer.points[0].insert(pc);
 			observer.context = &observations;
-			observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) {
+			observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) {
 				++*static_cast<int*>(context);
 			};
 			cpu.setInstructionObserver(std::move(observer));
@@ -1258,7 +1261,7 @@ void partialCodeWritesRetainOtherDecodedStarts() {
 		require(page.refreshState[8] == DECODED_REFRESH_DECODE && page.refreshState[4] == 0u, "a second write before re-decode still invalidates its independent cached instruction");
 		require(page.refreshState[5] == 0u && page.refreshState[6] == 0u && page.refreshState[7] == 0u, "ordinary predecessors do not consume the rewritten instruction's source words");
 		require(cpu.runUntilDepth(0, loopCycles) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "partial code writes preserve exact guest charges");
-		require(cpu.readFrameRegister(0, 0) == valueNumber(0) && cpu.readFrameRegister(0, 1) == valueNumber(-1), "both changed instructions execute, without losing the retained watch");
+		require(cpu.readFrameRegister(0, 0) == valueInteger(0) && cpu.readFrameRegister(0, 1) == valueInteger(-1), "both changed instructions execute, without losing the retained watch");
 	}
 }
 
@@ -1289,9 +1292,9 @@ void sourceAndFusionDependenciesRemainSeparate() {
 		writeInstruction(code, wordCount - 1u, static_cast<u8>(OpCode::JMP), 0, 63, 64u - wordCount, 255);
 		const u32 pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - headWords * INSTRUCTION_BYTES;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
-		cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(2);
-		cpu.activeThread()->frameAtDepth(0)->registers[1] = valueNumber(3);
-		cpu.activeThread()->frameAtDepth(0)->registers[2] = valueNumber(1);
+		cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(2));
+		cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueInteger(3));
+		cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueInteger(1));
 		const std::array<OpCode, 3> successors{OpCode::MOV, OpCode::SHL, OpCode::BXOR};
 		const std::array<int, 3> results{5, 10, 4};
 		for (size_t phase = 0; phase < successors.size(); ++phase) {
@@ -1304,7 +1307,7 @@ void sourceAndFusionDependenciesRemainSeparate() {
 				require(page.refreshState[DECODED_PAGE_WORDS - headWords] == DECODED_REFRESH_FUSION, "successor writes dirty fusion eligibility, not the unchanged head's source decode");
 			}
 			require(cpu.runUntilDepth(0, 6) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "WIDE and narrow pairs retain their three-cycle loop budget");
-			require(cpu.readFramePc(0) == pc && cpu.readFrameRegister(0, 4) == valueNumber(results[phase]), "negative and positive fusion decisions observe the rewritten successor");
+			require(cpu.readFramePc(0) == pc && cpu.readFrameRegister(0, 4) == valueInteger(results[phase]), "negative and positive fusion decisions observe the rewritten successor");
 			if (!instrumented) {
 				const auto& page = cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
 				const u8 expected = phase == 1 ? static_cast<u8>(DecodedDispatchOp::FusedAddShl) : static_cast<u8>(OpCode::ADD);
@@ -1330,10 +1333,10 @@ void changedWideFusionBodyInvalidatesItsCrossPageHead() {
 		const u32 pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 2u * INSTRUCTION_BYTES;
 		machine.memory.writeBytes(pc, code.data(), code.size());
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
-		cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(2);
-		cpu.activeThread()->frameAtDepth(0)->registers[1] = valueNumber(3);
-		cpu.activeThread()->frameAtDepth(0)->registers[2] = valueNumber(1);
-		require(cpu.runUntilDepth(0, 6) == RunResult::Yielded && cpu.readFrameRegister(0, 4) == valueNumber(10), "two WIDE instructions execute across a page boundary");
+		cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(2));
+		cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueInteger(3));
+		cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueInteger(1));
+		require(cpu.runUntilDepth(0, 6) == RunResult::Yielded && cpu.readFrameRegister(0, 4) == valueInteger(10), "two WIDE instructions execute across a page boundary");
 		if (!instrumented) {
 			const auto& page = cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
 			require(page.words[DECODED_PAGE_WORDS - 2u].dispatchOp == static_cast<u8>(DecodedDispatchOp::FusedAddShl), "normal execution actually cached the four-word fusion");
@@ -1341,7 +1344,7 @@ void changedWideFusionBodyInvalidatesItsCrossPageHead() {
 		writeInstruction(code, 3, static_cast<u8>(OpCode::BXOR), 4, 3, 2);
 		machine.memory.writeMappedU8(pc + 3u * INSTRUCTION_BYTES + 2u, code[3u * INSTRUCTION_BYTES + 2u]);
 		require(cpu.runUntilDepth(0, 4) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "a changed last fusion word preserves the exact charge");
-		require(cpu.readFrameRegister(0, 4) == valueNumber(4), "the fourth word invalidates its fused start three words earlier in the preceding page");
+		require(cpu.readFrameRegister(0, 4) == valueInteger(4), "the fourth word invalidates its fused start three words earlier in the preceding page");
 	}
 }
 #endif
@@ -1372,7 +1375,7 @@ void writableCodeWatchesBelongToTheirPhysicalSocket() {
 			);
 			memory.writeMappedU32LE(IO_CART_SELECT, slot);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], CART_RAM_BASE);
-			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueNumber(1), "each physical socket admits its own writable code");
+			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueInteger(1), "each physical socket admits its own writable code");
 			pages[slot] = cpu.activeThread()->frameAtDepth(0)->decodedPage;
 		}
 		writeInstruction(code, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
@@ -1383,7 +1386,7 @@ void writableCodeWatchesBelongToTheirPhysicalSocket() {
 		for (u32 slot = 0; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
 			memory.writeMappedU32LE(IO_CART_SELECT, slot);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], CART_RAM_BASE);
-			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueNumber(slot == 0u ? -1 : 0), "both physical sockets execute their changed instructions");
+			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueInteger(slot == 0u ? -1 : 0), "both physical sockets execute their changed instructions");
 		}
 	}
 }
@@ -1410,7 +1413,7 @@ void cachedInstructionBindingsFollowThePhysicalSelector() {
 		const auto* firstPage = cpu.activeThread()->frameAtDepth(0)->decodedPage;
 		for (const u32 select : {1u, 0xfffffffeu, 0xffffffffu, 0u}) {
 			memory.writeMappedWord(IO_CART_SELECT, select);
-			require(cpu.runUntilDepth(0, 768) == RunResult::Yielded && cpu.readFrameRegister(0, 1) == valueNumber((select & 1u) == 0u ? 1 : 0),
+			require(cpu.runUntilDepth(0, 768) == RunResult::Yielded && cpu.readFrameRegister(0, 1) == valueInteger((select & 1u) == 0u ? 1 : 0),
 				"without EXEC override, changing SELECT changes the physical code at the unchanged cached PC");
 			if ((select & 1u) == 0u) require(cpu.activeThread()->frameAtDepth(0)->decodedPage == firstPage,
 				"switching sockets retains each socket's independent decoded/native code");
@@ -1455,7 +1458,7 @@ void closureCallAndReturnRespectFrameBoundaries() {
 			}
 		}
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-		cpu.activeThread()->frameAtDepth(0)->registers[2] = valueNumber(99);
+		cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueInteger(99));
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "closure setup consumes its own physical instruction");
 		const u32 callPc = cpu.readFramePc(0);
 		const int callAndValue = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)];
@@ -1466,15 +1469,15 @@ void closureCallAndReturnRespectFrameBoundaries() {
 			state.haltedUntilIrqThreadRef = state.activeThreadRef;
 			cpu.restoreRuntimeState(state);
 			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(edgeKind == 4 ? OpCode::CALL : OpCode::RET)] + 1) == RunResult::Halted && cpu.instructionBudgetRemaining == (edgeKind == 5 ? 0 : 1), "frame transition activates the retained depth-sensitive HALT latch before another instruction");
-			require(cpu.readFrameRegister(0, 2) == valueNumber(99), "HALT retains the caller continuation");
-			if (edgeKind == 4) require(isNil(cpu.activeThread()->frameAtDepth(1)->registers[0]), "HALT at new callee depth precedes callee execution");
+			require(cpu.readFrameRegister(0, 2) == valueInteger(99), "HALT retains the caller continuation");
+			if (edgeKind == 4) require(isNil(cpu.activeThread()->frameAtDepth(1)->registers.get(0)), "HALT at new callee depth precedes callee execution");
 			continue;
 		}
 		if (edgeKind == 2) {
 			InstructionObserverBinding observer;
 			observer.points[0].insert(callPc);
 			observer.context = &edge;
-			observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) {
+			observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) {
 				auto& event = *static_cast<Edge*>(context);
 				++event.count;
 				event.irq.raise(IRQ_GPU);
@@ -1487,14 +1490,14 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		if (edgeKind == 2) {
 			require(edge.count == 1 && cpu.activeThread()->frameDepth == 3, "call-side device/observer edge enters IRQ before callee execution");
 			require(cpu.readCauseWord() == CPU_CAUSE_IRQ && cpu.readEpcWord() == calleePc, "CALL completes before IRQ saves the callee entry PC");
-			require(isNil(cpu.activeThread()->frameAtDepth(1)->registers[0]) && cpu.activeThread()->frameAtDepth(2)->registers[0] == valueNumber(1), "IRQ, callee and caller retain separate register bases");
+			require(isNil(cpu.activeThread()->frameAtDepth(1)->registers.get(0)) && cpu.activeThread()->frameAtDepth(2)->registers.get(0) == valueInteger(1), "IRQ, callee and caller retain separate register bases");
 			continue;
 		}
 		if (edgeKind == 1) require(edge.count == 0, "CALL does not reread the closure-bound record");
 		require(cpu.activeThread()->frameDepth == 2 && cpu.readFramePc(1) == calleePc + INSTRUCTION_BYTES, "direct call rebinds the callee and stops before RET");
 		require(cpu.runUntilDepth(1, 20) == RunResult::Halted && cpu.instructionBudgetRemaining == 20 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 1, "return stops at the requested depth with unused cycles retained");
-		require(cpu.readFrameRegister(0, 3) == valueNumber(1) && cpu.readFrameRegister(0, 2) == valueNumber(99), "return publishes results without executing the caller continuation");
-		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 2) == valueNumber(1), "resuming after return binds the caller registers");
+		require(cpu.readFrameRegister(0, 3) == valueInteger(1) && cpu.readFrameRegister(0, 2) == valueInteger(99), "return publishes results without executing the caller continuation");
+		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 2) == valueInteger(1), "resuming after return binds the caller registers");
 	}
 }
 
@@ -1507,7 +1510,7 @@ void successorFetchOrdering() {
 	image.exceptionFunctionIndex = 1;
 	// A partial backing page proves cacheability is not a readable-successor capability.
 	for (const u32 ramBytes : {PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.ramBytes - 16u}) {
-		for (const auto [op, expected] : {std::pair{OpCode::ADD, 4.0}, {OpCode::SHL, 6.0}, {OpCode::SHR, 1.0}}) {
+		for (const auto [op, expected] : {std::pair{OpCode::ADD, 4}, {OpCode::SHL, 6}, {OpCode::SHR, 1}}) {
 			for (const bool wideSuccessor : {false, true}) {
 				for (int dispatch = 0; dispatch < 4; ++dispatch) {
 					for (const bool warm : {false, true}) {
@@ -1522,14 +1525,14 @@ void successorFetchOrdering() {
 						machine.memory.writeBytes(currentPc, instructions.data(), instructions.size());
 						const u32 functionAddress = machine.rom.functionAddresses[0];
 						cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, currentPc);
-						Value* registers = cpu.activeThread()->frameAtDepth(0)->registers;
-						registers[0] = valueNumber(3.0);
-						registers[1] = valueNumber(1.0);
+						auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
+						registers.set(0, valueInteger(3));
+						registers.set(1, valueInteger(1));
 						int observations = 0;
 						if (dispatch == 1 || dispatch == 2) {
 							InstructionObserverBinding observer;
 							observer.points[0].insert(dispatch == 1 ? currentPc : successorPc);
-							observer.observe = [](void* state, ExecutionDomainId, u32, const Value*) { ++*static_cast<int*>(state); };
+							observer.observe = [](void* state, ExecutionDomainId, u32, ConstValueSpan) { ++*static_cast<int*>(state); };
 							observer.context = &observations;
 							cpu.setInstructionObserver(std::move(observer));
 						}
@@ -1541,10 +1544,10 @@ void successorFetchOrdering() {
 						}
 						if (dispatch == 3) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 						else cpu.setExecutionHook({});
-						registers[2] = valueNumber(-1.0);
+						registers.set(2, valueInteger(-1));
 						const u32 faultSequence = machine.memory.readBusFaultSequence();
 						require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(op)]) == RunResult::Yielded, "current instruction consumes its own grant");
-						require(asNumber(cpu.readFrameRegister(0, 2)) == expected, "current numeric result precedes successor fault");
+						require(cpu.readFrameRegister(0, 2) == valueInteger(expected), "current numeric result precedes successor fault");
 						require(cpu.readFramePc(0) == successorPc, "current instruction advances to successor");
 						require(cpu.lastPc == currentPc, "last PC identifies current instruction");
 						require(cpu.instructionBudgetRemaining == 0, "current instruction retains its base charge");
@@ -1552,7 +1555,7 @@ void successorFetchOrdering() {
 						require(machine.memory.readBusFaultSequence() == faultSequence, "speculative lookahead issues no faulting bus read");
 						require(observations == (dispatch == 1 ? 1 : 0), "only fetched current instruction is observed");
 						require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "successor fetch consumes its own grant");
-						require(asNumber(cpu.readFrameRegister(0, 2)) == expected, "successor fault retains current result");
+						require(cpu.readFrameRegister(0, 2) == valueInteger(expected), "successor fault retains current result");
 						require(cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, "successor fetch records IBE");
 						require(cpu.readEpcWord() == successorPc, "successor fetch records instruction-start EPC");
 						require(cpu.readBadAddressWord() == 0u, "IBE retains BadAddress");
@@ -1585,7 +1588,7 @@ void reservedMemoryKinds() {
 				int observations = 0;
 				InstructionObserverBinding observer;
 				observer.points[0].insert(pc);
-				observer.observe = [](void* state, ExecutionDomainId, u32, const Value*) { ++*static_cast<int*>(state); };
+				observer.observe = [](void* state, ExecutionDomainId, u32, ConstValueSpan) { ++*static_cast<int*>(state); };
 				observer.context = &observations;
 				cpu.setInstructionObserver(std::move(observer));
 				if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
@@ -1619,11 +1622,11 @@ void zeroStackReuse() {
 	CpuMachine machine(image);
 	auto& cpu = machine.cpu;
 	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "zero-stack call finishes");
-	require(isNil(cpu.readCompletionValues()[0]), "zero results nil-pad only the requested caller slot");
-	cpu.activeThread()->stack[0] = valueNumber(91.0);
+	require(isNil(cpu.readCompletionValues().get(0)), "zero results nil-pad only the requested caller slot");
+	cpu.activeThread()->stack.set(0, valueInteger(91));
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, 0x1a0);
-	require(cpu.readFrameRegister(0, 0) == valueNumber(91), "activation does not initialize scratch storage");
-	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted && cpu.readCompletionValues().empty(), "completion preserves true zero results");
+	require(cpu.readFrameRegister(0, 0) == valueInteger(91), "activation does not initialize scratch storage");
+	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted && cpu.readCompletionValues().size() == 0, "completion preserves true zero results");
 }
 
 void haltYieldPrecedence() {
@@ -1677,6 +1680,7 @@ void cachedPcWrapping() {
 	DecodedInstructionPage page(true, {});
 	page.refreshState.fill(0);
 	frame.pc = 0xfffffff8u;
+	frame.registers.set(0, valueInteger(1));
 	frame.decodedPage = &page;
 	frame.decodedPageAddress = 0xfffffc00u;
 	frame.decodedPageBusSignals = mappedBusSignalsForCartridgeSlot(0);
@@ -1698,7 +1702,7 @@ void imageTextImport() {
 	image.constants = {std::string("\xef\xbb\xbf" "A")};
 	CpuMachine machine(image);
 	machine.cpu.runUntilDepth(0, 100);
-	require(machine.cpu.stringPool().toString(asStringId(machine.cpu.readCompletionValues()[0])) == "\xef\xbb\xbf" "A", "initial U+FEFF is preserved");
+	require(machine.cpu.stringPool().toString(asStringId(machine.cpu.readCompletionValues().get(0))) == "\xef\xbb\xbf" "A", "initial U+FEFF is preserved");
 	for (const std::vector<u8>& bytes : {std::vector<u8>{0xc0, 0x80}, {0xed, 0xa0, 0x80}, {0xf4, 0x90, 0x80, 0x80}, {0xe2, 0x82}, {0x80}, {0xe2, 0x28, 0xa1}}) {
 		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 		const u32 table = readLE32(rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET);
