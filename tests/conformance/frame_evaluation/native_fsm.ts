@@ -4,12 +4,11 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { asClosure, asTable, valueBool, valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
 import type { CompiledRegion } from '../../../machine/ts/machine/cpu/compiled_region';
-import type { Closure } from '../../../machine/ts/machine/cpu/closure';
 import { DecodedDispatchOp } from '../../../machine/ts/machine/cpu/execution_image';
-import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../../machine/ts/machine/memory/mapped_page';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -80,6 +79,7 @@ for (const optLevel of [0, 3] as const) {
 			sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect: () => {},
 		});
 		runtime.boot();
+		const firmware = runtime.machine.cpu.rootThread.currentFrame!.executionImage;
 		const { cpu, memory } = runtime.machine;
 		let primaryFunction = 0, activeCycles = 0;
 		const retained: Array<CompiledRegion | null> = [null, null];
@@ -89,14 +89,15 @@ for (const optLevel of [0, 3] as const) {
 			activeCycles += grant - cpu.instructionBudgetRemaining;
 			assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 			assert.equal(cpu.isHaltedUntilIrq(), phase !== 8);
-			if (phase !== 8) assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('fsm_phase')!), phase);
-			else assert.deepEqual(runtime.readCompletionValues(), [true, true]);
+			if (phase !== 8) assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('fsm_phase')!), valueInteger(phase));
+			else assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueBool(true)]);
 			const reference = observations[0][phase];
 			assert.equal(activeCycles, reference.activeCycles, `${name} O${optLevel} ${phases[phase]}: exact guest cycles`);
 			assert.equal(cpu.instructionBudgetRemaining, reference.remainingCycles, `${name} O${optLevel} ${phases[phase]}: HALT budget`);
 			if (phase >= 1 && phase < 8) {
 				for (let evaluator = 0; evaluator < (phase >= 5 ? 2 : 1); evaluator++) {
-					const closure = cpu.getGlobalByKey(cpu.stringPool.find(evaluator === 0 ? 'fsm_evaluator' : 'fsm_other')!) as Closure;
+					const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find(evaluator === 0 ? 'fsm_evaluator' : 'fsm_other')!), cpu.gc);
+					assert.equal(closure.executionDomainId, firmware.executionDomainId);
 					const address = closure.functionAddress;
 					const code = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
 					const bytecodeBytes = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
@@ -108,7 +109,7 @@ for (const optLevel of [0, 3] as const) {
 					if (evaluator === 0) assert.equal(address, primaryFunction);
 					else assert.notEqual(address, primaryFunction);
 					if (backend === CpuExecutionBackend.JavaScript && ((evaluator === 0 && phase >= 2) || (evaluator === 1 && phase >= 6))) {
-						const page = cpu.rootThread.currentFrame!.executionImage.compiledCodeLookup!.find(code, 0)!;
+						const page = firmware.compiledCodeLookup!.find(code, 0)!;
 						const word = (code & (MAPPED_PAGE_BYTE_SIZE - 1)) / 4;
 						const block = page.compiledBlocks!.entries[word]!;
 						assert.ok(block, 'specific actual firmware evaluator acquired its generated entry');
@@ -117,8 +118,11 @@ for (const optLevel of [0, 3] as const) {
 						else assert.equal(block.region, retained[evaluator], 'warm evaluator region survives execution, same-shape rebinding and new-shape compilation');
 					}
 				}
-				if (phase >= 4) for (let index = 1; index <= 32; index++)
-					assert.equal(((cpu.getGlobalByKey(cpu.stringPool.find('fsm_bindings')!) as Table).getInteger(index) as Closure).functionAddress, primaryFunction);
+				if (phase >= 4) {
+					const bindings = asTable(cpu.getGlobalByKey(cpu.stringPool.find('fsm_bindings')!), cpu.gc);
+					for (let index = 1; index <= 32; index++)
+						assert.equal(asClosure(bindings.getInteger(index), cpu.gc).functionAddress, primaryFunction);
+				}
 			}
 			const state = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 			writeFileSync(join(directory, `O${optLevel}-${name}.${phase}.state`), state);

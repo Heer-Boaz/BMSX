@@ -134,7 +134,7 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 11, static_cast<u8>(OpCode::JMP), 0, 63, 52, 255);
 		break;
 	case Workload::Globals:
-		image.globalNames = {"value"}; image.systemGlobalNames = {"value"}; image.constants = {11.0};
+		image.globalNames = {"value"}; image.systemGlobalNames = {"value"}; image.constants = {11};
 		writeInstruction(text, 0, static_cast<u8>(OpCode::GETGL), 0, 0, 0);
 		writeInstruction(text, 1, static_cast<u8>(OpCode::ADD), 0, 0, 1);
 		writeInstruction(text, 2, static_cast<u8>(OpCode::SETGL), 0, 0, 0);
@@ -196,37 +196,37 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
 	cpu.reset();
-	Value* registers = cpu.activeThread()->frameAtDepth(0)->registers;
-	registers[0] = valueNumber(1); registers[1] = valueNumber(3);
-	registers[2] = valueNumber(7); registers[3] = valueNumber(65535);
+	ValueSpan registers = cpu.activeThread()->frameAtDepth(0)->registers;
+	registers.set(0, valueInteger(1)); registers.set(1, valueInteger(3));
+	registers.set(2, valueInteger(7)); registers.set(3, valueInteger(65535));
 	Table* retained = nullptr;
 	if (workload == Workload::Globals) {
-		cpu.setGlobalByKey(cpu.stringPool().intern("value"), valueNumber(1));
-		cpu.setSystemGlobalByKey(cpu.stringPool().intern("value"), valueNumber(1)); registers[5] = valueNumber(0);
+		cpu.setGlobalByKey(cpu.stringPool().intern("value"), valueInteger(1));
+		cpu.setSystemGlobalByKey(cpu.stringPool().intern("value"), valueInteger(1)); registers.set(5, valueInteger(0));
 	}
 	if (workload == Workload::TableChurnLive) {
 		retained = cpu.createTable(4096, 0);
-		cpu.setGlobalByKey(cpu.stringPool().intern("retained"), valueTable(retained));
+		cpu.setGlobalByKey(cpu.stringPool().intern("retained"), valueTable(cpu.gcHeap().reference(retained)));
 		const auto field = cpu.stringPool().intern("field");
 		for (int index = 1; index <= 4096; ++index) {
 			auto* child = cpu.createTable(1, 1);
-			child->setInteger(1, valueNumber(index));
-			child->setStringKey(field, valueNumber(index));
-			retained->setInteger(index, valueTable(child));
+			child->setInteger(1, valueInteger(index));
+			child->setStringKey(field, valueInteger(index));
+			retained->setInteger(index, valueTable(cpu.gcHeap().reference(child)));
 		}
 	}
 	if (workload == Workload::Tables) {
 		Table* table = cpu.createTable(8, 1);
-		registers[0] = valueTable(table);
-		for (int index = 1; index <= 8; ++index) table->setInteger(index, valueNumber(index));
-		table->setStringKey(cpu.stringPool().intern("field"), valueNumber(1));
+		registers.set(0, valueTable(cpu.gcHeap().reference(table)));
+		for (int index = 1; index <= 8; ++index) table->setInteger(index, valueInteger(index));
+		table->setStringKey(cpu.stringPool().intern("field"), valueInteger(1));
 	} else if (workload == Workload::Builtin) {
-		registers[0] = cpu.createBuiltinFunction(BuiltinFunctionId::StringByte);
-		registers[1] = valueString(cpu.stringPool().intern(std::string(1024, 'x')));
-		registers[2] = valueNumber(1024);
+		registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
+		registers.set(1, valueString(cpu.stringPool().intern(std::string(1024, 'x'))));
+		registers.set(2, valueInteger(1024));
 	} else if (workload == Workload::Ram) {
-		registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x100);
-		registers[2] = valueNumber(1);
+		registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x100));
+		registers.set(2, valueInteger(1));
 		memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x100, 1);
 	} else if (workload == Workload::CallsRamRecord) {
 		memory.writeBytes(RAM_RECORD_ADDRESS, rom.bytes.data() + rom.functionAddresses[1] - SYSTEM_ROM_BASE,
@@ -236,16 +236,16 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		for (u32 offset = 0; offset < image.text.size(); offset += INSTRUCTION_BYTES) {
 			memory.writeMappedU32LE(codeAddress + offset, readLE32(image.text.data() + offset));
 		}
-		registers[0] = valueNumber(readLE32(image.text.data() + INSTRUCTION_BYTES));
-		registers[1] = valueNumber(codeAddress + INSTRUCTION_BYTES);
-		registers[4] = valueNumber(readLE32(image.text.data() + INSTRUCTION_BYTES)
-			^ readLE32(image.text.data() + 8 * INSTRUCTION_BYTES));
+		registers.set(0, valueInteger(readLE32(image.text.data() + INSTRUCTION_BYTES)));
+		registers.set(1, valueInteger(codeAddress + INSTRUCTION_BYTES));
+		registers.set(4, valueInteger(readLE32(image.text.data() + INSTRUCTION_BYTES)
+			^ readLE32(image.text.data() + 8 * INSTRUCTION_BYTES)));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], codeAddress);
 	} else if (workload == Workload::Fractions) {
-		registers[0] = valueNumber(0.125);
-		registers[1] = valueNumber(0.125);
-		registers[2] = valueNumber(0.5);
-		registers[3] = valueNumber(0.25);
+		registers.set(0, valueFloat(0.125));
+		registers.set(1, valueFloat(0.125));
+		registers.set(2, valueFloat(0.5));
+		registers.set(3, valueFloat(0.25));
 	}
 	// Keep the amount of baseline-weighted work constant when evaluating a uniform
 	// instruction timing calibration. These work units are not retired instructions.
@@ -261,26 +261,26 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 			throw std::runtime_error("Benchmark must execute its workload, not an exception handler.");
 		}
 		if (workload == Workload::CodeWrites) {
-			const double value = asNumber(cpu.readFrameRegister(0, 6));
-			codeOutcomes |= value == 0 ? 1u : 0u;
-			codeOutcomes |= value == 1 ? 2u : 0u;
+			const Value value = cpu.readFrameRegister(0, 6);
+			codeOutcomes |= value == valueInteger(0) ? 1u : 0u;
+			codeOutcomes |= value == valueInteger(1) ? 2u : 0u;
 		}
 	}
 	if (workload == Workload::CodeWrites && codeOutcomes != 3u) {
 		throw std::runtime_error("Executable RAM writes must change both the instruction and its observed result.");
 	}
-	if (workload == Workload::CallsRamRecord && cpu.readFrameRegister(0, 6) != valueNumber(1)) {
+	if (workload == Workload::CallsRamRecord && cpu.readFrameRegister(0, 6) != valueInteger(1)) {
 		throw std::runtime_error("RAM record calls must execute the callee and return its result.");
 	}
-	if (workload == Workload::CallsArithmetic && cpu.readFrameRegister(0, 6) != valueNumber(4294967296.0)) {
+	if (workload == Workload::CallsArithmetic && cpu.readFrameRegister(0, 6) != valueInteger(0)) {
 		throw std::runtime_error("Arithmetic calls must execute the complete callee body and return its result.");
 	}
-	if (workload == Workload::Globals && (cpu.readFrameRegister(0, 4) != valueNumber(11)
+	if (workload == Workload::Globals && (cpu.readFrameRegister(0, 4) != valueInteger(11)
 		|| cpu.readFrameRegister(0, 6) != valueNil() || cpu.readFrameRegister(0, 7) != valueNil())) {
 		throw std::runtime_error("Context workloads must perform dynamic constant reads and range fills.");
 	}
 	if ((workload == Workload::TableChurn || workload == Workload::TableChurnLive)
-		&& cpu.readFrameRegister(0, 6) != valueNumber(10)) {
+		&& cpu.readFrameRegister(0, 6) != valueInteger(10)) {
 		throw std::runtime_error("Allocation workload must populate and read its new tables.");
 	}
 	i64 cycles = 0;
@@ -293,7 +293,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	const auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
 	if (retained) {
 		for (int index = 1; index <= 4096; ++index) {
-			if (asTable(retained->getInteger(index))->getInteger(1) != valueNumber(index)) {
+			if (asTable(retained->getInteger(index), cpu.gcHeap())->getInteger(1) != valueInteger(index)) {
 				throw std::runtime_error("Collection must preserve the entire retained graph.");
 			}
 		}

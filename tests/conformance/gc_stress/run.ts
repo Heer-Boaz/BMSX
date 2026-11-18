@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
+import { valueBool } from '../../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -50,7 +51,7 @@ try {
 				}
 			}
 			assert.equal(result, RunResult.Halted, label);
-			assert.deepEqual(runtime.readCompletionValues(), [true], label);
+			assert.deepEqual(runtime.readCompletionValues(), [valueBool(true)], label);
 			assert.ok(counter.allocations > 32, label);
 			const expected = decodeRuntimeSaveState(encodeRuntimeSaveState(captureRuntimeSaveState(runtime)),
 				PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);

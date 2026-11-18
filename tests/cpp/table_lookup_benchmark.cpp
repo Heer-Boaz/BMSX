@@ -35,7 +35,7 @@ struct Fixture {
 		size_t count = 0;
 		for (size_t n = 0; count < KeyCount * 2; ++n) {
 			const auto key = cpu.stringPool().intern("field_" + std::to_string(n));
-			if ((ValueHash{}(valueString(key)) & 63u) != 0u) continue;
+			if ((cpu.gcHeap().hash(valueString(key)) & 63u) != 0u) continue;
 			(count < KeyCount ? keys[count] : missing[count - KeyCount]) = key;
 			++count;
 		}
@@ -44,21 +44,21 @@ struct Fixture {
 			tables[t] = table;
 			for (size_t i = 0; i < KeyCount; ++i) {
 				const size_t k = (i + t) & (KeyCount - 1);
-				table->setStringKey(keys[k], valueNumber(k + 1));
+				table->setStringKey(keys[k], valueInteger(k + 1));
 			}
 		}
 		indexKey = cpu.stringPool().intern("__index");
 		inherited = tables[0];
 		for (int depth = 0; depth < 4; ++depth) {
 			auto* metatable = cpu.createTable(0, 1);
-			metatable->setStringKey(indexKey, valueTable(inherited));
+			metatable->setStringKey(indexKey, valueTable(cpu.gcHeap().reference(inherited)));
 			auto* child = cpu.createTable();
 			child->metatable = metatable;
 			inherited = child;
 		}
 		for (size_t i = 0; i < KeyCount; ++i) {
 			slots[i] = -1;
-			const Value expected = valueNumber(i + 1);
+			const Value expected = valueInteger(i + 1);
 			if (tables[0]->getStringKeyCached(keys[i], slots[i]) != expected
 				|| !isNil(tables[0]->getStringKey(missing[i]))) {
 				throw std::runtime_error("Table benchmark must start with the expected collision chains.");
@@ -76,7 +76,7 @@ template <Mode mode>
 void measure(Fixture& fixture, const char* name, int round) {
 	fixture.slots.fill(-1);
 	for (size_t k = 0; k < KeyCount; ++k) {
-		fixture.tables[0]->setStringKey(fixture.keys[k], valueNumber(k + 1));
+		fixture.tables[0]->setStringKey(fixture.keys[k], valueInteger(k + 1));
 		fixture.tables[0]->getStringKeyCached(fixture.keys[k], fixture.slots[k]);
 	}
 	u64 checksum = 0;
@@ -97,7 +97,7 @@ void measure(Fixture& fixture, const char* name, int round) {
 			fixture.inherited->resolveStringIndex(fixture.indexKey, fixture.keys[k], value);
 			result = value.value;
 		} else {
-			result = fixture.tables[0]->setStringKey(fixture.keys[k], valueNumber(i & 127u));
+			result = fixture.tables[0]->setStringKey(fixture.keys[k], valueInteger(i & 127u));
 		}
 		checksum = (checksum << 5u) + checksum + result + i;
 	}
@@ -106,7 +106,7 @@ void measure(Fixture& fixture, const char* name, int round) {
 	for (size_t i = 0; i < Iterations; ++i) {
 		const size_t k = (i >> 5u) & (KeyCount - 1u);
 		const u64 result = mode == Mode::Miss ? valueNil()
-			: mode == Mode::Update ? static_cast<u64>(fixture.slots[k]) : valueNumber(k + 1u);
+			: mode == Mode::Update ? static_cast<u64>(fixture.slots[k]) : valueInteger(k + 1u);
 		expected = (expected << 5u) + expected + result + i;
 	}
 	if (checksum != expected) throw std::runtime_error("Every measured table operation must contribute its expected result.");

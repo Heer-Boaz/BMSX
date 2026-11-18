@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
 		}
 		stressEnabled = false;
 		const auto values = runtime.readCompletionValues();
-		if (result != bmsx::RunResult::Halted || values.size() != 1 || values[0] != bmsx::valueBool(true)
+		if (result != bmsx::RunResult::Halted || values.size() != 1 || values.get(0) != bmsx::valueBool(true)
 			|| stressedAllocations <= 32) throw std::runtime_error("GC stress fixture did not finish successfully");
 		const auto bytes = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
 		std::ofstream output(std::string(argv[1]) + ".state", std::ios::binary);
