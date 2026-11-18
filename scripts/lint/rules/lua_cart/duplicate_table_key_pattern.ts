@@ -5,6 +5,7 @@ import {
 	LuaSyntaxKind as SyntaxKind,
 	LuaUnaryOperator as UnaryOperator,
 } from '../../../../toolchain/ts/lua/syntax/ast';
+import { evaluateNumberUnary, numberConstantValue } from '../../../../toolchain/ts/lua/number';
 import { type CartLintContext } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 import { pushIssue } from './impl/support/lint_context';
@@ -23,13 +24,14 @@ function staticTableKey(field: TableField, arrayIndex: number): StaticTableKey |
 	const key = field.key;
 	switch (key.kind) {
 		case SyntaxKind.StringLiteralExpression:
-		case SyntaxKind.NumericLiteralExpression:
 		case SyntaxKind.BooleanLiteralExpression:
 			return key.value;
+		case SyntaxKind.NumericLiteralExpression:
+			return numberConstantValue(key.value);
 		case SyntaxKind.UnaryExpression:
 			if (key.operator === UnaryOperator.Negate
 				&& key.operand.kind === SyntaxKind.NumericLiteralExpression) {
-				return -key.operand.value;
+				return numberConstantValue(evaluateNumberUnary(key.operator, key.operand.value)!);
 			}
 			return undefined;
 		default:
