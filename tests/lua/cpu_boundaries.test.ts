@@ -9,7 +9,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { createDecodedInstructionPage, DecodedDispatchOp, DECODED_PAGE_WORDS, DECODED_REFRESH_DECODE, type DecodedInstructionPage } from '../../machine/ts/machine/cpu/execution_image';
 import { mappedBusSignalsForCartridgeSlot } from '../../machine/ts/machine/memory/bus_signals';
-import { type Value, valueIsString, valueString, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { type Value, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueIsString, valueString, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { readLE16, readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
@@ -32,30 +32,40 @@ function returnImage(op = OpCode.RET, a = 0, b = 2, c = 0) {
 	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }], constants: [11, 29] });
 }
 
-test('string.byte preserves codepoint, default and signed-word position semantics in both dispatch modes', () => {
+test('string.byte uses signed word positions in a builtin CALL', () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
-	for (const instrumented of [false, true]) {
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		for (const [source, position, expected] of [
-			['Aé雪\0😀Z', undefined, 65], ['Aé雪\0😀Z', null, 65],
-			['Aé雪\0😀Z', 2, 233], ['Aé雪\0😀Z', 3, 0x96ea],
-			['Aé雪\0😀Z', 4, 0], ['Aé雪\0😀Z', 5, 0x1f600], ['Aé雪\0😀Z', 6, 90],
-			['Aé雪\0😀Z', 7, null], ['', undefined, null], ['abc', 0, null],
-			['abc', -1, null], ['abc', 2.9, 98], ['abc', 0x100000002, 98],
-			['abc', NaN, null], ['abc', Infinity, null], ['a'.repeat(4096), 4096, 97],
+			['Aé雪\0😀Z', undefined, 65], ['Aé雪\0😀Z', valueNil(), 65],
+			['Aé雪\0😀Z', valueInteger(2), 233], ['Aé雪\0😀Z', valueInteger(3), 0x96ea],
+			['Aé雪\0😀Z', valueInteger(4), 0], ['Aé雪\0😀Z', valueInteger(5), 0x1f600], ['Aé雪\0😀Z', valueInteger(6), 90],
+			['Aé雪\0😀Z', valueInteger(7), null], ['', undefined, null], ['abc', valueInteger(0), null],
+			['abc', valueInteger(-1), null], ['abc', valueFloat(2.9), 98], ['abc', valueFloat(2 ** 31), null],
+			['a'.repeat(511) + 'Z', valueFloat(2 ** 32 + 512), 90], ['a'.repeat(4096), valueInteger(4096), 97],
+			['abc', valueFloatBits(0xffa12345), 'fault'], ['abc', valueFloat(Infinity), 'fault'],
+			['abc', valueFloat(-Infinity), 'fault'], ['abc', valueBool(false), 'fault'],
 		] as const) {
 			writeInstruction(text, 0, OpCode.CALL, 0, position === undefined ? 2 : 3, 2);
 			const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({
-				text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }],
-			}));
-			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+				text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }, { firstWord: 1, wordCount: 1 }],
+				exceptionFunctionIndex: 1,
+			}), backend);
 			const registers = cpu.rootThread.frameAtDepth(0).registers;
-			registers.setEncoded(0, ValueTag.BuiltinFunction, BuiltinFunctionId.StringByte, null);
-			registers.setStringId(1, cpu.stringPool.intern(source));
-			if (position === null) registers.setNil(2);
-			else if (position !== undefined) registers.setNumber(2, position);
+			registers.setBuiltinFunction(0, BuiltinFunctionId.StringByte);
+			registers.setString(1, cpu.stringPool.intern(source));
+			if (position !== undefined) registers.set(2, position);
+			const pc = cpu.readFramePc(0);
+			const callee = registers.get(0);
 			assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-			assert.equal(cpu.readFrameRegister(0, 0), expected);
+			if (expected === 'fault') {
+				assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+				assert.equal(cpu.readEpcWord(), pc);
+				assert.equal(cpu.readFrameRegister(0, 0), callee);
+			} else {
+				assert.equal(cpu.readCauseWord(), 0);
+				assert.equal(cpu.readFrameRegister(0, 0), expected === null ? valueNil() : valueInteger(expected));
+			}
 		}
 	}
 });

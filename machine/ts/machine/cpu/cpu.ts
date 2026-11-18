@@ -3884,7 +3884,7 @@ export class CPU implements MappedPageInvalidator {
 			const positionIndex = base + 1;
 			const positionTag = registers.getTag(positionIndex);
 			if (positionTag !== ValueTag.Nil) {
-				position = integerOperand(registers.get(positionIndex));
+				position = wordOperand(registers.get(positionIndex)) | 0;
 			}
 		}
 		if (position < 1 || position > this.stringPool.codepointCount(sourceId)) {

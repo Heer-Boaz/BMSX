@@ -184,11 +184,13 @@ void ordinaryCases() {
 	for (const float position : {0.0f, -1.0f, 2.0f, 2.9f, 0x1p32f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()}) {
 		const auto rom = image(2, 3); Machine native(rom, false), scalar(rom, true); native.seed(BuiltinFunctionId::StringByte, 0, position); scalar.seed(BuiltinFunctionId::StringByte, 0, position);
 		test::runCpuParity(native.cpu, scalar.cpu, 32); parity(native, scalar);
-		if (position == 0 || position == -1 || position == 2)
-			require(native.cpu.readFrameRegister(0, 0) == native.expected, "integral Float position selects the Unicode codepoint or nil");
+		if (position == 2.9f)
+			require(native.cpu.readCauseWord() == 0 && native.cpu.readFrameRegister(0, 0) == valueInteger(233), "StringByte truncates a finite fractional word position before indexing");
+		else if (position == 0 || position == -1 || position == 2 || position == 0x1p32f)
+			require(native.cpu.readFrameRegister(0, 0) == native.expected && native.cpu.readCauseWord() == 0, "word position selects the Unicode codepoint or nil after wrapping");
 		else
 			require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT,
-				"fractional, out-of-range and nonfinite Float positions fault through the ordinary builtin");
+				"nonfinite Float positions fault through the ordinary builtin");
 	}
 	for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable, BuiltinFunctionId::SetMetatable}) for (const bool wide : {false, true}) {
 		const auto rom = image(2, 3, wide); Machine native(rom, false), scalar(rom, true);

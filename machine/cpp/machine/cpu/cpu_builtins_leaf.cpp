@@ -40,9 +40,9 @@ bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& 
 		if (args.size() > 1) {
 			const Value positionValue = args[1];
 			if (!isNil(positionValue)) {
-				i32 integer;
-				if (!valueToInteger(positionValue, integer)) return false;
-				position = integer;
+				u32 word;
+				if (!valueToWord(positionValue, word)) return false;
+				position = static_cast<i32>(word);
 			}
 		}
 		const StringId sourceId = asStringId(sourceValue);

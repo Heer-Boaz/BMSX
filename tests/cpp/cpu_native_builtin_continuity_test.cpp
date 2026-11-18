@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -71,7 +72,7 @@ struct Machine {
 			r.set(13, mode == 2 ? valueInteger(17) : valueString(cpu.stringPool().intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9))));
 			r.set(14, mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueFloat(position));
 			expected = mode == 1 ? valueInteger(65) : position == 3 ? valueInteger(128512)
-				: position == 2 ? valueInteger(233) : valueNil();
+				: (position == 2 || position == 2.9f) ? valueInteger(233) : valueNil();
 		} else if (id == BuiltinFunctionId::ToInteger) {
 			r.set(13, valueFloat(position));
 			expected = position == 3 ? valueInteger(3) : valueNil();
@@ -255,7 +256,7 @@ void grantsAndRestore() {
 		require(native.cpu.readCauseWord()==0 && native.cpu.isHaltedUntilIrq(),"every split grant and restored frontier completes the original builtin/successor");
 	}
 	for (const bool wide : {false,true}) for (const auto [mode, position] :
-		{std::pair{2, 3.f}, std::pair{3, 3.f}, std::pair{0, 2.9f}, std::pair{0, 2147483648.f}}) {
+		{std::pair{2, 3.f}, std::pair{3, 3.f}, std::pair{0, std::numeric_limits<float>::infinity()}, std::pair{0, std::numeric_limits<float>::quiet_NaN()}}) {
 		const auto rom=image(2,3,wide);Machine native(rom,false),scalar(rom,true);
 		native.seed(BuiltinFunctionId::StringByte,mode,position);scalar.seed(BuiltinFunctionId::StringByte,mode,position);
 		test::runCpuParity(native.cpu,scalar.cpu,15);parity(native,scalar);
@@ -277,7 +278,7 @@ int main() {
 		rawContinuity(BuiltinFunctionId::ToInteger,2,0,2.9f);
 		rawContinuity(BuiltinFunctionId::StringByte,2,1);
 		rawContinuity(BuiltinFunctionId::StringByte,2,0,3,true);
-		for (const float p : {0.0f,-1.0f,2.0f,2147483520.0f}) rawContinuity(BuiltinFunctionId::StringByte,2,0,p);
+		for (const float p : {0.0f,-1.0f,2.0f,2.9f,2147483520.0f,0x1p32f}) rawContinuity(BuiltinFunctionId::StringByte,2,0,p);
 		rawDeclines();completedDebtDoesNotRunTheSuccessor();mutableCalleesUseTheirCurrentIdentity();unboundStandaloneStillReturnsCall();
 		for(const bool nmi:{false,true})for(const bool wide:{false,true})inlineInterruptStop(nmi,wide);
 #endif
