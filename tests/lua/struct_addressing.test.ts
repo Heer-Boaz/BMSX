@@ -23,6 +23,28 @@ import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runCo
 const TEST_RAM_BASE = RAM_BASE + 0x20000;
 
 for (const optLevel of [0, 3] as const) {
+	test(`raw memory adds before converting a Float address at O${optLevel}`, () => {
+		const source = `
+local function write(base) mem[base + 4] = 17 end
+local function read(base) return mem[4 + base], mem[base - 4] end
+mem[0x08020004] = 33
+write(0x08020000.0p0)
+local a, b = read(0x08020000.0p0)
+local base = 0x08020000
+local function change() base = 0x08020000.0p0 end
+change()
+mem[base + 4] += 2
+local int = 0x08020000
+mem[int + 4.0] += 4
+return a, b, mem[0x08020000], mem[0x08020004]`;
+		const image = linkTestSystemBlua32(compileLuaSource(source, 'rounded-address.lua', optLevel));
+		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			assert.deepEqual(materializeCpuCompletionValues(cpu), [17, 17, 23, 33].map(valueInteger));
+		}
+	});
+
 	test(`typed pointer scaling preserves Integer wrap and Float promotion at O${optLevel}`, () => {
 		const source = `
 local pointer<const>: *u16 = 0

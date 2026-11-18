@@ -4816,32 +4816,48 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		return value?.kind === 'number' ? this.program.constIndex(value.value) : undefined;
 	}
 
+	// _D converts its base before adding the displacement. Source ADD/SUB
+	// does the opposite, so folding the two is valid only for Integer arithmetic.
+	private isIntegerAddressBase(expression: LuaExpression): boolean {
+		if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+			const reference = getResolvedIdentifierReference(this.semantics, expression);
+			if (reference.kind !== 'lexical') return false;
+			const writes = this.semantics.declarationValuesByDeclaration.get(reference.decl.id);
+			if (writes?.length !== 1) return false;
+			const write = writes[0];
+			if (write.syntax.kind !== LuaSyntaxKind.LocalAssignmentStatement) return false;
+			const initializer = write.syntax.values[write.index];
+			return initializer?.kind === LuaSyntaxKind.NumericLiteralExpression && initializer.value.kind === 'integer';
+		}
+		if (expression.kind === LuaSyntaxKind.UnaryExpression) return expression.operator === LuaUnaryOperator.BitwiseNot;
+		if (expression.kind !== LuaSyntaxKind.BinaryExpression) return false;
+		switch (expression.operator) {
+			case LuaBinaryOperator.BitwiseOr:
+			case LuaBinaryOperator.BitwiseAnd:
+			case LuaBinaryOperator.BitwiseXor:
+			case LuaBinaryOperator.ShiftLeft:
+			case LuaBinaryOperator.ShiftRight:
+				return true;
+			default:
+				return false;
+		}
+	}
+
 	private compileDisplacedAddress(expression: LuaExpression): { baseReg: number; byteOffset: number } | null {
-		if (expression.kind !== LuaSyntaxKind.BinaryExpression) {
-			return null;
+		if (expression.kind !== LuaSyntaxKind.BinaryExpression) return null;
+		const { left, right, operator } = expression;
+		if (operator !== LuaBinaryOperator.Add && operator !== LuaBinaryOperator.Subtract) return null;
+		let base = left;
+		let offset = evaluateStaticNumeric(this, undefined, right);
+		if (!offset && operator === LuaBinaryOperator.Add) {
+			base = right;
+			offset = evaluateStaticNumeric(this, undefined, left);
 		}
-		const binary = expression as LuaBinaryExpression;
-		if (binary.operator !== LuaBinaryOperator.Add && binary.operator !== LuaBinaryOperator.Subtract) {
-			return null;
-		}
-		const rightOffset = this.evaluateCompileTimeNumber(binary.right);
-		if (rightOffset !== undefined) {
-			const baseReg = this.allocTemp();
-			this.compileExpressionInto(binary.left, baseReg, 1);
-			return {
-				baseReg,
-				byteOffset: binary.operator === LuaBinaryOperator.Subtract ? -rightOffset : rightOffset,
-			};
-		}
-		if (binary.operator === LuaBinaryOperator.Add) {
-			const leftOffset = this.evaluateCompileTimeNumber(binary.left);
-			if (leftOffset !== undefined) {
-				const baseReg = this.allocTemp();
-				this.compileExpressionInto(binary.right, baseReg, 1);
-				return { baseReg, byteOffset: leftOffset };
-			}
-		}
-		return null;
+		if (offset?.kind !== 'number' || offset.value.kind !== 'integer' || !this.isIntegerAddressBase(base)) return null;
+		const baseReg = this.allocTemp();
+		this.compileExpressionInto(base, baseReg, 1);
+		const bytes = offset.value.word | 0;
+		return { baseReg, byteOffset: operator === LuaBinaryOperator.Subtract ? -bytes : bytes };
 	}
 
 	private compileMemoryTarget(target: Extract<ReturnType<typeof classifyAssignmentTargetPreparation>, { kind: 'memory' }>): Extract<AssignmentTarget, { kind: 'memory' }> {

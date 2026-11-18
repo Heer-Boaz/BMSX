@@ -125,6 +125,7 @@ export type LuaCallHierarchyOutgoingCall = {
 };
 
 export type LuaSemanticFrontendFile = {
+	readonly declarationValuesByDeclaration: FileSemanticData['declarationValuesByDeclaration'];
 	readonly locations: LuaSourceLocations;
 	diagnostics: readonly LuaStaticDiagnostic[];
 	getDeclaration(identifier: LuaIdentifierExpression): Decl | undefined;
@@ -429,6 +430,7 @@ function createBoundFile(
 	};
 	return {
 		locations: source.chunk.locations,
+		declarationValuesByDeclaration: source.declarationValuesByDeclaration,
 		diagnostics,
 		getDeclaration(identifier: LuaIdentifierExpression): Decl | undefined {
 			const id = source.declarationIdsBySyntax.get(identifier);

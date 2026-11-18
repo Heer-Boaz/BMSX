@@ -43,6 +43,18 @@ pointer[index * 2] = i & 65535
 total = (total + pointer[2 * index]) & 65535
 end
 return total`,
+		displaced_address: `local function update(base)
+mem[base + 4] += 1
+return mem[4 + base]
+end
+local base<const> = ${DYNAMIC_RAM_BASE + 0x1000}
+mem[base], mem[base + 4] = 0, 1
+for i = 1, ${iterations} do
+local a = update(base)
+local b = update(base + 0.0)
+if a ~= i + 1 or b ~= i then __bmsx_error('raw memory displacement changed address arithmetic') end
+end
+return mem[base], mem[base + 4]`,
 		arithmetic_identity: `local function operations(x)
 return x + 0, 0 + x, x - 0, 0 - x, x * 1, 1 * x, x / 1, x ^ 1
 end
