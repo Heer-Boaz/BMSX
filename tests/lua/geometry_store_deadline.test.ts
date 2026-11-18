@@ -44,8 +44,8 @@ function observe(mode: CpuExecutionBackend, crossing: boolean) {
 	const entry = DYNAMIC_RAM_BASE + 0x8000 + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
 	memory.writeBytes(entry, code);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, frame.functionAddress, entry);
-	frame.registers.setNumber(0, DYNAMIC_RAM_BASE + 0x4000);
-	frame.registers.setNumber(1, 0);
+	frame.registers.setInteger(0, DYNAMIC_RAM_BASE + 0x4000);
+	frame.registers.setInteger(1, 0);
 	runtime.frameScheduler.runCyclesToNextLogicalTick(512);
 	if (mode === CpuExecutionBackend.JavaScript) {
 		const word = (entry & MAPPED_PAGE_BYTE_MASK) >>> 2;
@@ -78,7 +78,7 @@ function observe(mode: CpuExecutionBackend, crossing: boolean) {
 	if (crossing) assert.equal(scheduler.nextDeadline(), scheduler.nowCycles + 1);
 	else assert.equal(geoController.captureState().xform.vertices[0], 0, 'non-crossing control samples before the write');
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, frame.functionAddress, entry);
-	frame.registers.setNumber(0, vertex); frame.registers.setNumber(1, 0x10000);
+	frame.registers.setInteger(0, vertex); frame.registers.setInteger(1, 0x10000);
 	const state = { updateExecuted: false, cycleBudgetRemaining: 100, cycleBudgetGranted: 100, cycleCarryGranted: 0, activeCpuUsedCycles: 0 };
 	const start = scheduler.nowCycles;
 	assert.equal(runtime.cpuExecution.runInstruction(state), InstructionStepResult.Executed);

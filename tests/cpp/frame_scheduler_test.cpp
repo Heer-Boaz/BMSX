@@ -97,7 +97,7 @@ void testRuntimeRestoreRearmsCpuGp0Wait() {
 	writeInstruction(code, 3, static_cast<u8>(OpCode::RET), 0, 0, 0);
 	writeInstruction(code, 4, static_cast<u8>(OpCode::RFE), 0, 0, 0);
 	image.functions = {{.firstWord = 0u, .wordCount = 4u, .maxStack = 2u}, {.firstWord = 4u, .wordCount = 1u}};
-	image.constants = {static_cast<f64>(IO_GX_GPU_GP0), static_cast<f64>(0x1f000000u)};
+	image.constants = {static_cast<i32>(IO_GX_GPU_GP0), i32{0x1f000000}};
 	image.irqFunctionIndex = 1u;
 	image.exceptionFunctionIndex = 1u;
 	for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
@@ -381,14 +381,14 @@ void testWarmedGeneratedDmaSharedBus() {
 	for (auto* runtime : runtimes) {
 		auto& frame = *runtime->machine.cpu.activeThread()->frameAtDepth(0);
 		const std::array<u32, 8> values{source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0};
-		for (size_t index = 0; index < values.size(); ++index) frame.registers[index] = valueNumber(values[index]);
+		for (size_t index = 0; index < values.size(); ++index) frame.registers.set(index, valueInteger(values[index]));
 		for (u32 word = 0; word < 256; ++word) runtime->machine.memory.writeMappedU32LE(source + word * 4, 0x12340000 + word);
 		// Five MMIO stores, 514 bus cycles, then load/add/backedge.
 		const int loopCycles = 5 * BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_D)] + 514
 			+ BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
 		runtime->frameScheduler.runCyclesToNextLogicalTick(*runtime, warmBursts * loopCycles);
-		require(frame.pc == entry && frame.registers[6] == valueNumber(warmBursts), "the real DMA loop warms through its admitted bursts");
+		require(frame.pc == entry && frame.registers.get(6) == valueInteger(warmBursts), "the real DMA loop warms through its admitted bursts");
 	}
 	auto& generatedFrame = *generated.machine.cpu.activeThread()->frameAtDepth(0);
 	const auto& page = *generatedFrame.decodedPage;
@@ -415,7 +415,7 @@ void testWarmedGeneratedDmaSharedBus() {
 		run(5 * BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_D)] + 1); // TRIGGER yields before the following load.
 		auto& memory = generated.machine.memory;
 		auto& dma = generated.machine.dmaController;
-		require(generatedFrame.pc == entry + 20 && generatedFrame.registers[6] == valueNumber(warmBursts + iteration),
+		require(generatedFrame.pc == entry + 20 && generatedFrame.registers.get(6) == valueInteger(warmBursts + iteration),
 			"the generated DMA-trigger store yields before its following load or counter update");
 		require(dma.cpuBusHeld() && dma.captureState().scheduledBlockCycles == 513, "the real DMA owns the remaining bus interval");
 		run(512);
@@ -427,8 +427,8 @@ void testWarmedGeneratedDmaSharedBus() {
 			"the completed burst publishes every raw source word");
 		run(BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)]);
-		require(generatedFrame.pc == entry && generatedFrame.registers[6] == valueNumber(warmBursts + 1 + iteration), "generated execution resumes exactly once after bus release");
-		require(generatedFrame.registers[7] == valueNumber(0x43210000 + iteration * 256), "the resumed load observes DMA output");
+		require(generatedFrame.pc == entry && generatedFrame.registers.get(6) == valueInteger(warmBursts + 1 + iteration), "generated execution resumes exactly once after bus release");
+		require(generatedFrame.registers.get(7) == valueInteger(0x43210000 + iteration * 256), "the resumed load observes DMA output");
 	}
 }
 #endif

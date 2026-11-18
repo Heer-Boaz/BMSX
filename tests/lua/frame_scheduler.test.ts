@@ -374,14 +374,14 @@ test('warmed generated MMIO starts DMA, yields the bus, and resumes only after r
 	const entry = system.image.functions[0].codeAddress;
 	for (const runtime of runtimes) {
 		const registers = runtime.machine.cpu.activeThread.frameAtDepth(0).registers;
-		[source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0].forEach((value, index) => registers.setNumber(index, value));
+		[source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0].forEach((value, index) => registers.setInteger(index, value));
 		for (let word = 0; word < 256; ++word) runtime.machine.memory.writeMappedU32LE(source + word * 4, 0x12340000 + word);
 		// Five MMIO stores, 514 bus cycles, then load/add/backedge.
 		const loopCycles = 5 * BASE_CYCLES[OpCode.STORE_MEM_D] + 514
 			+ BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP];
 		runtime.frameScheduler.runCyclesToNextLogicalTick(16 * loopCycles);
 		assert.equal(runtime.machine.cpu.activeThread.frameAtDepth(0).pc, entry);
-		assert.equal(registers.getNumber(6), 16);
+		assert.equal(registers.getInteger(6), 16);
 	}
 	const generatedPage = runtimes[0].machine.cpu.activeThread.frameAtDepth(0).decodedPage!;
 	const triggerWord = ((entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2) + 4;
@@ -406,7 +406,7 @@ test('warmed generated MMIO starts DMA, yields the bus, and resumes only after r
 		const { cpu, memory, dmaController } = runtimes[0].machine;
 		const frame = cpu.activeThread.frameAtDepth(0);
 		assert.equal(frame.pc, entry + 20);
-		assert.equal(frame.registers.getNumber(6), 16 + iteration);
+		assert.equal(frame.registers.getInteger(6), 16 + iteration);
 		assert.equal(dmaController.cpuBusHeld(), true);
 		assert.equal(dmaController.captureState().scheduledBlockCycles, 513);
 		run(512);
@@ -419,8 +419,8 @@ test('warmed generated MMIO starts DMA, yields the bus, and resumes only after r
 		for (let word = 0; word < 256; ++word) assert.equal(memory.readMappedU32LE(target + word * 4), 0x43210000 + iteration * 256 + word);
 		run(BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP]);
 		assert.equal(frame.pc, entry);
-		assert.equal(frame.registers.getNumber(6), 17 + iteration);
-		assert.equal(frame.registers.getNumber(7), 0x43210000 + iteration * 256, 'the resumed load observes DMA output');
+		assert.equal(frame.registers.getInteger(6), 17 + iteration);
+		assert.equal(frame.registers.getInteger(7), 0x43210000 + iteration * 256, 'the resumed load observes DMA output');
 	}
 });
 

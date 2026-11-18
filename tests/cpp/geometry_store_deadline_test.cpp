@@ -55,8 +55,8 @@ Result runCase(bool native, bool crossing) {
 	auto& memory = machine.memory;
 	memory.writeBytes(entryPc, image.text.data(), image.text.size());
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], entryPc);
-	frame.registers[0] = valueNumber(DYNAMIC_RAM_BASE + 0x4000u);
-	frame.registers[1] = valueNumber(0u);
+	frame.registers.set(0, valueInteger(DYNAMIC_RAM_BASE + 0x4000u));
+	frame.registers.set(1, valueInteger(0u));
 	for (int i = 0; i < 30; ++i) cpu.runUntilDepth(0, 128);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (native) test::waitForFixtureWorkerRequests(cpu);
@@ -75,7 +75,7 @@ Result runCase(bool native, bool crossing) {
 	}
 #endif
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], entryPc);
-	frame.registers[0] = valueNumber(vertex); frame.registers[1] = valueNumber(0x10000u);
+	frame.registers.set(0, valueInteger(vertex)); frame.registers.set(1, valueInteger(0x10000u));
 	memory.writeU32(vertex, 0u); memory.writeU32(vertex + 4u, 0u);
 	for (u32 i = 0; i < 12u; ++i) memory.writeU32(record + i * 4u, 0u);
 	memory.writeU32(record + GEO_XFORM2_RECORD_BYTES + GEO_XFORM2_RECORD_VERTEX_COUNT_OFFSET, 1u);
