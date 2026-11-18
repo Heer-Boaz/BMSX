@@ -25,48 +25,50 @@ result.minimum = math.min(8, nil, -3, 5)
 result.maximum = math.max(8, nil, -3, 5)
 result.text_minimum = math.min('pear', 'apple', 'plum') == 'apple' and 1 or 0
 local token<const> = { marker = 7 }
-result.abs_identity = math.abs(token) == token and 1 or 0
-result.abs_text = math.abs('12.5') == '12.5' and 1 or 0
-local missing_ok<const>, missing_value<const> = pcall(math.abs)
-result.abs_missing = missing_ok and missing_value == nil and 1 or 0
-result.arithmetic_nan = '12.5' // 1
+result.abs_table_error = not pcall(math.abs, token) and 1 or 0
+result.abs_text_error = not pcall(math.abs, '12.5') and 1 or 0
+result.abs_missing_error = not pcall(math.abs) and 1 or 0
+local divide<const> = function(value)
+	return value // 1
+end
+result.arithmetic_error = not pcall(divide, '12.5') and 1 or 0
 print('Math selection', result.minimum, result.maximum, result.text_minimum)
-print('Math supplied values', result.abs_identity, result.abs_text,
-	result.abs_missing, result.arithmetic_nan ~= result.arithmetic_nan)
-print('Math missing', missing_ok, missing_value)
+print('Math supplied values', result.abs_table_error, result.abs_text_error,
+	result.abs_missing_error, result.arithmetic_error)
 
-result.large_integer = math.tointeger(math.maxinteger + 1)
+result.wrapped_integer = math.tointeger(math.maxinteger + 1)
 result.fraction_rejected = math.tointeger(3.75) == nil and 1 or 0
 result.text_rejected = math.tointeger('3') == nil and 1 or 0
 result.classifications = math.type(3) == 'integer' and math.type(3.75) == 'float'
-	and math.type(math.huge) == 'float' and math.type('3') == nil and 1 or 0
+	and math.type(3.0) == 'float' and math.type(math.huge) == 'float' and math.type('3') == nil and 1 or 0
 result.unsigned_wrap = math.ult(-1, 1) and 1 or 0
-result.unsigned_fraction = math.ult(0.5, 1) and 1 or 0
-result.unsigned_equal = math.ult(4294967296, 0) and 1 or 0
+result.unsigned_fraction_error = not pcall(math.ult, 0.5, 1) and 1 or 0
+result.unsigned_out_of_range_error = not pcall(math.ult, 4294967296, 0) and 1 or 0
 result.signs[0] = math.sign(-3)
 result.signs[1] = math.sign(0)
 result.signs[2] = math.sign(3)
-print('Math classification', result.large_integer, result.fraction_rejected,
+print('Math classification', result.wrapped_integer, result.fraction_rejected,
 	result.text_rejected, result.classifications)
-print('Math unsigned', result.unsigned_wrap, result.unsigned_fraction,
-	result.unsigned_equal)
+print('Math unsigned', result.unsigned_wrap, result.unsigned_fraction_error,
+	result.unsigned_out_of_range_error)
 print('Math signs', result.signs[0], result.signs[1], result.signs[2])
 
 -- Reciprocals distinguish zero signs even when printed text does not.
 local negative_zero<const> = -1 / math.huge
-result.abs_negative_zero = 1 / math.abs(negative_zero) == -math.huge and 1 or 0
-result.floor_negative_zero = 1 / (negative_zero // 1) == -math.huge and 1 or 0
-result.ceil_negative_zero = 1 / math.ceil(negative_zero) == -math.huge and 1 or 0
+result.abs_positive_zero = 1 / math.abs(negative_zero) == math.huge and 1 or 0
+result.floordiv_negative_zero = 1 / (negative_zero // 1) == -math.huge and 1 or 0
+local ceiled_zero<const> = math.ceil(negative_zero)
+result.ceil_integer_zero = math.type(ceiled_zero) == 'integer' and ceiled_zero == 0 and 1 or 0
 result.round_positive_zero = 1 / math.round(negative_zero) == math.huge and 1 or 0
 local zero_integer<const>, zero_fraction<const> = math.modf(negative_zero)
-result.modf_integer_negative_zero = 1 / zero_integer == -math.huge and 1 or 0
+result.modf_integer_zero = math.type(zero_integer) == 'integer' and zero_integer == 0 and 1 or 0
 result.modf_fraction_positive_zero = 1 / zero_fraction == math.huge and 1 or 0
-result.fmod_positive_zero = 1 / math.fmod(negative_zero, 2) == math.huge and 1 or 0
+result.fmod_negative_zero = 1 / math.fmod(negative_zero, 2) == -math.huge and 1 or 0
 print('Math modf zero reciprocals', 1 / zero_integer, 1 / zero_fraction)
-print('Math zero signs', result.abs_negative_zero, result.floor_negative_zero,
-	result.ceil_negative_zero, result.round_positive_zero,
-	result.modf_integer_negative_zero, result.modf_fraction_positive_zero,
-	result.fmod_positive_zero)
+print('Math zero signs', result.abs_positive_zero, result.floordiv_negative_zero,
+	result.ceil_integer_zero, result.round_positive_zero,
+	result.modf_integer_zero, result.modf_fraction_positive_zero,
+	result.fmod_negative_zero)
 
 local min_ok<const>, min_error<const> = pcall(math.min, nil, 2)
 local max_ok<const>, max_error<const> = pcall(math.max)
@@ -77,7 +79,7 @@ result.max_error = not max_ok and max_error == 'max expects at least one argumen
 print('Math min error', min_ok, min_error)
 print('Math max error', max_ok, max_error)
 
--- Angles are ordinary radians; the BIOS owns binary64 argument reduction.
+-- Angles are ordinary radians; the BIOS owns binary32 argument reduction.
 result.trig[0] = math.sin(0)
 result.trig[1] = math.cos(0)
 result.trig[2] = math.tan(0)
@@ -101,8 +103,8 @@ result.root_nan = math.sqrt(-1)
 result.exponentials[0] = math.exp(0)
 result.exponentials[1] = math.exp(1)
 result.exponentials[2] = math.exp(-1)
-result.exp_edges[0] = math.exp(710)
-result.exp_edges[1] = math.exp(-746)
+result.exp_edges[0] = math.exp(89)
+result.exp_edges[1] = math.exp(-104)
 result.logarithms[0] = math.log(1)
 result.logarithms[1] = math.log(8, 2)
 result.logarithms[2] = math.log(100, 10)
@@ -116,27 +118,27 @@ print('Math logarithms', result.logarithms[0], result.logarithms[1],
 	result.logarithms[2], result.logarithms[3], result.log_nan ~= result.log_nan)
 
 -- Nonnumeric arithmetic does not enter the phase-word/Q16 primitive.
-result.trig_nonnumeric[0] = math.sin('text')
-result.trig_nonnumeric[1] = math.cos('text')
-result.trig_nonnumeric[2] = math.tan('text')
-result.atan_false = math.atan(1, false)
-print('Math nonnumeric angles', result.trig_nonnumeric[0], result.trig_nonnumeric[1],
-	result.trig_nonnumeric[2], result.atan_false)
+result.trig_errors[0] = not pcall(math.sin, 'text') and 1 or 0
+result.trig_errors[1] = not pcall(math.cos, 'text') and 1 or 0
+result.trig_errors[2] = not pcall(math.tan, 'text') and 1 or 0
+result.atan_false_error = not pcall(math.atan, 1, false) and 1 or 0
+print('Math nonnumeric angles', result.trig_errors[0], result.trig_errors[1],
+	result.trig_errors[2], result.atan_false_error)
 
 -- Explicit seeds make this sequence independent of the clock default.
 result.random_seed_count = select('#', math.randomseed(1))
 result.random_unit = math.random()
 result.random_single = math.random(6)
 result.random_interval = math.random(-2, 2)
-result.random_truncated = math.random(8.9, 8.1)
+result.random_fraction_error = not pcall(math.random, 8.9, 8.1) and 1 or 0
 print('Math random modes', result.random_seed_count, result.random_unit,
-	result.random_single, result.random_interval, result.random_truncated)
+	result.random_single, result.random_interval, result.random_fraction_error)
 result.random_seed_nil = math.randomseed(1) == nil and 1 or 0
 result.random_repeated = math.random()
 print('Math random replay', result.random_seed_nil, result.random_repeated,
 	result.random_repeated == result.random_unit)
 
--- Failed bounds consume the next draw before the protected error is returned.
+-- Rejected bounds leave the next draw unchanged.
 local bound_ok<const>, bound_error<const> = pcall(math.random, 0)
 result.random_error = not bound_ok
 	and bound_error == 'random upper bound must be positive.' and 1 or 0
@@ -152,13 +154,15 @@ print('Math random interval error', interval_ok, interval_error,
 	result.random_two_after_error)
 
 -- False is a supplied seed/bound; only nil selects the missing-bound branch.
-math.randomseed(false)
-result.random_false_seed = math.random()
-result.random_false_value = math.random(false)
+result.random_seed_error = not pcall(math.randomseed, false) and 1 or 0
+result.random_false_error = not pcall(math.random, false) and 1 or 0
 result.random_nil_upper = math.random(nil, false)
-print('Math random false', result.random_false_seed,
-	result.random_false_value ~= result.random_false_value, result.random_nil_upper)
+print('Math random false', result.random_seed_error,
+	result.random_false_error, result.random_nil_upper)
 
+math.randomseed(1)
+result.random_full = math.random(math.mininteger, math.maxinteger)
+result.random_high = math.random(0, math.maxinteger)
 result.integer_bounds[0] = math.mininteger
 result.integer_bounds[1] = math.maxinteger
 result.pi = math.pi

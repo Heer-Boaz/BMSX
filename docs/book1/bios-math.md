@@ -601,4 +601,4 @@ local replay<const> = math.random()
 
 `first` and `replay` are equal, approximately `0.236456`; `die` is `3`.
 All users of the library share this state, so an intervening call advances the
-same sequence. A rejected bound also consumes an update, as specified above.
+same sequence. A rejected bound leaves the next draw unchanged.
