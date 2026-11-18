@@ -254,11 +254,9 @@ void NativeBlockCompiler::emit(
 	case OpCode::LOAD_MEM_D:
 	case OpCode::STORE_MEM:
 	case OpCode::STORE_MEM_D:
-		emitMemory(instruction, *slow);
-		break;
 	case OpCode::STORE_MEM_WORDS:
 	case OpCode::STORE_MEM_WORDS_D:
-		emitExit(*slow);
+		emitMemory(instruction, *slow);
 		break;
 	case OpCode::GETGL:
 	case OpCode::SETGL:
@@ -315,6 +313,7 @@ void NativeBlockCompiler::emit(
 		return;
 	}
 	m_prefixCycles += instruction.baseCycles + (op == OpCode::LOADNIL ? instruction.b : 0);
+	if (op == OpCode::STORE_MEM_WORDS || op == OpCode::STORE_MEM_WORDS_D) m_prefixCycles += instruction.c;
 	if (op == OpCode::VARARG) {
 		if (instruction.b == 0) m_prefixTop = 0;
 		else if (instruction.b > 1) {

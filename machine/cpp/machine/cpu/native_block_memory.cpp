@@ -86,9 +86,10 @@ void NativeBlockCompiler::emitRomReads() {
 }
 
 void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, NativeBlockExitSite& slow) {
-	const auto kind = static_cast<MemoryAccessKind>(instruction.c);
+	const bool words = slow.exit == NativeBlockExit::WriteWords;
+	const auto kind = words ? MemoryAccessKind::Word : static_cast<MemoryAccessKind>(instruction.c);
 	const bool load = slow.exit == NativeBlockExit::ReadMemory;
-	const u32 width = kind == MemoryAccessKind::U8 ? 1 : kind == MemoryAccessKind::U16LE ? 2
+	const u32 width = words ? static_cast<u32>(instruction.c) * 4u : kind == MemoryAccessKind::U8 ? 1 : kind == MemoryAccessKind::U16LE ? 2
 		: kind == MemoryAccessKind::F64LE ? 8 : 4;
 	// The instruction has started. Even invalid address operands retain this
 	// charge; ordinary bus exits and retained retries must not charge it again.
@@ -102,13 +103,19 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 			static_cast<u8>(ValueTag::Integer)), slow, m_cache.state());
 	}
-	if (instruction.op == static_cast<u8>(OpCode::LOAD_MEM_D) || instruction.op == static_cast<u8>(OpCode::STORE_MEM_D))
+	if (instruction.op == static_cast<u8>(OpCode::LOAD_MEM_D) || instruction.op == static_cast<u8>(OpCode::STORE_MEM_D)
+		|| instruction.op == static_cast<u8>(OpCode::STORE_MEM_WORDS_D))
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM,
 			static_cast<u32>(instruction.disp) << 2u);
 	const auto alignment = MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(kind)];
 	if (alignment) {
 		sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, alignment);
 		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0), slow, m_cache.state());
+	}
+	if (width == 0) return; // Zero-count stores still require an aligned address.
+	if (width > m_bindings.ramBytes) {
+		emitExit(slow);
+		return;
 	}
 	// Keep ordinary RAM on the fall-through path. MMIO always goes to the bus.
 	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
@@ -117,6 +124,37 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 	auto* ramMiss = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, m_bindings.ramBytes - width);
 	if (!load) fault(ramMiss, slow, m_cache.state());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R1, 0);
+	if (words) {
+		// A watch anywhere in the sequence hands the untouched instruction to the bus.
+		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R1, 0, SLJIT_IMM, width - 4u);
+		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
+		auto* page = sljit_emit_label(m_compiler);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
+		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0), slow, m_cache.state());
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 1);
+		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL, SLJIT_R2, 0, SLJIT_R0, 0), page);
+		// Admit the Integer span before copying any payload. The bus owner
+		// converts mixed spans in order, including partial writes on a fault.
+		m_cache.publishRange(instruction.a, instruction.a + instruction.c);
+		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_IMM, instruction.a);
+		auto* tag = sljit_emit_label(m_compiler);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM2(NativeBlockAbi::tags, SLJIT_R0), 0);
+		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Integer)), slow, m_cache.state());
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
+		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_R0, 0, SLJIT_IMM, instruction.a + instruction.c), tag);
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.ram));
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, NativeBlockAbi::words, 0, SLJIT_IMM, instruction.a * sizeof(u32));
+		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_IMM, 0);
+		auto* copy = sljit_emit_label(m_compiler);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R0), 2);
+		if constexpr (std::endian::native == std::endian::big)
+			sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R3, 0, SLJIT_R3, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM2(SLJIT_R2, SLJIT_R0), 2, SLJIT_R3, 0);
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
+		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_R0, 0, SLJIT_IMM, instruction.c), copy);
+		return;
+	}
 	if (!load) {
 		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R3, 0, SLJIT_R1, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
 		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3),

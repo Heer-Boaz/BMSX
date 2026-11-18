@@ -7,6 +7,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/value_bank.h"
 
 #include <algorithm>
 #include <array>
@@ -131,8 +132,7 @@ void grantsAndTargetRetirement(bool inRam) {
 		std::array<Value, 12> registers; registers.fill(valueInteger(0));
 		registers[0] = valueInteger(2); registers[1] = valueInteger(1); registers[2] = valueBool(flag);
 		auto expected = registers;
-		ValueSlots slots(registers.size());
-		for (size_t i = 0; i < registers.size(); ++i) slots.set(i, registers[i]);
+		auto slots = test::valueBank(registers);
 		int remaining = grant, top = 0;
 		u32 segment = start;
 		const NativeBlockExitSite* expectedExit;
@@ -165,7 +165,7 @@ void grantsAndTargetRetirement(bool inRam) {
 		const auto* exit = page.nativeBlocks->entries[base + start]->run(run);
 		require((expectedExit ? exit == expectedExit : exit->exit == NativeBlockExit::ScalarBoundary) && run.remainingCycles == remaining && run.registerTop == top,
 			"one native entry traverses both branches, a WIDE merge and a backedge without a CPU dispatcher or intermediate frame");
-		for (size_t i = 0; i < expected.size(); ++i) require(slots.get(i) == expected[i], "raw linked execution preserves every word and tag");
+		require(test::matchesValues(slots.view(), expected), "raw linked execution preserves every word and tag");
 	}
 	}
 
