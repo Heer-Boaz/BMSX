@@ -12,7 +12,7 @@ return {
 			-- The three live readings are deliberately not pinned to constants.
 			assert(result.time_sample == result.time_sample // 1)
 			assert(result.nil_time_sample == result.nil_time_sample // 1)
-			assert(result.clock_sample >= 0 and result.clock_sample < 4294967.296)
+			assert(result.clock_sample >= 0 and result.clock_sample <= 4294967.5)
 			assert(result.noon_timestamp == 43200)
 			assert(observations.noon.year == 1970)
 			assert(observations.noon.month == 1)

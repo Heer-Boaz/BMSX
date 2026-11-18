@@ -94,7 +94,10 @@ Conversion leaves the sampled clock unchanged.
 
 ### Civil timestamp convention {#sec-bios-os-civil-timestamp-convention}
 
-The civil-conversion formulas map timestamp 0 to the following fields:
+A civil timestamp is a signed Integer count of seconds. The first supported
+instant is 1901-12-13 20:45:52 (−2147483648); the last is 2038-01-19
+03:14:07 (2147483647). The BIOS rejects a date outside this interval rather
+than wrapping into a different year. Timestamp 0 has the following fields:
 
 | Field | Value |
 | --- | --- |
@@ -129,8 +132,8 @@ Fields are read and checked in this exact order: `year`, `month`, `day`, `hour`,
 
 | Field | Value when nil | Inclusive accepted integer range |
 | --- | --- | --- |
-| `year` | Required | −2147481748 through 2147485547 |
-| `month` | Required | −2147483647 through 2147483648 |
+| `year` | Required | −2147483648 through 2147483647 |
+| `month` | Required | −2147483648 through 2147483647 |
 | `day` | Required | −2147483648 through 2147483647 |
 | `hour` | 12 | −2147483648 through 2147483647 |
 | `min` | 0 | −2147483648 through 2147483647 |
@@ -168,10 +171,9 @@ local timestamp = os.time(date)
 
 This produces timestamp 90000 and normalizes the Table to 1970-01-02 at 01:00:00, together with its recomputed `wday`, `yday`, and `isdst` fields.
 
-After the six fields pass, their combined timestamp must equal its integer
-component and lie in the inclusive range −9007199254740991 through
-9007199254740991. Intermediate arithmetic uses Number precision, so the
-combined calculation can fail even when each individual field is accepted.
+The combined result must be in the signed timestamp interval above. Range is
+checked after normalization: for example, an extra day and −24 hours cancel.
+A failed conversion does not write normalized fields into the supplied Table.
 
 Negative timestamps use floor-day decomposition. For example, timestamp −1 belongs to the day before timestamp 0, at 23:59:59; the day is not obtained by truncating toward zero.
 
@@ -212,10 +214,8 @@ For each supplied field, the integer check precedes the bounds check. Their exac
 
 Here `<field>` is replaced by `year`, `month`, `day`, `hour`, `min`, or `sec`, as appropriate. Because fields are processed in order, a failure in an earlier field is reached before a later field is read.
 
-After the fields, the combined timestamp checks use these exact messages, in order:
-
-- `time is not an integer`
-- `time is out-of-bound`
+After the fields are accepted the result is already a whole second. An
+out-of-range combined timestamp raises `time is out-of-bound`.
 
 Date fields use ordinary indexed reads and writes. Passing false selects
 conversion and fails its first field read with
@@ -243,16 +243,18 @@ local seconds = os.difftime(second, first)
 -- seconds is 86400.
 ```
 
-The function obtains the integer parts of `t2` and then `t1` before making either equality check. It then checks `t2` first and `t1` second. With the normally installed public `error`, the exact messages are:
+The function checks `t2` first and then `t1`. With the normally installed public `error`, the exact messages are:
 
 - `os.difftime t2 must be an integer.`
 - `os.difftime t1 must be an integer.`
 
-Fractions, NaN, missing/nil arguments, false, and other non-Number values fail the corresponding equality check; numeric strings are not parsed. If both arguments fail, the `t2` message is reached first, although both integer-part calculations have already occurred.
+Fractions, NaN, missing/nil arguments, false, and other non-Number values fail the corresponding equality check; numeric strings are not parsed. If both arguments fail, the `t2` message is reached first.
 
 The operands are checked for integer equality without the civil-field or
 timestamp bounds. Infinities therefore pass those checks; their subtraction
-can yield infinity or NaN. The result uses ordinary Number precision.
+can yield infinity or NaN. A difference of two Integers remains an Integer
+when representable; a larger signed difference is rounded to a Float, not
+wrapped. Differences with an out-of-range Float operand use Float subtraction.
 
 `difftime` reads no clock and applies no calendar conversion. For samples
 straddling the millisecond-counter wrap, account for the discontinuity before
@@ -260,8 +262,8 @@ using ordinary whole-second subtraction.
 
 ### Retained dependencies and call arguments {#sec-bios-os-retained-dependencies-and-call-arguments}
 
-Integer checks use the truncation function saved at BIOS installation;
-replacing public `math.modf` leaves those checks unchanged. Reported errors
+The conversion and truncation functions used here are retained at BIOS installation;
+replacing public Math bindings does not change date validation. Reported errors
 call the current global `error`.
 
 Missing fixed parameters are nil and surplus arguments are ignored. Thus an
@@ -272,8 +274,9 @@ also apply when the callee signature is known at compilation.
 ## Shared civil-day calculations {#sec-bios-os-shared-civil-day-calculations}
 
 The formulas below define `D(year, month, day)`, the civil-day index, and
-`C(days)`, its inverse. They use Number arithmetic in the written order,
-including `//` and `%`. These are reference formulas, not additional BIOS
+`C(days)`, its inverse. The equations use mathematical integers,
+with floor division (`//`) and its corresponding remainder (`%`). Intermediate
+products are not wrapped timestamp words. These are reference formulas, not additional BIOS
 functions or BLua program listings.
 
 
@@ -318,7 +321,7 @@ result = (year, month, day)
 
 **Month normalization for `os.time`**
 
-Before applying `D`, `os.time` calculates the normalized year and month as follows. The timestamp expression is split into successive additions to retain its calculation order.
+Before applying `D`, `os.time` calculates the normalized year and month as follows. Opposing field offsets cancel before the final timestamp range check.
 
 ```text
 month_index = month - 1
@@ -365,27 +368,15 @@ the timestamp. It decomposes the calendar fields before producing the chosen
 Table or scanning a String format. An empty format still checks its timestamp;
 a malformed conversion is reached after timestamp processing.
 
-`false` is not a substitute for `nil`. A false format reaches the length operation within `string.sub` before timestamp processing and raises `Attempted to get length of an unsupported value.` (Lua reason 0); it does not produce a date-specific argument error. A false timestamp is passed to the retained `math.modf` function rather than selecting the default timestamp. Its integer check invokes `error` with `time is not an integer`, before the bounds check.
+`false` is not a substitute for `nil`. A false format reaches the length operation within `string.sub` before timestamp processing and raises `Attempted to get length of an unsupported value.` (Lua reason 0); it does not produce a date-specific argument error. A false timestamp raises `time is not an integer` rather than selecting the default timestamp.
 
 ### Explicit timestamp checks {#sec-bios-os-explicit-timestamp-checks}
 
-The explicit timestamp check first obtains the integer result of the retained `math.modf` function. In the supplied Math library, this truncates toward zero: for a negative value the calculation is `-((-value) // 1)`, otherwise it is `value // 1`.
-
-If the retained integer differs from the input, the call invokes `error` with exactly:
-
-```text
-time is not an integer
-```
-
-
-Only after that check does it require the integer to lie within the inclusive range `-1FFFFFFFFFFFFFH` through `1FFFFFFFFFFFFFH`. A value outside that range invokes `error` with exactly:
-
-```text
-time is out-of-bound
-```
-
-
-The accepted integer is then used for decomposition. There is no separate date-specific type-dispatch or numeric-text parsing layer. The default timestamp read is not passed through these explicit-timestamp checks.
+Supply an Integer or a Float whose value is an exact Integer in the signed
+timestamp interval. Fractions, NaN and non-Numbers raise `time is not an
+integer`; an integral Float outside the interval or an infinity raises
+`time is out-of-bound`. Values are not parsed as text, truncated, or wrapped.
+The default counter sample already produces an Integer and needs no conversion.
 
 ### Table result and calendar fields {#sec-bios-os-table-result-and-calendar-fields}
 
@@ -566,7 +557,7 @@ of four, not constrained to four decimal digits.
 
 ### Library bindings and execution cost {#sec-bios-os-library-bindings-and-execution-cost}
 
-Date validation retains its installation-time truncation function. Formatting
+Date validation retains its installation-time numeric conversions. Formatting
 uses `sub` from the original String Table, while `tostring` and `error` are
 read through their current global bindings. Replacing the `string` global
 leaves that original Table in use; replacing its `sub` field changes slicing.
