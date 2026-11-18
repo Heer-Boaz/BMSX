@@ -67,7 +67,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(output(body, 'tags').entries.find(entry => entry.key.display === 'inspected').value.display, 'true');
 	assert.equal(output(body, 'probe').status, 'paused'); assert.equal(output(body, 'paused').active.status, 'paused');
 	assert.deepEqual(output(body, 'continue').values, ['first', 'nil', 'false', 'false', '3']);
-	assert.deepEqual(output(body, 'continue').tags, [ValueTag.String, ValueTag.Nil, ValueTag.False, ValueTag.String, ValueTag.Number]);
+	assert.deepEqual(output(body, 'continue').tags, [ValueTag.String, ValueTag.Nil, ValueTag.False, ValueTag.String, ValueTag.Integer]);
 	assert.equal(output(body, 'block').status, 'completed', 'the Lua call returns normally');
 	assert.equal(tree(body, 'blocked').nodes.find(node => node.label === 'blocked')!.activity.value, false, 'a lifecycle guard rejects the requested transition');
 	assert.equal(tree(body, 'blocked').nodes.find(node => node.label === 'parked')!.activity.value, true);

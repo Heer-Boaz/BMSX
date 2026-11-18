@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { RuntimeGuestCallPlan } from '../../ide/runtime/guest_call';
 import { ActorExecutionOperation } from '../../ide/workbench/contrib/actor_lab/execution';
-import { decodeActorToolRequest } from '../../ide/workbench/services/assistant/actor_tool_protocol';
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { STUDIO_ACTOR_TOOLS, decodeActorToolRequest } from '../../ide/workbench/services/assistant/actor_tool_protocol';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createFrameRuntime } from '../helpers/frame_runtime';
 import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
 
-/** Operation lifecycle against the real plan manager; World admission runs in browser conformance. */
+/** Operation lifecycle against the real plan manager; real World admission is covered by the live Studio tool test. */
 function fixture(t: TestContext, phase: 'queued' | 'boundary' | 'invoked' = 'invoked') {
 	const f = createRuntimeInspectionFixture(createFrameRuntime(), createScenarioTestSourceState([]));
 	const operation = new ActorExecutionOperation(1, f.execution.revision), service = f.actorExecution;
@@ -110,4 +111,18 @@ test('Actor wire inputs admit only explicit operations, literal source and opera
 	for (const operation of [0, -1, 1.5, '1']) assert.throws(() => decodeActorToolRequest('studio_control_actor', { target: 'target', operation, action: 'continue' }));
 	assert.throws(() => decodeActorToolRequest('studio_actor_action', { node: 'node', method: 'add_tag', arguments: ['inspected'] }));
 	assert.throws(() => decodeActorToolRequest('studio_control_actor', { target: 'target', operation: 1, action: 'discard' }));
+});
+
+test('Actor tool result advertisements describe the actual public ValueTag mapping', () => {
+	// This is a wire-decoding contract, not a snapshot of explanatory UI copy.
+	const expected = new Map([
+		[ValueTag.Nil, 'nil'], [ValueTag.False, 'false'], [ValueTag.True, 'true'],
+		[ValueTag.Integer, 'integer'], [ValueTag.Float, 'float'], [ValueTag.String, 'string'],
+		[ValueTag.Table, 'table'], [ValueTag.Closure, 'closure'], [ValueTag.BuiltinFunction, 'builtin'], [ValueTag.Thread, 'thread'],
+	]);
+	for (const name of ['studio_actor_action', 'studio_call_actor_method']) {
+		const definition = STUDIO_ACTOR_TOOLS.find(tool => tool.name === name)!;
+		const advertised = new Map(Array.from(definition.description.matchAll(/(\d+)=([a-z]+)/g), match => [+match[1], match[2]]));
+		assert.deepEqual(advertised, expected, `${name} must not merge the Integer/Float result tags`);
+	}
 });
