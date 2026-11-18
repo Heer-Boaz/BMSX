@@ -1,9 +1,8 @@
+import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
+import { asClosure, asTable, numberToHost, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { runCompletionClosure } from './cpu_test_harness';
@@ -24,22 +23,22 @@ probe = { map = map, count = #keys }
 function probe.clear() clear(map) end
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-		const map = probe.getStringKey(cpu.stringPool.find('map')!) as Table;
-		const clear = probe.getStringKey(cpu.stringPool.find('clear')!) as Closure;
+		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+		const map = asTable(probe.getStringKey(cpu.stringPool.find('map')!), cpu.gc);
+		const clear = asClosure(probe.getStringKey(cpu.stringPool.find('clear')!), cpu.gc);
 		const next = map.next;
 		let starts = 0, steps = 0;
 		// A destructive clear must advance one physical traversal. Restarting
 		// next(map) for each key repeatedly scans every already-cleared prefix.
-		t.mock.method(map, 'next', (afterTag, afterScalar, afterReference, output, outputIndex) => {
+		t.mock.method(map, 'next', (after, output, outputIndex) => {
 			steps++;
-			if (afterTag === ValueTag.Nil) starts++;
-			return next.call(map, afterTag, afterScalar, afterReference, output, outputIndex);
+			if (after === valueNil()) starts++;
+			return next.call(map, after, output, outputIndex);
 		});
 		runCompletionClosure(cpu, clear, []);
 		assert.equal(starts, 1);
-		assert.equal(steps, (probe.getStringKey(cpu.stringPool.find('count')!) as number) + 1);
-		assert.equal(probe.getStringKey(cpu.stringPool.find('map')!), map);
+		assert.equal(steps, numberToHost(probe.getStringKey(cpu.stringPool.find('count')!)) + 1);
+		assert.equal(asTable(probe.getStringKey(cpu.stringPool.find('map')!), cpu.gc), map);
 		map.forEachStoredEntry(() => assert.fail('cleared map retained a mapping'));
 	});
 
@@ -63,16 +62,16 @@ end
 function probe.clear() clear(map) end
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-		const seed = probe.getStringKey(cpu.stringPool.find('seed')!) as Closure;
-		const clear = probe.getStringKey(cpu.stringPool.find('clear')!) as Closure;
+		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+		const seed = asClosure(probe.getStringKey(cpu.stringPool.find('seed')!), cpu.gc);
+		const clear = asClosure(probe.getStringKey(cpu.stringPool.find('clear')!), cpu.gc);
 		let warmed = 0;
 		for (let cycle = 0; cycle < 3; cycle++) {
 			runCompletionClosure(cpu, seed, []);
 			runCompletionClosure(cpu, clear, []);
-			const heap = cpu.collectTrackedHeapBytes();
-			const weak = probe.getStringKey(cpu.stringPool.find('weak')!) as Table;
-			for (let index = 1; index <= 64; index++) assert.equal(weak.getInteger(index), null);
+			const heap = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
+			const weak = asTable(probe.getStringKey(cpu.stringPool.find('weak')!), cpu.gc);
+			for (let index = 1; index <= 64; index++) assert.equal(weak.getInteger(index), valueNil());
 			if (cycle === 0) warmed = heap;
 			else assert.equal(heap, warmed, 'historical keys must not grow retained clear storage');
 		}
@@ -96,7 +95,7 @@ kernel = function(count)
 end
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		const kernel = cpu.getGlobalByKey(cpu.stringPool.find('kernel')!) as Closure;
+		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 128);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);

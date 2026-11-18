@@ -1,8 +1,8 @@
+import { valueNil, asStringId } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { StringValue } from '../../machine/ts/machine/cpu/value';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
 
@@ -102,7 +102,7 @@ return failed
 `, { optLevel, modules });
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 	const [failure] = materializeCpuCompletionValues(cpu);
-	assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
+	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 });
 
 for (const optLevel of [0, 3] as const) {
@@ -172,7 +172,7 @@ return failed
 `, { optLevel, modules });
 			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 			const [failure] = materializeCpuCompletionValues(cpu);
-			assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
+			assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 		});
 	}
 
@@ -217,6 +217,6 @@ return failed
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const [failure] = materializeCpuCompletionValues(cpu);
-		assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
+		assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 	});
 }

@@ -1,12 +1,11 @@
-import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
-import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
+import { ValueTag, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { TEST_SYSTEM_CONTEXT_ID, createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
+import { captureInstalledLuaSources, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
-import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import {
 	BehaviorRuntimeProperties, RuntimePropertyIndex, runtimeInspectionPropertiesEqual, runtimePropertyIdentitiesEqual,
@@ -14,9 +13,8 @@ import {
 } from '../../ide/workbench/contrib/behavior_lens/runtime_properties';
 import { parseLuaChunk } from './cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
-import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 
-const numeric: RuntimePropertyIdentity = { section: 'member', field: '', key: { tag: ValueTag.Number, scalar: 1 } };
+const numeric: RuntimePropertyIdentity = { section: 'member', field: '', key: { tag: ValueTag.Integer, scalar: 1 } };
 const string: RuntimePropertyIdentity = { section: 'member', field: '', key: { tag: ValueTag.String, scalar: '1' } };
 const field: RuntimePropertyIdentity = { section: 'instance', field: 'id' };
 
@@ -64,7 +62,7 @@ test('filtered projections do not capture keys or format rejected values and ret
 	const refresh = () => {
 		properties.begin(); properties.text('STATUS', 'IGNORED');
 		properties.field('instance', 'id', 'IGNORED', callback);
-		properties.entry('member', 1, callback);
+		properties.entry('member', valueInteger(1), callback);
 		properties.entry('member', key, value);
 		return properties.finish();
 	};
@@ -87,16 +85,16 @@ test('filtered projections do not capture keys or format rejected values and ret
 test('semantic rows retain their comparison baseline through insertion, removal and reorder', () => {
 	const { sources, guest } = fixture(), properties = new BehaviorRuntimeProperties(sources, guest);
 	properties.begin(true);
-	properties.field('instance', 'health', 'HEALTH', 90);
-	properties.field('owner', 'health', 'HEALTH', 120);
+	properties.field('instance', 'health', 'HEALTH', valueInteger(90));
+	properties.field('owner', 'health', 'HEALTH', valueInteger(120));
 	const document = properties.finish(), health = document[0], owner = document[1];
 	assert.ok(document.every(row => row.valueChanged === false));
 	const identity = health.identity;
 
 	properties.begin(true);
-	properties.field('instance', 'extra', 'HEALTH', 1);
-	properties.field('instance', 'health', 'RENAMED HEALTH', 89);
-	properties.field('owner', 'health', 'HEALTH', 120);
+	properties.field('instance', 'extra', 'HEALTH', valueInteger(1));
+	properties.field('instance', 'health', 'RENAMED HEALTH', valueInteger(89));
+	properties.field('owner', 'health', 'HEALTH', valueInteger(120));
 	assert.strictEqual(properties.finish(), document);
 	assert.strictEqual(document[1], health);
 	assert.strictEqual(document[2], owner);
@@ -105,8 +103,8 @@ test('semantic rows retain their comparison baseline through insertion, removal 
 	assert.equal(document[0].valueChanged, false); assert.equal(owner.valueChanged, false);
 
 	properties.begin(true);
-	properties.field('owner', 'health', 'HEALTH', 119);
-	properties.field('instance', 'health', 'RENAMED HEALTH', 89);
+	properties.field('owner', 'health', 'HEALTH', valueInteger(119));
+	properties.field('instance', 'health', 'RENAMED HEALTH', valueInteger(89));
 	properties.finish();
 	assert.deepEqual(document, [owner, health]);
 	assert.equal(owner.valueChanged, true); assert.equal(health.valueChanged, false);
@@ -114,14 +112,14 @@ test('semantic rows retain their comparison baseline through insertion, removal 
 	assert.strictEqual(properties.finish(), document, 'nested projectors may finish the same document twice');
 
 	properties.begin(false);
-	properties.field('instance', 'health', 'HEALTH', 300);
-	properties.field('owner', 'health', 'HEALTH', 400);
+	properties.field('instance', 'health', 'HEALTH', valueInteger(300));
+	properties.field('owner', 'health', 'HEALTH', valueInteger(400));
 	properties.finish();
 	assert.strictEqual(document[0], health); assert.strictEqual(document[1], owner);
 	assert.ok(document.every(row => row.valueChanged === false), 'a new selected binding establishes a neutral baseline');
 	properties.begin(true);
-	properties.field('instance', 'health', 'HEALTH', 300);
-	properties.field('owner', 'health', 'HEALTH', 400);
+	properties.field('instance', 'health', 'HEALTH', valueInteger(300));
+	properties.field('owner', 'health', 'HEALTH', valueInteger(400));
 	properties.finish(); properties.finish();
 	assert.equal(properties.changed, false);
 });
@@ -131,9 +129,9 @@ test('typed entry identities retain warmed value, label and description caches t
 	const properties = new BehaviorRuntimeProperties(sources, guest);
 	const presentation = { prefix: 'ENTRY ' };
 	properties.begin(true);
-	properties.entry('member', 1, value, presentation, 'DEFAULT: ', value);
-	properties.entry('member', key, 20, presentation);
-	properties.field('member', '', 'UNKEYED', 30);
+	properties.entry('member', valueInteger(1), value, presentation, 'DEFAULT: ', value);
+	properties.entry('member', key, valueInteger(20), presentation);
+	properties.field('member', '', 'UNKEYED', valueInteger(30));
 	const document = properties.finish(), numericRow = document[0], stringRow = document[1], unkeyedRow = document[2];
 	assert.equal(numericRow.label, stringRow.label);
 	let identities = 0, labels = 0, values = 0, previews = 0;
@@ -145,13 +143,13 @@ test('typed entry identities retain warmed value, label and description caches t
 	for (let observation = 0; observation < 1000; observation++) {
 		properties.begin(true);
 		if (observation % 2 === 0) {
-			properties.field('member', '', 'UNKEYED', 30);
-			properties.entry('member', key, 20, presentation);
-			properties.entry('member', 1, value, presentation, 'DEFAULT: ', value);
+			properties.field('member', '', 'UNKEYED', valueInteger(30));
+			properties.entry('member', key, valueInteger(20), presentation);
+			properties.entry('member', valueInteger(1), value, presentation, 'DEFAULT: ', value);
 		} else {
-			properties.entry('member', 1, value, presentation, 'DEFAULT: ', value);
-			properties.entry('member', key, 20, presentation);
-			properties.field('member', '', 'UNKEYED', 30);
+			properties.entry('member', valueInteger(1), value, presentation, 'DEFAULT: ', value);
+			properties.entry('member', key, valueInteger(20), presentation);
+			properties.field('member', '', 'UNKEYED', valueInteger(30));
 		}
 		properties.finish();
 		assert.strictEqual(document[0], observation % 2 === 0 ? unkeyedRow : numericRow);
@@ -163,9 +161,9 @@ test('typed entry identities retain warmed value, label and description caches t
 	assert.deepEqual([identities, labels, values, previews], [0, 0, 0, 0]);
 	properties.invalidate();
 	properties.begin(true);
-	properties.entry('member', key, 21, presentation);
-	properties.entry('member', 1, value, presentation, 'DEFAULT: ', value);
-	properties.field('member', '', 'UNKEYED', 30);
+	properties.entry('member', key, valueInteger(21), presentation);
+	properties.entry('member', valueInteger(1), value, presentation, 'DEFAULT: ', value);
+	properties.field('member', '', 'UNKEYED', valueInteger(30));
 	properties.finish();
 	assert.strictEqual(document[0], stringRow); assert.strictEqual(document[1], numericRow);
 	assert.equal(stringRow.valueChanged, true); assert.equal(numericRow.valueChanged, false);
@@ -175,12 +173,12 @@ test('typed entry identities retain warmed value, label and description caches t
 test('completed observations release omitted rows and returning identities start neutral', () => {
 	const { sources, guest } = fixture(), properties = new BehaviorRuntimeProperties(sources, guest);
 	properties.begin(true);
-	properties.entry('member', 1, 10);
-	properties.entry('member', 2, 20);
-	properties.entry('member', 3, 30);
+	properties.entry('member', valueInteger(1), valueInteger(10));
+	properties.entry('member', valueInteger(2), valueInteger(20));
+	properties.entry('member', valueInteger(3), valueInteger(30));
 	const document = properties.finish(), removed = document[0], survivor = document[2];
 	properties.begin(true);
-	properties.entry('member', 3, 31);
+	properties.entry('member', valueInteger(3), valueInteger(31));
 	properties.text('STATUS', 'READY');
 	properties.finish();
 	assert.strictEqual(document[0], survivor); assert.equal(survivor.valueChanged, true);
@@ -188,14 +186,14 @@ test('completed observations release omitted rows and returning identities start
 	assert.strictEqual(properties.finish(), document);
 
 	properties.begin(true);
-	properties.entry('member', 1, 100);
-	properties.entry('member', 3, 31);
+	properties.entry('member', valueInteger(1), valueInteger(100));
+	properties.entry('member', valueInteger(3), valueInteger(31));
 	properties.finish();
 	assert.notStrictEqual(document[0], removed); assert.equal(document[0].valueChanged, false);
 	assert.strictEqual(document[1], survivor); assert.equal(survivor.valueChanged, false);
 	properties.begin(true); properties.finish(); properties.finish();
 	assert.equal(document.length, 0);
-	properties.begin(true); properties.entry('member', 3, 32); properties.finish();
+	properties.begin(true); properties.entry('member', valueInteger(3), valueInteger(32)); properties.finish();
 	assert.notStrictEqual(document[0], survivor); assert.equal(document[0].valueChanged, false);
 });
 
@@ -205,8 +203,8 @@ test('display-only occurrences retain unique rows but never enter a logical-watc
 	const presentation = { prefix: 'KEY ' };
 	const refresh = () => {
 		properties.begin();
-		properties.entry('shadowed-slot', 1, 10, presentation, '', undefined, key, false);
-		properties.entry('member', key, 20, presentation);
+		properties.entry('shadowed-slot', valueInteger(1), valueInteger(10), presentation, '', undefined, key, false);
+		properties.entry('member', key, valueInteger(20), presentation);
 		return properties.finish();
 	};
 	const document = refresh(), shadowed = document[0], canonical = document[1];
@@ -220,7 +218,7 @@ test('display-only occurrences retain unique rows but never enter a logical-watc
 	}
 	assert.equal(identities.mock.callCount(), 0); assert.equal(formats.mock.callCount(), 0);
 	const filtered = new BehaviorRuntimeProperties(sources, guest, () => true);
-	filtered.begin(); filtered.entry('shadowed-slot', 1, 10, presentation, '', undefined, key, false);
+	filtered.begin(); filtered.entry('shadowed-slot', valueInteger(1), valueInteger(10), presentation, '', undefined, key, false);
 	assert.equal(filtered.finish().length, 0);
 	assert.equal(identities.mock.callCount(), 0); assert.equal(formats.mock.callCount(), 0);
 });

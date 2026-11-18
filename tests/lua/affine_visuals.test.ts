@@ -1,10 +1,8 @@
+import { valueBool, asClosure, valueNil, asTable, asStringId } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
-import type { StringValue } from '../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
@@ -89,7 +87,7 @@ assert(named.animation=='active' and named.imgid=='other',
 return true
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 
 	test(`Scene members inherit prefab placement and visual defaults unless explicitly overridden (O${optLevel})`, () => {
@@ -130,7 +128,7 @@ assert(second.members.inherited.ox==9 and second.members.inherited.oy==12,
 return true
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 
 	test(`Sprite source changes preserve the concrete composite draw producer (O${optLevel})`, () => {
@@ -174,7 +172,7 @@ assert(part.draw==layered.draw_visual,'clearing a region discarded the concrete 
 return true
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 
 	test(`Rectangle geometry owns its dimensions and composes the retained visual affine (O${optLevel})`, t => {
@@ -220,8 +218,8 @@ end
 return true
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
-		const kernel = cpu.getGlobalByKey(cpu.stringPool.find('kernel')!) as Closure;
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
+		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 256);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);
@@ -276,7 +274,7 @@ return assertion_failed
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const [failure] = materializeCpuCompletionValues(cpu);
-		assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
+		assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 	});
 
 	// These coordinates/words are the subject of the GX affine producer contract,
@@ -347,7 +345,7 @@ return assertion_failed
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const [failure] = materializeCpuCompletionValues(cpu);
-		assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
+		assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 	});
 }
 
@@ -415,10 +413,10 @@ return {
 	}] });
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 	const [failure] = materializeCpuCompletionValues(cpu);
-	assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
-	const sources = cpu.getGlobalByKey(cpu.stringPool.find('sources')!) as Table;
+	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
+	const sources = asTable(cpu.getGlobalByKey(cpu.stringPool.find('sources')!), cpu.gc);
 	let sourceBytes = 0;
-	for (let index = 1; index <= 1024; index += 1) sourceBytes += (sources.getInteger(index) as Table).getTrackedHeapBytes();
+	for (let index = 1; index <= 1024; index += 1) sourceBytes += asTable(sources.getInteger(index), cpu.gc).getTrackedHeapBytes();
 	// The thousand-image stage exhausted RAM with 672-byte source descriptors.
 	// This is a retained-memory budget, independent of the sharing mechanism.
 	assert.ok(sourceBytes < 400 * 1024, `image source descriptors retained ${sourceBytes} bytes`);
@@ -457,9 +455,9 @@ probe = {
 }
 `, { optLevel: 3, modules });
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
+	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 	for (const lane of ['translation', 'affine']) {
-		const kernel = probe.getStringKey(cpu.stringPool.find(lane)!) as Closure;
+		const kernel = asClosure(probe.getStringKey(cpu.stringPool.find(lane)!), cpu.gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 256);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);

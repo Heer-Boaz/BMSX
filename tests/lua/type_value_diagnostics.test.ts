@@ -1,3 +1,4 @@
+import { valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -105,7 +106,7 @@ end
 -- shape in a comment and a string is not an identifier use.
 return read(3), nested(), object.shape, object['shape'], ptr.value, sizeof(shape), offsetof(shape.value), 'shape' == 'shape'`;
 	assert.deepEqual(buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'type_shadow.lua', source }])).getFile('type_shadow.lua').diagnostics, []);
-	assert.deepEqual(runCompiledLua(source, 'type_shadow.lua', optLevel), [4, 21, 7, 7, 11, 4, 0, true]);
+	assert.deepEqual(runCompiledLua(source, 'type_shadow.lua', optLevel), [valueInteger(4), valueInteger(21), valueInteger(7), valueInteger(7), valueInteger(11), valueInteger(4), valueInteger(0), valueBool(true)]);
 });
 
 test('retained diagnostic snapshots do not reinterpret a type as a later global value', () => {

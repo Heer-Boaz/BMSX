@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -21,25 +22,7 @@ import {
 	DMA_TRIGGER_START,
 } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import {
-	GX_GPU_DRAW_MODE_DITHER_ENABLED,
-	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH,
-	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP,
-	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP,
-	GX_GPU_TEXTURE_MODE_DIRECT16,
-	GX_GPU_TEXTURE_MODE_PALETTE4,
-	GX_GPU_TEXTURE_MODE_PALETTE8,
-	gxGpuPolygonDrawModeWord,
-	gxGpuPolygonTexturePageWordIndex,
-	gxGpuTextureAttribute,
-	gxGpuTransferHeight,
-	gxGpuTransferWidth,
-	gxGpuDrawingAreaBottomExclusive,
-	gxGpuDrawingAreaLeft,
-	gxGpuDrawingAreaRightExclusive,
-	gxGpuDrawingAreaTop,
-	gxGpuSigned11,
-} from '../../machine/ts/spec/gx/gp0';
+import { GX_GPU_COMMAND_FIFO_WORD_CAPACITY, GX_GPU_DMA_DIRECTION_CPU_TO_GP0, GX_GPU_DMA_DIRECTION_FIFO, GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU, GX_GPU_DRAW_MODE_DITHER_ENABLED, GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH, GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP, GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP, GX_GPU_GP0_CPU_TO_VRAM_FIRST, GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT, GX_GPU_GP0_DRAWING_AREA_TOP_LEFT, GX_GPU_GP0_DRAWING_OFFSET, GX_GPU_GP0_DRAW_MODE, GX_GPU_GP0_FILL_RECTANGLE, GX_GPU_GP0_IRQ_REQUEST, GX_GPU_GP0_LINE_FIRST, GX_GPU_GP0_MASK_BIT, GX_GPU_GP0_POLYGON_FIRST, GX_GPU_GP0_RECTANGLE_FIRST, GX_GPU_GP0_RENDER_GOURAUD_BIT, GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT, GX_GPU_GP0_RENDER_TEXTURE_BIT, GX_GPU_GP0_TEXTURE_WINDOW, GX_GPU_GP0_VRAM_TO_CPU_FIRST, GX_GPU_GP0_VRAM_TO_VRAM_FIRST, GX_GPU_TEXTURE_MODE_DIRECT16, GX_GPU_TEXTURE_MODE_PALETTE4, GX_GPU_TEXTURE_MODE_PALETTE8, gxGpuDrawingAreaBottomExclusive, gxGpuDrawingAreaLeft, gxGpuDrawingAreaRightExclusive, gxGpuDrawingAreaTop, gxGpuPolygonDrawModeWord, gxGpuPolygonTexturePageWordIndex, gxGpuSigned11, gxGpuTextureAttribute, gxGpuTransferHeight, gxGpuTransferWidth } from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_COMMAND_CAPACITY,
 	GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT,
@@ -65,7 +48,6 @@ import {
 	GX_GPU_VRAM_X_ADDRESS_PERIOD,
 	GX_GPU_VRAM_Y_ADDRESS_PERIOD,
 } from '../../machine/ts/spec/gx/vram';
-import { GX_GPU_COMMAND_FIFO_WORD_CAPACITY } from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_PCRTC_BGCOLOR_LOW,
 	GX_GPU_PCRTC_CONFIG_WORD_COUNT,
@@ -243,28 +225,6 @@ import {
 	GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
 	GX_GPU_VERTICAL_DISPLAY_RANGE_MASK,
 } from '../../machine/ts/spec/gx/gp1';
-import {
-	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
-	GX_GPU_DMA_DIRECTION_FIFO,
-	GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU,
-	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
-	GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT,
-	GX_GPU_GP0_DRAWING_AREA_TOP_LEFT,
-	GX_GPU_GP0_DRAWING_OFFSET,
-	GX_GPU_GP0_DRAW_MODE,
-	GX_GPU_GP0_FILL_RECTANGLE,
-	GX_GPU_GP0_IRQ_REQUEST,
-	GX_GPU_GP0_LINE_FIRST,
-	GX_GPU_GP0_MASK_BIT,
-	GX_GPU_GP0_POLYGON_FIRST,
-	GX_GPU_GP0_RECTANGLE_FIRST,
-	GX_GPU_GP0_RENDER_GOURAUD_BIT,
-	GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT,
-	GX_GPU_GP0_RENDER_TEXTURE_BIT,
-	GX_GPU_GP0_TEXTURE_WINDOW,
-	GX_GPU_GP0_VRAM_TO_CPU_FIRST,
-	GX_GPU_GP0_VRAM_TO_VRAM_FIRST,
-} from '../../machine/ts/spec/gx/gp0';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -1841,7 +1801,7 @@ test('blocked CPU GP0 store resumes after completion across device restore', () 
 	writeInstruction(code, 2, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE, 0);
 	writeInstruction(code, 3, OpCode.RET, 0, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 4, maxStack: 2 }],
-		constants: [IO_GX_GPU_GP0, 0x1f000000] });
+		constants: [IO_GX_GPU_GP0, 0x1f000000].map(integerConstant) });
 	const original = createGpu();
 	original.memory.installSystemRom(image.romBytes);
 	original.cpu.reset();

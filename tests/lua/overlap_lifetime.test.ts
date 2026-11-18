@@ -1,9 +1,8 @@
+import { asTable, asClosure, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
@@ -141,12 +140,12 @@ function probe.retire()
 end
 `, { optLevel, modules });
 			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-			const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-			runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find('retire')!) as Closure, []);
+			const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+			runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('retire')!), cpu.gc), []);
 			cpu.collectTrackedHeapBytes();
-			const weak = probe.getStringKey(cpu.stringPool.find('weak')!) as Table;
+			const weak = asTable(probe.getStringKey(cpu.stringPool.find('weak')!), cpu.gc);
 			for (let index = 1; index <= 65; index += 1) {
-				assert.equal(weak.getInteger(index), null, `retired object/geometry owner ${index} remained reachable`);
+				assert.equal(weak.getInteger(index), valueNil(), `retired object/geometry owner ${index} remained reachable`);
 			}
 		});
 	}
@@ -164,8 +163,8 @@ kernel = function(count)
 end
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		const kernel = cpu.getGlobalByKey(cpu.stringPool.find('kernel')!) as Closure;
-		const profile = profileWarmGuestKernel(cpu, kernel, 128);
+		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
+		const profile = profileWarmGuestKernel(cpu, kernel, 128, 50_000_000);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);
 		assert.equal(profile.retainedAfter, profile.retainedBefore);

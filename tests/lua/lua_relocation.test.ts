@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -146,8 +147,8 @@ test('actual compiled BLua confirms preserved and changed captures after the syn
 		const model = new EditorTextModel(resource, 'lua', source);
 		const transfer = createLuaTableFieldTransfer(model.buffer, file.chunk, field, target, 0);
 		model.pushEditOperations(transfer.edits);
-		assert.deepEqual(runCompiledLua(source + '\nreturn from[1]()'), [original]);
-		assert.deepEqual(runCompiledLua(model.buffer.getText() + '\nreturn to[1]()'), [moved]);
+		assert.deepEqual(runCompiledLua(source + '\nreturn from[1]()'), [valueInteger(original)]);
+		assert.deepEqual(runCompiledLua(model.buffer.getText() + '\nreturn to[1]()'), [valueInteger(moved)]);
 		assert.equal(changes.length, original === moved ? 0 : 1);
 		model.undo();
 		assert.equal(model.buffer.getText(), source);
@@ -169,8 +170,8 @@ local function second(...) return {} end`, 0, 1,
 		assert.equal(changes.length, 1);
 		const model = new EditorTextModel(resource, 'lua', source);
 		model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, file.chunk, field, target, 0).edits);
-		assert.deepEqual(runCompiledLua(source + '\n' + before), [11]);
-		assert.deepEqual(runCompiledLua(model.buffer.getText() + '\n' + after), [22]);
+		assert.deepEqual(runCompiledLua(source + '\n' + before), [valueInteger(11)]);
+		assert.deepEqual(runCompiledLua(model.buffer.getText() + '\n' + after), [valueInteger(22)]);
 		model.dispose();
 	}
 });

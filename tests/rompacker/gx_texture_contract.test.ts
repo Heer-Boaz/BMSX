@@ -1,3 +1,5 @@
+import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
@@ -235,7 +237,7 @@ string = require('string/base')
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 		const systemModuleSources = [
-			['base', readFileSync('machine/bios/base.lua', 'utf8')],
+			...BASE_FIRMWARE_MODULES.map(({path, source}) => [path, source] as const),
 			['tty/console', 'return { write = function() end, end_line = function() end }'],
 			['table', readFileSync('machine/bios/table.lua', 'utf8')],
 			['string/base', readFileSync('machine/bios/string/base.lua', 'utf8')],
@@ -419,7 +421,7 @@ return imgdec
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		const textureDestination = gxGpuPair16(320, 0);
 		const clutDestination = gxGpuPair16(320, 16);
-		assert.deepEqual(materializeCpuCompletionValues(cpu).map(value => (value as number) >>> 0), [
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [
 			1,
 			1,
 			1,
@@ -431,7 +433,7 @@ return imgdec
 			textureDestination,
 			loadedTexture.texturemeta!.word_width | (loadedTexture.texturemeta!.height << 16),
 			clutDestination,
-		]);
+		].map(valueInteger));
 	} finally {
 		await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
 	}

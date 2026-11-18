@@ -1,8 +1,7 @@
+import { asTable, asClosure } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
@@ -79,10 +78,13 @@ probe = {
 }
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-		const omitted = probe.getStringKey(cpu.stringPool.find('omitted')!) as Closure;
-		const explicit = probe.getStringKey(cpu.stringPool.find('explicit')!) as Closure;
+		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+		const omitted = asClosure(probe.getStringKey(cpu.stringPool.find('omitted')!), cpu.gc);
+		const state = cpu.captureRuntimeState(), strings = cpu.stringPool.captureState();
 		const implicitProfile = profileWarmGuestKernel(cpu, omitted, 32);
+		cpu.stringPool.restoreState(strings); cpu.restoreRuntimeState(state);
+		const restored = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+		const explicit = asClosure(restored.getStringKey(cpu.stringPool.find('explicit')!), cpu.gc);
 		const explicitProfile = profileWarmGuestKernel(cpu, explicit, 32);
 		// Fixed identity and immediate retirement isolate input admission from
 		// ID-string growth; the control reuses one real caller-owned input.
@@ -118,10 +120,13 @@ probe = {
 }
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-		const plain = probe.getStringKey(cpu.stringPool.find('plain')!) as Closure;
-		const hooks = probe.getStringKey(cpu.stringPool.find('hooks')!) as Closure;
+		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+		const plain = asClosure(probe.getStringKey(cpu.stringPool.find('plain')!), cpu.gc);
+		const state = cpu.captureRuntimeState(), strings = cpu.stringPool.captureState();
 		const plainProfile = profileWarmGuestKernel(cpu, plain, 32);
+		cpu.stringPool.restoreState(strings); cpu.restoreRuntimeState(state);
+		const restored = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+		const hooks = asClosure(restored.getStringKey(cpu.stringPool.find('hooks')!), cpu.gc);
 		const hookProfile = profileWarmGuestKernel(cpu, hooks, 32);
 		assert.equal(hookProfile.reservations, plainProfile.reservations);
 		assert.equal(hookProfile.reservedBytes, plainProfile.reservedBytes);

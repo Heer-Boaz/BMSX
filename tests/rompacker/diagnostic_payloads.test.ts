@@ -1,3 +1,5 @@
+import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
+import { asClosure, asInteger, valueBool, valueInteger, valueString } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -6,8 +8,6 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { buildRomBlua32Tail, finalizeRompack } from '../../scripts/rompacker/rombuilder';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import { valueString } from '../../machine/ts/machine/cpu/value';
 import { parseSystemRomImage } from '../../machine/ts/rompack/image';
 import { CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET } from '../../machine/ts/spec/bmsx/rom_package';
 import { readLE32 } from '../../machine/ts/common/endian';
@@ -41,7 +41,8 @@ end
 return probe_target(41)`;
 const assets = [
 	{ path: 'diagnostic_probe', source },
-	...['base', 'table', 'string/base', 'string/utf8', 'debug/scopes', 'shell/source_location'].map(path => ({
+	...BASE_FIRMWARE_MODULES,
+	...['table', 'string/base', 'string/utf8', 'debug/scopes', 'shell/source_location'].map(path => ({
 		path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 	})),
 	{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
@@ -66,22 +67,22 @@ test('public BIOS diagnostics and embedded host symbols are independently select
 		const { cpu, memory } = createTestSystemCpu({ romBytes: bytes });
 		cpu.installBootPrimitives();
 		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [42]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
 		if (!includeDiagnostics || includeSymbols) continue;
 		assert.equal(image.symbols, null, 'the BIOS proof has no embedded host symbol graph');
 		const metadata = tail.diagnostics!.symbols.metadata;
 		const target = image.layout.functions[metadata.functionDisplayNames.indexOf('probe_target')];
 		assert.ok(target, 'the fixture contains the named diagnostic target');
-		cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('inspect_scope')) as Closure,
-			[target.address, target.codeAddress]);
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('inspect_scope')), cpu.gc),
+			[valueInteger(target.address), valueInteger(target.codeAddress)]);
 		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueString(cpu.stringPool.intern('probe_target')), true, true]);
-		cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('inspect_location')) as Closure, [target.codeAddress]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueString(cpu.stringPool.intern('probe_target')), valueBool(true), valueBool(true)]);
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('inspect_location')), cpu.gc), [valueInteger(target.codeAddress)]);
 		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-		const [complete, locationAddress, sourceAddress] = materializeCpuCompletionValues(cpu) as [boolean, number, number];
-		assert.equal(complete, true);
+		const [complete, locationAddress, sourceAddress] = materializeCpuCompletionValues(cpu);
+		assert.equal(complete, valueBool(true));
 		const rows = [locationAddress, sourceAddress].map(address => String.fromCharCode(...Array.from({ length: 128 },
-			(_, index) => memory.readU8(address + index * 2))).replace(/\0+$/, ''));
+			(_, index) => memory.readU8(asInteger(address) + index * 2))).replace(/\0+$/, ''));
 		assert.match(rows[0], /^diagnostic_probe\.lua:\d+:\d+$/);
 		assert.equal(rows[1], ' local retained = value + 1');
 	}

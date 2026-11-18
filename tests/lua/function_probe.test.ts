@@ -31,7 +31,7 @@ return value`, 'observer.lua', optLevel);
 	const seen: number[][] = [];
 	cpu.setInstructionObserver({ points: [new Set(locations.keys()), new Set(), new Set()], observe(domain, pc, registers) {
 		assert.equal(domain, -1);
-		seen.push(locations.get(pc)!.map(slot => registers.getNumber(slot)));
+		seen.push(locations.get(pc)!.map(slot => registers.getInteger(slot)));
 	} });
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
 	let value = 11;
@@ -62,7 +62,7 @@ return true`, 'loop_entry.lua', optLevel));
 	const locations = new Map(binding.points.map(point => [point.pc, point.registers]));
 	const seen: number[] = [];
 	cpu.setInstructionObserver({ points: [new Set(locations.keys()), new Set(), new Set()], observe(_domain, pc, registers) {
-		seen.push(registers.getNumber(locations.get(pc)![0]));
+		seen.push(registers.getInteger(locations.get(pc)![0]));
 	} });
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
 	assert.deepEqual(seen, [3]);

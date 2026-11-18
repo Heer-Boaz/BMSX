@@ -1,3 +1,4 @@
+import { valueInteger, valueNil, valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -91,15 +92,15 @@ test('init annotations have no cold semantics and tooling invokes modules in dep
 	assert.deepEqual(image.symbols.initParticipants, compiled.metadata.initParticipants);
 	const { cpu } = createTestSystemCpu(image);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [0]);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('trace')), 0);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('trace')), valueInteger(0));
 
 	cpu.beginCompletionCallInExecutionDomain(
 		SYSTEM_EXECUTION_DOMAIN_ID,
 		image.vectors.initFunctionAddress,
 	);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('trace')), 1234);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('trace')), valueInteger(1234));
 });
 
 test('init participant slots follow the compiled program domain', () => {
@@ -131,15 +132,15 @@ test('an explicit source init call runs once cold and the tooling vector invokes
 	const image = linkTestSystemBlua32(compiled);
 	const { cpu } = createTestSystemCpu(image);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [1, 99]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [1, 99].map(valueInteger));
 
 	cpu.beginCompletionCallInExecutionDomain(
 		SYSTEM_EXECUTION_DOMAIN_ID,
 		image.vectors.initFunctionAddress,
 	);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('marker')), 2);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [null], 'preparation returns exactly one nil, not the participant result');
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('marker')), valueInteger(2));
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueNil()], 'preparation returns exactly one nil, not the participant result');
 });
 
 for (const optLevel of [0, 3] as const) {
@@ -180,7 +181,7 @@ return cold and first, *carried == 16 and *runs == 2 and captured == 6`;
 			});
 		}
 		assert.equal(machine.cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(machine.cpu), [true, true]);
+		assert.deepEqual(materializeCpuCompletionValues(machine.cpu), [true, true].map(valueBool));
 	});
 }
 
@@ -193,11 +194,11 @@ test('module initialization alone publishes a callable public preparation sequen
 	assert.notEqual(image.image.header.initFunctionAddress, 0);
 	const { cpu } = createTestSystemCpu(image);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.image.header.initFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [null]);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('constructed')), 1);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueNil()]);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('constructed')), valueInteger(1));
 });
 
 test('cart init vector invokes retained cart-global closures', () => {
@@ -221,10 +222,10 @@ test('cart init vector invokes retained cart-global closures', () => {
 	const image = linkTestBlua32Pair(system, cart);
 	const { cpu } = createTestBlua32PairCpu(image);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('value')), 2);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('value')), valueInteger(2));
 	cpu.beginCompletionCallInExecutionDomain(0, image.cartVectors.initFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('value')), 4);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('value')), valueInteger(4));
 });
 
 test('init function placement and signature are compile-time contracts', () => {

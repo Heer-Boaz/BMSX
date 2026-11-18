@@ -1,3 +1,4 @@
+import { valueBool } from '../../../machine/ts/machine/cpu/value';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { IO_INP_KEYS } from '../../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
@@ -22,7 +23,7 @@ export async function runStudioActorFind(test: StudioFixture) {
 		.replaceAll("'motion'", "'wait'")
 		.replace('\tworld:render()', '\tworld:render()\n\tgpu.fill_rect_color(16, 16, 80, 80, 0xff26a3bb)\n\tgpu.fill_rect_color(112, 64, 208, 160, 0xffbd7841)') }]);
 	await runPaletteCommand('Run: Reboot'); await press('Enter');
-	await until(() => guest.global('actor_tool_ready') === true && test.tasks.ready, 'actor find: real World constructs duplicate machine instances');
+	await until(() => guest.global('actor_tool_ready') === valueBool(true) && test.tasks.ready, 'actor find: real World constructs duplicate machine instances');
 	const ready = runtime.frameScheduler.lastTickSequence;
 	await until(() => runtime.frameScheduler.lastTickSequence >= ready + 4 && test.tasks.ready, 'actor find: retain physical frame history');
 	await press('ControlRight', 'ShiftRight');

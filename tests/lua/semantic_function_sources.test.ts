@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -190,7 +191,7 @@ test('compiled BLua preserves separately captured function bodies after reassign
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, file.file), [], {
 		entrySource: source, programDomain: 'system', optLevel: 0,
 	});
-	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [11, 22]);
+	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [11, 22].map(valueInteger));
 });
 
 test('possible call results retain every body through the public workspace resolver', () => {

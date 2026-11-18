@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
@@ -87,7 +88,7 @@ test('Play service captures current source, resets into a fresh physical world a
 	assert.equal(f.runTargets.selected, session);
 	assert.throws(() => f.service.start(f.module), /current Play session/);
 	assert.equal(f.runTargets.selected, session, 'rejected admission preserves the selected physical owner');
-	assert.deepEqual(session.guest.readStringMember(session.guest.global(buildModuleExportSlotName('game', [])), 'marker'), 34);
+	assert.deepEqual(session.guest.readStringMember(session.guest.global(buildModuleExportSlotName('game', [])), 'marker'), valueInteger(34));
 	assert.equal(session.evidence.logs.at(0).text, 'ready');
 	assert.equal(f.runs.results.runs.length, 0, 'interactive admission creates no automatic case or result');
 	session.execution.setPauseReason(HostPauseReason.Workbench, true);
@@ -110,7 +111,7 @@ test('Play service captures current source, resets into a fresh physical world a
 	assert.equal(accepted.closed, true); assert.equal(session.state, 'closed');
 	assert.notEqual(next.session!.target.runtime, session.target.runtime);
 	assert.equal(f.runTargets.selected, next.session);
-	assert.deepEqual(next.session!.guest.readStringMember(next.session!.guest.global(buildModuleExportSlotName('game', [])), 'marker'), 56);
+	assert.deepEqual(next.session!.guest.readStringMember(next.session!.guest.global(buildModuleExportSlotName('game', [])), 'marker'), valueInteger(56));
 	f.service.stop(next);
 	for (let grant = 0; next.state !== 'stopped' && grant < 2000; grant++) await f.advance();
 	assert.equal(next.state, 'stopped'); assert.equal(next.session!.evidence.logs.at(1).text, 'cleanup');
@@ -229,7 +230,7 @@ for (const optLevel of [0, 3] as const) test(`O${optLevel}: new authored fixture
 	await f.ready();
 	assert.equal(accepted.source, module.source);
 	assert.equal(accepted.session!.guest.readStringMember(
-		accepted.session!.guest.global(buildModuleExportSlotName('game', [])), 'marker'), 78);
+		accepted.session!.guest.global(buildModuleExportSlotName('game', [])), 'marker'), valueInteger(78));
 	assert.equal(f.sources.currentBlua32Media, original);
 	assert.equal(f.runs.results.runs.length, 0);
 });

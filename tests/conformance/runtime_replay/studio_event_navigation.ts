@@ -1,3 +1,4 @@
+import { valueBool } from '../../../machine/ts/machine/cpu/value';
 import { eventClipboardText } from '../../../ide/workbench/contrib/events/presentation';
 import type { EventViewerPane } from '../../../ide/workbench/contrib/events/editor_pane';
 import { WorkspaceRuntimeTools } from '../../../ide/workbench/services/assistant/runtime_tools';
@@ -39,7 +40,7 @@ export async function runStudioEventNavigation(test: StudioFixture) {
 	const source = harness.getActiveEditorDocument().model;
 	source.pushEditOperations([{ offset: 0, deleteLength: source.buffer.length, text: SOURCE }]);
 	await runPaletteCommand('Run: Reboot'); await press('Enter');
-	await until(() => guest.global('event_navigation_ready') === true && test.tasks.ready, 'events: guest fixture emits through cartlib');
+	await until(() => guest.global('event_navigation_ready') === valueBool(true) && test.tasks.ready, 'events: guest fixture emits through cartlib');
 	const ready = runtime.frameScheduler.lastTickSequence;
 	await until(() => runtime.frameScheduler.lastTickSequence >= ready + 24 && test.tasks.ready, 'events: retain emitted frames');
 	await press('ControlRight', 'ShiftRight');

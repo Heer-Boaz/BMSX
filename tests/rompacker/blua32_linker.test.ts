@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { LexicalDeclarationKind } from '../../toolchain/ts/lua/compiler/declaration_kind';
 import { LuaSourceCorrespondence } from '../../toolchain/ts/lua/semantic/source_correspondence';
 import assert from 'node:assert/strict';
@@ -16,6 +17,7 @@ import { replaceWithJump, replaceWithMov } from '../../toolchain/ts/lua/compiler
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import type {
+	ProgramConstant,
 	ProgramMetadata,
 	ProgramRuntimeSymbols,
 	Proto,
@@ -126,7 +128,7 @@ function makeMetadata(
 
 function makeSystemObject(
 	words: ReadonlyArray<EncodedWord>,
-	constPool: ReadonlyArray<null | boolean | number | string> = [],
+	constPool: readonly ProgramConstant[] = [],
 	constRelocs: ReadonlyArray<ProgramImageConstReloc> = [],
 ): { object: ProgramSystemObjectImage; metadata: ProgramMetadata } {
 	const code = buildCode(words);
@@ -167,7 +169,7 @@ function makeSystemObject(
 
 function makeCartObject(
 	words: ReadonlyArray<EncodedWord>,
-	constPool: ReadonlyArray<null | boolean | number | string> = [],
+	constPool: readonly ProgramConstant[] = [],
 	constRelocs: ReadonlyArray<ProgramImageConstReloc> = [],
 	biosFunctionConstRelocs: ReadonlyArray<ProgramBiosFunctionConstReloc> = [],
 ): { object: ProgramCartObjectImage; metadata: ProgramMetadata } {
@@ -215,7 +217,7 @@ function decodeBx(code: Uint8Array, wordIndex: number): number {
 test('BLua32 linker emits one self-describing physical image', () => {
 	const { object, metadata } = makeSystemObject([
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
-	], ['literal', 3]);
+	], ['literal', integerConstant(3)]);
 	object.sections.rodata.moduleProtos.push({ path: 'rooms/castle', protoIndex: 0 });
 	object.sections.rodata.bytes = new Uint8Array([1, 2, 3, 4]);
 	object.sections.data.bytes = new Uint8Array([5, 6, 7, 8]);
@@ -230,7 +232,7 @@ test('BLua32 linker emits one self-describing physical image', () => {
 	assert.deepEqual(Array.from(image.rodataBytes), [1, 2, 3, 4]);
 	assert.deepEqual(Array.from(image.dataLoadBytes), [5, 6, 7, 8]);
 	assert.deepEqual(Array.from(image.textBytes), Array.from(object.sections.text.code));
-	assert.deepEqual(image.constants, ['literal', 3]);
+	assert.deepEqual(image.constants, ['literal', integerConstant(3)]);
 	assert.deepEqual(linked.symbols.moduleFunctions, [{
 		path: 'rooms/castle',
 		address: image.functions[0].address,
@@ -608,7 +610,7 @@ test('cartridge global operands keep cartridge-owned and baseline-stable slot ta
 });
 
 test('system and cartridge storage relocations resolve against physical ROM and RAM sections', () => {
-	const system = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [0, 0, 0]);
+	const system = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [0, 0, 0].map(integerConstant));
 	system.object.sections.rodata.bytes = new Uint8Array([0x11, 0x12, 0x13, 0x14]);
 	system.object.sections.rodata.symbols = [{ name: 'system_lookup', offset: 0, byteCount: 4, alignment: 4 }];
 	system.object.sections.data = {
@@ -632,7 +634,7 @@ test('system and cartridge storage relocations resolve against physical ROM and 
 		[],
 	);
 
-	const cart = makeCartObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [0, 0, 0]);
+	const cart = makeCartObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [0, 0, 0].map(integerConstant));
 	cart.object.sections.rodata.bytes = new Uint8Array([0x21, 0x22, 0x23, 0x24]);
 	cart.object.sections.rodata.symbols = [{ name: 'cart_lookup', offset: 0, byteCount: 4, alignment: 4 }];
 	cart.object.sections.data = {
@@ -660,12 +662,12 @@ test('system and cartridge storage relocations resolve against physical ROM and 
 		linkedSystem.layout.header.rodataAddress,
 		linkedSystem.layout.header.dataLoadAddress,
 		DYNAMIC_RAM_BASE + 4,
-	]);
+	].map(integerConstant));
 	assert.deepEqual(linkedCart.layout.constants, [
 		linkedCart.layout.header.rodataAddress,
 		linkedCart.layout.header.dataLoadAddress,
 		DYNAMIC_RAM_BASE + 16,
-	]);
+	].map(integerConstant));
 	assert.equal(linkedSystem.layout.header.dataAddress, DYNAMIC_RAM_BASE);
 	assert.equal(linkedSystem.layout.header.bssAddress, DYNAMIC_RAM_BASE + 4);
 	assert.equal(linkedCart.layout.header.dataAddress, DYNAMIC_RAM_BASE + 8);
@@ -675,7 +677,7 @@ test('system and cartridge storage relocations resolve against physical ROM and 
 });
 
 test('static relocations select section symbol indices even when display labels are equal', () => {
-	const system = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], new Array(8).fill(0));
+	const system = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], new Array(8).fill(integerConstant(0)));
 	const symbols = [
 		{ name: 'same_label', offset: 0, byteCount: 8, alignment: 4 },
 		{ name: 'same_label', offset: 8, byteCount: 8, alignment: 4 },
@@ -701,11 +703,11 @@ test('static relocations select section symbol indices even when display labels 
 		dataLoadAddress + 4, dataLoadAddress + 12,
 		bssAddress + 4, bssAddress + 12,
 		rodataAddress + 4, rodataAddress + 12,
-	]);
+	].map(integerConstant));
 });
 
 test('BLua32 linker evaluates composite link-value expressions at initial and final layout', () => {
-	const system = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [0]);
+	const system = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [integerConstant(0)]);
 	system.object.link.constValueRelocs = [{
 		constIndex: 0,
 		kind: 'link_value',
@@ -713,8 +715,8 @@ test('BLua32 linker evaluates composite link-value expressions at initial and fi
 		expression: {
 			kind: 'binary',
 			operator: LuaBinaryOperator.ShiftRight,
-			left: { kind: 'export', exportPath: 'font_len', value: 6156 },
-			right: { kind: 'number', value: 2 },
+			left: { kind: 'export', exportPath: 'font_len', value: integerConstant(6156) },
+			right: { kind: 'number', value: integerConstant(2) },
 		},
 	}];
 	const linked = linkSystemBlua32Image(
@@ -724,14 +726,14 @@ test('BLua32 linker evaluates composite link-value expressions at initial and fi
 		LINK_TARGET_RAM_BYTES,
 		[],
 	);
-	assert.equal(linked.layout.constants[0], 1539);
+	assert.deepEqual(linked.layout.constants[0], integerConstant(1539));
 	applyBlua32LinkValues(
 		linked,
 		system.object.link.constValueRelocs,
 		'assets',
 		new Map([['font_len', 8192]]),
 	);
-	assert.equal(linked.layout.constants[0], 2048);
+	assert.deepEqual(linked.layout.constants[0], integerConstant(2048));
 });
 
 test('BLua32 hot revision maps unchanged physical function code one word at a time', () => {
@@ -1474,7 +1476,7 @@ test('BLua32 static layout rejects init participant add, remove, and reorder', (
 });
 
 test('text-only BLua32 revisions keep physical rodata addresses stable', () => {
-	const initial = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [0]);
+	const initial = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], [integerConstant(0)]);
 	initial.object.sections.rodata.bytes = new Uint8Array([0x78, 0x56, 0x34, 0x12]);
 	initial.object.sections.rodata.symbols = [{ name: 'live_value', offset: 0, byteCount: 4, alignment: 4 }];
 	initial.object.link.constValueRelocs = [{
@@ -1488,15 +1490,15 @@ test('text-only BLua32 revisions keep physical rodata addresses stable', () => {
 	const changed = makeSystemObject([
 		{ op: OpCode.LOADNIL, a: 0, b: 0, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
-	], [0]);
+	], [integerConstant(0)]);
 	changed.object.sections.rodata.bytes = initial.object.sections.rodata.bytes;
 	changed.object.sections.rodata.symbols = initial.object.sections.rodata.symbols;
 	changed.object.link.constValueRelocs = initial.object.link.constValueRelocs;
 	const changedImage = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 
 	assert.equal(initialImage.layout.header.rodataAddress, changedImage.layout.header.rodataAddress);
-	assert.deepEqual(initialImage.layout.constants, [initialImage.layout.header.rodataAddress]);
-	assert.deepEqual(changedImage.layout.constants, [changedImage.layout.header.rodataAddress]);
+	assert.deepEqual(initialImage.layout.constants, [initialImage.layout.header.rodataAddress].map(integerConstant));
+	assert.deepEqual(changedImage.layout.constants, [changedImage.layout.header.rodataAddress].map(integerConstant));
 });
 
 test('BLua32 linker preserves string literals that resemble obsolete relocation markers', () => {

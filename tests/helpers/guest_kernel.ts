@@ -4,15 +4,15 @@ import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 
 /** Count successful heap reservations, including allocate-then-collect churn. */
-export function profileWarmGuestKernel(cpu: CPU, kernel: Closure, iterations: number) {
+export function profileWarmGuestKernel(cpu: CPU, kernel: Closure, iterations: number, budget = 10_000_000) {
 	cpu.beginCompletionCall(kernel, [valueInteger(64)]);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
 	const heap = cpu.luaHeap;
 	cpu.collectTrackedHeapBytes();
 	// Collection can shrink the stack below this kernel's peak. Warm its
 	// call depth again before attributing any reservation to steady-state work.
 	cpu.beginCompletionCall(kernel, [valueInteger(64)]);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
 	const retainedBefore = heap.usedBytes();
 	const stackCapacityBefore = cpu.activeThread.stackRegisters.capacity();
 	const reserve = heap.reserve;
@@ -26,8 +26,8 @@ export function profileWarmGuestKernel(cpu: CPU, kernel: Closure, iterations: nu
 	let cycles: number;
 	try {
 		cpu.beginCompletionCall(kernel, [valueInteger(iterations)]);
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		cycles = 10_000_000 - cpu.instructionBudgetRemaining;
+		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+		cycles = budget - cpu.instructionBudgetRemaining;
 	} finally {
 		heap.reserve = reserve;
 	}

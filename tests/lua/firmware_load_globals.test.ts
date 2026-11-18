@@ -1,7 +1,8 @@
+import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
+import { valueBool, valueInteger, asClosure } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test_harness';
 
@@ -73,7 +74,7 @@ return score, shared.value, closure(0)
 end)
 `, { optLevel });
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, 116, 39, 122]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(116), valueInteger(39), valueInteger(122)]);
 });
 
 test('generated syntax retains lexical symbol identity and shares global lowering', () => {
@@ -91,7 +92,7 @@ return true
 end)
 `);
 	assert.equal(cpu.runUntilDepth(0, 2_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
 test('retained RAM global access survives collection and restore without per-access guest allocation', () => {
@@ -104,13 +105,15 @@ advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score')
 	const heap = cpu.collectTrackedHeapBytes(), globals = cpu.globalSlotCount;
 	const strings = cpu.stringPool.captureState(), saved = cpu.captureRuntimeState();
 	for (let index = 0; index < 2; index++) {
-		runCompletionClosure(cpu, cpu.getGlobalByKey(name) as Closure, []);
-		assert.equal(cpu.getGlobalByKey(score), 10000);
+		runCompletionClosure(cpu, asClosure(cpu.getGlobalByKey(name), cpu.gc), []);
+		assert.equal(cpu.getGlobalByKey(score), valueInteger(10000));
 		assert.equal(cpu.globalSlotCount, globals);
 		assert.equal(cpu.luaHeap.usedBytes(), heap, 'no transient guest allocation between explicit collections');
-		assert.equal(cpu.collectTrackedHeapBytes(), heap);
+		const capacity = cpu.rootThread.stackRegisters.capacity();
+		const collected = cpu.collectTrackedHeapBytes();
+		assert.equal(heap - collected, (capacity - cpu.rootThread.stackRegisters.capacity()) * THREAD_STACK_SLOT_BYTES);
 		cpu.stringPool.restoreState(strings); cpu.restoreRuntimeState(saved);
-		assert.equal(cpu.getGlobalByKey(score), 0);
+		assert.equal(cpu.getGlobalByKey(score), valueInteger(0));
 	}
 });
 
@@ -136,7 +139,7 @@ return a == literal and b == dynamic and c == 'local' and d == 'local'
 end)
 `, { optLevel });
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
 for (const optLevel of [0, 3] as const) test(`generated string-id syntax accepts a computed operand at O${optLevel}`, () => {
@@ -152,5 +155,5 @@ return value == 'string' and extra == nil
 end)
 `, { optLevel });
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });

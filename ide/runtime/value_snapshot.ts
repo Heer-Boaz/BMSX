@@ -28,7 +28,8 @@ const TRUE: ValueSnapshot = { kind: 'boolean', value: true };
 
 /** Bounded stored-value snapshots. Never invokes Lua or retains guest objects/string IDs. */
 export class GuestValueSnapshot {
-	private readonly visited = new Set<number>();
+	private readonly visited = new Map<number, Extract<ValueSnapshot, { kind: 'table' }>>();
+	public get tables(): ReadonlyMap<number, Extract<ValueSnapshot, { kind: 'table' }>> { return this.visited; }
 	private readonly scratch = Array.from({ length: VALUE_SNAPSHOT_DEPTH }, () => new ValueSlots(2));
 	private readonly textUnits: number[] = [];
 	private remainingEntries = 0;
@@ -69,8 +70,9 @@ export class GuestValueSnapshot {
 		const table = values.getTable(index, this.heap), id = table.hashId;
 		if (this.visited.has(id)) return { kind: 'reference', id };
 		if (depth === VALUE_SNAPSHOT_DEPTH) return { kind: 'table', id, entries: NO_ENTRIES, omitted: true };
-		this.visited.add(id);
 		const entries: ValueSnapshotEntry[] = [], scratch = this.scratch[depth];
+		const snapshot = { kind: 'table' as const, id, entries, omitted: false };
+		this.visited.set(id, snapshot);
 		let slot = 0, omitted = false;
 		const count = table.storedSlotCount;
 		while (slot < count && this.remainingSlots > 0) {
@@ -82,7 +84,8 @@ export class GuestValueSnapshot {
 			entries.push({ key: this.read(scratch, 0, VALUE_SNAPSHOT_DEPTH), value: this.read(scratch, 1, depth + 1) });
 		}
 		scratch.clear(2);
-		return { kind: 'table', id, entries, omitted: omitted || slot < count };
+		snapshot.omitted = omitted || slot < count;
+		return snapshot;
 	}
 }
 

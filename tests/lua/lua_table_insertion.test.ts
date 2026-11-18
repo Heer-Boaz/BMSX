@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -109,7 +110,7 @@ test('a batch owns its sibling separators once across table layouts and one Undo
 		const { table } = parseTable(source);
 		for (let index = 0; index <= table.fields.length; index++) {
 			const { result, model } = insert(source, index, ...fields);
-			assert.deepEqual(runCompiledLua(result + '\nreturn values.start_time_ms, values.clip_in_ms, values.nested.x'), [25, 25, 7]);
+			assert.deepEqual(runCompiledLua(result + '\nreturn values.start_time_ms, values.clip_in_ms, values.nested.x'), [25, 25, 7].map(valueInteger));
 			model.dispose();
 		}
 	}
@@ -150,7 +151,7 @@ test('inserted Lua fields change actual BLua32 evaluation and array order at eve
 		expected.splice(index, 0, 7);
 		const result = insert(source, index, 'value(7)').result;
 		assert.deepEqual(runCompiledLua(prefix + result + '\nreturn order, #values, values[1], values[2], values[3], values[4]'),
-			[expected.reduce((order, value) => order * 10 + value, 0), 4, ...expected]);
+			[expected.reduce((order, value) => order * 10 + value, 0), 4, ...expected].map(valueInteger));
 	}
 });
 
@@ -175,7 +176,7 @@ test('repeated insertion reuses actual syntax and one history element per field 
 	}
 	const expected = 'local values = {\n' + Array.from({ length: 12 }, (_, index) => '\t' + (index + 1) + (index < 11 ? ',' : '') + '\n').join('') + '}';
 	assert.equal(model.buffer.getText(), expected);
-	assert.deepEqual(runCompiledLua(expected + '\nreturn #values, values[1], values[12]'), [12, 1, 12]);
+	assert.deepEqual(runCompiledLua(expected + '\nreturn #values, values[1], values[12]'), [12, 1, 12].map(valueInteger));
 	for (let index = 0; index < 12; index += 1) model.undo();
 	assert.equal(model.buffer.getText(), original);
 	assert.equal(model.undo(), null);

@@ -1,3 +1,4 @@
+import { valueInteger, asTable, numberToHost } from '../../../machine/ts/machine/cpu/value';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { createInputControllerSnapshot, INP_POINTER_BUTTON_SECONDARY, InputControllerGamepadButtonBit, InputControllerSampleContext } from '../../../machine/ts/machine/devices/input/contracts';
 import { IO_INP_KEYS, IO_INP_PADS, IO_INP_POINTER_BUTTONS } from '../../../machine/ts/spec/bmsx/io';
@@ -7,7 +8,6 @@ import { editorViewState } from '../../../ide/editor/ui/view/state';
 import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
 import { runtimeWorld } from '../../../ide/workbench/contrib/actor_lab/runtime';
 import { readRuntimeLuaModuleExport } from '../../../ide/runtime/lua_inspection';
-import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { check, type StudioFixture } from './studio_fixture';
 import { nemesisTitle, nemesisTitleState, reachNemesisTitle } from './studio_nemesis_navigation';
 import { rects_intersect } from '../../../machine/ts/common/rect';
@@ -54,7 +54,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	test.setPointerButton('pointer_primary', false);
 	input.inputButton('gamepad:0', 'down', false, 0, clock.now(), 2);
 	await test.releaseGuestKey('KeyZ');
-	await until(() => guest.readStringMember(nemesisTitle(test), 'selected_player_count') === 2,
+	await until(() => guest.readStringMember(nemesisTitle(test), 'selected_player_count') === valueInteger(2),
 		'game input: controller changes the title menu through the cart input handlers');
 	await press('ShiftLeft', 'F1');
 	check(inputFocus.target?.guestInput?.bounds === undefined && ide.editor.guestInputRecipient === null,
@@ -138,23 +138,23 @@ export async function runStudioGameInput(test: StudioFixture) {
 	const full = guest.identity(guest.readStringMember(sprite.value, 'draw_visual'));
 	const region = guest.identity(guest.readStringMember(sprite.value, 'draw_region_visual'));
 	const world = runtimeWorld(ide.sources, guest, actor.domain)!;
-	const lane = guest.readStringMember(world, '_render_visuals') as Table;
+	const lane = asTable(guest.readStringMember(world, '_render_visuals'), guest.cpu.gc);
 	let pickX = -1, pickY = -1, pickHashId = 0;
-	for (let index = guest.readStringMember(world, '_render_visual_count') as number; index > 0; index--) {
-		const visual = lane.getInteger(index), owner = guest.readStringMember(visual, 'owner') as Table;
+	for (let index = numberToHost(guest.readStringMember(world, '_render_visual_count')); index > 0; index--) {
+		const visual = lane.getInteger(index), owner = guest.readStringMember(visual, 'owner');
 		const draw = guest.readStringMember(visual, 'draw'), cropped = guest.matchesIdentity(draw, region);
 		if (!cropped && !guest.matchesIdentity(draw, full) || !guest.isTruthy(guest.readStringMember(visual, 'visible'))
 			|| !guest.isTruthy(guest.readStringMember(owner, 'visible'))) continue;
-		const width = (guest.readStringMember(visual, cropped ? 'region_width' : 'source_width') as number)
-			* (guest.readStringMember(visual, 'scale_x') as number) * (guest.readStringMember(visual, 'draw_scale_x') as number);
-		const height = (guest.readStringMember(visual, cropped ? 'region_height' : 'source_height') as number)
-			* (guest.readStringMember(visual, 'scale_y') as number) * (guest.readStringMember(visual, 'draw_scale_y') as number);
-		const x = (guest.readStringMember(owner, 'x') as number) + (guest.readStringMember(visual, 'offset_x') as number)
-			+ (guest.readStringMember(visual, 'draw_offset_x') as number) + width / 2;
-		const y = (guest.readStringMember(owner, 'y') as number) + (guest.readStringMember(visual, 'offset_y') as number)
-			+ (guest.readStringMember(visual, 'draw_offset_y') as number) + height / 2;
+		const width = numberToHost(guest.readStringMember(visual, cropped ? 'region_width' : 'source_width'))
+			* numberToHost(guest.readStringMember(visual, 'scale_x')) * numberToHost(guest.readStringMember(visual, 'draw_scale_x'));
+		const height = numberToHost(guest.readStringMember(visual, cropped ? 'region_height' : 'source_height'))
+			* numberToHost(guest.readStringMember(visual, 'scale_y')) * numberToHost(guest.readStringMember(visual, 'draw_scale_y'));
+		const x = numberToHost(guest.readStringMember(owner, 'x')) + numberToHost(guest.readStringMember(visual, 'offset_x'))
+			+ numberToHost(guest.readStringMember(visual, 'draw_offset_x')) + width / 2;
+		const y = numberToHost(guest.readStringMember(owner, 'y')) + numberToHost(guest.readStringMember(visual, 'offset_y'))
+			+ numberToHost(guest.readStringMember(visual, 'draw_offset_y')) + height / 2;
 		if (width === 0 || height === 0 || x < 0 || y < 0 || x >= test.presenter.offscreenCanvasSize.x || y >= test.presenter.offscreenCanvasSize.y) continue;
-		pickX = x; pickY = y; pickHashId = owner.hashId; break;
+		pickX = x; pickY = y; pickHashId = asTable(owner, guest.cpu.gc).hashId; break;
 	}
 	check(pickHashId !== 0, 'real title presentation contains a visible sprite to pick');
 	const point = { left: actor.previewBounds.left + pickX * (actor.previewBounds.right - actor.previewBounds.left) / test.presenter.offscreenCanvasSize.x,

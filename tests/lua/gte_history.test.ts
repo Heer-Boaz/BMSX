@@ -1,7 +1,7 @@
+import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { IO_GX_GTE_COMMAND, IO_GX_GTE_DATA0 } from '../../machine/ts/spec/bmsx/io';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
@@ -70,8 +70,8 @@ test('retained observation leases, ring reuse, replay and install have separate 
 	assert.equal(history.observing, true);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const pinned = history.snapshot(0), reused = new GteCommandSnapshot();
-	const fn = cpu.getGlobalByKey(cpu.stringPool.find('issue')!) as Closure;
-	cpu.beginCompletionCall(fn, [2]);
+	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), cpu.gc);
+	cpu.beginCompletionCall(fn, [valueInteger(2)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	assert.equal(history.count, 2);
 	assert.equal(history.firstSequence, 4);
@@ -84,7 +84,7 @@ test('retained observation leases, ring reuse, replay and install have separate 
 	const end = history.endSequence;
 	for (const mode of [HistoryMode.Replaying, HistoryMode.Reviewing]) {
 		runtime.history.mode = mode;
-		cpu.beginCompletionCall(fn, [1]);
+		cpu.beginCompletionCall(fn, [valueInteger(1)]);
 		assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 		assert.equal(history.endSequence, end);
 	}
@@ -95,19 +95,19 @@ test('retained observation leases, ring reuse, replay and install have separate 
 	assert.equal(history.count, 0);
 	assert.equal(history.generation, generation + 1);
 	assert.equal(pinned.beforeData[0], 0xffc0ffc0);
-	cpu.beginCompletionCall(fn, [1]);
+	cpu.beginCompletionCall(fn, [valueInteger(1)]);
 	runtime.machine.scheduler.runCpuSlice(0, BUDGET);
 	assert.ok(history.at(end).timeline > pinned.timeline);
 	second.dispose();
 	assert.equal(history.observing, false);
 	const stopped = history.endSequence;
-	cpu.beginCompletionCall(fn, [1]); runtime.machine.scheduler.runCpuSlice(0, BUDGET);
+	cpu.beginCompletionCall(fn, [valueInteger(1)]); runtime.machine.scheduler.runCpuSlice(0, BUDGET);
 	assert.equal(history.endSequence, stopped);
 	const reopened = history.observe();
 	assert.equal(history.count, 0, 'a new observation session does not follow evidence from before an unobserved gap');
 	assert.equal(history.generation, generation + 2);
 	assert.equal(pinned.beforeData[0], 0xffc0ffc0, 'session replacement does not mutate detached evidence');
-	cpu.beginCompletionCall(fn, [1]); runtime.machine.scheduler.runCpuSlice(0, BUDGET);
+	cpu.beginCompletionCall(fn, [valueInteger(1)]); runtime.machine.scheduler.runCpuSlice(0, BUDGET);
 	assert.equal(history.count, 2);
 	assert.equal(history.at(stopped).sequence, stopped);
 	reopened.dispose();
@@ -125,8 +125,8 @@ test('detached GTE evidence uses physical checkpoint provenance after ring reuse
 	physical.start({ checkpointCapacity: 2, inputCapacity: 16, checkpointIntervalCycles: 0x100000000 });
 	physical.captureCheckpoint();
 	const start = runtime.machine.scheduler.nowCycles;
-	let issue = cpu.getGlobalByKey(cpu.stringPool.find('issue')!) as Closure;
-	cpu.beginCompletionCall(issue, [1]);
+	let issue = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), cpu.gc);
+	cpu.beginCompletionCall(issue, [valueInteger(1)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const pinned = history.snapshot(0), installedImage = pinned.image;
 	assert.equal(history.canSeek(pinned), false, 'an unfinished live interval has no retained navigation endpoint');
@@ -135,7 +135,7 @@ test('detached GTE evidence uses physical checkpoint provenance after ring reuse
 	assert.equal(history.canSeek(pinned), true);
 
 	const firstBoundary = runtime.machine.scheduler.nowCycles;
-	cpu.beginCompletionCall(issue, [2]);
+	cpu.beginCompletionCall(issue, [valueInteger(2)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	runtime.machine.scheduler.advanceTo(firstBoundary + BUDGET - cpu.instructionBudgetRemaining);
 	physical.recordInputBoundary(true);
@@ -150,8 +150,8 @@ test('detached GTE evidence uses physical checkpoint provenance after ring reuse
 	physical.captureCheckpoint();
 	assert.equal(history.canSeek(pinned), false, 'the discarded continuation is no longer physically reachable');
 
-	issue = cpu.getGlobalByKey(cpu.stringPool.find('issue')!) as Closure;
-	cpu.beginCompletionCall(issue, [1]);
+	issue = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), cpu.gc);
+	cpu.beginCompletionCall(issue, [valueInteger(1)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const replacement = history.snapshot(endSequence);
 	runtime.machine.scheduler.advanceTo(start + BUDGET - cpu.instructionBudgetRemaining);

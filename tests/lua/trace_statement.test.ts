@@ -1,7 +1,7 @@
+import { asStringId, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { asStringId, type StringValue } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { runCompiledTestSystem } from '../helpers/blua32';
@@ -85,7 +85,7 @@ return sink.count, evaluations
 	assert.deepEqual(selected.program.constPool, baseline.constPool);
 	assert.deepEqual(selected.program.protos, baseline.protos);
 	const cpu = runCompiledTestSystem(selected, 100_000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [3, 0]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(3), valueInteger(0)]);
 });
 
 test('emitted trace statements bind one subject channel and preserve static string values', () => {
@@ -105,8 +105,8 @@ return sink.count, sink.outcome
 `;
 	const cpu = runCompiledTestSystem(compileTraceSource(source, 'emit'), 100_000);
 	const result = materializeCpuCompletionValues(cpu);
-	assert.equal(result[0], 3);
-	assert.equal(cpu.stringPool.toString(asStringId(result[1] as StringValue)), 'accepted');
+	assert.equal(result[0], valueInteger(3));
+	assert.equal(cpu.stringPool.toString(asStringId(result[1])), 'accepted');
 });
 
 test('erased trace statements do not evaluate subject, sink or payload expressions', () => {
@@ -121,7 +121,7 @@ blua32.trace(evaluate({}), 'sample', evaluate('value'))
 return evaluations
 `;
 	const cpu = runCompiledTestSystem(compileTraceSource(source, 'erase'), 100_000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [0]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 });
 
 test('emitted trace statements evaluate payloads only for a selected sink', () => {
@@ -136,7 +136,7 @@ blua32.trace(subject, 'sample', evaluate())
 return evaluations
 `;
 	const cpu = runCompiledTestSystem(compileTraceSource(source, 'emit'), 100_000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [0]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 });
 
 test('trace channels are compiler-owned static names', () => {

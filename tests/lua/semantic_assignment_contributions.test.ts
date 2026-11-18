@@ -1,3 +1,4 @@
+import { valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -41,7 +42,7 @@ test('written contributions retain equal-valued occurrences and self-assignment 
 	assert.equal(contributions[5].syntax, flow.expression.body.body.get(1)!);
 	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	assert.equal(summaries.list()[0].aliases.length, 1, 'summary terms deduplicate values without erasing written occurrences');
-	assert.deepEqual(runCompiledLua(source), [1]);
+	assert.deepEqual(runCompiledLua(source), [valueInteger(1)]);
 });
 
 test('unmodeled expressions and compound writes retain unknown rather than aliasing the RHS', () => {
@@ -64,7 +65,7 @@ test('unmodeled expressions and compound writes retain unknown rather than alias
 	assert.equal(contributions[1].source, contributions[2].source, 'the abstract unknown is retained without per-expression allocation');
 	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	assert.ok(summaries.list()[0].aliases.some(item => item.source === summaries.terms.unknown()));
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'compound.lua', optimization), [14]);
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'compound.lua', optimization), [valueInteger(14)]);
 
 	const functionOperand = buildLuaFileSemanticData('local value = 1; value += function() return 9 end', 'operand.lua');
 	assert.equal(functionOperand.functionValueFlows[0].declaration, undefined, 'a compound RHS closure is not the assigned function');
@@ -96,7 +97,7 @@ test('short assignments distinguish nil padding from unmodeled expanded result l
 	assert.equal(paddedAssignment[1].source, NIL_VALUE_SOURCE);
 	assert.equal(paddedAssignment[2].source, NIL_VALUE_SOURCE);
 	for (const optimization of [0, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, 'lanes.lua', optimization), [5, true, true, 6, 7]);
+		assert.deepEqual(runCompiledLua(source, 'lanes.lua', optimization), [valueInteger(5), valueBool(true), valueBool(true), valueInteger(6), valueInteger(7)]);
 	}
 
 	const varargs = buildLuaFileSemanticData('return function(...) local left, right = ...; left, right = ... end', 'varargs.lua');
@@ -124,7 +125,7 @@ test('parallel RHS references keep the prior scope and surplus RHS still bind ca
 	assert.ok(semanticValueSourcesEqual(initializers[1].source, declarationValueSource(declaration.id)));
 	assert.equal(file.callValues.length, 2, 'surplus calls are not discarded with their unused result');
 	for (const optimization of [0, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, 'parallel.lua', optimization), [3, 9, 2]);
+		assert.deepEqual(runCompiledLua(source, 'parallel.lua', optimization), [3, 9, 2].map(valueInteger));
 	}
 });
 
@@ -156,7 +157,7 @@ test('table writes and logical operand transfers retain real fields and unmodele
 	assert.equal(operands[1].source.root.kind, 'unknown');
 	assert.equal(operands[2].source.root.kind, 'unknown');
 	for (const optimization of [0, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, 'tables.lua', optimization), [3, 9, 6, true, -5, true, true]);
+		assert.deepEqual(runCompiledLua(source, 'tables.lua', optimization), [valueInteger(3), valueInteger(9), valueInteger(6), valueBool(true), valueInteger(-5), valueBool(true), valueBool(true)]);
 	}
 });
 
@@ -164,23 +165,23 @@ test('folded local initializer positions cannot clobber later scalar, closure or
 	const fixtures = [
 		{
 			source: 'local outer = 3; local a, b, c, d = 9, outer, 8, outer; return a, b, c, d',
-			expected: [9, 3, 8, 3],
+			expected: [valueInteger(9), valueInteger(3), valueInteger(8), valueInteger(3)],
 		},
 		{
 			source: 'local outer = 3; local a<const>, b, c<const>, d = 9, outer, 8, outer; return a, b, c, d',
-			expected: [9, 3, 8, 3],
+			expected: [valueInteger(9), valueInteger(3), valueInteger(8), valueInteger(3)],
 		},
 		{
 			source: 'local function pair() return 3, 4 end; local a, b, c, d = 9, pair(); return a, b, c, d == nil',
-			expected: [9, 3, 4, true],
+			expected: [valueInteger(9), valueInteger(3), valueInteger(4), valueBool(true)],
 		},
 		{
 			source: 'local outer = 3; local a, b = 9, function() return outer end; return a, b()',
-			expected: [9, 3],
+			expected: [valueInteger(9), valueInteger(3)],
 		},
 		{
 			source: 'local outer = 3; local a, b, c = 9, outer, 8, function() return 10 end; return a, b, c',
-			expected: [9, 3, 8],
+			expected: [valueInteger(9), valueInteger(3), valueInteger(8)],
 		},
 	];
 	for (const fixture of fixtures) {
@@ -222,7 +223,7 @@ test('instantiation publishes a captured unknown write only from the called body
 	assert.notEqual(written, 0);
 	assert.equal(query.values.target(written), summaries.terms.unknown());
 	assert.equal(query.values.next(written), 0);
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'called-write.lua', optimization), [3]);
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'called-write.lua', optimization), [valueInteger(3)]);
 });
 
 test('equal scalar and unknown alternatives never establish a shared member-write location', () => {
@@ -239,7 +240,7 @@ test('equal scalar and unknown alternatives never establish a shared member-writ
 		workspace.updateFile('unrelated.lua', source);
 		assert.deepEqual(semanticSymbolsAt(workspace.getSnapshot(), 'unrelated.lua', 6, 14), [], value);
 		for (const optimization of [0, 3] as const) {
-			assert.deepEqual(runCompiledLua(source.replace('return left.right_only', 'return left.right_only == nil'), 'unrelated.lua', optimization), [true]);
+			assert.deepEqual(runCompiledLua(source.replace('return left.right_only', 'return left.right_only == nil'), 'unrelated.lua', optimization), [valueBool(true)]);
 		}
 	}
 });
@@ -266,7 +267,7 @@ test('scalar alternatives cannot join unrelated prototype owners', () => {
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
 		cpu.installBootPrimitives();
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	}
 });
 

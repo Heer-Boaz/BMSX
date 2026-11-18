@@ -13,23 +13,6 @@ import { visitStaticStorageInitializer, type StaticInitializerScalar } from './i
 import { evaluateStaticBinaryOperator, evaluateStaticUnaryOperator, isStaticFalsey, type StaticConstantValue, type StaticScalar } from './scalar';
 import { indexedStructType, StructTypes, type StructResolvedType } from './struct_types';
 
-// Every u32 base plus a displacement in this interval is an exact binary64
-// integer. Keep the signed displacement until the final address boundary so
-// that each authored addition remains provable before applying word wrapping.
-const MIN_EXACT_ADDRESS_DISPLACEMENT = -0x20000000000000;
-const MAX_EXACT_ADDRESS_DISPLACEMENT = 0x1fffff00000001;
-
-function exactAddressDisplacement(base: number | undefined, displacement: number): number | undefined {
-	if (base === undefined || !Number.isInteger(displacement)) return undefined;
-	const result = base + displacement;
-	if (result < MIN_EXACT_ADDRESS_DISPLACEMENT || result > MAX_EXACT_ADDRESS_DISPLACEMENT) return undefined;
-	// TwoSum's residual proves this authored addition did not itself round;
-	// checking the rounded result's range alone fails at the -2^53 boundary.
-	const displacementPart = result - base;
-	const residual = (base - (result - displacementPart)) + (displacement - displacementPart);
-	return residual === 0 ? result : undefined;
-}
-
 type StaticAddress = { readonly storage: Decl; readonly byteOffset: number };
 type TypedAddress = {
 	readonly storage: Decl | undefined;
@@ -188,7 +171,7 @@ export class LuaStaticSourceReads {
 			if (expression.kind === LuaSyntaxKind.MemberExpression) {
 				const field = base.type.struct?.fields.get(expression.member.name);
 				if (field === undefined) throw new StaticSourceError(`Unknown field '${expression.member.name}' on type '${base.type.name}'.`, file.file, expression.span);
-				return { storage: base.storage, byteOffset: exactAddressDisplacement(base.byteOffset, field.offset),
+				return { storage: base.storage, byteOffset: base.byteOffset === undefined ? undefined : (base.byteOffset + field.offset) >>> 0,
 					type: field.type, pointerIndex: false };
 			}
 			if (base.type.dimensions.length === 0 && !base.pointerIndex) {
@@ -200,7 +183,8 @@ export class LuaStaticSourceReads {
 				throw new StaticSourceError('Struct array index must be an integer when used as a compile-time offset.', file.file, expression.index.span);
 			}
 			return { storage: base.storage, type, pointerIndex: false,
-				byteOffset: index?.kind !== 'number' ? undefined : exactAddressDisplacement(base.byteOffset, numberConstantValue(index.value) * type.size)
+				byteOffset: base.byteOffset === undefined || index?.kind !== 'number' || index.value.kind !== 'integer' ? undefined
+					: (base.byteOffset + Math.imul(index.value.word, type.size)) >>> 0
 			};
 		}
 		if (expression.kind === LuaSyntaxKind.UnaryExpression && expression.operator === LuaUnaryOperator.Dereference) {
@@ -234,15 +218,14 @@ export class LuaStaticSourceReads {
 		if (expression.kind === LuaSyntaxKind.BinaryExpression
 			&& (expression.operator === LuaBinaryOperator.Add || expression.operator === LuaBinaryOperator.Subtract)) {
 			const left = this.address(file, expression.left), right = this.scalar(file, expression.right);
-			if (left !== undefined && right?.kind === 'number') {
-				const byteOffset = exactAddressDisplacement(left.byteOffset, expression.operator === LuaBinaryOperator.Subtract ? -numberConstantValue(right.value) : numberConstantValue(right.value));
-				return byteOffset === undefined ? undefined : { storage: left.storage, byteOffset };
+			// Float addition rounds the linked absolute address; source layout alone cannot prove its result.
+			if (left !== undefined && right?.kind === 'number' && right.value.kind === 'integer') {
+				return { storage: left.storage, byteOffset: (left.byteOffset + (expression.operator === LuaBinaryOperator.Subtract ? -right.value.word : right.value.word)) >>> 0 };
 			}
 			if (expression.operator === LuaBinaryOperator.Add) {
 				const address = this.address(file, expression.right), offset = this.scalar(file, expression.left);
-				if (address !== undefined && offset?.kind === 'number') {
-					const byteOffset = exactAddressDisplacement(address.byteOffset, numberConstantValue(offset.value));
-					return byteOffset === undefined ? undefined : { storage: address.storage, byteOffset };
+				if (address !== undefined && offset?.kind === 'number' && offset.value.kind === 'integer') {
+					return { storage: address.storage, byteOffset: (address.byteOffset + offset.value.word) >>> 0 };
 				}
 			}
 			return undefined;

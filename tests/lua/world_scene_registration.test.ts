@@ -1,3 +1,4 @@
+import { valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -48,5 +49,5 @@ assert(current.members.nested ~= nil)
 fixture_passed = true
 `, { optLevel, modules: WORLD_CPU_MODULES });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('fixture_passed')!), true);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('fixture_passed')!), valueBool(true));
 });

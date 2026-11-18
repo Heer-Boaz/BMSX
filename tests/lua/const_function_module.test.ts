@@ -1,3 +1,4 @@
+import { valueBool, valueInteger, valueFloat, numberToHost } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -81,7 +82,7 @@ return rect_overlaps(0, 0, 10, 10, 5, 5, 1, 1), rect_overlaps(0, 0, 2, 2, 3, 3, 
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
 	const disasm = disassembleConstExport(compiled, RECT_OVERLAPS_PATH);
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
-	assert.deepEqual(runColdCompiled(compiled), [true, false]);
+	assert.deepEqual(runColdCompiled(compiled), [true, false].map(valueBool));
 });
 
 test('clamp compiles as a const function module and calls through export-proto', () => {
@@ -95,7 +96,7 @@ return clamp(-2, 0, 10), clamp(7, 0, 10), clamp(12, 0, 10)
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
 	const disasm = disassembleConstExport(compiled, CLAMP_PATH);
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
-	assert.deepEqual(runColdCompiled(compiled), [0, 7, 10]);
+	assert.deepEqual(runColdCompiled(compiled), [0, 7, 10].map(valueInteger));
 });
 
 test('remaining scalar helpers compile as const function modules and call through export-proto', () => {
@@ -139,7 +140,7 @@ return rol8(5), rol8(128)
 		assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
 		const disasm = disassembleConstExport(compiled, testCase.path);
 		assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
-		assert.deepEqual(runColdCompiled(compiled), testCase.expected);
+		assert.deepEqual(runColdCompiled(compiled).map(numberToHost), testCase.expected);
 	}
 });
 
@@ -148,9 +149,9 @@ test('sin_turn32 is a const function module backed by visible rodata', () => {
 	const entrySource = `
 local s0<const> = require("${SIN_TURN32_PATH}")(0)
 local s90<const> = require("${SIN_TURN32_PATH}")(1073741824)
-local s180<const> = require("${SIN_TURN32_PATH}")(2147483648)
-local s270<const> = require("${SIN_TURN32_PATH}")(3221225472)
-local s360<const> = require("${SIN_TURN32_PATH}")(4294967296)
+local s180<const> = require("${SIN_TURN32_PATH}")(0x80000000)
+local s270<const> = require("${SIN_TURN32_PATH}")(0xc0000000)
+local s360<const> = require("${SIN_TURN32_PATH}")(0xffffffff + 1)
 local s45<const> = require("${SIN_TURN32_PATH}")(536870912)
 local sn45<const> = require("${SIN_TURN32_PATH}")(-536870912)
 return s0, s90, s180, s270, s360, s45, sn45
@@ -180,7 +181,7 @@ return s0, s90, s180, s270, s360, s45, sn45
 		0,
 		46340,
 		-46340,
-	]);
+	].map(valueInteger));
 });
 
 test('sin_turn32 rodata relocations survive O3 constant folding', () => {
@@ -189,7 +190,7 @@ test('sin_turn32 rodata relocations survive O3 constant folding', () => {
 return require("${SIN_TURN32_PATH}")(0)
 `;
 	const compiled = compileWithModule(entrySource, SIN_TURN32_PATH, moduleSource, 3);
-	assert.deepEqual(runColdCompiled(compiled), [0]);
+	assert.deepEqual(runColdCompiled(compiled), [valueInteger(0)]);
 });
 
 test('const function export aliases stay compile-time call targets', () => {
@@ -203,7 +204,7 @@ return sin_turn32(*angle)
 	assert.equal(compiled.moduleProtoMap.has(SIN_TURN32_PATH), false);
 	const disasm = disassembleConstExport(compiled, SIN_TURN32_PATH);
 	assert.doesNotMatch(disasm, /\bGETGL\b|\bGETFIELD\b/);
-	assert.deepEqual(runColdCompiled(compiled), [0]);
+	assert.deepEqual(runColdCompiled(compiled), [valueInteger(0)]);
 });
 
 test('const function modules do not materialize Lua function values', () => {
@@ -249,7 +250,7 @@ return round_to_nearest(1.6)
 		[module],
 		{ entrySource: source, programDomain: 'system' },
 	);
-	assert.deepEqual(runColdCompiled(systemCompiled), [2]);
+	assert.deepEqual(runColdCompiled(systemCompiled), [valueFloat(2)]);
 	const dynamicSource = `
 local round_to_nearest<const> = require("${ROUND_TO_NEAREST_PATH}")
 local dynamic = round_to_nearest
@@ -286,7 +287,7 @@ return api.math.clamp(12, 0, 10)
 		[module],
 		{ entrySource: callSource, programDomain: 'system' },
 	);
-	assert.deepEqual(runColdCompiled(systemCompiled), [10]);
+	assert.deepEqual(runColdCompiled(systemCompiled), [valueInteger(10)]);
 	const rootSource = `return require("${modulePath}")`;
 	assert.throws(
 		() => compileLuaChunkToProgram(

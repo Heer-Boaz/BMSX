@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -127,15 +128,15 @@ test('compiled BLua executes transferred expressions in their new list/evaluatio
 		[0, 0, [2134, 1, 3, 2, 1, 3, 4]], [1, 2, [1342, 1, 3, 1, 3, 4, 2]],
 	] as const) {
 		const { edited } = applyTransfer(source, 0, field, 1, gap);
-		assert.deepEqual(runCompiledLua(prefix + edited + suffix), expected);
+		assert.deepEqual(runCompiledLua(prefix + edited + suffix), expected.map(valueInteger));
 	}
 });
 
 test('syntax transfer does not claim that moving a captured identifier across shadowing preserves its binding', () => {
 	const source = 'local value=1\nlocal first={function() return value end}\nlocal value=2\nlocal second={}';
 	const { edited } = applyTransfer(source, 0, 0, 1, 0);
-	assert.deepEqual(runCompiledLua(source + '\nreturn first[1]()'), [1]);
-	assert.deepEqual(runCompiledLua(edited + '\nreturn second[1]()'), [2], 'a valid transfer still needs semantic admission before a graph may authorize it');
+	assert.deepEqual(runCompiledLua(source + '\nreturn first[1]()'), [valueInteger(1)]);
+	assert.deepEqual(runCompiledLua(edited + '\nreturn second[1]()'), [valueInteger(2)], 'a valid transfer still needs semantic admission before a graph may authorize it');
 });
 
 

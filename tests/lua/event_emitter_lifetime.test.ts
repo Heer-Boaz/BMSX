@@ -1,9 +1,9 @@
+import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
+import { asClosure, asTable, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_FAULT_REASON_CALL_NON_FUNCTION } from '../../machine/ts/spec/blua32/cop0';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 
@@ -215,7 +215,7 @@ return true`, { optLevel });
 		cpu.restoreRuntimeState(snapshot);
 		assert.deepEqual(cpu.captureRuntimeState(), snapshot);
 		cpu.collectTrackedHeapBytes();
-		const resume = cpu.getGlobalByKey(cpu.stringPool.find('resume_emission')!) as Closure;
+		const resume = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('resume_emission')!), cpu.gc);
 		cpu.beginCompletionCall(resume);
 		let result = RunResult.Yielded;
 		for (let grant = 0; grant < 10000 && result === RunResult.Yielded; grant++) {
@@ -242,19 +242,19 @@ function failure_kernel(count)
 end
 return true`, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		const kernel = cpu.getGlobalByKey(cpu.stringPool.find('failure_kernel')!) as Closure;
-		const weak = cpu.getGlobalByKey(cpu.stringPool.find('weak')!) as Table;
+		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('failure_kernel')!), cpu.gc);
+		const weak = asTable(cpu.getGlobalByKey(cpu.stringPool.find('weak')!), cpu.gc);
 		let first = 0;
 		for (let batch = 0; batch < 128; batch++) {
-			cpu.beginCompletionCall(kernel, [32]);
+			cpu.beginCompletionCall(kernel, [valueInteger(32)]);
 			let result = RunResult.Yielded;
 			for (let grant = 0; grant < 1000 && result === RunResult.Yielded; grant++) {
 				result = cpu.runUntilDepth(0, 1000);
 				assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 			}
 			assert.equal(result, RunResult.Halted);
-			const retained = cpu.collectTrackedHeapBytes();
-			for (let index = 1; index <= 64; index++) assert.equal(weak.get(index), null);
+			const retained = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
+			for (let index = 1; index <= 64; index++) assert.equal(weak.getInteger(index), valueNil());
 			if (batch === 0) first = retained;
 			assert.equal(retained, first, 'handled failures grew retained listener storage after warmup');
 		}
@@ -290,10 +290,10 @@ end
 return true`, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		cpu.collectTrackedHeapBytes();
-		const weak = cpu.getGlobalByKey(cpu.stringPool.find('weak')!) as Table;
-		for (let index = 1; index <= 3; index++) assert.equal(weak.get(index), null,
+		const weak = asTable(cpu.getGlobalByKey(cpu.stringPool.find('weak')!), cpu.gc);
+		for (let index = 1; index <= 3; index++) assert.equal(weak.getInteger(index), valueNil(),
 			'retired traversal nodes do not own subscribers or handler captures');
-		cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.find('finish_traversal')!) as Closure);
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('finish_traversal')!), cpu.gc));
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 	});
@@ -334,13 +334,13 @@ port:on({ event = 'fault', handler = faulty_handler })
 function emit_fault() port:emit('fault'); error('faulty handler returned normally') end
 return true`, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.find('emit_fault')!) as Closure);
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_fault')!), cpu.gc));
 		for (let grant = 0; grant < 10000 && cpu.readExceptionReturnFrameDepth() === -1; grant++) {
 			cpu.runUntilDepth(0, 1);
 		}
 		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_CALL_NON_FUNCTION,
 			'event dispatch must not catch and rethrow a native fault as an explicit error');
-		const handler = cpu.getGlobalByKey(cpu.stringPool.find('faulty_handler')!) as Closure;
+		const handler = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('faulty_handler')!), cpu.gc);
 		assert.ok(Array.from({ length: cpu.getFrameDepth() }, (_, index) => cpu.readFrameFunctionAddress(index)).includes(handler.functionAddress),
 			'original listener frame remains available to the fault debugger');
 	});
@@ -358,7 +358,7 @@ function success_kernel(rounds)
 end
 return true`, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		const kernel = cpu.getGlobalByKey(cpu.stringPool.find('success_kernel')!) as Closure;
+		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('success_kernel')!), cpu.gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 1024);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);

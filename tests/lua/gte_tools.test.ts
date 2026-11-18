@@ -1,8 +1,8 @@
+import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createBlua32SourceImage } from '../../ide/runtime/sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { IO_GX_GTE_COMMAND } from '../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -49,7 +49,7 @@ function fixture(t: TestContext, program = PROGRAM) {
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
 		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
-	const issue = cpu.getGlobalByKey(cpu.stringPool.find('issue')!) as Closure;
+	const issue = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), cpu.gc);
 	t.after(() => { lifetime.abort(); f.events.dispose(); f.gteHistory.dispose(); f.presenter.dispose(); });
 	return { ...f, tools, lifetime, cpu, issue, target: f.inspection.target };
 }
@@ -96,7 +96,7 @@ test('GTE tools return detached actual raw words and source descriptors without 
 	const f = fixture(t), { tools, target, cpu, runtime, gteHistory } = f;
 	await tools.execute('studio_gte_history', { target, action: 'start' });
 	runtime.machine.scheduler.setNowCycles(0x100000000 + 43);
-	cpu.beginCompletionCall(f.issue, [3]);
+	cpu.beginCompletionCall(f.issue, [valueInteger(3)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const request = { target, generation: gteHistory.generation, sequence: gteHistory.firstSequence, count: 2 };
 	const beforeCpu = cpu.captureRuntimeState(), beforeCycles = runtime.machine.scheduler.currentNowCycles();
@@ -149,7 +149,7 @@ test('GTE commands issued by an actual loaded RAM closure retain instruction ide
 	const f = fixture(t, `ram_issue = assert(load('return function(address, value) return address + value end'))(); return true`);
 	const { tools, target, cpu, runtime, gteHistory } = f;
 	await tools.execute('studio_gte_history', { target, action: 'start' });
-	const chunk = cpu.getGlobalByKey(cpu.stringPool.find('ram_issue')!) as Closure;
+	const chunk = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('ram_issue')!), cpu.gc);
 	// Firmware load accepts Lua syntax. Its genuine writable RAM closure can also
 	// execute raw memory instructions supplied through the central instruction ABI.
 	const codeAddress = cpu.memory.readMappedU32LE(chunk.functionAddress + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
@@ -157,11 +157,12 @@ test('GTE commands issued by an actual loaded RAM closure retain instruction ide
 	writeInstruction(code, 0, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE);
 	writeInstruction(code, 1, OpCode.RET, 0, 0, 0);
 	cpu.memory.writeBytes(codeAddress, code);
-	cpu.beginCompletionCall(chunk, [IO_GX_GTE_COMMAND, 0x00080001]);
+	cpu.beginCompletionCall(chunk, [valueInteger(IO_GX_GTE_COMMAND), valueInteger(0x00080001)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	assert.equal(gteHistory.count, 1);
 	const record = gteHistory.at(gteHistory.firstSequence);
-	assert.equal(record.domain, 0);
+	assert.equal(chunk.executionDomainId, -1, 'the BIOS constructs this RAM closure');
+	assert.equal(record.domain, chunk.executionDomainId);
 	assert.equal(record.pc, codeAddress);
 	assert.ok(record.pc! >= DYNAMIC_RAM_BASE && record.pc! < CART_ROM_BASE);
 	assert.equal(record.image, null, 'RAM execution does not borrow the installed cartridge image');
@@ -179,7 +180,7 @@ for (const cancellation of ['request', 'prompt'] as const) test(`GTE navigation 
 	const physical = runtime.history;
 	physical.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
 	physical.captureCheckpoint();
-	cpu.beginCompletionCall(f.issue, [1]);
+	cpu.beginCompletionCall(f.issue, [valueInteger(1)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const record = gteHistory.at(gteHistory.firstSequence), cycles = record.cycles, sequence = record.sequence;
 	const request = { target, generation: gteHistory.generation, sequence };

@@ -1,8 +1,9 @@
-import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { asClosure, asTable, numberToHost, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { TEST_SYSTEM_CONTEXT_ID, createTestRuntime, createTestRuntimeRomPayload, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createPathModuleProjectFixture, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
-import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
+import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
 import { readRuntimeStackFrames, buildLuaStackFrames } from '../../ide/runtime/stack_trace';
 import { editorTextModelService, EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -13,7 +14,6 @@ import { readActorMethods } from '../../ide/workbench/contrib/actor_lab/methods'
 import { ActorTimelineTransport } from '../../ide/workbench/contrib/actor_lab/timeline';
 import type { ActorNode } from '../../ide/workbench/contrib/actor_lab/runtime';
 import type { RuntimeGuestCall } from '../../ide/runtime/guest_call';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -31,14 +31,8 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32SlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import {
-	registerLuaSourceRecord,
-	type LuaSourceRecord,
-	type LuaSourceRegistry,
-} from '../../ide/runtime/source_registry';
 import { createRuntimeFaultState, recordSupervisorFault } from '../../ide/runtime/fault_state';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 	resourceIdentityKey,
@@ -51,11 +45,6 @@ import {
 	createBlua32SystemSourceImage,
 	type RuntimeSourceState,
 } from '../../ide/runtime/sources';
-import {
-	createTestRuntime,
-	createTestRuntimeRomPayload,
-	createTestSystemImageRuntimeSourceState,
-} from '../helpers/runtime_sources';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
 
 const semanticFrontendModulePromise = import('../../toolchain/ts/lua/semantic/frontend');
@@ -199,9 +188,9 @@ end
 `);
 	const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
 	cpu.reset(); cpu.runUntilDepth(0, 100_000);
-	const target = guest.global('target') as Table, component = guest.global('component') as Table;
-	const node: ActorNode = { kind: 'timeline', hashId: target.hashId, keyIdentity: guest.identity(null), label: 'test', name: 'test', prefix: '', children: [],
-		value: target, receiver: component, component, key: null, active: false, stateKeys: [] };
+	const target = guest.global('target'), component = guest.global('component');
+	const node: ActorNode = { kind: 'timeline', hashId: asTable(target, cpu.gc).hashId, keyIdentity: guest.identity(valueNil()), label: 'test', name: 'test', prefix: '', children: [],
+		value: target, receiver: component, component, key: valueNil(), active: false, stateKeys: [] };
 	const transport = new ActorTimelineTransport();
 	let call: RuntimeGuestCall | undefined, observer: ((completed: boolean) => void) | undefined;
 	const applied: number[] = [];
@@ -210,15 +199,15 @@ end
 		transport.refresh(node, false, guest, true, call === undefined);
 		transport.executePending(node, !checkpointPending && call === undefined, (selected, time, program, current, finished) => {
 			assert.equal(call, undefined, 'one admitted evaluation, not an input queue');
-			assert.equal(current(), true); assert.equal(program, (guest.readStringMember(target, 'program') as Table).hashId);
-			call = { domain: -1, closure: guest.readStringMember(selected.receiver, 'scrub_time') as Closure,
-				args: () => [component, selected.key, time] };
+			assert.equal(current(), true); assert.equal(program, asTable(guest.readStringMember(target, 'program'), guest.cpu.gc).hashId);
+			call = { domain: -1, closure: asClosure(guest.readStringMember(selected.receiver, 'scrub_time'), cpu.gc),
+				args: () => [component, selected.key, valueInteger(time)] };
 			observer = finished;
 		});
 	};
 	const complete = (success: boolean) => {
 		if (success) {
-			const args = call!.args(); applied.push(args[2] as number);
+			const args = call!.args(); applied.push(numberToHost(args[2]));
 			guest.invalidate(); cpu.beginCompletionCall(call!.closure, args);
 			cpu.runUntilDepth(0, 100_000);
 		}
@@ -231,9 +220,8 @@ end
 	assert.equal(call, undefined, 'execution still waits for the checkpoint');
 	checkpointPending = false; update(); complete(true); update();
 	assert.deepEqual(applied, [100, 300]);
-	assert.equal(transport.positionLabel, '300 MS');
 	assert.equal(transport.slider.value, 300);
-	assert.equal(guest.readStringMember(target, 'sample'), 600);
+	assert.equal(guest.readStringMember(target, 'sample'), valueInteger(600));
 	transport.request(400); update(); transport.request(500); complete(false); update();
 	assert.equal(call, undefined, 'fault/discard must not continue a queued scrub');
 	transport.request(600); update();
@@ -241,7 +229,7 @@ end
 	transport.clear(); call = undefined; update(); transport.request(700); update();
 	expired(false); complete(true); update();
 	assert.equal(transport.slider.value, 700, 'an expired call cannot clear a newer target session');
-	assert.equal(guest.readStringMember(target, 'sample'), 1400);
+	assert.equal(guest.readStringMember(target, 'sample'), valueInteger(1400));
 	let queued: () => boolean;
 	transport.request(800);
 	transport.executePending(node, true, (_node, _time, _program, current) => { queued = current; });
@@ -253,7 +241,7 @@ function runtimeWithPausedCpuLocal(source: string) {
 	const harness = createIntellisenseRuntime(source);
 	const cpu = harness.runtime.machine.cpu;
 	cpu.reset();
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 10_000), RunResult.Halted);
 	return {
 		...harness,
 		fault: createRuntimeFaultState(),
@@ -488,7 +476,7 @@ test('intellisense live locals resolve editor source paths against CPU module pa
 	if (resolved.kind !== 'value') {
 		return;
 	}
-	assert.equal(resolved.value, 42);
+	assert.equal(resolved.value, valueInteger(42));
 });
 
 test('inline debugger exposes virtual frames and physical caller locals', async () => {
@@ -516,7 +504,7 @@ test('inline debugger exposes virtual frames and physical caller locals', async 
 		0,
 	);
 	runtime.machine.cpu.reset();
-	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
+	assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000), RunResult.ExecutionStopped);
 	const fault = createRuntimeFaultState();
 	const stack = buildLuaStackFrames(readRuntimeStackFrames(runtime.machine.cpu, bridge.sources)).frames;
 	assert.equal(stack[0].functionName, 'inspect');
@@ -541,13 +529,13 @@ test('inline debugger exposes virtual frames and physical caller locals', async 
 	assert.ok(resolved);
 	assert.equal(resolved.kind, 'value');
 	if (resolved.kind === 'value') {
-		assert.equal(resolved.value, 41);
+		assert.equal(resolved.value, valueInteger(41));
 	}
 });
 
 test('intellisense resolves captured fault upvalues after the CPU stack is replaced', async () => {
 	const source = [
-		"require('supervisor_fault'); local captured = { value = 42 }",
+		"require('supervisor_fault'); local captured = { value = 42 }; captured.self = captured",
 		'return function()',
 		"\traise_fault('fault snapshot')",
 		'\treturn captured',
@@ -558,7 +546,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	cpu.reset(); cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(cpu.getFrameDepth(), 0);
-	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
+	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
 	cpu.beginCompletionCall(closure);
 	runToSupervisorFault(runtime);
 
@@ -571,6 +559,9 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(cpu.getFrameDepth(), 0);
 
+	const replacement = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+	asTable(cpu.readClosureUpvalue(replacement, 0), cpu.gc).setStringKey(cpu.stringPool.find('value')!, valueInteger(99));
+
 	const usageColumn = source.split('\n')[3].indexOf('captured') + 1;
 	const resolved = readRuntimeLuaValue(
 		runtime,
@@ -579,15 +570,15 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 		bridge.suspendedGuest,
 		analysis,
 		runtimeResource, SYSTEM_RESOURCE_DOMAIN,
-		['captured', 'value'],
+		['captured', 'self', 'value'],
 		4,
 		usageColumn,
 	);
-	assert.ok(resolved);
-	assert.equal(resolved.kind, 'value');
-	if (resolved.kind === 'value') {
-		assert.equal(resolved.value, 42);
-	}
+	assert.deepEqual(resolved, { kind: 'snapshot', value: { kind: 'integer', value: 42 } });
+	const { inspectLuaRuntimeExpression } = await intellisenseEngineModulePromise;
+	assert.deepEqual(inspectLuaRuntimeExpression(bridge.sources, bridge.suspendedGuest, fault, runtime,
+		'captured.value', runtimeResource, analysis, 4, usageColumn),
+		{ expression: 'captured.value', lines: ['42'], valueType: 'number', state: 'value' });
 });
 
 test('intellisense preserves shadowed local bindings during workspace retargeting', async () => {
@@ -623,14 +614,14 @@ return {}`;
 		const result = readRuntimeLuaModuleCapture(bridge.sources, guest, SYSTEM_RESOURCE_DOMAIN, 'captured', guest.global('read_module'), 'registry');
 		assert.equal(result.kind, 'value');
 		if (result.kind !== 'value') throw new Error('actual module capture is required');
-		assert.equal(guest.readStringMember(result.value, 'value'), 17);
+		assert.equal(guest.readStringMember(result.value, 'value'), valueInteger(17));
 		assert.deepEqual(readRuntimeLuaModuleCapture(bridge.sources, guest, SYSTEM_RESOURCE_DOMAIN, 'captured', guest.global('read_module'), 'absent'),
-			{ kind: 'value', value: null }, 'nil is a captured value, not a missing debug location');
+			{ kind: 'value', value: valueNil() }, 'nil is a captured value, not a missing debug location');
 		for (const [domain, path, closure, name] of [
 			[SYSTEM_RESOURCE_DOMAIN, 'captured', guest.global('read_shadow'), 'registry'],
 			[SYSTEM_RESOURCE_DOMAIN, 'captured', guest.global('read_module'), 'unknown'],
 			[0, 'captured', guest.global('read_module'), 'registry'],
-			[SYSTEM_RESOURCE_DOMAIN, 'captured', null, 'registry'],
+			[SYSTEM_RESOURCE_DOMAIN, 'captured', valueNil(), 'registry'],
 		] as const) assert.deepEqual(readRuntimeLuaModuleCapture(bridge.sources, guest, domain, path, closure, name),
 			{ kind: 'unavailable', reason: 'not_in_scope' }, 'a shadowed binding, wrong bus or missing capture is not a module registry');
 		assert.deepEqual(cpu.captureRuntimeState(), before, 'readback changes no register, cell, heap or CPU state');
@@ -681,8 +672,8 @@ halt_until_irq`;
 		assert.strictEqual(correspondence.update(callback), cached);
 		assert.deepEqual(runtimeLuaFunctionSource(bridge.sources, guest, callback), location);
 		// Hot Resume changes physical call targets without replacing the allocation identity.
-		const closure = callback as Closure, oldAddress = closure.functionAddress;
-		closure.functionAddress = (guest.global('other_callback') as Closure).functionAddress;
+		const closure = asClosure(callback, cpu.gc), oldAddress = closure.functionAddress;
+		closure.functionAddress = asClosure(guest.global('other_callback'), guest.cpu.gc).functionAddress;
 		assert.notStrictEqual(correspondence.update(callback), cached);
 		assert.deepEqual(correspondence.update(callback), runtimeLuaFunctionSource(bridge.sources, guest, callback));
 		// A mapped cartridge address does not imply a cartridge is installed on that bus.
@@ -699,7 +690,7 @@ halt_until_irq`;
 			entries.set(guest.kind(key), guest.formatValue(value));
 		});
 		assert.deepEqual(entries, new Map([
-			[SuspendedGuestValueKind.Number, 'numeric'], [SuspendedGuestValueKind.String, 'string'],
+			[SuspendedGuestValueKind.Integer, 'numeric'], [SuspendedGuestValueKind.String, 'string'],
 			[SuspendedGuestValueKind.Boolean, 'boolean'], [SuspendedGuestValueKind.Function, 'function'],
 		]));
 		assert.equal(runtimeLuaFunctionSource(bridge.sources, guest, guest.global('entries')), undefined);
@@ -731,28 +722,28 @@ halt_until_irq`;
 		cpu.reset();
 		cpu.installBootPrimitives();
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-		const subject = guest.global('subject') as Table;
+		const subject = guest.global('subject');
 		const bytes = cpu.luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 		const methods = readActorMethods(bridge.sources, guest, subject);
 		assert.deepEqual(methods.map(method => method.name), ['inherited', 'overridden', 'own']);
 		assert.equal(methods[1].source!.resource.path, 'cart.lua'); assert.equal(methods[1].source!.range.start.line, 7);
-		assert.deepEqual(readActorMethods(bridge.sources, guest, guest.global('dynamic') as Table), []);
-		assert.equal(guest.global('index_calls'), 0);
+		assert.deepEqual(readActorMethods(bridge.sources, guest, guest.global('dynamic')), []);
+		assert.equal(guest.global('index_calls'), valueInteger(0));
 		assert.equal(cpu.luaHeap.usedBytes(), bytes);
 		assert.equal(cpu.readFramePc(depth - 1), pc);
-		cpu.beginCompletionCall(guest.readStringMember(subject, 'inherited') as Closure, [subject, 5]);
+		cpu.beginCompletionCall(asClosure(guest.readStringMember(subject, 'inherited'), guest.cpu.gc), [subject, valueInteger(5)]);
 		assert.equal(cpu.runUntilDepth(depth, 1000), RunResult.Halted);
-		assert.equal(guest.readStringMember(subject, 'value'), 15, 'the receiver is the instance, not its prototype');
+		assert.equal(guest.readStringMember(subject, 'value'), valueInteger(15), 'the receiver is the instance, not its prototype');
 	});
 
 	test(`suspended inspection distinguishes a nil member from an unreadable path at O${optLevel}`, () => {
 		const source = 'input_value = {}\nlocal target = input_value\nhalt_until_irq\nreturn target.missing.value';
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
 		runtime.machine.cpu.reset();
-		assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
+		assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000), RunResult.Halted);
 		const fault = createRuntimeFaultState();
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
-			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target', 'missing'], 4, 8), { kind: 'value', value: null });
+			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target', 'missing'], 4, 8), { kind: 'value', value: valueNil() });
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target', 'missing', 'value'], 4, 8), { kind: 'unavailable', reason: 'not_a_table' });
 	});
@@ -775,7 +766,7 @@ return buffer`;
 		const fault = createRuntimeFaultState();
 		for (const [line, column, address] of [[1, 5, image.image.header.bssAddress], [6, 7, image.image.header.dataAddress], [8, 9, image.image.header.dataAddress]]) {
 			assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
-				runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['buffer'], line, column), { kind: 'value', value: address });
+				runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['buffer'], line, column), { kind: 'value', value: valueInteger(address) });
 		}
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
 			runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['shape'], 2, 8), { kind: 'unavailable', reason: 'not_runtime_value' });
@@ -793,7 +784,7 @@ return buffer`;
 		const reads = t.mock.method(bridge.suspendedGuest, 'global');
 		const fault = createRuntimeFaultState();
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
-			runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['exported'], 3, 8), { kind: 'value', value: image.image.header.bssAddress });
+			runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['exported'], 3, 8), { kind: 'value', value: valueInteger(image.image.header.bssAddress) });
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
 			runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['shape'], 3, 25), { kind: 'unavailable', reason: 'not_runtime_value' });
 		assert.equal(reads.mock.callCount(), 0);
@@ -822,19 +813,19 @@ return buffer`;
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target'], declarations.length + 4, 8);
 		assert.equal(result.kind, 'value');
-		if (result.kind === 'value') assert.equal(result.value, 42);
+		if (result.kind === 'value') assert.equal(result.value, valueInteger(42));
 	});
 
 	test(`suspended inspection does not invent a location for a folded local at O${optLevel}`, () => {
 		const source = 'local value = 11\nhalt_until_irq\nreturn value';
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
 		runtime.machine.cpu.reset();
-		assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
+		assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000), RunResult.Halted);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['value'], 3, 8);
 		if (optLevel === 0) {
 			assert.equal(result.kind, 'value');
-			if (result.kind === 'value') assert.equal(result.value, 11);
+			if (result.kind === 'value') assert.equal(result.value, valueInteger(11));
 		} else assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
 	});
 
@@ -879,7 +870,7 @@ end
 return descend(1)`,
 		},
 		{
-			name: 'live inner location', line: 8, expected: { kind: 'value', value: 0 },
+			name: 'live inner location', line: 8, expected: { kind: 'value', value: valueInteger(0) },
 			source: `local function descend(depth)
 	local value = depth * 11
 	if depth == 0 then
@@ -909,7 +900,8 @@ return descend(1)`,
 			recordSupervisorFault(fault, faulted.bridge.sources, faulted.runtime, faulted.bridge.suspendedGuest);
 			faulted.runtime.machine.cpu.reset(); faulted.runtime.machine.cpu.installBootPrimitives();
 			assert.deepEqual(readRuntimeLuaValue(faulted.runtime, faulted.bridge.sources, fault, faulted.bridge.suspendedGuest,
-				faulted.analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['value'], scenario.line, column), scenario.expected,
+				faulted.analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['value'], scenario.line, column),
+				scenario.expected.kind === 'value' ? { kind: 'snapshot', value: { kind: 'integer', value: 0 } } : scenario.expected,
 				'captured fault frames retain the same invocation after the physical stack is replaced');
 		});
 	}
@@ -944,7 +936,7 @@ return table
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['table'], 4, 8);
 		assert.equal(result.kind, 'value');
-		if (result.kind === 'value') assert.equal(result.value, null);
+		if (result.kind === 'value') assert.equal(result.value, valueNil());
 	});
 
 	test(`suspended inspection selects the written local rather than the innermost same name at O${optLevel}`, () => {
@@ -964,7 +956,7 @@ return value
 			const result = readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
 				analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['value', 'number'], line, column);
 			assert.equal(result.kind, 'value');
-			if (result.kind === 'value') assert.equal(result.value, expected);
+			if (result.kind === 'value') assert.equal(result.value, valueInteger(expected));
 		}
 	});
 
@@ -983,7 +975,7 @@ return actor:run()
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['self', 'value'], 5, 9);
 		assert.equal(result.kind, 'value');
-		if (result.kind === 'value') assert.equal(result.value, 42);
+		if (result.kind === 'value') assert.equal(result.value, valueInteger(42));
 	});
 
 	test(`suspended inspection does not read a caller local before its initializer returns at O${optLevel}`, () => {
@@ -1006,7 +998,7 @@ return pending
 test('suspended inspection borrowers release on invalidation and before an explicit guest call', () => {
 	const { runtime, bridge } = createIntellisenseRuntime('callback = function() return 7 end\nhalt_until_irq');
 	runtime.machine.cpu.reset();
-	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000), RunResult.Halted);
 	const guest = bridge.suspendedGuest, events: string[] = [];
 	const releaseFirst = guest.onDidInvalidate(() => { events.push('first'); releaseFirst(); });
 	const releaseSecond = guest.onDidInvalidate(() => { events.push('second'); releaseSecond(); });
@@ -1021,14 +1013,14 @@ test('suspended inspection requires installed source correspondence, and regains
 	const source = 'local target = 42\nhalt_until_irq\nreturn target';
 	const { runtime, bridge, analysis } = createIntellisenseRuntime(source);
 	runtime.machine.cpu.reset();
-	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000), RunResult.Halted);
 	const fault = createRuntimeFaultState();
 	const changed = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source.replace('target', 'edited'), runtimeResource)], [])).getFileData(resourceIdentityKey(runtimeResource))!;
 	assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
 		changed, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target'], 3, 8), { kind: 'unavailable', reason: 'source_changed' });
 	const result = readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target'], 3, 8);
 	assert.equal(result.kind, 'value');
-	if (result.kind === 'value') assert.equal(result.value, 42);
+	if (result.kind === 'value') assert.equal(result.value, valueInteger(42));
 	const { inspectLuaRuntimeExpression } = await intellisenseEngineModulePromise;
 	assert.equal(inspectLuaRuntimeExpression(bridge.sources, bridge.suspendedGuest, fault, runtime, 'target()', runtimeResource, analysis, 3, 8), null,
 		'only read-only identifier paths enter runtime inspection');

@@ -1,9 +1,9 @@
+import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { RuntimeGpuHistory } from '../../ide/runtime/gpu_history';
 import { RuntimeGteHistory } from '../../ide/runtime/gte_history';
@@ -100,9 +100,9 @@ return true`;
 	const history = new RuntimeGteHistory(f.host.runtime, f.sources, 2);
 	const source = new GteDebuggerInput(history), receiver = new GteDebuggerInput(history);
 	t.after(() => history.dispose());
-	const issueFunction = f.cpu.getGlobalByKey(f.cpu.stringPool.find('issue')!) as Closure;
+	const issueFunction = asClosure(f.cpu.getGlobalByKey(f.cpu.stringPool.find('issue')!), f.cpu.gc);
 	const issue = (word: number) => {
-		f.cpu.beginCompletionCall(issueFunction, [word]);
+		f.cpu.beginCompletionCall(issueFunction, [valueInteger(word)]);
 		assert.equal(f.host.runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	};
 	f.firstGroup.openEditor(source); issue(17); source.update(); source.select(0);
@@ -136,8 +136,8 @@ return true`;
 
 test('Events move retains actual selected evidence and reading position in a fresh pane until history clears', t => {
 	const f = inspectorWorkbench(t, compileEventHistoryFixture()), history = f.editor.events;
-	const emit = f.cpu.getGlobalByKey(f.cpu.stringPool.find('emit_for_viewer')!) as Closure;
-	f.cpu.beginCompletionCall(emit, [80]); assert.equal(f.cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	const emit = asClosure(f.cpu.getGlobalByKey(f.cpu.stringPool.find('emit_for_viewer')!), f.cpu.gc);
+	f.cpu.beginCompletionCall(emit, [valueInteger(80)]); assert.equal(f.cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const source = new EventViewerInput(history), receiver = new EventViewerInput(history);
 	f.firstGroup.openEditor(source); f.secondGroup.openEditor(receiver); f.firstGroup.activate(source.id); f.update();
 	source.filter = 'probe'; f.update(); source.selected = 20;

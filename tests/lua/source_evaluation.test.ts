@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -43,8 +44,8 @@ local to={}`;
 	assert.equal(collectLuaSourceEvaluation(file, expression).filter(item => item.kind === 'call').length, 1);
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: file.file, location: { kind: 'workspace' as const, path: file.file },contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],path:file.file,source:{type:'lua',resid:'evaluation'}}, 'lua', source);
 	model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, file.chunk, table.fields[0], target, 0).edits);
-	assert.deepEqual(runCompiledLua(source + '\nreturn from[2].duration_ticks'), [2]);
-	assert.deepEqual(runCompiledLua(model.buffer.getText() + '\nreturn from[1].duration_ticks, to[1].duration_ticks'), [1, 2]);
+	assert.deepEqual(runCompiledLua(source + '\nreturn from[2].duration_ticks'), [valueInteger(2)]);
+	assert.deepEqual(runCompiledLua(model.buffer.getText() + '\nreturn from[1].duration_ticks, to[1].duration_ticks'), [1, 2].map(valueInteger));
 	model.undo();
 	assert.equal(model.buffer.getText(), source);
 	model.dispose();

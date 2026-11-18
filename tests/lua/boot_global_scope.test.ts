@@ -1,3 +1,4 @@
+import { valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -36,9 +37,9 @@ for (const optLevel of [0, 3] as const) {
 		const { cpu } = createTestBlua32PairCpu(linkTestBlua32Pair(bios, cart));
 		cpu.installBootPrimitives();
 		assert.equal(cpu.runUntilDepth(0, 10000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [42]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
 		for (const primitive of LUA_BOOT_PRIMITIVES) {
-			assert.equal(cpu.getSystemGlobalByKey(cpu.stringPool.find(primitive.name)!), null);
+			assert.equal(cpu.getSystemGlobalByKey(cpu.stringPool.find(primitive.name)!), valueNil());
 		}
 	});
 }

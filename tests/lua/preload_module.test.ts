@@ -1,3 +1,4 @@
+import { valueInteger, valueBool, asTable } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -53,14 +54,14 @@ for (const optLevel of [0, 3] as const) test(`preloads use the existing dependen
 	const image = linkTestSystemBlua32(compiled);
 	const { cpu } = createTestSystemCpu(image);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [213, 0, true]);
-	const common = cpu.getSystemGlobalByKey(cpu.stringPool.find(buildModuleExportSlotName('common', []))!) as Table;
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(213), valueInteger(0), valueBool(true)]);
+	const common = asTable(cpu.getSystemGlobalByKey(cpu.stringPool.find(buildModuleExportSlotName('common', []))!), cpu.gc);
 	// Read the retained exported object through the compiler-owned module slot.
 	assert.ok(common instanceof Table);
 	cpu.beginCompletionCallInExecutionDomain(-1, image.vectors.initFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.equal(common.getStringKey(cpu.stringPool.find('calls')!), 2134);
-	assert.equal(common.getStringKey(cpu.stringPool.find('order')!), 213, 'init does not repeat module constructors');
+	assert.equal(common.getStringKey(cpu.stringPool.find('calls')!), valueInteger(2134));
+	assert.equal(common.getStringKey(cpu.stringPool.find('order')!), valueInteger(213), 'init does not repeat module constructors');
 });
 
 test('default and explicit empty preloads preserve executable bytes; cycles use require diagnostics', () => {
@@ -105,5 +106,5 @@ return component.new({}, 'early')` },
 	});
 	assert.ok(cart.staticModulePaths.indexOf('fixture/observation') < cart.staticModulePaths.indexOf('fixture/game'));
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [2, true, true]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(2), valueBool(true), valueBool(true)]);
 });

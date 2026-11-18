@@ -1,7 +1,7 @@
+import { valueBool, asClosure } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
@@ -80,8 +80,8 @@ end
 return true
 `,{optLevel,modules:collisionModules});
   assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
-  const kernel = cpu.getGlobalByKey(cpu.stringPool.find('kernel')!) as Closure;
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+  const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
   const profile = profileWarmGuestKernel(cpu,kernel,256);
   assert.equal(profile.reservations,0);
   assert.equal(profile.reservedBytes,0);
@@ -116,8 +116,8 @@ end
 return true
 `,{optLevel,modules:collisionModules});
   assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
-  const kernel = cpu.getGlobalByKey(cpu.stringPool.find('kernel')!) as Closure;
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+  const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
   const profile = profileWarmGuestKernel(cpu,kernel,256);
   assert.equal(profile.reservations,0);
   assert.equal(profile.reservedBytes,0);
@@ -167,7 +167,7 @@ assert(pool.acquire(storage)==a,'retired geometry slot did not reuse its intrusi
 return true
 `,{optLevel,modules:collisionModules});
   assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
  });
 
  test(`Collider source admission reserves animation bounds and separates physical geometry from presentation (O${optLevel})`, t => {
@@ -221,8 +221,8 @@ end
 return true
 `,{optLevel,modules:collisionModules});
   assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
-  const kernel = cpu.getGlobalByKey(cpu.stringPool.find('kernel')!) as Closure;
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+  const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
   const profile = profileWarmGuestKernel(cpu,kernel,256);
   assert.equal(profile.reservations,0);
   assert.equal(profile.reservedBytes,0);
@@ -256,7 +256,7 @@ assert(pool.acquire(storage)==canceled_storage,'unattached canceled collider lea
 return true
 `,{optLevel,modules:collisionModules});
   assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
  });
 
  test(`Tile-strip source admission precedes publication and empty geometry stays absent (O${optLevel})`, t => {
@@ -313,8 +313,8 @@ end
 return true
 `,{optLevel,modules:collisionModules});
   assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
-  const kernel = cpu.getGlobalByKey(cpu.stringPool.find('kernel')!) as Closure;
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
+  const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
   const profile = profileWarmGuestKernel(cpu,kernel,128);
   assert.equal(profile.reservations,0);
   assert.equal(profile.reservedBytes,0);
@@ -361,7 +361,7 @@ assert(strip._collider==nil and pool.acquire(storage)==strip_geometry,
 return true
 `,{optLevel,modules:collisionModules});
   assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
  });
 
  test(`Canceled strip collider factory releases its concrete source binding (O${optLevel})`, () => {
@@ -393,6 +393,6 @@ assert(scene.closed and returned_strip._collider==nil and returned_collider._geo
 return true
 `,{optLevel,modules:collisionModules});
   assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
-  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
  });
 }

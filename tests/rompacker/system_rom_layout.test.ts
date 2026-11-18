@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -51,7 +52,7 @@ for (const optLevel of [0, 3] as const) for (const debug of [false, true])
 		assert.ok(bytes.byteLength < SYSTEM_BLUA32_IMAGE_LIMIT, 'growth capacity is not serialized as zero padding');
 		const { cpu } = createTestSystemCpu({ romBytes: bytes });
 		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [0x12345678, payload.start]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0x12345678), valueInteger(payload.start)]);
 	});
 
 test('system source rebuild relocates asset references after code growth without moving BIOS import slots', async t => {
@@ -77,7 +78,7 @@ test('system source rebuild relocates asset references after code growth without
 	assert.deepEqual(readBlua32BiosImports(bytes).functions, readBlua32BiosImports(fixture.systemRom).functions);
 	const { cpu } = createTestSystemCpu({ romBytes: bytes });
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [0x12345678 + 128, payload.start]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0x12345678 + 128), valueInteger(payload.start)]);
 });
 
 test('system function growth preserves static addresses until a cold boot grows the bounded table', async t => {
@@ -113,5 +114,5 @@ return *p`;
 	assert.deepEqual(readBlua32BiosImports(bytes).functions, readBlua32BiosImports(fixture.systemRom).functions);
 	const { cpu } = createTestSystemCpu({ romBytes: bytes });
 	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [0x12345678]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0x12345678)]);
 });

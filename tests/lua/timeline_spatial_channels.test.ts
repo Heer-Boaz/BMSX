@@ -1,11 +1,9 @@
+import { asClosure, asStringId, asTable, numberToHost, valueBool, valueInteger, valueString } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { IO_APU_SAMPLE_SEQUENCE, IO_SYS_TIME_MS } from '../../machine/ts/spec/bmsx/io';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import { valueString, type StringValue } from '../../machine/ts/machine/cpu/value';
-import { Table } from '../../machine/ts/machine/cpu/table';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test_harness';
@@ -76,8 +74,8 @@ end)
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const result = materializeCpuCompletionValues(cpu);
-		assert.equal(result[0], true, result[0] ? undefined : cpu.stringPool.toString((result[1] as StringValue).id));
-		assert.equal(result[1], true);
+		assert.equal(result[0], valueBool(true), result[0] === valueBool(true) ? undefined : cpu.stringPool.toString(asStringId(result[1])));
+		assert.equal(result[1], valueBool(true));
 	});
 
 	test(`FSM timeline admission uses the constructor-published component before autoplay (O${optLevel})`, () => {
@@ -119,8 +117,8 @@ end)
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const result = materializeCpuCompletionValues(cpu);
-		assert.equal(result[0], true, result[0] ? undefined : cpu.stringPool.toString((result[1] as StringValue).id));
-		assert.equal(result[1], true);
+		assert.equal(result[0], valueBool(true), result[0] === valueBool(true) ? undefined : cpu.stringPool.toString(asStringId(result[1])));
+		assert.equal(result[1], valueBool(true));
 	});
 
 	test(`grouped spatial sampling preserves real identities, interpolation and query boundaries (O${optLevel})`, () => {
@@ -180,7 +178,7 @@ owner.timelines:define('mixed',{phase='physical',bindings={'pose'},duration_ms=3
 	duration_ms=30,sequence={phase='physical',bindings={'pose'},frames=range(3),frame_duration=10,tracks={{
 		kind='spatial',binding='pose',operation='position2',channels={
 			x={interpolation='linear',keys={{frame=0,value=0},{frame=1,value=10},{frame=2,value=20}}},
-			y={interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100,value=20}}},
+			y={interpolation='linear',keys={{time_ms=0,value=0},{time_ms=64,value=16}}},
 		},
 	}}},
 }}}, {pose=pose})
@@ -197,9 +195,9 @@ observed[5]=pose.ox
 observed[6]=pose.oy
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		const observed = cpu.getGlobalByKey(cpu.stringPool.find('observed')!) as Table;
-		assert.deepEqual(Array.from({ length: 6 }, (_, index) => observed.getInteger(index + 1)),
-			[7, 1, 10, 2, 17, 3]);
+		const observed = asTable(cpu.getGlobalByKey(cpu.stringPool.find('observed')!), cpu.gc);
+		assert.deepEqual(Array.from({ length: 6 }, (_, index) => numberToHost(observed.getInteger(index + 1))),
+			[7, 1.25, 10, 2.5, 17, 3.75]);
 	});
 
 	test(`cold writer admission protects every generic lowering and retains exact leaf receivers (O${optLevel})`, () => {
@@ -233,7 +231,7 @@ end)
 assert(not forbidden, '3D object admitted a 2D transform writer')
 local leaf<const> = {ox=-1}
 local target<const> = {leaf=leaf}
-owner.timelines:define('leaf',{target=target,duration_ms=100,tracks={{kind='value',path={'leaf','ox'},
+owner.timelines:define('leaf',{target=target,duration_ms=128,tracks={{kind='value',path={'leaf','ox'},
 	interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100,value=20}}}}})
 target.leaf=pose
 owner.timelines:seek_time('leaf',50)
@@ -292,8 +290,8 @@ prefab.define({def_id='scheduled',
  class=object_2d,
  components={timeline_component.new}})
 actor=world:spawn('scheduled',{})
-actor.timelines:define('late',{phase='presentation',duration_ms=100,tracks={{kind='value',interpolation='linear',
-	apply=function(_,value) late_value=value end,keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}})
+actor.timelines:define('late',{phase='presentation',duration_ms=128,tracks={{kind='value',interpolation='linear',
+	apply=function(_,value) late_value=value end,keys={{time_ms=0,value=0},{time_ms=128,value=128}}}}})
 actor.timelines:define('early',{phase='physical',duration_ms=20,bindings={'pose'},tracks={{kind='spatial',binding='pose',
 	operation='position2',channels={x={interpolation='linear',keys={{time_ms=0,value=0},{time_ms=20,value=20}}}}}}}, {pose=actor})
 actor.timelines:play('early',nil,function(owner)
@@ -322,8 +320,8 @@ prefab.define({def_id='timeline.world',
 local manual<const> = world:spawn('timeline.pose2',{})
 local automatic<const> = world:spawn('timeline.world',{})
 for _, phase in ipairs({'physical','presentation'}) do
-	local definition<const> = {phase=phase,duration_ms=100,tracks={{kind='value',path={phase},
-		interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}}
+	local definition<const> = {phase=phase,duration_ms=128,tracks={{kind='value',path={phase},
+		interpolation='linear',keys={{time_ms=0,value=0},{time_ms=128,value=128}}}}}
 	manual.timelines:define(phase,definition)
 	manual.timelines:play(phase)
 	automatic.timelines:define(phase,definition)
@@ -348,8 +346,8 @@ observed[10]=manual.physical
 observed[11]=manual.presentation
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		const observed = cpu.getGlobalByKey(cpu.stringPool.find('observed')!) as Table;
-		assert.deepEqual(Array.from({ length: 11 }, (_, index) => observed.getInteger(index + 1)),
+		const observed = asTable(cpu.getGlobalByKey(cpu.stringPool.find('observed')!), cpu.gc);
+		assert.deepEqual(Array.from({ length: 11 }, (_, index) => numberToHost(observed.getInteger(index + 1))),
 			[20, 20, 20, 20, 0, 0, 0, 40, 40, 20, 20],
 			'manual playback must retain its explicit driver without joining World clock views');
 	});
@@ -378,7 +376,7 @@ for _, phase in ipairs({'physical','presentation'}) do
 		local field<const> = phase..'_'..domain
 		actor[field]=0
 		actor.timelines:define(field,{phase=phase,clock_source=source[domain],continuous=true,tracks={{
-			kind='value',interpolation='linear',path={field},keys={{time_ms=0,value=0},{time_ms=10000,value=10000}},
+			kind='value',interpolation='linear',path={field},keys={{time_ms=0,value=0},{time_ms=8192,value=8192}},
 		}}})
 		actor.timelines:play(field)
 	end
@@ -400,7 +398,7 @@ probe={
 		end
 		actor.fresh=0
 		actor.timelines:define('fresh',{phase='presentation',clock_source=source.platform,continuous=true,tracks={{
-			kind='value',interpolation='linear',path={'fresh'},keys={{time_ms=0,value=0},{time_ms=10000,value=10000}},
+			kind='value',interpolation='linear',path={'fresh'},keys={{time_ms=0,value=0},{time_ms=8192,value=8192}},
 		}}})
 		actor.timelines:define('trigger',{phase='physical',clock_source=source.frame,duration_ms=20})
 		actor.timelines:play('trigger',nil,function(owner) owner.timelines:play('fresh',{snap_to_start=false}) end)
@@ -408,18 +406,18 @@ probe={
 }
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-		const step = probe.getStringKey(cpu.stringPool.find('step')!) as Closure;
-		const space = probe.getStringKey(cpu.stringPool.find('space')!) as Closure;
-		const restart = probe.getStringKey(cpu.stringPool.find('restart')!) as Closure;
+		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+		const step = asClosure(probe.getStringKey(cpu.stringPool.find('step')!), cpu.gc);
+		const space = asClosure(probe.getStringKey(cpu.stringPool.find('space')!), cpu.gc);
+		const restart = asClosure(probe.getStringKey(cpu.stringPool.find('restart')!), cpu.gc);
 		// This CPU fixture drives the published clock words directly; it tests
 		// timeline consumption, not peripheral service timing or audio playback.
 		const advance = (milliseconds: number, samples: number, abort: boolean, expected: readonly number[]) => {
 			cpu.memory.writeIoU32(IO_SYS_TIME_MS, milliseconds);
 			cpu.memory.writeIoU32(IO_APU_SAMPLE_SEQUENCE, samples);
-			runCompletionClosure(cpu, step, [abort]);
-			const actual = materializeCpuCompletionValues(cpu) as number[];
-			for (let index = 0; index < expected.length; index += 1) assert.ok(Math.abs(actual[index] - expected[index]) < 1e-9, JSON.stringify({ milliseconds, actual, expected, index }));
+			runCompletionClosure(cpu, step, [valueBool(abort)]);
+			const actual = materializeCpuCompletionValues(cpu).map(numberToHost);
+			assert.deepEqual(actual.slice(0, expected.length), expected);
 		};
 		advance(0, 0, false, [0, 0, 0, 0]);
 		advance(20, 882, true, [20, 0, 20, 0]);
@@ -447,16 +445,16 @@ owner.timelines:play('loop')
 probe={run=function(count) for index=1,count do owner.timelines:tick_gameplay(1) end end}
 `, { optLevel: 3, modules });
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-	const run = probe.getStringKey(cpu.stringPool.find('run')!) as Closure;
-	runCompletionClosure(cpu, run, [64]);
+	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+	const run = asClosure(probe.getStringKey(cpu.stringPool.find('run')!), cpu.gc);
+	runCompletionClosure(cpu, run, [valueInteger(64)]);
 	const heap = cpu.luaHeap;
 	const before = cpu.collectTrackedHeapBytes();
 	const reserve = heap.reserve;
 	let reservations = 0;
 	heap.reserve = function (...args) { reservations += 1; reserve.apply(heap, args); };
 	let cycles: number;
-	try { cycles = runCompletionClosure(cpu, run, [2048]); } finally { heap.reserve = reserve; }
+	try { cycles = runCompletionClosure(cpu, run, [valueInteger(2048)]); } finally { heap.reserve = reserve; }
 	assert.equal(reservations, 0);
 	assert.equal(heap.usedBytes(), before);
 	t.diagnostic(JSON.stringify({ iterations: 2048, cycles, reservations }));

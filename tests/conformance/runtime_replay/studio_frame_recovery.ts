@@ -1,4 +1,4 @@
-import type { Table } from '../../../machine/ts/machine/cpu/table';
+import { asTable, type Value, valueInteger, valueNil, valueThread } from '../../../machine/ts/machine/cpu/value';
 import { applyRuntimeSaveState, captureRuntimeSaveState, type RuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import { readRuntimeLuaModuleExport } from '../../../ide/runtime/lua_inspection';
@@ -29,23 +29,23 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 		const context = terminal.frameContext(inspection.readStack(0, 100).frames[0]);
 		return { inspection, context, stop: ide.debugger.source.stop! };
 	};
-	const scopes = (): Table[] => {
+	const scopes = (): Value[] => {
 		const module = readRuntimeLuaModuleExport(ide.sources, guest, -1, 'debug/frame_scopes');
 		if (module.kind !== 'value') throw new Error('Missing real firmware scope registry');
-		const active = guest.readStringMember(module.value, 'active') as Table;
-		const result: Table[] = [];
-		active.forEachStoredEntry((_tag, _word, scope) => result.push(scope as Table));
+		const active = asTable(guest.readStringMember(module.value, 'active'), guest.cpu.gc);
+		const result: Value[] = [];
+		active.forEachStoredEntry((_key, scope) => result.push(scope));
 		return result;
 	};
 	const first = await stopAtWait();
 	const original = terminal.evaluate('setglobal("frame_recovery_reader", function() return current end); '
 		+ 'setglobal("frame_recovery_value", current); local sum = 0; for i = 1, 2000000 do sum = sum + 1 end; return current, sum', first.context);
-	await until(() => guest.global('frame_recovery_reader') !== null && cpu.isUserMode(), 'frame recovery: live accessor in a running evaluation');
+	await until(() => guest.global('frame_recovery_reader') !== valueNil() && cpu.isUserMode(), 'frame recovery: live accessor in a running evaluation');
 	terminal.setPaused(original, true);
 	check(original.result === undefined && terminal.paused && first.inspection.lifetime.isDisposed,
 		'frame recovery: pause retains the call but expires prior inspection');
 	const borrowed = scopes();
-	check(borrowed.length === 1 && guest.readStringMember(borrowed[0], 'thread') === cpu.activeThread,
+	check(borrowed.length === 1 && guest.readStringMember(borrowed[0], 'thread') === valueThread(cpu.gc.reference(cpu.activeThread)),
 		'frame recovery: scope borrows the physical suspended thread');
 	const held = cycles(); await frame(); await frame();
 	check(cycles() === held, 'frame recovery: a paused frame evaluation does not run gameplay');
@@ -67,7 +67,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 		'frame recovery: restore cannot revive a selected stop or its handles');
 	const restored = scopes();
 	check(restored.length === 1 && restored[0] !== borrowed[0]
-		&& guest.readStringMember(restored[0], 'thread') === cpu.activeThread,
+		&& guest.readStringMember(restored[0], 'thread') === valueThread(cpu.gc.reference(cpu.activeThread)),
 		'frame recovery: saved firmware scope follows the restored heap and remains live');
 	const second = await stopAtWait();
 	check(second.stop.id !== first.stop.id && scopes().length === 0 && original.result?.status === 'interrupted',
@@ -84,7 +84,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 	const beforeInstall = ide.sources.currentBlua32Media;
 	const changing = terminal.evaluate('setglobal("frame_install_reader", function() return current end); '
 		+ 'local sum = 0; for i = 1, 2000000 do sum = sum + 1 end; return current, sum', second.context);
-	await until(() => guest.global('frame_install_reader') !== null && cpu.isUserMode(), 'frame recovery: pending accessor before source install');
+	await until(() => guest.global('frame_install_reader') !== valueNil() && cpu.isUserMode(), 'frame recovery: pending accessor before source install');
 	terminal.setPaused(changing, true);
 	const installedScopes = scopes();
 	check(installedScopes.length === 1, 'frame recovery: source install has a live scope to retire');
@@ -96,7 +96,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 	check(admission.status === 'accepted' && admission.mode === 'applied' && hotResume.applied,
 		`frame recovery: install without returning from the evaluation: ${JSON.stringify(admission)}`);
 	check(ide.sources.currentBlua32Media !== beforeInstall && scopes().length === 0
-		&& guest.readStringMember(installedScopes[0], 'thread') === null && !terminal.contextAvailable(second.context),
+		&& guest.readStringMember(installedScopes[0], 'thread') === valueNil() && !terminal.contextAvailable(second.context),
 		'frame recovery: installation retires firmware borrows and the old source selection');
 	check(!ide.debugger.plans.controlSuspended, 'frame recovery: accepted Hot Resume releases the evaluation pause');
 	await until(() => hotResume.result !== null && changing.result !== undefined && tasks.ready,
@@ -114,7 +114,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 		'frame recovery: physical bus fault during frame evaluation');
 	check(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) === 1,
 		`frame recovery: actual supervisor fault, not a protected Lua error: ${JSON.stringify(faulted.result)}`);
-	check(faulted.result!.status === 'interrupted' && ide.debugger.plans.mutationActive && guest.global('frame_fault_write') === 73,
+	check(faulted.result!.status === 'interrupted' && ide.debugger.plans.mutationActive && guest.global('frame_fault_write') === valueInteger(73),
 		'frame recovery: fault suspends real roots and preserves earlier writes');
 	const faultScopes = scopes();
 	check(faultScopes.length === 1, 'frame recovery: physical fault retains the scope until unwind');
@@ -123,7 +123,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 	check((await recovered.admission).status === 'accepted', 'frame recovery: supervisor recovery admitted');
 	await until(() => recovered.result !== null && tasks.ready, 'frame recovery: BIOS return and failed completion unwind');
 	check((await recovered.completion).status === 'completed' && scopes().length === 0
-		&& guest.readStringMember(faultScopes[0], 'thread') === null && guest.global('frame_fault_write') === 73,
+		&& guest.readStringMember(faultScopes[0], 'thread') === valueNil() && guest.global('frame_fault_write') === valueInteger(73),
 		'frame recovery: unwind closes the scope without rolling back the guest write');
 	const fourth = await stopAtWait();
 	const afterFault = terminal.evaluate('return current, getglobal("frame_fault_write"), pcall(getglobal("frame_fault_reader"))', fourth.context);
@@ -150,7 +150,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 		&& !terminal.contextAvailable(fourth.context) && !terminal.canEvaluate,
 		'frame recovery: history replaces inspection; evaluation requires leaving read-only review');
 	const historical = ide.inspection.open();
-	check(historical.readStack(0, 100).frames.length !== 0 && guest.global('frame_fault_write') === 73,
+	check(historical.readStack(0, 100).frames.length !== 0 && guest.global('frame_fault_write') === valueInteger(73),
 		'frame recovery: historical stack and the completed write belong to the restored target');
 	const step = ide.frameNavigation.step(1, 1);
 	await until(() => step.result !== undefined && tasks.ready, 'frame recovery: one recorded video frame');

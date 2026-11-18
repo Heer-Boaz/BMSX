@@ -1,3 +1,4 @@
+import { valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -56,7 +57,7 @@ test('removal keeps exterior comments verbatim and removes only the field plus i
 	assert.equal(events, 1);
 	assert.equal(model.buffer.getText(), expected);
 	assert.equal(parseTable(expected).table.fields.length, 1);
-	assert.deepEqual(runCompiledLua(expected + '\nreturn values.key, values[1]'), [null, 20]);
+	assert.deepEqual(runCompiledLua(expected + '\nreturn values.key, values[1]'), [valueNil(), valueInteger(20)]);
 	model.undo();
 	assert.equal(model.buffer.getText(), source);
 	assert.equal(model.undo(), null, 'punctuation has no separate history entry');
@@ -66,9 +67,9 @@ test('removal keeps exterior comments verbatim and removes only the field plus i
 
 test('first, middle and last array removal follow Lua order and allow an existing separator to become trailing', () => {
 	for (const [index, expected, result] of [
-		[0, 'local values = {  (20); (30) }', [20, 30, null]],
-		[1, 'local values = { (10),  (30) }', [10, 30, null]],
-		[2, 'local values = { (10), (20);  }', [10, 20, null]],
+		[0, 'local values = {  (20); (30) }', [valueInteger(20), valueInteger(30), valueNil()]],
+		[1, 'local values = { (10),  (30) }', [valueInteger(10), valueInteger(30), valueNil()]],
+		[2, 'local values = { (10), (20);  }', [valueInteger(10), valueInteger(20), valueNil()]],
 	] as const) {
 		const model = new EditorTextModel(resource, 'lua', 'local values = { (10), (20); (30) }');
 		const { parsed, table } = parseTable(model.buffer.getText());
@@ -87,7 +88,7 @@ test('sole fields with either trailing separator or none produce an empty valid 
 		const expected = 'local values = { -- leading\n  -- trailing\n  -- footer\n}';
 		assert.equal(model.buffer.getText(), expected);
 		assert.equal(parseTable(expected).table.fields.length, 0);
-		assert.deepEqual(runCompiledLua(expected + '\nreturn values[1]'), [null]);
+		assert.deepEqual(runCompiledLua(expected + '\nreturn values[1]'), [valueNil()]);
 	}
 });
 

@@ -1,3 +1,4 @@
+import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -102,7 +103,7 @@ test('a retained canonical root still receives classification from later compile
 	const terms = new FunctionSummaryStore([file], identities).terms;
 	const declaration = declarationValueSource(file.decls[0].id);
 	const declaredTerm = terms.compileSource(declaration);
-	const literal = literalValueSource({ kind: 'number', value: 3 });
+	const literal = literalValueSource({ kind: 'number', value: integerConstant(3) });
 	assert.equal(terms.compileSource(literal), declaredTerm);
 	assert.equal(terms.isNumericLiteral(declaredTerm), true);
 	assert.equal(terms.compileSource(declaration), declaredTerm);
@@ -112,11 +113,11 @@ test('a retained canonical root still receives classification from later compile
 test('literal roots retain typed payloads and primitive identities without encoded-kind probes', () => {
 	const identities = new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([]).map(file => file.file)), files: [], globalValues: new Map() });
 	const literals: SemanticLiteralValue[] = [
-		{ kind: 'string', value: '1' }, { kind: 'number', value: 1 },
+		{ kind: 'string', value: '1' }, { kind: 'number', value: integerConstant(1) },
 		{ kind: 'boolean', value: true }, { kind: 'string', value: 'true' },
 		{ kind: 'boolean', value: false }, { kind: 'string', value: 'false' },
-		{ kind: 'number', value: 0 }, { kind: 'string', value: 'n\0NaN' },
-		{ kind: 'number', value: Number.NaN }, { kind: 'number', value: Infinity },
+		{ kind: 'number', value: integerConstant(0) }, { kind: 'string', value: 'n\0NaN' },
+		{ kind: 'number', value: numberConstantFromHost(Number.NaN) }, { kind: 'number', value: numberConstantFromHost(Infinity) },
 	];
 	const roots = literals.map(literal => {
 		const source = literalValueSource(literal);
@@ -129,11 +130,11 @@ test('literal roots retain typed payloads and primitive identities without encod
 		assert.equal(identities.rawRootId(literalValueSource(literals[index]).root), roots[index]);
 		assert.ok(semanticValueSourcesEqual(literalValueSource(literals[index]), literalValueSource(literals[index])));
 	}
-	const zero = literalValueSource({ kind: 'number', value: 0 });
-	const negativeZero = literalValueSource({ kind: 'number', value: -0 });
-	assert.equal(identities.rawRootId(zero.root), identities.rawRootId(negativeZero.root));
-	assert.ok(semanticValueSourcesEqual(zero, negativeZero));
-	assert.equal(semanticValueSourceKey(zero), semanticValueSourceKey(negativeZero));
+	const zero = literalValueSource({ kind: 'number', value: integerConstant(0) });
+	const negativeZero = literalValueSource({ kind: 'number', value: numberConstantFromHost(-0) });
+	assert.notEqual(identities.rawRootId(zero.root), identities.rawRootId(negativeZero.root));
+	assert.ok(!semanticValueSourcesEqual(zero, negativeZero));
+	assert.notEqual(semanticValueSourceKey(zero), semanticValueSourceKey(negativeZero));
 });
 
 

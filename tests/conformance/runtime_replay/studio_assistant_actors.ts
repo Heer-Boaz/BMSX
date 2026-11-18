@@ -1,9 +1,9 @@
+import { valueBool, asTable, valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { ActorRuntimeInspection } from '../../../ide/workbench/contrib/actor_lab/runtime_inspection';
 import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
 import type { ActorChoice } from '../../../ide/workbench/contrib/actor_lab/projection';
-import type { Table } from '../../../machine/ts/machine/cpu/table';
 
 import { ACTOR_TOOLS_SOURCE } from '../../helpers/actor_tools_fixture';
 import { sourcePane, check, createStudioFixture } from './studio_fixture';
@@ -22,7 +22,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	const source = harness.getActiveEditorDocument().model;
 	source.pushEditOperations([{ offset: 0, deleteLength: source.buffer.length, text: ACTOR_TOOLS_SOURCE }]);
 	await runPaletteCommand('Run: Reboot'); await press('Enter');
-	await until(() => guest.global('actor_tool_ready') === true && test.tasks.ready, 'actor tools: actual World constructs both actors and their behaviors');
+	await until(() => guest.global('actor_tool_ready') === valueBool(true) && test.tasks.ready, 'actor tools: actual World constructs both actors and their behaviors');
 	const readyTick = runtime.frameScheduler.lastTickSequence;
 	await until(() => runtime.frameScheduler.lastTickSequence >= readyTick + 4 && test.tasks.ready, 'actor tools: retain post-construction history boundaries');
 	await press('ControlRight', 'ShiftRight');
@@ -31,7 +31,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await runPaletteCommand('Game: Inspect');
 	await runPaletteCommand('Actor Lab: Select Running Actor');
 	const picker = ide.editor.editorParts.activePart.quickInput;
-	const actorIds = [(guest.global('actor_tool_first') as Table).hashId, (guest.global('actor_tool_second') as Table).hashId];
+	const actorIds = [asTable(guest.global('actor_tool_first'), guest.cpu.gc).hashId, asTable(guest.global('actor_tool_second'), guest.cpu.gc).hashId];
 	check(picker.visible && picker.model.list.rows.length === actorIds.length
 		&& actorIds.every(id => picker.model.list.rows.some(row => (row.item as ActorChoice).hashId === id)), 'ordinary Actor Lab lists actual World membership');
 	await press('Enter'); await frame();
@@ -45,7 +45,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await submitAssistantText(test, 'Inspect both live actors and their FSM, BT, ActionEffect and timeline state. Expand the actual values; do not execute Lua, mutate or install source.');
 	const conversation = ide.editor.assistant;
 	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.kind === 'assistant'), 'actor tools: native model exchanges finish');
-	check(cycles() === position && runtime.machine.cpu.luaHeap.usedBytes() === heap && guest.global('actor_tool_callbacks') === 0,
+	check(cycles() === position && runtime.machine.cpu.luaHeap.usedBytes() === heap && guest.global('actor_tool_callbacks') === valueInteger(0),
 		'actor tools only read: unchanged guest heap, clock and callback counter');
 	check(source.version === version && ide.sources.currentBlua32Media === media, 'actor tools do not conflate dirty source and installed instances');
 	await renderer.capture!('conversation');
@@ -116,7 +116,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await test.clipboard.writeText('12, 34'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => test.tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive,
 		'actor tools: ordinary method completes at the World mutation rendezvous');
-	check(guest.readStringMember(guest.global('actor_tool_first'), 'health') === 12 && guest.readStringMember(guest.global('actor_tool_first'), 'energy') === 34,
+	check(guest.readStringMember(guest.global('actor_tool_first'), 'health') === valueInteger(12) && guest.readStringMember(guest.global('actor_tool_first'), 'energy') === valueInteger(34),
 		'ordinary Actor Lab reacquires its receiver after boundary execution');
 	check(inspector.visible && lab.details === positionDetails && lab.details!.items === positionItems
 		&& inspector.model.rows[inspector.model.selectionIndex].element.label === 'health'

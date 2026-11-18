@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
@@ -6,7 +7,7 @@ import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua } from './cpu_test_harness';
 
-const cases: { name: string; source: string; expected: (number | boolean)[] }[] = [
+const cases: { name: string; source: string; expected: number[] }[] = [
 	{
 		name: 'nested type does not replace its outer layout',
 		source: `struct shape
@@ -213,7 +214,7 @@ return sizeof(word[n]), sizeof(word[bits]), sizeof(word[(false ~= nil and 3 == 3
 
 for (const optLevel of [0, 3] as const) for (const { name, source, expected } of cases) {
 	test(`O${optLevel}: ${name}`, () => {
-		assert.deepEqual(runCompiledLua(source, 'scoped_types', optLevel), expected);
+		assert.deepEqual(runCompiledLua(source, 'scoped_types', optLevel), expected.map(valueInteger));
 	});
 }
 
@@ -237,7 +238,7 @@ ${section === 'bss' ? 'outer.first = 11; outer.last = 12' : ''}
 local pointer: *shape = outer
 local x, offset = nested()
 return pointer.first, pointer.last, x, offset, sizeof(shape), offsetof(shape.last)`;
-		assert.deepEqual(runCompiledLua(source, 'scoped_storage', optLevel), [11, 12, 24, 12, 8, 4]);
+		assert.deepEqual(runCompiledLua(source, 'scoped_storage', optLevel), [11, 12, 24, 12, 8, 4].map(valueInteger));
 	});
 }
 
@@ -269,7 +270,7 @@ return { size = size }` },
 	});
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [8, 12, 16]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [8, 12, 16].map(valueInteger));
 });
 
 for (const optLevel of [0, 3] as const) test(`O${optLevel}: block types are not published outside their lexical scope`, () => {
@@ -305,7 +306,7 @@ return { nested = { count = 3 }, cells = cells }` },
 	});
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [28, 28, 9]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [28, 28, 9].map(valueInteger));
 });
 
 for (const optLevel of [0, 3] as const) test(`O${optLevel}: written import aliases preserve exact module bindings and static dimensions`, () => {
@@ -325,7 +326,7 @@ for (const optLevel of [0, 3] as const) test(`O${optLevel}: written import alias
 		});
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [32, 3, 3, 2]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [32, 3, 3, 2].map(valueInteger));
 	}
 });
 

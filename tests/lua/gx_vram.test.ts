@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -9,7 +10,7 @@ import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harnes
 
 const vramSource = readFileSync('cartlib/gx/vram.lua', 'utf8');
 
-function runVram(entrySource: string, displaySize: number): unknown[] {
+function runVram(entrySource: string, displaySize: number) {
 	const displaySource = `return {
 	read_size_word = function()
 		return ${displaySize}
@@ -48,7 +49,7 @@ local vram<const> = require('cartlib/gx/vram')
 return vram.configure(2)
 `, gxGpuPair16(256, 192));
 
-	assert.deepEqual(result, [0, gxGpuPair16(256, 0), gxGpuPair16(256, 192)]);
+	assert.deepEqual(result, [0, gxGpuPair16(256, 0), gxGpuPair16(256, 192)].map(valueInteger));
 });
 
 test('GX VRAM configures vertical 640x480 display pages without a fixed presentation band', () => {
@@ -57,7 +58,7 @@ local vram<const> = require('cartlib/gx/vram')
 return vram.configure(2)
 `, gxGpuPair16(640, 480));
 
-	assert.deepEqual(result, [0, gxGpuPair16(0, 480), gxGpuPair16(640, 480)]);
+	assert.deepEqual(result, [0, gxGpuPair16(0, 480), gxGpuPair16(640, 480)].map(valueInteger));
 });
 
 test('GX VRAM honors two-axis alignment and reuses an explicit release', () => {
@@ -83,7 +84,7 @@ return first_destination,
 		gxGpuPair16(512, 0),
 		4,
 		5,
-	]);
+	].map(valueInteger));
 });
 
 test('GX VRAM replaces the allocation that creates a valid aligned placement', () => {
@@ -104,5 +105,5 @@ return retained.x | (retained.y << 16),
 		gxGpuPair16(0, 256),
 		3,
 		4,
-	]);
+	].map(valueInteger));
 });

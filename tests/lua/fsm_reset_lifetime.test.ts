@@ -1,9 +1,7 @@
+import { asTable, asClosure, valueInteger, valueBool, valueNil, asStringId } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { StringValue } from '../../machine/ts/machine/cpu/value';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { runCompletionClosure } from './cpu_test_harness';
 
@@ -46,13 +44,13 @@ function probe.reset_tree()
 end
 `, { optLevel });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-	const seed = probe.getStringKey(cpu.stringPool.find('seed')!) as Closure;
-	const resetLocal = probe.getStringKey(cpu.stringPool.find('reset_local')!) as Closure;
-	const resetTree = probe.getStringKey(cpu.stringPool.find('reset_tree')!) as Closure;
-	const weak = probe.getStringKey(cpu.stringPool.find('weak')!) as Table;
-	const data = probe.getStringKey(cpu.stringPool.find('data')!) as Table;
-	const childData = probe.getStringKey(cpu.stringPool.find('child_data')!) as Table;
+	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+	const seed = asClosure(probe.getStringKey(cpu.stringPool.find('seed')!), cpu.gc);
+	const resetLocal = asClosure(probe.getStringKey(cpu.stringPool.find('reset_local')!), cpu.gc);
+	const resetTree = asClosure(probe.getStringKey(cpu.stringPool.find('reset_tree')!), cpu.gc);
+	const weak = asTable(probe.getStringKey(cpu.stringPool.find('weak')!), cpu.gc);
+	const data = asTable(probe.getStringKey(cpu.stringPool.find('data')!), cpu.gc);
+	const childData = asTable(probe.getStringKey(cpu.stringPool.find('child_data')!), cpu.gc);
 	const defaultObject = probe.getStringKey(cpu.stringPool.find('default_object')!);
 	for (let cycle = 0; cycle < 3; cycle++) {
 		runCompletionClosure(cpu, seed, []);
@@ -60,17 +58,17 @@ end
 		let rootFields = 0;
 		data.forEachStoredEntry(() => rootFields++);
 		assert.equal(rootFields, 3, 'local reset must remove every undeclared field, including object keys');
-		assert.equal(data.getStringKey(cpu.stringPool.find('count')!), 7);
-		assert.equal(data.getStringKey(cpu.stringPool.find('enabled')!), false);
+		assert.equal(data.getStringKey(cpu.stringPool.find('count')!), valueInteger(7));
+		assert.equal(data.getStringKey(cpu.stringPool.find('enabled')!), valueBool(false));
 		assert.equal(data.getStringKey(cpu.stringPool.find('object')!), defaultObject);
-		assert.notEqual(childData.getStringKey(cpu.stringPool.find('transient_16')!), null, 'local reset must preserve child data');
+		assert.notEqual(childData.getStringKey(cpu.stringPool.find('transient_16')!), valueNil(), 'local reset must preserve child data');
 		runCompletionClosure(cpu, resetTree, []);
 		let childFields = 0;
 		childData.forEachStoredEntry(() => childFields++);
 		assert.equal(childFields, 1, 'tree reset must remove every undeclared child field');
-		assert.equal(cpu.stringPool.toString((childData.getStringKey(cpu.stringPool.find('status')!) as StringValue).id), 'idle');
+		assert.equal(cpu.stringPool.toString(asStringId(childData.getStringKey(cpu.stringPool.find('status')!))), 'idle');
 		cpu.collectTrackedHeapBytes();
-		for (let index = 1; index <= 32; index++) assert.equal(weak.getInteger(index), null, `stale data reference ${index} survived reset`);
-		assert.notEqual(weak.getInteger(33), null, 'declared object defaults must retain their identity');
+		for (let index = 1; index <= 32; index++) assert.equal(weak.getInteger(index), valueNil(), `stale data reference ${index} survived reset`);
+		assert.notEqual(weak.getInteger(33), valueNil(), 'declared object defaults must retain their identity');
 	}
 });

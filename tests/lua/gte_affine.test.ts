@@ -1,3 +1,4 @@
+import { valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -26,8 +27,8 @@ return a,b,c,d,e&0xffff,tx,ty,tz,preserves_basis,next_x,next_y,next_z,controls[0
 		] });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [
-			0xf0001000, 0x04000800, 0xfc002000, 0x0200f800, 0x3000,
-			11, 0xffffffeb, 512, true, 0xfffffffc, 4, 701, 0x8400,
+			valueInteger(0xf0001000), valueInteger(0x04000800), valueInteger(0xfc002000), valueInteger(0x0200f800), valueInteger(0x3000),
+			valueInteger(11), valueInteger(0xffffffeb), valueInteger(512), valueBool(true), valueInteger(0xfffffffc), valueInteger(4), valueInteger(701), valueInteger(0x8400),
 		]);
 	});
 }

@@ -1,21 +1,18 @@
-import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
-import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
+import { asTable, asClosure } from '../../machine/ts/machine/cpu/value';
+import { TEST_SYSTEM_CONTEXT_ID, createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
+import { captureInstalledLuaSources, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
-import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { ActorRuntimeTree, findRuntimeActor, runtimeWorld } from '../../ide/workbench/contrib/actor_lab/runtime';
 import { ActorStateGraph } from '../../ide/workbench/contrib/actor_lab/state_graph';
 import { actorTargetsEqual, captureActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
 import { parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
-import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 
 const WORLD = `local fsm<const> = require('cartlib/fsm/fsm_component')
 local leaf<const> = { definition = {}, states = {}, state_ids = {} }
@@ -43,11 +40,11 @@ function fixture(worldSource = WORLD) {
 	cpu.reset(); cpu.runUntilDepth(0, 100_000);
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), font = new Font({ variant: 'tiny' });
 	const world = runtimeWorld(sources, guest, -1)!;
-	const actors = guest.readStringMember(world, '_objects') as Table;
-	const actorHashId = (actors.getInteger(1) as Table).hashId;
+	const actors = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
+	const actorHashId = asTable(actors.getInteger(1), cpu.gc).hashId;
 	tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, actorHashId));
 	const machine = tree.roots[0].children[0].children[0];
-	const target = captureActorTarget(-1, world.hashId, tree.roots, machine);
+	const target = captureActorTarget(-1, asTable(world, cpu.gc).hashId, tree.roots, machine);
 	const graph = new ActorStateGraph(target, font);
 	const refresh = () => {
 		tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, actorHashId));
@@ -56,7 +53,7 @@ function fixture(worldSource = WORLD) {
 	refresh(); graph.viewport.layout(0, 0, 100, 100);
 	const snapshot = cpu.captureRuntimeState();
 	const restore = () => { tree.release(); guest.invalidate('history-restored'); cpu.restoreRuntimeState(snapshot); refresh(); };
-	const execute = (name: string) => { tree.release(); guest.invalidate(); runCompletionClosure(cpu, guest.global(name) as Closure, []); refresh(); };
+	const execute = (name: string) => { tree.release(); guest.invalidate(); runCompletionClosure(cpu, asClosure(guest.global(name), guest.cpu.gc), []); refresh(); };
 	return { graph, target, tree, guest, font, refresh, restore, execute };
 }
 

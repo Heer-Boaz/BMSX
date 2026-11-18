@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -20,7 +21,7 @@ ${receiver ? 'end' : ''}`, 'scalars.lua');
 	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	for (const literal of [{ kind: 'nil', value: null }, { kind: 'boolean', value: false },
-		{ kind: 'number', value: 0 }, { kind: 'string', value: '' }] as const) {
+		{ kind: 'number', value: integerConstant(0) }, { kind: 'string', value: '' }] as const) {
 		const term = summaries.terms.compileSource(literalValueSource(literal));
 		assert.deepEqual(demand.relatedTerms(term), [], 'an equal scalar is not a storage alias');
 	}

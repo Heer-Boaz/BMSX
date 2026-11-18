@@ -1,3 +1,5 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
+import { valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
@@ -133,11 +135,11 @@ local fractional: *string = names - 0.5`;
 		assert.equal(read.byteOffset, undefined);
 		assert.equal(read.value, undefined);
 	}
-	const source = declarations + `\nreturn names[1073741825] == names[1], names[-1073741823] == names[1], *wrapped == names[1], *p == names[1], *q == names[2]`;
+	const source = declarations + `\nreturn names[1073741825] == names[1], names[-1073741823] == names[1], *wrapped == names[1], p == 0, q == 0`;
 	for (const optLevel of [0, 3] as const) {
 		const values = runCompiledLua(source, 'wrapped-address', optLevel);
-		assert.deepEqual(values.slice(0, 3), [true, true, true]);
-		assert.equal(values[3] && values[4], false, 'binary64 rounding makes at least one flattened address wrong');
+		assert.deepEqual(values.slice(0, 3), [true, true, true].map(valueBool));
+		assert.deepEqual(values.slice(3), [true, true].map(valueBool), 'binary32 loses the ROM base before cancellation');
 	}
 });
 
@@ -155,25 +157,20 @@ return positive[0], negative[0]`;
 		assert.equal(read.value, undefined);
 	}
 	for (const optLevel of [0, 3] as const)
-		assert.deepEqual(runCompiledLua(source, 'fractional-address', optLevel), [5, 4]);
+		assert.deepEqual(runCompiledLua(source, 'fractional-address', optLevel), [5, 4].map(valueInteger));
 });
 
-test('an exact negative 2^53 displacement differs from a rounded following subtraction', () => {
+test('only Integer displacement preserves a storage-relative address before linking', () => {
 	const declarations = `rodata names: string[2] = { 'a', 'b' }
-local exact: *string = names - 9007199254740992
-local rounded: *string = names - 9007199254740992 - 1`;
+local exact: *string = names + 0xfffffffc + 4
+local rounded: *string = names + 1.0 - 1.0`;
 	const f = fixture(declarations + '\nreturn *exact, *rounded');
 	const exact = f.query.read(f.file, f.expressions[0]), rounded = f.query.read(f.file, f.expressions[1]);
 	assert.ok(exact?.kind === 'typed' && rounded?.kind === 'typed');
 	assert.equal(exact.byteOffset, 0); assert.deepEqual(exact.value, { kind: 'string', value: 'a' });
 	assert.equal(rounded.byteOffset, undefined); assert.equal(rounded.value, undefined);
 	for (const optLevel of [0, 3] as const) {
-		assert.deepEqual(runCompiledLua(declarations + '\nreturn *exact == names[0]', 'exact-address', optLevel), [true]);
-		const source = declarations + '\nreturn *rounded';
-		const program = compileLuaChunkToProgram(parseLuaChunk(source, 'rounded-address').chunk, [],
-			{ entrySource: source, programDomain: 'system', optLevel });
-		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
-		assert.notEqual(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.deepEqual(runCompiledLua(declarations + '\nreturn *exact == names[0]', 'exact-address', optLevel), [valueBool(true)]);
 	}
 });
 
@@ -214,7 +211,7 @@ local index = (2 << 1) - 3
 return message.text .. "!", names[index], #names, false and unknown(), true or unknown()`);
 	assert.deepEqual(f.query.scalar(f.file, f.expressions[0]), { kind: 'string', value: 'b!' });
 	assert.deepEqual(f.query.scalar(f.file, f.expressions[1]), { kind: 'string', value: 'b' });
-	assert.deepEqual(f.query.scalar(f.file, f.expressions[2]), { kind: 'number', value: 2 });
+	assert.deepEqual(f.query.scalar(f.file, f.expressions[2]), { kind: 'number', value: integerConstant(2) });
 	assert.deepEqual(f.query.scalar(f.file, f.expressions[3]), { kind: 'boolean', value: false });
 	assert.deepEqual(f.query.scalar(f.file, f.expressions[4]), { kind: 'boolean', value: true });
 	assert.equal(f.query.types.constants.evaluate(f.file, f.expressions[1]), undefined, 'source load capability does not change compile-time admission');
@@ -279,7 +276,7 @@ return register`;
 	assert.ok(read?.kind === 'typed');
 	assert.deepEqual(read.value, { kind: 'string', value: 'hi' });
 	for (const optLevel of [0, 3] as const)
-		assert.deepEqual(runCompiledLua(source + `().text == 'hi'`, 'reached-view', optLevel), [true]);
+		assert.deepEqual(runCompiledLua(source + `().text == 'hi'`, 'reached-view', optLevel), [valueBool(true)]);
 });
 
 test('each function-local alias must dominate its own dependent read', () => {
@@ -307,7 +304,7 @@ return register`;
 			const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
 			const result = cpu.runUntilDepth(0, 100000);
 			if (skipped) assert.notEqual(result, RunResult.Halted);
-			else { assert.equal(result, RunResult.Halted); assert.deepEqual(materializeCpuCompletionValues(cpu), [true]); }
+			else { assert.equal(result, RunResult.Halted); assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]); }
 		}
 	}
 });
@@ -381,7 +378,7 @@ test('a cross-file global navigation winner is not a typed storage binding', () 
 			{ entrySource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, false]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, false].map(valueBool));
 	}
 });
 
@@ -412,7 +409,7 @@ return names[asset.index], names[alias], names[combined], names[asset.other], na
 			{ entrySource: runtimeSource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true, true, true, true, true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true, true, true, true, true].map(valueBool));
 	}
 });
 
@@ -438,7 +435,7 @@ return names[asset.group.index], names[group.index], names[alias], names[group.o
 			{ entrySource: runtimeSource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true, true, true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true, true, true].map(valueBool));
 	}
 });
 
@@ -464,7 +461,7 @@ return *p`;
 			{ entrySource: runtimeSource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	}
 });
 

@@ -1,9 +1,8 @@
+import { asClosure, asTable, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
@@ -89,9 +88,9 @@ batch:submit(draw)
 return one_count,a0,a1,a2,b0,b1,b2,flat,two_count,c0,c1,c2,all_count,on_count,draw.count
 `, optLevel);
 		assert.deepEqual(values, [
-			2, sxy(120, 80), sxy(200, 120), sxy(200, 80),
-			sxy(120, 80), sxy(120, 120), sxy(200, 120), true,
-			1, sxy(120, 120), sxy(160, 160), sxy(200, 120), 0, 1, 2,
+			valueInteger(2), valueInteger(sxy(120, 80)), valueInteger(sxy(200, 120)), valueInteger(sxy(200, 80)),
+			valueInteger(sxy(120, 80)), valueInteger(sxy(120, 120)), valueInteger(sxy(200, 120)), valueBool(true),
+			valueInteger(1), valueInteger(sxy(120, 120)), valueInteger(sxy(160, 160)), valueInteger(sxy(200, 120)), valueInteger(0), valueInteger(1), valueInteger(2),
 		]);
 	});
 
@@ -119,7 +118,7 @@ for face=1,draw.count do
 end
 return draw.count,inside,winding,corner_mask
 `, optLevel);
-		assert.deepEqual(values, [2, true, true, 15]);
+		assert.deepEqual(values, [valueInteger(2), valueBool(true), valueBool(true), valueInteger(15)]);
 	});
 
 	test(`model batch retains fractional full affines, declared index widths and post-round culling (O${optLevel})`, () => {
@@ -166,7 +165,7 @@ batches.indexed32(batch,primitive,modelview,1,false)
 batch:submit(draw)
 return count,widths_same,w0,w1,w2,reflected_count,back_count,double_count,draw.count
 `, optLevel);
-		assert.deepEqual(values, [3, true, sxy(148, 81), sxy(168, 161), sxy(168, 81), 1, 0, 1, 0]);
+		assert.deepEqual(values, [valueInteger(3), valueBool(true), valueInteger(sxy(148, 81)), valueInteger(sxy(168, 161)), valueInteger(sxy(168, 81)), valueInteger(1), valueInteger(0), valueInteger(1), valueInteger(0)]);
 	});
 
 	test(`model batch globally orders depth and retained component identity without warm heap churn (O${optLevel})`, t => {
@@ -211,16 +210,16 @@ end
 probe.steady(2)
 return draw.count,draw.commands[1],draw.commands[2],draw.commands[3],draw.commands[4],draw.calls
 `, optLevel);
-		assert.deepEqual(values, [4, 0x20000022, 0x20000011, 0x20000044, 0x20000033, 4]);
-		const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')) as Table;
-		const steady = probe.getStringKey(cpu.stringPool.find('steady')) as Closure;
+		assert.deepEqual(values, [4, 0x20000022, 0x20000011, 0x20000044, 0x20000033, 4].map(valueInteger));
+		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')), cpu.gc);
+		const steady = asClosure(probe.getStringKey(cpu.stringPool.find('steady')), cpu.gc);
 		const profile = profileWarmGuestKernel(cpu, steady, 128);
 		assert.equal(profile.reservations, 0, 'warm collection, mergesort and repeated packed submission allocate no guest heap');
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [128]);
-		const clipped = probe.getStringKey(cpu.stringPool.find('clipped')) as Closure;
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(128)]);
+		const clipped = asClosure(probe.getStringKey(cpu.stringPool.find('clipped')), cpu.gc);
 		const clippedProfile = profileWarmGuestKernel(cpu, clipped, 128);
 		assert.equal(clippedProfile.reservations, 0, 'warm clipped polygon generation and sorting allocate no guest heap');
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [256]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(256)]);
 		t.diagnostic(`guest instructions/frame: sorted=${profile.cycles / 128}, clipped=${clippedProfile.cycles / 128}; allocations=${profile.reservations + clippedProfile.reservations}`);
 	});
 }

@@ -1,3 +1,4 @@
+import { valueInteger, valueNil, valueBool } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -225,7 +226,7 @@ return value, extra`;
 	assert.ok(implicit.kind === 'declaration-write');
 	assert.equal(implicit.write.index, 1);
 	assert.equal(implicit.value, NIL_VALUE_SOURCE);
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), [4, null]);
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), [valueInteger(4), valueNil()]);
 });
 
 test('captured writes retain their containing body without claiming that it ran', () => {
@@ -239,7 +240,7 @@ return value`);
 	assert.ok(initial.kind === 'declaration-write' && later.kind === 'declaration-write');
 	assert.equal(initial.write.flow, undefined);
 	assert.equal(later.write.flow, file.functionValueFlows[0].id);
-	assert.deepEqual(runCompiledLua("local value = 1; local function replace() value = 2 end; return value"), [1]);
+	assert.deepEqual(runCompiledLua("local value = 1; local function replace() value = 2 end; return value"), [valueInteger(1)]);
 });
 
 test('logical alternatives preserve unknown and known inputs rather than a closed target count', () => {
@@ -297,7 +298,7 @@ return replace(3, false), replace(3, true)`);
 	const entry = trace.boundaries[0].source;
 	assert.ok(entry.kind === 'binding-input');
 	assert.equal(entry.declaration, file.decls.find(declaration => declaration.name === 'value'));
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(file.source, file.file, optimization), [3, 7]);
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(file.source, file.file, optimization), [3, 7].map(valueInteger));
 });
 
 test('a reassigned implicit receiver retains its entry input and its own written source', () => {
@@ -313,7 +314,7 @@ return object:pick(false) == object, object:pick(true).field == 8`);
 	assert.deepEqual(trace.boundaries.map(boundary => boundary.reason), ['receiver']);
 	assert.equal(trace.boundaries[0].source.kind, 'receiver-input');
 	assert.equal(trace.terminals[0].kind, 'value-transfer');
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(file.source, file.file, optimization), [true, true]);
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(file.source, file.file, optimization), [true, true].map(valueBool));
 });
 
 test('source global contributions include writes from all files, with no same-name local merging', () => {

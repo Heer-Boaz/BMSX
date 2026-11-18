@@ -1,3 +1,4 @@
+import { valueBool, valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { getActiveIdeThemeVariant } from '../../../ide/common/constants';
 import { inputFocus } from '../../../ide/input/focus';
 import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
@@ -50,7 +51,7 @@ actor_tool_ready = true`)
 	end`)
 		.replace('\tworld:render()', '\tworld:render()\n\tgpu.fill_rect_color(actor_tool_first.spatial:resolve_world().wox, 16, 80, 80, 0xff26a3bb)\n\tgpu.fill_rect_color(112, 64, 208, 160, 0xffbd7841)') }]);
 	await runPaletteCommand('Run: Reboot'); await press('Enter');
-	await until(() => guest.global('actor_tool_ready') === true && test.tasks.ready, 'actor changes: real World and player input ready');
+	await until(() => guest.global('actor_tool_ready') === valueBool(true) && test.tasks.ready, 'actor changes: real World and player input ready');
 	const ready = runtime.frameScheduler.lastTickSequence;
 	await until(() => runtime.frameScheduler.lastTickSequence >= ready + 4 && test.tasks.ready, 'actor changes: retain physical history');
 	await press('ControlRight', 'ShiftRight');
@@ -81,7 +82,7 @@ actor_tool_ready = true`)
 	check(inputFocus.target?.guestInput?.bounds === lab.previewBounds && ide.editor.guestInputRecipient !== null && inspector.visible,
 		'ordinary embedded preview receives gameplay input through the unobscured preview beside floating Details');
 	test.setKey('KeyX', true);
-	await until(() => guest.readStringMember(guest.global('actor_tool_first'), 'health') === 10, 'actor changes: ordinary player action changes health from 9 to 10');
+	await until(() => guest.readStringMember(guest.global('actor_tool_first'), 'health') === valueInteger(10), 'actor changes: ordinary player action changes health from 9 to 10');
 	test.setKey('KeyX', false);
 	await press('ShiftLeft', 'F1');
 	await test.runMenuCommand('pause');
