@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -70,6 +71,6 @@ return producer
 	});
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('system_observed')!), 3);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('system_observed')!), valueInteger(3));
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
 });

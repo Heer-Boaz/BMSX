@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -38,7 +39,7 @@ return count`);
 		const image = decodeBlua32RomImage(rom, CART_ROM_BASE)!;
 		const { cpu } = createTestBlua32PairCpu({ systemRomBytes: system.romBytes, cartRomBytes: rom });
 		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [5050]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(5050)]);
 		assert.ok(!image.constants.includes('erased-payload'));
 		builds.push({ codeBytes: image.textBytes.length, constants: image.constants, cycles: 100_000 - cpu.instructionBudgetRemaining, heap: cpu.luaHeap.usedBytes() });
 	}

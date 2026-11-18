@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
-import { valueIsString } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueIsString } from '../../machine/ts/machine/cpu/value';
 import {
 	INP_CTRL_ARM,
 	IO_INP_CTRL,
@@ -62,7 +62,7 @@ test('ProgramCompiler -O3 folds a conditional increment after reusing the regist
 	].join('\n');
 	for (const opt of [0, 1, 2, 3] as const) {
 		const returned = runCompiledLua(source, 'reused_register_counter.lua', opt);
-		assert.deepEqual(Array.from(returned), [1, true], `optLevel ${opt} miscompiled the counter`);
+		assert.deepEqual(Array.from(returned), [valueInteger(1), valueBool(true)], `optLevel ${opt} miscompiled the counter`);
 	}
 });
 

@@ -1,3 +1,4 @@
+import { valueBool, numberToHost } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { affine2FromPose, affine2Rotation, affine2Skew } from '../../ide/common/affine2';
@@ -19,17 +20,17 @@ return affine.rotation(small_x)==nil,affine.skew(small_x)==nil,affine.skew(small
 		const second = {xx: 1, xy: 0, yx: 0, yy: 1e-200, ox: 0, oy: 0};
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [
 			affine2Rotation(first) === undefined, affine2Skew(first) === undefined, affine2Skew(second) === undefined,
-		]);
+		].map(valueBool));
 	});
 
 	test(`zero-skew construction preserves the actual guest signed-zero operands (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(`
 local affine<const> = require('cartlib/math/affine2')
-return affine.trs(0,0,-0,2,-3,0)
+return affine.trs(0,0,-0.0,2,-3,0)
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		const pose = affine2FromPose(0, 0, -0, 2, -3, 0);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [pose.xx, pose.xy, pose.yx, pose.yy, pose.ox, pose.oy]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu).map(numberToHost), [pose.xx, pose.xy, pose.yx, pose.yy, pose.ox, pose.oy]);
 	});
 
 	test(`implicit Object2D placement is its complete semantic identity (O${optLevel})`, () => {
@@ -41,7 +42,7 @@ return world:spawn('default'):get_transform()
 `, { optLevel, modules: WORLD_CPU_MODULES });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const pose = affine2FromPose(0, 0, 0, 1, 1, 0);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [pose.xx, pose.xy, pose.yx, pose.yy, pose.ox, pose.oy]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu).map(numberToHost), [pose.xx, pose.xy, pose.yx, pose.yy, pose.ox, pose.oy]);
 	});
 
 	test(`empty scale inputs do not reconstruct exact affine geometry (O${optLevel})`, () => {
@@ -64,7 +65,7 @@ end
 return valid
 `, { optLevel, modules: WORLD_CPU_MODULES });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 
 }

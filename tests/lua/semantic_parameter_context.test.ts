@@ -1,3 +1,4 @@
+import { valueBool, valueNil } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -98,7 +99,7 @@ test('rebinding a parameter cannot merge the actual argument and replacement obj
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'parameters.lua'), [], {
 		entrySource: source, programDomain: 'system', optLevel: 0,
 	});
-	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [true, null, null, true]);
+	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [valueBool(true), valueNil(), valueNil(), valueBool(true)]);
 });
 
 test('parameter rebinding stays local when the argument is another formal', () => {
@@ -169,7 +170,7 @@ test('writing through a parameter still modifies the shared argument object', ()
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'mutation.lua'), [], {
 		entrySource: source, programDomain: 'system', optLevel: 0,
 	});
-	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [true, true]);
+	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [true, true].map(valueBool));
 });
 
 test('an omitted argument does not become shared writable storage', () => {

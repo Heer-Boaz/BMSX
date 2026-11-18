@@ -1,3 +1,4 @@
+import { valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -27,7 +28,7 @@ return *value, mem[inner], value == inner`;
 		assert.deepEqual([...symbolIndices].sort(), [0, 1]);
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [11, 22, false]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(11), valueInteger(22), valueBool(false)]);
 	});
 }
 
@@ -43,5 +44,5 @@ local second = function(...)
 	return *counter
 end
 return first(), second(), first(), second()`;
-	assert.deepEqual(runCompiledLua(source, 'static_persistence', level), [1, 10, 2, 20]);
+	assert.deepEqual(runCompiledLua(source, 'static_persistence', level), [1, 10, 2, 20].map(valueInteger));
 });

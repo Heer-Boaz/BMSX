@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -43,7 +44,7 @@ local tiles<const>: *tile[3] = ${BIN_ADDR}
 return tiles[0].id, tiles[0].flags, tiles[1].id, tiles[2].flags, sizeof(tile)
 `,
 	);
-	assert.deepEqual(result, [10, 256, 20, 768, 8]);
+	assert.deepEqual(result, [10, 256, 20, 768, 8].map(valueInteger));
 });
 
 test('struct records with array fields read packed rows at the right offsets', () => {
@@ -59,5 +60,5 @@ local rows<const>: *row[1] = ${BIN_ADDR}
 return rows[0].header, rows[0].cells[0], rows[0].cells[2], sizeof(row), offsetof(row.cells)
 `,
 	);
-	assert.deepEqual(result, [0x11, 100, 300, 16, 4]);
+	assert.deepEqual(result, [0x11, 100, 300, 16, 4].map(valueInteger));
 });

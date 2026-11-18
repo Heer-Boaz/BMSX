@@ -1,3 +1,4 @@
+import { valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -47,7 +48,7 @@ assert(shared.program==entry.program and shared.primary_binding==other_owner
 return true
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 15_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 
 	test(`Timeline registration retains transport before recipients and builds nested outputs at play (O${optLevel})`, () => {
@@ -96,6 +97,6 @@ assert(owner.panel.value==41 and owner.panel.other==10,
 return true
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 }

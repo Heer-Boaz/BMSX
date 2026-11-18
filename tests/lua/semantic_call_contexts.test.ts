@@ -1,3 +1,5 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
+import { valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -127,7 +129,7 @@ return seen.left == 'walk', seen.right == 'run'`;
 		}
 	}
 	assert.equal(contexts.filter(context => context.ownerFrame > 0).length, 2);
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'pairs.lua', optimization), [true, true]);
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'pairs.lua', optimization), [true, true].map(valueBool));
 });
 
 test('call bindings and applications are retained across dependency reevaluation', () => {
@@ -239,7 +241,7 @@ record(absent())`);
 	assert.equal(after.callResults[0].applications.length, 1);
 	assert.equal(after.terminals.length, 1);
 	assert.equal(after.terminals[0].source.kind, 'function-return');
-	assert.deepEqual(after.terminals[0].source.value.root, { kind: 'literal', literal: { kind: 'number', value: 7 } });
+	assert.deepEqual(after.terminals[0].source.value.root, { kind: 'literal', literal: { kind: 'number', value: integerConstant(7) } });
 	assert.equal(before.callResults[0].applications.length, 0, 'old source graph must not acquire applications without their return edges');
 	assert.equal(values.trace(root), after);
 });
@@ -326,7 +328,7 @@ return seen.left == 'walk', seen.right == 'run'`;
 	assert.deepEqual(argumentsByCaller.map(args => file.chunk.locations.range(args[1].span).start.line), [4, 5]);
 	assert.equal(ancestry.calls.filter(call => call.caller.kind === 'module').length, 2);
 	assert.equal(sources.ancestry(wrap.calls[0]), ancestry);
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), [true, true]);
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), [true, true].map(valueBool));
 });
 
 test('source ancestry retains all incoming applications to a shared target frame', () => {
@@ -413,7 +415,7 @@ return left_value == 7, right_value == 8`;
 	const [left, right] = heads;
 	assert.ok(left.caller.kind === 'invocation' && right.caller.kind === 'invocation');
 	assert.notEqual(left.caller.lexicalOwner, right.caller.lexicalOwner);
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), [true, true]);
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), [true, true].map(valueBool));
 });
 
 for (const [name, factory, calls, expected] of [
@@ -444,7 +446,7 @@ ${calls}`;
 		const metrics = queries.metrics();
 		assert.equal(queries.callSources(call), ancestry);
 		assert.deepEqual(queries.metrics(), metrics, 'warm reads do not repeat creator demand');
-		for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), expected);
+		for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), expected.map(valueInteger));
 	});
 }
 
@@ -540,7 +542,7 @@ ${moduleCalls}`;
 		assert.equal(queries.callSources(call), graph);
 		assert.deepEqual(queries.metrics(), metrics);
 		for (const optimization of [0, 3] as const) {
-			assert.deepEqual(runCompiledLua(source, file.file, optimization), name === 'nested factory' ? [true] : [true, true]);
+			assert.deepEqual(runCompiledLua(source, file.file, optimization), (name === 'nested factory' ? [true] : [true, true]).map(valueBool));
 		}
 	});
 }

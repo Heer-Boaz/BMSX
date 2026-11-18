@@ -1,3 +1,4 @@
+import { valueBool, valueInteger, valueFloat, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -108,7 +109,7 @@ return first == nil, first == second, factory_calls`;
 		for (const optLevel of [0, 3] as const) {
 			const { compiled } = compileWithModule(entrySource, 'factory', moduleSource, [], optLevel);
 			assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)),
-				[tail === 'return', true, 1], `${tail}, O${optLevel}`);
+				[valueBool(tail === 'return'), valueBool(true), valueInteger(1)], `${tail}, O${optLevel}`);
 		}
 	}
 });
@@ -128,7 +129,7 @@ return definition.value, factory_calls`;
 	for (const optLevel of [0, 3] as const) {
 		const { compiled } = compileWithModule(entrySource, 'definition', moduleSource,
 			[{ path: 'create', source: factorySource }], optLevel);
-		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [73, 1]);
+		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [73, 1].map(valueInteger));
 	}
 });
 
@@ -143,7 +144,7 @@ test('only the final single-expression module return publishes a dynamic export'
 		for (const optLevel of [0, 3] as const) {
 			const { compiled } = compileWithModule('local value = require("library"); return value == true, value == nil',
 				'library', source, [], optLevel);
-			assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), expected, `${source}, O${optLevel}`);
+			assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), expected.map(valueBool), `${source}, O${optLevel}`);
 		}
 	}
 });
@@ -174,7 +175,7 @@ test('dynamic module calls observe replaced direct and method fields at every op
 		assert.equal(compiled.metadata.exportProtoIdBySlot.foo__read, undefined);
 		assert.equal(compiled.metadata.exportProtoIdBySlot.foo__method, undefined);
 		const cpu = runCompiledTestSystem(compiled, 100000);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [9, 11]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [9, 11].map(valueInteger));
 	}
 });
 
@@ -200,7 +201,7 @@ test('explicit const-module functions call sibling exports through link symbols'
 	), true);
 	assert.doesNotMatch(compiled.disasm, /\bNEWT\b/, 'const-module exports do not materialize a runtime table');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [6]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(6)]);
 });
 
 test('O3 inlines a known single-result static call target without retaining its closure relocation', () => {
@@ -213,7 +214,7 @@ end`;
 	assert.equal(result.constRelocs.some(reloc => reloc.kind === 'export_proto'), false);
 	assert.doesNotMatch(result.disasm, /\bCALL\b|\bCLOSURE\b/);
 	const cpu = runCompiledTestSystem(result.compiled, 100000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
 });
 
 for (const level of [0, 3] as const) test(`O${level}: static-module predeclaration does not leak later locals into a function's source scope`, () => {
@@ -231,7 +232,7 @@ return { read = read }`;
 	assert.ok(bindings.every(slot => slot.location === null && slot.liveWordRanges.length === 0));
 	assert.deepEqual(program.protos[index].upvalueDescs, []);
 	const cpu = runCompiledTestSystem(compiled, 100000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [42]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
 });
 
 test('bare function modules publish ordinary runtime callbacks with captures, table operations and multiple results', () => {
@@ -253,7 +254,7 @@ return value, count, marker == 'first', next_value, next_count, next_marker == '
 		assert.equal(result.compiled.moduleProtoMap.has('callback'), true, 'a statically required runtime module still has an initializer');
 		assert.equal(result.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.path === 'callback'), false);
 		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(result.compiled, 100000)),
-			[13, 1, true, 17, 2, true, true, 1], `O${optLevel}`);
+			[valueInteger(13), valueInteger(1), valueBool(true), valueInteger(17), valueInteger(2), valueBool(true), valueBool(true), valueInteger(1)], `O${optLevel}`);
 	}
 });
 
@@ -273,7 +274,7 @@ test('cartlib easing calls through its live runtime table', () => {
 	assert.match(compiled.disasm, /\bGETFIELD\b/, 'runtime module calls load the current table field');
 	assert.match(compiled.disasm, /\bNEWT\b/, 'public easing table remains available for Lua API consumers');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [0.5]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueFloat(0.5)]);
 });
 
 for (const optLevel of [0, 3] as const) test(`immutable imports do not turn local snapshots into live bindings (O${optLevel})`, () => {
@@ -291,7 +292,7 @@ local function read() return snapshot, mutable.value, api.value, api == api.earl
 api.value = 20
 mutable = { value = 30 }
 return read()`, 'api', moduleSource, [], optLevel);
-	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [10, 30, 20, true]);
+	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [valueInteger(10), valueInteger(30), valueInteger(20), valueBool(true)]);
 });
 
 test('dynamic module data reads observe table mutations at every optimization level', () => {
@@ -308,7 +309,7 @@ test('dynamic module data reads observe table mutations at every optimization le
 		const { compiled, disasm } = compileWithModule('local api<const> = require("foo")\nreturn api.bump()', 'foo', moduleSource, [], optLevel);
 		assert.match(disasm, /\bGETFIELD\b/, 'mutable fields must be read from the live module table');
 		const cpu = runCompiledTestSystem(compiled, 100000);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [1, 1]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [1, 1].map(valueInteger));
 	}
 });
 
@@ -326,7 +327,7 @@ test('dynamic module function value reads use the live table, not export-proto r
 	), false, 'function value read must not emit an export-proto relocation');
 	assert.match(compiled.disasm, /\bGETFIELD\b/, 'function value read must use the live module table');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
 });
 
 test('optimizer preserves a sibling closure upvalue environment', () => {
@@ -343,7 +344,7 @@ test('optimizer preserves a sibling closure upvalue environment', () => {
 	].join('\n');
 	const { compiled } = compileWithModule('local api<const> = require("foo")\nreturn api.apply(41)', 'foo', moduleSource, [], 3);
 	const cpu = runCompiledTestSystem(compiled, 100000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [41, null]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(41), valueNil()]);
 });
 
 // Nested namespaces in dynamic modules remain ordinary runtime-table paths.
@@ -378,7 +379,7 @@ test('dynamic root-function modules remain runtime values', () => {
 	assert.match(disasm, /\bSET(GL|SYS)\b.*foo\b/, 'module initializer must publish the root function value');
 	assert.match(disasm, /\bGET(GL|SYS)\b.*foo\b/, 'const local require must read the root function value from the export slot');
 	const cpu = runCompiledTestSystem(compiled, 100000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [5]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(5)]);
 });
 
 test('const modules inline export constants without runtime module state', () => {
@@ -444,7 +445,7 @@ test('generated GX register contracts remain compile-time words without runtime 
 			0x0000000a,
 			0x00000001,
 			0x00000002,
-		]);
+		].map(valueInteger));
 	}
 });
 
@@ -479,7 +480,7 @@ test('const module namespace aliases retain their compile-time export path', () 
 	assert.doesNotMatch(disasm, /\bNEWT\b/);
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*assets/);
 	const cpu = runCompiledTestSystem(compiled, 100000);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [20]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(20)]);
 });
 
 test('relocatable const-module values remain operands until the linker supplies them', () => {
@@ -503,7 +504,7 @@ test('relocatable const-module values remain operands until the linker supplies 
 		assert.doesNotMatch(disasm, /\bSHR\b/);
 		assert.match(disasm, /\bLOADK\b/);
 		const cpu = runCompiledTestSystem(compiled, 100000);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [1539]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1539)]);
 	}
 	const cold = compileWithConstModule(
 		'local assets<const> = require("assets")\nreturn assets.len >> 2',
@@ -558,7 +559,7 @@ test('asset-address relocation leaves the final payload length foldable', () => 
 			assert.match(disasm, /\bKSMI\b[^\n]*1539/);
 		}
 		const cpu = runCompiledTestSystem(compiled, 100000);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [0x00801234, 1539]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [0x00801234, 1539].map(valueInteger));
 	}
 });
 
@@ -638,7 +639,7 @@ api.added = 23
 return absent, api["missing"], api.added`;
 	for (const optLevel of [0, 3] as const) {
 		const { compiled } = compileWithModule(entrySource, 'api', 'return { known = 17 }', [], optLevel);
-		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [null, null, 23]);
+		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [valueNil(), valueNil(), valueInteger(23)]);
 	}
 });
 
@@ -671,6 +672,6 @@ test('a global require assignment does not replace compiler module syntax', () =
 	].join('\n');
 	for (const level of [0, 3] as const) {
 		const { compiled } = compileWithModule(source, 'fixture', 'return { value = 17 }', [], level);
-		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [17, false]);
+		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [valueInteger(17), valueBool(false)]);
 	}
 });

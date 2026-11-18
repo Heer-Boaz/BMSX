@@ -1,3 +1,4 @@
+import { valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -41,7 +42,7 @@ test('written empty, nil and unmodeled returns remain distinct first-value facts
 	}
 	assert.deepEqual(checked, ['empty', 'explicit', 'unknown', 'mixed']);
 	assert.deepEqual(runCompiledLua(source + '\nreturn empty() == nil, explicit() == nil, unknown(3), mixed(false) == nil, mixed(true)()', 'returns.lua'),
-		[true, true, 4, true, 7]);
+		[valueBool(true), valueBool(true), valueInteger(4), valueBool(true), valueInteger(7)]);
 });
 
 test('body fallthrough adds nil to the same instantiated return relation as the known callback', () => {
@@ -65,7 +66,7 @@ test('body fallthrough adds nil to the same instantiated return relation as the 
 	const values = [];
 	for (let link = query.values.first(call.result!); link !== 0; link = query.values.next(link)) values.push(query.values.target(link));
 	assert.deepEqual(values, summary.returns);
-	assert.deepEqual(runCompiledLua(source, 'choose.lua'), [true]);
+	assert.deepEqual(runCompiledLua(source, 'choose.lua'), [valueBool(true)]);
 });
 
 test('known and unmodeled written returns both contribute rather than reporting a singleton', () => {
@@ -94,7 +95,7 @@ test('non-exiting bodies do not manufacture nil while unresolved jumps retain un
 	assert.equal(summaries.list()[2].source.completion, LuaCompletion.None);
 	assert.equal(summaries.list()[2].returns.length, 1);
 	for (const optimization of [0, 3] as const) {
-		assert.deepEqual(runCompiledLua('local function jumping() goto result; if false then ::result:: return 9 end end; return jumping()', 'cross-block.lua', optimization), [9]);
+		assert.deepEqual(runCompiledLua('local function jumping() goto result; if false then ::result:: return 9 end end; return jumping()', 'cross-block.lua', optimization), [valueInteger(9)]);
 	}
 });
 

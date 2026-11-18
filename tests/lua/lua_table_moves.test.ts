@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -92,7 +93,7 @@ test('missing separators are inserted before comments; repeated moves do not acc
 	assert.equal(events, 4, 'one event and history element per explicit move');
 	const withSeparator = source.replace('(30)', '(30),');
 	assert.equal(model.buffer.getText(), withSeparator, 'only the grammar-required comma survives the round trip');
-	assert.deepEqual(runCompiledLua(withSeparator + '\nreturn values[1], values[2], values[3]'), [10, 20, 30]);
+	assert.deepEqual(runCompiledLua(withSeparator + '\nreturn values[1], values[2], values[3]'), [10, 20, 30].map(valueInteger));
 	for (let index = 0; index < 4; index += 1) model.undo();
 	assert.equal(model.buffer.getText(), source, 'Undo also restores the formerly absent separator');
 	assert.equal(model.undo(), null);
@@ -111,7 +112,7 @@ test('first, interior and final swaps change actual BLua32 field evaluation and 
 		const model = new EditorTextModel(resource, 'lua', source);
 		const { table, chunk } = parseTable(model.buffer.getText());
 		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, chunk, table, index, index + direction));
-		assert.deepEqual(runCompiledLua(prefix + model.buffer.getText() + '\nreturn order, values[1], values[2], values[3], values[4]'), expected);
+		assert.deepEqual(runCompiledLua(prefix + model.buffer.getText() + '\nreturn order, values[1], values[2], values[3], values[4]'), expected.map(valueInteger));
 	}
 });
 
@@ -123,7 +124,7 @@ test('moving syntax fields does not confuse identical names or mutate nested or 
 	const { table, chunk } = parseTable(model.buffer.getText());
 	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, chunk, table, 0, 1));
 	assert.equal(model.buffer.getText(), 'local values = {\n' + second + first + '}\nlocal other = {7,8}');
-	assert.deepEqual(runCompiledLua(model.buffer.getText() + '\nreturn values.duplicate[1], other[2]'), [1, 8]);
+	assert.deepEqual(runCompiledLua(model.buffer.getText() + '\nreturn values.duplicate[1], other[2]'), [1, 8].map(valueInteger));
 });
 
 test('non-adjacent moves retain the selected source and nested markers through ordinary Undo and Redo', () => {

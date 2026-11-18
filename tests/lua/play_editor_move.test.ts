@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
@@ -158,7 +159,7 @@ test('Play chrome intent moves independently of guest input and Reset replaces o
 	assert.equal(next.session!.execution.paused, true);
 	assert.equal(f.secondPart.activeGroup.model.activeTab, input); assert.equal(f.firstPart.activeGroup.model.findById(input.id), undefined);
 	const game = next.session!.guest.global(buildModuleExportSlotName('game', []));
-	assert.equal(next.session!.guest.readStringMember(game, 'marker'), 34);
+	assert.equal(next.session!.guest.readStringMember(game, 'marker'), valueInteger(34));
 	f.editor.commands.execute('editor.source', f.secondPart.activeGroup.panes.activePane!.commandTarget); await setImmediate(); f.update();
 	const source = f.secondPart.activeGroup.panes.activePane;
 	assert.ok(source instanceof CodeEditorPane && source.input.workingCopy === f.model);

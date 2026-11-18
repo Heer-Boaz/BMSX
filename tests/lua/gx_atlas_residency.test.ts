@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -26,7 +27,7 @@ return {
 	release = function()
 		active_count = active_count - 1
 	end,
-}`): unknown[] {
+}`) {
 	const moduleSources = [
 		{
 			path: 'cartlib/gx/gp0',
@@ -116,7 +117,7 @@ return first_after_third,
 	imgdec.upload_count()
 `);
 
-	assert.deepEqual(result, [1, 0, 1, 0, 1, 1, 4]);
+	assert.deepEqual(result, [1, 0, 1, 0, 1, 1, 4].map(valueInteger));
 });
 
 test('GX atlas admission replaces a fitting cache allocation before evicting unrelated residency', () => {
@@ -155,5 +156,5 @@ return {
 	end,
 }`);
 
-	assert.deepEqual(result, [1, 0, 1, 3]);
+	assert.deepEqual(result, [1, 0, 1, 3].map(valueInteger));
 });

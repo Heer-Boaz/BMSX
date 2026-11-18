@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -68,7 +69,7 @@ return operation(35)`;
 			cartRomBytes: writeTestBlua32Rom(cart.linked),
 		});
 		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [42]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
 	});
 }
 

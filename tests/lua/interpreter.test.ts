@@ -1,3 +1,4 @@
+import { valueInteger, valueNil, valueBool, valueFloat } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runCompiledLua } from './cpu_test_harness';
@@ -13,7 +14,7 @@ end
 return total
 `, INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 1);
-	assert.equal(result[0], 15);
+	assert.equal(result[0], valueInteger(15));
 });
 
 test('supports recursive local functions', () => {
@@ -27,7 +28,7 @@ end
 return fib(5)
 `, INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 1);
-	assert.equal(result[0], 5);
+	assert.equal(result[0], valueInteger(5));
 });
 
 test('does not expose later local declarations to earlier closures', () => {
@@ -40,7 +41,7 @@ local later = 41
 return caller()
 `, INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 1);
-	assert.equal(result[0], null);
+	assert.equal(result[0], valueNil());
 });
 
 test('keeps predeclared locals visible to closures after assignment', () => {
@@ -53,7 +54,7 @@ later = 41
 return caller()
 `, INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 1);
-	assert.equal(result[0], 41);
+	assert.equal(result[0], valueInteger(41));
 });
 
 test('repeat conditions read their body locals instead of same-named globals', () => {
@@ -67,7 +68,7 @@ until ready
 return passes, ready
 `;
 	for (const optLevel of [0, 1, 2, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [3, true]);
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [valueInteger(3), valueBool(true)]);
 	}
 });
 
@@ -84,7 +85,7 @@ end)()
 return passes
 `;
 	for (const optLevel of [0, 1, 2, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [3]);
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [valueInteger(3)]);
 	}
 });
 
@@ -104,7 +105,7 @@ until ready
 return passes, ready
 `;
 	for (const optLevel of [0, 1, 2, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [3, 17]);
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [3, 17].map(valueInteger));
 	}
 });
 
@@ -119,19 +120,19 @@ until *current == 3
 return passes
 `;
 	for (const optLevel of [0, 1, 2, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [3]);
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [valueInteger(3)]);
 	}
 });
 
 test('constant loads and folded arithmetic preserve both signs of zero', () => {
 	const source = `
-local negative<const> = -0
+local negative<const> = -0.0
 local positive<const> = 0
-return -0, 0, negative, positive, -negative, 1 / negative, 1 / positive
+return -0.0, 0, negative, positive, -negative, 1 / negative, 1 / positive
 `;
 	for (const optLevel of [0, 1, 2, 3] as const) {
 		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel),
-			[-0, 0, -0, 0, 0, -Infinity, Infinity]);
+			[valueFloat(-0), valueInteger(0), valueFloat(-0), valueInteger(0), valueFloat(0), valueFloat(-Infinity), valueFloat(Infinity)]);
 	}
 });
 
@@ -139,7 +140,7 @@ test('constant propagation distinguishes signed zero at control-flow joins', () 
 	const source = `
 local function reciprocal(negative)
 	local value
-	if negative then value = -0 else value = 0 end
+	if negative then value = -0.0 else value = 0 end
 	return value, 1 / value
 end
 local negative, negative_reciprocal = reciprocal(true)
@@ -147,7 +148,7 @@ local positive, positive_reciprocal = reciprocal(false)
 return negative, negative_reciprocal, positive, positive_reciprocal
 `;
 	for (const optLevel of [0, 1, 2, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [-0, -Infinity, 0, Infinity]);
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [valueFloat(-0), valueFloat(-Infinity), valueInteger(0), valueFloat(Infinity)]);
 	}
 });
 
@@ -162,7 +163,7 @@ advance()
 return before, sequence
 `;
 	for (const optLevel of [0, 2, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [0, 1]);
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [0, 1].map(valueInteger));
 	}
 });
 
@@ -181,7 +182,7 @@ end
 return read()
 `;
 	for (const optLevel of [0, 2, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [2]);
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [valueInteger(2)]);
 	}
 });
 
@@ -199,8 +200,8 @@ local current = tracker:add(5)
 return tracker.total, current
 `, INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 2);
-	assert.equal(result[0], 15);
-	assert.equal(result[1], 15);
+	assert.equal(result[0], valueInteger(15));
+	assert.equal(result[1], valueInteger(15));
 });
 
 test('supports varargs without runtime library iteration', () => {
@@ -212,7 +213,7 @@ end
 return sum_first_four(1, 2, 3, 4)
 `, INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 1);
-	assert.equal(result[0], 10);
+	assert.equal(result[0], valueInteger(10));
 });
 
 test('supports goto control flow', () => {
@@ -226,19 +227,19 @@ end
 return i
 `, INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 1);
-	assert.equal(result[0], 4);
+	assert.equal(result[0], valueInteger(4));
 });
 
 test('supports bitwise and floor division operators', () => {
 	const result = runCompiledLua('return 0xFF & 0x0F, 0x10 | 0x03, 0x7 ~ 0x4, 8 << 2, -8 >> 1, 7 // 2, ~0', INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 7);
-	assert.equal(result[0], 15);
-	assert.equal(result[1], 19);
-	assert.equal(result[2], 3);
-	assert.equal(result[3], 32);
-	assert.equal(result[4], -4);
-	assert.equal(result[5], 3);
-	assert.equal(result[6], -1);
+	assert.equal(result[0], valueInteger(15));
+	assert.equal(result[1], valueInteger(19));
+	assert.equal(result[2], valueInteger(3));
+	assert.equal(result[3], valueInteger(32));
+	assert.equal(result[4], valueInteger(0x7ffffffc));
+	assert.equal(result[5], valueInteger(3));
+	assert.equal(result[6], valueInteger(-1));
 });
 
 test('string ordering compares lexicographically', () => {
@@ -247,9 +248,9 @@ local values = { 'apple', 'banana' }
 return values[1] < values[2], values[2] < values[1], values[1] <= 'apple'
 `, INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 3);
-	assert.equal(result[0], true);
-	assert.equal(result[1], false);
-	assert.equal(result[2], true);
+	assert.equal(result[0], valueBool(true));
+	assert.equal(result[1], valueBool(false));
+	assert.equal(result[2], valueBool(true));
 });
 
 test('string ordering follows UTF-8 order outside the BMP at every optimization level', () => {
@@ -262,7 +263,7 @@ return values[1] < values[2], values[2] < values[1],
 	for (const optLevel of [0, 2, 3] as const) {
 		assert.deepEqual(
 			runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel),
-			[false, true, false, true, false, true],
+			[false, true, false, true, false, true].map(valueBool),
 		);
 	}
 });
@@ -276,8 +277,8 @@ local module = { optional = optional }
 return module.optional(), optional()
 `, INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 2);
-	assert.equal(result[0], true);
-	assert.equal(result[1], true);
+	assert.equal(result[0], valueBool(true));
+	assert.equal(result[1], valueBool(true));
 });
 
 test('open varargs do not expose stale frame top values', () => {
@@ -293,10 +294,10 @@ end
 return pass(22)
 `, INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 4);
-	assert.equal(result[0], 22);
-	assert.equal(result[1], true);
-	assert.equal(result[2], true);
-	assert.equal(result[3], 6);
+	assert.equal(result[0], valueInteger(22));
+	assert.equal(result[1], valueBool(true));
+	assert.equal(result[2], valueBool(true));
+	assert.equal(result[3], valueInteger(6));
 });
 
 test('multi-expression returns preserve trailing open vararg nil slots', () => {
@@ -307,8 +308,8 @@ end
 return take(0, 11, nil, 7)
 `, INTERPRETER_SEMANTICS_PATH);
 	assert.equal(result.length, 4);
-	assert.equal(result[0], 0);
-	assert.equal(result[1], 11);
-	assert.equal(result[2], null);
-	assert.equal(result[3], 7);
+	assert.equal(result[0], valueInteger(0));
+	assert.equal(result[1], valueInteger(11));
+	assert.equal(result[2], valueNil());
+	assert.equal(result[3], valueInteger(7));
 });
