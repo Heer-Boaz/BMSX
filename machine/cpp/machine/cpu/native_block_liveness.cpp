@@ -82,7 +82,30 @@ void NativeBlockCompiler::analyzeEntryLiveness() {
 	m_entryLive.assign(m_sources.size() * m_liveWordCount, 0);
 	std::vector<u64> uses(m_entryLive.size()), definitions(m_entryLive.size());
 	std::vector<std::array<size_t, 2>> successors(m_sources.size(), {m_sources.size(), m_sources.size()});
+	// A loop can seed its header from the preheader and check the backedge.
+	// At a forward merge, however, the first arm does not own the others'
+	// register kinds. Use the compact bank at those joins instead.
 	for (size_t index = 0; index < m_sources.size(); ++index) {
+		const auto& block = *m_blocks[index];
+		const auto op = static_cast<OpCode>(m_sources[index].instructions.back().decoded->op);
+		const auto edge = [&](const NativeBlockExitSite& exit) {
+			const size_t target = regionEntryIndex(exit.nextPc);
+			if (target != m_sources.size() && target > index) {
+				auto& entry = m_entries[target];
+				entry.planned = entry.hasForwardPredecessor;
+				entry.hasForwardPredecessor = true;
+			}
+			return target;
+		};
+		const auto exit = block.terminal.exit;
+		const bool resumes = exit == NativeBlockExit::Continue || exit == NativeBlockExit::Call || nativeBlockExitResumesFrame(exit);
+		const size_t fallthrough = resumes ? edge(block.terminal) : m_sources.size();
+		size_t alternate = m_sources.size();
+		if (op == OpCode::JMPIF || op == OpCode::JMPIFNOT || nativeBlockComparison(static_cast<u8>(op))) {
+			const auto& taken = block.sideExits.back();
+			if (taken.exit == NativeBlockExit::Continue && taken.nextPc != block.terminal.nextPc)
+				alternate = edge(taken);
+		}
 		const size_t base = index * m_liveWordCount;
 		bool continuing = true;
 		for (const auto& item : m_sources[index].instructions) {
@@ -110,15 +133,7 @@ void NativeBlockCompiler::analyzeEntryLiveness() {
 		}
 		if (!continuing)
 			continue;
-		const auto& block = *m_blocks[index];
-		if (block.terminal.exit == NativeBlockExit::Continue)
-			successors[index][0] = regionEntryIndex(block.terminal.nextPc);
-		const auto op = static_cast<OpCode>(m_sources[index].instructions.back().decoded->op);
-		if (op == OpCode::JMPIF || op == OpCode::JMPIFNOT || nativeBlockComparison(static_cast<u8>(op))) {
-			const auto& alternate = block.sideExits.back();
-			if (alternate.exit == NativeBlockExit::Continue)
-				successors[index][1] = regionEntryIndex(alternate.nextPc);
-		}
+		successors[index] = {fallthrough, alternate};
 	}
 	bool changed;
 	do {

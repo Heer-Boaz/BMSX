@@ -65,6 +65,7 @@ private:
 		sljit_label* guarded = nullptr;
 		sljit_label* proven = nullptr;
 		bool planned = false;
+		bool hasForwardPredecessor = false;
 	};
 	std::vector<Entry> m_entries;
 	size_t m_liveWordCount = 0;

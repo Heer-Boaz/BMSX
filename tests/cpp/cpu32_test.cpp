@@ -519,6 +519,52 @@ void scalarRegions() {
 			require(results.get(0) == valueInteger(3), "word-addressed backward jump");
 	}
 }
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void polymorphicForwardJoin() {
+	Number32Machine machine(operation(OpCode::MOV), false);
+	// Two independently callable predecessors define different kinds in R0.
+	// The join is also a public entry, so even its first caller cannot own R0.
+	const std::array ops{OpCode::K1, OpCode::JMP, OpCode::LOADK, OpCode::JMP, OpCode::MOV, OpCode::JMP};
+	std::array<DecodedInstruction, 6> decoded{};
+	std::array<NativeBlockInstruction, 6> instructions{};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		auto& d = decoded[i];
+		d.op = static_cast<u8>(ops[i]);
+		d.width = 1;
+		d.baseCycles = BASE_CYCLES[d.op];
+		instructions[i] = {&d, 0x3000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	decoded[1].bx = decoded[3].bx = instructions[4].pc;
+	decoded[4].a = 1;
+	decoded[5].bx = 0x4000u;
+	const auto code = std::span(instructions);
+	const std::array sources{NativeBlockSource{code.first(2)}, NativeBlockSource{code.subspan(2, 2)},
+		NativeBlockSource{code.last(2)}};
+	ValueSlots constants(1);
+	constants.set(0, valueFloatBits(0xffa12345));
+	auto& pool = machine.cpu.stringPool();
+	size_t bytes = 0;
+	auto blocks = NativeBlock::compileRegion(
+		sources, constants.view(), NativeCodeBindings(machine.memory, pool, pool.intern("__index")));
+	blocks.front()->region->publish(bytes);
+	const std::array expected{valueInteger(1), constants.get(0), valueBool(true)};
+	for (size_t i = 0; i < blocks.size(); ++i) {
+		ValueSlots registers(2);
+		registers.set(0, valueBool(true));
+		NativeBlockRunState state{};
+		state.registers = registers.view();
+		state.remainingCycles = 100;
+		require(blocks[i]->run(state) == &blocks.back()->terminal,
+			"neither predecessor nor a public entry may deopt at a polymorphic forward join");
+		require(registers.get(0) == expected[i] && registers.get(1) == expected[i],
+			"a forward join transports both tag and payload, including raw Float NaNs");
+		const int prefix = i == 2 ? 0 : blocks[i]->terminal.cycles;
+		require(state.remainingCycles == 100 - prefix - blocks.back()->terminal.cycles,
+			"each predecessor and the common suffix charge only their own instructions");
+	}
+}
+#endif
+
 void typedLoopBoundaries() {
 	// A cold reference CPU visits each loop entry fewer than the native threshold.
 	// The second CPU has the identical physical image precompiled, including
@@ -685,6 +731,9 @@ int main(int argc, char** argv) {
 		nativeOperandFaultPrefix();
 		memoryWords();
 		scalarRegions();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		polymorphicForwardJoin();
+#endif
 		typedLoopBoundaries();
 		constantsGlobalsAndRestore();
 		tableHeap();
