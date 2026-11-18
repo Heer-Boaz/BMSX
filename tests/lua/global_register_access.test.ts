@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { Table } from '../../machine/ts/machine/cpu/table';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { asTable, valueBool, valueInteger, valueIsClosure, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
@@ -35,7 +34,7 @@ return first, second, get('shared').hp, fourth, counter, get('alias') == shared,
 	)));
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 10000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [7, 13, 30, false, null, true, null]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueInteger(13), valueInteger(30), valueBool(false), valueNil(), valueBool(true), valueNil()]);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('alias')!), cpu.getGlobalByKey(cpu.stringPool.find('shared')!));
 });
 
@@ -57,10 +56,10 @@ return before, get('irq'), irq(3), invalid_read, invalid_write, missing_name
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 10000), RunResult.Halted);
 	const values = materializeCpuCompletionValues(cpu);
-	assert.deepEqual(values.slice(0, 2), [null, 99]);
-	assert.deepEqual(values.slice(3), [false, false, false]);
-	assert.equal(values[2], 3);
-	assert.notEqual(cpu.getSystemGlobalByKey(cpu.stringPool.find('irq')!), 99);
+	assert.deepEqual(values.slice(0, 2), [valueNil(), valueInteger(99)]);
+	assert.deepEqual(values.slice(3), [valueBool(false), valueBool(false), valueBool(false)]);
+	assert.equal(values[2], valueInteger(3));
+	assert.ok(valueIsClosure(cpu.getSystemGlobalByKey(cpu.stringPool.find('irq')!)));
 });
 
 test('dynamic names and values survive growth, collection and exact checkpoint restore', () => {
@@ -68,26 +67,26 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 	const count = cpu.globalSlotCount;
 	for (let index = 0; index < 257; index++) {
 		const key = cpu.stringPool.intern(`dynamic${index}`);
-		cpu.setGlobalByKey(key, ValueTag.Number, index, null);
+		cpu.setGlobalByKey(key, valueInteger(index));
 	}
 	const objectKey = cpu.stringPool.intern('object');
 	const object = cpu.createTable(1);
-	object.set(1, 42);
-	cpu.setGlobalByKey(objectKey, ValueTag.Table, NaN, object);
+	object.setInteger(1, valueInteger(42));
+	cpu.setGlobalByKey(objectKey, valueTable(cpu.gc.reference(object)));
 	const nilKey = cpu.stringPool.intern('nil-name');
-	cpu.setGlobalByKey(nilKey, ValueTag.Nil, NaN, null);
+	cpu.setGlobalByKey(nilKey, valueNil());
 	assert.equal(cpu.globalSlotCount, count + 259);
 	cpu.collectTrackedHeapBytes();
 	const names = cpu.stringPool.captureState();
 	const anchor = cpu.captureRuntimeState();
-	for (let index = 0; index < 257; index++) assert.equal(cpu.getGlobalByKey(cpu.stringPool.find(`dynamic${index}`)!), index);
-	cpu.setGlobalByKey(objectKey, ValueTag.Nil, NaN, null);
-	cpu.setGlobalByKey(cpu.stringPool.intern('future'), ValueTag.Number, 100, null);
+	for (let index = 0; index < 257; index++) assert.equal(cpu.getGlobalByKey(cpu.stringPool.find(`dynamic${index}`)!), valueInteger(index));
+	cpu.setGlobalByKey(objectKey, valueNil());
+	cpu.setGlobalByKey(cpu.stringPool.intern('future'), valueInteger(100));
 	cpu.collectTrackedHeapBytes();
 	cpu.stringPool.restoreState(names);
 	cpu.restoreRuntimeState(anchor);
 	assert.deepEqual(cpu.captureRuntimeState(), anchor);
-	assert.equal((cpu.getGlobalByKey(objectKey) as Table).get(1), 42);
+	assert.equal(asTable(cpu.getGlobalByKey(objectKey), cpu.gc).getInteger(1), valueInteger(42));
 	assert.equal(cpu.stringPool.toString(nilKey), 'nil-name');
 	assert.equal(cpu.globalSlotCount, count + 259);
 });
@@ -95,12 +94,12 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 test('registered writes allocate no guest heap and missing reads create no registers', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'global-reuse.lua')));
 	const key = cpu.stringPool.intern('value'), absent = cpu.stringPool.intern('absent');
-	cpu.setGlobalByKey(key, ValueTag.Number, 0, null);
+	cpu.setGlobalByKey(key, valueInteger(0));
 	const count = cpu.globalSlotCount, heap = cpu.luaHeap.captureState();
 	for (let index = 0; index < 10000; index++) {
-		cpu.setGlobalByKey(key, ValueTag.Number, index, null);
-		assert.equal(cpu.getGlobalByKey(key), index);
-		assert.equal(cpu.getGlobalByKey(absent), null);
+		cpu.setGlobalByKey(key, valueInteger(index));
+		assert.equal(cpu.getGlobalByKey(key), valueInteger(index));
+		assert.equal(cpu.getGlobalByKey(absent), valueNil());
 	}
 	assert.equal(cpu.globalSlotCount, count);
 	assert.deepEqual(cpu.luaHeap.captureState(), heap);

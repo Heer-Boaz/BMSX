@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -248,7 +249,7 @@ test('CPU timing store crossing a due VBlank differs from a store after service'
 	const image = linkRawTestSystemBlua32({
 		text,
 		functions: [{ firstWord: 0, wordCount: 7, maxStack: 2 }],
-		constants: [IO_INP_CTRL, timingAddress, PCRTC_SYNCH2_SLOW_WORD],
+		constants: [integerConstant(IO_INP_CTRL), integerConstant(timingAddress), integerConstant(PCRTC_SYNCH2_SLOW_WORD)],
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 0,
 		exceptionFunctionIndex: 0,

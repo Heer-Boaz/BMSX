@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -29,7 +30,7 @@ test('runtime codec preserves a blocked GP0 store and its wakeup', () => {
 	writeInstruction(code, 4, OpCode.RFE, 0, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({
 		text: code, functions: [{ firstWord: 0, wordCount: 4, maxStack: 2 }, { firstWord: 4, wordCount: 1 }],
-		constants: [IO_GX_GPU_GP0, 0x1f000000], systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		constants: [integerConstant(IO_GX_GPU_GP0), integerConstant(0x1f000000)], systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
 		startupFunctionIndex: 0, irqFunctionIndex: 1, exceptionFunctionIndex: 1,
 	});
 	const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, {
@@ -87,7 +88,7 @@ test('runtime restore keeps a GP0 DMA ownership stall distinct from FIFO complet
 	writeInstruction(code, 4, OpCode.RFE, 0, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({
 		text: code, functions: [{ firstWord: 0, wordCount: 4, maxStack: 2 }, { firstWord: 4, wordCount: 1 }],
-		constants: [IO_GX_GPU_GP0, 0xe1000000], systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		constants: [integerConstant(IO_GX_GPU_GP0), integerConstant(0xe1000000)], systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
 		startupFunctionIndex: 0, irqFunctionIndex: 1, exceptionFunctionIndex: 1,
 	});
 	const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, {

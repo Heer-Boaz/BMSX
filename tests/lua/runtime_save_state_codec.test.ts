@@ -61,12 +61,14 @@ function numberedWords(count: number): number[] {
 
 function createRuntimeSaveState(): RuntimeSaveState {
 	const snapshot = new CpuSnapshotWriter(new CpuSnapshot());
-	snapshot.reserveWords(3 * CPU_SNAPSHOT_VALUE_WORDS);
-	snapshot.setWord(0, ValueTag.Number);
-	snapshot.setNumber(1, 7);
-	snapshot.setWord(3, ValueTag.Number);
-	snapshot.setNumber(4, 42);
-	snapshot.setWord(6, ValueTag.Nil);
+	const integer = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
+	snapshot.setWord(integer, ValueTag.Integer);
+	snapshot.setWord(integer + 1, 0x80000001);
+	const float = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
+	snapshot.setWord(float, ValueTag.Float);
+	snapshot.setWord(float + 1, 0xffc00000);
+	const nil = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
+	snapshot.setWord(nil, ValueTag.Nil);
 	const ram = new Uint8Array(PSX_MACHINE_SPEC.ramBytes);
 	ram.set([1, 2, 3, 4]);
 	const audioRegisterWords = numberedWords(APU_PARAMETER_REGISTER_COUNT);
@@ -550,12 +552,12 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				executionCartridgeSlot: 0,
 				programExecutionDomainId: 0,
 				systemGlobals: [
-				{ key: 1, value: 0 },
+				{ key: 1, value: integer },
 			],
 				globalSlots: [
-					{ key: 3, value: 3 },
+					{ key: 3, value: float },
 				],
-				stringIndexTable: 6,
+				stringIndexTable: nil,
 			rootThreadRef: 0,
 			activeThreadRef: 0,
 			completionThreadRef: 0,
