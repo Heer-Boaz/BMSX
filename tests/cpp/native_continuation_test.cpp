@@ -15,6 +15,7 @@
 
 namespace {
 using namespace bmsx;
+constexpr Value callerMarker = valueFloatBits(0xffc01234u);
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
@@ -93,7 +94,7 @@ struct Machine {
 			&& parent->nativeContinuationCells[1] == lookup.entrySlot(parent->pc, 1),
 			"CALL copies the published callsite bindings to its activation");
 		cpu.writeFrameExecution(1, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[1], calleePc());
-		parent->registers[1] = valueNumber(73);
+		parent->registers.set(1, callerMarker);
 		cpu.setGlobalByKey(cpu.stringPool().intern("continuationResult"), valueNil());
 	}
 };
@@ -150,13 +151,14 @@ void boundReturn(bool replaceTargetStorage, bool changeBank) {
 	// still owns the slots; restore it before teardown. A cached RET must not
 	// repeat this lookup even when the source region has been destroyed.
 	auto& root = const_cast<NativeCodeLookup::Root&>(lookup.root(changeBank ? 1u : 0u));
-	auto* group = root[parent->pc >> NativeCodeLookup::ROOT_SHIFT];
-	root[parent->pc >> NativeCodeLookup::ROOT_SHIFT] = nullptr;
+	const auto rootIndex = parent->pc >> NativeCodeLookup::ROOT_SHIFT;
+	auto* group = root[rootIndex];
+	root[rootIndex] = nullptr;
 	machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)]
 		+ BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
-	root[parent->pc >> NativeCodeLookup::ROOT_SHIFT] = group;
+	root[rootIndex] = group;
 	require(machine.cpu.getFrameDepth() == 1
-		&& machine.cpu.getGlobalByKey(machine.cpu.stringPool().intern("continuationResult")) == valueNumber(73),
+		&& machine.cpu.getGlobalByKey(machine.cpu.stringPool().intern("continuationResult")) == callerMarker,
 		"RET follows the current published slot without a hierarchy walk or C++ continuation lookup");
 }
 
@@ -169,7 +171,7 @@ void cartridgeReturnSelectsLiveBank() {
 	writeInstruction(systemImage.text, 3, static_cast<u8>(OpCode::LOADK), 1, 0, 0);
 	writeInstruction(systemImage.text, 4, static_cast<u8>(OpCode::STORE_MEM), 0, 1, static_cast<u8>(MemoryAccessKind::Word));
 	writeInstruction(systemImage.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	systemImage.constants = {static_cast<double>(IO_CART_SELECT)};
+	systemImage.constants = {static_cast<i32>(IO_CART_SELECT)};
 	systemImage.functions = {{.firstWord=0, .wordCount=3, .maxStack=8},
 		{.firstWord=3, .wordCount=3, .numParams=1, .maxStack=2}};
 	systemImage.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
@@ -198,11 +200,11 @@ void cartridgeReturnSelectsLiveBank() {
 		for (int round = 0;; ++round) {
 			const u32 bank = round & 1;
 			memory.writeMappedWord(IO_CART_SELECT, bank ^ 1u);
-			parent->registers[2] = valueNumber(bank);
+			parent->registers.set(2, valueInteger(bank));
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], first.textAddress);
 			cpu.runUntilDepth(0, 8192 + (round & 31));
 			cpu.runUntilDepth(1, 100);
-			require(parent->registers[1] == valueNumber(bank == 0 ? 11 : 22)
+			require(parent->registers.get(1) == valueInteger(bank == 0 ? 11 : 22)
 				&& memory.cartridgeController().selectionWord() == bank,
 				"a callee MMIO SELECT write selects the actual return instructions from the other cartridge");
 			if (round >= 15) {
@@ -245,7 +247,7 @@ void wideContinuationAcrossPage() {
 		require(std::chrono::steady_clock::now() < deadline, "a cross-page return target is eventually published");
 		std::this_thread::yield();
 	}
-	require(parent->registers[1] == valueNumber(42) && lookup.entrySlot(continuation, 1) == cell,
+	require(parent->registers.get(1) == valueInteger(42) && lookup.entrySlot(continuation, 1) == cell,
 		"a warm native return consumes the WIDE instruction on the next physical page");
 }
 
@@ -258,7 +260,10 @@ void observationAndLifecycle(int action) {
 		InstructionObserverBinding binding;
 		binding.points[0].insert(parent->pc);
 		binding.context = &observed;
-		binding.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<unsigned*>(context); };
+		binding.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan registers) {
+			require(registers.get(1) == callerMarker, "observer receives the resumed caller's unmodified Float payload and tag");
+			++*static_cast<unsigned*>(context);
+		};
 		machine.cpu.setInstructionObserver(std::move(binding));
 		machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1);
 		require(observed == 1 && machine.cpu.getFrameDepth() == 1, "retired target obeys a newly installed observer");
@@ -269,13 +274,13 @@ void observationAndLifecycle(int action) {
 		require(!parent->nativeContinuationCells[0] && !parent->next->nativeContinuationCells[0],
 			"restore reconstructs guest activations without old host continuation metadata");
 		machine.cpu.runUntilDepth(1, 100);
-		require(machine.cpu.getFrameDepth() == 1 && parent->top == 4, "restored return retains the original result contract");
+		require(machine.cpu.getFrameDepth() == 1 && parent->top == 4 && parent->registers.get(1) == callerMarker, "restored return retains the original result contract");
 	} else if (action == 2) {
 		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.markerPc());
 		require(!parent->nativeContinuationCells[0], "hot-resume invalidates the caller's former continuation binding");
 		machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
-		require(machine.cpu.getGlobalByKey(machine.cpu.stringPool().intern("continuationResult")) == valueNumber(73),
+		require(machine.cpu.getGlobalByKey(machine.cpu.stringPool().intern("continuationResult")) == callerMarker,
 			"return after hot-resume follows the rewritten caller PC");
 	} else if (action == 3) {
 		machine.cpu.replaceExecutionImage(machine.addresses.resolveSystemDomain());
