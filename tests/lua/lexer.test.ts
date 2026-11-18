@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaSourceLocations } from '../../toolchain/ts/lua/syntax/source_locations';
 import { LuaSyntaxError } from '../../toolchain/ts/lua/errors';
@@ -9,13 +10,6 @@ function lex(source: string): LuaToken[] {
 	const lexer = new LuaLexer(source, 'path');
 	const tokens = lexer.scanTokens();
 	return Array.from(tokens.blocks(), ({ block }) => block.items).flat().filter(token => !isLuaTrivia(token.type));
-}
-
-function requireNumberLiteral(token: LuaToken): number {
-	if (typeof token.literal !== 'number') {
-		throw new Error('Expected numeric literal.');
-	}
-	return token.literal;
 }
 
 function requireStringLiteral(token: LuaToken): string {
@@ -84,12 +78,11 @@ test('parses numeric literals', () => {
 	const tokens = lex('0 42 3.14 .25 6e1 7.5E-2');
 	const numberTokens = tokens.filter((token) => token.type === LuaTokenType.Number);
 	assert.equal(numberTokens.length, 6);
-	assert.equal(requireNumberLiteral(numberTokens[0]), 0);
-	assert.equal(requireNumberLiteral(numberTokens[1]), 42);
-	assert.equal(requireNumberLiteral(numberTokens[2]), 3.14);
-	assert.equal(requireNumberLiteral(numberTokens[3]), 0.25);
-	assert.equal(requireNumberLiteral(numberTokens[4]), 60);
-	assert.equal(Math.abs(requireNumberLiteral(numberTokens[5]) - 0.075) < 1e-12, true);
+	assert.deepEqual(numberTokens.map(token => token.literal), [
+		integerConstant(0), integerConstant(42),
+		{ kind: 'float', word: 0x4048f5c3 }, { kind: 'float', word: 0x3e800000 },
+		{ kind: 'float', word: 0x42700000 }, { kind: 'float', word: 0x3d99999a },
+	]);
 });
 
 test('parses strings with escapes', () => {
@@ -152,8 +145,7 @@ test('parses hexadecimal numeric literals', () => {
 	const tokens = lex('0xFF 0x1.8p+1');
 	const numbers = tokens.filter((token) => token.type === LuaTokenType.Number);
 	assert.equal(numbers.length, 2);
-	assert.equal(requireNumberLiteral(numbers[0]), 255);
-	assert.ok(Math.abs(requireNumberLiteral(numbers[1]) - 3) < 1e-12);
+	assert.deepEqual(numbers.map(token => token.literal), [integerConstant(255), { kind: 'float', word: 0x40400000 }]);
 });
 
 test('parses long bracket strings', () => {
