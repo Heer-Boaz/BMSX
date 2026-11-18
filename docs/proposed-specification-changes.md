@@ -150,7 +150,7 @@ VRAM-leesfunctie uit de console moet verdwijnen.
 | GPU-texturecoherentie | Automatische zichtbaarheid van iedere VRAM-write is geen behoudseis | Texturecache of expliciete textureopslag, capaciteit en laad-/invalidatieregels |
 | GPU-readback | Eenvoudig geordend leespad beoordelen; dubbele context-snapshots niet verplicht | Functieomvang, wachttijd en afhandeling bij contextovername |
 | CPU-timing | Vaste nominale werkklassen met expliciete volumekosten als proef, met C++-/assemblyachtige prestatie-intentie voor normaal BLua-gebruik | Spelvalidatie en beoordeling van de proef; fysieke CPU en kwalificatie blijven afzonderlijk |
-| CPU-taalopslag | De taalheap wordt records in het publieke hoofd-RAM van 4 MiB, inclusief globals, frames en beheer ([§12](#sec-proposal-language-heap)) | Voorstel ter beoordeling; open beslissingen O1–O7; nog niet in handleidingen of runtimes |
+| CPU-taalopslag | De taalheap wordt records in het publieke hoofd-RAM van 4 MiB, inclusief constantenpools, globals, frames en beheer; de GEO-scratchreservering vervalt ([§12](#sec-proposal-language-heap)) | O1–O7 besloten; handleidingen en runtimes volgen per fase |
 | APU-bron en stereoplaatsing | Mono als standaard; onafhankelijke niveaus links en rechts | Programmeringsinterface, representatie en compatibiliteit |
 | APU-belasting | Garantie op basis van werkelijk haalbare belasting onderzoeken | Garantiedomein, eventuele stemlimiet en gedrag bij bereiken daarvan |
 | APU-broncontrole | Bestandsgroottecontrole vervangen door fysiek busgedrag onderzoeken | Exacte adres-, lege-kaart-, BADP- en foutregels en compatibiliteit |
@@ -1720,7 +1720,7 @@ volledige processor te bouwen. Zij blokkeert het nominale proefmodel niet:
 | Instructieaanvoer en rekenwerk | Fetchbreedte, decoder, beschikbare operandpoorten, resultaatpoorten, afhankelijkheden en de gekozen rekeneenheid; refill en meer-cyclusrekenwerk afzonderlijk. |
 | Geheugenwoord en 64-bit waarde | Werkelijke busbreedte, lokale treffer of externe service, volgorde van deeltransfers, pagina- en bankwisseling, refresh en mededinging. |
 | Eigen tabelveld | Geldige huidige sleutel en aanwezigheid, waardeopslag en eventuele vorm- of slothint; het trefferpad én de werkelijk benodigde misserroute. Een vaste offset verkort de adresberekening, niet de externe geheugentransactie. |
-| Gebonden `CALL` en `RET` | Residente closuregegevens, actieve waardeslots, controlestack, framewisseling en PC/domeinwisseling; spills en bestaande plaatsings- en capturevolumes afzonderlijk. Gewone CALL leest het oorspronkelijke functierecord niet opnieuw. |
+| Gebonden `CALL` en `RET` | Residente closuregegevens, actieve waardeslots, controlestack, framewisseling en PC/domeinwisseling; spills en bestaande plaatsings- en capturevolumes afzonderlijk. CALL gebruikt de gegevens van het gedeelde functieprototype ([§12.7](#sec-proposal-language-heap)). |
 | Constructie, groei en tekst | Opslagadmissie, de werkelijk gelezen of geschreven waardeslots of tekst, en hun geheugenservice; geen ongefundeerde toeslag voor het gebruik van Lua of een modulealias. |
 
 Lokale opslag moet een gekozen capaciteit, poortorganisatie en gedrag bij
@@ -1790,16 +1790,18 @@ Verdere fysieke contracten vragen hun eigen uitwerking en besluit.
 
 ## 12. CPU: de taalheap in hoofd-RAM {#sec-proposal-language-heap}
 
-**Status: richting gekozen op 18 november 2026 (B1–B9); dit voorstel werkt haar
-uit en wacht op beoordeling. Handleidingen en runtimes zijn nog niet gewijzigd.**
+**Status: richting gekozen op 18 november 2026 (B1–B9). Na de review van
+dezelfde dag zijn O1–O7 besloten, en de GEO-scratchreservering vervalt als
+richting. Handleidingen en runtimes zijn nog niet gewijzigd; ze veranderen per
+fase samen (12.14).**
 
 Tabellen, closures, captured-variable-cellen, threads met hun frames, strings,
-globals en het beheer van de taalruntime worden records in het publieke
-hoofd-RAM. Een referentiewaarde draagt het gastadres van haar record. Er is dan
-geen afzonderlijk taalbudget naast het RAM meer, en geen hostobjectgraaf als
-tweede machinetoestand. De bezette bytes van een object zijn de bytes die zijn
-record werkelijk in RAM inneemt. Savestate en rewind worden daarmee in
-eindvorm een geheugenkopie plus processortoestand.
+constantenpools, globals en het beheer van de taalruntime worden records in
+het publieke hoofd-RAM. Een referentiewaarde draagt het gastadres van haar
+record. Er is dan geen afzonderlijk taalbudget naast het RAM meer, en geen
+hostobjectgraaf als tweede machinetoestand. De bezette bytes van een object
+zijn de bytes die zijn record werkelijk in RAM inneemt. Savestate en rewind
+worden daarmee in eindvorm een geheugenkopie plus processortoestand.
 
 Dit besluit de open uitvoeringsvraag van de eerder goedgekeurde budgetrichting:
 globals, frames en beheer tellen mee in één fysiek budget, en het publiek
@@ -1815,35 +1817,38 @@ realisaties. Hun **werkgegevens** staan nu in het publieke RAM. Voor hun
 zie [Native programmageheugen](#sec-proposal-native-program-storage). Die vraag
 staat los van dit voorstel.
 
-### 12.1 Gekozen richting en bevestigingen
+### 12.1 Gekozen richting, bevestigingen en reviewbesluiten
 
 | | Keuze | Precedent |
 |---|---|---|
-| B1 | De heap loopt van het einde van de statische opslag tot het einde van RAM, vastgelegd bij de programmastart | PSX `InitHeap` na de BSS; MicroPython `gc_init(start, end)` |
-| B2 | Geen bescherming. Ruwe stores en DMA mogen records overschrijven; dat is een gastfout met deterministische gevolgen. Recordadressen worden gespiegeld | RAM-spiegeling door onvolledige adresdecodering (PSX) |
+| B1 | De heap loopt van het einde van de statische opslag tot het einde van RAM. De CPU legt de vloer vast bij reset en EXEC (12.2) | PSX `InitHeap` na de BSS; MicroPython `gc_init(start, end)`; PPSSPP reserveert een ELF-bereik vóór het schrijven |
+| B2 | Geen bescherming. Ruwe stores en DMA mogen records overschrijven; dat is een gastfout met deterministische gevolgen. Recordtoegangen worden per toegang gespiegeld (12.4) | RAM-spiegeling door onvolledige adresdecodering (PSX); mGBA kiest eerst de regio en past dan het bankmasker toe |
 | B3 | Het adres is de hash van een objectsleutel; `hashId` vervalt | Lua 5.4 `ltable.c` hasht objectsleutels op pointer |
 | B4 | Frames worden records in het stackblok van hun thread | Lua 5.4 `luaE_extendCI` |
 | B5 | Niet-verplaatsende allocator met size classes | Lua, MicroPython |
-| B6 | Allocatie en GC blijven een machinefunctie met de bestaande cycluskosten; het snelle allocatiepad zit inline in de JIT | De GC in de VM |
-| B7 | Stringconstanten zijn ROM-records met een interntabel in ROM; alle strings blijven geïnterneerd | NodeMCU Lua Flash Store |
+| B6 | Allocatie en GC blijven een machinefunctie; het snelle allocatiepad zit inline in de JIT. De cyclustarieven worden per bewerking vastgelegd (O2, 12.6) | De GC in de VM; Luau scheidt markeer- en veegwerk |
+| B7 | Stringconstanten zijn ROM-records met een interntabel in ROM. Alle strings blijven geïnterneerd: eerst RAM, dan ROM (12.9) | NodeMCU Lua Flash Store: eerst `strt`, dan `ROstrt` |
 | B8 | De RAM-basis staat in een vast register; het spiegelmasker is een immediate | Dolphin, PPSSPP, DuckStation |
 | B9 | TS gebruikt één `ArrayBuffer` met getypeerde views, zonder wrappers | v86, jsnes |
 
-De gebruiker heeft bevestigd:
+**Bevestigd door de gebruiker:**
 
-- **Het hoofd-RAM blijft 4 MiB.** De taalheap valt daarbinnen. Het effectieve
-  geheugen daalt van 4 MiB plus 3,5 MiB taalbudget naar 4 MiB in totaal.
+- **Het hoofd-RAM blijft 4 MiB** als uitgangspunt. Dat geldt ook na de correctie
+  van `K` naar ongeveer 2,84 MiB, zie 12.11. De taalheap valt binnen dat RAM.
 - **De `pairs`-volgorde mag veranderen.** [`next`](book1/bios-base.md#sec-bios-base-traversal-argument-selection-globals-and-output)
   belooft nu al alleen "array slots in ascending order, followed by live hash
   slots, according to the Table's current storage". Een andere hashverdeling
   wijzigt dat contract niet. Opgenomen demotijdlijnen die op de volgorde van
   objectsleutels leunen, worden opnieuw opgenomen.
 
-Bij het uitwerken bleken vier keuzes een aanvulling te vragen, die binnen de
-gekozen richting blijft: de vloer bij reset en EXEC (12.2), de spiegeling per
-toegang in plaats van per object (12.3), de opzoekvolgorde bij internering
-(12.6) en de socketbinding van cartridgestrings (12.6). Ze staan ook in de
-[open beslissingen](#sec-proposal-language-heap-open).
+**Akkoord na review.** Vier aanvullingen op B1–B9 zijn aanvaard:
+
+- de CPU zet de vloer, met pagina-uitgifte van boven naar beneden;
+- recordtoegangen worden per toegang gespiegeld;
+- internering zoekt eerst in RAM;
+- bit 31 van een cartridgestringreferentie kiest de socket.
+
+De beslissingen O1–O7 staan in [12.12](#sec-proposal-language-heap-decisions).
 
 ### 12.2 Het heapgebied
 
@@ -1858,11 +1863,10 @@ rapporteert en die de drempelformule gebruikt.
 **Vloer.** De vloer is het einde van de statische opslag van het geactiveerde
 programmabeeld, naar boven afgerond op 4 KiB:
 `max(DATA-run-adres + DATA-lengte, BSS-adres + BSS-lengte)`. De CPU leest die
-velden (`44H`–`50H` van de programmaheader) bij reset en bij EXEC. Die
-velden zijn nu beschrijvend en worden dan gelezen.
+velden (`44H`–`50H` van de programmaheader) bij reset en bij EXEC. Die velden
+zijn nu beschrijvend en worden dan gelezen.
 
-**Waarom de CPU de vloer zet bij reset en EXEC.** B1 noemt de BIOS als de partij
-die de heap bij de start vastlegt. Het opstartverloop laat zien dat de vloer al
+**Waarom de CPU de vloer zet.** Het opstartverloop laat zien dat de vloer al
 vóór de eerste BIOS-instructie moet bestaan:
 
 | Moment | Wat alloceert | Geldende vloer |
@@ -1874,20 +1878,28 @@ vóór de eerste BIOS-instructie moet bestaan:
 | EXEC naar de cartridge | Constantenpool en globaltoewijzing van het cartridgebeeld | **Einde cartridge-BSS**, door EXEC uit het doelbeeld gelezen |
 | Cartridge-startup | DATA kopiëren, BSS wissen, module-init, entry | Idem |
 
-EXEC behoudt de globalbanken en de BIOS-bindingen. BIOS-objecten leven dus
-door na de overdracht, en de cartridge wist daarna zijn BSS. Pagina's worden
-daarom **van boven naar beneden** uitgegeven, hoogste vrije pagina eerst.
-BIOS-objecten liggen dan hoog in RAM, ver boven de cartridge-BSS. Een
-activering die de vloer verhoogt boven een nog bezette pagina, voert eerst een
-volledige collectie uit. Ligt er daarna nog steeds een bezette pagina onder de
-nieuwe vloer, dan mislukt de activering met een hard halt, zoals bij een
-ongeldig startuprecord. Bij de huidige beelden gebeurt dat pas als de BIOS bij
-de overdracht vrijwel het hele heapgebied van ongeveer 2,85 MiB bezet houdt.
+EXEC behoudt de globalbanken en de BIOS-bindingen. Globals en andere levende
+objecten overleven dus de overdracht, en de cartridge wist daarna haar BSS.
+Pagina's worden daarom **van boven naar beneden** uitgegeven, hoogste vrije
+pagina eerst. BIOS-objecten liggen dan hoog in RAM, ver boven de cartridge-BSS.
 
-EXEC zet de vloer zelf. Zo valt elke EXEC-route onder dezelfde regel: de
-BIOS-overdracht, EXEC tussen cartridgebeelden, en een herhaalde startup. Een
-verlaagde vloer is altijd toegestaan. De statische opslag van het vorige beeld
-wordt dan heapruimte.
+**Grensgeval.** Overlapt de statische opslag van het nieuwe beeld een bezette
+heappagina, dan gaat het zo:
+
+1. EXEC voert eerst een volledige collectie uit.
+2. Ligt er daarna nog een bezette pagina onder de nieuwe vloer, dan wijst EXEC
+   de overdracht af met een hard halt, zoals bij een ongeldig startuprecord.
+
+De afwijzing valt vóór de eerste instructie van het nieuwe beeld. Er is dan nog
+geen byte van zijn DATA of BSS geschreven. PPSSPP doet hetzelfde bij het laden
+van een ELF op een vast adres: eerst het hele bereik reserveren, daarna pas de
+segmenten schrijven. Bij de huidige beelden gebeurt dit alleen als de BIOS bij
+de overdracht vrijwel het hele heapgebied bezet houdt.
+
+**Elke EXEC-route.** EXEC zet de vloer zelf, dus elke EXEC-route valt onder
+dezelfde regel: de BIOS-overdracht, EXEC tussen cartridgebeelden en een
+herhaalde startup. Een verlaagde vloer is altijd toegestaan. De statische
+opslag van het vorige beeld wordt dan heapruimte.
 
 **Plaatsing van cartridgeopslag.** [Memory](book1/memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)
 staat nu elke ongereserveerde plaatsing van cartridge-DATA/BSS toe. Met deze
@@ -1895,33 +1907,82 @@ regel is de heap alles boven het hoogste statische byte. Een plaatsing hoog in
 RAM is dus nog steeds geldig, maar laat weinig heap over. De compacte indeling
 blijft de aanbevolen vorm.
 
-**Instructies uit het heapgebied.** Een instructie-fetch uit `[vloer, 08400000H)`
-wordt geweigerd zoals een fetch uit system-I/O: `InstructionBusError`, zonder
-busread. Recordschrijfacties hoeven dan geen RAM-schrijfwatches te controleren.
-Dat houdt het hete pad van tabel- en upvaluestores vrij. De runtimecompiler van
-de BIOS zet zijn code in een BSS-arena onder de vloer en wordt hierdoor niet
-geraakt. Dit is open beslissing O1.
+**Uitvoerbaar RAM blijft (O1).** Instructies mogen uit het hele geïnstalleerde
+hoofd-RAM buiten de I/O-apertuur blijven komen, ook uit het heapgebied.
+Recordschrijfacties melden hun gewijzigde bereik aan dezelfde
+RAM-schrijfwatches als gewone stores, voor zover ze eerder gedecodeerde code
+kunnen raken. Een aaneengesloten reeks, zoals een kopie of rehash, geeft één
+melding, net als bij DMA.
 
-### 12.3 Adressering en spiegeling
+De kosten zijn één bytelezing en een vertakking per recordstore of per reeks.
+Dat is hetzelfde pad als de bestaande `STORE_MEM`-controle. DuckStation
+invalideert vertaalde code op dezelfde manier wanneer een bewaakte RAM-pagina
+wordt beschreven.
+
+### 12.3 De GEO-scratchreservering vervalt
+
+**Richting uit de review.** De vaste reservering van 512 KiB op
+`[08040000H, 080C0000H)` vervalt. GEO krijgt bron- en doeladressen van het
+programma ([GEO](book1/geo.md)). Geen apparaat en geen runtime-eigenaar hangt
+aan dat vaste adres. De enige gebruikers zijn studiosoftware en de bouw- en
+budgetconstanten:
+
+| Gebruiker | Nu | Daarna |
+|---|---|---|
+| `cartlib/collision/collision_2d.lua` | Vast adres `08040000H` en 512 KiB voor instances, resultaten en samenvatting | De cartridge reserveert de buffer in haar eigen BSS en geeft adres en capaciteit aan `cartlib` |
+| `carts/bare_metal_cart/cart.lua` | Gebruikt `08040000H` als textuurbuffer | Eigen BSS-buffer |
+| Linker (`DYNAMIC_RAM_BASE`) | System-DATA begint op `080C0000H` | System-DATA begint direct na de I/O-reservering, op `08040000H` |
+| `LuaHeap` (`BASE_RAM_USED_SIZE = GEO_SCRATCH_SIZE`) | Capaciteit `ramBytes − 512 KiB` = 3,5 MiB | Tijdens de infrastructuurfase expliciet vast op 3,5 MiB; vanaf de tabelfase `K` |
+
+**Omvang van de buffer.** De grootste post is de lijst met mogelijke
+contactresultaten. Bij 64 colliders kost ruimte voor alle 2.016 mogelijke
+contacten, met 36 bytes per resultaat, 72,4 KiB inclusief instances en
+samenvatting. Een spel kan een kleinere resultaatbuffer opgeven. GEO meldt
+`RESULT_CAPACITY` zodra een daadwerkelijke treffer niet meer past.
+
+Een aparte GEO-RAM is voor de huidige opdrachten niet nodig. De Seibu-COP uit
+*Raiden II* leest in MAME posities en hitboxen uit de adresruimte van het spel
+en houdt alleen de twee onderzochte objecten lokaal bij. BMSX heeft ook al
+lokale rekenbuffers: de polygon- en clippingarrays van `OVERLAP2D` beslaan in
+C++ samen 6 KiB.
+
+**Gevolg voor `K`.** Het heapgebied groeit met 512 KiB, min de GEO-buffer die
+de cartridge zelf declareert. Bereken `K` per ROM opnieuw zodra dat zo is
+(12.11).
+
+### 12.4 Adressering en spiegeling
 
 **Referenties.** Een Table-, Closure-, Thread- of String-waarde draagt in haar
 32-bit payload het adres van haar record. Een RAM-record heeft een adres in
-`08000000H`–`083FFFFFH`. ROM-strings staan in 12.6. Captured-variable-cellen
+`08000000H`–`083FFFFFH`. ROM-strings staan in 12.9. Captured-variable-cellen
 zijn geen taalwaarden; ze worden alleen vanuit closures en threads gerefereerd.
+Dit vervangt de huidige hostafhankelijke referentie: een pointer op ARM32, een
+directory-index op 64-bit hosts.
 
-**Spiegeling per toegang.** Elke toegang van de CPU tot een record berekent het
-byteadres `A` (record plus veldoffset, of blok plus index) en leest of schrijft
-het RAM-byte op offset `A mod 4 MiB`. Woordtoegangen negeren daarbij de laagste
-twee bits: offset `A AND 003FFFFCH`. Bytetoegangen gebruiken `A AND 003FFFFFH`.
+**Bereik.** Een recordtoegang blijft binnen de RAM-bank. Ze wordt **niet**
+begrensd tot haar allocatie: daarvoor zou de grootte van de allocatie nodig
+zijn, en B2 kiest bewust geen bescherming. Een corrupte referentie of index
+leest of schrijft dus andere RAM-bytes, niet buiten RAM.
 
-De regel geldt voor kopvelden, geïndexeerde slots, ketenlinks en
-allocatorbeheer, dus niet alleen voor de eerste dereferentie van een object.
-Het voorwerk noemde één masker per object. Dat volstaat niet: een corrupte
-array- of hashcapaciteit levert indices op die voorbij de buffer reiken. De
-uitlijning zit in het masker omdat een TS-`Uint32Array`-index de laagste bits
-al wegvalt, terwijl een C++-load op ARMv7 ongeuitlijnd zou lezen. Zonder
-uitlijning in het masker zou een corrupte referentie op de twee hosts
-verschillend uitpakken.
+**Breedte en adresberekening.** Recordtoegangen zijn 1 of 4 bytes breed.
+Voor een toegang op byteadres `A`, dat is record plus veldoffset of blok plus
+index:
+
+| Breedte | RAM-offset | Gevolg |
+|---|---|---|
+| 4 bytes | `A AND 003FFFFCH` | Uitgelijnd; overschrijdt nooit het einde van RAM |
+| 1 byte | `A AND 003FFFFFH` | |
+
+Een bewerking over meer woorden, zoals een kopie, een rehash of een
+stackverschuiving, rekent elk woord apart zo uit. De regel geldt voor kopvelden,
+geïndexeerde slots, ketenlinks en allocatorbeheer, dus niet alleen voor de
+eerste dereferentie van een object.
+
+Eén masker per object volstaat niet. Een corrupte array- of hashcapaciteit
+levert indices op die voorbij de buffer reiken. De uitlijning zit in het masker
+omdat een TS-`Uint32Array`-index de laagste bits al wegvalt, terwijl een
+C++-load op ARMv7 ongeuitlijnd zou lezen. Zonder uitlijning in het masker zou
+een corrupte referentie op de twee hosts verschillend uitpakken.
 
 **Geen bus.** Recordtoegangen gaan rechtstreeks naar de RAM-opslag, niet over
 de gemapte bus:
@@ -1929,9 +1990,10 @@ de gemapte bus:
 - Ze raken geen I/O-decoder. Een gemaskeerde offset onder `00010440H` leest de
   RAM-bytes onder de registerapertuur, niet de registers.
 - Ze geven geen busfout.
-- Ze gaan niet langs schrijfwatches of DMA-arbitrage.
+- Ze lopen niet via DMA-arbitrage.
 
-Hun kosten zitten in de bestaande instructie- en collectiekosten.
+Schrijfacties melden zich wel bij de RAM-schrijfwatches (O1, 12.2). Hun kosten
+zitten in de bestaande instructie- en collectiekosten.
 
 **De bus blijft ongespiegeld.** Voor gewone loads, stores en DMA blijft gelden
 wat [Memory](book1/memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)
@@ -1939,27 +2001,27 @@ zegt: `[08400000H, 10000000H)` is geen spiegel van het geïnstalleerde RAM. De
 spiegeling is een eigenschap van het recordpad van de CPU. Zie het als een
 interne adreseenheid die alleen de lage 22 adresbits aanstuurt.
 
-**Uitvoering in de hosts.** De uitkomst moet op elke host bitgelijk zijn.
+**Uitvoering in de hosts.** TS en C++ moeten bitgelijk gedrag geven.
 
-- **TS** gebruikt `ram32[(A & 0x3FFFFC) >>> 2]` en `ram8[A & 0x3FFFFF]` per
-  toegang.
-- **C++** maskeert per toegang. Per object mag het ook één keer, mits de host
-  vooraf controleert dat het volledige recordbereik binnen RAM ligt
-  (`basis + maskeer(A) + omvang ≤ 4 MiB`), met terugval op maskering per
-  toegang. Dat is één vergelijking per object.
+- **TS** gebruikt per toegang `ram32[(A & 0x3FFFFC) >>> 2]` en
+  `ram8[A & 0x3FFFFF]`.
+- **C++** maskeert per toegang. Een snelle controle vooraf mag ook, mits ze alle
+  volgende adressen met hun volledige breedte dekt: gemaskeerd begin plus de
+  omvang van alle volgende toegangen ≤ 4 MiB, anders terug naar maskering per
+  toegang. BMSX doet dat al voor aaneengesloten DMA-transfers.
 - **Kosten ten opzichte van nu:**
   - x86-64 en AArch64: één `and` per veld bovenop de basis-plus-indexload.
   - ARMv7: `add`, `ubfx` en `ldr` met geschaalde index, tegenover één
-    `ldr [obj, #off]` nu. Met de vergelijking per object blijft het één extra
-    instructie per object.
-  - Het voorwerk rekende met één instructie per dereferentie. Dat gold voor
-    maskering per object zonder bereikcontrole.
+    `ldr [obj, #off]` nu.
+  - Met de controle vooraf schatten we voor het snelle pad één extra
+    ARMv7-instructie per object. Dat is een schatting, nog geen meting.
 
 **JIT-ABI (B8).** De RAM-basis staat in een vast sljit-register. De gewone
 `LOAD_MEM`- en `STORE_MEM`-paden gebruiken nu een immediate host-pointer en
-stappen in fase 1 ook over op dat register. Dat is de eerste gebruiker.
+stappen in de infrastructuurfase ook over op dat register. Dat is de eerste
+gebruiker.
 
-### 12.4 Records
+### 12.5 Records
 
 Alle velden zijn u32 little-endian, tenzij anders vermeld. Records zijn op
 8 bytes uitgelijnd. Elk zelfstandig object begint met een **kopwoord**:
@@ -1970,41 +2032,35 @@ Alle velden zijn u32 little-endian, tenzij anders vermeld. Records zijn op
 - byte 3: soortafhankelijk.
 
 Een vrij slot heeft soort 0 en draagt in zijn tweede woord de volgende vrije
-plaats. Eigen blokken van een object (onderdelen, stack, buckets) hebben geen
-kopwoord. Ze liggen in pagina's die het paginabeheer als "eigen blok" markeert.
-De sweep slaat die pagina's over, en de eigenaar geeft zijn blok vrij.
+plaats. Eigen blokken van een object (onderdelen, stack, buckets, pools)
+hebben geen kopwoord. Ze liggen in pagina's die het paginabeheer als "eigen
+blok" markeert. De sweep slaat die pagina's over, en de eigenaar geeft zijn
+blok vrij.
 
 De indelingen hieronder zijn het voorstel. Elke migratiefase legt ze definitief
 vast met haar representatietabel. Ze worden **geen publieke
 programmeerinterface**: de handleidingen publiceren het gebied, de
 spiegelregel en de bezette bytes, en verklaren de inhoud van het heapgebied
-runtime-eigendom met een gereserveerde indeling. Zo hoeft niet elke fase een
-handleiding te wijzigen.
+runtime-eigendom met een gereserveerde indeling.
 
 | Object | Indeling | Bezette bytes |
 |---|---|---|
 | Table | Kop van 32 bytes: kopwoord, grijze link, metatable, onderdelenblok, arraycapaciteit `A`, hashcapaciteit `H`, lengtehint, `hashFree`. Onderdelenblok: `A + 2H` payloadwoorden, `H` ketenwoorden en `A + 2H` tagbytes | `32 + S(5A + 14H)`; het blok vervalt bij `A = H = 0` |
-| Closure | Kopwoord (byte 3 = `U`; vlaggen met VARARG en domein), grijze link, functierecordadres, codeadres, `numParams`/`maxStack` (2 × u16), daarna `U` upvalue-referenties | `S(20 + 4U)` |
+| Closure (O5) | Kopwoord (byte 3 = `U`; vlaggen met domein), grijze link, adres van het functieprototype, daarna `U` celreferenties | `S(12 + 4U)` |
 | Captured-variable-cel | Kopwoord (open/gesloten, tag van de gesloten waarde); payloadwoord bij gesloten, of stackindex bij open; thread-referentie bij open; volgende open cel | `16` |
-| Thread | Kop van 64 bytes: status, grijze link, resumer, entry, stackblok, capaciteit `V`, stacktop, framegegevens, fout, kop van de open cellen. Stackblok: `V` woorden, `V` tagbytes en het framegebied | `64 + S(stackblok)`; framerecords in fase 6 |
+| Thread | Kop van 64 bytes: status, grijze link, resumer, entry, stackblok, capaciteit `V`, stacktop, framegegevens, fout, kop van de open cellen. Stackblok: `V` woorden, `V` tagbytes en het framegebied | `64 + S(stackblok)`; framerecords in de fase van threads en frames |
 | String | Kopwoord (vlag ROM), hash, bytelengte `n`, volgende in de bucket, daarna `n` bytes | RAM: `S(16 + n)`. ROM: 0 |
 | Interntabel | Blok van `B` bucketwoorden (macht van twee) | `S(4B)` |
-| Globalbank (systeem, cartridge) | Blok met waardeslots, plus een naam-naar-slot-index | `S(5G)` plus de index |
-| Geactiveerd programmabeeld | Constantenpool (`C` waardeslots) en globaltoewijzing (`N` slotnummers) | `S(5C) + S(4N)` |
+| Constantenpool per geactiveerd beeld (O6) | `C` waardeslots: `C` payloadwoorden en `C` tagbytes | `S(5C)` |
+| Globaltoewijzing per geactiveerd beeld (O6) | `N` slotnummers voor de naamindices van het beeld | `S(4N)` |
+| Globalbank, systeem en gewoon (O6) | Blok met `G` waardeslots, plus een naam-naar-slot-index | `S(5G)` plus de index |
 
 **Grijze link.** Het woord dat `hashId` vrijmaakt (B3), wordt de opdringerige
 grijze link van tabellen, closures en threads. Strings en cellen worden zonder
 grijze lijst gemarkeerd: een string is een blad, en een cel markeert direct haar
-waarde. Er is dus geen begrensde markeerstack met een overloopregel nodig, en de
-koppen van Table (32) en Thread (64) blijven even groot.
+waarde. Er is dus geen begrensde markeerstack met een overloopregel nodig.
 
-**Closure: vier bytes erbij.** Volgens [Function and upvalue records](book1/program-images.md#sec-memory-function-and-upvalue-records)
-verandert het herschrijven van een functierecord alleen latere constructies,
-niet een bestaande closure. Volgens [CPU-uitvoering](#sec-proposal-cpu-execution)
-leest een gewone CALL het functierecord niet opnieuw. De closure moet dus
-codeadres, parameters en maxStack zelf dragen. Zie O5.
-
-**Size classes (B5).** `S(n)` is de bezette grootte van een aanvraag van
+**Size classes (B5).** `S(n)` is de toegewezen blokgrootte van een aanvraag van
 `n` bytes:
 
 | Aanvraag `n` | Afgerond op een veelvoud van |
@@ -2023,34 +2079,108 @@ keuze van pagina en slot moet daarom in TS en C++ bitgelijk zijn, met alle
 allocatortoestand in RAM. Dat is een implementatiecontract tussen de runtimes,
 geen handleidingregel.
 
-### 12.5 Bezette bytes, collectie en geheugenfout
+### 12.6 Bezetting, collectiecycli en geheugenfout (O2)
 
-- **Bezette bytes** zijn de size-class-groottes van alle toegewezen allocaties,
-  inclusief eigen blokken en nog niet geveegde onbereikbare objecten.
-  `collectgarbage('count')` rapporteert die. Vrije slots in gedeeltelijk
-  gebruikte pagina's en het beheergebied tellen niet mee. Zie O2.
-- **De cycluskosten van de GC** blijven `ceil(bezette bytes / 4)` per scan en
-  per onderzochte allocatie, met de bezette bytes uit 12.4. De rij voor de
-  stringdirectory wordt "één interntabelbucket onderzoeken: 1". Vrije slots
-  overslaan en eigen-blokpagina's overslaan is allocatorbeheer en kost niets
-  extra, zoals nu.
-- **Toelating.** Een aanvraag slaagt als er een vrij slot van haar klasse is, of
-  een vrije pagina of paginareeks binnen `[vloer, 083FC000H)`. Lukt dat niet,
-  dan volgt de bestaande noodroute: de actieve cyclus afmaken, één verse
-  volledige cyclus, opnieuw proberen, en anders de Lua-geheugenfout met
-  `OUT_OF_MEMORY` als die niet wordt afgehandeld. **Nieuw:** door versnippering
-  kan een aanvraag mislukken terwijl `count` kleiner is dan `K`. De handleiding
-  moet dat zeggen. Het appendix-onderzoek naar een niet-verplaatsende pool
-  voorzag dit al.
-- **Drempelformule.** Die blijft ongewijzigd, met `K` uit 12.2. `K` hangt nu af
-  van de statische opslag van het geactiveerde beeld.
-- **Corrupte records.** Allocator en collector moeten op corrupte records
-  begrensd blijven: geen eindeloze lus en geen toegang buiten de hostbuffer.
-  Het gevolg is fout maar deterministisch, en op alle hosts gelijk. Het
-  mechanisme, bijvoorbeeld een begrenzing per cyclus van het aantal
-  grijze-lijststappen, wordt in fase 7 vastgelegd.
+**Bezetting.** Toelating en `collectgarbage('count')` gebruiken de werkelijk
+toegewezen blokgrootte `S(n)` van alle allocaties. Daaronder vallen eigen
+blokken en nog niet geveegde onbereikbare objecten. Vrije slots in
+gedeeltelijk gebruikte pagina's en het beheergebied tellen niet mee.
 
-### 12.6 ROM-strings en internering (B7)
+**Collectiecycli per bewerking.** Het huidige tarief `ceil(occupied bytes / 4)`
+vervalt voor scannen en vegen. Met afgeronde blokgroottes zou alleen de padding
+de GC al trager maken. De tarieven volgen nu het werk zelf:
+
+| Werk | Voorstel |
+|---|---|
+| Een object markeren en scannen | De kopwoorden van het record plus 1 per onderzocht waardeslot of referentie. Table: `8 + A + 2H`. Closure: `3 + U`. Cel: `4`. Thread: `16` plus de onderzochte stackslots en framewoorden |
+| Een string of een object zonder inhoud markeren | `1` |
+| Een pagina vegen | `1` per bezocht blok, bezet of vrij; een paginareeks telt als één blok. Vrijgeven kost niets extra; dat is allocatorbeheer |
+| Eén interntabelbucket onderzoeken | `1`, zoals nu één stringdirectoryslot |
+| Zwakke tabel: één convergentiepass, of entries wissen | `A + 2H` per tabel |
+| Constant- en globalwortels | Ongewijzigd: `2C + 3(S + G)` per pass |
+
+De staptarget van 4.096 werkcycli, het allocatietegoed `max(256, floor(W/16))`
+en de ondeelbaarheidsregels blijven. Deze tarieven moeten in TS en C++ dezelfde
+gasttijd geven. De rij voor het verkleinen van een threadstack wordt in de fase
+van threads en frames herzien. Luau maakt hetzelfde onderscheid tussen
+markeerwerk per object en veegwerk per bezocht blok.
+
+**Toelating.** Een aanvraag slaagt als er een vrij slot van haar klasse is, of
+een vrije pagina of paginareeks binnen `[vloer, 083FC000H)`. Lukt dat niet,
+dan volgt de bestaande noodroute: de actieve cyclus afmaken, één verse
+volledige cyclus, opnieuw proberen, en anders de Lua-geheugenfout met
+`OUT_OF_MEMORY` als die niet wordt afgehandeld. **Nieuw:** door versnippering
+kan een aanvraag mislukken terwijl `count` kleiner is dan `K`. De handleiding
+moet dat zeggen.
+
+**Drempelformule.** Die blijft ongewijzigd, met `K` uit 12.2. `K` hangt nu af
+van de statische opslag van het geactiveerde beeld.
+
+**Corrupte records.** Allocator en collector moeten op corrupte records
+begrensd blijven: geen eindeloze lus en geen toegang buiten de hostbuffer. Het
+gevolg is fout maar deterministisch, en op alle hosts gelijk. Het mechanisme,
+bijvoorbeeld een begrenzing per cyclus van het aantal grijze-lijststappen,
+wordt in de fase van het GC-beheer vastgelegd.
+
+### 12.7 Closures en functieprototypes (O5)
+
+**Besluit: het closuremodel van Lua.** Een closure verwijst naar een gedeeld
+functieprototype en bindt haar eigen upvalue-cellen volgens de lexicale scope.
+Het prototype is het bestaande functierecord. `CALL` gebruikt de gegevens van
+dat prototype: codeadres, parameters, maxStack en vlaggen. De omvang van een
+closure volgt uit haar indeling: `S(12 + 4U)`.
+
+**De garantie over herschrijven vervalt.** Een functierecord herschrijven
+terwijl closures of actieve frames het gebruiken, is een programmafout. Dat
+ligt in lijn met de vaste `Proto` in Lua. De runtimes blijven wel
+deterministisch: een cache met prototypegegevens van een record in RAM hangt
+aan dezelfde schrijfwatches als gedecodeerde code (O1). Voor records in ROM
+speelt dit niet.
+
+Waar de garantie vandaan kwam:
+
+- Op 9 november verwachtte een test dat een bestaande closure na zo'n write de
+  nieuwe functie uitvoerde.
+- Op 12 november draaide `fe38862cd` die verwachting om, zodat het native
+  aanroeppad de bij `CLOSURE` vastgelegde gegevens kon gebruiken.
+- In `carts` en `cartlib` is statisch geen afhankelijkheid gevonden.
+
+| Onderdeel | Uitwerking |
+|---|---|
+| Runtime en JIT | Closures van dezelfde functiedefinitie delen één stabiel prototype. De JIT mag prototypegegevens per aanroepplek inbouwen; voor een prototype in RAM vervalt die code via de schrijfwatches |
+| Toolchain en BIOS-`load` | Het bestaande functierecord is het prototype. Er is geen nieuw ROM-formaat of nieuwe instructie nodig. De BIOS-linker vult het RAM-blok vóór de eerste closure wordt gemaakt, en een levende closure houdt dat blok al in leven. Een nieuwe functiedefinitie krijgt een nieuw prototype |
+| Studio en Hot Resume | Studio herschrijft nu afzonderlijke functievelden in levende ROM-closures. Voortaan koppelt de expliciete revisieovergang de betrokken closures aan het nieuwe prototype, met behoud van hun identiteit en captures. Actieve frames gaan via de bestaande relocatie |
+| Tests en snapshots | De assertions die een uitkomst eisen na het overschrijven van een levend record (`tests/lua/cpu_compiled_calls.test.ts`) worden vervangen. Dekking voor `CALL`/`RET`, stackgroei, gedeelde captures, `load` en Hot Resume blijft. Snapshot en restore herstellen gedeelde prototypes en cellen als gedeelde objecten |
+
+In §11 verandert de rij "Gebonden `CALL` en `RET`" mee: CALL leest de gegevens
+van het gedeelde prototype. Het tarief van `CLOSURE` wordt in de fase van
+closures herzien.
+
+### 12.8 Constantenpools en globals in gast-RAM (O6)
+
+**Besluit.** Gast-RAM wordt de opslag die de CPU daadwerkelijk gebruikt. Nu
+decodeert C++ bij beeldactivatie de constanten naar een hostvector en
+registreert het namen in twee machinebrede globalbanken. Die
+uitvoeringsgegevens verhuizen naar gast-RAM. De gewone allocatie telt hun
+ruimte één keer mee. Een aparte boekhoudkundige heffing op host-arrays vervalt.
+
+| Gegeven | Eigenaar en opslag |
+|---|---|
+| Oorspronkelijke constantrecords, namen en ROM-stringtekst | Blijven in het ROM-beeld. Een verwijzing naar een ROM-string kost in de gedecodeerde pool alleen de ruimte van het slot |
+| Gedecodeerde constanten en de koppeling van naamindices aan globale slots | Per geactiveerd programmabeeld in gast-RAM |
+| Gewone globals en systeemglobals | Hun actuele waarden staan in twee afzonderlijke banken in gast-RAM. Bij EXEC behoudt een bestaande naam binnen dezelfde bank zijn waarde |
+| Compilatie, symbolen en revisiegegevens | Studio mag eigen pools en indices in hostgeheugen houden. Bij inspectie of wijziging van een live global leest of schrijft Studio het echte gastslot. Bij Hot Resume installeert de runtime de nieuwe uitvoeringspool en koppelt de nieuwe naamindices aan de bestaande globale waarden |
+
+De slots bevatten gastreferenties: recordadressen voor tabellen, closures en
+threads. Numbers houden de geldende semantiek: Integer is int32 en Float is
+binary32. De review noemde binary64, maar sinds de int32/float32-merge op
+master geldt dat niet meer.
+
+Interpreter, JIT en GC gebruiken dezelfde RAM-opslag. Bouwt de JIT een
+constante in native code in, dan vernieuwt vervanging van de pool, bijvoorbeeld
+bij Hot Resume, ook de code die ervan afhangt.
+
+### 12.9 ROM-strings en internering (B7, O3)
 
 **Recordvorm in ROM.** Een ROM-stringrecord heeft dezelfde indeling als een
 RAM-stringrecord, met de ROM-vlag gezet: kopwoord, hash, bytelengte, volgende
@@ -2065,7 +2195,7 @@ publiek formaatgegeven.
 | Header `30H`/`34H` | Stringadres en stringbytes, beschrijvend | ROM-stringtabel: bucketadres en aantal buckets (macht van twee), door de CPU gelezen. Bucket = `hash AND (aantal − 1)` |
 | Constante, tag 4 | Tekstadres op `04H` en lengte op `08H` | Adres van het stringrecord op `04H`; `08H` ongebruikt |
 | Naamrecord | 8 bytes: tekstadres en lengte | 4 bytes: adres van het stringrecord |
-| UTF-8-controle bij activering | Ongeldige reeksen laten de activering mislukken | Vervalt samen met de goedgekeurde [byte-strings](#sec-proposal-byte-strings). Fase 5 en die wijziging horen bij elkaar |
+| UTF-8-controle bij activering | Ongeldige reeksen laten de activering mislukken | Vervalt samen met de goedgekeurde [byte-strings](#sec-proposal-byte-strings). De fase van strings en die wijziging horen bij elkaar |
 
 **Internering: eerst RAM, dan ROM.** Een nieuwe bytereeks krijgt als identiteit,
 in deze volgorde:
@@ -2076,29 +2206,33 @@ in deze volgorde:
    volgorde van activering;
 4. anders een nieuw RAM-record.
 
-Bij activering lost een beeld zijn stringconstanten en namen via dezelfde regel
-op, naar zijn constantenpool in RAM.
+Bij activering lost een beeld zijn stringconstanten en globale namen via
+dezelfde regel op, naar zijn constantenpool en globaltoewijzing in RAM.
 
-B7 noemde "ROM eerst". Dat breekt de identiteit zodra er na RAM-strings een
-nieuw beeld wordt geactiveerd. Voorbeeld: de BIOS maakt vóór EXEC
-`tostring(1)`, dus een RAM-string `"1"`, en de cartridge heeft een constante
-`"1"`. Met ROM eerst krijgen gelijke strings dan twee adressen. NodeMCU omzeilt
-dit door bij een nieuwe flashstore opnieuw op te starten. BMSX doet dat niet bij
-EXEC.
+Dit is ook de volgorde van NodeMCU. Die zoekt een nieuwe korte string eerst in
+`strt` (RAM) en dan in `ROstrt`, en voegt alleen een onopgeloste string aan
+`strt` toe. Het voorwerk noemde dit ten onrechte "ROM eerst".
 
-Met RAM eerst ontstaat na activering nooit meer een RAM-record voor bytes die
-in een geactiveerde ROM-tabel staan. Een eerder RAM-record blijft zolang iets
-ernaar verwijst, en zo lang blijft het ook de identiteit. Dat geldt ook voor de
-constantenpool die het oploste. Gelijke levende strings hebben zo altijd één
-adres.
+Met ROM eerst zou de identiteit breken zodra er na RAM-strings een nieuw beeld
+wordt geactiveerd. Voorbeeld: de BIOS maakt vóór EXEC `tostring(1)`, dus een
+RAM-string `"1"`, en de cartridge heeft een constante `"1"`. Met RAM eerst
+ontstaat na activering nooit meer een RAM-record voor bytes die in een
+geactiveerde ROM-tabel staan. Een eerder RAM-record blijft zolang iets ernaar
+verwijst, ook de constantenpool die het oploste. Zo heeft gelijke levende
+inhoud één identiteit, ook over EXEC en tussen sockets.
+
+**Toets.** Een BIOS-tabel met sleutel `"1"` geeft dezelfde waarde terug wanneer
+de cartridge haar eigen constante `"1"` als sleutel gebruikt.
 
 **Socketbinding van cartridgestrings.** Cartridgeadressen zijn in beide sockets
 gelijk ([Cartridge](book3/cartridge.md#sec-cartridge-selection-and-execution)).
-Een String-payload met alleen een ROM-adres is dus dubbelzinnig. Voorstel: bij
-een record in de cartridge-ROM van socket 1 is bit 31 van de referentie gezet.
-Het cartridge-ROM-venster `10000000H`–`2FFFFFFFH` gebruikt dat bit nooit.
+Een String-payload met alleen een ROM-adres is dus dubbelzinnig. Bij een record
+in de cartridge-ROM van socket 1 is daarom bit 31 van de referentie gezet. Het
+cartridge-ROM-venster `10000000H`–`2FFFFFFFH` gebruikt dat bit nooit. openMSX
+heeft een vergelijkbaar precedent: zijn slotgerichte leesfunctie combineert een
+adres met primaire en secundaire slotbits.
 
-Het recordpad leest:
+Het recordpad kiest eerst de regio en past dan het masker van die regio toe:
 
 - payload `< 08000000H` uit system-ROM;
 - payload in het RAM-venster uit RAM, gemaskeerd;
@@ -2112,7 +2246,7 @@ nul. Het recordpad leest nooit I/O, MMIO of cartridge-RAM.
 Wordt een kaart verwijderd of verwisseld, dan leest een record in die socket de
 nieuwe inhoud of nullen. De tekst is dan fout, maar deterministisch.
 Gelijkheid verandert niet, want die gaat op identiteit. Houd de kaart dus
-geplaatst zolang haar strings in gebruik zijn. Het alternatief staat in O3.
+geplaatst zolang haar strings in gebruik zijn.
 
 **Gemeten omvang** (constanten en namen, unieke teksten):
 
@@ -2122,8 +2256,7 @@ geplaatst zolang haar strings in gebruik zijn. Het alternatief staat in O3.
 | `nemesis_s.rom` | 1.738 | 36.719 | 71.160 bytes |
 | `pietious.rom` | 1.743 | 37.209 | 71.880 bytes |
 
-De winst van ROM-records zit dus vooral in de cartridge: ongeveer 70 KiB per
-spel, ruim 2% van de heap.
+De winst van ROM-records zit vooral in de cartridge: ongeveer 70 KiB per spel.
 
 **Hash van tabelsleutels.** String-sleutels hashen op identiteit, net als
 objectsleutels. De huidige C++-`scalarValueHash` doet dat al met het `StringId`.
@@ -2131,17 +2264,17 @@ Een tabelopzoeking dereferenceert de string dus niet. Alleen
 stringbewerkingen lezen het record, met de regiokeuze hierboven, in trage paden
 en builtins.
 
-### 12.7 De rol van de BIOS bij allocatie en collectie
+### 12.10 De rol van de BIOS bij allocatie en collectie
 
 - **Uitvoering.** Allocatie en collectie zijn CPU-functies (B6). De BIOS bevat
   geen allocator of collector voor taalwaarden.
 - **Interface.** De publieke interface blijft
   [`collectgarbage`](book1/bios-base.md#sec-bios-base-collectgarbage) over de
-  primitief `vm_collect_garbage`. `'count'` en `'capacity'` gaan over het
+  primitief `vm_collect_garbage`. `'count'` rapporteert de toegewezen
+  blokgroottes (12.6). `'capacity'` rapporteert `K`. Beide gaan over het
   heapgebied in hoofd-RAM. De zin "This does not include addressable RAM or
   VRAM" wordt omgekeerd: de capaciteit is een deel van het hoofd-RAM. Een nieuw
-  register of een nieuwe BIOS-functie is niet nodig. Publiceren gebeurt via
-  `capacity` en de vloerregel.
+  register of een nieuwe BIOS-functie is niet nodig.
 - **Opstart.** De BIOS hoeft bij de overdracht niets extra te doen. EXEC
   verhoogt de vloer en collecteert alleen als een bezette pagina in de weg zit.
   De levende BIOS-objecten blijven bovenin staan, want de heap is
@@ -2151,13 +2284,13 @@ en builtins.
   collectie.
 - **Grootste vaste verbruiker.** De BIOS-BSS meet 285.888 bytes. Daarvan is
   256 KiB de codearena van de runtimecompiler (`runtime_code_arena` in
-  `compiler/arena.lua`). Als de heap krap blijkt, is die arena de grootste
-  hefboom. Dit voorstel wijzigt haar niet.
+  `compiler/arena.lua`). Als de heap krap blijkt, is die arena een hefboom. Dit
+  voorstel wijzigt haar niet.
 
-### 12.8 Capaciteit bij 4 MiB
+### 12.11 Capaciteit bij 4 MiB
 
 De getallen komen uit de programmaheaders van de huidige beelden (`dist/`,
-16 november 2026):
+16 november 2026), met de huidige GEO-reservering:
 
 | | Nemesis | Pietious |
 |---|---:|---:|
@@ -2168,6 +2301,11 @@ De getallen komen uit de programmaheaders van de huidige beelden (`dist/`,
 | Heapgebied | 2.990.080 B (2,85 MiB) | 3.006.464 B (2,87 MiB) |
 | Na het beheergebied (`K`) | 2.973.696 B (2,84 MiB) | 2.990.080 B (2,85 MiB) |
 
+Zonder de GEO-reservering (12.3) groeit `K` met 512 KiB, min de GEO-buffer van
+de cartridge. Met een buffer voor 64 colliders (72,4 KiB) komt dat uit op
+ongeveer 3,27 MiB voor Nemesis. Bereken `K` per ROM opnieuw zodra de cartridge
+haar buffer declareert.
+
 Ter vergelijking:
 
 - het huidige losse budget is 3,5 MiB;
@@ -2175,84 +2313,91 @@ Ter vergelijking:
   1.048.400 bytes voor Starcatch (zie de bijlage);
 - de Pietious-heap telde bij de rewindmeting 22,8k objecten.
 
-De nieuwe recordgroottes verhogen de last met de size-class-afronding (gemiddeld
-ruim 10%), de stringkoppen, de framerecords, en de globals en constantenpools
-die nu nog niet worden belast. Een meting van de piek tijdens gameplay met de
-nieuwe groottes volgt in fase 3, zodra tabellen echte records zijn; fase 2 meet
-eerst de gameplaypiek onder de huidige charges. Blijkt de
-marge te klein, dan zijn de BIOS-codearena en de cartridge-BSS de eerste
-hefbomen. Een grotere RAM-omvang is een productkeuze die hier niet wordt
-gemaakt.
+**Tijdens de infrastructuurfase** houdt `LuaHeap` zijn capaciteit van 3,5 MiB.
+Die wordt dan ontkoppeld van `BASE_RAM_USED_SIZE`, want die constante hangt aan
+de GEO-reservering.
 
-### 12.9 Open beslissingen {#sec-proposal-language-heap-open}
+**Meting.** De gameplaypiek wordt gemeten met de nieuwe boekhouding zodra die
+beschikbaar is, vanaf de tabelfase. De keuze voor 4 MiB wacht daar niet op.
 
-| | Vraag | Opties | Aanbeveling |
-|---|---|---|---|
-| O1 | Instructies uit het heapgebied | (a) Fetch weigeren met `InstructionBusError`. (b) Recordwrites controleren schrijfwatches. (c) Niets regelen | **(a).** Geen kosten in het hete pad. Het precedent is "System I/O and cartridge MMIO do not supply instructions". (c) maakt een verouderde gedecodeerde pagina hostafhankelijk |
-| O2 | Basis van de bezette bytes | (a) Size-class-grootte. (b) Recordgrootte | **(a).** Eén getal voor toelating, `count` en cycluskosten. Eerlijk: het is wat RAM kost. Vraagt de klassenformule in de handleiding |
-| O3 | Cartridgestrings (B7) | (a) ROM-records met socketbit en internering RAM eerst (12.6). (b) Alleen systeem-ROM-records; cartridgestrings bij activering naar RAM kopiëren, ongeveer 70 KiB per spel | **(a).** Houdt B7 waar de strings zitten. Scherpe rand: verwijderen of verwisselen van de kaart, gedocumenteerd als programmafout. (b) is de eenvoudige terugvaloptie |
-| O4 | Wie zet de vloer bij EXEC | (a) EXEC uit de velden van het doelbeeld. (b) De BIOS vóór EXEC via een nieuw CP0-register | **(a).** Reset heeft de regel toch nodig, en (a) dekt elke EXEC-route |
-| O5 | Closurebinding | (a) De bestaande regel houden: closure `S(20 + 4U)`. (b) De closure leest het functierecord bij CALL: `S(16 + 4U)`, plus een recordread per CALL | **(a).** Sluit aan bij de CPU-uitvoeringsrichting in §11 |
-| O6 | Constantenpools en globalbanken | (a) RAM-objecten, belast. (b) Afgeleide hostcaches, onbelast | **(a).** Eén machinetoestand. Globals tellen volgens de goedgekeurde budgetrichting mee |
-| O7 | Moment van de handleidingwijziging | (a) In één keer na akkoord; de runtimes volgen per fase. (b) Per fase, samen met de runtimes | **(b).** Dit document schrijft voor dat een vastgesteld contract samen in handleidingen en runtimes wordt verwerkt; (a) zou de handleidingen fasenlang laten afwijken. De infrastructuurfase wijzigt dan alleen wat zij invoert: heapgebied, vloer, beheergebied, fetchweigering en de spiegelregel. De belastingsrijen en recordregels volgen met de fase die ze invoert |
+### 12.12 Beslissingen {#sec-proposal-language-heap-decisions}
 
-### 12.10 Hoofdstukken die mee veranderen
+Alle beslissingen zijn op 18 november 2026 na de review genomen.
 
-| Handleiding | Sectie | Wijziging |
+| | Vraag | Besluit |
 |---|---|---|
-| `book1/console.md` | Resourcetabel en inleiding | Het hoofd-RAM bevat ook de taalheap |
-| `book1/memory.md` | Reserved and cartridge storage in main RAM | De reserveringstabel krijgt het heapgebied en het beheergebied. De zin "Neither … defines a free arena …" vervalt. De vloerregel komt erbij, en wat die betekent voor andere plaatsingen. De zin over geen spiegel blijft en geldt voor de bus |
-| `book1/memory.md` | Addressed buffers and program storage | Bestemmingen buiten het heapgebied; gevolg van schrijven erin |
-| `book1/cpu.md` | Resourcetabel (taalbudget van 3,5 MiB) | Wordt: het heapgebied in hoofd-RAM |
-| `book1/cpu.md` | Language allocation and lifetime | Allocaties hebben een RAM-adres. Spiegeling per toegang, recordinhoud gereserveerd, schrijven door het programma is een programmafout |
-| `book1/cpu.md` | Collection work charge | De tabel met bezette bytes (12.4, size classes); de rij voor de stringdirectory; de zin "not charged by a separate frame-record size" (fase 6); `K` in de drempelformule; versnippering bij toelating |
-| `book1/cpu.md` | Instruction alignment and read faults | Geen fetch uit het heapgebied (O1) |
-| `book1/cpu.md` | EXEC en Execution domains | EXEC zet de vloer; mislukking door bezette pagina's; socketbinding van cartridgestrings (O3) |
-| `book1/blua-programs.md` | Language execution storage and byte RAM; Values are not byte buffers | Herschrijven: taalwaarden hebben records in RAM, maar hun indeling is geen programmeerinterface. Kopiëren behoudt identiteit. De zin "not a cartridge-addressable byte stack" blijft in betekenis |
-| `book1/program-images.md` | BLua32 executable image | De velden `30H`/`34H` en `44H`–`50H` worden gelezen |
-| `book1/program-images.md` | Constant and name records | Tag 4 en het naamrecord verwijzen naar stringrecords. Recordindeling, ROM-stringtabel en FNV-1a erbij. Samen met de byte-strings |
-| `book1/program-images.md` | Reset and cartridge startup; State at cartridge entry | De vloer bij reset en EXEC; BIOS-objecten bovenin |
-| `book1/coroutines.md` | Opslag van threads | Framerecords in het stackblok (fase 6); de betekenis van `Out of memory.` blijft |
-| `book1/bios-base.md` | Overzichtstabel; Allocation-pool management | `count`/`capacity` over het heapgebied in hoofd-RAM |
-| `book1/bios-table.md` | Rij `Out of memory.` | De betekenis blijft; geen wijziging nodig |
-| `book3/cartridge.md` | Selection and execution | Strings uit cartridge-ROM blijven aan hun socket gebonden (O3) |
-| `book4/hardware.md` | Runtime memory; Native-processor execution candidate | De private DRAM-bank vervalt als referentie. Werkgegevens staan in het publieke RAM |
-| Dit document | Overzichtstabel, status bovenaan, bijlagen *Private geheugenbanken* en *Runtimecapaciteit* | Bijwerken naar deze richting |
+| O1 | Instructies uit het heapgebied | **Uitvoerbaar hoofd-RAM blijft.** Recordwrites melden hun gewijzigde bereik aan de RAM-schrijfwatches; een aaneengesloten reeks geeft één melding. Een nieuwe zichtbare `InstructionBusError` alleen om een controle bij tabelstores te besparen, is onvoldoende reden (12.2) |
+| O2 | Bezetting en GC-cycli | **Toelating en `count` gebruiken de toegewezen blokgrootte. GC-cycli worden per bewerking geprijsd:** markeren per onderzocht slot, vegen per bezocht blok (12.6) |
+| O3 | Cartridgestrings | **ROM-records, internering eerst RAM, bit 31 kiest de socket.** Dat geldt ook voor ROM-constanten en globale namen (12.9) |
+| O4 | Wie zet de vloer bij EXEC | **De CPU**, bij reset en EXEC, met pagina-uitgifte van boven naar beneden. EXEC wijst een overdracht af vóór de startup als statische opslag een levende pagina overlapt (12.2) |
+| O5 | Closurebinding | **Het model van Lua:** gedeeld prototype, eigen cellen. De garantie over herschrijven vervalt (12.7) |
+| O6 | Constantenpools en globals | **In gast-RAM**, als de opslag die de CPU werkelijk gebruikt (12.8) |
+| O7 | Handleidingen | **Per fase, samen met beide runtimes** (12.13) |
 
-`dma.md`, `geo.md` en `imgdec.md` hoeven niet te veranderen. Hun
-RAM-bestemmingen liggen al "outside reserved storage", en `geo.md` beschrijft
-al dat schrijven in gereserveerd RAM de onderliggende bytes wijzigt. Het
-heapgebied valt onder die regel zodra `memory.md` het als gereserveerde opslag
-noemt.
+### 12.13 Hoofdstukken die mee veranderen
 
-### 12.11 Fasering
+Per fase leggen de handleidingen vast wat een cartridgebouwer moet weten:
 
-1. **Dit voorstel.** De handleidingen veranderen per fase, samen met de runtimes (O7).
+- wie de GEO-buffers reserveert;
+- wat `count` rapporteert;
+- welke toestand EXEC behoudt;
+- welke closure- en capturesemantiek geldt;
+- wanneer een bewerking faalt.
+
+Offsets van runtime-eigen records blijven in dit voorstel.
+
+| Handleiding | Sectie | Wijziging | Fase |
+|---|---|---|---|
+| `book1/console.md` | Resourcetabel en inleiding | Het hoofd-RAM bevat ook de taalheap | Infrastructuur |
+| `book1/memory.md` | Reserved and cartridge storage in main RAM | De reserveringstabel krijgt het heapgebied en het beheergebied, en de GEO-reservering vervalt. De zin "Neither … defines a free arena …" vervalt. De vloerregel komt erbij, en wat die betekent voor andere plaatsingen. De zin over geen spiegel blijft en geldt voor de bus | Infrastructuur, GEO |
+| `book1/memory.md` | Addressed buffers and program storage | GEO-buffers horen in de statische opslag van de cartridge; gevolg van schrijven in het heapgebied | GEO |
+| `book1/geo.md` | Launching and observing a job | Buffers komen uit de cartridge, niet uit een systeemreservering; dimensionering van de resultaatbuffer met `RESULT_CAPACITY` | GEO |
+| `book1/cpu.md` | Resourcetabel (taalbudget van 3,5 MiB) | Wordt: het heapgebied in hoofd-RAM | Tabellen (`K` wordt de capaciteit) |
+| `book1/cpu.md` | Language allocation and lifetime | Allocaties hebben een RAM-adres. Spiegeling per toegang; recordinhoud gereserveerd; schrijven door het programma is een programmafout | Infrastructuur |
+| `book1/cpu.md` | Collection work charge | Bezetting volgens size classes; tarieven per bewerking (O2); `K` in de drempelformule; versnippering bij toelating; de framezin | Per objectsoort, met haar fase |
+| `book1/cpu.md` | Closures and captured variables | Gedeeld prototype; geen garantie bij herschrijven van een levend record | Closures |
+| `book1/cpu.md` | EXEC en Execution domains | EXEC zet de vloer en wijst af bij overlap; socketbinding van cartridgestrings | Infrastructuur, strings |
+| `book1/blua-programs.md` | Language execution storage and byte RAM; Values are not byte buffers | Taalwaarden hebben records in RAM, maar hun indeling is geen programmeerinterface. Kopiëren behoudt identiteit | Infrastructuur |
+| `book1/program-images.md` | BLua32 executable image | De velden `44H`–`50H` worden gelezen (vloer), later ook `30H`/`34H` (stringtabel) | Infrastructuur, strings |
+| `book1/program-images.md` | Constant and name records | Tag 4 en het naamrecord verwijzen naar stringrecords; recordindeling, ROM-stringtabel en FNV-1a erbij; samen met de byte-strings | Strings |
+| `book1/program-images.md` | Function and upvalue records | "Rewriting a record changes the data bound by a later construction" vervalt; het record is het gedeelde prototype | Closures |
+| `book1/program-images.md` | Reset and cartridge startup; State at cartridge entry | De vloer bij reset en EXEC; BIOS-objecten bovenin; afwijzing bij overlap | Infrastructuur |
+| `book1/coroutines.md` | Opslag van threads | Framerecords in het stackblok; de betekenis van `Out of memory.` blijft | Threads en frames |
+| `book1/bios-base.md` | Overzichtstabel; Allocation-pool management | `count`/`capacity` over het heapgebied in hoofd-RAM | Tabellen |
+| `book3/cartridge.md` | Selection and execution | Strings uit cartridge-ROM blijven aan hun socket gebonden | Strings |
+| `book4/hardware.md` | Runtime memory; Native-processor execution candidate | De private DRAM-bank vervalt als referentie; werkgegevens staan in het publieke RAM | Infrastructuur |
+| Dit document | §11 (`CALL`/`RET`, `CLOSURE`), overzichtstabel, bijlagen | Bijwerken naar deze richting | Steeds bij de betrokken fase |
+
+`dma.md` en `imgdec.md` hoeven niet te veranderen. Hun RAM-bestemmingen liggen
+al "outside reserved storage". Het heapgebied valt onder die regel zodra
+`memory.md` het als gereserveerde opslag noemt.
+
+### 12.14 Fasering
+
+1. **Dit voorstel.** De handleidingen veranderen per fase, samen met de runtimes
+   (O7).
 2. **Infrastructuur.**
-   - De vloer en het beheergebied.
+   - De vloer, met afwijzing bij overlap, en het beheergebied.
    - De allocator met size classes, in TS en C++ gespiegeld en bitgelijk.
    - Het RAM-basisregister in de JIT-ABI, met `LOAD_MEM`/`STORE_MEM` als
      eerste gebruiker.
    - Eén `ArrayBuffer` met `Uint8Array`- en `Uint32Array`-views in TS.
-   - De fetchweigering (O1).
-   - Een meting van de piekbezetting tijdens gameplay onder de huidige charges,
-     met de bestaande demotijdlijnen. Tot nu toe zijn alleen opstartpieken
-     zonder invoer gemeten, en voor Pietious geen.
-
-   `LuaHeap` houdt in deze fase zijn huidige capaciteit. Zo veroorzaakt de
-   infrastructuur geen geheugenfout die nog niemand heeft onderzocht.
+   - De meldregel voor recordwrites aan de schrijfwatches (O1).
+   - `LuaHeap` expliciet op 3,5 MiB, los van `BASE_RAM_USED_SIZE`.
 
    Vóór de gespiegelde edits komen de representatietabel en de hete
    callsites.
-3. **Tabellen.** `K` wordt de capaciteit, een zichtbare daling van 3,5 MiB naar
-   ongeveer 2,84 MiB. Daarbij komt een nieuwe meting van de piekbezetting met
-   echte tabelrecords.
-4. **Closures en captured-variable-cellen.**
-5. **Strings**, samen met de byte-strings.
-6. **Threads en frames.**
-7. **GC-beheer, globalbanken en constantenpools in RAM.** Daarna vervalt de
+3. **GEO-reservering weg.** Geheugenkaart, linker, `cartlib`, de bare-metal-demo
+   en `memory.md`/`geo.md`. Deze stap staat los van de heapfasen, maar komt
+   vóór de tabelfase, zodat `K` meteen de definitieve indeling volgt.
+4. **Tabellen.** `K` wordt de capaciteit; de gameplaypiek wordt gemeten met de
+   nieuwe boekhouding.
+5. **Closures en captured-variable-cellen**, met de prototypes (O5).
+6. **Strings**, samen met de byte-strings.
+7. **Threads en frames.**
+8. **GC-beheer, globalbanken en constantenpools in RAM** (O6). Daarna vervalt de
    graafcapture.
-8. **Rewind** met dirty pages via de bestaande RAM-schrijfwatches.
+9. **Rewind** met dirty pages via de bestaande RAM-schrijfwatches.
 
 
 ## 13. Lua-compatibele byte-strings {#sec-proposal-byte-strings}
