@@ -998,6 +998,60 @@ void weakCanonicalClosuresAndStaticEntry() {
 	}
 }
 
+// The caller executes from writable RAM; its callee and function record stay in ROM.
+void rewriteActiveReturnAddress() {
+	const u32 callerPc = DYNAMIC_RAM_BASE + 2 * MAPPED_PAGE_BYTE_SIZE;
+	test::Blua32TestImage image; image.text.resize(8 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 1, 2);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::MOV), 6, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}, {.firstWord = 6, .wordCount = 2}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	CpuMachine native(image, false), scalar(image, true);
+	for (auto* m : {&native, &scalar}) {
+		m->memory.writeBytes(callerPc, m->rom.bytes.data() + m->rom.textAddress, 6 * INSTRUCTION_BYTES);
+		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], callerPc);
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 20000);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& pages = native.cpu.activeThread()->firstFrame->executionImage->decodedPages;
+	const auto& ramPage = pages.at(callerPc);
+	const u32 calleePc = native.rom.textAddress + 6 * INSTRUCTION_BYTES;
+	const auto& romPage = pages.at(calleePc & ~MAPPED_PAGE_BYTE_MASK);
+	test::waitForNativeEntry(native.cpu, ramPage, 4);
+	test::waitForNativeEntry(native.cpu, romPage, (calleePc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+	require(romPage.nativeBlocks->entries[(calleePc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]->terminal.exit == NativeBlockExit::Return,
+		"callee has a generated return while the original RAM continuation is still live");
+#endif
+	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
+	const u32 returnPc = callerPc + 4 * INSTRUCTION_BYTES;
+	std::vector<u8> replacement(INSTRUCTION_BYTES);
+	writeInstruction(replacement, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	for (auto* m : {&native, &scalar}) {
+		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], callerPc + 2 * INSTRUCTION_BYTES);
+		m->cpu.activeThread()->firstFrame->registers.set(6, valueInteger(73));
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
+	for (auto* m : {&native, &scalar}) {
+		require(m->cpu.activeThread()->frameDepth == 2 && m->cpu.activeThread()->firstFrame->pc == returnPc,
+			"the original caller is suspended at its generated return address");
+		m->memory.writeMappedWord(returnPc, readLE32(replacement.data()));
+	}
+	require(test::runCpuParity(native.cpu, scalar.cpu, 100) == RunResult::Halted,
+		"RET executes the replacement HALT rather than the retired MOV and backedge");
+	for (auto* m : {&native, &scalar}) {
+		require(m->cpu.activeThread()->frameDepth == 1 && m->cpu.readFramePc(0) == returnPc + INSTRUCTION_BYTES
+			&& m->cpu.readFrameRegister(0, 0) == valueInteger(1) && m->cpu.readFrameRegister(0, 6) == valueInteger(73),
+			"RET transfers the result once without executing the obsolete caller instruction");
+	}
+	requireParity(native, scalar);
+}
+
 void crossPageCalls(bool open, u32 recordOffset) {
 	const int callPrefix = BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + 2 * BASE_CYCLES[static_cast<u8>(OpCode::LOADK)]
 		+ BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
@@ -1177,6 +1231,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 
 int main() {
 	try {
+		rewriteActiveReturnAddress();
 		ownedValueStack();
 		reusableFrameChain();
 		inactiveFrameMetadata();

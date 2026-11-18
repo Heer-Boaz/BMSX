@@ -5,14 +5,15 @@ import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { valueBool, valueFloatBits, valueInteger, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
-import { writeLE32 } from '../../machine/ts/common/endian';
+import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { DECODED_PAGE_WORDS } from '../../machine/ts/machine/cpu/execution_image';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_RECORD_SIZE } from '../../machine/ts/spec/blua32/image_format';
+import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { LUA_FAULT_REASON_CALL_NON_FUNCTION } from '../../machine/ts/spec/blua32/cop0';
+import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
@@ -303,4 +304,108 @@ test('CALL retains varargs below the relocated fixed-parameter window', () => {
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
 	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(7), valueInteger(99));
+});
+
+for (const wide of [false, true]) test(`generated CALL/RET preserve full state and fault boundaries (WIDE: ${wide})`, () => {
+	const callBody = wide ? 4 : 3;
+	const calleeStart = callBody + 3;
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
+	writeInstruction(text, 2, OpCode.MOV, 0, 4, 0);
+	if (wide) writeInstruction(text, 3, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, callBody, OpCode.CALL, 0, 1, 2);
+	writeInstruction(text, callBody + 1, OpCode.MOV, 6, 0, 0);
+	writeInstruction(text, callBody + 2, OpCode.JMP, 0, 63, wide ? 59 : 60, 255);
+	writeInstruction(text, calleeStart, OpCode.K1, 0, 0, 0);
+	writeInstruction(text, calleeStart + 1, OpCode.RET, 0, 2, 0);
+	writeInstruction(text, calleeStart + 2, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [
+		{ firstWord: 0, wordCount: calleeStart, maxStack: 8 }, { firstWord: calleeStart, wordCount: 2 }, { firstWord: calleeStart + 2, wordCount: 1 },
+	], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	assert.equal(runCpuParity(js, ref, 10001), RunResult.Yielded);
+	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+	const executionImage = js.rootThread.frameAtDepth(0).executionImage;
+	const exits = new Set([...executionImage.decodedPages.values()].flatMap(page => page.compiledBlocks?.entries.filter(block => block !== null).map(block => block!.terminal.exit) ?? []));
+	assert.ok(exits.has(CompiledBlockExit.Call) && exits.has(CompiledBlockExit.Return), 'both sides of the call use generated exits');
+	for (const cpu of [js, ref]) {
+		cpu.runUntilDepth(1, 100);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES);
+		assert.equal(cpu.getFrameDepth(), 1);
+		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+		assert.equal(cpu.getFrameDepth(), 2);
+		assert.equal(cpu.rootThread.frameAtDepth(1).callSitePc, image.image.functions[0].codeAddress + callBody * INSTRUCTION_BYTES);
+		assert.equal(cpu.runUntilDepth(0, 5), RunResult.Yielded);
+		assert.equal(cpu.getFrameDepth(), 1);
+		cpu.rootThread.frameAtDepth(0).registers.setInteger(4, 77);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_CALL_NON_FUNCTION);
+		assert.equal(cpu.readEpcWord(), image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES);
+		assert.equal(cpu.readFrameRegister(0, 6), valueInteger(1));
+	}
+	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+});
+
+for (const editReturn of [false, true]) test(`CALL keeps its bound record when the suspended caller's ${editReturn ? 'return address' : 'call instruction'} is rewritten`, () => {
+	const recordAddress = 0x08005000;
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
+	writeInstruction(text, 2, OpCode.MOV, 0, 4, 0);
+	writeInstruction(text, 3, OpCode.CALL, 0, 1, 2);
+	writeInstruction(text, 4, OpCode.MOV, 6, 0, 0);
+	writeInstruction(text, 5, OpCode.JMP, 0, 63, 60, 255);
+	writeInstruction(text, 6, OpCode.K1, 0, 0, 0);
+	writeInstruction(text, 7, OpCode.RET, 0, 2, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [
+		{ firstWord: 0, wordCount: 6, maxStack: 8 }, { firstWord: 6, wordCount: 2 },
+	], closureRelocations: [{ wordIndex: 1, functionAddress: recordAddress }] });
+	const states = [];
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const entry = image.image.functions[0].codeAddress - SYSTEM_ROM_BASE;
+		memory.writeBytes(DYNAMIC_RAM_BASE, image.romBytes.subarray(entry, entry + text.length));
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+		const replacement = new Uint8Array(INSTRUCTION_BYTES);
+		writeInstruction(replacement, 0, OpCode.HALT, 0, 0, 0);
+		const source = { armed: false, writes: 0 };
+		const record = image.symbols.functionAddresses[1] - SYSTEM_ROM_BASE;
+		for (let offset = 0; offset <= BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET; offset += 4) {
+			memory.mapIoRead(recordAddress + offset, source, (source, address) => {
+				const offset = address - recordAddress;
+				if (source.armed && offset === BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET) {
+					source.armed = false;
+					++source.writes;
+					memory.writeBytes(DYNAMIC_RAM_BASE + 3 * INSTRUCTION_BYTES, replacement);
+				}
+				return readLE32(image.romBytes, record + offset);
+			});
+		}
+		assert.equal(cpu.runUntilDepth(0, 10001), RunResult.Yielded);
+		const page = cpu.rootThread.frameAtDepth(0).decodedPage!;
+		if (backend === CpuExecutionBackend.JavaScript) assert.equal(page.compiledBlocks!.entries[2]!.terminal.exit, CompiledBlockExit.Call);
+		cpu.runUntilDepth(1, 100);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES);
+		source.armed = true;
+		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+		assert.equal(source.writes, 0, 'the record was bound at CLOSURE, not reread at CALL');
+		assert.equal(cpu.getFrameDepth(), 2);
+		const caller = cpu.rootThread.frameAtDepth(0), returnPc = DYNAMIC_RAM_BASE + 4 * INSTRUCTION_BYTES;
+		assert.equal(caller.pc, returnPc);
+		caller.registers.setInteger(6, 73);
+		const edit = editReturn ? 4 : 3;
+		if (backend === CpuExecutionBackend.JavaScript) assert.ok(page.compiledBlocks!.entries[editReturn ? 4 : 2]);
+		memory.writeBytes(DYNAMIC_RAM_BASE + edit * INSTRUCTION_BYTES, replacement);
+		if (backend === CpuExecutionBackend.JavaScript) assert.equal(page.compiledBlocks!.entries[editReturn ? 4 : 2], null);
+		if (!editReturn) cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		assert.equal(cpu.getFrameDepth(), 1);
+		assert.equal(cpu.readFramePc(0), DYNAMIC_RAM_BASE + (edit + 1) * INSTRUCTION_BYTES);
+		assert.equal(cpu.readFrameRegister(0, 6), valueInteger(73), 'the obsolete MOV must not run');
+		if (editReturn) assert.equal(cpu.readFrameRegister(0, 0), valueInteger(1), 'RET delivers its result before fetching the new instruction');
+		states.push(cpu.captureRuntimeState());
+	}
+	assert.deepEqual(states[1], states[0]);
 });
