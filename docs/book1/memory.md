@@ -45,17 +45,18 @@ and [Sample RAM transfer](apu.md#sec-apu-sample-ram-transfer).
 
 ## Reserved and cartridge storage in main RAM {#sec-memory-reserved-and-cartridge-storage-in-main-ram}
 
-The installed main RAM occupies `08000000H` through `083FFFFFH`, a total of 4 MiB. This is a physical storage extent, not a cartridge allocation range. It includes the I/O reservation, GEO scratch storage, and the system's static storage as well as the cartridge program's static storage.
+The installed main RAM occupies `08000000H` through `083FFFFFH`, a total of 4 MiB. This is a physical storage extent, not a cartridge allocation range. It includes the I/O reservation, GEO scratch storage, the system's static storage and the cartridge program's static storage, and the language runtime's heap and management storage above them.
 
 Static storage includes DATA, whose initial bytes are copied from ROM, and
 BSS, which startup initializes to zero. Both use assigned main-RAM addresses.
 The firmware and the cartridge each have their own occupied sections.
 
 Subtracting the 256 KiB I/O reservation and 512 KiB GEO scratch reservation
-leaves **3.25 MiB** in `[080C0000H, 08400000H)` before accounting for system
-and cartridge static storage. The installed firmware occupies the beginning
-of this span. Its actual DATA/BSS footprint, rather than 3.25 MiB alone,
-determines where cartridge placement can begin.
+leaves **3.25 MiB** in `[080C0000H, 08400000H)`. Static storage occupies the
+beginning of this span, the 16 KiB runtime management area its end, and the
+language heap the space between them. The installed firmware occupies the
+beginning of the static storage. Its actual DATA/BSS footprint, rather than
+3.25 MiB alone, determines where cartridge placement can begin.
 
 The following ranges use an exclusive end: the end address is the first byte outside the range.
 
@@ -65,6 +66,8 @@ The following ranges use an exclusive end: the end address is the first byte out
 | GEO scratch reservation | `08040000H` | `080C0000H` | 512 KiB |
 | System static storage | `080C0000H` | Actual end of system BSS | Specified by the system executable image |
 | Cartridge static storage, compact layout below | Actual end of system BSS | Actual end of cartridge BSS | Specified by the cartridge executable image |
+| Language heap | Heap floor | `083FC000H` | Remainder of installed RAM |
+| Runtime management area | `083FC000H` | `08400000H` | 16 KiB |
 
 The decoded I/O register aperture ends at `08010440H`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers. Likewise, the GEO scratch reservation is not cartridge static storage.
 
@@ -79,7 +82,9 @@ The following compact layout places cartridge DATA at the system BSS end and
 cartridge BSS immediately after that DATA. This adjacency is a layout choice,
 **not a hardware requirement**. Another cartridge placement can use different
 unreserved RAM addresses; its records, code and startup initialization must all
-use that chosen placement without overwriting firmware storage.
+use that chosen placement without overwriting firmware storage. The heap floor
+follows the highest static byte, so a placement high in RAM leaves less space
+for the language heap.
 
 | Section in the compact layout, in address order | Run address |
 |---|---|
@@ -95,10 +100,27 @@ The program image records their actual RAM addresses and extents; see
 [[Program images and startup](program-images.md#sec-memory-blua32-executable-image)]{.content-visible when-format="html"}[Book II, §3.5]{.content-visible when-format="pdf"}. Those sections must fit the installed RAM without overlapping
 reserved storage.
 
-Choosing a static layout is not a hardware allocation service. Neither the
-installed RAM extent nor the end of cartridge BSS defines a free arena, stack
-reservation, or byte-addressed heap. Use the actual installed system image
-when calculating firmware occupancy.
+Choosing a static layout is not a hardware allocation service. Use the actual
+installed system image when calculating firmware occupancy.
+
+### Language heap and runtime management area {#sec-memory-language-heap}
+
+The language runtime owns main RAM above the active program's static storage.
+Its heap extends from the **heap floor** to `083FC000H`; the 16 KiB from
+`083FC000H` to the end of installed RAM hold its management data. Do not
+place DATA, BSS or buffers in either range. Their contents are not a
+programming interface. Ordinary stores and device writes into them are not
+rejected: they change runtime state, with the consequences of a program error.
+
+The heap floor is the end of the active image's static storage, the larger
+of its DATA run end and its BSS end, rounded up to a multiple of 4 KiB. It is
+never below `080C0000H`, where static storage begins. The CPU sets the floor
+from the system image at reset. EXEC sets it from the target image before
+that image's first instruction, and refuses a target whose static storage
+would cover heap storage still in use; see
+[[EXEC](cpu.md#sec-cpu-exec)]{.content-visible when-format="html"}[Book II, §1.13.4]{.content-visible when-format="pdf"}.
+The runtime fills its heap from the top of the range downward, so storage
+near the floor is the last to be used.
 
 ## Firmware reservation in VRAM {#sec-memory-firmware-reservation-in-vram}
 

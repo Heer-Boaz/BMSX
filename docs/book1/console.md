@@ -40,7 +40,7 @@ main-RAM addresses.
 | Installed resource | Specification |
 |---|---|
 | CPU/system timebase | 33,868,800 cycles per second |
-| Main RAM | 4 MiB, including reserved areas and firmware static storage |
+| Main RAM | 4 MiB, including reserved areas, firmware static storage and the language runtime's heap and management area |
 | GPU local memory | 2 MiB shared by drawing destinations, textures, palettes and display sources |
 | APU sample RAM | 512 KiB, separate from main RAM and GPU local memory |
 | System DMA | Two equivalent channels; one transfer block is serviced at a time |

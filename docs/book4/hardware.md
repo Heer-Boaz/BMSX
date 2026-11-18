@@ -112,14 +112,15 @@ are not yet established. Book II remains the programming reference.
 ### Native-processor execution candidate {#sec-core-native-execution}
 
 One possible execution layer uses a conventional 32-bit processor with a
-resident interpreter. Its private program and working storage are separate
-from the BIOS in system ROM and from the public 4 MiB main RAM. This is an
+resident interpreter. Its private program storage is separate from the BIOS in
+system ROM; its working data, the language runtime, occupies the public 4 MiB
+main RAM. This is an
 implementation candidate, not an established processor or timing guarantee.
 
 In this option, CORE could hold the interpreter's native program in a private
 on-chip ROM. After power and reset establish the hardware, the native processor
-starts from that private store and initializes the BLua32 execution state. The
-chosen main and private memories must be initialized before they are used. It
+starts from that private store and initializes the BLua32 execution state. Main
+memory must be initialized before the runtime uses it. It
 then enters the guest-visible reset sequence, reading the BMSX BIOS through U7
 and its system firmware flash. The BIOS initializes the system and selects a
 bootable cartridge. The native bootstrap and the BLua32 reset entry are thus
@@ -133,11 +134,10 @@ software-visible reset interface.
 
 ### Runtime memory {#sec-core-private-memory}
 
-A candidate adds a private 4 MiB DRAM bank for runtime values, objects, frames
-and management data. It is not guest-addressable main RAM. One physical pool
-can back the ordinary and system namespaces while preserving their separate
-logical roles. The bank size, allocation and failure behavior still require a
-product decision; fitting the devices does not prove that every workload fits.
+Runtime values, objects, frames and management data occupy the public main RAM
+above the active program's static storage, as Book I describes. No separate
+runtime memory bank is fitted. One heap backs the ordinary and system
+namespaces while preserving their separate logical roles.
 
 ### Runtime lifetime and collection {#sec-runtime-pool-and-collection}
 

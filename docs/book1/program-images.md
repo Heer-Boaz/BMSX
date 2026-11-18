@@ -122,8 +122,9 @@ writable static contents with their initial values.
 
 ### From reset to the system program {#sec-memory-from-reset-to-the-system-program}
 
-At reset the CPU selects system ROM and enters the startup function specified
-in its ROM header. The call stack and transient execution state are cleared,
+At reset the CPU selects system ROM, sets the language-heap floor from the
+system image's static storage and enters the startup function specified in
+its ROM header. The call stack and transient execution state are cleared,
 there are no supplied arguments, and Status starts at `00000001H`: supervisor
 mode with current interrupt enable set.
 
@@ -162,6 +163,13 @@ For a cartridge image, CPU Status has interrupt enable and user mode set
 occurs before the later application-entry call. The BIOS's zero IRQ-mask write
 masks source delivery without clearing CPU interrupt enable. The full
 [EXEC reference](cpu.md#sec-cpu-exec) specifies execution-state changes.
+
+Before the startup function's first instruction, EXEC raises the language-heap
+floor to the end of the cartridge's static storage. The BIOS has allocated its
+own language data from the top of the heap, so the cartridge's DATA and BSS
+are free of it. If a target's static storage would still cover heap storage in
+use after a full collection, EXEC hard-halts before writing any of it; see the
+[EXEC reference](cpu.md#sec-cpu-exec).
 
 The selected cartridge startup routine performs the DATA copy, BSS clear,
 module initialization and entry call described under
@@ -300,7 +308,11 @@ constant or name tables.
 | `5CH` | Preparation-sequence function-record address; zero when no sequence is present. |
 
 Provide the complete 96-byte header, including its descriptive slots. The CPU
-reads the explicit constant/name addresses and counts. Magic, version,
+reads the explicit constant/name addresses and counts. Reset and EXEC also read
+the DATA byte count and run address (`44H`, `48H`) and the BSS address and
+byte count (`4CH`, `50H`): the larger of the two section ends sets the
+language-heap floor; see
+[[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}. Magic, version,
 function-table enumeration, section order and declared section extents do not
 alter those reads or bound instruction fetching. DATA and BSS are initialized
 by the startup instructions.

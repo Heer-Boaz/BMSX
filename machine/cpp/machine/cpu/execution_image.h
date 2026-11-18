@@ -177,6 +177,7 @@ struct Blua32ExecutionImage {
 #endif
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
+	u32 staticEnd = 0;
 	ValueSlots constPool;
 	std::vector<u32> globalSlots;
 	std::vector<u32> systemGlobalSlots;

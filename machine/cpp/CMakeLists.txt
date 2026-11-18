@@ -743,6 +743,9 @@ if(BMSX_BUILD_TESTS)
 	set(BMSX_TEST_ROM_SOURCE
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
 	)
+	add_executable(bmsx_heap_floor_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/heap_floor_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_heap_floor_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_heap_floor_tests COMMAND bmsx_heap_floor_tests)
 
 	add_executable(bmsx_libretro_host_frame_pacer_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_frame_pacer_test.c

@@ -26,6 +26,7 @@
 #include "machine/cpu/closure.h"
 #include "machine/execution_address_space.h"
 #include "machine/cpu/errors.h"
+#include "machine/cpu/heap_allocator.h"
 #include "machine/cpu/lua_heap.h"
 #include "spec/blua32/instruction_format.h"
 #include "machine/cpu/execution_image.h"
@@ -225,6 +226,8 @@ public:
 	const StringPool& stringPool() const { return m_stringPool; }
 	LuaHeap& luaHeap() { return m_luaHeap; }
 	const LuaHeap& luaHeap() const { return m_luaHeap; }
+	HeapAllocator& heapAllocator() { return m_heapAllocator; }
+	const HeapAllocator& heapAllocator() const { return m_heapAllocator; }
 	GcHeap& gcHeap() { return m_heap; }
 	const GcHeap& gcHeap() const { return m_heap; }
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
@@ -423,6 +426,7 @@ private:
 		MappedBusSignals busSignals
 	);
 	void executeFunctionAddress(u32 functionAddress);
+	bool setProgramHeapFloor(u32 staticEnd);
 	void executeControlWrite(CallFrame& frame, int source, int field);
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
@@ -573,6 +577,7 @@ private:
 	Span<const u8> m_executionTableView;
 	Blua32FunctionRecordLatch m_functionRecordLatch;
 	LuaHeap m_luaHeap;
+	HeapAllocator m_heapAllocator;
 	StringPool m_stringPool;
 	Value m_indexKey;
 	GcHeap m_heap;

@@ -1,8 +1,11 @@
 #include "machine/execution_address_space.h"
 
+#include <algorithm>
+
 #include "common/endian.h"
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/rom_header.h"
+#include "spec/blua32/image_format.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
@@ -70,8 +73,20 @@ std::optional<Blua32ExecutionBoot> ExecutionAddressSpace::resolveDomain(
 	if (imageOffset == 0u) {
 		return {};
 	}
+	const u32 imageAddress = romBaseAddress + imageOffset;
+	// An unbacked program header leaves the failure to image activation.
+	u32 staticEnd = 0u;
+	Span<const u8> programHeader;
+	if (m_memory.bindRomByteView(imageAddress, BLUA32_IMAGE_HEADER_SIZE, cartridgeSlot, programHeader)) {
+		const u8* program = programHeader.data();
+		const u32 dataEnd = readLE32(program + BLUA32_IMAGE_DATA_ADDRESS_OFFSET)
+			+ readLE32(program + BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET);
+		const u32 bssEnd = readLE32(program + BLUA32_IMAGE_BSS_ADDRESS_OFFSET)
+			+ readLE32(program + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET);
+		staticEnd = std::max(dataEnd, bssEnd);
+	}
 	return Blua32ExecutionBoot{
-		.imageAddress = romBaseAddress + imageOffset,
+		.imageAddress = imageAddress,
 		.executionDomainId = executionDomainId,
 		.startupFunctionAddress = readLE32(
 			headerBytes.data() + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET
@@ -82,6 +97,7 @@ std::optional<Blua32ExecutionBoot> ExecutionAddressSpace::resolveDomain(
 		.exceptionFunctionAddress = readLE32(
 			headerBytes.data() + BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET
 		),
+		.staticEnd = staticEnd,
 	};
 }
 

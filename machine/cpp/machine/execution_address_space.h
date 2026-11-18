@@ -16,6 +16,8 @@ struct Blua32ExecutionBoot {
 	u32 startupFunctionAddress = 0;
 	u32 irqFunctionAddress = 0;
 	u32 exceptionFunctionAddress = 0;
+	// Exclusive end of the image's DATA run and BSS; the language-heap floor.
+	u32 staticEnd = 0;
 };
 
 class ExecutionAddressSpace {

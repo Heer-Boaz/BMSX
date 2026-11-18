@@ -141,6 +141,7 @@ import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { LuaHeap, type LuaHeapState } from './lua_heap';
+import { HeapAllocator } from './heap_allocator';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
 	COMPILED_BLOCK_MAX_INSTRUCTIONS,
@@ -281,6 +282,7 @@ export class CPU implements MappedPageInvalidator {
 	public readonly memory: Memory;
 
 	public readonly luaHeap: LuaHeap;
+	public readonly heapAllocator: HeapAllocator;
 	public readonly gc: GcHeap;
 	public readonly stringPool: StringPool;
 	private indexKey!: StringId;
@@ -394,6 +396,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memory = memory;
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.luaHeap = new LuaHeap(this);
+		this.heapAllocator = new HeapAllocator(memory);
 		this.stringPool = new StringPool(this.luaHeap);
 		this.luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES);
 		this.rootThread.hashId = this.allocateObjectHashId();
@@ -650,6 +653,7 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = false;
 		this.staticClosuresByAddress.clear();
 		this.memory.clearMappedPageWriteWatches();
+		this.heapAllocator.reset(systemBoot.staticEnd);
 		this.executionImagesByDomain.fill(null);
 		this.systemImage = this.activateExecutionImage(systemBoot);
 		this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1] = this.systemImage;
@@ -857,6 +861,7 @@ export class CPU implements MappedPageInvalidator {
 		const image: Blua32ExecutionImage = {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
+			staticEnd: executionBoot.staticEnd,
 			constTags,
 			constWords,
 			globalSlots,
@@ -939,6 +944,10 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public replaceExecutionImage(executionBoot: Blua32ExecutionBoot): void {
+		if (executionBoot.executionDomainId === this.programExecutionDomainId
+			&& !this.heapAllocator.setFloor(executionBoot.staticEnd)) {
+			throw new Error('Replacement program static storage overlaps live language-heap pages.');
+		}
 		const imageIndex = executionBoot.executionDomainId + 1;
 		const previousImage = this.executionImagesByDomain[imageIndex];
 		if (previousImage !== null) {
@@ -1329,6 +1338,15 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private executeFunctionAddress(functionAddress: number): void {
+		// The target image's static storage must be free of live heap pages before
+		// its activation or startup can write there.
+		const targetDomainId = this.executionAddressSpace.domainIdOnBus(functionAddress, MAPPED_BUS_MASTER_CPU);
+		const targetBoot = targetDomainId === null ? null : this.executionAddressSpace.resolveDomain(targetDomainId);
+		const staticEnd = targetDomainId === null ? this.activeExecutionImage.staticEnd : targetBoot?.staticEnd;
+		if (staticEnd !== undefined && !this.setProgramHeapFloor(staticEnd)) {
+			this.hardHalt();
+			return;
+		}
 		if (!this.readFunctionRecordOnBus(
 			this.activeExecutionImage,
 			functionAddress,
@@ -1354,6 +1372,14 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = false;
 		const closure = this.staticClosureFromLatch();
 		this.pushFrame(closure, EMPTY_CALL_ARGS, 0, 0, false);
+	}
+
+	private setProgramHeapFloor(staticEnd: number): boolean {
+		if (this.heapAllocator.setFloor(staticEnd)) {
+			return true;
+		}
+		this.luaHeap.collectRuntime();
+		return this.heapAllocator.setFloor(staticEnd);
 	}
 
 	public beginCompletionCall(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {

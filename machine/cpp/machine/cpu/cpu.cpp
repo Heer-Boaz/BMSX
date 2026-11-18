@@ -80,6 +80,7 @@ CPU::CPU(
 	, m_irqController(irqController)
 	, m_executionAddressSpace(executionAddressSpace)
 	, m_luaHeap(*this)
+	, m_heapAllocator(memory)
 	, m_stringPool(m_luaHeap)
 	, m_indexKey(valueString(m_stringPool.intern("__index")))
 	, m_heap(*this, m_luaHeap, m_stringPool, m_stringPool.intern("__mode"))
@@ -187,6 +188,7 @@ void CPU::reset() {
 	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
+	m_heapAllocator.reset(systemBoot.staticEnd);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
 #endif
@@ -334,6 +336,7 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	auto image = std::make_unique<Blua32ExecutionImage>();
 	image->executionDomainId = executionDomainId;
 	image->irqFunctionAddress = executionBoot.irqFunctionAddress;
+	image->staticEnd = executionBoot.staticEnd;
 	m_executionAddressSpace.bindReadOnlyView(
 		executionDomainId,
 		executionBoot.imageAddress,
@@ -416,6 +419,9 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
 #endif
+	if (executionBoot.executionDomainId == m_programExecutionDomainId && !m_heapAllocator.setFloor(executionBoot.staticEnd)) {
+		throw BMSX_RUNTIME_ERROR("Replacement program static storage overlaps live language-heap pages.");
+	}
 	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
 		static_cast<size_t>(executionBoot.executionDomainId + 1)
 	];
@@ -732,7 +738,26 @@ bool CPU::readFunctionRecordOnBus(
 	return image && readFunctionRecord(*image, address, busSignals);
 }
 
+bool CPU::setProgramHeapFloor(u32 staticEnd) {
+	if (m_heapAllocator.setFloor(staticEnd)) return true;
+	m_luaHeap.collectRuntime();
+	return m_heapAllocator.setFloor(staticEnd);
+}
+
 void CPU::executeFunctionAddress(u32 functionAddress) {
+	// The target image's static storage must be free of live heap pages before
+	// its activation or startup can write there.
+	const auto targetDomainId = m_executionAddressSpace.domainIdOnBus(functionAddress, MAPPED_BUS_MASTER_CPU);
+	std::optional<u32> staticEnd;
+	if (!targetDomainId) {
+		staticEnd = m_activeExecutionImage->staticEnd;
+	} else if (const auto targetBoot = m_executionAddressSpace.resolveDomain(*targetDomainId)) {
+		staticEnd = targetBoot->staticEnd;
+	}
+	if (staticEnd && !setProgramHeapFloor(*staticEnd)) {
+		hardHalt();
+		return;
+	}
 	if (!readFunctionRecordOnBus(
 		*m_activeExecutionImage,
 		functionAddress,

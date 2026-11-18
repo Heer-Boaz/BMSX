@@ -1731,7 +1731,9 @@ supplies the pending/mask/acknowledgment and accepted-interrupt conditions.
 At CPU reset, Status is `00000001H`; Cause, EPC, BadAddress, LuaFaultReason and
 the exception-domain word are zero. Retained pre-NMI report words are also
 zero. Interrupt-wait, blocked-store, hard-halt and pending interrupt states are
-cleared. The CPU discards the active call stack and enters the system startup
+cleared. The CPU discards the active call stack, initializes the runtime
+management area, sets the language-heap floor from the system image
+([[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}) and enters the system startup
 static function with no arguments.
 
 The first PC comes from that startup function's record, not an assumed
@@ -1746,7 +1748,9 @@ separate software reset request and device-context transitions.
 
 A reserved opcode, a WIDE body containing another WIDE, or an unreadable
 required function record causes a hard halt. EXEC also hard-halts when its
-record lacks STATIC. Execution and interrupt acceptance stop until reset.
+record lacks STATIC, or when its target's static storage would cover
+language-heap storage still in use. Execution and interrupt acceptance stop
+until reset.
 HALT, in contrast, is a resumable interrupt wait.
 
 Misaligned instruction addresses and mapped instruction-read faults take the
@@ -1807,6 +1811,8 @@ Returning from an NMI-marked exception frame also restores the retained pre-NMI 
 ### EXEC {#sec-cpu-exec}
 
 Writing `EXEC` supplies a **function-record address**, not an instruction-entry address. The record is read on the CPU bus and must identify a static function; otherwise execution hard-halts.
+
+Before reading the record, `EXEC` sets the language-heap floor from the target image's static storage ([[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}). A record address in system ROM selects the system image, and one in the cartridge window selects the image in the selected socket; a record elsewhere keeps the active image's floor. Lowering the floor always succeeds. If raising it would cover heap storage still in use, `EXEC` first completes a full collection. If storage below the new floor is still in use, execution hard-halts before any instruction of the target runs, so none of its DATA or BSS has been written.
 
 A successful `EXEC` clears the active call stack, selects the function's image, and starts the static function with zero arguments. It clears HALT, retained-interrupt-event, blocked-write and hard-halt state. The new Status is 3 if the selected execution-domain ID is nonnegative, or 1 otherwise. `EXEC` replaces execution: it is neither an ordinary function call with a saved return point nor an exception return.
 
