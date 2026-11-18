@@ -30,11 +30,13 @@ local original<const>, override<const> = {bindings={}}, {bindings={}}
 local definition<const> = {id_local='controls',program=original}
 local factory<const> = input.factory(definition)
 definition.program=override
-prefab.define({def_id='input.default',class={},components={factory}})
-prefab.define({def_id='input.override',class={},components={input.factory({id_local='controls',program=override,clock_source=clock.frame})}})
-prefab.define({def_id='input.dynamic',class={ctor=function(self)
+prefab.define({def_id='input.default',components={factory}})
+prefab.define({def_id='input.override',components={input.factory({id_local='controls',program=override,clock_source=clock.frame})}})
+local dynamic<const> = setmetatable({}, {__index=world_object})
+function dynamic:ctor()
  self:add_component(input.new(self,{program=override}))
-end}})
+end
+prefab.define({def_id='input.dynamic',class=dynamic})
 local a<const> = world:spawn('input.default',{})
 local b<const> = world:spawn('input.override',{})
 local c<const> = world:spawn('input.dynamic',{})

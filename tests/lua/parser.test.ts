@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
@@ -59,8 +60,8 @@ test('parses local assignment with multiple values', () => {
 	assert.equal(localStatement.values.length, 2);
 	const firstValue = localStatement.values[0] as LuaNumericLiteralExpression;
 	const secondValue = localStatement.values[1] as LuaNumericLiteralExpression;
-	assert.equal(firstValue.value, 1);
-	assert.equal(secondValue.value, 2);
+	assert.deepEqual(firstValue.value, integerConstant(1));
+	assert.deepEqual(secondValue.value, integerConstant(2));
 });
 
 test('parses function declaration with method name and parameters', () => {
@@ -251,8 +252,8 @@ test('parses numeric for loop', () => {
 	assert.equal(forStatement.variable.name, 'i');
 	const start = forStatement.start as LuaNumericLiteralExpression;
 	const limit = forStatement.limit as LuaNumericLiteralExpression;
-	assert.equal(start.value, 1);
-	assert.equal(limit.value, 10);
+	assert.deepEqual(start.value, integerConstant(1));
+	assert.deepEqual(limit.value, integerConstant(10));
 	assert.notEqual(forStatement.step, null);
 	assert.equal(forStatement.block.body.length, 1);
 });
@@ -311,8 +312,8 @@ test('parses unary minus with exponent precedence', () => {
 	assert.equal(binary.operator, LuaBinaryOperator.Exponent);
 	const base = binary.left as LuaNumericLiteralExpression;
 	const exponent = binary.right as LuaNumericLiteralExpression;
-	assert.equal(base.value, 2);
-	assert.equal(exponent.value, 2);
+	assert.deepEqual(base.value, integerConstant(2));
+	assert.deepEqual(exponent.value, integerConstant(2));
 });
 
 test('parses goto and label statements', () => {
