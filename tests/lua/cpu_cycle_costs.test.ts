@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { createBuiltinFunction } from '../../machine/ts/machine/cpu/value';
-
+import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
@@ -13,7 +13,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
-import { ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueBuiltinFunction, valueInteger, valueNil, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 
 test('all nominal opcode prices include instruction issue, while WIDE remains free', () => {
 	const expected = [
@@ -50,7 +50,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: word, maxStack: quotient + 6 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.frameAtDepth(0), base = frame.pc;
-			frame.registers.setNumber(3, 9); frame.registers.setNumber(4, -7); frame.registers.setNumber(5, 3);
+			frame.registers.setInteger(3, 9); frame.registers.setInteger(4, -7); frame.registers.setInteger(5, 3);
 			cpu.runUntilDepth(0, 7100);
 			if (backend === CpuExecutionBackend.JavaScript) {
 				const page = frame.decodedPage!;
@@ -66,20 +66,22 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				while (remaining > 0) remaining -= charges[completed++];
 				assert.equal(cpu.instructionBudgetRemaining, remaining, `full admitted charge including debt at grant ${grant}`);
 				assert.equal(frame.pc, base + boundaries[completed] * INSTRUCTION_BYTES, `next instruction at grant ${grant}`);
-				assert.equal(frame.registers.getTag(quotient), completed >= 2 ? ValueTag.Number : ValueTag.Nil);
-				assert.equal(frame.registers.getTag(floor), completed >= 3 ? ValueTag.Number : ValueTag.Nil);
-				if (completed >= 2) assert.ok(Object.is(frame.registers.getNumber(quotient), -7 / 3));
-				if (completed >= 3) assert.equal(frame.registers.getNumber(floor), -3);
-				assert.equal(frame.registers.getTag(2), completed >= 4 ? ValueTag.True : completed >= 1 ? ValueTag.Number : ValueTag.Nil);
+				assert.equal(frame.registers.getTag(quotient), completed >= 2 ? ValueTag.Float : ValueTag.Nil);
+				assert.equal(frame.registers.getTag(floor), completed >= 3 ? ValueTag.Integer : ValueTag.Nil);
+				if (completed >= 2) assert.ok(Object.is(frame.registers.getFloat(quotient), Math.fround(-7 / 3)));
+				if (completed >= 3) assert.equal(frame.registers.getInteger(floor), -3);
+				assert.equal(frame.registers.getTag(2), completed >= 4 ? ValueTag.True : completed >= 1 ? ValueTag.Integer : ValueTag.Nil);
 			}
 			for (const [left, right, divided, floored] of [[-0, 3, -0, -0], [1, 0, Infinity, Infinity], [0, 0, NaN, NaN], [Infinity, -2, -Infinity, -Infinity]]) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
-				frame.registers.setNumber(4, left); frame.registers.setNumber(5, right);
+				frame.registers.setFloat(4, left); frame.registers.setFloat(5, right);
 				assert.equal(cpu.runUntilDepth(0, 71), RunResult.Yielded);
 				assert.equal(cpu.instructionBudgetRemaining, 0);
 				assert.equal(frame.pc, base);
-				assert.ok(Object.is(frame.registers.getNumber(quotient), divided));
-				assert.ok(Object.is(frame.registers.getNumber(floor), floored));
+				assert.equal(frame.registers.getTag(quotient), ValueTag.Float);
+				assert.equal(frame.registers.getTag(floor), ValueTag.Float);
+				assert.ok(Object.is(frame.registers.getFloat(quotient), divided));
+				assert.ok(Object.is(frame.registers.getFloat(floor), floored));
 			}
 		});
 		test(`skipped division bodies pay no execution budget (${backend}, WIDE=${wide})`, () => {
@@ -98,7 +100,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: word, maxStack: 258 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.frameAtDepth(0), base = frame.pc;
-			frame.registers.setNumber(4, -7); frame.registers.setNumber(5, 3);
+			frame.registers.setInteger(4, -7); frame.registers.setInteger(5, 3);
 			cpu.runUntilDepth(0, 600);
 			if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 			for (let grant = 0; grant <= 6; ++grant) {
@@ -115,10 +117,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 }
 
 test('builtin cost resolution uses fixed VM primitive tiers', () => {
-	assert.deepEqual(createBuiltinFunction(BuiltinFunctionId.Next).cost, { base: 1, perArg: 0, perRet: 0 });
-	assert.deepEqual(createBuiltinFunction(BuiltinFunctionId.Error).cost, { base: 2, perArg: 0, perRet: 0 });
-	assert.deepEqual(createBuiltinFunction(BuiltinFunctionId.PCall).cost, { base: 4, perArg: 0, perRet: 0 });
-	assert.deepEqual(createBuiltinFunction(BuiltinFunctionId.StringChar).cost, { base: 2, perArg: 0, perRet: 0 });
+	assert.deepEqual(BUILTIN_FUNCTIONS[BuiltinFunctionId.Next].cost, { base: 1, perArg: 0, perRet: 0 });
+	assert.deepEqual(BUILTIN_FUNCTIONS[BuiltinFunctionId.Error].cost, { base: 2, perArg: 0, perRet: 0 });
+	assert.deepEqual(BUILTIN_FUNCTIONS[BuiltinFunctionId.PCall].cost, { base: 4, perArg: 0, perRet: 0 });
+	assert.deepEqual(BUILTIN_FUNCTIONS[BuiltinFunctionId.StringChar].cost, { base: 2, perArg: 0, perRet: 0 });
 });
 
 
@@ -134,7 +136,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			writeInstruction(text, 5, OpCode.CALL, 4, 3, wantedOperand);
 			writeInstruction(text, 6, OpCode.JMP, 0, 63, 59, 255);
 			writeInstruction(text, 7, OpCode.RET, 0, producedOperand, 0);
-			const image = linkRawTestSystemBlua32({ text, constants: [17, 29], functions: [
+			const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17), integerConstant(29)], functions: [
 				{ firstWord: 0, wordCount: 7, maxStack: 16 },
 				{ firstWord: 7, wordCount: 1, numParams: 2, maxStack: 2 },
 			], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] });
@@ -151,7 +153,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				const caller = cpu.rootThread.currentFrame!;
 				assert.equal(caller.pc, image.image.functions[0].codeAddress + 6 * INSTRUCTION_BYTES);
 				assert.equal(caller.top, 4 + placed);
-				for (let i = 0; i < placed; ++i) assert.equal(caller.registers.get(4 + i), i < produced ? [17, 29][i] : null);
+				for (let i = 0; i < placed; ++i) assert.equal(caller.registers.get(4 + i), i < produced ? valueInteger([17, 29][i]) : valueNil());
 			}
 		});
 	}
@@ -161,14 +163,14 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
 			writeInstruction(text, 1, OpCode.LOADK, 1, 0, 1);
 			writeInstruction(text, 2, OpCode.RET, 0, producedOperand, 0);
-			const image = linkRawTestSystemBlua32({ text, constants: [17, 29], functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }] });
+			const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17), integerConstant(29)], functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
 			cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.LOADK]);
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
 			const count = producedOperand === 0 ? 2 : producedOperand - 1;
 			assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - count);
 			const values: Value[] = []; cpu.readCompletionValues(values);
-			assert.deepEqual(values, [17, 29].slice(0, count));
+			assert.deepEqual(values, [valueInteger(17), valueInteger(29)].slice(0, count));
 		});
 	}
 	for (const wanted of [0, 1, 2, 6, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.ramBytes + 1]) {
@@ -185,22 +187,22 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				{ firstWord: 0, wordCount: 6, maxStack: 8 }, { firstWord: 6, wordCount: 1, maxStack: 2 },
 			], closureRelocations: [{ wordIndex: 3, functionAddress: blua32TestFunctionAddress(0, 1) }] });
 			const { cpu } = createTestSystemCpu(image, backend);
-			cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), ValueTag.BuiltinFunction, BuiltinFunctionId.PCall, null);
+			cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
 			while (cpu.getFrameDepth() !== 2) cpu.runUntilDepth(0, 1);
 			const thread = cpu.rootThread;
 			assert.equal(thread.protectedCallDepth, 2);
-			thread.currentFrame!.registers.setNumber(0, 17); thread.currentFrame!.registers.setNumber(1, 29);
+			thread.currentFrame!.registers.setInteger(0, 17); thread.currentFrame!.registers.setInteger(1, 29);
 			const failFirst = wanted === PSX_MACHINE_SPEC.ramBytes + 1;
 			thread.protectedCallContinuations.peek(failFirst ? 1 : 0).returnCount = failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted;
 			const fault = wanted >= PSX_MACHINE_SPEC.ramBytes;
 			// Both success- and error-placement collect. If the inner return completed,
 			// its closure is already dead at the first scan (four fewer mark words).
-			const gcCycles = fault ? (failFirst ? 348 : 344) : 0;
+			const gcCycles = fault ? (failFirst ? 300 : 296) : 0;
 			if (fault) assert.throws(() => cpu.runUntilDepth(1, 2), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			else assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const outer = wanted === 0 ? 4 : wanted - 1;
 			assert.equal(cpu.instructionBudgetRemaining, 2 - BASE_CYCLES[OpCode.RET] - (failFirst ? 0 : 3) - (fault ? 0 : outer) - gcCycles, 'the inner status plus two values remains charged if outer admission throws');
-			if (!fault) assert.deepEqual(Array.from({ length: outer }, (_, i) => thread.currentFrame!.registers.get(i)), [true, true, 17, 29, null].slice(0, outer));
+			if (!fault) assert.deepEqual(Array.from({ length: outer }, (_, i) => thread.currentFrame!.registers.get(i)), [valueBool(true), valueBool(true), valueInteger(17), valueInteger(29), valueNil()].slice(0, outer));
 		});
 	}
 }
@@ -221,15 +223,15 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			{ firstWord: 0, wordCount: 8, maxStack: 12 }, { firstWord: 8, wordCount: 1, maxStack: 2 },
 		], closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(0, 1) }] });
 		const { cpu } = createTestSystemCpu(image, backend);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('create'), ValueTag.BuiltinFunction, BuiltinFunctionId.CoroutineCreate, null);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('resume'), ValueTag.BuiltinFunction, BuiltinFunctionId.CoroutineResume, null);
+		cpu.setSystemGlobalByKey(cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
+		cpu.setSystemGlobalByKey(cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
 		while (cpu.activeThread === cpu.rootThread) cpu.runUntilDepth(0, 1);
-		cpu.activeThread.currentFrame!.registers.setNumber(0, 17); cpu.activeThread.currentFrame!.registers.setNumber(1, 29);
+		cpu.activeThread.currentFrame!.registers.setInteger(0, 17); cpu.activeThread.currentFrame!.registers.setInteger(1, 29);
 		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
 		const placed = wanted === 0 ? 3 : wanted - 1;
 		assert.equal(cpu.instructionBudgetRemaining, 2 - BASE_CYCLES[OpCode.RET] - placed);
 		assert.equal(cpu.activeThread, cpu.rootThread);
-		assert.deepEqual(Array.from({ length: placed }, (_, i) => cpu.rootThread.currentFrame!.registers.get(4 + i)), [true, 17, 29, null, null].slice(0, placed));
+		assert.deepEqual(Array.from({ length: placed }, (_, i) => cpu.rootThread.currentFrame!.registers.get(4 + i)), [valueBool(true), valueInteger(17), valueInteger(29), valueNil(), valueNil()].slice(0, placed));
 	});
 
 	test(`builtin CALL result placement charges copied and padded slots (${backend})`, () => {
@@ -239,13 +241,13 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		writeInstruction(text, 2, OpCode.LOADK, 2, 0, 1);
 		writeInstruction(text, 3, OpCode.CALL, 0, 3, 5);
 		writeInstruction(text, 4, OpCode.JMP, 0, 63, 63, 255);
-		const image = linkRawTestSystemBlua32({ text, constants: ['#', 17], systemGlobalNames: ['select'], functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] });
+		const image = linkRawTestSystemBlua32({ text, constants: ['#', integerConstant(17)], systemGlobalNames: ['select'], functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] });
 		const { cpu } = createTestSystemCpu(image, backend);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('select'), ValueTag.BuiltinFunction, BuiltinFunctionId.Select, null);
+		cpu.setSystemGlobalByKey(cpu.stringPool.intern('select'), valueBuiltinFunction(BuiltinFunctionId.Select));
 		while (cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES) cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 1 - 4, 'CALL base, select tier and four placed slots');
-		assert.deepEqual(Array.from({ length: 4 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [1, null, null, null]);
+		assert.deepEqual(Array.from({ length: 4 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [valueInteger(1), valueNil(), valueNil(), valueNil()]);
 	});
 
 	test(`xpcall handler RET charges its error receiving range (${backend})`, () => {
@@ -262,17 +264,17 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		writeInstruction(text, 9, OpCode.CALL, 0, 2, 1);
 		writeInstruction(text, 10, OpCode.RET, 0, 1, 0);
 		writeInstruction(text, 11, OpCode.RET, 0, 2, 0);
-		const image = linkRawTestSystemBlua32({ text, constants: [17], systemGlobalNames: ['xpcall', 'error'], functions: [
+		const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17)], systemGlobalNames: ['xpcall', 'error'], functions: [
 			{ firstWord: 0, wordCount: 7, maxStack: 8 }, { firstWord: 7, wordCount: 4, maxStack: 4 }, { firstWord: 11, wordCount: 1, numParams: 1, maxStack: 1 },
 		], closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(0, 1) }, { wordIndex: 4, functionAddress: blua32TestFunctionAddress(0, 2) }] });
 		const { cpu } = createTestSystemCpu(image, backend);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('xpcall'), ValueTag.BuiltinFunction, BuiltinFunctionId.XPCall, null);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('error'), ValueTag.BuiltinFunction, BuiltinFunctionId.Error, null);
+		cpu.setSystemGlobalByKey(cpu.stringPool.intern('xpcall'), valueBuiltinFunction(BuiltinFunctionId.XPCall));
+		cpu.setSystemGlobalByKey(cpu.stringPool.intern('error'), valueBuiltinFunction(BuiltinFunctionId.Error));
 		while (cpu.activeThread.currentFrame!.functionAddress !== image.symbols.functionAddresses[2]) cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 1, 'error CALL, error primitive and one handler argument placement');
 		assert.equal(cpu.runUntilDepth(1, 1), RunResult.Halted);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - 5);
-		assert.deepEqual(Array.from({ length: 5 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [false, 17, null, null, null]);
+		assert.deepEqual(Array.from({ length: 5 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [valueBool(false), valueInteger(17), valueNil(), valueNil(), valueNil()]);
 	});
 }
 
@@ -287,12 +289,12 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] });
 	const { cpu } = createTestSystemCpu(image, backend);
 	cpu.runUntilDepth(0, 1);
-	const closure = cpu.rootThread.currentFrame!.registers.getClosure(0);
+	const closure = cpu.rootThread.currentFrame!.registers.getClosure(0, cpu.gc);
 	for (let call = 0; call < 16; ++call) {
-		cpu.beginCompletionCall(closure, [17, 29]);
+		cpu.beginCompletionCall(closure, [valueInteger(17), valueInteger(29)]);
 		assert.equal(cpu.runUntilDepth(1, 1), RunResult.Halted);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - 2);
 		const values: Value[] = []; cpu.readCompletionValues(values);
-		assert.deepEqual(values, [17, 29]);
+		assert.deepEqual(values, [valueInteger(17), valueInteger(29)]);
 	}
 });
