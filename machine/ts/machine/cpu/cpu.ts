@@ -393,7 +393,7 @@ export class CPU implements MappedPageInvalidator {
 	) {
 		this.memory = memory;
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
-		this.luaHeap = new LuaHeap(this, memory.ramByteCount());
+		this.luaHeap = new LuaHeap(this);
 		this.stringPool = new StringPool(this.luaHeap);
 		this.luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES);
 		this.rootThread.hashId = this.allocateObjectHashId();

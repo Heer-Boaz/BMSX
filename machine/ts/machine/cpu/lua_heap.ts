@@ -1,4 +1,3 @@
-import { BASE_RAM_USED_SIZE } from '../../spec/bmsx/memory_map';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
 import type { Thread } from './thread';
@@ -7,6 +6,9 @@ import { shiftRightSigned } from '../common/numeric';
 import { valueNil, type Value } from './value';
 
 const MIN_COLLECTION_BYTES = 1024 * 1024;
+// The CPU reference's language-allocation budget. It stays a fixed accounting
+// capacity until language records occupy the main-RAM heap extent.
+const LANGUAGE_ALLOCATION_CAPACITY_BYTES = 0x00380000;
 
 export type LuaHeapState = {
 	trackedBytes: number;
@@ -16,10 +18,9 @@ export type LuaHeapState = {
 export class LuaHeap {
 	private trackedBytes = 0;
 	private nextCollectionBytes = MIN_COLLECTION_BYTES;
-	private readonly capacityBytes: number;
+	private readonly capacityBytes = LANGUAGE_ALLOCATION_CAPACITY_BYTES;
 
-	public constructor(private readonly cpu: CPU, ramByteCount: number) {
-		this.capacityBytes = ramByteCount - BASE_RAM_USED_SIZE;
+	public constructor(private readonly cpu: CPU) {
 	}
 
 	public reserve(

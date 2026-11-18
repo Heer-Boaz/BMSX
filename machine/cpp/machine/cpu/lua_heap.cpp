@@ -4,7 +4,6 @@
 
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
-#include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
 
@@ -14,9 +13,8 @@ namespace bmsx {
 void stressHeapAllocation(LuaHeap& heap);
 #endif
 
-LuaHeap::LuaHeap(CPU& cpu, size_t ramByteCount)
-	: m_cpu(cpu)
-	, m_capacityBytes(ramByteCount - BASE_RAM_USED_SIZE) {
+LuaHeap::LuaHeap(CPU& cpu)
+	: m_cpu(cpu) {
 }
 
 void LuaHeap::reserve(

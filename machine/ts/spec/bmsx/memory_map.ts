@@ -26,7 +26,6 @@ export const IO_REGION_SIZE = 0x00040000; // 256 KB
 
 export const GEO_SCRATCH_SIZE = 0x00080000; // 512 KB
 export const MIN_RAM_SIZE = IO_REGION_SIZE + GEO_SCRATCH_SIZE;
-export const BASE_RAM_USED_SIZE = GEO_SCRATCH_SIZE;
 export const DYNAMIC_RAM_BASE = RAM_BASE + MIN_RAM_SIZE;
 
 export const IO_BASE = RAM_BASE;

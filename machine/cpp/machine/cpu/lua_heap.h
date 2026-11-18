@@ -21,7 +21,7 @@ public:
 		m_trackedBytes = state.trackedBytes;
 		m_nextCollectionBytes = state.nextCollectionBytes;
 	}
-	LuaHeap(CPU& cpu, size_t ramByteCount);
+	explicit LuaHeap(CPU& cpu);
 
 	// A stack-growth admission excludes that same allocation from GC shrinking;
 	// its charged delta is relative to the capacity on entry, even on failure.
@@ -46,9 +46,12 @@ public:
 private:
 	void creditStep(size_t work);
 	static constexpr size_t MIN_COLLECTION_BYTES = 1024 * 1024;
+	// The CPU reference's language-allocation budget. It stays a fixed accounting
+	// capacity until language records occupy the main-RAM heap extent.
+	static constexpr size_t LANGUAGE_ALLOCATION_CAPACITY_BYTES = 0x00380000;
 
 	CPU& m_cpu;
-	const size_t m_capacityBytes;
+	const size_t m_capacityBytes = LANGUAGE_ALLOCATION_CAPACITY_BYTES;
 	size_t m_trackedBytes = 0;
 	size_t m_nextCollectionBytes = MIN_COLLECTION_BYTES;
 };

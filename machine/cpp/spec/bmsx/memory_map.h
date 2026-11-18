@@ -32,7 +32,6 @@ constexpr uint32_t IO_REGION_SIZE = 0x00040000u; // 256 KB
 
 constexpr uint32_t GEO_SCRATCH_SIZE = 0x00080000u; // 512 KB
 constexpr uint32_t MIN_RAM_SIZE = IO_REGION_SIZE + GEO_SCRATCH_SIZE;
-constexpr uint32_t BASE_RAM_USED_SIZE = GEO_SCRATCH_SIZE;
 constexpr uint32_t DYNAMIC_RAM_BASE = RAM_BASE + MIN_RAM_SIZE;
 
 constexpr uint32_t IO_BASE = RAM_BASE;

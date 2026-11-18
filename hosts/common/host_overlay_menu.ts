@@ -25,7 +25,7 @@ import { HostRewindTimeline, TimelineAction, type TimelineState } from './rewind
 import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
-import { BASE_RAM_USED_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GEO_SCRATCH_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { HostKeyboardInteraction } from './input/host_keyboard_interaction';
 import {
 	create_rect_bounds,
@@ -735,7 +735,7 @@ export class HostOverlayMenu {
 			this.queueUsageBar(0, runtime.cpuUsageCyclesUsed(), runtime.cpuUsageCyclesGranted(), font);
 			this.queueUsageBar(
 				1,
-				BASE_RAM_USED_SIZE + runtime.machine.cpu.luaHeap.usedBytes(),
+				GEO_SCRATCH_SIZE + runtime.machine.cpu.luaHeap.usedBytes(),
 				runtime.machine.memory.ramByteCount(),
 				font,
 			);

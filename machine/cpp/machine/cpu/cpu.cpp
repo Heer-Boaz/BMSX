@@ -79,7 +79,7 @@ CPU::CPU(
 	: m_memory(memory)
 	, m_irqController(irqController)
 	, m_executionAddressSpace(executionAddressSpace)
-	, m_luaHeap(*this, memory.ramByteCount())
+	, m_luaHeap(*this)
 	, m_stringPool(m_luaHeap)
 	, m_indexKey(valueString(m_stringPool.intern("__index")))
 	, m_heap(*this, m_luaHeap, m_stringPool, m_stringPool.intern("__mode"))

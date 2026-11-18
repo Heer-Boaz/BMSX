@@ -13,7 +13,6 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { BASE_RAM_USED_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -98,7 +97,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 test('failed allocation retains the collection debit, not pending request bytes', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	cpu.instructionBudgetRemaining = 1;
-	assert.throws(() => cpu.luaHeap.reserve(PSX_MACHINE_SPEC.ramBytes - BASE_RAM_USED_SIZE + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
+	assert.throws(() => cpu.luaHeap.reserve(cpu.luaHeap.capacity() + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
 	assert.equal(cpu.instructionBudgetRemaining, -168); assert.equal(cpu.luaHeap.usedBytes(), 133);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted); assert.equal(cpu.instructionBudgetRemaining, -1);
 });
