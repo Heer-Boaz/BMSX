@@ -68,7 +68,7 @@ test('a warmed native comparison faults before fetching its skipped MMIO success
 	writeInstruction(code, 0, OpCode.EQ, 1, 0, 1);
 	memory.cartridgeController.writeU32(pc, readLE32(code, 0), mappedBusSignalsForCartridgeSlot(0));
 	const frame = cpu.rootThread.frameAtDepth(0);
-	frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 0);
+	frame.registers.setInteger(0, 0); frame.registers.setInteger(1, 0);
 	for (let i = 0; i < 10; ++i) {
 		jump(cpu, pc);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
@@ -78,7 +78,7 @@ test('a warmed native comparison faults before fetching its skipped MMIO success
 	let reads = 0;
 	const cartridge = memory.cartridgeController, read = cartridge.readU32.bind(cartridge);
 	cartridge.readU32 = (address, signals) => { if (address >= CART_MMIO_BASE) reads += 1; return read(address, signals); };
-	frame.registers.setNumber(1, 1);
+	frame.registers.setInteger(1, 1);
 	jump(cpu, pc);
 	assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
 	fault(cpu, memory, CART_MMIO_BASE, CART_MMIO_BASE);

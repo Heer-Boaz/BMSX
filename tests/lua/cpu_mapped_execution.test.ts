@@ -1,11 +1,11 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { asClosure, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 
-import { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { CpuSnapshotClosure, CpuSnapshotObjectKind } from '../../machine/ts/machine/cpu/snapshot';
-import { ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_ALIGNMENT,
@@ -54,7 +54,7 @@ test('compact and padded ROM calls use admitted record spans with identical cycl
 		romBytes.set(image.romBytes);
 		romBytes.set(image.romBytes.subarray(sourceRecord, sourceRecord + BLUA32_FUNCTION_RECORD_SIZE), record);
 		const { cpu, memory } = createTestSystemCpu({ romBytes });
-		cpu.rootThread.frameAtDepth(0).registers.setNumber(1, record);
+		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, record);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const readWord = memory.readMappedBusU32LE.bind(memory);
 		let scalarRecordReads = 0;
@@ -64,7 +64,7 @@ test('compact and padded ROM calls use admitted record spans with identical cycl
 		};
 		const cycles = BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL] + 2 * (BASE_CYCLES[OpCode.RET] + 1) + BASE_CYCLES[OpCode.K1];
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 		assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(memory.readBusFaultSequence(), 0);
 		assert.equal(scalarRecordReads, 0, 'a fully backed record needs no repeated per-word bus dispatch, including in a partial page');
@@ -92,7 +92,7 @@ test('WIDE and sequential fetch cross function-record metadata boundaries', () =
 	const { cpu } = createTestSystemCpu(image);
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 	assert.equal(cpu.getFrameDepth(), 0);
 });
 
@@ -135,7 +135,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			{ firstWord: 6, wordCount: 2 },
 			{ firstWord: 8, wordCount: 1 },
 		],
-		constants: [RAM_FUNCTION_ADDRESS],
+		constants: [integerConstant(RAM_FUNCTION_ADDRESS)],
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 2,
 		exceptionFunctionIndex: 2,
@@ -159,14 +159,14 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	writeRamFunction(memory, ramCode, 1);
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const closures = materializeCpuCompletionValues(cpu) as Closure[];
+	const closures = materializeCpuCompletionValues(cpu).map(value => asClosure(value, cpu.gc));
 	assert.equal(closures[0].functionAddress, RAM_FUNCTION_ADDRESS);
 	assert.equal(closures[1].functionAddress, RAM_FUNCTION_ADDRESS);
 	const closure = closures[1];
 
 	cpu.beginCompletionCall(closure);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 
 	const readMappedBusU32LE = memory.readMappedBusU32LE.bind(memory);
 	let instructionReadCount = 0;
@@ -176,7 +176,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	};
 	cpu.beginCompletionCall(closure);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 	assert.equal(instructionReadCount, 0);
 
 	const replacement = new Uint8Array(2 * INSTRUCTION_BYTES);
@@ -186,7 +186,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 
 	cpu.beginCompletionCall(closure);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [0]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 	assert.equal(instructionReadCount, 2);
 });
 
@@ -208,10 +208,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	const frame = cpu.rootThread.frameAtDepth(0);
 	for (let index = 0; index < 32; ++index) {
 		memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, 4 + index);
-		frame.registers.setNumber(1, RAM_FUNCTION_ADDRESS);
+		frame.registers.setInteger(1, RAM_FUNCTION_ADDRESS);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		cpu.runUntilDepth(0, 2);
-		if (index === 0) frame.registers.setClosure(2, frame.registers.getClosure(0));
+		if (index === 0) frame.registers.set(2, frame.registers.get(0));
 	}
 	frame.top = 3;
 	const countVersions = (): number => {
@@ -224,21 +224,21 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		return count;
 	};
 	assert.equal(countVersions(), 32, 'uncleared weak cache is captured before guest collection');
-	const retained = frame.registers.getClosure(2);
+	const retained = frame.registers.get(2);
 	cpu.collectTrackedHeapBytes();
 	assert.equal(countVersions(), 2, 'guest GC prunes unreferenced record versions');
-	assert.equal(frame.registers.getClosure(2), retained);
+	assert.equal(frame.registers.get(2), retained);
 	const weak = cpu.createTable(1, 0);
 	const metatable = cpu.createTable(0, 1);
 	metatable.setStringKey(cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 	weak.metatable = metatable;
 	weak.setInteger(1, retained);
-	cpu.setGlobalByKey(cpu.stringPool.intern('weak_closure'), ValueTag.Table, NaN, weak);
+	cpu.setGlobalByKey(cpu.stringPool.intern('weak_closure'), valueTable(cpu.gc.reference(weak)));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(weak.getInteger(1), retained, 'a strong guest root preserves the weak referent identity');
 	frame.registers.setNil(2);
 	cpu.collectTrackedHeapBytes();
-	assert.equal(weak.getInteger(1), null, 'a canonical closure is collectible when reachable only through a weak table');
+	assert.equal(weak.getInteger(1), valueNil(), 'a canonical closure is collectible when reachable only through a weak table');
 	assert.equal(countVersions(), 1, 'weak cache and weak value are pruned in the same collection');
 	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
 	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
@@ -254,5 +254,5 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	assert.equal(cpu.rootThread.currentFrame!.closure.recordUpvalueCount, 3);
 	assert.equal(cpu.rootThread.currentFrame!.closure.upvalues.length, 0);
 	cpu.runUntilDepth(1, 100);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 });

@@ -1,9 +1,9 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { ValueTag, asClosure, valueBool, valueFloat, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import { ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
@@ -24,7 +24,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const image = linkRawTestSystemBlua32({ text, functions: [
 			{ firstWord: 0, wordCount: 6, maxStack: 128 },
 			{ firstWord: 6, wordCount: 2, numParams: 2, maxStack: 8 },
-		], constants: [37], closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+		], constants: [integerConstant(37)], closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(0, 1) }] });
 		const { cpu } = createTestSystemCpu(image, backend);
 		const calleePc = image.image.functions[1].codeAddress;
 		cpu.setExecutionHook((_domain, pc) => pc === calleePc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
@@ -33,11 +33,11 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(child.stackBase, parent.stackBase + 5);
 		assert.equal(cpu.rootThread.stackTop, child.stackBase + child.stackCapacity);
 		assert.equal(cpu.rootThread.stackRegisters.capacity(), 128, 'callee shares the existing allocation, not an appended maxStack window');
-		assert.equal(child.registers.get(0), 37);
-		assert.equal(child.registers.get(1), null, 'only the missing parameter is nil-filled');
-		child.registers.setNumber(0, 41);
-		assert.equal(parent.registers.get(5), 41, 'the argument and parameter are the same physical slot');
-		assert.equal(parent.registers.get(0), 1);
+		assert.equal(child.registers.get(0), valueInteger(37));
+		assert.equal(child.registers.get(1), valueNil(), 'only the missing parameter is nil-filled');
+		child.registers.setInteger(0, 41);
+		assert.equal(parent.registers.get(5), valueInteger(41), 'the argument and parameter are the same physical slot');
+		assert.equal(parent.registers.get(0), valueInteger(1));
 		const snapshot = cpu.captureRuntimeState();
 		assert.equal(snapshot.threads[0].stack.length, 13, 'snapshot writes the shared range once');
 		cpu.restoreRuntimeState(snapshot);
@@ -46,7 +46,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.runUntilDepth(0, 100);
 		const result: Value[] = [];
 		cpu.readCompletionValues(result);
-		assert.deepEqual(result, [41, null]);
+		assert.deepEqual(result, [valueInteger(41), valueNil()]);
 	});
 }
 
@@ -66,7 +66,7 @@ local function outer(first, ...)
  local a, b = nested(23)
  return read, a, b, ...
 end
-local read, a, b, c, d = outer(17, false, -0)
+local read, a, b, c, d = outer(17, false, -0.0)
 collect()
 return read(), a, b, c, d
 `, optLevel);
@@ -82,7 +82,7 @@ return read(), a, b, c, d
 		assert.equal(result, RunResult.Halted);
 		const values: Value[] = [];
 		cpu.readCompletionValues(values);
-		assert.deepEqual(values, [17, 23, 17, false, -0]);
+		assert.deepEqual(values, [valueInteger(17), valueInteger(23), valueInteger(17), valueBool(false), valueFloat(-0)]);
 	});
 
 	test(`zero results are not one nil (${backend}, O${optLevel})`, () => {
@@ -98,7 +98,7 @@ return count('#', empty()), count('#', implicit()), count('#', nilvalue())
 		assert.equal(cpu.runUntilDepth(0, 10000), RunResult.Halted);
 		const values: Value[] = [];
 		cpu.readCompletionValues(values);
-		assert.deepEqual(values, [0, 0, 1]);
+		assert.deepEqual(values, [valueInteger(0), valueInteger(0), valueInteger(1)]);
 	});
 }
 
@@ -122,10 +122,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
 		assert.equal(cpu.rootThread.currentFrame!.top, top);
 		cpu.collectTrackedHeapBytes(); cpu.restoreRuntimeState(cpu.captureRuntimeState());
-		const table = cpu.rootThread.currentFrame!.registers.getTable(2);
+		const table = cpu.rootThread.currentFrame!.registers.get(2);
 		assert.equal(cpu.rootThread.currentFrame!.registers.getTag(2), ValueTag.Table, 'capture owns its cell independently of the open result range');
 		cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0); cpu.runUntilDepth(0, 100);
-		cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('read')) as Closure);
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('read')), cpu.gc));
 		cpu.runUntilDepth(0, 100);
 		const values: Value[] = []; cpu.readCompletionValues(values);
 		assert.deepEqual(values, [table]);

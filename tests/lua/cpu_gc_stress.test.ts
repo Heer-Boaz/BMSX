@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { valueBool, type Value } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Value } from '../../machine/ts/machine/cpu/value';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { gcStressVectors, installAllocationStress } from '../helpers/gc_stress';
@@ -30,7 +30,7 @@ for (const optLevel of [0, 3] as const) {
 				assert.equal(result, RunResult.Halted);
 				const results: Value[] = [];
 				cpu.readCompletionValues(results);
-				assert.deepEqual(results, [true]);
+				assert.deepEqual(results, [valueBool(true)]);
 				assert.ok(counter.allocations > 32, 'stress exercised repeated real allocation/collection boundaries');
 			});
 		}

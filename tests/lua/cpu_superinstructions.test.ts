@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
@@ -64,7 +65,7 @@ test('normal decoded dispatch preserves the guest budget boundary inside a fused
 	assert.equal(fusedCpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.SHL] + BASE_CYCLES[OpCode.BXOR]), RunResult.Yielded);
 	assert.equal(fusedCpu.readFramePc(0), entryPc + 4 * INSTRUCTION_BYTES);
 	assert.equal(fusedCpu.lastPc, entryPc + 3 * INSTRUCTION_BYTES);
-	assert.equal(fusedCpu.readFrameRegister(0, 3), 3);
+	assert.equal(fusedCpu.readFrameRegister(0, 3), valueInteger(3));
 	assert.equal(
 		fusedCpu.rootThread.frameAtDepth(0).decodedPage!.dispatchOps[((entryPc + 2 * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) >>> 2],
 		DecodedDispatchOp.FusedShlBxor,
@@ -73,14 +74,14 @@ test('normal decoded dispatch preserves the guest budget boundary inside a fused
 	assert.equal(cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.SHL]), RunResult.Yielded);
 	assert.equal(cpu.readFramePc(0), entryPc + 3 * INSTRUCTION_BYTES);
 	assert.equal(cpu.lastPc, entryPc + 2 * INSTRUCTION_BYTES);
-	assert.equal(cpu.readFrameRegister(0, 2), 2);
+	assert.equal(cpu.readFrameRegister(0, 2), valueInteger(2));
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.equal(cpu.readFrameRegister(0, 3), 3);
-	assert.equal(cpu.readFrameRegister(0, 4), 4);
-	assert.equal(cpu.readFrameRegister(0, 5), 8);
-	assert.equal(cpu.readFrameRegister(0, 6), 4);
-	assert.equal(cpu.readFrameRegister(0, 7), 5);
+	assert.equal(cpu.readFrameRegister(0, 3), valueInteger(3));
+	assert.equal(cpu.readFrameRegister(0, 4), valueInteger(4));
+	assert.equal(cpu.readFrameRegister(0, 5), valueInteger(8));
+	assert.equal(cpu.readFrameRegister(0, 6), valueInteger(4));
+	assert.equal(cpu.readFrameRegister(0, 7), valueInteger(5));
 	const page = cpu.rootThread.frameAtDepth(0).decodedPage!;
 	for (const [word, op] of [[2, DecodedDispatchOp.FusedShlBxor], [4, DecodedDispatchOp.FusedAddShl], [6, DecodedDispatchOp.FusedShrBxor]]) {
 		assert.equal(page.dispatchOps[((entryPc + word * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) >>> 2], op);
@@ -130,7 +131,7 @@ test('instrumented dispatch observes the second instruction of a normally fused 
 		entryPc + 2 * INSTRUCTION_BYTES,
 		secondPc,
 	]);
-	assert.equal(cpu.readFrameRegister(0, 2), 2);
+	assert.equal(cpu.readFrameRegister(0, 2), valueInteger(2));
 	assert.equal(cpu.readFramePc(0), secondPc);
 });
 
@@ -143,7 +144,7 @@ for (const instrumented of [false, true]) test(`sparse observation respects fusi
 		points: [new Set([pc]), new Set(), new Set()],
 		observe(domain, at, registers) {
 			assert.equal(domain, -1);
-			assert.equal(registers.getNumber(2), 2);
+			assert.equal(registers.get(2), valueInteger(2));
 			observations.push(at);
 		},
 	});
@@ -155,7 +156,7 @@ for (const instrumented of [false, true]) test(`sparse observation respects fusi
 	}
 	assert.equal(cpu.runUntilDepth(0, instrumented ? BASE_CYCLES[OpCode.BXOR] : 2 * BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.SHL] + BASE_CYCLES[OpCode.BXOR]), RunResult.Yielded);
 	assert.equal(cpu.instructionBudgetRemaining, 0);
-	assert.equal(cpu.readFrameRegister(0, 3), 3);
+	assert.equal(cpu.readFrameRegister(0, 3), valueInteger(3));
 	assert.deepEqual(observations, [pc]);
 	cpu.setInstructionObserver(null);
 	cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.K1] + 2 * (BASE_CYCLES[OpCode.SHL] + BASE_CYCLES[OpCode.BXOR]) + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.SHR] + BASE_CYCLES[OpCode.JMP]);

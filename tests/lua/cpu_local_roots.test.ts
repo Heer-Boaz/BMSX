@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { asClosure, asStringId, asTable, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { prepareLuaLiteral } from '../../ide/runtime/lua_literal';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import { valueString, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from './cpu_test_harness';
 
@@ -20,10 +18,10 @@ for (const optLevel of [0, 3] as const) {
 		});
 		const outer = cpu.acquireLocalRoots();
 		try {
-			const value = prepareLuaLiteral('{ local_root_key = "outer-payload", child = { "nested-payload" } }')(cpu) as Table;
-			assert.equal(cpu.stringPool.toString((value.getStringKey(cpu.stringPool.find('local_root_key')!) as StringValue).id), 'outer-payload');
-			const child = value.getStringKey(cpu.stringPool.find('child')!) as Table;
-			assert.equal(cpu.stringPool.toString((child.getInteger(1) as StringValue).id), 'nested-payload');
+			const value = asTable(prepareLuaLiteral('{ local_root_key = "outer-payload", child = { "nested-payload" } }')(cpu), cpu.gc);
+			assert.equal(cpu.stringPool.toString(asStringId(value.getStringKey(cpu.stringPool.find('local_root_key')!))), 'outer-payload');
+			const child = asTable(value.getStringKey(cpu.stringPool.find('child')!), cpu.gc);
+			assert.equal(cpu.stringPool.toString(asStringId(child.getInteger(1))), 'nested-payload');
 			const inner = cpu.acquireLocalRoots();
 			try {
 				cpu.stringPool.intern('inner-only-payload');
@@ -49,7 +47,7 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 			const completion: Value[] = [];
 			cpu.readCompletionValues(completion);
-			const closure = completion[0] as Closure;
+			const closure = asClosure(completion[0], cpu.gc);
 			const args: Value[] = [];
 			const strings = Array.from({ length: 24 }, (_, index) => `host-argument-${index}`);
 			const roots = cpu.acquireLocalRoots();
@@ -65,6 +63,6 @@ for (const optLevel of [0, 3] as const) {
 			assert.ok(gc.mock.callCount() > 0, 'actual call entry must grow the stack and collect before copying host arguments');
 			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 			cpu.readCompletionValues(completion);
-			assert.deepEqual(completion.map(value => cpu.stringPool.toString((value as StringValue).id)), strings);
+			assert.deepEqual(completion.map(value => cpu.stringPool.toString(asStringId(value))), strings);
 		});
 }

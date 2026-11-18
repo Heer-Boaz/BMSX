@@ -1,11 +1,12 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { ValueTag, valueBool, valueBuiltinFunction, valueInteger, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
-import { ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -75,12 +76,12 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			{ firstWord: 0, wordCount: 5, maxStack: 8 },
 			{ firstWord: 5, wordCount: 4, maxStack: 8 },
 			{ firstWord: 9, wordCount: 2, maxStack: 8 },
-		], constants: [7], systemGlobalNames: ['pcall'], closureRelocations: [
+		], constants: [integerConstant(7)], systemGlobalNames: ['pcall'], closureRelocations: [
 			{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) },
 			{ wordIndex: 6, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 2) },
 		] });
 		const { cpu } = createTestSystemCpu(image, backend);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), ValueTag.BuiltinFunction, BuiltinFunctionId.PCall, null);
+		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
 		for (let grant = 0; grant < 20 && cpu.getFrameDepth() !== 3; ++grant) cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.getFrameDepth(), 3);
 		assert.equal(cpu.rootThread.protectedCallDepth, 1);
@@ -96,7 +97,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.rootThread.protectedCallDepth, 1, 'ordinary child return must not finish protection');
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 		const values: Value[] = []; cpu.readCompletionValues(values);
-		assert.deepEqual(values, [true, 7]);
+		assert.deepEqual(values, [valueBool(true), valueInteger(7)]);
 		assert.equal(cpu.rootThread.protectedCallDepth, 0);
 		assert.equal(cpu.rootThread.firstFrame!.next!.protectedContinuationIndex, -1);
 	});
@@ -105,7 +106,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const { cpu } = createTestSystemCpu(callImage(1024, 1, 4), backend), thread = cpu.rootThread;
 		cpu.runUntilDepth(0, 1);
 		const caller = thread.currentFrame!, prepared = thread.acquireFrame();
-		const live = cpu.stringPool.intern('caller-only-across-admission'); caller.registers.setStringId(0, live);
+		const live = cpu.stringPool.intern('caller-only-across-admission'); caller.registers.set(0, valueString(live));
 		const heap = cpu.captureRuntimeState().luaHeap, garbage = 'g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 1);
 		cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
 		cpu.stringPool.intern(garbage);
@@ -113,7 +114,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.stringPool.find(garbage), undefined, 'stack growth actually collected');
 		assert.equal(thread.currentFrame, prepared); assert.equal(thread.firstFrame, caller); assert.equal(thread.frameDepth, 2);
 		assert.equal(cpu.stringPool.find('caller-only-across-admission'), live);
-		prepared.registers.setStringId(7, cpu.stringPool.intern('retired-frame-only'));
+		prepared.registers.set(7, valueString(cpu.stringPool.intern('retired-frame-only')));
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		assert.equal(thread.currentFrame, caller); assert.equal(caller.next, prepared);
 		assert.equal(prepared.closure, null); assert.equal(prepared.executionImage, null); assert.equal(prepared.registers.capacity(), 0);
@@ -126,7 +127,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const { cpu } = createTestSystemCpu(callImage(8, 62), backend), thread = cpu.rootThread;
 		while (thread.frameDepth !== 2) cpu.runUntilDepth(0, 1);
 		const caller = thread.firstFrame!, callee = thread.currentFrame!;
-		const result = cpu.stringPool.intern('returning-frame-only'); callee.registers.setStringId(0, result); callee.top = 1;
+		const result = cpu.stringPool.intern('returning-frame-only'); callee.registers.set(0, valueString(result)); callee.top = 1;
 		const heap = cpu.captureRuntimeState().luaHeap, garbage = 'g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 1);
 		cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
 		cpu.stringPool.intern(garbage);
@@ -143,7 +144,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.runUntilDepth(0, 1);
 		const caller = thread.currentFrame!;
 		if (completion) {
-			assert.throws(() => cpu.beginCompletionCall(caller.registers.getClosure(0)), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
+			assert.throws(() => cpu.beginCompletionCall(caller.registers.getClosure(0, cpu.gc)), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			assert.equal(thread.frameDepth, 1); assert.equal(thread.stackTop, 8);
 			assert.equal(caller.next!.closure, null); assert.equal(caller.next!.executionImage, null);
 		} else {

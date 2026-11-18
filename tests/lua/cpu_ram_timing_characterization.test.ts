@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { valueFloat, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -30,8 +31,8 @@ test('characterize current public RAM charges for scalar and counted accesses', 
 			const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8 + count }] });
 			const { cpu, memory } = createTestSystemCpu(image, backend);
 			const registers = cpu.rootThread.frameAtDepth(0).registers;
-			registers.setNumber(0, DYNAMIC_RAM_BASE);
-			for (let i = 0; i < count; ++i) registers.setNumber(8 + i, 0xcafe0000 + i);
+			registers.setInteger(0, DYNAMIC_RAM_BASE);
+			for (let i = 0; i < count; ++i) registers.setInteger(8 + i, 0xcafe0000 + i);
 			let cycles = 0;
 			for (let i = 0; i < 12; ++i) {
 				for (let word = 0; word < Math.max(count, 1); ++word) memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 4 * word, 0xa5a5a5a5);
@@ -54,22 +55,22 @@ test('characterize current public RAM charges for scalar and counted accesses', 
 			const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 2 }] });
 			const { cpu, memory } = createTestSystemCpu(image, backend);
 			const registers = cpu.rootThread.frameAtDepth(0).registers;
-			registers.setNumber(0, DYNAMIC_RAM_BASE); registers.setNumber(1, 17);
+			registers.setInteger(0, DYNAMIC_RAM_BASE); registers.setInteger(1, 17);
 			let cycles = 0;
 			for (let i = 0; i < 12; ++i) {
 				if (op === OpCode.LOAD_MEM) {
-					registers.setNumber(1, -123);
+					registers.setInteger(1, -123);
 					if (kind === MemoryAccessKind.F64LE) memory.writeMappedF64LE(DYNAMIC_RAM_BASE, 17);
 					else memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 17);
 				} else {
-					registers.setNumber(1, 17);
+					registers.setInteger(1, 17);
 					memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0xa5a5a5a5);
 					memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 4, 0xa5a5a5a5);
 				}
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 				cpu.runUntilDepth(0, 1);
 				cycles = 1 - cpu.instructionBudgetRemaining;
-				if (op === OpCode.LOAD_MEM) assert.equal(registers.getNumber(1), 17);
+				if (op === OpCode.LOAD_MEM) assert.equal(registers.get(1), kind === MemoryAccessKind.F64LE ? valueFloat(17) : valueInteger(17));
 				else if (kind === MemoryAccessKind.F64LE) {
 					assert.equal(memory.readMappedF64LE(DYNAMIC_RAM_BASE), 17);
 					assert.equal(memory.readMappedU32LE(DYNAMIC_RAM_BASE), 0);
