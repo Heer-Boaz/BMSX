@@ -199,6 +199,8 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	// The stable gate has already published CALL's exact prefix. A completed
 	// leaf owns its receiving range even when that prefix exhausted the grant.
 	sljit_set_label(builtin, sljit_emit_label(compiler));
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM2(NativeBlockAbi::words, SLJIT_R2), 2);
+	sljit_set_label(NativeBlockAbi::emitNonleafBuiltinJump(compiler, SLJIT_R1), coldDispatch);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::state, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, exit));
 	sljit_emit_icall(compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, P),

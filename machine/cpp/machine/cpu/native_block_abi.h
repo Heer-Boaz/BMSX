@@ -22,6 +22,8 @@ struct NativeCallScratch {
 // Every linked region shares this one native frame. Only the word/tag bases,
 // run state and cycle grant are pinned; the remaining banks own raw payloads.
 struct NativeBlockAbi {
+	// Test the builtin ID against the nonallocating leaf repertoire; clobbers R1.
+	static sljit_jump* emitNonleafBuiltinJump(sljit_compiler*, sljit_s32 id);
 	// S0/S1 = slot planes, R0/R1 = signed indices relative to those bases.
 	// R2 is the copy count; R3 is the nil tail when padding is requested.
 	static void emitFramePlacement(sljit_compiler*, bool moveFormals, bool pad);

@@ -5,6 +5,17 @@
 
 namespace bmsx {
 
+sljit_jump* NativeBlockAbi::emitNonleafBuiltinJump(sljit_compiler* compiler, sljit_s32 id) {
+	static_assert(BUILTIN_FUNCTION_COUNT <= 32);
+	constexpr u32 leafIds = (1u << static_cast<u32>(BuiltinFunctionId::SetMetatable))
+		| (1u << static_cast<u32>(BuiltinFunctionId::GetMetatable))
+		| (1u << static_cast<u32>(BuiltinFunctionId::StringByte))
+		| (1u << static_cast<u32>(BuiltinFunctionId::ToInteger));
+	sljit_emit_op2(compiler, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_IMM, leafIds, id, 0);
+	sljit_emit_op2u(compiler, SLJIT_AND32 | SLJIT_SET_Z, SLJIT_R1, 0, SLJIT_IMM, 1);
+	return sljit_emit_jump(compiler, SLJIT_ZERO);
+}
+
 void NativeBlockCompiler::emitBuiltinCall(const DecodedInstruction& instruction) {
 	auto& block = *m_blocks[m_current];
 	auto& call = block.terminal;
@@ -18,17 +29,8 @@ void NativeBlockCompiler::emitBuiltinCall(const DecodedInstruction& instruction)
 	}
 
 	fault(m_cache.guard(base, ValueTag::BuiltinFunction, SLJIT_R0), call, m_cache.state());
-	// Most builtins use the full call owner. Reject their IDs in generated
-	// code rather than entering the leaf once here and again at the shared gate.
-	static_assert(BUILTIN_FUNCTION_COUNT <= 32);
-	constexpr u32 leafIds = (1u << static_cast<u32>(BuiltinFunctionId::SetMetatable))
-		| (1u << static_cast<u32>(BuiltinFunctionId::GetMetatable))
-		| (1u << static_cast<u32>(BuiltinFunctionId::StringByte))
-		| (1u << static_cast<u32>(BuiltinFunctionId::ToInteger));
 	const auto id = readTyped(base, ValueTag::BuiltinFunction);
-	sljit_emit_op2(m_compiler, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_IMM, leafIds, id.reg, 0);
-	sljit_emit_op2u(m_compiler, SLJIT_AND32 | SLJIT_SET_Z, SLJIT_R1, 0, SLJIT_IMM, 1);
-	fault(sljit_emit_jump(m_compiler, SLJIT_ZERO), call, m_cache.state());
+	fault(NativeBlockAbi::emitNonleafBuiltinJump(m_compiler, id.reg), call, m_cache.state());
 	// The nonallocating leaf reads only its callee and arguments. Keep all
 	// unrelated guest payloads in the same registers across the host call.
 	m_cache.publishRange(base, base + instruction.b);

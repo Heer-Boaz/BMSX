@@ -169,6 +169,21 @@ void builtinPaths() {
 		}
 #endif
 	}
+	const auto rom = image(OpCode::CALL, 2, 2);
+	Machine generated(rom, false), scalar(rom, true);
+	for (auto* machine : {&generated, &scalar}) {
+		auto& frame = *machine->cpu.rootThread()->currentFrame;
+		frame.registers.set(0, machine->cpu.createBuiltinFunction(BuiltinFunctionId::Type));
+		frame.registers.set(1, valueInteger(17));
+		frame.top = 2;
+	}
+	parity(generated, scalar, 100);
+	require(generated.cpu.rootThread()->currentFrame->registers.get(0) == valueString(generated.cpu.stringPool().intern("number")),
+		"the full type builtin publishes the guest result");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(generated.cpu.nativeGateProfile().builtinAttempts == 0 && row(generated, NativeBlockExit::Call).entries == 1,
+		"a nonleaf builtin enters its semantic handler without a rejected leaf call");
+#endif
 }
 
 void warmClosureAndSnapshot() {
