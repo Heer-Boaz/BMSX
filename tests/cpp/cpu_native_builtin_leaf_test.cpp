@@ -35,7 +35,9 @@ test::Blua32TestRom image(int results, int args, bool wide = false) {
 		{.firstWord=2 * DECODED_PAGE_WORDS, .wordCount=1, .maxStack=16}};
 	source.exceptionFunctionIndex = source.irqFunctionIndex = 3;
 	source.globalNames = {"rawLeafMarker", "target"};
-	return test::encodeBlua32TestRom(RomImageDomain::System, source);
+	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, source);
+	rom.bytes.resize((rom.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~size_t{MAPPED_PAGE_BYTE_MASK});
+	return rom;
 }
 
 struct Machine {
@@ -55,7 +57,7 @@ struct Machine {
 			InstructionObserverBinding observer;
 			observer.points[0].insert(r.textAddress + 2 * INSTRUCTION_BYTES);
 			observer.context = &observedSuccessors;
-			observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<int*>(context); };
+			observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) { ++*static_cast<int*>(context); };
 			cpu.setInstructionObserver(std::move(observer));
 		}
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
@@ -63,24 +65,23 @@ struct Machine {
 		else cpu.prepareSystemNativeCode();
 #endif
 	}
-	void seed(BuiltinFunctionId id, int mode = 0, double position = 3) {
-		auto* frame = cpu.rootThread()->currentFrame; auto* r = frame->registers;
-		r[0] = cpu.createBuiltinFunction(id);
-		require(asBuiltinFunction(r[0])->id == id, "the actual runtime callee carries its raw builtin ID");
-		r[12] = valueNumber(99.75); r[11] = valueNumber(DYNAMIC_RAM_BASE + 0x4000); frame->top = 3;
+	void seed(BuiltinFunctionId id, int mode = 0, float position = 3) {
+		auto* frame = cpu.rootThread()->currentFrame; auto r = frame->registers;
+		r.set(0, cpu.createBuiltinFunction(id));
+		require(asBuiltinFunctionId(r.get(0)) == id, "the actual runtime callee carries its raw builtin ID");
+		r.set(12, valueFloat(99.75f)); r.set(11, valueInteger(DYNAMIC_RAM_BASE + 0x4000)); frame->top = 3;
 		if (id == BuiltinFunctionId::StringByte) {
-			r[1] = mode == 2 ? valueNumber(17) : valueString(cpu.stringPool().intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9)));
-			r[2] = mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueNumber(position);
-			expected = mode == 1 ? valueNumber(65) : position == 3 ? valueNumber(128512) : position == 2.9 ? valueNumber(233)
-				: position == 4294967297.0 ? valueNumber(65) : valueNil();
+			r.set(1, mode == 2 ? valueInteger(17) : valueString(cpu.stringPool().intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9))));
+			r.set(2, mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueFloat(position));
+			expected = mode == 1 ? valueInteger(65) : position == 3 ? valueInteger(128512) : position == 2 ? valueInteger(233) : valueNil();
 		} else {
 			target = cpu.createTable(0, 1); meta = cpu.createTable(0, 1);
-			meta->setStringKey(cpu.stringPool().intern("field"), valueNumber(71));
+			meta->setStringKey(cpu.stringPool().intern("field"), valueInteger(71));
 			target->metatable = meta;
-			cpu.setGlobalByKey(cpu.stringPool().intern("target"), valueTable(target));
-			r[1] = mode == 3 ? valueNumber(17) : valueTable(target);
-			r[2] = mode == 1 ? valueNil() : mode == 2 ? valueBool(false) : valueTable(meta);
-			expected = id == BuiltinFunctionId::GetMetatable ? valueTable(meta) : valueTable(target);
+			cpu.setGlobalByKey(cpu.stringPool().intern("target"), valueTable(cpu.gcHeap().reference(target)));
+			r.set(1, mode == 3 ? valueInteger(17) : valueTable(cpu.gcHeap().reference(target)));
+			r.set(2, mode == 1 ? valueNil() : mode == 2 ? valueBool(false) : valueTable(cpu.gcHeap().reference(meta)));
+			expected = id == BuiltinFunctionId::GetMetatable ? valueTable(cpu.gcHeap().reference(meta)) : valueTable(cpu.gcHeap().reference(target));
 		}
 	}
 	u32 marker() { return memory.readMappedU32LE(DYNAMIC_RAM_BASE + 0x4000); }
@@ -114,8 +115,8 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	void* marker = cold ? nullptr : markerPage->nativeCode[markerWord];
 	caller->terminal.continuationCells[0] = &marker;
 	const auto& gate = nativeBlockGate();
-	NativeCpuRunState run{.state={.registers=frame->registers, .constants=owner->constPool.data(), .frame=frame,
-		.constantCount=static_cast<u32>(owner->constPool.size()), .remainingCycles=grant, .registerTop=frame->top, .exitCode=gate.dispatch,
+	NativeCpuRunState run{.state={.registers=frame->registers, .constants=owner->constPool.view(), .frame=frame, .heap=&machine.cpu.gcHeap(),
+		.constantCount=static_cast<u32>(owner->constPool.capacity()), .remainingCycles=grant, .registerTop=frame->top, .exitCode=gate.dispatch,
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 		.diagnosticOpcodes={},
 #endif
@@ -149,9 +150,9 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 			&& machine.observedSuccessors == 1, "resuming the ordinary successor observes it once and never replays the already committed CALL");
 	}
 	if (id == BuiltinFunctionId::SetMetatable && mode == 1) require(machine.target->metatable == nullptr, "discard and receiving forms still perform the real metatable removal");
-	require(frame->registers[7] == valueNumber(99.75), "the cached numeric prefix survives the returning helper ABI");
+	require(frame->registers.get(7) == valueFloat(99.75f), "the cached numeric prefix survives the returning helper ABI");
 	require(frame->top == receiving && machine.cpu.getFrameDepth() == 1 && frame->next == nullptr, "builtin completion owns exact top without a child frame");
-	if (receiving) require(frame->registers[0] == machine.expected, "the raw native result equals the primitive contract");
+	if (receiving) require(frame->registers.get(0) == machine.expected, "the raw native result equals the primitive contract");
 }
 #endif
 
@@ -166,8 +167,8 @@ void ordinaryCases() {
 		require(native.cpu.rootThread()->currentFrame->top == receiving, "open, discard, fixed and padded receiving counts retain exact top");
 		if (receiving) require(native.cpu.readFrameRegister(0, 0) == native.expected, "ordinary raw builtin result is exact");
 		if (id == BuiltinFunctionId::SetMetatable) {
-			native.target->setStringKey(native.cpu.stringPool().intern("local"), valueNumber(9));
-			scalar.target->setStringKey(scalar.cpu.stringPool().intern("local"), valueNumber(9)); parity(native, scalar);
+			native.target->setStringKey(native.cpu.stringPool().intern("local"), valueInteger(9));
+			scalar.target->setStringKey(scalar.cpu.stringPool().intern("local"), valueInteger(9)); parity(native, scalar);
 		}
 		if (receiving > 1) require(isNil(native.cpu.readFrameRegister(0, 1)), "unsupported result counts keep ordinary nil padding");
 		native.cpu.collectHeap(); scalar.cpu.collectHeap(); parity(native, scalar);
@@ -178,11 +179,16 @@ void ordinaryCases() {
 		native.seed(BuiltinFunctionId::StringByte, 1); scalar.seed(BuiltinFunctionId::StringByte, 1);
 		if (args == 0) { native.cpu.rootThread()->currentFrame->top = 2; scalar.cpu.rootThread()->currentFrame->top = 2; }
 		test::runCpuParity(native.cpu, scalar.cpu, 32); parity(native, scalar);
-		require(native.cpu.readFrameRegister(0, 0) == valueNumber(65), "missing, explicit nil and open arguments preserve StringByte default position");
+		require(native.cpu.readFrameRegister(0, 0) == valueInteger(65), "missing, explicit nil and open arguments preserve StringByte default position");
 	}
-	for (const double position : {0.0, -1.0, 2.9, 4294967297.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+	for (const float position : {0.0f, -1.0f, 2.0f, 2.9f, 0x1p32f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()}) {
 		const auto rom = image(2, 3); Machine native(rom, false), scalar(rom, true); native.seed(BuiltinFunctionId::StringByte, 0, position); scalar.seed(BuiltinFunctionId::StringByte, 0, position);
-		test::runCpuParity(native.cpu, scalar.cpu, 32); parity(native, scalar); require(native.cpu.readFrameRegister(0, 0) == native.expected, "Unicode positions use existing signed32/default rules");
+		test::runCpuParity(native.cpu, scalar.cpu, 32); parity(native, scalar);
+		if (position == 0 || position == -1 || position == 2)
+			require(native.cpu.readFrameRegister(0, 0) == native.expected, "integral Float position selects the Unicode codepoint or nil");
+		else
+			require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT,
+				"fractional, out-of-range and nonfinite Float positions fault through the ordinary builtin");
 	}
 	for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable, BuiltinFunctionId::SetMetatable}) for (const bool wide : {false, true}) {
 		const auto rom = image(2, 3, wide); Machine native(rom, false), scalar(rom, true);

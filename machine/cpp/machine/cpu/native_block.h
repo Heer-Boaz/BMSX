@@ -61,15 +61,6 @@ struct NativeBlockRunState {
 #endif
 };
 
-// Live inputs/results for a nonallocating builtin. The two consumed arguments
-// are independent of the deferred guest-bank publication; success reuses the
-// first word for its result and returns the exact completed grant/top.
-struct NativeBuiltinCallState {
-	Value arguments[2];
-	int remainingCycles;
-	int registerTop;
-};
-
 enum class NativeBlockTransition : u32 {
 	Redispatch,
 	RebindFrame,

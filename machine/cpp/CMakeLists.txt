@@ -378,6 +378,7 @@ endif()
 
 if(BMSX_ENABLE_NATIVE_BLOCKS)
 	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp machine/cpu/native_block_abi.cpp
+		machine/cpu/native_block_call.cpp machine/cpu/native_block_return.cpp machine/cpu/native_block_frames.cpp
 		machine/cpu/native_block_registers.cpp machine/cpu/native_block_numeric.cpp machine/cpu/native_block_compare.cpp
 		machine/cpu/closure.cpp machine/cpu/native_block_context.cpp machine/cpu/native_block_control.cpp machine/cpu/native_block_length.cpp machine/cpu/native_block_table.cpp machine/cpu/native_block_memory.cpp machine/cpu/native_block_edges.cpp machine/cpu/native_block_liveness.cpp
 		machine/cpu/cpu_native_blocks.cpp machine/cpu/cpu_native_execution.cpp machine/cpu/cpu_native_prepare.cpp)
@@ -1228,11 +1229,17 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_cpu_compiled_calls_tests ../../tests/cpp/cpu_compiled_calls_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu_compiled_calls_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	if(BMSX_SNESMINI_TARGET)
+		target_link_options(bmsx_cpu_compiled_calls_tests PRIVATE -static-libstdc++ -static-libgcc)
+	endif()
 	add_test(NAME bmsx_cpu_compiled_calls_tests COMMAND bmsx_cpu_compiled_calls_tests)
 	add_executable(bmsx_cpu_native_builtin_leaf_tests ../../tests/cpp/cpu_native_builtin_leaf_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu_native_builtin_leaf_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	if(BMSX_ENABLE_NATIVE_BLOCKS)
 		target_link_libraries(bmsx_cpu_native_builtin_leaf_tests PRIVATE bmsx_sljit)
+	endif()
+	if(BMSX_SNESMINI_TARGET)
+		target_link_options(bmsx_cpu_native_builtin_leaf_tests PRIVATE -static-libstdc++ -static-libgcc)
 	endif()
 	add_test(NAME bmsx_cpu_native_builtin_leaf_tests COMMAND bmsx_cpu_native_builtin_leaf_tests)
 	add_executable(bmsx_cpu_native_builtin_continuity_tests ../../tests/cpp/cpu_native_builtin_continuity_test.cpp ${BMSX_TEST_ROM_SOURCE})

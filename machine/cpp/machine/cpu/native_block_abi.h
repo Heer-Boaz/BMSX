@@ -8,6 +8,17 @@
 
 namespace bmsx {
 
+struct NativeCallScratch {
+	const NativeBlockExitSite* exit;
+	CallFrame* caller;
+	CallFrame* callee;
+	Closure* closure;
+	void* target;
+	int argumentBase;
+	u32 functionAddress, codeAddress, numParams, maxStack, flags;
+	int argCount, varargBase, varargCount, stackBase, stackTop;
+};
+
 // Every linked region shares this one native frame. Only the word/tag bases,
 // run state and cycle grant are pinned; the remaining banks own raw payloads.
 struct NativeBlockAbi {
@@ -26,6 +37,7 @@ struct NativeBlockAbi {
 	static constexpr int saveds = (fixedSaved + savedWords) | SLJIT_ENTER_FLOAT(savedFloats);
 	static constexpr int helperResultOffset = registerCacheCapacity * sizeof(u32);
 	static constexpr int stackBytes = helperResultOffset + 64;
+	static_assert(sizeof(NativeCallScratch) <= stackBytes);
 	static constexpr int signature = SLJIT_ARGS2(P, P, P);
 	static constexpr auto wordRegisters = [] {
 		std::array<NativeRegisterHost, wordCount> result{};
@@ -53,6 +65,15 @@ public:
 	void* exit;
 	void* dispatch;
 	void* leaveSegment;
+private:
+	static sljit_label* emitCallGate(sljit_compiler*, sljit_label* cold, sljit_label* returned);
+	static sljit_label* emitReturnGate(sljit_compiler*, sljit_label* cold);
+	// S0/S1 = thread planes, R0/R1 = absolute source/destination, R2/R3 = copied/missing.
+	static void emitFramePlacement(sljit_compiler*, bool moveFormals);
+	// Input: R0 = PC. Output: R3 = live entry; R2 is scratch.
+	static void emitCodeLookup(sljit_compiler*, sljit_label* declined);
+	static void emitFrameEntry(sljit_compiler*, sljit_sw targetSlot);
+
 };
 const NativeBlockGate& nativeBlockGate();
 

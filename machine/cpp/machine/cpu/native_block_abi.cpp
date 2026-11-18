@@ -30,11 +30,22 @@ NativeBlockGate::NativeBlockGate() {
 	auto* returned = sljit_emit_label(compiler);
 	sljit_emit_return(compiler, SLJIT_MOV_P, SLJIT_R0, 0);
 	auto* dispatched = sljit_emit_label(compiler);
+	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, exit));
+	auto* call = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, static_cast<int>(NativeBlockExit::Call));
+	auto* ret = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, static_cast<int>(NativeBlockExit::Return));
+	auto* cold = sljit_emit_label(compiler);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_R0, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::state, 0);
 	sljit_emit_icall(compiler, SLJIT_CALL, SLJIT_ARGS2(P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::dispatchNativeExit));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0), returned);
 	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), resume);
+	// CALL and RET save their descriptor in the same scratch slot before
+	// reusing R0. Declined transitions still own the original, unplaced grant.
+	auto* declined = sljit_emit_label(compiler);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, exit));
+	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), cold);
+	sljit_set_label(call, emitCallGate(compiler, declined, returned));
+	sljit_set_label(ret, emitReturnGate(compiler, declined));
 	auto* leave = sljit_emit_label(compiler);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);

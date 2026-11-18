@@ -55,7 +55,6 @@ class CPU;
 class NativeCompilerWorker;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 enum class NativeBuiltinCallOutcome : u32;
-struct NativeBuiltinCallState;
 #endif
 struct NativeCompilationSource;
 class GcHeap;
@@ -477,10 +476,10 @@ private:
 	void skipNextInstruction(CallFrame& frame);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	friend class NativeBlockGate;
+	struct NativeFrameOffsets { size_t haltedThread, haltedDepth; };
+	static NativeFrameOffsets nativeFrameOffsets();
 	friend class NativeBlockCompiler;
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
-	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, const NativeBlockExitSite* exit,
-		NativeBuiltinCallState* call, BuiltinFunction* function) noexcept;
 	static NativeBuiltinCallOutcome tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	void prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pc, MappedBusSignals busSignals);
 	void prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32ExecutionBoot& boot);
