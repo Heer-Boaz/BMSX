@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { GeometryXform2Phase, GeometryXform2Unit } from '../../machine/ts/machine/devices/geometry/xform2';
 import type { GeometryJobState } from '../../machine/ts/machine/devices/geometry/job';
 import * as geo from '../../machine/ts/machine/devices/geometry/contracts';
-import { GEO_SCRATCH_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { Machine } from '../../machine/ts/machine/machine';
@@ -11,9 +11,12 @@ import { DEVICE_SERVICE_GEO } from '../../machine/ts/machine/scheduler/device';
 import * as io from '../../machine/ts/spec/bmsx/io';
 import { cartridgeSlots } from '../helpers/cartridge';
 
+// RAM outside the test image's static storage, for GEO operands and results.
+const GEO_BUFFERS = DYNAMIC_RAM_BASE + 0x10000;
+
 function fixture(count = 2) {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const record = GEO_SCRATCH_BASE, vertices = record + 0x100, matrix = record + 0x1000, bounds = record + 0x2000;
+	const record = GEO_BUFFERS, vertices = record + 0x100, matrix = record + 0x1000, bounds = record + 0x2000;
 	const job: GeometryJobState = { cmd: 0, src0: record, src1: vertices, src2: matrix, dst0: vertices + 8, dst1: bounds,
 		count: 1, param0: 0, param1: 0, stride0: 24, stride1: 8, stride2: 24,
 		processed: 0, resultCount: 0, exactPairCount: 0, broadphasePairCount: 0 };

@@ -422,7 +422,7 @@ def build():
         'memory_bytes':{'main':4194304,'vram':2097152,'audio':524288},
         'main_ram_topology':'2x 1Mx16 in parallel as one 32-bit bank',
         'vram_topology':'2x 1MiB, both on shared 32-bit data bus; separate chip selects; timing unvalidated',
-        'geo_scratch':'512 KiB reserved inside main RAM, no additional physical RAM',
+        'geo_buffers':'Program-owned buffers in main RAM, no additional physical RAM',
         'rom_capacity':'TBD; 16 MiB is address window only',
         'rails':'9 V/3 A external adapter; dual LTC1148-class synchronous buck, 3.3 V/3 A and 5 V/2 A design ratings; circuit proposal not electrically released',
         'thermal_change':'4.1 mm CPU/GPU packages, 1 mm TIM, common 140x72x29 sink base16.7/top45.7 mm; local front-left relief and support bosses',

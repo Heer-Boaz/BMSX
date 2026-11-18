@@ -28,7 +28,7 @@ void testController(bool abort) {
 	Machine machine(memory, input, PSX_MACHINE_SPEC);
 	machine.resetDevices(); machine.scheduler.reset();
 	machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec, 0);
-	const u32 record = GEO_SCRATCH_BASE, descriptors = record + 0x100u, vertices = record + 0x200u, result = record + 0x400u;
+	const u32 record = (DYNAMIC_RAM_BASE + 0x10000u), descriptors = record + 0x100u, vertices = record + 0x200u, result = record + 0x400u;
 	const std::array<u32, 5> pair = {0u, 0u, 0u, 1u, 0u};
 	const std::array<u32, 8> desc = {1u, 4u, 0u, 0u, 1u, 4u, 32u, 0u};
 	const std::array<u32, 16> coords = {0u, 0u, 0x40000u, 0u, 0x40000u, 0x40000u, 0u, 0x40000u,
@@ -88,7 +88,7 @@ int main() {
 	testController(false);
 	testController(true);
 	Memory memory({{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
-	const u32 record = GEO_SCRATCH_BASE, descriptors = record + 0x100u, vertices = record + 0x200u, result = record + 0x400u;
+	const u32 record = (DYNAMIC_RAM_BASE + 0x10000u), descriptors = record + 0x100u, vertices = record + 0x200u, result = record + 0x400u;
 	GeometryJobState job;
 	job.src0 = record; job.src1 = descriptors; job.src2 = vertices; job.dst0 = result;
 	job.count = 1u; job.stride0 = 20u; job.stride1 = 16u;

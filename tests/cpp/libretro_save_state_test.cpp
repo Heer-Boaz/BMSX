@@ -105,7 +105,7 @@ void testLibretroStateEnvelopeRoundTrip() {
 
 	bmsx::Memory& memory = runtime.machine.memory;
 	const size_t stateSize = bmsx::libretroStateSize(runtime);
-	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0x11223344u);
+	memory.writeMappedU32LE((bmsx::DYNAMIC_RAM_BASE + 0x10000u), 0x11223344u);
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0x89abcdefu);
 	const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
 	std::vector<bmsx::u8> envelope(stateSize + 16u, 0xa5);
@@ -118,13 +118,13 @@ void testLibretroStateEnvelopeRoundTrip() {
 		[](auto byte) { return byte == 0; }), "frontend capacity contains deterministic zero padding");
 	require(std::all_of(envelope.begin() + stateSize, envelope.end(), [](auto byte) { return byte == 0xa5; }),
 		"serialization does not touch bytes outside its announced capacity");
-	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0xaabbccddu);
+	memory.writeMappedU32LE((bmsx::DYNAMIC_RAM_BASE + 0x10000u), 0xaabbccddu);
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0u);
 	require(
 		bmsx::unserializeLibretroState(runtime, envelope),
 		"libretro envelope should decode its retained payload length");
 	require(
-		memory.readMappedU32LE(bmsx::GEO_SCRATCH_BASE) == 0x11223344u,
+		memory.readMappedU32LE((bmsx::DYNAMIC_RAM_BASE + 0x10000u)) == 0x11223344u,
 		"libretro envelope should restore system RAM");
 	require(
 		memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0x89abcdefu,

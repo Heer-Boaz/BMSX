@@ -13,10 +13,13 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import * as io from '../../machine/ts/spec/bmsx/io';
-import { DYNAMIC_RAM_BASE, GEO_SCRATCH_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
+
+// RAM outside the test image's static storage, for GEO operands and results.
+const GEO_BUFFERS = DYNAMIC_RAM_BASE + 0x10000;
 
 // The first record costs six cycles and has no vertices. The second samples
 // the vertex at its own start; this places the competing STORE one cycle
@@ -58,10 +61,10 @@ function observe(mode: CpuExecutionBackend, crossing: boolean) {
 	// Preserve warmed code but isolate this timeline from unrelated periodic
 	// timer callbacks; GEO is subsequently launched through mapped registers.
 	scheduler.reset();
-	const record = GEO_SCRATCH_BASE + 0x1000;
-	const vertex = GEO_SCRATCH_BASE + 0x2000;
-	const matrix = GEO_SCRATCH_BASE + 0x3000;
-	const output = GEO_SCRATCH_BASE + 0x4000;
+	const record = GEO_BUFFERS + 0x1000;
+	const vertex = GEO_BUFFERS + 0x2000;
+	const matrix = GEO_BUFFERS + 0x3000;
+	const output = GEO_BUFFERS + 0x4000;
 	for (const [i, word] of [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, geo.GEO_INDEX_NONE].entries()) memory.writeU32(record + i * 4, word);
 	for (const [i, word] of [0x10000, 0, 0, 0, 0x10000, 0].entries()) memory.writeU32(matrix + i * 4, word);
 	memory.writeU32(vertex, 0); memory.writeU32(vertex + 4, 0);

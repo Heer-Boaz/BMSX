@@ -13,7 +13,7 @@ import {
     IO_CMD_GEO_SAT2_BATCH,
 } from '../../machine/ts/machine/devices/geometry/contracts.ts';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget.ts';
-import { RAM_BASE, GEO_SCRATCH_BASE } from '../../machine/ts/spec/bmsx/memory_map.ts';
+import { RAM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map.ts';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model.ts';
 
 class CountedMemory extends Memory {
@@ -39,14 +39,15 @@ const memory = new CountedMemory({ systemRom: new Uint8Array(0),
     cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
 const ram = memory.ramData();
 const count = GEO_XFORM2_MAX_VERTICES;
-const record = GEO_SCRATCH_BASE;
-const vertices = GEO_SCRATCH_BASE + 0x1000;
-const matrix = GEO_SCRATCH_BASE + 0x2000;
-const transformed = GEO_SCRATCH_BASE + 0x3000;
-const bounds = GEO_SCRATCH_BASE + 0x4000;
-const pair = GEO_SCRATCH_BASE + 0x5000;
-const descriptors = GEO_SCRATCH_BASE + 0x6000;
-const result = GEO_SCRATCH_BASE + 0x7000;
+const bufferBase = DYNAMIC_RAM_BASE + 0x10000;
+const record = bufferBase;
+const vertices = bufferBase + 0x1000;
+const matrix = bufferBase + 0x2000;
+const transformed = bufferBase + 0x3000;
+const bounds = bufferBase + 0x4000;
+const pair = bufferBase + 0x5000;
+const descriptors = bufferBase + 0x6000;
+const result = bufferBase + 0x7000;
 
 // The parabola chain and closing chord form a strictly convex 64-gon. Every
 // coordinate is an exactly representable raw Q16 word; no trig/converter shim.

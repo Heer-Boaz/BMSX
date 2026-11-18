@@ -11,11 +11,11 @@
 using namespace bmsx;
 
 namespace {
-constexpr u32 instances = GEO_SCRATCH_BASE;
-constexpr u32 shapes = GEO_SCRATCH_BASE + 0x100u;
-constexpr u32 vertices = GEO_SCRATCH_BASE + 0x200u;
-constexpr u32 result = GEO_SCRATCH_BASE + 0x400u;
-constexpr u32 summary = GEO_SCRATCH_BASE + 0x500u;
+constexpr u32 instances = (DYNAMIC_RAM_BASE + 0x10000u);
+constexpr u32 shapes = (DYNAMIC_RAM_BASE + 0x10000u) + 0x100u;
+constexpr u32 vertices = (DYNAMIC_RAM_BASE + 0x10000u) + 0x200u;
+constexpr u32 result = (DYNAMIC_RAM_BASE + 0x10000u) + 0x400u;
+constexpr u32 summary = (DYNAMIC_RAM_BASE + 0x10000u) + 0x500u;
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);

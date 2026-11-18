@@ -123,13 +123,12 @@ The beginning of installed main RAM is reserved as follows:
 | Reservation | Byte-address interval or extent | Purpose |
 |---|---|---|
 | I/O | `[08000000H, 08040000H)` | 256 KiB reservation containing the device-register aperture |
-| GEO scratch | `[08040000H, 080C0000H)` | 512 KiB reserved area |
-| Firmware static storage | Starting at `080C0000H`, through the actual end of system BSS | Initialized DATA and zero-initialized BSS used by the BIOS |
+| Firmware static storage | Starting at `08040000H`, through the actual end of system BSS | Initialized DATA and zero-initialized BSS used by the BIOS |
 
-The I/O and GEO reservations occupy 768 KiB. This leaves 3.25 MiB before
-subtracting firmware and cartridge static storage; it is not a free-memory
-figure. Reserve both complete areas even where no register is decoded. Place
-cartridge data and buffers outside the firmware's complete DATA/BSS extent.
+The I/O reservation occupies 256 KiB, including addresses with no decoded
+register. The remaining 3.75 MiB must hold firmware and cartridge static
+storage, the language heap and its management area. Place cartridge data and
+device buffers outside the firmware’s complete DATA/BSS extent.
 The [Memory chapter](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)
 specifies the register aperture, reserved storage and RAM placement.
 [[Program images and startup](program-images.md#sec-program-images)]{.content-visible when-format="html"}[Book II, Chapter 3]{.content-visible when-format="pdf"}

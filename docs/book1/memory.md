@@ -45,33 +45,32 @@ and [Sample RAM transfer](apu.md#sec-apu-sample-ram-transfer).
 
 ## Reserved and cartridge storage in main RAM {#sec-memory-reserved-and-cartridge-storage-in-main-ram}
 
-The installed main RAM occupies `08000000H` through `083FFFFFH`, a total of 4 MiB. This is a physical storage extent, not a cartridge allocation range. It includes the I/O reservation, GEO scratch storage, the system's static storage and the cartridge program's static storage, and the language runtime's heap and management storage above them.
+The installed main RAM occupies `08000000H` through `083FFFFFH`, a total of 4 MiB. This is a physical storage extent, not a cartridge allocation range. It includes the I/O reservation, the system's static storage and the cartridge program's static storage, and the language runtime's heap and management storage above them.
 
 Static storage includes DATA, whose initial bytes are copied from ROM, and
 BSS, which startup initializes to zero. Both use assigned main-RAM addresses.
 The firmware and the cartridge each have their own occupied sections.
 
-Subtracting the 256 KiB I/O reservation and 512 KiB GEO scratch reservation
-leaves **3.25 MiB** in `[080C0000H, 08400000H)`. Static storage occupies the
+Subtracting the 256 KiB I/O reservation leaves **3.75 MiB** in
+`[08040000H, 08400000H)`. Static storage occupies the
 beginning of this span, the 16 KiB runtime management area its end, and the
 language heap the space between them. The installed firmware occupies the
 beginning of the static storage. Its actual DATA/BSS footprint, rather than
-3.25 MiB alone, determines where cartridge placement can begin.
+the total span alone, determines where cartridge placement can begin.
 
 The following ranges use an exclusive end: the end address is the first byte outside the range.
 
 | Use | Start | Exclusive end | Size |
 |---|---|---|---|
 | Declared I/O reservation | `08000000H` | `08040000H` | 256 KiB |
-| GEO scratch reservation | `08040000H` | `080C0000H` | 512 KiB |
-| System static storage | `080C0000H` | Actual end of system BSS | Specified by the system executable image |
+| System static storage | `08040000H` | Actual end of system BSS | Specified by the system executable image |
 | Cartridge static storage, compact layout below | Actual end of system BSS | Actual end of cartridge BSS | Specified by the cartridge executable image |
 | Language heap | Heap floor | `083FC000H` | Remainder of installed RAM |
 | Runtime management area | `083FC000H` | `08400000H` | 16 KiB |
 
-The decoded I/O register aperture ends at `08010440H`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers. Likewise, the GEO scratch reservation is not cartridge static storage.
+The decoded I/O register aperture ends at `08010440H`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers.
 
-`080C0000H` is the start of **system DATA**, not a universal cartridge RAM base.
+`08040000H` is the start of **system DATA**, not a universal cartridge RAM base.
 The installed firmware's BSS follows its DATA. Account for their actual occupied
 extent in the matching BIOS image, rather than assuming a fixed cartridge base.
 The image's declared BSS address and byte count identify that span; their sum
@@ -88,7 +87,7 @@ for the language heap.
 
 | Section in the compact layout, in address order | Run address |
 |---|---|
-| System DATA | `080C0000H` |
+| System DATA | `08040000H` |
 | System BSS | End of system DATA |
 | Cartridge DATA | Actual end of system BSS |
 | Cartridge BSS | End of cartridge DATA |
@@ -114,7 +113,7 @@ rejected: they change runtime state, with the consequences of a program error.
 
 The heap floor is the end of the active image's static storage, the larger
 of its DATA run end and its BSS end, rounded up to a multiple of 4 KiB. It is
-never below `080C0000H`, where static storage begins. The CPU sets the floor
+never below `08040000H`, where static storage begins. The CPU sets the floor
 from the system image at reset. EXEC sets it from the target image before
 that image's first instruction, and refuses a target whose static storage
 would cover heap storage still in use; see
@@ -126,7 +125,7 @@ near the floor is the last to be used.
 
 The 2 MiB VRAM is shared GPU storage, arranged as 1024 rows of 1024 **16-bit words**. Each row spans 2048 bytes. A drawing destination, texture source or display source selects storage within that same memory; it does not create a separate CPU byte-address allocation.
 
-The firmware uses VRAM both for the full terminal drawing surface and for its system texture atlas, which supplies terminal glyphs. Preserve the **bounding rectangle covering both**, rather than reserve only the currently visible text or the atlas alone. This VRAM reservation is separate from the I/O, GEO scratch and static-storage reservations in main RAM.
+The firmware uses VRAM both for the full terminal drawing surface and for its system texture atlas, which supplies terminal glyphs. Preserve the **bounding rectangle covering both**, rather than reserve only the currently visible text or the atlas alone. This VRAM reservation is separate from the I/O and static-storage reservations in main RAM.
 
 ### Reservation lifetime {#sec-memory-handoff-is-not-release}
 
@@ -185,7 +184,9 @@ The 320 × 252 bounding rectangle covers 80640 16-bit words, or 161280 bytes of 
 A device buffer is an addressed range of bytes. A language Table, String or
 function value is not such a range, and the CPU's function-local value slots
 do not provide a cartridge-addressable byte stack. Use storage with the
-layout and alignment required by the receiving unit.
+layout and alignment required by the receiving unit. Reserve GEO operands and
+result buffers in the program’s own static storage; there is no system-assigned
+GEO buffer. Use [GEO’s command reference](geo.md#sec-geo) to size each span.
 
 [[BLua storage reference](blua-programs.md#sec-blua-programs-typed-storage-layouts-and-address-views)]{.content-visible when-format="html"}[Book II, §2.2]{.content-visible when-format="pdf"}
 defines declarations, typed views and record indexing. The example in

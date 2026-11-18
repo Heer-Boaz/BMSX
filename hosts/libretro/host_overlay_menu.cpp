@@ -478,7 +478,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 HostResourceUsage HostResourceUsage::capture(const Runtime& runtime) {
 	const f64 vramBytes = static_cast<f64>(runtime.machine.gxGpu.readVramSnapshotBytes().size());
 	return {{static_cast<f64>(runtime.cpuUsageCyclesUsed()),
-		static_cast<f64>(GEO_SCRATCH_SIZE + runtime.machine.cpu.luaHeap().usedBytes()), vramBytes},
+		static_cast<f64>(runtime.machine.cpu.heapAllocator().floorAddress() - RAM_BASE + RUNTIME_MANAGEMENT_SIZE + runtime.machine.cpu.luaHeap().usedBytes()), vramBytes},
 		{static_cast<f64>(runtime.cpuUsageCyclesGranted()),
 		static_cast<f64>(runtime.machine.memory.ramByteCount()), vramBytes}};
 }

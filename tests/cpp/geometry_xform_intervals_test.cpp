@@ -12,7 +12,7 @@
 
 using namespace bmsx;
 namespace {
-constexpr u32 record = GEO_SCRATCH_BASE, vertices = record + 0x100u, matrix = record + 0x1000u, bounds = record + 0x2000u;
+constexpr u32 record = (DYNAMIC_RAM_BASE + 0x10000u), vertices = record + 0x100u, matrix = record + 0x1000u, bounds = record + 0x2000u;
 void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
 class IdleInput final : public InputControllerInputSource {
 public:

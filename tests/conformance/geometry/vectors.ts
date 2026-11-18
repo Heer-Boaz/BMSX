@@ -1,12 +1,15 @@
 import { numberToF32Bits } from '../../../machine/ts/common/float32';
 import { encodeSignedFix16 } from '../../../machine/ts/machine/common/numeric';
-import { GEO_SCRATCH_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import * as io from '../../../machine/ts/spec/bmsx/io';
 import * as geo from '../../../machine/ts/machine/devices/geometry/contracts';
 
+// RAM outside any test image's static storage, for GEO operands and results.
+const GEO_BUFFERS = DYNAMIC_RAM_BASE + 0x10000;
+
 export type GeometryVector = { name: string; writes: [number, number][]; reads: number[]; pairCounterSeed: number; firstRecordPairs: number; clipCapacityBoundary: number };
-const instances = GEO_SCRATCH_BASE, shapes = GEO_SCRATCH_BASE + 0x100, vertices = GEO_SCRATCH_BASE + 0x200;
-const result = GEO_SCRATCH_BASE + 0x400, summary = GEO_SCRATCH_BASE + 0x500;
+const instances = GEO_BUFFERS, shapes = GEO_BUFFERS + 0x100, vertices = GEO_BUFFERS + 0x200;
+const result = GEO_BUFFERS + 0x400, summary = GEO_BUFFERS + 0x500;
 
 /** One RAM/MMIO program is consumed unchanged by both cores. */
 function vector(name: string, a: readonly number[], b: readonly number[], sat: boolean): GeometryVector {
@@ -60,8 +63,8 @@ export function geometryVectors(): GeometryVector[] {
 		cases[0].a.map(numberToF32Bits), cases[0].b.map(numberToF32Bits), false);
 	const compoundCommand = compoundTie.writes.pop()!;
 	for (let side = 0; side < 2; ++side) {
-		const compound = GEO_SCRATCH_BASE + 0x60 + side * geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
-		const pieces = GEO_SCRATCH_BASE + 0x80 + side * 2 * geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
+		const compound = GEO_BUFFERS + 0x60 + side * geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
+		const pieces = GEO_BUFFERS + 0x80 + side * 2 * geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
 		const bounds = shapes + side * 32 + geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
 		compoundTie.writes.push([instances + side * geo.GEO_OVERLAP2D_INSTANCE_BYTES, compound]);
 		[geo.GEO_OVERLAP2D_SHAPE_KIND_COMPOUND, 2, pieces - compound, bounds - compound]
@@ -117,7 +120,7 @@ export function geometryVectors(): GeometryVector[] {
 		const square = [0, 0, 4, 0, 4, 4, 0, 4].map(numberToF32Bits);
 		const v = vector(`full-pass-first-record-${count}`, square, square, false);
 		v.firstRecordPairs = count - 1;
-		const separateSummary = GEO_SCRATCH_BASE + 0x900;
+		const separateSummary = GEO_BUFFERS + 0x900;
 		v.reads = v.reads.map(address => address >= summary && address < summary + 16
 			? address - summary + separateSummary : address);
 		const command = v.writes.pop()!;
@@ -160,7 +163,7 @@ export function geometryVectors(): GeometryVector[] {
 	result.push(atCapacity);
 	const failing = vector('overlap-clip-129-after-contact', clip129, [-4,-4,4,-4,4,4,-4,4].map(numberToF32Bits), false);
 	failing.clipCapacityBoundary = 129;
-	const clipResult = GEO_SCRATCH_BASE + 0x900, clipSummary = GEO_SCRATCH_BASE + 0xa00;
+	const clipResult = GEO_BUFFERS + 0x900, clipSummary = GEO_BUFFERS + 0xa00;
 	const lastCommand = failing.writes.pop()!;
 	for (const write of failing.writes) {
 		if (write[0] === io.IO_GEO_COUNT) write[1] = 3;
@@ -183,7 +186,7 @@ export function geometryVectors(): GeometryVector[] {
 	// Exercise the bounded XFORM input/output buffer with raw fixed-point
 	// extremes, fractional products and saturation at both vertex limits.
 	for (const count of [4, geo.GEO_XFORM2_MAX_VERTICES]) {
-		const record = GEO_SCRATCH_BASE + 0x1000, source = record + 0x100, matrix = record + 0x400;
+		const record = GEO_BUFFERS + 0x1000, source = record + 0x100, matrix = record + 0x400;
 		const destination = record + 0x500, bounds = record + 0x800;
 		const writes: [number, number][] = [];
 		const words = (address: number, values: readonly number[]) => values.forEach((word, index) => writes.push([address + index * 4, word >>> 0]));

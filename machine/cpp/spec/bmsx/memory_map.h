@@ -30,15 +30,13 @@ constexpr uint32_t IO_WORD_SIZE = 4;
 
 constexpr uint32_t IO_REGION_SIZE = 0x00040000u; // 256 KB
 
-constexpr uint32_t GEO_SCRATCH_SIZE = 0x00080000u; // 512 KB
 // The language heap extends from the active image's page-rounded static end to
 // the runtime management area at the top of installed RAM.
 constexpr uint32_t HEAP_PAGE_SIZE = 0x00001000u; // 4 KB
 constexpr uint32_t RUNTIME_MANAGEMENT_SIZE = 0x00004000u; // 16 KB
-constexpr uint32_t MIN_RAM_SIZE = IO_REGION_SIZE + GEO_SCRATCH_SIZE;
+constexpr uint32_t MIN_RAM_SIZE = IO_REGION_SIZE;
 constexpr uint32_t DYNAMIC_RAM_BASE = RAM_BASE + MIN_RAM_SIZE;
 
 constexpr uint32_t IO_BASE = RAM_BASE;
-constexpr uint32_t GEO_SCRATCH_BASE = IO_BASE + IO_REGION_SIZE;
 
 } // namespace bmsx

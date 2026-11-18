@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { GeometrySat2Phase, GeometrySat2Unit } from '../../machine/ts/machine/devices/geometry/sat2';
 import type { GeometryJobState } from '../../machine/ts/machine/devices/geometry/job';
 import * as geo from '../../machine/ts/machine/devices/geometry/contracts';
-import { GEO_SCRATCH_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { Machine } from '../../machine/ts/machine/machine';
@@ -11,9 +11,12 @@ import { DEVICE_SERVICE_GEO } from '../../machine/ts/machine/scheduler/device';
 import * as io from '../../machine/ts/spec/bmsx/io';
 import { cartridgeSlots } from '../helpers/cartridge';
 
+// RAM outside the test image's static storage, for GEO operands and results.
+const GEO_BUFFERS = DYNAMIC_RAM_BASE + 0x10000;
+
 function fixture() {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const record = GEO_SCRATCH_BASE, descriptors = record + 0x100, vertices = record + 0x200, result = record + 0x400;
+	const record = GEO_BUFFERS, descriptors = record + 0x100, vertices = record + 0x200, result = record + 0x400;
 	const job: GeometryJobState = { cmd: 0, src0: record, src1: descriptors, src2: vertices, dst0: result, dst1: 0,
 		count: 1, param0: 0, param1: 0, stride0: 20, stride1: 16, stride2: 0,
 		processed: 0, resultCount: 0, exactPairCount: 0, broadphasePairCount: 0 };
@@ -159,7 +162,7 @@ test('SAT2 largest legal polygons use bounded raw vertex loads and axis work', (
 	memory.writeU32(job.src1 + geo.GEO_SAT2_DESC_VERTEX_COUNT_OFFSET, 64);
 	memory.writeU32(job.src1 + 16 + geo.GEO_SAT2_DESC_VERTEX_COUNT_OFFSET, 64);
 	memory.writeU32(job.src1 + 16 + geo.GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET, 512);
-	job.dst0 = GEO_SCRATCH_BASE + 0x800;
+	job.dst0 = GEO_BUFFERS + 0x800;
 	for (let i = 0; i < 256; ++i) memory.writeU32(vertices + i * 4, 0);
 	unit.beginJob(); unit.processStep(job);
 	assert.equal(unit.progress().phase, GeometrySat2Phase.LoadA);

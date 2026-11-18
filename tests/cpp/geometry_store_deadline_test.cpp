@@ -33,7 +33,7 @@ struct Result {
 	i64 now, used, remaining;
 };
 Result runCase(bool native, bool crossing) {
-	constexpr u32 record = GEO_SCRATCH_BASE + 0x1000u, vertex = GEO_SCRATCH_BASE + 0x2000u, matrix = GEO_SCRATCH_BASE + 0x3000u, output = GEO_SCRATCH_BASE + 0x4000u;
+	constexpr u32 record = (DYNAMIC_RAM_BASE + 0x10000u) + 0x1000u, vertex = (DYNAMIC_RAM_BASE + 0x10000u) + 0x2000u, matrix = (DYNAMIC_RAM_BASE + 0x10000u) + 0x3000u, output = (DYNAMIC_RAM_BASE + 0x10000u) + 0x4000u;
 	test::Blua32TestImage image;
 	image.text.resize(2u * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::STORE_MEM_D), 1, 0, static_cast<u8>(MemoryAccessKind::U32LE), 0);

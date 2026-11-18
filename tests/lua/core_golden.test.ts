@@ -39,11 +39,14 @@ import {
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { CART_ROM_BASE, CART_ROM_SIZE, GEO_SCRATCH_BASE, RAM_BASE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_SIZE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { VblankState } from '../../machine/ts/machine/runtime/vblank';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
+
+// RAM outside the test image's static storage, for GEO operands and results.
+const GEO_BUFFERS = DYNAMIC_RAM_BASE + 0x10000;
 
 const TRANSFORM_CASES: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
 	[0, 0, 0, 0, 0, 0],
@@ -71,10 +74,10 @@ test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () =
 	assert.equal(memory.readU8(SYSTEM_ROM_BASE), 0x11);
 	memory.writeU32(RAM_BASE, 0x12345678);
 	assert.equal(memory.readU32(RAM_BASE), 0x12345678);
-	memory.writeMappedU32LE(GEO_SCRATCH_BASE, 0x89abcdef);
-	assert.equal(memory.readMappedU32LE(GEO_SCRATCH_BASE), 0x89abcdef);
-	memory.writeMappedU16LE(GEO_SCRATCH_BASE + 4, 0xf00d);
-	assert.equal(memory.readMappedU16LE(GEO_SCRATCH_BASE + 4), 0xf00d);
+	memory.writeMappedU32LE(GEO_BUFFERS, 0x89abcdef);
+	assert.equal(memory.readMappedU32LE(GEO_BUFFERS), 0x89abcdef);
+	memory.writeMappedU16LE(GEO_BUFFERS + 4, 0xf00d);
+	assert.equal(memory.readMappedU16LE(GEO_BUFFERS + 4), 0xf00d);
 	memory.writeIoU32(IO_DMA0_STATUS, 0xfeedcafe);
 	assert.equal(memory.readIoU32(IO_DMA0_STATUS), 0xfeedcafe);
 	assert.equal(memory.readMappedU32LE(IO_DMA0_STATUS), 0xfeedcafe);

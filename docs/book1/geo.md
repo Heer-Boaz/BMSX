@@ -208,13 +208,16 @@ Choose a command according to the operation and coordinate representation:
 | XFORM2 span / SAT2 polygon | At most 64 vertices |
 | OVERLAP2D polygon / clipping workspace | At most 64 input vertices / 128 clipping vertices |
 | Installed main RAM | 4 MiB; addressed operand and result storage, not a private GEO payload buffer |
-| Assigned GEO workspace | 512 KiB of main RAM at 08040000H…080BFFFFH; not an automatic operand destination |
 | System-cycle timebase | 33,868,800 cycles/s |
 | Arithmetic rate | 16,384,000 work units/s; command-specific work units below |
 
-Program source and destination addresses explicitly. The assigned workspace
-is available in main RAM; commands use the addresses supplied by the program.
-Record sizes and operation-specific limits appear in the command reference.
+Reserve the operand, result and summary buffers needed by the command in the
+program’s own storage, then write their addresses into the GEO registers.
+GEO has no system-assigned buffer in main RAM. For OVERLAP2D, reserve 36
+bytes per contact record and set the result capacity to the number of records
+the buffer holds. Reserve the 16-byte summary separately. If another hit
+would exceed the capacity, GEO reports `RESULT_CAPACITY` without writing that
+record.
 
 ![GEO captured configuration and live operand paths](figures/geo-job.svg){#fig-geo-job}
 

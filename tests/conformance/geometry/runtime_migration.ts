@@ -17,12 +17,15 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/bl
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import * as io from '../../../machine/ts/spec/bmsx/io';
 import { IO_GEO_DST0, IO_GEO_DST1, IO_GEO_FAULT, IO_GEO_PROCESSED, IO_GEO_STATUS, IO_IRQ_FLAGS, IRQ_GEO_DONE } from '../../../machine/ts/spec/bmsx/io';
-import { GEO_SCRATCH_BASE, IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { GEO_OVERLAP2D_RESULT_BYTES, GEO_OVERLAP2D_SUMMARY_BYTES, GEO_STATUS_DONE, IO_CMD_GEO_XFORM2_BATCH } from '../../../machine/ts/machine/devices/geometry/contracts';
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { geometryVectors } from './vectors';
+
+// RAM outside any test image's static storage, for GEO operands and results.
+const GEO_BUFFERS = DYNAMIC_RAM_BASE + 0x10000;
 
 const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 writeInstruction(code, 0, OpCode.HALT, 0, 0, 0, 0);
@@ -101,7 +104,7 @@ try {
 	const tsPrefix = join(directory, 'ts');
 	const runner = command[0]!;
 
-	const scratch = GEO_SCRATCH_BASE;
+	const scratch = GEO_BUFFERS;
 	const xformWrites: [number, number][] = [];
 	const words = (address: number, values: number[]) => values.forEach((value, i) => xformWrites.push([address + i * 4, value]));
 	words(scratch, [0, 0, 0, 0, 2, 0]);
