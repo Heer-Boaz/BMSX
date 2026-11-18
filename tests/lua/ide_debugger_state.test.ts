@@ -25,9 +25,7 @@ import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import { valueString, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
+import { asClosure, asInteger, asStringId, asTable, valueBool, valueInteger, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { prepareLuaLiteral } from '../../ide/runtime/lua_literal';
 import { RuntimeGuestCallPlan, scheduleRuntimeGuestCall } from '../../ide/runtime/guest_call';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
@@ -125,7 +123,7 @@ for (const admission of ['quiescent', 'at-stop'] as const) test(`a revoked ${adm
 		{ backend: { finishGxGpuReadbacks: () => readback.promise } } as VideoPresenter);
 	let current = true, cancelled = false;
 	const pending = scheduleRuntimeGuestCall(runtime, guest, state, tasks,
-		{ admission, honorUserStops: false, isCurrent: () => current, prepare: () => ({ domain: -1, closure: values[0] as Closure, args: () => [] }) },
+		{ admission, honorUserStops: false, isCurrent: () => current, prepare: () => ({ domain: -1, closure: asClosure(values[0], cpu.gc), args: () => [] }) },
 		() => assert.fail('cancelled evaluation started'), completed => { assert.equal(completed, false); cancelled = true; }, assert.fail);
 	current = false; readback.resolve(); await pending;
 	assert.equal(cancelled, true); assert.equal(state.plans.controlActive, false);
@@ -181,7 +179,7 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 				assert.equal(cpu.getFrameDepth(), depth);
 				assert.equal(cpu.readFramePc(depth - 1), pc);
 				assert.equal(state.source.stop !== undefined, true);
-				return { domain: -1, closure: guest.global('operation') as Closure, args: () => [] };
+				return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] };
 			},
 		}, () => { started++; }, completed => { finished = completed; if (completed) cpu.readCompletionValues(values); }, assert.fail);
 		assert.equal(started, 1);
@@ -195,12 +193,12 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 			assert.equal(state.plans.controlSuspended, true);
 			didExecuteRuntimeDebuggerPlan(state);
 			assert.equal(finished, undefined);
-			assert.equal(guest.global('evaluations'), 0, 'the nested breakpoint is before its write');
+			assert.equal(guest.global('evaluations'), valueInteger(0), 'the nested breakpoint is before its write');
 			resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
 			assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 		}
 		didExecuteRuntimeDebuggerPlan(state);
-		assert.equal(finished, true); assert.deepEqual(values, [42, null, false]);
+		assert.equal(finished, true); assert.deepEqual(values, [valueInteger(42), valueNil(), valueBool(false)]);
 		assert.equal(state.plans.controlActive, false);
 		assert.equal(cpu.activeThread, thread); assert.equal(cpu.getFrameDepth(), depth);
 		assert.equal(cpu.readFramePc(depth - 1), pc); assert.equal(cpu.readExceptionReturnFrameDepth(), exceptionDepth);
@@ -213,7 +211,7 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 		resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
 		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Yielded);
 		assert.equal(memory.readMappedU32LE(irqTail), 42, 'ordinary Continue observes the retained mutation');
-		assert.equal(guest.global('evaluations'), 1);
+		assert.equal(guest.global('evaluations'), valueInteger(1));
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 	});
 }
@@ -237,15 +235,15 @@ return loops
 	let finished = false;
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'quiescent', honorUserStops: true, isCurrent: () => true,
-		prepare: () => ({ domain: -1, closure: guest.global('operation') as Closure, args: () => [] }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] }),
 	}, () => {}, completed => { finished = completed; cpu.readCompletionValues(values); }, assert.fail);
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	didExecuteRuntimeDebuggerPlan(state);
-	assert.equal(finished, true); assert.deepEqual(values, [42]);
-	assert.equal(state.source.stop !== undefined, false); assert.equal(guest.global('loops'), 0);
+	assert.equal(finished, true); assert.deepEqual(values, [valueInteger(42)]);
+	assert.equal(state.source.stop !== undefined, false); assert.equal(guest.global('loops'), valueInteger(0));
 	resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
 	assert.equal(stoppedSourceLine(harness), line);
-	assert.equal(guest.global('loops'), 1, 'Continue executes the original stopped instruction once before stopping on its next visit');
+	assert.equal(guest.global('loops'), valueInteger(1), 'Continue executes the original stopped instruction once before stopping on its next visit');
 });
 
 for (const optLevel of [0, 3] as const) test(`discarding an at-stop plan does not present an unreturned caller O${optLevel}`, async () => {
@@ -268,7 +266,7 @@ return work -- caller stop
 	const outcomes: boolean[] = [];
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'at-stop', honorUserStops: true, isCurrent: () => true,
-		prepare: () => ({ domain: -1, closure: guest.global('operation') as Closure, args: () => [] }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] }),
 	}, () => {}, completed => { outcomes.push(completed); }, assert.fail);
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	didExecuteRuntimeDebuggerPlan(state);
@@ -279,7 +277,7 @@ return work -- caller stop
 	assert.deepEqual(outcomes, [false]); assert.equal(state.plans.controlActive, false);
 	assert.equal(state.source.stop !== undefined, true); assert.equal(state.source.stop!.pc, innerPc);
 	assert.equal(cpu.getFrameDepth(), depth + 1, 'plan retirement is not an implicit stack unwind');
-	assert.equal(cpu.readFramePc(depth - 1), outerPc); assert.equal(guest.global('work'), 0);
+	assert.equal(cpu.readFramePc(depth - 1), outerPc); assert.equal(guest.global('work'), valueInteger(0));
 });
 
 for (const optLevel of [0, 3] as const) for (const cancel of [false, true]) test(`evaluation ${cancel ? 'cancels' : 'admits fresh arguments'} after the physical IRQ return (O${optLevel})`, async () => {
@@ -324,7 +322,7 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 			assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 			const first = memory.readMappedU32LE(irqCount);
 			assert.equal(first, 1, 'resolve arguments after the handler, not before it');
-			return { domain: -1, closure: guest.global('operation') as Closure, args: () => [first] };
+			return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [valueInteger(first)] };
 		},
 	}, () => { started++; }, value => { completed = value; if (value) cpu.readCompletionValues(result); }, assert.fail);
 	assert.equal(prepared, 0);
@@ -355,7 +353,7 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	state.plans.didExecute();
-	assert.deepEqual(result, [1, 2]);
+	assert.deepEqual(result, [valueInteger(1), valueInteger(2)]);
 	assert.equal(completed, true);
 	assert.equal(state.plans.mutationActive, false);
 	assert.equal(cpu.getFrameDepth(), depth);
@@ -378,16 +376,16 @@ return actor, advance
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
-	const actor = values[0] as Table;
-	const closure = values[1] as Closure;
+	const actor = asTable(values[0], cpu.gc);
+	const closure = asClosure(values[1], cpu.gc);
 	const key = cpu.stringPool.find('value')!;
 	const depth = cpu.getFrameDepth();
 	let completed = false;
-	cpu.beginCompletionCall(closure, [actor, 100]);
+	cpu.beginCompletionCall(closure, [values[0], valueInteger(100)]);
 	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, 'completion', false, value => { completed = value; }), 'workbench');
 	cpu.runUntilDepth(depth, 80);
-	const partial = actor.getStringKey(key) as number;
-	assert.ok(partial > 0 && partial < 100);
+	const partial = actor.getStringKey(key);
+	assert.ok(asInteger(partial) > 0 && asInteger(partial) < 100);
 	state.plans.setControlSuspended(true);
 	assert.equal(runtimeDebuggerExecutionRequested(state), false);
 	assert.equal(runtimeDebuggerExecutionIntent(state), HostExecutionIntent.None);
@@ -401,7 +399,7 @@ return actor, advance
 	state.plans.didExecute();
 	assert.equal(completed, true);
 	assert.equal(state.plans.mutationActive, false);
-	assert.equal(actor.getStringKey(key), 100);
+	assert.equal(actor.getStringKey(key), valueInteger(100));
 	assert.equal(cpu.getFrameDepth(), depth);
 });
 
@@ -451,17 +449,17 @@ end
 		didEnter: () => { entered++; assert.equal(runtime.completionCallPending(), true); },
 		boundary: () => {
 			boundaryCalls++;
-			return { request: { domain: -1, closure: guest.global('request_boundary') as Closure, args: () => [] },
+			return { request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), args: () => [] },
 				condition: values => {
-					const receipt = values[0] as Table, key = cpu.stringPool.find('reached')!;
-					return () => receipt.getStringKey(key) === true;
+					const receipt = asTable(values[0], cpu.gc), key = cpu.stringPool.find('reached')!;
+					return () => receipt.getStringKey(key) === valueBool(true);
 				} };
 		},
 		prepare: () => {
 			prepared++;
 			const target = guest.global('actor');
 			assert.notEqual(target, before, 'resolve the replacement, never the popup borrow');
-			return { domain: -1, closure: guest.global('operation') as Closure, args: () => [target] };
+			return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [target] };
 		},
 	}, () => { started++; }, value => { completed = value; if (value) cpu.readCompletionValues(results); }, assert.fail);
 	const execute = async () => {
@@ -483,18 +481,18 @@ end
 	if (cancel === 'admission') current = false;
 	await tasks.schedule(() => {}, assert.fail, RuntimeTaskKind.History);
 	assert.equal(started, 1);
-	assert.equal(guest.global('ordinary'), 1, 'stop at the owner boundary, before another game iteration');
+	assert.equal(guest.global('ordinary'), valueInteger(1), 'stop at the owner boundary, before another game iteration');
 	if (cancel !== 'never') {
 		assert.equal(completed, false); assert.equal(prepared, 0); assert.equal(entered, 0);
-		assert.equal(guest.global('calls'), 0, 'a revoked request leaves no queued edit in the guest');
+		assert.equal(guest.global('calls'), valueInteger(0), 'a revoked request leaves no queued edit in the guest');
 		assert.equal(state.plans.mutationActive, false);
 		return;
 	}
 	assert.equal(prepared, 1); assert.equal(entered, 1);
 	assert.equal(readbacks, 4, 'synchronize GPU work after IRQ, receipt submission and boundary');
 	await execute();
-	assert.equal(completed, true); assert.deepEqual(results, [101]);
-	assert.equal(guest.global('calls'), 1); assert.equal(state.plans.mutationActive, false);
+	assert.equal(completed, true); assert.deepEqual(results, [valueInteger(101)]);
+	assert.equal(guest.global('calls'), valueInteger(1)); assert.equal(state.plans.mutationActive, false);
 });
 
 for (const optLevel of [0, 3] as const) test(`guest boundary works in RAM code without linked symbols (O${optLevel})`, async () => {
@@ -516,9 +514,9 @@ end
 	const { cpu, memory } = runtime.machine;
 	cpu.reset(); assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
 	const values: Value[] = []; cpu.readCompletionValues(values);
-	const driver = values[0] as Closure;
+	const driver = asClosure(values[0], cpu.gc);
 	const guest = new SuspendedGuestSession(runtime);
-	const source = (guest.global('ram_body') as Closure).functionAddress;
+	const source = (asClosure(guest.global('ram_body'), cpu.gc)).functionAddress;
 	const record = new Uint8Array(BLUA32_FUNCTION_RECORD_SIZE);
 	memory.readBytesInto(source, record, record.length);
 	const code = new Uint8Array(memory.readMappedU32LE(source + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET));
@@ -535,18 +533,18 @@ end
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'quiescent', honorUserStops: false,
 		isCurrent: () => true,
-		boundary: () => ({ request: { domain: -1, closure: guest.global('request_boundary') as Closure, args: () => [] },
-			condition: values => { const receipt = values[0] as Table, key = cpu.stringPool.find('reached')!;
-				return () => receipt.getStringKey(key) === true; } }),
-		prepare: () => ({ domain: -1, closure: guest.global('operation') as Closure, args: () => [] }),
+		boundary: () => ({ request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), args: () => [] },
+			condition: values => { const receipt = asTable(values[0], cpu.gc), key = cpu.stringPool.find('reached')!;
+				return () => receipt.getStringKey(key) === valueBool(true); } }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] }),
 	}, () => {}, ready => { completed = ready; cpu.readCompletionValues(values); }, assert.fail);
 	for (let phase = 0; phase < 3; phase++) {
 		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 		state.plans.didExecute();
 		await tasks.schedule(() => {}, assert.fail, RuntimeTaskKind.History);
 	}
-	assert.equal(completed, true); assert.deepEqual(values, [1]);
-	assert.equal(guest.global('passes'), 1, 'no instruction beyond the published boundary');
+	assert.equal(completed, true); assert.deepEqual(values, [valueInteger(1)]);
+	assert.equal(guest.global('passes'), valueInteger(1), 'no instruction beyond the published boundary');
 });
 
 function stoppedSourceLine(harness: DebuggerHarness): number {
@@ -568,7 +566,7 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 	state.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }, [2]);
 	assert.ok(state.breakpoints.bindings.pcs[0].size > 0, 'the real source has an emitted breakpoint PC');
 	let finished = 0;
-	cpu.beginCompletionCall(values[0] as Closure, [1]);
+	cpu.beginCompletionCall(asClosure(values[0], cpu.gc), [valueInteger(1)]);
 	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, 0, 'completion', honorUserStops, completed => {
 		assert.equal(completed, true); finished++;
 	}), 'workbench');
@@ -592,7 +590,7 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 	cpu.readCompletionValues(values);
 	assert.equal(finished, 1);
 	assert.equal(state.plans.mutationActive, false);
-	assert.deepEqual(values, [2]);
+	assert.deepEqual(values, [valueInteger(2)]);
 });
 
 function startAtBreakpoint(harness: DebuggerHarness, line: number): void {
@@ -709,7 +707,7 @@ while true do halt_until_irq end
 	const { cpu, memory, irqController } = runtime.machine;
 	cpu.reset(); cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
 	const depth = cpu.getFrameDepth(), guest = new SuspendedGuestSession(runtime);
-	cpu.beginCompletionCall(guest.global('operation') as Closure, []);
+	cpu.beginCompletionCall(asClosure(guest.global('operation'), cpu.gc), []);
 	let completed = false;
 	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, 'completion', true, value => { completed = value; }), 'workbench');
 	cpu.runUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET);
@@ -722,7 +720,7 @@ while true do halt_until_irq end
 	state.plans.didExecute();
 	assert.equal(completed, true); assert.equal(state.source.stop !== undefined, false);
 	assert.equal(memory.readMappedU32LE(irqCount), 0, 'completion stops before an unrelated IRQ instruction');
-	const values: Value[] = []; cpu.readCompletionValues(values); assert.deepEqual(values, [42]);
+	const values: Value[] = []; cpu.readCompletionValues(values); assert.deepEqual(values, [valueInteger(42)]);
 });
 
 for (const level of [0, 3] as const) for (const transition of ['source-install', 'hot-resume', 'reset'] as const) test(`O${level}: an evaluation cannot republish a source stop after ${transition}`, async () => {
@@ -737,7 +735,7 @@ for (const level of [0, 3] as const) for (const transition of ['source-install',
 	let completed = false;
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'at-stop', honorUserStops: true, isCurrent: () => true,
-		prepare: () => ({ domain: -1, closure: guest.global('operation') as Closure, args: () => [] }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] }),
 	}, () => {}, result => { completed = result; }, assert.fail);
 	if (transition === 'source-install') {
 		state.sources.currentBlua32Media = { ...state.sources.currentBlua32Media };
@@ -757,7 +755,7 @@ test(`guest call admission roots prepare and recursive arguments across GC (O${o
 	const cpu = runtime.machine.cpu;
 	cpu.reset(); assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
 	const values: Value[] = []; cpu.readCompletionValues(values);
-	const closure = values[0] as Closure, guest = new SuspendedGuestSession(runtime);
+	const closure = asClosure(values[0], cpu.gc), guest = new SuspendedGuestSession(runtime);
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
 	const intern = cpu.stringPool.intern.bind(cpu.stringPool);
@@ -780,11 +778,11 @@ test(`guest call admission roots prepare and recursive arguments across GC (O${o
 	didExecuteRuntimeDebuggerPlan(state);
 	assert.equal(finished, true);
 	cpu.readCompletionValues(values);
-	assert.equal(cpu.stringPool.toString((values[0] as StringValue).id), 'prepare-owned-string');
-	const table = values[1] as Table;
-	const child = table.getStringKey(cpu.stringPool.find('argument_owned_key')!) as Table;
-	assert.equal(cpu.stringPool.toString((child.getInteger(1) as StringValue).id), 'nested-owned-string');
-	assert.equal(cpu.stringPool.toString((values[2] as StringValue).id), 'last-owned-string');
+	assert.equal(cpu.stringPool.toString(asStringId(values[0])), 'prepare-owned-string');
+	const table = asTable(values[1], cpu.gc);
+	const child = asTable(table.getStringKey(cpu.stringPool.find('argument_owned_key')!), cpu.gc);
+	assert.equal(cpu.stringPool.toString(asStringId(child.getInteger(1))), 'nested-owned-string');
+	assert.equal(cpu.stringPool.toString(asStringId(values[2])), 'last-owned-string');
 });
 
 test('failed guest-call preparation releases its temporary allocation roots', async () => {
