@@ -17,9 +17,9 @@ using namespace bmsx;
 using namespace std::string_view_literals;
 void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
 enum class Kind { Empty, Ascending, Descending, Stale, Sparse, Terminal };
-struct Case { Kind kind; double boundary; int probes; };
+struct Case { Kind kind; i32 boundary; int probes; };
 constexpr std::array cases{Case{Kind::Empty,0,1}, Case{Kind::Ascending,64,2}, Case{Kind::Descending,4096,26},
-	Case{Kind::Stale,0,1}, Case{Kind::Sparse,4503599627370496.0,105}, Case{Kind::Terminal,9007199254740991.0,54}};
+	Case{Kind::Stale,0,1}, Case{Kind::Sparse,1 << 30,61}, Case{Kind::Terminal,INT32_MAX,32}};
 struct Program {
 	test::Blua32TestImage image;
 	std::array<u32,6> starts;
@@ -50,12 +50,12 @@ Table* makeTable(CPU& cpu,Kind kind) {
 	auto* table=cpu.createTable(kind==Kind::Sparse||kind==Kind::Terminal?0:4096,128);
 	if (kind==Kind::Ascending) for (int k=1;k<=64;++k) table->setInteger(k,valueBool(false));
 	if (kind==Kind::Descending||kind==Kind::Stale) {
-		const Value value=kind==Kind::Stale?valueTable(cpu.createTable()):valueBool(false);
+		const Value value=kind==Kind::Stale?valueTable(cpu.gcHeap().reference(cpu.createTable())):valueBool(false);
 		for (int k=4096;k>=1;--k) table->setInteger(k,value);
 	}
 	if (kind==Kind::Stale) table->clearWeakEntries(false,true,[](Value){return false;});
-	if (kind==Kind::Sparse||kind==Kind::Terminal) for (int bit=52;bit>=0;--bit) table->set(valueNumber(static_cast<double>(uint64_t{1}<<bit)),valueBool(false));
-	if (kind==Kind::Terminal) table->set(valueNumber(9007199254740991.0),valueBool(false));
+	if (kind==Kind::Sparse||kind==Kind::Terminal) for (int bit=30;bit>=0;--bit) table->setInteger(1 << bit,valueBool(false));
+	if (kind==Kind::Terminal) table->setInteger(INT32_MAX,valueBool(false));
 	return table;
 }
 u32 seed(Table* table) {
@@ -71,7 +71,7 @@ void sameSnapshot(const CpuRuntimeState& a,const CpuRuntimeState& b) {
 void pureSearchAndSeed() {
 	Program program(false);
 	for (const auto test:cases) {
-		Machine m(program,true); auto* table=makeTable(m.cpu,test.kind); m.cpu.activeThread()->currentFrame->registers[0]=valueTable(table);
+		Machine m(program,true); auto* table=makeTable(m.cpu,test.kind); m.cpu.activeThread()->currentFrame->registers.set(0, valueTable(m.cpu.gcHeap().reference(table)));
 		const auto before=m.cpu.captureRuntimeState();
 		for (int repeat=0;repeat<3;++repeat) {
 			u32 probes; require(Table::length(table,&probes)==test.boundary&&probes==static_cast<u32>(test.probes),"exact literal logical probe count and border");
@@ -92,7 +92,7 @@ void everyGrant() {
 	for (bool wide:{false,true}) for (const auto test:cases) {
 		Program program(wide);Machine generated(program,false),scalar(program,true);
 		for (auto* m:{&generated,&scalar}) {
-			auto* r=m->cpu.activeThread()->currentFrame->registers;r[0]=valueTable(makeTable(m->cpu,test.kind));r[10]=valueTable(m->cpu.createTable(1));
+			auto r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueTable(m->cpu.gcHeap().reference(makeTable(m->cpu,test.kind))));r.set(10, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable(1))));
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		const auto* page=generated.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup->find(generated.rom.textAddress,0);
@@ -103,15 +103,15 @@ void everyGrant() {
 		for (int grant=0;grant<=total;++grant) {
 			for (auto* m:{&generated,&scalar}) {
 				m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);
-				auto* r=m->cpu.activeThread()->currentFrame->registers;r[6]=valueNumber(91);r[8]=valueNil();r[9]=valueNil();asTable(r[10])->setInteger(1,valueNumber(-1));
+				auto r=m->cpu.activeThread()->currentFrame->registers;r.set(6, valueInteger(91));r.set(8, valueNil());r.set(9, valueNil());asTable(r.get(10), m->cpu.gcHeap())->setInteger(1,valueInteger(-1));
 			}
 			require(test::runCpuParity(generated.cpu,scalar.cpu,grant)==RunResult::Yielded,"LEN loop remains runnable");
 			int remaining=grant,completed=0;while (remaining>0)remaining-=charges[completed++];
-			auto* frame=generated.cpu.activeThread()->currentFrame;auto* r=frame->registers;
+			auto* frame=generated.cpu.activeThread()->currentFrame;auto r=frame->registers;
 			require(generated.cpu.instructionBudgetRemaining==remaining&&frame->pc==generated.rom.textAddress+program.starts[completed==6?0:completed]*INSTRUCTION_BYTES,"literal full-P debt and instruction frontier");
-			require(r[6]==(completed>=3?valueNumber(test.boundary):completed>=2?r[0]:valueNumber(91))
-				&&asTable(r[10])->getInteger(1)==(completed>=4?valueNumber(test.boundary):valueNumber(-1))&&r[8]==(completed>=5?valueNumber(37):valueNil()),
-				"aliased F64 result and side-effecting suffix commit only at admitted instruction frontiers");
+			require(r.get(6)==(completed>=3?valueInteger(test.boundary):completed>=2?r.get(0):valueInteger(91))
+				&&asTable(r.get(10), generated.cpu.gcHeap())->getInteger(1)==(completed>=4?valueInteger(test.boundary):valueInteger(-1))&&r.get(8)==(completed>=5?valueInteger(37):valueNil()),
+				"aliased Integer result and side-effecting suffix commit only at admitted instruction frontiers");
 			sameSnapshot(generated.cpu.captureRuntimeState(),scalar.cpu.captureRuntimeState());
 		}
 		require(generated.cpu.luaHeap().usedBytes()==heap,"length performs no guest allocation");
@@ -119,10 +119,10 @@ void everyGrant() {
 			m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);
 			const auto before=m->cpu.captureRuntimeState();m->cpu.runUntilDepth(0,5);const auto after=m->cpu.captureRuntimeState();const int debt=m->cpu.instructionBudgetRemaining;
 			m->cpu.restoreRuntimeState(before);m->cpu.runUntilDepth(0,5);require(m->cpu.instructionBudgetRemaining==debt,"restored seed repeats exact logical work");sameSnapshot(m->cpu.captureRuntimeState(),after);
-			auto* r=m->cpu.activeThread()->currentFrame->registers;r[0]=valueString(m->cpu.stringPool().intern("é😀\0"sv));
+			auto r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueString(m->cpu.stringPool().intern("é😀\0"sv)));
 			m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);m->cpu.runUntilDepth(0,5);
-			require(m->cpu.instructionBudgetRemaining==-2&&m->cpu.readFrameRegister(0,6)==valueNumber(3),"String LEN ignores stale Table probe work and remains base3");
-			r=m->cpu.activeThread()->currentFrame->registers;r[0]=valueBool(true);r[8]=valueNil();
+			require(m->cpu.instructionBudgetRemaining==-2&&m->cpu.readFrameRegister(0,6)==valueInteger(3),"String LEN ignores stale Table probe work and remains base3");
+			r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueBool(true));r.set(8, valueNil());
 			m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);m->cpu.runUntilDepth(0,5);
 			require(m->cpu.instructionBudgetRemaining==-2&&(m->cpu.readCauseWord()&0x7c)==CPU_CAUSE_CODE_TRAP
 				&&m->cpu.readFrameRegister(0,6)==valueBool(true)&&isNil(m->cpu.readFrameRegister(0,8)),
@@ -142,28 +142,28 @@ void skippedLength() {
 		program.image.functions = {{.firstWord=0, .wordCount=word+1, .maxStack=10}};
 		Machine generated(program, false), scalar(program, true);
 		for (auto* m : {&generated, &scalar}) {
-			auto* r = m->cpu.activeThread()->currentFrame->registers;
-			r[0] = valueTable(makeTable(m->cpu, Kind::Descending)); r[1] = valueNumber(1); r[6] = valueNumber(91);
+			auto r = m->cpu.activeThread()->currentFrame->registers;
+			r.set(0, valueTable(m->cpu.gcHeap().reference(makeTable(m->cpu, Kind::Descending)))); r.set(1, valueInteger(1)); r.set(6, valueInteger(91));
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 4);
-		require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.readFrameRegister(0, 6) == valueNumber(91)
-			&& generated.cpu.readFrameRegister(0, 8) == valueNumber(37), "skipped LEN has no presence work or destination commit");
+		require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.readFrameRegister(0, 6) == valueInteger(91)
+			&& generated.cpu.readFrameRegister(0, 8) == valueInteger(37), "skipped LEN has no presence work or destination commit");
 	}
 }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void oneGateFrontier() {
-	Program program(false);Machine m(program,false);auto* frame=m.cpu.activeThread()->currentFrame;auto* r=frame->registers;
-	r[0]=valueTable(makeTable(m.cpu,Kind::Descending));r[10]=valueTable(m.cpu.createTable(1));asTable(r[10])->setInteger(1,valueNumber(-1));r[8]=valueNil();
+	Program program(false);Machine m(program,false);auto* frame=m.cpu.activeThread()->currentFrame;auto r=frame->registers;
+	r.set(0, valueTable(m.cpu.gcHeap().reference(makeTable(m.cpu,Kind::Descending))));r.set(10, valueTable(m.cpu.gcHeap().reference(m.cpu.createTable(1))));asTable(r.get(10), m.cpu.gcHeap())->setInteger(1,valueInteger(-1));r.set(8, valueNil());
 	const auto* page=frame->executionImage->nativeCodeLookup->find(m.rom.textAddress,0);
 	const auto& block=page->nativeBlocks->entries[(m.rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES];
 	NativeBlockRunState state{};
-	state.registers = r; state.constants = frame->executionImage->constPool.data();
-	state.frame = frame; state.remainingCycles = 18; state.registerTop = frame->top;
+	state.registers = r; state.constants = frame->executionImage->constPool.view();
+	state.frame = frame; state.heap = &m.cpu.gcHeap(); state.remainingCycles = 18; state.registerTop = frame->top;
 	const auto* exit=block->run(state);
 	require(exit->exit==NativeBlockExit::Continue&&exit->nextPc==m.rom.textAddress+program.starts[3]*INSTRUCTION_BYTES&&state.remainingCycles==-145,
 		"one actual gate invocation returns completed LEN debt before any outer CPU loop can intervene");
-	require(r[6]==valueNumber(4096)&&r[9]==valueNumber(37)&&asTable(r[10])->getInteger(1)==valueNumber(-1)&&isNil(r[8]),
-		"F64 stays intact across scalar-work read and cached result is published before the unexecuted side effect");
+	require(r.get(6)==valueInteger(4096)&&r.get(9)==valueInteger(37)&&asTable(r.get(10), m.cpu.gcHeap())->getInteger(1)==valueInteger(-1)&&isNil(r.get(8)),
+		"Integer stays intact across scalar-work read and cached result is published before the unexecuted side effect");
 }
 #endif
 } // namespace

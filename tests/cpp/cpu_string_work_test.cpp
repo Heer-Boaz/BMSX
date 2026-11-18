@@ -43,15 +43,15 @@ void logicalStringWork(bool scalar, OpCode op) {
 		auto& frame = machine.restart();
 		const std::string right("a😀雪\0", 9);
 		const std::string left = repeat % 3 == 2 ? right : repeat % 3 == 1 ? "a😀雪" : "z😀雪";
-		frame.registers[1] = valueString(machine.cpu.stringPool().intern(left));
-		frame.registers[2] = valueString(machine.cpu.stringPool().intern(right));
+		frame.registers.set(1, valueString(machine.cpu.stringPool().intern(left)));
+		frame.registers.set(2, valueString(machine.cpu.stringPool().intern(right)));
 		machine.cpu.runUntilDepth(0, 1);
 		const int leftCount = repeat % 3 == 2 ? 4 : 3;
 		const int cycles = BASE_CYCLES[static_cast<u8>(op)]
 			+ (op == OpCode::CONCAT ? 4 + leftCount : op == OpCode::CONCATN ? 6 + leftCount : op == OpCode::EQ ? 0 : leftCount);
 		require(machine.cpu.instructionBudgetRemaining == 1 - cycles, "logical text work charges agree on cold and warm native paths");
 		if (op == OpCode::CONCAT || op == OpCode::CONCATN) {
-			require(machine.cpu.stringPool().toString(asStringId(frame.registers[0])) == left + right, "concatenation preserves complete Unicode and zero codepoints");
+			require(machine.cpu.stringPool().toString(asStringId(frame.registers.get(0))) == left + right, "concatenation preserves complete Unicode and zero codepoints");
 		} else {
 			const bool matched = op == OpCode::LT ? left < right : op == OpCode::LE ? left <= right : left == right;
 			const int words = matched ? 2 : 1;
@@ -78,23 +78,23 @@ void selectAndChar(bool scalar) {
 		if (builtin == BuiltinFunctionId::Select) {
 			for (const int selector : {-2147483647 - 1, 0, -32, -1, 1, 32, 33}) {
 				auto& frame = machine.restart();
-				frame.registers[0] = machine.cpu.createBuiltinFunction(builtin);
-				frame.registers[1] = valueNumber(selector);
-				for (int i = 1; i <= 32; ++i) frame.registers[i + 1] = valueNumber(i);
+				frame.registers.set(0, machine.cpu.createBuiltinFunction(builtin));
+				frame.registers.set(1, valueInteger(selector));
+				for (int i = 1; i <= 32; ++i) frame.registers.set(i + 1, valueInteger(i));
 				machine.cpu.runUntilDepth(0, 1);
-				const auto expected = selector == 33 ? valueNil() : valueNumber(selector == -1 || selector == 32 ? 32 : 1);
-				if (wanted != 1 && !(wanted == 0 && selector == 33)) require(frame.registers[0] == expected, "negative select clips to valid argument storage even at INT_MIN");
+				const auto expected = selector == 33 ? valueNil() : valueInteger(selector == -1 || selector == 32 ? 32 : 1);
+				if (wanted != 1 && !(wanted == 0 && selector == 33)) require(frame.registers.get(0) == expected, "negative select clips to valid argument storage even at INT_MIN");
 				const int available = selector == 33 ? 0 : selector == -1 || selector == 32 ? 1 : 32;
 				const int placed = wanted == 0 ? available : wanted - 1;
 				require(frame.top == placed, "select preserves open and fixed receiving ranges");
-				for (int i = available; i < placed; ++i) require(frame.registers[i] == valueNil(), "select retains requested nil padding");
+				for (int i = available; i < placed; ++i) require(frame.registers.get(i) == valueNil(), "select retains requested nil padding");
 			}
 		} else {
 			for (const bool invalid : {false, true}) {
 				auto& frame = machine.restart();
-				frame.registers[0] = machine.cpu.createBuiltinFunction(builtin);
-				frame.registers[1] = valueNumber(invalid ? -1 : 65);
-				frame.registers[2] = valueNumber(0); frame.registers[3] = valueNumber(0x1f600);
+				frame.registers.set(0, machine.cpu.createBuiltinFunction(builtin));
+				frame.registers.set(1, valueInteger(invalid ? -1 : 65));
+				frame.registers.set(2, valueInteger(0)); frame.registers.set(3, valueInteger(0x1f600));
 				machine.cpu.runUntilDepth(0, 1);
 				if (invalid) require(machine.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT, "discarding char results must not discard validation");
 				require(machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 5, "char charges all supplied codepoints, including argument faults");

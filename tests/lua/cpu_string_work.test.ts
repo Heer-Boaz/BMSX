@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { BuiltinResults } from '../../machine/ts/machine/cpu/value_slots';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { BuiltinResults } from '../../machine/ts/machine/cpu/builtin_values';
+import { valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -25,8 +25,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				// hits and comparison early-outs do not determine the cycle debit.
 				const right = 'a😀雪\0';
 				const left = repeat % 3 === 2 ? right : repeat % 3 === 1 ? 'a😀雪' : 'z😀雪';
-				frame.registers.setStringId(1, cpu.stringPool.intern(left));
-				frame.registers.setStringId(2, cpu.stringPool.intern(right));
+				frame.registers.setString(1, cpu.stringPool.intern(left));
+				frame.registers.setString(2, cpu.stringPool.intern(right));
 				cpu.runUntilDepth(0, 1);
 				const length = Array.from(left).length + Array.from(right).length;
 				const cycles = BASE_CYCLES[op] + (op === OpCode.CONCAT ? length : op === OpCode.CONCATN ? 2 + length : op === OpCode.EQ ? 0 : Math.min(Array.from(left).length, Array.from(right).length));
@@ -54,11 +54,11 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			for (const selector of [-2147483648, 0, -32, -1, 1, 32, 33]) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 				const r = cpu.rootThread.currentFrame!.registers;
-				r.setEncoded(0, ValueTag.BuiltinFunction, BuiltinFunctionId.Select, null);
-				r.setNumber(1, selector);
-				for (let i = 1; i <= 32; ++i) r.setNumber(i + 1, i);
+				r.setBuiltinFunction(0, BuiltinFunctionId.Select);
+				r.setInteger(1, selector);
+				for (let i = 1; i <= 32; ++i) r.setInteger(i + 1, i);
 				produced = 0; cpu.runUntilDepth(0, 1);
-				assert.equal(r.get(0), selector === 33 ? null : selector === -1 || selector === 32 ? 32 : 1);
+				assert.equal(r.get(0), selector === 33 ? valueNil() : valueInteger(selector === -1 || selector === 32 ? 32 : 1));
 				assert.equal(produced, selector === 33 ? 0 : 1, 'fixed one-result consumers must not copy the unused suffix');
 			}
 		} finally { BuiltinResults.prototype.push = originalPush; }
@@ -70,13 +70,13 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }] });
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, r = frame.registers;
-		r.setEncoded(0, ValueTag.BuiltinFunction, BuiltinFunctionId.Select, null);
-		r.setNumber(1, -2147483648);
-		for (let i = 0; i < 3; ++i) r.setNumber(i + 2, i + 10);
+		r.setBuiltinFunction(0, BuiltinFunctionId.Select);
+		r.setInteger(1, -2147483648);
+		for (let i = 0; i < 3; ++i) r.setInteger(i + 2, i + 10);
 		cpu.runUntilDepth(0, 1);
 		const count = wanted === 0 ? 3 : wanted - 1;
 		assert.equal(frame.top, count);
-		assert.deepEqual(Array.from({ length: count }, (_, i) => r.get(i)), [10, 11, 12, null, null].slice(0, count));
+		assert.deepEqual(Array.from({ length: count }, (_, i) => r.get(i)), [valueInteger(10), valueInteger(11), valueInteger(12), valueNil(), valueNil()].slice(0, count));
 	});
 
 	for (const selector of ['#', 'invalid']) test(`discarded select still validates its selector (${backend}, ${selector})`, () => {
@@ -85,8 +85,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }] });
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
-		frame.registers.setEncoded(0, ValueTag.BuiltinFunction, BuiltinFunctionId.Select, null);
-		frame.registers.setStringId(1, cpu.stringPool.intern(selector));
+		frame.registers.setBuiltinFunction(0, BuiltinFunctionId.Select);
+		frame.registers.setString(1, cpu.stringPool.intern(selector));
 		cpu.runUntilDepth(0, 1);
 		if (selector === '#') assert.equal(frame.top, 0);
 		else assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -98,8 +98,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }] });
 		const { cpu } = createTestSystemCpu(image, backend), r = cpu.rootThread.currentFrame!.registers;
-		r.setEncoded(0, ValueTag.BuiltinFunction, BuiltinFunctionId.StringChar, null);
-		r.setNumber(1, invalid ? -1 : 65); r.setNumber(2, 0); r.setNumber(3, 0x1f600);
+		r.setBuiltinFunction(0, BuiltinFunctionId.StringChar);
+		r.setInteger(1, invalid ? -1 : 65); r.setInteger(2, 0); r.setInteger(3, 0x1f600);
 		cpu.runUntilDepth(0, 1);
 		if (invalid) assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 3, 'CALL base + builtin 2 + three supplied codepoints');

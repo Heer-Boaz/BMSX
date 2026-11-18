@@ -78,20 +78,20 @@ void sameSnapshot(const CpuRuntimeState& a, const CpuRuntimeState& b) {
 }
 Value keyFor(CPU& cpu, KeyKind kind) {
 	return kind == KeyKind::String ? valueString(cpu.stringPool().intern("field"))
-		: kind == KeyKind::Integer ? valueNumber(1) : valueBool(false);
+		: kind == KeyKind::Integer ? valueInteger(1) : valueBool(false);
 }
 Table* makeChain(CPU& cpu, Table* root, int depth, Value key, Value value) {
 	auto* current = root;
 	for (int i = 1; i < depth; ++i) {
 		auto* next = cpu.createTable(2, 2); auto* meta = cpu.createTable(0, 1);
-		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(next)); current->metatable = meta; current = next;
+		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(next))); current->metatable = meta; current = next;
 	}
 	current->set(key, value);
 	return current;
 }
 void cycle(CPU& cpu, Table* root) {
 	auto* meta = cpu.createTable(0, 1);
-	meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(root)); root->metatable = meta;
+	meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(root))); root->metatable = meta;
 }
 
 void grantsAndRestore() {
@@ -103,24 +103,24 @@ void grantsAndRestore() {
 			auto* root = m->cpu.createTable(2, 2); const auto key = keyFor(m->cpu, kind);
 			makeChain(m->cpu, root, depth, key, valueBool(false));
 			if (depth == 1) cycle(m->cpu, root);
-			auto* r = m->cpu.activeThread()->currentFrame->registers; r[0] = valueTable(root); r[1] = key;
+			auto r = m->cpu.activeThread()->currentFrame->registers; r.set(0, valueTable(m->cpu.gcHeap().reference(root))); r.set(1, key);
 		}
 		const auto heap = generated.cpu.luaHeap().usedBytes();
 		for (int grant = 0; grant <= total; ++grant) {
 			for (auto* m : {&generated, &scalar}) {
 				m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-				auto* r = m->cpu.activeThread()->currentFrame->registers; r[6] = valueNumber(91); r[7] = valueNil(); r[8] = valueNumber(57);
+				auto r = m->cpu.activeThread()->currentFrame->registers; r.set(6, valueInteger(91)); r.set(7, valueNil()); r.set(8, valueInteger(57));
 			}
 			require(test::runCpuParity(generated.cpu, scalar.cpu, grant) == RunResult::Yielded, "an ordinary read loop remains runnable");
 			int remaining = grant, completed = 0;
 			while (remaining > 0) remaining -= charges[completed++];
-			auto* frame = generated.cpu.activeThread()->currentFrame; auto* r = frame->registers;
+			auto* frame = generated.cpu.activeThread()->currentFrame; auto r = frame->registers;
 			require(generated.cpu.instructionBudgetRemaining == remaining, "each additionally visited Table costs exactly8, including debt");
 			require(frame->pc == generated.rom.textAddress + program.starts[completed == 4 ? 0 : completed] * INSTRUCTION_BYTES,
 				"the completed read frontier precedes every unadmitted marker");
-			require(r[6] == (completed >= 2 ? valueBool(false) : completed == 1 ? r[0] : valueNumber(91))
-				&& r[8] == (completed >= 3 ? valueBool(false) : valueNumber(57))
-				&& r[7] == (op == OpCode::SELF && completed >= 2 ? r[0] : valueNil()),
+			require(r.get(6) == (completed >= 2 ? valueBool(false) : completed == 1 ? r.get(0) : valueInteger(91))
+				&& r.get(8) == (completed >= 3 ? valueBool(false) : valueInteger(57))
+				&& r.get(7) == (op == OpCode::SELF && completed >= 2 ? r.get(0) : valueNil()),
 				"aliased result, following marker and SELF receiver publish at their actual instruction boundaries");
 			sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 		}
@@ -142,8 +142,8 @@ void faultsOnce() {
 		Program program(op, wide); Machine generated(program, false), scalar(program, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto* root = m->cpu.createTable(2, 2); const auto key = keyFor(m->cpu, kind);
-			if (cyclic) cycle(m->cpu, root); else makeChain(m->cpu, root, 33, key, valueNumber(73));
-			auto* r = m->cpu.activeThread()->currentFrame->registers; r[0] = valueTable(root); r[1] = key; r[8] = valueNumber(57);
+			if (cyclic) cycle(m->cpu, root); else makeChain(m->cpu, root, 33, key, valueInteger(73));
+			auto r = m->cpu.activeThread()->currentFrame->registers; r.set(0, valueTable(m->cpu.gcHeap().reference(root))); r.set(1, key); r.set(8, valueInteger(57));
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);
 		require(3 - generated.cpu.instructionBudgetRemaining == 2 + (op == OpCode::SELF ? 17 : op == OpCode::GETI ? 8 : 16) + 248,
@@ -151,8 +151,8 @@ void faultsOnce() {
 		require(generated.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP
 			&& generated.cpu.readEpcWord() == generated.rom.textAddress + program.starts[1] * INSTRUCTION_BYTES,
 			"chain error belongs to actual instruction/prefix start");
-		auto* r = generated.cpu.activeThread()->frameAtDepth(0)->registers;
-		require(r[6] == r[0] && r[8] == valueNumber(57) && (op != OpCode::SELF || r[7] == r[0]),
+		auto r = generated.cpu.activeThread()->frameAtDepth(0)->registers;
+		require(r.get(6) == r.get(0) && r.get(8) == valueInteger(57) && (op != OpCode::SELF || r.get(7) == r.get(0)),
 			"fault leaves destination and following marker intact but retains SELF receiver");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 	}
@@ -163,20 +163,20 @@ void stringReceiver() {
 		Program program(OpCode::GETFIELD, wide, true); Machine generated(program, false), scalar(program, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu; auto* installed = cpu.createTable(0, 2); const auto key = keyFor(cpu, KeyKind::String);
-			makeChain(cpu, installed, 3, key, valueNumber(73));
-			auto* r = cpu.activeThread()->currentFrame->registers;
-			r[20] = cpu.createBuiltinFunction(BuiltinFunctionId::SetStringIndex); r[21] = valueTable(installed);
-			r[0] = valueString(cpu.stringPool().intern("receiver")); r[8] = valueNumber(57);
+			makeChain(cpu, installed, 3, key, valueInteger(73));
+			auto r = cpu.activeThread()->currentFrame->registers;
+			r.set(20, cpu.createBuiltinFunction(BuiltinFunctionId::SetStringIndex)); r.set(21, valueTable(cpu.gcHeap().reference(installed)));
+			r.set(0, valueString(cpu.stringPool().intern("receiver"))); r.set(8, valueInteger(57));
 			require(cpu.runUntilDepth(0, 7) == RunResult::Yielded, "the real builtin installs the String index Table");
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);
 		require(generated.cpu.instructionBudgetRemaining == 3 - 2 - 32
-			&& generated.cpu.readFrameRegister(0, 6) == valueNumber(73) && generated.cpu.readFrameRegister(0, 8) == valueNumber(57),
+			&& generated.cpu.readFrameRegister(0, 6) == valueInteger(73) && generated.cpu.readFrameRegister(0, 8) == valueInteger(57),
 			"String dispatch's first installed Table is covered by base; only two inherited targets add16");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 		for (auto* m : {&generated, &scalar}) {
-			auto* installed = asTable(m->cpu.readFrameRegister(0, 21));
-			installed->metatable->setStringKey(m->cpu.stringPool().intern("__index"), valueTable(m->cpu.createTable()));
+			auto* installed = asTable(m->cpu.readFrameRegister(0, 21), m->cpu.gcHeap());
+			installed->metatable->setStringKey(m->cpu.stringPool().intern("__index"), valueTable(m->cpu.gcHeap().reference(m->cpu.createTable())));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);

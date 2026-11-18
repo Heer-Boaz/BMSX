@@ -67,12 +67,12 @@ void expensiveInstructionDebtAndSkip() {
 		Machine generated(image, false), scalar(image, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto& f = *m->cpu.activeThread()->currentFrame;
-			f.registers[0] = valueNumber(17); f.registers[1] = valueNumber(2); f.registers[2] = valueNumber(3);
+			f.registers.set(0, valueInteger(17)); f.registers.set(1, valueInteger(2)); f.registers.set(2, valueInteger(3));
 		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
 			&& generated.cpu.instructionBudgetRemaining == 1 - price
 			&& generated.cpu.readFramePc(0) == generated.rom.textAddress + (wide ? 8u : 4u)
-			&& generated.cpu.readFrameRegister(0, 0) == valueNumber(op == OpCode::POW ? 8 : op == OpCode::MOD ? 2 : op == OpCode::FLOORDIV ? 0 : 2.0 / 3.0),
+			&& generated.cpu.readFrameRegister(0, 0) == (op == OpCode::POW ? valueFloat(8) : op == OpCode::DIV ? valueFloat(2.0f / 3.0f) : valueInteger(op == OpCode::MOD ? 2 : 0)),
 			"one positive grant executes one complete narrow/WIDE arithmetic instruction and retains literal negative debt");
 		const auto pc = generated.cpu.readFramePc(0);
 		test::runCpuParity(generated.cpu, scalar.cpu, 0);
@@ -86,9 +86,9 @@ void expensiveInstructionDebtAndSkip() {
 		writeInstruction(image.text, wide ? 3 : 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 		image.functions[0].wordCount = wide ? 4 : 3;
 		Machine skipped(image, false), skippedScalar(image, true);
-		for (auto* m : {&skipped, &skippedScalar}) m->cpu.activeThread()->currentFrame->registers[0] = valueNumber(17);
+		for (auto* m : {&skipped, &skippedScalar}) m->cpu.activeThread()->currentFrame->registers.set(0, valueInteger(17));
 		require(test::runCpuParity(skipped.cpu, skippedScalar.cpu, 3) == RunResult::Halted
-			&& skipped.cpu.instructionBudgetRemaining == -1 && skipped.cpu.readFrameRegister(0, 0) == valueNumber(17),
+			&& skipped.cpu.instructionBudgetRemaining == -1 && skipped.cpu.readFrameRegister(0, 0) == valueInteger(17),
 			"skipped expensive bodies add no price, including their WIDE prefix, and never write their destination");
 	}
 }
@@ -104,7 +104,7 @@ void middlePowAdmission() {
 	for (const int grant : {0, 1, 2, 3, 127, 128, 129, 130, 131, 257, 258, 259, 260, 261, 262}) {
 		Machine generated(image, false), scalar(image, true);
 		for (auto* m : {&generated, &scalar}) {
-			auto* r = m->cpu.activeThread()->currentFrame->registers; r[2] = valueNumber(2); r[3] = valueNumber(3);
+			auto r = m->cpu.activeThread()->currentFrame->registers; r.set(2, valueInteger(2)); r.set(3, valueInteger(3));
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		const auto* frame = generated.cpu.activeThread()->currentFrame;
@@ -131,7 +131,7 @@ void creationAndCallWorkOnce() {
 	image.functions = {{.firstWord=0, .wordCount=2, .maxStack=3}};
 	Machine generated(image, false), scalar(image, true);
 	test::runCpuParity(generated.cpu, scalar.cpu, 1);
-	require(generated.cpu.instructionBudgetRemaining == -33 && asTable(generated.cpu.readFrameRegister(0, 0))->storedSlotCount() == 6,
+	require(generated.cpu.instructionBudgetRemaining == -33 && asTable(generated.cpu.readFrameRegister(0, 0), generated.cpu.gcHeap())->storedSlotCount() == 6,
 		"NEWT pays literal24 base plus2 array and8 rounded-hash Value initializations exactly once");
 	image.text.assign(2 * MAPPED_PAGE_BYTE_SIZE, 0);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
@@ -150,7 +150,7 @@ void creationAndCallWorkOnce() {
 	require(call.cpu.instructionBudgetRemaining == -31 && call.cpu.getFrameDepth() == 2,
 		"CALL pays literal32 and no placement charge for its supplied aliased fixed argument");
 	test::runCpuParity(call.cpu, callScalar.cpu, 1);
-	require(call.cpu.instructionBudgetRemaining == -16 && call.cpu.getFrameDepth() == 1 && call.cpu.readFrameRegister(0, 0) == valueNumber(7),
+	require(call.cpu.instructionBudgetRemaining == -16 && call.cpu.getFrameDepth() == 1 && call.cpu.readFrameRegister(0, 0) == valueInteger(7),
 		"RET pays literal16 plus one actual receiving slot, with no duplicate CALL or function-record charge");
 }
 void countedStoreReadinessAndPartialFault() {
@@ -176,9 +176,9 @@ void countedStoreReadinessAndPartialFault() {
 				});
 				m->memory.mapIoWriteReady(port + 4u * word, [](void* context, u32, MappedBusSignals) { return static_cast<Device*>(context)->ready; });
 			}
-			auto* registers = m->cpu.activeThread()->currentFrame->registers;
-			registers[0] = valueNumber(port - (displaced ? 4u : 0u));
-			for (int word = 0; word < 5; ++word) registers[1 + word] = valueNumber(73 + word);
+			auto registers = m->cpu.activeThread()->currentFrame->registers;
+			registers.set(0, valueInteger(port - (displaced ? 4u : 0u)));
+			for (int word = 0; word < 5; ++word) registers.set(1 + word, valueInteger(73 + word));
 		}
 		if (fault) {
 			test::runCpuParity(generated.cpu, scalar.cpu, 1);

@@ -81,8 +81,8 @@ void exactGrant(bool store) {
 		Machine native(image, false), scalar(image, true);
 		for (auto* machine : {&native, &scalar}) {
 			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
-			frame->registers[4] = valueNumber(address);
-			frame->registers[5] = valueNumber(0x12345678);
+			frame->registers.set(4, valueInteger(address));
+			frame->registers.set(5, valueInteger(0x12345678));
 			for (int i = 0; i < 20; ++i) machine->cpu.runUntilDepth(0, 128);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			if (machine == &native) {
@@ -94,7 +94,7 @@ void exactGrant(bool store) {
 #endif
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 				machine->rom.functionAddresses[0], machine->rom.textAddress);
-			for (int reg = 0; reg < 4; ++reg) frame->registers[reg] = valueNil();
+			for (int reg = 0; reg < 4; ++reg) frame->registers.set(reg, valueNil());
 			machine->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 			machine->memory.writeU32(address, 0);
 		}
@@ -147,7 +147,7 @@ void divisionBudget(bool skip) {
 		Machine native(image, false), scalar(image, true);
 		for (auto* machine : {&native, &scalar}) {
 			auto* frame = machine->cpu.rootThread()->frameAtDepth(0);
-			frame->registers[3] = valueNumber(9); frame->registers[4] = valueNumber(-7); frame->registers[5] = valueNumber(3);
+			frame->registers.set(3, valueInteger(9)); frame->registers.set(4, valueInteger(-7)); frame->registers.set(5, valueInteger(3));
 			machine->cpu.runUntilDepth(0, skip ? 600 : 7100);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			if (machine == &native) waitForNativeEntries(*machine, machine->rom.textAddress, {0});
@@ -160,7 +160,7 @@ void divisionBudget(bool skip) {
 				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 					machine->rom.functionAddresses[0], machine->rom.textAddress);
 				auto* frame = machine->cpu.rootThread()->frameAtDepth(0);
-				frame->registers[quotient] = valueNil(); frame->registers[floor] = valueNil(); frame->registers[2] = valueNil();
+				frame->registers.set(quotient, valueNil()); frame->registers.set(floor, valueNil()); frame->registers.set(2, valueNil());
 				require(machine->cpu.runUntilDepth(0, grant) == RunResult::Yielded, "division loop yields at its next admission boundary");
 				if (skip) {
 					const int completed = (grant + 1) >> 1;
@@ -169,7 +169,7 @@ void divisionBudget(bool skip) {
 						"a skipped division has no execution charge, including WIDE");
 					require(frame->pc == machine->rom.textAddress + skippedBoundaries[completed] * INSTRUCTION_BYTES,
 						"a comparison skips the complete division instruction");
-					require(frame->registers[quotient] == valueNil() && frame->registers[floor] == valueNil(),
+					require(frame->registers.get(quotient) == valueNil() && frame->registers.get(floor) == valueNil(),
 						"skipped divisions do not write destinations");
 				} else {
 					int remaining = grant, completed = 0;
@@ -177,25 +177,25 @@ void divisionBudget(bool skip) {
 					require(machine->cpu.instructionBudgetRemaining == remaining, "each admitted division keeps its complete fixed charge and debt");
 					require(frame->pc == machine->rom.textAddress + boundaries[completed] * INSTRUCTION_BYTES,
 						"division debt prevents the next opcode from executing");
-					require(frame->registers[quotient] == (completed >= 2 ? valueNumber(-7.0 / 3.0) : valueNil()), "DIV writes only after admission");
-					require(frame->registers[floor] == (completed >= 3 ? valueNumber(-3) : valueNil()), "FLOORDIV writes only after admission");
-					require(frame->registers[2] == (completed >= 4 ? valueBool(true) : completed >= 1 ? valueNumber(9) : valueNil()),
+					require(frame->registers.get(quotient) == (completed >= 2 ? valueFloat(-7.0f / 3.0f) : valueNil()), "DIV writes only after admission");
+					require(frame->registers.get(floor) == (completed >= 3 ? valueInteger(-3) : valueNil()), "FLOORDIV writes only after admission");
+					require(frame->registers.get(2) == (completed >= 4 ? valueBool(true) : completed >= 1 ? valueInteger(9) : valueNil()),
 						"the successor marker is not published early");
 				}
 			}
 		}
 		if (skip) continue;
-		const double inf = std::numeric_limits<double>::infinity(), nan = std::numeric_limits<double>::quiet_NaN();
-		const std::array<std::array<double, 4>, 4> cases{{{-0.0, 3.0, -0.0, -0.0}, {1.0, 0.0, inf, inf}, {0.0, 0.0, nan, nan}, {inf, -2.0, -inf, -inf}}};
+		const float inf = std::numeric_limits<float>::infinity(), nan = std::numeric_limits<float>::quiet_NaN();
+		const std::array<std::array<float, 4>, 4> cases{{{-0.0, 3.0, -0.0, -0.0}, {1.0, 0.0, inf, inf}, {0.0, 0.0, nan, nan}, {inf, -2.0, -inf, -inf}}};
 		for (const auto& values : cases) for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 				machine->rom.functionAddresses[0], machine->rom.textAddress);
 			auto* frame = machine->cpu.rootThread()->frameAtDepth(0);
-			frame->registers[4] = valueNumber(values[0]); frame->registers[5] = valueNumber(values[1]);
+			frame->registers.set(4, valueFloat(values[0])); frame->registers.set(5, valueFloat(values[1]));
 			require(machine->cpu.runUntilDepth(0, 71) == RunResult::Yielded && machine->cpu.instructionBudgetRemaining == 0,
 				"nonfinite and signed-zero operands keep the same fixed division budget");
 			require(frame->pc == machine->rom.textAddress, "nonfinite results finish the complete generated loop");
-			require(frame->registers[quotient] == valueNumber(values[2]) && frame->registers[floor] == valueNumber(values[3]),
+			require(frame->registers.get(quotient) == valueFloat(values[2]) && frame->registers.get(floor) == valueFloat(values[3]),
 				"division retains NaN, infinity and signed-zero semantics");
 		}
 	}
@@ -224,8 +224,8 @@ void exactGrantSweep(bool scalarControl) {
 		Machine native(image, scalarControl), scalar(image, true);
 		for (auto* machine : {&native, &scalar}) {
 			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
-			frame->registers[4] = valueNumber(address);
-			frame->registers[5] = valueNumber(0x12345678);
+			frame->registers.set(4, valueInteger(address));
+			frame->registers.set(5, valueInteger(0x12345678));
 			for (int i = 0; i < 20; ++i) machine->cpu.runUntilDepth(0, 128);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			if (machine == &native && !scalarControl) {
@@ -237,7 +237,7 @@ void exactGrantSweep(bool scalarControl) {
 #endif
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 				machine->rom.functionAddresses[0], machine->rom.textAddress);
-			for (int reg = 0; reg < 4; ++reg) frame->registers[reg] = valueNil();
+			for (int reg = 0; reg < 4; ++reg) frame->registers.set(reg, valueNil());
 			machine->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 			machine->memory.writeU32(address, 0);
 		}
@@ -256,7 +256,7 @@ void exactGrantSweep(bool scalarControl) {
 		const Value nativeTable = native.cpu.readFrameRegister(0, 3), scalarTable = scalar.cpu.readFrameRegister(0, 3);
 		registersEqual &= (nativeTable == valueNil() && scalarTable == valueNil())
 			|| (valueIsTable(nativeTable) && valueIsTable(scalarTable)
-				&& asTable(nativeTable)->storedSlotCount() == asTable(scalarTable)->storedSlotCount());
+				&& asTable(nativeTable, native.cpu.gcHeap())->storedSlotCount() == asTable(scalarTable, scalar.cpu.gcHeap())->storedSlotCount());
 		for (auto* machine : {&native, &scalar}) {
 			machine->irq.raise(IRQ_GPU);
 			require(machine->cpu.enterPendingInterrupt(), "IRQ is accepted");
@@ -295,8 +295,8 @@ void irqAfterNativeMmioBeforeShortSuccessor() {
 		Machine native(image, false), scalar(image, true);
 		for (auto* machine : {&native, &scalar}) {
 			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
-			frame->registers[4] = valueNumber(IO_IRQ_MASK);
-			frame->registers[5] = valueNumber(0);
+			frame->registers.set(4, valueInteger(IO_IRQ_MASK));
+			frame->registers.set(5, valueInteger(0));
 			for (int n = 0; n < 30; ++n) machine->cpu.runUntilDepth(0, 128);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			if (machine == &native) {
@@ -308,7 +308,7 @@ void irqAfterNativeMmioBeforeShortSuccessor() {
 #endif
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 				machine->rom.functionAddresses[0], machine->rom.textAddress);
-			frame->registers[5] = valueNumber(IRQ_GPU);
+			frame->registers.set(5, valueInteger(IRQ_GPU));
 			machine->irq.raise(IRQ_GPU);
 		}
 		const auto a = native.cpu.runUntilDepth(0, grant);
@@ -407,10 +407,10 @@ void rewriteAndObserveAfterShortGrant() {
 			InstructionObserverBinding observer;
 			observer.points[0].insert(DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
 			observer.context = machine == &native ? &seenNative : &seenScalar;
-			observer.observe = [](void* context, ExecutionDomainId domain, u32 pc, const Value* registers) {
+			observer.observe = [](void* context, ExecutionDomainId domain, u32 pc, ConstValueSpan registers) {
 				++*static_cast<int*>(context);
 				require(domain == SYSTEM_EXECUTION_DOMAIN_ID && pc == DYNAMIC_RAM_BASE + INSTRUCTION_BYTES
-					&& registers[0] == valueNumber(1), "late observer sees the admitted prefix");
+					&& registers.get(0) == valueInteger(1), "late observer sees the admitted prefix");
 			};
 			machine->cpu.setInstructionObserver(std::move(observer));
 		}
@@ -420,7 +420,7 @@ void rewriteAndObserveAfterShortGrant() {
 			&& left.lastPc == right.lastPc && std::ranges::equal(left.snapshot.words(), right.snapshot.words()),
 			"source rewrite and late observation after a short grant preserve the complete guest state");
 		require(seenNative == 1 && seenScalar == 1
-			&& native.cpu.readFrameRegister(0, 1) == valueNumber(1),
+			&& native.cpu.readFrameRegister(0, 1) == valueInteger(1),
 			"both routes observe and execute the replacement exactly once");
 	}
 }
@@ -447,7 +447,7 @@ void exactCallVarargSweep() {
 			auto* thread = machine->cpu.activeThread();
 			if (thread->frameDepth > 1) machine->cpu.runUntilDepth(1, 100);
 			auto* frame = thread->frameAtDepth(0);
-			require(valueIsClosure(frame->registers[10]), "warm caller retains its closure");
+			require(valueIsClosure(frame->registers.get(10)), "warm caller retains its closure");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			if (machine == &native) {
 				waitForNativeEntries(*machine, machine->rom.textAddress, {2, 16});
@@ -460,7 +460,7 @@ void exactCallVarargSweep() {
 #endif
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 				machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
-			frame->registers[0] = valueNil(); frame->registers[1] = valueNil(); frame->top = 11;
+			frame->registers.set(0, valueNil()); frame->registers.set(1, valueNil()); frame->top = 11;
 			machine->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 		}
 		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
@@ -474,7 +474,7 @@ void exactCallVarargSweep() {
 				const auto* a = nativeThread->frameAtDepth(depth); const auto* b = scalarThread->frameAtDepth(depth);
 				equal &= a->pc == b->pc && a->top == b->top && a->varargCount == b->varargCount;
 				for (int reg = 0; reg < 3; ++reg) {
-					const Value av = a->registers[reg], bv = b->registers[reg];
+					const Value av = a->registers.get(reg), bv = b->registers.get(reg);
 					equal &= av == bv || (valueIsClosure(av) && valueIsClosure(bv));
 				}
 			}
