@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
+import { asInteger, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
@@ -51,13 +52,13 @@ test('Run on a live FSM executes its entry and then the whole game; Pause and St
 	await f.until(() => operation.result !== undefined);
 	assert.equal(operation.result!.status, 'completed');
 	assert.equal(f.view.interaction.running, true); assert.equal(f.execution.paused, false);
-	assert.equal(f.value(f.runner, 'entries'), 1);
-	const first = f.value(f.runner, 'updates') as number, other = f.value(f.bystander, 'updates') as number;
+	assert.equal(f.value(f.runner, 'entries'), valueInteger(1));
+	const first = asInteger(f.value(f.runner, 'updates')), other = asInteger(f.value(f.bystander, 'updates'));
 	const presentation = f.ide.guest.readStringMember(f.value(f.runner, 'visual'), 'presentation_oy');
 	const before = new Uint8Array(f.backend.borrowPresentedPixels());
 	for (let i = 0; i < 12; i++) await f.frame();
-	assert.ok((f.value(f.runner, 'updates') as number) > first);
-	assert.ok((f.value(f.bystander, 'updates') as number) > other, 'unselected BT actor is simulated too');
+	assert.ok(asInteger(f.value(f.runner, 'updates')) > first);
+	assert.ok(asInteger(f.value(f.bystander, 'updates')) > other, 'unselected BT actor is simulated too');
 	assert.notEqual(f.ide.guest.readStringMember(f.value(f.runner, 'visual'), 'presentation_oy'), presentation,
 		'the controller-started presentation timeline advances alongside gameplay');
 	assert.notDeepEqual(f.backend.borrowPresentedPixels(), before, 'normal World rendering changes completed pixels');
@@ -83,12 +84,12 @@ test('Run in the live state graph honors cartlib transition guards and follows a
 	f.select('blocked'); f.controller.openStateGraph(f.view, editorViewState.font.renderFont()); f.editor.update(0);
 	const operation = f.run(); await f.until(() => operation.result !== undefined);
 	assert.equal(operation.result!.status, 'completed');
-	assert.equal(f.value(f.runner, 'entries'), 0);
+	assert.equal(f.value(f.runner, 'entries'), valueInteger(0));
 	for (let i = 0; i < 3; i++) await f.frame();
 	const graph = f.view.stateGraph!;
 	assert.equal(graph.viewport.model.nodes.find(node => node.name === 'idle')!.active, true);
 	assert.equal(graph.viewport.model.nodes.find(node => node.name === 'blocked')!.active, false);
-	assert.equal(f.value(f.runner, 'updates'), 0);
+	assert.equal(f.value(f.runner, 'updates'), valueInteger(0));
 	assert.equal(f.view.interaction.running, true, 'a refused transition is not a fabricated pose or a frozen game');
 });
 
@@ -102,12 +103,12 @@ test('Run restarts the selected BT through its ordinary lifecycle without touchi
 	assert.ok(picker.model.list.selectionIndex >= 0); await picker.accept();
 	const stop = f.ide.actorExecution.active!; await f.until(() => stop.result !== undefined);
 	assert.equal(f.controller.selected(f.view)!.active, false);
-	const before = f.value(f.bystander, 'updates') as number;
+	const before = asInteger(f.value(f.bystander, 'updates'));
 	const operation = f.run(); await f.until(() => operation.result !== undefined);
 	assert.equal(operation.result!.status, 'completed');
 	for (let i = 0; i < 4; i++) await f.frame();
-	assert.ok((f.value(f.bystander, 'updates') as number) > before);
-	assert.equal(f.value(f.runner, 'updates'), 0);
+	assert.ok(asInteger(f.value(f.bystander, 'updates')) > before);
+	assert.equal(f.value(f.runner, 'updates'), valueInteger(0));
 });
 
 test('Actor Pause controls an admitted Run and Continue drains the call without silently restarting gameplay', async t => {
@@ -121,7 +122,7 @@ test('Actor Pause controls an admitted Run and Continue drains the call without 
 	await f.frame(); assert.equal(f.runtime.machine.scheduler.currentNowCycles(), cycles);
 	f.editor.commands.execute('pause', f.pane.commandTarget);
 	await f.until(() => operation.result !== undefined);
-	assert.equal(operation.result!.status, 'completed'); assert.equal(f.value(f.runner, 'entries'), 1);
+	assert.equal(operation.result!.status, 'completed'); assert.equal(f.value(f.runner, 'entries'), valueInteger(1));
 	assert.equal(f.view.interaction.running, false); assert.equal(f.execution.paused, true);
 });
 
