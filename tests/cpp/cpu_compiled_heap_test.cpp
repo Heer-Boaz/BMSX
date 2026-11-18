@@ -57,7 +57,7 @@ void fixedHelperContinuation(OpCode operation) {
 	writeInstruction(code, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(sourcePc, code.data(), code.size());
-		if (operation == OpCode::GETI) machine->cpu.activeThread()->currentFrame->registers[0] = valueTable(machine->cpu.createTable());
+		if (operation == OpCode::GETI) machine->cpu.activeThread()->currentFrame->registers.set(0, valueTable(machine->cpu.gcHeap().reference(machine->cpu.createTable())));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], sourcePc);
 	}
 	for (int pass = 0; pass < 4; ++pass) {
@@ -91,7 +91,7 @@ void fixedHelperContinuation(OpCode operation) {
 	}
 	test::waitForNativeEntry(native.cpu, *targetPage, 0);
 	require(exit.continuationCells[0] == cell && *cell == targetPage->nativeCode[0]
-		&& native.cpu.readFrameRegister(0, 1) == valueNumber(13), "publication reuses the withdrawn continuation cell");
+		&& native.cpu.readFrameRegister(0, 1) == valueInteger(13), "publication reuses the withdrawn continuation cell");
 	// Redirect only the raw code cell, leaving the ordinary target descriptor
 	// intact. Generic C++ lookup would execute 13, not the marker's 29.
 	// This fixture is disposable and never resumes the redirected cache.
@@ -108,13 +108,14 @@ void fixedHelperContinuation(OpCode operation) {
 	native.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, native.rom.functionAddresses[0], sourcePc);
 	targetPage->nativeCode[0] = targetPage->nativeCode[16];
 	native.cpu.runUntilDepth(0, 5);
-	require(native.cpu.readFrameRegister(0, 1) == valueNumber(29), "helper resumes through the raw code cell, not a second descriptor lookup");
+	require(native.cpu.readFrameRegister(0, 1) == valueInteger(29), "helper resumes through the raw code cell, not a second descriptor lookup");
 }
 #endif
 
 void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && a.nextObjectHashId == b.nextObjectHashId
+	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
+		&& a.nextObjectHashId == b.nextObjectHashId
 		&& a.luaHeap.trackedBytes == b.luaHeap.trackedBytes && a.luaHeap.nextCollectionBytes == b.luaHeap.nextCollectionBytes,
 		"the complete value graph, allocation roots and heap accounting agree");
 	require(std::tie(a.statusWord, a.causeWord, a.epcWord, a.badAddressWord, a.luaFaultReasonWord, a.exceptionDomainWord,
@@ -145,7 +146,7 @@ void concatKindsAndAliases(int destination) {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) for (int warm = 0; warm < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++warm) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(1); frame.registers[1] = valueNumber(2);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(1)); frame.registers.set(1, valueInteger(2));
 		m->cpu.runUntilDepth(0, 4);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -156,25 +157,24 @@ void concatKindsAndAliases(int destination) {
 	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == NativeBlockExit::Concat && block->sourceWords == 2, "the allocating concatenation really terminates a native prefix");
 #endif
-	BuiltinFunction builtin{BuiltinFunctionId::Type};
 	const std::array<std::pair<Value, std::string_view>, 10> values{{{valueNil(), "nil"}, {valueBool(false), "false"},
-		{valueBool(true), "true"}, {valueNumber(0), "0"}, {valueNumber(-0.0), "-0"},
-		{valueNumber(std::numeric_limits<double>::quiet_NaN()), "nan"}, {valueNumber(std::numeric_limits<double>::infinity()), "inf"},
-		{valueNumber(-std::numeric_limits<double>::infinity()), "-inf"}, {valueNumber(1.234565), "1.23456"}, {valueBuiltinFunction(&builtin), "function"}}};
+		{valueBool(true), "true"}, {valueInteger(0), "0"}, {valueFloat(-0.f), "-0.0"},
+		{valueFloatBits(0xffa12345), "nan"}, {valueFloatBits(0x7f800000), "inf"},
+		{valueFloatBits(0xff800000), "-inf"}, {valueFloat(1.234565f), "1.234565"}, {valueBuiltinFunction(BuiltinFunctionId::Type), "function"}}};
 	const std::array extra{std::string("λ\0🍻", 7), std::string("table"), std::string("function"), std::string("thread")};
 	for (size_t kind = 0; kind < values.size() + extra.size(); ++kind) {
 		const std::string expected = std::string(kind < values.size() ? values[kind].second : std::string_view(extra[kind - values.size()])) + "!";
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.top = 0;
-			if (kind < values.size()) frame.registers[0] = values[kind].first;
+			if (kind < values.size()) frame.registers.set(0, values[kind].first);
 			else switch (kind - values.size()) {
-				case 0: frame.registers[0] = valueString(m->cpu.stringPool().intern(extra[0])); break;
-				case 1: frame.registers[0] = valueTable(m->cpu.createTable(0, 0)); break;
-				case 2: frame.registers[0] = valueClosure(frame.closure); break;
-				case 3: frame.registers[0] = valueThread(m->cpu.activeThread()); break;
+				case 0: frame.registers.set(0, valueString(m->cpu.stringPool().intern(extra[0]))); break;
+				case 1: frame.registers.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable(0, 0)))); break;
+				case 2: frame.registers.set(0, valueClosure(m->cpu.gcHeap().reference(frame.closure))); break;
+				case 3: frame.registers.set(0, valueThread(m->cpu.gcHeap().reference(m->cpu.activeThread()))); break;
 			}
-			frame.registers[1] = valueString(m->cpu.stringPool().intern("!"));
+			frame.registers.set(1, valueString(m->cpu.stringPool().intern("!")));
 		}
 		require(native.cpu.runUntilDepth(0, 4) == scalar.cpu.runUntilDepth(0, 4), "aliasing concatenation consumes the same grant"); requireParity(native, scalar);
 		require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, destination))) == expected, "every language kind uses the specified text conversion");
@@ -187,7 +187,7 @@ void concatConstants() {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 7, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CONCAT), 0, 63, 62, 63);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
-	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}}; image.constants = {-0.0, std::string("🍻")};
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}}; image.constants = {Blua32FloatConstant{0x80000000u}, std::string("🍻")};
 	CpuMachine native(image), scalar(image, true); native.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 320); scalar.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 320); requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
@@ -197,7 +197,7 @@ void concatConstants() {
 	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == NativeBlockExit::Concat && block->terminal.exitB == -1 && block->terminal.exitC == -2, "the native terminal retains signed RK constants");
 #endif
-	require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 0))) == "-0🍻", "numeric conversion is not u32 conversion");
+	require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 0))) == "-0.0🍻", "numeric conversion is not u32 conversion");
 }
 
 void concatRange(int count) {
@@ -212,9 +212,9 @@ void concatRange(int count) {
 	for (int warm = 0; warm < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++warm) {
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			auto* registers = m->cpu.activeThread()->frameAtDepth(0)->registers;
-			for (int i = 0; i < count; ++i) registers[512 + i] = i == 0 ? valueString(m->cpu.stringPool().intern("L"))
-				: i == 1 ? valueBool(false) : valueNumber(i % 10);
+			auto registers = m->cpu.activeThread()->frameAtDepth(0)->registers;
+			for (int i = 0; i < count; ++i) registers.set(512 + i, i == 0 ? valueString(m->cpu.stringPool().intern("L"))
+				: i == 1 ? valueBool(false) : valueInteger(i % 10));
 		}
 		require(native.cpu.runUntilDepth(0, 5) == scalar.cpu.runUntilDepth(0, 5), "WIDE ranges consume the same grant"); requireParity(native, scalar);
 		require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 513))) == expected, "every source is read before the overlapping destination is written");
@@ -246,7 +246,7 @@ void allocationRoots(bool closure) {
 		{.firstWord = 16, .wordCount = 1, .staticClosure = false, .upvalues = {{true, 7}}}};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[9] = valueNumber(1); r[1] = valueNumber(2); r[2] = valueNumber(3);
+		auto r = m->cpu.activeThread()->frameAtDepth(0)->registers; r.set(9, valueInteger(1)); r.set(1, valueInteger(2)); r.set(2, valueInteger(3));
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (closure ? 405 : 400));
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -260,10 +260,10 @@ void allocationRoots(bool closure) {
 	std::array<std::string, 2> garbage; size_t index = 0;
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto* r = frame.registers;
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto r = frame.registers;
 		Table* table = m->cpu.createTable(0, 1); auto& strings = m->cpu.stringPool();
 		table->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
-		r[9] = valueTable(table); r[1] = valueString(strings.intern("fresh-")); r[2] = valueString(strings.intern("result")); frame.top = 0;
+		r.set(9, valueTable(m->cpu.gcHeap().reference(table))); r.set(1, valueString(strings.intern("fresh-"))); r.set(2, valueString(strings.intern("result"))); frame.top = 0;
 		const auto heap = m->cpu.captureRuntimeState().luaHeap;
 		m->cpu.luaHeap().restoreState({heap.trackedBytes, m->cpu.luaHeap().capacity()});
 		garbage[index] = std::string(m->cpu.luaHeap().capacity() - heap.trackedBytes - 1, 'g'); strings.intern(garbage[index++]);
@@ -272,10 +272,10 @@ void allocationRoots(bool closure) {
 	index = 0;
 	for (auto* m : {&native, &scalar}) {
 		auto& strings = m->cpu.stringPool(); require(!strings.find(garbage[index++]), "the operation really collected the unrooted pressure string");
-		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; Table* retained = asTable(r[7]);
+		auto r = m->cpu.activeThread()->frameAtDepth(0)->registers; Table* retained = asTable(r.get(7), m->cpu.gcHeap());
 		require(retained->getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")), "a moved reference remains rooted across allocation");
-		if (closure) require(m->cpu.readClosureUpvalue(asClosure(r[0]), 0) == r[7], "capture observes the published reference value");
-		else require(strings.toString(asStringId(r[0])) == "fresh-result", "allocation commits the entire concatenation result");
+		if (closure) require(m->cpu.readClosureUpvalue(asClosure(r.get(0), m->cpu.gcHeap()), 0) == r.get(7), "capture observes the published reference value");
+		else require(strings.toString(asStringId(r.get(0))) == "fresh-result", "allocation commits the entire concatenation result");
 	}
 }
 
@@ -316,7 +316,7 @@ void closureBusFault(bool descriptors) {
 		{.firstWord = 16, .wordCount = 1, .staticClosure = false, .upvalues = {{true, 7}}}}; image.globalNames = {"target"};
 	CpuMachine native(image), scalar(image, true); constexpr u32 bad = 0xdead0000u;
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1] + 0.75)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 504);
+		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 504);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
@@ -333,11 +333,11 @@ void closureBusFault(bool descriptors) {
 			m->memory.writeBytes(DYNAMIC_RAM_BASE, m->rom.bytes.data() + offset, BLUA32_FUNCTION_RECORD_SIZE);
 			m->memory.writeMappedU32LE(DYNAMIC_RAM_BASE + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, bad);
 		}
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(descriptors ? DYNAMIC_RAM_BASE : bad));
-		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[256] = valueNumber(73); frame.top = 0;
+		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(descriptors ? DYNAMIC_RAM_BASE : bad));
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(256, valueInteger(73)); frame.top = 0;
 	}
 	require(native.cpu.runUntilDepth(0, 6) == RunResult::Halted && scalar.cpu.runUntilDepth(0, 6) == RunResult::Halted, "a metadata bus fault hard-halts both paths"); requireParity(native, scalar);
-	require(native.cpu.captureRuntimeState().hardHalted && native.cpu.readFrameRegister(0, 256) == valueNumber(73)
+	require(native.cpu.captureRuntimeState().hardHalted && native.cpu.readFrameRegister(0, 256) == valueInteger(73)
 		&& native.cpu.activeThread()->frameAtDepth(0)->top == 8, "the failed instruction does not write or extend its destination");
 	require(native.cpu.readCurrentInstructionPc() == native.rom.textAddress + 2u * INSTRUCTION_BYTES
 		&& native.cpu.lastPc == native.rom.textAddress + 3u * INSTRUCTION_BYTES, "faults retain the WIDE prefix/body boundary");
@@ -354,7 +354,7 @@ void closureAddressAlias(int source) {
 		{.firstWord = 16, .wordCount = 1}, {.firstWord = 16, .wordCount = 1, .staticClosure = false}}; image.globalNames = {"target"};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400);
+		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
@@ -368,10 +368,10 @@ void closureAddressAlias(int source) {
 	for (int index : {2, 1, 2, 2, 1}) {
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[index] + 0.75));
+			m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[index]));
 		}
 		require(native.cpu.runUntilDepth(0, 4) == scalar.cpu.runUntilDepth(0, 4), "both live operand paths consume the same grant"); requireParity(native, scalar);
-		require(asClosure(native.cpu.readFrameRegister(0, source))->functionAddress == native.rom.functionAddresses[index], "the full source address is sampled before its slot is replaced");
+		require(asClosure(native.cpu.readFrameRegister(0, source), native.cpu.gcHeap())->functionAddress == native.rom.functionAddresses[index], "the full source address is sampled before its slot is replaced");
 	}
 }
 
@@ -383,11 +383,11 @@ void concatAllocationFault(bool range) {
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 16}, {.firstWord = 32, .wordCount = 1}}; image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[1] = valueNumber(1); frame.registers[2] = valueNumber(2);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(1, valueInteger(1)); frame.registers.set(2, valueInteger(2));
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (range ? 396 : 320));
 		m->cpu.luaHeap().restoreState({m->cpu.luaHeap().usedBytes(), m->cpu.luaHeap().capacity()});
 		const StringId id = m->cpu.stringPool().intern(std::string(2u * 1024u * 1024u, 'x'));
-		frame.registers[1] = valueString(id); frame.registers[2] = valueString(id); frame.registers[0] = valueNumber(73); frame.top = 0;
+		frame.registers.set(1, valueString(id)); frame.registers.set(2, valueString(id)); frame.registers.set(0, valueInteger(73)); frame.top = 0;
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
@@ -398,13 +398,13 @@ void concatAllocationFault(bool range) {
 	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
 #endif
 	const auto strings = native.cpu.stringPool().captureState();
-	int gcCycles = 4 * ceilDiv4(static_cast<int>(64 + native.cpu.rootThread()->stackCapacity * 8)) + 2 * 4 + strings.slots;
+	int gcCycles = 4 * ceilDiv4(static_cast<int>(64 + native.cpu.rootThread()->stackCapacity * 5)) + 2 * 4 + strings.slots;
 	for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
 	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");
 	require(native.cpu.instructionBudgetRemaining == -4 * 1024 * 1024 - (range ? 2 : 0) - gcCycles, "allocation faults retain complete logical text-work and pre-admission GC charges");
-	require(native.cpu.readFrameRegister(0, 0) == valueNumber(73) && native.cpu.activeThread()->frameAtDepth(0)->top == 9, "the failed allocation preserves its destination and published top");
+	require(native.cpu.readFrameRegister(0, 0) == valueInteger(73) && native.cpu.activeThread()->frameAtDepth(0)->top == 9, "the failed allocation preserves its destination and published top");
 }
 } // namespace
 
