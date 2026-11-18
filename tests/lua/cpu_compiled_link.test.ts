@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { integerConstant } from '../../toolchain/ts/lua/number';
+import { ValueTag, valueInteger, valueFloatBits, valueBool, valueTable, valueNil } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -24,7 +25,7 @@ test('helper continuations are predeclared entries and read their own current Va
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 9 }] });
 	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
-	frame.registers.setNumber(1, DYNAMIC_RAM_BASE); cpu.runUntilDepth(0, 1024);
+	frame.registers.setInteger(1, DYNAMIC_RAM_BASE); cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const entries = [0, 2, 4].map(word => page.compiledBlocks!.entries[first + word]!);
 	assert.ok(entries.every(entry => entry.region === entries[0].region), 'all helper returns are known before a slow helper is taken');
@@ -32,10 +33,10 @@ test('helper continuations are predeclared entries and read their own current Va
 	const table = cpu.createTable();
 	for (let iteration = 0; iteration < 32; ++iteration) for (let start = 0; start < entries.length; ++start) {
 		const registers = new ValueSlots(9), block = entries[start];
-		registers.setEncoded(0, ValueTag.False, 37, null); registers.setNumber(1, DYNAMIC_RAM_BASE); registers.setTable(8, table);
+		registers.setEncoded(0, ValueTag.False, 37); registers.setInteger(1, DYNAMIC_RAM_BASE); registers.set(8, start === 1 ? valueInteger(31) : valueTable(cpu.gc.reference(table)));
 		memory.writeMappedWord(DYNAMIC_RAM_BASE, 17);
 		const run = { remainingCycles: 1, registerTop: 0, memoryAddress: 0, lengthWork: { probes: 0 } };
-		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constScalars, page, frame, block.entry, run)];
+		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constWords, page, frame, block.entry, run)];
 		assert.ok(exit === entries[2].terminal, 'one generated invocation executes the complete suffix');
 		const suffixes = [
 			BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.MOV]
@@ -45,13 +46,14 @@ test('helper continuations are predeclared entries and read their own current Va
 		];
 		assert.deepEqual(run, { remainingCycles: 1 - suffixes[start], registerTop: start === 0 ? 9 : 6, memoryAddress: 0, lengthWork: { probes: 0 } });
 		if (start === 0) {
-			assert.equal(registers.getNumber(0), 17); assert.equal(registers.getNumber(4), 1);
-			assert.equal(registers.getNumber(5), 17); assert.equal(registers.getNumber(8), 1);
+			assert.equal(registers.getInteger(0), 17); assert.equal(registers.getInteger(4), 1);
+			assert.equal(registers.getInteger(5), 17); assert.equal(registers.getInteger(8), 1);
 			assert.equal(memory.readMappedWord(DYNAMIC_RAM_BASE), 1);
 		} else {
-			for (const register of [0, 5]) { assert.equal(registers.getTag(register), ValueTag.False); assert.equal(registers.getScalar(register), 37); }
-			assert.equal(registers.getTable(8), table); assert.equal(registers.get(4), start === 1 ? table : null);
-			assert.equal(memory.readMappedWord(DYNAMIC_RAM_BASE), start === 1 ? 0 : 17);
+			for (const register of [0, 5]) { assert.equal(registers.getTag(register), ValueTag.False); assert.equal(registers.getPayload(register), 37); }
+			assert.equal(registers.get(8), start === 1 ? valueInteger(31) : valueTable(cpu.gc.reference(table)));
+			assert.equal(registers.get(4), start === 1 ? valueInteger(31) : valueNil());
+			assert.equal(memory.readMappedWord(DYNAMIC_RAM_BASE), start === 1 ? 31 : 17);
 		}
 	}
 });
@@ -67,7 +69,7 @@ test('helper-success fallthrough does not execute a later store without a grant'
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 9 }] });
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu } of machines) {
-		cpu.rootThread.frameAtDepth(0).registers.setNumber(1, DYNAMIC_RAM_BASE);
+		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, 2048);
 	}
 	const frame = machines[0].cpu.rootThread.frameAtDepth(0), page = frame.decodedPage!;
@@ -100,26 +102,25 @@ test('resident Values cross internal string branches and publish only when leavi
 	writeInstruction(text, 7, OpCode.ADD, 4, 4, -1, 7);
 	writeInstruction(text, 8, OpCode.MOV, 5, 4, 0);
 	writeInstruction(text, 9, OpCode.JMP, 0, 63, 54, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 10, maxStack: 11 }], constants: [1] });
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 10, maxStack: 11 }], constants: [integerConstant(1)] });
 	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
 	const alpha = cpu.stringPool.intern('alpha'), omega = cpu.stringPool.intern('omega');
-	frame.registers.setStringId(0, alpha); frame.registers.setStringId(1, omega); frame.registers.setNumber(4, 0);
-	frame.registers.setEncoded(8, ValueTag.False, 37, null); cpu.runUntilDepth(0, 1024);
+	frame.registers.setString(0, alpha); frame.registers.setString(1, omega); frame.registers.setInteger(4, 0);
+	frame.registers.setEncoded(8, ValueTag.False, 37); cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!, table = cpu.createTable();
-	for (const less of [false, true]) for (const kind of [ValueTag.False, ValueTag.Table, ValueTag.Number]) for (const grant of [32, 63, 128, 257]) {
+	for (const less of [false, true]) for (const kind of [ValueTag.False, ValueTag.Table, ValueTag.Float]) for (const grant of [32, 63, 128, 257]) {
 		const r = new ValueSlots(11), writes = new Uint32Array(11), store = r.setEncoded.bind(r);
-		r.setStringId(0, less ? alpha : omega); r.setStringId(1, less ? omega : alpha);
-		r.setNumber(3, 73); r.setNumber(4, 0);
-		r.setEncoded(8, kind, kind === ValueTag.False ? 37 : kind === ValueTag.Number ? -0 : NaN, kind === ValueTag.Table ? table : null);
-		r.setEncoded = (register, tag, scalar, reference) => { ++writes[register]; store(register, tag, scalar, reference); };
+		r.setString(0, less ? alpha : omega); r.setString(1, less ? omega : alpha);
+		r.setInteger(3, 73); r.setInteger(4, 0);
+		r.setEncoded(8, kind, kind === ValueTag.False ? 37 : kind === ValueTag.Float ? 0x80000000 : cpu.gc.reference(table));
+		r.setEncoded = (register, tag, word) => { ++writes[register]; store(register, tag, word); };
 		const run = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, lengthWork: { probes: 0 } };
-		block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, run);
-		assert.ok(r.getNumber(4) > 0); assert.equal(r.getNumber(5), r.getNumber(4)); assert.equal(run.registerTop, 11);
-		if (!less) { assert.equal(r.getNumber(3), 73); assert.equal(r.getTag(9), ValueTag.Nil); }
+		block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, run);
+		assert.ok(r.getInteger(4) > 0); assert.equal(r.getInteger(5), r.getInteger(4)); assert.equal(run.registerTop, 11);
+		if (!less) { assert.equal(r.getInteger(3), 73); assert.equal(r.getTag(9), ValueTag.Nil); }
 		for (const register of less ? [3, 6, 7, 9, 10] : [6, 7, 10]) {
-			assert.equal(r.getTag(register), r.getTag(8)); assert.equal(r.getScalar(register), r.getScalar(8));
-			assert.equal(r.getReference(register), r.getReference(8));
+			assert.equal(r.getTag(register), r.getTag(8)); assert.equal(r.getPayload(register), r.getPayload(8));
 		}
 		assert.ok(writes[4] <= 1, 'the live-through accumulator is not written back at internal branches');
 		// r7 is redefined before use at the loop head, so it leaves that entry's
@@ -144,11 +145,11 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frameAtDepth(0);
-		frame.registers.setNumber(0, 2); frame.registers.setNumber(1, 1); frame.registers.setNumber(8, 0);
+		frame.registers.setInteger(0, 2); frame.registers.setInteger(1, 1); frame.registers.setInteger(8, 0);
 	}
 	for (const flag of [true, false]) {
 		for (const { cpu } of machines) {
-			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setBool(2, flag);
+			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setBoolean(2, flag);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		assert.equal(runCpuParity(machines[0].cpu, machines[1].cpu, 2048), RunResult.Yielded);
@@ -161,8 +162,8 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 	assert.equal(taken.exit, CompiledBlockExit.Continue);
 	for (const flag of [false, true]) for (const start of [0, 2, 4, 6]) for (let grant = 2; grant <= 64; ++grant) {
 		const frame = machines[0].cpu.rootThread.frameAtDepth(0), registers = new ValueSlots(12);
-		for (let index = 0; index < 12; ++index) registers.setNumber(index, 0);
-		registers.setNumber(0, 2); registers.setNumber(1, 1); registers.setBool(2, flag);
+		for (let index = 0; index < 12; ++index) registers.setInteger(index, 0);
+		registers.setInteger(0, 2); registers.setInteger(1, 1); registers.setBoolean(2, flag);
 		const expected = new Array<number | boolean>(12).fill(0); expected[0] = 2; expected[1] = 1; expected[2] = flag;
 		let remaining = grant, top = 0, segment = start;
 		let expectedExit = root.terminal;
@@ -186,13 +187,13 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 			if (remaining <= next.admissionCycles + next.admissionVarargs * frame.varargCount) break;
 		}
 		const run = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, lengthWork: { probes: 0 } }, block = cache.entries[start]!;
-		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constScalars, page, frame, block.entry, run)];
+		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constWords, page, frame, block.entry, run)];
 		assert.ok(exit === expectedExit, 'one function call executes all admitted internal edges');
 		assert.deepEqual(run, { remainingCycles: remaining, registerTop: top, memoryAddress: 0, lengthWork: { probes: 0 } });
-		assert.deepEqual(Array.from({ length: 12 }, (_, index) => registers.get(index)), expected);
+		assert.deepEqual(Array.from({ length: 12 }, (_, index) => registers.get(index)), expected.map((v, i) => i === 2 ? valueBool(flag) : valueInteger(v as number)));
 	}
 
-	for (const flag of [true, false, 0, NaN]) for (let grant = 1; grant <= 96; ++grant) {
+	for (const flag of [valueBool(true), valueBool(false), valueInteger(0), valueFloatBits(0x7fc00000)]) for (let grant = 1; grant <= 96; ++grant) {
 		for (const { cpu } of machines) {
 			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.set(2, flag); frame.top = 0;
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
@@ -209,7 +210,7 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 	assert.ok(cache.entries[0] === null && cache.entries[2] === null && cache.entries[4] === null,
 		'a source write retires the function containing its internal branch targets');
 	for (const { cpu } of machines) {
-		cpu.rootThread.frameAtDepth(0).registers.setBool(2, true);
+		cpu.rootThread.frameAtDepth(0).registers.setBoolean(2, true);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 2048);
@@ -237,7 +238,7 @@ test('cross-page chains retain successor page ownership and disconnect rewritten
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frameAtDepth(0);
-		frame.registers.setNumber(0, 2); frame.registers.setNumber(1, 1); frame.registers.setNumber(8, 0);
+		frame.registers.setInteger(0, 2); frame.registers.setInteger(1, 1); frame.registers.setInteger(8, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 2048);
@@ -280,7 +281,7 @@ for (const inRam of [false, true]) test(`short grants do not promote sequential 
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		if (inRam) memory.writeBytes(start, text);
-		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, 0); frame.registers.setInteger(1, 1);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 4096);
@@ -316,24 +317,24 @@ test('linked counted stores need only one cycle, then stop or block before the f
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const pc = image.image.functions[0].codeAddress, address = DYNAMIC_RAM_BASE + 0x4000;
 	for (const { cpu } of [js, ref]) {
-		const r = cpu.rootThread.frameAtDepth(0).registers; r.setNumber(0, address);
-		for (let i = 0; i < 5; ++i) r.setNumber(8 + i, 73 + i);
+		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, address);
+		for (let i = 0; i < 5; ++i) r.setInteger(8 + i, 73 + i);
 		cpu.runUntilDepth(0, 1024);
 	}
 	const cache = js.cpu.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!, first = cache.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
 	const store = cache.entries[((pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES) + 4]!;
 	const prefixCycles = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
 	const storeCycles = BASE_CYCLES[OpCode.STORE_MEM_WORDS] + 5;
-	assert.ok(store && store.region === first.region); assert.equal(store.terminal.cycles, storeCycles);
+	assert.ok(store && store.region === first.region); assert.equal(store.terminal.cycles, BASE_CYCLES[OpCode.STORE_MEM_WORDS], "word work is charged only after preflight");
 	assert.ok(cache.entries[store.firstWord + 2]?.region === first.region);
 	for (const grant of [prefixCycles, prefixCycles + 1, prefixCycles + storeCycles,
 		prefixCycles + storeCycles + 1, prefixCycles + storeCycles + 2, prefixCycles + storeCycles + 3]) {
 		for (const { cpu } of [js, ref]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			const frame = cpu.rootThread.frameAtDepth(0); frame.top = 0; frame.registers.setNumber(7, 99);
+			const frame = cpu.rootThread.frameAtDepth(0); frame.top = 0; frame.registers.setInteger(7, 99);
 		}
 		assert.equal(runCpuParity(js.cpu, ref.cpu, grant), RunResult.Yielded);
-		for (const { cpu } of [js, ref]) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(7), grant <= prefixCycles + storeCycles ? 99 : 1);
+		for (const { cpu } of [js, ref]) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getInteger(7), grant <= prefixCycles + storeCycles ? 99 : 1);
 		assert.deepEqual(js.cpu.captureRuntimeState(), ref.cpu.captureRuntimeState());
 	}
 	const endpoints = [];
@@ -343,7 +344,7 @@ test('linked counted stores need only one cycle, then stop or block before the f
 			memory.mapIoWrite(IO_BASE + 0x5000 + i * 4, port, (state, _address, word) => state.writes.push(word));
 			memory.mapIoWriteReady<typeof port>(IO_BASE + 0x5000 + i * 4, state => state.ready);
 		}
-		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, IO_BASE + 0x5000); frame.registers.setNumber(7, 99);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, IO_BASE + 0x5000); frame.registers.setInteger(7, 99);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		assert.equal(cpu.runUntilDepth(0, prefixCycles + 1), RunResult.Halted);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.STORE_MEM_WORDS]);
@@ -354,7 +355,7 @@ test('linked counted stores need only one cycle, then stop or block before the f
 		assert.equal(cpu.instructionBudgetRemaining, 1 - (storeCycles - BASE_CYCLES[OpCode.STORE_MEM_WORDS]));
 		assert.equal(chargedBeforeWait + 1 - cpu.instructionBudgetRemaining, prefixCycles + storeCycles,
 			'the linked store retains its initial base charge and pays its word surcharge exactly once');
-		assert.equal(frame.pc, pc + 6 * INSTRUCTION_BYTES); assert.equal(frame.registers.getNumber(7), 99);
+		assert.equal(frame.pc, pc + 6 * INSTRUCTION_BYTES); assert.equal(frame.registers.getInteger(7), 99);
 		assert.deepEqual(port.writes, [73, 74, 75, 76, 77]);
 	}
 	assert.deepEqual(js.cpu.captureRuntimeState(), ref.cpu.captureRuntimeState());
@@ -376,8 +377,8 @@ test('linked memory side exits retain predecessor state before MMIO and synchron
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text); memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x800, 5);
 		const frame = cpu.rootThread.frameAtDepth(0);
-		frame.registers.setNumber(0, DYNAMIC_RAM_BASE + 0x800); frame.registers.setNumber(1, 1);
-		frame.registers.setNumber(2, 0); frame.registers.setNumber(9, 0);
+		frame.registers.setInteger(0, DYNAMIC_RAM_BASE + 0x800); frame.registers.setInteger(1, 1);
+		frame.registers.setInteger(2, 0); frame.registers.setInteger(9, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 1200);
@@ -385,7 +386,7 @@ test('linked memory side exits retain predecessor state before MMIO and synchron
 	assert.ok(page.compiledBlocks!.entries[4]?.region === root.region, 'the memory successor remains inside the source region');
 	for (const address of [IO_SYS_BUS_FAULT_CODE, 0x01000000]) {
 		for (const { cpu } of machines) {
-			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, address); frame.top = 0;
+			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, address); frame.top = 0;
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 6);
@@ -405,7 +406,7 @@ test('an external entry into a WIDE body shares its sequential join without dupl
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frameAtDepth(0);
-		frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1); frame.registers.setNumber(2, 0);
+		frame.registers.setInteger(0, 0); frame.registers.setInteger(1, 1); frame.registers.setInteger(2, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 1200);
@@ -449,13 +450,12 @@ test('more than six live-through raw Values remain local across every internal e
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, firstWord = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const table = cpu.createTable(), string = cpu.stringPool.intern('retained');
-	const tags = [ValueTag.Nil, ValueTag.False, ValueTag.True, ValueTag.Number, ValueTag.Number, ValueTag.String, ValueTag.Table, ValueTag.Number];
-	const scalars = [13, 37, 42, -0, NaN, string, NaN, 19];
-	const references = [null, null, null, null, null, null, table, null];
+	const tags = [ValueTag.Nil, ValueTag.False, ValueTag.True, ValueTag.Float, ValueTag.Float, ValueTag.String, ValueTag.Table, ValueTag.Integer];
+	const words = [13, 37, 42, 0x80000000, 0xffc12345, string, cpu.gc.reference(table), 19];
 	for (const start of [0, 1]) for (const grant of [1, 15, 16, 63, 128, 257]) {
 		const block = page.compiledBlocks!.entries[firstWord + starts[start]]!, r = new ValueSlots(25);
 		const expected = Array.from({ length: 8 }, (_, index) => index);
-		for (let register = 0; register < 8; ++register) r.setEncoded(register, tags[register], scalars[register], references[register]);
+		for (let register = 0; register < 8; ++register) r.setEncoded(register, tags[register], words[register]);
 		let segment = start, remaining = grant;
 		do {
 			for (let first = segment * 4; first < segment * 4 + 4; first += 2)
@@ -463,14 +463,13 @@ test('more than six live-through raw Values remain local across every internal e
 			remaining -= 15 * BASE_CYCLES[OpCode.MOV]; segment ^= 1;
 		} while (remaining > page.compiledBlocks!.entries[firstWord + starts[segment]]!.admissionCycles);
 		const writes = new Uint32Array(8), store = r.setEncoded.bind(r);
-		r.setEncoded = (register, tag, scalar, reference) => { if (register < 8) ++writes[register]; store(register, tag, scalar, reference); };
+		r.setEncoded = (register, tag, word) => { if (register < 8) ++writes[register]; store(register, tag, word); };
 		const state = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, lengthWork: { probes: 0 } };
-		block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, state);
+		block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state);
 		assert.equal(state.remainingCycles, remaining); assert.equal(state.registerTop, 25);
 		for (let register = 0; register < 8; ++register) {
 			assert.equal(r.getTag(register), tags[expected[register]]);
-			assert.equal(r.getScalar(register), scalars[expected[register]]);
-			assert.equal(r.getReference(register), references[expected[register]]);
+			assert.equal(r.getPayload(register), words[expected[register]]);
 			assert.ok(writes[register] <= 1, `live-through binding ${register} is published only at the cold exit`);
 		}
 	}

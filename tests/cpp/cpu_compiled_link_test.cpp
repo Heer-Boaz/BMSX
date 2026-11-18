@@ -43,7 +43,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
 		&& native.cpu.lastPc == scalar.cpu.lastPc,
 		"linked blocks publish the same PC, WIDE body, register extent and cycle boundary as scalar instructions");
-	for (int reg = 0; reg < 12; ++reg) require(first.registers[reg] == second.registers[reg],
+	for (int reg = 0; reg < 12; ++reg) require(first.registers.get(reg) == second.registers.get(reg),
 		"linked execution preserves each raw live register at every grant");
 }
 
@@ -68,7 +68,7 @@ void grantsAndTargetRetirement(bool inRam) {
 	for (auto* machine : {&native, &scalar}) {
 		if (inRam) machine->memory.writeBytes(startPc, image.text.data(), image.text.size());
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		frame.registers[0] = valueNumber(2); frame.registers[1] = valueNumber(1); frame.registers[8] = valueNumber(0);
+		frame.registers.set(0, valueInteger(2)); frame.registers.set(1, valueInteger(1)); frame.registers.set(8, valueInteger(0));
 	}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	// Request the root before either branch can submit a different job.
@@ -82,7 +82,7 @@ void grantsAndTargetRetirement(bool inRam) {
 #endif
 	for (const bool flag : {true, false}) {
 		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frameAtDepth(0)->registers[2] = valueBool(flag);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueBool(flag));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], startPc);
 		}
 		require(test::runCpuParity(native.cpu, scalar.cpu, 2048) == RunResult::Yielded, "warm both branch paths");
@@ -94,7 +94,7 @@ void grantsAndTargetRetirement(bool inRam) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (inRam) for (const bool flag : {true, false}) {
 		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frameAtDepth(0)->registers[2] = valueBool(flag);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueBool(flag));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], startPc);
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 2048);
@@ -102,7 +102,7 @@ void grantsAndTargetRetirement(bool inRam) {
 	}
 	if (inRam) for (const bool flag : {true, false}) {
 		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frameAtDepth(0)->registers[2] = valueBool(flag);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueBool(flag));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], startPc);
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 2048);
@@ -128,9 +128,11 @@ void grantsAndTargetRetirement(bool inRam) {
 			&& root->region == page.nativeBlocks->entries[base + 4]->region,
 			"a discovered ROM graph keeps both branch targets as internal entries");
 	for (const bool flag : {false, true}) for (const u32 start : {0u, 2u, 4u, 6u}) for (int grant = 2; grant <= 64; ++grant) {
-		std::array<Value, 12> registers; registers.fill(valueNumber(0));
-		registers[0] = valueNumber(2); registers[1] = valueNumber(1); registers[2] = valueBool(flag);
+		std::array<Value, 12> registers; registers.fill(valueInteger(0));
+		registers[0] = valueInteger(2); registers[1] = valueInteger(1); registers[2] = valueBool(flag);
 		auto expected = registers;
+		ValueSlots slots(registers.size());
+		for (size_t i = 0; i < registers.size(); ++i) slots.set(i, registers[i]);
 		int remaining = grant, top = 0;
 		u32 segment = start;
 		const NativeBlockExitSite* expectedExit;
@@ -138,13 +140,13 @@ void grantsAndTargetRetirement(bool inRam) {
 			const auto& current = *page.nativeBlocks->entries[base + segment];
 			if (remaining <= BASE_CYCLES[static_cast<u8>(OpCode::ADD)]) { expectedExit = nullptr; break; }
 			if (segment == 0) {
-				expected[8] = valueNumber(asNumber(expected[8]) + 1); top = std::max(top, 9);
+				expected[8] = valueInteger(asInteger(expected[8]) + 1); top = std::max(top, 9);
 			} else if (segment == 2) {
-				expected[0] = valueNumber(-asNumber(expected[0])); top = std::max(top, 1);
+				expected[0] = valueInteger(-asInteger(expected[0])); top = std::max(top, 1);
 			} else if (segment == 4) {
-				expected[0] = valueNumber(static_cast<i32>(toU32(expected[0]) << 1u)); top = std::max(top, 1);
+				expected[0] = valueInteger(static_cast<i32>(valuePayload(expected[0]) << 1u)); top = std::max(top, 1);
 			} else {
-				expected[4] = valueNumber(asNumber(expected[0]) + asNumber(expected[8])); top = std::max(top, 5);
+				expected[4] = valueInteger(asInteger(expected[0]) + asInteger(expected[8])); top = std::max(top, 5);
 			}
 			remaining -= BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
 			expectedExit = &current.terminal;
@@ -158,18 +160,19 @@ void grantsAndTargetRetirement(bool inRam) {
 			remaining -= BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
 			if (remaining <= 0) break;
 		}
-		NativeBlockRunState run{.registers = registers.data(), .constants = native.cpu.activeThread()->frameAtDepth(0)->executionImage->constPool.data(),
+		NativeBlockRunState run{.registers = slots.view(), .constants = native.cpu.activeThread()->frameAtDepth(0)->executionImage->constPool.view(),
 			.remainingCycles = grant};
 		const auto* exit = page.nativeBlocks->entries[base + start]->run(run);
-		require((expectedExit ? exit == expectedExit : exit->exit == NativeBlockExit::ScalarBoundary) && registers == expected && run.remainingCycles == remaining && run.registerTop == top,
+		require((expectedExit ? exit == expectedExit : exit->exit == NativeBlockExit::ScalarBoundary) && run.remainingCycles == remaining && run.registerTop == top,
 			"one native entry traverses both branches, a WIDE merge and a backedge without a CPU dispatcher or intermediate frame");
+		for (size_t i = 0; i < expected.size(); ++i) require(slots.get(i) == expected[i], "raw linked execution preserves every word and tag");
 	}
 	}
 
 #endif
-	for (const Value flag : {valueBool(true), valueBool(false), valueNumber(0), VALUE_QNAN_MASK}) for (int grant = 1; grant <= 96; ++grant) {
+	for (const Value flag : {valueBool(true), valueBool(false), valueInteger(0), valueFloatBits(0x7fc00000u)}) for (int grant = 1; grant <= 96; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
-			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.registers[2] = flag; frame.top = 0;
+			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.registers.set(2, flag); frame.top = 0;
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], startPc);
 		}
 		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded, "each short grant completes its admitted segment");
@@ -191,7 +194,7 @@ void grantsAndTargetRetirement(bool inRam) {
 	}
 #endif
 	for (auto* machine : {&native, &scalar}) {
-		machine->cpu.activeThread()->frameAtDepth(0)->registers[2] = valueBool(true);
+		machine->cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueBool(true));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
@@ -232,7 +235,7 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		frame.registers[0] = valueNumber(2); frame.registers[1] = valueNumber(1); frame.registers[8] = valueNumber(0);
+		frame.registers.set(0, valueInteger(2)); frame.registers.set(1, valueInteger(1)); frame.registers.set(8, valueInteger(0));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
@@ -308,7 +311,7 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 	for (auto* machine : {&native, &scalar}) {
 		if (inRam) machine->memory.writeBytes(start, image.text.data(), image.text.size());
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		frame.registers[0] = valueNumber(0); frame.registers[1] = valueNumber(1);
+		frame.registers.set(0, valueInteger(0)); frame.registers.set(1, valueInteger(1));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 4096);
@@ -427,7 +430,7 @@ void entriesIntoWideBodiesRetainIndependentOwners() {
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		frame.registers[0] = frame.registers[2] = valueNumber(0); frame.registers[1] = valueNumber(1);
+		frame.registers.set(0, valueInteger(0)); frame.registers.set(2, valueInteger(0)); frame.registers.set(1, valueInteger(1));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 1200);
@@ -483,7 +486,7 @@ void entriesIntoWideBodiesRetainIndependentOwners() {
 		InstructionObserverBinding observer;
 		observer.points[0].insert(DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
 		observer.context = &observed[index];
-		observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<u32*>(context); };
+		observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) { ++*static_cast<u32*>(context); };
 		machine->cpu.setInstructionObserver(std::move(observer));
 	}
 	for (const u32 offset : {0u, 1u}) {

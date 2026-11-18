@@ -70,9 +70,9 @@ void replayAllocationIdentities() {
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "program completes");
 	const auto values = cpu.readCompletionValues();
 	const std::array expectedIds{
-		bmsx::asTable(values[0])->hashId,
-		bmsx::asClosure(values[1])->hashId,
-		bmsx::asClosure(values[2])->hashId,
+		bmsx::asTable(values.get(0), cpu.gcHeap())->hashId,
+		bmsx::asClosure(values.get(1), cpu.gcHeap())->hashId,
+		bmsx::asClosure(values.get(2), cpu.gcHeap())->hashId,
 	};
 	const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime));
 	for (const int budget : {1001, 2001, 4001, 8001}) {
@@ -82,9 +82,9 @@ void replayAllocationIdentities() {
 		require(cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "the next call consumes only its newly supplied grant");
 		require(cpu.runUntilDepth(0, budget) == bmsx::RunResult::Halted, "replay completes with a fresh grant");
 		const auto replay = cpu.readCompletionValues();
-		require(bmsx::asTable(replay[0])->hashId == expectedIds[0], "table identity must replay");
-		require(bmsx::asClosure(replay[1])->hashId == expectedIds[1], "cold canonical closure identity must replay");
-		require(bmsx::asClosure(replay[2])->hashId == expectedIds[2], "dynamic closure identity must replay");
+		require(bmsx::asTable(replay.get(0), cpu.gcHeap())->hashId == expectedIds[0], "table identity must replay");
+		require(bmsx::asClosure(replay.get(1), cpu.gcHeap())->hashId == expectedIds[1], "cold canonical closure identity must replay");
+		require(bmsx::asClosure(replay.get(2), cpu.gcHeap())->hashId == expectedIds[2], "dynamic closure identity must replay");
 		require(bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime)) == expected, "replay reproduces every state field without normalizing a grant");
 	}
 }
@@ -119,7 +119,7 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 			mode->setStringKey(cpu.stringPool().intern("__mode"), bmsx::valueString(cpu.stringPool().intern("v")));
 			weak->metatable = mode;
 			weak->setInteger(1, cpu.readFrameRegister(0, 0));
-			cpu.setGlobalByKey(cpu.stringPool().intern("weak"), bmsx::valueTable(weak));
+			cpu.setGlobalByKey(cpu.stringPool().intern("weak"), bmsx::valueTable(cpu.gcHeap().reference(weak)));
 			cpu.collectHeap();
 			require(weak->getInteger(1) == cpu.readFrameRegister(0, 0), "live caller locals remain heap roots across calls");
 		}
@@ -127,13 +127,13 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 		cpu.setExecutionHook({});
 		cpu.restoreRuntimeState(saved);
 		const auto restored = cpu.readFrameRegister(0, 0);
-		require(op == bmsx::OpCode::K1 ? bmsx::valueIsNumber(restored) : bmsx::valueIsTable(restored),
+		require(op == bmsx::OpCode::K1 ? bmsx::valueIsInteger(restored) : bmsx::valueIsTable(restored),
 			"snapshot preserves the caller local below its call area");
 		require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "restored frame returns");
 		const auto values = cpu.readCompletionValues();
 		require(values.size() == 1u, "explicit RET returns its reserved register");
-		if (op == bmsx::OpCode::K1) require(bmsx::asNumber(values[0]) == 1, "numeric register survives restore");
-		else require(values[0] == bmsx::asTable(cpu.getGlobalByKey(cpu.stringPool().intern("weak")))->getInteger(1), "reference identity survives restore");
+		if (op == bmsx::OpCode::K1) require(values.get(0) == bmsx::valueInteger(1), "numeric register survives restore");
+		else require(values.get(0) == bmsx::asTable(cpu.getGlobalByKey(cpu.stringPool().intern("weak")), cpu.gcHeap())->getInteger(1), "reference identity survives restore");
 	}
 }
 
@@ -146,8 +146,8 @@ void mirroredAllocationOrder() {
 	require(cpu.stringPool().intern("error in error handling", false) == 2u, "mirrored protected-call error string id");
 	require(cpu.stringPool().intern("Attempted to get length of an unsupported value.", false) == 3u, "mirrored fault error string id");
 	cpu.runUntilDepth(0, 1000);
-	const auto* closure = bmsx::asClosure(cpu.readCompletionValues()[1]);
-	require(closure->upvalues[0]->hashId == closure->hashId + 1u, "closure allocation precedes its new upvalue");
+	const auto* closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
+	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().object(closure->upvalues[0]))->hashId == closure->hashId + 1u, "closure allocation precedes its new upvalue");
 }
 
 void inspectOpenAndClosedClosure() {
@@ -165,20 +165,20 @@ void inspectOpenAndClosedClosure() {
 	});
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::ExecutionStopped, "stop after capture, before the defining frame returns");
 	const auto open = cpu.captureRuntimeState();
-	const auto* closure = bmsx::asClosure(cpu.readFrameRegister(0, 1));
-	require(closure->upvalues[0]->open, "fixture capture is open");
+	const auto* closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
+	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().object(closure->upvalues[0]))->open, "fixture capture is open");
 	const auto table = cpu.readFrameRegister(0, 0);
 	require(cpu.readClosureUpvalue(closure, 0) == table, "read the live defining register without calling the closure");
 	const auto afterRead = cpu.captureRuntimeState();
 	require(std::ranges::equal(afterRead.snapshot.words(), open.snapshot.words()), "inspection does not change the open cell or heap");
 	cpu.setExecutionHook({});
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "defining frame returns normally");
-	closure = bmsx::asClosure(cpu.readCompletionValues()[1]);
-	require(!closure->upvalues[0]->open, "fixture capture is closed");
+	closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
+	require(!static_cast<bmsx::Upvalue*>(cpu.gcHeap().object(closure->upvalues[0]))->open, "fixture capture is closed");
 	require(cpu.readClosureUpvalue(closure, 0) == table, "closed cell keeps the same value");
 	cpu.restoreRuntimeState(open);
-	closure = bmsx::asClosure(cpu.readFrameRegister(0, 1));
-	require(closure->upvalues[0]->open, "restore replaces the closure with its open capture");
+	closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
+	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().object(closure->upvalues[0]))->open, "restore replaces the closure with its open capture");
 	require(cpu.readClosureUpvalue(closure, 0) == cpu.readFrameRegister(0, 0), "restored read follows the restored frame");
 }
 
@@ -201,13 +201,13 @@ void replayWeakCollectionSchedule() {
 	auto* metatable = cpu.createTable(0, 1);
 	metatable->setStringKey(cpu.stringPool().intern("__mode"), bmsx::valueString(cpu.stringPool().intern("v")));
 	weak->metatable = metatable;
-	weak->setInteger(1, bmsx::valueTable(cpu.createTable()));
-	cpu.setGlobalByKey(weakKey, bmsx::valueTable(weak));
+	weak->setInteger(1, bmsx::valueTable(cpu.gcHeap().reference(cpu.createTable())));
+	cpu.setGlobalByKey(weakKey, bmsx::valueTable(cpu.gcHeap().reference(weak)));
 	for (int index = 0; index < 17; ++index) cpu.createTable(256, 0);
 	const auto anchor = cpu.captureRuntimeState();
 	const auto strings = cpu.stringPool().captureState();
 	const auto allocateUntilCollected = [&]() {
-		auto* current = bmsx::asTable(cpu.getGlobalByKey(weakKey));
+		auto* current = bmsx::asTable(cpu.getGlobalByKey(weakKey), cpu.gcHeap());
 		require(bmsx::valueIsTable(current->getInteger(1)), "restore must not collect a weak referent");
 		for (int count = 1; count < 4096; ++count) {
 			cpu.createTable(256, 0);
@@ -254,11 +254,11 @@ void restoreUnrootedCanonicalClosure() {
 	}
 	require(captured, "snapshot must retain unrooted canonical cache entries");
 	cpu.runUntilDepth(0, 1000);
-	const auto expectedId = bmsx::asTable(cpu.readCompletionValues()[0])->hashId;
+	const auto expectedId = bmsx::asTable(cpu.readCompletionValues().get(0), cpu.gcHeap())->hashId;
 	cpu.restoreRuntimeState(cold);
 	cpu.restoreRuntimeState(warm);
 	cpu.runUntilDepth(0, 1000);
-	require(bmsx::asTable(cpu.readCompletionValues()[0])->hashId == expectedId, "warm cache restore must preserve the next guest allocation identity");
+	require(bmsx::asTable(cpu.readCompletionValues().get(0), cpu.gcHeap())->hashId == expectedId, "warm cache restore must preserve the next guest allocation identity");
 }
 
 void capturePreservesGlobalRegisters() {
@@ -273,11 +273,11 @@ void capturePreservesGlobalRegisters() {
 	auto& cpu = machine.runtime.machine.cpu;
 	cpu.runUntilDepth(0, 1000);
 	const auto key = cpu.stringPool().intern("answer");
-	require(bmsx::asNumber(cpu.getGlobalByKey(key)) == 1.0, "SETGL writes the named owner");
+	require(cpu.getGlobalByKey(key) == bmsx::valueInteger(1), "SETGL writes the named owner");
 	const auto snapshot = cpu.captureRuntimeState();
-	cpu.setGlobalByKey(key, bmsx::valueNumber(99));
+	cpu.setGlobalByKey(key, bmsx::valueInteger(99));
 	cpu.restoreRuntimeState(snapshot);
-	require(bmsx::asNumber(cpu.getGlobalByKey(key)) == 1.0, "restore retains the authoritative register value");
+	require(cpu.getGlobalByKey(key) == bmsx::valueInteger(1), "restore retains the authoritative register value");
 }
 
 void restoreHardHalt() {
@@ -305,12 +305,12 @@ void reuseSnapshotStorage() {
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto key = cpu.stringPool().intern("graph");
 	auto* root = cpu.createTable(130, 0);
-	cpu.setGlobalByKey(key, bmsx::valueTable(root));
+	cpu.setGlobalByKey(key, bmsx::valueTable(cpu.gcHeap().reference(root)));
 	for (int index = 1; index <= 130; ++index) {
 		auto* child = cpu.createTable(1, 0);
 		child->hashId = 0xffffffffu;
-		child->setInteger(1, bmsx::valueTable(root));
-		root->setInteger(index, bmsx::valueTable(child));
+		child->setInteger(1, bmsx::valueTable(cpu.gcHeap().reference(root)));
+		root->setInteger(index, bmsx::valueTable(cpu.gcHeap().reference(child)));
 	}
 	const auto retained = cpu.captureRuntimeState();
 	auto recycled = cpu.captureRuntimeState();
@@ -338,9 +338,9 @@ void reuseSnapshotStorage() {
 	require(std::ranges::equal(recycled.snapshot.words(), fresh.snapshot.words()), "recycled storage has no stale active words");
 	require(std::ranges::equal(recycled.snapshot.objectWords(), fresh.snapshot.objectWords()), "recycled index has no stale object records");
 	cpu.restoreRuntimeState(retained);
-	auto* restored = bmsx::asTable(cpu.getGlobalByKey(key));
+	auto* restored = bmsx::asTable(cpu.getGlobalByKey(key), cpu.gcHeap());
 	require(restored->getInteger(1) != restored->getInteger(2), "equal allocation ids do not merge snapshot identities");
-	require(bmsx::asTable(restored->getInteger(130))->getInteger(1) == bmsx::valueTable(restored), "cycle survives graph growth and restore");
+	require(bmsx::asTable(restored->getInteger(130), cpu.gcHeap())->getInteger(1) == bmsx::valueTable(cpu.gcHeap().reference(restored)), "cycle survives graph growth and restore");
 	const auto after = cpu.captureRuntimeState();
 	require(std::ranges::equal(after.snapshot.words(), retained.snapshot.words()), "the retained checkpoint remains intact");
 	require(std::ranges::equal(after.snapshot.objectWords(), retained.snapshot.objectWords()), "the retained object index remains intact");
@@ -351,22 +351,21 @@ void preserveSnapshotValueBits() {
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto key = cpu.stringPool().intern("values");
 	const std::array values{
-		bmsx::valueNumber(-0.0), bmsx::valueNumber(0.0), bmsx::valueNumber(1.25),
-		bmsx::valueNumber(std::numeric_limits<double>::quiet_NaN()),
-		bmsx::valueNumber(std::numeric_limits<double>::infinity()),
-		bmsx::valueNumber(-std::numeric_limits<double>::infinity()),
-		bmsx::valueNumber(std::numeric_limits<double>::denorm_min()),
-		bmsx::valueNumber(std::numeric_limits<double>::max()),
+		bmsx::valueInteger(0), bmsx::valueInteger(INT32_MIN), bmsx::valueInteger(INT32_MAX),
+		bmsx::valueFloatBits(0x80000000u), bmsx::valueFloat(0.0f), bmsx::valueFloat(1.25f),
+		bmsx::valueFloatBits(0xffc12345u), bmsx::valueFloatBits(0x7f800001u),
+		bmsx::valueFloatBits(0x7f800000u), bmsx::valueFloatBits(0xff800000u),
+		bmsx::valueFloatBits(1u), bmsx::valueFloatBits(0x7f7fffffu),
 		bmsx::valueBool(false), bmsx::valueBool(true),
 		bmsx::valueString(cpu.stringPool().intern("saved")),
 		cpu.createBuiltinFunction(bmsx::BuiltinFunctionId::Next), bmsx::valueNil(),
 	};
 	auto* table = cpu.createTable(values.size(), 0);
-	cpu.setGlobalByKey(key, bmsx::valueTable(table));
+	cpu.setGlobalByKey(key, bmsx::valueTable(cpu.gcHeap().reference(table)));
 	for (size_t index = 0; index < values.size(); ++index) table->setInteger(index + 1, values[index]);
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	const auto* restored = bmsx::asTable(cpu.getGlobalByKey(key));
+	const auto* restored = bmsx::asTable(cpu.getGlobalByKey(key), cpu.gcHeap());
 	for (size_t index = 0; index < values.size(); ++index) require(restored->getInteger(index + 1) == values[index], "raw native value bits survive restore");
 	const auto after = cpu.captureRuntimeState();
 	require(std::ranges::equal(after.snapshot.words(), state.snapshot.words()), "all primitive tags and payload words survive restore");
@@ -377,19 +376,19 @@ void preserveDeepGraph() {
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto key = cpu.stringPool().intern("deep");
 	auto* root = cpu.createTable(1, 0);
-	cpu.setGlobalByKey(key, bmsx::valueTable(root));
+	cpu.setGlobalByKey(key, bmsx::valueTable(cpu.gcHeap().reference(root)));
 	auto* tail = root;
 	for (int index = 1; index < 4096; ++index) {
 		auto* child = cpu.createTable(1, 0);
-		tail->setInteger(1, bmsx::valueTable(child));
+		tail->setInteger(1, bmsx::valueTable(cpu.gcHeap().reference(child)));
 		tail = child;
 	}
-	tail->setInteger(1, bmsx::valueTable(root));
+	tail->setInteger(1, bmsx::valueTable(cpu.gcHeap().reference(root)));
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	auto* restored = bmsx::asTable(cpu.getGlobalByKey(key));
+	auto* restored = bmsx::asTable(cpu.getGlobalByKey(key), cpu.gcHeap());
 	auto* current = restored;
-	for (int index = 0; index < 4096; ++index) current = bmsx::asTable(current->getInteger(1));
+	for (int index = 0; index < 4096; ++index) current = bmsx::asTable(current->getInteger(1), cpu.gcHeap());
 	require(current == restored, "deep cyclic graph restores every edge");
 	const auto after = cpu.captureRuntimeState();
 	require(std::ranges::equal(after.snapshot.words(), state.snapshot.words()), "deep graph preserves every word");
@@ -401,28 +400,28 @@ void preserveDynamicGlobalRegisters() {
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto count = cpu.globalSlotCount();
 	for (int index = 0; index < 257; ++index) {
-		cpu.setGlobalByKey(cpu.stringPool().intern("dynamic" + std::to_string(index)), bmsx::valueNumber(index));
+		cpu.setGlobalByKey(cpu.stringPool().intern("dynamic" + std::to_string(index)), bmsx::valueInteger(index));
 	}
 	const auto key = cpu.stringPool().intern("held");
 	auto* object = cpu.createTable(1, 0);
-	object->setInteger(1, bmsx::valueNumber(42));
-	cpu.setGlobalByKey(key, bmsx::valueTable(object));
+	object->setInteger(1, bmsx::valueInteger(42));
+	cpu.setGlobalByKey(key, bmsx::valueTable(cpu.gcHeap().reference(object)));
 	const auto nilKey = cpu.stringPool().intern("nil-name");
 	cpu.setGlobalByKey(nilKey, bmsx::valueNil());
 	cpu.collectHeap();
 	const auto strings = cpu.stringPool().captureState();
 	const auto state = cpu.captureRuntimeState();
 	cpu.setGlobalByKey(key, bmsx::valueNil());
-	cpu.setGlobalByKey(cpu.stringPool().intern("future"), bmsx::valueNumber(100));
+	cpu.setGlobalByKey(cpu.stringPool().intern("future"), bmsx::valueInteger(100));
 	cpu.collectHeap();
 	cpu.stringPool().restoreState(strings);
 	cpu.restoreRuntimeState(state);
 	require(cpu.globalSlotCount() == count + 259, "dynamic register membership restores exactly");
 	for (int index = 0; index < 257; ++index) {
-		require(bmsx::asNumber(cpu.getGlobalByKey(cpu.stringPool().intern("dynamic" + std::to_string(index)))) == index,
+		require(cpu.getGlobalByKey(cpu.stringPool().intern("dynamic" + std::to_string(index))) == bmsx::valueInteger(index),
 			"growth and restore preserve every global register");
 	}
-	require(bmsx::asNumber(bmsx::asTable(cpu.getGlobalByKey(key))->getInteger(1)) == 42, "dynamic global is a heap root");
+	require(bmsx::asTable(cpu.getGlobalByKey(key), cpu.gcHeap())->getInteger(1) == bmsx::valueInteger(42), "dynamic global is a heap root");
 	require(cpu.stringPool().toString(nilKey) == "nil-name", "nil-valued registers retain their names");
 	const auto after = cpu.captureRuntimeState();
 	require(std::ranges::equal(after.snapshot.words(), state.snapshot.words()), "dynamic roots retain exact snapshot words");
@@ -438,8 +437,8 @@ void diagnosticGcPhasesDoNotBecomeMachineState() {
 	auto* mode = cpu.createTable(0, 1);
 	mode->setStringKey(strings.intern("__mode"), bmsx::valueString(strings.intern("v")));
 	weak->metatable = mode;
-	weak->setInteger(1, bmsx::valueTable(cpu.createTable(64, 0)));
-	cpu.setGlobalByKey(weakKey, bmsx::valueTable(weak));
+	weak->setInteger(1, bmsx::valueTable(cpu.gcHeap().reference(cpu.createTable(64, 0))));
+	cpu.setGlobalByKey(weakKey, bmsx::valueTable(cpu.gcHeap().reference(weak)));
 	strings.intern("unrooted diagnostic text");
 	const auto anchor = bmsx::captureRuntimeSaveState(machine.runtime);
 	const auto before = cpu.diagnosticGcProfile();
