@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
+import { valueBool, valueFloat } from '../../machine/ts/machine/cpu/value';
 import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -35,10 +36,9 @@ error = function() return 'not an error' end
 assert(gc('capacity') == capacity)
 assert(not pcall(gc, 'unsupported'))
 return true, capacity`;
-		const baseSource = readFileSync('machine/bios/base.lua', 'utf8');
 		const consoleSource = 'return { write = function() end, end_line = function() end }';
 		const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), [
-			{ path: 'base', source: baseSource, chunk: parseLuaChunk(baseSource, 'base.lua') },
+			...BASE_FIRMWARE_MODULES.map(({ path, source }) => ({ path, source, chunk: parseLuaChunk(source, path) })),
 			{ path: 'tty/console', source: consoleSource, chunk: parseLuaChunk(consoleSource) },
 		], { entrySource, optLevel, programDomain: 'system' });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled), backend);
@@ -48,7 +48,7 @@ return true, capacity`;
 		for (let i = 0; i < 1000 && result === RunResult.Yielded; ++i) result = cpu.runUntilDepth(0, 2048);
 		assert.equal(result, RunResult.Halted, `fault ${cpu.readLuaFaultReasonWord()}, EPC ${cpu.readEpcWord()}`);
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, cpu.luaHeap.capacity() / 1024]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueFloat(cpu.luaHeap.capacity() / 1024)]);
 		assert.equal(profile.fullCollections, 3);
 		assert.ok(profile.steps > profile.collections);
 	});
