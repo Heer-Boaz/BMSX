@@ -41,8 +41,8 @@ struct Images {
 		writeInstruction(bios.text, DECODED_PAGE_WORDS + 4, static_cast<u8>(OpCode::SETSYS), 0, 0, 0);
 		writeInstruction(bios.text, DECODED_PAGE_WORDS + 5, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		writeInstruction(bios.text, 2 * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::RFE), 0, 0, 0);
-		bios.constants = {static_cast<f64>(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET),
-			303.0, static_cast<f64>(IO_CART_SELECT)};
+		bios.constants = {static_cast<i32>(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET),
+			303, static_cast<i32>(IO_CART_SELECT)};
 		bios.globalNames = {"systemMarker"}; bios.systemGlobalNames = {"systemSlot"};
 		bios.functions = {{.firstWord=0, .wordCount=3, .maxStack=8},
 			{.firstWord=DECODED_PAGE_WORDS, .wordCount=6, .numParams=1, .maxStack=2},
@@ -74,8 +74,8 @@ struct Images {
 			writeInstruction(cart.text, DECODED_PAGE_WORDS + 3, static_cast<u8>(OpCode::LOADK), 1, 0, 3);
 			writeInstruction(cart.text, DECODED_PAGE_WORDS + 4, static_cast<u8>(OpCode::STORE_MEM), 1, 0, static_cast<u8>(MemoryAccessKind::Word));
 			writeInstruction(cart.text, DECODED_PAGE_WORDS + 5, static_cast<u8>(OpCode::RFE), 0, 0, 0);
-			cart.constants = {static_cast<f64>(101u * (slot + 1)), static_cast<f64>(slot ^ 1u),
-				static_cast<f64>(IO_IRQ_ACK), static_cast<f64>(IRQ_VBLANK)};
+			cart.constants = {static_cast<i32>(101u * (slot + 1)), static_cast<i32>(slot ^ 1u),
+				static_cast<i32>(IO_IRQ_ACK), static_cast<i32>(IRQ_VBLANK)};
 			cart.globalNames = {"cartMarker", "cartSystemMarker"};
 			cart.systemGlobalNames = {"systemSlot", "irqSeen"};
 			cart.closureRelocations = {{1, system.functionAddresses[1]}};
@@ -127,8 +127,8 @@ struct Machine {
 	}
 	Value global(const char* name) { return cpu.getGlobalByKey(cpu.stringPool().intern(name)); }
 	void completedMarkers() {
-		require(global("systemMarker") == valueNumber(303) && global("cartMarker") == valueNumber(303 + 101 * (slot + 1))
-			&& global("cartSystemMarker") == valueNumber(606 + 101 * (slot + 1)),
+		require(global("systemMarker") == valueInteger(303) && global("cartMarker") == valueInteger(303 + 101 * (slot + 1))
+			&& global("cartSystemMarker") == valueInteger(606 + 101 * (slot + 1)),
 			"each image consumes its own constants/name slots and the shared global banks");
 		require(memory.cartridgeController().selectionWord() == (slot ^ 1u)
 			&& cpu.readFrameExecutionDomain(0) == static_cast<ExecutionDomainId>(slot)
@@ -187,7 +187,7 @@ void irqInSystemCallee(const Images& images, u32 slot) {
 		if (generated.cpu.isHaltedUntilIrq()) break;
 	}
 	const auto key = generated.cpu.stringPool().intern("irqSeen");
-	require(generated.cpu.getSystemGlobalByKey(key) == valueNumber(1), "IRQ in a user-mode BIOS callee uses the program socket's vector");
+	require(generated.cpu.getSystemGlobalByKey(key) == valueInteger(1), "IRQ in a user-mode BIOS callee uses the program socket's vector");
 	generated.completedMarkers(); scalar.completedMarkers();
 }
 
@@ -209,14 +209,14 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 		auto* targetPage = targetImage->nativeCodeLookup->find(targetPc, slot);
 		targetPage->retireNativeBlocks();
 	}
-	std::array<Value, 8> decoyGlobals{};
+	ValueSlots decoyGlobals(8);
 	std::array<u32, COP0_EXEC + 1> decoyCp0{};
 	decoyCp0[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	const int grant = exhausted ? BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1 : 100;
 	const auto& gate = nativeBlockGate();
-	NativeCpuRunState run{.state={.registers=frame->registers, .constants=sourceImage->constPool.data(), .frame=frame,
-		.globalValues=decoyGlobals.data(), .systemGlobalValues=decoyGlobals.data(), .cop0Words=decoyCp0.data(),
-		.constantCount=static_cast<u32>(sourceImage->constPool.size()), .remainingCycles=grant, .registerTop=frame->top,
+	NativeCpuRunState run{.state={.registers=frame->registers, .constants=sourceImage->constPool.view(), .frame=frame, .heap=&m.cpu.gcHeap(),
+		.globalValues=decoyGlobals.view(), .systemGlobalValues=decoyGlobals.view(), .cop0Words=decoyCp0.data(),
+		.constantCount=static_cast<u32>(sourceImage->constPool.capacity()), .remainingCycles=grant, .registerTop=frame->top,
 		.exitCode=gate.dispatch,
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 		.diagnosticOpcodes={},
@@ -241,10 +241,13 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 	}
 	require(m.cpu.isHaltedUntilIrq(), "one stable native gate reaches the cartridge's real HALT");
 	m.completedMarkers();
-	require(run.state.frame == m.cpu.activeThread()->currentFrame && run.state.registers == run.state.frame->registers
-		&& run.state.constants == run.state.frame->executionImage->constPool.data()
-		&& run.state.constantCount == run.state.frame->executionImage->constPool.size()
-		&& run.state.globalValues != decoyGlobals.data() && run.state.systemGlobalValues != decoyGlobals.data()
+	require(run.state.frame == m.cpu.activeThread()->currentFrame && run.state.registers.words() == run.state.frame->registers.words()
+		&& run.state.registers.tags() == run.state.frame->registers.tags()
+		&& run.state.constants.words() == run.state.frame->executionImage->constPool.words()
+		&& run.state.constants.tags() == run.state.frame->executionImage->constPool.tags()
+		&& run.state.constantCount == run.state.frame->executionImage->constPool.capacity()
+		&& run.state.globalValues.words() != decoyGlobals.words() && run.state.globalValues.tags() != decoyGlobals.tags()
+		&& run.state.systemGlobalValues.words() != decoyGlobals.words() && run.state.systemGlobalValues.tags() != decoyGlobals.tags()
 		&& run.state.cop0Words != decoyCp0.data() && run.state.cop0Words[COP0_STATUS] == CPU_STATUS_CART_ENTRY
 		&& run.codeRoot == run.state.frame->executionImage->nativeCodeLookup->root(slot)
 		&& run.cartridgeSlot == slot && run.cartridgeRom == m.memory.cartridgeController().romStorage(slot),
