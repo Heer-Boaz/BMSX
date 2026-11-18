@@ -118,9 +118,9 @@ auto makeGtePlusBurstImage(
 	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_WORDS_D), 1, 0, static_cast<bmsx::u8>(words.size()));
 	bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	image.constants.reserve(words.size() + 1u);
-	image.constants.emplace_back(static_cast<bmsx::f64>(bmsx::IO_GX_GTE_PLUS_BASE));
+	image.constants.emplace_back(static_cast<bmsx::i32>(bmsx::IO_GX_GTE_PLUS_BASE));
 	for (uint32_t word : words) {
-		image.constants.emplace_back(static_cast<bmsx::f64>(word));
+		image.constants.emplace_back(static_cast<bmsx::i32>(word));
 	}
 	image.functions.push_back({
 		.firstWord = 0u,
@@ -333,8 +333,8 @@ void testCommandObservationPreservesCpu() {
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	image.functions.push_back({.firstWord = 0u, .wordCount = 5u, .maxStack = 2u});
-	image.constants.emplace_back(static_cast<bmsx::f64>(bmsx::IO_GX_GTE_COMMAND));
-	image.constants.emplace_back(static_cast<bmsx::f64>(GTE_SF | bmsx::GX_GTE_FN_RTPS));
+	image.constants.emplace_back(static_cast<bmsx::i32>(bmsx::IO_GX_GTE_COMMAND));
+	image.constants.emplace_back(static_cast<bmsx::i32>(GTE_SF | bmsx::GX_GTE_FN_RTPS));
 	GteHarness baseline(image), observed(image);
 	for (auto* harness : {&baseline, &observed}) {
 		setupIdentityProjection(harness->gte);
@@ -346,7 +346,7 @@ void testCommandObservationPreservesCpu() {
 	bmsx::InstructionObserverBinding instructionObserver;
 	instructionObserver.points[0].insert(expectedPc);
 	instructionObserver.context = &instructionObservations;
-	instructionObserver.observe = [](void* context, bmsx::ExecutionDomainId, bmsx::u32, const bmsx::Value*) {
+	instructionObserver.observe = [](void* context, bmsx::ExecutionDomainId, bmsx::u32, bmsx::ConstValueSpan) {
 		++*static_cast<int*>(context);
 	};
 	observed.cpu.setInstructionObserver(std::move(instructionObserver));
@@ -714,8 +714,8 @@ void testPlusObservationPreservesCpuInterlock() {
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	image.functions.push_back({.firstWord = 0u, .wordCount = 5u, .maxStack = 2u});
 	const auto commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
-	image.constants.emplace_back(static_cast<bmsx::f64>(commandAddress));
-	image.constants.emplace_back(static_cast<bmsx::f64>(1));
+	image.constants.emplace_back(static_cast<bmsx::i32>(commandAddress));
+	image.constants.emplace_back(1);
 	const auto& prices = bmsx::BASE_CYCLES;
 	const int load = prices[static_cast<size_t>(bmsx::OpCode::LOADK)];
 	const int store = prices[static_cast<size_t>(bmsx::OpCode::STORE_MEM_D)];
@@ -1628,7 +1628,7 @@ void testNormalCpuInstructionTiming() {
  for (bool scalar : {false, true}) {
   bmsx::test::Blua32TestImage image;
   image.text.resize(7 * bmsx::INSTRUCTION_BYTES);
-  image.constants = {static_cast<double>(bmsx::IO_GX_GTE_COMMAND), static_cast<double>(bmsx::GX_GTE_FN_RTPT), static_cast<double>(bmsx::IO_GX_GTE_DATA0)};
+  image.constants = {static_cast<bmsx::i32>(bmsx::IO_GX_GTE_COMMAND), static_cast<bmsx::i32>(bmsx::GX_GTE_FN_RTPT), static_cast<bmsx::i32>(bmsx::IO_GX_GTE_DATA0)};
   image.functions = {{.firstWord=0, .wordCount=7, .maxStack=5}};
   bmsx::writeInstruction(image.text,0,static_cast<bmsx::u8>(bmsx::OpCode::LOADK),0,0,0);
   bmsx::writeInstruction(image.text,1,static_cast<bmsx::u8>(bmsx::OpCode::LOADK),1,0,1);

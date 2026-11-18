@@ -1290,8 +1290,8 @@ void testBlockedCpuGp0StoreResumesAcrossDeviceRestore() {
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	image.functions.push_back({ .firstWord = 0u, .wordCount = 4u, .maxStack = 2u });
-	image.constants.emplace_back(static_cast<bmsx::f64>(bmsx::IO_GX_GPU_GP0));
-	image.constants.emplace_back(static_cast<bmsx::f64>(0x1f000000u));
+	image.constants.emplace_back(static_cast<bmsx::i32>(bmsx::IO_GX_GPU_GP0));
+	image.constants.emplace_back(0x1f000000);
 	const auto rom = bmsx::test::encodeBlua32TestRom(bmsx::RomImageDomain::System, image);
 	GpuHarness original;
 	original.memory.installSystemRom(rom.bytes);
