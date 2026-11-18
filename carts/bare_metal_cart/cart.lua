@@ -164,14 +164,17 @@ local mesh_sin_q12 = 0
 local mesh_cos_q12 = q12_one
 local post_sin_q12 = 0
 local post_cos_q12 = q12_one
-local shard_words<const>: *word = 0x08044000
 local shard_count<const> = 32
 local shard_stride<const> = 8
-local particle_words<const>: *word = 0x08045000
+bss shard_storage: word[shard_count * shard_stride]
+local shard_words<const>: *word = shard_storage
 local particle_count<const> = 72
 local particle_stride<const> = 4
+bss particle_storage: word[particle_count * particle_stride]
+local particle_words<const>: *word = particle_storage
 local particle_brightness_q8<const> = 176
-local angle_words<const>: *word = 0x08046000
+bss angle_storage: word[angle_count * 2]
+local angle_words<const>: *word = angle_storage
 
 local wait_vblank<const> = function()
 	while (irq_pending_flags & irq_vblank) == 0 do

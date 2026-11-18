@@ -1929,7 +1929,7 @@ aan dat vaste adres. De oude gebruikers zijn hieronder verantwoord:
 | Gebruiker | Voor fase 3 | Na fase 3 |
 |---|---|---|
 | `cartlib/collision/collision_2d.lua` | Vast adres `08040000H` en 512 KiB voor instances, resultaten en samenvatting | De cartridge reserveert de buffer in haar eigen BSS en geeft adres en capaciteit aan `cartlib` |
-| `carts/bare_metal_cart/cart.lua` | Gebruikt `08040000H` als textuurbuffer | Eigen BSS-buffer |
+| `carts/bare_metal_cart/cart.lua` | Gebruikt `08040000H` als textuurbuffer en `08044000H`–`08046FFFH` voor scherf-, deeltjes- en hoektabellen | Eigen BSS-buffers |
 | Linker (`DYNAMIC_RAM_BASE`) | System-DATA begint op `080C0000H` | System-DATA begint direct na de I/O-reservering, op `08040000H` |
 | `LuaHeap` (`BASE_RAM_USED_SIZE = GEO_SCRATCH_SIZE`) | Capaciteit `ramBytes − 512 KiB` = 3,5 MiB | Tijdens de infrastructuurfase expliciet vast op 3,5 MiB; vanaf de tabelfase `K` |
 
@@ -2317,7 +2317,7 @@ hebben per beeld dezelfde statische indeling.
 | nemesis_s | `080ADD5CH` | `080AE000H` | 3.465.216 |
 | pietious | `080A9D5CH` | `080AA000H` | 3.481.600 |
 | cartlib_test | `08091CDCH` | `08092000H` | 3.579.904 |
-| bare_metal_cart | `080AF4D0H` | `080B0000H` | 3.457.024 |
+| bare_metal_cart | `080B0150H` | `080B1000H` | 3.452.928 |
 | studio_test | `08089CD8H` | `0808A000H` | 3.612.672 |
 
 Ter vergelijking:
