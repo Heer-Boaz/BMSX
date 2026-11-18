@@ -34,7 +34,7 @@ public:
 test::Blua32TestRom systemProgram(bool warmLoop = false) {
 	test::Blua32TestImage image;
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
-	image.constants = {static_cast<double>(test::blua32TestFunctionAddress(RomImageDomain::Cartridge, 0))};
+	image.constants = {static_cast<i32>(test::blua32TestFunctionAddress(RomImageDomain::Cartridge, 0))};
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MTC0), 0, COP0_EXEC, 0);
@@ -50,7 +50,7 @@ test::Blua32TestRom systemProgram(bool warmLoop = false) {
 test::Blua32TestImage cartridgeProgram(const std::string& text) {
 	test::Blua32TestImage image;
 	image.text.resize(3u * MAPPED_PAGE_BYTE_SIZE);
-	image.constants = {text, static_cast<double>(IO_IRQ_FLAGS)};
+	image.constants = {text, static_cast<i32>(IO_IRQ_FLAGS)};
 	image.globalNames = {"cartResult"};
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETGL), 0, 0, 0);
@@ -239,7 +239,7 @@ void crossPageWideSourceUsesItsPhysicalSlot() {
 	machine.runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0u);
 	machine.cpu().beginCompletionCallInExecutionDomain(1, machine.cart.functionAddresses[1]);
 	require(machine.cpu().runUntilDepth(1, 32) == RunResult::Halted
-		&& machine.cpu().readCompletionValues()[0] == valueNumber(37),
+		&& machine.cpu().readCompletionValues().get(0) == valueInteger(37),
 		"the prepared cross-page function and operands stay pinned to slot one after socket selection changes");
 }
 
@@ -288,7 +288,7 @@ void observationsAndUnusedHintsStayAtExecution() {
 	InstructionObserverBinding observer;
 	observer.points[1].insert(machine.cart.textAddress);
 	observer.context = &observations;
-	observer.observe = [](void* context, ExecutionDomainId domain, u32, const Value*) {
+	observer.observe = [](void* context, ExecutionDomainId domain, u32, ConstValueSpan) {
 		require(domain == 0, "cartridge observation keeps its execution domain");
 		++*static_cast<int*>(context);
 	};

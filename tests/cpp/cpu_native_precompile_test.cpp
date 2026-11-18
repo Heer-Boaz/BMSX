@@ -72,7 +72,7 @@ test::Blua32TestImage program() {
 	writeInstruction(image.text, 192, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	writeInstruction(image.text, 256, static_cast<u8>(OpCode::KSMI), 0, 0, 9);
 	writeInstruction(image.text, 257, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	image.constants = {static_cast<double>(DYNAMIC_RAM_BASE + 0x4000u), static_cast<double>(IO_IRQ_FLAGS)};
+	image.constants = {static_cast<i32>(DYNAMIC_RAM_BASE + 0x4000u), static_cast<i32>(IO_IRQ_FLAGS)};
 	image.functions = {{.firstWord=0, .wordCount=11, .maxStack=8},
 		{.firstWord=64, .wordCount=2, .maxStack=1}, {.firstWord=128, .wordCount=1},
 		{.firstWord=192, .wordCount=1}, {.firstWord=256, .wordCount=2}};
@@ -203,7 +203,7 @@ void preparationPreservesConfiguredObservation() {
 		InstructionObserverBinding binding;
 		binding.context = &observation;
 		binding.points[0].insert(observation.pc);
-		binding.observe = [](void* context, ExecutionDomainId domain, u32 pc, const Value*) {
+		binding.observe = [](void* context, ExecutionDomainId domain, u32 pc, ConstValueSpan) {
 			auto& observation = *static_cast<Observation*>(context);
 			require(domain == SYSTEM_EXECUTION_DOMAIN_ID && pc == observation.pc,
 				"the configured observer retains its exact execution domain and physical PC");
@@ -270,7 +270,7 @@ void crossPageWideDependenciesRemainOwned() {
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before && entryAt(cpu, pc) && entryAt(cpu, pc)->sourceWords >= 2u,
 		"a backed WIDE body across the physical ROM page remains a cold native source dependency");
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[4]);
-	require(cpu.runUntilDepth(1, 32) == RunResult::Halted && cpu.readCompletionValues()[0] == valueNumber(11),
+	require(cpu.runUntilDepth(1, 32) == RunResult::Halted && cpu.readCompletionValues().get(0) == valueInteger(11),
 		"the prepared cross-page function executes its complete raw WIDE operand");
 }
 
@@ -293,8 +293,8 @@ void preparationSharesTheExistingCapacityPolicy() {
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::System, image));
 	auto& cpu = machine.runtime.machine.cpu;
 	auto& registers = cpu.rootThread()->frameAtDepth(0)->registers;
-	registers[0] = valueNumber(0);
-	registers[1] = valueNumber(1);
+	registers.set(0, valueInteger(0));
+	registers.set(1, valueInteger(1));
 	cpu.setNativeCompilationProfiling(true);
 	const auto before = encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime));
 	cpu.prepareSystemNativeCode();
