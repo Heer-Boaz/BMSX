@@ -20,7 +20,7 @@ static void exerciseCompletionBoundary(bmsx::CPU& cpu, bool fault) {
 	auto* thread = cpu.activeThread();
 	const int depth = cpu.getFrameDepth();
 	const auto protectedDepth = thread->protectedCallDepth;
-	cpu.beginCompletionCall(*bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe"))));
+	cpu.beginCompletionCall(*bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe")), cpu.gcHeap()));
 	for (int grant = 0; grant < 10000 && cpu.completionCallPending() && cpu.readExceptionReturnFrameDepth() == -1; ++grant) {
 		cpu.runUntilDepth(depth, 1, thread);
 	}
@@ -31,7 +31,7 @@ static void exerciseCompletionBoundary(bmsx::CPU& cpu, bool fault) {
 	} else {
 		const auto values = cpu.readCompletionValues();
 		if (cpu.readExceptionReturnFrameDepth() != -1 || cpu.completionCallPending() || cpu.getFrameDepth() != depth
-			|| values.size() != 1 || values[0] != bmsx::valueBool(true)) throw std::runtime_error("nested completion pcall/coroutine failed");
+			|| values.size() != 1 || values.get(0) != bmsx::valueBool(true)) throw std::runtime_error("nested completion pcall/coroutine failed");
 	}
 }
 
@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
 				if (std::string(argv[index]).find("halted_tooling_call-") != std::string::npos) {
 					if (cpu.runUntilDepth(0, 100000) != bmsx::RunResult::Halted || !cpu.isHaltedUntilIrq()) throw std::runtime_error("root did not HALT");
 					const int depth = cpu.getFrameDepth();
-					cpu.beginCompletionCall(*bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe"))));
+					cpu.beginCompletionCall(*bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe")), cpu.gcHeap()));
 					for (int grant = 0; grant < 10000; ++grant) {
 						const auto status = cpu.runUntilDepth(depth, 17, cpu.rootThread());
 						const auto snapshot = cpu.captureRuntimeState();
@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
 					if (!interruptVector && cpu.readExceptionReturnFrameDepth() != -1) throw std::runtime_error("unexpected machine fault");
 				}
 				const auto values = runtime.readCompletionValues();
-				if (result != bmsx::RunResult::Halted || cpu.getFrameDepth() != 0 || values.size() != 1 || values[0] != bmsx::valueBool(true)) throw std::runtime_error("coroutine assertion failed");
+				if (result != bmsx::RunResult::Halted || cpu.getFrameDepth() != 0 || values.size() != 1 || values.get(0) != bmsx::valueBool(true)) throw std::runtime_error("coroutine assertion failed");
 			}
 			const auto bytes = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
 			const auto decoded = bmsx::decodeRuntimeSaveState(bytes, bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);

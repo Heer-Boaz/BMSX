@@ -1,11 +1,10 @@
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { asClosure, asThread, asTable, valueBool, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { compileCoroutineTest, coroutineVectors } from '../helpers/coroutine';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { ThreadStatus, type Thread } from '../../machine/ts/machine/cpu/thread';
-import type { Table } from '../../machine/ts/machine/cpu/table';
+import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 
 for (const optLevel of [0, 3] as const) {
 	for (const [name, body] of Object.entries(coroutineVectors)) {
@@ -16,7 +15,7 @@ for (const optLevel of [0, 3] as const) {
 				assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 				assert.equal(cpu.isHaltedUntilIrq(), true);
 				const depth = cpu.getFrameDepth();
-				cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('probe')) as Closure);
+				cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));
 				for (let grant = 0; grant < 10000; grant++) {
 					const status = cpu.runUntilDepth(depth, 17, cpu.rootThread);
 					const snapshot = cpu.captureRuntimeState();
@@ -26,7 +25,7 @@ for (const optLevel of [0, 3] as const) {
 				}
 				assert.equal(cpu.activeThread, cpu.rootThread);
 				assert.equal(cpu.getFrameDepth(), depth);
-				assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('entered')), true);
+				assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('entered')), valueBool(true));
 				assert.equal(cpu.isHaltedUntilIrq(), true, 'returning from tooling preserves the root HALT');
 				cpu.clearHaltUntilIrq();
 			}
@@ -34,7 +33,7 @@ for (const optLevel of [0, 3] as const) {
 			let interrupted = false;
 			for (let grant = 0; grant < 10000 && result === RunResult.Yielded; grant += 1) {
 				if (name === 'interrupted' && !interrupted && cpu.activeThread !== cpu.rootThread
-					&& cpu.getGlobalByKey(cpu.stringPool.intern('interrupt_ready')) === true) {
+					&& cpu.getGlobalByKey(cpu.stringPool.intern('interrupt_ready')) === valueBool(true)) {
 					cpu.requestNonMaskableInterrupt();
 					assert.equal(cpu.enterPendingInterrupt(), true);
 					const snapshot = cpu.captureRuntimeState();
@@ -52,17 +51,17 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(cpu.getFrameDepth(), 0);
 			const values = [];
 			cpu.readCompletionValues(values);
-			assert.deepEqual(values, [true]);
+			assert.deepEqual(values, [valueBool(true)]);
 			assert.equal(cpu.activeThread.status, ThreadStatus.Running);
 			if (name === 'protected_and_failed') {
-				const failed = cpu.getGlobalByKey(cpu.stringPool.intern('failed_thread')) as Thread;
+				const failed = asThread(cpu.getGlobalByKey(cpu.stringPool.intern('failed_thread')), cpu.gc);
 				assert.equal(failed.status, ThreadStatus.Failed);
 				assert.ok(failed.frameDepth > 0, 'failed coroutine keeps its authored frames');
 			}
 			cpu.collectTrackedHeapBytes();
 			if (name === 'collection') {
-				const weak = cpu.getGlobalByKey(cpu.stringPool.intern('weak_threads')) as Table;
-				assert.equal(weak.get(1), null, 'unreachable thread is collected after its last stack roots return');
+				const weak = asTable(cpu.getGlobalByKey(cpu.stringPool.intern('weak_threads')), cpu.gc);
+				assert.equal(weak.getInteger(1), valueNil(), 'unreachable thread is collected after its last stack roots return');
 			}
 		});
 	}
