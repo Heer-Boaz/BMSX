@@ -2056,8 +2056,7 @@ RunResult CPU::runLoop(
 	int nativeFirstDispatchCycles = 0;
 	bool forceScalarOnce = false;
 	NativeCpuRunState nativeState{.state = {}, .cpu = this, .targetDepth = targetDepth,
-		.systemRom = &m_memory.systemRomStorage(),
-		.ram = {m_memory.ramData(), m_memory.ramByteCount()}, .error = {}};
+		.systemRom = &m_memory.systemRomStorage(), .error = {}};
 #endif
 	for (;;) {
 		try {
@@ -2363,6 +2362,7 @@ dispatch_native_block: {
 					.globalValues = m_globalValues.view(), .systemGlobalValues = m_systemGlobalValues.view(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.capacity()),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top,
+					.ram = m_memory.ramData(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 					.diagnosticOpcodes = {},
 #endif

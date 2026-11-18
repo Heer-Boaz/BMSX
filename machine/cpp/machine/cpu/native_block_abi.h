@@ -19,16 +19,30 @@ struct NativeCallScratch {
 	int argCount, varargBase, varargCount, stackBase, stackTop;
 };
 
+// Word registers left for the value cache when `fixedSaved` saved registers are pinned.
+inline constexpr int nativeWordCacheRegisters(int fixedSaved) {
+	const int saved = std::min(4, SLJIT_NUMBER_OF_SAVED_REGISTERS - fixedSaved);
+	return saved + std::min(4 - saved, SLJIT_NUMBER_OF_REGISTERS - SLJIT_NUMBER_OF_SAVED_REGISTERS - 4);
+}
+
 // Every linked region shares this one native frame. Only the word/tag bases,
-// run state and cycle grant are pinned; the remaining banks own raw payloads.
+// run state, cycle grant and, where it is free, the main-RAM base are pinned;
+// the remaining banks own raw payloads.
 struct NativeBlockAbi {
 	// Test the builtin ID against the nonallocating leaf repertoire; clobbers R1.
 	static sljit_jump* emitNonleafBuiltinJump(sljit_compiler*, sljit_s32 id);
 	// S0/S1 = slot planes, R0/R1 = signed indices relative to those bases.
 	// R2 is the copy count; R3 is the nil tail when padding is requested.
 	static void emitFramePlacement(sljit_compiler*, bool moveFormals, bool pad);
+	// destination = host address of the main-RAM byte offset in `offset`; the two
+	// registers must differ. The only way generated code reaches the RAM base.
+	static void emitRamAddress(sljit_compiler*, sljit_s32 destination, sljit_s32 offset);
 	static constexpr sljit_s32 words = SLJIT_S0, tags = SLJIT_S1, state = SLJIT_S2, budget = SLJIT_S3;
-	static constexpr int fixedSaved = 4;
+	// The main-RAM base is pinned in S4 only where the value cache keeps all of
+	// its word registers (x86-64, AArch64). ARMv7 reads it from the run state at
+	// each RAM access instead of giving up a cached register.
+	static constexpr bool pinnedRam = nativeWordCacheRegisters(5) == nativeWordCacheRegisters(4);
+	static constexpr int fixedSaved = pinnedRam ? 5 : 4;
 	static constexpr int savedWords = std::min(4, SLJIT_NUMBER_OF_SAVED_REGISTERS - fixedSaved);
 	static constexpr int scratchWords =
 		std::min(4 - savedWords, SLJIT_NUMBER_OF_REGISTERS - SLJIT_NUMBER_OF_SAVED_REGISTERS - 4);

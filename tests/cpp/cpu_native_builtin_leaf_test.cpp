@@ -117,12 +117,13 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	const auto& gate = nativeBlockGate();
 	NativeCpuRunState run{.state={.registers=frame->registers, .constants=owner->constPool.view(), .frame=frame, .heap=&machine.cpu.gcHeap(),
 		.constantCount=static_cast<u32>(owner->constPool.capacity()), .remainingCycles=grant, .registerTop=frame->top, .exitCode=gate.dispatch,
+		.ram=machine.memory.ramData(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 		.diagnosticOpcodes={},
 #endif
 		}, .cpu=&machine.cpu, .targetDepth=0, .codeRoot=owner->nativeCodeLookup->root(0),
 		.systemRom=&machine.memory.systemRomStorage(), .cartridgeRom=machine.memory.cartridgeController().romStorage(0),
-		.ram={machine.memory.ramData(), machine.memory.ramByteCount()}, .cartridgeSlot=0, .error={}};
+		.cartridgeSlot=0, .error={}};
 	// The typed gate models an already admitted segment, not outer-loop IRQ admission.
 	if (interrupt) machine.cpu.requestNonMaskableInterrupt();
 	using Entry = void (SLJIT_FUNC *)(NativeCpuRunState*, void*);

@@ -207,9 +207,9 @@ void inlineInterruptStop(bool nmi, bool wide) {
 	auto* caller=preparedCaller(machine);auto* owner=frame->executionImage;auto* page=owner->nativeCodeLookup->find(rom.textAddress,0);
 	const auto& gate=nativeBlockGate();
 	NativeCpuRunState run{.state={.registers=frame->registers,.constants=owner->constPool.view(),.frame=frame,
-		.constantCount=static_cast<u32>(owner->constPool.capacity()),.remainingCycles=64,.registerTop=frame->top,.exitCode=gate.dispatch},
+		.constantCount=static_cast<u32>(owner->constPool.capacity()),.remainingCycles=64,.registerTop=frame->top,.exitCode=gate.dispatch,.ram=machine.memory.ramData()},
 		.cpu=&machine.cpu,.targetDepth=0,.codeRoot=owner->nativeCodeLookup->root(0),.systemRom=&machine.memory.systemRomStorage(),
-		.cartridgeRom=machine.memory.cartridgeController().romStorage(0),.ram={machine.memory.ramData(),machine.memory.ramByteCount()},.cartridgeSlot=0,.error={}};
+		.cartridgeRom=machine.memory.cartridgeController().romStorage(0),.cartridgeSlot=0,.error={}};
 	// The typed gate is an already-admitted native segment, not a fresh outer
 	// CPU IRQ admission. Its successful CALL must stop at the next instruction.
 	if(nmi) machine.cpu.requestNonMaskableInterrupt();else machine.irq.raise(1);

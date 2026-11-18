@@ -65,6 +65,7 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 	const NativeCodeBindings& bindings, const NativeBlockExitHandlers& exitHandlers
 ) {
 	auto region = std::make_shared<NativeCodeRegion>();
+	region->ram = bindings.ram;
 	std::vector<std::unique_ptr<NativeBlock>> blocks;
 	blocks.reserve(sources.size());
 	for (const auto& source : sources) {
@@ -224,6 +225,7 @@ NativeBlock::~NativeBlock() {
 const NativeBlockExitSite* NativeBlock::run(NativeBlockRunState& state) const {
 	using Entry = const NativeBlockExitSite* (SLJIT_FUNC *)(NativeBlockRunState*, void*);
 	state.exitCode = m_gate->exit;
+	state.ram = region->ram;
 	return reinterpret_cast<Entry>(m_gate->entry)(&state, m_body);
 }
 

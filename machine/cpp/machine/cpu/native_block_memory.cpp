@@ -143,7 +143,7 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Integer)), slow, m_cache.state());
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
 		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_R0, 0, SLJIT_IMM, instruction.a + instruction.c), tag);
-		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.ram));
+		NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, NativeBlockAbi::words, 0, SLJIT_IMM, instruction.a * sizeof(u32));
 		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_IMM, 0);
 		auto* copy = sljit_emit_label(m_compiler);
@@ -168,7 +168,7 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 			fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0), slow, m_cache.state());
 		}
 	}
-	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.ram));
+	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
 	const auto move = kind == MemoryAccessKind::U8 ? SLJIT_MOV32_U8 : kind == MemoryAccessKind::U16LE ? SLJIT_MOV32_U16 : SLJIT_MOV32;
 	if (load) {
 		emitBackingLoad(kind, false);

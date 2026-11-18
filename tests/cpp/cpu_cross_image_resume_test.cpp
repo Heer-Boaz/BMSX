@@ -217,13 +217,13 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 	NativeCpuRunState run{.state={.registers=frame->registers, .constants=sourceImage->constPool.view(), .frame=frame, .heap=&m.cpu.gcHeap(),
 		.globalValues=decoyGlobals.view(), .systemGlobalValues=decoyGlobals.view(), .cop0Words=decoyCp0.data(),
 		.constantCount=static_cast<u32>(sourceImage->constPool.capacity()), .remainingCycles=grant, .registerTop=frame->top,
-		.exitCode=gate.dispatch,
+		.exitCode=gate.dispatch, .ram=m.memory.ramData(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 		.diagnosticOpcodes={},
 #endif
 		}, .cpu=&m.cpu, .targetDepth=targetDepth, .codeRoot=sourceImage->nativeCodeLookup->root(sourceSlot),
 		.systemRom=&m.memory.systemRomStorage(), .cartridgeRom=m.memory.cartridgeController().romStorage(sourceSlot),
-		.ram={m.memory.ramData(), m.memory.ramByteCount()}, .cartridgeSlot=sourceSlot, .error={}};
+		.cartridgeSlot=sourceSlot, .error={}};
 	// No CPU run loop surrounds this call. Only a same-stable-gate resume can
 	// execute the genuine guest marker instructions before the gate returns.
 	using Entry = void (SLJIT_FUNC *)(NativeCpuRunState*, void*);

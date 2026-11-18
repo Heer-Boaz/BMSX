@@ -56,6 +56,8 @@ struct NativeBlockRunState {
 	int registerTop = 0;
 	u32 scalarPc = 0;
 	void* exitCode = nullptr;
+	// Host base of guest main RAM; the gate pins it for the whole native frame.
+	u8* ram = nullptr;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticNativeOpcodeCounts diagnosticOpcodes;
 #endif
@@ -153,6 +155,8 @@ public:
 	NativeCodeRegion(const NativeCodeRegion&) = delete;
 	NativeCodeRegion& operator=(const NativeCodeRegion&) = delete;
 	size_t codeBytes = 0;
+	// The main RAM the generated code addresses through the pinned RAM base.
+	u8* ram = nullptr;
 private:
 	friend class NativeBlock;
 	void* m_code = nullptr;

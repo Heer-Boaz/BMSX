@@ -8,6 +8,20 @@
 #endif
 
 namespace bmsx {
+namespace {
+// Valid only when NativeBlockAbi::pinnedRam; on ARMv7 S4 is a cached word register.
+constexpr sljit_s32 PINNED_RAM = SLJIT_S4;
+} // namespace
+
+void NativeBlockAbi::emitRamAddress(sljit_compiler* compiler, sljit_s32 destination, sljit_s32 offset) {
+	if constexpr (pinnedRam) {
+		sljit_emit_op2(compiler, SLJIT_ADD, destination, 0, offset, 0, PINNED_RAM, 0);
+	} else {
+		sljit_emit_op1(compiler, SLJIT_MOV_P, destination, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, ram));
+		sljit_emit_op2(compiler, SLJIT_ADD, destination, 0, destination, 0, offset, 0);
+	}
+}
+
 
 NativeBlockGate::NativeBlockGate() {
 	auto* compiler = sljit_create_compiler(nullptr);
@@ -19,6 +33,9 @@ NativeBlockGate::NativeBlockGate() {
 	// Arguments arrive in S0/S1; preserve both before binding the two planes.
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_S1, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::state, 0, SLJIT_S0, 0);
+	if constexpr (NativeBlockAbi::pinnedRam)
+		sljit_emit_op1(compiler, SLJIT_MOV_P, PINNED_RAM, 0, SLJIT_MEM1(NativeBlockAbi::state),
+			offsetof(NativeBlockRunState, ram));
 	auto* resume = sljit_emit_label(compiler);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::words, 0, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, registers) + ValueSpan::wordsOffset());
