@@ -4,12 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import { Table } from '../../machine/ts/machine/cpu/table';
-import {
-	asStringId,
-	type StringValue,
-} from '../../machine/ts/machine/cpu/value';
+import { asClosure, asStringId, asTable, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
 import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test_harness';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
@@ -294,6 +289,13 @@ return target.value, active_data.retained, blackboard_instance:get(ticks_key), b
 	machine.current_id == 'active', target.tags.new_active, target.tags.old_active
 `;
 
+// 10,000 real transitions under the current opcode/placement tariffs on the
+// pre-Integer/Float machine: 20,300,024 cycles detached; recording adds
+// 2,620,000. Keep both bounds independent of this implementation's results.
+const DETACHED_TRANSITION_CYCLES = 20_300_024;
+const RECORDER_TRANSITION_CYCLES = 2_620_000;
+const TRANSITION_CALL_GRANT = DETACHED_TRANSITION_CYCLES + RECORDER_TRANSITION_CYCLES + 1;
+
 const TRANSITION_RECORDER_ENTRY_SOURCE = `
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -396,7 +398,7 @@ end
 return aborts
 `, { optLevel });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [2]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(2)]);
 });
 
 test('BT source membership fixture executes its opaque builders and ordered children only in compiled cartlib', () => {
@@ -410,7 +412,7 @@ local status<const> = program.evaluate(target, execution, program.operand)
 return status == result.success, target.order
 `);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, 1212]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(1212)]);
 });
 
 test('source-owned BT moves change actual compiled task order and keep choice weights attached to their children', () => {
@@ -430,7 +432,7 @@ local status<const> = program.evaluate(target, execution, program.operand)
 return status == result.success, target.order, #children, children.note == 'metadata is not a child'
 `);
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, expected, 3, true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(expected), valueInteger(3), valueBool(true)]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
 		const weighted = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(BT_ORDER_SOURCE, resource)], ['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/result']))).definitions[2];
@@ -448,7 +450,7 @@ end
 return target.order, weighted.choices[${destination === 0 ? 1 : 3}].weight, weighted.choices.note == 'metadata is not a choice'
 `);
 		assert.equal(choiceCpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(choiceCpu), [expected, 9, true]);
+		assert.deepEqual(materializeCpuCompletionValues(choiceCpu), [valueInteger(expected), valueInteger(9), valueBool(true)]);
 	}
 });
 
@@ -480,7 +482,7 @@ ${execution}
 return target.order, #nested.children, nested.children[1] == leaf
 `);
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [expected, 2, true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(expected), valueInteger(2), valueBool(true)]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
 	}
@@ -517,7 +519,7 @@ ${execution}
 return target.order, #nested.children, same_value
 `);
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [expected, 2, sameValue]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(expected), valueInteger(2), valueBool(sameValue)]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
 	}
@@ -547,7 +549,7 @@ assert(children.note == 'metadata is not a child')
 return target.order, #children, #nested.children
 `);
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), inward ? [1312, 2, 3] : [1132, 4, 1]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), inward ? [valueInteger(1312), valueInteger(2), valueInteger(3)] : [valueInteger(1132), valueInteger(4), valueInteger(1)]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
 	}
@@ -582,7 +584,7 @@ assert(program.evaluate(target, {_execution_state=program.create_execution_state
 return target.order, #children, #nested.children, children.note == 'metadata is not a child'
 `);
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), inward ? [1213, 2, 3, true] : [1231, 4, 1, true]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), inward ? [valueInteger(1213), valueInteger(2), valueInteger(3), valueBool(true)] : [valueInteger(1231), valueInteger(4), valueInteger(1), valueBool(true)]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
 		model.dispose();
@@ -593,13 +595,13 @@ test('cartlib FSM and behaviour-tree instances retain semantic state across prog
 	const { cpu } = createCartlibProgramHarness(CART_ENTRY_SOURCE);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [
-		1021,
-		73,
-		11,
-		91,
-		true,
-		true,
-		null,
+		valueInteger(1021),
+		valueInteger(73),
+		valueInteger(11),
+		valueInteger(91),
+		valueBool(true),
+		valueBool(true),
+		valueNil(),
 	]);
 });
 
@@ -639,7 +641,7 @@ machine:start()
 return machine.current_id=='left', left.current_id=='active', machine.states.right.current_id=='active', left.current_state==left.states.active
 `);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true, true, true]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true), valueBool(true), valueBool(true)]);
 	model.undo(); assert.equal(model.buffer.getText(), FSM_INITIAL_SOURCE);
 	model.dispose();
 });
@@ -652,12 +654,14 @@ test('cold BT channel selection leaves actual FSM transition work identical to e
 				? ['bt.compile.begin', 'bt.compile.node', 'bt.compile.end'] : mode,
 		});
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		const [run, , recorder] = materializeCpuCompletionValues(cpu) as [Closure, Closure, Table];
-		runCompletionClosure(cpu, run, [20]);
+		const [runValue, , recorderValue] = materializeCpuCompletionValues(cpu);
+		const run = asClosure(runValue, cpu.gc);
+		const recorder = asTable(recorderValue, cpu.gc);
+		runCompletionClosure(cpu, run, [valueInteger(20)]);
 		const warmBytes = cpu.luaHeap.usedBytes();
-		const cycles = runCompletionClosure(cpu, run, [10_000]);
+		const cycles = runCompletionClosure(cpu, run, [valueInteger(10_000)], TRANSITION_CALL_GRANT);
 		assert.equal(cpu.luaHeap.usedBytes(), warmBytes);
-		assert.equal(recorder.getInteger(4), mode === 'emit' ? 10_023 : 0);
+		assert.equal(recorder.getInteger(4), valueInteger(mode === 'emit' ? 10_023 : 0));
 		measurements.push({ mode, cycles });
 	}
 	assert.equal(measurements[1].cycles, measurements[0].cycles);
@@ -668,50 +672,53 @@ test('cold BT channel selection leaves actual FSM transition work identical to e
 test('FSM transition recorder publishes ordered fixed-capacity facts without steady-state allocation', () => {
 	const { cpu } = createCartlibProgramHarness(TRANSITION_RECORDER_ENTRY_SOURCE, { traceStatements: 'emit' });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	const [run, detach, channel] = materializeCpuCompletionValues(cpu) as [
-		Closure,
-		Closure,
-		Table,
-	];
-	const records = channel.getInteger(5) as Table;
+	const [runValue, detachValue, channelValue] = materializeCpuCompletionValues(cpu);
+	const run = asClosure(runValue, cpu.gc);
+	const detach = asClosure(detachValue, cpu.gc);
+	const channel = asTable(channelValue, cpu.gc);
+	const records = asTable(channel.getInteger(5), cpu.gc);
+	const recordSlots = Array.from({ length: 4 }, (_, i) => records.getInteger(i + 1));
 	const strings = cpu.stringPool;
-	const text = (value: StringValue): string => strings.toString(asStringId(value));
+	const text = (value: Value): string => strings.toString(asStringId(value));
 
-	assert.equal(text(channel.getInteger(1) as StringValue), 'trace_target.trace_machine');
-	assert.equal(text(channel.getInteger(2) as StringValue), 'trace_machine');
-	assert.equal(channel.getInteger(3), 4);
-	assert.equal(channel.getInteger(4), 3);
-	const rejected = records.getInteger(1) as Table;
-	const committed = records.getInteger(2) as Table;
-	const nested = records.getInteger(3) as Table;
-	assert.equal(rejected.getInteger(1), 1);
-	assert.equal(rejected.getInteger(6), false);
-	assert.equal(text(rejected.getInteger(3) as StringValue), 'trace_machine');
-	assert.equal(text(rejected.getInteger(4) as StringValue), 'trace_machine:/idle');
-	assert.equal(text(rejected.getInteger(5) as StringValue), 'trace_machine:/active');
-	assert.equal(committed.getInteger(1), 2);
-	assert.equal(committed.getInteger(6), true);
-	assert.equal(nested.getInteger(1), 3);
-	assert.equal(text(nested.getInteger(4) as StringValue), 'trace_machine:/active');
-	assert.equal(text(nested.getInteger(5) as StringValue), 'trace_machine:/done');
+	assert.equal(text(channel.getInteger(1)), 'trace_target.trace_machine');
+	assert.equal(text(channel.getInteger(2)), 'trace_machine');
+	assert.equal(channel.getInteger(3), valueInteger(4));
+	assert.equal(channel.getInteger(4), valueInteger(3));
+	const rejected = asTable(records.getInteger(1), cpu.gc);
+	const committed = asTable(records.getInteger(2), cpu.gc);
+	const nested = asTable(records.getInteger(3), cpu.gc);
+	assert.equal(rejected.getInteger(1), valueInteger(1));
+	assert.equal(rejected.getInteger(6), valueBool(false));
+	assert.equal(text(rejected.getInteger(3)), 'trace_machine');
+	assert.equal(text(rejected.getInteger(4)), 'trace_machine:/idle');
+	assert.equal(text(rejected.getInteger(5)), 'trace_machine:/active');
+	assert.equal(committed.getInteger(1), valueInteger(2));
+	assert.equal(committed.getInteger(6), valueBool(true));
+	assert.equal(nested.getInteger(1), valueInteger(3));
+	assert.equal(text(nested.getInteger(4)), 'trace_machine:/active');
+	assert.equal(text(nested.getInteger(5)), 'trace_machine:/done');
 
-	runCompletionClosure(cpu, run, [20]);
-	const heapBefore = cpu.collectTrackedHeapBytes();
-	const recordedCycles = runCompletionClosure(cpu, run, [10_000]);
-	assert.equal(cpu.collectTrackedHeapBytes(), heapBefore);
-	assert.equal(channel.getInteger(4), 10_023);
+	runCompletionClosure(cpu, run, [valueInteger(20)]);
+	// The returned handles are borrowed by the scenario driver, not GC roots.
+	const heapBefore = cpu.collectTrackedHeapBytes(runValue, detachValue, channelValue);
+	const recordedCycles = runCompletionClosure(cpu, run, [valueInteger(10_000)], TRANSITION_CALL_GRANT);
+	// A full collection may shrink a retained stack; it must not retain extra storage.
+	assert.ok(cpu.collectTrackedHeapBytes(runValue, detachValue, channelValue) <= heapBefore);
+	assert.equal(channel.getInteger(4), valueInteger(10_023));
 	for (let sequence = 10_020; sequence <= 10_023; sequence += 1) {
 		const slot = ((sequence - 1) % 4) + 1;
-		const record = records.getInteger(slot) as Table;
-		assert.equal(record.getInteger(1), sequence);
+		assert.equal(records.getInteger(slot), recordSlots[slot - 1], 'the recorder overwrites the original slot in place');
+		const record = asTable(recordSlots[slot - 1], cpu.gc);
+		assert.equal(record.getInteger(1), valueInteger(sequence));
 	}
 
 	runCompletionClosure(cpu, detach, []);
-	const unselectedCycles = runCompletionClosure(cpu, run, [10_000]);
-	assert.ok(unselectedCycles <= 1_900_000, `unselected trace used ${unselectedCycles} cycles`);
+	const unselectedCycles = runCompletionClosure(cpu, run, [valueInteger(10_000)], TRANSITION_CALL_GRANT);
+	assert.ok(unselectedCycles <= DETACHED_TRANSITION_CYCLES, `unselected trace used ${unselectedCycles} cycles`);
 	const recorderCycles = recordedCycles - unselectedCycles;
 	assert.ok(recorderCycles > 0);
-	assert.ok(recorderCycles <= 400_000, `recorder used ${recorderCycles} cycles`);
+	assert.ok(recorderCycles <= RECORDER_TRANSITION_CYCLES, `recorder used ${recorderCycles} cycles`);
 });
 
 
@@ -735,7 +742,7 @@ ${checks}
 return ${FSM_PATH_CASES.length}
 `);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [FSM_PATH_CASES.length]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(FSM_PATH_CASES.length)]);
 });
 
 test('retarget descriptors compile to the exact cartlib anchor and guarded/concurrent step plan', () => {
@@ -769,7 +776,7 @@ ${checks}
 return ${FSM_RETARGET_PATH_CASES.length}
 `);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [FSM_RETARGET_PATH_CASES.length]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(FSM_RETARGET_PATH_CASES.length)]);
 });
 
 test('a retargeted callback preserves live rebind identity, dispatch effects, guards and exit/entry ordering', () => {
@@ -817,7 +824,7 @@ assert(machine.current_state==other and target.exits==1 and target.entries==1, '
 return true
 `);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	model.undo(); assert.equal(model.buffer.getText(), FSM_RETARGET_EXECUTION_SOURCE);
 	model.dispose();
 });
