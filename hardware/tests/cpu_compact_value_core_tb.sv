@@ -64,7 +64,7 @@ module cpu_compact_value_core_tb;
   .req_valid(word_valid),.req_ready(req_ready[0]),.req_write(word_write),.req_hold(word_hold),.req_address(word_address),.req_wdata(word_data),
   .rsp_valid(rsp_valid[0]),.rsp_rdata(rsp_rdata[31:0]),.rsp_fault_code(rsp_fault_code[31:0]),.rsp_timeout(rsp_timeout[0]),
   .fault_valid(slot_fault),.fault_address(),.fault_code(),.fault_timeout(),.fault_write(),.fault_words_completed());
- reg dma_valid=0;integer dma_wait=0,dma_admitted_locked=0,word_count=0,raw_wait_on_cpu=0;
+ reg dma_valid=0;integer dma_wait=0,dma_admitted_locked=0,word_count=0,raw_wait_on_cpu=0,clock_count=0;
  always @* begin
   req_valid=0;req_write=0;req_hold=0;req_address=0;req_wdata=0;req_access=0;
   req_valid[0]=word_valid;req_write[0]=word_write;req_hold[0]=word_hold;
@@ -72,6 +72,7 @@ module cpu_compact_value_core_tb;
   req_valid[1]=dma_valid;req_address[63:32]=32'h08040024;
  end
  always @(posedge clk) if(reset_n)begin
+  clock_count=clock_count+1;
   if(word_valid && req_ready[0])word_count=word_count+1;
   if(block_locked && dma_valid && !req_ready[1])dma_wait=dma_wait+1;
   if(block_locked && req_ready[1])dma_admitted_locked=dma_admitted_locked+1;
@@ -86,6 +87,22 @@ module cpu_compact_value_core_tb;
    do @(posedge clk);while(!raw_ready);@(negedge clk);raw_valid=0;while(!raw_rsp_valid)@(negedge clk);
    repeat(2)begin if(!raw_rsp_valid || raw_rsp_data!==expected)$fatal(1,"raw output %h expected %h",raw_rsp_data,expected);@(negedge clk);end
    raw_rsp_ready=1;@(negedge clk);raw_rsp_ready=0;end
+ endtask
+ // This raw-slot producer has no table allocator or guest instruction. It
+ // measures only one candidate's sequential private-memory transfer path.
+ // Sizes mirror the Value-slot initialization counts in the table-growth
+ // characterization; they do not establish the table's physical layout,
+ // its parallelism, or a NEWT/SETT cycle price.
+ task automatic measure_nil_slot_writes(input integer slots,input integer base);
+  integer i,start_clock,start_words,start_refreshes,elapsed;
+  begin
+   start_clock=clock_count;start_words=word_count;start_refreshes=private_bank.refreshes;
+   for(i=0;i<slots;i=i+1)raw_put(0,base+i,64'h7ff9000000000000);
+   elapsed=clock_count-start_clock;
+   if(word_count-start_words!=2*slots)$fatal(1,"compact slot word count");
+   $display("SLOT_CHARACTERIZE candidate=compact_private_core workload=sequential_raw_nil_writes slots=%0d producer_elapsed_clocks=%0d physical_word_writes=%0d private_refreshes=%0d",slots,elapsed,word_count-start_words,private_bank.refreshes-start_refreshes);
+   for(i=0;i<slots;i=i+1)raw_get(base+i,64'h7ff9000000000000);
+  end
  endtask
  task automatic dma_read;
   begin @(negedge clk);dma_valid=1;do @(posedge clk);while(!req_ready[1]);
@@ -106,6 +123,8 @@ module cpu_compact_value_core_tb;
   join
   if(!dma_wait || dma_admitted_locked || slot_fault)$fatal(1,"reservation did not exclude DMA");
   raw_get(3,64'hfff80000deadbeef);
+  measure_nil_slot_writes(32,20000);
+  measure_nil_slot_writes(62,21000);
   for(n=0;n<64;n=n+1)begin
    rc=$fscanf(f,"%h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h\n",pc,prefix,body,iw,eop,ea,eb,erkb,erkc,lb,li,rb,ri,ln,lv,rn,rv,expected);
    if(rc!=18)$fatal(1,"vector fields %0d",rc);

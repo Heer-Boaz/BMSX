@@ -18,6 +18,7 @@ import { PlayInput } from '../../ide/workbench/services/play/input';
 import { PlayRuntimeSession } from '../../ide/workbench/play_runtime';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import type { Table } from '../../machine/ts/machine/cpu/table';
+import { asInteger, asTable, ValueTag, valueBool, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -75,7 +76,7 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 	};
 	const game = (): Table => {
 		const cpu = target.runtime.machine.cpu;
-		return cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))) as Table;
+		return asTable(cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))), cpu.gc);
 	};
 	const field = (name: string) => game().getStringKey(target.runtime.machine.cpu.stringPool.intern(name));
 	await settle(() => session.ready);
@@ -88,7 +89,7 @@ for (const optLevel of [0, 3] as const) test(`O${optLevel}: Play inspection uses
 	const f = await fixture(t, optLevel, SCENE, gameSource, 1), code = f.session, guest = f.session.guest;
 	const before = captureRuntimeMachineState(f.target.runtime);
 	const exported = readRuntimeLuaModuleExport(code, guest, 0, 'game');
-	assert.ok(exported.kind === 'value'); assert.strictEqual(exported.value, f.game());
+	assert.ok(exported.kind === 'value'); assert.strictEqual(asTable(exported.value, f.target.runtime.machine.cpu.gc), f.game());
 	const callback = guest.global('inspect_probe'), source = runtimeLuaFunctionSource(code, guest, callback)!;
 	assert.equal(source.executionDomain, 0);
 	assert.deepEqual(source.resource, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'entry.lua' });
@@ -116,10 +117,10 @@ for (const optLevel of [0, 3] as const) for (const closeAtStop of [false, true])
 		.replace('game.updates=game.updates+1', 'game.updates=game.updates+1\n if world.receipt ~= nil then world.receipt.reached=true end');
 	const f = await fixture(t, optLevel, SCENE, gameSource, 0, [{ path: 'cartlib/world/world', source: ACTOR_WORLD }]);
 	const session = f.session, guest = session.guest, world = runtimeWorld(session, guest, 0)!;
-	const actor = (guest.readStringMember(world, '_objects') as Table).getInteger(1) as Table;
-	assert.equal(readActorChoices(session, guest, 0)[0].hashId, actor.hashId);
+	const actor = asTable(guest.readStringMember(world, '_objects'), f.target.runtime.machine.cpu.gc).getInteger(1);
+	assert.equal(readActorChoices(session, guest, 0)[0].hashId, guest.identityScalar(actor, ValueTag.Table));
 	const tree = new ActorRuntimeTree(); tree.update(session, guest, 0, actor);
-	const target = captureActorTarget(0, world.hashId, tree.roots, tree.roots[0]);
+	const target = captureActorTarget(0, guest.identityScalar(world, ValueTag.Table), tree.roots, tree.roots[0]);
 	const identity = guest.identity(guest.readStringMember(actor, 'change')); tree.dispose();
 	const source = session.debugSources.catalog.find(entry => entry.path.endsWith('cartlib/world/world.lua'))!;
 	assert.equal(session.debugSources.setBreakpoints(source.source, [4])[0].status, 'bound');
@@ -128,7 +129,7 @@ for (const optLevel of [0, 3] as const) for (const closeAtStop of [false, true])
 	session.execution.setPauseReason(HostPauseReason.Requested, true);
 	const operation = session.actorExecution.start({ kind: 'method', target, identity, method: 'change', args: [] });
 	await f.settle(() => operation.status === 'paused');
-	assert.equal(operation.invoked, true); assert.equal(f.field('marker'), 12, 'the breakpoint precedes the requested mutation');
+	assert.equal(operation.invoked, true); assert.equal(f.field('marker'), valueInteger(12), 'the breakpoint precedes the requested mutation');
 	assert.equal(session.transport.playbackEnabled, false); assert.equal(session.navigation.canStep(-1), false);
 	const held = captureRuntimeMachineState(f.target.runtime);
 	for (let index = 0; index < 5; index++) await f.frame();
@@ -145,7 +146,7 @@ for (const optLevel of [0, 3] as const) for (const closeAtStop of [false, true])
 		session.debuggerExecution.resume('continue', 'workbench');
 		await f.settle(() => operation.result !== undefined);
 		assert.equal(operation.result!.status, 'completed'); assert.deepEqual(operation.result!.values, ['33']);
-		assert.equal(f.field('marker'), 33); assert.equal(session.debugger.plans.mutationActive, false);
+		assert.equal(f.field('marker'), valueInteger(33)); assert.equal(session.debugger.plans.mutationActive, false);
 		assert.equal(f.target.runtime.history.mode, HistoryMode.Recording, 'recording restarts only after the admitted call settles');
 		assert.equal(session.execution.userPaused, true);
 		assert.equal(session.execution.executionBlocked(), true);
@@ -163,7 +164,7 @@ return {kind='integration', setup=function(t)
 `;
 	const game = GAME.replace('mem[0x08000064]=1\n mem[0x08000004]', `
  if game.fsm ~= nil then
-  local n=game.fsm[4]+1; local slot=((n-1)%2)+1
+  local n=game.fsm[4]+1; local slot=((n-1)&1)+1
   local f=game.fsm[5][slot]; f[1]=n; f[2]=n; f[3]='lane'; f[4]='before'; f[5]='after'; f[6]=true; game.fsm[4]=n
   local e=game.effects[5][slot]; e[1]=n; e[2]=n; e[5]=n; game.effects[4]=n
  end
@@ -194,7 +195,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`O${optLevel}: Play is paced, accepts physical input and frame-steps only its own machine`, async t => {
 		const f = await fixture(t, optLevel), runtime = f.target.runtime;
 		const primary = captureRuntimeMachineState(f.authoring.runtime);
-		assert.equal(f.field('down_samples'), 2, 'compiled setup owns scripted input');
+		assert.equal(f.field('down_samples'), valueInteger(2), 'compiled setup owns scripted input');
 		const samples = f.target.input.fixture.samples, before = runtime.frameScheduler.lastTickSequence;
 		f.input.guestInputRecipient = f.target.input.physical;
 		f.input.inputButton('keyboard:0', 'KeyA', true, 1, 0, 1); f.input.pollInput();
@@ -202,7 +203,7 @@ for (const optLevel of [0, 3] as const) {
 		for (let frame = 0; frame < 10; frame++) await f.frame(0);
 		assert.equal(runtime.frameScheduler.lastTickSequence, before, 'zero elapsed time grants no game ticks');
 		await f.settle(() => runtime.frameScheduler.lastTickSequence >= before + 4);
-		assert.ok((f.field('down_samples') as number) > 2);
+		assert.ok(asInteger(f.field('down_samples')) > 2);
 		assert.equal(f.target.input.fixture.samples, samples, 'ordinary gameplay is not a scripted fixture operation');
 		f.session.execution.setPauseReason(HostPauseReason.Requested, true);
 		const held = captureRuntimeMachineState(runtime), pixels = f.session.frames.bitmap!.image.pixels;
@@ -244,8 +245,8 @@ test('Play history reconstructs privately, publishes the selected boundary and t
 	assert.ok(runtime.history.latestCycles < end, 'explicit resume branches at the inspected point');
 	const restored = f.game();
 	f.session.stop(); await f.settle(() => f.session.state === 'stopped');
-	assert.equal(restored.getStringKey(runtime.machine.cpu.stringPool.intern('closed')), true);
-	assert.equal(prior.getStringKey(runtime.machine.cpu.stringPool.intern('closed')), null);
+	assert.equal(restored.getStringKey(runtime.machine.cpu.stringPool.intern('closed')), valueBool(true));
+	assert.equal(prior.getStringKey(runtime.machine.cpu.stringPool.intern('closed')), valueNil());
 	assert.equal(f.session.evidence.logs.length, 1);
 	assert.equal(f.session.evidence.logs.at(0).text, 'cleanup');
 });
@@ -261,7 +262,7 @@ test('Play quarantines original host failures and physical faults without fabric
 	assert.equal((await step.completion).status, 'failed', 'finite target operations cannot hang behind a host fault');
 	f.session.stop(); f.session.advance(1000);
 	assert.deepEqual(captureRuntimeMachineState(f.target.runtime), before);
-	assert.equal(f.field('closed'), null); assert.equal(f.logs.length, 0);
+	assert.equal(f.field('closed'), valueNil()); assert.equal(f.logs.length, 0);
 	const second = await fixture(t);
 	// Producer-side stimulus for an already published fault, not a guest write to a read-only register.
 	second.target.runtime.machine.memory.writeIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE, 1);
@@ -269,7 +270,7 @@ test('Play quarantines original host failures and physical faults without fabric
 	second.session.advance(1000);
 	assert.equal(second.session.failure!.kind, 'machine');
 	assert.equal(second.target.runtime.machine.scheduler.currentNowCycles(), cycles, 'a latched physical fault blocks the next CPU grant');
-	assert.equal(second.field('closed'), null);
+	assert.equal(second.field('closed'), valueNil());
 });
 
 test('Play source stops bind to its immutable compiled image, never the authoring debugger or a synthetic test case', async t => {
@@ -296,7 +297,7 @@ test('Play source stops bind to its immutable compiled image, never the authorin
 	assert.equal(frames.result!.status, 'completed'); assert.equal(frames.result!.completedFrames, 3);
 	assert.deepEqual(captureRuntimeMachineState(f.authoring.runtime), primary);
 	f.session.stop(); await f.settle(() => f.session.state === 'stopped');
-	assert.equal(f.field('closed'), true);
+	assert.equal(f.field('closed'), valueBool(true));
 });
 
 for (const optLevel of [0, 3] as const) test(`O${optLevel}: recorded review cannot be trapped by live source breakpoints`, async t => {

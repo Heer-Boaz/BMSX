@@ -1,10 +1,10 @@
 import { BASE_RAM_USED_SIZE } from '../../spec/bmsx/memory_map';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
-import {
-	ValueTag,
-	type ValueReference,
-} from './value';
+import type { Thread } from './thread';
+import { GC_ASSIST_BYTES } from './gc_heap';
+import { shiftRightSigned } from '../common/numeric';
+import { valueNil, type Value } from './value';
 
 const MIN_COLLECTION_BYTES = 1024 * 1024;
 
@@ -24,42 +24,51 @@ export class LuaHeap {
 
 	public reserve(
 		byteCount: number,
-		root0Tag: ValueTag = ValueTag.Nil,
-		root0Scalar: number = NaN,
-		root0Reference: ValueReference = null,
-		root1Tag: ValueTag = ValueTag.Nil,
-		root1Scalar: number = NaN,
-		root1Reference: ValueReference = null,
-		root2Tag: ValueTag = ValueTag.Nil,
-		root2Scalar: number = NaN,
-		root2Reference: ValueReference = null,
+		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(),
+		growingStack: Thread | null = null,
 	): void {
 		let nextBytes = this.trackedBytes + byteCount;
-		if (nextBytes > this.nextCollectionBytes || nextBytes > this.capacityBytes) {
-			this.cpu.collectTrackedHeapBytes(
-				root0Tag,
-				root0Scalar,
-				root0Reference,
-				root1Tag,
-				root1Scalar,
-				root1Reference,
-				root2Tag,
-				root2Scalar,
-				root2Reference,
-			);
-			nextBytes = this.trackedBytes + byteCount;
-			if (nextBytes > this.capacityBytes) {
-				throw LUA_OUT_OF_MEMORY_SIGNAL;
-			}
-			if (nextBytes > this.nextCollectionBytes) {
-				this.nextCollectionBytes = Math.max(MIN_COLLECTION_BYTES, nextBytes * 2);
-			}
+		if (nextBytes > this.capacityBytes) {
+			this.collectRuntime(root0, root1, root2, growingStack);
+		} else if (nextBytes > this.nextCollectionBytes) {
+			const work = this.cpu.gc.step(
+				root0, root1, root2, growingStack);
+			this.cpu.instructionBudgetRemaining -= work;
+			this.creditStep(work);
 		}
+		nextBytes = this.trackedBytes + byteCount;
+		if (nextBytes > this.capacityBytes) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		this.trackedBytes = nextBytes;
+	}
+
+	public collectRuntime(
+		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(),
+		growingStack: Thread | null = null,
+	): void {
+		this.cpu.instructionBudgetRemaining -= this.cpu.gc.collect(
+			root0, root1, root2, growingStack,
+		);
+	}
+
+	/** Explicit work earns the same allocation credit as an automatic assist. */
+	public stepRuntime(): boolean {
+		const work = this.cpu.gc.step();
+		this.cpu.instructionBudgetRemaining -= work;
+		this.creditStep(work);
+		return !this.cpu.gc.active();
+	}
+
+	private creditStep(work: number): void {
+		if (this.cpu.gc.active()) this.nextCollectionBytes = this.trackedBytes + Math.max(GC_ASSIST_BYTES, shiftRightSigned(work, 4));
 	}
 
 	public restoreAllocate(byteCount: number): void {
 		this.trackedBytes += byteCount;
+	}
+
+	/** Completed table-storage work consumes the current run's transient grant. */
+	public accountTableStorageWork(valueSlots: number): void {
+		this.cpu.instructionBudgetRemaining -= valueSlots;
 	}
 
 	public release(byteCount: number): void {
@@ -70,17 +79,16 @@ export class LuaHeap {
 		this.trackedBytes += restoredBytes - previousBytes;
 	}
 
-	public finishCollection(liveBytes: number): void {
-		this.trackedBytes = liveBytes;
-		this.nextCollectionBytes = Math.max(MIN_COLLECTION_BYTES, liveBytes * 2);
-		if (liveBytes > this.capacityBytes) {
-			throw LUA_OUT_OF_MEMORY_SIGNAL;
-		}
+	public finishCollection(): void {
+		const liveBytes = this.trackedBytes;
+		this.nextCollectionBytes = Math.max(liveBytes + GC_ASSIST_BYTES,
+			Math.min(this.capacityBytes - (this.capacityBytes >>> 3), Math.max(MIN_COLLECTION_BYTES, liveBytes * 2)));
 	}
 
 	public usedBytes(): number {
 		return this.trackedBytes;
 	}
+	public capacity(): number { return this.capacityBytes; }
 
 	public captureState(): LuaHeapState {
 		return {

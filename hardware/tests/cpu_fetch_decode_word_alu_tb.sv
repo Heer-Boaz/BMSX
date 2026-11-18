@@ -22,13 +22,12 @@ module cpu_fetch_decode_word_alu_tb;
  wire alu_valid;wire [13:0] alu_dest;wire [63:0] alu_result;
  cpu_word_alu alu(.clk(clk),.reset_n(reset_n),.req_valid(decode_valid),.req_ready(decode_ready),.req_operations(operations),.req_destination(destination),
   .req_left_number(left),.req_right_number(right),.rsp_valid(alu_valid),.rsp_ready(rsp_ready),.rsp_destination(alu_dest),.rsp_number(alu_result));
- function automatic [31:0] swap(input [31:0] x);swap={x[7:0],x[15:8],x[23:16],x[31:24]};endfunction
  always @(posedge clk)if(reset_n)begin
   cycles<=cycles+1;mem_rsp_valid<=mem_valid&&mem_ready;
   if(mem_valid&&mem_ready)begin
    if(mem_signals!==signals)$fatal(1,"lost cartridge execution-domain flags");
-   if(mem_address===pc)mem_rsp_data<=swap(prefix);
-   else if(mem_address===pc+32'd4)mem_rsp_data<=swap(body);
+   if(mem_address===pc)mem_rsp_data<=prefix;
+   else if(mem_address===pc+32'd4)mem_rsp_data<=body;
    else $fatal(1,"wrong memory request %h",mem_address);
   end
  end

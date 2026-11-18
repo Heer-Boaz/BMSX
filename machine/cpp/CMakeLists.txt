@@ -7,26 +7,41 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# =============================================================================
-# Options
-# =============================================================================
-
+# ======================================================================# Options
+# ======================================================================
 option(BMSX_BUILD_LIBRETRO "Build libretro core" ON)
 option(BMSX_BUILD_LIBRETRO_HOST "Build libretro host executable" OFF)
 option(BMSX_BUILD_SDL "Build SDL standalone executable" OFF)
 option(BMSX_BUILD_TESTS "Build unit tests" OFF)
 option(BMSX_BUILD_EGL_TESTS "Build headless EGL renderer conformance tests (requires GLES2 and EGL 1.5)" OFF)
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
+option(BMSX_ENABLE_NATIVE_BLOCKS "Generate native CPU blocks with precise side exits" ON)
+option(BMSX_NATIVE_COMPILER_WORKER "Compile native regions on a bounded background worker" OFF)
+option(BMSX_NATIVE_PERF_MAP "Publish generated native-code symbols to Linux perf maps" OFF)
+option(BMSX_NATIVE_GATE_PROFILE "Report materialized native C++ gate transitions per libretro run" OFF)
+option(BMSX_DIAGNOSTIC_CPU_SLICES "Measure CPU-run consumption and GC phases in diagnostic builds" OFF)
+option(BMSX_DIAGNOSTIC_CPU_TIMING "Measure Linux CPU-slice wall/thread time without opcode probes" OFF)
 option(BMSX_ENABLE_ZLIB "Enable PNG screenshot output" ON)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
 # Previously GLES2 was disabled by default on Windows; enable by default on all platforms
 message(STATUS "BMSX: Default BMSX_ENABLE_GLES2=${BMSX_ENABLE_GLES2_DEFAULT}")
 option(BMSX_ENABLE_GLES2 "Enable OpenGLES2 backend" ${BMSX_ENABLE_GLES2_DEFAULT})
+option(BMSX_GLES2_SOFTWARE_GX "Exact software GX and scanout with GLES2 postprocessing" OFF)
+if(BMSX_NATIVE_PERF_MAP AND (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT BMSX_ENABLE_NATIVE_BLOCKS))
+	message(FATAL_ERROR "BMSX_NATIVE_PERF_MAP requires Linux and native CPU blocks")
+endif()
+if(BMSX_NATIVE_GATE_PROFILE AND (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT BMSX_ENABLE_NATIVE_BLOCKS))
+	message(FATAL_ERROR "BMSX_NATIVE_GATE_PROFILE requires Linux and native CPU blocks")
+endif()
+if(BMSX_DIAGNOSTIC_CPU_TIMING AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	message(FATAL_ERROR "BMSX_DIAGNOSTIC_CPU_TIMING requires Linux thread CPU clocks")
+endif()
+if(BMSX_GLES2_SOFTWARE_GX AND NOT BMSX_ENABLE_GLES2)
+	message(FATAL_ERROR "BMSX_GLES2_SOFTWARE_GX requires BMSX_ENABLE_GLES2")
+endif()
 
-# =============================================================================
-# Find zlib for PNG screenshot output.
-# =============================================================================
-
+# ======================================================================# Find zlib for PNG screenshot output.
+# ======================================================================
 if(BMSX_ENABLE_ZLIB)
 	if(WIN32)
 		find_package(ZLIB)
@@ -59,10 +74,8 @@ if(BMSX_ENABLE_ZLIB)
 	endif()
 endif()
 
-# =============================================================================
-# Compiler flags
-# =============================================================================
-
+# ======================================================================# Compiler flags
+# ======================================================================
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 	add_compile_options(-O3 -Wall -Wextra -Wpedantic)
 	if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -80,10 +93,8 @@ elseif(MSVC)
 	endif()
 endif()
 
-# =============================================================================
-# Shared wire-format libraries
-# =============================================================================
-
+# ======================================================================# Shared wire-format libraries
+# ======================================================================
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.frag.glsl"
@@ -168,11 +179,19 @@ file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_readback.frag.glsl"
 	BMSX_GX_GPU_READBACK_FRAGMENT_SHADER
 )
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_cache_copy.vert.glsl"
+	BMSX_GX_GPU_CACHE_COPY_VERTEX_SHADER)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_cache_copy.frag.glsl"
+	BMSX_GX_GPU_CACHE_COPY_FRAGMENT_SHADER)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_cache_copy.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_cache_copy.frag.glsl")
 foreach(shader IN ITEMS
 	BMSX_GX_GPU_FILL_VERTEX_SHADER BMSX_GX_GPU_FILL_FRAGMENT_SHADER
 	BMSX_GX_GPU_LINE_VERTEX_SHADER BMSX_GX_GPU_LINE_FRAGMENT_SHADER
 	BMSX_GX_GPU_TEXTURED_VERTEX_SHADER BMSX_GX_GPU_TEXTURED_FRAGMENT_SHADER
 	BMSX_GX_GPU_TRANSFER_FRAGMENT_SHADER BMSX_GX_GPU_SCANOUT_FRAGMENT_SHADER
+	BMSX_GX_GPU_CACHE_COPY_FRAGMENT_SHADER
 )
 	string(REPLACE "#include \"gx_gpu_words.glsl\"" "${BMSX_GX_GPU_WORD_FUNCTIONS}"
 		${shader} "${${shader}}")
@@ -231,10 +250,8 @@ foreach(target bmsx_binary_codec bmsx_rom_image)
 	)
 endforeach()
 
-# =============================================================================
-# Machine library (static)
-# =============================================================================
-
+# ======================================================================# Machine library (static)
+# ======================================================================
 add_library(bmsx_core STATIC
 	common/scratchbuffer.cpp
 
@@ -260,8 +277,12 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/save_state.cpp
 
 	machine/cpu/cpu.cpp
+	machine/cpu/cpu_builtins_leaf.cpp
+	machine/cpu/cpu_decode.cpp
+	machine/cpu/thread.cpp
 	machine/cpu/snapshot.cpp
 	machine/cpu/execution_image.cpp
+	machine/cpu/gc_heap.cpp
 	machine/cpu/lua_heap.cpp
 	machine/cpu/table.cpp
 	machine/cpu/value.cpp
@@ -311,9 +332,11 @@ add_library(bmsx_core STATIC
 	machine/runtime/timing/config.cpp
 	machine/runtime/vblank.cpp
 	machine/memory/memory.cpp
+	machine/memory/mapped_page.cpp
 	machine/devices/gx/gpu.cpp
 	machine/devices/gx/gpu_pcrtc.cpp
 	machine/devices/gx/gpu_command_timing.cpp
+	machine/devices/gx/gpu_prepared_commands.cpp
 	machine/devices/gx/vram_power_on.cpp
 	machine/devices/gx/gte.cpp
 	common/hash.cpp
@@ -334,6 +357,47 @@ target_include_directories(bmsx_core PUBLIC
 
 target_link_libraries(bmsx_core PUBLIC bmsx_binary_codec)
 
+if(BMSX_DIAGNOSTIC_CPU_SLICES)
+	target_compile_definitions(bmsx_core PUBLIC BMSX_DIAGNOSTIC_CPU_SLICES=1)
+endif()
+if(BMSX_DIAGNOSTIC_CPU_TIMING)
+	target_sources(bmsx_core PRIVATE machine/scheduler/diagnostic_cpu_timing.cpp)
+	target_compile_definitions(bmsx_core PUBLIC BMSX_DIAGNOSTIC_CPU_TIMING=1)
+endif()
+if(BMSX_NATIVE_GATE_PROFILE)
+	target_compile_definitions(bmsx_core PUBLIC BMSX_NATIVE_GATE_PROFILE=1)
+endif()
+
+if(BMSX_ENABLE_NATIVE_BLOCKS OR BMSX_BUILD_TESTS)
+	add_library(bmsx_sljit STATIC ../../third_party/sljit/sljit_src/sljitLir.c)
+	set_target_properties(bmsx_sljit PROPERTIES POSITION_INDEPENDENT_CODE ON)
+	target_include_directories(bmsx_sljit PUBLIC ../../third_party/sljit/sljit_src)
+	target_compile_definitions(bmsx_sljit PUBLIC SLJIT_CONFIG_AUTO=1 SLJIT_VERBOSE=0
+		SLJIT_DEBUG=$<IF:$<CONFIG:Debug>,1,0>)
+endif()
+
+if(BMSX_ENABLE_NATIVE_BLOCKS)
+	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp machine/cpu/native_block_abi.cpp
+		machine/cpu/native_block_builtin.cpp machine/cpu/native_block_call.cpp machine/cpu/native_block_return.cpp machine/cpu/native_block_frames.cpp
+		machine/cpu/native_block_registers.cpp machine/cpu/native_block_numeric.cpp machine/cpu/native_block_compare.cpp
+		machine/cpu/closure.cpp machine/cpu/native_block_context.cpp machine/cpu/native_block_control.cpp machine/cpu/native_block_length.cpp machine/cpu/native_block_table.cpp machine/cpu/native_block_memory.cpp machine/cpu/native_block_edges.cpp machine/cpu/native_block_liveness.cpp
+		machine/cpu/cpu_native_blocks.cpp machine/cpu/cpu_native_execution.cpp machine/cpu/cpu_native_prepare.cpp)
+	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)
+	target_link_libraries(bmsx_core PRIVATE bmsx_sljit)
+	if(BMSX_NATIVE_PERF_MAP OR BMSX_NATIVE_COMPILER_WORKER)
+		find_package(Threads REQUIRED)
+		target_link_libraries(bmsx_core PRIVATE Threads::Threads)
+	endif()
+	if(BMSX_NATIVE_PERF_MAP)
+		target_sources(bmsx_core PRIVATE machine/cpu/native_perf_map.cpp)
+		target_compile_definitions(bmsx_core PUBLIC BMSX_NATIVE_PERF_MAP=1)
+	endif()
+	if(BMSX_NATIVE_COMPILER_WORKER)
+		target_sources(bmsx_core PRIVATE machine/cpu/native_compiler_worker.cpp)
+		target_compile_definitions(bmsx_core PUBLIC BMSX_NATIVE_COMPILER_WORKER=1)
+	endif()
+endif()
+
 # Machine arithmetic must not depend on the host's FMA support. PUBLIC also
 # applies the contract to inline machine code compiled by consumers.
 if(MSVC)
@@ -342,10 +406,8 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 	target_compile_options(bmsx_core PUBLIC -fno-fast-math -ffp-contract=off)
 endif()
 
-# =============================================================================
-# Native host support (static)
-# =============================================================================
-
+# ======================================================================# Native host support (static)
+# ======================================================================
 set(SCALABLE_FONT_PIXELS "${CMAKE_CURRENT_BINARY_DIR}/generated/render/host_overlay/scalable_font_pixels.h")
 add_custom_command(OUTPUT "${SCALABLE_FONT_PIXELS}"
 	COMMAND ${CMAKE_COMMAND}
@@ -365,6 +427,7 @@ add_library(bmsx_host_support STATIC
 	audio/output_resampler.cpp
 	render/backend/backend.cpp
 	render/backend/software/gx_gpu.cpp
+	render/backend/software/gx_gpu_execution.cpp
 	render/backend/software/gx_gpu_commands.cpp
 	render/backend/software/gx_gpu_rasterizer.cpp
 	render/backend/software/gx_gpu_scanout.cpp
@@ -383,6 +446,7 @@ add_library(bmsx_host_support STATIC
 	render/host_overlay/software/glyph.cpp
 	render/host_overlay/gles2/pipeline.cpp
 	render/post/crt/software/pipeline.cpp
+	render/post/crt/noise.cpp
 	render/post/crt/software/crt_processor.cpp
 	render/post/device_quantize/lut.cpp
 	render/post/device_quantize/software/pipeline.cpp
@@ -410,12 +474,21 @@ target_link_libraries(bmsx_host_support PUBLIC bmsx_core)
 if(BMSX_ENABLE_GLES2)
 	target_sources(bmsx_host_support PRIVATE
 		render/backend/gles2/backend.cpp
+		render/backend/gles2/draw_state.cpp
 		render/backend/gles2/fullscreen_quad.cpp
-		render/backend/gles2/gx_gpu.cpp
+		render/backend/gles2/gx_gpu_textured_program.cpp
+		render/backend/gles2/gx_gpu_primitive_program.cpp
+		render/backend/gles2/gx_gpu_draw_targets.cpp
 		render/backend/gles2/texture_copy.cpp
 		render/post/crt/gles2/pipeline.cpp
 		render/post/device_quantize/gles2/pipeline.cpp
 	)
+	if(BMSX_GLES2_SOFTWARE_GX)
+		target_sources(bmsx_host_support PRIVATE render/backend/gles2/software_gx_gpu.cpp)
+		target_compile_definitions(bmsx_host_support PUBLIC BMSX_GLES2_SOFTWARE_GX=1)
+	else()
+		target_sources(bmsx_host_support PRIVATE render/backend/gles2/gx_gpu.cpp)
+	endif()
 	find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
 	target_link_libraries(bmsx_host_support PUBLIC ${GLESV2_LIBRARY})
 	if(UNIX AND NOT APPLE)
@@ -423,10 +496,8 @@ if(BMSX_ENABLE_GLES2)
 	endif()
 endif()
 
-# =============================================================================
-# ROM and BLua32 source diagnostics tooling
-# =============================================================================
-
+# ======================================================================# ROM and BLua32 source diagnostics tooling
+# ======================================================================
 if(BMSX_BUILD_LIBRETRO OR BMSX_BUILD_TESTS)
 	add_library(bmsx_rom_tooling STATIC
 		rompack/tokens.cpp
@@ -460,10 +531,8 @@ if(BMSX_BUILD_LIBRETRO OR BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_blua32_tooling PUBLIC bmsx_rom_tooling)
 endif()
 
-# =============================================================================
-# Libretro core (shared library)
-# =============================================================================
-
+# ======================================================================# Libretro core (shared library)
+# ======================================================================
 set(BMSX_LIBRETRO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro")
 set(BMSX_LIBRETRO_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro_host")
 set(BMSX_LIBRETRO_CORE_SOURCES
@@ -487,6 +556,15 @@ set(BMSX_LIBRETRO_CORE_SOURCES
 	${BMSX_LIBRETRO_DIR}/host_shortcuts.c
 	${BMSX_LIBRETRO_DIR}/video_output.cpp
 )
+if(BMSX_NATIVE_GATE_PROFILE)
+	list(APPEND BMSX_LIBRETRO_CORE_SOURCES ${BMSX_LIBRETRO_DIR}/native_gate_profile.cpp)
+endif()
+
+if(BMSX_ENABLE_GLES2)
+	list(APPEND BMSX_LIBRETRO_CORE_SOURCES ${BMSX_LIBRETRO_DIR}/gles_frame_worker.cpp)
+	find_package(Threads REQUIRED)
+	target_link_libraries(bmsx_host_support PUBLIC Threads::Threads)
+endif()
 
 if(BMSX_BUILD_LIBRETRO)
 	add_library(bmsx_libretro SHARED
@@ -533,10 +611,8 @@ if(BMSX_BUILD_LIBRETRO)
 
 endif()
 
-# =============================================================================
-# Libretro host executable (Linux)
-# =============================================================================
-
+# ======================================================================# Libretro host executable (Linux)
+# ======================================================================
 if(BMSX_BUILD_LIBRETRO_HOST)
 	if(NOT UNIX OR APPLE)
 		message(FATAL_ERROR "BMSX_BUILD_LIBRETRO_HOST is supported only on Linux-like UNIX platforms.")
@@ -544,15 +620,26 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 	if(NOT BMSX_ENABLE_ZLIB)
 		message(FATAL_ERROR "BMSX_BUILD_LIBRETRO_HOST requires BMSX_ENABLE_ZLIB for PNG screenshot output.")
 	endif()
+	if(BMSX_SNESMINI_TARGET)
+		add_executable(bmsx_snesmini_input
+			${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini/input_proxy.c
+			${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini/input_merge.c
+			${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
+		)
+		target_include_directories(bmsx_snesmini_input PRIVATE ${BMSX_LIBRETRO_HOST_DIR} ${BMSX_LIBRETRO_DIR})
+	endif()
 
 	add_executable(bmsx_libretro_host
 		${BMSX_LIBRETRO_HOST_DIR}/main.c
+		${BMSX_LIBRETRO_HOST_DIR}/clover.c
 		${BMSX_LIBRETRO_HOST_DIR}/audio_output.c
 		${BMSX_LIBRETRO_HOST_DIR}/audio_queue.c
 		${BMSX_LIBRETRO_HOST_DIR}/core_options.c
 		${BMSX_LIBRETRO_HOST_DIR}/core_session.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_pacer.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_timing.c
+		${BMSX_LIBRETRO_HOST_DIR}/native_compilation_profile.c
+		${BMSX_LIBRETRO_HOST_DIR}/execution_profile.c
 		${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
 		${BMSX_LIBRETRO_HOST_DIR}/host_control.c
 		${BMSX_LIBRETRO_HOST_DIR}/control_transport.c
@@ -572,6 +659,10 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cjson
 	)
 
+	if(BMSX_SNESMINI_TARGET)
+		target_compile_definitions(bmsx_libretro_host PRIVATE BMSX_LIBRETRO_HOST_SNESMINI=1)
+	endif()
+
 	if(NOT CMAKE_CROSSCOMPILING)
 		find_package(SDL2 REQUIRED CONFIG)
 		target_compile_definitions(bmsx_libretro_host PRIVATE BMSX_LIBRETRO_HOST_SDL=1)
@@ -579,22 +670,38 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 	endif()
 endif()
 
-# =============================================================================
-# SDL standalone (for debugging) - TODO: implement
-# =============================================================================
-
+# ======================================================================# SDL standalone (for debugging) - TODO: implement
+# ======================================================================
 if(BMSX_BUILD_SDL)
 	message(WARNING "SDL platform not yet implemented")
 	# find_package(SDL2 REQUIRED)
 	# add_executable(bmsx_sdl ...)
 endif()
 
-# =============================================================================
-# Tests
-# =============================================================================
-
+# ======================================================================# Tests
+# ======================================================================
 if(BMSX_BUILD_TESTS)
 	enable_testing()
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		add_executable(bmsx_snesmini_input_merge_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/snesmini_input_merge_test.c
+			${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini/input_merge.c
+		)
+		target_include_directories(bmsx_snesmini_input_merge_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini)
+		add_test(NAME bmsx_snesmini_input_merge_tests COMMAND bmsx_snesmini_input_merge_tests)
+		add_executable(bmsx_snesmini_input_proxy_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/snesmini_input_proxy_test.c
+			${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini/input_merge.c
+			${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
+		)
+		target_include_directories(bmsx_snesmini_input_proxy_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini ${BMSX_LIBRETRO_HOST_DIR} ${BMSX_LIBRETRO_DIR})
+		add_test(NAME bmsx_snesmini_input_proxy_tests COMMAND bmsx_snesmini_input_proxy_tests)
+		set_tests_properties(bmsx_snesmini_input_proxy_tests PROPERTIES TIMEOUT 10)
+	endif()
+	add_executable(bmsx_gx_gpu_dirty_regions_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_dirty_regions_test.cpp)
+	target_include_directories(bmsx_gx_gpu_dirty_regions_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	add_test(NAME bmsx_gx_gpu_dirty_regions_tests COMMAND bmsx_gx_gpu_dirty_regions_tests)
 	add_executable(bmsx_pow_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/pow_conformance_runner.cpp)
 	target_link_libraries(bmsx_pow_conformance_runner PRIVATE bmsx_core)
@@ -607,6 +714,25 @@ if(BMSX_BUILD_TESTS)
 	if(BMSX_SNESMINI_TARGET)
 		target_link_options(bmsx_geometry_conformance_runner PRIVATE -static-libstdc++ -static-libgcc)
 	endif()
+	add_executable(bmsx_geometry_steps_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_steps_test.cpp)
+	target_link_libraries(bmsx_geometry_steps_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_geometry_steps_tests COMMAND bmsx_geometry_steps_tests)
+	add_executable(bmsx_geometry_xform_intervals_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_xform_intervals_test.cpp)
+	target_link_libraries(bmsx_geometry_xform_intervals_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_geometry_xform_intervals_tests COMMAND bmsx_geometry_xform_intervals_tests)
+	add_executable(bmsx_geometry_sat_intervals_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_sat_intervals_test.cpp)
+	target_link_libraries(bmsx_geometry_sat_intervals_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_geometry_sat_intervals_tests COMMAND bmsx_geometry_sat_intervals_tests)
+	add_executable(bmsx_native_register_cache_tests
+		../../tests/cpp/native_register_cache_test.cpp
+		machine/cpu/native_block_registers.cpp)
+	target_include_directories(bmsx_native_register_cache_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	target_link_libraries(bmsx_native_register_cache_tests PRIVATE bmsx_sljit)
+	add_test(NAME bmsx_native_register_cache_tests COMMAND bmsx_native_register_cache_tests)
+
 	set(BMSX_TEST_ROM_SOURCE
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
 	)
@@ -621,6 +747,8 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_libretro_host_frame_timing_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_frame_timing_test.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_timing.c
+		${BMSX_LIBRETRO_HOST_DIR}/native_compilation_profile.c
+		${BMSX_LIBRETRO_HOST_DIR}/execution_profile.c
 	)
 	target_include_directories(bmsx_libretro_host_frame_timing_tests PRIVATE
 		${BMSX_LIBRETRO_HOST_DIR}
@@ -661,6 +789,35 @@ if(BMSX_BUILD_TESTS)
 	)
 
 	if(UNIX AND NOT APPLE)
+		if(BMSX_ENABLE_GLES2 OR BMSX_BUILD_LIBRETRO_HOST)
+			foreach(platform IN ITEMS fbdev snesmini)
+				add_executable(bmsx_libretro_host_video_context_${platform}_tests
+					${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_video_context_test.c
+					${BMSX_LIBRETRO_HOST_DIR}/video_context.c
+					${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
+				)
+				target_include_directories(bmsx_libretro_host_video_context_${platform}_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
+				target_link_libraries(bmsx_libretro_host_video_context_${platform}_tests PRIVATE dl)
+				target_link_options(bmsx_libretro_host_video_context_${platform}_tests PRIVATE
+					LINKER:--wrap=open LINKER:--wrap=ioctl LINKER:--wrap=close LINKER:--wrap=mmap LINKER:--wrap=munmap)
+				if(platform STREQUAL "snesmini")
+					target_compile_definitions(bmsx_libretro_host_video_context_${platform}_tests PRIVATE BMSX_LIBRETRO_HOST_SNESMINI=1)
+				endif()
+				add_test(NAME bmsx_libretro_host_video_context_${platform}_tests COMMAND bmsx_libretro_host_video_context_${platform}_tests)
+			endforeach()
+
+			add_executable(bmsx_libretro_host_input_timeline_tests
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_input_timeline_test.c
+				${BMSX_LIBRETRO_HOST_DIR}/input_timeline.c
+				${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
+				${BMSX_LIBRETRO_HOST_DIR}/video_presenter.c
+				${BMSX_LIBRETRO_HOST_DIR}/software_frame_blitter.c
+				${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
+			)
+			target_include_directories(bmsx_libretro_host_input_timeline_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR} ${BMSX_LIBRETRO_DIR})
+			target_link_libraries(bmsx_libretro_host_input_timeline_tests PRIVATE m)
+			add_test(NAME bmsx_libretro_host_input_timeline_tests COMMAND bmsx_libretro_host_input_timeline_tests)
+		endif()
 		if(BMSX_BUILD_LIBRETRO_HOST AND NOT CMAKE_CROSSCOMPILING)
 			add_executable(bmsx_libretro_host_input_devices_tests
 				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_input_devices_test.c
@@ -672,6 +829,30 @@ if(BMSX_BUILD_TESTS)
 			target_include_directories(bmsx_libretro_host_input_devices_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR} ${BMSX_LIBRETRO_DIR})
 			target_link_libraries(bmsx_libretro_host_input_devices_tests PRIVATE SDL2::SDL2)
 			add_test(NAME bmsx_libretro_host_input_devices_tests COMMAND bmsx_libretro_host_input_devices_tests)
+
+			find_package(Python3 REQUIRED COMPONENTS Interpreter)
+			add_library(bmsx_libretro_host_signal_test_core SHARED
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_signal_core.c)
+			target_include_directories(bmsx_libretro_host_signal_test_core PRIVATE ${BMSX_LIBRETRO_DIR})
+			add_library(bmsx_libretro_host_cpu_clock_fixture SHARED
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_cpu_clock_fixture.c)
+			target_link_libraries(bmsx_libretro_host_cpu_clock_fixture PRIVATE dl)
+			add_test(NAME bmsx_libretro_host_cpu_timing_tests
+				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_cpu_timing_test.py
+					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_signal_test_core>
+					$<TARGET_FILE:bmsx_libretro_host_cpu_clock_fixture>)
+			add_test(NAME bmsx_libretro_host_signals_tests
+				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_signals_test.py
+					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_signal_test_core>)
+			add_test(NAME bmsx_libretro_host_execution_profile_tests
+				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_execution_profile_test.py
+					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_signal_test_core>)
+			add_library(bmsx_libretro_host_clover_test_core SHARED
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_clover_core.c)
+			target_include_directories(bmsx_libretro_host_clover_test_core PRIVATE ${BMSX_LIBRETRO_DIR})
+			add_test(NAME bmsx_libretro_host_clover_tests
+				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_clover_test.py
+					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_clover_test_core>)
 		endif()
 		add_executable(bmsx_libretro_host_audio_queue_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_audio_queue_test.c
@@ -680,6 +861,19 @@ if(BMSX_BUILD_TESTS)
 		target_include_directories(bmsx_libretro_host_audio_queue_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
 		target_link_libraries(bmsx_libretro_host_audio_queue_tests PRIVATE pthread)
 		add_test(NAME bmsx_libretro_host_audio_queue_tests COMMAND bmsx_libretro_host_audio_queue_tests)
+		if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+			add_executable(bmsx_libretro_host_audio_output_tests
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_audio_output_test.c
+				${BMSX_LIBRETRO_HOST_DIR}/audio_output.c
+				${BMSX_LIBRETRO_HOST_DIR}/audio_queue.c
+				${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
+			)
+			target_include_directories(bmsx_libretro_host_audio_output_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
+			target_link_libraries(bmsx_libretro_host_audio_output_tests PRIVATE pthread)
+			target_link_options(bmsx_libretro_host_audio_output_tests PRIVATE
+				-Wl,--wrap=open -Wl,--wrap=ioctl -Wl,--wrap=close -Wl,--wrap=pthread_setschedparam)
+			add_test(NAME bmsx_libretro_host_audio_output_tests COMMAND bmsx_libretro_host_audio_output_tests)
+		endif()
 	endif()
 	add_executable(bmsx_gx_gte_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gte_test.cpp
@@ -690,8 +884,9 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_gx_gpu_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_test.cpp
+		${BMSX_TEST_ROM_SOURCE}
 	)
-	target_link_libraries(bmsx_gx_gpu_tests PRIVATE bmsx_host_support)
+	target_link_libraries(bmsx_gx_gpu_tests PRIVATE bmsx_host_support bmsx_rom_tooling)
 	add_test(NAME bmsx_gx_gpu_tests COMMAND bmsx_gx_gpu_tests)
 
 	add_executable(bmsx_device_quantize_tests
@@ -712,14 +907,40 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_host_overlay_clip_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_host_overlay_clip_tests COMMAND bmsx_host_overlay_clip_tests)
 
+	add_executable(bmsx_gx_gpu_span_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_span_test.cpp
+	)
+	target_link_libraries(bmsx_gx_gpu_span_tests PRIVATE bmsx_host_support)
+	add_test(NAME bmsx_gx_gpu_span_tests COMMAND bmsx_gx_gpu_span_tests)
+
 	add_executable(bmsx_video_presenter_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/video_presenter_test.cpp
 	)
 	target_link_libraries(bmsx_video_presenter_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_video_presenter_tests COMMAND bmsx_video_presenter_tests)
 
+	add_executable(bmsx_crt_software_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/crt_software_test.cpp
+	)
+	target_link_libraries(bmsx_crt_software_tests PRIVATE bmsx_host_support)
+	add_test(NAME bmsx_crt_software_tests COMMAND bmsx_crt_software_tests)
+
+	if(UNIX AND NOT APPLE AND BMSX_ENABLE_GLES2)
+		add_executable(bmsx_gles2_draw_state_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gles2_draw_state_test.cpp
+			render/backend/gles2/draw_state.cpp)
+		target_include_directories(bmsx_gles2_draw_state_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+		add_test(NAME bmsx_gles2_draw_state_tests COMMAND bmsx_gles2_draw_state_tests)
+	endif()
+
 	if(UNIX AND NOT APPLE AND BMSX_ENABLE_GLES2)
 		find_library(BMSX_TEST_EGL_LIBRARY EGL REQUIRED)
+		add_executable(bmsx_runtime_execution_benchmark
+			../../tests/cpp/runtime_execution_benchmark.cpp
+			${BMSX_LIBRETRO_DIR}/cartridge_media.cpp
+			${BMSX_LIBRETRO_DIR}/presentation_state.cpp)
+		target_include_directories(bmsx_runtime_execution_benchmark PRIVATE ${BMSX_LIBRETRO_DIR})
+		target_link_libraries(bmsx_runtime_execution_benchmark PRIVATE bmsx_host_support bmsx_rom_image ${BMSX_TEST_EGL_LIBRARY})
 		configure_file("${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/gx_gpu_words_shader.h.in"
 			"${CMAKE_CURRENT_BINARY_DIR}/generated/tests/gx_gpu_words_shader.h" @ONLY)
 		add_executable(bmsx_gles2_gx_words_tests
@@ -733,6 +954,23 @@ if(BMSX_BUILD_TESTS)
 			target_link_options(bmsx_gles2_gx_words_tests PRIVATE -static-libstdc++ -static-libgcc)
 		endif()
 		add_test(NAME bmsx_gles2_gx_words_tests COMMAND bmsx_gles2_gx_words_tests)
+		# Opt-in architecture probe: candidate mismatches are experimental results,
+		# not permission to change the installed renderer or relax normal tests.
+		add_executable(bmsx_gles2_vram_experiment
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gles2_vram_format_experiment.cpp
+			${BMSX_LIBRETRO_HOST_DIR}/video_context.c
+			${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c)
+		target_include_directories(bmsx_gles2_vram_experiment PRIVATE
+			${CMAKE_CURRENT_BINARY_DIR}/generated/tests ${BMSX_LIBRETRO_HOST_DIR})
+		target_link_libraries(bmsx_gles2_vram_experiment PRIVATE bmsx_host_support ${BMSX_TEST_EGL_LIBRARY} dl)
+		if(BMSX_SNESMINI_TARGET)
+			target_link_options(bmsx_gles2_vram_experiment PRIVATE -static-libstdc++ -static-libgcc)
+		endif()
+		if(BMSX_GLES2_SOFTWARE_GX)
+			add_executable(bmsx_software_gx_gles2_tests ../../tests/cpp/software_gx_gles2_test.cpp)
+			target_link_libraries(bmsx_software_gx_gles2_tests PRIVATE bmsx_host_support ${BMSX_TEST_EGL_LIBRARY})
+			add_test(NAME bmsx_software_gx_gles2_tests COMMAND bmsx_software_gx_gles2_tests)
+		else()
 		add_executable(bmsx_gx_gpu_textured_gles2_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_textured_gles2_test.cpp
 			${BMSX_LIBRETRO_HOST_DIR}/video_context.c
@@ -740,11 +978,35 @@ if(BMSX_BUILD_TESTS)
 		target_include_directories(bmsx_gx_gpu_textured_gles2_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
 		target_link_libraries(bmsx_gx_gpu_textured_gles2_tests PRIVATE bmsx_host_support ${BMSX_TEST_EGL_LIBRARY} dl)
 		target_link_options(bmsx_gx_gpu_textured_gles2_tests PRIVATE
-			LINKER:--wrap=glBindBuffer LINKER:--wrap=glBufferData LINKER:--wrap=glBufferSubData LINKER:--wrap=glReadPixels)
+			LINKER:--wrap=glBindBuffer LINKER:--wrap=glBufferData LINKER:--wrap=glBufferSubData LINKER:--wrap=glReadPixels LINKER:--wrap=glDrawArrays LINKER:--wrap=glTexSubImage2D)
 		if(BMSX_SNESMINI_TARGET)
 			target_link_options(bmsx_gx_gpu_textured_gles2_tests PRIVATE -static-libstdc++ -static-libgcc)
 		endif()
 		add_test(NAME bmsx_gx_gpu_textured_gles2_tests COMMAND bmsx_gx_gpu_textured_gles2_tests)
+		endif()
+		add_executable(bmsx_gles_frame_worker_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gles_frame_worker_test.cpp
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
+			${BMSX_LIBRETRO_DIR}/entry.cpp
+			${BMSX_LIBRETRO_CORE_SOURCES})
+		target_include_directories(bmsx_gles_frame_worker_tests PRIVATE ${BMSX_LIBRETRO_DIR})
+		target_link_libraries(bmsx_gles_frame_worker_tests PRIVATE bmsx_host_support bmsx_blua32_tooling ${BMSX_TEST_EGL_LIBRARY})
+		target_link_options(bmsx_gles_frame_worker_tests PRIVATE LINKER:--wrap=glDrawArrays)
+		if(BMSX_SNESMINI_TARGET)
+			target_link_options(bmsx_gles_frame_worker_tests PRIVATE -static-libstdc++ -static-libgcc)
+		endif()
+		add_test(NAME bmsx_gles_frame_worker_tests COMMAND bmsx_gles_frame_worker_tests)
+		set_tests_properties(bmsx_gles_frame_worker_tests PROPERTIES TIMEOUT 120)
+		add_executable(bmsx_crt_gles2_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/crt_gles2_test.cpp
+			${BMSX_LIBRETRO_HOST_DIR}/video_context.c
+			${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c)
+		target_include_directories(bmsx_crt_gles2_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
+		target_link_libraries(bmsx_crt_gles2_tests PRIVATE bmsx_host_support ${BMSX_TEST_EGL_LIBRARY} dl)
+		if(BMSX_SNESMINI_TARGET)
+			target_link_options(bmsx_crt_gles2_tests PRIVATE -static-libstdc++ -static-libgcc)
+		endif()
+		add_test(NAME bmsx_crt_gles2_tests COMMAND bmsx_crt_gles2_tests)
 	endif()
 
 	if(BMSX_BUILD_EGL_TESTS)
@@ -777,6 +1039,12 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_dma_controller_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_dma_controller_tests COMMAND bmsx_dma_controller_tests)
+
+	add_executable(bmsx_gpu_command_timeline_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gpu_command_timeline_test.cpp
+	)
+	target_link_libraries(bmsx_gpu_command_timeline_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_gpu_command_timeline_tests COMMAND bmsx_gpu_command_timeline_tests)
 
 	add_executable(bmsx_cartridge_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cartridge_controller_test.cpp
@@ -822,6 +1090,11 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_imgdec_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_imgdec_tests COMMAND bmsx_imgdec_tests)
 
+	add_executable(bmsx_imgdec_throughput_benchmark
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/imgdec_throughput_benchmark.cpp
+	)
+	target_link_libraries(bmsx_imgdec_throughput_benchmark PRIVATE bmsx_core)
+
 	add_executable(bmsx_audio_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/audio_controller_test.cpp
 	)
@@ -850,12 +1123,69 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/frame_evaluation_runner.cpp
 	)
 	target_link_libraries(bmsx_frame_evaluation_runner PRIVATE bmsx_core)
+	add_executable(bmsx_firmware_fsm_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/firmware_fsm_runner.cpp
+	)
+	target_link_libraries(bmsx_firmware_fsm_runner PRIVATE bmsx_core)
 
 	add_executable(bmsx_binary_stream_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/binary_stream_test.cpp
 	)
 	target_link_libraries(bmsx_binary_stream_tests PRIVATE bmsx_binary_codec)
 	add_test(NAME bmsx_binary_stream_tests COMMAND bmsx_binary_stream_tests)
+	add_executable(bmsx_binary_codec_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/binary_codec_test.cpp
+	)
+	target_link_libraries(bmsx_binary_codec_tests PRIVATE bmsx_binary_codec)
+	add_test(NAME bmsx_binary_codec_tests COMMAND bmsx_binary_codec_tests)
+
+	add_executable(bmsx_object_storage_pool_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/object_storage_pool_test.cpp
+	)
+	target_include_directories(bmsx_object_storage_pool_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	add_test(NAME bmsx_object_storage_pool_tests COMMAND bmsx_object_storage_pool_tests)
+
+	add_executable(bmsx_small_block_pool_tests ../../tests/cpp/small_block_pool_test.cpp)
+	target_include_directories(bmsx_small_block_pool_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	add_test(NAME bmsx_small_block_pool_tests COMMAND bmsx_small_block_pool_tests)
+	add_executable(bmsx_cpu32_tests ../../tests/cpp/cpu32_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu32_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu32_tests COMMAND bmsx_cpu32_tests)
+	add_executable(bmsx_cpu32_context_tests ../../tests/cpp/cpu32_context_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu32_context_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu32_context_tests COMMAND bmsx_cpu32_context_tests)
+	add_executable(bmsx_cpu32_memory_tests ../../tests/cpp/cpu32_memory_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu32_memory_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu32_memory_tests COMMAND bmsx_cpu32_memory_tests)
+	add_executable(bmsx_value32_tests ../../tests/cpp/value32_test.cpp
+		machine/cpu/thread.cpp machine/cpu/closure.cpp)
+	target_include_directories(bmsx_value32_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	if(BMSX_ENABLE_NATIVE_BLOCKS)
+		target_compile_definitions(bmsx_value32_tests PRIVATE BMSX_ENABLE_NATIVE_BLOCKS=1)
+	endif()
+	add_test(NAME bmsx_value32_tests COMMAND bmsx_value32_tests)
+	add_executable(bmsx_numeric32_tests ../../tests/cpp/numeric32_test.cpp)
+	target_include_directories(bmsx_numeric32_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	add_test(NAME bmsx_numeric32_tests COMMAND bmsx_numeric32_tests)
+	add_executable(bmsx_value_storage_tests ../../tests/cpp/value_storage_test.cpp)
+	target_include_directories(bmsx_value_storage_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	add_test(NAME bmsx_value_storage_tests COMMAND bmsx_value_storage_tests)
+	add_executable(bmsx_heap_reference_tests ../../tests/cpp/heap_reference_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_heap_reference_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_heap_reference_tests COMMAND bmsx_heap_reference_tests)
+	add_executable(bmsx_table_storage_pool_tests ../../tests/cpp/table_storage_pool_test.cpp)
+	target_link_libraries(bmsx_table_storage_pool_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_table_storage_pool_tests COMMAND bmsx_table_storage_pool_tests)
+	if(BMSX_SNESMINI_TARGET)
+		target_link_options(bmsx_small_block_pool_tests PRIVATE -static-libstdc++ -static-libgcc)
+		target_link_options(bmsx_cpu32_tests PRIVATE -static-libstdc++ -static-libgcc)
+		target_link_options(bmsx_cpu32_context_tests PRIVATE -static-libstdc++ -static-libgcc)
+		target_link_options(bmsx_cpu32_memory_tests PRIVATE -static-libstdc++ -static-libgcc)
+		target_link_options(bmsx_value32_tests PRIVATE -static-libstdc++ -static-libgcc)
+		target_link_options(bmsx_numeric32_tests PRIVATE -static-libstdc++ -static-libgcc)
+		target_link_options(bmsx_value_storage_tests PRIVATE -static-libstdc++ -static-libgcc)
+		target_link_options(bmsx_table_storage_pool_tests PRIVATE -static-libstdc++ -static-libgcc)
+	endif()
 
 	add_executable(bmsx_runtime_save_state_codec_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/runtime_save_state_codec_test.cpp
@@ -876,12 +1206,191 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_cpu_boundary_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_boundary_tests COMMAND bmsx_cpu_boundary_tests)
+	add_executable(bmsx_cpu_compiled_compare_tests ../../tests/cpp/cpu_compiled_compare_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_compiled_compare_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_compiled_compare_tests COMMAND bmsx_cpu_compiled_compare_tests)
+	add_executable(bmsx_cpu_compiled_link_tests ../../tests/cpp/cpu_compiled_link_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_compiled_link_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_compiled_link_tests COMMAND bmsx_cpu_compiled_link_tests)
+	add_executable(bmsx_cpu_shared_stack_tests ../../tests/cpp/cpu_shared_stack_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_shared_stack_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_shared_stack_tests COMMAND bmsx_cpu_shared_stack_tests)
+	add_executable(bmsx_cpu_exact_grant_tests ../../tests/cpp/cpu_exact_grant_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_exact_grant_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_exact_grant_allocate COMMAND bmsx_cpu_exact_grant_tests allocate)
+	add_test(NAME bmsx_cpu_exact_grant_store COMMAND bmsx_cpu_exact_grant_tests store)
+	add_test(NAME bmsx_cpu_division_budget COMMAND bmsx_cpu_exact_grant_tests division-budget)
+	add_test(NAME bmsx_cpu_exact_grant_sweep COMMAND bmsx_cpu_exact_grant_tests sweep)
+	add_test(NAME bmsx_cpu_exact_grant_sweep_scalar_control COMMAND bmsx_cpu_exact_grant_tests sweep-scalar-control)
+	add_test(NAME bmsx_cpu_exact_grant_call_vararg COMMAND bmsx_cpu_exact_grant_tests call-vararg-sweep)
+	add_test(NAME bmsx_cpu_exact_grant_irq_short COMMAND bmsx_cpu_exact_grant_tests irq-short)
+	add_test(NAME bmsx_cpu_exact_grant_nmi_short COMMAND bmsx_cpu_exact_grant_tests nmi-short)
+	add_test(NAME bmsx_cpu_exact_grant_rewrite_short COMMAND bmsx_cpu_exact_grant_tests rewrite-short)
+
+	add_executable(bmsx_cpu_compiled_calls_tests ../../tests/cpp/cpu_compiled_calls_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_compiled_calls_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	if(BMSX_SNESMINI_TARGET)
+		target_link_options(bmsx_cpu_compiled_calls_tests PRIVATE -static-libstdc++ -static-libgcc)
+	endif()
+	add_test(NAME bmsx_cpu_compiled_calls_tests COMMAND bmsx_cpu_compiled_calls_tests)
+	add_executable(bmsx_cpu_native_builtin_leaf_tests ../../tests/cpp/cpu_native_builtin_leaf_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_native_builtin_leaf_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	if(BMSX_ENABLE_NATIVE_BLOCKS)
+		target_link_libraries(bmsx_cpu_native_builtin_leaf_tests PRIVATE bmsx_sljit)
+	endif()
+	if(BMSX_SNESMINI_TARGET)
+		target_link_options(bmsx_cpu_native_builtin_leaf_tests PRIVATE -static-libstdc++ -static-libgcc)
+	endif()
+	add_test(NAME bmsx_cpu_native_builtin_leaf_tests COMMAND bmsx_cpu_native_builtin_leaf_tests)
+	add_executable(bmsx_cpu_native_builtin_continuity_tests ../../tests/cpp/cpu_native_builtin_continuity_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_native_builtin_continuity_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	if(BMSX_ENABLE_NATIVE_BLOCKS)
+		target_link_libraries(bmsx_cpu_native_builtin_continuity_tests PRIVATE bmsx_sljit)
+	endif()
+	add_test(NAME bmsx_cpu_native_builtin_continuity_tests COMMAND bmsx_cpu_native_builtin_continuity_tests)
+	add_executable(bmsx_cpu_cross_image_resume_tests ../../tests/cpp/cpu_cross_image_resume_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_cross_image_resume_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	if(BMSX_ENABLE_NATIVE_BLOCKS)
+		target_link_libraries(bmsx_cpu_cross_image_resume_tests PRIVATE bmsx_sljit)
+	endif()
+	add_test(NAME bmsx_cpu_cross_image_resume_tests COMMAND bmsx_cpu_cross_image_resume_tests)
+	add_executable(bmsx_cpu_compiled_context_tests ../../tests/cpp/cpu_compiled_context_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_compiled_context_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_compiled_context_tests COMMAND bmsx_cpu_compiled_context_tests)
+	add_executable(bmsx_cpu_compiled_table_tests ../../tests/cpp/cpu_compiled_table_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_compiled_table_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_compiled_table_tests COMMAND bmsx_cpu_compiled_table_tests)
+	add_executable(bmsx_cpu_table_index_work_tests ../../tests/cpp/cpu_table_index_work_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_table_index_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_table_index_work_tests COMMAND bmsx_cpu_table_index_work_tests)
+	add_executable(bmsx_cpu_table_length_work_tests ../../tests/cpp/cpu_table_length_work_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_table_length_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_table_length_work_tests COMMAND bmsx_cpu_table_length_work_tests)
+	add_executable(bmsx_cpu_compiled_control_tests ../../tests/cpp/cpu_compiled_control_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_compiled_control_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_compiled_control_tests COMMAND bmsx_cpu_compiled_control_tests)
+	add_executable(bmsx_cpu_bulk_costs_tests ../../tests/cpp/cpu_bulk_costs_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_bulk_costs_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_bulk_costs_tests COMMAND bmsx_cpu_bulk_costs_tests)
+	add_executable(bmsx_cpu_nominal_costs_tests ../../tests/cpp/cpu_nominal_costs_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_nominal_costs_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_nominal_costs_tests COMMAND bmsx_cpu_nominal_costs_tests)
+	add_executable(bmsx_cpu_gc_work_tests ../../tests/cpp/cpu_gc_work_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_gc_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_gc_work_tests COMMAND bmsx_cpu_gc_work_tests)
+	# Link the instrumented allocator directly, instead of the archive's ordinary
+	# allocator object. No other test or product target enables allocation stress.
+	add_executable(bmsx_gc_stress_runner ../../tests/cpp/gc_stress_runner.cpp machine/cpu/lua_heap.cpp)
+	target_compile_definitions(bmsx_gc_stress_runner PRIVATE BMSX_GC_STRESS=1)
+	target_link_libraries(bmsx_gc_stress_runner PRIVATE bmsx_core)
+	add_executable(bmsx_cpu_string_work_tests ../../tests/cpp/cpu_string_work_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_string_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_string_work_tests COMMAND bmsx_cpu_string_work_tests)
+
+	add_executable(bmsx_cpu_backend_diagnostics_tests ../../tests/cpp/cpu_backend_diagnostics_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_backend_diagnostics_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_backend_diagnostics_tests COMMAND bmsx_cpu_backend_diagnostics_tests)
+
+	add_executable(bmsx_cpu_compiled_heap_tests ../../tests/cpp/cpu_compiled_heap_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_compiled_heap_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_compiled_heap_tests COMMAND bmsx_cpu_compiled_heap_tests)
+	add_executable(bmsx_cpu_compiled_words_tests ../../tests/cpp/cpu_compiled_words_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_compiled_words_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_compiled_words_tests COMMAND bmsx_cpu_compiled_words_tests)
+	if(BMSX_ENABLE_NATIVE_BLOCKS)
+		if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+			add_executable(bmsx_native_perf_map_tests ../../tests/cpp/native_perf_map_test.cpp ${BMSX_TEST_ROM_SOURCE})
+			target_link_libraries(bmsx_native_perf_map_tests PRIVATE bmsx_core bmsx_blua32_tooling bmsx_sljit)
+			add_test(NAME bmsx_native_perf_map_tests COMMAND bmsx_native_perf_map_tests)
+		endif()
+		add_executable(bmsx_cpu_native_precompile_tests ../../tests/cpp/cpu_native_precompile_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		target_link_libraries(bmsx_cpu_native_precompile_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+		add_test(NAME bmsx_cpu_native_precompile_tests COMMAND bmsx_cpu_native_precompile_tests)
+		add_executable(bmsx_cpu_cart_precompile_tests ../../tests/cpp/cpu_cart_precompile_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		target_link_libraries(bmsx_cpu_cart_precompile_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+		add_test(NAME bmsx_cpu_cart_precompile_tests COMMAND bmsx_cpu_cart_precompile_tests)
+		add_executable(bmsx_native_continuation_tests ../../tests/cpp/native_continuation_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		target_link_libraries(bmsx_native_continuation_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+		add_test(NAME bmsx_native_continuation_tests COMMAND bmsx_native_continuation_tests)
+		if(BMSX_NATIVE_COMPILER_WORKER)
+			add_executable(bmsx_native_compiler_worker_tests ../../tests/cpp/native_compiler_worker_test.cpp ${BMSX_TEST_ROM_SOURCE})
+			target_link_libraries(bmsx_native_compiler_worker_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+			add_test(NAME bmsx_native_compiler_worker_tests COMMAND bmsx_native_compiler_worker_tests)
+		endif()
+		add_executable(bmsx_native_block_tests ../../tests/cpp/native_block_test.cpp)
+		target_link_libraries(bmsx_native_block_tests PRIVATE bmsx_core)
+		add_test(NAME bmsx_native_block_tests COMMAND bmsx_native_block_tests)
+		add_executable(bmsx_native_block_table_write_tests ../../tests/cpp/native_block_table_write_test.cpp)
+		target_link_libraries(bmsx_native_block_table_write_tests PRIVATE bmsx_core)
+		add_test(NAME bmsx_native_block_table_write_tests COMMAND bmsx_native_block_table_write_tests)
+		add_executable(bmsx_cpu_compiled_memory_tests ../../tests/cpp/cpu_compiled_memory_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		target_link_libraries(bmsx_cpu_compiled_memory_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+		add_test(NAME bmsx_cpu_compiled_memory_tests COMMAND bmsx_cpu_compiled_memory_tests)
+		add_executable(bmsx_cpu_compiled_rom_tests ../../tests/cpp/cpu_compiled_rom_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		target_link_libraries(bmsx_cpu_compiled_rom_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+		add_test(NAME bmsx_cpu_compiled_rom_tests COMMAND bmsx_cpu_compiled_rom_tests)
+	endif()
+	add_executable(bmsx_cpu_decoded_operand_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_decoded_operand_test.cpp
+		${BMSX_TEST_ROM_SOURCE}
+	)
+	target_link_libraries(bmsx_cpu_decoded_operand_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_decoded_operand_tests COMMAND bmsx_cpu_decoded_operand_tests)
+	add_executable(bmsx_cpu_native_gate_profile_tests
+		../../tests/cpp/cpu_native_gate_profile_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_native_gate_profile_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	if(BMSX_ENABLE_NATIVE_BLOCKS)
+		target_link_libraries(bmsx_cpu_native_gate_profile_tests PRIVATE bmsx_sljit)
+	endif()
+	add_test(NAME bmsx_cpu_native_gate_profile_tests COMMAND bmsx_cpu_native_gate_profile_tests)
+
+	add_executable(bmsx_cpu_throughput_benchmark
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_throughput_benchmark.cpp
+		${BMSX_TEST_ROM_SOURCE}
+	)
+	target_link_libraries(bmsx_cpu_throughput_benchmark PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_executable(bmsx_cpu_execution_benchmark ../../tests/cpp/cpu_execution_benchmark.cpp)
+	target_link_libraries(bmsx_cpu_execution_benchmark PRIVATE bmsx_core)
+	if(BMSX_DIAGNOSTIC_CPU_TIMING)
+		add_executable(bmsx_lua_rebuild_benchmark
+			../../tests/cpp/lua_rebuild_benchmark.cpp
+			common/mmap_file.cpp
+			${BMSX_LIBRETRO_DIR}/cartridge_media.cpp)
+		target_include_directories(bmsx_lua_rebuild_benchmark PRIVATE ${BMSX_LIBRETRO_DIR})
+		target_link_libraries(bmsx_lua_rebuild_benchmark PRIVATE bmsx_core bmsx_rom_image)
+		if(BMSX_SNESMINI_TARGET)
+			target_link_options(bmsx_lua_rebuild_benchmark PRIVATE -static-libstdc++ -static-libgcc)
+		endif()
+	endif()
+	if(BMSX_SNESMINI_TARGET)
+		target_link_options(bmsx_cpu_execution_benchmark PRIVATE -static-libstdc++ -static-libgcc)
+	endif()
+
+	add_executable(bmsx_value_conversion_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/value_conversion_test.cpp
+	)
+	target_link_libraries(bmsx_value_conversion_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_value_conversion_tests COMMAND bmsx_value_conversion_tests)
+	add_executable(bmsx_value_classification_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/value_classification_test.cpp
+	)
+	target_link_libraries(bmsx_value_classification_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_value_classification_tests COMMAND bmsx_value_classification_tests)
 
 	add_executable(bmsx_table_inspection_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/table_inspection_test.cpp
 	)
 	target_link_libraries(bmsx_table_inspection_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_table_inspection_tests COMMAND bmsx_table_inspection_tests)
+	add_executable(bmsx_table_lookup_benchmark
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/table_lookup_benchmark.cpp
+	)
+	target_link_libraries(bmsx_table_lookup_benchmark PRIVATE bmsx_core)
+	add_executable(bmsx_table_string_key_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/table_string_key_test.cpp
+	)
+	target_link_libraries(bmsx_table_string_key_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_table_string_key_tests COMMAND bmsx_table_string_key_tests)
 
 	add_executable(bmsx_string_pool_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/string_pool_test.cpp
@@ -889,6 +1398,12 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_string_pool_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_string_pool_tests COMMAND bmsx_string_pool_tests)
+
+	add_executable(bmsx_word_fifo_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/word_fifo_test.cpp
+	)
+	target_include_directories(bmsx_word_fifo_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	add_test(NAME bmsx_word_fifo_tests COMMAND bmsx_word_fifo_tests)
 
 	add_executable(bmsx_input_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/input_controller_test.cpp
@@ -908,8 +1423,26 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
 		${BMSX_TEST_ROM_SOURCE}
 	)
-	target_link_libraries(bmsx_frame_scheduler_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	target_link_libraries(bmsx_frame_scheduler_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	add_test(NAME bmsx_frame_scheduler_tests COMMAND bmsx_frame_scheduler_tests)
+
+	add_executable(bmsx_geometry_runtime_timing_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_runtime_timing_test.cpp
+		${BMSX_TEST_ROM_SOURCE}
+	)
+	target_link_libraries(bmsx_geometry_runtime_timing_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
+	add_test(NAME bmsx_geometry_runtime_timing_tests COMMAND bmsx_geometry_runtime_timing_tests)
+
+	add_executable(bmsx_geometry_store_deadline_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_store_deadline_test.cpp
+		${BMSX_TEST_ROM_SOURCE}
+	)
+	target_link_libraries(bmsx_geometry_store_deadline_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
+	add_test(NAME bmsx_geometry_store_deadline_tests COMMAND bmsx_geometry_store_deadline_tests)
+
+	add_executable(bmsx_geometry_runtime_migration_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_runtime_migration_runner.cpp)
+	target_link_libraries(bmsx_geometry_runtime_migration_runner PRIVATE bmsx_core)
 
 	add_executable(bmsx_libretro_save_state_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_save_state_test.cpp
@@ -937,6 +1470,18 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_LIBRETRO_DIR}
 	)
 	add_test(NAME bmsx_libretro_environment_tests COMMAND bmsx_libretro_environment_tests)
+	if(BMSX_NATIVE_GATE_PROFILE)
+		add_executable(bmsx_libretro_native_gate_profile_tests
+			../../tests/cpp/libretro_native_gate_profile_test.cpp
+			../../tests/cpp/support/boot_rom_fixture.cpp
+			${BMSX_TEST_ROM_SOURCE}
+			${BMSX_LIBRETRO_DIR}/entry.cpp
+			${BMSX_LIBRETRO_CORE_SOURCES})
+		target_link_libraries(bmsx_libretro_native_gate_profile_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
+		target_include_directories(bmsx_libretro_native_gate_profile_tests PRIVATE ${BMSX_LIBRETRO_DIR})
+		target_link_options(bmsx_libretro_native_gate_profile_tests PRIVATE LINKER:--wrap=clock_gettime)
+		add_test(NAME bmsx_libretro_native_gate_profile_tests COMMAND bmsx_libretro_native_gate_profile_tests)
+	endif()
 
 	add_executable(bmsx_cartridge_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cartridge_conformance_runner.cpp
@@ -1101,10 +1646,8 @@ if(BMSX_BUILD_TESTS)
 	endif()
 endif()
 
-# =============================================================================
-# Installation
-# =============================================================================
-
+# ======================================================================# Installation
+# ======================================================================
 install(TARGETS
 	bmsx_binary_codec
 	bmsx_rom_image

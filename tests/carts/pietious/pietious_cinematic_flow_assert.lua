@@ -3,11 +3,17 @@ local registry<const> = require('cartlib/registry')
 local rom_dir<const> = require('cartlib/rom_dir')
 local world<const> = require('cartlib/world/world')
 require('constants')
+local apu_slot<const>: *word = 0x08000148
 local selected_apu_source<const>: *word = 0x0800018c
+local castle_source_address<const> = rom_dir.audio('music_castle').addr
 local end_demo_source_address<const> = rom_dir.audio('enddemo').addr
 local intro_logo_reveal_timeline_id<const> = 'intro.logo.reveal'
 local intro_logo_hold_timeline_id<const> = 'intro.logo.hold'
 local intro_logo_hold_frames<const> = 128
+local record_room_enter<const> = function(test, _event_type, _emitter, payload)
+	test.room_enter_count = test.room_enter_count + 1
+	test.room_enter_payload = payload
+end
 local bind_completion_states<const> = function(test, director)
 	test.victory_dance_state = director.state_machines:bind_state_path('/game_completion/victory_dance')
 	test.room_curtain_state = director.state_machines:bind_state_path('/game_completion/room_curtain')
@@ -26,13 +32,32 @@ return {
 				and registry:get('narrative') ~= nil
 				and registry:get('end_demo') ~= nil
 				and registry:get('title_screen') ~= nil end, 120)
-			local test<const> = {}
+			t:at_boundary(world:request_mutation_boundary(), 120)
+			local test<const> = { room_enter_count = 0 }
 			local director = registry:get('d')
+			test.initial_director = director
+			test.initial_castle = registry:get('c')
+			test.initial_player = registry:get('pietolon')
+			test.initial_room = test.initial_castle.room
+			test.initial_session = test.initial_castle.session
+			test.initial_x, test.initial_y = test.initial_player:get_global_position()
+			test.elevator = test.initial_castle.elevators[1]
+			test.elevator_x, test.elevator_y = test.elevator:get_global_position()
+			test.initial_gameplay_time = world.gameplay_time_ms
+			test.initial_castle.events:on({
+				event = 'room.enter',
+				subscriber = test,
+				handler = record_room_enter,
+			})
 			test.intro_state = director.state_machines:bind_state_path('/intro')
 			test.story_state = director.state_machines:bind_state_path('/story')
 			test.title_state = director.state_machines:bind_state_path('/title_screen')
+			test.title_wait_state = director.state_machines:bind_state_path('/title_start_wait')
+			test.room_state = director.state_machines:bind_state_path('/room')
 			assert(director.state_machines:matches_state(test.intro_state), 'Pietious did not boot into the Konami intro')
 			assert(world.active_space_id == 'intro', 'intro did not own the presentation space')
+			assert(test.initial_castle.room_enter_pending and not test.initial_room.tiles_visible
+			and not director.ui.visual.visible, 'intro admitted the prepared room before gameplay')
 
 			local intro<const> = registry:get('intro')
 			intro.state_machines:transition_to('/hidden')
@@ -83,15 +108,52 @@ return {
 			assert(director.state_machines:matches_state(test.title_state), 'story did not advance to the title screen')
 			assert(world.active_space_id == 'title', 'title did not own the presentation space')
 
-			local first_director<const> = director
+			assert(test.initial_player.wox == test.initial_x and test.initial_player.woy == test.initial_y
+			and test.elevator.wox == test.elevator_x and test.elevator.woy == test.elevator_y,
+			'intro and title advanced main-space player or elevator simulation')
+			assert(world.gameplay_time_ms > test.initial_gameplay_time,
+			'presentation stopped the existing World gameplay clock')
+			t:down('ArrowRight')
 			t:press('AltRight', 2)
-			t:wait_until('fresh game session', function()
-				return registry:get('d') ~= first_director and world.active_space_id == 'main' and registry:get('c').current_room_number == 1
+			t:wait_until('initial title start wait', function()
+				return director.state_machines:matches_state(test.title_wait_state)
+			end, 120)
+			assert(world.active_space_id == 'transition' and test.initial_castle.room_enter_pending
+			and test.room_enter_count == 0,
+			'title completion entered gameplay before the retained start wait')
+			assert(director.timelines:get('director.wait.title_start').duration_ms
+			== flow_title_start_wait_frames * clock.frame_delta_milliseconds(),
+			'title start did not retain its authored frame-clock wait')
+			t:wait_until('initial room entry', function()
+				return registry:get('d') ~= nil and world.active_space_id == 'main'
+				and registry:get('c').current_room_number == 1
 			end, 240)
+			t:at_boundary(world:request_mutation_boundary(), 120)
+			assert(registry:get('d') == test.initial_director and registry:get('c') == test.initial_castle
+			and registry:get('pietolon') == test.initial_player and test.initial_castle.room == test.initial_room
+			and test.initial_castle.session == test.initial_session,
+			'first title start discarded the already prepared game session')
+			assert(director.state_machines:matches_state(test.room_state)
+			and not test.initial_castle.room_enter_pending and test.room_enter_count == 1
+			and test.room_enter_payload.room_number == 1 and test.room_enter_payload.world_number == 0
+			and not test.room_enter_payload.suppress_room_music,
+			'first gameplay entry did not consume and announce its pending room exactly once')
+			assert(test.initial_room.tiles_visible and director.ui.visual.visible and world.gameplay_clock_running,
+			'first gameplay entry did not restore the room, HUD and gameplay schedule')
+			t:wait_until('initial room music', function()
+				*apu_slot = 1
+				return *selected_apu_source == castle_source_address
+			end, 120)
+			t:wait_until('held input on initial room entry', function()
+				return test.initial_player.wox > test.initial_x
+			end, 12)
+			t:up('ArrowRight')
 			director = registry:get('d')
 			bind_completion_states(test, director)
 			t:wait_ticks(50)
 			local player<const> = registry:get('pietolon')
+			player.status.health = 13
+			test.initial_session.rooms['pietious.room_002'].destroyed_rocks.rock_002_02 = true
 			test.player_victory_state = player.state_machines:bind_state_path('/victory_dance')
 			director.state_machines:transition_to('/daemon_key')
 			player.events:emit('item.picked', { item_type = 'keyworld1', item_id = 'cinematic_test_key' })
@@ -146,6 +208,25 @@ return {
 			assert(epilogue_fade_ticks > 1, 'epilogue advanced before physical music fade')
 			assert(director.state_machines:matches_state(test.ending_title_state), 'epilogue did not return to the title screen')
 			assert(world.active_space_id == 'title', 'post-epilogue title did not own the presentation space')
+			assert(not test.initial_castle.room_enter_pending and test.room_enter_count == 1,
+			'completed gameplay recreated an unentered initial room')
+			t:press('AltRight', 2)
+			t:wait_until('new game after completion', function()
+				return registry:get('d') ~= nil and registry:get('d') ~= director
+				and world.active_space_id == 'main'
+			end, 240)
+			t:at_boundary(world:request_mutation_boundary(), 120)
+			local fresh_castle<const> = registry:get('c')
+			local fresh_player<const> = registry:get('pietolon')
+			assert(fresh_castle ~= test.initial_castle and fresh_player ~= test.initial_player
+			and fresh_castle.room ~= test.initial_room and fresh_castle.session ~= test.initial_session
+			and fresh_player.status == fresh_castle.session.player,
+			'post-completion New Game reused the played session or its actors')
+			assert(test.initial_castle.world == nil and test.initial_player.world == nil and test.initial_room.world == nil
+			and fresh_player.status.health == fresh_player.status.max_health
+			and next(fresh_castle.session.rooms['pietious.room_002'].destroyed_rocks) == nil
+			and test.initial_session.player.health == 13,
+			'New Game did not dispose the played actors and initialize independent persistent state')
 
 		end,
 	},

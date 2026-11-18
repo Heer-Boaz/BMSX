@@ -23,6 +23,7 @@ enum class HostMenuInput : u8 {
 	Active,
 	RebootCart,
 	ExitGame,
+	SuspendGame,
 };
 
 // Derived from the current page; guest execution state never owns UI pause.
@@ -30,6 +31,13 @@ enum class HostMenuExecution : u8 {
 	Live,
 	Paused,
 	Rewind,
+};
+
+// Captured by the machine owner; live overlays never inspect the running Runtime.
+struct HostResourceUsage {
+	std::array<f64, 3> used;
+	std::array<f64, 3> total;
+	static HostResourceUsage capture(const Runtime& runtime);
 };
 
 class HostOverlayMenu {
@@ -47,6 +55,8 @@ public:
 	void dismiss(LibretroInput& input, HostRewind& rewind, Outcome outcome = Outcome::Retain);
 	void queueRenderCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind);
 	bool queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind, f64 hostFps);
+	bool livePresentationRequired(const VideoPresenter& presenter) const;
+	bool queueLiveOverlayCommands(VideoPresenter& presenter, f64 hostFps, const HostResourceUsage& usage);
 	bool active() const { return m_page != Page::Closed; }
 	HostMenuExecution executionMode() const;
 

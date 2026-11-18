@@ -1,9 +1,12 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { asClosure, valueFloat, valueFloatBits, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
@@ -15,9 +18,106 @@ import {
 	linkRawTestSystemBlua32,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
-import { materializeCpuCompletionValues, runCompiledLua } from './cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runCompletionClosure } from './cpu_test_harness';
 
 const TEST_RAM_BASE = RAM_BASE + 0x20000;
+
+for (const optLevel of [0, 3] as const) {
+	test(`raw memory adds before converting a Float address at O${optLevel}`, () => {
+		const source = `
+local function write(base) mem[base + 4] = 17 end
+local function read(base) return mem[4 + base], mem[base - 4] end
+mem[0x08020004] = 33
+write(0x08020000.0p0)
+local a, b = read(0x08020000.0p0)
+local base = 0x08020000
+local function change() base = 0x08020000.0p0 end
+change()
+mem[base + 4] += 2
+local int = 0x08020000
+mem[int + 4.0] += 4
+return a, b, mem[0x08020000], mem[0x08020004]`;
+		const image = linkTestSystemBlua32(compileLuaSource(source, 'rounded-address.lua', optLevel));
+		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			assert.deepEqual(materializeCpuCompletionValues(cpu), [17, 17, 23, 33].map(valueInteger));
+		}
+	});
+
+	test(`typed pointer scaling preserves Integer wrap and Float promotion at O${optLevel}`, () => {
+		const source = `
+local pointer<const>: *u16 = 0
+return function(index)
+    return &pointer[index * 2], &pointer[2 * index], &pointer[index * 3], &pointer[index * 0.5], &pointer[index * 2.0], &pointer[1073741824 * index]
+end, function(index)
+    return 0 + (index * 2) * 2, 0 + (2 * index) * 2, 0 + (index * 3) * 2, 0 + (index * 0.5) * 2, 0 + (index * 2.0) * 2, 0 + (1073741824 * index) * 2
+end`;
+		const compiled = compileLuaSource(source, 'pointer-scale.lua', optLevel);
+		const image = linkTestSystemBlua32(compiled);
+		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			const [pointer, arithmetic] = materializeCpuCompletionValues(cpu);
+			const closure = asClosure(pointer, cpu.gc), reference = asClosure(arithmetic, cpu.gc);
+			for (const index of [valueInteger(1), valueFloat(1), valueInteger(0x40000001), valueInteger(-1),
+				valueFloatBits(0x80000000), valueFloatBits(1), valueFloatBits(0x80000001), valueFloatBits(0x7f7fffff),
+				valueFloat(Infinity), valueFloat(-Infinity), valueFloatBits(0xffc00001)]) {
+				runCompletionClosure(cpu, closure, [index]);
+				const actual = materializeCpuCompletionValues(cpu);
+				runCompletionClosure(cpu, reference, [index]);
+				assert.deepEqual(actual, materializeCpuCompletionValues(cpu), 'address formation must preserve both tag and word');
+				if (index === valueInteger(1)) {
+					assert.deepEqual(actual, [valueInteger(4), valueInteger(4), valueInteger(6),
+						valueFloat(1), valueFloat(4), valueInteger(-2147483648)]);
+				} else if (index === valueFloat(1)) {
+					assert.equal(actual[5], valueFloat(2147483648));
+				}
+			}
+		}
+	});
+
+	test(`typed pointer scaling evaluates the dynamic index exactly once at O${optLevel}`, () => {
+		const source = `
+local pointer<const>: *u16 = 0
+local count = 0
+local function value()
+    count = count + 1
+    return count
+end
+local first = &pointer[value() * 2]
+local second = &pointer[2 * value()]
+return first, second, count`;
+		const image = linkTestSystemBlua32(compileLuaSource(source, 'pointer-effects.lua', optLevel));
+		const entry = disassembleTestBlua32Functions(image, [image.vectors.entryFunctionAddress]);
+		assert.equal((entry.match(/\bMUL\b/g) ?? []).length, 2, 'one fused Integer stride per selection');
+		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			assert.deepEqual(materializeCpuCompletionValues(cpu), [4, 8, 2].map(valueInteger));
+		}
+	});
+
+	test(`typed pointer scaling preserves wrapped word addresses at O${optLevel}`, () => {
+		const source = `
+local pointer<const>: *u16 = ${TEST_RAM_BASE}
+return function(index)
+    pointer[index * 2] = 4660
+    return pointer[index * 2]
+end`;
+		const image = linkTestSystemBlua32(compileLuaSource(source, 'pointer-wrap.lua', optLevel));
+		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+			const { cpu, memory } = createTestSystemCpu(image, backend);
+			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+			for (const index of [0, 2 ** 30, -(2 ** 30)]) {
+				runCompletionClosure(cpu, closure, [valueInteger(index)]);
+				assert.deepEqual(materializeCpuCompletionValues(cpu), [4660].map(valueInteger));
+				assert.equal(memory.readMappedU16LE(TEST_RAM_BASE), 4660);
+			}
+		}
+	});
+}
 
 function parseSource(source: string, path = 'struct_addressing.lua') {
 	const lexer = new LuaLexer(source, path);
@@ -49,7 +149,7 @@ function makeDisplacedMemoryCode(): Uint8Array {
 	writeInstruction(code, 6, OpCode.LOADK, 3, 0, 3, 0);
 	writeInstruction(code, 7, OpCode.LOADK, 4, 0, 4, 0);
 	writeInstruction(code, 8, OpCode.STORE_MEM_WORDS_D, 3, 0, 2, 16);
-	writeInstruction(code, 9, OpCode.RET, 2, 1, 0, 0);
+	writeInstruction(code, 9, OpCode.RET, 2, 2, 0, 0);
 	return code;
 }
 
@@ -57,12 +157,12 @@ test('CPU executes displaced memory load/store opcodes', () => {
 	const finalized = linkRawTestSystemBlua32({
 		text: makeDisplacedMemoryCode(),
 		functions: [{ firstWord: 0, wordCount: 10, maxStack: 5 }],
-		constants: [TEST_RAM_BASE, 0x11111111, 0x22222222, 0x33333333, 0x44444444],
+		constants: [TEST_RAM_BASE, 0x11111111, 0x22222222, 0x33333333, 0x44444444].map(integerConstant),
 	});
 	const { cpu, memory } = createTestSystemCpu(finalized);
 
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [0x22222222]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [0x22222222].map(valueInteger));
 	assert.equal(memory.readMappedU32LE(TEST_RAM_BASE), 0x11111111);
 	assert.equal(memory.readMappedU32LE(TEST_RAM_BASE + 48), 0x22222222);
 	assert.equal(memory.readMappedU32LE(TEST_RAM_BASE + 64), 0x33333333);
@@ -80,7 +180,7 @@ return mem[base + 48]
 
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 48/);
 	assert.match(disassembly, /LOAD_MEM_D r\d+, r\d+, 0, 48/);
-	assert.deepEqual(runCompiledLua(source), [7]);
+	assert.deepEqual(runCompiledLua(source), [7].map(valueInteger));
 });
 
 test('compiler keeps generic memory path for out-of-range or unaligned offsets', () => {
@@ -115,7 +215,7 @@ packets[1].color = 0x33333333
 return mem[base], mem[base + 12], mem[base + sizeof(tri) + offsetof(tri.color)], &packets[1], sizeof(tri), offsetof(tri.color)
 `);
 
-	assert.deepEqual(result, [0x11111111, 0x22222222, 0x33333333, TEST_RAM_BASE + 20, 20, 16]);
+	assert.deepEqual(result, [0x11111111, 0x22222222, 0x33333333, TEST_RAM_BASE + 20, 20, 16].map(valueInteger));
 });
 
 test('struct views support nested records and row-major multi-dimensional arrays', () => {
@@ -134,7 +234,7 @@ scene[1][2].constants.view[3] = 0x12345678
 return mem[base + 196], &scene[1][0], sizeof(draw), offsetof(draw.constants.eye)
 `);
 
-	assert.deepEqual(result, [0x12345678, TEST_RAM_BASE + 108, 36, 20]);
+	assert.deepEqual(result, [0x12345678, TEST_RAM_BASE + 108, 36, 20].map(valueInteger));
 });
 
 test('pointer arrow fields lower scalar reads and writes to displaced memory opcodes', () => {
@@ -160,7 +260,7 @@ return packet->color, packet->weight
 
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 4, 0/);
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 20/);
-	assert.deepEqual(runCompiledLua(source), [7, 9]);
+	assert.deepEqual(runCompiledLua(source), [7, 9].map(valueInteger));
 });
 
 test('pointer dereference and indexed pointer fields lower to direct memory stores', () => {
@@ -186,7 +286,7 @@ return mem[base], mem[base + sizeof(q16_matrix) + 12]
 	assert.equal(disassembly.includes('NEWT'), false);
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 0/);
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 28/);
-	assert.deepEqual(runCompiledLua(source), [1, 8]);
+	assert.deepEqual(runCompiledLua(source), [1, 8].map(valueInteger));
 });
 
 test('compiler rejects whole-struct assignment targets', () => {

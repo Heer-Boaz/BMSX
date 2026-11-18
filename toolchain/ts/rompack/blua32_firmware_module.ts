@@ -1,4 +1,5 @@
 import {
+	ValueMoveKind,
 	CLOSURE_ADDRESS_REGISTER_WIDE_C,
 	EXT_A_BITS,
 	EXT_B_BITS,
@@ -28,7 +29,7 @@ import {
 	BLUA32_UPVALUE_IN_STACK_MASK,
 	BLUA32_UPVALUE_RECORD_SIZE,
 } from '../../../machine/ts/spec/blua32/image_format';
-import { encodeFixedCallArgCount, OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { encodeFixedValueCount, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 
 export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	'module<const>',
@@ -48,7 +49,7 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\text_bx_bits = ${EXT_BX_BITS},`,
 	`\text_c_bits = ${EXT_C_BITS},`,
 	`\tclosure_address_register_wide_c = ${CLOSURE_ADDRESS_REGISTER_WIDE_C},`,
-	`\tfixed_call_arg_count_bias = ${encodeFixedCallArgCount(0)},`,
+	`\tfixed_value_count_bias = ${encodeFixedValueCount(0)},`,
 	`\tfunction_alignment = ${BLUA32_FUNCTION_ALIGNMENT},`,
 	`\tfunction_record_size = ${BLUA32_FUNCTION_RECORD_SIZE},`,
 	`\tfunction_code_address_word_index = ${BLUA32_FUNCTION_CODE_ADDRESS_OFFSET >>> 2},`,
@@ -60,9 +61,11 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\tfunction_upvalue_count_word_index = ${BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET >>> 2},`,
 	`\tfunction_reserved_word_index = ${BLUA32_FUNCTION_RESERVED_OFFSET >>> 2},`,
 	`\tupvalue_record_size = ${BLUA32_UPVALUE_RECORD_SIZE},`,
-	`\tupvalue_in_stack_mask = ${BLUA32_UPVALUE_IN_STACK_MASK},`,
+	`\tupvalue_in_stack_mask = 0x${BLUA32_UPVALUE_IN_STACK_MASK.toString(16)},`,
 	`\top_wide = ${OpCode.WIDE},`,
 	`\top_mov = ${OpCode.MOV},`,
+	`\tmove_float_bits = ${ValueMoveKind.FloatBits},`,
+	`\tmove_float_from_bits = ${ValueMoveKind.FloatFromBits},`,
 	`\top_knil = ${OpCode.KNIL},`,
 	`\top_kfalse = ${OpCode.KFALSE},`,
 	`\top_ktrue = ${OpCode.KTRUE},`,

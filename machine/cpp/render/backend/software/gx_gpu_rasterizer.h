@@ -6,12 +6,12 @@
 
 namespace bmsx {
 
-struct GxGpuCommandBuffer;
+struct GxGpuCommandStorage;
 struct GxGpuSoftwareState;
 
 void drawGxGpuSoftwareRectangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
 	i32 y0,
@@ -20,7 +20,7 @@ void drawGxGpuSoftwareRectangle(
 	u32 colorWord);
 void drawGxGpuSoftwareTriangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
 	i32 y0,
@@ -34,7 +34,7 @@ void drawGxGpuSoftwareTriangle(
 	bool ditherEnabled);
 void drawGxGpuSoftwareTexturedTriangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
 	i32 y0,
@@ -54,7 +54,7 @@ void drawGxGpuSoftwareTexturedTriangle(
 	bool ditherEnabled);
 void drawGxGpuSoftwareTexturedRectangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
 	i32 y0,
@@ -64,7 +64,7 @@ void drawGxGpuSoftwareTexturedRectangle(
 	u32 textureWord);
 void drawGxGpuSoftwareLineSegment(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
 	i32 y0,

@@ -1,3 +1,4 @@
+import { numberConstantValue, type NumberConstant } from '../number';
 import { MemoryAccessKind } from '../../../../machine/ts/spec/blua32/memory_access_kind';
 import type { FileSemanticData } from '../semantic/model';
 import { LuaSyntaxKind, LuaTableFieldKind, type LuaExpression } from '../syntax/ast';
@@ -8,7 +9,7 @@ import { indexedStructType, type StructResolvedType } from './struct_types';
 export type StaticInitializerScalar = Extract<StaticScalar, { readonly kind: 'number' | 'string' }>;
 export type StaticInitializerConstants = {
 	evaluate(file: FileSemanticData, expression: LuaExpression): StaticConstantValue | undefined;
-	evaluateNumeric(file: FileSemanticData, expression: LuaExpression): number | undefined;
+	evaluateNumeric(file: FileSemanticData, expression: LuaExpression): NumberConstant | undefined;
 };
 export type StaticInitializerVisitor = (byteOffset: number, type: StructResolvedType,
 	expression: LuaExpression, value: StaticInitializerScalar) => void;
@@ -68,11 +69,12 @@ export function visitStaticStorageInitializer(file: FileSemanticData, type: Stru
 			visit(byteOffset, scalar, initializer, value);
 			return;
 		}
-		const number = constants.evaluateNumeric(file, initializer);
-		if (number === undefined)
+		const value = constants.evaluateNumeric(file, initializer);
+		if (value === undefined)
 			throw new StaticSourceError(`${section} primitive initializer must be a compile-time number.`, file.file, initializer.span);
+		const number = numberConstantValue(value);
 		if (access.memoryKind !== MemoryAccessKind.F32LE && access.memoryKind !== MemoryAccessKind.F64LE && !Number.isInteger(number))
 			throw new StaticSourceError(`${section} primitive initializer must be a compile-time integer.`, file.file, initializer.span);
-		visit(byteOffset, scalar, initializer, { kind: 'number', value: number });
+		visit(byteOffset, scalar, initializer, { kind: 'number', value });
 	});
 }

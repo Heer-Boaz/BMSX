@@ -1091,6 +1091,40 @@ static uint8_t* capture_pixels(size_t required_bytes) {
 	return presenter->capture_pixels;
 }
 
+static uint8_t* capture_software_pixels(void) {
+	BmsxVideoSurface* surface = g_presenter.surface;
+	uint8_t* pixels = capture_pixels((size_t)surface->width * surface->height * 4u);
+	for (int y = 0; y < surface->height; ++y) {
+		const int source_y = surface->height - 1 - y;
+		copy_surface_row_to_rgba(
+				pixels + (size_t)y * (size_t)surface->width * 4u,
+				surface->pixels + (size_t)source_y * (size_t)surface->stride,
+				surface->width);
+	}
+	return pixels;
+}
+
+static uint8_t* capture_hardware_pixels(unsigned width, unsigned height, GLuint framebuffer) {
+	uint8_t* pixels = capture_pixels((size_t)width * height * 4u);
+	glBindFramebuffer_ptr(GL_FRAMEBUFFER, framebuffer);
+	glReadPixels_ptr(0, 0, (GLsizei)width, (GLsizei)height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+	glBindFramebuffer_ptr(GL_FRAMEBUFFER, 0);
+	return pixels;
+}
+
+bool video_presenter_save_screenshot(const char* path) {
+	VideoPresenter* presenter = &g_presenter;
+	if (presenter->uses_hw_render) {
+		if (!presenter->hw_texture) return false;
+		const unsigned width = presenter->hw_texture_width, height = presenter->hw_texture_height;
+		return screenshot_save_png(path, width, height,
+				capture_hardware_pixels(width, height, presenter->hw_framebuffer));
+	}
+	BmsxVideoSurface* surface = presenter->surface;
+	return screenshot_save_png(path, (uint32_t)surface->width, (uint32_t)surface->height,
+			capture_software_pixels());
+}
+
 static void capture_software_frame(void) {
 	VideoPresenter* presenter = &g_presenter;
 	uint64_t capture_frame;
@@ -1099,16 +1133,7 @@ static void capture_software_frame(void) {
 		return;
 	}
 	BmsxVideoSurface* surface = presenter->surface;
-	const size_t pixel_count =
-			(size_t)surface->width * (size_t)surface->height;
-	uint8_t* pixels = capture_pixels(pixel_count * 4u);
-	for (int y = 0; y < surface->height; ++y) {
-		const int source_y = surface->height - 1 - y;
-		copy_surface_row_to_rgba(
-				pixels + (size_t)y * (size_t)surface->width * 4u,
-				surface->pixels + (size_t)source_y * (size_t)surface->stride,
-				surface->width);
-	}
+	uint8_t* pixels = capture_software_pixels();
 	char filename[128];
 	if (!controlled) snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
 	const char* capture_filename = controlled ? host_control_capture_filename() : filename;
@@ -1133,23 +1158,13 @@ static void capture_hardware_frame(unsigned width, unsigned height) {
 		width = (unsigned)presenter->surface->width;
 		height = (unsigned)presenter->surface->height;
 	}
-	uint8_t* pixels = capture_pixels((size_t)width * (size_t)height * 4u);
-	glBindFramebuffer_ptr(GL_FRAMEBUFFER, controlled ? 0 : presenter->hw_framebuffer);
-	glReadPixels_ptr(
-			0,
-			0,
-			(GLsizei)width,
-			(GLsizei)height,
-			GL_RGBA,
-			GL_UNSIGNED_BYTE,
-			pixels);
+	uint8_t* pixels = capture_hardware_pixels(width, height, controlled ? 0 : presenter->hw_framebuffer);
 	char filename[128];
 	if (!controlled) snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
 	const char* capture_filename = controlled ? host_control_capture_filename() : filename;
 	const bool saved = screenshot_save_png(capture_filename, width, height, pixels);
 	if (controlled) host_control_capture_complete(width, height, saved);
 	else if (!saved) host_fatal("Screenshot save failed: %s", filename);
-	glBindFramebuffer_ptr(GL_FRAMEBUFFER, 0);
 }
 
 static bool present_hardware_frame(void) {

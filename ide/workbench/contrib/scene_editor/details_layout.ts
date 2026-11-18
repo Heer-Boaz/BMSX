@@ -1,5 +1,5 @@
 import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
-import { formatNumber } from '../../../../machine/ts/common/number_format';
+import { formatFloat } from '../../../../machine/ts/common/number_format';
 import * as constants from '../../../common/constants';
 import { forEachWrappedMeasuredRange, uppercaseOutsideStrings, writeWrappedMeasuredText } from '../../../common/text';
 import { measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
@@ -73,7 +73,7 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 			const { family, value } = property.descriptor;
 			// Compact coordinate readings are presentation only; focusing still exposes the
 			// exact editable value and an unchanged acceptance publishes no source edit.
-			const text = property.descriptor.preview ?? (family === '2d' ? String(Number(value.toFixed(2))) : formatNumber(value));
+			const text = property.descriptor.preview ?? (family === '2d' ? String(Number(value.toFixed(2))) : formatFloat(value));
 			property.text = truncateTextToWidth(text, cellRight - fieldLeft - 6);
 			if (column === columns - 1 || index === view.properties.length - 1) top += fieldHeight + PADDING;
 		}

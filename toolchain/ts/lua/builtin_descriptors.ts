@@ -111,6 +111,8 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'os.difftime', params: ['t2', 't1'], signature: 'os.difftime(t2, t1)' },
 	{ name: 'os.time', params: ['table?'], signature: 'os.time([table])', description: 'Converts a BMSX civil-time date table, or returns elapsed BMSX machine time in seconds when omitted.' },
 	{ name: 'blua32.closure', params: ['function_address'], signature: 'blua32.closure(function_address)', description: 'Creates a closure from a mapped BLua32 function-record address. Compiles to the indirect CLOSURE ISA form and is not a first-class Lua function.' },
+	{ name: 'blua32.float_bits', params: ['value'], signature: 'blua32.float_bits(value)', description: 'Reinterprets a Float word as an Integer. Emits MOV kind 1; not a function value.' },
+	{ name: 'blua32.float_from_bits', params: ['word'], signature: 'blua32.float_from_bits(word)', description: 'Reinterprets an Integer word as a Float. Emits MOV kind 2; not a function value.' },
 	{ name: 'blua32.trace', params: ['subject', 'channel', '...'], signature: 'blua32.trace(subject, channel, ...)', description: 'Source instrumentation statement. Unselected channels are erased; selected channels send values to a subject/channel guest sink.' },
 	{ name: 'blua32.trace_sink', params: ['subject', 'channel', 'sink'], signature: 'blua32.trace_sink(subject, channel, sink)', description: 'Binds or clears one subject/channel guest sink. Erased when that channel is unselected.' },
 	{ name: 'mem', params: ['addr'], signature: 'mem[addr]', description: 'Reserved memory-mapped 32-bit word space for direct `mem[addr]` reads/writes. Not a first-class Lua value. Invalid or read-only writes raise a fault.' },

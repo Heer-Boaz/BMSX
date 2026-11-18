@@ -3,7 +3,7 @@ import test from 'node:test';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { SuspendedValuePresentation } from '../../ide/runtime/value_presentation';
 import { RuntimePropertyIndex } from '../../ide/workbench/contrib/behavior_lens/runtime_properties';
-import { valueString } from '../../machine/ts/machine/cpu/value';
+import { valueString, valueTable, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 
 test('retained string identities and property indexes follow text, not recycled intern slots', () => {
@@ -29,4 +29,50 @@ test('retained string identities and property indexes follow text, not recycled 
 	assert.equal(index.find('entries', '', valueString(recreated), guest), 'selected');
 	assert.equal(presentation.update(valueString(recreated)), 'retained-identity-before-gc');
 	assert.equal(index.delete(property), true);
+});
+
+test('numeric watches retain subtype and raw NaN identity instead of host Number equality', () => {
+	const runtime = createTestRuntime(createTestRuntimeRomPayload()), guest = new SuspendedGuestSession(runtime);
+	const presentation = new SuspendedValuePresentation(guest, 'summary');
+	presentation.update(valueInteger(2));
+	presentation.update(valueInteger(2)); assert.equal(presentation.observationChanged, false);
+	presentation.update(valueFloat(2)); assert.equal(presentation.observationChanged, true);
+	presentation.update(valueFloat(2)); assert.equal(presentation.observationChanged, false);
+	const first = valueFloatBits(0xffa12345), second = valueFloatBits(0xffa12346);
+	assert.equal(guest.formatValue(first), guest.formatValue(second), 'the same display must not hide different raw words');
+	presentation.update(first); presentation.update(second);
+	assert.equal(presentation.observationChanged, true);
+	presentation.update(second); assert.equal(presentation.observationChanged, false);
+});
+
+test('retained object identities do not alias a recycled compact heap reference', () => {
+	const runtime = createTestRuntime(createTestRuntimeRomPayload()), cpu = runtime.machine.cpu;
+	const guest = new SuspendedGuestSession(runtime), presentation = new SuspendedValuePresentation(guest, 'summary');
+	cpu.collectTrackedHeapBytes();
+	const table = cpu.createTable(), first = valueTable(cpu.gc.reference(table));
+	const identity = guest.identity(first);
+	presentation.update(first);
+	cpu.collectTrackedHeapBytes();
+	const replacement = cpu.createTable(), second = valueTable(cpu.gc.reference(replacement));
+	assert.equal(valuePayload(first), valuePayload(second), 'exercise real directory-slot reuse');
+	assert.notEqual(table.hashId, replacement.hashId);
+	assert.equal(guest.matchesIdentity(second, identity), false);
+	presentation.update(second);
+	assert.equal(presentation.observationChanged, true);
+});
+
+test('table previews use the returned key, not traversal work, to detect exhaustion', () => {
+	const runtime = createTestRuntime(createTestRuntimeRomPayload()), cpu = runtime.machine.cpu;
+	const guest = new SuspendedGuestSession(runtime);
+	const table = cpu.createTable(8, 16);
+	const value = valueTable(cpu.gc.reference(table));
+	const presentation = new SuspendedValuePresentation(guest, 'preview');
+	assert.equal(guest.previewValue(value, 1, 8), '{}', 'vacant allocated storage has no preview entries');
+	assert.equal(presentation.update(value), '{}');
+	table.set(valueBool(false), valueInteger(7));
+	assert.equal(guest.previewValue(value, 1, 8), '{ false = 7 }', 'a false key is a live entry');
+	assert.equal(presentation.update(value), '{ false = 7 }');
+	table.set(valueBool(false), valueNil());
+	assert.equal(guest.previewValue(value, 1, 8), '{}', 'a deleted hash node is not a preview entry');
+	assert.equal(presentation.update(value), '{}');
 });

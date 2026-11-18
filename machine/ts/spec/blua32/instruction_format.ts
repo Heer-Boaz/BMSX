@@ -1,3 +1,5 @@
+export const enum ValueMoveKind { Copy = 0, FloatBits = 1, FloatFromBits = 2 }
+
 export const INSTRUCTION_BYTES = 4;
 
 export const MAX_OP_BITS = 6;
@@ -56,16 +58,16 @@ export function writeInstruction(code: Uint8Array, index: number, op: number, a:
 
 export function writeInstructionWord(code: Uint8Array, index: number, word: number): void {
 	const offset = index * INSTRUCTION_BYTES;
-	code[offset] = (word >>> 24) & 0xff;
-	code[offset + 1] = (word >>> 16) & 0xff;
-	code[offset + 2] = (word >>> 8) & 0xff;
-	code[offset + 3] = word & 0xff;
+	code[offset] = word & 0xff;
+	code[offset + 1] = (word >>> 8) & 0xff;
+	code[offset + 2] = (word >>> 16) & 0xff;
+	code[offset + 3] = (word >>> 24) & 0xff;
 }
 
 export function readInstructionWord(code: Uint8Array, index: number): number {
 	const offset = index * INSTRUCTION_BYTES;
-	return ((code[offset] << 24)
-		| (code[offset + 1] << 16)
-		| (code[offset + 2] << 8)
-		| code[offset + 3]) >>> 0;
+	return (code[offset]
+		| (code[offset + 1] << 8)
+		| (code[offset + 2] << 16)
+		| (code[offset + 3] << 24)) >>> 0;
 }

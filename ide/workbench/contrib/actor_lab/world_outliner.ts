@@ -1,4 +1,4 @@
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
+import { asTable, isNil, numberToHost, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { ScrollableWorkbenchTree } from '../../ui/scrollable_tree';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
@@ -37,31 +37,33 @@ export class ActorWorldOutliner {
 		this.tree.scroll = 0; this.tree.horizontalScrollbar.setScroll(0);
 		this.revision++;
 	}
-	public update(guest: SuspendedGuestSession, world: Table | undefined, selectedHashId: number): boolean {
+	public update(guest: SuspendedGuestSession, world: Value | undefined, selectedHashId: number): boolean {
 		if (world === undefined) {
 			if (this.worldHashId === undefined) return false;
 			this.clear(); return true;
 		}
-		if (world.hashId !== this.worldHashId) { this.clear(); this.worldHashId = world.hashId; }
-		const objectsRevision = guest.readStringMember(world, '_objects_revision') as number;
-		const topologyRevision = guest.readStringMember(guest.readStringMember(world, '_spatial_hierarchy'), '_topology_revision') as number;
+		const worldHashId = guest.identityScalar(world, ValueTag.Table);
+		if (worldHashId !== this.worldHashId) { this.clear(); this.worldHashId = worldHashId; }
+		const objectsRevision = numberToHost(guest.readStringMember(world, '_objects_revision'));
+		const topologyRevision = numberToHost(guest.readStringMember(guest.readStringMember(world, '_spatial_hierarchy'), '_topology_revision'));
 		if (objectsRevision === this.objectsRevision && topologyRevision === this.topologyRevision) {
 			const selectionChanged = this.updateSelection(selectedHashId, false);
 			return this.refreshVisibleLabels(guest, world) || selectionChanged;
 		}
 		this.objectsRevision = objectsRevision; this.topologyRevision = topologyRevision;
 		const tree = this.tree;
-		const stamp = ++this.revision, objects = guest.readStringMember(world, '_objects') as Table;
-		for (let i = 1; i <= objects.arrayLength; i++) {
-			const actor = objects.getInteger(i) as Table, parent = guest.readStringMember(actor, 'parent') as Table | null;
-			let entry = this.members.get(actor.hashId);
+		const stamp = ++this.revision, objects = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
+		for (let i = 1, length = objects.length(); i <= length; i++) {
+			const actor = objects.getInteger(i), parent = guest.readStringMember(actor, 'parent');
+			const hashId = guest.identityScalar(actor, ValueTag.Table);
+			let entry = this.members.get(hashId);
 			if (entry === undefined) {
-				entry = { hashId: actor.hashId, label: '', parentHashId: undefined, arrayIndex: i,
+				entry = { hashId, label: '', parentHashId: undefined, arrayIndex: i,
 					containsSelection: false, seen: stamp, attached: false, row: undefined };
-				this.members.set(actor.hashId, entry);
+				this.members.set(hashId, entry);
 			}
 			entry.label = guest.formatValue(guest.readStringMember(actor, 'id'));
-			entry.parentHashId = parent === null ? undefined : parent.hashId;
+			entry.parentHashId = isNil(parent) ? undefined : guest.identityScalar(parent, ValueTag.Table);
 			entry.arrayIndex = i;
 			entry.seen = stamp; entry.attached = false;
 			if (entry.row !== undefined) entry.row.children.length = 0;
@@ -79,10 +81,10 @@ export class ActorWorldOutliner {
 	}
 	/** Membership revisions bind a scalar slot once; selecting an actor does not
 	 * search every live object again on each inspection. The borrow stays local. */
-	public readActor(guest: SuspendedGuestSession, world: Table | undefined, hashId: number): Table | undefined {
+	public readActor(guest: SuspendedGuestSession, world: Value | undefined, hashId: number): Value | undefined {
 		const entry = this.members.get(hashId);
 		if (entry === undefined) return undefined;
-		return (guest.readStringMember(world!, '_objects') as Table).getInteger(entry.arrayIndex) as Table;
+		return asTable(guest.readStringMember(world!, '_objects'), guest.cpu.gc).getInteger(entry.arrayIndex);
 	}
 	public reveal(hashId: number): void {
 		this.updateSelection(hashId, false);
@@ -100,14 +102,14 @@ export class ActorWorldOutliner {
 		for (let row = selected; row !== undefined && row !== null; row = row.parent) row.element.containsSelection = true;
 		return true;
 	}
-	private refreshVisibleLabels(guest: SuspendedGuestSession, world: Table): boolean {
+	private refreshVisibleLabels(guest: SuspendedGuestSession, world: Value): boolean {
 		// Virtualized property bindings, not a World census: ordinary motion reads
 		// only the already-bound visible slots and never rebuilds the hierarchy.
-		const tree = this.tree, objects = guest.readStringMember(world, '_objects') as Table;
+		const tree = this.tree, objects = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
 		const first = tree.scroll | 0, end = Math.min(tree.rows.length, first + tree.layout.visibleRowCount);
 		let changed = false;
 		for (let i = first; i < end; i++) {
-			const entry = tree.rows[i].element, actor = objects.getInteger(entry.arrayIndex) as Table;
+			const entry = tree.rows[i].element, actor = objects.getInteger(entry.arrayIndex);
 			const label = guest.formatValue(guest.readStringMember(actor, 'id'));
 			if (entry.label !== label) { entry.label = label; changed = true; }
 		}

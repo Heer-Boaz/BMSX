@@ -20,8 +20,8 @@ void main() {
 	gl_Position = vec4(clip, 0.0, 1.0);
 	v_lineStart = ivec2(a_lineStart);
 	v_lineEnd = ivec2(a_lineEnd);
-	ivec3 color0 = ivec3(a_color0 * 255.0 + 0.5);
-	ivec3 colorDelta = ivec3(a_color1 * 255.0 + 0.5) - color0;
+	ivec3 color0 = ivec3(a_color0);
+	ivec3 colorDelta = ivec3(a_color1) - color0;
 	ivec2 delta = v_lineEnd - v_lineStart;
 	int steps = max(abs(delta.x), abs(delta.y));
 	v_colorBase = color0 * 4096 + ivec3(2048);

@@ -21,6 +21,14 @@ static const BinValue NULL_VALUE = BinValue(nullptr);
 
 namespace {
 
+BinTag numberTag(f64 value) {
+	if (value != value || (value == 0.0 && std::signbit(value))) return BinTag::F32;
+	if (value >= static_cast<f64>(std::numeric_limits<i32>::min())
+		&& value <= static_cast<f64>(std::numeric_limits<i32>::max())
+		&& static_cast<f64>(static_cast<i32>(value)) == value) return BinTag::Int;
+	return static_cast<f64>(static_cast<f32>(value)) == value ? BinTag::F32 : BinTag::F64;
+}
+
 class BinWriter {
 public:
 	explicit BinWriter(size_t capacityHint) {
@@ -61,10 +69,24 @@ public:
 		}
 		if (value.isArray()) {
 			const BinArray& array = value.asArray();
-			writeTag(BinTag::Arr);
-			writeVarUint(static_cast<uint32_t>(array.size()));
+			bool integers = true;
 			for (const BinValue& entry : array) {
-				writeWithPropTable(entry, propNameToId);
+				if (entry.isInt()) {
+					const i64 integer = entry.asInt();
+					integers = integer >= std::numeric_limits<i32>::min() && integer <= std::numeric_limits<i32>::max();
+				} else {
+					integers = entry.isF64() && numberTag(entry.asF64()) == BinTag::Int;
+				}
+				if (!integers) break;
+			}
+			writeTag(integers ? BinTag::IntArray : BinTag::Arr);
+			writeVarUint(static_cast<uint32_t>(array.size()));
+			if (integers) {
+				for (const BinValue& entry : array) {
+					writeVarInt(entry.isInt() ? entry.asInt() : static_cast<i64>(entry.asF64()));
+				}
+			} else {
+				for (const BinValue& entry : array) writeWithPropTable(entry, propNameToId);
 			}
 			return;
 		}
@@ -188,32 +210,11 @@ private:
 	}
 
 	void writeNumber(f64 value) {
-		if (std::isnan(value)) {
-			writeTag(BinTag::F32);
-			writeF32(static_cast<f32>(value));
-			return;
-		}
-		if (std::signbit(value) && value == 0.0) {
-			writeTag(BinTag::F32);
-			writeF32(static_cast<f32>(value));
-			return;
-		}
-		const auto integer = static_cast<i64>(value);
-		if (static_cast<f64>(integer) == value
-			&& integer >= static_cast<i64>(std::numeric_limits<int32_t>::min())
-			&& integer <= static_cast<i64>(std::numeric_limits<int32_t>::max())) {
-			writeTag(BinTag::Int);
-			writeVarInt(integer);
-			return;
-		}
-		const f32 f32Value = static_cast<f32>(value);
-		if (static_cast<f64>(f32Value) == value) {
-			writeTag(BinTag::F32);
-			writeF32(f32Value);
-			return;
-		}
-		writeTag(BinTag::F64);
-		writeF64(value);
+		const BinTag tag = numberTag(value);
+		writeTag(tag);
+		if (tag == BinTag::Int) writeVarInt(static_cast<i64>(value));
+		else if (tag == BinTag::F32) writeF32(static_cast<f32>(value));
+		else writeF64(value);
 	}
 
 	static uint32_t readRefId(const BinValue& value) {
@@ -411,12 +412,15 @@ BinValue BinDecoder::readValue() {
 		case BinTag::Str:
 			return BinValue(readString());
 
+		case BinTag::IntArray:
 		case BinTag::Arr: {
 			u32 len = readVarUint();
 			BinArray arr;
 			arr.reserve(len);
-			for (u32 i = 0; i < len; ++i) {
-				arr.push_back(readValue());
+			if (tag == BinTag::IntArray) {
+				for (u32 i = 0; i < len; ++i) arr.emplace_back(readVarInt());
+			} else {
+				for (u32 i = 0; i < len; ++i) arr.push_back(readValue());
 			}
 			return BinValue(std::move(arr));
 		}

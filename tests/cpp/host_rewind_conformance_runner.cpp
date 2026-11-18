@@ -88,10 +88,8 @@ void testPresentationIntentLifetime() {
 	LibretroInput input(supervisorRequest);
 	Runtime runtime({system, {}, PSX_MACHINE_SPEC}, input);
 	runtime.boot();
-	retro_system_av_info avInfo{};
-	avInfo.geometry.base_width = 4;
-	avInfo.geometry.base_height = 3;
-	LibretroVideoOutput video(avInfo);
+	LibretroVideoOutput video;
+	video.stageDisplaySize(4, 3, 4, 3);
 	auto backend = std::make_unique<SoftwareBackend>(4, 3, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	auto& software = *backend;
 	backend->resizePresentationTarget(4, 3);
@@ -187,10 +185,8 @@ void testDefaultRetentionVideoStandards() {
 		for (const auto [reg, word] : timingWords) runtime.machine.memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(reg), word);
 		runDueRuntimeTimers(runtime);
 		require(runtime.timing.ufpsScaled == (pal ? 50000000 : 59940059), "the real PCRTC owns the selected PAL or NTSC timing");
-		retro_system_av_info avInfo{};
-		avInfo.geometry.base_width = 256;
-		avInfo.geometry.base_height = 212;
-		LibretroVideoOutput video(avInfo);
+		LibretroVideoOutput video;
+		video.stageDisplaySize(256, 212, 256, 212);
 		VideoPresenter presenter(video, std::make_unique<SoftwareBackend>(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes), 256, 212);
 		RenderPresentationState presentation;
 		HostRewind rewind(runtime, presenter, presentation);
@@ -238,10 +234,8 @@ void testRecordingPolicy() {
 	LibretroInput input(supervisorRequest);
 	Runtime runtime({system, {}, PSX_MACHINE_SPEC}, input);
 	runtime.boot();
-	retro_system_av_info avInfo{};
-	avInfo.geometry.base_width = 4;
-	avInfo.geometry.base_height = 3;
-	LibretroVideoOutput video(avInfo);
+	LibretroVideoOutput video;
+	video.stageDisplaySize(4, 3, 4, 3);
 	auto backend = std::make_unique<CountingSoftwareBackend>(4, 3, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	auto& software = *backend;
 	VideoPresenter presenter(video, std::move(backend), 4, 3);
@@ -279,12 +273,12 @@ void testRecordingPolicy() {
 int main(int argc, char** argv) {
 	try {
 		testRecordingPolicy();
+		testPresentationIntentLifetime();
 		if (argc == 1) {
 			std::cout << "HOST-REWIND-POLICY:PASS\n";
 			return 0;
 		}
 		require(argc == 3 || argc == 4, "Usage: bmsx_host_rewind_conformance_runner SYSTEM_DIRECTORY CART_ROM [OUTPUT_DIRECTORY]");
-		testPresentationIntentLifetime();
 		testDefaultRetentionVideoStandards();
 		LibretroInput input(supervisorRequest);
 		input.setInputPollCallback(poll);
@@ -301,10 +295,8 @@ int main(int argc, char** argv) {
 			++restoredStates;
 			restoredCycles = runtime.machine.scheduler.currentNowCycles();
 		};
-		retro_system_av_info avInfo{};
-		avInfo.geometry.base_width = 256;
-		avInfo.geometry.base_height = 212;
-		LibretroVideoOutput video(avInfo);
+		LibretroVideoOutput video;
+		video.stageDisplaySize(256, 212, 256, 212);
 		auto backend = std::make_unique<CountingSoftwareBackend>(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
 		auto& software = *backend;
 		VideoPresenter presenter(video, std::move(backend), 256, 212);

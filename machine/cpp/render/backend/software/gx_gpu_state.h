@@ -91,13 +91,13 @@ struct GxGpuSoftwareState {
 	explicit GxGpuSoftwareState(size_t vramByteCount, size_t interlacedPixelCount)
 		: vram(vramByteCount >> 1u)
 		, vramWordMask(vram.size() - 1u)
-		, vramSnapshotScratch(vramByteCount)
+		, textureLatchScratch(vramByteCount >> 1u)
 		, interlacedPixels(interlacedPixelCount) {
 	}
 
 	std::vector<u16> vram;
 	size_t vramWordMask;
-	std::vector<u8> vramSnapshotScratch;
+	std::vector<u16> textureLatchScratch;
 	size_t processedCommandCount = 0u;
 	u32 processedCommandSerial = 0u;
 	u64 vramSnapshotSerial = 0u;
@@ -112,6 +112,7 @@ struct GxGpuSoftwareState {
 	GxGpuSoftwareTriangleEdgeSpan triangleEdge1;
 	GxGpuSoftwareTriangleEdgeSpan triangleEdge2;
 	std::array<i32, 2u> triangleSpanBounds{};
+	std::array<i32, 4u> textureBoundsScratch{};
 };
 
 } // namespace bmsx

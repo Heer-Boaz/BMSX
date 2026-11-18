@@ -443,8 +443,8 @@ build/tests/cpu-instruction-decode-vectors.txt: build/tests/cpu_instruction_deco
 	$(NODE) $< > $@
 build/tests/cpu_instruction_decode_cpp: tests/cpu_instruction_decode_vectors.cpp ../machine/cpp/spec/blua32/instruction_format.cpp ../machine/cpp/spec/blua32/opcode.cpp
 	@mkdir -p $(@D)
-	$(CXX) -std=c++20 -O2 -ffunction-sections -fdata-sections -I../machine/cpp -MM -MT $@ $(filter %.cpp,$^) > build/tests/cpu_instruction_decode_cpp.d
-	$(CXX) -std=c++20 -O2 -ffunction-sections -fdata-sections -I../machine/cpp $(filter %.cpp,$^) -Wl,--gc-sections -o $@
+	$(CXX) -std=c++20 -O2 -ffunction-sections -fdata-sections -I../machine/cpp -MM -MT $@ $(filter-out ../machine/cpp/rompack/tooling/disassembler.cpp,$(filter %.cpp,$^)) > build/tests/cpu_instruction_decode_cpp.d
+	$(CXX) -std=c++20 -O2 -ffunction-sections -fdata-sections -I../machine/cpp $(filter-out ../machine/cpp/rompack/tooling/disassembler.cpp,$(filter %.cpp,$^)) -Wl,--gc-sections -o $@
 -include build/tests/cpu_instruction_decode_cpp.d
 build/tests/cpu_instruction_decode.vvp: rtl/cpu_instruction_decode.sv tests/cpu_instruction_decode_tb.sv
 	@mkdir -p $(@D)
@@ -1539,8 +1539,8 @@ build/tests/cpu-word-execute-vectors.txt: build/tests/cpu_word_execute_vectors.c
 	$(NODE) $< > $@
 build/tests/cpu_word_execute_cpp: tests/cpu_word_execute_vectors.cpp ../machine/cpp/spec/blua32/instruction_format.cpp ../machine/cpp/spec/blua32/opcode.cpp
 	@mkdir -p $(@D)
-	$(CXX) -std=c++20 -O2 -ffunction-sections -fdata-sections -I../machine/cpp -MM -MT $@ $(filter %.cpp,$^) > build/tests/cpu_word_execute_cpp.d
-	$(CXX) -std=c++20 -O2 -ffunction-sections -fdata-sections -I../machine/cpp $(filter %.cpp,$^) -Wl,--gc-sections -o $@
+	$(CXX) -std=c++20 -O2 -ffunction-sections -fdata-sections -I../machine/cpp -MM -MT $@ $(filter-out ../machine/cpp/rompack/tooling/disassembler.cpp,$(filter %.cpp,$^)) > build/tests/cpu_word_execute_cpp.d
+	$(CXX) -std=c++20 -O2 -ffunction-sections -fdata-sections -I../machine/cpp $(filter-out ../machine/cpp/rompack/tooling/disassembler.cpp,$(filter %.cpp,$^)) -Wl,--gc-sections -o $@
 -include build/tests/cpu_word_execute_cpp.d
 build/tests/cpu_word_execute.vvp: rtl/cpu_instruction_decode.sv rtl/cpu_word_alu.sv rtl/cpu_word_execute.sv tests/cpu_word_execute_tb.sv
 	@mkdir -p $(@D)

@@ -116,6 +116,7 @@ import {
 import { AudioController } from '../../machine/ts/machine/devices/audio/controller';
 import { BiquadFilterState } from '../../machine/ts/machine/devices/audio/biquad_filter';
 import { ApuOutputMixer } from '../../machine/ts/machine/devices/audio/output';
+import { createApuBadpDecoderState, createApuBadpTransition, readApuBadpFrameAt, resetApuBadpDecoder } from '../../machine/ts/machine/devices/audio/badp_decoder_hot_path';
 import { APU_OUTPUT_RING_CAPACITY_FRAMES } from '../../machine/ts/machine/devices/audio/output_ring';
 import { interpolateApuPcmSample } from '../../machine/ts/machine/devices/audio/pcm_decoder_hot_path';
 import { resolveApuPhaseStep } from '../../machine/ts/machine/devices/audio/playback';
@@ -368,7 +369,7 @@ test('APU sample bus binds ROM directly, owns sample RAM, and rejects CPU memory
 	const cartRom = new Uint8Array([0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8]);
 	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom) }, PSX_MACHINE_SPEC.ramBytes);
 	const sampleMemory = new ApuSampleMemory(memory);
-	const view: ApuSourceByteView = {
+	const view: ApuSourceByteView = { revision: { value: 0 },
 		bytes: new Uint8Array(0),
 		byteOffset: 0,
 		byteLength: 0,
@@ -400,7 +401,7 @@ test('APU source descriptors must fit actual ROM bytes, not their mapped windows
 		],
 	}, PSX_MACHINE_SPEC.ramBytes);
 	const sampleMemory = new ApuSampleMemory(memory);
-	const view: ApuSourceByteView = { bytes: new Uint8Array(0), byteOffset: 0, byteLength: 0, cartridgeSlot: 0 };
+	const view: ApuSourceByteView = { revision: { value: 0 }, bytes: new Uint8Array(0), byteOffset: 0, byteLength: 0, cartridgeSlot: 0 };
 	for (const base of [SYSTEM_ROM_BASE, CART_ROM_BASE]) {
 		assert.equal(sampleMemory.bindSource(base, 4, 0, view), true);
 		assert.equal(sampleMemory.bindSource(base + 3, 1, 0, view), true);
@@ -552,13 +553,13 @@ function createTransferEdgeHarness(): ReturnType<typeof createAudioControllerHar
 	harness.audio.onService(0);
 	const dmaSource = DYNAMIC_RAM_BASE + 0x300;
 	harness.memory.writeMappedU32LE(dmaSource, 0xc0c0c0c0);
-	harness.scheduler.advanceTo(46);
+	harness.scheduler.advanceTo(45);
 	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_ADDRESS, 0);
 	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_DMA_WRITE);
 	harness.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, dmaSource);
 	harness.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, IO_APU_TRANSFER_DATA);
 	harness.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 1);
-	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x000000c0);
+	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000006);
 	harness.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	serviceScheduledDmaBlock(harness);
 	return { ...harness, audioOutput };
@@ -627,7 +628,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	live.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
 	live.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, IO_APU_TRANSFER_DATA);
 	live.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 32);
-	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003cc1);
+	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000006);
 	live.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(live.memory.readIoU32(IO_DMA0_STATUS), DMA_STATUS_BUSY);
 	serviceScheduledDmaBlock(live);
@@ -671,7 +672,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	live.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, IO_APU_TRANSFER_DATA);
 	live.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, target);
 	live.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 32);
-	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003c12);
+	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000007);
 	live.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(live.memory.readIoU32(IO_DMA0_STATUS), DMA_STATUS_BUSY);
 	serviceScheduledSampleTransfer(live);
@@ -691,7 +692,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	live.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, IO_APU_TRANSFER_DATA);
 	live.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, target);
 	live.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 1);
-	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x000003fc);
+	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000007);
 	live.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(live.memory.mappedWriteReady(IO_APU_TRANSFER_DATA), false);
 });
@@ -717,7 +718,7 @@ for (const count of [20, 4]) {
 			memory.writeMappedU32LE(IO_DMA0_READ_ADDR, IO_APU_TRANSFER_DATA);
 			memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, destination);
 			memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, count);
-			memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003c12);
+			memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000007);
 			memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 			memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_DMA_READ);
 			const deadlines: number[] = [];
@@ -731,14 +732,14 @@ for (const count of [20, 4]) {
 					}
 				}
 			}
-			assert.deepEqual(deadlines, count === 20 ? [512, 529, 1041, 1046] : [512, 517]);
+			assert.deepEqual(deadlines, count === 20 ? [512, 545, 1057, 1066] : [512, 521]);
 			assert.equal(memory.readMappedU32LE(IO_DMA0_STATUS), DMA_STATUS_DONE);
 			assert.equal(memory.readMappedU32LE(IO_APU_STATUS), 0x420);
 			const pending = audio.captureState().sampleTransfer;
 			assert.equal(pending.fifoCount, 12);
 			assert.equal(pending.scheduledWords, 4);
 			const due = scheduler.nowCycles + pending.scheduledCycles;
-			assert.equal(due, count === 20 ? 1174 : 645);
+			assert.equal(due, count === 20 ? 1194 : 649);
 			machine.advanceDevices(due - (stopBeforeDeadline ? 1 : 0) - scheduler.nowCycles);
 			assert.equal(scheduler.hasDueTimer(), !stopBeforeDeadline);
 			// No capture/status read or timer dispatch: CONTROL itself must service due work.
@@ -762,10 +763,10 @@ for (const count of [20, 4]) {
 	}
 }
 
-test('APU transfer FIFO is not consumed by a forced wrong-direction DMA block', () => {
+test('APU download route waits in write mode without consuming the upload FIFO', () => {
 	const harness = createAudioHarness();
 	harness.dma.setTiming(0, 8, 0, 0, 0, 0);
-	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
+	harness.audio.setTiming(2 * APU_TRANSFER_WORDS_PER_SECOND, 0);
 	const source = DYNAMIC_RAM_BASE + 0x500;
 	const target = DYNAMIC_RAM_BASE + 0x600;
 	for (let index = 0; index < 32; index += 1) {
@@ -776,17 +777,19 @@ test('APU transfer FIFO is not consumed by a forced wrong-direction DMA block', 
 	harness.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
 	harness.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, IO_APU_TRANSFER_DATA);
 	harness.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 32);
-	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003cc1);
+	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000006);
 	harness.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	serviceScheduledDmaBlock(harness);
 	const before = harness.audio.captureState().sampleTransfer;
 	assert.equal(before.fifoCount, APU_TRANSFER_FIFO_WORD_CAPACITY);
 	assert.equal(before.scheduledWords, APU_TRANSFER_FIFO_WORD_CAPACITY);
 
-	harness.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, IO_APU_TRANSFER_DATA);
+	harness.memory.writeMappedU32LE(IO_DMA0_TRIGGER, 2); // STOP the pending upload tail, not the APU FIFO.
 	harness.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, target);
-	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003c02);
-	serviceScheduledDmaBlock(harness);
+	harness.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 1);
+	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 7);
+	harness.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(harness.dma.cpuBusHeld(), false, 'download route waits while the APU is in write mode');
 	const afterReverseBlock = harness.audio.captureState().sampleTransfer;
 	assert.equal(afterReverseBlock.fifoCount, APU_TRANSFER_FIFO_WORD_CAPACITY);
 	assert.equal(afterReverseBlock.scheduledWords, APU_TRANSFER_FIFO_WORD_CAPACITY);
@@ -843,6 +846,85 @@ function writeBadpSourceRegisters(memory: Memory, sampleRateHz: number): void {
 	memory.writeMappedWord(IO_APU_SOURCE_DATA_OFFSET, 48);
 	memory.writeMappedWord(IO_APU_SOURCE_DATA_BYTES, 12);
 }
+
+test('BADP repeated loop-boundary transitions preserve decoder state and honor source writes', () => {
+	const frameCount = 128;
+	const bytes = new Uint8Array(8 + frameCount / 2);
+	writeLE16(bytes, 0, frameCount);
+	writeLE16(bytes, 2, bytes.length);
+	bytes.fill(0x11, 8);
+	let reads = 0;
+	const counted = new Proxy(bytes, { get(target, key) {
+		if (key !== 'length' && Number(key) >= 8) reads += 1;
+		return Reflect.get(target, key, target);
+	} });
+	const revision = { value: 0 };
+	const makeRecord = (sourceBytes: Uint8Array) => ({
+		sourceBytes, dataOffset: 0, frames: frameCount, channels: 1,
+		badpSeekTable: { bytes: new Uint8Array(0), byteOffset: 0, entryCount: 0 },
+		badp: createApuBadpDecoderState(), badpTransition: createApuBadpTransition(), sourceRevision: revision,
+	});
+	const optimized = makeRecord(counted);
+	const reference = makeRecord(bytes);
+	resetApuBadpDecoder(optimized, frameCount - 1);
+	resetApuBadpDecoder(reference, frameCount - 1);
+	const compare = (frame: number) => {
+		reference.badpTransition.target = -1;
+		const expected = readApuBadpFrameAt(reference, frame);
+		const actual = readApuBadpFrameAt(optimized, frame);
+		assert.equal(actual, expected);
+		assert.deepEqual(optimized.badp, reference.badp);
+	};
+	compare(0);
+	compare(frameCount - 1);
+	compare(0);
+	reads = 0;
+	compare(frameCount - 1);
+	assert.equal(reads, 0, 'repeat transition reuses the exact decoder state');
+	compare(0);
+	bytes[8] = 0x17;
+	revision.value += 1;
+	reads = 0;
+	compare(frameCount - 1);
+	assert.equal(reads, frameCount - 1, 'a sample-RAM write invalidates the old transition');
+	for (const frame of [0, frameCount - 1, frameCount - 2, 3, 50, 49, 127, 0]) compare(frame);
+});
+
+test('APU loop cursors preserve PCM for fractional, reverse and multi-loop steps', () => {
+	const source = new Uint8Array([0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0]);
+	for (const { start, step } of [
+		{ start: 2, step: 0x8000 }, { start: 5, step: -0x8000 },
+		{ start: 0, step: 0x10000 }, { start: 7, step: 0x94000 },
+		{ start: 2, step: -0x94000 }, { start: 5, step: 0 },
+	]) {
+		const harness = createRealAudioHarness();
+		writeSampleRamBytes(harness.memory, source);
+		writePcmSourceRegisters(harness.memory, APU_SAMPLE_RAM_BASE, source.length);
+		for (const [address, value] of [
+			[IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ],
+			[IO_APU_SOURCE_FRAME_COUNT, source.length],
+			[IO_APU_SOURCE_LOOP_START_SAMPLE, 2], [IO_APU_SOURCE_LOOP_END_SAMPLE, 6],
+			[IO_APU_START_SAMPLE, start], [IO_APU_RATE_STEP_Q16, step >>> 0],
+			[IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE], [IO_APU_SLOT, 1],
+		]) harness.memory.writeMappedWord(address!, value!);
+		writeApuCommand(harness.memory, harness.audio, APU_CMD_PLAY);
+		let cursor = start * APU_RATE_STEP_Q16_ONE;
+		const loopStart = 2 * APU_RATE_STEP_Q16_ONE, loopLength = 4 * APU_RATE_STEP_Q16_ONE;
+		for (let frame = 0; frame < 40; frame += 1) {
+			cursor = loopStart + (((cursor - loopStart) % loopLength) + loopLength) % loopLength;
+			const index = (cursor - (cursor % APU_RATE_STEP_Q16_ONE)) / APU_RATE_STEP_Q16_ONE;
+			const next = index + 1 === 6 ? 2 : index + 1;
+			const sample = interpolateApuPcmSample((source[index]! - 128) << 8,
+				(source[next]! - 128) << 8, cursor % APU_RATE_STEP_Q16_ONE);
+			harness.audioOutput.renderMachineFrames(1, frame);
+			assert.equal(harness.audioOutput.outputRing.readFramePacked(), ((sample & 0xffff) * 0x10001) >>> 0,
+				`start ${start}, step ${step}, frame ${frame}`);
+			cursor += step;
+			const wrapped = loopStart + (((cursor - loopStart) % loopLength) + loopLength) % loopLength;
+			assert.equal(harness.audioOutput.captureState().voices[0]!.cursorQ16, wrapped);
+		}
+	}
+});
 
 function writeApuCommand(memory: Memory, audio: AudioController, command: number): void {
 	memory.writeMappedWord(IO_APU_CMD, command);
@@ -1547,6 +1629,38 @@ test('APU save restore resumes the exact future PCM phase while transport stays 
 	live.hostOutput.pull(live.audioOutput.outputRing, liveOutput, 2, APU_SAMPLE_RATE_HZ);
 	restored.hostOutput.pull(restored.audioOutput.outputRing, restoredOutput, 2, APU_SAMPLE_RATE_HZ);
 	assert.deepEqual(restoredOutput, liveOutput);
+});
+
+test('APU BADP loop playback preserves live RAM updates across a warmed transition and restore', () => {
+	const live = createRealAudioHarness();
+	writeBadpSourceRegisters(live.memory, APU_SAMPLE_RATE_HZ / 2);
+	live.memory.writeMappedWord(IO_APU_SOURCE_LOOP_START_SAMPLE, 0);
+	live.memory.writeMappedWord(IO_APU_SOURCE_LOOP_END_SAMPLE, 8);
+	live.memory.writeMappedWord(IO_APU_START_SAMPLE, 7);
+	live.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, 0);
+	live.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	live.memory.writeMappedWord(IO_APU_SLOT, 1);
+	writeApuCommand(live.memory, live.audio, APU_CMD_PLAY);
+	let beforeWrite = 0;
+	for (let index = 0; index < 12; index += 1) {
+		if (index === 4) {
+			live.memory.writeMappedWord(IO_APU_TRANSFER_ADDRESS, 56);
+			live.memory.writeMappedWord(IO_APU_TRANSFER_CONTROL, 1);
+			live.memory.writeMappedWord(IO_APU_TRANSFER_DATA, 0x11111117);
+			live.memory.writeMappedWord(IO_APU_TRANSFER_CONTROL, 0);
+		}
+		if (index === 6) live.memory.writeMappedWord(IO_APU_SOURCE_LOOP_START_SAMPLE, 2);
+		if (index === 7) live.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, 0xffff8000);
+		if (index === 9) live.memory.writeMappedWord(IO_APU_SOURCE_ADDR, APU_SAMPLE_RAM_BASE);
+		const restored = restoreRealAudioHarness(live.audio.captureState());
+		live.audioOutput.renderMachineFrames(1, index);
+		restored.audioOutput.renderMachineFrames(1, index);
+		const sample = live.audioOutput.outputRing.readFramePacked();
+		assert.equal(sample, restored.audioOutput.outputRing.readFramePacked());
+		if (index === 3) beforeWrite = sample;
+		if (index === 4) assert.notEqual(sample, beforeWrite, 'the changed nibble affects the next forward decode');
+		assert.deepEqual(live.audio.captureState().output, restored.audio.captureState().output);
+	}
 });
 
 test('APU BADP interpolation window and selected-slot seek survive save restore', () => {

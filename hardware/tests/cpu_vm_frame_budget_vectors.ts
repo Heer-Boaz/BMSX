@@ -17,19 +17,21 @@ const image = linkRawTestSystemBlua32({
 });
 const { cpu } = createTestSystemCpu(image);
 cpu.setGlobalByKey(cpu.stringPool.intern('rec', false), ValueTag.Closure, NaN,
-	cpu.activeThread.frames[0]!.closure);
+	cpu.activeThread.frameAtDepth(0)!.closure);
 const before = cpu.collectTrackedHeapBytes();
 const initialCapacity = cpu.activeThread.stackRegisters.capacity();
 cpu.runUntilDepth(0, 20000);
 const after = cpu.collectTrackedHeapBytes();
 const capacity = cpu.activeThread.stackRegisters.capacity();
-const frames = cpu.activeThread.frames;
-if (frames.length !== 6668 || capacity !== 8192 ||
-	after - before !== (capacity - initialCapacity) * THREAD_STACK_SLOT_BYTES ||
-	frames.some(frame => frame.stackCapacity !== 1)) {
-	throw Error(`unexpected frame/accounting result: frames=${frames.length}, capacity=${capacity}, delta=${after - before}`);
+const thread = cpu.activeThread;
+for (let frame = thread.currentFrame; frame !== null; frame = frame.previous) {
+	if (frame.stackCapacity !== 1) throw Error(`recursive frame has ${frame.stackCapacity} stack slots`);
 }
-process.stdout.write(`PASS actual TS CPU: ${frames.length} one-slot recursive frames, ${capacity} reserved stack slots, ${after - before} additional tracked bytes; separate frame state not charged per frame\n`);
+if (thread.frameDepth !== 6668 || capacity !== 8192 ||
+	after - before !== (capacity - initialCapacity) * THREAD_STACK_SLOT_BYTES) {
+	throw Error(`unexpected frame/accounting result: frames=${thread.frameDepth}, capacity=${capacity}, delta=${after - before}`);
+}
+process.stdout.write(`PASS actual TS CPU: ${thread.frameDepth} one-slot recursive frames, ${capacity} reserved stack slots, ${after - before} additional tracked bytes; separate frame state not charged per frame\n`);
 
 // The name text and global slots from an image are separate from the logical
 // language heap. Exercise guest SETGL, not merely an internal array write;

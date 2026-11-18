@@ -38,7 +38,7 @@ void ApuSampleTransfer::reset() {
 
 void ApuSampleTransfer::dispose() {
 	cancelBatch();
-	m_dma.setRequestLines((1u << DMA_REQUEST_APU_WRITE) | (1u << DMA_REQUEST_APU_READ), 0u);
+	m_dma.setEndpointRequests(DmaEndpoint::ApuWrite, 0u, DmaEndpoint::ApuRead, 0u);
 }
 
 void ApuSampleTransfer::setTiming(i64 cpuHz, i64 nowCycles) {
@@ -242,10 +242,9 @@ void ApuSampleTransfer::cancelBatch() {
 }
 
 void ApuSampleTransfer::updateDmaRequests() {
-	const u32 requestMask = (1u << DMA_REQUEST_APU_WRITE) | (1u << DMA_REQUEST_APU_READ);
-	const u32 assertedRequests = (m_mode == APU_TRANSFER_MODE_DMA_WRITE && m_fifoCount == 0u ? 1u << DMA_REQUEST_APU_WRITE : 0u)
-		| (m_mode == APU_TRANSFER_MODE_DMA_READ && m_fifoCount == APU_TRANSFER_FIFO_WORD_CAPACITY ? 1u << DMA_REQUEST_APU_READ : 0u);
-	m_dma.setRequestLines(requestMask, assertedRequests);
+	const u32 write = m_mode == APU_TRANSFER_MODE_DMA_WRITE && m_fifoCount == 0u ? APU_TRANSFER_FIFO_WORD_CAPACITY : 0u;
+	const u32 read = m_mode == APU_TRANSFER_MODE_DMA_READ && m_fifoCount == APU_TRANSFER_FIFO_WORD_CAPACITY ? m_fifoCount : 0u;
+	m_dma.setEndpointRequests(DmaEndpoint::ApuWrite, write, DmaEndpoint::ApuRead, read);
 }
 
 } // namespace bmsx

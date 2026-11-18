@@ -39,6 +39,8 @@ const modules = [
 ];
 
 const source = WORLD_CPU_SETUP + `
+world:start()
+
 local model_component<const> = require('cartlib/component/static_model_component')
 local renderer<const> = require('cartlib/component/model_renderer_component')
 local static_model<const> = require('cartlib/gx/static_model')

@@ -18,6 +18,9 @@ import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { MAPPED_BUS_INSTRUCTION_FETCH, mappedBusSignalsForCartridgeSlot } from '../../machine/ts/machine/memory/bus_signals';
+import { MAPPED_PAGE_BYTE_MASK, type MappedPageBinding } from '../../machine/ts/machine/memory/mapped_page';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 
@@ -27,6 +30,10 @@ import { createRuntimeDebuggerState, discardRuntimeDebuggerPlans, willExecuteRun
 import { HotResumeService } from '../../ide/workbench/services/execution/hot_resume';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
+import { asClosure, asTable, valueInteger, valueNil, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
+import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
+import { identityHotResumeRevision } from '../helpers/hot_resume';
 
 async function fixture(t: TestContext, init = '') {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-hot-resume-'));
@@ -83,6 +90,131 @@ test('Hot Resume captures admitted documents, not later typing; no-init installa
 	assert.equal(f.sources.cartridgeSlots[0]!.installedBlua32Sources.get('entry'), captured.source);
 	assert.notEqual(f.model.buffer.getText(), captured.source);
 	assert.equal(f.model.dirty, true, 'application is not a source save');
+});
+
+test('Hot Resume retires warmed generated code and runs the edited function without rebooting its caller', async t => {
+	const f = await fixture(t, `function calculate(x) return x + 3 end
+retained = 0
+for i = 1, 512 do retained = calculate(retained) end`);
+	for (let tick = 0; tick < 100 && !f.cpu.isHaltedUntilIrq(); ++tick) f.target.advanceGame(10_000);
+	assert.equal(f.cpu.isHaltedUntilIrq(), true);
+	assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('retained')), valueInteger(1536));
+	const depth = f.cpu.getFrameDepth();
+	const binding: MappedPageBinding = { key: 0, cacheable: false, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 };
+	const compiledEntry = (pc: number) => {
+		const image = f.cpu.activeThread.frameAtDepth(depth - 1).executionImage;
+		f.cpu.memory.bindMappedPage((pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0, mappedBusSignalsForCartridgeSlot(0) | MAPPED_BUS_INSTRUCTION_FETCH, binding);
+		return image.decodedPages.get(binding.key)?.compiledBlocks?.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	};
+	let calculate = f.cpu.getGlobalByKey(f.cpu.stringPool.intern('calculate'));
+	assert.equal(valueTag(calculate), ValueTag.Closure);
+	const original = compiledEntry(asClosure(calculate, f.cpu.gc).codeAddress);
+	assert.ok(original, 'the installed program must have generated the callable itself');
+	f.cpu.beginCompletionCall(asClosure(calculate, f.cpu.gc), [valueInteger(2)]);
+	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+	assert.deepEqual(f.runtime.readCompletionValues(), [valueInteger(5)]);
+	const parked = f.cpu.activeThread.frameAtDepth(depth - 1);
+	f.cpu.setGlobalByKey(f.cpu.stringPool.intern('retained'), valueInteger(9876));
+	const source = f.model.buffer.getText(), offset = source.indexOf('x + 3');
+	assert.ok(offset >= 0);
+	f.model.pushEditOperations([{ offset, deleteLength: 'x + 3'.length, text: 'x + 7' }]);
+	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
+	assert.equal(f.cpu.getFrameDepth(), depth); assert.equal(f.cpu.activeThread.frameAtDepth(depth - 1), parked);
+	assert.equal(f.cpu.isHaltedUntilIrq(), true);
+	assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('retained')), valueInteger(9876), 'Hot Resume must not repeat startup or replace live globals');
+	const caller = f.cpu.readFramePc(depth - 1); // Installation may relocate the parked instruction.
+	calculate = f.cpu.getGlobalByKey(f.cpu.stringPool.intern('calculate'));
+	assert.equal(valueTag(calculate), ValueTag.Closure);
+	for (let attempt = 0; attempt < 12; ++attempt) {
+		f.cpu.beginCompletionCall(asClosure(calculate, f.cpu.gc), [valueInteger(2)]);
+		assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+		assert.deepEqual(f.runtime.readCompletionValues(), [valueInteger(9)], 'cold and regenerated bodies must use the edited instructions');
+	}
+	const regenerated = compiledEntry(asClosure(calculate, f.cpu.gc).codeAddress);
+	assert.ok(regenerated && regenerated !== original, 'the new image must admit a new generated body for the edited callable');
+	assert.equal(f.cpu.getFrameDepth(), depth); assert.equal(f.cpu.readFramePc(depth - 1), caller); assert.equal(f.cpu.isHaltedUntilIrq(), true);
+});
+
+test('Hot Resume rebinds retained closures without replacing their captures or identity', async t => {
+	const f = await fixture(t, `local retained_value = 17
+function make_retained() return function(x) return x + retained_value + 3 end end
+retained_function = make_retained()`);
+	const key = f.cpu.stringPool.intern('retained_function');
+	const reference = f.cpu.getGlobalByKey(key);
+	const retained = asClosure(reference, f.cpu.gc);
+	assert.equal(valueTag(reference), ValueTag.Closure);
+	assert.equal(retained.upvalues.length, 1);
+	const upvalue = retained.upvalues[0];
+	const oldCodeAddress = retained.codeAddress;
+	const depth = f.cpu.getFrameDepth();
+	f.cpu.beginCompletionCall(retained, [valueInteger(2)]);
+	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+	assert.deepEqual(f.runtime.readCompletionValues(), [valueInteger(22)]);
+	const source = f.model.buffer.getText();
+	const offset = source.indexOf('retained_value + 3');
+	const parentOffset = source.indexOf('return function(x)');
+	assert.ok(offset >= 0);
+	assert.ok(parentOffset >= 0);
+	f.model.pushEditOperations([
+		{ offset: parentOffset, deleteLength: 'return function(x)'.length,
+			text: 'local y = retained_value; retained_value = y + 1; return function(x)' },
+		{ offset, deleteLength: 'retained_value + 3'.length, text: 'retained_value + 7' },
+	]);
+	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
+	assert.equal(f.cpu.getGlobalByKey(key), reference);
+	assert.equal(retained.upvalues[0], upvalue);
+	assert.notEqual(retained.codeAddress, oldCodeAddress, 'the retained closure must follow relocated code');
+	f.cpu.beginCompletionCall(retained, [valueInteger(2)]);
+	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+	assert.deepEqual(f.runtime.readCompletionValues(), [valueInteger(26)]);
+});
+
+test('Hot Resume rejects an unmapped live closure before changing guest state', async t => {
+	const f = await fixture(t, `local retained_value = 17
+function make_retained() return function(x) return x + retained_value end end
+retained_function = make_retained()`);
+	const key = f.cpu.stringPool.intern('retained_function');
+	const reference = f.cpu.getGlobalByKey(key);
+	const retained = asClosure(reference, f.cpu.gc);
+	const image = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout;
+	const revision = identityHotResumeRevision(image);
+	const index = blua32FunctionIndexAtAddress(image, retained.functionAddress);
+	assert.notEqual(index, -1);
+	revision.revision.functionAddresses[index] = 0;
+	const oldCodeAddress = retained.codeAddress;
+	assert.throws(() => buildHotResumeRelocation(f.cpu, [null, revision, null], f.cpu.getFrameDepth()), /closure/);
+	assert.equal(f.cpu.getGlobalByKey(key), reference);
+	assert.equal(retained.codeAddress, oldCodeAddress);
+});
+
+test('Hot Resume rebinds a closure retained only in a weak table', async t => {
+	const f = await fixture(t, `weak_values = {}
+weak_meta = { __mode = 'v' }
+local function put_weak()
+ local retained_value = 17
+ weak_values[1] = function(x) return x + retained_value + 3 end
+end
+put_weak()`);
+	const weakValues = asTable(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_values')), f.cpu.gc);
+	weakValues.metatable = asTable(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_meta')), f.cpu.gc);
+	const reference = weakValues.getInteger(1);
+	const retained = asClosure(reference, f.cpu.gc);
+	let visited = false;
+	weakValues.setInteger(1, valueNil());
+	f.cpu.visitReachableClosures(closure => { if (closure === retained) visited = true; });
+	assert.equal(visited, false, 'the weak entry must be the only guest path to this closure');
+	weakValues.setInteger(1, reference);
+	f.cpu.visitReachableClosures(closure => { if (closure === retained) visited = true; });
+	assert.equal(visited, true, 'tooling traversal includes stored weak entries');
+	const source = f.model.buffer.getText();
+	const offset = source.indexOf('retained_value + 3');
+	f.model.pushEditOperations([{ offset, deleteLength: 'retained_value + 3'.length, text: 'retained_value + 7' }]);
+	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
+	assert.equal(weakValues.getInteger(1), reference);
+	const depth = f.cpu.getFrameDepth();
+	f.cpu.beginCompletionCall(retained, [valueInteger(2)]);
+	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+	assert.deepEqual(f.runtime.readCompletionValues(), [valueInteger(26)]);
 });
 
 test('build rejection has a result without poisoning execution; repair can use the same queue', async t => {
@@ -160,7 +292,7 @@ test('fault evidence reports applied code and remains final when retained init i
 
 test('workbench Hot Resume runs init to its physical return without continuing the parked game', async t => {
 	const f = await fixture(t, 'local function refresh<init>() refreshed = 1 end');
-	const pcs = f.cpu.activeThread.frames.map((_, index) => f.cpu.readFramePc(index));
+	const pcs = Array.from({ length: f.cpu.getFrameDepth() }, (_, index) => f.cpu.readFramePc(index));
 	const first = f.service.resume('workbench');
 	await first.admission;
 	assert.equal(first.status, 'initializing');
@@ -173,8 +305,8 @@ test('workbench Hot Resume runs init to its physical return without continuing t
 	f.target.advanceGame(10000);
 	didExecuteRuntimeDebuggerPlan(f.debuggerState);
 	assert.deepEqual(await first.completion, { status: 'completed', applied: true });
-	assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('refreshed')), 1);
-	assert.deepEqual(f.cpu.activeThread.frames.map((_, index) => f.cpu.readFramePc(index)), pcs,
+	assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('refreshed')), valueInteger(1));
+	assert.deepEqual(Array.from({ length: f.cpu.getFrameDepth() }, (_, index) => f.cpu.readFramePc(index)), pcs,
 		'retained caller frames and PCs have not advanced');
 	assert.equal(f.debuggerState.plans.workbenchExecutionRequested, false);
 	assert.equal(f.debuggerState.plans.mutationActive, false);
@@ -235,7 +367,7 @@ test('readback and host execution failures settle requests as infrastructure fai
 test('relocation rejection preserves installed media and the real retained frame', async t => {
 	const f = await fixture(t, 'local function parked() while true do halt_until_irq end end\nparked()');
 	const media = f.sources.currentBlua32Media;
-	const frame = f.cpu.activeThread.frames.at(-1)!;
+	const frame = f.cpu.activeThread.currentFrame!;
 	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: 'module<entry>\nwhile true do halt_until_irq end' }]);
 	const operation = f.service.resume();
 	assert.equal((await operation.admission).status, 'not-admitted');
@@ -246,7 +378,7 @@ test('relocation rejection preserves installed media and the real retained frame
 	assert.equal(result.applied, false);
 	assert.equal(f.tasks.ready, true);
 	assert.equal(f.sources.currentBlua32Media, media);
-	assert.equal(f.cpu.activeThread.frames.at(-1), frame);
+	assert.equal(f.cpu.activeThread.currentFrame!, frame);
 });
 
 // Source-refresh operations use a real workspace owner, separate from recovery.

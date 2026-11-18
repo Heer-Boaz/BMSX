@@ -99,7 +99,7 @@ import {
 import { Machine } from '../../machine/ts/machine/machine';
 import { captureMachineSaveState, restoreMachineSaveState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { IO_WORD_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { GeometryController } from '../../machine/ts/machine/devices/geometry/controller';
 import type { GeometryControllerState } from '../../machine/ts/machine/devices/geometry/save_state';
 
@@ -267,6 +267,23 @@ function assertGeometryFaultLatch(
 	return capturedGeometry;
 }
 
+function advanceGeometryBoundary(machine: Machine): void {
+	const { scheduler, memory } = machine;
+	while (scheduler.hasDueTimer()) machine.runDeviceService(scheduler.popDueTimer());
+	const before = [memory.readIoU32(IO_GEO_STATUS), memory.readIoU32(IO_GEO_PROCESSED)];
+	const target = scheduler.nowCycles + machine.geometryController.captureState().pendingCycles;
+	assert.ok(target > scheduler.nowCycles, 'GEO has a paid interval before publication');
+	while (scheduler.nextDeadline() < target) {
+		machine.advanceDevices(scheduler.nextDeadline() - scheduler.nowCycles);
+		while (scheduler.hasDueTimer()) machine.runDeviceService(scheduler.popDueTimer());
+	}
+	machine.advanceDevices(target - scheduler.nowCycles - 1);
+	assert.deepEqual([memory.readIoU32(IO_GEO_STATUS), memory.readIoU32(IO_GEO_PROCESSED)], before,
+		'the unpaid final cycle retains status and outer-record progress');
+	machine.advanceDevices(1);
+	while (scheduler.hasDueTimer()) machine.runDeviceService(scheduler.popDueTimer());
+}
+
 test('GEO save-state restores in-flight command latch instead of aborting BUSY work', () => {
 	const machine = makeMachine();
 	const memory = machine.memory;
@@ -280,8 +297,7 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	writeXform2BatchRegisters(memory, jobBase, 3);
 	let capturedGeometry = startGeometryCommand(memory, geometry, IO_CMD_GEO_XFORM2_BATCH);
 
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
+	advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_PROCESSED), 1);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	capturedGeometry = geometry.captureState();
@@ -290,8 +306,7 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	memory.writeMappedWord(IO_GEO_COUNT, 1);
 	const saved = captureMachineSaveState(machine);
 
-	geometry.accrueCycles(8, 9);
-	geometry.onService(9);
+	while (geometry.hasPendingWork()) advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_DONE);
@@ -306,15 +321,13 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_BUSY);
 
-	geometry.accrueCycles(1, 2);
-	geometry.onService(2);
+	advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_PROCESSED), 2);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_BUSY);
 
-	geometry.accrueCycles(1, 2);
-	geometry.onService(2);
+	advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_PROCESSED), 3);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	capturedGeometry = geometry.captureState();
@@ -335,8 +348,7 @@ test('GEO execution fault ack preserves completed command status', () => {
 	writeXform2BatchRegisters(memory, jobBase, 1);
 	let capturedGeometry = startGeometryCommand(memory, geometry, IO_CMD_GEO_XFORM2_BATCH);
 
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
+	advanceGeometryBoundary(machine);
 
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), executionFaultStatus);
 	assert.notEqual(memory.readIoU32(IO_GEO_FAULT), 0);
@@ -434,8 +446,7 @@ test('GEO xform2 faults oversize vertex batches at the device record capacity', 
 	writeXform2BatchRegisters(memory, jobBase, 1);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
+	advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_VERTEX_COUNT);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
@@ -456,12 +467,37 @@ test('GEO sat2 faults oversize convex polygons at the device scratch capacity', 
 	writeSat2BatchRegisters(memory, pairBase, descBase, vertexBase, resultBase, 1);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_SAT2_BATCH);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
+	advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_VERTEX_COUNT);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
 });
+
+// Drive real scheduled events and verify that an unpaid interval cannot
+// publish a result, summary, completion status, or outer-record progress.
+function finishOverlapAtScheduledEdges(machine: Machine, result: number, summary: number): void {
+	const { memory, scheduler, geometryController: geometry } = machine;
+	let paidInterval = false;
+	while (geometry.hasPendingWork()) {
+		const deadline = scheduler.nextDeadline();
+		assert.ok(deadline >= scheduler.nowCycles && deadline < Number.MAX_SAFE_INTEGER, 'busy GEO has an actual next event');
+		const delta = deadline - scheduler.nowCycles;
+		if (delta > 0) {
+			paidInterval = true;
+			const before = [memory.readIoU32(IO_GEO_STATUS), memory.readIoU32(IO_GEO_PROCESSED),
+				...Array.from({ length: 9 }, (_, i) => memory.readU32(result + i * IO_WORD_SIZE)),
+				...Array.from({ length: 4 }, (_, i) => memory.readU32(summary + i * IO_WORD_SIZE))];
+			machine.advanceDevices(delta - 1);
+			assert.deepEqual([memory.readIoU32(IO_GEO_STATUS), memory.readIoU32(IO_GEO_PROCESSED),
+				...Array.from({ length: 9 }, (_, i) => memory.readU32(result + i * IO_WORD_SIZE)),
+				...Array.from({ length: 4 }, (_, i) => memory.readU32(summary + i * IO_WORD_SIZE))], before,
+				'GEO effects stay unpublished until the scheduled edge');
+			machine.advanceDevices(1);
+		}
+		while (scheduler.hasDueTimer()) machine.runDeviceService(scheduler.popDueTimer());
+	}
+	assert.equal(paidInterval, true, 'a nonempty overlap job incurs a real work interval');
+}
 
 test('GEO overlap2d start consumes register words without submit preflight', () => {
 	const machine = makeMachine();
@@ -469,21 +505,31 @@ test('GEO overlap2d start consumes register words without submit preflight', () 
 	const geometry = machine.geometryController;
 	const jobBase = RAM_BASE + 0x900;
 
+	const summaryBase = jobBase + 0x200;
+	for (let word = 0; word < 4; ++word) memory.writeU32(summaryBase + word * IO_WORD_SIZE, 0x12345678);
 	writeOverlap2dFullPassRegisters(memory, jobBase, 0, jobBase + 0x100, jobBase + 0x300, 1);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
+	machine.advanceDevices(3);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY, 'zero-count launch pays its four summary writes');
+	assert.equal(memory.readU32(summaryBase), 0x12345678, 'launch summary is not published one cycle early');
+	machine.advanceDevices(1);
+	while (machine.scheduler.hasDueTimer()) machine.runDeviceService(machine.scheduler.popDueTimer());
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
+	assert.deepEqual(Array.from({ length: 4 }, (_, i) => memory.readU32(summaryBase + i * IO_WORD_SIZE)), [0, 0, 0, 0]);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);
 
 	writeOverlap2dFullPassRegisters(memory, jobBase, 0, 0, 0, 0);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
+	finishOverlapAtScheduledEdges(machine, 0, summaryBase);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);
 
 	const shapeA = jobBase + 0x400;
 	const shapeB = jobBase + 0x500;
-	const summaryBase = jobBase + 0x200;
 	const resultBase = jobBase + 0x300;
 
 	writeOverlap2dInstance(memory, jobBase, shapeA);
@@ -493,8 +539,7 @@ test('GEO overlap2d start consumes register words without submit preflight', () 
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(2, 2);
-	geometry.onService(2);
+	finishOverlapAtScheduledEdges(machine, resultBase, summaryBase);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	assert.equal(memory.readU32(summaryBase + GEO_OVERLAP2D_SUMMARY_RESULT_COUNT_OFFSET), 1);
 	assert.equal(memory.readU32(resultBase + GEO_OVERLAP2D_RESULT_NX_OFFSET), 0xbf80_0000);
@@ -511,8 +556,7 @@ test('GEO overlap2d start consumes register words without submit preflight', () 
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(2, 2);
-	geometry.onService(2);
+	finishOverlapAtScheduledEdges(machine, resultBase, summaryBase);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_VERTEX_COUNT);
 
@@ -525,8 +569,7 @@ test('GEO overlap2d start consumes register words without submit preflight', () 
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(2, 2);
-	geometry.onService(2);
+	finishOverlapAtScheduledEdges(machine, resultBase, summaryBase);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);
@@ -540,8 +583,7 @@ test('GEO overlap2d start consumes register words without submit preflight', () 
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(2, 2);
-	geometry.onService(2);
+	finishOverlapAtScheduledEdges(machine, resultBase, summaryBase);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);

@@ -15,4 +15,8 @@ test('BLua32 instruction words remain unsigned raw 32-bit words', () => {
 	writeInstructionWord(bytes, 0, word);
 	assert.deepEqual(bytes, new Uint8Array([0xff, 0xff, 0xff, 0xff]));
 	assert.equal(readInstructionWord(bytes, 0), 0xffffffff);
+
+	writeInstructionWord(bytes, 0, 0x78563412);
+	assert.deepEqual(bytes, new Uint8Array([0x12, 0x34, 0x56, 0x78]));
+	assert.equal(readInstructionWord(bytes, 0), 0x78563412);
 });

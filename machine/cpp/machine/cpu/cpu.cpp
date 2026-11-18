@@ -1,4 +1,13 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/value_arithmetic.h"
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+#include "machine/cpu/native_compiler_worker.h"
+#endif
+
+#include "common/compiler.h"
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/native_execution.h"
+#endif
 #include "common/endian.h"
 #include "machine/common/numeric.h"
 #include "spec/blua32/numeric.h"
@@ -19,302 +28,9 @@ namespace bmsx {
 
 namespace {
 constexpr size_t kClosureHeapBytes = 16;
-constexpr size_t kClosureUpvalueSlotHeapBytes = 8;
-constexpr size_t kUpvalueHeapBytes = 24;
-constexpr uint8_t kTableWeakKeys = 1;
-constexpr uint8_t kTableWeakValues = 2;
-static inline size_t trackedClosureBytes(const Closure& closure) {
-	return closure.trackedHeapBytes;
-}
-
-static inline size_t closureAllocationBytes(size_t upvalueCount) {
-	return sizeof(Closure) + (upvalueCount * sizeof(Upvalue*));
-}
+constexpr size_t kClosureUpvalueSlotHeapBytes = 4;
 
 } // namespace
-
-bool GcHeap::markValue(Value v) {
-	if (!valueIsTagged(v)) {
-		return false;
-	}
-	switch (valueTag(v)) {
-		case ValueTag::Thread:
-			return markObject(asThread(v));
-		case ValueTag::Table:
-			return markObject(asTable(v));
-		case ValueTag::Closure:
-			return markClosure(asClosure(v));
-		case ValueTag::BuiltinFunction:
-			return false;
-		case ValueTag::String:
-			m_stringPool.markReachable(asStringId(v));
-			return false;
-		default:
-			return false;
-	}
-}
-
-bool GcHeap::markClosure(Closure* closure) {
-	if (closure->trackedHeapBytes == 0) {
-		return false;
-	}
-	return markObject(closure);
-}
-
-Closure* GcHeap::allocateClosure(size_t upvalueCount) {
-	const size_t byteCount = closureAllocationBytes(upvalueCount);
-	void* storage = ::operator new(byteCount);
-	auto* closure = new (storage) Closure();
-	closure->type = ObjType::Closure;
-	closure->marked = false;
-	closure->hashId = allocateHashId();
-	closure->next = m_objects;
-	closure->upvalueCount = upvalueCount;
-	closure->upvalues = reinterpret_cast<Upvalue**>(static_cast<uint8_t*>(storage) + sizeof(Closure));
-	for (size_t index = 0; index < upvalueCount; ++index) {
-		closure->upvalues[index] = nullptr;
-	}
-	m_objects = closure;
-	return closure;
-}
-
-GcHeap::~GcHeap() {
-	while (m_objects) {
-		GCObject* object = m_objects;
-		m_objects = object->next;
-		destroyObject(object);
-	}
-}
-
-bool GcHeap::markObject(GCObject* obj) {
-	if (!obj || obj->marked) {
-		return false;
-	}
-	obj->marked = true;
-	m_grayStack.push_back(obj);
-	return true;
-}
-
-uint8_t GcHeap::tableWeakMode(const Table& table) const {
-	if (!table.metatable) {
-		return 0;
-	}
-	const Value modeValue = table.metatable->getStringKey(m_modeKey);
-	if (!valueIsString(modeValue)) {
-		return 0;
-	}
-	const std::string& mode = m_stringPool.toString(asStringId(modeValue));
-	uint8_t weakMode = 0;
-	for (char ch : mode) {
-		switch (ch) {
-			case 'k':
-				weakMode |= kTableWeakKeys;
-				break;
-			case 'v':
-				weakMode |= kTableWeakValues;
-				break;
-		}
-	}
-	return weakMode;
-}
-
-bool GcHeap::valueIsAlive(Value value) const {
-	if (!valueIsTagged(value)) {
-		return true;
-	}
-	switch (valueTag(value)) {
-		case ValueTag::Thread:
-			return asThread(value)->marked;
-		case ValueTag::Table:
-			return asTable(value)->marked;
-		case ValueTag::Closure: {
-			const Closure* closure = asClosure(value);
-			return closure->trackedHeapBytes == 0 || closure->marked;
-		}
-		default:
-			return true;
-	}
-}
-
-void GcHeap::trace() {
-	while (!m_grayStack.empty()) {
-		GCObject* obj = m_grayStack.back();
-		m_grayStack.pop_back();
-		switch (obj->type) {
-			case ObjType::Thread: {
-				auto* thread = static_cast<Thread*>(obj);
-				markObject(thread->resumer);
-				if (thread->entry != nullptr) markClosure(thread->entry);
-				markValue(thread->error);
-	for (const auto& framePtr : thread->frames) {
-		CallFrame* frame = framePtr.get();
-		markClosure(frame->closure);
-		for (int i = 0; i < frame->stackCapacity; ++i) {
-			markValue(frame->registers[static_cast<size_t>(i)]);
-		}
-		for (int i = 0; i < frame->varargCount; ++i) {
-			markValue(thread->stack[static_cast<size_t>(frame->varargBase + i)]);
-		}
-		for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
-			markObject(upvalue);
-			markValue(frame->registers[static_cast<size_t>(upvalue->index)]);
-		}
-	}
-				break;
-			}
-			case ObjType::Table: {
-				auto* table = static_cast<Table*>(obj);
-				if (table->metatable) {
-					markObject(table->metatable);
-				}
-				const uint8_t weakMode = tableWeakMode(*table);
-				if (weakMode != 0) {
-					m_weakTables.push_back(table);
-					m_weakTableModes.push_back(weakMode);
-					if (weakMode == kTableWeakKeys) {
-						m_ephemeronTables.push_back(table);
-					}
-				}
-				if ((weakMode & kTableWeakKeys) == 0) {
-					table->forEachEntry([this, weakMode](Value key, Value value) {
-						markValue(key);
-						if (weakMode == 0) {
-							markValue(value);
-						}
-					});
-				}
-				break;
-			}
-			case ObjType::Closure: {
-				auto* closure = static_cast<Closure*>(obj);
-				for (size_t index = 0; index < closure->upvalueCount; ++index) {
-					markObject(closure->upvalues[index]);
-				}
-				break;
-			}
-			case ObjType::Upvalue: {
-				auto* upvalue = static_cast<Upvalue*>(obj);
-				if (!upvalue->open) {
-					markValue(upvalue->value);
-				} else {
-					markObject(upvalue->frame->thread);
-				}
-				break;
-			}
-		}
-	}
-}
-
-void GcHeap::convergeEphemerons() {
-	bool changed = false;
-	do {
-		changed = false;
-		for (Table* table : m_ephemeronTables) {
-			table->forEachEntry([this, &changed](Value key, Value value) {
-				if (valueIsAlive(key) && markValue(value)) {
-					changed = true;
-				}
-			});
-		}
-		trace();
-	} while (changed);
-}
-
-void GcHeap::clearWeakTables() {
-	for (size_t index = 0; index < m_weakTables.size(); ++index) {
-		Table* table = m_weakTables[index];
-		const uint8_t weakMode = m_weakTableModes[index];
-		table->clearWeakEntries(
-			(weakMode & kTableWeakKeys) != 0,
-			(weakMode & kTableWeakValues) != 0,
-			[this](Value value) { return valueIsAlive(value); }
-		);
-		table->forEachEntry([this](Value key, Value value) {
-			if (valueIsString(key)) {
-				m_stringPool.markReachable(asStringId(key));
-			}
-			if (valueIsString(value)) {
-				m_stringPool.markReachable(asStringId(value));
-			}
-		});
-	}
-}
-
-void GcHeap::destroyObject(GCObject* object) {
-	switch (object->type) {
-		case ObjType::Thread:
-			m_luaHeap.release(THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stack.size() * THREAD_STACK_SLOT_BYTES);
-			delete static_cast<Thread*>(object);
-			break;
-		case ObjType::Table:
-			m_luaHeap.release(static_cast<Table*>(object)->trackedHeapBytes());
-			delete static_cast<Table*>(object);
-			break;
-		case ObjType::Closure:
-			m_luaHeap.release(trackedClosureBytes(*static_cast<Closure*>(object)));
-			static_cast<Closure*>(object)->~Closure();
-			::operator delete(object);
-			break;
-		case ObjType::Upvalue:
-			m_luaHeap.release(kUpvalueHeapBytes);
-			delete static_cast<Upvalue*>(object);
-			break;
-	}
-}
-
-size_t GcHeap::sweep() {
-	size_t liveBytes = 0;
-	GCObject** current = &m_objects;
-	while (*current) {
-		GCObject* object = *current;
-		if (object->marked) {
-			switch (object->type) {
-				case ObjType::Thread: liveBytes += THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stack.size() * THREAD_STACK_SLOT_BYTES; break;
-				case ObjType::Table: liveBytes += static_cast<Table*>(object)->trackedHeapBytes(); break;
-				case ObjType::Closure: liveBytes += trackedClosureBytes(*static_cast<Closure*>(object)); break;
-				case ObjType::Upvalue: liveBytes += kUpvalueHeapBytes; break;
-			}
-			object->marked = false;
-			current = &object->next;
-			continue;
-		}
-		*current = object->next;
-		destroyObject(object);
-	}
-	return liveBytes;
-}
-
-void GcHeap::finishRestore(u32 nextObjectHashId) {
-	// Snapshot objects were marked while rebuilding, including weak referents.
-	// Reclaim only the discarded host graph; do not perform a guest collection.
-	sweep();
-	m_nextObjectHashId = nextObjectHashId;
-}
-
-size_t GcHeap::collect(
-	Value root0,
-	Value root1,
-	Value root2
-) {
-	m_weakTables.clear();
-	m_weakTableModes.clear();
-	m_ephemeronTables.clear();
-	m_stringPool.beginReachabilityEpoch();
-	m_stringPool.markReachable(m_modeKey);
-	m_cpu.markRoots(*this);
-	markValue(root0);
-	markValue(root1);
-	markValue(root2);
-	trace();
-	convergeEphemerons();
-	clearWeakTables();
-	const size_t liveBytes = sweep();
-	m_stringPool.reclaimUnreachable();
-	m_weakTables.clear();
-	m_weakTableModes.clear();
-	m_ephemeronTables.clear();
-	return liveBytes + m_stringPool.trackedLuaHeapBytes();
-}
 
 BuiltinResultsScratchScope::BuiltinResultsScratchScope(CPU& cpu, BuiltinResults& out) noexcept
 	: m_cpu(&cpu)
@@ -368,6 +84,7 @@ CPU::CPU(
 	, m_indexKey(valueString(m_stringPool.intern("__index")))
 	, m_heap(*this, m_luaHeap, m_stringPool, m_stringPool.intern("__mode"))
 	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling", false))) {
+	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	m_luaFaultErrorValues.fill(valueNil());
 	m_luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = valueString(m_stringPool.intern("Attempted to get length of an unsupported value.", false));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_CALL_NON_FUNCTION] = valueString(m_stringPool.intern("Attempted to call a non-function value.", false));
@@ -379,6 +96,7 @@ CPU::CPU(
 	m_luaFaultErrorValues[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = valueString(m_stringPool.intern("xpcall error handler must be a function.", false));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY] = valueString(m_stringPool.intern("Out of memory.", false));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_ARGUMENT] = valueString(m_stringPool.intern("Invalid argument.", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_NEXT_KEY] = valueString(m_stringPool.intern("invalid key to 'next'", false));
 	m_builtinResultScratch.reserve(1);
 	m_builtinResultScratch.get(0).ensureCapacity(8);
 	m_builtinResultScratch.clear();
@@ -399,11 +117,17 @@ CPU::CPU(
 }
 
 CPU::~CPU() {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	m_nativeCompilerWorker.reset();
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	clearNativeContinuationBindings();
+#endif
 	m_memory.detachMappedPageInvalidator();
 }
 
 Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
-	return valueBuiltinFunction(&m_builtinFunctions[static_cast<size_t>(id)]);
+	return valueBuiltinFunction(id);
 }
 
 Table* CPU::createTable(int arraySize, int hashSize) {
@@ -411,11 +135,11 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 	m_luaHeap.reserve(Table::trackedHeapBytesForCapacities(static_cast<size_t>(arraySize), hashCapacity));
 	Table* table = m_heap.allocate<Table>(
 		ObjType::Table,
-		m_luaHeap,
+		m_heap,
 		static_cast<size_t>(arraySize),
 		hashCapacity
 	);
-	trackLocalRoot(valueTable(table));
+	trackLocalRoot(valueTable(m_heap.reference(table)));
 	return table;
 }
 
@@ -430,11 +154,14 @@ Closure* CPU::allocateTrackedClosure(
 }
 
 void CPU::reset() {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	discardNativeCompilation();
+#endif
 	const Blua32ExecutionBoot systemBoot =
 		m_executionAddressSpace.resolveSystemDomain();
 	const u32 systemResetFunctionAddress = systemBoot.startupFunctionAddress;
 	const u32 systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
-	m_completionValues.clear();
+	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	clearCallStack();
 	m_stringIndexTable = nullptr;
 	m_haltedUntilIrqFrameDepth = -1;
@@ -442,12 +169,14 @@ void CPU::reset() {
 	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
+	m_pendingMemory.kind = PendingMemoryKind::None;
 	m_hardHalted = false;
-	m_statusWord = CPU_STATUS_SYSTEM_ENTRY;
-	m_causeWord = 0u;
-	m_epcWord = 0u;
-	m_badAddressWord = 0u;
-	m_luaFaultReasonWord = 0u;
+	m_programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
+	m_cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
+	m_cop0Words[COP0_CAUSE] = 0u;
+	m_cop0Words[COP0_EPC] = 0u;
+	m_cop0Words[COP0_BAD_ADDRESS] = 0u;
+	m_cop0Words[COP0_LUA_FAULT_REASON] = 0u;
 	m_exceptionDomainWord = 0u;
 	m_nmiReturnCauseWord = 0u;
 	m_nmiReturnEpcWord = 0u;
@@ -458,6 +187,9 @@ void CPU::reset() {
 	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	clearNativeContinuationBindings();
+#endif
 	for (std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
 		image.reset();
 	}
@@ -468,8 +200,12 @@ void CPU::reset() {
 		std::move(activatedSystemImage);
 	m_systemExceptionFunctionAddress = systemExceptionFunctionAddress;
 	latchActiveExecutionImage(*m_systemImage);
-	Closure* systemResetClosure = staticClosureAtAddress(systemResetFunctionAddress);
-	pushFrame(systemResetClosure, nullptr, 0u, 0, 0, false);
+	if (!readFunctionRecord(*m_systemImage, systemResetFunctionAddress, executionBusSignalsForDomain(SYSTEM_EXECUTION_DOMAIN_ID))) {
+		hardHalt();
+		return;
+	}
+	Closure* systemResetClosure = staticClosureForRecord(boundFunctionRecord(m_functionRecordLatch));
+	pushFrame(systemResetClosure, {}, 0, 0, false);
 	collectHeap();
 }
 
@@ -502,12 +238,12 @@ StringId CPU::internExecutionString(
 	);
 }
 
-std::vector<Value> CPU::decodeConstantPool(
+ValueSlots CPU::decodeConstantPool(
 	ExecutionDomainId executionDomainId,
 	u32 tableAddress,
 	u32 constantCount
 ) {
-	std::vector<Value> constPool(constantCount);
+	ValueSlots constPool(constantCount);
 	if (constantCount == 0u) {
 		return constPool;
 	}
@@ -524,24 +260,26 @@ std::vector<Value> CPU::decodeConstantPool(
 			readLE32(record + BLUA32_CONSTANT_TAG_OFFSET)
 		)) {
 			case Blua32ConstantTag::Nil:
-				constPool[index] = valueNil();
+				constPool.set(index, valueNil());
 				break;
 			case Blua32ConstantTag::False:
-				constPool[index] = valueBool(false);
+				constPool.set(index, valueBool(false));
 				break;
 			case Blua32ConstantTag::True:
-				constPool[index] = valueBool(true);
+				constPool.set(index, valueBool(true));
 				break;
-			case Blua32ConstantTag::Number:
-				constPool[index] = valueNumber(readF64LE(
-					record + BLUA32_CONSTANT_PAYLOAD_OFFSET));
+			case Blua32ConstantTag::Integer:
+				constPool.set(index, valueInteger(static_cast<i32>(readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET))));
+				break;
+			case Blua32ConstantTag::Float:
+				constPool.set(index, valueFloatBits(readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)));
 				break;
 			case Blua32ConstantTag::String:
-				constPool[index] = valueString(internExecutionString(
+				constPool.set(index, valueString(internExecutionString(
 					executionDomainId,
 					readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET),
 					readLE32(record + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET)
-				));
+				)));
 				break;
 			default:
 				throw BMSX_RUNTIME_ERROR("BLua32 constant tag is invalid.");
@@ -582,7 +320,7 @@ std::vector<u32> CPU::registerGlobalNames(
 			const size_t slotIndex = registeredNames.size();
 			slot = slotByKey.emplace(key, slotIndex).first;
 			registeredNames.push_back(key);
-			values.push_back(valueNil());
+			values.reserveCapacity(registeredNames.size());
 		}
 		slots[index] = static_cast<u32>(slot->second);
 	}
@@ -672,6 +410,12 @@ void CPU::latchActiveExecutionImage(Blua32ExecutionImage& image) {
 }
 
 void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	discardNativeCompilation();
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	clearNativeContinuationBindings();
+#endif
 	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
 		static_cast<size_t>(executionBoot.executionDomainId + 1)
 	];
@@ -695,34 +439,62 @@ bool CPU::isExecutionDomainResident(ExecutionDomainId executionDomainId) const {
 	] != nullptr;
 }
 
-Closure* CPU::staticClosureAtAddress(u32 address) {
-	auto [entry, inserted] = m_staticClosuresByAddress.try_emplace(address);
-	Closure& closure = entry->second;
-	if (inserted) {
-		closure.type = ObjType::Closure;
-		closure.marked = false;
-		closure.hashId = m_heap.allocateHashId();
-		closure.next = nullptr;
-		closure.functionAddress = address;
-		closure.upvalueCount = 0;
-		closure.upvalues = nullptr;
-		closure.trackedHeapBytes = 0;
+Closure CPU::boundFunctionRecord(const Blua32FunctionRecordLatch& record) const {
+	Closure result;
+	result.functionAddress = record.address;
+	result.codeAddress = record.codeAddress;
+	result.numParams = record.numParams;
+	result.maxStack = record.maxStack;
+	result.flags = record.flags;
+	result.upvalueTableAddress = record.upvalueTableAddress;
+	result.recordUpvalueCount = record.upvalueCount;
+	result.executionDomainId = record.image->executionDomainId;
+	return result;
+}
+
+Closure* CPU::staticClosureForRecord(const Closure& record) {
+	auto found = m_staticClosuresByAddress.find(record.functionAddress);
+	Closure* first = nullptr;
+	if (found != m_staticClosuresByAddress.end()) {
+		for (Closure* closure : found->second) {
+			if (closure->sameFunction(record) && (!first || closure->hashId < first->hashId)) first = closure;
+		}
 	}
-	return &closure;
+	if (first) return first;
+	m_luaHeap.reserve(kClosureHeapBytes);
+	Closure* closure = allocateTrackedClosure(record.functionAddress, 0);
+	closure->codeAddress = record.codeAddress;
+	closure->numParams = record.numParams;
+	closure->maxStack = record.maxStack;
+	closure->flags = record.flags;
+	closure->upvalueTableAddress = record.upvalueTableAddress;
+	closure->recordUpvalueCount = record.recordUpvalueCount;
+	closure->executionDomainId = record.executionDomainId;
+	closure->canonical = true;
+	m_staticClosuresByAddress[record.functionAddress].push_back(closure);
+	return closure;
+}
+
+void CPU::pruneStaticClosures() {
+	for (auto entry = m_staticClosuresByAddress.begin(); entry != m_staticClosuresByAddress.end();) {
+		entry->second.remove_if([this](const Closure* closure) { return !m_heap.isAlive(closure); });
+		if (entry->second.empty()) entry = m_staticClosuresByAddress.erase(entry);
+		else ++entry;
+	}
 }
 
 void CPU::clearExecutionEnvironment() {
-	m_completionValues.clear();
+	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	clearCallStack();
 	clearGlobalSlots();
 }
 
 void CPU::clearGlobalSlots() {
 	m_systemGlobalNames.clear();
-	m_systemGlobalValues.clear();
+	m_systemGlobalValues.resize(0);
 	m_systemGlobalSlotByKey.clear();
 	m_globalNames.clear();
-	m_globalValues.clear();
+	m_globalValues.resize(0);
 	m_globalSlotByKey.clear();
 }
 
@@ -730,9 +502,10 @@ void CPU::setGlobalByKey(StringId key, const Value& value) {
 	const auto [slot, inserted] = m_globalSlotByKey.try_emplace(key, m_globalNames.size());
 	if (inserted) {
 		m_globalNames.push_back(key);
-		m_globalValues.push_back(value);
+		m_globalValues.reserveCapacity(m_globalNames.size());
+		m_globalValues.set(slot->second, value);
 	} else {
-		m_globalValues[slot->second] = value;
+		m_globalValues.set(slot->second, value);
 	}
 }
 
@@ -741,17 +514,17 @@ void CPU::setSystemGlobalByKey(StringId key, const Value& value) {
 	if (slot == m_systemGlobalSlotByKey.end()) {
 		throw BMSX_RUNTIME_ERROR("System global '" + m_stringPool.toString(key) + "' has no register slot.");
 	}
-	m_systemGlobalValues[slot->second] = value;
+	m_systemGlobalValues.set(slot->second, value);
 }
 
 Value CPU::getSystemGlobalByKey(StringId key) const {
-	return m_systemGlobalValues[m_systemGlobalSlotByKey.find(key)->second];
+	return m_systemGlobalValues.get(m_systemGlobalSlotByKey.find(key)->second);
 }
 
 Value CPU::getGlobalByKey(StringId key) const {
 	const auto globalIt = m_globalSlotByKey.find(key);
 	if (globalIt != m_globalSlotByKey.end()) {
-		return m_globalValues[globalIt->second];
+		return m_globalValues.get(globalIt->second);
 	}
 	return valueNil();
 }
@@ -769,26 +542,72 @@ DecodedInstructionPage& CPU::decodedPageForAddress(
 	return it->second;
 }
 
-void CPU::invalidateDecodedPage(u64 key) {
+void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle() && m_pendingNativeCompilation.key == key)
+		m_pendingNativeCompilation.invalidated = true;
+#endif
+	const u32 firstPredecessor = firstWord >= DECODED_DEPENDENCY_PREDECESSOR_WORDS
+		? firstWord - DECODED_DEPENDENCY_PREDECESSOR_WORDS : 0u;
+	const u32 predecessorEnd = std::min(firstWord, static_cast<u32>(DECODED_PAGE_WORDS));
 	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
 		if (!image) {
 			continue;
 		}
 		auto page = image->decodedPages.find(key);
 		if (page != image->decodedPages.end()) {
-			page->second.refreshState.fill(DECODED_REFRESH_DECODE);
+			auto& decodedPage = page->second;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			decodedPage.retireNativeBlocks(firstWord, endWord);
+#endif
+			for (u32 index = firstPredecessor; index < predecessorEnd; ++index) {
+				u8& refresh = decodedPage.refreshState[index];
+				if ((refresh & DECODED_REFRESH_DECODE) != 0u) continue;
+				const auto& decoded = decodedPage.words[index];
+				const u32 ownEnd = index + decoded.width;
+				if (ownEnd > firstWord) {
+					refresh = DECODED_REFRESH_DECODE;
+				} else if (ownEnd + 2u > firstWord && decodedDispatchCanFuse(decoded.op)
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+					&& (!decodedPage.nativeBlocks || !decodedPage.nativeBlocks->entries[index])
+#endif
+				) {
+					refresh |= DECODED_REFRESH_FUSION;
+				}
+			}
+			if (firstWord < DECODED_PAGE_WORDS) {
+				if (endWord == firstWord + 1u) {
+					decodedPage.refreshState[firstWord] = DECODED_REFRESH_DECODE;
+				} else {
+					std::fill(
+						decodedPage.refreshState.begin() + firstWord,
+						decodedPage.refreshState.begin() + endWord,
+						DECODED_REFRESH_DECODE
+					);
+				}
+			}
 		}
 	}
 }
 
-void CPU::invalidateMappedPage(u64 key) {
-	invalidateDecodedPage(key);
-	if (key >= MAPPED_PAGE_BYTE_SIZE) {
-		invalidateDecodedPage(key - MAPPED_PAGE_BYTE_SIZE);
+void CPU::invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) {
+	invalidateDecodedWords(key, firstWord, endWord);
+	if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
+		invalidateDecodedWords(
+			key - MAPPED_PAGE_BYTE_SIZE,
+			DECODED_PAGE_WORDS + firstWord,
+			DECODED_PAGE_WORDS + endWord
+		);
 	}
 }
 
 void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle()
+		&& m_pendingNativeCompilation.key >= (firstKey >= MAPPED_PAGE_BYTE_SIZE ? firstKey - MAPPED_PAGE_BYTE_SIZE : 0u)
+		&& m_pendingNativeCompilation.key < endKey)
+		m_pendingNativeCompilation.invalidated = true;
+#endif
 	const u64 invalidationStart = firstKey >= MAPPED_PAGE_BYTE_SIZE
 		? firstKey - MAPPED_PAGE_BYTE_SIZE
 		: 0u;
@@ -798,6 +617,9 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 		}
 		for (auto& [key, page] : image->decodedPages) {
 			if (key >= invalidationStart && key < endKey) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				page.retireNativeBlocks();
+#endif
 				page.refreshState.fill(DECODED_REFRESH_DECODE);
 			}
 		}
@@ -806,220 +628,24 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 
 DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 	const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
+	const auto busSignals = mappedBusSignalsForCartridgeSlot(m_memory.cartridgeController().selectedSlot(m_executionBusSignals));
 	if (frame.decodedPage
-		&& frame.decodedPageAddress == pageAddress) {
+		&& frame.decodedPageAddress == pageAddress && frame.decodedPageBusSignals == busSignals) {
 		return *frame.decodedPage;
 	}
 	MappedPageBinding binding;
-	m_memory.bindMappedPage(pageAddress, m_executionBusSignals, binding);
+	m_memory.bindMappedPage(pageAddress, busSignals, binding);
 	DecodedInstructionPage& page = decodedPageForAddress(
 		*frame.executionImage,
 		binding
 	);
 	frame.decodedPage = &page;
 	frame.decodedPageAddress = pageAddress;
+	frame.decodedPageBusSignals = busSignals;
+	frame.compilationEntry = true;
 	return page;
 }
 
-bool CPU::decodeInstruction(
-	CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion
-) {
-	DecodedInstruction& decoded = page.words[pageOffset];
-	bool instructionCacheable = page.cacheable;
-	DecodedInstructionPage* bodyPage = nullptr;
-	int width = 1;
-	uint8_t op;
-	const u32 faultSequence = m_memory.readBusFaultSequence();
-	uint8_t wideA = 0;
-	uint8_t wideB = 0;
-	uint8_t wideC = 0;
-	const uint32_t sourceWord = m_memory.readMappedBusU32BE(pc, m_executionBusSignals);
-	if (m_memory.readBusFaultSequence() != faultSequence) {
-		enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
-		return false;
-	}
-	uint32_t bodyWord = sourceWord;
-	op = static_cast<uint8_t>((sourceWord >> 18) & 0x3f);
-	uint8_t ext = static_cast<uint8_t>(sourceWord >> 24);
-	if (static_cast<OpCode>(op) == OpCode::WIDE) {
-		width = 2;
-		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
-			bodyPage = &decodedPageForFrame(
-				frame,
-				pc + INSTRUCTION_BYTES
-			);
-			instructionCacheable = instructionCacheable && bodyPage->cacheable;
-		}
-		wideA = static_cast<uint8_t>((sourceWord >> 12) & 0x3f);
-		wideB = static_cast<uint8_t>((sourceWord >> 6) & 0x3f);
-		wideC = static_cast<uint8_t>(sourceWord & 0x3f);
-		bodyWord = m_memory.readMappedBusU32BE(
-			pc + INSTRUCTION_BYTES,
-			m_executionBusSignals
-		);
-		if (m_memory.readBusFaultSequence() != faultSequence) {
-			enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
-			return false;
-		}
-		op = static_cast<uint8_t>((bodyWord >> 18) & 0x3f);
-		ext = static_cast<uint8_t>(bodyWord >> 24);
-	}
-	const bool unchanged = decoded.width != 0u
-		&& decoded.sourceWord == sourceWord
-		&& decoded.bodyWord == bodyWord
-		&& decoded.width == static_cast<uint8_t>(width);
-	if (!unchanged) {
-		const uint8_t aLow = static_cast<uint8_t>((bodyWord >> 12) & 0x3f);
-		const uint8_t bLow = static_cast<uint8_t>((bodyWord >> 6) & 0x3f);
-		const uint8_t cLow = static_cast<uint8_t>(bodyWord & 0x3f);
-		const bool usesDisp = OPCODE_USES_DISP[op] != 0u;
-		const bool usesBx = !usesDisp && OPCODE_USES_BX[op] != 0u;
-		const uint8_t extA = usesBx || usesDisp
-			? 0
-			: static_cast<uint8_t>((ext >> 6) & 0x3);
-		const uint8_t extB = usesBx || usesDisp
-			? 0
-			: static_cast<uint8_t>((ext >> 3) & 0x7);
-		const uint8_t extC = usesBx || usesDisp
-			? 0
-			: static_cast<uint8_t>(ext & 0x7);
-		const int aShift = usesDisp
-			? MAX_OPERAND_BITS
-			: MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-		const int bShift = usesDisp
-			? MAX_OPERAND_BITS
-			: MAX_OPERAND_BITS + EXT_B_BITS;
-		const int cShift = usesDisp
-			? MAX_OPERAND_BITS
-			: MAX_OPERAND_BITS + EXT_C_BITS;
-		const uint32_t bxLow =
-			(static_cast<uint32_t>(bLow) << MAX_OPERAND_BITS) | cLow;
-		const uint32_t rawB = (static_cast<uint32_t>(wideB) << bShift)
-			| (static_cast<uint32_t>(extB) << MAX_OPERAND_BITS)
-			| bLow;
-		const uint32_t rawC = (static_cast<uint32_t>(wideC) << cShift)
-			| (static_cast<uint32_t>(extC) << MAX_OPERAND_BITS)
-			| cLow;
-		const uint32_t decodedBx =
-			(static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
-			| (static_cast<uint32_t>(usesBx ? ext : 0) << MAX_BX_BITS)
-			| bxLow;
-		const int32_t decodedSbx = signExtend(
-			decodedBx,
-			MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS)
-		);
-		decoded.sourceWord = sourceWord;
-		decoded.bodyWord = bodyWord;
-		decoded.op = op;
-		decoded.width = static_cast<uint8_t>(width);
-		decoded.a = static_cast<uint16_t>(
-			(wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow
-		);
-		decoded.b = static_cast<uint16_t>(rawB);
-		decoded.c = static_cast<uint16_t>(rawC);
-		switch (static_cast<OpCode>(op)) {
-			case OpCode::GETGL:
-			case OpCode::SETGL:
-				decoded.bx = frame.executionImage->globalSlots[decodedBx];
-				break;
-			case OpCode::GETSYS:
-			case OpCode::SETSYS:
-				decoded.bx = frame.executionImage->systemGlobalSlots[decodedBx];
-				break;
-			case OpCode::JMP:
-			case OpCode::JMPIF:
-			case OpCode::JMPIFNOT:
-				decoded.bx = pc
-					+ static_cast<u32>(width * INSTRUCTION_BYTES)
-					+ static_cast<u32>(decodedSbx * INSTRUCTION_BYTES);
-				break;
-			default:
-				decoded.bx = decodedBx;
-				break;
-		}
-		decoded.sbx = decodedSbx;
-		decoded.rkB = signExtend(
-			rawB,
-			MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS)
-		);
-		decoded.rkC = signExtend(
-			rawC,
-			MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS)
-		);
-		decoded.disp = ext;
-		if (rawC > static_cast<u32>(MemoryAccessKind::F64LE)
-			&& (static_cast<OpCode>(op) == OpCode::LOAD_MEM
-				|| static_cast<OpCode>(op) == OpCode::STORE_MEM
-				|| static_cast<OpCode>(op) == OpCode::LOAD_MEM_D
-				|| static_cast<OpCode>(op) == OpCode::STORE_MEM_D)) {
-			decoded.op = static_cast<u8>(DecodedDispatchOp::ReservedMemory);
-		}
-		if (static_cast<OpCode>(op) == OpCode::GETFIELD
-			|| static_cast<OpCode>(op) == OpCode::SETFIELD
-			|| static_cast<OpCode>(op) == OpCode::SELF) {
-			decoded.tableCacheSlot = -1;
-		}
-	}
-	decoded.dispatchOp = decoded.op;
-	page.refreshState[pageOffset] = instructionCacheable ? 0u : DECODED_REFRESH_DECODE;
-	if (instructionCacheable && page.writeWatch) {
-		*page.writeWatch = 1u;
-	}
-	if (instructionCacheable && bodyPage && bodyPage->writeWatch) {
-		*bodyPage->writeWatch = 1u;
-	}
-	const auto& observed = m_instructionObserver.points[static_cast<size_t>(frame.executionImage->executionDomainId + 1)];
-	if (observed.contains(pc)) {
-		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::Observe);
-		return true;
-	}
-	const bool fusionCandidate = static_cast<OpCode>(op) == OpCode::SHL
-		|| static_cast<OpCode>(op) == OpCode::ADD
-		|| static_cast<OpCode>(op) == OpCode::SHR;
-	if (!allowFusion) {
-		if (fusionCandidate && instructionCacheable) {
-			page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
-		}
-		return true;
-	}
-	if (!fusionCandidate || !instructionCacheable) {
-		return true;
-	}
-	const u32 nextPc = pc + static_cast<u32>(width) * INSTRUCTION_BYTES;
-	if (observed.contains(nextPc)) return true;
-	DecodedInstructionPage& nextPage = decodedPageForFrame(frame, nextPc);
-	if (!nextPage.cacheable) {
-		return true;
-	}
-	const u32 nextOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) >> 2;
-	const u8 nextRefreshState = nextPage.refreshState[nextOffset];
-	if ((nextRefreshState & DECODED_REFRESH_DECODE) != 0u) {
-		if (nextOffset == DECODED_PAGE_WORDS - 1u) {
-			page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
-			return true;
-		}
-		// Lookahead may inspect only fully backed memory, never a faulting bus access.
-		// The last-word exclusion above keeps a WIDE body in that same backing page.
-		MappedPageBinding binding;
-		m_memory.bindMappedPage(
-			nextPc & ~MAPPED_PAGE_BYTE_MASK,
-			m_executionBusSignals,
-			binding
-		);
-		if (!binding.readBytes) {
-			return true;
-		}
-		if (!decodeInstruction(frame, nextPage, nextOffset, nextPc, false)) {
-			return false;
-		}
-		if ((nextPage.refreshState[nextOffset] & DECODED_REFRESH_DECODE) != 0u) {
-			return true;
-		}
-	}
-	const DecodedInstruction& successor = nextPage.words[nextOffset];
-	decoded.dispatchOp = decodedDispatchOp(op, successor.op);
-	return true;
-}
 
 void CPU::skipNextInstruction(CallFrame& frame) {
 	DecodedInstructionPage& page = decodedPageForFrame(frame, frame.pc);
@@ -1040,32 +666,30 @@ bool CPU::readFunctionRecord(
 	m_functionRecordLatch.image = &image;
 	m_functionRecordLatch.busSignals = busSignals;
 	m_functionRecordLatch.address = address;
-	const u32 pageOffset = address & MAPPED_PAGE_BYTE_MASK;
-	if (pageOffset <= MAPPED_PAGE_BYTE_SIZE - BLUA32_FUNCTION_RECORD_SIZE) {
-		MappedPageBinding binding;
-		m_memory.bindMappedPage(address & ~MAPPED_PAGE_BYTE_MASK, busSignals, binding);
-		if (binding.readBytes) {
-			const u8* record = binding.readBytes + pageOffset;
-			m_functionRecordLatch.codeAddress = readLE32(
-				record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET
-			);
-			m_functionRecordLatch.numParams = readLE32(
-				record + BLUA32_FUNCTION_NUM_PARAMS_OFFSET
-			);
-			m_functionRecordLatch.maxStack = readLE32(
-				record + BLUA32_FUNCTION_MAX_STACK_OFFSET
-			);
-			m_functionRecordLatch.flags = readLE32(
-				record + BLUA32_FUNCTION_FLAGS_OFFSET
-			);
-			m_functionRecordLatch.upvalueTableAddress = readLE32(
-				record + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET
-			);
-			m_functionRecordLatch.upvalueCount = readLE32(
-				record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET
-			);
-			return true;
-		}
+	m_functionRecordLatch.cacheableRead = false;
+	Span<const u8> view;
+	if (m_memory.bindMappedReadView(address, BLUA32_FUNCTION_RECORD_SIZE, busSignals, view)) {
+		m_functionRecordLatch.cacheableRead = true;
+		const u8* record = view.data();
+		m_functionRecordLatch.codeAddress = readLE32(
+			record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET
+		);
+		m_functionRecordLatch.numParams = readLE32(
+			record + BLUA32_FUNCTION_NUM_PARAMS_OFFSET
+		);
+		m_functionRecordLatch.maxStack = readLE32(
+			record + BLUA32_FUNCTION_MAX_STACK_OFFSET
+		);
+		m_functionRecordLatch.flags = readLE32(
+			record + BLUA32_FUNCTION_FLAGS_OFFSET
+		);
+		m_functionRecordLatch.upvalueTableAddress = readLE32(
+			record + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET
+		);
+		m_functionRecordLatch.upvalueCount = readLE32(
+			record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET
+		);
+		return true;
 	}
 	const u32 faultSequence = m_memory.readBusFaultSequence();
 	m_functionRecordLatch.codeAddress = m_memory.readMappedBusU32LE(
@@ -1118,9 +742,18 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 		hardHalt();
 		return;
 	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// Ordinary EXEC selection has established the image's constant/name banks.
+	// Preparation changes only host code caches, before any target instruction.
+	if (m_functionRecordLatch.image->executionDomainId >= 0) {
+		const auto boot = m_executionAddressSpace.resolveDomain(m_functionRecordLatch.image->executionDomainId);
+		prepareNativeImageCode(*m_functionRecordLatch.image, *boot);
+	}
+#endif
 	clearCallStack();
 	latchActiveExecutionImage(*m_functionRecordLatch.image);
-	m_statusWord = m_functionRecordLatch.image->executionDomainId >= 0
+	m_programExecutionDomainId = m_functionRecordLatch.image->executionDomainId;
+	m_cop0Words[COP0_STATUS] = m_functionRecordLatch.image->executionDomainId >= 0
 		? CPU_STATUS_CART_ENTRY
 		: CPU_STATUS_SYSTEM_ENTRY;
 	m_haltedUntilIrqFrameDepth = -1;
@@ -1128,56 +761,37 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
+	m_pendingMemory.kind = PendingMemoryKind::None;
 	m_hardHalted = false;
 	m_yieldRequested = false;
-	Closure* closure = staticClosureAtAddress(functionAddress);
-	pushLatchedFrame(closure, nullptr, 0, 0, 0, false);
+	Closure* closure = staticClosureForRecord(boundFunctionRecord(m_functionRecordLatch));
+	pushFrame(closure, {}, 0, 0, false);
 }
 
 void CPU::beginCompletionCall(Closure& closure, BuiltinArgsView args) {
+	// Call injection takes over the physical instruction stream. The suspended
+	// frame retains its PC; an unaccepted endpoint access must not follow it.
+	abortStalledMemoryWrite();
 	auto roots = acquireLocalRoots();
-	trackLocalRoot(valueClosure(&closure));
+	trackLocalRoot(valueClosure(m_heap.reference(&closure)));
 	for (size_t index = 0; index < args.size(); ++index) trackLocalRoot(args[index]);
 	// The input span may borrow the completion latch being cleared below.
 	args = BuiltinArgsView(m_localRoots.data() + m_localRoots.size() - args.size(), args.size());
-	m_completionValues.clear();
+	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	m_completionThread = m_activeThread;
 	m_yieldRequested = false;
-	pushFrame(&closure, args.data(), args.size(), 0, 0, true);
+	pushFrame(&closure, args, 0, 0, true);
 }
 
 void CPU::beginCompletionCallInExecutionDomain(
 	ExecutionDomainId executionDomainId,
 	u32 functionAddress
 ) {
-	beginCompletionClosureInExecutionDomain(executionDomainId, *staticClosureAtAddress(functionAddress));
-}
-
-void CPU::beginCompletionClosureInExecutionDomain(
-	ExecutionDomainId executionDomainId,
-	Closure& closure,
-	BuiltinArgsView args
-) {
-	auto roots = acquireLocalRoots();
-	trackLocalRoot(valueClosure(&closure));
-	for (size_t index = 0; index < args.size(); ++index) trackLocalRoot(args[index]);
-	args = BuiltinArgsView(m_localRoots.data() + m_localRoots.size() - args.size(), args.size());
-	m_completionValues.clear();
-	m_completionThread = m_activeThread;
-	m_yieldRequested = false;
-	readFunctionRecord(
-		*executionImageForDomain(executionDomainId),
-		closure.functionAddress,
-		executionBusSignalsForDomain(executionDomainId)
-	);
-	pushLatchedFrame(
-		&closure,
-		args.data(),
-		args.size(),
-		0,
-		0,
-		true
-	);
+	if (!readFunctionRecord(*executionImageForDomain(executionDomainId), functionAddress, executionBusSignalsForDomain(executionDomainId))) {
+		hardHalt();
+		return;
+	}
+	beginCompletionCall(*staticClosureForRecord(boundFunctionRecord(m_functionRecordLatch)));
 }
 
 CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
@@ -1193,41 +807,15 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		return id;
 	};
 	const CpuSnapshotValueWriter writeValue = [&](u32 offset, Value value) {
-		if (valueIsNumber(value)) {
-			snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::Number));
-			snapshot.setNumber(offset + 1, asNumber(value));
-			return;
+		const auto tag = valueTag(value);
+		u32 payload = valuePayload(value);
+		switch (tag) {
+			case ValueTag::Table: case ValueTag::Thread: case ValueTag::Closure:
+				payload = captureObject(m_heap.object(payload)); break;
+			default: break;
 		}
-		snapshot.setWord(offset + 2, 0);
-		switch (valueTag(value)) {
-			case ValueTag::Nil:
-			case ValueTag::False:
-			case ValueTag::True:
-				// These three native tags already match the snapshot tag column.
-				snapshot.setWord(offset, static_cast<u32>(valueTag(value)));
-				snapshot.setWord(offset + 1, 0);
-				break;
-			case ValueTag::String:
-				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::String));
-				snapshot.setWord(offset + 1, asStringId(value));
-				break;
-			case ValueTag::BuiltinFunction:
-				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::BuiltinFunction));
-				snapshot.setWord(offset + 1, static_cast<u32>(asBuiltinFunction(value)->id));
-				break;
-			case ValueTag::Table:
-				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::Table));
-				snapshot.setWord(offset + 1, captureObject(asTable(value)));
-				break;
-			case ValueTag::Thread:
-				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::Thread));
-				snapshot.setWord(offset + 1, captureObject(asThread(value)));
-				break;
-			case ValueTag::Closure:
-				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::Closure));
-				snapshot.setWord(offset + 1, captureObject(asClosure(value)));
-				break;
-		}
+		snapshot.setWord(offset, static_cast<u32>(tag));
+		snapshot.setWord(offset + 1, payload);
 	};
 	const auto captureValueState = [&](Value value) -> u32 {
 		const u32 offset = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
@@ -1238,8 +826,9 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	CpuRuntimeState state;
 	const auto captureThread = [&](const Thread* thread) -> u32 {
 		CpuThreadState saved;
-		saved.frames.reserve(thread->frames.size());
-		for (const auto& framePtr : thread->frames) {
+		saved.frames.reserve(thread->frameDepth);
+		const CallFrame* framePtr = thread->firstFrame;
+		for (size_t depth = 0; depth < thread->frameDepth; ++depth, framePtr = framePtr->next) {
 			const CallFrame& frame = *framePtr;
 			CpuFrameState frameState;
 			frameState.functionAddress = frame.functionAddress;
@@ -1253,15 +842,9 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 			frameState.isExceptionFrame = frame.isExceptionFrame;
 			frameState.isNonMaskableExceptionFrame = frame.isNonMaskableExceptionFrame;
 			frameState.stackCapacity = frame.stackCapacity;
-			// top delimits open CALL/RET ranges, not the reserved registerfile.
-			frameState.registers.reserve(static_cast<size_t>(frame.stackCapacity));
-			for (int index = 0; index < frame.stackCapacity; ++index) {
-				frameState.registers.push_back(captureValueState(frame.registers[static_cast<size_t>(index)]));
-			}
-			frameState.varargs.reserve(static_cast<size_t>(frame.varargCount));
-			for (int index = 0; index < frame.varargCount; ++index) {
-				frameState.varargs.push_back(captureValueState(thread->stack[static_cast<size_t>(frame.varargBase + index)]));
-			}
+			frameState.stackBase = frame.stackBase;
+			frameState.varargBase = frame.varargBase;
+			frameState.varargCount = frame.varargCount;
 			saved.frames.push_back(std::move(frameState));
 		}
 		saved.protectedCalls.reserve(thread->protectedCallDepth);
@@ -1273,18 +856,19 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 			continuationState.callBase = continuation.callBase;
 			continuationState.returnCount = continuation.returnCount;
 			continuationState.handlerRegister = continuation.handlerRegister;
-			for (size_t frameIndex = 0; frameIndex < thread->frames.size(); ++frameIndex) {
-				CallFrame* frame = thread->frames[frameIndex].get();
+			const CallFrame* frame = thread->firstFrame;
+			for (size_t frameIndex = 0; frameIndex < thread->frameDepth; ++frameIndex, frame = frame->next) {
 				if (frame == continuation.caller) {
 					continuationState.callerFrameIndex = static_cast<int>(frameIndex);
 				}
-				if (frame == continuation.target) {
+				if (frame->protectedContinuationIndex == static_cast<i32>(index)) {
 					continuationState.targetFrameIndex = static_cast<int>(frameIndex);
 				}
 			}
 			saved.protectedCalls.push_back(continuationState);
 		}
-		for (const auto& frame : thread->frames) {
+		const CallFrame* frame = thread->firstFrame;
+		for (size_t depth = 0; depth < thread->frameDepth; ++depth, frame = frame->next) {
 			for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
 				saved.openUpvalues.push_back(captureObject(upvalue));
 			}
@@ -1294,8 +878,10 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		saved.resumerRef = thread->resumer == nullptr ? -1 : static_cast<int>(captureObject(thread->resumer));
 		saved.callBase = thread->callBase;
 		saved.returnCount = thread->returnCount;
-		saved.stackCapacity = thread->stack.size();
-		saved.error = captureValueState(thread->error);
+		saved.stackCapacity = thread->stackCapacity;
+		saved.stack.reserve(static_cast<size_t>(thread->stackTop));
+		for (int slot = 0; slot < thread->stackTop; ++slot) saved.stack.push_back(captureValueState(thread->stack.get(slot)));
+		saved.error = captureValueState(thread->error());
 		const u32 index = static_cast<u32>(state.threads.size());
 		state.threads.push_back(std::move(saved));
 		return index;
@@ -1306,7 +892,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	state.haltedUntilIrqThreadRef = m_haltedUntilIrqThread == nullptr ? -1 : static_cast<int>(captureObject(m_haltedUntilIrqThread));
 	state.systemGlobals.reserve(m_systemGlobalNames.size());
 	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
-		const Value value = m_systemGlobalValues[index];
+		const Value value = m_systemGlobalValues.get(index);
 		state.systemGlobals.push_back(CpuRootValueState{
 			m_systemGlobalNames[index],
 			captureValueState(value),
@@ -1316,35 +902,46 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	for (size_t index = 0; index < m_globalNames.size(); ++index) {
 		state.globalSlots.push_back(CpuRootValueState{
 			m_globalNames[index],
-			captureValueState(m_globalValues[index]),
+			captureValueState(m_globalValues.get(index)),
 		});
 	}
 	state.executionCartridgeSlot = m_activeExecutionImage->executionDomainId;
-	state.completionValues.reserve(m_completionValues.size());
-	for (const Value& value : m_completionValues) {
-		state.completionValues.push_back(captureValueState(value));
+	state.programExecutionDomainId = m_programExecutionDomainId;
+	state.completionValues.reserve(m_completionValueCount);
+	for (size_t i = 0; i < m_completionValueCount; ++i) {
+		state.completionValues.push_back(captureValueState(m_completionValues.get(i)));
 	}
 	state.stringIndexTable = captureValueState(
-		m_stringIndexTable ? valueTable(m_stringIndexTable) : valueNil()
+		m_stringIndexTable ? valueTable(m_heap.reference(m_stringIndexTable)) : valueNil()
 	);
 	// Cache residency is allocation state even when a static closure is no
 	// longer in a live register. Order the cold snapshot by physical address.
 	std::vector<const Closure*> canonicalClosures;
 	canonicalClosures.reserve(m_staticClosuresByAddress.size());
-	for (const auto& [address, closure] : m_staticClosuresByAddress) {
-		canonicalClosures.push_back(&closure);
+	for (const auto& [address, versions] : m_staticClosuresByAddress) {
+		for (const Closure* closure : versions) canonicalClosures.push_back(closure);
 	}
-	std::sort(canonicalClosures.begin(), canonicalClosures.end(), [](const Closure* left, const Closure* right) {
-		return left->functionAddress < right->functionAddress;
+	std::stable_sort(canonicalClosures.begin(), canonicalClosures.end(), [](const Closure* left, const Closure* right) {
+		return std::tie(left->functionAddress, left->executionDomainId, left->codeAddress, left->numParams, left->maxStack, left->flags, left->upvalueTableAddress, left->recordUpvalueCount, left->upvalueCount, left->hashId)
+			< std::tie(right->functionAddress, right->executionDomainId, right->codeAddress, right->numParams, right->maxStack, right->flags, right->upvalueTableAddress, right->recordUpvalueCount, right->upvalueCount, right->hashId);
 	});
 	for (const Closure* closure : canonicalClosures) {
 		captureObject(closure);
 	}
+	state.gc = m_heap.captureState(captureObject);
 	// Reserve ordinals at each edge, then drain in ordinal order. Guest graph
 	// depth must not consume the host call stack.
 	for (u32 id = 0; id < pendingObjects.size(); ++id) {
 		const auto* object = pendingObjects[id];
 		u32 offset;
+		if (m_heap.sweepGarbage(object)) {
+			offset = snapshot.reserveWords(3);
+			snapshot.setWord(offset, static_cast<u32>(CpuSnapshotObjectKind::Garbage));
+			snapshot.setWord(offset + 1, object->hashId);
+			snapshot.setWord(offset + 2, static_cast<u32>(m_heap.allocationBytes(object)));
+			snapshot.setObjectWord(id, offset);
+			continue;
+		}
 		switch (object->type) {
 			case ObjType::Thread: {
 				const auto* thread = static_cast<const Thread*>(object);
@@ -1363,10 +960,17 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				snapshot.setWord(offset + SNAP_CLOSURE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Closure));
 				snapshot.setWord(offset + SNAP_CLOSURE_HASH_ID, closure->hashId);
 				snapshot.setWord(offset + SNAP_CLOSURE_FUNCTION_ADDRESS, closure->functionAddress);
-				snapshot.setWord(offset + SNAP_CLOSURE_CANONICAL, closure->trackedHeapBytes == 0);
+				snapshot.setWord(offset + SNAP_CLOSURE_CANONICAL, closure->canonical);
 				snapshot.setWord(offset + SNAP_CLOSURE_UPVALUE_COUNT, static_cast<u32>(closure->upvalueCount));
+				snapshot.setWord(offset + SNAP_CLOSURE_CODE_ADDRESS, closure->codeAddress);
+				snapshot.setWord(offset + SNAP_CLOSURE_NUM_PARAMS, closure->numParams);
+				snapshot.setWord(offset + SNAP_CLOSURE_MAX_STACK, closure->maxStack);
+				snapshot.setWord(offset + SNAP_CLOSURE_FLAGS, closure->flags);
+				snapshot.setWord(offset + SNAP_CLOSURE_UPVALUE_TABLE_ADDRESS, closure->upvalueTableAddress);
+				snapshot.setWord(offset + SNAP_CLOSURE_RECORD_UPVALUE_COUNT, closure->recordUpvalueCount);
+				snapshot.setWord(offset + SNAP_CLOSURE_EXECUTION_DOMAIN_ID, static_cast<u32>(closure->executionDomainId));
 				for (u32 index = 0; index < closure->upvalueCount; ++index) {
-					snapshot.setWord(offset + SNAP_CLOSURE_DATA + index, captureObject(closure->upvalues[index]));
+					snapshot.setWord(offset + SNAP_CLOSURE_DATA + index, captureObject(m_heap.object(closure->upvalues[index])));
 				}
 				break;
 			}
@@ -1380,14 +984,14 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				int frameIndex = -1;
 				if (upvalue->open) {
 					frameIndex = 0;
-					while (upvalue->frame->thread->frames[static_cast<size_t>(frameIndex)].get() != upvalue->frame) ++frameIndex;
+					for (auto* frame = upvalue->frame->thread->firstFrame; frame != upvalue->frame; frame = frame->next) ++frameIndex;
 				}
 				snapshot.setWord(offset + SNAP_UPVALUE_THREAD_REF, upvalue->open ? captureObject(upvalue->frame->thread) : static_cast<u32>(-1));
 				snapshot.setWord(offset + SNAP_UPVALUE_FRAME_INDEX, static_cast<u32>(frameIndex));
-				writeValue(offset + SNAP_UPVALUE_VALUE, upvalue->open ? upvalue->frame->registers[upvalue->index] : upvalue->value);
+				writeValue(offset + SNAP_UPVALUE_VALUE, upvalue->open ? upvalue->frame->registers.get(upvalue->index) : upvalue->value());
 				break;
 			}
-			default: __builtin_unreachable();
+			default: BMSX_UNREACHABLE();
 		}
 		snapshot.setObjectWord(id, offset);
 	}
@@ -1406,11 +1010,12 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	state.interruptEventPending = m_interruptEventPending;
 	state.memoryWriteBlocked = m_memoryWriteBlocked;
 	state.memoryWriteBlockedAddress = m_memoryWriteBlockedAddress;
-	state.statusWord = m_statusWord;
-	state.causeWord = m_causeWord;
-	state.epcWord = m_epcWord;
-	state.badAddressWord = m_badAddressWord;
-	state.luaFaultReasonWord = m_luaFaultReasonWord;
+	state.pendingMemory = m_pendingMemory;
+	state.statusWord = m_cop0Words[COP0_STATUS];
+	state.causeWord = m_cop0Words[COP0_CAUSE];
+	state.epcWord = m_cop0Words[COP0_EPC];
+	state.badAddressWord = m_cop0Words[COP0_BAD_ADDRESS];
+	state.luaFaultReasonWord = m_cop0Words[COP0_LUA_FAULT_REASON];
 	state.exceptionDomainWord = m_exceptionDomainWord;
 	state.nmiReturnCauseWord = m_nmiReturnCauseWord;
 	state.nmiReturnEpcWord = m_nmiReturnEpcWord;
@@ -1423,31 +1028,51 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 }
 
 void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	discardNativeCompilation();
+#endif
 	const auto& snapshot = state.snapshot;
-	m_completionValues.clear();
+	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	clearCallStack();
-	std::unordered_set<u32> canonicalAddresses;
-	for (u32 offset : snapshot.objectWords()) {
-		if (snapshot.word(offset) == static_cast<u32>(CpuSnapshotObjectKind::Closure) && snapshot.word(offset + SNAP_CLOSURE_CANONICAL) != 0) {
-			canonicalAddresses.insert(snapshot.word(offset + SNAP_CLOSURE_FUNCTION_ADDRESS));
-		}
-	}
-	std::erase_if(m_staticClosuresByAddress, [&](const auto& entry) { return !canonicalAddresses.contains(entry.first); });
+	auto previousCanonical = std::move(m_staticClosuresByAddress);
+	m_staticClosuresByAddress.clear();
+	auto savedClosure = [&](u32 offset) {
+		Closure record;
+		record.functionAddress = snapshot.word(offset + SNAP_CLOSURE_FUNCTION_ADDRESS);
+		record.upvalueCount = snapshot.word(offset + SNAP_CLOSURE_UPVALUE_COUNT);
+		record.codeAddress = snapshot.word(offset + SNAP_CLOSURE_CODE_ADDRESS);
+		record.numParams = snapshot.word(offset + SNAP_CLOSURE_NUM_PARAMS);
+		record.maxStack = snapshot.word(offset + SNAP_CLOSURE_MAX_STACK);
+		record.flags = snapshot.word(offset + SNAP_CLOSURE_FLAGS);
+		record.upvalueTableAddress = snapshot.word(offset + SNAP_CLOSURE_UPVALUE_TABLE_ADDRESS);
+		record.recordUpvalueCount = snapshot.word(offset + SNAP_CLOSURE_RECORD_UPVALUE_COUNT);
+		record.executionDomainId = snapshot.integer(offset + SNAP_CLOSURE_EXECUTION_DOMAIN_ID);
+		return record;
+	};
 	std::vector<GCObject*> restoredObjects(snapshot.objectCount());
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
 		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {
+			case CpuSnapshotObjectKind::Garbage: {
+				const auto bytes = snapshot.word(offset + 2);
+				m_luaHeap.restoreAllocate(bytes);
+				auto* object = m_heap.allocate<GarbageAllocation>(ObjType::Garbage, bytes);
+				object->restored = true;
+				object->hashId = snapshot.word(offset + 1);
+				restoredObjects[index] = object;
+				break;
+			}
 			case CpuSnapshotObjectKind::Thread: {
 				if (index != static_cast<size_t>(state.rootThreadRef)) {
 					m_luaHeap.restoreAllocate(THREAD_HEAP_BYTES + state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)].stackCapacity * THREAD_STACK_SLOT_BYTES);
 				}
 				Thread* thread = index == static_cast<size_t>(state.rootThreadRef) ? m_rootThread : m_heap.allocate<Thread>(ObjType::Thread);
 				const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
-				thread->marked = true;
+				thread->restored = true;
 				thread->hashId = snapshot.word(offset + SNAP_THREAD_HASH_ID);
-				thread->stack.assign(saved.stackCapacity, valueNil());
+				thread->resizeStack(saved.stackCapacity);
 				thread->stackTop = 0;
-				thread->frames.clear();
+				while (thread->currentFrame) thread->leaveFrame();
 				thread->status = saved.status;
 				thread->callBase = saved.callBase;
 				thread->returnCount = saved.returnCount;
@@ -1458,46 +1083,73 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
 				const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
 				m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(arrayCapacity, hashSize));
-				Table* table = m_heap.allocate<Table>(ObjType::Table, m_luaHeap, arrayCapacity, hashSize);
-				table->marked = true;
+				Table* table = m_heap.allocate<Table>(ObjType::Table, m_heap, arrayCapacity, hashSize);
+				table->restored = true;
 				table->hashId = snapshot.word(offset + SNAP_TABLE_HASH_ID);
 				restoredObjects[index] = table;
 				break;
 			}
 			case CpuSnapshotObjectKind::Closure: {
-				const u32 functionAddress = snapshot.word(offset + SNAP_CLOSURE_FUNCTION_ADDRESS);
+				const Closure record = savedClosure(offset);
+				const u32 functionAddress = record.functionAddress;
 				const bool canonical = snapshot.word(offset + SNAP_CLOSURE_CANONICAL) != 0;
 				Closure* closure;
 				if (canonical) {
-					closure = staticClosureAtAddress(functionAddress);
+					const u32 hashId = snapshot.word(offset + SNAP_CLOSURE_HASH_ID);
+					auto& versions = m_staticClosuresByAddress[functionAddress];
+					auto previous = previousCanonical.find(functionAddress);
+					closure = nullptr;
+					if (previous != previousCanonical.end()) {
+						auto& candidates = previous->second;
+						auto existing = std::find_if(candidates.begin(), candidates.end(), [&](const Closure* item) {
+							return item->hashId == hashId && item->sameFunction(record);
+						});
+						if (existing != candidates.end()) {
+							closure = *existing;
+							candidates.erase(existing);
+						}
+					}
+					if (!closure) {
+						m_luaHeap.restoreAllocate(kClosureHeapBytes + record.upvalueCount * kClosureUpvalueSlotHeapBytes);
+						closure = allocateTrackedClosure(functionAddress, record.upvalueCount);
+					}
+					versions.push_back(closure);
 				} else {
-					const u32 upvalueCount = snapshot.word(offset + SNAP_CLOSURE_UPVALUE_COUNT);
-					m_luaHeap.restoreAllocate(kClosureHeapBytes + upvalueCount * kClosureUpvalueSlotHeapBytes);
-					closure = allocateTrackedClosure(functionAddress, upvalueCount);
+					m_luaHeap.restoreAllocate(kClosureHeapBytes + record.upvalueCount * kClosureUpvalueSlotHeapBytes);
+					closure = allocateTrackedClosure(functionAddress, record.upvalueCount);
 				}
-				closure->marked = !canonical;
+				closure->codeAddress = record.codeAddress;
+				closure->numParams = record.numParams;
+				closure->maxStack = record.maxStack;
+				closure->flags = record.flags;
+				closure->upvalueTableAddress = record.upvalueTableAddress;
+				closure->recordUpvalueCount = record.recordUpvalueCount;
+				closure->canonical = canonical;
+				closure->executionDomainId = record.executionDomainId;
+				closure->restored = true;
 				closure->hashId = snapshot.word(offset + SNAP_CLOSURE_HASH_ID);
 				restoredObjects[index] = closure;
 				break;
 			}
 			case CpuSnapshotObjectKind::Upvalue: {
-				m_luaHeap.restoreAllocate(kUpvalueHeapBytes);
+				m_luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
 				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
-				upvalue->marked = true;
+				upvalue->restored = true;
 				upvalue->open = false;
 				upvalue->index = snapshot.integer(offset + SNAP_UPVALUE_INDEX);
 				upvalue->frame = nullptr;
-				upvalue->value = valueNil();
+				upvalue->setValue(valueNil());
 				upvalue->hashId = snapshot.word(offset + SNAP_UPVALUE_HASH_ID);
 				restoredObjects[index] = upvalue;
 				break;
 			}
 		}
 	}
-	const CpuSnapshotReader reader(snapshot, restoredObjects, m_builtinFunctions);
+	const CpuSnapshotReader reader(snapshot, restoredObjects, m_heap);
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
 		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {
+			case CpuSnapshotObjectKind::Garbage: break;
 			case CpuSnapshotObjectKind::Thread:
 				break;
 			case CpuSnapshotObjectKind::Table:
@@ -1506,37 +1158,40 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			case CpuSnapshotObjectKind::Closure: {
 				auto* closure = static_cast<Closure*>(restoredObjects[index]);
 				for (u32 slot = 0; slot < closure->upvalueCount; ++slot) {
-					closure->upvalues[slot] = static_cast<Upvalue*>(restoredObjects[snapshot.word(offset + SNAP_CLOSURE_DATA + slot)]);
+					closure->upvalues[slot] = m_heap.reference(restoredObjects[snapshot.word(offset + SNAP_CLOSURE_DATA + slot)]);
 				}
 				break;
 			}
 			case CpuSnapshotObjectKind::Upvalue: {
 				auto* upvalue = static_cast<Upvalue*>(restoredObjects[index]);
 				upvalue->open = snapshot.word(offset + SNAP_UPVALUE_OPEN) != 0;
-				upvalue->value = upvalue->open ? valueNil() : reader.readValue(offset + SNAP_UPVALUE_VALUE);
+				upvalue->setValue(upvalue->open ? valueNil() : reader.readValue(offset + SNAP_UPVALUE_VALUE));
 				break;
 			}
 		}
 	}
 
 	m_memory.clearMappedPageWriteWatches();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	clearNativeContinuationBindings();
+#endif
 	for (auto& image : m_executionImagesByDomain) {
 		image.reset();
 	}
 	clearGlobalSlots();
 	m_systemGlobalNames.reserve(state.systemGlobals.size());
-	m_systemGlobalValues.reserve(state.systemGlobals.size());
+	m_systemGlobalValues.resize(state.systemGlobals.size());
 	for (const CpuRootValueState& entry : state.systemGlobals) {
 		m_systemGlobalSlotByKey.emplace(entry.key, m_systemGlobalNames.size());
 		m_systemGlobalNames.push_back(entry.key);
-		m_systemGlobalValues.push_back(reader.readValue(entry.value));
+		m_systemGlobalValues.set(m_systemGlobalNames.size() - 1, reader.readValue(entry.value));
 	}
 	m_globalNames.reserve(state.globalSlots.size());
-	m_globalValues.reserve(state.globalSlots.size());
+	m_globalValues.resize(state.globalSlots.size());
 	for (const CpuRootValueState& entry : state.globalSlots) {
 		m_globalSlotByKey.emplace(entry.key, m_globalNames.size());
 		m_globalNames.push_back(entry.key);
-		m_globalValues.push_back(reader.readValue(entry.value));
+		m_globalValues.set(m_globalNames.size() - 1, reader.readValue(entry.value));
 	}
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if ((state.executionResidencyMask & (1u << index)) != 0u) {
@@ -1555,54 +1210,38 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		m_activeThread = thread;
 		thread->entry = saved.entryRef < 0 ? nullptr : static_cast<Closure*>(restoredObjects[saved.entryRef]);
 		thread->resumer = saved.resumerRef < 0 ? nullptr : static_cast<Thread*>(restoredObjects[saved.resumerRef]);
-		thread->error = reader.readValue(saved.error);
+		thread->setError(reader.readValue(saved.error));
+		thread->stackTop = static_cast<int>(saved.stack.size());
+		for (size_t slot = 0; slot < saved.stack.size(); ++slot) thread->stack.set(slot, reader.readValue(saved.stack[slot]));
+		thread->stack.clear(thread->stackTop, thread->stackCapacity - thread->stackTop);
 		for (const CpuFrameState& frameState : saved.frames) {
-			readFunctionRecordOnBus(
-				*executionImage,
-				frameState.functionAddress,
-				m_executionBusSignals
-			);
-			const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
-			auto frame = acquireFrame();
-			frame->thread = m_activeThread;
+			auto* frame = m_activeThread->acquireFrame();
 			frame->functionAddress = frameState.functionAddress;
-			frame->executionImage = functionRecord.image;
-			frame->pc = frameState.pc;
 			frame->closure = static_cast<Closure*>(restoredObjects[static_cast<size_t>(frameState.closureRef)]);
+			frame->executionImage = executionImageForDomain(frame->closure->executionDomainId);
+			frame->pc = frameState.pc;
 			frame->returnBase = frameState.returnBase;
 			frame->returnCount = frameState.returnCount;
 			frame->returnToCompletionLatch = frameState.returnToCompletionLatch;
 			frame->callSitePc = frameState.callSitePc;
 			frame->isExceptionFrame = frameState.isExceptionFrame;
 			frame->isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
-			frame->varargBase = m_activeThread->stackTop;
-			frame->varargCount = static_cast<int>(frameState.varargs.size());
-			frame->stackBase = frame->varargBase + frame->varargCount;
-			const size_t targetCapacity = static_cast<size_t>(frameState.stackCapacity);
-			frame->stackCapacity = static_cast<int>(targetCapacity);
-			m_activeThread->stackTop = frame->stackBase + frame->stackCapacity;
-			ensureStackSize(static_cast<size_t>(m_activeThread->stackTop));
-			frame->registers = m_activeThread->stack.data() + frame->stackBase;
-			for (int slot = 0; slot < frame->stackCapacity; ++slot) {
-				frame->registers[static_cast<size_t>(slot)] = valueNil();
-			}
-			for (size_t registerIndex = 0; registerIndex < frameState.registers.size(); ++registerIndex) {
-				frame->registers[registerIndex] = reader.readValue(frameState.registers[registerIndex]);
-			}
-			for (size_t varargIndex = 0; varargIndex < frameState.varargs.size(); ++varargIndex) {
-				m_activeThread->stack[static_cast<size_t>(frame->varargBase) + varargIndex] = reader.readValue(frameState.varargs[varargIndex]);
-			}
+			frame->varargBase = frameState.varargBase;
+			frame->varargCount = frameState.varargCount;
+			frame->stackBase = frameState.stackBase;
+			frame->stackCapacity = frameState.stackCapacity;
+			frame->registers = thread->stack.view().subspan(frame->stackBase, frame->stackCapacity);
 			frame->top = frameState.top;
-			m_activeThread->frames.push_back(std::move(frame));
+			m_activeThread->enterFrame(frame);
 		}
 		for (size_t index = 0; index < saved.protectedCalls.size(); ++index) {
 			const CpuProtectedCallState& continuationState = saved.protectedCalls[index];
 			ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(index);
 			continuation.kind = continuationState.kind;
-			continuation.caller = m_activeThread->frames[static_cast<size_t>(continuationState.callerFrameIndex)].get();
-			continuation.target = continuationState.targetFrameIndex < 0
-				? nullptr
-				: m_activeThread->frames[static_cast<size_t>(continuationState.targetFrameIndex)].get();
+			continuation.caller = m_activeThread->frameAtDepth(static_cast<size_t>(continuationState.callerFrameIndex));
+			if (continuationState.targetFrameIndex >= 0) {
+				m_activeThread->frameAtDepth(static_cast<size_t>(continuationState.targetFrameIndex))->protectedContinuationIndex = static_cast<i32>(index);
+			}
 			continuation.returnsToProtectedParent = continuationState.returnsToProtectedParent;
 			continuation.callBase = continuationState.callBase;
 			continuation.returnCount = continuationState.returnCount;
@@ -1618,11 +1257,11 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			const u32 offset = snapshot.objectWord(static_cast<u32>(upvalueRef));
 			Upvalue* upvalue = static_cast<Upvalue*>(restoredObjects[static_cast<size_t>(upvalueRef)]);
 			Thread* owner = static_cast<Thread*>(restoredObjects[snapshot.word(offset + SNAP_UPVALUE_THREAD_REF)]);
-			CallFrame* frame = owner->frames[static_cast<size_t>(snapshot.integer(offset + SNAP_UPVALUE_FRAME_INDEX))].get();
+			CallFrame* frame = owner->frameAtDepth(static_cast<size_t>(snapshot.integer(offset + SNAP_UPVALUE_FRAME_INDEX)));
 			upvalue->open = true;
 			upvalue->index = snapshot.integer(offset + SNAP_UPVALUE_INDEX);
 			upvalue->frame = frame;
-			upvalue->value = valueNil();
+			upvalue->setValue(valueNil());
 			linkOpenUpvalue(*frame, upvalue);
 		}
 
@@ -1632,11 +1271,12 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_threadSwitchRequested = false;
 
 	const Value stringIndexTable = reader.readValue(state.stringIndexTable);
-	m_stringIndexTable = isNil(stringIndexTable) ? nullptr : asTable(stringIndexTable);
-	m_completionValues.reserve(state.completionValues.size());
+	m_stringIndexTable = isNil(stringIndexTable) ? nullptr : asTable(stringIndexTable, m_heap);
+	m_completionValues.reserveCapacity(state.completionValues.size());
 	for (u32 valueState : state.completionValues) {
-		m_completionValues.push_back(reader.readValue(valueState));
+		m_completionValues.set(m_completionValueCount++, reader.readValue(valueState));
 	}
+	m_programExecutionDomainId = state.programExecutionDomainId;
 	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;
 	m_haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
@@ -1644,11 +1284,12 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_interruptEventPending = state.interruptEventPending;
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
-	m_statusWord = state.statusWord;
-	m_causeWord = state.causeWord;
-	m_epcWord = state.epcWord;
-	m_badAddressWord = state.badAddressWord;
-	m_luaFaultReasonWord = state.luaFaultReasonWord;
+	m_pendingMemory = state.pendingMemory;
+	m_cop0Words[COP0_STATUS] = state.statusWord;
+	m_cop0Words[COP0_CAUSE] = state.causeWord;
+	m_cop0Words[COP0_EPC] = state.epcWord;
+	m_cop0Words[COP0_BAD_ADDRESS] = state.badAddressWord;
+	m_cop0Words[COP0_LUA_FAULT_REASON] = state.luaFaultReasonWord;
 	m_exceptionDomainWord = state.exceptionDomainWord;
 	m_nmiReturnCauseWord = state.nmiReturnCauseWord;
 	m_nmiReturnEpcWord = state.nmiReturnEpcWord;
@@ -1659,6 +1300,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_yieldRequested = state.yieldRequested;
 	m_hardHalted = state.hardHalted;
 	m_heap.finishRestore(state.nextObjectHashId);
+	m_heap.restoreState(state.gc, restoredObjects);
 	m_luaHeap.restoreState(state.luaHeap);
 }
 
@@ -1671,7 +1313,7 @@ void CPU::haltUntilIrq() {
 		m_interruptEventPending = false;
 		return;
 	}
-	m_haltedUntilIrqFrameDepth = static_cast<int>(m_activeThread->frames.size());
+	m_haltedUntilIrqFrameDepth = static_cast<int>(m_activeThread->frameDepth);
 	m_haltedUntilIrqThread = m_activeThread;
 	m_yieldRequested = false;
 }
@@ -1684,7 +1326,7 @@ void CPU::hardHalt() {
 }
 
 
-void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out) {
+void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out, int resultLimit) {
 	switch (fn.id) {
 		case BuiltinFunctionId::Next:
 			runBuiltinNextValue(args[0], args[1], out);
@@ -1692,12 +1334,20 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::Type:
 			out.push_back(valueString(m_stringPool.intern(valueTypeNameForLua(args[0]))));
 			break;
+		case BuiltinFunctionId::NumberType:
+			out.push_back(valueIsNumber(args[0])
+				? valueString(m_stringPool.intern(valueIsInteger(args[0]) ? "integer" : "float"))
+				: valueNil());
+			break;
+		case BuiltinFunctionId::ToInteger:
 		case BuiltinFunctionId::SetMetatable:
-			runBuiltinSetMetatable(args, out);
-			break;
 		case BuiltinFunctionId::GetMetatable:
-			runBuiltinGetMetatable(args, out);
+		case BuiltinFunctionId::StringByte: {
+			Value result;
+			if (!executeBuiltinLeaf(fn.id, args, result)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			out.push_back(result);
 			break;
+		}
 		case BuiltinFunctionId::RawGet:
 			runBuiltinRawGet(args, out);
 			break;
@@ -1713,40 +1363,37 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			setGlobalByKey(asStringId(args[0]), args[1]);
 			break;
 		case BuiltinFunctionId::Select:
-			runBuiltinSelect(args, out);
+			runBuiltinSelect(args, out, resultLimit);
 			break;
 		case BuiltinFunctionId::FrameCount:
-			out.push_back(valueNumber(asThread(args[0])->frames.size()));
+			out.push_back(valueInteger(asThread(args[0], m_heap)->frameDepth));
 			break;
 		case BuiltinFunctionId::FrameHeader: {
-			const auto& frame = *asThread(args[0])->frames[toI32(args[1])];
-			out.push_back(valueNumber(frame.functionAddress));
-			out.push_back(valueNumber(frame.pc));
-			out.push_back(valueNumber(frame.callSitePc));
+			const auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
+			out.push_back(valueInteger(frame.functionAddress));
+			out.push_back(valueInteger(frame.pc));
+			out.push_back(valueInteger(frame.callSitePc));
 			out.push_back(valueBool(frame.returnToCompletionLatch));
-			out.push_back(valueNumber(static_cast<u32>(frame.executionImage->executionDomainId)));
+			out.push_back(valueInteger(static_cast<u32>(frame.executionImage->executionDomainId)));
 			out.push_back(valueBool(frame.isExceptionFrame));
 			break;
 		}
 		case BuiltinFunctionId::GetFrameRegister:
 		case BuiltinFunctionId::SetFrameRegister: {
-			auto& frame = *asThread(args[0])->frames[toI32(args[1])];
-			const int index = toI32(args[2]);
-			if (fn.id == BuiltinFunctionId::GetFrameRegister) out.push_back(frame.registers[index]);
-			else frame.registers[index] = args[3];
+			auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
+			const int index = integerOperand(args[2]);
+			if (fn.id == BuiltinFunctionId::GetFrameRegister) out.push_back(frame.registers.get(index));
+			else frame.registers.set(index, args[3]);
 			break;
 		}
 		case BuiltinFunctionId::GetFrameUpvalue:
 		case BuiltinFunctionId::SetFrameUpvalue: {
-			const auto& frame = *asThread(args[0])->frames[toI32(args[1])];
-			Upvalue* upvalue = frame.closure->upvalues[toI32(args[2])];
+			const auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
+			Upvalue* upvalue = static_cast<Upvalue*>(m_heap.object(frame.closure->upvalues[integerOperand(args[2])]));
 			if (fn.id == BuiltinFunctionId::SetFrameUpvalue) writeUpvalue(upvalue, args[3]);
-			else out.push_back(upvalue->open ? upvalue->frame->registers[upvalue->index] : upvalue->value);
+			else out.push_back(upvalue->open ? upvalue->frame->registers.get(upvalue->index) : upvalue->value());
 			break;
 		}
-		case BuiltinFunctionId::StringByte:
-			runBuiltinStringByte(args, out);
-			break;
 		case BuiltinFunctionId::StringChar:
 			runBuiltinStringChar(args, out);
 			break;
@@ -1754,40 +1401,48 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			if (!valueIsTable(args[0])) {
 				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			}
-			m_stringIndexTable = asTable(args[0]);
+			m_stringIndexTable = asTable(args[0], m_heap);
 			break;
 		case BuiltinFunctionId::CoroutineCreate:
 			if (args.empty() || !valueIsClosure(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			out.push_back(valueThread(createThread(asClosure(args[0]))));
+			out.push_back(valueThread(m_heap.reference(createThread(asClosure(args[0], m_heap)))));
 			break;
 		case BuiltinFunctionId::CoroutineRunning:
-			out.push_back(valueThread(m_activeThread));
+			out.push_back(valueThread(m_heap.reference(m_activeThread)));
 			out.push_back(valueBool(m_activeThread == m_rootThread));
 			break;
 		case BuiltinFunctionId::CoroutineStatus:
 		case BuiltinFunctionId::CoroutineClose:
 		case BuiltinFunctionId::CoroutineIsYieldable: {
 			Thread* thread = args.empty() && fn.id == BuiltinFunctionId::CoroutineIsYieldable ? m_activeThread
-				: !args.empty() && valueIsThread(args[0]) ? asThread(args[0]) : nullptr;
+				: !args.empty() && valueIsThread(args[0]) ? asThread(args[0], m_heap) : nullptr;
 			if (thread == nullptr) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			if (fn.id == BuiltinFunctionId::CoroutineIsYieldable) out.push_back(valueBool(coroutineYieldable(*thread)));
 			else if (fn.id == BuiltinFunctionId::CoroutineStatus) {
-				out.push_back(valueNumber(static_cast<int>(thread->status)));
+				out.push_back(valueInteger(static_cast<int>(thread->status)));
 			} else {
 				const bool failed = thread->status == ThreadStatus::Failed;
 				out.push_back(valueBool(!failed));
-				if (failed) out.push_back(thread->error);
+				if (failed) out.push_back(thread->error());
 				closeThread(*thread);
-				thread->error = valueNil();
+				thread->setError(valueNil());
 			}
 			break;
 		}
 		case BuiltinFunctionId::CoroutineResume:
 		case BuiltinFunctionId::CoroutineYield:
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		case BuiltinFunctionId::CollectGarbage:
-			collectHeap();
+		case BuiltinFunctionId::CollectGarbage: {
+			if (!args.empty() && !valueIsNumber(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			const i32 operation = args.empty() ? 0 : integerOperand(args[0]);
+			if (operation == static_cast<int>(GarbageCollectionOperation::Collect)) m_luaHeap.collectRuntime();
+			else if (operation == static_cast<int>(GarbageCollectionOperation::Count)) {
+				out.push_back(valueInteger(m_luaHeap.usedBytes()));
+				out.push_back(valueInteger(m_luaHeap.capacity()));
+			} else if (operation == static_cast<int>(GarbageCollectionOperation::Step)) out.push_back(valueBool(m_luaHeap.stepRuntime()));
+			else throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			break;
+		}
 		case BuiltinFunctionId::Error:
 			runBuiltinError(args);
 			break;
@@ -1798,38 +1453,43 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 }
 
 Thread* CPU::createThread(Closure* entry) {
-	m_luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES, valueClosure(entry));
+	m_luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES, valueClosure(m_heap.reference(entry)));
 	auto* thread = m_heap.allocate<Thread>(ObjType::Thread);
 	thread->entry = entry;
-	trackLocalRoot(valueThread(thread));
+	trackLocalRoot(valueThread(m_heap.reference(thread)));
 	return thread;
 }
 
 bool CPU::coroutineYieldable(const Thread& thread) const {
 	if (&thread == m_rootThread) return false;
-	for (const auto& frame : thread.frames) if (frame->isExceptionFrame || frame->returnToCompletionLatch) return false;
+	for (auto* frame = thread.currentFrame; frame; frame = frame->previous)
+		if (frame->isExceptionFrame || frame->returnToCompletionLatch) return false;
 	for (size_t i = 0; i < thread.protectedCallDepth; ++i) {
 		if (thread.protectedCallContinuations.get(i).kind == ProtectedCallKind::XPCallHandler) return false;
 	}
 	return true;
 }
 
-void CPU::returnToResumer(const Value* source, int sourceCount, bool succeeded) {
+void CPU::returnToResumer(int sourceBase, int sourceCount, bool succeeded) {
 	Thread* thread = m_activeThread;
 	Thread* resumer = thread->resumer;
 	m_activeThread = resumer;
 	resumer->status = ThreadStatus::Running;
-	CallFrame& caller = *resumer->frames.back();
-	const int count = resumer->returnCount == 0 ? sourceCount + 1 : resumer->returnCount;
-	ensureRegisterCapacity(caller, resumer->callBase + count - 1);
-	caller.registers[resumer->callBase] = valueBool(succeeded);
-	const int copied = std::min(sourceCount, count - 1);
-	for (int i = 0; i < copied; ++i) caller.registers[resumer->callBase + i + 1] = source[i];
-	for (int i = copied + 1; i < count; ++i) caller.registers[resumer->callBase + i] = valueNil();
+	CallFrame& caller = *resumer->currentFrame;
+	const int count = decodeValueCount(resumer->returnCount, sourceCount + 1);
+	if (count > 0) {
+		ensureRegisterCapacity(caller, resumer->callBase + count - 1);
+		caller.registers.set(resumer->callBase, valueBool(succeeded));
+		const int copied = std::min(sourceCount, count - 1);
+		for (int i = 0; i < copied; ++i)
+			caller.registers.set(resumer->callBase + i + 1, succeeded ? thread->stack.get(sourceBase + i) : thread->error());
+		for (int i = copied + 1; i < count; ++i) caller.registers.set(resumer->callBase + i, valueNil());
+	}
 	caller.top = resumer->callBase + count;
 	thread->resumer = nullptr;
 	m_threadSwitchRequested = true;
 	m_yieldRequested = true;
+	instructionBudgetRemaining -= count;
 }
 
 void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc) {
@@ -1839,18 +1499,18 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 		thread->callBase = base;
 		thread->returnCount = count;
 		thread->status = ThreadStatus::Suspended;
-		returnToResumer(caller.registers + base + 1, argc, true);
+		returnToResumer(caller.stackBase + base + 1, argc, true);
 		return;
 	}
-	if (argc == 0 || !valueIsThread(caller.registers[base + 1])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	Thread* target = asThread(caller.registers[base + 1]);
+	if (argc == 0 || !valueIsThread(caller.registers.get(base + 1))) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	Thread* target = asThread(caller.registers.get(base + 1), m_heap);
 	const bool exceptionActive = readExceptionReturnFrameDepth() != -1;
 	if (exceptionActive || (target->status != ThreadStatus::New && target->status != ThreadStatus::Suspended)) {
 		auto scratch = acquireBuiltinResultScratch();
 		BuiltinResults& out = scratch.get();
 		out.push_back(valueBool(false));
 		out.push_back(valueString(m_stringPool.intern(exceptionActive ? "cannot resume coroutine across a hardware exception" : "cannot resume non-suspended coroutine")));
-		writeReturnValues(caller, base, count, out.data(), static_cast<int>(out.size()));
+		writeReturnValuesFromBuiltinResults(caller, base, count, out);
 		return;
 	}
 	const bool fresh = target->status == ThreadStatus::New;
@@ -1864,10 +1524,8 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 		pushFrame(caller, target->entry, base + 2, argc - 1, 0, 0, false, 0);
 		target->entry = nullptr;
 	} else {
-		CallFrame& frame = *target->frames.back();
-		const int returned = target->returnCount == 0 ? argc - 1 : target->returnCount;
-		ensureRegisterCapacity(frame, target->callBase + returned - 1);
-		writeReturnValues(frame, target->callBase, target->returnCount, caller.registers + base + 2, argc - 1);
+		CallFrame& frame = *target->currentFrame;
+		writeReturnValuesFromRegisters(frame, target->callBase, target->returnCount, caller, base + 2, argc - 1);
 	}
 	m_threadSwitchRequested = true;
 	m_yieldRequested = true;
@@ -1877,23 +1535,23 @@ bool CPU::handleThreadError(Value error) {
 	if (handleProtectedCallError(error)) return true;
 	Thread* thread = m_activeThread;
 	if (thread->resumer == nullptr) return false;
-	for (const auto& frame : thread->frames) if (frame->isExceptionFrame || frame->returnToCompletionLatch) return false;
+	for (auto* frame = thread->currentFrame; frame; frame = frame->previous)
+		if (frame->isExceptionFrame || frame->returnToCompletionLatch) return false;
 	thread->status = ThreadStatus::Failed;
-	thread->error = error;
-	returnToResumer(&thread->error, 1, false);
+	thread->setError(error);
+	returnToResumer(0, 1, false);
 	return true;
 }
 
 void CPU::closeThread(Thread& thread) {
 	if (thread.status == ThreadStatus::Running || thread.status == ThreadStatus::Normal) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	for (auto& frame : thread.frames) {
-		closeUpvalues(*frame);
-		releaseFrame(std::move(frame));
+	while (thread.currentFrame) {
+		instructionBudgetRemaining -= closeUpvalues(*thread.currentFrame);
+		thread.leaveFrame();
 	}
-	thread.frames.clear();
 	thread.protectedCallDepth = 0;
 	thread.protectedCallContinuations.clear();
-	std::fill(thread.stack.begin(), thread.stack.end(), valueNil());
+	thread.stack.clear(0, thread.stackCapacity);
 	thread.stackTop = 0;
 	thread.entry = nullptr;
 	thread.status = ThreadStatus::Dead;
@@ -1911,10 +1569,10 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase
 		runCoroutineTransfer(fn.id, frame, callBase, returnCount, argCount);
 		return;
 	}
-	const BuiltinArgsView args(frame.registers + static_cast<size_t>(callBase + 1), static_cast<size_t>(argCount));
-	callBuiltinFunction(fn, args, out);
-	if (!m_activeThread->frames.empty() && m_activeThread->frames.back().get() == &frame) {
-		writeReturnValues(frame, callBase, returnCount, out.data(), static_cast<int>(out.size()));
+	const BuiltinArgsView args(frame.registers.subspan(callBase + 1, argCount));
+	callBuiltinFunction(fn, args, out, returnCount == 0 ? -1 : returnCount - 1);
+	if (m_activeThread->frameDepth != 0 && m_activeThread->currentFrame == &frame) {
+		writeReturnValuesFromBuiltinResults(frame, callBase, returnCount, out);
 	}
 }
 
@@ -1922,7 +1580,7 @@ void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBa
 	int argumentBase, int argumentCount, bool returnsToProtectedParent) {
 	if (id == BuiltinFunctionId::XPCall) {
 		const Value handler = argumentCount > 1
-			? caller.registers[static_cast<size_t>(argumentBase + 1)]
+			? caller.registers.get(static_cast<size_t>(argumentBase + 1))
 			: valueNil();
 		if (!valueIsClosure(handler) && !valueIsBuiltinFunction(handler)) {
 			throw LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
@@ -1933,7 +1591,6 @@ void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBa
 	m_activeThread->protectedCallDepth = continuationIndex + 1;
 	continuation.kind = id == BuiltinFunctionId::PCall ? ProtectedCallKind::PCall : ProtectedCallKind::XPCallBody;
 	continuation.caller = &caller;
-	continuation.target = nullptr;
 	continuation.returnsToProtectedParent = returnsToProtectedParent;
 	continuation.callBase = callBase;
 	continuation.returnCount = returnCount;
@@ -1942,7 +1599,7 @@ void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBa
 	const int targetArgumentOffset = id == BuiltinFunctionId::PCall ? 1 : 2;
 	invokeProtectedTarget(
 		continuationIndex,
-		argumentCount > 0 ? caller.registers[static_cast<size_t>(argumentBase)] : valueNil(),
+		argumentCount > 0 ? caller.registers.get(static_cast<size_t>(argumentBase)) : valueNil(),
 		argumentBase + targetArgumentOffset,
 		std::max(argumentCount - targetArgumentOffset, 0)
 	);
@@ -1952,11 +1609,12 @@ void CPU::invokeProtectedTarget(size_t continuationIndex, Value target, int argu
 	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 	CallFrame& caller = *continuation.caller;
 	if (valueIsClosure(target)) {
-		continuation.target = pushFrame(caller, asClosure(target), argumentBase, argumentCount, 0, 0, false, caller.pc - INSTRUCTION_BYTES);
+		auto* frame = pushFrame(caller, asClosure(target, m_heap), argumentBase, argumentCount, 0, 0, false, caller.pc - INSTRUCTION_BYTES);
+		if (frame) frame->protectedContinuationIndex = static_cast<i32>(continuationIndex);
 		return;
 	}
 	if (valueIsBuiltinFunction(target)) {
-		BuiltinFunction& builtin = *asBuiltinFunction(target);
+		BuiltinFunction& builtin = m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(target))];
 		instructionBudgetRemaining -= static_cast<int>(builtin.cycleBase);
 		if (builtin.id == BuiltinFunctionId::PCall || builtin.id == BuiltinFunctionId::XPCall) {
 			startProtectedCall(builtin.id, caller, continuation.callBase, 0, argumentBase, argumentCount, true);
@@ -1966,8 +1624,8 @@ void CPU::invokeProtectedTarget(size_t continuationIndex, Value target, int argu
 		BuiltinResults& results = resultsScratch.get();
 		callBuiltinFunction(
 			builtin,
-			BuiltinArgsView(caller.registers + static_cast<size_t>(argumentBase), static_cast<size_t>(argumentCount)),
-			results
+			BuiltinArgsView(caller.registers.subspan(argumentBase, argumentCount)),
+			results, -1
 		);
 		finishProtectedCall(continuationIndex, results.data(), static_cast<int>(results.size()));
 		return;
@@ -1982,6 +1640,7 @@ void CPU::finishProtectedCall(size_t continuationIndex, const Value* values, int
 		return;
 	}
 	const int resultCount = writeProtectedResults(continuation, true, values, valueCount);
+	instructionBudgetRemaining -= resultCount;
 	finishProtectedContinuation(continuationIndex, resultCount);
 }
 
@@ -1990,48 +1649,46 @@ void CPU::finishProtectedCall(size_t continuationIndex, CallFrame& source, int s
 	if (continuation.kind == ProtectedCallKind::XPCallHandler) {
 		finishProtectedCallWithError(
 			continuationIndex,
-			sourceCount > 0 ? source.registers[static_cast<size_t>(sourceBase)] : valueNil()
+			sourceCount > 0 ? source.registers.get(static_cast<size_t>(sourceBase)) : valueNil()
 		);
 		return;
 	}
 	const int resultCount = writeProtectedResults(continuation, true, source, sourceBase, sourceCount);
+	instructionBudgetRemaining -= resultCount;
 	finishProtectedContinuation(continuationIndex, resultCount);
 }
 
 void CPU::finishProtectedCallWithError(size_t continuationIndex, Value errorValue) {
 	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 	CallFrame& caller = *continuation.caller;
-	const int resultCount = continuation.returnCount == 0 ? 2 : continuation.returnCount;
+	const int resultCount = decodeValueCount(continuation.returnCount, 2);
 	if (resultCount > 0) {
-		Value* registers = ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
-		registers[static_cast<size_t>(continuation.callBase)] = valueBool(false);
+		ValueSpan registers = ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
+		registers.set(static_cast<size_t>(continuation.callBase), valueBool(false));
 		if (resultCount > 1) {
-			registers[static_cast<size_t>(continuation.callBase + 1)] = errorValue;
+			registers.set(static_cast<size_t>(continuation.callBase + 1), errorValue);
 			for (int index = 2; index < resultCount; ++index) {
-				registers[static_cast<size_t>(continuation.callBase + index)] = valueNil();
+				registers.set(static_cast<size_t>(continuation.callBase + index), valueNil());
 			}
 		}
 	}
 	caller.top = continuation.callBase + resultCount;
+	instructionBudgetRemaining -= resultCount;
 	finishProtectedContinuation(continuationIndex, resultCount);
 }
 
 int CPU::writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, const Value* values, int valueCount) {
 	CallFrame& caller = *continuation.caller;
-	const int resultCount = continuation.returnCount == 0 ? valueCount + 1 : continuation.returnCount;
+	const int resultCount = decodeValueCount(continuation.returnCount, valueCount + 1);
 	if (resultCount > 0) {
-		Value* registers = ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
-		registers[static_cast<size_t>(continuation.callBase)] = valueBool(prefix);
+		ValueSpan registers = ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
+		registers.set(static_cast<size_t>(continuation.callBase), valueBool(prefix));
 		const int copiedCount = std::min(valueCount, resultCount - 1);
 		if (copiedCount > 0) {
-			std::memcpy(
-				registers + continuation.callBase + 1,
-				values,
-				static_cast<size_t>(copiedCount) * sizeof(Value)
-			);
+			for (int i = 0; i < copiedCount; ++i) registers.set(continuation.callBase + 1 + i, values[i]);
 		}
 		for (int index = copiedCount + 1; index < resultCount; ++index) {
-			registers[static_cast<size_t>(continuation.callBase + index)] = valueNil();
+			registers.set(static_cast<size_t>(continuation.callBase + index), valueNil());
 		}
 	}
 	caller.top = continuation.callBase + resultCount;
@@ -2040,20 +1697,16 @@ int CPU::writeProtectedResults(ProtectedCallContinuation& continuation, bool pre
 
 int CPU::writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, CallFrame& source, int sourceBase, int sourceCount) {
 	CallFrame& caller = *continuation.caller;
-	const int resultCount = continuation.returnCount == 0 ? sourceCount + 1 : continuation.returnCount;
+	const int resultCount = decodeValueCount(continuation.returnCount, sourceCount + 1);
 	if (resultCount > 0) {
-		Value* registers = ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
+		ValueSpan registers = ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
 		const int copiedCount = std::min(sourceCount, resultCount - 1);
 		if (copiedCount > 0) {
-			std::memmove(
-				registers + continuation.callBase + 1,
-				source.registers + sourceBase,
-				static_cast<size_t>(copiedCount) * sizeof(Value)
-			);
+			registers.copyFrom(source.registers, continuation.callBase + 1, sourceBase, copiedCount);
 		}
-		registers[static_cast<size_t>(continuation.callBase)] = valueBool(prefix);
+		registers.set(static_cast<size_t>(continuation.callBase), valueBool(prefix));
 		for (int index = copiedCount + 1; index < resultCount; ++index) {
-			registers[static_cast<size_t>(continuation.callBase + index)] = valueNil();
+			registers.set(static_cast<size_t>(continuation.callBase + index), valueNil());
 		}
 	}
 	caller.top = continuation.callBase + resultCount;
@@ -2066,7 +1719,6 @@ void CPU::finishProtectedContinuation(size_t continuationIndex, int resultCount)
 	const int callBase = continuation.callBase;
 	const bool returnsToProtectedParent = continuation.returnsToProtectedParent;
 	continuation.caller = nullptr;
-	continuation.target = nullptr;
 	m_activeThread->protectedCallDepth = continuationIndex;
 	if (returnsToProtectedParent) {
 		finishProtectedCall(continuationIndex - 1, *caller, callBase, resultCount);
@@ -2080,18 +1732,14 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 		}
 		const size_t continuationIndex = m_activeThread->protectedCallDepth - 1;
 		ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
-		int callerIndex = 0;
-		while (m_activeThread->frames[static_cast<size_t>(callerIndex)].get() != continuation.caller) {
-			callerIndex += 1;
-		}
-		for (int frameIndex = static_cast<int>(m_activeThread->frames.size()) - 1; frameIndex > callerIndex; --frameIndex) {
+		int callerIndex = static_cast<int>(m_activeThread->frameDepth) - 1;
+		for (auto* frame = m_activeThread->currentFrame; frame != continuation.caller; frame = frame->previous, --callerIndex) {
 			// Completion roots return to their latch, not the interrupted caller.
-			const auto& frame = *m_activeThread->frames[static_cast<size_t>(frameIndex)];
-			if (frame.isExceptionFrame || frame.returnToCompletionLatch) {
+			if (frame->isExceptionFrame || frame->returnToCompletionLatch) {
 				return false;
 			}
 		}
-		unwindToDepth(callerIndex + 1);
+		unwindToDepth(callerIndex + 1, true);
 		if (continuation.kind != ProtectedCallKind::XPCallBody) {
 			const Value result = continuation.kind == ProtectedCallKind::XPCallHandler
 				? m_errorInErrorHandlingValue
@@ -2101,10 +1749,10 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 		}
 
 		continuation.kind = ProtectedCallKind::XPCallHandler;
-		continuation.target = nullptr;
 		CallFrame& caller = *continuation.caller;
-		const Value handler = caller.registers[static_cast<size_t>(continuation.handlerRegister)];
+		const Value handler = caller.registers.get(static_cast<size_t>(continuation.handlerRegister));
 		setRegister(caller, continuation.callBase, errorValue);
+		--instructionBudgetRemaining;
 		try {
 			invokeProtectedTarget(continuationIndex, handler, continuation.callBase, 1);
 			return true;
@@ -2122,38 +1770,9 @@ void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
 	}
 	Value nextKey;
 	Value nextValue;
-	if (!asTable(target)->nextEntry(key, nextKey, nextValue)) {
-		out.push_back(valueNil());
-		return;
-	}
+	instructionBudgetRemaining -= static_cast<int>(asTable(target, m_heap)->nextEntry(key, nextKey, nextValue));
 	out.push_back(nextKey);
-	out.push_back(nextValue);
-}
-
-void CPU::runBuiltinSetMetatable(BuiltinArgsView args, BuiltinResults& out) {
-	const Value target = args[0];
-	if (!valueIsTable(target)) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	}
-	const Value metatableValue = args[1];
-	Table* metatable = nullptr;
-	if (valueIsTable(metatableValue)) {
-		metatable = asTable(metatableValue);
-	} else if (!isNil(metatableValue)) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	}
-	Table* table = asTable(target);
-	table->metatable = metatable;
-	out.push_back(target);
-}
-
-void CPU::runBuiltinGetMetatable(BuiltinArgsView args, BuiltinResults& out) {
-	const Value target = args[0];
-	if (!valueIsTable(target)) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	}
-	Table* metatable = asTable(target)->metatable;
-	out.push_back(metatable ? valueTable(metatable) : valueNil());
+	if (!isNil(nextKey)) out.push_back(nextValue);
 }
 
 void CPU::runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out) {
@@ -2161,7 +1780,7 @@ void CPU::runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out) {
 	if (!valueIsTable(target)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
-	Table* table = asTable(target);
+	Table* table = asTable(target, m_heap);
 	out.push_back(table->get(args[1]));
 }
 
@@ -2170,16 +1789,16 @@ void CPU::runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out) {
 	if (!valueIsTable(target)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
-	Table* table = asTable(target);
+	Table* table = asTable(target, m_heap);
 	table->set(args[1], args[2]);
-	out.push_back(valueTable(table));
+	out.push_back(valueTable(m_heap.reference(table)));
 }
 
-void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out) {
+void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit) {
 	const Value selector = args[0];
 	if (valueIsString(selector)) {
 		if (m_stringPool.toString(asStringId(selector)) == "#") {
-			out.push_back(valueNumber(static_cast<double>(args.size() - 1)));
+			out.push_back(valueInteger(static_cast<i32>(args.size() - 1)));
 			return;
 		}
 		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -2188,64 +1807,33 @@ void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
 	const int count = static_cast<int>(args.size()) - 1;
-	int start = toI32(selector);
+	int start = integerOperand(selector);
 	if (start < 0) {
 		start = count + start + 1;
 	}
-	for (int index = start; index <= count; ++index) {
-		if (index >= 1 && static_cast<size_t>(index) < args.size()) {
-			out.push_back(args[static_cast<size_t>(index)]);
-		}
+	start = std::max(start, 1);
+	const int available = std::max(count - start + 1, 0);
+	const int produced = resultLimit < 0 ? available : std::min(available, resultLimit);
+	for (int index = 0; index < produced; ++index) {
+		out.push_back(args[static_cast<size_t>(start + index)]);
 	}
-}
-
-void CPU::runBuiltinStringByte(BuiltinArgsView args, BuiltinResults& out) {
-	const Value sourceValue = args[0];
-	if (!valueIsString(sourceValue)) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	}
-	const std::string& source = m_stringPool.toString(asStringId(sourceValue));
-	int position = 1;
-	if (args.size() > 1) {
-		const Value positionValue = args[1];
-		if (!isNil(positionValue)) {
-			if (!valueIsNumber(positionValue)) {
-				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			}
-			position = toI32(positionValue);
-		}
-	}
-	if (position < 1) {
-		out.push_back(valueNil());
-		return;
-	}
-	size_t byteIndex = 0;
-	int current = 1;
-	while (byteIndex < source.size()) {
-		if (current == position) {
-			out.push_back(valueNumber(static_cast<double>(readUtf8Codepoint(source, byteIndex))));
-			return;
-		}
-		byteIndex = nextUtf8Index(source, byteIndex);
-		current += 1;
-	}
-	out.push_back(valueNil());
 }
 
 void CPU::runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out) {
+	instructionBudgetRemaining -= static_cast<int>(args.size());
 	std::string result;
 	result.reserve(args.size());
 	for (const auto& arg : args) {
 		if (!valueIsNumber(arg)) {
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
-		const uint32_t codepoint = toU32(arg);
+		const uint32_t codepoint = wordOperand(arg);
 		if (codepoint > 0x10ffffu || (codepoint >= 0xd800u && codepoint <= 0xdfffu)) {
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
 		appendUtf8Codepoint(result, codepoint);
 	}
-	out.push_back(valueString(m_stringPool.intern(result)));
+	out.push_back(valueString(m_stringPool.internOwned(std::move(result))));
 }
 
 void CPU::runBuiltinError(BuiltinArgsView args) {
@@ -2266,7 +1854,7 @@ void CPU::requestNonMaskableInterrupt() {
 }
 
 bool CPU::canAcceptMaskableInterruptLine() const {
-	return (m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+	return (m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 		&& m_irqController.hasAssertedMaskableInterruptLine();
 }
 
@@ -2281,20 +1869,22 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 }
 
 bool CPU::enterPendingInterrupt() {
+	if (m_pendingMemory.kind != PendingMemoryKind::None) return false;
 	if (m_nonMaskableInterruptPending) {
 		m_nonMaskableInterruptPending = false;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
-		const u32 returnCauseWord = m_causeWord;
-		const u32 returnEpcWord = m_epcWord;
-		const u32 returnBadAddressWord = m_badAddressWord;
-		const u32 returnLuaFaultReasonWord = m_luaFaultReasonWord;
+		const u32 returnCauseWord = m_cop0Words[COP0_CAUSE];
+		const u32 returnEpcWord = m_cop0Words[COP0_EPC];
+		const u32 returnBadAddressWord = m_cop0Words[COP0_BAD_ADDRESS];
+		const u32 returnLuaFaultReasonWord = m_cop0Words[COP0_LUA_FAULT_REASON];
 		const u32 returnExceptionDomainWord = m_exceptionDomainWord;
 		enterException(
+			*m_systemImage,
 			m_systemExceptionFunctionAddress,
 			CPU_CAUSE_NMI,
-			m_activeThread->frames.back()->pc
+			m_activeThread->currentFrame->pc
 		);
-		m_activeThread->frames.back()->isNonMaskableExceptionFrame = true;
+		m_activeThread->currentFrame->isNonMaskableExceptionFrame = true;
 		m_nmiReturnCauseWord = returnCauseWord;
 		m_nmiReturnEpcWord = returnEpcWord;
 		m_nmiReturnBadAddressWord = returnBadAddressWord;
@@ -2304,9 +1894,9 @@ bool CPU::enterPendingInterrupt() {
 		return true;
 	}
 	if (canAcceptMaskableInterruptLine()) {
-		Blua32ExecutionImage& image = isUserMode() ? *m_activeExecutionImage : *m_systemImage;
+		Blua32ExecutionImage& image = isUserMode() ? *executionImageForDomain(m_programExecutionDomainId) : *m_systemImage;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
-		enterException(image.irqFunctionAddress, CPU_CAUSE_IRQ, m_activeThread->frames.back()->pc);
+		enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, m_activeThread->currentFrame->pc);
 		if (!hadHaltLatch) m_interruptEventPending = true;
 		return true;
 	}
@@ -2315,42 +1905,75 @@ bool CPU::enterPendingInterrupt() {
 
 void CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) {
 	interruptedFrame.pc = m_currentInstructionPc;
-	enterException(m_systemExceptionFunctionAddress, causeWord, m_currentInstructionPc);
+	enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, m_currentInstructionPc);
 }
 
 void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address) {
-	m_badAddressWord = address;
+	m_cop0Words[COP0_BAD_ADDRESS] = address;
 	enterSynchronousException(interruptedFrame, causeWord);
 }
 
 void CPU::enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc) {
 	instructionBudgetRemaining -= 1;
 	interruptedFrame.pc = pc;
-	enterException(m_systemExceptionFunctionAddress, causeWord, pc);
+	enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, pc);
 }
 
 void CPU::enterLuaFaultException(u32 reason, Value errorValue) {
-	m_luaFaultReasonWord = reason;
-	enterSynchronousException(*m_activeThread->frames.back(), CPU_CAUSE_CODE_TRAP);
-	m_activeThread->frames.back()->registers[0] = errorValue;
+	m_cop0Words[COP0_LUA_FAULT_REASON] = reason;
+	enterSynchronousException(*m_activeThread->currentFrame, CPU_CAUSE_CODE_TRAP);
+	m_activeThread->currentFrame->registers.set(0, errorValue);
+}
+
+void CPU::returnFromException(CallFrame& frame) {
+	if (isUserMode()) {
+		enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+		return;
+	}
+	if (!frame.isExceptionFrame) {
+		hardHalt();
+		return;
+	}
+	const bool returnFromNmi = frame.isNonMaskableExceptionFrame;
+	const u32 returnPc = m_cop0Words[COP0_EPC];
+	instructionBudgetRemaining -= closeUpvalues(frame);
+	m_activeThread->leaveFrame();
+	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_RFE_RESTORE_MASK)
+		| ((m_cop0Words[COP0_STATUS] >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
+	if (m_activeThread->frameDepth != 0) {
+		auto& caller = *m_activeThread->currentFrame;
+		caller.pc = returnPc;
+		caller.compilationEntry = true;
+	}
+	if (returnFromNmi) {
+		m_cop0Words[COP0_CAUSE] = m_nmiReturnCauseWord;
+		m_cop0Words[COP0_EPC] = m_nmiReturnEpcWord;
+		m_cop0Words[COP0_BAD_ADDRESS] = m_nmiReturnBadAddressWord;
+		m_cop0Words[COP0_LUA_FAULT_REASON] = m_nmiReturnLuaFaultReasonWord;
+		m_exceptionDomainWord = m_nmiReturnExceptionDomainWord;
+	}
 }
 
 void CPU::enterException(
+	Blua32ExecutionImage& vectorImage,
 	u32 functionAddress,
 	u32 causeWord,
 	u32 epcWord
 ) {
-	m_exceptionDomainWord = static_cast<u32>(m_activeThread->frames.back()->executionImage->executionDomainId);
-	m_epcWord = epcWord;
-	m_causeWord = causeWord;
-	m_statusWord = (m_statusWord & ~CPU_STATUS_MODE_STACK_MASK)
-		| ((m_statusWord << 2u) & CPU_STATUS_MODE_STACK_MASK);
+	m_exceptionDomainWord = static_cast<u32>(m_activeThread->currentFrame->executionImage->executionDomainId);
+	m_cop0Words[COP0_EPC] = epcWord;
+	m_cop0Words[COP0_CAUSE] = causeWord;
+	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_MODE_STACK_MASK)
+		| ((m_cop0Words[COP0_STATUS] << 2u) & CPU_STATUS_MODE_STACK_MASK);
 	clearHaltAfterAcceptedInterrupt();
-	Closure* closure = staticClosureAtAddress(functionAddress);
+	if (!readFunctionRecordOnBus(vectorImage, functionAddress, executionBusSignalsForDomain(vectorImage.executionDomainId))) {
+		hardHalt();
+		return;
+	}
+	Closure* closure = staticClosureForRecord(boundFunctionRecord(m_functionRecordLatch));
 	CallFrame* frame = pushFrame(
 		closure,
-		nullptr,
-		0,
+		{},
 		0,
 		0,
 		false
@@ -2379,13 +2002,18 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 	}
 }
 
+#include "machine/cpu/cpu_calls.inl"
+#include "machine/cpu/cpu_memory.inl"
+#include "machine/cpu/cpu_control.inl"
+#include "machine/cpu/cpu_strings.inl"
+
 template <bool RootBoundary, bool Instrumented>
 RunResult CPU::runLoop(
 	int targetDepth,
 	int instructionBudget
 ) {
 	instructionBudgetRemaining = instructionBudget;
-	auto& frames = m_activeThread->frames;
+	Thread& thread = *m_activeThread;
 	ExecutionHookBinding hookBinding;
 	if constexpr (Instrumented) {
 		hookBinding = m_executionHookBinding;
@@ -2393,29 +2021,35 @@ RunResult CPU::runLoop(
 	CallFrame* frame = nullptr;
 	Blua32ExecutionImage* image = nullptr;
 	DecodedInstruction* decoded;
+	DecodedInstructionPage* decodedPage = nullptr;
+	u32 pageAddress = 0;
 	u32 pc = 0;
-	int a = 0;
-	int b = 0;
-	int c = 0;
-	uint32_t bx = 0;
-	int sbx = 0;
-	int rkB = 0;
-	int rkC = 0;
-	int disp = 0;
-	Value* registers = nullptr;
+	ValueSpan registers;
+	bool canReuseFrame = false;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const NativeBlock* nativeBlock = nullptr;
+	int nativeFirstDispatchCycles = 0;
+	bool forceScalarOnce = false;
+	NativeCpuRunState nativeState{.state = {}, .cpu = this, .targetDepth = targetDepth,
+		.systemRom = &m_memory.systemRomStorage(),
+		.ram = {m_memory.ramData(), m_memory.ramByteCount()}, .error = {}};
+#endif
 	for (;;) {
 		try {
+			if (static_cast<int>(thread.frameDepth) > targetDepth && instructionBudgetRemaining > 0
+				&& !m_memoryWriteBlocked && !m_hardHalted && !m_yieldRequested
+				&& !(m_haltedUntilIrqThread == m_activeThread && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth))) resumePendingMemoryOperation();
 			if constexpr (RootBoundary) {
-				if (frames.empty()) {
+				if (thread.frameDepth == 0) {
 					return RunResult::Halted;
 				}
 			} else {
-				if (static_cast<int>(frames.size()) <= targetDepth) {
+				if (static_cast<int>(thread.frameDepth) <= targetDepth) {
 					return RunResult::Halted;
 				}
 			}
 			if (m_hardHalted
-				|| (m_haltedUntilIrqThread == m_activeThread && m_haltedUntilIrqFrameDepth == static_cast<int>(frames.size()))
+				|| (m_haltedUntilIrqThread == m_activeThread && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth))
 				|| m_memoryWriteBlocked) {
 				return RunResult::Halted;
 			}
@@ -2426,14 +2060,18 @@ RunResult CPU::runLoop(
 			if (instructionBudgetRemaining <= 0) {
 				return RunResult::Yielded;
 			}
+			frame = thread.currentFrame;
+			image = frame->executionImage;
+			if (image != m_activeExecutionImage) latchActiveExecutionImage(*image);
+			registers = frame->registers;
 			if constexpr (Instrumented) {
 				if (m_nonMaskableInterruptPending) {
 					enterPendingInterrupt();
 					continue;
 				}
-				if ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+				if ((m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 					&& m_irqController.hasAssertedMaskableInterruptLine()) {
-					CallFrame* interruptedFrame = frames.back().get();
+					CallFrame* interruptedFrame = thread.currentFrame;
 					Blua32ExecutionImage* interruptedImage = interruptedFrame->executionImage;
 					if ((hookBinding.preMaskableInterruptDomainMask
 						& executionDomainBit(interruptedImage->executionDomainId)) != 0u
@@ -2449,15 +2087,20 @@ RunResult CPU::runLoop(
 				}
 			} else {
 				if (m_nonMaskableInterruptPending
-					|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+					|| ((m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 						&& m_irqController.hasAssertedMaskableInterruptLine())) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+					// The next instruction belongs to the interrupt handler; retry admission
+					// for the suspended instruction after RFE instead.
+					forceScalarOnce = false;
+#endif
 					enterPendingInterrupt();
 					continue;
 				}
 			}
-			frame = frames.back().get();
-			image = frame->executionImage;
-			registers = frame->registers;
+			goto dispatch_fetch;
+
+dispatch_fetch:
 			pc = frame->pc;
 			if constexpr (Instrumented) {
 				if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
@@ -2466,27 +2109,28 @@ RunResult CPU::runLoop(
 				}
 			}
 			if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) {
-				m_badAddressWord = pc;
+				m_cop0Words[COP0_BAD_ADDRESS] = pc;
 				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
 				continue;
 			}
-			const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-			DecodedInstructionPage* decodedPage = frame->decodedPage;
-			if (!decodedPage || frame->decodedPageAddress != pageAddress) {
-				decodedPage = &decodedPageForFrame(*frame, pc);
-			}
+			pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
+			decodedPage = &decodedPageForFrame(*frame, pc);
+			goto dispatch_decode;
+
+dispatch_decode:
 			const u32 pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
+			u8 refreshState = decodedPage->refreshState[pageOffset];
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			[[maybe_unused]] const bool rewritten = (refreshState & DECODED_REFRESH_DECODE) != 0u
+				&& decodedPage->words[pageOffset].width != 0u;
+#endif
 			if ((Instrumented
-					? (decodedPage->refreshState[pageOffset] & DECODED_REFRESH_DECODE)
-					: decodedPage->refreshState[pageOffset]) != 0u
-				&& !decodeInstruction(
-				*frame,
-				*decodedPage,
-				pageOffset,
-				pc,
-				!Instrumented
-			)) {
-				continue;
+					? (refreshState & DECODED_REFRESH_DECODE)
+					: refreshState) != 0u) {
+				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented)) {
+					continue;
+				}
+				refreshState = decodedPage->refreshState[pageOffset];
 			}
 			decoded = &decodedPage->words[pageOffset];
 			m_currentInstructionPc = pc;
@@ -2497,28 +2141,21 @@ RunResult CPU::runLoop(
 			if constexpr (Instrumented) {
 				dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
 					? decoded->dispatchOp : decoded->op;
-				instructionBudgetRemaining -= static_cast<int>(DECODED_DISPATCH_BASE_CYCLES[dispatchOp]);
+				instructionBudgetRemaining -= dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
+					? decoded->dispatchCycles : decoded->baseCycles;
 			} else {
 				dispatchOp = decoded->dispatchOp;
-				instructionBudgetRemaining -= static_cast<int>(
-					DECODED_DISPATCH_BASE_CYCLES[dispatchOp]
-				);
+				// Cacheable instruction reads cannot raise a device edge during fetch.
+				canReuseFrame = (refreshState & DECODED_REFRESH_DECODE) == 0u;
+				instructionBudgetRemaining -= decoded->dispatchCycles;
 			}
-			a = decoded->a;
-			b = decoded->b;
-			c = decoded->c;
-			bx = decoded->bx;
-			sbx = decoded->sbx;
-			rkB = decoded->rkB;
-			rkC = decoded->rkC;
-			disp = decoded->disp;
 
 #define FRAME (*frame)
 #define IMAGE (*image)
-#define REG(index) registers[static_cast<size_t>(index)]
+#define REG(index) registers.get(static_cast<size_t>(index))
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
-	REG(index) = (valueExpr); \
+	registers.set(static_cast<size_t>(index), (valueExpr)); \
 	const int nextTop = (index) + 1; \
 	if (nextTop > FRAME.top) { \
 		FRAME.top = nextTop; \
@@ -2530,7 +2167,20 @@ RunResult CPU::runLoop(
 #define TABLE_CACHE_SLOT() (decoded->tableCacheSlot)
 #define DISPATCH_LABEL(name) case static_cast<uint8_t>(OpCode::name):
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
+#define DISPATCH_NEXT() do { \
+	if constexpr (!Instrumented) { \
+		if (canReuseFrame && instructionBudgetRemaining > 0) { \
+			pc = frame->pc; \
+			if ((pc & ~MAPPED_PAGE_BYTE_MASK) == pageAddress) goto dispatch_decode; \
+			goto dispatch_fetch; \
+		} \
+	} \
+	goto dispatch_continue; \
+} while (0)
 #define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
+#define DISPATCH_REBIND_FRAME() do { \
+	goto dispatch_rebind_frame; \
+} while (0)
 
 dispatch_instruction:
 			if constexpr (Instrumented) {
@@ -2544,6 +2194,35 @@ dispatch_instruction:
 				}
 			} else {
 				switch (dispatchOp) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				case static_cast<u8>(DecodedDispatchOp::NativeWarm): {
+					auto& visits = decodedPage->nativeVisits[pageOffset];
+					if (visits < NATIVE_BLOCK_COMPILATION_THRESHOLD) ++visits;
+					if (FRAME.compilationEntry && visits == NATIVE_BLOCK_COMPILATION_THRESHOLD) {
+						prepareNativeBlock(IMAGE, *decodedPage, pc, m_executionBusSignals);
+					}
+					FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
+					dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock)
+						? decoded->dispatchOp : decoded->op;
+					goto dispatch_instruction;
+				}
+				case static_cast<u8>(DecodedDispatchOp::NativeBlock): {
+					// The CPU thread owns code publication and source writes. With no
+					// intervening guest instruction, this is the same published entry;
+					// interrupt entry above cancels the retry before any handler runs.
+					if (forceScalarOnce) {
+						forceScalarOnce = false;
+						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
+						dispatchOp = decoded->op;
+						goto dispatch_instruction;
+					}
+					nativeBlock = decodedPage->nativeBlocks->entries[pageOffset].get();
+					// The first instruction's ordinary charge/PC publication has
+					// already happened with positive budget, admitting this segment.
+					nativeFirstDispatchCycles = decoded->baseCycles;
+					goto dispatch_native_block;
+				}
+#endif
 				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
 					enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					DISPATCH_CONTINUE();
@@ -2551,17 +2230,17 @@ dispatch_instruction:
 					goto dispatch_observe;
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor):
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShrBxor): {
+					const int a = decoded->a;
+					const int rkB = decoded->b;
+					const int rkC = decoded->c;
 					const Value& shiftLeftValue = readRK(IMAGE, registers, rkB);
 					const Value& shiftRightValue = readRK(IMAGE, registers, rkC);
-					const int32_t shifted = dispatchOp
-						== static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor)
-						? static_cast<int32_t>(
-							toU32(shiftLeftValue) << (toU32(shiftRightValue) & 31u)
-						)
-						: toI32(shiftLeftValue) >> (toU32(shiftRightValue) & 31u);
+					const i32 shifted = dispatchOp == static_cast<u8>(DecodedDispatchOp::FusedShlBxor)
+						? luaShiftLeft(integerOperand(shiftLeftValue), integerOperand(shiftRightValue))
+						: luaShiftRight(integerOperand(shiftLeftValue), integerOperand(shiftRightValue));
 					SET_REGISTER_FAST(
 						a,
-						valueNumber(static_cast<double>(shifted))
+						valueInteger(shifted)
 					);
 					if (instructionBudgetRemaining <= 0) {
 						DISPATCH_CONTINUE();
@@ -2588,26 +2267,27 @@ dispatch_instruction:
 					m_lastExecutionDomainId = IMAGE.executionDomainId;
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
-					instructionBudgetRemaining -= static_cast<int>(
-						BASE_CYCLES[static_cast<size_t>(OpCode::BXOR)]
-					);
-					const Value& xorLeftValue = readRK(IMAGE, registers, decoded->rkB);
-					const Value& xorRightValue = readRK(IMAGE, registers, decoded->rkC);
+					instructionBudgetRemaining -= decoded->baseCycles;
+					const Value& xorLeftValue = readRK(IMAGE, registers, decoded->b);
+					const Value& xorRightValue = readRK(IMAGE, registers, decoded->c);
 					const int32_t xorResult = static_cast<int32_t>(
-						toU32(xorLeftValue) ^ toU32(xorRightValue)
+						static_cast<u32>(integerOperand(xorLeftValue)) ^ static_cast<u32>(integerOperand(xorRightValue))
 					);
 					SET_REGISTER_FAST(
 						decoded->a,
-						valueNumber(static_cast<double>(xorResult))
+						valueInteger(xorResult)
 					);
 					DISPATCH_CONTINUE();
 				}
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedAddShl): {
+					const int a = decoded->a;
+					const int rkB = decoded->b;
+					const int rkC = decoded->c;
 					const Value& addLeftValue = readRK(IMAGE, registers, rkB);
 					const Value& addRightValue = readRK(IMAGE, registers, rkC);
 					SET_REGISTER_FAST(
 						a,
-						valueNumber(asNumber(addLeftValue) + asNumber(addRightValue))
+						valueAdd(addLeftValue, addRightValue)
 					);
 					if (instructionBudgetRemaining <= 0) {
 						DISPATCH_CONTINUE();
@@ -2634,34 +2314,106 @@ dispatch_instruction:
 					m_lastExecutionDomainId = IMAGE.executionDomainId;
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
-					instructionBudgetRemaining -= static_cast<int>(
-						BASE_CYCLES[static_cast<size_t>(OpCode::SHL)]
-					);
-					const Value& shiftLeftValue = readRK(IMAGE, registers, decoded->rkB);
-					const Value& shiftRightValue = readRK(IMAGE, registers, decoded->rkC);
-					const uint32_t shifted = toU32(shiftLeftValue)
-						<< (toU32(shiftRightValue) & 31u);
+					instructionBudgetRemaining -= decoded->baseCycles;
+					const Value& shiftLeftValue = readRK(IMAGE, registers, decoded->b);
+					const Value& shiftRightValue = readRK(IMAGE, registers, decoded->c);
+					const i32 shifted = luaShiftLeft(integerOperand(shiftLeftValue), integerOperand(shiftRightValue));
 					SET_REGISTER_FAST(
 						decoded->a,
-						valueNumber(static_cast<double>(static_cast<int32_t>(shifted)))
+						valueInteger(shifted)
 					);
 					DISPATCH_CONTINUE();
 				}
 #include "machine/cpu/cpu_dispatch.inl"
 				}
 			}
+			goto dispatch_continue;
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+dispatch_native_block: {
+				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
+				nativeState.cartridgeRom = m_memory.cartridgeController().romStorage(nativeState.cartridgeSlot);
+				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(nativeState.cartridgeSlot);
+				nativeState.state = {.registers = registers, .constants = IMAGE.constPool.view(), .frame = frame, .heap = &m_heap,
+					.globalValues = m_globalValues.view(), .systemGlobalValues = m_systemGlobalValues.view(),
+					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.capacity()),
+					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top,
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+					.diagnosticOpcodes = {},
+#endif
+				};
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+				const int nativeStartBudget = nativeState.state.remainingCycles;
+#endif
+				nativeBlock->execute(nativeState);
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+				// Helpers publish the authoritative CPU grant before returning or
+				// reporting an error; the native state's copy can then be stale.
+				m_diagnosticExecutionProfile.nativeOriginCycles += static_cast<i64>(nativeStartBudget) - instructionBudgetRemaining;
+				const auto& counts = nativeState.state.diagnosticOpcodes;
+				auto& total = m_diagnosticExecutionProfile.nativeOpcodes;
+				total.newt += counts.newt;
+				total.call += counts.call;
+				total.setfield += counts.setfield;
+				total.concat += counts.concat;
+				total.concatn += counts.concatn;
+#endif
+				if (nativeState.forceScalar) { forceScalarOnce = true; nativeState.forceScalar = false; }
+				if (nativeState.error) std::rethrow_exception(std::exchange(nativeState.error, {}));
+				DISPATCH_CONTINUE();
+			}
+#endif
+
+dispatch_rebind_frame:
+			if constexpr (Instrumented) goto dispatch_continue;
+			if (canReuseFrame && instructionBudgetRemaining > 0) {
+				if constexpr (RootBoundary) {
+					if (thread.frameDepth == 0) return RunResult::Halted;
+				} else {
+					if (static_cast<int>(thread.frameDepth) <= targetDepth) return RunResult::Halted;
+				}
+				// A pure frame transition can activate the depth-sensitive HALT latch.
+				if (m_haltedUntilIrqThread == m_activeThread
+					&& m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth)) return RunResult::Halted;
+				frame = thread.currentFrame;
+				image = frame->executionImage;
+				if (image != m_activeExecutionImage) latchActiveExecutionImage(*image);
+				registers = frame->registers;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				pc = frame->pc;
+				// A function record can supply a raw unaligned code address. Leave
+				// its address exception to the ordinary instruction-fetch boundary.
+				if ((pc & (INSTRUCTION_BYTES - 1u)) == 0u) {
+					pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
+					decodedPage = &decodedPageForFrame(FRAME, pc);
+					if (decodedPage->nativeBlocks) {
+						nativeBlock = decodedPage->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+						if (nativeBlock && instructionBudgetRemaining > 0) {
+							nativeFirstDispatchCycles = 0;
+							goto dispatch_native_block;
+						}
+					}
+				}
+#endif
+				goto dispatch_fetch;
+			}
 			goto dispatch_continue;
 
 dispatch_observe:
+			canReuseFrame = false;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
+#endif
 			m_instructionObserver.observe(m_instructionObserver.context, image->executionDomainId, pc, registers);
 			// Observe has zero base cost; execute and charge the original instruction once.
 			dispatchOp = decoded->op;
-			instructionBudgetRemaining -= static_cast<int>(DECODED_DISPATCH_BASE_CYCLES[dispatchOp]);
+			instructionBudgetRemaining -= decoded->baseCycles;
 			goto dispatch_instruction;
 
 dispatch_continue:
 #undef DISPATCH_BLOCKED
+#undef DISPATCH_REBIND_FRAME
+#undef DISPATCH_NEXT
 #undef DISPATCH_CONTINUE
 #undef DISPATCH_LABEL
 #undef SKIP_NEXT_INSTRUCTION
@@ -2705,6 +2457,9 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, const Threa
 }
 
 RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBudget) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	cpu.publishNativeCompilation();
+#endif
 	if (targetDepth == 0) {
 		return cpu.runLoop<true, false>(targetDepth, instructionBudget);
 	}
@@ -2719,11 +2474,19 @@ RunResult CPU::runUntilDepthInstrumented(CPU& cpu, int targetDepth, int instruct
 }
 
 void CPU::setInstructionObserver(InstructionObserverBinding binding) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	discardNativeCompilation();
+#endif
 	m_instructionObserver = std::move(binding);
 	// Predecessors may have fused across a newly observed PC.
 	for (auto& image : m_executionImagesByDomain) {
 		if (!image) continue;
-		for (auto& [key, page] : image->decodedPages) page.refreshState.fill(DECODED_REFRESH_DECODE);
+		for (auto& [key, page] : image->decodedPages) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			page.retireNativeBlocks();
+#endif
+			page.refreshState.fill(DECODED_REFRESH_DECODE);
+		}
 	}
 }
 
@@ -2734,19 +2497,19 @@ void CPU::setExecutionHook(ExecutionHookBinding binding) {
 		: &CPU::runUntilDepthInstrumented;
 }
 
-void CPU::unwindToDepth(int targetDepth) {
-	while (static_cast<int>(m_activeThread->frames.size()) > targetDepth) {
-		auto finished = std::move(m_activeThread->frames.back());
-		m_activeThread->frames.pop_back();
-		closeUpvalues(*finished);
-		m_activeThread->stackTop = finished->varargBase;
-		releaseFrame(std::move(finished));
+void CPU::unwindToDepth(int targetDepth, bool chargeCaptures) {
+	if (static_cast<int>(m_activeThread->frameDepth) > targetDepth) abortStalledMemoryWrite();
+	while (static_cast<int>(m_activeThread->frameDepth) > targetDepth) {
+		auto* finished = m_activeThread->currentFrame;
+		const int closed = closeUpvalues(*finished);
+		if (chargeCaptures) instructionBudgetRemaining -= closed;
+		m_activeThread->leaveFrame();
 	}
 	while (m_activeThread->protectedCallDepth > 0) {
 		ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(m_activeThread->protectedCallDepth - 1);
 		bool callerActive = false;
-		for (const auto& frame : m_activeThread->frames) {
-			if (frame.get() == continuation.caller) {
+		for (auto* frame = m_activeThread->currentFrame; frame; frame = frame->previous) {
+			if (frame == continuation.caller) {
 				callerActive = true;
 				break;
 			}
@@ -2755,22 +2518,28 @@ void CPU::unwindToDepth(int targetDepth) {
 			break;
 		}
 		continuation.caller = nullptr;
-		continuation.target = nullptr;
 		m_activeThread->protectedCallDepth -= 1;
 	}
 }
 
-void CPU::collectHeap() {
-	collectHeap(valueNil(), valueNil(), valueNil());
+size_t CPU::collectionRootWordCount() const {
+	size_t words = 3 * (m_systemGlobalNames.size() + m_globalNames.size());
+	for (const auto& image : m_executionImagesByDomain) {
+		if (image) words += 2 * image->constPool.capacity();
+	}
+	return words;
 }
 
-void CPU::collectHeap(Value root0, Value root1, Value root2) {
-	const size_t liveBytes = m_heap.collect(root0, root1, root2);
-	m_luaHeap.finishCollection(liveBytes);
+size_t CPU::collectHeap(Value root0, Value root1, Value root2, Thread* growingStack) {
+	return m_heap.collect(root0, root1, root2, growingStack);
+}
+
+size_t CPU::stepHeap(Value root0, Value root1, Value root2, Thread* growingStack) {
+	return m_heap.step(root0, root1, root2, growingStack);
 }
 
 ExecutionDomainId CPU::readFrameExecutionDomain(int frameIndex) const {
-	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->executionImage->executionDomainId;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->executionImage->executionDomainId;
 }
 
 ExecutionDomainId CPU::readLastExecutionDomain() const {
@@ -2782,20 +2551,20 @@ u32 CPU::readCurrentInstructionPc() const {
 }
 
 u32 CPU::readFrameFunctionAddress(int frameIndex) const {
-	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->functionAddress;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->functionAddress;
 }
 
 u32 CPU::readFramePc(int frameIndex) const {
-	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->pc;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->pc;
 }
 
 u32 CPU::readFrameCallSitePc(int childFrameIndex) const {
-	return m_activeThread->frames[static_cast<size_t>(childFrameIndex)]->callSitePc;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->callSitePc;
 }
 
 bool CPU::completionCallPending() const {
-	for (auto frame = m_completionThread->frames.rbegin(); frame != m_completionThread->frames.rend(); ++frame) {
-		if ((*frame)->returnToCompletionLatch) {
+	for (auto* frame = m_completionThread->currentFrame; frame; frame = frame->previous) {
+		if (frame->returnToCompletionLatch) {
 			return true;
 		}
 	}
@@ -2803,71 +2572,72 @@ bool CPU::completionCallPending() const {
 }
 
 bool CPU::readFrameReturnsToCompletionLatch(int frameIndex) const {
-	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->returnToCompletionLatch;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->returnToCompletionLatch;
 }
 
 void CPU::abortCompletionCall(int frameIndex) {
-	unwindToDepth(frameIndex);
-	m_completionValues.clear();
+	unwindToDepth(frameIndex, false);
+	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 }
 
-auto CPU::readCompletionValues() const -> std::span<const Value> {
-	return m_completionValues;
+auto CPU::readCompletionValues() const -> ConstValueSpan {
+	return m_completionValues.view().subspan(0, m_completionValueCount);
 }
 
 bool CPU::isExceptionFrame(int frameIndex) const {
-	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->isExceptionFrame;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->isExceptionFrame;
 }
 
 // Frame depth reached after all currently active exception roots return.
 int CPU::readExceptionReturnFrameDepth() const {
-	for (size_t frameIndex = 0; frameIndex < m_activeThread->frames.size(); frameIndex += 1) {
-		if (m_activeThread->frames[frameIndex]->isExceptionFrame) return static_cast<int>(frameIndex);
+	const CallFrame* frame = m_activeThread->firstFrame;
+	for (size_t frameIndex = 0; frameIndex < m_activeThread->frameDepth; ++frameIndex, frame = frame->next) {
+		if (frame->isExceptionFrame) return static_cast<int>(frameIndex);
 	}
 	return -1;
 }
 
 bool CPU::isNonMaskableExceptionFrame(int frameIndex) const {
-	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->isNonMaskableExceptionFrame;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->isNonMaskableExceptionFrame;
 }
 
 int CPU::getFrameRegisterCount(int frameIndex) const {
-	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->top;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->top;
 }
 
 Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
-	const CallFrame& frame = *m_activeThread->frames[static_cast<size_t>(frameIndex)];
-	return frame.registers[static_cast<size_t>(registerIndex)];
+	const CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
+	return frame.registers.get(static_cast<size_t>(registerIndex));
 }
 
 int CPU::getFrameUpvalueCount(int frameIndex) const {
-	const CallFrame& frame = *m_activeThread->frames[static_cast<size_t>(frameIndex)];
+	const CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
 	return static_cast<int>(frame.closure->upvalueCount);
 }
 
 Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
-	const CallFrame& frame = *m_activeThread->frames[static_cast<size_t>(frameIndex)];
+	const CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
 	return readClosureUpvalue(frame.closure, upvalueIndex);
 }
 
 Value CPU::readClosureUpvalue(const Closure* closure, int upvalueIndex) const {
-	return readUpvalue(closure->upvalues[static_cast<size_t>(upvalueIndex)]);
+	return readUpvalue(static_cast<Upvalue*>(m_heap.object(closure->upvalues[static_cast<size_t>(upvalueIndex)])));
 }
 
 u32 CPU::readEpcWord() const {
-	return m_epcWord;
+	return m_cop0Words[COP0_EPC];
 }
 
 u32 CPU::readCauseWord() const {
-	return m_causeWord;
+	return m_cop0Words[COP0_CAUSE];
 }
 
 u32 CPU::readBadAddressWord() const {
-	return m_badAddressWord;
+	return m_cop0Words[COP0_BAD_ADDRESS];
 }
 
 u32 CPU::readLuaFaultReasonWord() const {
-	return m_luaFaultReasonWord;
+	return m_cop0Words[COP0_LUA_FAULT_REASON];
 }
 
 u32 CPU::readExceptionDomainWord() const {
@@ -2875,7 +2645,7 @@ u32 CPU::readExceptionDomainWord() const {
 }
 
 void CPU::writeEpcWord(u32 value) {
-	m_epcWord = value;
+	m_cop0Words[COP0_EPC] = value;
 }
 
 u32 CPU::readNmiReturnEpcWord() const {
@@ -2899,25 +2669,43 @@ void CPU::writeFrameExecution(
 		executionBusSignalsForDomain(executionDomainId)
 	);
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
-	CallFrame& frame = *m_activeThread->frames[static_cast<size_t>(frameIndex)];
-	if (functionRecord.maxStack > static_cast<u32>(frame.stackCapacity)) {
-		ensureRegisterCapacity(frame, static_cast<int>(functionRecord.maxStack) - 1);
+	CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
+	if (&frame == m_activeThread->currentFrame) abortStalledMemoryWrite();
+	const u32 registerCount = std::max(functionRecord.maxStack, functionRecord.numParams);
+	if (registerCount > static_cast<u32>(frame.stackCapacity)) {
+		ensureRegisterCapacity(frame, static_cast<int>(registerCount) - 1);
 	}
 	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
 		&& functionRecord.upvalueCount == 0u) {
-		frame.closure = staticClosureAtAddress(functionRecord.address);
+		frame.closure = staticClosureForRecord(boundFunctionRecord(functionRecord));
 	} else {
-		frame.closure->functionAddress = functionRecord.address;
+		Closure* oldClosure = frame.closure;
+		m_luaHeap.reserve(kClosureHeapBytes + oldClosure->upvalueCount * kClosureUpvalueSlotHeapBytes);
+		Closure* replacement = allocateTrackedClosure(functionRecord.address, oldClosure->upvalueCount);
+		const Closure record = boundFunctionRecord(functionRecord);
+		replacement->codeAddress = record.codeAddress;
+		replacement->numParams = record.numParams;
+		replacement->maxStack = record.maxStack;
+		replacement->flags = record.flags;
+		replacement->upvalueTableAddress = record.upvalueTableAddress;
+		replacement->recordUpvalueCount = record.recordUpvalueCount;
+		replacement->executionDomainId = record.executionDomainId;
+		std::copy_n(oldClosure->upvalues, oldClosure->upvalueCount, replacement->upvalues);
+		frame.closure = replacement;
 	}
 	frame.functionAddress = functionRecord.address;
 	frame.executionImage = functionRecord.image;
 	frame.decodedPage = nullptr;
 	frame.decodedPageAddress = 0;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	frame.nativeContinuationCells = {};
+#endif
+	frame.compilationEntry = true;
 	frame.pc = pc;
 }
 
 void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
-	m_activeThread->frames[static_cast<size_t>(childFrameIndex)]->callSitePc = pc;
+	m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->callSitePc = pc;
 }
 
 Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
@@ -2944,7 +2732,7 @@ Closure* CPU::createClosure(CallFrame& frame) {
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
 		&& functionRecord.upvalueCount == 0u) {
-		return staticClosureAtAddress(functionRecord.address);
+		return staticClosureForRecord(boundFunctionRecord(functionRecord));
 	}
 	m_closureUpvalueScratch.resize(functionRecord.upvalueCount);
 	std::fill(m_closureUpvalueScratch.begin(), m_closureUpvalueScratch.end(), nullptr);
@@ -2972,16 +2760,23 @@ Closure* CPU::createClosure(CallFrame& frame) {
 				newUpvalueCount += 1;
 			}
 		} else {
-			m_closureUpvalueScratch[index] = frame.closure->upvalues[upvalueIndex];
+			m_closureUpvalueScratch[index] = static_cast<Upvalue*>(m_heap.object(frame.closure->upvalues[upvalueIndex]));
 		}
 	}
 	const size_t closureHeapBytes = kClosureHeapBytes
 		+ (static_cast<size_t>(functionRecord.upvalueCount) * kClosureUpvalueSlotHeapBytes);
-	m_luaHeap.reserve(closureHeapBytes + (newUpvalueCount * kUpvalueHeapBytes));
+	m_luaHeap.reserve(closureHeapBytes + (newUpvalueCount * UPVALUE_HEAP_BYTES));
 	auto* closure = allocateTrackedClosure(
 		functionRecord.address,
 		functionRecord.upvalueCount
 	);
+	closure->codeAddress = functionRecord.codeAddress;
+	closure->numParams = functionRecord.numParams;
+	closure->maxStack = functionRecord.maxStack;
+	closure->flags = functionRecord.flags;
+	closure->upvalueTableAddress = functionRecord.upvalueTableAddress;
+	closure->recordUpvalueCount = functionRecord.upvalueCount;
+	closure->executionDomainId = functionRecord.image->executionDomainId;
 	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
 		Upvalue* upvalue = m_closureUpvalueScratch[index];
 		if (!upvalue) {
@@ -2993,292 +2788,219 @@ Closure* CPU::createClosure(CallFrame& frame) {
 			upvalue->frame = &frame;
 			linkOpenUpvalue(frame, upvalue);
 		}
-		closure->upvalues[index] = upvalue;
+		closure->upvalues[index] = m_heap.reference(upvalue);
 	}
 	m_closureUpvalueScratch.clear();
 	m_closureUpvalueWordScratch.clear();
+	instructionBudgetRemaining -= static_cast<int>(functionRecord.upvalueCount);
 	return closure;
 }
 
-void CPU::closeUpvalues(CallFrame& frame) {
+int CPU::closeUpvalues(CallFrame& frame) {
+	int closed = 0;
 	Upvalue* upvalue = frame.openUpvalueHead;
 	frame.openUpvalueHead = nullptr;
 	while (upvalue) {
 		Upvalue* next = upvalue->nextOpen;
-		upvalue->value = frame.registers[static_cast<size_t>(upvalue->index)];
+		upvalue->writeBarrier();
+		upvalue->setValue(frame.registers.get(static_cast<size_t>(upvalue->index)));
 		upvalue->open = false;
 		upvalue->frame = nullptr;
 		upvalue->nextOpen = nullptr;
 		upvalue = next;
+		++closed;
 	}
+	return closed;
 }
 
-const Value& CPU::readUpvalue(Upvalue* upvalue) const {
+Value CPU::readUpvalue(Upvalue* upvalue) const {
 	if (upvalue->open) {
-		return upvalue->frame->registers[upvalue->index];
+		return upvalue->frame->registers.get(upvalue->index);
 	}
-	return upvalue->value;
+	return upvalue->value();
 }
 
 void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
 	if (upvalue->open) {
-		upvalue->frame->registers[upvalue->index] = value;
+		upvalue->frame->registers.set(upvalue->index, value);
 		return;
 	}
-	upvalue->value = value;
+	upvalue->writeBarrier();
+	upvalue->setValue(value);
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 	int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc) {
-	if (!readFunctionRecordOnBus(
-		*m_activeExecutionImage,
-		closure->functionAddress,
-		m_executionBusSignals
-	)) {
-		hardHalt();
-		return nullptr;
-	}
-	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
+	const Closure& functionRecord = *closure;
 	const int callerArgBase = caller.stackBase + argBase;
-	auto frame = acquireFrame();
-	frame->thread = m_activeThread;
+	const bool sharedStack = caller.thread == m_activeThread;
+	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop;
+	const bool vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u;
+	const int varargCount = vararg && static_cast<u32>(argCount) > functionRecord.numParams
+		? static_cast<int>(static_cast<u32>(argCount) - functionRecord.numParams) : 0;
+	const int stackBase = vararg ? argumentBase + argCount : argumentBase;
+	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
+	auto* frame = m_activeThread->acquireFrame();
+	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)));
 	frame->functionAddress = closure->functionAddress;
-	frame->executionImage = functionRecord.image;
+	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->pc = functionRecord.codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
 	frame->returnToCompletionLatch = returnToCompletionLatch;
 	frame->callSitePc = callSitePc;
-	frame->varargBase = m_activeThread->stackTop;
-	frame->varargCount = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u
-		? std::max(argCount - static_cast<int>(functionRecord.numParams), 0)
-		: 0;
-	frame->stackBase = frame->varargBase + frame->varargCount;
-	const size_t targetCapacity = std::max(functionRecord.maxStack, 1u);
+	frame->varargBase = argumentBase + static_cast<int>(functionRecord.numParams);
+	frame->varargCount = varargCount;
+	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
-	m_activeThread->stackTop = frame->stackBase + frame->stackCapacity;
-	ensureStackSize(static_cast<size_t>(m_activeThread->stackTop));
-	frame->registers = m_activeThread->stack.data() + frame->stackBase;
+	frame->registers = m_activeThread->stack.view().subspan(stackBase, frame->stackCapacity);
 	frame->top = static_cast<int>(functionRecord.numParams);
-	std::fill_n(frame->registers, targetCapacity, valueNil());
-
-	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {
-		if (i < argCount) {
-			frame->registers[static_cast<size_t>(i)] = caller.thread->stack[static_cast<size_t>(callerArgBase + i)];
+	const int copiedCount = std::min(frame->top, argCount);
+	if (vararg || !sharedStack) {
+		frame->registers.copyFrom(caller.thread->stack.view(), 0, callerArgBase, copiedCount);
+	}
+	frame->registers.clear(copiedCount, frame->top - copiedCount);
+	if (vararg) {
+		if (sharedStack) {
+			// Fixed arguments now live in the relocated working frame. Keep only
+			// the original extra arguments below it, as in a Lua vararg frame.
+			m_activeThread->stack.clear(argumentBase, copiedCount);
 		} else {
-			frame->registers[static_cast<size_t>(i)] = valueNil();
+			m_activeThread->stack.view().copyFrom(caller.thread->stack.view(), frame->varargBase, callerArgBase + frame->top, varargCount);
 		}
 	}
-	if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u) {
-		for (int i = 0; i < frame->varargCount; ++i) {
-			m_activeThread->stack[static_cast<size_t>(frame->varargBase + i)] = caller.thread->stack[
-				static_cast<size_t>(callerArgBase + static_cast<int>(functionRecord.numParams) + i)
-			];
-		}
-	}
-	CallFrame* pushed = frame.get();
-	m_activeThread->frames.push_back(std::move(frame));
-	return pushed;
+	instructionBudgetRemaining -= (vararg || !sharedStack ? frame->top : frame->top - copiedCount)
+		+ (sharedStack ? 0 : varargCount);
+	m_activeThread->stackTop = stackBase + frame->stackCapacity;
+	m_activeThread->enterFrame(frame);
+	return frame;
 }
 
-CallFrame* CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
+CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 	int returnBase, int returnCount, bool returnToCompletionLatch) {
-	if (!readFunctionRecordOnBus(
-		*m_activeExecutionImage,
-		closure->functionAddress,
-		m_executionBusSignals
-	)) {
-		hardHalt();
-		return nullptr;
-	}
-	return pushLatchedFrame(
-		closure,
-		args,
-		argCount,
-		returnBase,
-		returnCount,
-		returnToCompletionLatch
-	);
-}
-
-CallFrame* CPU::pushLatchedFrame(
-	Closure* closure,
-	const Value* args,
-	size_t argCount,
-	int returnBase,
-	int returnCount,
-	bool returnToCompletionLatch
-) {
-	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
-	const uintptr_t stackBegin = reinterpret_cast<uintptr_t>(m_activeThread->stack.data());
-	const uintptr_t stackEnd = stackBegin + m_activeThread->stack.size() * sizeof(Value);
-	const uintptr_t argsBegin = reinterpret_cast<uintptr_t>(args);
-	const uintptr_t argsEnd = argsBegin + argCount * sizeof(Value);
-	const bool argsInStack = argCount > 0 && stackBegin != 0 && argsBegin >= stackBegin && argsEnd <= stackEnd;
-	const ptrdiff_t argsOffset = argsInStack ? static_cast<ptrdiff_t>((argsBegin - stackBegin) / sizeof(Value)) : 0;
-	auto frame = acquireFrame();
-	frame->thread = m_activeThread;
+	const Closure& functionRecord = *closure;
+	const size_t argCount = args.size();
+	auto* frame = m_activeThread->acquireFrame();
+	const int argumentBase = m_activeThread->stackTop;
+	const bool vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u;
+	const int varargCount = vararg && argCount > functionRecord.numParams
+		? static_cast<int>(argCount - functionRecord.numParams) : 0;
+	const int stackBase = vararg ? argumentBase + static_cast<int>(argCount) : argumentBase;
+	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
+	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)));
 	frame->functionAddress = closure->functionAddress;
-	frame->executionImage = functionRecord.image;
+	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->pc = functionRecord.codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
 	frame->returnToCompletionLatch = returnToCompletionLatch;
 	frame->callSitePc = functionRecord.codeAddress;
-	frame->varargBase = m_activeThread->stackTop;
-	frame->varargCount = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u
-		? std::max(static_cast<int>(argCount) - static_cast<int>(functionRecord.numParams), 0)
-		: 0;
-	frame->stackBase = frame->varargBase + frame->varargCount;
-	const size_t targetCapacity = std::max(functionRecord.maxStack, 1u);
+	frame->varargBase = argumentBase + static_cast<int>(functionRecord.numParams);
+	frame->varargCount = varargCount;
+	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
-	m_activeThread->stackTop = frame->stackBase + frame->stackCapacity;
-	ensureStackSize(static_cast<size_t>(m_activeThread->stackTop));
-	frame->registers = m_activeThread->stack.data() + frame->stackBase;
+	frame->registers = m_activeThread->stack.view().subspan(stackBase, frame->stackCapacity);
 	frame->top = static_cast<int>(functionRecord.numParams);
-	std::fill_n(frame->registers, targetCapacity, valueNil());
-	const Value* sourceArgs = argsInStack ? m_activeThread->stack.data() + argsOffset : args;
-
-	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {
-		if (i < static_cast<int>(argCount)) {
-			frame->registers[static_cast<size_t>(i)] = sourceArgs[i];
-		} else {
-			frame->registers[static_cast<size_t>(i)] = valueNil();
-		}
+	const int copiedCount = std::min(frame->top, static_cast<int>(argCount));
+	for (int i = 0; i < copiedCount; ++i) frame->registers.set(i, args[i]);
+	frame->registers.clear(copiedCount, frame->top - copiedCount);
+	if (varargCount != 0) {
+		for (int i = 0; i < varargCount; ++i) m_activeThread->stack.set(frame->varargBase + i, args[frame->top + i]);
 	}
-	if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u) {
-		for (int i = 0; i < frame->varargCount; ++i) {
-			m_activeThread->stack[static_cast<size_t>(frame->varargBase + i)] = sourceArgs[
-				static_cast<size_t>(functionRecord.numParams) + static_cast<size_t>(i)
-			];
-		}
-	}
-	CallFrame* pushed = frame.get();
-	m_activeThread->frames.push_back(std::move(frame));
-	return pushed;
+	m_activeThread->stackTop = stackBase + frame->stackCapacity;
+	m_activeThread->enterFrame(frame);
+	return frame;
 }
 
-void CPU::writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount) {
-	if (count == 0) {
-		for (int i = 0; i < valueCount; ++i) {
-			setRegister(frame, base + i, values[i]);
+void CPU::writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount) {
+	const int targetCount = decodeValueCount(count, sourceCount);
+	if (targetCount > 0) {
+		ValueSpan registers = ensureRegisterCapacity(frame, base + targetCount - 1);
+		// Backing growth can relocate both views; their stack offsets stay fixed.
+		const int copiedCount = std::min(sourceCount, targetCount);
+		registers.copyFrom(source.registers, base, sourceBase, copiedCount);
+		registers.clear(base + copiedCount, targetCount - copiedCount);
+	}
+	frame.top = base + targetCount;
+	instructionBudgetRemaining -= targetCount;
+}
+
+void CPU::writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values) {
+	const int valueCount = static_cast<int>(values.size());
+	const int targetCount = decodeValueCount(count, valueCount);
+	if (targetCount > 0) {
+		ValueSpan registers = ensureRegisterCapacity(frame, base + targetCount - 1);
+		const int copiedCount = std::min(valueCount, targetCount);
+		for (int i = 0; i < copiedCount; ++i) {
+			registers.set(base + i, values[i]);
 		}
-		frame.top = base + valueCount;
-		return;
+		for (int i = copiedCount; i < targetCount; ++i) {
+			registers.set(base + i, valueNil());
+		}
 	}
-	for (int i = 0; i < count; ++i) {
-		const Value value = i < valueCount ? values[i] : valueNil();
-		setRegister(frame, base + i, value);
-	}
-	frame.top = base + count;
+	frame.top = base + targetCount;
+	instructionBudgetRemaining -= targetCount;
 }
 
 void CPU::setRegister(CallFrame& frame, int index, Value value) {
-	Value* registers = ensureRegisterCapacity(frame, index);
-	registers[static_cast<size_t>(index)] = value;
+	ValueSpan registers = ensureRegisterCapacity(frame, index);
+	registers.set(static_cast<size_t>(index), value);
 	const int nextTop = index + 1;
 	if (nextTop > frame.top) {
 		frame.top = nextTop;
 	}
 }
 
-Value* CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
+ValueSpan CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	if (index < frame.stackCapacity) {
 		return frame.registers;
-	}
-	int frameIndex = -1;
-	for (size_t i = 0; i < m_activeThread->frames.size(); ++i) {
-		if (m_activeThread->frames[i].get() == &frame) {
-			frameIndex = static_cast<int>(i);
-			break;
-		}
-	}
-	if (frameIndex < 0) {
-		throw BMSX_RUNTIME_ERROR("Attempted to grow registers for a non-top frame.");
 	}
 	const size_t needed = static_cast<size_t>(index) + 1;
 	size_t bucket = nextPowerOfTwo(needed);
 	if (bucket < 8) {
 		bucket = 8;
 	}
-	const int previousCapacity = frame.stackCapacity;
+	ensureStackSize(static_cast<size_t>(frame.stackBase) + bucket);
 	frame.stackCapacity = static_cast<int>(bucket);
-	const int delta = frame.stackCapacity - previousCapacity;
-	ensureStackSize(static_cast<size_t>(m_activeThread->stackTop + delta));
-	if (delta > 0) {
-		for (int i = static_cast<int>(m_activeThread->frames.size()) - 1; i > frameIndex; --i) {
-			CallFrame* shifted = m_activeThread->frames[static_cast<size_t>(i)].get();
-			const int rangeBase = shifted->varargBase;
-			const int rangeCount = shifted->varargCount + shifted->stackCapacity;
-			for (int slot = rangeCount - 1; slot >= 0; --slot) {
-				m_activeThread->stack[static_cast<size_t>(rangeBase + delta + slot)] = m_activeThread->stack[static_cast<size_t>(rangeBase + slot)];
-			}
-			shifted->varargBase += delta;
-			shifted->stackBase += delta;
-		}
-	}
-	m_activeThread->stackTop += delta;
-	refreshFrameRegisterPointers();
-	for (int i = previousCapacity; i < frame.stackCapacity; ++i) {
-		frame.registers[static_cast<size_t>(i)] = valueNil();
+	frame.registers = frame.thread->stack.view().subspan(frame.stackBase, frame.stackCapacity);
+	if (&frame == frame.thread->currentFrame) {
+		frame.thread->stackTop = frame.stackBase + frame.stackCapacity;
 	}
 	return frame.registers;
 }
 
-void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount) {
-	const uint32_t faultSequence = m_memory.readBusFaultSequence();
-	uint32_t writeAddr = addr;
-	for (int offset = 0; offset < valueCount; ++offset) {
-		m_memory.writeMappedWord(writeAddr, toU32(frame.registers[static_cast<size_t>(valueBase + offset)]));
-		if (m_memory.readBusFaultSequence() != faultSequence) {
-			enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
-			return;
-		}
-		writeAddr += 4;
-	}
-}
-
+// TODO: Admit function-valued __index through VM call/return continuations in
+// all indexed-read forms. Table-only resolution is an implementation limitation,
+// not the intended BLua contract; raw Table storage must not execute guest code.
 Value CPU::resolveTableIndex(Table* table, const Value& key) {
-	Value value;
-	if (table->resolveIndex(
-		asStringId(m_indexKey),
-		key,
-		value
-	)) {
-		return value;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	TableLookupResult result;
+	table->resolveIndex(asStringId(m_indexKey), key, result);
+	instructionBudgetRemaining -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
+	if (result.status == TableLookupStatus::ChainExhausted) throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	return result.value;
 }
 
 Value CPU::resolveTableIntegerIndex(Table* table, int index) {
-	Value value;
-	if (table->resolveIntegerIndex(
-		asStringId(m_indexKey),
-		index,
-		value
-	)) {
-		return value;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	TableLookupResult result;
+	table->resolveIntegerIndex(asStringId(m_indexKey), index, result);
+	instructionBudgetRemaining -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
+	if (result.status == TableLookupStatus::ChainExhausted) throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	return result.value;
 }
 
 Value CPU::resolveTableFieldIndex(Table* table, StringId key) {
-	Value value;
-	if (table->resolveStringIndex(
-		asStringId(m_indexKey),
-		key,
-		value
-	)) {
-		return value;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	TableLookupResult result;
+	table->resolveStringIndex(asStringId(m_indexKey), key, result);
+	instructionBudgetRemaining -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
+	if (result.status == TableLookupStatus::ChainExhausted) throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	return result.value;
 }
 
 Value CPU::loadTableIndex(const Value& base, const Value& key) {
 	if (valueIsTable(base)) {
-		Table* table = asTable(base);
+		Table* table = asTable(base, m_heap);
 		if (!table->metatable) {
 			return table->get(key);
 		}
@@ -3295,7 +3017,7 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 
 Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 	if (valueIsTable(base)) {
-		Table* table = asTable(base);
+		Table* table = asTable(base, m_heap);
 		if (!table->metatable) {
 			return table->getInteger(index);
 		}
@@ -3310,50 +3032,23 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 	throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
-Value CPU::loadTableFieldIndexCached(
-	int& predictedSlot,
-	const Value& base,
-	StringId key
-) {
-	if (valueIsTable(base)) {
-		Table* table = asTable(base);
-		if (!table->metatable) {
-			return table->getStringKeyCached(key, predictedSlot);
-		}
-		Value value;
-		predictedSlot = table->resolveStringIndexCached(
-			m_indexKey,
-			key,
-			predictedSlot,
-			value
-		);
-		if (predictedSlot == TABLE_INDEX_CHAIN_EXHAUSTED) {
-			throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-		}
-		return value;
-	}
-	if (valueIsString(base)) {
-		if (!m_stringIndexTable->metatable) {
-			return m_stringIndexTable->getStringKeyCached(key, predictedSlot);
-		}
-		Value value;
-		predictedSlot = m_stringIndexTable->resolveStringIndexCached(
-			m_indexKey,
-			key,
-			predictedSlot,
-			value
-		);
-		if (predictedSlot == TABLE_INDEX_CHAIN_EXHAUSTED) {
-			throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-		}
-		return value;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
+Value CPU::loadTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key) {
+	Table* table;
+	if (valueIsTable(base)) table = asTable(base, m_heap);
+	else if (valueIsString(base)) table = m_stringIndexTable;
+	else throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
+	if (!table->metatable) return table->getStringKeyCached(key, predictedSlot);
+	TableLookupResult result;
+	table->resolveStringIndexCached(asStringId(m_indexKey), key, predictedSlot, result);
+	instructionBudgetRemaining -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
+	if (result.status == TableLookupStatus::ChainExhausted) throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	predictedSlot = result.slot;
+	return result.value;
 }
 
 Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
 	if (valueIsTable(base)) {
-		Table* table = asTable(base);
+		Table* table = asTable(base, m_heap);
 		if (!table->metatable) {
 			return table->getStringKey(key);
 		}
@@ -3370,7 +3065,7 @@ Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
 
 void CPU::storeTableIndex(const Value& base, const Value& key, const Value& value) {
 	if (valueIsTable(base)) {
-		asTable(base)->set(key, value);
+		asTable(base, m_heap)->set(key, value);
 		return;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
@@ -3378,7 +3073,7 @@ void CPU::storeTableIndex(const Value& base, const Value& key, const Value& valu
 
 void CPU::storeTableIntegerIndex(const Value& base, int index, const Value& value) {
 	if (valueIsTable(base)) {
-		asTable(base)->setInteger(index, value);
+		asTable(base, m_heap)->setInteger(index, value);
 		return;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
@@ -3391,57 +3086,31 @@ void CPU::storeTableFieldIndexCached(
 	const Value& value
 ) {
 	if (valueIsTable(base)) {
-		asTable(base)->setStringKeyCached(key, value, predictedSlot);
+		asTable(base, m_heap)->setStringKeyCached(key, value, predictedSlot);
 		return;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 }
 
-std::unique_ptr<CallFrame> CPU::acquireFrame() {
-	if (!m_framePool.empty()) {
-		auto frame = std::move(m_framePool.back());
-		m_framePool.pop_back();
-		return frame;
-	}
-	return std::make_unique<CallFrame>();
-}
-
-void CPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
-	frame->varargBase = 0;
-	frame->varargCount = 0;
-	frame->decodedPage = nullptr;
-	frame->decodedPageAddress = 0;
-	frame->registers = nullptr;
-	frame->stackBase = 0;
-	frame->stackCapacity = 0;
-	frame->isExceptionFrame = false;
-	frame->isNonMaskableExceptionFrame = false;
-	if (m_framePool.size() < static_cast<size_t>(MAX_POOLED_FRAMES)) {
-		m_framePool.push_back(std::move(frame));
-	}
-}
-
 void CPU::clearCallStack() {
+	abortStalledMemoryWrite();
 	for (;;) {
 		for (size_t index = 0; index < m_activeThread->protectedCallDepth; ++index) {
 			ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(index);
 			continuation.caller = nullptr;
-			continuation.target = nullptr;
 		}
 		m_activeThread->protectedCallDepth = 0;
-		while (!m_activeThread->frames.empty()) {
-			CallFrame* frame = m_activeThread->frames.back().get();
+		while (m_activeThread->frameDepth != 0) {
+			CallFrame* frame = m_activeThread->currentFrame;
 			closeUpvalues(*frame);
-			auto finished = std::move(m_activeThread->frames.back());
-			m_activeThread->frames.pop_back();
-			releaseFrame(std::move(finished));
+			m_activeThread->leaveFrame();
 		}
-		std::fill(m_activeThread->stack.begin(), m_activeThread->stack.end(), valueNil());
+		m_activeThread->stack.clear(0, m_activeThread->stackCapacity);
 		m_activeThread->stackTop = 0;
 		Thread* thread = m_activeThread;
 		thread->status = ThreadStatus::Dead;
 		thread->entry = nullptr;
-		thread->error = valueNil();
+		thread->setError(valueNil());
 		if (thread == m_rootThread) break;
 		m_activeThread = thread->resumer == nullptr ? m_rootThread : thread->resumer;
 		thread->resumer = nullptr;
@@ -3452,20 +3121,14 @@ void CPU::clearCallStack() {
 }
 
 
-void CPU::ensureStackSize(size_t size) {
-	if (size <= m_activeThread->stack.size()) return;
+void CPU::ensureStackSize(size_t size, Value root) {
+	if (size <= m_activeThread->stackCapacity) return;
 	size_t capacity = 8;
 	while (capacity < size) capacity *= 2;
-	m_luaHeap.reserve((capacity - m_activeThread->stack.size()) * THREAD_STACK_SLOT_BYTES);
-	m_activeThread->stack.resize(capacity, valueNil());
-	refreshFrameRegisterPointers();
-}
-
-void CPU::refreshFrameRegisterPointers() {
-	Value* base = m_activeThread->stack.data();
-	for (const auto& framePtr : m_activeThread->frames) {
-		framePtr->registers = base + framePtr->stackBase;
-	}
+	// Admission must not shrink the allocation whose growth it is admitting.
+	m_luaHeap.reserve((capacity - m_activeThread->stackCapacity) * THREAD_STACK_SLOT_BYTES,
+		root, valueNil(), valueNil(), m_activeThread);
+	m_activeThread->resizeStack(capacity);
 }
 
 BuiltinResultsScratchScope CPU::acquireBuiltinResultScratch() {
@@ -3496,8 +3159,8 @@ void CPU::markRoots(GcHeap& heap) {
 	heap.markValue(m_errorInErrorHandlingValue);
 	for (const Value value : m_luaFaultErrorValues) heap.markValue(value);
 	heap.markObject(m_stringIndexTable);
-	for (const auto& value : m_completionValues) {
-		heap.markValue(value);
+	for (size_t i = 0; i < m_completionValueCount; ++i) {
+		heap.markValue(m_completionValues.get(i));
 	}
 	for (size_t scratchIndex = 0; scratchIndex < m_builtinResultScratchIndex; ++scratchIndex) {
 		BuiltinResults& scratch = m_builtinResultScratch.get(scratchIndex);
@@ -3510,19 +3173,19 @@ void CPU::markRoots(GcHeap& heap) {
 	}
 	for (size_t slot = 0; slot < m_systemGlobalNames.size(); ++slot) {
 		m_stringPool.markReachable(m_systemGlobalNames[slot]);
-		heap.markValue(m_systemGlobalValues[slot]);
+		heap.markValue(m_systemGlobalValues.get(slot));
 	}
 	for (size_t slot = 0; slot < m_globalNames.size(); ++slot) {
 		m_stringPool.markReachable(m_globalNames[slot]);
-		heap.markValue(m_globalValues[slot]);
+		heap.markValue(m_globalValues.get(slot));
 	}
 	for (const std::unique_ptr<Blua32ExecutionImage>& executionImage : m_executionImagesByDomain) {
 		if (!executionImage) {
 			continue;
 		}
 		Blua32ExecutionImage* image = executionImage.get();
-		for (Value value : image->constPool) {
-			heap.markValue(value);
+		for (size_t index = 0; index < image->constPool.capacity(); ++index) {
+			heap.markValue(image->constPool.get(index));
 		}
 	}
 	heap.markObject(m_rootThread);

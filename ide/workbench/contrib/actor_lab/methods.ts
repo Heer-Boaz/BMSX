@@ -1,5 +1,4 @@
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
-import { valueTag, ValueTag } from '../../../../machine/ts/machine/cpu/value';
+import { valueTag, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import { runtimeLuaFunctionSource, type RuntimeLuaFunctionSource } from '../../../runtime/lua_inspection';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
@@ -7,7 +6,7 @@ import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 export type ActorMethod = { readonly name: string; readonly source: RuntimeLuaFunctionSource | undefined };
 
 /** Stored Lua functions resolved through ordinary table inheritance, without calling __index. */
-export function readActorMethods(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, receiver: Table): ActorMethod[] {
+export function readActorMethods(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, receiver: Value): ActorMethod[] {
 	const methods: ActorMethod[] = [];
 	guest.visitTableStringMembers(receiver, (name, value) => {
 		if (valueTag(value) !== ValueTag.Closure) return;

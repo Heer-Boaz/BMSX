@@ -5,6 +5,13 @@ export const COP0_CAUSE = 13;
 export const COP0_EPC = 14;
 export const COP0_EXEC = 15;
 
+const cop0Fields = (1 << COP0_BAD_ADDRESS) | (1 << COP0_LUA_FAULT_REASON)
+	| (1 << COP0_STATUS) | (1 << COP0_CAUSE) | (1 << COP0_EPC) | (1 << COP0_EXEC);
+
+export function cop0FieldImplemented(field: number): boolean {
+	return field >= 0 && field <= COP0_EXEC && ((cop0Fields >>> field) & 1) !== 0;
+}
+
 export const CPU_STATUS_INTERRUPT_ENABLE_CURRENT = 1 << 0;
 export const CPU_STATUS_USER_MODE_CURRENT = 1 << 1;
 export const CPU_STATUS_MODE_STACK_MASK = 0x3f;
@@ -35,3 +42,4 @@ export const LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION = 7;
 export const LUA_FAULT_REASON_EXPLICIT_ERROR = 8;
 export const LUA_FAULT_REASON_OUT_OF_MEMORY = 9;
 export const LUA_FAULT_REASON_INVALID_ARGUMENT = 10;
+export const LUA_FAULT_REASON_INVALID_NEXT_KEY = 11;

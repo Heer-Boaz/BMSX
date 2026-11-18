@@ -11,6 +11,7 @@
 #include <linux/input.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <time.h>
 #include <unistd.h>
@@ -21,6 +22,7 @@
 
 enum {
 	kMaximumInputDevices = KEYBOARD_INPUT_EVDEV_SOURCE_COUNT,
+	kGamepadPortCount = 2,
 	kMouseButtonPrimary = 1 << 0,
 	kMouseButtonSecondary = 1 << 1,
 	kMouseButtonAux = 1 << 2,
@@ -49,6 +51,8 @@ typedef struct InputDevice {
 	bool hat_y_valid;
 	bool has_hat;
 	bool has_abs_xy;
+	bool clovercon_buttons;
+	unsigned pad_port;
 	uint16_t pad_state;
 	uint16_t published_pad_state;
 } InputDevice;
@@ -75,7 +79,9 @@ typedef struct InputDevices {
 	InputDevice devices[kMaximumInputDevices];
 	char paths[kMaximumInputDevices][64];
 	size_t device_count;
-	uint16_t pad_state;
+	int evdev_watch_fd;
+	bool evdev_watch_active;
+	uint16_t pad_states[kGamepadPortCount];
 	int32_t mouse_absolute_x;
 	int32_t mouse_absolute_y;
 	int32_t mouse_delta_x;
@@ -180,7 +186,7 @@ static uint8_t map_evdev_key_to_mouse(uint16_t code) {
 	}
 }
 
-static uint16_t map_evdev_key_to_pad(uint16_t code) {
+static uint16_t map_evdev_key_to_pad(uint16_t code, bool clovercon_buttons) {
 	switch (code) {
 #ifdef BTN_TRIGGER_HAPPY3
 		case BTN_TRIGGER_HAPPY3:
@@ -215,9 +221,9 @@ static uint16_t map_evdev_key_to_pad(uint16_t code) {
 		case BTN_SELECT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
 		case BTN_SOUTH:
-			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_B);
+			return (uint16_t)(1u << (clovercon_buttons ? RETRO_DEVICE_ID_JOYPAD_A : RETRO_DEVICE_ID_JOYPAD_B));
 		case BTN_EAST:
-			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_A);
+			return (uint16_t)(1u << (clovercon_buttons ? RETRO_DEVICE_ID_JOYPAD_B : RETRO_DEVICE_ID_JOYPAD_A));
 		case BTN_NORTH:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_X);
 		case BTN_WEST:
@@ -230,12 +236,14 @@ static uint16_t map_evdev_key_to_pad(uint16_t code) {
 static bool read_absolute_axis(
 		InputDevice* device,
 		unsigned code,
+		int32_t* value,
 		int32_t* minimum,
 		int32_t* maximum) {
 	struct input_absinfo axis;
 	if (ioctl(device->fd, EVIOCGABS(code), &axis) != 0) {
 		return false;
 	}
+	*value = axis.value;
 	*minimum = axis.minimum;
 	*maximum = axis.maximum;
 	return true;
@@ -243,6 +251,12 @@ static bool read_absolute_axis(
 
 static void open_evdev_device(const char* path) {
 	InputDevices* input = &g_input_devices;
+	size_t slot = input->device_count;
+	for (size_t index = 0; index < input->device_count; ++index) {
+		if (input->devices[index].fd >= 0 && strcmp(input->devices[index].path, path) == 0) return;
+		if (input->devices[index].fd < 0 && slot == input->device_count) slot = index;
+	}
+	if (slot == kMaximumInputDevices) return;
 	const int fd = open(path, O_RDONLY | O_NONBLOCK);
 	if (fd < 0) {
 		fprintf(stderr, "[libretro-host] Failed to open %s: %s\n", path, strerror(errno));
@@ -259,88 +273,100 @@ static void open_evdev_device(const char* path) {
 		.abs_y_min = INT32_MIN,
 		.abs_y_max = INT32_MAX,
 	};
+	// Clovercon reports Nintendo A/B labels as BTN_A/B instead of the Linux
+	// south/east positions. Its X/Y codes already match north/west positions.
+	char name[64];
+	device.clovercon_buttons = ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0
+		&& strncmp(name, "Nintendo Clovercon - controller", sizeof("Nintendo Clovercon - controller") - 1) == 0;
+	if (device.clovercon_buttons && strcmp(name, "Nintendo Clovercon - controller2") == 0) {
+		device.pad_port = 1;
+	}
+	uint8_t pressed[(KEY_MAX + 8) / 8] = {0};
+	if (ioctl(fd, EVIOCGKEY(sizeof(pressed)), pressed) >= 0) {
+		for (unsigned code = BTN_MISC; code <= KEY_MAX; ++code) {
+			if (pressed[code / 8] & (1u << (code % 8))) {
+				device.pad_state |= map_evdev_key_to_pad(code, device.clovercon_buttons);
+			}
+		}
+	}
 	snprintf(
-			input->paths[input->device_count],
-			sizeof(input->paths[input->device_count]),
+			input->paths[slot],
+			sizeof(input->paths[slot]),
 			"%s",
 			path);
-	device.path = input->paths[input->device_count];
+	device.path = input->paths[slot];
 	device.hat_x_valid = read_absolute_axis(
 			&device,
 			ABS_HAT0X,
+			&device.hat_x,
 			&device.hat_x_min,
 			&device.hat_x_max);
 	device.hat_y_valid = read_absolute_axis(
 			&device,
 			ABS_HAT0Y,
+			&device.hat_y,
 			&device.hat_y_min,
 			&device.hat_y_max);
 	device.has_hat = device.hat_x_valid || device.hat_y_valid;
 	const bool has_absolute_x = read_absolute_axis(
 			&device,
 			ABS_X,
+			&device.abs_x,
 			&device.abs_x_min,
 			&device.abs_x_max);
 	const bool has_absolute_y = read_absolute_axis(
 			&device,
 			ABS_Y,
+			&device.abs_y,
 			&device.abs_y_min,
 			&device.abs_y_max);
 	device.has_abs_xy = has_absolute_x && has_absolute_y;
-	input->devices[input->device_count++] = device;
-	fprintf(stderr, "[libretro-host] input %s opened\n", path);
+	input->devices[slot] = device;
+	if (slot == input->device_count) ++input->device_count;
+	fprintf(stderr, "[libretro-host] input %s opened%s\n", path, device.clovercon_buttons ? " (Clovercon)" : "");
 }
 
 static void open_evdev_devices(void) {
-	InputDevices* input = &g_input_devices;
 	DIR* directory = opendir("/dev/input");
-	if (directory) {
-		struct dirent* entry = NULL;
-		while ((entry = readdir(directory)) != NULL) {
-			if (strncmp(entry->d_name, "event", 5) != 0) {
-				continue;
-			}
-			char path[64];
-			const size_t prefix_length = sizeof("/dev/input/") - 1;
-			const size_t maximum_name_length =
-					sizeof(path) - prefix_length - 1;
-			snprintf(
-					path,
-					sizeof(path),
-					"/dev/input/%.*s",
-					(int)maximum_name_length,
-					entry->d_name);
-			open_evdev_device(path);
-			if (input->device_count == kMaximumInputDevices) {
-				break;
-			}
+	if (!directory) host_fatal("Cannot open /dev/input: %s", strerror(errno));
+	struct dirent* entry = NULL;
+	while ((entry = readdir(directory)) != NULL) {
+		if (strncmp(entry->d_name, "event", 5) != 0) {
+			continue;
 		}
-		closedir(directory);
+		char path[64];
+		const size_t prefix_length = sizeof("/dev/input/") - 1;
+		const size_t maximum_name_length = sizeof(path) - prefix_length - 1;
+		snprintf(path, sizeof(path), "/dev/input/%.*s", (int)maximum_name_length, entry->d_name);
+		open_evdev_device(path);
 	}
-	if (!input->device_count) {
-		static const char* paths[] = {
-			"/dev/input/event0",
-			"/dev/input/event1",
-			"/dev/input/event2",
-			"/dev/input/event3",
-		};
-		for (size_t index = 0; index < sizeof(paths) / sizeof(paths[0]); ++index) {
-			open_evdev_device(paths[index]);
-			if (input->device_count == kMaximumInputDevices) {
-				break;
+	closedir(directory);
+}
+
+static void poll_evdev_hotplug(void) {
+	union { char bytes[4096]; struct inotify_event aligned; } buffer;
+	for (;;) {
+		const ssize_t count = read(g_input_devices.evdev_watch_fd, buffer.bytes, sizeof(buffer.bytes));
+		if (count < 0 && errno == EINTR) continue;
+		if (count < 0 && errno == EAGAIN) return;
+		if (count <= 0) host_fatal("Cannot read evdev device notifications: %s", strerror(errno));
+		for (size_t offset = 0; offset < (size_t)count;) {
+			const struct inotify_event* event = (const struct inotify_event*)(buffer.bytes + offset);
+			if (event->mask & IN_Q_OVERFLOW) {
+				open_evdev_devices();
+			} else if ((event->mask & (IN_CREATE | IN_MOVED_TO)) && strncmp(event->name, "event", 5) == 0) {
+				char path[64];
+				snprintf(path, sizeof(path), "/dev/input/%.*s", (int)(sizeof(path) - sizeof("/dev/input/")), event->name);
+				open_evdev_device(path);
 			}
+			offset += sizeof(*event) + event->len;
 		}
-	}
-	if (!input->device_count) {
-		host_fatal(
-				"No input devices opened. Are you running as root / "
-				"do you have permissions for /dev/input/event*?");
 	}
 }
 
 static void close_evdev_device(InputDevice* device, size_t index) {
 	if ((device->pad_state | device->published_pad_state) != 0 && g_cancel_gamepad_input) {
-		g_cancel_gamepad_input(0);
+		g_cancel_gamepad_input(device->pad_port);
 	}
 	keyboard_input_release_source(
 			KEYBOARD_INPUT_SOURCE_EVDEV_FIRST + (unsigned)index);
@@ -350,13 +376,14 @@ static void close_evdev_device(InputDevice* device, size_t index) {
 	device->published_pad_state = 0;
 }
 
-static void finalize_pad_state(uint16_t pad_state) {
+static void finalize_pad_state(uint16_t pad_state, uint16_t player2_pad_state) {
 	InputDevices* input = &g_input_devices;
-	input->pad_state = pad_state;
+	input->pad_states[0] = pad_state;
+	input->pad_states[1] = player2_pad_state;
 	const bool exit_combo_down =
-			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
-			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
-			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
+			(pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
+			(pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
+			(pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
 	if (!exit_combo_down) {
 		input->exit_combo_start_milliseconds = 0;
 		return;
@@ -445,7 +472,7 @@ static void apply_evdev_absolute_axes(InputDevice* device, uint16_t* pad_state) 
 
 static void poll_evdev_devices(void) {
 	InputDevices* input = &g_input_devices;
-	uint16_t pad_state = 0;
+	uint16_t pad_states[kGamepadPortCount] = {0};
 	reset_mouse_frame_state();
 	for (size_t index = 0; index < input->device_count; ++index) {
 		InputDevice* device = &input->devices[index];
@@ -495,7 +522,7 @@ static void poll_evdev_devices(void) {
 						input->mouse_buttons &= (uint8_t)~mouse_button;
 					}
 				}
-				const uint16_t pad_button = map_evdev_key_to_pad(event.code);
+				const uint16_t pad_button = map_evdev_key_to_pad(event.code, device->clovercon_buttons);
 				if (pad_button) {
 					if (event.value) {
 						device->pad_state |= pad_button;
@@ -544,15 +571,16 @@ static void poll_evdev_devices(void) {
 			continue;
 		}
 		device->published_pad_state = device->pad_state;
-		pad_state |= device->pad_state;
+		uint16_t* pad_state = &pad_states[device->pad_port];
+		*pad_state |= device->pad_state;
 		if (device->has_hat) {
-			apply_evdev_hat(device, &pad_state);
+			apply_evdev_hat(device, pad_state);
 		} else if (device->has_abs_xy) {
-			apply_evdev_absolute_axes(device, &pad_state);
+			apply_evdev_absolute_axes(device, pad_state);
 		}
 	}
 	update_pointer_from_surface();
-	finalize_pad_state(pad_state);
+	finalize_pad_state(pad_states[0], pad_states[1]);
 }
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
@@ -756,7 +784,7 @@ static void poll_sdl_devices(void) {
 			pad_state = sdl_controller_pad_state();
 		}
 	}
-	finalize_pad_state(pad_state);
+	finalize_pad_state(pad_state, 0);
 }
 #endif
 
@@ -773,7 +801,14 @@ void input_devices_open(
 #endif
 	};
 	if (driver == BMSX_INPUT_DRIVER_EVDEV) {
+		g_input_devices.evdev_watch_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+		if (g_input_devices.evdev_watch_fd < 0 || inotify_add_watch(g_input_devices.evdev_watch_fd,
+				"/dev/input", IN_CREATE | IN_MOVED_TO) < 0) {
+			host_fatal("Cannot watch /dev/input: %s", strerror(errno));
+		}
+		g_input_devices.evdev_watch_active = true;
 		open_evdev_devices();
+		if (!g_input_devices.device_count) host_fatal("No input devices opened in /dev/input");
 		return;
 	}
 #ifdef BMSX_LIBRETRO_HOST_SDL
@@ -803,6 +838,7 @@ void input_devices_close(void) {
 		return;
 	}
 #endif
+	if (input->evdev_watch_active) close(input->evdev_watch_fd);
 	for (size_t index = 0; index < input->device_count; ++index) {
 		if (input->devices[index].fd >= 0) {
 			close_evdev_device(&input->devices[index], index);
@@ -818,6 +854,7 @@ void input_devices_poll(void) {
 #endif
 	{
 		poll_evdev_devices();
+		if (g_input_devices.evdev_watch_active) poll_evdev_hotplug();
 	}
 	RemotePointer* remote = &g_input_devices.remote;
 	remote->delta_x = remote->pending_x;
@@ -862,11 +899,11 @@ int16_t input_devices_state(
 		unsigned index,
 		unsigned id) {
 	InputDevices* input = &g_input_devices;
+	if (device == RETRO_DEVICE_JOYPAD) {
+		return port < kGamepadPortCount && (input->pad_states[port] & (uint16_t)(1u << id)) ? 1 : 0;
+	}
 	if (port != 0) {
 		return 0;
-	}
-	if (device == RETRO_DEVICE_JOYPAD) {
-		return (input->pad_state & (uint16_t)(1u << id)) ? 1 : 0;
 	}
 	if (device == RETRO_DEVICE_MOUSE) {
 		const uint8_t buttons = input->mouse_buttons | input->remote.buttons;

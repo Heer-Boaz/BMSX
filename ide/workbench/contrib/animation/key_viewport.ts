@@ -1,6 +1,6 @@
 import { WorkbenchSlider } from '../../ui/slider';
 import type { AnimationKeyUnit, AnimationSourceDocument, AnimationTrackSource } from './model';
-import { formatNumber } from '../../../../machine/ts/common/number_format';
+import { formatFloat } from '../../../../machine/ts/common/number_format';
 import { AnimationCurve } from './curve';
 import { animationKeyTimeIndex, EMPTY_ANIMATION_KEY_INDEX } from './key_index';
 
@@ -66,7 +66,7 @@ export class AnimationKeyViewport {
 	public setView(minimum: number, maximum: number): void {
 		if (this.range.minimum === minimum && this.range.maximum === maximum && this.startLabel !== '') return;
 		this.range.setRange(minimum, maximum, this.unit === 'u' ? 0.01 : 1);
-		this.startLabel = formatNumber(minimum); this.endLabel = formatNumber(maximum); this.revision++;
+		this.startLabel = formatFloat(minimum); this.endLabel = formatFloat(maximum); this.revision++;
 	}
 	public zoom(x: number, factor: number): void {
 		const ratio = (x - this.range.bounds.left - 3) / (this.range.bounds.right - this.range.bounds.left - 6);
@@ -124,7 +124,7 @@ export class AnimationKeyViewport {
 	private updateSelectionLabel(): void {
 		const key = this.track?.keys[this.selected];
 		const value = this.dragValue === undefined ? key?.coordinate?.value : this.dragValue;
-		this.selectionLabel = key === undefined ? `+ ${formatNumber(this.cursor)}` : value === undefined || value === null ? 'SOURCE KEY' : formatNumber(value);
+		this.selectionLabel = key === undefined ? `+ ${formatFloat(this.cursor)}` : value === undefined || value === null ? 'SOURCE KEY' : formatFloat(value);
 	}
 	public setCursor(value: number): void { this.cursor = value; this.updateSelectionLabel(); }
 	public adjacentKey(direction: 'ArrowLeft' | 'ArrowRight' | 'Home' | 'End'): number {

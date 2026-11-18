@@ -248,7 +248,8 @@ export function loadModelFromBuffer(assetId: string, buffer: Uint8Array, imageBy
 			const offset = textureDirectoryOffset + index * MODEL_TEXTURE_BYTE_LENGTH;
 			const start = view.getUint32(offset + MODEL_TEXTURE.streamOffset, true), count = view.getUint32(offset + MODEL_TEXTURE.streamWordCount, true);
 			if (count === 0) return undefined; // Image slot is not used by a native base-color material.
-			return { width: view.getUint32(offset + MODEL_TEXTURE.width, true), height: view.getUint32(offset + MODEL_TEXTURE.height, true),
+			const width = view.getUint32(offset + MODEL_TEXTURE.width, true), height = view.getUint32(offset + MODEL_TEXTURE.height, true);
+			return { width, height, decodedWords: (width * height + 1) >>> 1,
 				stream: buffer.subarray(start, start + count * 4) };
 		}),
 		source: decodeModelSource(assetId, packed, meshes, imageBytes),

@@ -31,7 +31,7 @@ import {
 } from './vram';
 
 export const GX_GPU_COMMAND_FIFO_WORD_CAPACITY = 16;
-export const GX_GPU_DMA_INGRESS_WORD_CAPACITY = 16;
+export const GX_GPU_DMA_INGRESS_WORD_CAPACITY = 256;
 export const GX_GPU_CLUT_4BIT_WORDS = 16;
 export const GX_GPU_CLUT_8BIT_WORDS = 256;
 export const GX_GPU_CLUT_4BIT_SIZE_WORD = GX_GPU_CLUT_4BIT_WORDS | (1 << 16);

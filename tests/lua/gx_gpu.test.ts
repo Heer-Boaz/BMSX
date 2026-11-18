@@ -13,7 +13,14 @@ import {
 	IRQ_GPU,
 	IRQ_GX_PCRTC,
 	IRQ_VBLANK,
+	IO_DMA0_READ_ADDR,
+	IO_DMA0_TRANSFER_COUNT,
+	IO_DMA0_CONTROL,
+	IO_DMA0_TRIGGER,
+	DMA_ROUTE_TO_GPU,
+	DMA_TRIGGER_START,
 } from '../../machine/ts/spec/bmsx/io';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	GX_GPU_DRAW_MODE_DITHER_ENABLED,
 	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH,
@@ -183,6 +190,7 @@ import {
 	GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
 	GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES,
 	gxGpuTriangleAttributePlane,
+	gxGpuTextureAxisBounds,
 	gxGpuVramLogicalAreaOverlapsBounds,
 } from '../../machine/ts/render/backend/gx_gpu_render_rules';
 import {
@@ -259,11 +267,15 @@ import {
 } from '../../machine/ts/spec/gx/gp0';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
-import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
+import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_GPU, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { PSX_MACHINE_SPEC, PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/spec/bmsx/model';
 import { executeGxGpuSoftwareVramCommands, renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
@@ -279,6 +291,27 @@ import {
 
 const gxGpuSoftware = new GxGpuSoftwareState(PSX_MACHINE_SPEC.gxGpuVramBytes, 0);
 const gxGpuSoftwareVram = gxGpuSoftware.vram;
+
+test('GX-GPU conservative texture bounds cover wrapped fixed-point and windowed coordinates', () => {
+	const bounds = new Int32Array(4);
+	gxGpuTextureAxisBounds(bounds, 0, 0x24000, 0x1000, 0, 17, 9, 0xff, 0);
+	assert.deepEqual(Array.from(bounds.subarray(0, 2)), [36, 53], 'ordinary small draws do not latch a full texture page');
+	gxGpuTextureAxisBounds(bounds, 0, 0, 0x1000, 0, 1024, 512, 0x87, 0x68);
+	assert.deepEqual(Array.from(bounds.subarray(0, 2)), [0x68, 0xf0], 'window bits restrict even a wrapped interval');
+	for (const [base, sx, sy, width, height, andMask, orMask] of [
+		[0xfffff, 0x7ffff, 0x80000, 1024, 512, 0xff, 0],
+		[0x80000, 0x80000, 0x7ffff, 1024, 512, 0x87, 0x68],
+		[0x24000, 0x1000, 0, 17, 9, 0xff, 0],
+		[0x81000, 0xff000, 0, 9, 3, 0xff, 0],
+	]) {
+		gxGpuTextureAxisBounds(bounds, 0, base, sx, sy, width, height, andMask, orMask);
+		for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+			const uv = ((base + x * sx + y * sy) >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
+			const sample = (uv & andMask) | orMask;
+			assert.ok(sample >= bounds[0] && sample < bounds[1], `${sample} outside [${bounds[0]}, ${bounds[1]})`);
+		}
+	}
+});
 
 test('GX-GPU GPUREAD fences prior backend work and packs wrapped odd pixels', () => {
 	const { gpu } = createGpu();
@@ -296,7 +329,7 @@ test('GX-GPU GPUREAD fences prior backend work and packs wrapped odd pixels', ()
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
 
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM, 0);
-	assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_RECEIVE_DMA, 0);
+	assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_RECEIVE_DMA, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
 	completeGpuCommands(gpu);
 	const output = gpu.readDeviceOutput();
 	assert.equal(output.commandBuffer.presentCommandCount, 0);
@@ -652,6 +685,17 @@ function runGpuAtNextDeadline(gpu: GxGpu, scheduler: DeviceScheduler): number {
 	return gpu.onService(deadline);
 }
 
+// Advance real scheduled device boundaries, without requiring a timer for every GPU command.
+function advanceGpuTo(gpu: GxGpu, scheduler: DeviceScheduler, cycle: number): void {
+	while (scheduler.nextDeadline() <= cycle) {
+		const deadline = scheduler.nextDeadline();
+		scheduler.advanceTo(deadline);
+		assert.equal(scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+		gpu.onService(deadline);
+	}
+	scheduler.advanceTo(cycle);
+}
+
 const standaloneCommandBufferDma = createGpu().dma;
 
 test('GX-GPU presentation observer publishes the latched prefix and raw status without changing execution', () => {
@@ -682,24 +726,35 @@ test('GX-GPU presentation observer publishes the latched prefix and raw status w
 	assert.equal(records.length, 2, 'retirement detaches observation');
 });
 
+test('GX-GPU latches the full extension word from restored device state', () => {
+	const { gpu } = createGpu();
+	const state = gpu.captureState();
+	state.vramYAddressExtensionWord = 0x100;
+	gpu.restoreState(state);
+	for (const word of [0x600000ff, 0, 0x00010001]) gpu.writeGp0(word);
+	assert.equal(gpu.readDeviceOutput().commandBuffer.commandVramYAddressExtensionWord[0], 0x100);
+});
+
 test('GX-GPU operation observer borrows actual packet words and latched state identically for CPU and DMA', () => {
 	const packets = [
 		[0xe1001a55], [0xe2001234], [0xe3000801], [0xe4002008], [0xe5000fff], [0xe6000003],
 		[0x24010203, 0x00010002, 0x00100020, 0x00030004, 0x01650030, 0x00050006, 0x00400050],
 		[0x0200ffff, 0, 0x00010001], [0x600000ff, 0x00010002, 0x00030004],
-		[0x40010203, 0x00010002, 0x00030004], [0x80000000, 0, 0x00010002, 0x00010001],
+		[0x40010203, 0xf001e002, 0xa003c004], [0x80000000, 0, 0x00010002, 0x00010001],
 		[0xa0000000, 0, 0x00010002, 0xfeedbeef], [0xc0000000, 0, 0x00010002],
 	];
 	const histories: unknown[][] = [];
 	for (const dma of [false, true]) {
 		const baseline = createGpu(), observed = createGpu();
 		const records: { kind: number; opcode: number; words: number[]; state: number[]; cycle: number }[] = [];
-		observed.gpu.setOperationObserver({ emitted(buffer, index, cycle) {
+		observed.gpu.setOperationObserver({ emitted(buffer, index, cycle, words, start) {
 			assert.equal(buffer.commandCount, index + 1);
 			assert.ok(buffer.executedCommandCount <= index, 'notification precedes operation timing/completion');
-			const start = buffer.commandWordStart[index];
+			if (buffer.commandKind[index] !== GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM) {
+				assert.notEqual(words, buffer.words, 'fixed operations borrow the emitter rather than backend transport');
+			}
 			records.push({ kind: buffer.commandKind[index], opcode: buffer.commandOpcode[index], cycle,
-				words: Array.from(buffer.words.subarray(start, start + buffer.commandWordCount[index])),
+				words: Array.from(words.subarray(start, start + buffer.commandWordCount[index])),
 				state: [buffer.commandDrawModeWord[index], buffer.commandVramYAddressExtensionWord[index],
 					buffer.commandTextureWindowWord[index], buffer.commandDrawingAreaTopLeftWord[index],
 					buffer.commandDrawingAreaBottomRightWord[index], buffer.commandDrawingOffsetWord[index],
@@ -712,7 +767,7 @@ test('GX-GPU operation observer borrows actual packet words and latched state id
 			target.gpu.writeGp1((GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24) | 3);
 			for (const packet of packets) {
 				for (let index = 0; index < packet.length; index += 1) {
-					if (dma) target.memory.writeMappedDmaU32LE(IO_GX_GPU_GP0, packet[index], MAPPED_BUS_MASTER_DMA | (index + 1 === packet.length ? MAPPED_BUS_DMA_BLOCK_END : 0));
+					if (dma) target.memory.writeMappedBusU32LE(IO_GX_GPU_GP0, packet[index], MAPPED_BUS_MASTER_DMA | (index + 1 === packet.length ? MAPPED_BUS_DMA_BLOCK_END : 0));
 					else target.memory.writeMappedU32LE(IO_GX_GPU_GP0, packet[index]);
 				}
 				target.scheduler.advanceTo(target.scheduler.currentNowCycles() + 100000);
@@ -736,14 +791,55 @@ test('GX-GPU operation observer borrows actual packet words and latched state id
 	assert.deepEqual(histories[0], histories[1]);
 });
 
+test('image payload blocks retain packet boundaries, queued commands and consumed prefixes across restore', () => {
+	const packet = [0xa0000000, 0x00120034, 0x00010045,
+		...Array.from({ length: 35 }, (_, index) => (0xe1000000 | index) >>> 0), 0xe1000235];
+	for (const dma of [false, true]) for (const restored of [false, true]) for (const clear of [false, true]) {
+		const { gpu, memory, scheduler } = createGpu();
+		stopPcrtc(memory, gpu, scheduler);
+		const events: { kind: number; words: number[] }[] = [];
+		gpu.setOperationObserver({ emitted(buffer, index, _cycle, words, start) {
+			events.push({ kind: buffer.commandKind[index],
+				words: Array.from(words.subarray(start, start + buffer.commandWordCount[index])) });
+		} });
+		for (let start = 0; start < packet.length; start += 16) {
+			scheduler.advanceTo((start / 16 + 1) * 1000);
+			const end = Math.min(start + 16, packet.length);
+			for (let index = start; index < end; index += 1) {
+				if (dma) memory.writeMappedBusU32LE(IO_GX_GPU_GP0, packet[index], MAPPED_BUS_MASTER_DMA
+					| (index + 1 === end ? MAPPED_BUS_DMA_BLOCK_END : 0));
+				else gpu.writeGp0(packet[index]);
+			}
+			if (end === 32) {
+				const partial = gpu.captureState();
+				assert.equal(partial.gp0ImageLoadWordsRemaining, 6);
+				assert.equal(partial.gp0IngressWordsRemaining, 6);
+				assert.deepEqual(partial.commandBuffer.words, packet.slice(0, 32));
+				assert.deepEqual(partial.gp0FifoWords, []);
+				assert.deepEqual(partial.gp0DmaIngressWords, []);
+				assert.equal(events.length, 0, 'partial upload is not an emitted operation');
+				if (restored) gpu.restoreState(partial);
+				if (clear) { gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24); break; }
+			}
+		}
+		assert.deepEqual(events, [{ kind: GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, words: packet.slice(0, clear ? 32 : 38) }]);
+		if (!clear) {
+			assert.equal(gpu.readDrawModeWord(), 0, 'following command waits behind upload execution');
+			assert.deepEqual(gpu.captureState().gp0FifoWords, [packet[38]]);
+		}
+		completeGpuCommands(gpu);
+		assert.equal(gpu.readDrawModeWord(), clear ? 0 : 0x235, 'payload words never execute as GP0 opcodes');
+		assert.deepEqual(gpu.captureState().gp0FifoWords, []);
+	}
+});
+
 test('GX-GPU observer reports delayed logical starts, normalized polyline segments and consumed upload prefix', () => {
 	const { gpu, memory, scheduler } = createGpu();
 	stopPcrtc(memory, gpu, scheduler);
 	const events: { kind: number; words: number[]; cycle: number; callbackCycle: number }[] = [];
-	gpu.setOperationObserver({ emitted(buffer, index, cycle) {
-		const start = buffer.commandWordStart[index];
+	gpu.setOperationObserver({ emitted(buffer, index, cycle, words, start) {
 		events.push({ kind: buffer.commandKind[index], cycle, callbackCycle: scheduler.currentNowCycles(),
-			words: Array.from(buffer.words.subarray(start, start + buffer.commandWordCount[index])) });
+			words: Array.from(words.subarray(start, start + buffer.commandWordCount[index])) });
 	} });
 	for (const word of [0x020000ff, 0, 0x00040020, 0x480000ff, 0x00010002, 0x00020003, 0x00030004, 0x50005000]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
 	assert.equal(events.length, 1, 'queued words are not emitted operations yet');
@@ -767,9 +863,8 @@ test('GX-GPU observer attach, detach, restore and reset do not synthesize operat
 	for (const word of [0x020000ff, 0, 0x00040020, 0x6000ff00, 0x00010002]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
 	const saved = gpu.captureSaveState();
 	const events: number[][] = [];
-	const observer = { emitted(buffer: GxGpuCommandBufferView, index: number) {
-		const start = buffer.commandWordStart[index];
-		events.push(Array.from(buffer.words.subarray(start, start + buffer.commandWordCount[index])));
+	const observer = { emitted(buffer: GxGpuCommandBufferView, index: number, _cycle: number, words: Uint32Array, start: number) {
+		events.push(Array.from(words.subarray(start, start + buffer.commandWordCount[index])));
 	} };
 	gpu.setOperationObserver(observer);
 	gpu.setOperationObserver(null);
@@ -1344,6 +1439,40 @@ test('GX-GPU drains a saturated executed prefix into retained backend VRAM', () 
 	assert.equal(gpu.lastFrameCommitted(), true);
 });
 
+test('GX-GPU resumes queued DMA ingress when a saturated command prefix is retired', () => {
+	for (const present of [false, true]) {
+		const { memory, gpu } = createGpu();
+		for (let index = 0; index < GX_GPU_COMMAND_CAPACITY; index += 1) {
+			gpu.writeGp0(GX_GPU_GP0_FILL_RECTANGLE << 24);
+			gpu.writeGp0(0);
+			gpu.writeGp0(0x00010001);
+			completeGpuCommands(gpu);
+		}
+		if (present) gpu.presentReadyFrameOnVblankEdge();
+		const packet = [GX_GPU_GP0_FILL_RECTANGLE << 24, 0, 0x00010001];
+		for (let index = 0; index < 27; index += 1) {
+			memory.writeMappedBusU32LE(IO_GX_GPU_GP0, packet[index % 3], MAPPED_BUS_MASTER_DMA
+				| (index === 26 ? MAPPED_BUS_DMA_BLOCK_END : 0));
+		}
+		let state = gpu.captureState();
+		assert.equal(state.gp0FifoWords.length, GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
+		assert.equal(state.gp0DmaIngressWords.length, 11);
+		assert.equal(state.pendingCommandCycles, 0);
+		assert.equal(state.commandBuffer.executedCommandCount, GX_GPU_COMMAND_CAPACITY);
+		if (present) gpu.retirePresentedCommands(); else gpu.retireExecutedCommands();
+		state = gpu.captureState();
+		assert.ok(state.pendingCommandCycles > 0);
+		assert.equal(state.commandBuffer.commandCount, 1);
+		assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), false, 'queued ingress blocks CPU writes');
+		completeGpuCommands(gpu);
+		state = gpu.captureState();
+		assert.equal(state.gp0DmaIngressWords.length, 0);
+		assert.equal(state.gp0FifoWords.length, 0);
+		assert.equal(state.commandBuffer.executedCommandCount, 9);
+		assert.notEqual(gpu.readStatus() & GX_GPU_STATUS_READY_TO_RECEIVE_DMA, 0);
+	}
+});
+
 test('GX-GPU reserves one maximal CPU upload and drains it before reusing word storage', () => {
 	const { gpu } = createGpu();
 	const commands = gpu.readDeviceOutput().commandBuffer;
@@ -1501,7 +1630,7 @@ test('GX-GPU handles PSX GP1 display disable and DMA direction status bits', () 
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
 });
 
-test('GX-GPU GPUSTAT readiness tracks GP0 packet assembly and payload phases', () => {
+test('GX-GPU GPUSTAT ingress readiness is independent of packet assembly and execution', () => {
 	const { gpu } = createGpu();
 	const commands = gpu.readDeviceOutput().commandBuffer;
 
@@ -1514,9 +1643,9 @@ test('GX-GPU GPUSTAT readiness tracks GP0 packet assembly and payload phases', (
 	gpu.writeGp0((GX_GPU_GP0_POLYGON_FIRST << 24) | 0x00010203);
 	status = gpu.readStatus();
 	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
-	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
 	assert.equal((status & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, 0);
-	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, GX_GPU_STATUS_DMA_DATA_REQUEST);
 
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
 	status = gpu.readStatus();
@@ -1536,11 +1665,11 @@ test('GX-GPU GPUSTAT readiness tracks GP0 packet assembly and payload phases', (
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	status = gpu.readStatus();
 	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
-	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, 0);
-	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
+	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, GX_GPU_STATUS_DMA_DATA_REQUEST);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_FIFO);
 	status = gpu.readStatus();
-	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
 	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, GX_GPU_STATUS_DMA_DATA_REQUEST);
 	assert.equal(commands.commandCount, 1);
 	assert.equal(commands.executedCommandCount, 0);
@@ -1568,18 +1697,18 @@ test('GX-GPU GPUSTAT readiness tracks GP0 packet assembly and payload phases', (
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	gpu.writeGp0(((GX_GPU_GP0_LINE_FIRST | GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) << 24) | 0x0000ff);
 	status = gpu.readStatus();
-	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, 0);
-	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
+	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, GX_GPU_STATUS_DMA_DATA_REQUEST);
 	gpu.writeGp0(0x00010002);
 	gpu.writeGp0(0x00020003);
 	status = gpu.readStatus();
 	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
-	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
 	gpu.writeGp0(0x50005000);
 	status = gpu.readStatus();
 	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
-	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, 0);
-	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
+	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, GX_GPU_STATUS_DMA_DATA_REQUEST);
 	assert.equal(commands.commandCount, 3);
 	completeGpuCommands(gpu);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
@@ -1607,20 +1736,16 @@ test('GX-GPU command timing gates GPUSTAT idle and the VBLANK execution frontier
 	assert.equal(commands.commandCount, 1);
 	assert.equal(commands.executedCommandCount, 0);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
-	assert.equal(scheduler.nextDeadline(), 29);
 	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal(commands.presentCommandCount, 0);
 
-	scheduler.advanceTo(28);
-	gpu.onService(28);
-	assert.equal(commands.executedCommandCount, 0);
+	advanceGpuTo(gpu, scheduler, 28);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
+	assert.equal(commands.executedCommandCount, 0);
 
-	scheduler.advanceTo(29);
-	gpu.onService(29);
-	assert.equal(commands.executedCommandCount, 1);
+	advanceGpuTo(gpu, scheduler, 29);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
-	assert.equal(scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+	assert.equal(commands.executedCommandCount, 1);
 	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal(commands.presentCommandCount, 1);
 });
@@ -1654,22 +1779,24 @@ test('GX-GPU ingress bypasses only NOPs and executes drawing state in FIFO order
 	assert.equal(gpu.readDrawingAreaBottomRightWord(), 0);
 	assert.equal(gpu.readDrawingOffsetWord(), 0);
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), true);
-	assert.equal(scheduler.nextDeadline(), 29);
 	for (let index = 6; index < GX_GPU_COMMAND_FIFO_WORD_CAPACITY; index += 1) {
 		gpu.writeGp0(0x03000000 | index);
 	}
 
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), false);
-	runGpuAtNextDeadline(gpu, scheduler);
+	advanceGpuTo(gpu, scheduler, 29);
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), true);
 	assert.equal(gpu.readDrawingAreaTopLeftWord(), 0);
-	runGpuAtNextDeadline(gpu, scheduler);
+	advanceGpuTo(gpu, scheduler, 58);
+	gpu.readStatus();
 	assert.equal(gpu.readDrawingAreaTopLeftWord(), 0x00054321 & GX_GPU_DRAWING_AREA_MASK);
 	assert.equal(gpu.readDrawingAreaBottomRightWord(), 0);
-	runGpuAtNextDeadline(gpu, scheduler);
+	advanceGpuTo(gpu, scheduler, 59);
+	gpu.readStatus();
 	assert.equal(gpu.readDrawingAreaBottomRightWord(), 0x00023456 & GX_GPU_DRAWING_AREA_MASK);
 	assert.equal(gpu.readDrawingOffsetWord(), 0);
-	runGpuAtNextDeadline(gpu, scheduler);
+	advanceGpuTo(gpu, scheduler, 60);
+	gpu.readStatus();
 	assert.equal(gpu.readDrawingOffsetWord(), 0x00345678 & GX_GPU_DRAWING_OFFSET_MASK);
 });
 
@@ -1705,6 +1832,346 @@ test('GX-GPU does not mirror undefined GP1 40h to reset', () => {
 	gpu.writeGp1(GX_GPU_GP1_DISPLAY_MODE << 24);
 	gpu.writeGp1(0x40000000);
 	assert.equal(gpu.readDisplayModeWord(), 0);
+});
+
+test('blocked CPU GP0 store resumes after completion across device restore', () => {
+	const code = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.LOADK, 1, 0, 1, 0);
+	writeInstruction(code, 2, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE, 0);
+	writeInstruction(code, 3, OpCode.RET, 0, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 4, maxStack: 2 }],
+		constants: [IO_GX_GPU_GP0, 0x1f000000] });
+	const original = createGpu();
+	original.memory.installSystemRom(image.romBytes);
+	original.cpu.reset();
+	stopPcrtc(original.memory, original.gpu, original.scheduler);
+	for (const word of [0x020000ff, 0, 0x00010001]) original.gpu.writeGp0(word);
+	for (let i = 0; i < GX_GPU_COMMAND_FIFO_WORD_CAPACITY; ++i) original.gpu.writeGp0(0xe1000000);
+	assert.equal(original.memory.mappedWriteReady(IO_GX_GPU_GP0), false);
+	assert.equal(original.scheduler.runCpuSlice(0, 20), RunResult.Halted);
+	assert.equal(original.cpu.isMemoryWriteBlocked(), true);
+	assert.equal(original.cpu.stalledMemoryWriteAddress(), IO_GX_GPU_GP0);
+	original.scheduler.advanceTo(20 - original.cpu.instructionBudgetRemaining);
+	const gpuState = original.gpu.captureState();
+	const cpuState = original.cpu.captureRuntimeState();
+	const restored = createGpu();
+	restored.memory.installSystemRom(image.romBytes);
+	restored.cpu.reset();
+	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);
+	restored.scheduler.advanceTo(original.scheduler.nowCycles);
+	restored.gpu.restoreState(gpuState);
+	restored.cpu.restoreRuntimeState(cpuState);
+	for (const target of [original, restored]) {
+		target.scheduler.advanceTo(28);
+		assert.equal(target.cpu.isMemoryWriteBlocked(), true);
+		assert.equal(target.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0);
+		while (target.scheduler.nextDeadline() <= 29) {
+			const deadline = target.scheduler.nextDeadline();
+			target.scheduler.advanceTo(deadline);
+			assert.equal(target.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+			target.gpu.onService(deadline);
+		}
+		target.scheduler.advanceTo(29);
+		assert.equal(target.cpu.isMemoryWriteBlocked(), false);
+		assert.equal(target.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'blocked store has not yet retired');
+		for (let attempt = 0; attempt < 4 && target.cpu.getFrameDepth() > 0; ++attempt) target.scheduler.runCpuSlice(0, 20);
+		assert.equal(target.cpu.getFrameDepth(), 0, 'the blocked store and return retire');
+		assert.equal(target.cpu.isMemoryWriteBlocked(), false);
+		while (target.scheduler.nextDeadline() < 45) {
+			const deadline = target.scheduler.nextDeadline();
+			target.scheduler.advanceTo(deadline);
+			assert.equal(target.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+			target.gpu.onService(deadline);
+		}
+		target.scheduler.advanceTo(44);
+		assert.equal(target.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'queued IRQ is not early');
+		while (target.scheduler.nextDeadline() <= 45) {
+			const deadline = target.scheduler.nextDeadline();
+			target.scheduler.advanceTo(deadline);
+			assert.equal(target.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+			target.gpu.onService(deadline);
+		}
+		target.scheduler.advanceTo(45);
+		assert.equal(target.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU, 'retried store reaches the GPU');
+	}
+});
+
+test('split DMA polyline payload survives restore before real IRQ and readback commands', () => {
+	const source = createGpu();
+	stopPcrtc(source.memory, source.gpu, source.scheduler);
+	source.dma.setTiming(1, 1, 1, 1, 0, 0);
+	source.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	const address = DYNAMIC_RAM_BASE + 0x5000;
+	const prefix = [0x480000ff, 0, 1, 0xc0000002, 0x1f000003];
+	for (let i = 0; i < prefix.length; ++i) source.memory.writeU32(address + 4 * i, prefix[i]);
+	source.memory.writeMappedWord(IO_DMA0_READ_ADDR, address);
+	source.memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, prefix.length);
+	source.memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	source.memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	const firstDeadline = source.scheduler.nextDeadline();
+	source.scheduler.advanceTo(firstDeadline);
+	assert.equal(source.scheduler.popDueTimer(), DEVICE_SERVICE_DMA);
+	source.dma.onService(firstDeadline);
+	assert.equal(source.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0);
+	assert.equal(source.gpu.backendServicePending(), false);
+	const saved = source.gpu.captureSaveState();
+	const restored = createGpu();
+	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);
+	restored.scheduler.advanceTo(firstDeadline);
+	restored.dma.setTiming(1, 1, 1, 1, 0, 0);
+	restored.gpu.restoreSaveState(saved);
+	const suffix = [0xc0000004, 0x1f000005, 0x50005000, 0x1f000000, 0xc0000000, 0, 0x00010001];
+	for (let i = 0; i < suffix.length; ++i) restored.memory.writeU32(address + 4 * i, suffix[i]);
+	restored.memory.writeMappedWord(IO_DMA0_READ_ADDR, address);
+	restored.memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, suffix.length);
+	restored.memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	restored.memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(restored.dma.cpuBusHeld(), true);
+	while (restored.dma.cpuBusHeld()) {
+		const deadline = restored.scheduler.nextDeadline();
+		assert.ok(deadline < firstDeadline + 1000);
+		restored.scheduler.advanceTo(deadline);
+		const kind = restored.scheduler.popDueTimer();
+		assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'vertex data do not raise IRQ before the DMA suffix arrives');
+		assert.equal(restored.gpu.backendServicePending(), false, 'vertex data do not start readback before the DMA suffix arrives');
+		if (kind === DEVICE_SERVICE_GPU) restored.gpu.onService(deadline);
+		else if (kind === DEVICE_SERVICE_DMA) restored.dma.onService(deadline);
+		else assert.fail(`unexpected device ${kind}`);
+	}
+	const secondDeadline = restored.scheduler.nowCycles;
+	assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU, 'IRQ fires at the true post-polyline marker');
+	assert.equal(restored.gpu.backendServicePending(), false, 'readback waits for its completion');
+	for (let offset = 1; offset <= 2; ++offset) {
+		const cycle = secondDeadline + offset;
+		while (restored.scheduler.nextDeadline() <= cycle) {
+			const deadline = restored.scheduler.nextDeadline();
+			restored.scheduler.advanceTo(deadline);
+			assert.equal(restored.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+			restored.gpu.onService(deadline);
+		}
+		restored.scheduler.advanceTo(cycle);
+		assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU);
+		assert.equal(restored.gpu.backendServicePending(), offset === 2, 'readback starts on its own completion');
+	}
+	new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(restored.gpu);
+	assert.equal(restored.gpu.readGp0(), 0x001f, 'polyline pixels survive DMA and restore');
+});
+
+test('split DMA image payload survives restore before real IRQ and readback commands', () => {
+	const source = createGpu();
+	stopPcrtc(source.memory, source.gpu, source.scheduler);
+	source.dma.setTiming(1, 1, 1, 1, 0, 0);
+	source.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	const address = DYNAMIC_RAM_BASE + 0x4000;
+	const imageWords = [0xa0000000, 0, 0x00100020];
+	for (let i = 0; i < 256; ++i) imageWords.push((i & 1) === 0 ? 0xc0121234 : 0x1f005678);
+	const firstWords = 131;
+	for (let i = 0; i < firstWords; ++i) source.memory.writeU32(address + 4 * i, imageWords[i]);
+	source.memory.writeMappedWord(IO_DMA0_READ_ADDR, address);
+	source.memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, firstWords);
+	source.memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	source.memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(source.dma.cpuBusHeld(), true);
+	const firstDeadline = source.scheduler.nextDeadline();
+	source.scheduler.advanceTo(firstDeadline);
+	assert.equal(source.scheduler.popDueTimer(), DEVICE_SERVICE_DMA);
+	source.dma.onService(firstDeadline);
+	assert.equal(source.dma.cpuBusHeld(), false);
+	assert.equal(source.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'image payload does not raise IRQ');
+	assert.equal(source.gpu.backendServicePending(), false, 'image payload does not start readback');
+	const partial = source.gpu.captureState();
+	assert.deepEqual(partial.gp0FifoWords, []);
+	assert.deepEqual(partial.gp0DmaIngressWords, []);
+	assert.equal(partial.gp0ImageLoadWordsRemaining, 128);
+	assert.equal(partial.gp0IngressWordsRemaining, 128);
+	const partialCommands = source.gpu.readDeviceOutput().commandBuffer;
+	assert.equal(partialCommands.commandCount, 0, 'the image is not emitted at a partial DMA boundary');
+	assert.equal(partialCommands.wordCount, firstWords);
+	assert.deepEqual(Array.from(partialCommands.words.subarray(0, firstWords)), imageWords.slice(0, firstWords));
+	const saved = source.gpu.captureSaveState();
+	const restored = createGpu();
+	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);
+	restored.scheduler.advanceTo(firstDeadline);
+	restored.dma.setTiming(1, 1, 1, 1, 0, 0);
+	restored.gpu.restoreSaveState(saved);
+	const suffix = [...imageWords.slice(firstWords), 0x1f000000, 0xc0000000, 0, 0x00010004];
+	for (let i = 0; i < suffix.length; ++i) restored.memory.writeU32(address + 4 * i, suffix[i]);
+	restored.memory.writeMappedWord(IO_DMA0_READ_ADDR, address);
+	restored.memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, suffix.length);
+	restored.memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	restored.memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(restored.dma.cpuBusHeld(), true);
+	const secondDeadline = restored.scheduler.nextDeadline();
+	restored.scheduler.advanceTo(secondDeadline);
+	assert.equal(restored.scheduler.popDueTimer(), DEVICE_SERVICE_DMA);
+	restored.dma.onService(secondDeadline);
+	assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0);
+	assert.equal(restored.gpu.backendServicePending(), false);
+	for (const cycle of [secondDeadline + 1, secondDeadline + 2, secondDeadline + 3]) {
+		while (restored.scheduler.nextDeadline() <= cycle) {
+			const deadline = restored.scheduler.nextDeadline();
+			restored.scheduler.advanceTo(deadline);
+			const kind = restored.scheduler.popDueTimer();
+			assert.equal(kind, DEVICE_SERVICE_GPU);
+			restored.gpu.onService(deadline);
+		}
+		restored.scheduler.advanceTo(cycle);
+		assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU, 'only the real IRQ marker fires');
+		assert.equal(restored.gpu.backendServicePending(), cycle === secondDeadline + 3, 'readback starts at its own boundary');
+	}
+	new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(restored.gpu);
+	assert.equal(restored.gpu.readGp0(), 0xc0121234);
+	assert.equal(restored.gpu.readGp0(), 0x1f005678);
+});
+
+test('partial image survives supervisor restore and queued readback starts at its boundary', () => {
+	const source = createGpu();
+	stopPcrtc(source.memory, source.gpu, source.scheduler);
+	for (const word of [0xa0000000, 0, 0x00020002, 0xc0001234]) source.gpu.writeGp0(word);
+	assert.equal(source.gpu.backendServicePending(), false, 'readback-looking image payload is not a command');
+	source.gpu.beginSupervisorQuiesce();
+	assert.equal(source.gpu.supervisorQuiescent(), true);
+	source.gpu.enterSupervisorContext();
+	const saved = source.gpu.captureSaveState();
+	const restored = createGpu();
+	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);
+	restored.gpu.restoreSaveState(saved);
+	restored.gpu.leaveSupervisorContext();
+	restored.gpu.writeGp0(0x1f005678);
+	for (const word of [0xc0000000, 0, 0x00020002]) restored.gpu.writeGp0(word);
+	for (const cycle of [0, 1, 2]) {
+		while (restored.scheduler.nextDeadline() <= cycle) {
+			const deadline = restored.scheduler.nextDeadline();
+			restored.scheduler.advanceTo(deadline);
+			assert.equal(restored.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+			restored.gpu.onService(deadline);
+		}
+		restored.scheduler.advanceTo(cycle);
+		assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'IRQ-looking image payload is not a command');
+		assert.equal(restored.gpu.backendServicePending(), cycle === 2, 'queued readback becomes pending at its boundary');
+	}
+	new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(restored.gpu);
+	assert.equal(restored.gpu.readGp0(), 0xc0001234);
+	assert.equal(restored.gpu.readGp0(), 0x1f005678);
+});
+
+test('unobserved GPU completions catch up at register access without per-command deadlines', () => {
+	const { memory, gpu, scheduler } = createGpu();
+	stopPcrtc(memory, gpu, scheduler);
+	for (let i = 0; i < 3; ++i) {
+		gpu.writeGp0(0x020000ff);
+		gpu.writeGp0(0);
+		gpu.writeGp0(0x00010001);
+	}
+	assert.equal(scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+	scheduler.advanceTo(28);
+	assert.equal(gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, 0);
+	assert.equal(gpu.readDeviceOutput().commandBuffer.executedCommandCount, 0);
+	scheduler.advanceTo(87);
+	assert.equal(gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal(gpu.readDeviceOutput().commandBuffer.executedCommandCount, 3);
+});
+
+test('DMA START sees GPU capacity freed while no channel was waiting', () => {
+	const { memory, gpu, scheduler, dma } = createGpu();
+	stopPcrtc(memory, gpu, scheduler);
+	dma.setTiming(1, 1, 1, 1, 0, 0);
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	for (const word of [0x020000ff, 0, 0x00640001]) gpu.writeGp0(word);
+	const source = DYNAMIC_RAM_BASE + 0x3000;
+	for (let i = 0; i < GX_GPU_COMMAND_FIFO_WORD_CAPACITY + 1; ++i) memory.writeU32(source + 4 * i, 0xe1000000);
+	memory.writeU32(source + 0x100, 0x1f000000);
+	memory.writeMappedWord(IO_DMA0_READ_ADDR, source);
+	memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, GX_GPU_COMMAND_FIFO_WORD_CAPACITY + 1);
+	memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(dma.cpuBusHeld(), true, 'first DMA fills the ingress');
+	const advance = (cycle: number) => {
+		while (scheduler.nextDeadline() <= cycle) {
+			const deadline = scheduler.nextDeadline();
+			scheduler.advanceTo(deadline);
+			while (scheduler.hasDueTimer()) {
+				const kind = scheduler.popDueTimer();
+				if (kind === DEVICE_SERVICE_GPU) gpu.onService(deadline);
+				else if (kind === DEVICE_SERVICE_DMA) dma.onService(deadline);
+				else assert.fail(`unexpected device ${kind}`);
+			}
+		}
+		scheduler.advanceTo(cycle);
+	};
+	advance(50);
+	assert.equal(dma.cpuBusHeld(), false);
+	assert.equal(memory.readIoU32(IO_GX_GPU_GP1) & GX_GPU_STATUS_DMA_DATA_REQUEST, 0, 'ingress remains busy at the first publication');
+	advance(5000);
+	// Do not poll GPU status here: starting DMA itself must observe current capacity.
+	memory.writeMappedWord(IO_DMA0_READ_ADDR, source + 0x100);
+	memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, 1);
+	memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(dma.cpuBusHeld(), true, 'new DMA starts after the GPU has drained');
+	advance(5100);
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU, 'newly started DMA delivers its IRQ command');
+});
+
+test('DMA GP0 prefix cannot make queued commands begin before burst publication', () => {
+	const { memory, gpu, scheduler, dma } = createGpu();
+	stopPcrtc(memory, gpu, scheduler);
+	dma.setTiming(1, 40, 1, 1, 0, 0);
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	for (const word of [0x020000ff, 0, 0x00010001]) gpu.writeGp0(word);
+	const source = DYNAMIC_RAM_BASE + 0x1000;
+	for (const [index, word] of [0x020000aa, 0, 0x00010001, 0x1f000000].entries()) memory.writeU32(source + 4 * index, word);
+	scheduler.advanceTo(10);
+	memory.writeMappedWord(IO_DMA0_READ_ADDR, source);
+	memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, 4);
+	memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(dma.cpuBusHeld(), true);
+	const advance = (cycle: number) => {
+		while (scheduler.nextDeadline() <= cycle) {
+			const deadline = scheduler.nextDeadline();
+			scheduler.advanceTo(deadline);
+			while (scheduler.hasDueTimer()) {
+				const kind = scheduler.popDueTimer();
+				if (kind === DEVICE_SERVICE_GPU) gpu.onService(deadline);
+				else if (kind === DEVICE_SERVICE_DMA) dma.onService(deadline);
+				else assert.fail(`unexpected device ${kind}`);
+			}
+		}
+		scheduler.advanceTo(cycle);
+	};
+	for (const cycle of [28, 29, 57, 58, 59, 86]) {
+		advance(cycle);
+		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, `GPU IRQ before cycle 87 at ${cycle}`);
+	}
+	assert.equal(dma.cpuBusHeld(), false);
+	advance(87);
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU);
+});
+
+test('GX-GPU schedules an IRQ behind queued commands without treating payload as an opcode, including restore', () => {
+	const original = createGpu();
+	stopPcrtc(original.memory, original.gpu, original.scheduler);
+	for (const word of [0x020000ff, 0, 0x00010001, 0x020000aa, 0x1f000000, 0x00010001, 0x1f000000]) {
+		original.gpu.writeGp0(word);
+	}
+	const restored = createGpu();
+	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);
+	restored.gpu.restoreState(original.gpu.captureState());
+	for (const target of [original, restored]) {
+		for (const cycle of [29, 57, 58]) {
+			while (target.scheduler.nextDeadline() <= cycle) {
+				const deadline = target.scheduler.nextDeadline();
+				target.scheduler.advanceTo(deadline);
+				assert.equal(target.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+				target.gpu.onService(deadline);
+			}
+			target.scheduler.advanceTo(cycle);
+			assert.equal(target.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, cycle === 58 ? IRQ_GPU : 0,
+				cycle === 29 ? 'payload 1f is not an IRQ' : 'IRQ starts at preceding completion');
+		}
+	}
 });
 
 test('GX-GPU handles PSX GP0 IRQ request and GP1 interrupt acknowledge', () => {
@@ -2273,18 +2740,14 @@ test('GX-GPU save-state restores command time and FIFO suffix relative to schedu
 	const restored = createGpu();
 	restored.scheduler.advanceTo(100);
 	restored.gpu.restoreState(state);
-	restored.gpu.onService(100);
-	assert.equal(restored.scheduler.nextDeadline(), 119);
-	restored.scheduler.advanceTo(118);
-	restored.gpu.onService(118);
+	advanceGpuTo(restored.gpu, restored.scheduler, 118);
+	restored.gpu.readStatus();
 	assert.equal(restored.gpu.readDrawModeWord(), 0);
-	restored.scheduler.advanceTo(119);
-	restored.gpu.onService(119);
+	advanceGpuTo(restored.gpu, restored.scheduler, 119);
+	restored.gpu.readStatus();
 	assert.equal(restored.gpu.readDrawModeWord(), 0x000123);
 	assert.equal(restored.gpu.readDeviceOutput().commandBuffer.executedCommandCount, 1);
-	assert.equal(restored.scheduler.nextDeadline(), 120);
-	restored.scheduler.advanceTo(120);
-	restored.gpu.onService(120);
+	advanceGpuTo(restored.gpu, restored.scheduler, 120);
 	assert.equal((restored.gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 });
 
@@ -2298,14 +2761,13 @@ test('GX-GPU GP1 clear retains accepted draws and cuts C0 at the execution front
 	active.gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	active.gpu.writeGp0(0);
 	active.gpu.writeGp0((1 << 16) | 1);
-	const fillDeadline = active.scheduler.nextDeadline();
-	active.scheduler.advanceTo(fillDeadline);
-	active.gpu.onService(fillDeadline);
+	const fillDeadline = 29;
+	advanceGpuTo(active.gpu, active.scheduler, fillDeadline);
+	active.gpu.readStatus();
 	const activeCommands = active.gpu.readDeviceOutput().commandBuffer;
 	assert.equal(activeCommands.commandCount, 2);
 	assert.equal(activeCommands.executedCommandCount, 1);
 	assert.equal(active.gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_IDLE);
-	assert.equal(active.scheduler.nextDeadline(), fillDeadline + 1);
 
 	active.gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	assert.equal(activeCommands.commandCount, 1);
@@ -2327,19 +2789,17 @@ test('GX-GPU GP1 clear retains accepted draws and cuts C0 at the execution front
 	queued.gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	queued.gpu.writeGp0(0);
 	queued.gpu.writeGp0((1 << 16) | 1);
-	const queuedFillDeadline = queued.scheduler.nextDeadline();
+	const queuedFillDeadline = 29;
 	queued.gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	const queuedCommands = queued.gpu.readDeviceOutput().commandBuffer;
 	assert.equal(queuedCommands.commandCount, 1);
 	assert.equal(queuedCommands.executedCommandCount, 0);
 	assert.equal(queued.gpu.captureState().gp0FifoWords.length, 0);
-	assert.equal(queued.scheduler.nextDeadline(), queuedFillDeadline);
 	assert.equal(queued.gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_IDLE);
 	assert.equal(queued.gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, 0);
-	queued.scheduler.advanceTo(queuedFillDeadline);
-	queued.gpu.onService(queuedFillDeadline);
-	assert.equal(queuedCommands.executedCommandCount, 1);
+	advanceGpuTo(queued.gpu, queued.scheduler, queuedFillDeadline);
 	assert.equal((queued.gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal(queuedCommands.executedCommandCount, 1);
 });
 
 test('GX-GPU GP1 reset cancels a restored active C0 deadline', () => {
@@ -2384,9 +2844,9 @@ test('GX-GPU stream clear retains the active finite command deadline without exe
 		gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
 		gpu.writeGp0(0);
 		gpu.writeGp0((16 << 16) | 64);
-		const deadline = scheduler.nextDeadline();
+		const deadline = scheduler.currentNowCycles() + gpu.captureState().pendingCommandCycles;
 		gpu.writeGp0((GX_GPU_GP0_DRAW_MODE << 24) | 0x000123);
-		scheduler.advanceTo(deadline - 1);
+		advanceGpuTo(gpu, scheduler, deadline - 1);
 		memory.writeMappedU32LE(address, action);
 		memory.writeMappedU32LE(address, action);
 		const output = gpu.readDeviceOutput();
@@ -2394,18 +2854,13 @@ test('GX-GPU stream clear retains the active finite command deadline without exe
 		assert.equal(output.commandBuffer.executedCommandCount, 0);
 		assert.equal(gpu.captureState().pendingCommandCycles, 1);
 		assert.equal(gpu.captureState().gp0FifoWords.length, 0);
-		if (scheduler.nextDeadline() === scheduler.currentNowCycles()) {
-			gpu.onService(scheduler.currentNowCycles());
-		}
-		assert.equal(scheduler.nextDeadline(), deadline);
 		assert.equal(gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, 0);
 		backend.executeGxGpuCommandDrain(gpu);
 		assert.equal(backend.gxGpuSoftware.vram[0], previousPixel, 'unfinished drawing is not rendered by a backend drain');
-		scheduler.advanceTo(deadline);
-		gpu.onService(deadline);
+		advanceGpuTo(gpu, scheduler, deadline);
+		assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 		assert.equal(output.commandBuffer.executedCommandCount, 1);
 		assert.equal(gpu.readDrawModeWord(), 0, 'queued settings must not execute after stream clear');
-		assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 		backend.executeGxGpuCommandDrain(gpu);
 		assert.equal(backend.gxGpuSoftware.vram[0], 0x001f, 'retained drawing reaches VRAM after its original deadline');
 	}
@@ -2420,10 +2875,9 @@ test('GX-GPU stream clear preserves a timed state command without a raster recor
 	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	assert.equal(gpu.captureState().pendingCommandCycles, 1);
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, 0);
-	scheduler.advanceTo(scheduler.nextDeadline());
-	gpu.onService(scheduler.currentNowCycles());
-	assert.equal(gpu.readDrawModeWord(), 0x000123);
+	advanceGpuTo(gpu, scheduler, scheduler.currentNowCycles() + 1);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal(gpu.readDrawModeWord(), 0x000123);
 });
 
 test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-to-VRAM uploads', () => {
@@ -2466,12 +2920,10 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 	assert.equal(gpu.readDrawModeWord(), 0x000222);
 	assert.equal(gpu.readMaskBitModeWord(), 3);
 	assert.equal(commands.executedCommandCount, 0);
-	assert.equal(scheduler.nextDeadline(), scheduler.currentNowCycles() + 1);
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, 0);
-	scheduler.advanceTo(scheduler.nextDeadline());
-	gpu.onService(scheduler.currentNowCycles());
-	assert.equal(commands.executedCommandCount, 1);
+	advanceGpuTo(gpu, scheduler, scheduler.currentNowCycles() + 1);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal(commands.executedCommandCount, 1);
 
 	gpu.writeGp0((0x48 << 24) | 0x0000ff);
 	gpu.writeGp0(0x00010002);
@@ -2482,8 +2934,8 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	assert.equal(commands.commandCount, 3);
 	assert.equal(commands.wordCount, 11);
-	scheduler.advanceTo(scheduler.nextDeadline());
-	gpu.onService(scheduler.currentNowCycles());
+	advanceGpuTo(gpu, scheduler, scheduler.currentNowCycles() + gpu.captureState().pendingCommandCycles);
+	gpu.readStatus();
 
 	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
 	gpu.writeGp0(32);
@@ -2493,10 +2945,10 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 
 	gpu.writeGp0((GX_GPU_GP0_DRAW_MODE << 24) | 0x000444);
 	assert.equal(commands.commandCount, 4);
-	scheduler.advanceTo(scheduler.nextDeadline());
-	gpu.onService(scheduler.currentNowCycles());
-	scheduler.advanceTo(scheduler.nextDeadline());
-	gpu.onService(scheduler.currentNowCycles());
+	advanceGpuTo(gpu, scheduler, scheduler.currentNowCycles() + gpu.captureState().pendingCommandCycles);
+	gpu.readStatus();
+	advanceGpuTo(gpu, scheduler, scheduler.currentNowCycles() + gpu.captureState().pendingCommandCycles);
+	gpu.readStatus();
 	assert.equal(gpu.readDrawModeWord(), 0x000444);
 });
 
@@ -2601,6 +3053,57 @@ test('GX-GPU software backend packed RGB555 blend matches channel arithmetic', (
 					expected |= channel << shift;
 				}
 				assert.equal(gxGpuSoftwareBlendRgb555(source, destination, mode), expected);
+			}
+		}
+	}
+});
+
+test('GX-GPU software raw uploads preserve packing, wrap, masks and untouched words', () => {
+	const commands = new GxGpuCommandBuffer(standaloneCommandBufferDma);
+	const software = new GxGpuSoftwareState(PSX_MACHINE_SPEC.gxGpuVramBytes, 0);
+	const initial = new Uint16Array(software.vram.length);
+	const expected = new Uint16Array(software.vram.length);
+	for (let index = 0; index < initial.length; index += 1) initial[index] = index * 173;
+	const wordStart = 5;
+	const payloadStart = wordStart + 3;
+	commands.commandCount = 1;
+	commands.commandKind[0] = GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM;
+	commands.commandWordStart[0] = wordStart;
+	commands.words[wordStart] = 0xa0000000;
+	for (let index = payloadStart; index < commands.words.length; index += 1) {
+		commands.words[index] = Math.imul(index, 0x9e3779b9);
+	}
+	assert.equal(commands.wordHalves.buffer, commands.words.buffer, 'raw pixel view shares the owned word storage');
+	// Same 576-case matrix as the native raw-upload contract, with a nonzero
+	// command offset. The oracle decodes raw words, independently of the view.
+	for (const size of [0x00010001, 0x00030003, 0x00030011, 0x00020400, 0x02010401, 0]) {
+		const width = ((size - 1) & 1023) + 1;
+		const height = (((size >>> 16) - 1) & 511) + 1;
+		const payloadWords = (width * height + 1) >>> 1;
+		commands.words[wordStart + 2] = size;
+		for (const x of [0, 1, 1007, 1023]) {
+			for (const extension of [0, 0x100]) {
+				const yMask = extension === 0 ? 511 : 1023;
+				commands.words[wordStart + 1] = (yMask << 16) | x;
+				commands.commandVramYAddressExtensionWord[0] = extension;
+				for (const mask of [0, 1, 2, 3]) {
+					commands.commandMaskBitModeWord[0] = mask;
+					for (const prefix of [1, 13, payloadWords]) {
+						const words = Math.min(prefix, payloadWords);
+						commands.commandWordCount[0] = 3 + words;
+						expected.set(initial);
+						software.vram.set(initial);
+						for (let pixel = 0; pixel < Math.min(words * 2, width * height); pixel += 1) {
+							const at = (((yMask + ((pixel / width) | 0)) & yMask) * 1024) + ((x + pixel % width) & 1023);
+							const source = (commands.words[payloadStart + (pixel >>> 1)] >>> ((pixel & 1) * 16)) & 0xffff;
+							if ((mask & 2) === 0 || (expected[at] & 0x8000) === 0) {
+								expected[at] = source | ((mask & 1) !== 0 ? 0x8000 : 0);
+							}
+						}
+						executeGxGpuSoftwareCommands(software, commands, 0, 1);
+						assert.deepEqual(software.vram, expected, `size=${size} x=${x} extension=${extension} mask=${mask} prefix=${prefix}`);
+					}
+				}
 			}
 		}
 	}

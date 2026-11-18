@@ -1,3 +1,4 @@
+import type { NumberConstant } from '../../number';
 import type { LuaSourceUnit } from '../source_layout';
 import type { LuaSourceLocations, LuaSyntaxSpan } from '../source_locations';
 import type { LuaSyntaxError } from '../../errors';
@@ -298,7 +299,7 @@ export type LuaLabelStatement = LuaNode & {
 
 export type LuaNumericLiteralExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.NumericLiteralExpression;
-	readonly value: number;
+	readonly value: NumberConstant;
 };
 
 export type LuaStringLiteralExpression = LuaNode & {

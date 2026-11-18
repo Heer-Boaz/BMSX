@@ -1,4 +1,4 @@
-import type { Table } from '../../machine/ts/machine/cpu/table';
+import { asInteger, asTable, isNil, valueNil, valueThread } from '../../machine/ts/machine/cpu/value';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { readRuntimeLuaModuleExport } from './lua_inspection';
@@ -10,14 +10,15 @@ export function retireRuntimeFrameScopes(runtime: Runtime, sources: RuntimeSourc
 	thread?: Thread, firstFrame = 0): void {
 	const module = readRuntimeLuaModuleExport(sources, guest, -1, 'debug/frame_scopes');
 	// Source installs can precede BIOS startup. No scopes exist before this module initializes.
-	if (module.kind !== 'value' || module.value === null) return;
-	const pool = runtime.machine.cpu.stringPool;
-	const active = (module.value as Table).getStringKey(pool.find('active')!) as Table;
+	if (module.kind !== 'value' || isNil(module.value)) return;
+	const cpu = runtime.machine.cpu, pool = cpu.stringPool;
+	const active = asTable(asTable(module.value, cpu.gc).getStringKey(pool.find('active')!), cpu.gc);
 	const threadKey = pool.find('thread')!, frameKey = pool.find('owner_frame')!;
-	active.forEachStoredEntry((_tag, _scalar, reference) => {
-		const scope = reference as Table;
-		if (thread !== undefined && (scope.getStringKey(threadKey) !== thread || (scope.getStringKey(frameKey) as number) < firstFrame)) return;
-		scope.setStringKey(threadKey, null);
-		active.set(scope, null);
+	const threadValue = thread === undefined ? valueNil() : valueThread(cpu.gc.reference(thread));
+	active.forEachStoredEntry((key) => {
+		const scope = asTable(key, cpu.gc);
+		if (thread !== undefined && (scope.getStringKey(threadKey) !== threadValue || asInteger(scope.getStringKey(frameKey)) < firstFrame)) return;
+		scope.setStringKey(threadKey, valueNil());
+		active.set(key, valueNil());
 	});
 }

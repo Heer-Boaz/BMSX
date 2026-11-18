@@ -81,8 +81,8 @@ observations.bare = load('return', 'manual.bare', 't')
 observations.fallthrough = load('', 'manual.empty', 't')
 result.bare_count = select('#', observations.bare())
 result.fallthrough_count = select('#', observations.fallthrough())
-print('Load nil results', result.bare_count, observations.bare(),
-	result.fallthrough_count, observations.fallthrough())
+result.explicit_nil_count = select('#', load('return nil', 'manual.nil', 't')())
+print('Load result counts', result.bare_count, result.fallthrough_count, result.explicit_nil_count)
 
 local tuple_environment<const> = {
 	pair = function() return 3, nil, 9 end,

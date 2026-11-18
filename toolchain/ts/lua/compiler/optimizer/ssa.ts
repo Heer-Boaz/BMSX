@@ -1,10 +1,12 @@
+import { ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
+import { evaluateNumberBinary, numberConstantValue } from '../../number';
+import { LuaBinaryOperator } from '../../syntax/ast';
 // start repeated-sequence-acceptable -- SSA optimizer keeps instruction rewrites inline for compile-time throughput and readable opcode cases.
 // start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
 import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import { MAX_EXT_CONST } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, isSkipInstruction, type Block } from '../control_flow';
-import type { ProgramConstant } from '../program';
 import type { Instruction, InstructionSet, OptimizationContext } from './index';
 import {
 	cloneDuplicatedInstruction,
@@ -60,8 +62,6 @@ const EMPTY_DEF_SLOTS: DefSlot[] = [];
 const RK_B = 1;
 const RK_C = 2;
 
-const inlineConstEquals = (constant: ConstValue | null, value: ProgramConstant): boolean =>
-	!!constant && constant.value === value;
 const SCCP_UNDEF = 0;
 const SCCP_CONST = 1;
 const SCCP_OVERDEFINED = 2;
@@ -165,18 +165,6 @@ const intersectImmediateDominator = (idom: number[], rpoIndex: number[], a: numb
 		}
 	}
 	return finger1;
-};
-
-const replaceWithUnm = (instruction: Instruction, dst: number, src: number): void => {
-	instruction.op = OpCode.UNM;
-	instruction.a = dst;
-	instruction.b = src;
-	instruction.c = 0;
-	instruction.format = 'ABC';
-	instruction.rkMask = 0;
-	instruction.target = null;
-	instruction.callProtoIndex = null;
-	instruction.symbolicReloc = undefined;
 };
 
 const replaceWithNop = (instruction: Instruction): void => {
@@ -403,6 +391,7 @@ const evaluateSccpDef = (
 				constVal: constValueForOptimization(null, context.constIndex(null)),
 			};
 		case OpCode.MOV: {
+			if (instruction.c !== ValueMoveKind.Copy) return { kind: SCCP_OVERDEFINED, constVal: null };
 			if (!uses || uses.length === 0) {
 				throw new Error('[ProgramOptimizer] Missing MOV operand.');
 			}
@@ -427,7 +416,7 @@ const evaluateSccpDef = (
 			const operand = getSccpOperand(instruction, 'b', uses[0], context, valueKind, valueConst);
 			if (operand.kind === SCCP_CONST && operand.constVal) {
 				const result = evaluateUnary(instruction.op, operand.constVal);
-				if (result !== null) {
+				if (result !== undefined) {
 					return {
 						kind: SCCP_CONST,
 						constVal: constValueForOptimization(result, context.constIndex(result)),
@@ -471,7 +460,7 @@ const evaluateSccpDef = (
 				throw new Error('[ProgramOptimizer] Missing SCCP constants.');
 			}
 			const result = evaluateBinary(instruction.op, left.constVal, right.constVal);
-			if (result !== null) {
+			if (result !== undefined) {
 				return {
 					kind: SCCP_CONST,
 					constVal: constValueForOptimization(result, context.constIndex(result)),
@@ -880,6 +869,7 @@ const computeValueNumbers = (
 				const instruction = instructions[def.index];
 				switch (instruction.op) {
 					case OpCode.MOV: {
+						if (instruction.c !== ValueMoveKind.Copy) break;
 						const uses = usesForInstruction(def.index);
 						if (uses.length === 0) {
 							throw new Error('[ProgramOptimizer] Missing MOV operand.');
@@ -1027,104 +1017,6 @@ const applyAvailableValueNumbering = (
 	}
 };
 
-const simplifyAlgebraic = (instructions: Instruction[], context: OptimizationContext): void => {
-	const getInlineConst = (instruction: Instruction, field: 'b' | 'c'): ConstValue | null => {
-		const rkMaskBit = field === 'b' ? RK_B : RK_C;
-		const operand = field === 'b' ? instruction.b : instruction.c;
-		if ((instruction.rkMask & rkMaskBit) !== 0 && operand < 0) {
-			return constPoolValueForOptimization(context, -1 - operand);
-		}
-		return null;
-	};
-
-	const getRegisterOperand = (instruction: Instruction, field: 'b' | 'c'): number | null => {
-		const rkMaskBit = field === 'b' ? RK_B : RK_C;
-		const operand = field === 'b' ? instruction.b : instruction.c;
-		if ((instruction.rkMask & rkMaskBit) !== 0 && operand < 0) {
-			return null;
-		}
-		return operand;
-	};
-
-	const replaceWithOperand = (instruction: Instruction, field: 'b' | 'c', constant: ConstValue | null): void => {
-		if (constant) {
-			replaceWithConst(instruction, instruction.a, constant.value, context);
-			return;
-		}
-		const reg = getRegisterOperand(instruction, field);
-		if (reg || reg === 0) {
-			replaceWithMov(instruction, instruction.a, reg);
-		}
-	};
-
-	const replaceWithNegatedOperand = (instruction: Instruction, field: 'b' | 'c', constant: ConstValue | null): void => {
-		if (constant) {
-			if (constant.kind === ConstValueKind.Number) {
-				replaceWithConst(instruction, instruction.a, -constant.value, context);
-			}
-			return;
-		}
-		const reg = getRegisterOperand(instruction, field);
-		if (reg || reg === 0) {
-			replaceWithUnm(instruction, instruction.a, reg);
-		}
-	};
-
-	for (let i = 0; i < instructions.length; i += 1) {
-		const instruction = instructions[i];
-		switch (instruction.op) {
-			case OpCode.ADD: {
-				const bConst = getInlineConst(instruction, 'b');
-				const cConst = getInlineConst(instruction, 'c');
-				if (inlineConstEquals(bConst, 0)) {
-					replaceWithOperand(instruction, 'c', cConst);
-				} else if (inlineConstEquals(cConst, 0)) {
-					replaceWithOperand(instruction, 'b', bConst);
-				}
-				break;
-			}
-			case OpCode.SUB: {
-				const bConst = getInlineConst(instruction, 'b');
-				const cConst = getInlineConst(instruction, 'c');
-				if (inlineConstEquals(cConst, 0)) {
-					replaceWithOperand(instruction, 'b', bConst);
-				} else if (inlineConstEquals(bConst, 0)) {
-					replaceWithNegatedOperand(instruction, 'c', cConst);
-				}
-				break;
-			}
-			case OpCode.MUL: {
-				const bConst = getInlineConst(instruction, 'b');
-				const cConst = getInlineConst(instruction, 'c');
-				if (inlineConstEquals(bConst, 1)) {
-					replaceWithOperand(instruction, 'c', cConst);
-				} else if (inlineConstEquals(cConst, 1)) {
-					replaceWithOperand(instruction, 'b', bConst);
-				}
-				break;
-			}
-			case OpCode.DIV: {
-				const cConst = getInlineConst(instruction, 'c');
-				if (inlineConstEquals(cConst, 1)) {
-					const bConst = getInlineConst(instruction, 'b');
-					replaceWithOperand(instruction, 'b', bConst);
-				}
-				break;
-			}
-			case OpCode.POW: {
-				const cConst = getInlineConst(instruction, 'c');
-				if (inlineConstEquals(cConst, 1)) {
-					const bConst = getInlineConst(instruction, 'b');
-					replaceWithOperand(instruction, 'b', bConst);
-				}
-				break;
-			}
-			default:
-				break;
-		}
-	}
-};
-
 const isControlFlowInstruction = (instruction: Instruction): boolean => {
 	if (instruction.op === OpCode.RET || instruction.op === OpCode.RFE) {
 		return true;
@@ -1138,6 +1030,7 @@ const isControlFlowInstruction = (instruction: Instruction): boolean => {
 };
 
 const isHoistableInstruction = (instruction: Instruction): boolean => {
+	if (instruction.op === OpCode.MOV && instruction.c !== ValueMoveKind.Copy) return false;
 	switch (instruction.op) {
 		case OpCode.MOV:
 		case OpCode.KNIL:
@@ -1612,7 +1505,7 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 			}
 			const zeroIndex = -1 - lt0.b;
 			const zeroValue = constPoolValueForOptimization(context, zeroIndex);
-			if (!zeroValue || zeroValue.value !== 0) {
+			if (zeroValue?.kind !== ConstValueKind.Number || numberConstantValue(zeroValue.value) !== 0) {
 				continue;
 			}
 			if (ltPos.b < 0 || ltPos.c < 0 || ltNeg.b < 0 || ltNeg.c < 0) {
@@ -1699,22 +1592,22 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 				continue;
 			}
 			const start = startConst.value;
-			const limit = limitConst.value;
-			const step = stepConst.value;
+			const limit = numberConstantValue(limitConst.value);
+			const step = numberConstantValue(stepConst.value);
 			if (step === 0) {
 				continue;
 			}
 			let iterations = 0;
 			let loopValue = start;
 			if (step > 0) {
-				while (iterations <= maxUnroll && loopValue <= limit) {
+				while (iterations <= maxUnroll && numberConstantValue(loopValue) <= limit) {
 					iterations += 1;
-					loopValue += step;
+					loopValue = evaluateNumberBinary(LuaBinaryOperator.Add, loopValue, stepConst.value)!;
 				}
 			} else {
-				while (iterations <= maxUnroll && loopValue >= limit) {
+				while (iterations <= maxUnroll && numberConstantValue(loopValue) >= limit) {
 					iterations += 1;
-					loopValue += step;
+					loopValue = evaluateNumberBinary(LuaBinaryOperator.Add, loopValue, stepConst.value)!;
 				}
 			}
 			if (iterations === 0 || iterations > maxUnroll) {
@@ -2146,6 +2039,7 @@ export const applyGlobalOptimizations = (
 					const instruction = instructions[def.index];
 					switch (instruction.op) {
 						case OpCode.MOV: {
+							if (instruction.c !== ValueMoveKind.Copy) break;
 							const slots = instrUses[def.index] ?? EMPTY_USE_SLOTS;
 							if (slots.length === 0) {
 								throw new Error('[ProgramOptimizer] Missing MOV operand.');
@@ -2319,7 +2213,6 @@ export const applyGlobalOptimizations = (
 		}
 	}
 
-	simplifyAlgebraic(instructions, context);
 	let current: InstructionSet = { instructions, ranges };
 	const enableLoopOptimizations = true;
 	if (enableLoopOptimizations) {

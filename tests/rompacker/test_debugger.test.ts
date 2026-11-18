@@ -222,10 +222,10 @@ end`;
 		f.advance(); const compiled = debug.sources.catalog.find(entry => entry.path === PATH)!;
 		assert.equal(debug.sources.setBreakpoints(compiled.source, [cancelAt === 'body' ? 6 : 3])[0].status, 'bound');
 		debug.resume(Mode.Continue); f.advance(); assert.equal(debug.phase, cancelAt);
-		const cpu = f.target.runtime.machine.cpu, thread = cpu.activeThread, frame = thread.frames.at(-1)!, pc = frame.pc;
+		const cpu = f.target.runtime.machine.cpu, thread = cpu.activeThread, frame = thread.currentFrame!, pc = frame.pc;
 		execution.cancel(); const completion = debug.wait();
 		if (cancelAt === 'body') {
-			assert.equal(execution.active, false); assert.equal(frame.pc, pc); assert.ok(thread.frames.includes(frame));
+			assert.equal(execution.active, false); assert.equal(frame.pc, pc); assert.ok(thread.frameIndex(frame) >= 0);
 			assert.match(f.result.failures[0].message, /outside a cooperative phase boundary/);
 		} else {
 			assert.equal(debug.status, 'cancelling'); assert.equal(execution.active, true);

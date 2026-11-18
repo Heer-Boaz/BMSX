@@ -2,8 +2,7 @@ import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import type { Thread } from '../../machine/ts/machine/cpu/thread';
+import { asThread, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { retireRuntimeFrameScopes } from '../../ide/runtime/frame_scopes';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
@@ -34,18 +33,18 @@ return true`, 0);
 	retireRuntimeFrameScopes(runtime, sources, guest);
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
 	const initialized = materializeCpuCompletionValues(cpu);
-	assert.deepEqual(initialized, [true, true], initialized.map(value => guest.formatValue(value)).join('\t'));
-	const keeper = guest.global('keeper') as Thread;
-	const pcs = keeper.frames.map(frame => frame.pc);
-	const reader = guest.global('reader') as Closure;
-	assert.deepEqual(guest.callClosure(reader), [17]);
+	assert.deepEqual(initialized, [valueBool(true), valueBool(true)], initialized.map(value => guest.formatValue(value)).join('\t'));
+	const keeper = asThread(guest.global('keeper'), cpu.gc);
+	const pcs = Array.from({ length: keeper.frameDepth }, (_, index) => keeper.frameAtDepth(index).pc);
+	const reader = guest.global('reader');
+	assert.deepEqual(guest.callClosure(reader), [valueInteger(17)]);
 	if (mode === 'completion-unwind') {
 		retireRuntimeFrameScopes(runtime, sources, guest, cpu.activeThread, 0);
-		retireRuntimeFrameScopes(runtime, sources, guest, keeper, keeper.frames.length);
-		assert.deepEqual(guest.callClosure(reader), [17], 'other threads and lower scopes retain their borrow');
+		retireRuntimeFrameScopes(runtime, sources, guest, keeper, keeper.frameDepth);
+		assert.deepEqual(guest.callClosure(reader), [valueInteger(17)], 'other threads and lower scopes retain their borrow');
 	}
 	retireRuntimeFrameScopes(runtime, sources, guest, mode === 'completion-unwind' ? keeper : undefined);
-	assert.deepEqual(keeper.frames.map(frame => frame.pc), pcs, 'retirement neither runs Lua nor unwinds/rewrites the physical stack');
-	assert.deepEqual(guest.callClosure(guest.global('verify') as Closure).map(value => guest.formatValue(value)),
+	assert.deepEqual(Array.from({ length: keeper.frameDepth }, (_, index) => keeper.frameAtDepth(index).pc), pcs, 'retirement neither runs Lua nor unwinds/rewrites the physical stack');
+	assert.deepEqual(guest.callClosure(guest.global('verify')).map(value => guest.formatValue(value)),
 		['false', 'Selected frame evaluation has ended.']);
 });

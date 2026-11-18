@@ -1,4 +1,5 @@
 import { readLE16, readLE32, writeLE16, writeLE32 } from '../../../common/endian';
+import { RomStorage } from '../../memory/rom_storage';
 import {
 	CART_MMIO_BASE,
 	CART_RAM_BASE,
@@ -27,19 +28,15 @@ type CartridgeRamRegion = {
 	pageWriteWatches: MappedPageWriteWatches;
 };
 
-type CartridgeRomRegion = {
-	bytes: Uint8Array;
-};
-
 export class CartridgeCard {
-	private readonly rom: CartridgeRomRegion | null;
+	private readonly rom: RomStorage | null;
 	private readonly ram: CartridgeRamRegion | null;
 	private readonly mappedKeyOffset: number;
 	private readonly mailbox: CartridgeMailbox | null;
 	private mappedPageInvalidator: MappedPageInvalidator | null = null;
 
 	public constructor(media: CartridgeCardMedia, mappedKeyOffset: number) {
-		this.rom = media.rom === null ? null : { bytes: media.rom };
+		this.rom = media.rom === null ? null : new RomStorage(media.rom);
 		this.ram = media.ramByteCount === null
 			? null
 			: {
@@ -55,7 +52,7 @@ export class CartridgeCard {
 	}
 
 	public installRom(rom: Uint8Array): void {
-		this.rom!.bytes = rom;
+		this.rom!.install(rom);
 		if (this.mappedPageInvalidator !== null) {
 			this.mappedPageInvalidator.invalidateMappedRange(
 				CART_ROM_BASE + this.mappedKeyOffset,
@@ -63,6 +60,8 @@ export class CartridgeCard {
 			);
 		}
 	}
+
+	public romStorage(): RomStorage | null { return this.rom; }
 
 	public attachMappedPageInvalidator(invalidator: MappedPageInvalidator): void {
 		this.mappedPageInvalidator = invalidator;
@@ -268,6 +267,18 @@ export class CartridgeCard {
 			return false;
 		}
 		out.bytes = rom.bytes;
+		out.byteOffset = offset;
+		out.byteLength = length;
+		return true;
+	}
+
+	public bindMappedReadView(address: number, length: number, out: CartridgeByteView): boolean {
+		if (address < CART_RAM_BASE) return this.bindRomByteView(address, length, out);
+		const ram = this.ram;
+		const offset = address - CART_RAM_BASE;
+		if (address >= CART_MMIO_BASE || ram === null || length === 0
+			|| offset >= ram.bytes.byteLength || length > ram.bytes.byteLength - offset) return false;
+		out.bytes = ram.bytes;
 		out.byteOffset = offset;
 		out.byteLength = length;
 		return true;

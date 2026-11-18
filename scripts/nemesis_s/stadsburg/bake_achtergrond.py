@@ -77,8 +77,8 @@ def composite(foreground, background, exterior):
 
 def compile_background(root, plan, runtime, tiles, entries, cells):
     width, height = plan['width'], len(cells)
-    original_roles = ''.join(runtime['tile_symbols'][k - 1] if k else ' '
-                             for row in runtime['tile_ids'] for k in row)
+    original_roles = tuple(runtime['tile_roles'][k - 1] if k else 32
+                           for row in runtime['tile_ids'] for k in row)
     background = draw_backdrop(root, plan['background'], width, height)
     stage = np.zeros_like(background)
     empty = np.zeros((height, width), dtype=bool)
@@ -140,7 +140,7 @@ def compile_background(root, plan, runtime, tiles, entries, cells):
 
     # Keep the original semantic IDs intact. Only the visible source for a
     # particular occurrence gains a composition; its native symbol is copied.
-    symbols = list(runtime['tile_symbols'])
+    roles = list(runtime['tile_roles'])
     variants = {}
     changed = 0
     combined = background.copy()
@@ -155,17 +155,17 @@ def compile_background(root, plan, runtime, tiles, entries, cells):
             if np.array_equal(front, pixels):
                 continue
             name = asset(pixels)
-            symbol = symbols[original_id - 1]
-            key = name, symbol
+            role = roles[original_id - 1]
+            key = name, role
             if key not in variants:
                 runtime['tile_assets'].append(name)
-                symbols.append(symbol)
-                variants[key] = len(symbols)
+                roles.append(role)
+                variants[key] = len(roles)
             runtime['tile_ids'][y][x] = variants[key]
             changed += 1
-    runtime['tile_symbols'] = ''.join(symbols)
-    assert original_roles == ''.join(runtime['tile_symbols'][k - 1] if k else ' '
-                                     for row in runtime['tile_ids'] for k in row)
+    runtime['tile_roles'] = roles
+    assert original_roles == tuple(runtime['tile_roles'][k - 1] if k else 32
+                                   for row in runtime['tile_ids'] for k in row)
 
     # Poses retain their native pattern identities, including damage and
     # collision ownership. Visual substitutions are resolved once at admission.
@@ -219,29 +219,72 @@ def compile_background(root, plan, runtime, tiles, entries, cells):
         clip['visuals'] = visual_rows
     for name, pixels in new_assets.items():
         assert all(len(set(map(tuple, row))) <= 2 for row in pixels), name
-    # A native pattern bank holds exact 8x8 drawings in 32x32 slots. One image
-    # resource per bank avoids retaining a ROM metadata object for every tiny
-    # character. Native terrain and cargo pattern IDs stay independent.
-    bank_names = []
-    bank_ids = {}
+    # One bank-cell vocabulary covers every stage drawing. Semantic terrain
+    # roles and cargo pattern indices stay separate from this visual identity.
+    water = runtime['water_animation']
+    water_names = list(water['frames'])
+    water_family = {name: index + 1 for index, name in enumerate(water_names)}
+    water['tile_families'] = [water_family.get(name, 0) for name in runtime['tile_assets']]
+    required = list(runtime['tile_assets']) + harbor['patterns'] + [harbor['empty']]
+    required += [name for frames in water['frames'].values() for name in frames]
+    required += [name for clip in harbor['clips'] for row in clip.get('visuals', []) for name in row if name]
+    # Composites are opaque; native animation poses can contain transparent
+    # texels. Preserve their alpha rather than treating black as transparency.
+    new_assets = {name: np.asarray(Image.fromarray(pixels).convert('RGBA'))
+                  for name, pixels in new_assets.items()}
+    for name in required:
+        if name in new_assets:
+            continue
+        path = (root / entries[native_sources[name]]['image'] if name in native_sources
+                else root / 'res/img' / f'{name}@atlas=gameplay.png')
+        pixels = np.asarray(Image.open(path).convert('RGBA'))
+        assert pixels.shape == (8, 8, 4), name
+        new_assets[name] = pixels
+
+    bank_names, bank_ids, pixel_ids = [], {}, {}
     bank_image = None
-    for index, (name, pixels) in enumerate(new_assets.items()):
+    for name, pixels in new_assets.items():
+        key = pixels.tobytes()
+        if key in pixel_ids:
+            bank_ids[name] = pixel_ids[key]
+            continue
+        index = len(pixel_ids)
         slot = index % 1024
         if not slot:
             if bank_image is not None:
                 bank_image.save(root / 'res/img' / f'{bank_names[-1]}@atlas=gameplay.png')
             bank_names.append(f'achtergrond_bank_{len(bank_names)}')
-            bank_image = Image.new('RGB', (256, 256))
+            bank_image = Image.new('RGBA', (256, 256), (0, 0, 0, 255))
         bank_image.paste(Image.fromarray(pixels), ((slot % 32) * 8, (slot // 32) * 8))
-        bank_ids[name] = index + 1
+        bank_ids[name] = pixel_ids[key] = index + 1
     bank_image.save(root / 'res/img' / f'{bank_names[-1]}@atlas=gameplay.png')
-    runtime['tile_banks'] = {'assets': bank_names, 'tile_count': len(new_assets)}
-    runtime['tile_assets'] = [bank_ids.get(name, name) for name in runtime['tile_assets']]
+    # Exact RGBA identity preserves the RGB555 zero word and STP/mask decision.
+    # Verify every input against its emitted cell, not just each unique bitmap.
+    banks = [Image.open(root / 'res/img' / f'{name}@atlas=gameplay.png') for name in bank_names]
+    for name, pixels in new_assets.items():
+        index = bank_ids[name] - 1
+        x, y = (index % 32) * 8, ((index % 1024) // 32) * 8
+        assert banks[index // 1024].crop((x, y, x + 8, y + 8)).tobytes() == pixels.tobytes(), name
+    runtime['tile_banks'] = {'assets': bank_names, 'tile_count': len(pixel_ids)}
+    runtime['tile_assets'] = [bank_ids[name] for name in runtime['tile_assets']]
     runtime['background']['tile_assets'] = [bank_ids[name] for name in backdrop_assets]
+    water['frames'] = [[bank_ids[name] for name in water['frames'][base]] for base in water_names]
+    harbor['patterns'] = [bank_ids[name] for name in harbor['patterns']]
+    harbor['empty'] = bank_ids[harbor['empty']]
     for clip in harbor['clips']:
         if 'visuals' in clip:
-            clip['visuals'] = [[bank_ids.get(name, name) for name in row]
-                               for row in clip['visuals']]
+            clip['visuals'] = [[bank_ids[name] if name else 0 for name in row] for row in clip['visuals']]
+    # Stage-only source drawings remain authored, but must not occupy a second
+    # copy of the gameplay atlas beside their bank cells.
+    archived = root / 'authoring/banked_tiles'
+    archived.mkdir(exist_ok=True)
+    for name in required:
+        source = root / 'res/img' / f'{name}@atlas=gameplay.png'
+        if source.exists():
+            target = archived / source.name
+            source.replace(target)
+            if name in native_sources:
+                entries[native_sources[name]]['image'] = target.relative_to(root).as_posix()
     for path in (root / 'res/img').glob('achtergrond_*@atlas=gameplay.png'):
         if path.name.split('@')[0] not in bank_names:
             path.unlink()
@@ -251,7 +294,7 @@ def compile_background(root, plan, runtime, tiles, entries, cells):
     (preview / 'achtergrond_report.json').write_text(json.dumps({
         'scenes': plan['background']['scenes'],
         'background_assets': len(backdrop_assets), 'composite_assets': len(variants),
-        'pattern_banks': len(bank_names), 'bank_patterns': len(new_assets),
+        'pattern_banks': len(bank_names), 'bank_patterns': len(pixel_ids),
         'composed_stage_cells': changed, 'composed_animation_cels': animated_composites,
         'native_roles_preserved': True, 'maximum_inks_per_8x1': 2,
     }, indent=2) + '\n')

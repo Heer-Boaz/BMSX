@@ -1,6 +1,7 @@
+import { numberConstantFromHost, numberConstantValue, evaluateNumberUnary, type NumberConstant } from '../../../toolchain/ts/lua/number';
 import { LuaSourceLocations } from '../../../toolchain/ts/lua/syntax/source_locations';
 import {
-	LuaSyntaxKind,
+	LuaSyntaxKind, LuaUnaryOperator,
 	type LuaNumericLiteralExpression,
 	type LuaBooleanLiteralExpression,
 	type LuaNilLiteralExpression,
@@ -12,7 +13,7 @@ import {
 } from '../../../toolchain/ts/lua/syntax/ast';
 import { findLuaTableFieldSeparator } from '../../../toolchain/ts/lua/syntax/table_fields';
 import { quoteLuaString } from '../../../toolchain/ts/lua/syntax/string_literal';
-import { formatLuaNumberExpression, luaNumericLiteral, readLuaEncodedNumber, readLuaNumberLiteral } from '../../../toolchain/ts/lua/syntax/number_expression';
+import { formatLuaNumberConstant, luaNumericLiteral, readLuaEncodedNumber, readLuaNumberLiteral } from '../../../toolchain/ts/lua/syntax/number_expression';
 import { LuaTokenType } from '../../../toolchain/ts/lua/syntax/token';
 import type { LuaTokenSequence } from '../../../toolchain/ts/lua/syntax/token_sequence';
 import type { EditorTextEdit } from '../../editor/model/text_model';
@@ -138,16 +139,18 @@ export function createLuaTableFieldNumberEdits(
 	field: LuaTableField,
 	value: number,
 ): EditorTextEdit[] | null {
+	const constant = numberConstantFromHost(value);
+	value = numberConstantValue(constant);
 	const expression = field.value;
 	const literal = luaNumericLiteral(expression);
 	if (literal === null) {
 		const previous = readLuaEncodedNumber(expression);
 		if (previous === null) return null;
 		if (Object.is(previous, value)) return [];
-		return createLuaClosedNumberEdits(buffer, locations, field, value);
+		return createLuaClosedNumberEdits(buffer, locations, field, constant);
 	}
 	const negated = expression.kind === LuaSyntaxKind.UnaryExpression;
-	const previousValue = negated ? -literal.value : literal.value;
+	const previousValue = readLuaNumberLiteral(expression)!;
 	if (Object.is(value, previousValue)) {
 		return [];
 	}
@@ -155,9 +158,13 @@ export function createLuaTableFieldNumberEdits(
 	const literalStart = buffer.offsetAt(locations.range(literal.span).start.line - 1, locations.range(literal.span).start.column - 1);
 	const literalEnd = buffer.offsetAt(locations.range(literal.span).end.line - 1, locations.range(literal.span).end.column);
 	const literalSource = buffer.getTextRange(literalStart, literalEnd);
-	const negative = value < 0 || Object.is(value, -0);
+	// Decimal 2147483648 is Float; the minimum Integer needs its word literal.
+	const minimumInteger = constant.kind === 'integer' && constant.word === 0x80000000;
+	const negative = !minimumInteger && (value < 0 || Object.is(value, -0));
 	const magnitude = negative ? -value : value;
-	const digits = magnitude % 1 === 0 ? formatIntegerLiteral(magnitude, literalSource) : formatLuaNumberExpression(magnitude, false);
+	const digits = minimumInteger ? formatLuaNumberConstant(constant, false)
+		: constant.kind === 'integer' ? formatIntegerLiteral(magnitude, literalSource)
+			: formatLuaNumberConstant(negative ? evaluateNumberUnary(LuaUnaryOperator.Negate, constant)! : constant, false);
 	const edits: EditorTextEdit[] = [];
 	let replacement = digits;
 	if (negated) {
@@ -183,7 +190,7 @@ export function createLuaTableFieldNumberEdits(
 
 /** Rewrite the closed Number-source syntax, keeping all source trivia and
  * grouping outside the removed division operand. Human input remains literal-only. */
-function createLuaClosedNumberEdits(buffer: TextBuffer, locations: LuaSourceLocations, field: LuaTableField, value: number): EditorTextEdit[] {
+function createLuaClosedNumberEdits(buffer: TextBuffer, locations: LuaSourceLocations, field: LuaTableField, constant: NumberConstant): EditorTextEdit[] {
 	const expression = locations.range(field.value.span), fieldRange = locations.range(field.span);
 	const start = buffer.offsetAt(expression.start.line - 1, expression.start.column - 1);
 	const end = buffer.offsetAt(fieldRange.end.line - 1, fieldRange.end.column);
@@ -199,7 +206,7 @@ function createLuaClosedNumberEdits(buffer: TextBuffer, locations: LuaSourceLoca
 				divided = true; edits.push({ offset, deleteLength: token.width, text: '' }); break;
 			case LuaTokenType.Number:
 				if (divided) denominator = true;
-				edits.push({ offset, deleteLength: token.width, text: divided ? '' : formatLuaNumberExpression(value, false) }); break;
+				edits.push({ offset, deleteLength: token.width, text: divided ? '' : formatLuaNumberConstant(constant, false) }); break;
 			case LuaTokenType.LeftParen:
 				if (divided && !denominator) { rightGroups++; edits.push({ offset, deleteLength: token.width, text: '' }); }
 				break;

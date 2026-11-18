@@ -46,7 +46,7 @@ class RenderGraphRuntime;
 class VideoPresenter;
 class RenderPassLibrary;
 struct RenderPassStateStorage;
-struct GxGpuDeviceOutput;
+struct GxGpuPresentation;
 
 class RenderGraphIO {
 public:
@@ -151,7 +151,7 @@ public:
 
 	void addPass(const RenderGraphPass& pass);
 	void compile(FrameData* frame);
-	void execute(FrameData* frame, const GxGpuDeviceOutput& output);
+	void execute(FrameData* frame, const GxGpuPresentation& output);
 	void invalidate();
 	RgbaImage captureHistoryTexture(u8 index);
 
@@ -198,7 +198,7 @@ private:
 	void realizeAll();
 	void destroyResources();
 	void setupPass(const RenderGraphPass& pass, RenderGraphIO& io, FrameData* frame);
-	void executePass(RenderGraphPass& pass, RenderGraphContext& ctx, FrameData* frame, const GxGpuDeviceOutput& output);
+	void executePass(RenderGraphPass& pass, RenderGraphContext& ctx, FrameData* frame, const GxGpuPresentation& output);
 	RenderGraphTexHandle graphHandle(RenderGraphSlot slot) const;
 	bool resolveExecutablePass(i32 orderIndex, bool hasOrder, ExecutablePass& out);
 	WriteTargets writeTargetsForPass(i32 passIndex) const;

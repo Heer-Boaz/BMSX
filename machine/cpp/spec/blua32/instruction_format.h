@@ -5,6 +5,8 @@
 
 namespace bmsx {
 
+enum class ValueMoveKind : uint32_t { Copy = 0, FloatBits = 1, FloatFromBits = 2 };
+
 constexpr int INSTRUCTION_BYTES = 4;
 constexpr int MAX_OP_BITS = 6;
 constexpr int MAX_OPERAND_BITS = 6;

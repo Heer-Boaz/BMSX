@@ -18,7 +18,7 @@ export async function buildSourceCartridgeFixture(
 	projectRootPath: string,
 	systemRom: Uint8Array,
 	modules: readonly { path: string; source: string }[],
-	options: { traceStatements: TraceStatementSelection; preloadModules: readonly string[] },
+	options: { traceStatements: TraceStatementSelection; preloadModules: readonly string[]; resourceRoots?: readonly string[] },
 ): Promise<Uint8Array> {
 	const root = join(workspace, projectRootPath);
 	for (const module of modules) {
@@ -28,7 +28,7 @@ export async function buildSourceCartridgeFixture(
 	}
 	const programFiles = collectCartSourceFiles([root]);
 	const libraryFiles = collectCartSourceFiles(['cartlib', 'testlib']);
-	const inputs = await prepareRomInputs([], [...programFiles, ...libraryFiles], { kind: 'filesystem' });
+	const inputs = await prepareRomInputs(options.resourceRoots ?? [], [...programFiles, ...libraryFiles], { kind: 'filesystem' });
 	const metadata = await getResMetaList(inputs, {
 		domain: 'cart', extraLuaFiles: programFiles, virtualRoot: root,
 		libraryLuaFiles: libraryFiles, sourceOnlyLuaRootFiles: [],
@@ -37,7 +37,7 @@ export async function buildSourceCartridgeFixture(
 	const assets = await generateRomAssets(await getResourcesList(metadata));
 	const layout = layoutRomPrefix(assets, true, { hardware: [{ type: 'rom' }] });
 	const blua32 = buildRomBlua32Tail(assets, {
-		...options,
+		traceStatements: options.traceStatements, preloadModules: options.preloadModules,
 		domain: 'cart', includeDiagnostics: true, includeSymbols: true, optLevel: 3, imageOffset: layout.nextOffset,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		biosImports: readBlua32BiosImports(systemRom),

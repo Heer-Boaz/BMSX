@@ -45,15 +45,15 @@ export class CpuExecutionState {
 		if (gxGpu.backendServiceBlocksMachine()) {
 			return tickCompleted;
 		}
-		if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld()) {
+		if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
 			return tickCompleted;
 		}
 		const scheduler = machine.scheduler;
 		while (true) {
-			if (!machine.systemController.cpuHeld() && cpu.enterPendingInterrupt()) {
+			if (!machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld() && cpu.enterPendingInterrupt()) {
 				return tickCompleted;
 			}
-			if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld()) {
+			if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
 				return tickCompleted;
 			}
 			if (tickCompleted) {
@@ -146,13 +146,13 @@ export class CpuExecutionState {
 		const scheduler = machine.scheduler;
 		const endCycle = scheduler.nowCycles + cycleBudget;
 		runDueRuntimeTimers(runtime);
-		while (targetThread.frames.length > targetDepth) {
+		while (targetThread.frameDepth > targetDepth) {
 			if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
 			if (machine.gxGpu.backendServiceBlocksMachine()
 				|| machine.systemController.cpuHeld()) {
 				return CpuSuspendedRunResult.Halted;
 			}
-			if (cpu.isMemoryWriteBlocked()) {
+			if (cpu.isMemoryWriteBlocked() || machine.dmaController.cpuBusHeld()) {
 				const nextDeadline = scheduler.nextDeadline();
 				if (nextDeadline === Number.MAX_SAFE_INTEGER) {
 					return CpuSuspendedRunResult.Halted;
@@ -183,13 +183,12 @@ export class CpuExecutionState {
 			const result = scheduler.runCpuSlice(targetDepth, sliceBudget, targetThread);
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
 			if (consumed > 0) {
-				machine.advanceDevices(consumed);
+				advanceRuntimeTime(runtime, consumed);
 				if (machine.systemController.cpuHeld()) {
 					return CpuSuspendedRunResult.Halted;
 				}
-				runDueRuntimeTimers(runtime);
 			}
-			if (targetThread.frames.length <= targetDepth) {
+			if (targetThread.frameDepth <= targetDepth) {
 				return CpuSuspendedRunResult.Completed;
 			}
 			if (result === RunResult.ExecutionStopped) {
@@ -208,7 +207,7 @@ export class CpuExecutionState {
 					if (machine.gxGpu.backendServiceBlocksMachine()) {
 						return CpuSuspendedRunResult.Halted;
 					}
-					const cpuHeld = machine.systemController.cpuHeld();
+					const cpuHeld = machine.systemController.cpuHeld() || machine.dmaController.cpuBusHeld();
 					if (!cpuHeld && cpu.enterPendingInterrupt()) {
 						break;
 					}
@@ -254,7 +253,7 @@ export class CpuExecutionState {
 			&& !tickCompleted
 			&& !runtime.machine.gxGpu.backendServiceBlocksMachine()
 			&& !runtime.machine.systemController.cpuHeld()) {
-			if (cpu.isMemoryWriteBlocked()) {
+			if (cpu.isMemoryWriteBlocked() || runtime.machine.dmaController.cpuBusHeld()) {
 				const nextDeadline = scheduler.nextDeadline();
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
@@ -320,8 +319,18 @@ export class CpuExecutionState {
 }
 
 export function advanceRuntimeTime(runtime: Runtime, cycles: number): boolean {
-	runtime.machine.advanceDevices(cycles);
-	return runDueRuntimeTimers(runtime);
+	const machine = runtime.machine, scheduler = machine.scheduler;
+	const targetCycle = scheduler.nowCycles + cycles;
+	runDueRuntimeTimers(runtime);
+	// These cycles already elapsed. Holds gate the next CPU slice; device
+	// edges retire before advancing the rest of the completed instruction.
+	while (scheduler.nowCycles < targetCycle) {
+		const deadline = scheduler.nextDeadline();
+		const nextCycle = deadline < targetCycle ? deadline : targetCycle;
+		machine.advanceDevices(nextCycle - scheduler.nowCycles);
+		runDueRuntimeTimers(runtime);
+	}
+	return runtime.vblank.tickCompleted;
 }
 
 export function runDueRuntimeTimers(runtime: Runtime): boolean {

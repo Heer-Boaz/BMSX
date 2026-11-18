@@ -22,6 +22,8 @@ import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test
 // unrelated World population. These are guest machine cycles, not host timings.
 // https://github.com/bevyengine/bevy/blob/main/examples/stress_tests/transform_hierarchy.rs
 const worldFixture = WORLD_CPU_SETUP + `
+world:start()
+
 prefab.define({def_id='measure.2d',
  class=object_2d})
 prefab.define({def_id='measure.3d',

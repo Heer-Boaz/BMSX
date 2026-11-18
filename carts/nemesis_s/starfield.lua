@@ -92,8 +92,13 @@ function starfield:ctor()
 	self.scroll_step = velocity.pixels_per_second_to_pixels_per_tick(stage_star_scroll_speed_px_per_second)
 end
 
+-- disable-next-line single_line_method_pattern -- World dispatches this construction-readiness override; it is not a forwarding API.
 function starfield:onspawn()
 	self.timelines:define(blink_timeline_id, blink_sequence)
+end
+
+-- disable-next-line single_line_method_pattern -- World dispatches this gameplay-start override after component activation.
+function starfield:on_activate()
 	self.timelines:play(blink_timeline_id)
 end
 

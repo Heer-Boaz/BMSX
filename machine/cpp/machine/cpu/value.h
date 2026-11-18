@@ -1,497 +1,131 @@
 #pragma once
 
-#include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <iterator>
-#include <memory>
 #include <string>
-#include <utility>
-#include <vector>
-
+#include "common/compiler.h"
+#include "common/float32.h"
 #include "machine/cpu/string_pool.h"
 #include "spec/blua32/builtin.h"
+#include "spec/blua32/numeric.h"
 
 namespace bmsx {
-
+class GcHeap;
 struct Table;
 struct Closure;
-struct Upvalue;
 struct Thread;
 
-struct BuiltinFunctionCost {
-	uint16_t base = 1;
-	uint8_t perArg = 0;
-	uint8_t perRet = 0;
-};
-
+// Only transient complete values use this transport word. Persistent slots use
+// ValueStorage's separate 32-bit payload and byte-tag planes, never Value[].
 using Value = uint64_t;
-
 enum class ValueTag : uint8_t {
-	Nil = 0,
-	False = 1,
-	True = 2,
-	String = 3,
-	Table = 4,
-	Closure = 5,
-	BuiltinFunction = 6,
-	Thread = 7,
+	Nil, False, True, Integer, Float, String, Table, Closure, BuiltinFunction, Thread,
+	DeadKey, // Table retirement metadata; never a language-level value.
 };
-
-enum class ObjType : uint8_t {
-	Table,
-	Closure,
-	Upvalue,
-	Thread,
-};
-
-struct GCObject {
-	ObjType type;
-	bool marked = false;
-	uint32_t hashId = 0;
-	GCObject* next = nullptr;
-};
-
-struct BuiltinFunction {
-	BuiltinFunctionId id = BuiltinFunctionId::Next;
-	uint16_t cycleBase = 1;
-	uint8_t cyclePerArg = 0;
-	uint8_t cyclePerRet = 0;
-};
-
-inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN_FUNCTION_COSTS {{
-	{ 1, 0, 0 },
-	{ 1, 0, 0 },
-	{ 2, 0, 0 },
-	{ 2, 0, 0 },
-	{ 1, 0, 0 },
-	{ 1, 0, 0 },
-	{ 1, 0, 0 },
-	{ 2, 0, 0 },
-	{ 2, 0, 0 },
-	{ 2, 0, 0 },
-	{ 4, 0, 0 },
-	{ 4, 0, 0 },
-	{ 1, 0, 0 },
-	{ 4, 0, 0 },
-	{ 4, 0, 0 },
-	{ 4, 0, 0 },
-	{ 4, 0, 0 },
-	{ 4, 0, 0 },
-	{ 4, 0, 0 },
-	{ 4, 0, 0 },
-	{ 4, 0, 0 },
-	{ 1, 0, 0 },
-	{ 1, 0, 0 },
-	{ 1, 0, 0 }, // FrameCount
-	{ 1, 0, 0 }, // GetFrameRegister
-	{ 1, 0, 0 }, // SetFrameRegister
-	{ 1, 0, 0 }, // GetFrameUpvalue
-	{ 1, 0, 0 }, // SetFrameUpvalue
-	{ 1, 0, 0 }, // FrameHeader
-}};
-
-constexpr uint64_t VALUE_QNAN_MASK = 0x7ff8000000000000ULL;
-constexpr uint64_t VALUE_SIGN_BIT = 0x8000000000000000ULL;
-constexpr uint64_t VALUE_PAYLOAD_MASK = 0x0000ffffffffffffULL;
-
-inline uint8_t valueEncodedTag(Value v) {
-	if ((v & VALUE_QNAN_MASK) != VALUE_QNAN_MASK) {
-		return 0;
+inline constexpr unsigned VALUE_HEADER_SHIFT = 32;
+inline constexpr std::ptrdiff_t VALUE_HEADER_BYTE_OFFSET = std::endian::native == std::endian::little ? 4 : 0;
+inline constexpr std::ptrdiff_t VALUE_LOW_WORD_BYTE_OFFSET = std::endian::native == std::endian::little ? 0 : 4;
+inline constexpr uint32_t valueHeader(Value value) { return static_cast<uint32_t>(value >> VALUE_HEADER_SHIFT); }
+inline constexpr ValueTag valueTag(Value value) { return static_cast<ValueTag>(valueHeader(value)); }
+inline constexpr uint32_t valuePayload(Value value) { return static_cast<uint32_t>(value); }
+inline constexpr uint32_t valueTagHeader(ValueTag tag) { return static_cast<uint32_t>(tag); }
+inline constexpr Value valueFromTag(ValueTag tag, uint32_t payload = 0) {
+	return (static_cast<uint64_t>(tag) << VALUE_HEADER_SHIFT) | payload;
+}
+inline constexpr Value valueNil() { return valueFromTag(ValueTag::Nil); }
+inline constexpr Value valueBool(bool value) { return valueFromTag(value ? ValueTag::True : ValueTag::False); }
+inline constexpr Value valueInteger(int32_t value) { return valueFromTag(ValueTag::Integer, static_cast<uint32_t>(value)); }
+inline constexpr Value valueFloatBits(uint32_t bits) { return valueFromTag(ValueTag::Float, bits); }
+// New arithmetic result, not a raw load/copy. NaNs canonicalize per operation.
+inline Value valueFloat(float value) { return valueFloatBits(luaFloatResultBits(value)); }
+inline constexpr Value valueString(StringId id) { return valueFromTag(ValueTag::String, id); }
+inline constexpr Value valueTable(uint32_t reference) { return valueFromTag(ValueTag::Table, reference); }
+inline constexpr Value valueClosure(uint32_t reference) { return valueFromTag(ValueTag::Closure, reference); }
+inline constexpr Value valueThread(uint32_t reference) { return valueFromTag(ValueTag::Thread, reference); }
+inline constexpr Value valueBuiltinFunction(BuiltinFunctionId id) {
+	return valueFromTag(ValueTag::BuiltinFunction, static_cast<uint32_t>(id));
+}
+inline constexpr bool valueIsInteger(Value value) { return valueTag(value) == ValueTag::Integer; }
+inline constexpr bool valueIsFloat(Value value) { return valueTag(value) == ValueTag::Float; }
+inline constexpr bool valueIsNumber(Value value) { return valueIsInteger(value) || valueIsFloat(value); }
+inline constexpr bool isNil(Value value) { return valueTag(value) == ValueTag::Nil; }
+inline constexpr bool isTruthy(Value value) { return valueTag(value) != ValueTag::Nil && valueTag(value) != ValueTag::False; }
+inline constexpr bool valueIsString(Value value) { return valueTag(value) == ValueTag::String; }
+inline constexpr bool valueIsTable(Value value) { return valueTag(value) == ValueTag::Table; }
+inline constexpr bool valueIsClosure(Value value) { return valueTag(value) == ValueTag::Closure; }
+inline constexpr bool valueIsThread(Value value) { return valueTag(value) == ValueTag::Thread; }
+inline constexpr bool valueIsBuiltinFunction(Value value) { return valueTag(value) == ValueTag::BuiltinFunction; }
+inline constexpr bool valueIsBool(Value value) { return valueTag(value) == ValueTag::False || valueTag(value) == ValueTag::True; }
+inline constexpr bool valueToBool(Value value) { return valueTag(value) == ValueTag::True; }
+inline constexpr int32_t asInteger(Value value) { return static_cast<int32_t>(valuePayload(value)); }
+inline float asFloat(Value value) { return f32BitsToNumber(valuePayload(value)); }
+inline constexpr StringId asStringId(Value value) { return valuePayload(value); }
+inline constexpr BuiltinFunctionId asBuiltinFunctionId(Value value) { return static_cast<BuiltinFunctionId>(valuePayload(value)); }
+// Number admission belongs to the instruction; mixed arithmetic converts its
+// Integer operand before computing, not after a wider intermediate result.
+inline float numberAsFloat(Value value) { return valueIsInteger(value) ? static_cast<float>(asInteger(value)) : asFloat(value); }
+inline bool valueToWord(Value value, uint32_t& word) {
+	if (valueIsInteger(value)) { word = valuePayload(value); return true; }
+	return valueIsFloat(value) && luaFloatToWord(valuePayload(value), word);
+}
+inline bool valueToInteger(Value value, int32_t& integer) {
+	if (valueIsInteger(value)) { integer = asInteger(value); return true; }
+	return valueIsFloat(value) && luaFloatToInteger(valuePayload(value), integer);
+}
+inline NumericOrder compareNumbers(Value left, Value right) {
+	if (valueIsInteger(left)) {
+		if (!valueIsInteger(right)) return luaCompareIntegerFloat(asInteger(left), asFloat(right));
+		return asInteger(left) < asInteger(right) ? NumericOrder::Less : asInteger(left) > asInteger(right) ? NumericOrder::Greater : NumericOrder::Equal;
 	}
-	return static_cast<uint8_t>(
-		((v >> 48) & 0x7ULL)
-		| ((v >> 60) & 0x8ULL)
-	);
-}
-
-inline bool valueIsNumber(Value v) {
-	return valueEncodedTag(v) == 0;
-}
-
-inline bool valueIsTagged(Value v) {
-	return valueEncodedTag(v) != 0;
-}
-
-inline uint64_t valuePayload(Value v) {
-	return v & VALUE_PAYLOAD_MASK;
-}
-
-inline ValueTag valueTag(Value v) {
-	return static_cast<ValueTag>(valueEncodedTag(v) - 1u);
-}
-
-inline Value valueFromTag(ValueTag tag, uint64_t payload = 0) {
-	const uint64_t tagBits = static_cast<uint64_t>(tag) + 1;
-	const uint64_t hi = (tagBits & 0x7ULL) << 48;
-	const uint64_t sign = (tagBits & 0x8ULL) ? VALUE_SIGN_BIT : 0ULL;
-	return VALUE_QNAN_MASK | hi | sign | (payload & VALUE_PAYLOAD_MASK);
-}
-
-inline Value valueFromNumber(double value) {
-	if (value != value) {
-		return VALUE_QNAN_MASK;
+	if (valueIsInteger(right)) {
+		const auto order = luaCompareIntegerFloat(asInteger(right), asFloat(left));
+		return order == NumericOrder::Unordered ? order : static_cast<NumericOrder>(-static_cast<int>(order));
 	}
-	Value out = 0;
-	std::memcpy(&out, &value, sizeof(double));
-	return out;
+	const float a = asFloat(left), b = asFloat(right);
+	return a < b ? NumericOrder::Less : a > b ? NumericOrder::Greater : a == b ? NumericOrder::Equal : NumericOrder::Unordered;
 }
-
-inline double asNumber(Value v) {
-	double out = 0.0;
-	std::memcpy(&out, &v, sizeof(double));
-	return out;
+inline bool valuesEqual(Value left, Value right) {
+	if (valueIsNumber(left) && valueIsNumber(right)) return compareNumbers(left, right) == NumericOrder::Equal;
+	const auto tag = valueTag(left);
+	return tag <= ValueTag::True ? tag == valueTag(right) : left == right;
 }
-
-inline double decodeNumber(Value v) {
-	return asNumber(valueIsNumber(v) ? v : VALUE_QNAN_MASK);
+inline Value canonicalTableKey(Value value) {
+	if (valueTag(value) <= ValueTag::True) return valueFromTag(valueTag(value));
+	if (!valueIsFloat(value)) return value;
+	int32_t integer;
+	if (luaFloatToInteger(valuePayload(value), integer)) return valueInteger(integer);
+	return (valuePayload(value) & 0x7fffffffu) > 0x7f800000u ? valueFloatBits(BLUA32_FLOAT_NAN) : value;
 }
-
-inline Value valueNil() {
-	return valueFromTag(ValueTag::Nil);
-}
-
-inline Value valueBool(bool value) {
-	return valueFromTag(value ? ValueTag::True : ValueTag::False);
-}
-
-inline Value valueNumber(double value) {
-	return valueFromNumber(value);
-}
-
-inline Value valueString(StringId id) {
-	return valueFromTag(ValueTag::String, id);
-}
-
-inline Value valueTable(Table* table) {
-	return valueFromTag(ValueTag::Table, reinterpret_cast<uint64_t>(table));
-}
-
-inline Value valueClosure(Closure* closure) {
-	return valueFromTag(ValueTag::Closure, reinterpret_cast<uint64_t>(closure));
-}
-
-inline Value valueThread(Thread* thread) {
-	return valueFromTag(ValueTag::Thread, reinterpret_cast<uint64_t>(thread));
-}
-inline Thread* asThread(Value value) {
-	return reinterpret_cast<Thread*>(valuePayload(value));
-}
-inline bool valueIsThread(Value value) {
-	return valueEncodedTag(value) == static_cast<uint8_t>(ValueTag::Thread) + 1u;
-}
-
-inline Value valueBuiltinFunction(BuiltinFunction* fn) {
-	return valueFromTag(ValueTag::BuiltinFunction, reinterpret_cast<uint64_t>(fn));
-}
-
-inline bool isNil(Value v) {
-	return valueEncodedTag(v) == static_cast<uint8_t>(ValueTag::Nil) + 1u;
-}
-
-inline bool isTruthy(Value v) {
-	const uint8_t tag = valueEncodedTag(v);
-	return tag != static_cast<uint8_t>(ValueTag::Nil) + 1u
-		&& tag != static_cast<uint8_t>(ValueTag::False) + 1u;
-}
-
-inline uint32_t toU32(double value) {
-	if (value >= -4294967296.0 && value < 4294967296.0) {
-		return static_cast<uint32_t>(static_cast<int64_t>(value));
-	}
-	uint64_t bits = 0;
-	std::memcpy(&bits, &value, sizeof(double));
-	const uint32_t encodedExponent = static_cast<uint32_t>((bits >> 52) & 0x7ffULL);
-	if (encodedExponent < 1023u || encodedExponent == 0x7ffu) {
-		return 0u;
-	}
-	const uint32_t exponent = encodedExponent - 1023u;
-	if (exponent >= 84u) {
-		return 0u;
-	}
-	const uint64_t significand = (bits & 0x000fffffffffffffULL) | 0x0010000000000000ULL;
-	const uint32_t word = exponent < 52u
-		? static_cast<uint32_t>(significand >> (52u - exponent))
-		: static_cast<uint32_t>(significand) << (exponent - 52u);
-	return (bits & VALUE_SIGN_BIT) == 0u ? word : 0u - word;
-}
-
-inline uint32_t toU32(Value value) {
-	return toU32(asNumber(value));
-}
-
-inline int32_t toI32(double value) {
-	return static_cast<int32_t>(toU32(value));
-}
-
-inline int32_t toI32(Value value) {
-	return static_cast<int32_t>(toU32(value));
-}
-
-inline StringId asStringId(Value v) {
-	return static_cast<StringId>(valuePayload(v));
-}
-
-inline Table* asTable(Value v) {
-	return reinterpret_cast<Table*>(valuePayload(v));
-}
-
-inline Closure* asClosure(Value v) {
-	return reinterpret_cast<Closure*>(valuePayload(v));
-}
-
-inline BuiltinFunction* asBuiltinFunction(Value v) {
-	return reinterpret_cast<BuiltinFunction*>(valuePayload(v));
-}
-
-inline bool valueIsString(Value v) {
-	return valueEncodedTag(v) == static_cast<uint8_t>(ValueTag::String) + 1u;
-}
-
-inline bool valueIsBool(Value v) {
-	const uint8_t tag = valueEncodedTag(v);
-	return tag == static_cast<uint8_t>(ValueTag::False) + 1u
-		|| tag == static_cast<uint8_t>(ValueTag::True) + 1u;
-}
-
-inline bool valueToBool(Value v) {
-	return valueTag(v) == ValueTag::True;
-}
-
-inline bool valueIsTable(Value v) {
-	return valueEncodedTag(v) == static_cast<uint8_t>(ValueTag::Table) + 1u;
-}
-
-inline bool valueIsClosure(Value v) {
-	return valueEncodedTag(v) == static_cast<uint8_t>(ValueTag::Closure) + 1u;
-}
-
-inline bool valueIsBuiltinFunction(Value v) {
-	return valueEncodedTag(v) == static_cast<uint8_t>(ValueTag::BuiltinFunction) + 1u;
-}
-
-inline uint32_t valueObjectHashId(Value value) {
-	return reinterpret_cast<const GCObject*>(valuePayload(value))->hashId;
-}
-
-inline uint32_t valueBuiltinFunctionHashId(Value value) {
-	return static_cast<uint32_t>(asBuiltinFunction(value)->id) + 1u;
-}
-
-struct ValueHash {
-	size_t operator()(Value v) const noexcept {
-		const uint8_t encodedTag = valueEncodedTag(v);
-		if (encodedTag == 0) {
-			double num = asNumber(v);
-			if (num == 0.0) {
-				num = 0.0;
-			}
-			uint64_t bits = 0;
-			std::memcpy(&bits, &num, sizeof(double));
-			return static_cast<size_t>(bits ^ (bits >> 32));
-		}
-		switch (static_cast<ValueTag>(encodedTag - 1u)) {
-			case ValueTag::False:
-				return static_cast<size_t>(0x85ebca6bu);
-			case ValueTag::True:
-				return static_cast<size_t>(0x9e3779b9u);
-			case ValueTag::Nil:
-				return static_cast<size_t>(0x27d4eb2du);
-			case ValueTag::String:
-				return static_cast<size_t>(static_cast<uint64_t>(asStringId(v)) * 2654435761ULL);
-			case ValueTag::BuiltinFunction:
-				return static_cast<size_t>(valueBuiltinFunctionHashId(v) * 0x27d4eb2du);
-			case ValueTag::Thread:
-			case ValueTag::Table:
-			case ValueTag::Closure:
-				return static_cast<size_t>(static_cast<uint64_t>(valueObjectHashId(v)) * 2654435761ULL);
-			default:
-				break;
-		}
-		const uint64_t payload = valuePayload(v);
-		return static_cast<size_t>(payload * 2654435761ULL);
-	}
-};
-
 struct ValueEq {
-	bool operator()(Value lhs, Value rhs) const noexcept {
-		if (valueIsNumber(lhs) && valueIsNumber(rhs)) {
-			return lhs == rhs || asNumber(lhs) == asNumber(rhs);
-		}
-		return lhs == rhs;
-	}
+	bool operator()(Value left, Value right) const { return canonicalTableKey(left) == canonicalTableKey(right); }
 };
-
-class BuiltinArgsView {
-public:
-	BuiltinArgsView() = default;
-	BuiltinArgsView(const Value* data, size_t size)
-		: m_data(data)
-		, m_size(size) {
-	}
-	BuiltinArgsView(const std::vector<Value>& values)
-		: m_data(values.data())
-		, m_size(values.size()) {
-	}
-
-	size_t size() const noexcept { return m_size; }
-	bool empty() const noexcept { return m_size == 0; }
-	const Value* data() const noexcept { return m_data; }
-	const Value* begin() const noexcept { return m_data; }
-	const Value* end() const noexcept { return m_size == 0 ? m_data : m_data + m_size; }
-	Value operator[](size_t index) const noexcept { return index < m_size ? m_data[index] : valueNil(); }
-	BuiltinArgsView tailFrom(size_t index) const noexcept {
-		return index < m_size ? BuiltinArgsView(m_data + index, m_size - index) : BuiltinArgsView(m_data + m_size, 0);
-	}
-
-private:
-	const Value* m_data = nullptr;
-	size_t m_size = 0;
-};
-
-class BuiltinResults {
-public:
-	class iterator {
-	public:
-		enum class Position : uint8_t {
-			Begin,
-			End,
-		};
-
-		explicit iterator(Position position)
-			: m_position(position) {
+inline uint32_t scalarValueHash(Value value) {
+	value = canonicalTableKey(value);
+	switch (valueTag(value)) {
+		case ValueTag::Integer:
+		case ValueTag::Float: {
+			uint32_t bits = valuePayload(value);
+			bits ^= std::rotl(bits, 14); bits *= 0x85ebca6bu; bits ^= bits >> 13;
+			return bits;
 		}
-
-		Position position() const noexcept { return m_position; }
-
-	private:
-		Position m_position;
-	};
-
-	BuiltinResults() = default;
-	BuiltinResults(BuiltinResults&&) noexcept = default;
-	BuiltinResults& operator=(BuiltinResults&&) noexcept = default;
-	BuiltinResults(const BuiltinResults&) = delete;
-	BuiltinResults& operator=(const BuiltinResults&) = delete;
-
-	void clear() noexcept { m_size = 0; }
-	size_t size() const noexcept { return m_size; }
-	bool empty() const noexcept { return m_size == 0; }
-	const Value* data() const noexcept { return m_data.get(); }
-	Value* data() noexcept { return m_data.get(); }
-	const Value& operator[](size_t index) const noexcept { return m_data[index]; }
-	Value& operator[](size_t index) noexcept { return m_data[index]; }
-	iterator begin() const noexcept { return iterator(iterator::Position::Begin); }
-	iterator end() const noexcept { return iterator(iterator::Position::End); }
-
-	void push_back(Value value) {
-		ensureCapacity(m_size + 1);
-		m_data[m_size++] = value;
-	}
-
-	void prepend(Value value) {
-		ensureCapacity(m_size + 1);
-		if (m_size > 0) {
-			std::memmove(m_data.get() + 1, m_data.get(), m_size * sizeof(Value));
-		}
-		m_data[0] = value;
-		++m_size;
-	}
-
-	void append(const Value* values, size_t count) {
-		if (count == 0) {
-			return;
-		}
-		ensureCapacity(m_size + count);
-		std::memcpy(m_data.get() + m_size, values, count * sizeof(Value));
-		m_size += count;
-	}
-
-	void insert(iterator position, Value value) {
-		if (position.position() == iterator::Position::Begin) {
-			prepend(value);
-			return;
-		}
-		push_back(value);
-	}
-
-	template <typename InputIt>
-	void insert(iterator position, InputIt first, InputIt last) {
-		const size_t count = static_cast<size_t>(std::distance(first, last));
-		if (count == 0) {
-			return;
-		}
-		ensureCapacity(m_size + count);
-		if (position.position() == iterator::Position::Begin) {
-			std::memmove(m_data.get() + count, m_data.get(), m_size * sizeof(Value));
-			size_t index = 0;
-			for (; first != last; ++first, ++index) {
-				m_data[index] = static_cast<Value>(*first);
-			}
-			m_size += count;
-			return;
-		}
-		for (; first != last; ++first) {
-			m_data[m_size++] = static_cast<Value>(*first);
-		}
-	}
-
-	void ensureCapacity(size_t needed) {
-		if (needed <= m_capacity) {
-			return;
-		}
-		size_t nextCapacity = m_capacity == 0 ? 8 : m_capacity;
-		while (nextCapacity < needed) {
-			nextCapacity <<= 1;
-		}
-		std::unique_ptr<Value[]> next = std::make_unique<Value[]>(nextCapacity);
-		if (m_size > 0) {
-			std::memcpy(next.get(), m_data.get(), m_size * sizeof(Value));
-		}
-		m_data = std::move(next);
-		m_capacity = nextCapacity;
-	}
-
-private:
-	std::unique_ptr<Value[]> m_data;
-	size_t m_size = 0;
-	size_t m_capacity = 0;
-};
-
-void appendValueString(std::string& out, Value value, const StringPool& stringPool);
-std::string valueToString(Value value, const StringPool& stringPool);
-
-inline const char* valueTypeName(Value value) {
-	const uint8_t encodedTag = valueEncodedTag(value);
-	if (encodedTag == 0) return "number";
-	switch (static_cast<ValueTag>(encodedTag - 1u)) {
-		case ValueTag::Nil: return "nil";
-		case ValueTag::False: return "boolean";
-		case ValueTag::True: return "boolean";
-		case ValueTag::String: return "string";
-		case ValueTag::Thread: return "thread";
-		case ValueTag::Table: return "table";
-		case ValueTag::Closure: return "closure";
-		case ValueTag::BuiltinFunction: return "builtin_function";
-		default: return "unknown";
+		case ValueTag::Nil: return 0x27d4eb2du;
+		case ValueTag::False: return 0x85ebca6bu;
+		case ValueTag::True: return 0x9e3779b9u;
+		case ValueTag::String: return valuePayload(value) * 2654435761u;
+		case ValueTag::BuiltinFunction: return (valuePayload(value) + 1u) * 0x27d4eb2du;
+		default: BMSX_UNREACHABLE();
 	}
 }
+// Reference decoding requires the owner; an encoded payload is never itself a
+// wide-host pointer, nor a global directory or a hash identity.
+Table* asTable(Value value, const GcHeap& heap);
+Closure* asClosure(Value value, const GcHeap& heap);
+Thread* asThread(Value value, const GcHeap& heap);
+uint32_t valueObjectHashId(Value value, const GcHeap& heap);
 
-inline const char* valueTypeNameForLua(Value value) {
-	const uint8_t encodedTag = valueEncodedTag(value);
-	if (encodedTag == 0) return "number";
-	switch (static_cast<ValueTag>(encodedTag - 1u)) {
-		case ValueTag::Nil: return "nil";
-		case ValueTag::False:
-		case ValueTag::True: return "boolean";
-		case ValueTag::String: return "string";
-		case ValueTag::Thread: return "thread";
-		case ValueTag::Table: return "table";
-		case ValueTag::Closure:
-		case ValueTag::BuiltinFunction:
-		default: return "function";
-	}
-}
-
+int appendValueString(std::string& out, Value value, const StringPool& strings);
+std::string valueToString(Value value, const StringPool& strings);
+const char* valueTypeName(Value value);
+const char* valueTypeNameForLua(Value value);
 } // namespace bmsx

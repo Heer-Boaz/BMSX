@@ -5,7 +5,7 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from './blua32';
-import { COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
+import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
 import { parseLuaChunk } from '../lua/cpu_test_harness';
 
 /** Real cartlib/compiler/CPU and BIOS math; no host, ICU or world scheduler. */
@@ -18,7 +18,6 @@ type CartlibProgramOptions = {
 };
 
 const SYSTEM_MODULE_FILES = [
-	['base', 'machine/bios/base.lua'],
 	['table', 'machine/bios/table.lua'],
 	['string/base', 'machine/bios/string/base.lua'],
 	['string/utf8', 'machine/bios/string/utf8.lua'],
@@ -127,14 +126,15 @@ const CART_STUB_MODULES = [
 	},
 ] as const;
 
-export function createCartlibProgramHarness(
+export function compileCartlibProgram(
 	cartEntrySource: string,
 	{ traceStatements = 'erase', preloadModules = [], optLevel = 3, modules = [] }: CartlibProgramOptions = {},
 ) {
 	const systemSources = new Map<string, string>(SYSTEM_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]));
+	for (const module of BASE_FIRMWARE_MODULES) systemSources.set(module.path, module.source);
 	for (const module of SYSTEM_STUB_MODULES) systemSources.set(module.path, module.source);
 	for (const module of COROUTINE_FIRMWARE_MODULES) systemSources.set(module.path, module.source);
-	for (const path of ['math', 'math/trig']) systemSources.set(path, readFileSync(`machine/bios/${path}.lua`, 'utf8'));
+	for (const path of ['math', 'math/trig', 'math/trig/reduce']) systemSources.set(path, readFileSync(`machine/bios/${path}.lua`, 'utf8'));
 	const systemModules = Array.from(systemSources, ([path, source]) => ({
 		path, source, chunk: parseLuaChunk(source, `${path}.lua`),
 	}));
@@ -169,7 +169,12 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		preloadModules,
 	});
 	const images = linkTestBlua32Pair(systemCompiled, cartCompiled);
+	return { images, cart: cartCompiled, cartSources };
+}
+
+export function createCartlibProgramHarness(cartEntrySource: string, options: CartlibProgramOptions = {}) {
+	const { images, cart } = compileCartlibProgram(cartEntrySource, options);
 	const { cpu } = createTestBlua32PairCpu(images);
 	cpu.installBootPrimitives();
-	return { cpu, images, cart: cartCompiled };
+	return { cpu, images, cart };
 }

@@ -276,7 +276,7 @@ to the program-header address obtained above. The CPU uses these six unsigned
 | Image byte offset | Field | Unit and interpretation |
 | --- | --- | --- |
 | `18H` | Constant-table address | Absolute machine byte address in installed ROM. |
-| `1CH` | Constant count | Number of 16-byte constant records. |
+| `1CH` | Constant count | Number of 12-byte constant records. |
 | `20H` | Global-name-table address | Absolute machine byte address in installed ROM. |
 | `24H` | Global-name count | Number of 8-byte name records. |
 | `28H` | System-global-name-table address | Absolute machine byte address in installed ROM. |
@@ -320,19 +320,29 @@ count leaves its address unused.
 
 ### Constant and name records {#sec-memory-constant-and-name-records}
 
-Constant record `i` begins at `constantTableAddress + 16i`, with zero-based `i`. The tag is a four-byte unsigned little-endian word at record offset `00H`:
+Constant record `i` begins at `constantTableAddress + 12i`, with zero-based `i`. The tag is a four-byte unsigned little-endian word at record offset `00H`:
 
 | Tag | Value | Payload consumed |
 | --- | --- | --- |
 | 0 | Nil | None. |
 | 1 | False | None. |
 | 2 | True | None. |
-| 3 | Number | Eight-byte IEEE-754 binary64, little-endian, at `04H`–`0BH`. |
+| 3 | Integer Number | Four-byte two's-complement integer, little-endian, at `04H`–`07H`. |
 | 4 | String | Absolute ROM text byte address at `04H`; text byte count at `08H`, both u32 little-endian. |
+| 5 | Floating Number | Four-byte IEEE-754 binary32, little-endian, at `04H`–`07H`. |
+
+Each constant record occupies 12 bytes. An Integer record preserves its signed
+32-bit value. A Floating record preserves all 32 bits, including signed zero,
+infinity and any NaN payload or sign. Loading either kind preserves its Number
+subtype. For example, Integer `2` and Floating `2.0`
+compare equal but have different subtypes.
 
 Constant indices select records in table order. Tags 0–2 encode their value
-without a payload; bytes `0CH`–`0FH` are unused. A record with another tag is
-invalid and prevents program activation.
+without a payload. The word at `08H` is unused in Integer and Floating
+records. String records use all three words. A record with another tag is
+invalid and prevents program activation. Arithmetic and the comparison of the
+two Number subtypes are defined by the
+[[CPU reference](cpu.md#sec-cpu-values-and-numeric-instructions)]{.content-visible when-format="html"}[CPU reference, Book II, Chapter 1]{.content-visible when-format="pdf"}.
 
 Both name tables use the same layout. Name record `i` begins at `tableAddress + 8i`:
 
@@ -372,13 +382,24 @@ A function address identifies a **32-byte function record**, not its first instr
 
 VARARG retains arguments beyond the fixed parameters. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#sec-cpu-closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. The declared code byte count does not bound instruction fetches.
 
+The code address names an instruction in an executable ROM or RAM window.
+Instruction fetch does not access system I/O or cartridge MMIO; the CPU
+[fetch rules](cpu.md#sec-memory-instruction-alignment-and-read-faults) define
+the fault and its timing. This restriction does not apply to the mapped-bus
+reads used to construct a closure from its function record.
+
+Closure construction binds the record's entry and frame data. Rewriting a
+record changes the data bound by a later construction, not the data of an
+existing closure. Instructions remain in addressed memory and are fetched
+there when the closure executes.
+
 Upvalue descriptor `i` is a four-byte unsigned little-endian word at
 `upvalueTableAddress + 4i`. Bit 31 set captures a parent-frame register; bit 31
 clear captures a parent-closure upvalue. Bits 0–30 contain the zero-based index.
 Function and upvalue records use ordinary mapped-bus reads and may therefore
 occupy mapped memory. Constant and name-table records and their text require ROM.
 
-Function-record words are little-endian; [instruction words are big-endian](cpu.md#sec-cpu-instruction-words-and-execution-resources). Neither a function-record address nor a record's code address is relative to the image header.
+Function-record and [instruction words are little-endian](cpu.md#sec-cpu-instruction-words-and-execution-resources). Neither a function-record address nor a record's code address is relative to the image header.
 
 ## Locating BIOS call targets {#sec-blua-programs-locating-bios-call-targets}
 

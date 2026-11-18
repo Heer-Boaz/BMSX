@@ -198,7 +198,7 @@ export class ActorWatches {
 		if (actor.nodes.every(node => node.pins.every(pin => pin.retired))) return;
 		const target = actor.target;
 		const world = runtimeWorld(this.sources, this.guest, target.domain);
-		if (world === undefined || world.hashId !== target.worldHashId) return;
+		if (world === undefined || this.guest.identityScalar(world, ValueTag.Table) !== target.worldHashId) return;
 		if (domain === target.domain && current.roots[0]?.hashId === target.actorHashId) return current;
 		if (otherDomain === target.domain && otherTree?.roots[0]?.hashId === target.actorHashId) return otherTree;
 		actor.tree.update(this.sources, this.guest, target.domain, findWorldActor(this.guest, world, target.actorHashId));

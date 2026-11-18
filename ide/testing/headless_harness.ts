@@ -67,7 +67,7 @@ export type HeadlessIdeHarness = {
 	isDebuggerStopped(): boolean;
 	reboot(): BootOperation;
 	executeCommand(command: EditorCommandId): void;
-	openLuaSource(path: string): void;
+	openLuaSource(path: string, contextId?: string): void;
 	replaceActiveCodeSource(source: string): void;
 	/** Diagnostic breakdown of tracked-heap contributors, for leak hunting. */
 	debugStats(): HeadlessIdeHeapStats;
@@ -136,14 +136,14 @@ export function createHeadlessIdeHarness(
 			ide.runTargets, { action: 'reboot', presentation: captureEditorActionPresentation(inputFocus.target) },
 		),
 		executeCommand: command => ide.editor.commands.execute(command),
-		openLuaSource: (path: string) => {
+		openLuaSource: (path: string, contextId = ide.sources.activeContextId) => {
 			activateEditor(
 				ide.editor,
 				ide.sources,
 				runtime,
 			);
-			const resource = (ide.sources.catalog.resolveResource({ contextId: ide.sources.activeContextId, path })
-				?? ide.sources.catalog.resolveModule(ide.sources.activeContextId, path))!;
+			const resource = (ide.sources.catalog.resolveResource({ contextId, path })
+				?? ide.sources.catalog.resolveModule(contextId, path))!;
 			openLuaCodeTab(ide.editor.editorParts.activeGroup, ide.sources.catalog, ide.sources.catalog.resolveResource(resource)!);
 		},
 		replaceActiveCodeSource: (source: string) => {

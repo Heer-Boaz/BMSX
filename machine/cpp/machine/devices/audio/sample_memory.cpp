@@ -12,6 +12,7 @@ ApuSampleMemory::ApuSampleMemory(const Memory& memory)
 
 void ApuSampleMemory::reset() {
 	m_ram.fill(0u);
+	++m_revision;
 }
 
 bool ApuSampleMemory::bindSource(u32 address, u32 byteLength, u32 cartridgeSlot, ApuSourceByteView& out) const {
@@ -21,12 +22,14 @@ bool ApuSampleMemory::bindSource(u32 address, u32 byteLength, u32 cartridgeSlot,
 			&& byteLength <= APU_SAMPLE_RAM_BYTES
 			&& offset <= APU_SAMPLE_RAM_BYTES - byteLength) {
 			out.bytes = {m_ram.data() + offset, byteLength};
+			out.revision = &m_revision;
 			out.cartridgeSlot = cartridgeSlot;
 			return true;
 		}
 		return false;
 	}
 	out.cartridgeSlot = cartridgeSlot;
+	out.revision = &APU_ROM_SOURCE_REVISION;
 	return m_memory.bindRomByteView(address, byteLength, cartridgeSlot, out.bytes);
 }
 
@@ -36,6 +39,7 @@ auto ApuSampleMemory::readWord(u32 address) const -> u32 {
 
 void ApuSampleMemory::writeWord(u32 address, u32 word) {
 	writeLE32(m_ram.data() + (address & (APU_SAMPLE_RAM_ADDRESS_MASK & ~3u)), word);
+	++m_revision;
 }
 
 auto ApuSampleMemory::captureState(std::vector<u8> bytes) const -> std::vector<u8> {
@@ -45,6 +49,7 @@ auto ApuSampleMemory::captureState(std::vector<u8> bytes) const -> std::vector<u
 
 void ApuSampleMemory::restoreState(const std::vector<u8>& bytes) {
 	std::copy(bytes.begin(), bytes.end(), m_ram.begin());
+	++m_revision;
 }
 
 } // namespace bmsx

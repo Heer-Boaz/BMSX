@@ -4,6 +4,7 @@
 #include "rompack/tooling/opcode_metadata.h"
 #include "rompack/tooling/source_text.h"
 #include "common/number_format.h"
+#include "common/float32.h"
 
 #include <algorithm>
 #include <cctype>
@@ -56,12 +57,8 @@ std::string formatBoolLiteral(int value) {
 	return value != 0 ? "true" : "false";
 }
 
-std::string formatCountLiteral(int value) {
-	return value == 0 ? "*" : std::to_string(value);
-}
-
-std::string formatCallArgCountLiteral(int value) {
-	return value == 0 ? "*" : std::to_string(decodeCallArgCount(value, 0));
+std::string formatValueCountLiteral(int value) {
+	return value == 0 ? "*" : std::to_string(decodeValueCount(value, 0));
 }
 
 std::string formatConstValue(const Blua32ImageLayout& image, int index) {
@@ -72,8 +69,10 @@ std::string formatConstValue(const Blua32ImageLayout& image, int index) {
 		text << "nil";
 	} else if (const bool* boolean = std::get_if<bool>(&value)) {
 		text << (*boolean ? "true" : "false");
-	} else if (const f64* number = std::get_if<f64>(&value)) {
-		text << formatNumber(*number);
+	} else if (const i32* number = std::get_if<i32>(&value)) {
+		text << formatInteger(*number);
+	} else if (const auto* number = std::get_if<Blua32FloatConstant>(&value)) {
+		text << formatFloat(f32BitsToNumber(number->bits));
 	} else {
 		text << std::quoted(std::get<std::string>(value));
 	}
@@ -248,7 +247,8 @@ DecodedDebugInstruction decodeInstructionAtPcInternal(const Blua32ImageLayout& i
 std::string formatInstructionText(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, const Blua32SymbolsImage* symbols, int pcWidth) {
 	switch (decoded.op) {
 		case OpCode::MOV:
-			return "MOV r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
+			return "MOV r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b)
+				+ (decoded.c == 0 ? "" : ", " + std::to_string(decoded.c));
 		case OpCode::KNIL:
 			return "KNIL r" + std::to_string(decoded.a);
 		case OpCode::KFALSE:
@@ -262,7 +262,7 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::KM1:
 			return "KM1 r" + std::to_string(decoded.a);
 		case OpCode::KSMI:
-			return "KSMI r" + std::to_string(decoded.a) + ", " + formatNumber(decoded.sbx);
+			return "KSMI r" + std::to_string(decoded.a) + ", " + formatInteger(decoded.sbx);
 		case OpCode::LOADK:
 			return "LOADK r" + std::to_string(decoded.a) + ", " + formatConstValue(image, decoded.bx);
 		case OpCode::LOADKR:
@@ -336,11 +336,11 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::SETUP:
 			return "SETUP r" + std::to_string(decoded.a) + ", u" + std::to_string(decoded.b);
 		case OpCode::VARARG:
-			return "VARARG r" + std::to_string(decoded.a) + ", " + formatCountLiteral(decoded.b);
+			return "VARARG r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b);
 		case OpCode::CALL:
-			return "CALL r" + std::to_string(decoded.a) + ", " + formatCallArgCountLiteral(decoded.b) + ", " + formatCountLiteral(decoded.c);
+			return "CALL r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b) + ", " + formatValueCountLiteral(decoded.c);
 		case OpCode::RET:
-			return "RET r" + std::to_string(decoded.a) + ", " + formatCountLiteral(decoded.b);
+			return "RET r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b);
 		case OpCode::MFC0:
 			return "MFC0 r" + std::to_string(decoded.a) + ", c" + std::to_string(decoded.b);
 		case OpCode::MTC0:
@@ -370,7 +370,7 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, const Blua32SymbolsImage* symbols, int pcWidth) {
 	switch (decoded.op) {
 		case OpCode::MOV:
-			return {registerOperand("dst", decoded.a), registerOperand("src", decoded.b)};
+			return {registerOperand("dst", decoded.a), registerOperand("src", decoded.b), plainOperand("move kind", formatInteger(decoded.c))};
 		case OpCode::KNIL:
 			return {registerOperand("dst", decoded.a)};
 		case OpCode::KFALSE:
@@ -384,7 +384,7 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::KM1:
 			return {registerOperand("dst", decoded.a)};
 		case OpCode::KSMI:
-			return {registerOperand("dst", decoded.a), plainOperand("imm", formatNumber(decoded.sbx))};
+			return {registerOperand("dst", decoded.a), plainOperand("imm", formatInteger(decoded.sbx))};
 		case OpCode::LOADK:
 			return {registerOperand("dst", decoded.a), plainOperand("const", formatConstValue(image, decoded.bx))};
 		case OpCode::LOADKR:
@@ -464,11 +464,11 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::SETUP:
 			return {registerOperand("src", decoded.a), plainOperand("upvalue", "u" + std::to_string(decoded.b))};
 		case OpCode::VARARG:
-			return {registerOperand("dst", decoded.a), plainOperand("count", formatCountLiteral(decoded.b))};
+			return {registerOperand("dst", decoded.a), plainOperand("count", formatValueCountLiteral(decoded.b))};
 		case OpCode::CALL:
-			return {registerOperand("callee", decoded.a), plainOperand("args", formatCallArgCountLiteral(decoded.b)), plainOperand("returns", formatCountLiteral(decoded.c))};
+			return {registerOperand("callee", decoded.a), plainOperand("args", formatValueCountLiteral(decoded.b)), plainOperand("returns", formatValueCountLiteral(decoded.c))};
 		case OpCode::RET:
-			return {registerOperand("base", decoded.a), plainOperand("count", formatCountLiteral(decoded.b))};
+			return {registerOperand("base", decoded.a), plainOperand("count", formatValueCountLiteral(decoded.b))};
 		case OpCode::LOAD_MEM_D:
 			return {registerOperand("dst", decoded.a), registerOperand("base", decoded.b), plainOperand("kind", std::to_string(decoded.c)), plainOperand("disp", std::to_string(decoded.disp << 2))};
 		case OpCode::STORE_MEM_D:

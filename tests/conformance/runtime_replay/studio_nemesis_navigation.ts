@@ -7,7 +7,7 @@ export function nemesisTitle(test: StudioFixture) {
 	const { guest } = test;
 	const world = guest.global(buildModuleExportSlotName('cartlib/world/world', []));
 	const objects = guest.readStringMember(world, '_objects') as Table;
-	for (let index = 1; index <= objects.arrayLength; index++) {
+	for (let index = 1; index <= objects.length(); index++) {
 		const object = objects.get(index);
 		if (guest.formatValue(guest.readStringMember(object, 'id')) === 'nemesis_s.title_screen') return object;
 	}

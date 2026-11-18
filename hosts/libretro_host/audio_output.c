@@ -195,7 +195,7 @@ static void configure_alsa_software_parameters(void) {
 	parameters.sleep_min = 0;
 	parameters.avail_min = 1;
 	parameters.xfer_align = g_audio.period_frames / 2u;
-	parameters.start_threshold = g_audio.period_frames;
+	parameters.start_threshold = g_audio.buffer_frames / 2u;
 	parameters.stop_threshold = g_audio.buffer_frames;
 	parameters.silence_threshold = 0;
 	parameters.silence_size = 0;

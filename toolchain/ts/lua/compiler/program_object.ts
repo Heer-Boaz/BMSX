@@ -1,3 +1,4 @@
+import type { NumberConstant } from '../number';
 import type {
 	Program,
 	ProgramConstant,
@@ -97,11 +98,11 @@ export type ProgramLinkValueExpression =
 	| {
 		kind: 'export';
 		exportPath: string;
-		value: number;
+		value: NumberConstant;
 	}
 	| {
 		kind: 'number';
-		value: number;
+		value: NumberConstant;
 	}
 	| {
 		kind: 'unary';

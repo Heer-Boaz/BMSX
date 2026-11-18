@@ -94,7 +94,7 @@
   harness commands; do not raise/remove limits without explicit user approval.
   A memory-limit failure is a failing test run, not permission to retry without
   the limit. Diagnose the failing case or retained state instead.
-- Linux/WSL with cgroup v2 memory control is required. The runner reuses a verified
+- Linux/WSL tests require cgroup v2 memory control. The runner reuses a verified
   cap of at most 8 GiB by default, with no opt-in mode. Only when no accepted cap
   exists does it install the limits through a delegated writable cgroup or a
   running systemd user manager. An unlimited or greater-than-8-GiB cap must be
@@ -108,6 +108,15 @@
   be used, stop; there is no unbounded fallback.
   `prlimit`, `ulimit` and V8 heap limits do not substitute for the shared cgroup
   budget. Build steps preceding the harness in npm scripts are separate.
+- Native Windows tests are explicitly permitted through `scripts/test-windows.ps1`
+  in 64-bit Windows PowerShell/PowerShell. It installs and verifies a hard Job
+  Object limit of at most 8 GiB aggregate committed memory for the ordinary
+  process tree, with atomic assignment before execution, no breakaway and
+  kill-on-close. Lower limits and bounded timeouts are supported; there is no
+  unbounded fallback. Observed memory-limit notifications always fail the run,
+  but Windows does not guarantee notification of every denied allocation; this
+  is not Linux cgroup/OOM-equivalent detection. A known limit hit remains a
+  failing test even if the child catches the allocation failure and exits zero.
 - This limits the test cgroup, not the entire agent or user session. Direct
   commands and processes requesting separate systemd units (including browsers
   and native process-scope tests) can run outside it. Do not describe this

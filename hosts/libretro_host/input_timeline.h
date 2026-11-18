@@ -12,6 +12,7 @@ void input_timeline_configure(
 		uint64_t frame_usec,
 		bmsx_read_execution_domain_id_t read_execution_domain_id);
 void input_timeline_dispatch_before_run(void);
+void input_timeline_finish_run(void);
 bool input_timeline_consume_presented_capture(uint64_t* out_frame);
 bool input_timeline_is_active(void);
 bool input_timeline_should_auto_quit(uint64_t trailing_frames);

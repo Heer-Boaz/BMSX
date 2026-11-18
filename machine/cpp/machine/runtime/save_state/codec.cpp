@@ -176,6 +176,7 @@ template<class Writer> void writeStringPoolStateEntry(Writer& writer, const Stri
 	writer.u32(state.id);
 	writer.string(state.value);
 	writer.boolean(state.tracked);
+	writer.boolean(state.reachable);
 }
 
 StringPoolStateEntry readStringPoolStateEntry(BinaryReader& reader) {
@@ -183,6 +184,7 @@ StringPoolStateEntry readStringPoolStateEntry(BinaryReader& reader) {
 	state.id = reader.u32();
 	state.value = reader.string();
 	state.tracked = reader.boolean();
+	state.reachable = reader.boolean();
 	return state;
 }
 
@@ -191,6 +193,11 @@ template<class Writer> void writeStringPoolState(Writer& writer, const StringPoo
 	for (const auto& value : state.entries) {
 		writeStringPoolStateEntry(writer, value);
 	}
+	writer.u32(static_cast<u32>(state.slots));
+	writer.i32(state.sweep);
+	writer.u32(static_cast<u32>(state.sweepEnd));
+	writer.u32(static_cast<u32>(state.freeIds.size()));
+	writer.u32s(state.freeIds);
 }
 
 StringPoolState readStringPoolState(BinaryReader& reader) {
@@ -200,6 +207,8 @@ StringPoolState readStringPoolState(BinaryReader& reader) {
 	for (u32 index = 0; index < entriesCount; ++index) {
 		state.entries.push_back(readStringPoolStateEntry(reader));
 	}
+	state.slots = reader.u32(); state.sweep = reader.i32(); state.sweepEnd = reader.u32();
+	state.freeIds.resize(reader.u32()); reader.u32s(state.freeIds);
 	return state;
 }
 
@@ -293,6 +302,94 @@ GeometryJobState readGeometryJobState(BinaryReader& reader) {
 	return state;
 }
 
+template<class Writer> void writeGeometryOverlapProgress(Writer& writer, const GeometryOverlap2dProgress& state) {
+	writer.u32(state.phase); writer.u32(state.instanceBIndex); writer.u32(state.pairMeta);
+	writer.u32(state.shapeAAddr); writer.u32(state.shapeBAddr);
+	writer.u32(state.shapeAOffset); writer.u32(state.shapeBOffset);
+	writer.u32(state.countA); writer.u32(state.countB); writer.u32(state.pieceA); writer.u32(state.pieceB);
+	writer.boolean(state.compoundA); writer.boolean(state.compoundB); writer.boolean(state.bestHit);
+	writer.u32(state.bestPieceA); writer.u32(state.bestPieceB); writer.u32(state.bestFeature);
+	writer.f64(state.bestDepth); writer.f64(state.bestNx); writer.f64(state.bestNy);
+	writer.f64(state.bestPx); writer.f64(state.bestPy);
+	writer.u32s(state.instanceA); writer.u32s(state.instanceB);
+	for (double value : state.boundsA) writer.f64(value);
+	writer.u32(state.pendingWork.axes); writer.u32(state.pendingWork.projectionVertices);
+	writer.u32(state.pendingWork.averageVertices); writer.u32(state.pendingWork.clipVertices);
+	writer.u32(state.pendingWork.clipEdges); writer.u32(state.pendingWork.squareRoots);
+	writer.u32(state.pendingWork.divisions);
+	writer.u32(state.pendingWriteFlags); writer.u32(state.afterPublishPhase);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingFault);
+}
+
+GeometryOverlap2dProgress readGeometryOverlapProgress(BinaryReader& reader) {
+	GeometryOverlap2dProgress state;
+	state.phase = reader.u32(); state.instanceBIndex = reader.u32(); state.pairMeta = reader.u32();
+	state.shapeAAddr = reader.u32(); state.shapeBAddr = reader.u32();
+	state.shapeAOffset = reader.u32(); state.shapeBOffset = reader.u32();
+	state.countA = reader.u32(); state.countB = reader.u32(); state.pieceA = reader.u32(); state.pieceB = reader.u32();
+	state.compoundA = reader.boolean(); state.compoundB = reader.boolean(); state.bestHit = reader.boolean();
+	state.bestPieceA = reader.u32(); state.bestPieceB = reader.u32(); state.bestFeature = reader.u32();
+	state.bestDepth = reader.f64(); state.bestNx = reader.f64(); state.bestNy = reader.f64();
+	state.bestPx = reader.f64(); state.bestPy = reader.f64();
+	reader.u32s(state.instanceA); reader.u32s(state.instanceB);
+	for (double& value : state.boundsA) value = reader.f64();
+	state.pendingWork.axes = reader.u32(); state.pendingWork.projectionVertices = reader.u32();
+	state.pendingWork.averageVertices = reader.u32(); state.pendingWork.clipVertices = reader.u32();
+	state.pendingWork.clipEdges = reader.u32(); state.pendingWork.squareRoots = reader.u32();
+	state.pendingWork.divisions = reader.u32();
+	state.pendingWriteFlags = reader.u32(); state.afterPublishPhase = reader.u32();
+	state.pendingMemory.ramWords = reader.u32(); state.pendingMemory.systemRomWords = reader.u32();
+	state.pendingMemory.cartridgeWords = reader.u32(); state.pendingMemory.otherWords = reader.u32();
+	state.pendingFault = reader.u32();
+	return state;
+}
+
+template<class Writer> void writeGeometryXformProgress(Writer& writer, const GeometryXform2Progress& state) {
+	writer.u32(state.phase);
+	writer.u32(state.dstAddress); writer.u32(state.boundsAddress);
+	writer.u32(state.vertexCount); writer.boolean(state.hasBounds);
+	writer.u32s(state.vertices); writer.u32s(state.bounds);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingWorkUnits); writer.u32(state.pendingFault);
+}
+
+GeometryXform2Progress readGeometryXformProgress(BinaryReader& reader) {
+	GeometryXform2Progress state;
+	state.phase = reader.u32();
+	state.dstAddress = reader.u32(); state.boundsAddress = reader.u32();
+	state.vertexCount = reader.u32(); state.hasBounds = reader.boolean();
+	reader.u32s(state.vertices); reader.u32s(state.bounds);
+	state.pendingMemory.ramWords = reader.u32(); state.pendingMemory.systemRomWords = reader.u32();
+	state.pendingMemory.cartridgeWords = reader.u32(); state.pendingMemory.otherWords = reader.u32();
+	state.pendingWorkUnits = reader.u32(); state.pendingFault = reader.u32();
+	return state;
+}
+
+template<class Writer> void writeGeometrySatProgress(Writer& writer, const GeometrySat2Progress& state) {
+	writer.u32(state.phase);
+	writer.u32(state.vertexAddressA); writer.u32(state.vertexAddressB);
+	writer.u32(state.countA); writer.u32(state.countB); writer.u32(state.resultAddress);
+	writer.u32s(state.verticesA); writer.u32s(state.verticesB); writer.u32s(state.result);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingWorkUnits); writer.u32(state.pendingFault);
+}
+
+GeometrySat2Progress readGeometrySatProgress(BinaryReader& reader) {
+	GeometrySat2Progress state;
+	state.phase = reader.u32();
+	state.vertexAddressA = reader.u32(); state.vertexAddressB = reader.u32();
+	state.countA = reader.u32(); state.countB = reader.u32(); state.resultAddress = reader.u32();
+	reader.u32s(state.verticesA); reader.u32s(state.verticesB); reader.u32s(state.result);
+	state.pendingMemory.ramWords = reader.u32(); state.pendingMemory.systemRomWords = reader.u32();
+	state.pendingMemory.cartridgeWords = reader.u32(); state.pendingMemory.otherWords = reader.u32();
+	state.pendingWorkUnits = reader.u32(); state.pendingFault = reader.u32();
+	return state;
+}
+
 template<class Writer> void writeGeometryControllerState(Writer& writer, const GeometryControllerState& state) {
 	writer.u32(static_cast<u32>(state.phase));
 	writer.u32s(state.registerWords);
@@ -300,8 +397,11 @@ template<class Writer> void writeGeometryControllerState(Writer& writer, const G
 	if (state.activeJob) {
 		writeGeometryJobState(writer, *state.activeJob);
 	}
+	writeGeometryXformProgress(writer, state.xform);
+	writeGeometrySatProgress(writer, state.sat);
+	writeGeometryOverlapProgress(writer, state.overlap);
 	writer.i64(state.workCarry);
-	writer.u32(state.availableWorkUnits);
+	writer.i64(state.pendingCycles);
 	writer.boolean(state.supervisorQuiesceRequested);
 }
 
@@ -313,8 +413,11 @@ GeometryControllerState readGeometryControllerState(BinaryReader& reader) {
 		state.activeJob.emplace();
 		*state.activeJob = readGeometryJobState(reader);
 	}
+	state.xform = readGeometryXformProgress(reader);
+	state.sat = readGeometrySatProgress(reader);
+	state.overlap = readGeometryOverlapProgress(reader);
 	state.workCarry = reader.i64();
-	state.availableWorkUnits = reader.u32();
+	state.pendingCycles = reader.i64();
 	state.supervisorQuiesceRequested = reader.boolean();
 	return state;
 }
@@ -335,7 +438,7 @@ template<class Writer> void writeGxGpuCommandBufferState(Writer& writer, const G
 	writer.u32(static_cast<u32>(state.commandDrawModeWord.size()));
 	writer.u32s(state.commandDrawModeWord);
 	writer.u32(static_cast<u32>(state.commandVramYAddressExtensionWord.size()));
-	writer.bytes(state.commandVramYAddressExtensionWord);
+	writer.u32s(state.commandVramYAddressExtensionWord);
 	writer.u32(static_cast<u32>(state.commandTextureWindowWord.size()));
 	writer.u32s(state.commandTextureWindowWord);
 	writer.u32(static_cast<u32>(state.commandDrawingAreaTopLeftWord.size()));
@@ -354,7 +457,7 @@ template<class Writer> void writeGxGpuCommandBufferState(Writer& writer, const G
 	writer.u64(state.readbackFenceCommandCount);
 	writer.u32(state.readbackX);
 	writer.u32(state.readbackY);
-	writer.u8(state.readbackVramYAddressExtensionWord);
+	writer.u32(state.readbackVramYAddressExtensionWord);
 	writer.u32(state.readbackWidth);
 	writer.u32(state.readbackHeight);
 	writer.u32(state.readbackPixelCursor);
@@ -373,7 +476,7 @@ GxGpuCommandBufferState readGxGpuCommandBufferState(BinaryReader& reader) {
 	state.commandWordStart = reader.u32s(reader.u32());
 	state.commandWordCount = reader.u32s(reader.u32());
 	state.commandDrawModeWord = reader.u32s(reader.u32());
-	state.commandVramYAddressExtensionWord = reader.bytes(reader.u32());
+	state.commandVramYAddressExtensionWord = reader.u32s(reader.u32());
 	state.commandTextureWindowWord = reader.u32s(reader.u32());
 	state.commandDrawingAreaTopLeftWord = reader.u32s(reader.u32());
 	state.commandDrawingAreaBottomRightWord = reader.u32s(reader.u32());
@@ -385,7 +488,7 @@ GxGpuCommandBufferState readGxGpuCommandBufferState(BinaryReader& reader) {
 	state.readbackFenceCommandCount = reader.u64();
 	state.readbackX = reader.u32();
 	state.readbackY = reader.u32();
-	state.readbackVramYAddressExtensionWord = reader.u8();
+	state.readbackVramYAddressExtensionWord = reader.u32();
 	state.readbackWidth = reader.u32();
 	state.readbackHeight = reader.u32();
 	state.readbackPixelCursor = reader.u32();
@@ -472,7 +575,7 @@ template<class Writer> void writeGxGpuIngressContextState(Writer& writer, const 
 	writer.u64(state.readbackFenceCommandCount);
 	writer.u32(state.readbackX);
 	writer.u32(state.readbackY);
-	writer.u8(state.readbackVramYAddressExtensionWord);
+	writer.u32(state.readbackVramYAddressExtensionWord);
 	writer.u32(state.readbackWidth);
 	writer.u32(state.readbackHeight);
 	writer.u32(state.readbackPixelCursor);
@@ -506,7 +609,7 @@ GxGpuIngressContextState readGxGpuIngressContextState(BinaryReader& reader) {
 	state.readbackFenceCommandCount = reader.u64();
 	state.readbackX = reader.u32();
 	state.readbackY = reader.u32();
-	state.readbackVramYAddressExtensionWord = reader.u8();
+	state.readbackVramYAddressExtensionWord = reader.u32();
 	state.readbackWidth = reader.u32();
 	state.readbackHeight = reader.u32();
 	state.readbackPixelCursor = reader.u32();
@@ -677,6 +780,7 @@ template<class Writer> void writeGxGteState(Writer& writer, const GxGteState& st
 	writer.i64(state.mac3);
 	writer.u32(state.currentSf);
 	writer.u32(state.lastCycles);
+	writer.u32(state.normalPendingCycles);
 	writer.u32(state.plusPendingCycles);
 	writer.boolean(state.plusInterlockArmed);
 	writer.u32(state.plusPendingResultXy);
@@ -695,6 +799,7 @@ GxGteState readGxGteState(BinaryReader& reader) {
 	state.mac3 = reader.i64();
 	state.currentSf = reader.u32();
 	state.lastCycles = reader.u32();
+	state.normalPendingCycles = reader.u32();
 	state.plusPendingCycles = reader.u32();
 	state.plusInterlockArmed = reader.boolean();
 	state.plusPendingResultXy = reader.u32();
@@ -918,10 +1023,6 @@ template<class Writer> void writeDmaControllerState(Writer& writer, const DmaCon
 	writer.u32(state.nextChannel);
 	writer.u32(state.scheduledBlockWords);
 	writer.i64(state.scheduledBlockCycles);
-	writer.u32(state.scheduledReadAddressWord);
-	writer.u32(state.scheduledWriteAddressWord);
-	writer.u32(state.scheduledTransferCountWord);
-	writer.u32(state.scheduledControlWord);
 	writer.boolean(state.supervisorQuiesceRequested);
 	writer.boolean(state.supervisorAdmissionQuiesceRequested);
 	for (const auto& value : state.userChannels) {
@@ -939,10 +1040,6 @@ DmaControllerState readDmaControllerState(BinaryReader& reader) {
 	state.nextChannel = reader.u32();
 	state.scheduledBlockWords = reader.u32();
 	state.scheduledBlockCycles = reader.i64();
-	state.scheduledReadAddressWord = reader.u32();
-	state.scheduledWriteAddressWord = reader.u32();
-	state.scheduledTransferCountWord = reader.u32();
-	state.scheduledControlWord = reader.u32();
 	state.supervisorQuiesceRequested = reader.boolean();
 	state.supervisorAdmissionQuiesceRequested = reader.boolean();
 	for (auto& value : state.userChannels) {
@@ -954,58 +1051,50 @@ DmaControllerState readDmaControllerState(BinaryReader& reader) {
 
 template<class Writer> void writeImgDecControllerState(Writer& writer, const ImgDecControllerState& state) {
 	writer.u32(state.inputWordCountWord);
-	writer.u32(state.textureDestinationWord);
-	writer.u32(state.textureSizeWord);
-	writer.u32(state.clutDestinationWord);
+	writer.u32(state.outputWordCountWord);
 	writer.u32(state.controlWord);
 	writer.u32(state.statusWord);
 	writer.u32(state.dataWord);
 	writer.u32(state.inputWordsReceived);
 	writer.u32(state.decodedWordCount);
-	writer.u32(state.textureWordCount);
-	writer.u32(state.clutWordCount);
 	writer.u32(state.outputWordsRead);
 	writer.u32(state.decodePhase);
-	writer.u32(state.outputStage);
 	writer.u32(state.runWordsRemaining);
 	writer.u32(state.repeatWord);
 	writer.u32(state.backReferenceDistance);
+	writer.u32(state.blockPhase);
+	writer.u32(state.blockReadIndex);
+	writer.i64(state.blockCyclesRemaining);
 	writer.boolean(state.supervisorQuiesceRequested);
 	writer.u32(static_cast<u32>(state.inputWords.size()));
 	writer.u32s(state.inputWords);
-	writer.u32(static_cast<u32>(state.outputWords.size()));
-	writer.u32s(state.outputWords);
+	writer.u32(static_cast<u32>(state.blockWords.size()));
+	writer.u32s(state.blockWords);
 	writer.u32(static_cast<u32>(state.historyWords.size()));
 	writer.u32s(state.historyWords);
-	writer.u32(state.scheduledDecodeWords);
-	writer.i64(state.scheduledDecodeCycles);
 }
 
 ImgDecControllerState readImgDecControllerState(BinaryReader& reader) {
 	ImgDecControllerState state;
 	state.inputWordCountWord = reader.u32();
-	state.textureDestinationWord = reader.u32();
-	state.textureSizeWord = reader.u32();
-	state.clutDestinationWord = reader.u32();
+	state.outputWordCountWord = reader.u32();
 	state.controlWord = reader.u32();
 	state.statusWord = reader.u32();
 	state.dataWord = reader.u32();
 	state.inputWordsReceived = reader.u32();
 	state.decodedWordCount = reader.u32();
-	state.textureWordCount = reader.u32();
-	state.clutWordCount = reader.u32();
 	state.outputWordsRead = reader.u32();
 	state.decodePhase = reader.u32();
-	state.outputStage = reader.u32();
 	state.runWordsRemaining = reader.u32();
 	state.repeatWord = reader.u32();
 	state.backReferenceDistance = reader.u32();
+	state.blockPhase = reader.u32();
+	state.blockReadIndex = reader.u32();
+	state.blockCyclesRemaining = reader.i64();
 	state.supervisorQuiesceRequested = reader.boolean();
 	state.inputWords = reader.u32s(reader.u32());
-	state.outputWords = reader.u32s(reader.u32());
+	state.blockWords = reader.u32s(reader.u32());
 	state.historyWords = reader.u32s(reader.u32());
-	state.scheduledDecodeWords = reader.u32();
-	state.scheduledDecodeCycles = reader.i64();
 	return state;
 }
 
@@ -1105,11 +1194,10 @@ template<class Writer> void writeCpuFrameState(Writer& writer, const CpuFrameSta
 	writer.u32(state.functionAddress);
 	writer.u32(state.pc);
 	writer.i32(state.closureRef);
+	writer.i32(state.stackBase);
 	writer.i32(state.stackCapacity);
-	writer.u32(static_cast<u32>(state.registers.size()));
-	writer.u32s(state.registers);
-	writer.u32(static_cast<u32>(state.varargs.size()));
-	writer.u32s(state.varargs);
+	writer.i32(state.varargBase);
+	writer.i32(state.varargCount);
 	writer.i32(state.returnBase);
 	writer.i32(state.returnCount);
 	writer.i32(state.top);
@@ -1124,9 +1212,10 @@ CpuFrameState readCpuFrameState(BinaryReader& reader) {
 	state.functionAddress = reader.u32();
 	state.pc = reader.u32();
 	state.closureRef = reader.i32();
+	state.stackBase = reader.i32();
 	state.stackCapacity = reader.i32();
-	state.registers = reader.u32s(reader.u32());
-	state.varargs = reader.u32s(reader.u32());
+	state.varargBase = reader.i32();
+	state.varargCount = reader.i32();
 	state.returnBase = reader.i32();
 	state.returnCount = reader.i32();
 	state.top = reader.i32();
@@ -1178,6 +1267,8 @@ template<class Writer> void writeCpuThreadState(Writer& writer, const CpuThreadS
 	writer.i32(state.callBase);
 	writer.i32(state.returnCount);
 	writer.u64(state.stackCapacity);
+	writer.u32(static_cast<u32>(state.stack.size()));
+	writer.u32s(state.stack);
 	writer.u32(state.error);
 	writer.u32(static_cast<u32>(state.frames.size()));
 	for (const auto& value : state.frames) {
@@ -1199,6 +1290,7 @@ CpuThreadState readCpuThreadState(BinaryReader& reader) {
 	state.callBase = reader.i32();
 	state.returnCount = reader.i32();
 	state.stackCapacity = reader.u64();
+	state.stack = reader.u32s(reader.u32());
 	state.error = reader.u32();
 	const u32 framesCount = reader.u32();
 	state.frames.reserve(framesCount);
@@ -1227,6 +1319,24 @@ CpuSnapshot readCpuSnapshot(BinaryReader& reader) {
 	return CpuSnapshot(std::move(words), std::move(objectWords));
 }
 
+template<class Writer> void writeGcState(Writer& writer, const GcState& state) {
+	writer.u32(static_cast<u32>(state.phase));
+	writer.u32(state.white);
+	writer.i32(state.sweep);
+	for (const auto* values : {&state.allocations, &state.colors, &state.gray, &state.grayAgain, &state.threads, &state.weak}) {
+		writer.u32(static_cast<u32>(values->size()));
+		writer.u32s(*values);
+	}
+}
+GcState readGcState(BinaryReader& reader) {
+	GcState state;
+	state.phase = static_cast<GcPhase>(reader.u32()); state.white = reader.u32(); state.sweep = reader.i32();
+	for (auto* values : {&state.allocations, &state.colors, &state.gray, &state.grayAgain, &state.threads, &state.weak}) {
+		values->resize(reader.u32()); reader.u32s(*values);
+	}
+	return state;
+}
+
 template<class Writer> void writeLuaHeapState(Writer& writer, const LuaHeapState& state) {
 	writer.u64(state.trackedBytes);
 	writer.u64(state.nextCollectionBytes);
@@ -1241,6 +1351,7 @@ LuaHeapState readLuaHeapState(BinaryReader& reader) {
 
 template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntimeState& state) {
 	writer.i32(state.executionCartridgeSlot);
+	writer.i32(state.programExecutionDomainId);
 	writer.u32(static_cast<u32>(state.systemGlobals.size()));
 	for (const auto& value : state.systemGlobals) {
 		writeCpuRootValueState(writer, value);
@@ -1265,12 +1376,20 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.u32(state.nextObjectHashId);
 	writer.boolean(state.hardHalted);
 	writeLuaHeapState(writer, state.luaHeap);
+	writeGcState(writer, state.gc);
 	writer.u32(state.lastPc);
 	writer.i32(state.haltedUntilIrqThreadRef);
 	writer.i32(state.haltedUntilIrqFrameDepth);
 	writer.boolean(state.interruptEventPending);
 	writer.boolean(state.memoryWriteBlocked);
 	writer.u32(state.memoryWriteBlockedAddress);
+	writer.u32(static_cast<u32>(state.pendingMemory.kind));
+	writer.u32(state.pendingMemory.instructionPc);
+	writer.u32(state.pendingMemory.nextPc);
+	writer.u32(state.pendingMemory.address);
+	writer.u32(static_cast<u32>(state.pendingMemory.accessKind));
+	writer.i32(state.pendingMemory.registerIndex);
+	writer.i32(state.pendingMemory.wordCount);
 	writer.u32(state.statusWord);
 	writer.u32(state.causeWord);
 	writer.u32(state.epcWord);
@@ -1289,6 +1408,7 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	CpuRuntimeState state;
 	state.executionCartridgeSlot = reader.i32();
+	state.programExecutionDomainId = reader.i32();
 	const u32 systemGlobalsCount = reader.u32();
 	state.systemGlobals.reserve(systemGlobalsCount);
 	for (u32 index = 0; index < systemGlobalsCount; ++index) {
@@ -1315,12 +1435,20 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.nextObjectHashId = reader.u32();
 	state.hardHalted = reader.boolean();
 	state.luaHeap = readLuaHeapState(reader);
+	state.gc = readGcState(reader);
 	state.lastPc = reader.u32();
 	state.haltedUntilIrqThreadRef = reader.i32();
 	state.haltedUntilIrqFrameDepth = reader.i32();
 	state.interruptEventPending = reader.boolean();
 	state.memoryWriteBlocked = reader.boolean();
 	state.memoryWriteBlockedAddress = reader.u32();
+	state.pendingMemory.kind = static_cast<PendingMemoryKind>(reader.u32());
+	state.pendingMemory.instructionPc = reader.u32();
+	state.pendingMemory.nextPc = reader.u32();
+	state.pendingMemory.address = reader.u32();
+	state.pendingMemory.accessKind = static_cast<MemoryAccessKind>(reader.u32());
+	state.pendingMemory.registerIndex = reader.i32();
+	state.pendingMemory.wordCount = reader.i32();
 	state.statusWord = reader.u32();
 	state.causeWord = reader.u32();
 	state.epcWord = reader.u32();

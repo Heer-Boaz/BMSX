@@ -1,5 +1,6 @@
 import {
 	CART_BUS_END,
+	CART_MMIO_BASE,
 	CART_MMIO_END,
 	CART_RAM_END,
 	CART_ROM_BASE,
@@ -12,8 +13,11 @@ import {
 	SYSTEM_ROM_SIZE,
 } from '../../spec/bmsx/memory_map';
 import { CartridgeController } from '../devices/cartridge/controller';
+import { RomStorage } from './rom_storage';
+import type { MemoryWordCounters } from './word_counters';
 import type { CartridgeSocketMediaPair } from '../devices/cartridge/contracts';
 import {
+	DMA_BURST_WORD_CAPACITY,
 	BUS_FAULT_ACCESS_READ,
 	BUS_FAULT_ACCESS_F32,
 	BUS_FAULT_ACCESS_F64,
@@ -67,8 +71,11 @@ import {
 } from '../../spec/bmsx/io';
 import { readLE16, readLE32, writeLE16, writeLE32 } from '../../common/endian';
 import {
+	MAPPED_BUS_INSTRUCTION_FETCH,
 	MAPPED_BUS_MASTER_CPU,
 	MAPPED_BUS_MASTER_DMA,
+	MAPPED_BUS_DMA_MEMORY,
+	MAPPED_BUS_DMA_BLOCK_END,
 	type MappedBusSignals,
 } from './bus_signals';
 import {
@@ -95,6 +102,46 @@ const BUS_ACCESS_WRITE_U32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32;
 const BUS_ACCESS_WRITE_F32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F32;
 const BUS_ACCESS_WRITE_F64 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64;
 
+// Decode the physical IO word permissions once, not on every DMA/CPU write.
+const READ_ONLY_IO_SLOTS = new Uint8Array(IO_SLOT_COUNT);
+READ_ONLY_IO_SLOTS.fill(1, (IO_INP_KEYS - IO_BASE) >>> 2, (IO_INP_OUTPUT_PORT - IO_BASE) >>> 2);
+for (const address of [
+	IO_SYS_BUS_FAULT_CODE,
+	IO_SYS_BUS_FAULT_ADDR,
+	IO_SYS_BUS_FAULT_ACCESS,
+	IO_SYS_TIME_MS,
+	IO_SYS_FRAME_MS_Q16,
+	IO_SYS_CYCLES_PER_FRAME,
+	IO_SYS_STATUS,
+	IO_IRQ_FLAGS,
+	IO_DMA0_STATUS,
+	IO_DMA1_STATUS,
+	IO_IMGDEC_STATUS,
+	IO_IMGDEC_INPUT_WORDS_RECEIVED,
+	IO_IMGDEC_DECODED_WORD_COUNT,
+	IO_GEO_STATUS,
+	IO_GEO_PROCESSED,
+	IO_GEO_FAULT,
+	IO_INP_STATUS,
+	IO_INP_OUTPUT_STATUS,
+	IO_APU_STATUS,
+	IO_APU_FAULT_CODE,
+	IO_APU_FAULT_DETAIL,
+	IO_APU_EVENT_KIND,
+	IO_APU_EVENT_SLOT,
+	IO_APU_EVENT_SOURCE_ADDR,
+	IO_APU_EVENT_SEQ,
+	IO_APU_SELECTED_SOURCE_ADDR,
+	IO_APU_ACTIVE_MASK,
+	IO_CART_STATUS,
+	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+	IO_SYS_SUPERVISOR_FAULT_CAUSE,
+	IO_SYS_SUPERVISOR_FAULT_EPC,
+	IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS,
+	IO_SYS_SUPERVISOR_FAULT_LUA_REASON,
+	IO_SYS_SUPERVISOR_FAULT_DOMAIN,
+]) READ_ONLY_IO_SLOTS[(address - IO_BASE) >>> 2] = 1;
+
 export type IoReadHandler<TContext> = (context: TContext, addr: number, busSignals: MappedBusSignals) => number;
 export type IoWriteHandler<TContext> = (context: TContext, addr: number, value: number, busSignals: MappedBusSignals) => void;
 export type IoWriteReadyHandler<TContext> = (
@@ -102,6 +149,15 @@ export type IoWriteReadyHandler<TContext> = (
 	addr: number,
 	busSignals: MappedBusSignals,
 ) => boolean;
+// Prefix callbacks apply only end-silent FIFO/latch/counter effects; the
+// block-ending scalar read -> ready -> write still performs all boundary work.
+export type IoDmaReadPrefixHandler<T> = (context: T, address: number, words: Uint32Array, count: number, signals: MappedBusSignals) => void;
+export type IoDmaWritePrefixHandler<T> = (context: T, address: number, words: Uint32Array, count: number, signals: MappedBusSignals) => void;
+type IoDmaPrefixBinding = {
+	slot: number;
+	read: IoDmaReadPrefixHandler<unknown> | null;
+	write: IoDmaWritePrefixHandler<unknown> | null;
+};
 type StoredIoReadHandler = (context: unknown, addr: number, busSignals: MappedBusSignals) => number;
 type StoredIoWriteHandler = (context: unknown, addr: number, value: number, busSignals: MappedBusSignals) => void;
 type StoredIoWriteReadyHandler = (
@@ -117,7 +173,7 @@ export type MemorySaveState = {
 	busFaultAccess: number;
 };
 
-export type RomByteView = {
+export type MemoryByteView = {
 	bytes: Uint8Array;
 	byteOffset: number;
 	byteLength: number;
@@ -130,10 +186,13 @@ export type MemoryInit = {
 
 export const NO_BLOCKED_MAPPED_WRITE = 0xffffffff;
 
+export const enum IoWriteStorage { Retained, Device }
+
 export class Memory {
-	private systemRom: Uint8Array;
+	private readonly systemRom: RomStorage;
 	public readonly cartridgeController: CartridgeController;
 	private readonly ram: Uint8Array;
+	public readonly ramView: DataView;
 	private readonly ramPageWriteWatches: MappedPageWriteWatches;
 	private mappedPageInvalidator: MappedPageInvalidator | null = null;
 	private readonly ioSlots: Uint32Array;
@@ -142,6 +201,10 @@ export class Memory {
 	private readonly ioReadHandlers: Array<StoredIoReadHandler | null>;
 	private readonly ioWriteHandlers: Array<StoredIoWriteHandler | null>;
 	private readonly ioWriteReadyHandlers: Array<StoredIoWriteReadyHandler | null>;
+	private readonly ioDmaPrefixes: IoDmaPrefixBinding[] = [];
+	private readonly ioWriteStorage = new Uint8Array(IO_SLOT_COUNT);
+	private readonly dmaPrefixWords = new Uint32Array(DMA_BURST_WORD_CAPACITY);
+	private readonly dmaRomView: MemoryByteView;
 	private readonly ioByteLength = IO_SLOT_COUNT * IO_WORD_SIZE;
 	private readonly busFaultCodeSlot = (IO_SYS_BUS_FAULT_CODE - IO_BASE) / IO_WORD_SIZE;
 	private readonly busFaultAddrSlot = (IO_SYS_BUS_FAULT_ADDR - IO_BASE) / IO_WORD_SIZE;
@@ -155,9 +218,11 @@ export class Memory {
 	private busFaultSequence = 0;
 
 	public constructor(init: MemoryInit, ramByteCount: number) {
-		this.systemRom = init.systemRom;
+		this.systemRom = new RomStorage(init.systemRom);
+		this.dmaRomView = { bytes: init.systemRom, byteOffset: 0, byteLength: 0 };
 		this.cartridgeController = new CartridgeController(init.cartridgeSlots);
 		this.ram = new Uint8Array(ramByteCount);
+		this.ramView = new DataView(this.ram.buffer);
 		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount);
 		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
@@ -185,8 +250,12 @@ export class Memory {
 		return this.ram.byteLength;
 	}
 
+	public ramWriteWatches(): MappedPageWriteWatches { return this.ramPageWriteWatches; }
+
+	public systemRomStorage(): RomStorage { return this.systemRom; }
+
 	public installSystemRom(rom: Uint8Array): void {
-		this.systemRom = rom;
+		this.systemRom.install(rom);
 		if (this.mappedPageInvalidator !== null) {
 			this.mappedPageInvalidator.invalidateMappedRange(SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE);
 		}
@@ -210,8 +279,8 @@ export class Memory {
 		out.writeWatchIndex = 0;
 		if (addr < RAM_BASE) {
 			out.cacheable = addr < SYSTEM_ROM_SIZE;
-			if (addr + MAPPED_PAGE_BYTE_SIZE <= this.systemRom.byteLength) {
-				out.readBytes = this.systemRom;
+			if (addr + MAPPED_PAGE_BYTE_SIZE <= this.systemRom.bytes.byteLength) {
+				out.readBytes = this.systemRom.bytes;
 				out.readByteOffset = addr;
 			}
 			return;
@@ -245,17 +314,42 @@ export class Memory {
 		const slot = (addr - IO_BASE) / IO_WORD_SIZE;
 		this.ioReadContexts[slot] = context;
 		this.ioReadHandlers[slot] = handler as StoredIoReadHandler;
+		const prefix = this.findIoDmaPrefix(slot);
+		if (prefix !== null) prefix.read = null;
 	}
 
-	public mapIoWrite<TContext>(addr: number, context: TContext, handler: IoWriteHandler<TContext>): void {
+	public mapIoWrite<TContext>(addr: number, context: TContext, handler: IoWriteHandler<TContext>, storage = IoWriteStorage.Retained): void {
 		const slot = (addr - IO_BASE) / IO_WORD_SIZE;
+		this.ioWriteStorage[slot] = storage;
 		this.ioWriteContexts[slot] = context;
 		this.ioWriteHandlers[slot] = handler as StoredIoWriteHandler;
+		const prefix = this.findIoDmaPrefix(slot);
+		if (prefix !== null) prefix.write = null;
 	}
 
 	public mapIoWriteReady<TContext>(addr: number, handler: IoWriteReadyHandler<TContext>): void {
 		const slot = (addr - IO_BASE) / IO_WORD_SIZE;
 		this.ioWriteReadyHandlers[slot] = handler as StoredIoWriteReadyHandler;
+		const prefix = this.findIoDmaPrefix(slot);
+		if (prefix !== null) prefix.write = null;
+	}
+
+	private findIoDmaPrefix(slot: number): IoDmaPrefixBinding | null {
+		const prefixes = this.ioDmaPrefixes;
+		for (let i = 0; i < prefixes.length; ++i) if (prefixes[i].slot === slot) return prefixes[i];
+		return null;
+	}
+
+	public mapIoDmaReadPrefix<T>(address: number, handler: IoDmaReadPrefixHandler<T> | null): void {
+		const slot = (address - IO_BASE) / IO_WORD_SIZE, prefix = this.findIoDmaPrefix(slot);
+		if (prefix !== null) prefix.read = handler as IoDmaReadPrefixHandler<unknown>;
+		else if (handler !== null) this.ioDmaPrefixes.push({ slot, read: handler as IoDmaReadPrefixHandler<unknown>, write: null });
+	}
+
+	public mapIoDmaWritePrefix<T>(address: number, handler: IoDmaWritePrefixHandler<T> | null): void {
+		const slot = (address - IO_BASE) / IO_WORD_SIZE, prefix = this.findIoDmaPrefix(slot);
+		if (prefix !== null) prefix.write = handler as IoDmaWritePrefixHandler<unknown>;
+		else if (handler !== null) this.ioDmaPrefixes.push({ slot, read: null, write: handler as IoDmaWritePrefixHandler<unknown> });
 	}
 
 	public mappedWriteReady(addr: number): boolean {
@@ -349,7 +443,7 @@ export class Memory {
 	private readMainMemoryU8(addr: number, faultAccess: number): number {
 		if (addr < RAM_BASE) {
 			if (addr < SYSTEM_ROM_SIZE) {
-				return addr < this.systemRom.byteLength ? this.systemRom[addr]! : 0;
+				return addr < this.systemRom.bytes.byteLength ? this.systemRom.bytes[addr]! : 0;
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
@@ -368,11 +462,22 @@ export class Memory {
 		return handler !== null ? handler(this.ioReadContexts[slot], addr, busSignals) : this.ioSlots[slot];
 	}
 
-	private writeIoSlot(slot: number, addr: number, value: number, busSignals: MappedBusSignals): void {
-		this.ioSlots[slot] = value;
+	private writeIoSlot(slot: number, addr: number, value: number, faultAccess: number, busSignals: MappedBusSignals): void {
+		if (READ_ONLY_IO_SLOTS[slot] !== 0) {
+			this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
+			return;
+		}
+		const word = value >>> 0;
+		const writeReady = this.ioWriteReadyHandlers[slot];
+		if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0
+			&& writeReady !== null
+			&& !writeReady(this.ioWriteContexts[slot], addr, busSignals)) {
+			return;
+		}
+		if (this.ioWriteStorage[slot] === IoWriteStorage.Retained) this.ioSlots[slot] = word;
 		const handler = this.ioWriteHandlers[slot];
 		if (handler !== null) {
-			handler(this.ioWriteContexts[slot], addr, value, busSignals);
+			handler(this.ioWriteContexts[slot], addr, word, busSignals);
 		}
 	}
 
@@ -432,7 +537,7 @@ export class Memory {
 	}
 
 	public writeMappedWord(addr: number, value: number): void {
-		this.writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_WORD, MAPPED_BUS_MASTER_CPU);
+		this.writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_WRITE_WORD);
 	}
 
 	public readU8(addr: number): number {
@@ -483,19 +588,23 @@ export class Memory {
 		return this.readIoSlot((addr - IO_BASE) / IO_WORD_SIZE, addr, MAPPED_BUS_MASTER_CPU);
 	}
 
-	public readU32(addr: number): number {
+	public readU32(addr: number, counters: MemoryWordCounters | null = null): number {
 		if (addr < RAM_BASE) {
 			if (addr <= SYSTEM_ROM_SIZE - 4) {
-				return this.readRomWindowU32LE(this.systemRom, addr);
+				if (counters !== null) counters.systemRomWords = (counters.systemRomWords + 1) >>> 0;
+				return this.readRomWindowU32LE(this.systemRom.bytes, addr);
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
 			if (offset + 4 <= this.ram.byteLength) {
+				if (counters !== null) counters.ramWords = (counters.ramWords + 1) >>> 0;
 				return readLE32(this.ram, offset);
 			}
 		} else if (addr <= CART_BUS_END - 4) {
+			if (counters !== null) counters.cartridgeWords = (counters.cartridgeWords + 1) >>> 0;
 			return this.cartridgeController.readU32(addr, MAPPED_BUS_MASTER_CPU);
 		}
+		if (counters !== null) counters.otherWords = (counters.otherWords + 1) >>> 0;
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
 		return 0;
 	}
@@ -507,7 +616,7 @@ export class Memory {
 		}
 		if (addr < RAM_BASE) {
 			if (addr <= SYSTEM_ROM_SIZE - 2) {
-				return this.readRomWindowU16LE(this.systemRom, addr);
+				return this.readRomWindowU16LE(this.systemRom.bytes, addr);
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const ramOffset = addr - RAM_BASE;
@@ -525,21 +634,6 @@ export class Memory {
 		return this.readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess);
 	}
 
-	public readMappedBusU32BE(
-		addr: number,
-		busSignals: MappedBusSignals,
-		faultAccess = BUS_ACCESS_READ_U32,
-	): number {
-		const word = this.readMappedBusU32LE(addr, busSignals, faultAccess);
-		return ((word >>> 24)
-			| ((word >>> 8) & 0x0000ff00)
-			| ((word << 8) & 0x00ff0000)
-			| (word << 24)) >>> 0;
-	}
-
-	public readMappedDmaU32LE(addr: number, busSignals: MappedBusSignals): number {
-		return this.readMappedBusU32LE(addr, busSignals);
-	}
 
 	public readMappedBusU32LE(
 		addr: number,
@@ -548,15 +642,20 @@ export class Memory {
 	): number {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
+			if ((busSignals & (MAPPED_BUS_INSTRUCTION_FETCH | MAPPED_BUS_DMA_MEMORY)) !== 0) {
+				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
+				return 0;
+			}
 			return this.readIoSlot(slot, addr, busSignals);
 		}
 		if (this.isIoRegionRange(addr, 4)) {
-			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
+			this.raiseBusFault((busSignals & (MAPPED_BUS_INSTRUCTION_FETCH | MAPPED_BUS_DMA_MEMORY)) !== 0
+				? BUS_FAULT_UNMAPPED : BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 			return 0;
 		}
 		if (addr < RAM_BASE) {
 			if (addr <= SYSTEM_ROM_SIZE - 4) {
-				return this.readRomWindowU32LE(this.systemRom, addr);
+				return this.readRomWindowU32LE(this.systemRom.bytes, addr);
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const ramOffset = addr - RAM_BASE;
@@ -564,6 +663,10 @@ export class Memory {
 				return readLE32(this.ram, ramOffset);
 			}
 		} else if (addr <= CART_BUS_END - 4) {
+			if (addr >= CART_MMIO_BASE && (busSignals & MAPPED_BUS_INSTRUCTION_FETCH) !== 0) {
+				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
+				return 0;
+			}
 			return this.cartridgeController.readU32(addr, busSignals);
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
@@ -600,6 +703,17 @@ export class Memory {
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
 	}
 
+	public countRawWriteU32(addr: number, counters: MemoryWordCounters): void {
+		if (addr < CART_ROM_BASE) {
+			if (this.isRamRange(addr, IO_WORD_SIZE)) { counters.ramWords = (counters.ramWords + 1) >>> 0; return; }
+			if (addr <= SYSTEM_ROM_SIZE - IO_WORD_SIZE) { counters.systemRomWords = (counters.systemRomWords + 1) >>> 0; return; }
+		} else if (addr <= CART_BUS_END - IO_WORD_SIZE) {
+			counters.cartridgeWords = (counters.cartridgeWords + 1) >>> 0;
+			return;
+		}
+		counters.otherWords = (counters.otherWords + 1) >>> 0;
+	}
+
 	public writeMappedU16LE(addr: number, value: number): void {
 		if (this.isIoRegionRange(addr, 2)) {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U16);
@@ -617,32 +731,101 @@ export class Memory {
 	}
 
 	public writeMappedU32LE(addr: number, value: number, faultAccess = BUS_ACCESS_WRITE_U32): void {
-		this.writeMappedBusU32LE(addr, value, faultAccess, MAPPED_BUS_MASTER_CPU);
+		this.writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, faultAccess);
 	}
 
-	public writeMappedDmaU32LE(addr: number, value: number, busSignals: MappedBusSignals): void {
-		this.writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_U32, busSignals);
+	// Fixed I/O slots are resolved once; live handlers and per-word bus effects remain ordered.
+	public transferDmaBlock(readAddress: number, writeAddress: number, wordCount: number,
+		readStep: number, writeStep: number, readBusSignals: MappedBusSignals, writeBusSignals: MappedBusSignals): void {
+		if (wordCount !== 0 && readStep === IO_WORD_SIZE && writeStep === IO_WORD_SIZE) {
+			const bytes = wordCount * IO_WORD_SIZE;
+			const view = this.dmaRomView;
+			if (writeAddress >= IO_BASE + this.ioByteLength
+				&& this.isRamRange(writeAddress, bytes)
+				&& this.bindMappedReadView(readAddress, bytes, readBusSignals, view)) {
+				const destination = writeAddress - RAM_BASE;
+				for (let offset = 0; offset < bytes; offset += IO_WORD_SIZE) {
+					writeLE32(this.ram, destination + offset, readLE32(view.bytes, view.byteOffset + offset));
+				}
+				this.ramPageWriteWatches.invalidateWrite(destination, bytes, RAM_BASE, this.mappedPageInvalidator!);
+				return;
+			}
+		}
+		const readSlot = readStep === 0 && (readBusSignals & MAPPED_BUS_DMA_MEMORY) === 0 ? this.ioAlignedSlot(readAddress) : -1;
+		const writeSlot = writeStep === 0 && (writeBusSignals & MAPPED_BUS_DMA_MEMORY) === 0 ? this.ioAlignedSlot(writeAddress) : -1;
+		const writePrefix = wordCount > 1 && writeSlot >= 0 ? this.findIoDmaPrefix(writeSlot) : null;
+		if (writePrefix !== null && writePrefix.write !== null && READ_ONLY_IO_SLOTS[writeSlot] === 0) {
+			const prefix = wordCount - 1, words = this.dmaPrefixWords;
+			const readPrefix = readSlot >= 0 ? this.findIoDmaPrefix(readSlot) : null;
+			let prefixRead = false;
+			if (readPrefix !== null && readPrefix.read !== null) {
+				readPrefix.read(this.ioReadContexts[readSlot], readAddress, words, prefix, readBusSignals);
+				prefixRead = true;
+			} else if (readStep === 0 || readStep === IO_WORD_SIZE) {
+				const byteCount = readStep === 0 ? IO_WORD_SIZE : prefix * IO_WORD_SIZE;
+				if (readAddress >= IO_BASE + this.ioByteLength && this.isRamRange(readAddress, byteCount)) {
+					for (let i = 0; i < prefix; ++i) words[i] = readLE32(this.ram, readAddress - RAM_BASE + i * readStep);
+					prefixRead = true;
+				} else if (this.bindRomByteView(readAddress, byteCount, this.cartridgeController.selectedSlot(readBusSignals), this.dmaRomView)) {
+					const view = this.dmaRomView;
+					for (let i = 0; i < prefix; ++i) words[i] = readLE32(view.bytes, view.byteOffset + i * readStep);
+					prefixRead = true;
+				}
+			}
+			if (prefixRead) {
+				writePrefix.write(this.ioWriteContexts[writeSlot], writeAddress, words, prefix, writeBusSignals);
+				readAddress = (readAddress + prefix * readStep) >>> 0;
+				wordCount = 1;
+			}
+		}
+		if (readSlot >= 0 && writeSlot >= 0) {
+			for (let i = 0; i < wordCount; ++i) {
+				const end = i + 1 === wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0;
+				const word = this.readIoSlot(readSlot, readAddress, readBusSignals | end);
+				this.writeIoSlot(writeSlot, writeAddress, word, BUS_ACCESS_WRITE_U32, writeBusSignals | end);
+			}
+			return;
+		}
+		if (writeSlot >= 0) {
+			for (let i = 0; i < wordCount; ++i) {
+				const end = i + 1 === wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0;
+				const word = this.readMappedBusU32LE(readAddress, readBusSignals | end);
+				this.writeIoSlot(writeSlot, writeAddress, word, BUS_ACCESS_WRITE_U32, writeBusSignals | end);
+				readAddress = (readAddress + readStep) >>> 0;
+			}
+			return;
+		}
+		if (readSlot >= 0) {
+			for (let i = 0; i < wordCount; ++i) {
+				const end = i + 1 === wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0;
+				const word = this.readIoSlot(readSlot, readAddress, readBusSignals | end);
+				this.writeMappedBusU32LE(writeAddress, word, writeBusSignals | end);
+				writeAddress = (writeAddress + writeStep) >>> 0;
+			}
+			return;
+		}
+		for (let i = 0; i < wordCount; ++i) {
+			const end = i + 1 === wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0;
+			const word = this.readMappedBusU32LE(readAddress, readBusSignals | end);
+			this.writeMappedBusU32LE(writeAddress, word, writeBusSignals | end);
+			readAddress = (readAddress + readStep) >>> 0;
+			writeAddress = (writeAddress + writeStep) >>> 0;
+		}
 	}
 
-	private writeMappedBusU32LE(addr: number, value: number, faultAccess: number, busSignals: MappedBusSignals): void {
+	public writeMappedBusU32LE(addr: number, value: number, busSignals: MappedBusSignals, faultAccess = BUS_ACCESS_WRITE_U32): void {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
-			if (this.isReadOnlyIoAddress(addr)) {
-				this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
+			if ((busSignals & MAPPED_BUS_DMA_MEMORY) !== 0) {
+				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 				return;
 			}
-			const word = value >>> 0;
-			const writeReady = this.ioWriteReadyHandlers[slot];
-			if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0
-				&& writeReady !== null
-				&& !writeReady(this.ioWriteContexts[slot], addr, busSignals)) {
-				return;
-			}
-			this.writeIoSlot(slot, addr, word, busSignals);
+			this.writeIoSlot(slot, addr, value, faultAccess, busSignals);
 			return;
 		}
 		if (this.isIoRegionRange(addr, 4)) {
-			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
+			this.raiseBusFault((busSignals & MAPPED_BUS_DMA_MEMORY) !== 0
+				? BUS_FAULT_UNMAPPED : BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 			return;
 		}
 		if (addr < CART_ROM_BASE) {
@@ -674,7 +857,7 @@ export class Memory {
 	public readBytesInto(addr: number, out: Uint8Array, length: number, dstOffset = 0): void {
 		if (addr < RAM_BASE) {
 			if (length <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - length) {
-				this.copyRomWindowInto(this.systemRom, addr, out, dstOffset, length);
+				this.copyRomWindowInto(this.systemRom.bytes, addr, out, dstOffset, length);
 				return;
 			}
 		} else if (addr < CART_ROM_BASE) {
@@ -705,9 +888,9 @@ export class Memory {
 			&& addr - CART_ROM_BASE <= CART_BUS_END - CART_ROM_BASE - length;
 	}
 
-	public bindRomByteView(addr: number, length: number, cartridgeSlot: number, out: RomByteView): boolean {
-		if (length > 0 && this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)) {
-			out.bytes = this.systemRom;
+	public bindRomByteView(addr: number, length: number, cartridgeSlot: number, out: MemoryByteView): boolean {
+		if (length > 0 && this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.bytes.byteLength)) {
+			out.bytes = this.systemRom.bytes;
 			out.byteOffset = addr - SYSTEM_ROM_BASE;
 			out.byteLength = length;
 			return true;
@@ -719,7 +902,22 @@ export class Memory {
 	}
 
 	public isRamRange(addr: number, length: number): boolean {
-		return addr >= RAM_BASE && addr - RAM_BASE + length <= this.ram.byteLength;
+		return addr >= RAM_BASE && addr < CART_ROM_BASE && length <= CART_ROM_BASE - addr
+			&& addr - RAM_BASE + length <= this.ram.byteLength;
+	}
+
+	public bindMappedReadView(addr: number, length: number, busSignals: MappedBusSignals, out: MemoryByteView): boolean {
+		if (addr < RAM_BASE) return this.bindRomByteView(addr, length, 0, out);
+		if (addr < CART_ROM_BASE) {
+			const offset = addr - RAM_BASE;
+			if (length === 0 || !this.isRamRange(addr, length)
+				|| (addr < IO_BASE + this.ioByteLength && addr + length > IO_BASE)) return false;
+			out.bytes = this.ram;
+			out.byteOffset = offset;
+			out.byteLength = length;
+			return true;
+		}
+		return addr < CART_BUS_END && this.cartridgeController.bindMappedReadView(addr, length, busSignals, out);
 	}
 
 	public mappedRegion(addr: number): MemoryRegionKind {
@@ -849,49 +1047,5 @@ export class Memory {
 		return addr >= base && addr + length <= base + size;
 	}
 
-	private isReadOnlyIoAddress(addr: number): boolean {
-		if (addr >= IO_INP_KEYS && addr < IO_INP_OUTPUT_PORT) {
-			return true; // latched keyboard/pointer/pad snapshot words
-		}
-		switch (addr) {
-			case IO_SYS_BUS_FAULT_CODE:
-			case IO_SYS_BUS_FAULT_ADDR:
-			case IO_SYS_BUS_FAULT_ACCESS:
-			case IO_SYS_TIME_MS:
-			case IO_SYS_FRAME_MS_Q16:
-			case IO_SYS_CYCLES_PER_FRAME:
-			case IO_SYS_STATUS:
-			case IO_IRQ_FLAGS:
-			case IO_DMA0_STATUS:
-			case IO_DMA1_STATUS:
-			case IO_IMGDEC_STATUS:
-			case IO_IMGDEC_INPUT_WORDS_RECEIVED:
-			case IO_IMGDEC_DECODED_WORD_COUNT:
-			case IO_GEO_STATUS:
-			case IO_GEO_PROCESSED:
-			case IO_GEO_FAULT:
-			case IO_INP_STATUS:
-			case IO_INP_OUTPUT_STATUS:
-			case IO_APU_STATUS:
-			case IO_APU_FAULT_CODE:
-			case IO_APU_FAULT_DETAIL:
-			case IO_APU_EVENT_KIND:
-			case IO_APU_EVENT_SLOT:
-			case IO_APU_EVENT_SOURCE_ADDR:
-			case IO_APU_EVENT_SEQ:
-			case IO_APU_SELECTED_SOURCE_ADDR:
-			case IO_APU_ACTIVE_MASK:
-			case IO_CART_STATUS:
-			case IO_SYS_SUPERVISOR_FAULT_SEQUENCE:
-			case IO_SYS_SUPERVISOR_FAULT_CAUSE:
-			case IO_SYS_SUPERVISOR_FAULT_EPC:
-			case IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS:
-			case IO_SYS_SUPERVISOR_FAULT_LUA_REASON:
-			case IO_SYS_SUPERVISOR_FAULT_DOMAIN:
-				return true;
-			default:
-				return false;
-		}
-	}
 
 }

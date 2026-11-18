@@ -10,6 +10,8 @@ import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpe
 for (const optLevel of [0, 3] as const) {
 	test(`World and Scene accept omitted construction options without replacing explicit inputs (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
 local shared<const> = { score = 12 }
 local actor<const> = {}
 function actor:ctor(options)
@@ -61,6 +63,8 @@ world:clear()
 
 	test(`Omitted spawn options have the same guest allocation cost as reused explicit input (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
 prefab.define({def_id='inputs.group',
  class=world_object,
  defaults={ id = 'inputs.reused' }})
@@ -88,6 +92,8 @@ probe = {
 
 	test(`Construction hooks do not allocate an owner-forwarding context (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
 local input<const> = {}
 local actor<const> = {}
 function actor:initialize(options)

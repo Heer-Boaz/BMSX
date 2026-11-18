@@ -4,6 +4,9 @@
 #include "spec/gx/vram.h"
 #include "machine/devices/gx/gpu_display.h"
 
+#include <algorithm>
+#include <array>
+
 namespace bmsx {
 
 constexpr i32 GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
@@ -17,6 +20,27 @@ constexpr i64 GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE = 1 << GX_GPU_TRIANGLE_AT
 constexpr u32 GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK = 0xfffffu;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1u;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2u;
+
+inline i32 gxGpuTriangleAttributeSignedStep(u32 word) {
+	return (word & 0x80000u) != 0u ? static_cast<i32>(word) - 0x100000 : static_cast<i32>(word);
+}
+
+// Conservative texel bounds for an affine fixed-point plane over a draw box.
+inline void gxGpuTextureAxisBounds(std::array<i32, 4u>& out, size_t offset,
+	u32 base, u32 stepX, u32 stepY, i32 width, i32 height, u32 andMask, u32 orMask) {
+	const i32 start = static_cast<i32>(base & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK);
+	const i32 dx = gxGpuTriangleAttributeSignedStep(stepX & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) * (width - 1);
+	const i32 dy = gxGpuTriangleAttributeSignedStep(stepY & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) * (height - 1);
+	const i32 low = start + std::min(0, dx) + std::min(0, dy);
+	const i32 high = start + std::max(0, dx) + std::max(0, dy);
+	if (andMask != 0xffu || orMask != 0u || low < 0 || high > static_cast<i32>(GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK)) {
+		out[offset] = static_cast<i32>(orMask);
+		out[offset + 1u] = static_cast<i32>((andMask | orMask) + 1u);
+	} else {
+		out[offset] = low >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS;
+		out[offset + 1u] = (high >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) + 1;
+	}
+}
 
 enum class GxGpuRasterKind : u8 {
 	Polygon,
@@ -51,8 +75,8 @@ inline void gxGpuTriangleAttributePlane(
 		const i64 stepYQuotient = (static_cast<i64>(x1 - x0) * (value2 - value1) - static_cast<i64>(x2 - x1) * (value1 - value0)) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE / determinant;
 		const u32 stepXRaw = static_cast<u32>(stepXQuotient) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
 		const u32 stepYRaw = static_cast<u32>(stepYQuotient) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
-		const i32 stepX = (stepXRaw & 0x80000u) != 0u ? static_cast<i32>(stepXRaw) - 0x100000 : static_cast<i32>(stepXRaw);
-		const i32 stepY = (stepYRaw & 0x80000u) != 0u ? static_cast<i32>(stepYRaw) - 0x100000 : static_cast<i32>(stepYRaw);
+		const i32 stepX = gxGpuTriangleAttributeSignedStep(stepXRaw);
+		const i32 stepY = gxGpuTriangleAttributeSignedStep(stepYRaw);
 		const i64 anchorValue = anchor == 0 ? value0 : (anchor == 1 ? value1 : value2);
 		out[outOffset + component] = static_cast<u32>(anchorValue * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE + (GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE >> 1u) - static_cast<i64>(anchorX) * stepX - static_cast<i64>(anchorY) * stepY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
 		out[outOffset + componentCount + component] = stepXRaw;
@@ -267,6 +291,23 @@ inline bool gxGpuDrawModeTextureRectangleXFlip(u32 drawModeWord) {
 
 inline bool gxGpuDrawModeTextureRectangleYFlip(u32 drawModeWord) {
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) != 0u;
+}
+
+inline void gxGpuRectangleUvPlane(u32* out, i32 x, i32 y, u32 u, u32 v, u32 drawModeWord) {
+	// Rectangles have unit texel steps. Do not manufacture unsigned triangle
+	// vertices for their exclusive edges: a flipped edge may be negative.
+	const i32 stepX = gxGpuDrawModeTextureRectangleXFlip(drawModeWord)
+		? -GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE : GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE;
+	const i32 stepY = gxGpuDrawModeTextureRectangleYFlip(drawModeWord)
+		? -GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE : GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE;
+	out[0] = static_cast<u32>(u * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE
+		+ (GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE >> 1) - static_cast<i64>(x) * stepX) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+	out[1] = static_cast<u32>(v * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE
+		+ (GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE >> 1) - static_cast<i64>(y) * stepY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+	out[2] = static_cast<u32>(stepX) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+	out[3] = 0u;
+	out[4] = 0u;
+	out[5] = static_cast<u32>(stepY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
 }
 
 inline bool gxGpuSegmentExceedsPrimitiveSize(i32 x0, i32 y0, i32 x1, i32 y1) {

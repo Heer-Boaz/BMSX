@@ -1,12 +1,12 @@
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
-import type { Table } from '../../machine/ts/machine/cpu/table';
+import { asTable } from '../../machine/ts/machine/cpu/value';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import { Blua32GlobalRegisterFile } from './sources';
 import type { RuntimeLuaFrameBinding, RuntimeLuaFrameScope } from './lua_inspection';
 import { SuspendedGuestValueKind, type SuspendedGuestSession, type SuspendedGuestValue } from './suspended_guest';
 
 export type InspectedValue = {
-	readonly kind: 'nil' | 'boolean' | 'number' | 'string' | 'table' | 'function' | 'thread';
+	readonly kind: 'nil' | 'boolean' | 'integer' | 'float' | 'string' | 'table' | 'function' | 'thread';
 	readonly display: string;
 	readonly reference?: string;
 };
@@ -27,7 +27,7 @@ type Container =
 	| { kind: 'table'; value: SuspendedGuestValue; entries?: readonly (readonly [SuspendedGuestValue, SuspendedGuestValue])[] };
 const VALUE_KINDS: Record<SuspendedGuestValueKind, InspectedValue['kind']> = {
 	[SuspendedGuestValueKind.Nil]: 'nil', [SuspendedGuestValueKind.Boolean]: 'boolean',
-	[SuspendedGuestValueKind.Number]: 'number', [SuspendedGuestValueKind.String]: 'string',
+	[SuspendedGuestValueKind.Integer]: 'integer', [SuspendedGuestValueKind.Float]: 'float', [SuspendedGuestValueKind.String]: 'string',
 	[SuspendedGuestValueKind.Table]: 'table', [SuspendedGuestValueKind.Function]: 'function',
 	[SuspendedGuestValueKind.Thread]: 'thread',
 };
@@ -53,7 +53,7 @@ export class InspectionValues {
 	public describe(value: SuspendedGuestValue): InspectedValue {
 		const guest = this.guest!, kind = guest.kind(value), display = guest.formatValue(value);
 		if (kind !== SuspendedGuestValueKind.Table) return { kind: VALUE_KINDS[kind], display };
-		const identity = (value as Table).hashId;
+		const identity = asTable(value, guest.cpu.gc).hashId;
 		let reference = this.tables.get(identity);
 		if (reference === undefined) {
 			reference = this.add({ kind: 'table', value });
@@ -95,7 +95,7 @@ export class InspectionValues {
 						: binding.kind === 'address' ? { kind: 'address', address: binding.address, display: `0x${binding.address.toString(16).padStart(8, '0')}` }
 						: binding.location !== null
 						? this.describe(binding.location.inStack ? container.frame.registers.get(binding.location.index)
-							: guest.readClosureUpvalue(container.frame.closure, binding.location.index))
+							: guest.cpu.readClosureUpvalue(container.frame.closure, binding.location.index))
 						: { kind: 'unavailable', reason: 'no-live-location', display: '<no live location>' } });
 			}
 		}

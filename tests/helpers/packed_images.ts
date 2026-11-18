@@ -5,7 +5,7 @@ import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 /** Synthetic packed asset data produced by the real codecs, independent of gameplay carts. */
 export function createPackedImageFixture(id: string, width: number, height: number, pixels: Uint8Array, atlasId = `${id}-atlas`) {
 	const texture = encodeDirect16GxTexture(width, height, new Uint8ClampedArray(pixels));
-	const bytes = new Uint8Array(encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount));
+	const bytes = new Uint8Array(encodeImgDecStream(texture.words));
 	const entries: RomAsset[] = [
 		{ resid: id, type: 'image', source_path: `${id}.png`, imgmeta: { width, height, texture_u: 0, texture_v: 0, gx_atlas_id: atlasId } },
 		{ resid: atlasId, type: 'texture', start: 0, end: bytes.length, texturemeta: {

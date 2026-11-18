@@ -2,8 +2,7 @@ import { type RuntimeStackTraceFrame } from './stack_trace';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import { valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { asClosure, isTruthy, valueInteger, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../machine/ts/spec/bmsx/io';
 import { resumeRuntimeDebugger, RuntimeDebuggerResumeMode, type RuntimeDebuggerState } from './debugger_state';
@@ -172,12 +171,12 @@ export class RuntimeLuaEvaluation {
 			prepare: () => {
 				const module = readRuntimeLuaModuleExport(this.sources, this.guest, -1, 'shell/repl');
 				if (module.kind !== 'value') throw new Error('The installed BIOS does not contain shell/repl. Rebuild and reboot the BIOS.');
-				return { domain: -1, closure: this.guest.readStringMember(module.value, selected === undefined ? 'evaluate' : 'evaluate_frame') as Closure,
+				return { domain: -1, closure: asClosure(this.guest.readStringMember(module.value, selected === undefined ? 'evaluate' : 'evaluate_frame'), this.runtime.machine.cpu.gc),
 					args: () => {
 						const pool = this.runtime.machine.cpu.stringPool;
 						const args: Value[] = [valueString(pool.intern(source)), valueString(pool.intern(`=evaluation:${operation.id}`))];
 						if (selected === undefined) args.push(valueString(pool.intern(name)));
-						else args.push(selected.frame.physicalFrameIndex, selected.frame.inlineDepth);
+						else args.push(valueInteger(selected.frame.physicalFrameIndex), valueInteger(selected.frame.inlineDepth));
 						return args;
 					} };
 			},
@@ -189,7 +188,7 @@ export class RuntimeLuaEvaluation {
 			if (operation.result !== undefined || operation.outcome !== undefined) return;
 			if (!completed) { this.finish(operation, { status: 'interrupted', values: ['Lua call interrupted; existing guest mutations are retained.'] }); return; }
 			this.runtime.machine.cpu.readCompletionValues(this.values);
-			const succeeded = this.values[0] === true;
+			const succeeded = isTruthy(this.values[0]);
 			const result: string[] = [];
 			for (let index = 1; index < this.values.length; index++) result.push(this.guest.previewValue(this.values[index], 2, 12));
 			this.values.length = 0;

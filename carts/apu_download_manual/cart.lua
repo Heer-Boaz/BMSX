@@ -5,7 +5,6 @@ local result<const>: *apu_download_result = state.result
 local irq_flags<const>: *word = 0x08000000
 local irq_ack<const>: *word = 0x08000004
 local irq_mask<const>: *word = 0x08000008
-local dma_read<const>: *word = 0x0800000c
 local dma_write<const>: *word = 0x08000010
 local dma_count<const>: *word = 0x08000014
 local dma_control<const>: *word = 0x08000018
@@ -33,11 +32,10 @@ for phase = 0, 1 do
 	*transfer_control = 0
 	*transfer_address = offsets[phase]
 	*irq_ack = 0x00000001
-	*dma_read = 0x080001ec
 	*dma_write = &result.received[phase * 20]
 	*dma_count = counts[phase]
-	-- Fixed APU_READ source, incrementing FORCE destination, block16.
-	*dma_control = 0x00003c12
+	-- Fixed APU_READ source, incrementing memory destination; FIFO bounds each burst.
+	*dma_control = 0x00000007
 	*dma_trigger = 1
 	*transfer_control = 3
 	while (*dma_status & 0x00000001) ~= 0 do

@@ -225,10 +225,16 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	// Leave a representative multi-second transport preview for visual inspection.
 	const previewEnd = history.latestCycles + runtime.timing.cpuHz * 7;
 	for (let count = 0; count < 4000 && history.latestCycles < previewEnd; count += 1) await frame();
+	const image = runtime.machine.cpu.activeThread.currentFrame!.executionImage;
+	let generatedBlocks = 0;
+	for (const page of image.decodedPages.values()) if (page.compiledBlocks !== null) {
+		for (const block of page.compiledBlocks.entries) if (block !== null) ++generatedBlocks;
+	}
+	require(generatedBlocks > 0, 'the unconfigured browser Runtime must generate JavaScript for the running game');
 	await openRewind(); await press('ArrowLeft'); await settle();
 	await testWebGpuReadbackLifetime(runtime, backend);
 	await backend.device.queue.onSubmittedWorkDone();
 	require(errors.length === 0, errors.join('\n'));
-	return { backend: backend.type, hostFrames, checkpoint, latest, audioFrames, vramBytes: expectedVram.length,
+	return { backend: backend.type, generatedBlocks, hostFrames, checkpoint, latest, audioFrames, vramBytes: expectedVram.length,
 		referenceAgeSeconds, minimumSpanSeconds: minimumSpanCycles / runtime.timing.cpuHz, retentionFrames, checkpointEvictions };
 }

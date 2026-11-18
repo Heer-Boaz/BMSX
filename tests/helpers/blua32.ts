@@ -30,6 +30,7 @@ import {
 	RunResult,
 } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
+import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
 import {
 	BASE_BX_BITS,
@@ -39,7 +40,7 @@ import {
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import type { ProgramMetadata, Proto, UpvalueDesc } from '../../toolchain/ts/lua/compiler/program';
+import type { ProgramConstant, ProgramMetadata, Proto, UpvalueDesc } from '../../toolchain/ts/lua/compiler/program';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -109,7 +110,7 @@ export type TestBlua32Function = {
 export type TestBlua32Source = {
 	text: Uint8Array;
 	functions: ReadonlyArray<TestBlua32Function>;
-	constants?: ReadonlyArray<null | boolean | number | string>;
+	constants?: ReadonlyArray<ProgramConstant>;
 	globalNames?: ReadonlyArray<string>;
 	systemGlobalNames?: ReadonlyArray<string>;
 	constRelocs?: ReadonlyArray<ProgramImageConstReloc>;
@@ -488,17 +489,19 @@ export function linkTestBlua32Pair(
 
 export function createTestSystemCpu(
 	finalized: Pick<TestBlua32Image, 'romBytes'>,
+	executionBackend?: CpuExecutionBackend,
 ): { cpu: CPU; memory: Memory; irqController: IrqController; executionAddressSpace: ExecutionAddressSpace } {
 	const memory = new Memory({ systemRom: finalized.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
-	const cpu = new CPU(memory, irqController, executionAddressSpace);
+	const cpu = new CPU(memory, irqController, executionAddressSpace, executionBackend);
 	cpu.reset();
 	return { cpu, memory, irqController, executionAddressSpace };
 }
 
 export function createTestBlua32PairCpu(
 	finalized: Pick<TestBlua32ImagePair, 'systemRomBytes' | 'cartRomBytes'>,
+	executionBackend?: CpuExecutionBackend,
 ): { cpu: CPU; memory: Memory; irqController: IrqController; executionAddressSpace: ExecutionAddressSpace } {
 	const memory = new Memory({
 		systemRom: finalized.systemRomBytes,
@@ -506,7 +509,7 @@ export function createTestBlua32PairCpu(
 	}, PSX_MACHINE_SPEC.ramBytes);
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
-	const cpu = new CPU(memory, irqController, executionAddressSpace);
+	const cpu = new CPU(memory, irqController, executionAddressSpace, executionBackend);
 	cpu.reset();
 	return { cpu, memory, irqController, executionAddressSpace };
 }

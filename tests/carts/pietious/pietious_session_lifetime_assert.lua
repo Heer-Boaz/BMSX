@@ -11,6 +11,7 @@ return {
 	tests = {
 		session_survives_actor_reconstruction = function(t)
 			t:wait_until('game fixture', function() return registry:get('d') ~= nil end, 120)
+			t:at_boundary(world:request_mutation_boundary(), 120)
 			local old_castle<const> = registry:get('c')
 			local old_player<const> = old_castle.player
 			local old_room<const> = old_castle.room

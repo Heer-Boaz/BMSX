@@ -40,7 +40,35 @@ i64 DeviceScheduler::currentNowCycles() const {
 RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, const Thread* targetThread) {
 	beginCpuSlice(sliceBudget);
 	ScopeExit activeSlice([this]() { endCpuSlice(); });
+#if defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	DiagnosticCpuSliceMeasurement measurement(diagnosticCpuTiming, sliceBudget, m_cpu.instructionBudgetRemaining);
+#endif
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	// Same admission/consumption boundary as CpuTopologyDiagnostic::scheduler;
+	// this bounded probe needs the cumulative count/sum, not its histograms.
+	const DiagnosticExecutionProfile before = m_cpu.diagnosticExecutionProfile();
+	const auto result = m_cpu.runUntilDepth(targetDepth, sliceBudget, targetThread);
+	const auto& after = m_cpu.diagnosticExecutionProfile();
+	const i64 consumed = static_cast<i64>(sliceBudget) - m_cpu.instructionBudgetRemaining;
+	const i64 native = after.nativeOriginCycles - before.nativeOriginCycles;
+	++diagnosticCpuSliceCount;
+	diagnosticCpuSliceConsumedCycles += consumed;
+	diagnosticNativeOriginCycles += native;
+	diagnosticInterpreterRuntimeCycles += consumed - native;
+	diagnosticNativeOpcodes.newt += after.nativeOpcodes.newt - before.nativeOpcodes.newt;
+	diagnosticNativeOpcodes.call += after.nativeOpcodes.call - before.nativeOpcodes.call;
+	diagnosticNativeOpcodes.setfield += after.nativeOpcodes.setfield - before.nativeOpcodes.setfield;
+	diagnosticNativeOpcodes.concat += after.nativeOpcodes.concat - before.nativeOpcodes.concat;
+	diagnosticNativeOpcodes.concatn += after.nativeOpcodes.concatn - before.nativeOpcodes.concatn;
+	diagnosticInterpreterOpcodes.newt += after.interpreterOpcodes.newt - before.interpreterOpcodes.newt;
+	diagnosticInterpreterOpcodes.call += after.interpreterOpcodes.call - before.interpreterOpcodes.call;
+	diagnosticInterpreterOpcodes.setfield += after.interpreterOpcodes.setfield - before.interpreterOpcodes.setfield;
+	diagnosticInterpreterOpcodes.concat += after.interpreterOpcodes.concat - before.interpreterOpcodes.concat;
+	diagnosticInterpreterOpcodes.concatn += after.interpreterOpcodes.concatn - before.interpreterOpcodes.concatn;
+	return result;
+#else
 	return m_cpu.runUntilDepth(targetDepth, sliceBudget, targetThread);
+#endif
 }
 
 void DeviceScheduler::advanceTo(i64 nowCycles) {
@@ -91,7 +119,8 @@ void DeviceScheduler::pushTimer(i64 deadline, uint8_t deviceKind, uint32_t gener
 	m_timerGenerations.push_back(generation);
 	while (index > 0) {
 		const size_t parent = (index - 1u) >> 1u;
-		if (m_timerDeadlines[parent] <= deadline) {
+		if (m_timerDeadlines[parent] < deadline ||
+			(m_timerDeadlines[parent] == deadline && m_timerDeviceKinds[parent] <= deviceKind)) {
 			break;
 		}
 		m_timerDeadlines[index] = m_timerDeadlines[parent];
@@ -118,10 +147,12 @@ void DeviceScheduler::removeTopTimer() {
 	size_t index = 0u;
 	while (index < (lastIndex >> 1u)) {
 		size_t child = (index << 1u) + 1u;
-		if (child + 1u < lastIndex && m_timerDeadlines[child + 1u] < m_timerDeadlines[child]) {
+		if (child + 1u < lastIndex && (m_timerDeadlines[child + 1u] < m_timerDeadlines[child] ||
+			(m_timerDeadlines[child + 1u] == m_timerDeadlines[child] && m_timerDeviceKinds[child + 1u] < m_timerDeviceKinds[child]))) {
 			child += 1u;
 		}
-		if (m_timerDeadlines[child] >= deadline) {
+		if (m_timerDeadlines[child] > deadline ||
+			(m_timerDeadlines[child] == deadline && m_timerDeviceKinds[child] >= deviceKind)) {
 			break;
 		}
 		m_timerDeadlines[index] = m_timerDeadlines[child];

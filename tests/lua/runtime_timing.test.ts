@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -54,7 +55,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
@@ -248,7 +249,7 @@ test('CPU timing store crossing a due VBlank differs from a store after service'
 	const image = linkRawTestSystemBlua32({
 		text,
 		functions: [{ firstWord: 0, wordCount: 7, maxStack: 2 }],
-		constants: [IO_INP_CTRL, timingAddress, PCRTC_SYNCH2_SLOW_WORD],
+		constants: [integerConstant(IO_INP_CTRL), integerConstant(timingAddress), integerConstant(PCRTC_SYNCH2_SLOW_WORD)],
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 0,
 		exceptionFunctionIndex: 0,
@@ -278,7 +279,7 @@ test('CPU timing store crossing a due VBlank differs from a store after service'
 		const storePc = runtime.machine.cpu.readFramePc(0);
 		runtime.cpuExecution.runInstruction(frame);
 		assert.equal(runtime.machine.cpu.readFramePc(0), storePc + INSTRUCTION_BYTES);
-		assert.equal(scheduler.nowCycles, deadline + (crossing ? 1 : 2));
+		assert.equal(scheduler.nowCycles, deadline + BASE_CYCLES[OpCode.STORE_MEM_D] - (crossing ? 1 : 0));
 		assert.equal(runtime.machine.memory.readMappedU32LE(timingAddress), PCRTC_SYNCH2_SLOW_WORD);
 		observed.push([
 			runtime.machine.memory.readIoU32(IO_INP_STATUS),

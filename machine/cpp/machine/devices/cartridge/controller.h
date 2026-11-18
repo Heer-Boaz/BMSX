@@ -22,6 +22,10 @@ public:
 
 	void connect(Memory& memory, IrqController& irq, DmaController& dma);
 	void installRom(u32 slotIndex, std::span<const u8> rom);
+	const Span<const u8>* romStorage(u32 slotIndex) const {
+		return m_cards[slotIndex] ? m_cards[slotIndex]->romStorage() : nullptr;
+	}
+	const u32& selectionWord() const { return m_selectionWord; }
 	void attachMappedPageInvalidator(MappedPageInvalidator& invalidator);
 	void detachMappedPageInvalidator();
 	void clearMappedPageWriteWatches();
@@ -70,6 +74,7 @@ public:
 	}
 	void readBytes(u32 address, u8* out, size_t length) const;
 	bool bindRomByteView(u32 slotIndex, u32 address, size_t length, Span<const u8>& out) const;
+	bool bindMappedReadView(u32 address, size_t length, MappedBusSignals busSignals, Span<const u8>& out) const;
 
 private:
 	static u32 readSelectionThunk(void* context, u32 address, MappedBusSignals busSignals);

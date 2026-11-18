@@ -6,4 +6,5 @@
 void screenshot_set_output_dir(const char* output_dir);
 const char* screenshot_get_output_dir(void);
 
+// Relative names use the configured capture directory; absolute paths are written directly.
 bool screenshot_save_png(const char* filename, uint32_t width, uint32_t height, const uint8_t* rgba_data);

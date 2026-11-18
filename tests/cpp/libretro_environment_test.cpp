@@ -1,10 +1,12 @@
 #include "bmsx_libretro.h"
 #include "input.h"
 #include "runtime_error.h"
+#include "video_output.h"
 #include "common/endian.h"
 #include "spec/bmsx/cartridge.h"
 #include "spec/bmsx/io.h"
 #include "spec/gx/pcrtc.h"
+#include "spec/blua32/opcode.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "spec/bmsx/model.h"
 #include "machine/runtime/save_state/codec.h"
@@ -26,6 +28,10 @@ namespace {
 unsigned supervisorInterfaceQueries = 0u;
 bool defaultRequestLineWasLow = false;
 bool acceptPrivateInterfaces = true;
+unsigned nativeProfileOffers = 0u;
+BmsxNativeCompilationProfileInterface nativeProfile{};
+unsigned executionProfileOffers = 0u;
+BmsxExecutionProfileInterface executionProfile{};
 bool acceptXrgb8888 = true;
 unsigned pixelFormatRequests = 0u;
 unsigned requestLineReads = 0u;
@@ -118,6 +124,16 @@ int16_t discardInputState(unsigned, unsigned, unsigned, unsigned) {
 }
 
 bool softwareFrontendEnvironment(unsigned command, void* data) {
+	if (command == BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE) {
+		++executionProfileOffers;
+		if (acceptPrivateInterfaces) executionProfile = *static_cast<BmsxExecutionProfileInterface*>(data);
+		return acceptPrivateInterfaces;
+	}
+	if (command == BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE) {
+		++nativeProfileOffers;
+		if (acceptPrivateInterfaces) nativeProfile = *static_cast<BmsxNativeCompilationProfileInterface*>(data);
+		return acceptPrivateInterfaces;
+	}
 	if (command == RETRO_ENVIRONMENT_SET_PIXEL_FORMAT) {
 		pixelFormatRequests += 1u;
 		return acceptXrgb8888
@@ -198,9 +214,45 @@ bool frontendEnvironment(unsigned command, void* data) {
 	}
 	return softwareFrontendEnvironment(command, data);
 }
+
+void testAvPublicationPhases() {
+	static unsigned geometry = 0u, system = 0u;
+	static bool presenting = false;
+	bmsx::LibretroVideoOutput output;
+	output.setEnvironment([](unsigned command, void*) -> bool {
+		if (command == RETRO_ENVIRONMENT_SET_GEOMETRY) ++geometry;
+		if (command == RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO) {
+			require(!presenting, "a system AV notification cannot recreate GL during presentation");
+			++system;
+		}
+		return true;
+	});
+	retro_system_av_info initial{};
+	output.getSystemAvInfo(initial);
+	output.stageDisplaySize(256, 192, 256, 192);
+	require(geometry == 0u && system == 0u, "staging outside retro_run does not publish AV parameters");
+	require(output.publishPendingAvInfo() == bmsx::LibretroAvInfoNotification::Geometry,
+		"the safe frame-entry boundary publishes staged geometry");
+	presenting = true;
+	output.setDisplaySize(320, 240, 320, 240);
+	require(geometry == 2u && system == 0u, "in-envelope presentation geometry is published immediately");
+	output.setDisplaySize(1921, 1081, 1921, 1081);
+	require(geometry == 2u && system == 0u, "an expanded envelope stays pending during presentation");
+	presenting = false;
+	require(output.publishPendingAvInfo() == bmsx::LibretroAvInfoNotification::System && system == 1u,
+		"the safe frame-exit boundary publishes the expanded envelope");
+	output.setFrameRate(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED + 1);
+	presenting = true;
+	output.setDisplaySize(256, 192, 256, 192);
+	require(geometry == 2u && system == 1u, "a pending timing change prevents an intermediate geometry notification");
+	presenting = false;
+	require(output.publishPendingAvInfo() == bmsx::LibretroAvInfoNotification::System && system == 2u,
+		"timing and geometry changes share a safe system AV publication");
+}
 } // namespace
 
 int main() {
+	testAvPublicationPhases();
 	testDiagnosticTextLog();
 	constexpr bmsx::u32 primaryCartRamBytes = 16u;
 	constexpr bmsx::u32 auxiliaryCartRamBytes = 24u;
@@ -269,6 +321,18 @@ int main() {
 	retro_set_environment(frontendEnvironment);
 	require(supervisorInterfaceQueries == 2u, "reinstalling the frontend environment should renegotiate the supervisor interface");
 	retro_init();
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	require(executionProfileOffers == 1u && executionProfile.read_profile != nullptr,
+		"diagnostic cores offer the opt-in execution profile during initialization");
+#else
+	require(executionProfileOffers == 0u, "standard cores do not offer execution diagnostics");
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(nativeProfileOffers == 1u && nativeProfile.read_profile != nullptr,
+		"native core offers the opt-in cumulative compilation profile during initialization");
+#else
+	require(nativeProfileOffers == 0u, "interpreter-only core does not offer native compilation profiling");
+#endif
 	const retro_game_info cartridgeSlots[2] = {
 		{
 			.path = gamePath.c_str(),
@@ -287,6 +351,12 @@ int main() {
 		retro_load_game_special(BMSX_SUBSYSTEM_DUAL_CARTRIDGE, cartridgeSlots, 2u),
 		"the core should load both physical cartridge sockets through the libretro subsystem");
 	require(pixelFormatRequests == 1u, "content load should negotiate the XRGB8888 framebuffer contract once");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	BmsxNativeCompilationProfile initialNativeProfile{};
+	nativeProfile.read_profile(&initialNativeProfile);
+	require(initialNativeProfile.prepare_requests == 0u && initialNativeProfile.prepare_nanoseconds == 0u,
+		"accepted native profile reads the loaded CPU before guest execution");
+#endif
 	std::vector<bmsx::u8> cartridgeState(retro_serialize_size());
 	require(retro_serialize(cartridgeState.data(), cartridgeState.size()), "the dual-cartridge core should serialize both socket states");
 	const bmsx::u32 cartridgeStateBytes = bmsx::readLE32(cartridgeState.data() + 4u);
@@ -299,6 +369,42 @@ int main() {
 			bmsx::PSX_MACHINE_SPEC.ramBytes,
 			bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const auto& cartridgeControllerState = cartridgeRuntimeState.machineState.machine.cartridge;
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	BmsxExecutionProfile initialExecutionProfile{}, repeatedExecutionProfile{};
+	executionProfile.read_profile(&initialExecutionProfile);
+	executionProfile.read_profile(&repeatedExecutionProfile);
+	require(std::memcmp(&initialExecutionProfile, &repeatedExecutionProfile, sizeof(initialExecutionProfile)) == 0,
+		"repeated diagnostic reads neither execute guest work nor consume diagnostic counters");
+	require(initialExecutionProfile.scheduler_now_cycles == cartridgeRuntimeState.machineState.schedulerNowCycles
+		&& initialExecutionProfile.cpu_slice_count == 0u && initialExecutionProfile.cpu_slice_consumed_cycles == 0,
+		"execution profile exports the raw scheduler position and unexecuted CPU slice counters");
+	require(initialExecutionProfile.gc_collections == 1u,
+		"the loaded CPU profile includes its boot collection before the first host run");
+	require(initialExecutionProfile.gc_total_nanoseconds >= initialExecutionProfile.gc_roots_nanoseconds
+		+ initialExecutionProfile.gc_trace_nanoseconds + initialExecutionProfile.gc_weak_nanoseconds
+		+ initialExecutionProfile.gc_sweep_nanoseconds + initialExecutionProfile.gc_string_reclaim_nanoseconds
+		+ initialExecutionProfile.gc_mark_again_nanoseconds,
+		"GC phase times are contained within the complete collection interval");
+	std::vector<bmsx::u8> afterProfileReads(cartridgeState.size());
+	require(retro_serialize(afterProfileReads.data(), afterProfileReads.size()) && afterProfileReads == cartridgeState,
+		"profile reads leave serialized machine state unchanged");
+	bmsx::RuntimeSaveState negativeSchedulerState = cartridgeRuntimeState;
+	negativeSchedulerState.machineState.schedulerNowCycles = -INT64_C(9007199254740993);
+	const auto negativePayload = bmsx::encodeRuntimeSaveState(negativeSchedulerState);
+	std::vector<bmsx::u8> negativeEnvelope(cartridgeState.size());
+	std::memcpy(negativeEnvelope.data(), cartridgeState.data(), 4u);
+	bmsx::writeLE32(negativeEnvelope.data() + 4u, static_cast<bmsx::u32>(negativePayload.size()));
+	std::memcpy(negativeEnvelope.data() + 8u, negativePayload.data(), negativePayload.size());
+	require(retro_unserialize(negativeEnvelope.data(), negativeEnvelope.size()),
+		"a signed scheduler position can be restored through the existing state interface");
+	executionProfile.read_profile(&repeatedExecutionProfile);
+	require(repeatedExecutionProfile.scheduler_now_cycles == negativeSchedulerState.machineState.schedulerNowCycles,
+		"execution profile preserves a raw negative scheduler position without clamping or number conversion");
+	repeatedExecutionProfile.scheduler_now_cycles = initialExecutionProfile.scheduler_now_cycles;
+	require(std::memcmp(&initialExecutionProfile, &repeatedExecutionProfile, sizeof(initialExecutionProfile)) == 0,
+		"state restoration does not rewind or regenerate CPU-lifetime diagnostic counters");
+	require(retro_unserialize(cartridgeState.data(), cartridgeState.size()), "restore the startup machine before its first host run");
+#endif
 	require(cartridgeControllerState.selectionWord == 0u, "the cartridge controller should reset to socket 0 without host-side executable inspection");
 	require(cartridgeControllerState.slots[0]->ram->size() == 16u, "slot 0 cartridge RAM should come from its physical cartridge manifest");
 	require(cartridgeControllerState.slots[1]->ram->size() == 24u, "slot 1 cartridge RAM should come from its physical cartridge manifest");
@@ -308,6 +414,28 @@ int main() {
 	require(inputPolls == 1u, "the supported core should poll the platform input owner once during the frame");
 	require(requestLineReads == 1u, "an accepted frontend callback should drive the platform supervisor-request line");
 	require(geometryNotifications == 0u && systemAvNotifications == 0u, "unchanged startup AV state should not be republished");
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	BmsxExecutionProfile runningExecutionProfile{};
+	executionProfile.read_profile(&runningExecutionProfile);
+	require(runningExecutionProfile.cpu_native_origin_cycles + runningExecutionProfile.cpu_interpreter_runtime_cycles
+		== runningExecutionProfile.cpu_slice_consumed_cycles,
+		"the backend partition equals the existing exact CPU grant consumption");
+	require(runningExecutionProfile.scheduler_now_cycles > initialExecutionProfile.scheduler_now_cycles
+		&& runningExecutionProfile.cpu_slice_count > 0u
+		&& runningExecutionProfile.cpu_slice_consumed_cycles == static_cast<int64_t>(runningExecutionProfile.cpu_slice_count)
+			* bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::HALT)],
+		"boot and supervisor entries contain only HALT, so each recorded CPU slice charges exactly that instruction's cost");
+	require(runningExecutionProfile.gc_collections == initialExecutionProfile.gc_collections,
+		"a nonallocating boot HALT does not fabricate a guest collection");
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	BmsxNativeCompilationProfile runningNativeProfile{};
+	nativeProfile.read_profile(&runningNativeProfile);
+	require(runningNativeProfile.prepare_nanoseconds == runningNativeProfile.discovery_nanoseconds
+		+ runningNativeProfile.retirement_nanoseconds + runningNativeProfile.compilation_nanoseconds
+		&& runningNativeProfile.peak_code_bytes >= runningNativeProfile.code_bytes,
+		"private profile readout preserves the owning CPU phase totals and absolute cache gauges");
+#endif
 
 	const std::vector<bmsx::u8> expandedState = makeExpandedPcrtcState();
 	require(retro_unserialize(expandedState.data(), expandedState.size()), "the core should restore the expanded PCRTC state");
@@ -322,7 +450,24 @@ int main() {
 	require(!lastVideoWasNull, "a software frame remains valid after a synchronous system AV update");
 
 	const unsigned notificationsBeforeReset = geometryNotifications + systemAvNotifications;
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	BmsxExecutionProfile beforeResetProfile{}, afterResetProfile{};
+	executionProfile.read_profile(&beforeResetProfile);
+#endif
 	retro_reset();
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	executionProfile.read_profile(&afterResetProfile);
+	require(afterResetProfile.scheduler_now_cycles == 0
+		&& afterResetProfile.cpu_slice_count == beforeResetProfile.cpu_slice_count
+		&& afterResetProfile.cpu_slice_consumed_cycles == beforeResetProfile.cpu_slice_consumed_cycles,
+		"hardware reset rewinds scheduler position without resetting diagnostic CPU consumption");
+	require(afterResetProfile.cpu_native_origin_cycles == beforeResetProfile.cpu_native_origin_cycles
+		&& afterResetProfile.cpu_interpreter_runtime_cycles == beforeResetProfile.cpu_interpreter_runtime_cycles,
+		"hardware reset does not rewind backend-origin diagnostic lifetime counters");
+	require(afterResetProfile.gc_collections == beforeResetProfile.gc_collections + 1u
+		&& afterResetProfile.gc_total_nanoseconds >= beforeResetProfile.gc_total_nanoseconds,
+		"CPU reset adds its real collection to the existing diagnostic lifetime");
+#endif
 	require(geometryNotifications + systemAvNotifications == notificationsBeforeReset, "retro_reset must defer geometry publication to retro_run");
 	insideRetroRun = true;
 	retro_run();

@@ -13,8 +13,9 @@ import {
 import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -103,7 +104,7 @@ import {
 	GX_GTE_PLUS_SCALAR,
 	GxGte,
 } from '../../machine/ts/machine/devices/gx/gte';
-import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 const GTE_SF = 1 << 19;
 
@@ -286,7 +287,7 @@ test('GX-GTE command observation brackets only actual normal MMIO writes with bo
 	assert.equal(observed.gte.readDataRegister(15), records[1].data[14]);
 	assert.equal(records[0].data[14], 0x12345678, 'copied evidence survives register mutation');
 	const bus = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END;
-	for (const { memory } of [baseline, observed]) memory.writeMappedDmaU32LE(IO_GX_GTE_COMMAND, 0x12340000, bus);
+	for (const { memory } of [baseline, observed]) memory.writeMappedBusU32LE(IO_GX_GTE_COMMAND, 0x12340000, bus);
 	assert.deepEqual(records.slice(2).map(record => [record.phase, record.command, record.bus, record.cycles]), [
 		['before', 0x12340000, bus, GX_GTE_CYCLES_RTPT], ['after', 0x12340000, bus, 0],
 	]);
@@ -527,13 +528,13 @@ test('GX-GTE+ retains old result and FLAG latches until the retained completion 
 test('GX-GTE+ command admission is CPU-only and cannot overwrite an active command', () => {
 	const { memory, scheduler } = createGte();
 	const commandAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE;
-	memory.writeMappedDmaU32LE(commandAddress, 0xcafe0002, MAPPED_BUS_MASTER_DMA);
+	memory.writeMappedBusU32LE(commandAddress, 0xcafe0002, MAPPED_BUS_MASTER_DMA);
 	assert.equal(memory.readMappedU32LE(commandAddress), 0);
 	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), 0);
 
 	memory.writeMappedU32LE(commandAddress, 0xdeadbe01);
 	memory.writeMappedU32LE(commandAddress, 0xcafe0002);
-	memory.writeMappedDmaU32LE(commandAddress, 0xabcd0002, MAPPED_BUS_MASTER_DMA);
+	memory.writeMappedBusU32LE(commandAddress, 0xabcd0002, MAPPED_BUS_MASTER_DMA);
 	assert.equal(memory.readMappedU32LE(commandAddress), 0xdeadbe01);
 	assert.equal(scheduler.hasDueTimer(), false);
 	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
@@ -565,7 +566,7 @@ test('GX-GTE+ observes actual acceptance separately from lazy publication, inclu
 		published(deadline, cycle, words) { events.push({ phase: 'published', cycle, deadline, words: Array.from(words) }); },
 	});
 	for (const { memory, scheduler } of [baseline, observed]) {
-		memory.writeMappedDmaU32LE(commandAddress, 1, MAPPED_BUS_MASTER_DMA);
+		memory.writeMappedBusU32LE(commandAddress, 1, MAPPED_BUS_MASTER_DMA);
 		memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE, pack16(10, -20));
 		memory.writeMappedU32LE(commandAddress, 0xdeadbe01);
 		memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE, pack16(99, 88));
@@ -590,7 +591,7 @@ test('GX-GTE+ observes actual acceptance separately from lazy publication, inclu
 		memory.writeMappedU32LE(commandAddress, 0x41);
 		scheduler.advanceTo(30);
 		assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE), 0x81000000);
-		memory.writeMappedDmaU32LE(commandAddress, 1, MAPPED_BUS_MASTER_DMA);
+		memory.writeMappedBusU32LE(commandAddress, 1, MAPPED_BUS_MASTER_DMA);
 	}
 	assert.deepEqual(events.map(event => [event.phase, event.cycle, event.deadline]), [
 		['accepted', 0, 5], ['published', 20, 5], ['accepted', 20, 25],
@@ -678,6 +679,9 @@ test('GX-GTE+ observation preserves real CPU interlock/retry cycles, heap and co
 		constants: [commandAddress, 1], functionIds: ['observed_plus_interlock'] });
 	const baseline = createGte(), observed = createGte();
 	for (const { cpu } of [baseline, observed]) { cpu.memory.installSystemRom(image.romBytes); cpu.reset(); }
+	const firstIssue = 2 * BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.STORE_MEM_D];
+	const firstDeadline = firstIssue + GX_GTE_PLUS_CYCLES_VMAD3;
+	const secondDeadline = firstDeadline + GX_GTE_PLUS_CYCLES_VMAD3;
 	const events: [string, number, number][] = [];
 	observed.gte.setPlusObserver({
 		accepted(_command, _bus, cycle, deadline) { events.push(['accepted', cycle, deadline]); },
@@ -686,19 +690,19 @@ test('GX-GTE+ observation preserves real CPU interlock/retry cycles, heap and co
 	for (const { cpu, scheduler, memory, gte } of [baseline, observed]) {
 		assert.equal(scheduler.runCpuSlice(0, 1000), RunResult.Halted);
 		assert.equal(cpu.isMemoryWriteBlocked(), true);
-		assert.equal(1000 - cpu.instructionBudgetRemaining, 6);
-		scheduler.advanceTo(6);
-		assert.equal(scheduler.nextDeadline(), 9);
-		scheduler.advanceTo(9);
+		assert.equal(1000 - cpu.instructionBudgetRemaining, 2 * BASE_CYCLES[OpCode.LOADK] + 2 * BASE_CYCLES[OpCode.STORE_MEM_D]);
+		scheduler.advanceTo(2 * BASE_CYCLES[OpCode.LOADK] + 2 * BASE_CYCLES[OpCode.STORE_MEM_D]);
+		assert.equal(scheduler.nextDeadline(), firstDeadline);
+		scheduler.advanceTo(firstDeadline);
 		assert.equal(scheduler.popDueTimer(), DEVICE_SERVICE_GTE);
 		gte.onService();
 		assert.equal(cpu.isMemoryWriteBlocked(), false);
 		assert.equal(scheduler.runCpuSlice(0, 1000), RunResult.Halted);
-		assert.equal(1000 - cpu.instructionBudgetRemaining, 4);
-		scheduler.advanceTo(16);
+		assert.equal(1000 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.RET] + 2);
+		scheduler.advanceTo(secondDeadline);
 		memory.readMappedU32LE(commandAddress);
 	}
-	assert.deepEqual(events, [['accepted', 4, 9], ['published', 9, 9], ['accepted', 11, 16], ['published', 16, 16]]);
+	assert.deepEqual(events, [['accepted', firstIssue, firstDeadline], ['published', firstDeadline, firstDeadline], ['accepted', firstDeadline, secondDeadline], ['published', secondDeadline, secondDeadline]]);
 	assert.equal(observed.cpu.instructionBudgetRemaining, baseline.cpu.instructionBudgetRemaining);
 	assert.equal(observed.cpu.luaHeap.usedBytes(), baseline.cpu.luaHeap.usedBytes());
 	assert.deepEqual(observed.cpu.captureRuntimeState(), baseline.cpu.captureRuntimeState());
@@ -723,7 +727,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 		GX_GTE_PLUS_FN_VMAD3,
 	];
 	installGtePlusBurstProgram(first.cpu, burstWords);
-	assert.equal(first.cpu.runUntilDepth(0, burstWords.length + 1), RunResult.Yielded);
+	assert.equal(first.cpu.runUntilDepth(0, (burstWords.length + 1) * BASE_CYCLES[OpCode.LOADK]), RunResult.Yielded);
 	first.memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
 	first.scheduler.beginCpuSlice(10);
 	assert.equal(first.cpu.runUntilDepth(0, 10), RunResult.Halted);
@@ -763,7 +767,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 	assert.equal(restored.memory.readMappedU32LE(commandAddress), GX_GTE_PLUS_FN_VMAD3);
 	assert.equal(restored.scheduler.hasDueTimer(), false);
 	const resumedState = restored.gte.captureState();
-	assert.equal(resumedState.plusPendingCycles, 3);
+	assert.equal(resumedState.plusPendingCycles, 0);
 	assert.equal(resumedState.plusInterlockArmed, false);
 	completeGtePlus(restored.memory, restored.scheduler, 3);
 	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), pack16(14, -14));
@@ -1490,3 +1494,73 @@ test('GX-GTE RTPS saturates a 0x20000 UNR divide result without divide overflow 
 	assert.equal(gte.readDataRegister(14), pack16(160, 120));
 	assert.equal(gte.readControlRegister(31), 0);
 });
+
+// A dependent access consumes only the outstanding coprocessor interval.
+for (const port of [IO_GX_GTE_DATA0, IO_GX_GTE_CONTROL0]) {
+ test(`normal GTE completion interlocks dependent CPU port ${port}`, () => {
+  const { memory, cpu, gte, scheduler } = createGte();
+  cpu.instructionBudgetRemaining = 100;
+  scheduler.beginCpuSlice(100);
+  memory.writeMappedU32LE(IO_GX_GTE_COMMAND, GX_GTE_FN_RTPT);
+  assert.equal(gte.captureState().normalPendingCycles, 23);
+  cpu.instructionBudgetRemaining -= 7; // independent work overlaps GTE
+  assert.equal(memory.readMappedU32LE(IO_GX_GTE_CYCLES), 23);
+  assert.equal(cpu.instructionBudgetRemaining, 93);
+  memory.readMappedU32LE(port);
+  assert.equal(cpu.instructionBudgetRemaining, 77);
+  memory.readMappedU32LE(port);
+  assert.equal(cpu.instructionBudgetRemaining, 77);
+  assert.equal(scheduler.hasDueTimer(), false);
+  scheduler.endCpuSlice();
+ });
+}
+test('normal GTE chained commands, grant overrun, and restored deadline', () => {
+ const { memory, cpu, gte, scheduler } = createGte();
+ cpu.instructionBudgetRemaining = 10;
+ scheduler.beginCpuSlice(10);
+ memory.writeMappedU32LE(IO_GX_GTE_COMMAND, GX_GTE_FN_RTPT);
+ const state = gte.captureState();
+ memory.writeMappedU32LE(IO_GX_GTE_COMMAND, GX_GTE_FN_NCLIP);
+ assert.equal(cpu.instructionBudgetRemaining, -13);
+ assert.equal(gte.captureState().normalPendingCycles, 8);
+ scheduler.endCpuSlice();
+ scheduler.setNowCycles(1000);
+ gte.restoreState(state);
+ cpu.instructionBudgetRemaining = 10;
+ scheduler.beginCpuSlice(10);
+ cpu.instructionBudgetRemaining -= 3;
+ memory.readMappedU32LE(IO_GX_GTE_DATA0);
+ assert.equal(cpu.instructionBudgetRemaining, -13);
+ scheduler.endCpuSlice();
+ gte.reset();
+ assert.equal(gte.captureState().normalPendingCycles, 0);
+});
+
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+ test(`normal GTE latency is included by real BLua memory instructions (${backend})`, () => {
+  const text = new Uint8Array(7 * INSTRUCTION_BYTES);
+  writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
+  writeInstruction(text, 1, OpCode.LOADK, 1, 0, 1);
+  writeInstruction(text, 2, OpCode.LOADK, 2, 0, 2);
+  writeInstruction(text, 3, OpCode.STORE_MEM, 1, 0, MemoryAccessKind.Word);
+  writeInstruction(text, 4, OpCode.K1, 3, 0, 0);
+  writeInstruction(text, 5, OpCode.LOAD_MEM, 4, 2, MemoryAccessKind.Word);
+  writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
+  const image = linkRawTestSystemBlua32({text, constants: [IO_GX_GTE_COMMAND,GX_GTE_FN_RTPT,IO_GX_GTE_DATA0], functions:[{firstWord:0,wordCount:7,maxStack:5}]});
+  const { cpu } = createTestSystemCpu(image, backend);
+  const scheduler = new DeviceScheduler(cpu);
+  const gte = new GxGte(cpu.memory,cpu,scheduler);
+  const baseCycles = 3 * BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.STORE_MEM] + BASE_CYCLES[OpCode.K1]
+   + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.JMP];
+  const outstanding = GX_GTE_CYCLES_RTPT - BASE_CYCLES[OpCode.K1] - BASE_CYCLES[OpCode.LOAD_MEM];
+  const grant = baseCycles + outstanding;
+  for (let repeat=0;repeat<24;++repeat) {
+   assert.equal(scheduler.runCpuSlice(0,grant),RunResult.Yielded);
+   assert.equal(cpu.instructionBudgetRemaining,0,`${baseCycles} base cycles plus ${outstanding} outstanding GTE cycles`);
+   assert.equal(cpu.rootThread.currentFrame!.pc,image.image.functions[0].codeAddress);
+   scheduler.advanceTo(scheduler.nowCycles+grant);
+   assert.equal(gte.captureState().normalPendingCycles,0);
+  }
+  if (backend===CpuExecutionBackend.JavaScript) assert.ok(cpu.rootThread.currentFrame!.decodedPage!.compiledBlocks);
+ });
+}

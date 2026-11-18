@@ -870,12 +870,16 @@ DMA DATA writes also replace the latch. In DMA_WRITE they append to the FIFO if 
 
 ### Requests and admitted blocks {#sec-apu-requests-and-admitted-blocks}
 
-| DMA request selector | Asserted condition |
+| DMA route | Admission capacity |
 |---|---|
-| APU_WRITE = 3 | DMA_WRITE mode and FIFO empty |
-| APU_READ = 4 | DMA_READ mode and FIFO full with 16 words |
+| 6 TO_APU | 16 words in DMA_WRITE mode with an empty FIFO |
+| 7 FROM_APU | 16 words in DMA_READ mode with a full FIFO |
 
-The controller admits a block only when both its read and write request selectors pass. FORCE = 0 always passes; DISABLED = 15 never passes. Once admitted, every word in that block executes even if the APU request drops after the first word. Requests gate **whole blocks**, not individual ready words. Use the appropriate APU selector, the intended transfer mode and a fixed TRANSFER_DATA endpoint; FORCE cannot override the latch, overflow or empty-read behavior above.
+Program only the memory-side address. TRANSFER_DATA is wired by the route,
+not supplied as an address or independent request selector. The remaining
+count can shorten a burst below sixteen words. Once admitted, every word in
+that burst transfers even when its request drops; availability governs the
+next admission. No forced or arbitrary-MMIO DMA route bypasses these modes.
 
 At the end of each DMA block, DMA_WRITE starts an eligible FIFO-to-RAM transfer
 and DMA_READ starts an eligible RAM-to-FIFO refill. This applies to intermediate
@@ -897,11 +901,13 @@ The offset is **not captured with the batch**. Writing TRANSFER_ADDRESS while a 
 
 TRANSFER_BUSY is not a mode indicator. DMA_WRITE with an empty FIFO can request a block while TRANSFER_BUSY is clear. DMA_READ with a full FIFO can likewise request a block without pending RAM service. STATUS BUSY, bit 2, concerns active voices or queued commands; it is not transfer completion.
 
-A CPU DATA write waits while either busy DMA channel owns DATA as its exact read or write port, even when that channel is waiting for requests. For an admitted block, ownership uses its captured base address; otherwise it uses the channel's current programmed address. The write proceeds only after neither direction owns that port. This is not FIFO-full backpressure. CPU DATA reads are not blocked by this ownership rule. DMA DATA writes are always accepted by the port without an occupancy stall; their actual effect follows the FIFO rules above.
+A CPU DATA write waits while a BUSY TO_APU or FROM_APU channel owns DATA,
+even when that channel is waiting for requests. Port ownership follows the
+fixed route, not an address register. The write proceeds only after neither direction owns that port. This is not FIFO-full backpressure. CPU DATA reads are not blocked by this ownership rule. DMA DATA writes are always accepted by the port without an occupancy stall; their actual effect follows the FIFO rules above.
 
 ### Completing uploads and downloads {#sec-apu-completing-uploads-and-downloads}
 
-For upload, program the offset, select DMA_WRITE, and DMA to the fixed DATA port using APU_WRITE admission. DMA channel DONE reports completion of the controller's final mapped accesses and count/address updates; its DMA IRQ does not report sample-RAM commit. Wait for the final batch to finish before changing mode or using the new bytes. In particular, a mode change immediately after DONE can discard the final upload batch.
+For upload, program the offset, select DMA_WRITE, and DMA to the fixed DATA port using TO_APU. DMA channel DONE reports completion of the controller's final mapped accesses and count/address updates; its DMA IRQ does not report sample-RAM commit. Wait for the final batch to finish before changing mode or using the new bytes. In particular, a mode change immediately after DONE can discard the final upload batch.
 
 For download, program the offset before selecting DMA_READ. Filling the FIFO costs sample-RAM transfer time; APU_READ asserts only when all 16 words are available. DMA reads dequeue those prefetched words. The final DMA block can start further prefetch even when the channel reaches DONE. After receiving the desired words, select STOP to cancel unwanted prefetch. CPU DATA reads cannot drain the FIFO. The transfer unit has no separate START/DONE register or transfer-completion IRQ.
 
@@ -968,19 +974,19 @@ Thus a control write at the batch's exact deadline cannot cancel that already-du
 
 DMA transports words between its source and the APU DATA port. The APU then transfers those words between its FIFO and private sample RAM. Each stage has its own timing and completion condition; adding only the sample-RAM cost does not give the complete upload time.
 
-For a contiguous cartridge-ROM source and a fixed I/O destination, an admitted DMA block of N words costs **8 × N + 4 cycles**. The setup cost applies afresh to each admitted block. This cost and the APU's **32 × N** service cost describe separate stages.
+For a contiguous cartridge-ROM source and a fixed I/O destination, an admitted DMA block of N words costs **9 × N + 4 cycles**. The setup cost applies afresh to each admitted block. This cost and the APU's **32 × N** service cost describe separate stages.
 
-The following controlled upload transfers 20 words. Before cycle 0, the address and DMA registers are programmed, DMA_WRITE is selected, and the FIFO is empty. The DMA source increments through readable cartridge ROM without a region crossing; its destination remains TRANSFER_DATA. Its blocks contain at most 16 words, with FORCE read admission and APU_WRITE write admission. There are no intervening mode/address writes or competing work. Cycle 0 is the first DMA block admission, not the start of CPU setup.
+The following controlled upload transfers 20 words. Before cycle 0, the address and DMA registers are programmed, DMA_WRITE is selected, and the FIFO is empty. The DMA source increments through readable cartridge ROM without a region crossing; its destination remains TRANSFER_DATA. Its blocks contain at most 16 words, using the TO_APU route. There are no intervening mode/address writes or competing work. Cycle 0 is the first DMA block admission, not the start of CPU setup.
 
 | Cycle | Event |
 |---:|---|
-| 0 | Admit the first 16-word DMA block. Its cost is 8 × 16 + 4 = 132 cycles. |
-| 132 | DMA supplies 16 FIFO words. The end of the block starts a 16-word RAM transfer: 512 cycles. |
-| 644 | The first 16-word sample-RAM transfer completes. The empty FIFO requests the remaining four DMA words; their block costs 8 × 4 + 4 = 36 cycles. |
-| 680 | DMA supplies the four-word tail, starts 128 cycles of RAM transfer, and reaches channel DONE. The tail is not yet in sample RAM. |
-| 808 | The four-word tail commits; TRANSFER_BUSY clears. All 20 words are now in sample RAM. |
+| 0 | Admit the first 16-word DMA block. Its cost is 9 × 16 + 4 = 148 cycles. |
+| 148 | DMA supplies 16 FIFO words. The end of the block starts a 16-word RAM transfer: 512 cycles. |
+| 660 | The first 16-word sample-RAM transfer completes. The empty FIFO requests the remaining four DMA words; their block costs 9 × 4 + 4 = 40 cycles. |
+| 700 | DMA supplies the four-word tail, starts 128 cycles of RAM transfer, and reaches channel DONE. The tail is not yet in sample RAM. |
+| 828 | The four-word tail commits; TRANSFER_BUSY clears. All 20 words are now in sample RAM. |
 
-Here, DMA DONE occurs at cycle 680, while final RAM commit occurs at cycle **132 + 512 + 36 + 128 = 808**. Switching to STOP at DMA DONE would cancel the tail's pending commit.
+Here, DMA DONE occurs at cycle 700, while final RAM commit occurs at cycle **148 + 512 + 40 + 128 = 828**. Switching to STOP at DMA DONE would cancel the tail's pending commit.
 
 ## Worked download: requested data and surplus prefetch {#sec-apu-worked-download-requested-data-and-surplus-prefetch}
 
@@ -991,37 +997,36 @@ read O. Both examples stay within sample RAM without wrapping.
 
 With the transfer unit stopped and FIFO empty, program TRANSFER_ADDRESS and
 arm DMA0 for a fixed TRANSFER_DATA source, an aligned incrementing RAM destination,
-count 20 or 4, APU_READ/FORCE requests and sixteen-word blocks
-(`CONTROL=00003C12H`). The channel waits for prefill. Cycle 0 is the write changing
+count 20 or 4 and the FROM_APU route (`CONTROL=00000007H`). The channel waits for prefill. Cycle 0 is the write changing
 TRANSFER_CONTROL from STOP to DMA_READ. The timelines use the installed
 33,868,800-Hz clock, with no intervening CPU accesses, other DMA activity, system
 pause or destination-region crossing.
 
-Sample transfer costs 32 cycles per word. The initial prefill always contains 16 words and therefore takes 512 cycles, even for a four-word DMA request. APU_READ is asserted by a full FIFO, not by the requested count. Once admitted, a DMA block completes without rechecking that request between words. Fixed-port-to-RAM transport costs **N + 1** cycles per block: 17 for 16 words, then 5 for four. Prefill and transport are separate stages; the tables show states after each completed operation, not individual word-access edges.
+Sample transfer costs 32 cycles per word. The initial prefill always contains 16 words and therefore takes 512 cycles, even for a four-word DMA request. APU_READ is asserted by a full FIFO, not by the requested count. Once admitted, a DMA block completes without rechecking that request between words. Fixed-port-to-RAM transport costs **2N + 1** cycles per burst: 33 for sixteen words, then nine for four. Prefill and transport are separate stages; the tables show states after each completed operation, not individual word-access edges.
 
 **Twenty-word request: 16 + 4 DMA words**
 
 | Cycle | Completed work | FIFO contents | Moving offset | Next work |
 |---:|---|---|---|---|
 | 0 | DMA_READ selected; DMA waits | Empty | O | Prefill 16 |
-| 512 | Prefill 16 | W0–W15 | O + 64 | DMA 16, 17 cycles |
-| 529 | DMA writes W0–W15 | Empty | O + 64 | Prefill 16, 512 cycles |
-| 1041 | Prefill 16 | W16–W31 | O + 128 | DMA 4, 5 cycles |
-| 1046 | DMA writes W16–W19; DONE | W20–W31: 12 words | O + 128 | Surplus prefill 4, 128 cycles |
-| 1174 | Surplus prefill 4 | W20–W35: 16 words | O + 144 | None |
+| 512 | Prefill 16 | W0–W15 | O + 64 | DMA 16, 33 cycles |
+| 545 | DMA writes W0–W15 | Empty | O + 64 | Prefill 16, 512 cycles |
+| 1057 | Prefill 16 | W16–W31 | O + 128 | DMA 4, 9 cycles |
+| 1066 | DMA writes W16–W19; DONE | W20–W31: 12 words | O + 128 | Surplus prefill 4, 128 cycles |
+| 1194 | Surplus prefill 4 | W20–W35: 16 words | O + 144 | None |
 
 **Four-word request**
 
 | Cycle | Completed work | FIFO contents | Moving offset | Next work |
 |---:|---|---|---|---|
 | 0 | DMA_READ selected; DMA waits | Empty | O | Prefill 16 |
-| 512 | Prefill 16 | W0–W15 | O + 64 | DMA 4, 5 cycles |
-| 517 | DMA writes W0–W3; DONE | W4–W15: 12 words | O + 64 | Surplus prefill 4, 128 cycles |
-| 645 | Surplus prefill 4 | W4–W19: 16 words | O + 80 | None |
+| 512 | Prefill 16 | W0–W15 | O + 64 | DMA 4, 9 cycles |
+| 521 | DMA writes W0–W3; DONE | W4–W15: 12 words | O + 64 | Surplus prefill 4, 128 cycles |
+| 649 | Surplus prefill 4 | W4–W19: 16 words | O + 80 | None |
 
 DMA DONE marks receipt of all requested destination words and raises the DMA interrupt. It does not mean sample transfer is idle: the final block starts prefill into four free FIFO slots, leaving `TRANSFER_BUSY` set. Twenty requested words therefore require two 16-word prefills before DONE; the subsequent surplus is four words, not sixteen. Do not wait for `TRANSFER_BUSY` to recognize requested receipt. The low APU BUSY bit concerns voices and commands instead.
 
-After DMA DONE, STOP strictly before the surplus deadline cancels those four pending words and discards the 12 FIFO leftovers. STOP exactly at 1174, or 645 for the short request, first completes the due prefill, then clears the FIFO. The moving offset consequently remains O + 128 or O + 64 before the deadline, versus O + 144 or O + 80 at it. STOP preserves sample RAM, copied destination words and the DATA latch; DONE remains set. STOP does not rewind the moving offset or change the programmed O. `TRANSFER_ADDRESS` still reads the programmed O, while CPU DATA reads return the latch rather than draining the FIFO. The STOP cycles refer to register-write edges. A polling loop adds its own
+After DMA DONE, STOP strictly before the surplus deadline cancels those four pending words and discards the 12 FIFO leftovers. STOP exactly at 1194, or 649 for the short request, first completes the due prefill, then clears the FIFO. The moving offset consequently remains O + 128 or O + 64 before the deadline, versus O + 144 or O + 80 at it. STOP preserves sample RAM, copied destination words and the DATA latch; DONE remains set. STOP does not rewind the moving offset or change the programmed O. `TRANSFER_ADDRESS` still reads the programmed O, while CPU DATA reads return the latch rather than draining the FIFO. The STOP cycles refer to register-write edges. A polling loop adds its own
 instruction time before that write.
 
 ### Download words in BLua {#sec-apu-download-words-in-blua}
@@ -1054,10 +1059,9 @@ for phase = 0, 1 do
     *control = 0
     *address = offsets[phase]
     *irq_ack = 1
-    dma0[0] = 0x080001ec
     dma0[1] = &received[phase * 20]
     dma0[2] = counts[phase]
-    dma0[3] = 0x00003c12    -- APU_READ/FORCE, fixed source, incrementing RAM.
+    dma0[3] = 7             -- FROM_APU; memory destination increments.
     dma0[5] = 1
     *control = 3            -- DMA_READ: prefill before the first DMA block.
     while (dma0[4] & 1) ~= 0 do

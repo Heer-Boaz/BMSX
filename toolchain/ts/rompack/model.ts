@@ -6,7 +6,7 @@ export const MODEL_STATIC_FEATURE = {
 	texture: 1, alpha: 2, vertexColor: 4, morph: 8, skin: 16, textureLayout: 32,
 } as const;
 
-export type ModelTexture = { readonly width: number; readonly height: number; readonly stream: Uint8Array };
+export type ModelTexture = { readonly width: number; readonly height: number; readonly decodedWords: number; readonly stream: Uint8Array };
 /** Image slots retain source identity; unused images have no native stream. */
 export type ModelTextures = readonly (ModelTexture | undefined)[];
 export type ModelPrimitive = {

@@ -90,7 +90,11 @@ local cargo<const> = function(t,tag,anchor,left,travel,frames)
     local st<const>,ship<const> = scene(t,left,0)
     local lives<const> = ship.player_state.lives
     local sx<const> = (anchor-left)*8+4
-    ship:set_global_position(sx-76,96+8*travel+3)
+    -- The first winch has only one empty tile below its load; the old
+    -- passage placed the ship inside the waterfront. Keep that pilot clear
+    -- while testing its animation. The second winch has room for a passage.
+    if travel==2 then ship:set_global_position(26,72)
+    else ship:set_global_position(sx-76,96+8*travel+3) end
     local seen,previous,passed_under=0,0,false
     for i=1,frames do
         wait_update(t)
@@ -100,13 +104,16 @@ local cargo<const> = function(t,tag,anchor,left,travel,frames)
         assert(st:is_solid_pixel(sx,95+8*depth))
         local old_shoulder<const> = st:is_solid_pixel(sx-8,67)
         assert(old_shoulder==(depth==0),'old sack tile must be clear when only the narrow chain is there')
-        assert(st:first_solid_vertical_tile_offset(sx,128,15,-1)==(128//8-(95+8*depth)//8))
+        local ray_y<const> = 96+8*travel
+        assert(st:first_solid_vertical_tile_offset(sx,ray_y,15,-1)==(ray_y//8-(95+8*depth)//8))
         if depth>seen then seen=depth end
         previous=depth
-        -- A real, vulnerable pilot crosses under the full extended load.
-        local px<const> = math.min(sx+20,sx-76+i*(travel==2 and 2 or 1))
-        ship:set_global_position(px,96+8*travel+3)
-        if depth==travel and px+14>=sx-8 and px<sx+16 then passed_under=true end
+        -- Only the second winch has a passage high enough for the pilot.
+        if travel~=2 then
+            local px<const> = math.min(sx+20,sx-76+i)
+            ship:set_global_position(px,96+8*travel+3)
+            if depth==travel and px+14>=sx-8 and px<sx+16 then passed_under=true end
+        end
         assert(ship.player_state.lives==lives)
         t:capture(string.format('werf|%s|%d|%d|%d|%d',tag,i,world.gameplay_time_ms//1,left,depth))
     end

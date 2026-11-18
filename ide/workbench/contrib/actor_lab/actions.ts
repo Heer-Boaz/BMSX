@@ -1,3 +1,4 @@
+import { isNil, ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import { readActionEffectInstances } from '../behavior_lens/action_effect_runtime';
 import type { ResourceDomain } from '../../../common/resource';
 import { showEditorMessage } from '../../../common/feedback_state';
@@ -31,8 +32,8 @@ export class ActorLabEditorActions {
 			lifetime.add({ dispose: controller.guest.onDidInvalidate(() => this.quickInput.hide()) });
 			return new TextQuickPickProvider(readActionEffectInstances(controller.sources, controller.guest, domain).items);
 		}, choice => {
-			const actorHashId = (controller.guest.readStringMember(choice.component, 'owner') as import('../../../../machine/ts/machine/cpu/table').Table).hashId;
-			const effectHashId = choice.effect.hashId, componentHashId = choice.component.hashId, key = controller.guest.identity(choice.key);
+			const actorHashId = controller.guest.identityScalar(controller.guest.readStringMember(choice.component, 'owner'), ValueTag.Table);
+			const effectHashId = controller.guest.identityScalar(choice.effect, ValueTag.Table), componentHashId = controller.guest.identityScalar(choice.component, ValueTag.Table), key = controller.guest.identity(choice.key);
 			input.domain = domain;
 			input.follow.stop(); input.stateGraph = undefined; input.navigation = 'actor'; input.inspection = 'outline'; input.historical = false;
 			input.actorHashId = actorHashId;
@@ -132,7 +133,7 @@ export class ActorLabEditorActions {
 	}
 	public scrub(input: ActorLabInput, node: ActorNode, time: number, programHashId: number, current: () => boolean, finished: (completed: boolean) => void): void {
 		const controller = input.controller;
-		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, node);
+		const target = captureActorTarget(input.domain, controller.guest.identityScalar(runtimeWorld(controller.sources, controller.guest, input.domain)!, ValueTag.Table), input.runtime.roots, node);
 		this.run(input, { kind: 'scrub', target, time, programHashId }, result => finished(result.status === 'completed'), current);
 	}
 
@@ -164,7 +165,7 @@ export class ActorLabEditorActions {
 	public actions(input: ActorLabInput, node: ActorNode): void {
 		const controller = input.controller;
 		input.interaction.running = false;
-		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, node);
+		const target = captureActorTarget(input.domain, controller.guest.identityScalar(runtimeWorld(controller.sources, controller.guest, input.domain)!, ValueTag.Table), input.runtime.roots, node);
 		const items = actorActions(node).map(action => ({ ...action, detail: '' }));
 		this.quickInput.pick(`ACTIONS / ${node.label}`, 'Changes the running instance, not its Lua source',
 			(_origin, lifetime) => {
@@ -183,7 +184,7 @@ export class ActorLabEditorActions {
 	public callMethod(input: ActorLabInput, node: ActorNode): void {
 		const controller = input.controller;
 		input.interaction.running = false;
-		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, node);
+		const target = captureActorTarget(input.domain, controller.guest.identityScalar(runtimeWorld(controller.sources, controller.guest, input.domain)!, ValueTag.Table), input.runtime.roots, node);
 		this.quickInput.pick(`CALL / ${node.label}`, 'Stored Lua functions; selected instance is passed as self',
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: controller.guest.onDidInvalidate(() => this.quickInput.hide()) });
@@ -202,7 +203,7 @@ export class ActorLabEditorActions {
 	public emitEvent(input: ActorLabInput, eventName = ''): void {
 		const controller = input.controller;
 		input.interaction.running = false;
-		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, input.runtime.roots[0]);
+		const target = captureActorTarget(input.domain, controller.guest.identityScalar(runtimeWorld(controller.sources, controller.guest, input.domain)!, ValueTag.Table), input.runtime.roots, input.runtime.roots[0]);
 		this.quickInput.input('EMIT FROM ACTOR', 'Event name', eventName, async text => text, name => {
 			this.quickInput.input(`PAYLOAD / ${name}`, 'Lua literal', '{}', async text => prepareLuaLiteral(text), payload => {
 				this.run(input, { kind: 'event', target, name, payload });
@@ -219,7 +220,7 @@ export class ActorLabEditorActions {
 		input.interaction.running = false;
 		const prefab = readRuntimeLuaModuleExport(controller.sources, controller.guest, input.domain, 'cartlib/world/prefab');
 		const choices: (QuickPickItem & { id: SuspendedValueIdentity; definition: SuspendedValueIdentity })[] = [];
-		if (prefab.kind === 'value' && prefab.value !== null) {
+		if (prefab.kind === 'value' && !isNil(prefab.value)) {
 			const definitions = readRuntimeLuaModuleCapture(controller.sources, controller.guest, input.domain, 'cartlib/world/prefab',
 				controller.guest.readStringMember(prefab.value, 'define'), 'definitions');
 			if (definitions.kind === 'value') controller.guest.visitTableEntries(definitions.value, (id, definition) => {
@@ -233,7 +234,7 @@ export class ActorLabEditorActions {
 			}, choice => {
 				this.quickInput.input('SPAWN ARGUMENTS', 'World.spawn: object options and optional placement', '{}',
 					async text => prepareLuaArguments(text), args => this.run(input, { kind: 'spawn', domain: input.domain,
-						worldHashId: runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId,
+						worldHashId: controller.guest.identityScalar(runtimeWorld(controller.sources, controller.guest, input.domain)!, ValueTag.Table),
 						definitionId: choice.id, definition: choice.definition, args }, result => {
 					if (result.status !== 'completed') return;
 					input.stateGraph = undefined; input.navigation = 'actor'; input.inspection = 'outline'; input.follow.stop(); input.historical = false;

@@ -23,7 +23,7 @@ module cpu_fetch_decode_tb;
    if(mem_valid&&mem_ready)begin
     if(mem_signals!==signals)$fatal(1,"lost domain");
     if(mem_address===pc)selected=source;else if(mem_address===(pc+4))selected=body;else $fatal(1,"bad fetch address");
-    mem_rsp_data<={selected[7:0],selected[15:8],selected[23:16],selected[31:24]};
+    mem_rsp_data<=selected;
    end
   end
  end

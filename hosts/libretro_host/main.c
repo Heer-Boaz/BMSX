@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include <errno.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -13,10 +14,12 @@
 
 #include "libretro.h"
 #include "audio_output.h"
+#include "clover.h"
 #include "core_session.h"
 #include "core_options.h"
 #include "frame_pacer.h"
 #include "frame_timing.h"
+#include "native_compilation_profile.h"
 #include "host_fatal.h"
 #include "host_control.h"
 #include "input_devices.h"
@@ -74,12 +77,21 @@ static uint64_t monotonic_ns(void) {
 	return (uint64_t)ts.tv_sec * BMSX_HOST_NSEC_PER_SECOND + (uint64_t)ts.tv_nsec;
 }
 
+static uint64_t cpu_clock_ns(clockid_t clock_id) {
+	struct timespec ts;
+	if (clock_gettime(clock_id, &ts) != 0) {
+		host_fatal("CPU clock_gettime(%d) failed: %s", (int)clock_id, strerror(errno));
+	}
+	return (uint64_t)ts.tv_sec * BMSX_HOST_NSEC_PER_SECOND + (uint64_t)ts.tv_nsec;
+}
+
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
-			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
+			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--profile-native-compilation] [--profile-execution] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
+			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--profile-native-compilation] [--profile-execution] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
 			argv0, argv0);
+	fprintf(stderr, "  --core-option KEY VALUE: set a core option (repeatable; dedicated host flags take precedence)\n");
 	exit(2);
 }
 
@@ -123,19 +135,35 @@ int main(int argc, char** argv) {
 	bool paced_timeline = false;
 	bool auto_timeline = false;
 	bool audio_disabled = false;
+	bool profile_native_compilation = false;
+	bool profile_execution = false;
 	bool hidden_window = false;
+	bool clover_launch = false;
+	BmsxClover clover = {0};
 	uint64_t maximum_run_frames = 0;
 	uint64_t run_frame_count = 0;
 	unsigned alsa_underruns_at_timing_start = 0u;
 	BmsxFrameTimingState frame_timing = {
 		.warmup_frames = 500u,
 	};
+	BmsxCoreOptions option_overrides = {0};
 	BmsxVideoContextKind video_context_kind = BMSX_VIDEO_CONTEXT_FBDEV;
 	BmsxInputDriverKind input_driver = BMSX_INPUT_DRIVER_EVDEV;
 	const char* backend = "software";
 	const char* video_backend = "fb";
 
 	for (int i = 1; i < argc; ++i) {
+		if (strcmp(argv[i], "--clover") == 0) {
+			clover_launch = true;
+			clover_read_arguments(&clover, argc - i - 1, argv + i + 1);
+			break;
+		}
+		if (strcmp(argv[i], "--core-option") == 0) {
+			const char* key = required_arg(argc, argv, &i);
+			const char* value = required_arg(argc, argv, &i);
+			bmsx_core_options_override(&option_overrides, key, value);
+			continue;
+		}
 		if (strcmp(argv[i], "--core") == 0) {
 			core_path = required_arg(argc, argv, &i);
 			continue;
@@ -176,6 +204,14 @@ int main(int argc, char** argv) {
 			maximum_run_frames = parse_positive_u64_arg(
 					required_arg(argc, argv, &i),
 					"--max-frames");
+			continue;
+		}
+		if (strcmp(argv[i], "--profile-native-compilation") == 0) {
+			profile_native_compilation = true;
+			continue;
+		}
+		if (strcmp(argv[i], "--profile-execution") == 0) {
+			profile_execution = true;
 			continue;
 		}
 		if (strcmp(argv[i], "--timing-report") == 0) {
@@ -258,6 +294,10 @@ int main(int argc, char** argv) {
 	if (!no_game && !game_path) {
 		usage(argv[0]);
 	}
+	if (clover.replay) {
+		fprintf(stderr, "[libretro-host] Clover rewind is not supported yet\n");
+		return 0;
+	}
 	if (no_game && slot1_path) {
 		usage(argv[0]);
 	}
@@ -270,6 +310,10 @@ int main(int argc, char** argv) {
 	if (strcmp(video_backend, "fb") != 0 && strcmp(video_backend, "sdl") != 0) {
 		host_fatal("Invalid --video %s (expected fb|sdl)", video_backend);
 	}
+	if (profile_native_compilation && !frame_timing.enabled)
+		host_fatal("--profile-native-compilation requires --timing-report");
+	if (profile_execution && !frame_timing.enabled)
+		host_fatal("--profile-execution requires --timing-report");
 	const bool profile_gx_upload =
 			frame_timing.enabled && strcmp(backend, "gles2") == 0;
 	const bool use_sdl_backend = strcmp(video_backend, "sdl") == 0;
@@ -288,10 +332,19 @@ int main(int argc, char** argv) {
 
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
+	/* A launcher may block these signals before exec; its mask is inherited. */
+	sigset_t shutdown_signals;
+	sigemptyset(&shutdown_signals);
+	sigaddset(&shutdown_signals, SIGINT);
+	sigaddset(&shutdown_signals, SIGTERM);
+	pthread_sigmask(SIG_UNBLOCK, &shutdown_signals, NULL);
 
 	BmsxCoreSession session;
 	core_session_open(&session, core_path, system_dir, save_dir);
+	session.options = option_overrides;
 	session.accept_gx_upload_profile_interface = profile_gx_upload;
+	session.accept_native_compilation_profile_interface = profile_native_compilation;
+	session.accept_execution_profile_interface = profile_execution;
 	bmsx_core_options_override(
 			&session.options,
 			"bmsx_render_backend",
@@ -332,6 +385,10 @@ int main(int argc, char** argv) {
 	input_devices_open(input_driver, !hidden_window, video_surface);
 
 	core->retro_init();
+	if (profile_native_compilation && !session.native_compilation_profile_interface_set)
+		host_fatal("--profile-native-compilation requires a native compilation profile interface");
+	if (profile_execution && !session.execution_profile_interface_set)
+		host_fatal("--profile-execution requires current execution profile interface from a diagnostic core");
 	if (profile_gx_upload && !session.gx_upload_profile_interface_set) {
 		host_fatal("--timing-report requires GX upload profile interface v1 for the GLES2 backend");
 	}
@@ -347,6 +404,7 @@ int main(int argc, char** argv) {
 			session.system_info.need_fullpath ? "true" : "false");
 
 	core->retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+	core->retro_set_controller_port_device(1, RETRO_DEVICE_JOYPAD);
 	core_session_load_content(&session, no_game, game_path, slot1_path);
 
 	struct retro_system_av_info av = {0};
@@ -354,6 +412,10 @@ int main(int argc, char** argv) {
 	video_presenter_update_av_info(&av);
 	core_session_update_timing(&session, &av.timing);
 	video_presenter_activate_core_context();
+	if (clover_launch && !clover_load_state(&clover, core)) {
+		host_fatal("[libretro-host] Failed to load the Clover suspend point");
+	}
+	const uint64_t clover_start_ns = monotonic_ns();
 	fprintf(stderr, "[libretro-host] av: base=%ux%u max=%ux%u fps=%.2f sr=%.2f\n",
 			av.geometry.base_width, av.geometry.base_height,
 			av.geometry.max_width, av.geometry.max_height,
@@ -415,14 +477,30 @@ int main(int argc, char** argv) {
 		input_timeline_dispatch_before_run();
 		if (use_control) host_control_poll();
 		video_presenter_begin_frame(drop_video);
+		BmsxNativeCompilationProfile native_before;
+		if (profile_native_compilation && frame_timing.record_frame)
+			session.native_compilation_profile.read_profile(&native_before);
+		BmsxExecutionProfile execution_before;
+		if (profile_execution && frame_timing.record_frame)
+			session.execution_profile.read_profile(&execution_before);
+		// CPU clocks sample the same run/presentation boundary. Read them outside
+		// the existing wall interval so their syscalls do not inflate run_ms.
+		const uint64_t main_cpu_start_ns = frame_timing.record_frame
+			? cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID) : 0u;
+		const uint64_t process_cpu_start_ns = frame_timing.record_frame
+			? cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID) : 0u;
 		const uint64_t run_start_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		core->retro_run();
+		input_timeline_finish_run();
 		const bool presented_frame = video_presenter_end_frame();
 		if (use_control) host_control_after_frame(presented_frame);
 		const uint64_t run_end_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		if (frame_timing.record_frame) {
+			const uint64_t process_cpu_ns = cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID) - process_cpu_start_ns;
+			const uint64_t main_cpu_ns = cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID) - main_cpu_start_ns;
+			BmsxGxUploadProfileFrameV1 gx_upload_frame;
+			const BmsxGxUploadProfileFrameV1* current_gx_upload = NULL;
 			if (profile_gx_upload) {
-				BmsxGxUploadProfileFrameV1 gx_upload_frame;
 				if (session.gx_upload_profile.read_frame(
 						frame_timing.gx_render_frame_serial,
 						&gx_upload_frame)) {
@@ -431,17 +509,38 @@ int main(int argc, char** argv) {
 					bmsx_frame_timing_record_gx_upload(
 							&frame_timing.report,
 							&gx_upload_frame);
+					current_gx_upload = &gx_upload_frame;
 				}
+			}
+			BmsxNativeCompilationProfile native_interval;
+			const BmsxNativeCompilationProfile* current_native = NULL;
+			if (profile_native_compilation) {
+				BmsxNativeCompilationProfile native_after;
+				session.native_compilation_profile.read_profile(&native_after);
+				native_interval = bmsx_native_compilation_profile_delta(&native_before, &native_after);
+				current_native = &native_interval;
+			}
+			BmsxExecutionProfileInterval execution_interval;
+			const BmsxExecutionProfileInterval* current_execution = NULL;
+			if (profile_execution) {
+				BmsxExecutionProfile execution_after;
+				session.execution_profile.read_profile(&execution_after);
+				execution_interval = bmsx_execution_profile_delta(&execution_before, &execution_after);
+				current_execution = &execution_interval;
 			}
 			const uint64_t run_ns = run_end_ns - run_start_ns;
 			bmsx_frame_timing_record(&frame_timing.report,
+					run_frame_count,
+					run_start_ns,
 					run_ns,
 					frame_timing.current_blit_ns,
 					frame_timing.current_blit_ran,
 					frame_timing.current_swap_ns,
 					frame_timing.current_swap_ran,
 					drop_video && frame_timing.current_video_frame_received,
-					!drop_video && presented_frame);
+					!drop_video && presented_frame,
+					current_gx_upload, current_native, current_execution,
+					main_cpu_ns, process_cpu_ns);
 		}
 		++run_frame_count;
 		if (maximum_run_frames == 0 &&
@@ -475,6 +574,19 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	int exit_status = 0;
+	if (clover_launch && !(session.shutdown_requested &&
+			session.shutdown_reason == BMSX_SHUTDOWN_REASON_EXIT_GAME &&
+			!g_signal_quit_requested)) {
+		const uint64_t save_start_ns = monotonic_ns();
+		if (!clover_save_state(&clover, core, (save_start_ns - clover_start_ns) / BMSX_HOST_NSEC_PER_SECOND)) {
+			fprintf(stderr, "[libretro-host] Failed to save the Clover suspend point\n");
+			exit_status = 1;
+		} else if (clover.output_directory && !clover.demo) {
+			fprintf(stderr, "[libretro-host] Clover suspend point saved in %llums\n",
+					(unsigned long long)((monotonic_ns() - save_start_ns) / 1000000u));
+		}
+	}
 	input_timeline_shutdown();
 	if (use_control) host_control_close();
 	input_devices_close();
@@ -487,5 +599,5 @@ int main(int argc, char** argv) {
 	}
 	bmsx_video_context_close();
 	core_session_close(&session);
-	return 0;
+	return exit_status;
 }

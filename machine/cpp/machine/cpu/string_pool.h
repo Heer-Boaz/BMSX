@@ -19,11 +19,16 @@ struct StringPoolStateEntry {
 	StringId id = 0;
 	std::string value;
 	bool tracked = false;
+	bool reachable = false;
 };
 
 struct StringPoolState {
 	// Occupied slots in ascending ID order.
 	std::vector<StringPoolStateEntry> entries;
+	std::vector<StringId> freeIds;
+	size_t slots = 0;
+	int sweep = -1;
+	size_t sweepEnd = 0;
 };
 
 class StringPool {
@@ -35,6 +40,8 @@ public:
 	std::optional<StringId> find(std::string_view value) const;
 	const std::string& toString(StringId id) const;
 	int codepointCount(StringId id) const;
+	// index is a zero-based codepoint index below codepointCount(id).
+	uint32_t codepointAt(StringId id, size_t index) const;
 	size_t trackedLuaHeapBytes() const { return m_trackedBytes; }
 	StringPoolState captureState() const;
 	void restoreState(const StringPoolState& state);
@@ -46,7 +53,10 @@ public:
 	// independent of reachability: resident image literals remain ROM-backed.
 	void beginReachabilityEpoch();
 	void markReachable(StringId id);
-	void reclaimUnreachable();
+	void markLocalRoots();
+	void beginSweep();
+	size_t sweepStep(size_t words);
+	bool sweeping() const { return m_sweep >= 0; }
 
 private:
 	friend class CPU;
@@ -56,6 +66,7 @@ private:
 		StringId id = 0;
 		std::string value;
 		int codepointCount = 0;
+		std::unique_ptr<uint32_t[]> codepointBlockOffsets;
 		size_t trackedByteLength = 0;
 	};
 
@@ -88,6 +99,12 @@ private:
 	std::unordered_map<std::string_view, StringId, StringKeyHash, StringKeyEq> m_stringMap;
 	std::vector<std::unique_ptr<InternedString>> m_entries;
 	std::vector<bool> m_reachable;
+	int m_sweep = -1;
+	size_t m_sweepEnd = 0;
 };
+
+int compareStringIds(const StringPool* pool, StringId left, StringId right, int* remainingCycles);
+// C ABI entry for generated code; no allocation or guest execution.
+int stringCodepointCount(const StringPool* pool, StringId id) noexcept;
 
 } // namespace bmsx

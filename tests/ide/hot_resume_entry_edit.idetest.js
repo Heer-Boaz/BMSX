@@ -12,6 +12,10 @@ const findLogMessage = (firstIndex, predicate) => {
 
 const revisionSource = (record, revision) => record.base_src
 	.replace(
+		'hot_resume_new_game_count = 0\n',
+		'hot_resume_new_game_count = 0\nhot_resume_loop_count = 0\n',
+	)
+	.replace(
 		'\thot_resume_module_probe = hot_value.get()\n',
 		"\thot_resume_module_probe = hot_value.get()\n\tprint('hot-resume-init')\n",
 	)
@@ -47,13 +51,21 @@ const initialSystemAssetConsumerIndex = initialSystemImage.symbols.metadata.func
 t.assert(initialSystemAssetConsumerIndex >= 0, 'system asset consumer function is missing');
 const initialSystemAssetConsumer = initialSystemImage.layout.functions[initialSystemAssetConsumerIndex];
 const liveMathTable = cpu.getGlobalByKey(cpu.stringPool.intern('math'));
+t.assert(value.valueIsTable(liveMathTable), 'the retained live-state probe must start with the actual BIOS math table');
 const liveStateProbeKey = cpu.stringPool.intern('__hot_resume_live_state_probe');
 const loopCountKey = cpu.stringPool.intern('hot_resume_loop_count');
-cpu.setGlobalByKey(liveStateProbeKey, tableValueTag, NaN, liveMathTable);
+cpu.setGlobalByKey(liveStateProbeKey, liveMathTable);
+const typedProbeValues = [value.valueInteger(16777217), value.valueInteger(-2147483648),
+	value.valueInteger(0), value.valueFloatBits(0x80000000), value.valueFloatBits(0x7fa12345), value.valueBool(false)];
+const typedProbeKeys = typedProbeValues.map((probe, index) => {
+	const key = cpu.stringPool.intern(`__hot_resume_typed_${index}`);
+	cpu.setGlobalByKey(key, probe);
+	return key;
+});
 const cartridge = sourceState.cartridgeSlots[cpu.activeCartridgeSlot()];
-const entryRecord = cartridge.luaSources.path2lua['entry.lua'];
-const valueRecord = cartridge.luaSources.path2lua['value.lua'];
-const baseRecord = sourceState.systemLuaSources.path2lua['base.lua'];
+const entryRecord = sourceState.catalog.getContext(cartridge.contextId).luaSources.path2lua['entry.lua'];
+const valueRecord = sourceState.catalog.getContext(cartridge.contextId).luaSources.path2lua['value.lua'];
+const baseRecord = sourceState.catalog.getContext(sourceState.systemContextId).luaSources.path2lua['base.lua'];
 const initPrintBreakpointLine = revisionSource(entryRecord, 2)
 	.split("\tprint('hot-resume-init')")[0]
 	.split('\n').length;
@@ -76,8 +88,8 @@ for (let frameIndex = 0; frameIndex < frameDepthBeforeRejectedEdit; frameIndex +
 }
 const lastExecutionDomainBeforeRejectedEdit = cpu.readLastExecutionDomain();
 const lastPcBeforeRejectedEdit = cpu.lastPc;
-const initCountBeforeRejectedEdit = cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'));
-t.openLuaSource('entry.lua');
+const initCountBeforeRejectedEdit = value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')));
+t.openLuaSource('entry.lua', cartridge.contextId);
 t.replaceActiveCodeSource(entryRecord.base_src.replace(
 	'\trepeat\n\t\thalt_until_irq\n\tuntil vblank_count ~= 0\n\tvblank_count = vblank_count - 1\n',
 	'\tvblank_count = 0\n',
@@ -97,7 +109,7 @@ for (let frameIndex = 0; frameIndex < frameDepthBeforeRejectedEdit; frameIndex +
 	);
 }
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeRejectedEdit,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === initCountBeforeRejectedEdit,
 	'rejected edit reran init',
 );
 t.assert(
@@ -106,7 +118,7 @@ t.assert(
 	'rejected edit changed the last-execution latch',
 );
 
-t.openLuaSource('entry.lua');
+t.openLuaSource('entry.lua', cartridge.contextId);
 t.replaceActiveCodeSource(entryRecord.base_src.replace(
 	'local function init<init>()',
 	'local function init()',
@@ -117,33 +129,35 @@ await t.frames(60);
 t.assert(sourceState.currentBlua32Media === originalMedia, 'init annotation removal replaced tooling media');
 t.assert(cpu.getFrameDepth() === frameDepthBeforeRejectedEdit, 'init annotation removal changed frame depth');
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeRejectedEdit,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === initCountBeforeRejectedEdit,
 	'init annotation removal executed guest code',
 );
 
 const installRevision = async (revision) => {
-	t.openLuaSource('entry.lua');
+	t.openLuaSource('entry.lua', cartridge.contextId);
 	t.replaceActiveCodeSource(revisionSource(entryRecord, revision));
-	t.openLuaSource('value.lua');
+	t.openLuaSource('value.lua', cartridge.contextId);
 	t.replaceActiveCodeSource(moduleRevisionSource(valueRecord, revision));
-	t.openLuaSource('base.lua');
+	t.openLuaSource('base.lua', sourceState.systemContextId);
 	t.replaceActiveCodeSource(systemRevisionSource(baseRecord, revision));
 	await t.performHotResume().admission;
 };
 
 const firstRevisionLogStart = t.logMessageCount();
 await installRevision(1);
-cpu.setGlobalByKey(loopCountKey, numberValueTag, 0, null);
+cpu.setGlobalByKey(loopCountKey, value.valueInteger(0));
 await t.frames(60);
 
 t.assert(t.runtime() === runtime, 'first Hot Resume replaced the live runtime');
 t.assert(runtime.machine.cpu === cpu, 'first Hot Resume replaced the live CPU');
 t.assert(cpu.getGlobalByKey(liveStateProbeKey) === liveMathTable, 'first Hot Resume replaced a live heap object');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_entry_edit_probe')) === 1, 'first entry edit did not execute');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_module_probe')) === 1, 'first module edit did not execute through init');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_system_probe')) === 1, 'first system-ROM edit did not execute');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === 2, 'first Hot Resume did not rerun init exactly once');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_new_game_count')) === 1, 'first Hot Resume reran new_game');
+for (let index = 0; index < typedProbeValues.length; index++)
+	t.assert(cpu.getGlobalByKey(typedProbeKeys[index]) === typedProbeValues[index], 'first Hot Resume changed an int32/f32 payload or kind');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_entry_edit_probe'))) === 1, 'first entry edit did not execute');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_module_probe'))) === 1, 'first module edit did not execute through init');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_system_probe'))) === 1, 'first system-ROM edit did not execute');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === 2, 'first Hot Resume did not rerun init exactly once');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_new_game_count'))) === 1, 'first Hot Resume reran new_game');
 t.assert(
 	findLogMessage(firstRevisionLogStart, message => message === 'hot-resume-init') >= 0,
 	'first Hot Resume print did not reach the host SystemOutputLog',
@@ -169,35 +183,37 @@ await t.frames(60);
 t.assert(t.runtime() === runtime, 'second Hot Resume replaced the live runtime');
 t.assert(runtime.machine.cpu === cpu, 'second Hot Resume replaced the live CPU');
 t.assert(cpu.getGlobalByKey(liveStateProbeKey) === liveMathTable, 'second Hot Resume replaced a live heap object');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_entry_edit_probe')) === 2, 'second consecutive entry edit did not execute');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_module_probe')) === 2, 'second consecutive module edit did not execute through init');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_system_probe')) === 2, 'second consecutive system-ROM edit did not execute');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === 3, 'second Hot Resume did not rerun init exactly once');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_new_game_count')) === 1, 'second Hot Resume reran new_game');
+for (let index = 0; index < typedProbeValues.length; index++)
+	t.assert(cpu.getGlobalByKey(typedProbeKeys[index]) === typedProbeValues[index], 'second Hot Resume changed an int32/f32 payload or kind');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_entry_edit_probe'))) === 2, 'second consecutive entry edit did not execute');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_module_probe'))) === 2, 'second consecutive module edit did not execute through init');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_system_probe'))) === 2, 'second consecutive system-ROM edit did not execute');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === 3, 'second Hot Resume did not rerun init exactly once');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_new_game_count'))) === 1, 'second Hot Resume reran new_game');
 
-const initCountBeforeSystemOnlyEdit = cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'));
+const initCountBeforeSystemOnlyEdit = value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')));
 cpu.setGlobalByKey(
 	cpu.stringPool.intern('hot_resume_print_revision'),
-	numberValueTag,
-	-1,
-	null,
+	value.valueInteger(-1),
 );
-t.openLuaSource('base.lua');
+t.openLuaSource('base.lua', sourceState.systemContextId);
 t.replaceActiveCodeSource(systemRevisionSource(baseRecord, 3));
 await t.performHotResume().admission;
 await t.frames(60);
 
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeSystemOnlyEdit,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === initCountBeforeSystemOnlyEdit,
 	'system-only Hot Resume reran the mechanically relinked cartridge init',
 );
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_system_probe')) === 3, 'system-only Hot Resume did not install live system code');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_entry_edit_probe')) === 2, 'system-only Hot Resume changed cartridge entry behavior');
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_module_probe')) === 2, 'system-only Hot Resume changed cartridge module behavior');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_system_probe'))) === 3, 'system-only Hot Resume did not install live system code');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_entry_edit_probe'))) === 2, 'system-only Hot Resume changed cartridge entry behavior');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_module_probe'))) === 2, 'system-only Hot Resume changed cartridge module behavior');
+for (let index = 0; index < typedProbeValues.length; index++)
+	t.assert(cpu.getGlobalByKey(typedProbeKeys[index]) === typedProbeValues[index], 'system-only Hot Resume changed an int32/f32 payload or kind');
 
 const mediaBeforeNoOpRefresh = sourceState.currentBlua32Media;
-const initCountBeforeBreakpoint = cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'));
-const printCountBeforeBreakpoint = cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_print_call_count'));
+const initCountBeforeBreakpoint = value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')));
+const printCountBeforeBreakpoint = value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_print_call_count')));
 runtime.machine.memory.writeMappedU32LE(0x08010420, dataOnlySlot);
 t.assert(
 	runtime.machine.memory.cartridgeController.selectedSlot() === dataOnlySlot,
@@ -208,7 +224,7 @@ await t.performHotResume().admission;
 
 t.assert(!t.debuggerStopped(), 'Hot Resume tooling task executed guest init outside the frame scheduler');
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeBreakpoint,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === initCountBeforeBreakpoint,
 	'Hot Resume tooling task executed init before the next machine frame',
 );
 t.assert(runtime.history.checkpointCount === 0, 'Hot Resume kept checkpoints from the previous timeline');
@@ -223,20 +239,21 @@ t.assert(
 	'no-op Hot Resume changed CART_SELECT',
 );
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeBreakpoint + 1,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === initCountBeforeBreakpoint + 1,
 	'init did not reach the print breakpoint',
 );
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_print_call_count')) === printCountBeforeBreakpoint,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_print_call_count'))) === printCountBeforeBreakpoint,
 	'print executed before its breakpoint',
 );
 
 const stoppedInitFrameDepth = cpu.getFrameDepth();
+t.openLuaSource('entry.lua', cartridge.contextId);
 await t.performHotResume().admission;
 
 t.assert(!t.debuggerStopped(), 'nested Hot Resume did not release the stopped init frame');
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeBreakpoint + 1,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === initCountBeforeBreakpoint + 1,
 	'nested Hot Resume executed its init inside the tooling task',
 );
 for (let frame = 0; frame < 60 && !t.debuggerStopped(); frame += 1) await t.frames(1);
@@ -246,11 +263,11 @@ t.assert(
 	'nested Hot Resume did not stop in the fresh init frame above the relocated stop',
 );
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeBreakpoint + 2,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === initCountBeforeBreakpoint + 2,
 	'fresh init did not reach its own print breakpoint',
 );
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_print_call_count')) === printCountBeforeBreakpoint,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_print_call_count'))) === printCountBeforeBreakpoint,
 	'fresh init print executed before its breakpoint',
 );
 
@@ -260,36 +277,36 @@ await t.frames(60);
 t.assert(!t.debuggerStopped(), 'relocated stopped init immediately retriggered its breakpoint');
 t.assert(runtime.history.checkpointCount !== 0, 'completed nested init did not start its new timeline');
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeBreakpoint + 2,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === initCountBeforeBreakpoint + 2,
 	'continuing nested init breakpoints reran init',
 );
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_print_call_count')) === printCountBeforeBreakpoint + 2,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_print_call_count'))) === printCountBeforeBreakpoint + 2,
 	'continuing nested init breakpoints did not execute both prints',
 );
-t.assert(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_new_game_count')) === 1, 'no-op Hot Resume reran new_game');
+t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_new_game_count'))) === 1, 'no-op Hot Resume reran new_game');
 t.toggleBreakpoint('entry.lua', initPrintBreakpointLine);
 
 t.toggleBreakpoint('entry.lua', loopCountBreakpointLine);
 await t.frames(60);
 t.assert(t.debuggerStopped(), 'cart did not reach the loop breakpoint before stopped Hot Resume');
-const loopCountAtStoppedHotResume = cpu.getGlobalByKey(loopCountKey);
-const initCountAtStoppedHotResume = cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'));
+const loopCountAtStoppedHotResume = value.asInteger(cpu.getGlobalByKey(loopCountKey));
+const initCountAtStoppedHotResume = value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')));
 await t.performHotResume().admission;
 
 t.assert(!t.debuggerStopped(), 'Hot Resume did not release the relocated debugger stop');
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountAtStoppedHotResume,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === initCountAtStoppedHotResume,
 	'Hot Resume executed init inside the tooling task while resuming a debugger stop',
 );
 await t.frames(60);
 t.assert(t.debuggerStopped(), 'cart did not return to the loop breakpoint after stopped Hot Resume');
 t.assert(
-	cpu.getGlobalByKey(loopCountKey) === loopCountAtStoppedHotResume + 1,
+	value.asInteger(cpu.getGlobalByKey(loopCountKey)) === loopCountAtStoppedHotResume + 1,
 	'Hot Resume immediately retriggered the relocated breakpoint instead of executing its instruction once',
 );
 t.assert(
-	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountAtStoppedHotResume + 1,
+	value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'))) === initCountAtStoppedHotResume + 1,
 	'scheduler did not execute init exactly once while resuming a debugger stop',
 );
 t.toggleBreakpoint('entry.lua', loopCountBreakpointLine);
@@ -316,13 +333,23 @@ await t.frames(20);
 
 const rebootedRuntime = t.runtime();
 const rebootedCpu = rebootedRuntime.machine.cpu;
-t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_entry_edit_probe')) === 2, 'cold boot did not execute the second cartridge-ROM revision');
-t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_module_probe')) === 2, 'cold boot did not execute the second module revision');
-t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_system_probe')) === 3, 'cold boot did not execute the third system-ROM revision');
-t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count')) === 1, 'cold boot did not execute init exactly once');
-t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_new_game_count')) === 1, 'cold boot did not execute new_game exactly once');
+t.assert(value.valueIsInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_loop_count')))
+	&& value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_loop_count'))) > 0,
+	'cold boot must initialize and advance the Integer loop counter through guest code');
+// A reboot replaces the heap and string pool. Reacquire global-name IDs rather
+// than reusing the IDs retained for the previous machine instance.
+const rebootedTypedProbeKeys = typedProbeValues.map((probe, index) => {
+	const key = rebootedCpu.stringPool.intern(`__hot_resume_typed_${index}`);
+	rebootedCpu.setGlobalByKey(key, probe);
+	return key;
+});
+t.assert(value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_entry_edit_probe'))) === 2, 'cold boot did not execute the second cartridge-ROM revision');
+t.assert(value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_module_probe'))) === 2, 'cold boot did not execute the second module revision');
+t.assert(value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_system_probe'))) === 3, 'cold boot did not execute the third system-ROM revision');
+t.assert(value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count'))) === 1, 'cold boot did not execute init exactly once');
+t.assert(value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_new_game_count'))) === 1, 'cold boot did not execute new_game exactly once');
 
-t.openLuaSource('entry.lua');
+t.openLuaSource('entry.lua', cartridge.contextId);
 t.replaceActiveCodeSource(revisionSource(entryRecord, 2).replace(
 	"\tprint('hot-resume-init')\n",
 	"\tprint('hot-resume-init')\n\thot_resume_module_probe()\n",
@@ -366,13 +393,13 @@ await t.frames(12);
 t.capture('hot-resume-init-fault-ide');
 
 const faultedMedia = sourceState.currentBlua32Media;
-const initCountAtFault = rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count'));
-const printCountAtFault = rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_print_call_count'));
+const initCountAtFault = value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count')));
+const printCountAtFault = value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_print_call_count')));
 const rebootedLoopCountKey = rebootedCpu.stringPool.intern('hot_resume_loop_count');
-rebootedCpu.setGlobalByKey(rebootedLoopCountKey, numberValueTag, 0, null);
+rebootedCpu.setGlobalByKey(rebootedLoopCountKey, value.valueInteger(0));
 const loopCountAtFault = 0;
 t.assert(rebootedRuntime.completionCallPending(), 'faulted init completion root is not physically pending');
-t.openLuaSource('entry.lua');
+t.openLuaSource('entry.lua', cartridge.contextId);
 t.replaceActiveCodeSource(revisionSource(entryRecord, 2));
 await t.performHotResume().admission;
 
@@ -380,7 +407,7 @@ t.assert(sourceState.currentBlua32Media === faultedMedia, 'supervisor Hot Resume
 t.assert(!rebootedCpu.isUserMode(), 'supervisor Hot Resume left firmware during phase one');
 t.assert(rebootedCpu.isHaltedUntilIrq(), 'supervisor Hot Resume ran BIOS monitor code during phase one');
 t.assert(
-	rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count')) === initCountAtFault,
+	value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count'))) === initCountAtFault,
 	'supervisor Hot Resume executed init during phase one',
 );
 t.assert(
@@ -394,8 +421,8 @@ for (let frame = 0; frame < 1200 && !recovered; frame += 1) {
 	await t.frames(1);
 	recovered = rebootedCpu.isUserMode()
 		&& sourceState.currentBlua32Media !== faultedMedia
-		&& rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count')) === initCountAtFault + 1
-		&& rebootedCpu.getGlobalByKey(rebootedLoopCountKey) > loopCountAtFault
+		&& value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count'))) === initCountAtFault + 1
+		&& value.asInteger(rebootedCpu.getGlobalByKey(rebootedLoopCountKey)) > loopCountAtFault
 		&& !rebootedRuntime.completionCallPending();
 }
 
@@ -404,15 +431,15 @@ t.assert(!t.debuggerStopped(), 'internal user-execution fence surfaced as a debu
 t.assert(rebootedCpu.isUserMode(), 'fault repair did not return to user mode');
 t.assert(sourceState.currentBlua32Media !== faultedMedia, 'fault repair did not install the fixed media');
 t.assert(
-	rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count')) === initCountAtFault + 1,
+	value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count'))) === initCountAtFault + 1,
 	'fault repair did not execute fixed init exactly once',
 );
 t.assert(
-	rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_print_call_count')) === printCountAtFault + 1,
+	value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_print_call_count'))) === printCountAtFault + 1,
 	'fault repair did not send the fixed init print through the guest terminal path',
 );
 t.assert(
-	rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_new_game_count')) === 1,
+	value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_new_game_count'))) === 1,
 	'fault repair reran new_game',
 );
 t.assert(
@@ -420,7 +447,9 @@ t.assert(
 	'fault repair raised a second supervisor fault',
 );
 t.assert(!rebootedRuntime.completionCallPending(), 'fault repair left a completion root pending');
+for (let index = 0; index < typedProbeValues.length; index++)
+	t.assert(rebootedCpu.getGlobalByKey(rebootedTypedProbeKeys[index]) === typedProbeValues[index], 'fault recovery changed an int32/f32 payload or kind');
 t.assert(
-	rebootedCpu.getGlobalByKey(rebootedLoopCountKey) > loopCountAtFault,
+	value.asInteger(rebootedCpu.getGlobalByKey(rebootedLoopCountKey)) > loopCountAtFault,
 	'fault repair did not continue the retained game loop',
 );

@@ -1,3 +1,4 @@
+import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import type { BehaviorLensNavigationSelection } from './navigation_selection';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
@@ -273,7 +274,7 @@ export class BehaviorLensController {
 				return new TextQuickPickProvider(choices);
 			}, choice => {
 				this.showRuntimeInspection(group, input, inspector, choice.domain, choice.image, `LIVE EFFECT / ${choice.label}`, {
-					kind: 'action_effect', componentHashId: choice.component.hashId, effectHashId: choice.effect.hashId,
+					kind: 'action_effect', componentHashId: this.guest.identityScalar(choice.component, ValueTag.Table), effectHashId: this.guest.identityScalar(choice.effect, ValueTag.Table),
 				});
 			}, lifetime => {
 				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
@@ -299,8 +300,8 @@ export class BehaviorLensController {
 					return new TextQuickPickProvider(readStateMachineStates(this.guest, machine.machine));
 				}, state => {
 					this.showRuntimeInspection(group, input, inspector, machine.domain, machine.image, `LIVE FSM / ${state.label}`, {
-						kind: 'state_machine', componentHashId: machine.component.hashId,
-						machineHashId: machine.machine.hashId, stateHashId: state.state.hashId,
+						kind: 'state_machine', componentHashId: this.guest.identityScalar(machine.component, ValueTag.Table),
+						machineHashId: this.guest.identityScalar(machine.machine, ValueTag.Table), stateHashId: this.guest.identityScalar(state.state, ValueTag.Table),
 					});
 				}, lifetime => {
 					lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
@@ -324,7 +325,7 @@ export class BehaviorLensController {
 				return new TextQuickPickProvider(choices);
 			}, choice => {
 				this.showRuntimeInspection(group, input, inspector, choice.domain, choice.image, `LIVE BT / ${choice.label}`, {
-					kind: 'behavior_tree', componentHashId: choice.component.hashId,
+					kind: 'behavior_tree', componentHashId: this.guest.identityScalar(choice.component, ValueTag.Table),
 				});
 			}, lifetime => {
 				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });

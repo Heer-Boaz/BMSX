@@ -1,4 +1,4 @@
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
+import { asInteger, asTable, canonicalTableKey, isNil, valueInteger, type Value } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
@@ -6,9 +6,9 @@ import type { QuickPickItem } from '../../services/quick_input/provider';
 import { visitRuntimeComponents } from './runtime_components';
 import { BehaviorRuntimeProperties, type RuntimeInspectionProperty } from './runtime_properties';
 
-export type BehaviorTreeInstanceChoice = QuickPickItem & { readonly component: Table };
+export type BehaviorTreeInstanceChoice = QuickPickItem & { readonly component: Value };
 
-function behaviorTreeInstanceChoice(guest: SuspendedGuestSession, component: Table): BehaviorTreeInstanceChoice {
+function behaviorTreeInstanceChoice(guest: SuspendedGuestSession, component: Value): BehaviorTreeInstanceChoice {
 	return { label: guest.formatValue(guest.readStringMember(component, 'tree_id')),
 		description: `COMPONENT ${guest.formatValue(guest.readStringMember(component, 'id'))}`,
 		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'owner'), 'id'))}`, component };
@@ -33,34 +33,37 @@ const EXECUTION_FIELDS = [
 
 /** This component's stored layout names its values, including nil slots. Never use programs_by_id. */
 export function inspectBehaviorTreeInstance(
-	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, component: Table,
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, component: Value,
 	properties = new BehaviorRuntimeProperties(sources, guest),
 ): RuntimeInspectionProperty[] {
 	properties.field('component', 'id', 'COMPONENT', guest.readStringMember(component, 'id'));
 	properties.field('owner', 'id', 'OWNER', guest.readStringMember(guest.readStringMember(component, 'owner'), 'id'));
 	const board = guest.readStringMember(component, 'blackboard');
-	if (board === null) {
+	if (isNil(board)) {
 		properties.field('component', 'blackboard', 'BLACKBOARD', board, 'THIS COMPONENT HAS NO BLACKBOARD.');
 	} else {
 		const layout = guest.readStringMember(board, '_layout');
-		const values = guest.readStringMember(board, '_values') as Table | null;
+		const values = guest.readStringMember(board, '_values');
 		// new()/rebind() publish separate fields. At a stop before binding, show
 		// their actual nil/table values; do not manufacture named slot values.
-		if (layout === null || values === null) {
+		if (isNil(layout) || isNil(values)) {
 			properties.field('blackboard', '_layout', 'BLACKBOARD LAYOUT', layout);
 			properties.field('blackboard', '_values', 'BLACKBOARD STORAGE', values);
 		} else {
-			const keys = guest.readStringMember(layout, 'keys') as Table;
-			const defaults = guest.readStringMember(layout, 'initial_values') as Table;
-			const slotsByKey = guest.readStringMember(layout, 'slots_by_key') as Table;
-			if (keys.arrayLength === 0) properties.text('BLACKBOARD', '{}', 'NO DECLARED KEYS.');
-			for (let slot = 1; slot <= keys.arrayLength; slot += 1) {
-				const key = keys.getInteger(slot);
+			const keys = asTable(guest.readStringMember(layout, 'keys'), guest.cpu.gc);
+			const defaults = asTable(guest.readStringMember(layout, 'initial_values'), guest.cpu.gc);
+			const slotsByKey = asTable(guest.readStringMember(layout, 'slots_by_key'), guest.cpu.gc);
+			const valueSlots = asTable(values, guest.cpu.gc);
+			const keyCount = keys.length();
+			if (keyCount === 0) properties.text('BLACKBOARD', '{}', 'NO DECLARED KEYS.');
+			for (let slot = 1; slot <= keyCount; slot += 1) {
+				// Logical names use slots_by_key's table-key equality, not raw subtype identity.
+				const key = canonicalTableKey(keys.getInteger(slot));
 				// compile/rebind resolve semantic keys through slots_by_key. Earlier
 				// duplicate declarations remain visible, but are not independent watches.
-				const watchable = slotsByKey.get(key) === slot;
-				properties.entry(watchable ? 'blackboard' : 'blackboard-slot', watchable ? key : slot,
-					values.getInteger(slot), BLACKBOARD_PRESENTATION, `STORED SLOT ${slot}\nLOADED DEFAULT: `,
+				const watchable = asInteger(slotsByKey.get(key)) === slot;
+				properties.entry(watchable ? 'blackboard' : 'blackboard-slot', watchable ? key : valueInteger(slot),
+					valueSlots.getInteger(slot), BLACKBOARD_PRESENTATION, `STORED SLOT ${slot}\nLOADED DEFAULT: `,
 					defaults.getInteger(slot), key, watchable);
 			}
 		}

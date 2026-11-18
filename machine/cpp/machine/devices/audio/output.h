@@ -86,6 +86,8 @@ private:
 		BiquadFilterState filter;
 		bool usesBadp = false;
 		ApuBadpDecoderState badp;
+		ApuBadpTransition badpTransition;
+		const u64* sourceRevision = &APU_ROM_SOURCE_REVISION;
 	};
 
 	friend auto captureApuOutputVoiceState(const VoiceRecord& record) -> ApuOutputVoiceState;

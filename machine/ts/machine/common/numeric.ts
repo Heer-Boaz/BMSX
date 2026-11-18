@@ -5,8 +5,6 @@ const I64_MIN_HI = 0x8000_0000 | 0;
 const I64_MIN_LO = 0;
 const I64_MAX_HI = 0x7fff_ffff;
 const I64_MAX_LO = 0xffff_ffff;
-const F32_BITS_BUFFER = new ArrayBuffer(4);
-const F32_BITS_VIEW = new DataView(F32_BITS_BUFFER);
 
 export const FIX16_ONE = 1 << FIX16_SHIFT;
 export const FIX16_SCALE = FIX16_ONE;
@@ -67,16 +65,6 @@ export function ceilLog2(value: number): number {
 
 export function ceilDiv4(value: number): number {
 	return (value + 3) >> 2;
-}
-
-export function f32BitsToNumber(bits: number): number {
-	F32_BITS_VIEW.setUint32(0, bits >>> 0, true);
-	return F32_BITS_VIEW.getFloat32(0, true);
-}
-
-export function numberToF32Bits(value: number): number {
-	F32_BITS_VIEW.setFloat32(0, value, true);
-	return F32_BITS_VIEW.getUint32(0, true);
 }
 
 export function saturateRoundedI32(value: number): number {

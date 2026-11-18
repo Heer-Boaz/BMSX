@@ -47,7 +47,7 @@ export class RuntimeEventHistory {
 	) {
 		this.buffer = new Array(capacity);
 		this.checkpoints = new Array(capacity);
-		this.snapshot = new GuestValueSnapshot(runtime.machine.cpu.stringPool);
+		this.snapshot = new GuestValueSnapshot(runtime.machine.cpu.stringPool, runtime.machine.cpu.gc);
 		this.bindSources();
 	}
 

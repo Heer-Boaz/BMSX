@@ -104,7 +104,7 @@ positions do not count back from the end.
 A supplied non-`nil` position must be a Number. The conversion to a signed
 32-bit word truncates a finite value toward zero, wraps modulo
 4,294,967,296, and interprets the high bit as the sign bit. NaN and either
-infinity convert to zero. This conversion is not the rounding used by every
+infinity raise `INVALID_ARGUMENT`. This conversion is not the rounding used by every
 other String operation.
 
 For `value = string.char(65, 122, 233, 128640)`:
@@ -131,7 +131,7 @@ accepted as a position.
 Pass one Number for each Unicode scalar to put in the result. Values are not
 restricted to 0 through 255. Each Number is converted to an unsigned 32-bit
 word: a finite value is truncated toward zero and wrapped modulo
-4,294,967,296; NaN and either infinity convert to zero. The converted value
+4,294,967,296. NaN and either infinity raise `INVALID_ARGUMENT`. The converted value
 must be in `000000H` through `10FFFFH`, excluding `D800H` through `DFFFH`.
 
 | Call | Result |
@@ -146,9 +146,8 @@ must be in `000000H` through `10FFFFH`, excluding `D800H` through `DFFFH`.
 | `string.char(0xd800)` | `INVALID_ARGUMENT` |
 | `string.char("65")` | `INVALID_ARGUMENT` |
 
-Zero is an ordinary codepoint, not a String terminator. NaN and infinity
-therefore produce a zero codepoint rather than an empty String. A nonnumeric
-argument or a converted value outside the accepted scalar range raises
+Zero is an ordinary codepoint, not a String terminator. A nonnumeric or
+nonfinite argument, or a converted value outside the accepted scalar range, raises
 `INVALID_ARGUMENT`; decimal String arguments are not converted to Numbers.
 The result is text, not an allocation of raw bytes at a mapped address.
 
@@ -156,9 +155,13 @@ For `byte` and `char`, `INVALID_ARGUMENT` is a language argument error. A
 protected call receives the original error String `"Invalid argument."`.
 It is not a Memory interrupt.
 
-Each `byte` or `char` call has a builtin surcharge of two cycles, with no
-per-argument, position or per-result term in that surcharge. The surrounding
-BIOS instructions and ordinary calls have their own cycle charges.
+Each `byte` call has a builtin surcharge of two cycles, independent of the
+selected position. Each `char` call has a two-cycle builtin base surcharge plus
+one cycle per supplied argument. The full argument-count charge is applied
+before argument validation, including when an invalid argument faults or the
+caller discards the result. A call with no arguments therefore adds only two
+cycles. The surrounding BIOS instructions, ordinary calls and result receiving
+ranges have their own cycle charges.
 
 ### `string.len(value)` {#sec-bios-string-stringlenvalue}
 
@@ -166,7 +169,7 @@ BIOS instructions and ordinary calls have their own cycle charges.
 returns its result. On a String it counts codepoints, including zero
 codepoints. It does not report an encoded UTF-8 byte count.
 
-On a Table it returns the maintained length, not the number of keys or
+On a Table it returns the length boundary, not the number of keys or
 the largest numeric key. For the Table length operation, its state rules
 and its fault handling, follow the CPU chapter's length-operation procedure.
 Other value categories raise the ordinary length error,
@@ -321,10 +324,10 @@ local empty = string.sub('ABCDE', 0, 0)       -- ''
 local whole = string.sub('ABCDE', nil, nil)  -- original value
 ```
 
-Non-Number endpoint values participate in arithmetic as NaN; numeric-looking
-Strings are not parsed. Consequently `string.sub('ABCDE', '2', '4')` selects an
-empty range: the start becomes 1 and the end becomes 0. This differs from
-`string.byte`, which requires a supplied non-nil position to be a Number.
+Non-Number endpoint values raise `INVALID_ARGUMENT` in the floor division;
+numeric-looking Strings are not parsed. A supplied Float NaN instead follows
+the NaN row above. The length operation precedes normalization of the start
+and end positions.
 
 There is no preliminary String-only check here either. With a Table, the
 empty-range branch can return an empty String and the full-span branch can
@@ -351,9 +354,9 @@ operation.
 ### Repetition and separators {#sec-bios-string-repetition-and-separators}
 
 A missing or nil count means 1. Otherwise, the count is `count_arg // 1`;
-non-Number counts become NaN rather than being parsed or rejected by a
-count-type check. A count at most zero returns one empty String before the
-value or separator is concatenated.
+a non-Number raises `INVALID_ARGUMENT` at that operation and is not parsed.
+A count at most zero returns one empty String before the value or separator is
+concatenated.
 
 For String inputs and a finite normalized count N > 0, the result contains
 N copies. A non-nil separator goes between those copies, not before the first
@@ -378,7 +381,8 @@ branch order determines the result:
 
 For example, `string.rep(7, 1)` returns the String `'7'`, whereas
 `string.rep(7, 1, '|')` returns the Number 7. `string.rep(7, 0, {})` returns `''`.
-The String count `'3'` follows the NaN rows, not the finite-count rule.
+The String count `'3'` raises `INVALID_ARGUMENT`; it does not follow the NaN
+rows. Those rows apply to a numeric Float NaN.
 
 Concatenation converts values to Strings using the ordinary conversion rules:
 Numbers use their Number formatter, and nil, Booleans, Tables and functions use
@@ -417,7 +421,7 @@ Builds formatted text and, on normal completion, returns exactly one String. It 
 
 For a String `format`, positions, field widths and String precisions count Unicode codepoints, not UTF-8 bytes. Literal codepoints are copied in order. An embedded NUL does not terminate the format.
 
-**Table-length dependency.** There is no String-only entry check: the first operation is `#format`. Categories other than String and Table fail at that operation. A Table whose length is obtained as zero returns an empty String; a positive length leads to a codepoint-read operation that requires a String and fails. The [CPU's maintained-length rules](cpu.md#sec-cpu-stored-length) also apply to the ordinary Table operations used during formatting.
+**Table-length dependency.** There is no String-only entry check: the first operation is `#format`. Categories other than String and Table fail at that operation. A Table whose length is obtained as zero returns an empty String; a positive length leads to a codepoint-read operation that requires a String and fails. The [CPU's Table-length rules](cpu.md#sec-cpu-table-length) also apply to the ordinary Table operations used during formatting.
 
 
 ### Example: formatted text {#sec-bios-string-example-formatted-text}
@@ -437,9 +441,10 @@ local floating = string.format('%.2f/%.1e/%#.3g',
     1.25, 12.5, 100)                                 -- '1.25/1.3e+01/100.'
 ```
 
-`string.format('%.0f', 1000000)` returns `'1e+06'`, because its whole-number
-piece uses ordinary Number-to-text conversion. The conversion rules below
-explain this output when choosing a numeric format.
+`string.format('%.0f', 1000000)` returns `'1000000'`. Floating conversions
+use the binary32 value; `%d` instead preserves every Integer digit.
+For example, `string.format('%d/%.0f', 16777217, 16777217)` returns
+`'16777217/16777216'`.
 
 ### Conversion syntax and argument order {#sec-bios-string-conversion-syntax-and-argument-order}
 
@@ -459,17 +464,25 @@ Each component except `%` and the final conversion is optional. The dot belongs 
 | Modifiers | Any order and repetition of `l`, `L`, `h`. They are ignored and do not change the numeric representation. |
 | Conversion | Exactly one of `s c d i u o x X f F e E g G q`. |
 
-Decimal fields are accumulated by multiplying the previous value by ten and adding the next digit. There is no field digit-count or numeric cap. There is no positional `$` syntax. No additional conversion is supplied for `a`, `A`, `p` or `n`; a percent reached after parsing flags, width or precision is not the `%%` escape.
+Decimal width and precision fields must fit a nonnegative Integer (at most
+`2147483647`). A larger field raises an error instead of wrapping. There is no positional `$` syntax. No additional conversion is supplied for `a`, `A`, `p` or `n`; a percent reached after parsing flags, width or precision is not the `%%` escape.
 
 Arguments are selected sequentially: width `*` first, precision `*` second, then one value for a recognized conversion. An unsupported conversion does not select a conversion value, although its stars have already selected their arguments. There is no argument-count preflight or too-many-arguments error. With the installed argument-selection function, an exhausted argument list supplies Nil to a scalar selection; an omitted `format` is also Nil.
 
-A star uses the first result of `math.modf`. For finite Numbers this truncates toward zero. A negative width enables left alignment and uses the negated width. A precision is retained only when its truncated value is nonnegative; a negative or NaN precision is absent. A non-Number star argument reaches this arithmetic as Number NaN, rather than being parsed as numeric text or rejected by a formatter-specific type check. For that width, the negative-width test and padding comparison are false; that precision is absent.
+A star takes a Number, truncates toward zero and requires the result to fit
+an Integer. A negative width enables left alignment and uses its magnitude;
+`-2147483648` cannot be used as a width because that magnitude is not an
+Integer. A negative precision is absent. Nonfinite or out-of-range values
+raise an error. Numeric text is not accepted in place of a Number.
 
 ### Flags, signs and padding {#sec-bios-string-flags-signs-and-padding}
 
 Width is a minimum, never a truncation limit. Padding measures the combined codepoint lengths of sign, base prefix and content. If padding is needed, `-` appends spaces and overrides `0`. Otherwise `0` inserts zeros after the sign and base prefix; ordinary padding inserts spaces before both.
 
-For signed conversions, a value less than zero selects `-`; otherwise `+` selects `+`, then space selects one leading space. Thus `+` overrides space. Sign selection does not inspect a negative-zero sign bit.
+For signed integer conversions, a negative Integer selects `-`. Floating
+conversions retain the sign of negative zero and negative infinity; NaN is
+printed without a negative sign. Otherwise `+` selects `+`, then space
+selects one leading space. Thus `+` overrides space.
 
 | Conversion group | Flag and precision effects |
 | --- | --- |
@@ -481,13 +494,14 @@ For signed conversions, a value less than zero selects `-`; otherwise `+` select
 
 ### Text, codepoint and quoted conversions {#sec-bios-string-text-codepoint-and-quoted-conversions}
 
-**`%s` — text.** Calls the current `tostring` on the argument, then, if precision is present, takes codepoints 1 through that precision before applying width. For an ordinary converted String, precision zero gives empty content. The argument need not originally be a String. Substring construction uses the maintained-length rule above.
+**`%s` — text.** Calls the current `tostring` on the argument, then, if precision is present, takes codepoints 1 through that precision before applying width. For an ordinary converted String, precision zero gives empty content. The argument need not originally be a String. Substring construction uses the Table-length boundary rule above.
 
 **`%c` — one codepoint.** Takes the integer component from `math.modf` and
 passes that one value to `string.char`. Conversion to an unsigned 32-bit word
 truncates and wraps. A word above `10FFFFH` or within `D800H`–`DFFFH` raises the
-codepoint error. NaN and either infinity convert to codepoint zero; non-Number
-arguments also reach zero through the arithmetic conversion.
+codepoint error. NaN and either infinity raise `INVALID_ARGUMENT` at word
+conversion; a non-Number raises an error in `math.modf` before reaching
+`string.char`.
 
 `string.format('%c', 0)` contains one NUL codepoint. Both
 `string.format('%c', 65)` and `string.format('%c', 65.75)` produce `'A'`.
@@ -511,45 +525,64 @@ Every other codepoint is copied unchanged. Width applies after quoting. Precisio
 
 ### Integer conversions {#sec-bios-string-integer-conversions}
 
-`%d` and `%i` take the first `math.modf` result. Finite fractions truncate toward zero, and a negative integer is formatted using its positive magnitude and a separate minus sign. These conversions do not impose a 32-bit word limit.
+`%d` and `%i` accept an Integer or a finite Float whose truncation toward
+zero fits an Integer. They print signed decimal, including the full range
+`-2147483648` through `2147483647`. A non-Number, nonfinite value or
+out-of-range truncated value raises an error.
 
-`%u`, `%o`, `%x` and `%X` take that same first result, apply a bitwise AND with `FFFFFFFFH`, and interpret the result as an unsigned 32-bit magnitude. `%u` uses decimal, `%o` octal, and `%x`/`%X` hexadecimal with lowercase/uppercase letters.
+`%u`, `%o`, `%x` and `%X` admit the argument in the same way, then interpret
+its 32 bits as an unsigned word. `%u` uses decimal, `%o` octal, and `%x`/`%X`
+hexadecimal with lowercase/uppercase letters. Thus Integer `-1` prints as
+`4294967295`, `37777777777`, `ffffffff` or `FFFFFFFF`, respectively. There
+is no intermediate positive Number representing `2^32 - 1`.
 
-Zero initially produces one `0`. Other magnitudes are converted by repeated remainder and floor division in the selected base. Integer precision adds leading zeros to the requested minimum digit count. Precision zero clears the digits when the magnitude is zero.
-
-For `#` octal, empty digits are restored to one `0`; otherwise a leading `0` is added only if the first digit is not already zero. For `#` hexadecimal, `0x` or `0X` is added only for a nonzero magnitude. The common width rules then place sign, prefix and padding.
-
-A signed NaN magnitude produces no initial digits; sign flags, precision and width can still add text. Non-Number arguments reach signed integer formatting as Number NaN. Unsigned conversion maps both that result and Number NaN or either infinity to zero. Either infinity in signed integer conversion produces a positive-infinite magnitude; repeated base division then fails to make progress toward completion.
+Integer precision adds leading zeros to the requested minimum digit count.
+Precision zero clears the digits when the word is zero. For `#` octal,
+empty digits are restored to one `0`; otherwise a leading `0` is added only
+if the first digit is not already zero. For `#` hexadecimal, `0x` or `0X`
+is added only for a nonzero word. The common width rules then place sign,
+prefix and padding.
 
 ### Floating conversions {#sec-bios-string-floating-conversions}
 
-`f`/`F` select fixed construction, `e`/`E` scientific construction, and `g`/`G` general construction. They do not validate the original argument as a Number or parse numeric Strings.
+`f`/`F` select fixed decimal, `e`/`E` scientific notation, and `g`/`G` general
+notation. An Integer argument is first rounded to Float. A Float argument
+keeps its binary32 value. Numeric Strings and other non-Numbers raise an
+error; they are not parsed as numeric text.
 
-A Number NaN is handled before construction as `nan` or `NAN`; either infinity is handled as `inf` or `INF`. Sign selection is separate, so negative infinity receives a minus sign and nonnegative special values may receive `+` or space. For other arguments, sign is selected from the original value and a value less than zero is negated to obtain the magnitude.
+Finite values are rounded from their exact stored binary32 value to the
+requested decimal position. Rounding chooses the nearest value, with an
+exact half rounded away from zero. For example, `%.1f` formats `1.25` as
+`1.3` and `-1.25` as `-1.3`. Precision can exceed the significant decimal
+digits of a Float: subsequent digits describe that stored value, not the
+original source numeral.
 
-Non-Number arguments do not match the initial Number-special cases. Comparisons with the numeric constants are false, and subsequent arithmetic produces Number NaN. The selected construction below therefore proceeds with NaN arithmetic and text pieces; this is not the initial `nan`/`NAN` shortcut or a formatter-specific argument error.
+**Fixed (`f`, `F`).** Precision defaults to six and specifies the number of
+digits after the decimal point. Precision zero omits the point unless `#`
+is present. Large whole parts are written in full, not scientific notation.
 
+**Scientific (`e`, `E`).** Precision defaults to six and specifies the
+number of digits after the decimal point. A nonzero mantissa has one digit
+before the point. Rounding a mantissa through ten increments the exponent.
+The suffix is `e` or `E`, an explicit sign and at least two decimal exponent
+digits. Zero has exponent zero. Precision zero omits the point unless `#`
+is present.
 
-**Fixed construction (`f`, `F`).** Precision defaults to six; explicit zero is retained. For magnitude `v` and precision `p`, construct `scale` by starting at one and multiplying by ten `p` times, then calculate:
+**General (`g`, `G`).** Precision defaults to six significant digits;
+explicit zero means one. First round to that number of significant digits.
+Use scientific notation if the resulting exponent is below -4 or at least
+the significant-digit count; otherwise use fixed notation. Without `#`,
+omit trailing fractional zeros and an unneeded point. Integer place zeros
+are never stripped: `%g` of `100000` is `100000`, not `1`. With `#`, retain
+the requested significant digits and the decimal point.
 
-```text
-rounded  = first modf result of (v * scale + 0.5)
-whole    = rounded // scale
-fraction = rounded % scale
-```
+NaN is `nan` or `NAN`; infinity is `inf` or `INF`. Negative infinity and
+negative zero retain their minus sign; sign flags apply to other values,
+including NaN. Width and zero-padding apply after constructing this text.
 
-
-Convert `whole` with the current `tostring`. When `p > 0`, append a dot and `tostring(fraction)`, padding that fraction text on the left with zeros to at least `p` codepoints. At precision zero, append a dot only for `#`.
-
-**Scientific construction (`e`, `E`).** Precision also defaults to six. Zero uses fixed construction followed by exponent zero. Otherwise repeatedly divide the magnitude by ten while it is at least ten, or multiply it by ten while it is positive and below one, tracking the exponent from zero. Round the resulting mantissa using the same multiply-plus-half and first-`modf` operation. If the rounded value is at least `10 * scale`, divide it by ten using floor division and increment the exponent. Construct the whole/fraction text as above, then append `e` or `E`, an explicit exponent sign, and the current `tostring` of the absolute exponent, left-padded with zeros to at least two codepoints. Two is a minimum, not an exponent limit.
-
-**General construction (`g`, `G`).** Precision defaults to six significant digits; explicit zero becomes one. Determine the decimal exponent from the unrounded magnitude, using exponent zero for zero. If the exponent is below −4 or at least the significant-digit precision, select scientific construction with precision one less than the significant-digit count. Otherwise select fixed construction with precision `significant − exponent − 1`. The choice is not repeated after rounding.
-
-Without `#`, detach the first `e`/`E` suffix, remove every trailing zero from the preceding text, remove a trailing dot if present, and reattach the suffix. This stripping does not require a decimal point: it can remove integer trailing zeros as well. `#` skips stripping. `G` then applies ASCII-only uppercasing to the resulting text. Stripping and uppercasing use the maintained-length rule above.
-
-**Default numeric text dependency.** The whole, fraction and exponent text pieces above use `tostring`; precision does not substitute an arbitrary-length decimal writer. Under the installed default, Nil becomes `nil`, Booleans become `false` or `true`, Tables become `table`, Threads become `thread`, function values become `function`, and Strings retain their contents. Number specials become `nan`, `-inf` or `inf`.
-
-For finite Numbers, default text conversion writes positive zero as `0`, preserves a received negative zero as `-0`, and writes nonzero integral magnitudes below 1,000,000 exactly. Other finite-number text uses a six-significant-digit general algorithm: normalize, scale by 100,000, round with ties to even, adjust a six-digit carry, then choose fixed notation only for a post-rounding exponent from −4 through 5. Otherwise it uses lowercase `e`, an explicit sign and at least two exponent digits. Fractional trailing zeros are removed. This text algorithm is distinct from the formatter's multiply-plus-half rounding. Consequently, requested floating precision does not guarantee that all whole/fraction pieces are plain fixed decimal digits, or that every requested decimal digit is accurate.
+Numeric conversions produce their own decimal digits, independently of
+replacing the global `tostring`. The `%s` and `%q` conversions still call
+that global as specified above.
 
 ### Errors, completed work and limits {#sec-bios-string-errors-completed-work-and-limits}
 
@@ -568,15 +601,16 @@ String or count. Length and codepoint errors retain their ordinary texts.
 
 
 The formatter keeps its original character, substring, repetition,
-concatenation and truncation functions. Its `tostring`, `select` and `error`
-calls use current globals. Replacing a saved helper's public field leaves
+concatenation and numeric conversion functions. Its `%s`/`%q` `tostring`,
+`select` and `error` calls use current globals. Replacing a saved helper's public field leaves
 the saved function in place; that helper can still use current globals of its
 own.
 
-Choose finite widths and precisions appropriate to the output. Large
-padding and decimal precision create more text and require more processing.
-Positive-infinite precision prevents the scaling loop from progressing;
-positive-infinite width can prevent repetition from completing.
+Choose widths and precisions appropriate to the output. Large padding and
+decimal precision require more text storage and processing; they remain
+subject to the language-storage budget. A field or numeric result length
+that exceeds the nonnegative Integer range raises an error. No partial
+result is returned.
 
 ## Pattern language {#sec-bios-string-pattern-language}
 
@@ -704,7 +738,7 @@ An opening `(` records the current source position. A closing `)` searches backw
 
 The form `()` is different: it records the numeric current position without consuming text. It is a position capture, not an empty text capture.
 
-**Capture-result dependency.** Capture bookkeeping and extraction use the [CPU's maintained Table lengths](cpu.md#sec-cpu-stored-length). Returned sequences also follow the ordinary caller's result adjustment.
+**Capture-result dependency.** Capture bookkeeping and extraction use the [CPU's Table-length rules](cpu.md#sec-cpu-table-length). Returned sequences also follow the ordinary caller's result adjustment.
 
 Outside sets, `%1` through `%9` refer to a previously recorded, finished text capture. A backreference compares that capture's codepoints at the current source position and, on success, advances by the captured length. A missing capture, an unfinished capture, or a position capture raises `invalid string pattern capture` when that reference is reached.
 
@@ -753,7 +787,7 @@ A terminal `%` has no dedicated rejection. Special-escape dispatch first reads a
 
 Pattern calls return positions, captured substrings or replacement text as
 specified below. Capture and result sequences use ordinary Table lengths and
-ordinary call-result adjustment. The [CPU reference](cpu.md#sec-cpu-stored-length)
+ordinary call-result adjustment. The [CPU reference](cpu.md#sec-cpu-table-length)
 defines those rules. Matching and substitution also allocate temporary
 language objects; budget for them when processing large text.
 
@@ -765,7 +799,7 @@ string.find(source, pattern [, start [, plain]])
 
 Searches `source` and constructs the start and inclusive end positions of the first match. Positions count String codepoints, beginning at 1; they are neither UTF-8 byte offsets nor grapheme-cluster positions. See [Pattern language](#sec-bios-string-pattern-language) for pattern syntax, capture ordering and position captures.
 
-**Arguments and starting position.** Omitted or nil `start` means 1. Otherwise the function computes `start // 1`: a positive result is used directly, a negative result becomes `#source + result + 1`, and zero becomes 1. A result still below 1 is not clamped. Do not rely on such a start producing ordinary in-range match boundaries. This arithmetic does not parse numeric Strings; a nonnil non-Number makes both sign comparisons false and therefore normalizes to 1.
+**Arguments and starting position.** Omitted or nil `start` means 1. Otherwise the function computes `start // 1`: a positive result is used directly, a negative result becomes `#source + result + 1`, and zero or Float NaN becomes 1. A result still below 1 is not clamped. Do not rely on such a start producing ordinary in-range match boundaries. This arithmetic does not parse numeric Strings; a nonnil non-Number raises `INVALID_ARGUMENT`.
 
 If the normalized start is greater than `#source`, `find` returns one nil before inspecting `plain` or the pattern. In particular, a start of `#source + 1` takes this return, even for an empty pattern. Otherwise a pattern search can consider candidates through `#source + 1`. A leading `^` restricts the search to the supplied start; it does not independently assert the beginning of the complete source.
 
@@ -827,7 +861,7 @@ string.gsub(source, pattern, replacement [, limit])
 
 Builds a substituted String and returns it together with the substitution count. Positions and substring boundaries are codepoint-based. See [Pattern language](#sec-bios-string-pattern-language) for pattern syntax and `string.find` for shared binding dependencies and reached pattern errors.
 
-**Limit and count.** Omitted or nil `limit` means `#source + 1`. Otherwise the function computes `limit // 1` and replaces a negative result with 0. A zero limit skips matching and replacement entirely, assembles the unchanged source tail, and returns that String with count 0. A nonnil non-Number limit does not parse as a numeric String or raise a `gsub`-specific integer error: its arithmetic result fails the loop comparison, so the replacement loop is likewise skipped.
+**Limit and count.** Omitted or nil `limit` means `#source + 1`. Otherwise the function computes `limit // 1` and replaces a negative result with 0. A zero limit skips matching and replacement entirely, assembles the unchanged source tail, and returns that String with count 0. A nonnil non-Number limit raises `INVALID_ARGUMENT` in the floor division; it is not parsed as a numeric String. A Float NaN is a Number and fails the loop comparison, so the replacement loop is skipped.
 
 The count increases after a successful replacement evaluation, including an evaluation that chooses to keep the original match. The limit bounds completed replacement iterations, not the work spent finding a match, backtracking, looking up a replacement or running a replacement function.
 
@@ -861,8 +895,9 @@ local sample = decode_float(0x3fa00000, 0, 4)        -- 1.25
 local calibration = decode_float(0xc0040000, 0, 8)  -- -2.5
 ```
 
-Its signature is `decode_float(high, low, byte_count)`, with one Number result.
-Pass the raw unsigned words after reading them in the record's byte order:
+Its signature is `decode_float(high, low, byte_count)`, with one Float result.
+Pass Integers containing the raw words after reading them in the record's byte
+order; their signed interpretations do not change their bits:
 
 | Argument | Four-byte form | Eight-byte form |
 | --- | --- | --- |
@@ -871,8 +906,8 @@ Pass the raw unsigned words after reading them in the record's byte order:
 | `byte_count` | 4 | 8 |
 
 Exactly `byte_count == 4` selects the four-byte form; every other value selects
-the eight-byte calculation. There are no separate word-range or argument-type
-checks. Both forms use the field extraction and Number arithmetic under
+the eight-byte calculation. The words used by the selected form undergo the
+integer conversion of the CPU's bitwise instructions. Both forms use the field extraction under
 [Decoding](#sec-bios-string-decoding), without reading a String or mapped memory. Surplus
 arguments are ignored. This import does not supply a separate public encoder.
 
@@ -893,7 +928,7 @@ v1, v2, ..., next_pos = string.unpack(format, packet [, pos])
 - `unpack` returns one value for each integer, floating-point, or text field, followed by the next one-based source position. Controls and padding produce no values. An empty or control-only format normally returns only that position.
 
 **Shared Table dependency.** Temporary packet pieces and unpacked-result
-collections use the [CPU's maintained Table lengths](cpu.md#sec-cpu-stored-length),
+collections use the [CPU's Table-length rules](cpu.md#sec-cpu-table-length),
 including when every supplied format and operand is a String. Accepted Table
 operands are retained in the argument-category account below. Ordinary caller
 result adjustment still applies.
@@ -966,7 +1001,10 @@ then position 34. These are one-based continuation positions, not lengths.
 
 Each call begins in little-endian order with maximum alignment 8. `pack` and `packsize` start at zero-based offset 0. `unpack` begins at the source offset selected by `pos`.
 
-Only the following whitespace is ignored between format tokens: space and codepoints 9–13. A numeric suffix consists of consecutive ASCII decimal digits. There is no sign, decimal point, separator, or internal whitespace in a suffix. The suffix reader has no general digit-count or numeric upper bound; the individual options below impose their own restrictions.
+Only the following whitespace is ignored between format tokens: space and codepoints 9–13. A numeric suffix consists of consecutive ASCII decimal digits. There is no sign, decimal point, separator, or internal whitespace in a suffix. Leading zeroes do not impose a digit-count limit. The mathematical suffix
+value must fit a nonnegative Integer (0 through 2147483647); a larger value
+raises `string.pack format count out of range.` Individual options below
+impose their further restrictions.
 
 
 In the tables, `A` is the current maximum alignment, and all widths and alignments count packet units. Defaults are fixed, not inferred from a machine word size.
@@ -979,14 +1017,14 @@ In the tables, `A` is the current maximum alignment, and all widths and alignmen
 | `H` | Unsigned integer | 2 | `min(A, 2)` | 1 / 1 |
 | `l` | Signed integer | 4 | `min(A, 4)` | 1 / 1 |
 | `L` | Unsigned integer | 4 | `min(A, 4)` | 1 / 1 |
-| `j` | Signed integer | 8 | `min(A, 8)` | 1 / 1 |
-| `J` | Unsigned integer | 8 | `min(A, 8)` | 1 / 1 |
+| `j` | Signed Integer | 4 | `min(A, 4)` | 1 / 1 |
+| `J` | Unsigned Integer word | 4 | `min(A, 4)` | 1 / 1 |
 | `i[N]` | Signed integer | `N`, default 4; explicit `N` must be 1–8 | `min(A, N)` | 1 / 1 |
 | `I[N]` | Unsigned integer | `N`, default 4; explicit `N` must be 1–8 | `min(A, N)` | 1 / 1 |
 | `T` | Unsigned integer | 4 | **4, regardless of `A`** | 1 / 1 |
 | `f` | Floating-point field | 4 | `min(A, 4)` | 1 / 1 |
 | `d` | Floating-point field | 8 | `min(A, 8)` | 1 / 1 |
-| `n` | Floating-point field | 8 | `min(A, 8)` | 1 / 1 |
+| `n` | Floating-point field | 4 | `min(A, 4)` | 1 / 1 |
 | `cN` | Fixed-width text | `N`; suffix required, zero permitted | 1; no automatic padding | 1 / 1 |
 | `z` | Zero-terminated text | Content length + 1 | 1 | 1 / 1 |
 | `s[N]` | Length-prefixed text | Prefix width + content length; prefix defaults to 4, explicit width 1–8 | `min(A, prefix width)` before the prefix | 1 / 1 |
@@ -994,14 +1032,14 @@ In the tables, `A` is the current maximum alignment, and all widths and alignmen
 | `X` | Align for a following field | Padding only; see below | Determined by lookahead | 0 / 0 |
 
 
-`[N]` marks an optional suffix in this table; the square brackets are not format characters. The `f`, `d`, `n`, and `z` options do not read a width suffix. `cN` has no parser-imposed maximum width.
+`[N]` marks an optional suffix in this table; the square brackets are not format characters. The `f`, `d`, `n`, and `z` options do not read a width suffix. `cN` uses the full nonnegative Integer width range.
 
 | Control | Effect |
 | --- | --- |
 | `<` | Select little-endian numeric order. |
 | `>` | Select big-endian numeric order. |
 | `=` | Select the fixed default: little-endian order. |
-| `!N` | Set maximum alignment to positive decimal `N`. The suffix is required. It need not be a power of two; there is no upper-bound check in this control. |
+| `!N` | Set maximum alignment to positive decimal `N`. The suffix is required. It need not be a power of two; the maximum is 2147483647. |
 
 Controls consume neither packet units nor arguments and return no data values. Every other option is unsupported. Parsing and field processing are interleaved; there is no separate up-front format-validation pass.
 
@@ -1030,30 +1068,32 @@ For example, `string.packsize("!1bT")` is 8, and `string.packsize("bXc3")` is 6.
 
 ### Integer fields {#sec-bios-string-integer-fields}
 
-Integer fields use ordinary BLua Numbers, not a separate exact 64-bit integer type.
+Packing accepts an Integer or a Float whose exact integral value fits the
+signed 32-bit Integer range. A fraction, nonfinite Float or nonnumeric value
+raises an error. The resulting Integer supplies a 32-bit word.
 
-For packing, the value is first divided by 1 with `//`. If the result differs from the original value, the call reports an integer-value error. Fractional Numbers are therefore rejected, not rounded into valid integer arguments. Numeric Strings, Booleans, Tables, nil, and a missing argument are not coerced into integers. Numeric NaN fails the same test. Positive and negative infinity reach the safe-range error.
+For a signed field narrower than four units, the Integer must fit its signed
+field width. For an unsigned field narrower than four units, it must be
+nonnegative and fit that field width. Fields of four or more units accept every
+Integer. Signed fields wider than four units extend the sign bit; unsigned
+fields wider than four units extend with zero bits. Exactly the selected number
+of base-256 digits is written in the selected order. For example,
+`string.pack("<I4", -1)` writes four codepoints of value 255, while
+`string.pack("<I2", -1)` raises an unsigned-range error.
 
-The value must then lie within the safe integer interval:
+For unpacking, accumulate the codepoint values in the selected base-256 order
+as a mathematical nonnegative integer `N`. Source codepoints are not restricted
+to 0–255. Let `W = 2^(8 * width)`. For a signed field, if `N >= W / 2`,
+subtract `W` once; the resulting value must fit the signed 32-bit Integer
+range. For an unsigned field, `N` must be at most `FFFFFFFFH`; its low 32 bits
+become an Integer, including a negative Integer when bit 31 is set. Values
+outside these ranges raise an error. These calculations define the result even
+when a source codepoint is larger than one byte.
 
-```text
--9007199254740991 <= value <= 9007199254740991
-```
-
-It must also fit the selected field width `w`:
-
-| Field | Accepted width range before the safe-integer restriction |
-| --- | --- |
-| Signed | `-(256^w)/2` through `(256^w)/2 - 1` |
-| Unsigned | `0` through `256^w - 1` |
-
-A negative signed value is encoded by adding `256^w` once. Exactly `w` base-256 digits are then written in the selected order. Little-endian writing takes `% 256` and repeatedly divides by 256 with `//`; big-endian writing uses descending powers of 256.
-
-**Seven- and eight-unit signed fields require particular care.** The positive value after that addition can exceed the exact integer interval even when the accepted input does not. Do not assume exact 64-bit wrapping or a general signed seven-/eight-unit round trip.
-
-On reading, digits are accumulated as an unsigned Number in the selected order. An accumulated value greater than 9007199254740991 is rejected **before** signed interpretation. Only after that check does a signed field subtract `256^w` once if its value is at least `(256^w)/2`. There is no additional lower-bound or digit-range check.
-
-Thus an ordinary octet-valued seven- or eight-unit representation with its sign bit set is rejected before it can become a negative result: its unsigned value is at least `2^55` or `2^63`, respectively. For example, eight codepoints of value 255 read with `j` reach the safe-integer error rather than returning −1. Packing −1 with `j` is likewise not a promise of an exact all-255 representation: it first performs the Number addition `-1 + 2^64`.
+Thus four codepoints of value 255 unpacked as either `j` or `J` produce
+Integer −1. Eight such codepoints unpacked with `i8` produce Integer −1,
+while `I8` raises an error because its unsigned value exceeds 32 bits. No
+64-bit Integer subtype is created by an eight-unit field.
 
 ### Text fields {#sec-bios-string-text-fields}
 
@@ -1083,22 +1123,26 @@ Text widths and lengths are codepoint counts. Embedded zero codepoints are ordin
 
 ### Floating-point fields {#sec-bios-string-floating-point-fields}
 
-`f` uses a four-unit field; `d` and `n` use eight-unit fields. These are specific Number-to-field transformations. Use the transformations below, including their rounding and subnormal rules, when constructing an interchange record.
+`f` and `n` use four-unit binary32 fields; `d` uses an eight-unit binary64
+field. These are specific Number-to-field transformations. Use the
+transformations below, including their rounding and subnormal rules, when
+constructing an interchange record.
 
-The following equations specify the transformations, including their subnormal branch. `//` denotes BLua floor division.
+The following equations describe mathematical field values, including the subnormal branch. They are not BLua expressions; `//` denotes mathematical floor division and raw words are interpreted as unsigned field bits.
 
 #### Encoding {#sec-bios-string-encoding}
 
-Pass a Number. `f` encodes IEEE 754 binary32; `d` and `n` encode IEEE 754
-binary64. Finite values are rounded to the nearest representable value, with
-an exact halfway case selecting the even significand. Binary32 conversion
-can therefore lose precision or overflow even when the original Number is
-finite. Binary64 retains a finite Number's representation.
+Pass a Number. `f` and `n` encode IEEE 754 binary32; `d` encodes IEEE 754
+binary64. Integer-to-binary32 conversion rounds to the nearest representable
+value, with an exact halfway case selecting the even significand. A Float
+already has binary32 precision. Encoding either an Integer or a finite Float
+as binary64 preserves its exact numerical value.
 
 Subnormal results use gradual underflow. Positive and negative zero retain
 their signs, including when a small value rounds to zero. Infinities retain
-their signs. Number NaNs are written with exponent bits all set and fraction
-1; their original payload and sign are not preserved.
+their signs. A Float encoded as binary32 retains its entire word, including
+NaN sign and payload. A NaN encoded as binary64 becomes the quiet NaN with
+high word `7FF80000H` and low word zero.
 
 | Input Number | Binary32 word | Binary64 high word | Binary64 low word |
 | --- | --- | --- | --- |
@@ -1106,9 +1150,8 @@ their signs. Number NaNs are written with exponent bits all set and fraction
 | `-0.0` | `80000000H` | `80000000H` | `00000000H` |
 | `1.25` | `3FA00000H` | `3FF40000H` | `00000000H` |
 | `2^-149` | `00000001H` | `36A00000H` | `00000000H` |
-| `2^-1074` | `00000000H` | `00000000H` | `00000001H` |
 | Positive infinity | `7F800000H` | `7FF00000H` | `00000000H` |
-| NaN | `7F800001H` | `7FF00000H` | `00000001H` |
+| Canonical arithmetic NaN | `7FC00000H` | `7FF80000H` | `00000000H` |
 
 A binary32 field writes its word in the selected byte order. A little-endian
 binary64 field writes the low word first, then the high word, with each word
@@ -1120,8 +1163,8 @@ For decoding below, the field parameters are:
 
 | Field | Exponent bits `E` | Mantissa bits `M` | Bias `B = 2^(E-1)-1` | Scale `S = 2^M` |
 | --- | ---: | ---: | ---: | ---: |
-| `f` | 8 | 23 | 127 | `2^23` |
-| `d`, `n` | 11 | 52 | 1023 | `2^52` |
+| `f`, `n` | 8 | 23 | 127 | `2^23` |
+| `d` | 11 | 52 | 1023 | `2^52` |
 
 Let `emax = 2^E - 1`. These are field values, not additional format options.
 The encoding operation does not parse numeric Strings or perform the integer
@@ -1130,17 +1173,23 @@ general value conversion.
 
 #### Decoding {#sec-bios-string-decoding}
 
-`f` reads one four-unit word as `high` and supplies `low = 0`. `d` and `n` read the two four-unit words in the inverse order of encoding.
+`f` and `n` read one four-unit word as `high` and supply `low = 0`. `d` reads
+the two four-unit words in the inverse order of encoding. Every result is a
+Float. A binary32 field preserves all its bits. A finite binary64 value is
+rounded directly to binary32, to nearest with ties to even, after both words
+have been read; a binary64 NaN becomes `7FC00000H`.
 
 
-The sign multiplier is −1 when `high >= 2^31`, otherwise 1. Extract the fields as follows:
+The sign multiplier is −1 when bit 31 of the raw `high` word is set, otherwise
+1. Extract the fields as follows; these equations describe the field bits and
+do not require a signed Number holding a 64-bit mantissa:
 
 ```text
-f:
+f, n:
     e = (high // 2^23) % 2^8
     m = high % 2^23
 
-d, n:
+d:
     e = (high // 2^20) % 2^11
     m = (high % 2^20) * 2^32 + low
 ```
@@ -1157,7 +1206,10 @@ otherwise:            sign * (1 + m / S) * 2^(e - B)
 ```
 
 
-Source digits are not validated as octets. NaN payloads are reduced to a Number NaN by the arithmetic above.
+Source digits are not validated as octets. Each four-unit word retains the low
+32 bits of its base-256 accumulation; carries beyond that word do not enter a
+neighboring word. Binary64 NaN payloads are reduced to a canonical Float NaN. The formulas identify the value represented by the input field; for a
+binary64 field the final rounding is to binary32, not to a binary64 Number.
 
 ### Unpack positions, bounds, and results {#sec-bios-string-unpack-positions-bounds-and-results}
 
@@ -1167,7 +1219,9 @@ For an ordinary numeric starting position, the accepted interval is 1 through `#
 
 Alignment remains relative to the absolute source offset. A packet packed at offset 0 is therefore not automatically aligned the same way when unpacked from an arbitrary interior position.
 
-The position argument has no Number-category or integer check. A nonnumeric value or NaN becomes NaN through `//`, evades the range comparisons, and is not repaired. For example, an empty format and String source with a numeric String position produce NaN as the only next-position result. Either infinity fails the explicit range check.
+A nonnumeric position, NaN or infinity raises an error. A finite fractional
+position follows the floor rule above before the range check; a numeric String
+is not parsed as a position.
 
 Before reading or skipping `x`, `X`, integer, float, fixed-width text,
 length-prefix, or prefixed-content spans, `unpack` checks whether the needed
@@ -1198,7 +1252,7 @@ result, these edge cases follow the operations selected by the format:
 - A Table source can pass through control/padding-only unpacking without byte access. A full-span `cN` substring can likewise return the Table itself.
 
 
-These branches use the CPU's maintained-length rule.
+These branches use the CPU's Table-length boundary rule.
 
 Packing keeps its original character, substring, Table-concatenation,
 Table-unpack and floating-word conversion functions. Argument selection reads
@@ -1215,9 +1269,11 @@ The packing module directly reports the following messages, with the capitalizat
 | Condition | Message |
 | --- | --- |
 | Integer input fails the integer-value test | `string.pack integer value must be an integer.` |
-| Integer input exceeds the safe Number integer interval | `string.pack integer value exceeds safe integer range.` |
 | Integer input does not fit its field width | `string.pack integer value out of range.` |
-| Accumulated unsigned input exceeds the safe integer interval | `string.unpack integer exceeds safe integer range.` |
+| Decoded integer is outside the signed-result or unsigned-word range | `string.unpack integer exceeds safe integer range.` |
+| A decimal format suffix exceeds the nonnegative Integer range | `string.pack format count out of range.` |
+| The total returned by `packsize` exceeds 2147483647 | `string.packsize size out of range.` |
+| A floating field input is not a Number | `string.pack float value must be a number.` |
 | Missing or nonpositive `!N` suffix | `string.pack alignment must be a positive integer.` |
 | Explicit `i`/`I` width outside 1–8 | `string.pack invalid integer size.` |
 | Missing `c` width | `string.pack expected a size for c format.` |

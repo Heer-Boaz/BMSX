@@ -59,6 +59,7 @@ function new_game()
 end
 
 new_game()
+world:start()
 studio_test_ready = true
 studio_test_rendered_frames = 0
 while true do

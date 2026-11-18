@@ -1,3 +1,5 @@
+import { crtNoiseTextureBytes, CRT_NOISE_WIDTH, CRT_NOISE_HEIGHT } from '../noise';
+import { RGBA8_LINEAR_TEXTURE_PARAMS } from '../../../backend/texture_params';
 import type { ColorAttachmentSpec, GPUBackend, RenderGraphPassContext, RenderPassDesc, RenderPassStateRegistry, TextureHandle } from '../../../backend/backend';
 import type { RenderPassLibrary } from '../../../backend/pass/library';
 import type { WebGPUBackend, WebGPUPassEncoder } from '../../../backend/webgpu/backend';
@@ -23,8 +25,8 @@ function writeCrtUniforms(out: Float32Array, state: RenderPassStateRegistry['crt
 	out[3] = sourceTexelY;
 	const opts = state.options;
 	if (opts.applyNoise) {
-		out[4] = state.noiseOffset;
-		out[14] = state.time;
+		out[4] = state.noisePhase & (CRT_NOISE_WIDTH - 1);
+		out[14] = state.noisePhase >>> 9;
 	}
 	out[5] = opts.applyNoise ? 1 : 0;
 	out[6] = opts.applyColorBleed ? 1 : 0;
@@ -82,6 +84,7 @@ function createCrtBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
 			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 			{ binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+			{ binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 		],
 	});
 }
@@ -101,7 +104,7 @@ function presentBindGroupForTexture(device: GPUDevice, layout: GPUBindGroupLayou
 	return cache.bindGroup as GPUBindGroup;
 }
 
-function crtBindGroupForTexture(device: GPUDevice, layout: GPUBindGroupLayout, uniformBuffer: GPUBuffer, sampler: GPUSampler, cache: TextureBindCache, texture: GPUTexture): GPUBindGroup {
+function crtBindGroupForTexture(device: GPUDevice, layout: GPUBindGroupLayout, uniformBuffer: GPUBuffer, sampler: GPUSampler, cache: TextureBindCache, texture: GPUTexture, noiseView: GPUTextureView): GPUBindGroup {
 	if (cache.texture !== texture) {
 		cache.texture = texture;
 		cache.view = texture.createView();
@@ -111,6 +114,7 @@ function crtBindGroupForTexture(device: GPUDevice, layout: GPUBindGroupLayout, u
 				{ binding: 0, resource: { buffer: uniformBuffer } },
 				{ binding: 1, resource: cache.view },
 				{ binding: 2, resource: sampler },
+				{ binding: 3, resource: noiseView },
 			],
 		});
 	}
@@ -140,6 +144,8 @@ export function registerCRT(registry: RenderPassLibrary): void {
 	let crtPipeline: GPURenderPipeline;
 	let sampler: GPUSampler;
 	let uniformBuffer: GPUBuffer;
+	let noiseTexture: GPUTexture;
+	let noiseView: GPUTextureView;
 	let crtSourceWidth = 0;
 	let crtSourceHeight = 0;
 	let crtSourceTexelX = 0;
@@ -181,6 +187,7 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		bootstrap,
 		teardown: () => {
 			uniformBuffer.destroy();
+			if (noiseTexture !== undefined) noiseTexture.destroy();
 		},
 		exec: (backend, _fbo, state: RenderPassStateRegistry['presentation_history_a']) => {
 			const wgpu = backend as WebGPUBackend;
@@ -234,7 +241,11 @@ export function registerCRT(registry: RenderPassLibrary): void {
 			}
 			writeCrtUniforms(crtUniformScratch, state, crtSourceTexelX, crtSourceTexelY);
 			wgpu.device.queue.writeBuffer(uniformBuffer, 0, crtUniformScratch);
-			const bindGroup = crtBindGroupForTexture(wgpu.device, crtLayout, uniformBuffer, sampler, crtCache, state.colorTex as GPUTexture);
+			if (noiseTexture === undefined) {
+				noiseTexture = wgpu.createTexture(crtNoiseTextureBytes(), CRT_NOISE_WIDTH, CRT_NOISE_HEIGHT, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture;
+				noiseView = noiseTexture.createView();
+			}
+			const bindGroup = crtBindGroupForTexture(wgpu.device, crtLayout, uniformBuffer, sampler, crtCache, state.colorTex as GPUTexture, noiseView);
 			renderFullscreen(backend, crtPipeline, bindGroup, wgpu.context.getCurrentTexture());
 		},
 	});

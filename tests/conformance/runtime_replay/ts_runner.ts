@@ -11,7 +11,9 @@ for (const extension of ['.glsl', '.wgsl']) {
 }
 
 async function main(): Promise<void> {
-	const [systemPath, cartPath, outputPrefix] = process.argv.slice(2);
+	const [systemPath, cartPath, outputPrefix, cpuBackend = 'default'] = process.argv.slice(2);
+	assert.ok(cpuBackend === 'default' || cpuBackend === 'interpreter' || cpuBackend === 'javascript', 'CPU backend must be default, interpreter or javascript');
+	const { CpuExecutionBackend } = await import('../../../machine/ts/machine/cpu/compiled_block');
 	const { Runtime } = await import('../../../machine/ts/machine/runtime/runtime');
 	const { parseSystemRomImage, parseCartridgePackage } = await import('../../../machine/ts/rompack/image');
 	const { cartridgeMediaFromPackage } = await import('../../../hosts/common/cartridge_media');
@@ -41,6 +43,7 @@ async function main(): Promise<void> {
 		systemRomBytes: parseSystemRomImage(readFileSync(systemPath)).bytes,
 		cartridgeSlots: [cartridgeMediaFromPackage(parseCartridgePackage(readFileSync(cartPath))), null],
 		machineModel: PSX_MACHINE_SPEC,
+		cpuExecutionBackend: cpuBackend === 'default' ? undefined : cpuBackend === 'javascript' ? CpuExecutionBackend.JavaScript : CpuExecutionBackend.Interpreter,
 	}, input);
 	const gpu = runtime.machine.gxGpu;
 	const backend = new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
@@ -183,6 +186,15 @@ async function main(): Promise<void> {
 	for (let index = 0; index < 10; index += 1) tick();
 	assert.equal(history.inputJournal.endSequence, 87);
 	if (outputPrefix) writeFileSync(`${outputPrefix}-history.state`, encodeRuntimeSaveState(capture()));
+	let compiledBlocks = 0;
+	for (let frame = runtime.machine.cpu.rootThread.currentFrame; frame !== null; frame = frame.previous) {
+		for (const page of frame.executionImage.decodedPages.values()) {
+			if (page.compiledBlocks === null) continue;
+			for (const block of page.compiledBlocks.entries) if (block !== null) ++compiledBlocks;
+		}
+	}
+	if (cpuBackend !== 'interpreter') assert.ok(compiledBlocks > 0, 'the replay must exercise actual generated JavaScript');
+	console.log(JSON.stringify({ cpuBackend, compiledBlocks }));
 	console.log(JSON.stringify({ host: 'ts-history', seekSteps, seekWorkMs, maxSeekStepMs, seekRestoreMs, historyCaptures, historyCaptureMs, checkpoints: history.checkpointCount, inputBytes: history.inputJournal.storageBytes }));
 	applyRuntimeSaveState(runtime, capture());
 	assert.equal(history.mode, HistoryMode.Disabled, 'external load ends history');

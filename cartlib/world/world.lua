@@ -28,7 +28,12 @@
 --    Systems iterate retained dense arrays directly; world keeps active
 --    membership stable until the current group completes.
 --
--- 6. GAMEPLAY TIME BELONGS TO THE WORLD SCHEDULE.
+-- 6. INITIAL CONSTRUCTION PRECEDES GAMEPLAY.
+--    Initial spawns publish and bind without activation. start() activates the
+--    assembled world and publishes its update runner. Runtime spawns activate
+--    at their ordinary batch barrier; clear() does not restart the World.
+--
+-- 7. GAMEPLAY TIME BELONGS TO THE WORLD SCHEDULE.
 --    gameplay_time_ms advances once before an admitted gameplay update and
 --    remains unchanged while that clock lane is suspended. Cooldown owners can
 --    retain absolute gameplay deadlines without ticking every component.
@@ -121,6 +126,7 @@ end
 function world_class.new()
 	local self<const> = setmetatable({}, world_class)
 	self._objects = {}
+	self._started = false
 	self._objects_revision = 0
 	self._spaces = {}
 	self._space_order = {}
@@ -252,7 +258,9 @@ function world_class:configure(world_module)
 		frame_delta_milliseconds,
 		world_module.gameplay_clock_rate
 	)
-	self.update = self._update_with_gameplay
+	if self.update ~= nil then
+		self.update = self.gameplay_clock_running and self._update_with_gameplay or self._update_without_gameplay
+	end
 	local spaces<const> = world_module.spaces
 	for space_index = 1, #spaces do
 		self:_add_space(spaces[space_index])
@@ -261,6 +269,25 @@ function world_class:configure(world_module)
 	self._initial_space_id = initial_space_id
 	self.active_space_id = initial_space_id
 	self:_commit_active_space(initial_space_id)
+end
+
+-- Construction, publication and binding may complete across several initial
+-- Scene batches. Begin gameplay only after the cart has assembled that world.
+-- The same barrier retains reentrant births and deaths until the initial
+-- activation pass completes; later births use ordinary runtime admission.
+function world_class:start()
+	if self._started then
+		return
+	end
+	self._started = true
+	self:_open_mutation_barrier()
+	local objects<const> = self._objects
+	local count<const> = #objects
+	for index = 1, count do
+		objects[index]:_activate()
+	end
+	self:_commit_mutation_barrier()
+	self.update = self.gameplay_clock_running and self._update_with_gameplay or self._update_without_gameplay
 end
 
 function world_class:active_component_view(component_class)
@@ -332,9 +359,11 @@ function world_class:_commit_gameplay_clock(running)
 	self.gameplay_clock_running = running
 	if running then
 		self._system_manager:resume_clock(clock.gameplay)
-		self.update = self._update_with_gameplay
-	else
-		self.update = self._update_without_gameplay
+	end
+	-- A clock change during construction or the initial activation cascade
+	-- retains its state without publishing an executable world prematurely.
+	if self.update ~= nil then
+		self.update = running and self._update_with_gameplay or self._update_without_gameplay
 	end
 	return true
 end
@@ -725,10 +754,12 @@ function world_class:_flush_admissions()
 			obj:_bind()
 		end
 	end
-	for index = first, last do
-		local obj<const> = pending[index]
-		if not obj.marked_for_disposal then
-			obj:_activate()
+	if self._started then
+		for index = first, last do
+			local obj<const> = pending[index]
+			if not obj.marked_for_disposal then
+				obj:_activate()
+			end
 		end
 	end
 	for index = first, last do

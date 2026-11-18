@@ -5,6 +5,29 @@ ivec2 gxWordBytes(vec4 rawPixel) {
 	return ivec2(n.b * 16 + n.a, n.r * 16 + n.g);
 }
 
+// Cached RGB5_A1 pixels decode back to the same two raw word bytes.
+ivec2 gxRgb5WordBytes(vec4 pixel) {
+	ivec3 color = ivec3(pixel.rgb * 31.0 + 0.5);
+	return ivec2(color.r + (color.g - (color.g / 8) * 8) * 32,
+		color.g / 8 + color.b * 4 + (pixel.a >= 0.5 ? 128 : 0));
+}
+
+#ifdef GX_GPU_CACHED_TARGETS
+uniform ivec2 u_targetOrigin;
+uniform vec2 u_targetSize;
+#else
+#define u_targetOrigin ivec2(0)
+#define u_targetSize vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS))
+#endif
+
+ivec2 gxTargetWordBytes(vec4 pixel) {
+#ifdef GX_GPU_TARGET_RGB5_A1
+	return gxRgb5WordBytes(pixel);
+#else
+	return gxWordBytes(pixel);
+#endif
+}
+
 ivec3 decodeRgb555To5(ivec2 word) {
 	return ivec3(word.x - (word.x / 32) * 32,
 		word.x / 32 + (word.y - (word.y / 4) * 4) * 8,
@@ -16,6 +39,23 @@ vec4 encodeRgb555(ivec3 color5, int maskBit) {
 	int high = color5.y / 8 + color5.z * 4 + maskBit * 128;
 	return vec4(high / 16, high - (high / 16) * 16,
 		low / 16, low - (low / 16) * 16) / 15.0;
+}
+
+vec4 gxEncodeTargetRgb555(ivec3 color5, int maskBit) {
+#ifdef GX_GPU_TARGET_RGB5_A1
+	return vec4(vec3(color5) / 31.0, float(maskBit));
+#else
+	return encodeRgb555(color5, maskBit);
+#endif
+}
+
+vec4 gxTargetRawWord(vec4 pixel) {
+#ifdef GX_GPU_TARGET_RGB5_A1
+	ivec2 word = gxWordBytes(pixel);
+	return gxEncodeTargetRgb555(decodeRgb555To5(word), word.y / 128);
+#else
+	return pixel;
+#endif
 }
 
 // A Q12 attribute accumulator has 20 bits. Vertex attributes carry its two

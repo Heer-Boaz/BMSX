@@ -19,6 +19,14 @@ struct ApuBadpDecoderState {
 	i64 previousDecodedFrame = -1;
 	i16 previousDecodedLeft = 0;
 	i16 previousDecodedRight = 0;
+	bool operator==(const ApuBadpDecoderState&) const = default;
+};
+
+struct ApuBadpTransition {
+	ApuBadpDecoderState from;
+	ApuBadpDecoderState to;
+	i64 target = -1;
+	u64 revision = 0;
 };
 
 struct ApuBadpSeekTable {

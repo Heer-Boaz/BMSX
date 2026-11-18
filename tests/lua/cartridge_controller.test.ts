@@ -1,16 +1,12 @@
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import assert from 'node:assert/strict';
+import { MAPPED_BUS_MASTER_CPU } from '../../machine/ts/machine/memory/bus_signals';
 import { test } from 'node:test';
 
 import { writeLE32 } from '../../machine/ts/common/endian';
 import {
-	DMA_CONTROL_BLOCK_WORDS_SHIFT,
-	DMA_CONTROL_READ_INCREMENT,
-	DMA_CONTROL_READ_REQUEST_SHIFT,
-	DMA_CONTROL_WRITE_INCREMENT,
-	DMA_CONTROL_WRITE_REQUEST_SHIFT,
-	DMA_REQUEST_CARTRIDGE_SLOT0_WRITE,
-	DMA_REQUEST_CARTRIDGE_SLOT1_READ,
+	DMA_CONTROL_READ_SLOT_SHIFT,
+	DMA_ROUTE_COPY,
 	DMA_TRIGGER_START,
 	IO_CART_SELECT,
 	IO_CART_STATUS,
@@ -27,7 +23,6 @@ import {
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import {
-	CARTRIDGE_MAILBOX_CONTROL_DREQ_READ,
 	CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE,
 	CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER,
 	CARTRIDGE_MAILBOX_CONTROL_OFFSET,
@@ -110,6 +105,9 @@ test('cartridge bus selects one physical socket and retains the raw selection la
 	memory.writeMappedU32LE(IO_CART_SELECT, 0xa5a50001);
 	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 0xa5a50001);
 	assert.equal(memory.readMappedU32LE(CART_ROM_BASE), 0xaabbccdd);
+	const view = { bytes: slot0.rom!, byteOffset: 0, byteLength: 0 };
+	assert.equal(memory.bindMappedReadView(CART_ROM_BASE, 4, MAPPED_BUS_MASTER_CPU, view), true);
+	assert.equal(view.bytes, slot1.rom);
 	assert.equal(
 		memory.readMappedU32LE(IO_CART_STATUS),
 		CARTRIDGE_STATUS_SLOT0_PRESENT
@@ -219,28 +217,15 @@ test('mailbox IRQ raises once per cartridge source-latch edge', () => {
 	assert.notEqual(memory.readMappedU32LE(IO_IRQ_FLAGS) & IRQ_CARTRIDGE_SLOT0, 0);
 });
 
-test('cartridge DREQ selectors override CPU selection independently on both DMA sides', () => {
+test('DMA socket bits select ROM and RAM independently of CPU selection and device DREQ', () => {
 	const { memory, dma, scheduler } = createHarness([
 		slot([0x01020304, 0x11121314], 16, true),
 		slot([0xa1a2a3a4, 0xb1b2b3b4], 16, true),
 	]);
 
-	memory.writeMappedU32LE(IO_CART_SELECT, 1);
-	memory.writeMappedU32LE(
-		MAILBOX_CONTROL_ADDRESS,
-		CARTRIDGE_MAILBOX_CONTROL_DREQ_READ,
-	);
 	memory.writeMappedU32LE(IO_CART_SELECT, 0);
-	memory.writeMappedU32LE(
-		MAILBOX_CONTROL_ADDRESS,
-		CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE,
-	);
 
-	const control = DMA_CONTROL_READ_INCREMENT
-		| DMA_CONTROL_WRITE_INCREMENT
-		| (DMA_REQUEST_CARTRIDGE_SLOT1_READ << DMA_CONTROL_READ_REQUEST_SHIFT)
-		| (DMA_REQUEST_CARTRIDGE_SLOT0_WRITE << DMA_CONTROL_WRITE_REQUEST_SHIFT)
-		| (1 << DMA_CONTROL_BLOCK_WORDS_SHIFT);
+	const control = DMA_ROUTE_COPY | (1 << DMA_CONTROL_READ_SLOT_SHIFT);
 	memory.writeMappedU32LE(IO_DMA0_READ_ADDR, CART_ROM_BASE);
 	memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, CART_RAM_BASE);
 	memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 2);

@@ -41,6 +41,8 @@ return source
 ];
 
 const setup = WORLD_CPU_SETUP + `
+world:start()
+
 local collider<const> = require('cartlib/collision/collider_2d_component')
 local geometry_pool<const> = require('cartlib/collision/geometry_pool')
 local overlap_system<const> = require('cartlib/collision/overlap_2d_system')

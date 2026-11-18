@@ -15,7 +15,7 @@ const NODE_FIELDS = ['node'];
 const CALL_FIELDS = ['node', 'method', 'arguments'];
 const CONTROL_FIELDS = ['target', 'operation', 'action'];
 const START = { type: 'integer', minimum: 0 }, COUNT = { type: 'integer', minimum: 1 };
-const RESULT_DESCRIPTION = ` Results pair bounded display strings (values) with raw ValueTags (tags): ${ValueTag.Nil}=nil, ${ValueTag.False}=false, ${ValueTag.True}=true, ${ValueTag.Number}=number, ${ValueTag.String}=string, ${ValueTag.Table}=table, ${ValueTag.Closure}=closure, ${ValueTag.BuiltinFunction}=builtin, ${ValueTag.Thread}=thread. Reinspect for expandable values; a completed call is not proof of domain success or a refreshed image.`;
+const RESULT_DESCRIPTION = ` Results pair bounded display strings (values) with raw ValueTags (tags): ${ValueTag.Nil}=nil, ${ValueTag.False}=false, ${ValueTag.True}=true, ${ValueTag.Integer}=integer, ${ValueTag.Float}=float, ${ValueTag.String}=string, ${ValueTag.Table}=table, ${ValueTag.Closure}=closure, ${ValueTag.BuiltinFunction}=builtin, ${ValueTag.Thread}=thread. Reinspect for expandable values; a completed call is not proof of domain success or a refreshed image.`;
 
 export const STUDIO_ACTOR_TOOLS = [
 	{ name: 'studio_list_actor_operations', description: 'Discover the same live-instance actions and stored Lua methods as Actor Lab. Node must come from the current suspended actor tree. Defaults are Lua literal arguments, not code. Discovery executes nothing. Action/call completion is distinct from event gates, later disposal, or later rendering.',

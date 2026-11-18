@@ -9,8 +9,10 @@ input.push_context(1, 'pietious', {
 	start = { 'Enter', 'AltRight' },
 	confirm = { 'KeyX', 'Enter', 'AltRight', 'Space' },
 	pause = { 'F2' },
+	inventory = { 'F1', 'ShiftLeft', 'ShiftRight' },
 }, {
 	confirm = { 'a', 'start', 'touch' },
+	inventory = { 'lb', 'rb' },
 })
 local world<const> = require('cartlib/world/world')
 local scene_library<const> = require('cartlib/world/scene_library')
@@ -234,6 +236,7 @@ atlas.load('world1_daemon')
 -- The cart entry owns cold boot. In-game restart requests are committed by
 -- the loop after World update and enter gameplay directly.
 create_world('intro')
+world:start()
 vblank.wait()
 
 -- Pietious intentionally advances one gameplay tick across two display frames.

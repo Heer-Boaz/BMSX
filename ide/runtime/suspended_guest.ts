@@ -1,24 +1,26 @@
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { StringId, StringPool } from '../../machine/ts/machine/cpu/string_pool';
 import {
 	TABLE_INDEX_CHAIN_LIMIT,
-	type Table,
+	TableLookupStatus,
+	type TableLookupResult,
 } from '../../machine/ts/machine/cpu/table';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import {
-	materializeValue,
 	EMPTY_CALL_ARGS,
 	type Value,
-	type ValueReference,
+	asInteger,
+	asStringId,
+	asTable,
+	asClosure,
+	isTruthy,
+	valueNil,
+	valuePayload,
 	valueIsTable,
 	valueToString,
 	valueTag,
 	ValueTag,
-	type StringValue,
-	type BuiltinFunction,
 } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
@@ -50,7 +52,8 @@ const NOT_A_TABLE: SuspendedGuestRead = { kind: 'unavailable', reason: 'not_a_ta
 export const enum SuspendedGuestValueKind {
 	Nil,
 	Boolean,
-	Number,
+	Integer,
+	Float,
 	String,
 	Table,
 	Function,
@@ -65,9 +68,13 @@ type SuspendedGuestTableMemberVisitor = (
 const METATABLE_LOOP_MESSAGE = 'Metatable __index loop detected while inspecting suspended guest state.';
 
 export class SuspendedGuestSession {
-	private readonly cpu: CPU;
+	/** Borrowed Values are decoded only through this physical CPU's heap. */
+	public readonly cpu: CPU;
 	private readonly stringPool: StringPool;
 	private readonly scratch = new ValueSlots(1);
+	private readonly lookupResult: TableLookupResult = {
+		values: this.scratch, slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
+	};
 	private readonly entryScratch = new ScratchBuffer<ValueSlots>(() => new ValueSlots(2));
 	private readonly previewParts = new ScratchBuffer<string[]>(() => []);
 	private readonly previewVisited = new Set<number>();
@@ -94,8 +101,8 @@ export class SuspendedGuestSession {
 	}
 
 	/** Decode semantic String data, without invoking value presentation. */
-	public stringText(value: StringValue): string {
-		return this.stringPool.toString(value.id);
+	public stringText(value: Value): string {
+		return this.stringPool.toString(asStringId(value));
 	}
 
 	/** UI borrowers end before execution and when restore replaces the inspected heap. */
@@ -121,7 +128,7 @@ export class SuspendedGuestSession {
 	public identity(value: Value): SuspendedValueIdentity {
 		const tag = valueTag(value);
 		return tag === ValueTag.String
-			? { tag, scalar: this.stringText(value as StringValue) }
+			? { tag, scalar: this.stringText(value) }
 			: { tag, scalar: this.identityScalar(value, tag) };
 	}
 	public matchesIdentity(value: Value, identity: SuspendedValueIdentity): boolean {
@@ -133,10 +140,11 @@ export class SuspendedGuestSession {
 	public identityScalar(value: Value, tag: ValueTag): number | string {
 		switch (tag) {
 			case ValueTag.Nil: case ValueTag.False: case ValueTag.True: return 0;
-			case ValueTag.Number: return value as number;
-			case ValueTag.String: return this.stringPool.toString((value as StringValue).id);
-			case ValueTag.BuiltinFunction: return (value as BuiltinFunction).id;
-			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return (value as Table | Closure | Thread).hashId;
+			case ValueTag.Integer: return asInteger(value);
+			case ValueTag.Float: case ValueTag.BuiltinFunction: return valuePayload(value);
+			case ValueTag.String: return this.stringPool.toString(asStringId(value));
+			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return this.cpu.gc.object(valuePayload(value)).hashId;
+			default: throw new Error('Internal table metadata is not a language value.');
 		}
 	}
 
@@ -146,7 +154,7 @@ export class SuspendedGuestSession {
 		args: ReadonlyArray<SuspendedGuestValue> = EMPTY_CALL_ARGS,
 	): ReadonlyArray<SuspendedGuestValue> {
 		this.invalidate();
-		return this.runtime.callClosure(value as Closure, args);
+		return this.runtime.callClosure(asClosure(value, this.cpu.gc), args);
 	}
 
 	public kind(value: SuspendedGuestValue): SuspendedGuestValueKind {
@@ -156,8 +164,10 @@ export class SuspendedGuestSession {
 			case ValueTag.False:
 			case ValueTag.True:
 				return SuspendedGuestValueKind.Boolean;
-			case ValueTag.Number:
-				return SuspendedGuestValueKind.Number;
+			case ValueTag.Integer:
+				return SuspendedGuestValueKind.Integer;
+			case ValueTag.Float:
+				return SuspendedGuestValueKind.Float;
 			case ValueTag.String:
 				return SuspendedGuestValueKind.String;
 			case ValueTag.Thread:
@@ -167,6 +177,7 @@ export class SuspendedGuestSession {
 			case ValueTag.Closure:
 			case ValueTag.BuiltinFunction:
 				return SuspendedGuestValueKind.Function;
+			default: throw new Error('Internal table metadata is not a language value.');
 		}
 	}
 
@@ -186,14 +197,15 @@ export class SuspendedGuestSession {
 
 	/** Same guest predicate as ValueSlots.isTruthy: only nil and false are false. */
 	public isTruthy(value: SuspendedGuestValue): boolean {
-		return value !== null && value !== false;
+		return isTruthy(value);
 	}
 
-	/** A closure has no birth socket. Resolve its address on the current instruction bus. */
+	/** A closure carries the execution domain in which its function record was bound. */
 	public functionLocation(value: SuspendedGuestValue, target?: RuntimeFunctionLocationBuffer): RuntimeFunctionLocation | undefined {
 		if (valueTag(value) !== ValueTag.Closure) return undefined;
-		const address = (value as Closure).functionAddress;
-		const domain = this.runtime.machine.executionAddressSpace.domainIdOnBus(address, this.cpu.readExecutionBusSignals());
+		const closure = asClosure(value, this.cpu.gc);
+		const address = closure.functionAddress;
+		const domain = closure.executionDomainId;
 		if (target === undefined) return { domain, address };
 		target.domain = domain; target.address = address;
 		return target;
@@ -204,26 +216,17 @@ export class SuspendedGuestSession {
 		if (location !== undefined && location.domain !== null) return location;
 	}
 
-	/** The symbol reader supplies an actual closure and its installed capture index. */
-	public readClosureUpvalue(value: SuspendedGuestValue, index: number): SuspendedGuestValue {
-		return this.cpu.readClosureUpvalue(value as Closure, index);
-	}
-
 	public readStringMember(
 		value: SuspendedGuestValue,
 		name: string,
 	): SuspendedGuestValue {
 		const key = this.stringPool.find(name);
 		if (key == null) {
-			return null;
+			return valueNil();
 		}
-		const table = value as Table;
-		if (!table.resolveStringIndex(
-			this.indexKey,
-			key,
-			this.scratch,
-			0,
-		)) {
+		const table = asTable(value, this.cpu.gc);
+		table.resolveStringIndex(this.indexKey, key, this.lookupResult);
+		if (this.lookupResult.status === TableLookupStatus.ChainExhausted) {
 			throw new Error(METATABLE_LOOP_MESSAGE);
 		}
 		const result = this.scratch.get(0);
@@ -248,9 +251,7 @@ export class SuspendedGuestSession {
 
 	/** Stored entries only: numeric/boolean/reference keys are not stringified into lookup keys. */
 	public visitTableEntries(value: SuspendedGuestValue, visitor: (key: SuspendedGuestValue, value: SuspendedGuestValue) => void): void {
-		(value as Table).forEachStoredEntry((keyTag, keyScalar, keyReference, tag, scalar, reference) => {
-			visitor(materializeValue(keyTag, keyScalar, keyReference), materializeValue(tag, scalar, reference));
-		});
+		asTable(value, this.cpu.gc).forEachStoredEntry(visitor);
 	}
 
 	public visitTableStringMembers(
@@ -258,25 +259,17 @@ export class SuspendedGuestSession {
 		visitor: SuspendedGuestTableMemberVisitor,
 	): void {
 		const seen = new Set<StringId>();
-		const visitEntry = (
-			keyTag: ValueTag,
-			keyScalar: number,
-			_keyReference: ValueReference,
-			entryTag: ValueTag,
-			entryScalar: number,
-			entryReference: ValueReference,
-		): void => {
-			if (keyTag === ValueTag.String && !seen.has(keyScalar)) {
+		const visitEntry = (key: Value, entry: Value): void => {
+			if (valueTag(key) !== ValueTag.String) return;
+			const id = asStringId(key);
+			if (!seen.has(id)) {
 				// Lua lookup stops at the first stored value, including false and
 				// non-callable shadows. Consumers filter the resolved members only.
-				seen.add(keyScalar);
-				visitor(
-					this.stringPool.toString(keyScalar),
-					materializeValue(entryTag, entryScalar, entryReference),
-				);
+				seen.add(id);
+				visitor(this.stringPool.toString(id), entry);
 			}
 		};
-		let current = value as Table;
+		let current = asTable(value, this.cpu.gc);
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
 			current.forEachStoredEntry(visitEntry);
 			const next = current.metatableIndexTable(this.indexKey);
@@ -311,7 +304,7 @@ export class SuspendedGuestSession {
 		if (!valueIsTable(value)) {
 			return valueToString(value, this.stringPool);
 		}
-		const table = value;
+		const table = asTable(value, this.cpu.gc);
 		if (depth >= maxDepth || this.previewVisited.has(table.hashId)) {
 			return '{…}';
 		}
@@ -319,24 +312,13 @@ export class SuspendedGuestSession {
 		const parts = this.previewParts.get(depth);
 		const entry = this.entryScratch.get(depth);
 		parts.length = 0;
-		let afterTag = ValueTag.Nil;
-		let afterScalar = NaN;
-		let afterReference: ValueReference = null;
 		let entryCount = 0;
-		let hasEntry = table.next(
-			afterTag,
-			afterScalar,
-			afterReference,
-			entry,
-			0,
-		);
-		while (hasEntry && entryCount < maxEntries) {
-			const keyTag = entry.getTag(0);
-			const keyScalar = entry.getScalar(0);
-			const keyReference = entry.getReference(0);
+		table.next(valueNil(), entry, 0);
+		while (entry.getTag(0) !== ValueTag.Nil && entryCount < maxEntries) {
+			const key = entry.get(0);
 			parts.push(
 				`${this.previewValueAtDepth(
-					materializeValue(keyTag, keyScalar, keyReference),
+					key,
 					depth + 1,
 					maxDepth,
 					maxEntries,
@@ -347,19 +329,10 @@ export class SuspendedGuestSession {
 					maxEntries,
 				)}`,
 			);
-			afterTag = keyTag;
-			afterScalar = keyScalar;
-			afterReference = keyReference;
 			entryCount += 1;
-			hasEntry = table.next(
-				afterTag,
-				afterScalar,
-				afterReference,
-				entry,
-				0,
-			);
+			table.next(key, entry, 0);
 		}
-		if (hasEntry) {
+		if (entry.getTag(0) !== ValueTag.Nil) {
 			parts.push('…');
 		}
 		const preview = parts.length === 0 ? '{}' : `{ ${parts.join(', ')} }`;

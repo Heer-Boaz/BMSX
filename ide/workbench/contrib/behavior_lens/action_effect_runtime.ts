@@ -1,5 +1,4 @@
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
-import { valueIsString } from '../../../../machine/ts/machine/cpu/value';
+import { isNil, valueIsString, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedGuestValue } from '../../../runtime/suspended_guest';
@@ -10,8 +9,8 @@ import { BehaviorRuntimeProperties, type RuntimeInspectionProperty } from './run
 
 /** Borrowed within one suspended read. Never saved in an editor input. */
 export type ActionEffectInstance = {
-	readonly component: Table;
-	readonly effect: Table;
+	readonly component: Value;
+	readonly effect: Value;
 	readonly key: SuspendedGuestValue;
 };
 export type ActionEffectInstanceChoice = QuickPickItem & ActionEffectInstance;
@@ -21,13 +20,13 @@ export function findActionEffectInstance(sources: RuntimeInstalledSourceState, g
 	if (component === undefined) return undefined;
 	let result: ActionEffectInstance | undefined;
 	guest.visitTableEntries(guest.readStringMember(component, 'effects'), (key, value) => {
-		const effect = value as Table;
-		if (effect.hashId === effectHashId) result = { component, key, effect };
+		const effect = value;
+		if (guest.identityScalar(effect, ValueTag.Table) === effectHashId) result = { component, key, effect };
 	});
 	return result;
 }
 
-function actionEffectInstanceChoice(guest: SuspendedGuestSession, component: Table, key: SuspendedGuestValue, effect: Table): ActionEffectInstanceChoice {
+function actionEffectInstanceChoice(guest: SuspendedGuestSession, component: Value, key: SuspendedGuestValue, effect: Value): ActionEffectInstanceChoice {
 	return { label: guest.formatValue(key), description: `COMPONENT ${guest.formatValue(guest.readStringMember(component, 'id'))}`,
 		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'owner'), 'id'))}`, component, key, effect };
 }
@@ -37,7 +36,7 @@ export function readActionEffectInstances(sources: RuntimeInstalledSourceState, 
 	const items: ActionEffectInstanceChoice[] = [];
 	const available = visitRuntimeComponents(sources, guest, domain, 'cartlib/actioneffects/actioneffect_component', component => {
 		guest.visitTableEntries(guest.readStringMember(component, 'effects'), (key, effect) => {
-			items.push(actionEffectInstanceChoice(guest, component, key, effect as Table));
+			items.push(actionEffectInstanceChoice(guest, component, key, effect));
 		});
 	});
 	return { available, items };
@@ -62,14 +61,14 @@ export function inspectActionEffectInstance(
 	properties.field('world', 'gameplay_time_ms', 'GAMEPLAY TIME (MS)', guest.readStringMember(world, 'gameplay_time_ms'));
 	for (const [field, label] of INSTANCE_FIELDS) {
 		const value = guest.readStringMember(choice.effect, field);
-		if (value !== null) properties.field('instance', field, label, value);
+		if (!isNil(value)) properties.field('instance', field, label, value);
 	}
-	return inspectActionEffectDefinition(sources, guest, guest.readStringMember(choice.effect, 'definition') as Table, guest.formatValue(choice.key), properties);
+	return inspectActionEffectDefinition(sources, guest, guest.readStringMember(choice.effect, 'definition'), guest.formatValue(choice.key), properties);
 }
 
 /** Shared property projection for a registry entry or an instance's own retained definition. */
 export function inspectActionEffectDefinition(
-	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, definition: Table, id: string, properties = new BehaviorRuntimeProperties(sources, guest),
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, definition: Value, id: string, properties = new BehaviorRuntimeProperties(sources, guest),
 ): RuntimeInspectionProperty[] {
 	properties.text('LOADED DEFINITION', id,
 		'THE SELECTED RETAINED DEFINITION. NOT A MATCH TO THE OPEN AUTHORED REGISTRATION.');

@@ -3,6 +3,7 @@
  */
 
 #include "crt_processor.h"
+#include "render/post/crt/noise.h"
 
 #include "common/clamp.h"
 #include "render/backend/backend.h"
@@ -42,10 +43,6 @@ inline f32 smoothstep(f32 edge0, f32 edge1, f32 x) {
 
 inline u8 signalByte(f32 c) {
 	return static_cast<u8>(clamp(c, 0.0f, 1.0f) * 255.0f + 0.5f);
-}
-
-inline f32 fract(f32 v) {
-	return v - static_cast<f32>(static_cast<i32>(v));
 }
 
 std::array<f32, 256> buildByteToLinearTable() {
@@ -171,25 +168,22 @@ inline BlurContrast applyBlurAndContrast(
 	};
 }
 
-// Mirrors the GPU CRT shader hash exactly (crt.frag.glsl / crt.frag.wgsl
-// hashNoise): wrap the inputs for precision, scale the z/time term by 1e-4
-// (NOT 0.1), then the same dot/fract mix. Inputs here are non-negative, so the
-// truncating fract() above matches GLSL fract().
-inline f32 hashNoise(f32 u, f32 v, f32 t) {
-	const f32 wu = u - 1024.0f * static_cast<f32>(static_cast<i32>(u / 1024.0f));
-	const f32 wv = v - 1024.0f * static_cast<f32>(static_cast<i32>(v / 1024.0f));
-	const f32 wt = t - 4096.0f * static_cast<f32>(static_cast<i32>(t / 4096.0f));
-	f32 px = fract(wu * 0.1f * 12.9898f);
-	f32 py = fract(wv * 0.1f * 78.233f);
-	f32 pz = fract(wt * 0.0001f * 43758.5453f);
-	const f32 dotp = px * (py + 19.19f) + py * (pz + 19.19f) + pz * (px + 19.19f);
-	px += dotp;
-	py += dotp;
-	pz += dotp;
-	return fract((px + py) * pz);
+// Match the four nonzero taps without evaluating the unused blur result.
+inline BlurContrast applyContrast(const u32* top, const u32* middle, const u32* bottom,
+	const SampleAxis& x, const SampleAxis& y, const std::array<f32, 256>& table) {
+	const u32* sideRow = y.contrastBefore != 0.0f ? top : bottom;
+	const i32 sideX = x.contrastBefore != 0.0f ? x.before : x.after;
+	const auto center = unpackLinear(middle[x.center], table);
+	const auto horizontal = unpackLinear(middle[sideX], table);
+	const auto vertical = unpackLinear(sideRow[x.center], table);
+	const auto diagonal = unpackLinear(sideRow[sideX], table);
+	const LinearRgb neighborhood{
+		(diagonal.r + vertical.r * 2.0f) + (horizontal.r + center.r * 2.0f) * 2.0f - center.r,
+		(diagonal.g + vertical.g * 2.0f) + (horizontal.g + center.g * 2.0f) * 2.0f - center.g,
+		(diagonal.b + vertical.b * 2.0f) + (horizontal.b + center.b * 2.0f) * 2.0f - center.b,
+	};
+	return {center, center, std::abs(luminance(center) - luminance(neighborhood) * 0.125f)};
 }
-
-
 
 } // namespace
 
@@ -212,10 +206,11 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 	const f32 srcHf = static_cast<f32>(srcHeight);
 	const f32 srcMaxX = srcWf - 1.0f;
 	const f32 srcMaxY = srcHf - 1.0f;
-	const f32 time = static_cast<f32>(state.time);
 	const auto& options = state.options;
 	const bool usesCollapsedKernel = options.applyBlur || options.applyFringing || options.applyAperture || options.applyScanlines;
-	const f32 random = state.noiseOffset;
+	const auto noise = options.applyNoise ? noiseTextureBytes() : std::span<const u8>{};
+	const u32 noiseX = state.noisePhase & (NOISE_WIDTH - 1u);
+	const u32 noiseY = state.noisePhase / NOISE_WIDTH;
 	const u32* sampleSource = src;
 
 	for (i32 y = 0; y < dstHeight; ++y) {
@@ -229,9 +224,8 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 		const f32 sourceY = uvY * srcHf;
 		const i32 sourceRow = static_cast<i32>(sourceY);
 		const f32 scanlinePhase = (sourceRow & 1) == 0 ? 1.0f : -1.0f;
-		const f32 lineNoise = options.applyNoise
-			? hashNoise(0.0f, static_cast<f32>(sourceRow) + time * 30.0f, 0.0f) - 0.5f
-			: 0.0f;
+		const u32 noiseRow = ((static_cast<u32>(sourceRow) + noiseY) & (NOISE_HEIGHT - 1u)) * NOISE_WIDTH * 4u;
+		const f32 lineNoise = options.applyNoise ? static_cast<f32>(noise[noiseRow + 1u]) / 255.0f - 0.5f : 0.0f;
 		for (i32 x = 0; x < dstWidth; ++x) {
 			const f32 uvX = (static_cast<f32>(x) + 0.5f) * invOutW;
 			const f32 srcX = uvX * srcMaxX;
@@ -239,7 +233,9 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 			BlurContrast bc;
 			if (usesCollapsedKernel) {
 				const SampleAxis kernelX = collapsedKernelAxis(srcX, srcWidth);
-				bc = applyBlurAndContrast(topRow, middleRow, bottomRow, kernelX, kernelY, table);
+				bc = options.applyBlur
+					? applyBlurAndContrast(topRow, middleRow, bottomRow, kernelX, kernelY, table)
+					: applyContrast(topRow, middleRow, bottomRow, kernelX, kernelY, table);
 			} else {
 				bc.center = sampleLinear(sampleSource, srcWidth, srcHeight, srcX, srcY, table);
 				bc.blurred = bc.center;
@@ -332,10 +328,8 @@ void renderCRT(SoftwareBackend& backend, const CRTPipelineState& state) {
 			}
 
 			if (options.applyNoise) {
-				const f32 pixNoise =
-					hashNoise(uvX * srcWf + random,
-								sourceY + random,
-								time) - 0.5f;
+				const u32 pixelX = (static_cast<u32>(uvX * srcWf) + noiseX) & (NOISE_WIDTH - 1u);
+				const f32 pixNoise = static_cast<f32>(noise[noiseRow + pixelX * 4u]) / 255.0f - 0.5f;
 				const f32 lum = luminance(color);
 				const f32 n = pixNoise * 0.65f + lineNoise * 0.35f;
 				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);

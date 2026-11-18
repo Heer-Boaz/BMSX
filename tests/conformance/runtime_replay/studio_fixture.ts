@@ -1,3 +1,4 @@
+import { asInteger, valueBool } from '../../../machine/ts/machine/cpu/value';
 import { WorkbenchPreferences } from '../../../ide/workbench/services/preferences/preferences';
 import { mapDisplayPointToViewport } from '../../../machine/ts/render/video_output';
 import { CodeEditorPane } from '../../../ide/workbench/contrib/code_editor/editor_pane';
@@ -309,8 +310,8 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const settle = () => until(() => tasks.ready && !rewind.seeking, 'seek/queue must settle');
 	const guest = ide.guest;
 	const waitForTestFrame = async () => {
-		await until(() => guest.global('studio_test_ready') === true
-			&& (guest.global('studio_test_rendered_frames') as number) > 0 && tasks.ready,
+		await until(() => guest.global('studio_test_ready') === valueBool(true)
+			&& asInteger(guest.global('studio_test_rendered_frames')) > 0 && tasks.ready,
 			'dedicated Studio test cartridge completed its first render');
 		const renderedAt = cycles();
 		await until(() => screen.gameFrame.presentationSequence !== undefined

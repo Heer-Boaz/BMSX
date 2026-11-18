@@ -1,13 +1,61 @@
 #include "machine/memory/memory.h"
+
+#include "common/compiler.h"
 #include "common/endian.h"
 #include "machine/devices/cartridge/controller.h"
 #include "spec/bmsx/memory_map.h"
 
 #include <cstring>
+#include <array>
 
 namespace bmsx {
 
 namespace {
+
+// Decode the physical IO word permissions once, not on every DMA/CPU write.
+constexpr auto kReadOnlyIoSlots = [] {
+	std::array<bool, IO_SLOT_COUNT> slots{};
+	for (u32 address = IO_INP_KEYS; address < IO_INP_OUTPUT_PORT; address += IO_WORD_SIZE)
+		slots[(address - IO_BASE) / IO_WORD_SIZE] = true;
+	const u32 addresses[]{
+		IO_SYS_BUS_FAULT_CODE,
+		IO_SYS_BUS_FAULT_ADDR,
+		IO_SYS_BUS_FAULT_ACCESS,
+		IO_SYS_TIME_MS,
+		IO_SYS_FRAME_MS_Q16,
+		IO_SYS_CYCLES_PER_FRAME,
+		IO_SYS_STATUS,
+		IO_IRQ_FLAGS,
+		IO_DMA0_STATUS,
+		IO_DMA1_STATUS,
+		IO_IMGDEC_STATUS,
+		IO_IMGDEC_INPUT_WORDS_RECEIVED,
+		IO_IMGDEC_DECODED_WORD_COUNT,
+		IO_GEO_STATUS,
+		IO_GEO_PROCESSED,
+		IO_GEO_FAULT,
+		IO_INP_STATUS,
+		IO_INP_OUTPUT_STATUS,
+		IO_APU_STATUS,
+		IO_APU_FAULT_CODE,
+		IO_APU_FAULT_DETAIL,
+		IO_APU_EVENT_KIND,
+		IO_APU_EVENT_SLOT,
+		IO_APU_EVENT_SOURCE_ADDR,
+		IO_APU_EVENT_SEQ,
+		IO_APU_SELECTED_SOURCE_ADDR,
+		IO_APU_ACTIVE_MASK,
+		IO_CART_STATUS,
+		IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+		IO_SYS_SUPERVISOR_FAULT_CAUSE,
+		IO_SYS_SUPERVISOR_FAULT_EPC,
+		IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS,
+		IO_SYS_SUPERVISOR_FAULT_LUA_REASON,
+		IO_SYS_SUPERVISOR_FAULT_DOMAIN,
+	};
+	for (const u32 address : addresses) slots[(address - IO_BASE) / IO_WORD_SIZE] = true;
+	return slots;
+}();
 
 constexpr size_t IO_SYS_BUS_FAULT_CODE_SLOT = (IO_SYS_BUS_FAULT_CODE - IO_BASE) / IO_WORD_SIZE;
 constexpr size_t IO_SYS_BUS_FAULT_ADDR_SLOT = (IO_SYS_BUS_FAULT_ADDR - IO_BASE) / IO_WORD_SIZE;
@@ -100,7 +148,7 @@ Memory::Memory(const MemoryInit& init, u32 ramByteCount)
 }
 
 void Memory::installSystemRom(std::span<const u8> rom) {
-	m_systemRom = rom;
+	m_systemRom = Span<const u8>(rom);
 	if (m_mappedPageInvalidator) {
 		m_mappedPageInvalidator->invalidateMappedRange(
 			SYSTEM_ROM_BASE,
@@ -132,7 +180,7 @@ void Memory::bindMappedPage(
 ) {
 	out.key = addr;
 	out.readBytes = nullptr;
-	out.writeWatch = nullptr;
+	out.writeWatch = {};
 	if (addr < RAM_BASE) {
 		out.cacheable = addr < SYSTEM_ROM_SIZE;
 		if (static_cast<size_t>(addr) + MAPPED_PAGE_BYTE_SIZE <= m_systemRom.size()) {
@@ -165,17 +213,40 @@ void Memory::bindMappedPage(
 }
 
 void Memory::mapIoRead(uint32_t addr, void* context, IoReadHandler handler) {
-	m_ioReadHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = { context, handler };
+	const size_t slot = static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE);
+	m_ioReadHandlers[slot] = { context, handler };
+	if (auto* prefix = findIoDmaPrefix(static_cast<int>(slot))) prefix->read = nullptr;
 }
 
-void Memory::mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler) {
+void Memory::mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler, IoWriteStorage storage) {
+	m_ioWriteStorage[(addr - IO_BASE) / IO_WORD_SIZE] = storage;
 	IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)];
 	binding.context = context;
 	binding.handler = handler;
+	if (auto* prefix = findIoDmaPrefix(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE))) prefix->write = nullptr;
 }
 
 void Memory::mapIoWriteReady(uint32_t addr, IoWriteReadyHandler handler) {
-	m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)].ready = handler;
+	const size_t slot = static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE);
+	m_ioWriteHandlers[slot].ready = handler;
+	if (auto* prefix = findIoDmaPrefix(static_cast<int>(slot))) prefix->write = nullptr;
+}
+
+Memory::IoDmaPrefixBinding* Memory::findIoDmaPrefix(int slot) {
+	for (auto& prefix : m_ioDmaPrefixes) if (prefix.slot == slot) return &prefix;
+	return nullptr;
+}
+
+void Memory::mapIoDmaReadPrefix(u32 address, IoDmaReadPrefixHandler handler) {
+	const int slot = static_cast<int>((address - IO_BASE) / IO_WORD_SIZE);
+	if (auto* prefix = findIoDmaPrefix(slot)) prefix->read = handler;
+	else if (handler != nullptr) m_ioDmaPrefixes.push_back({slot, handler, nullptr});
+}
+
+void Memory::mapIoDmaWritePrefix(u32 address, IoDmaWritePrefixHandler handler) {
+	const int slot = static_cast<int>((address - IO_BASE) / IO_WORD_SIZE);
+	if (auto* prefix = findIoDmaPrefix(slot)) prefix->write = handler;
+	else if (handler != nullptr) m_ioDmaPrefixes.push_back({slot, nullptr, handler});
 }
 
 bool Memory::mappedWriteReady(uint32_t addr) {
@@ -250,10 +321,16 @@ u32 Memory::readIoSlot(int slot, uint32_t addr, MappedBusSignals busSignals) con
 	return m_ioSlots[static_cast<size_t>(slot)];
 }
 
-void Memory::writeIoSlot(int slot, uint32_t addr, u32 value, MappedBusSignals busSignals) {
+void Memory::writeIoSlot(int slot, uint32_t addr, u32 value, u32 faultAccess, MappedBusSignals busSignals) {
 	const size_t slotIndex = static_cast<size_t>(slot);
-	m_ioSlots[slotIndex] = value;
+	if (kReadOnlyIoSlots[slotIndex]) {
+		raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
+		return;
+	}
 	const IoWriteBinding& binding = m_ioWriteHandlers[slotIndex];
+	if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u && binding.ready != nullptr
+		&& !binding.ready(binding.context, addr, busSignals)) return;
+	if (m_ioWriteStorage[slotIndex] == IoWriteStorage::Retained) m_ioSlots[slotIndex] = value;
 	if (binding.handler != nullptr) {
 		binding.handler(binding.context, addr, value, busSignals);
 	}
@@ -322,7 +399,7 @@ void Memory::writeIoU32(uint32_t addr, u32 value) {
 }
 
 void Memory::writeMappedWord(uint32_t addr, u32 value) {
-	writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_WORD, MAPPED_BUS_MASTER_CPU);
+	writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_WRITE_WORD);
 }
 
 u8 Memory::readU8(uint32_t addr) const {
@@ -373,21 +450,34 @@ uint32_t Memory::readIoU32(uint32_t addr) const {
 	return readIoSlot(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE), addr, MAPPED_BUS_MASTER_CPU);
 }
 
-uint32_t Memory::readU32(uint32_t addr) const {
+template<bool Count>
+uint32_t Memory::readRawU32(uint32_t addr, MemoryWordCounters* counters) const {
 	if (addr < RAM_BASE) {
 		if (addr <= SYSTEM_ROM_SIZE - 4u) {
+			if constexpr (Count) ++counters->systemRomWords;
 			return readRomWindowU32LE(m_systemRom.data(), m_systemRom.size(), addr);
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset + sizeof(uint32_t) <= m_ram.size()) {
+			if constexpr (Count) ++counters->ramWords;
 			return readLE32(m_ram.data() + offset);
 		}
 	} else if (addr <= CART_BUS_END - 4u) {
+		if constexpr (Count) ++counters->cartridgeWords;
 		return m_cartridgeController.readU32(addr, MAPPED_BUS_MASTER_CPU);
 	}
+	if constexpr (Count) ++counters->otherWords;
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
 	return 0;
+}
+
+uint32_t Memory::readU32(uint32_t addr) const {
+	return readRawU32<false>(addr, nullptr);
+}
+
+uint32_t Memory::readCountedU32(uint32_t addr, MemoryWordCounters& counters) const {
+	return readRawU32<true>(addr, &counters);
 }
 
 uint32_t Memory::readMappedU16LE(uint32_t addr) const {
@@ -415,22 +505,6 @@ uint32_t Memory::readMappedU32LE(uint32_t addr, uint32_t faultAccess) const {
 	return readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess);
 }
 
-uint32_t Memory::readMappedBusU32BE(
-	uint32_t addr,
-	MappedBusSignals busSignals,
-	uint32_t faultAccess
-) const {
-	const uint32_t value = readMappedBusU32LE(addr, busSignals, faultAccess);
-	return ((value & 0x000000ffu) << 24)
-		| ((value & 0x0000ff00u) << 8)
-		| ((value & 0x00ff0000u) >> 8)
-		| ((value & 0xff000000u) >> 24);
-}
-
-uint32_t Memory::readMappedDmaU32LE(uint32_t addr, MappedBusSignals busSignals) const {
-	return readMappedBusU32LE(addr, busSignals);
-}
-
 uint32_t Memory::readMappedBusU32LE(
 	uint32_t addr,
 	MappedBusSignals busSignals,
@@ -438,10 +512,15 @@ uint32_t Memory::readMappedBusU32LE(
 ) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
+		if ((busSignals & (MAPPED_BUS_INSTRUCTION_FETCH | MAPPED_BUS_DMA_MEMORY)) != 0u) {
+			raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
+			return 0u;
+		}
 		return readIoSlot(slot, addr, busSignals);
 	}
 	if (isIoRegionRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
+		raiseBusFault((busSignals & (MAPPED_BUS_INSTRUCTION_FETCH | MAPPED_BUS_DMA_MEMORY)) != 0u
+			? BUS_FAULT_UNMAPPED : BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 		return 0;
 	}
 	if (addr < RAM_BASE) {
@@ -454,6 +533,10 @@ uint32_t Memory::readMappedBusU32LE(
 			return readLE32(m_ram.data() + offset);
 		}
 	} else if (addr <= CART_BUS_END - 4u) {
+		if (addr >= CART_MMIO_BASE && (busSignals & MAPPED_BUS_INSTRUCTION_FETCH) != 0u) {
+			raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
+			return 0u;
+		}
 		return m_cartridgeController.readU32(addr, busSignals);
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
@@ -495,6 +578,17 @@ void Memory::writeU32(uint32_t addr, uint32_t value) {
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
 }
 
+void Memory::countRawWriteU32(uint32_t addr, MemoryWordCounters& counters) const {
+	if (addr < CART_ROM_BASE) {
+		if (isRamRange(addr, IO_WORD_SIZE)) { ++counters.ramWords; return; }
+		if (addr <= SYSTEM_ROM_SIZE - IO_WORD_SIZE) { ++counters.systemRomWords; return; }
+	} else if (addr <= CART_BUS_END - IO_WORD_SIZE) {
+		++counters.cartridgeWords;
+		return;
+	}
+	++counters.otherWords;
+}
+
 void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
 	if (isIoRegionRange(addr, 2)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U16);
@@ -512,31 +606,111 @@ void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
 }
 
 void Memory::writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess) {
-	writeMappedBusU32LE(addr, value, faultAccess, MAPPED_BUS_MASTER_CPU);
+	writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, faultAccess);
 }
 
-void Memory::writeMappedDmaU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals) {
-	writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_U32, busSignals);
+// Only declared end-silent FIFO ports may batch the prefix. Arbitrary MMIO
+// retains per-word bus order, and every block's last read precedes its last write.
+void Memory::transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
+	u32 readStep, u32 writeStep, MappedBusSignals readSignals, MappedBusSignals writeSignals) {
+	if (wordCount != 0u && readStep == IO_WORD_SIZE && writeStep == IO_WORD_SIZE) {
+		const size_t bytes = static_cast<size_t>(wordCount) * IO_WORD_SIZE;
+		Span<const u8> source;
+		if (writeAddress >= IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE
+			&& isRamRange(writeAddress, bytes)
+			&& bindMappedReadView(readAddress, bytes, readSignals, source)) {
+			const size_t destinationOffset = writeAddress - RAM_BASE;
+			u8* destination = m_ram.data() + destinationOffset;
+			for (size_t offset = 0; offset < bytes; offset += IO_WORD_SIZE) {
+				writeLE32(destination + offset, readLE32(source.data_ + offset));
+			}
+			m_ramPageWriteWatches.invalidateWrite(destinationOffset, bytes, RAM_BASE, m_mappedPageInvalidator);
+			return;
+		}
+	}
+	const int readSlot = readStep == 0u && (readSignals & MAPPED_BUS_DMA_MEMORY) == 0u ? ioAlignedSlot(readAddress) : -1;
+	const int writeSlot = writeStep == 0u && (writeSignals & MAPPED_BUS_DMA_MEMORY) == 0u ? ioAlignedSlot(writeAddress) : -1;
+	auto* writePrefix = wordCount > 1u && writeSlot >= 0 ? findIoDmaPrefix(writeSlot) : nullptr;
+	if (writePrefix != nullptr && writePrefix->write != nullptr
+		&& !kReadOnlyIoSlots[static_cast<size_t>(writeSlot)]) {
+		std::array<u32, DMA_BURST_WORD_CAPACITY> words;
+		const u32 prefix = wordCount - 1u;
+		auto* readPrefix = readSlot >= 0 ? findIoDmaPrefix(readSlot) : nullptr;
+		bool prefixRead = false;
+		if (readPrefix != nullptr && readPrefix->read != nullptr) {
+			readPrefix->read(
+				m_ioReadHandlers[static_cast<size_t>(readSlot)].context, readAddress, words.data(), prefix, readSignals);
+			prefixRead = true;
+		} else if (readStep == 0u || readStep == IO_WORD_SIZE) {
+			Span<const u8> bytes;
+			const u32 byteCount = readStep == 0u ? IO_WORD_SIZE : prefix * IO_WORD_SIZE;
+			bool bound;
+			if (readAddress >= IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE && isRamRange(readAddress, byteCount)) {
+				bytes.data_ = m_ram.data() + (readAddress - RAM_BASE);
+				bound = true;
+			} else {
+				bound = bindRomByteView(readAddress, byteCount, m_cartridgeController.selectedSlot(readSignals), bytes);
+			}
+			if (bound) {
+				for (u32 i = 0u; i < prefix; ++i) words[i] = readLE32(bytes.data_ + i * readStep);
+				prefixRead = true;
+			}
+		}
+		if (prefixRead) {
+			writePrefix->write(
+				m_ioWriteHandlers[static_cast<size_t>(writeSlot)].context, writeAddress, words.data(), prefix, writeSignals);
+			readAddress += prefix * readStep;
+			wordCount = 1u;
+		}
+	}
+	if (readSlot >= 0 && writeSlot >= 0) {
+		for (u32 i = 0u; i < wordCount; ++i) {
+			const MappedBusSignals end = i + 1u == wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0u;
+			const u32 word = readIoSlot(readSlot, readAddress, readSignals | end);
+			writeIoSlot(writeSlot, writeAddress, word, BUS_ACCESS_WRITE_U32, writeSignals | end);
+		}
+		return;
+	}
+	if (writeSlot >= 0) {
+		for (u32 i = 0u; i < wordCount; ++i) {
+			const MappedBusSignals end = i + 1u == wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0u;
+			const u32 word = readMappedBusU32LE(readAddress, readSignals | end);
+			writeIoSlot(writeSlot, writeAddress, word, BUS_ACCESS_WRITE_U32, writeSignals | end);
+			readAddress += readStep;
+		}
+		return;
+	}
+	if (readSlot >= 0) {
+		for (u32 i = 0u; i < wordCount; ++i) {
+			const MappedBusSignals end = i + 1u == wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0u;
+			const u32 word = readIoSlot(readSlot, readAddress, readSignals | end);
+			writeMappedBusU32LE(writeAddress, word, writeSignals | end);
+			writeAddress += writeStep;
+		}
+		return;
+	}
+	for (u32 i = 0u; i < wordCount; ++i) {
+		const MappedBusSignals end = i + 1u == wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0u;
+		const u32 word = readMappedBusU32LE(readAddress, readSignals | end);
+		writeMappedBusU32LE(writeAddress, word, writeSignals | end);
+		readAddress += readStep;
+		writeAddress += writeStep;
+	}
 }
 
-void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusSignals busSignals) {
+void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals, uint32_t faultAccess) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		if (isReadOnlyIoAddress(addr)) {
-			raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
+		if ((busSignals & MAPPED_BUS_DMA_MEMORY) != 0u) {
+			raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 			return;
 		}
-		const IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>(slot)];
-		if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u
-			&& binding.ready != nullptr
-			&& !binding.ready(binding.context, addr, busSignals)) {
-			return;
-		}
-		writeIoSlot(slot, addr, value, busSignals);
+		writeIoSlot(slot, addr, value, faultAccess, busSignals);
 		return;
 	}
 	if (isIoRegionRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
+		raiseBusFault((busSignals & MAPPED_BUS_DMA_MEMORY) != 0u
+			? BUS_FAULT_UNMAPPED : BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 		return;
 	}
 	if (addr < CART_ROM_BASE) {
@@ -633,8 +807,21 @@ bool Memory::bindRomByteView(uint32_t addr, size_t length, u32 cartridgeSlot, Sp
 	return false;
 }
 
+bool Memory::bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals busSignals, Span<const u8>& out) const {
+	if (addr < RAM_BASE) return bindRomByteView(addr, length, 0u, out);
+	if (addr < CART_ROM_BASE) {
+		const u32 ioEnd = IO_BASE + static_cast<u32>(m_ioSlots.size()) * IO_WORD_SIZE;
+		if (length == 0u || !isRamRange(addr, length)
+			|| (addr < ioEnd && (addr >= IO_BASE || length > IO_BASE - addr))) return false;
+		out = Span<const u8>(m_ram.data() + (addr - RAM_BASE), length);
+		return true;
+	}
+	return addr < CART_BUS_END && m_cartridgeController.bindMappedReadView(addr, length, busSignals, out);
+}
+
 bool Memory::isRamRange(uint32_t addr, size_t length) const {
 	return addr >= RAM_BASE
+		&& addr < CART_ROM_BASE && length <= CART_ROM_BASE - addr
 		&& length <= m_ram.size()
 		&& static_cast<size_t>(addr - RAM_BASE) <= m_ram.size() - length;
 }
@@ -686,7 +873,7 @@ u32 Memory::mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind regio
 							: addr < CART_BUS_END ? CART_BUS_END : (u64{1} << ADDRESS_BITS);
 		break;
 	default:
-		__builtin_unreachable();
+		BMSX_UNREACHABLE();
 	}
 	const u64 regionWords = (boundary - addr + (IO_WORD_SIZE - 1u)) / IO_WORD_SIZE;
 	return regionWords < wordLimit ? static_cast<u32>(regionWords) : wordLimit;
@@ -726,49 +913,5 @@ bool Memory::isIoRegionRange(uint32_t addr, size_t length) const {
 	return addressRangeWithin(addr, IO_BASE, m_ioSlots.size() * IO_WORD_SIZE, length);
 }
 
-bool Memory::isReadOnlyIoAddress(uint32_t addr) const {
-	if (addr >= IO_INP_KEYS && addr < IO_INP_OUTPUT_PORT) {
-		return true; // latched keyboard/pointer/pad snapshot words
-	}
-	switch (addr) {
-		case IO_SYS_BUS_FAULT_CODE:
-		case IO_SYS_BUS_FAULT_ADDR:
-		case IO_SYS_BUS_FAULT_ACCESS:
-		case IO_SYS_TIME_MS:
-		case IO_SYS_FRAME_MS_Q16:
-		case IO_SYS_CYCLES_PER_FRAME:
-		case IO_SYS_STATUS:
-		case IO_IRQ_FLAGS:
-		case IO_DMA0_STATUS:
-		case IO_DMA1_STATUS:
-		case IO_IMGDEC_STATUS:
-		case IO_IMGDEC_INPUT_WORDS_RECEIVED:
-		case IO_IMGDEC_DECODED_WORD_COUNT:
-		case IO_GEO_STATUS:
-		case IO_GEO_PROCESSED:
-		case IO_GEO_FAULT:
-		case IO_INP_STATUS:
-		case IO_INP_OUTPUT_STATUS:
-		case IO_APU_STATUS:
-		case IO_APU_FAULT_CODE:
-		case IO_APU_FAULT_DETAIL:
-		case IO_APU_EVENT_KIND:
-		case IO_APU_EVENT_SLOT:
-		case IO_APU_EVENT_SOURCE_ADDR:
-		case IO_APU_EVENT_SEQ:
-		case IO_APU_SELECTED_SOURCE_ADDR:
-		case IO_APU_ACTIVE_MASK:
-		case IO_CART_STATUS:
-		case IO_SYS_SUPERVISOR_FAULT_SEQUENCE:
-		case IO_SYS_SUPERVISOR_FAULT_CAUSE:
-		case IO_SYS_SUPERVISOR_FAULT_EPC:
-		case IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS:
-		case IO_SYS_SUPERVISOR_FAULT_LUA_REASON:
-		case IO_SYS_SUPERVISOR_FAULT_DOMAIN:
-			return true;
-		default:
-			return false;
-	}
-}
 
 } // namespace bmsx

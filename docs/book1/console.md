@@ -182,16 +182,16 @@ commands and result handling.
 ### Image decoding {#sec-console-image-decoding}
 
 Compressed image data needs a different path from vertex arithmetic. IMGDEC
-expands its compressed word stream into GPU upload headers and texture or
-palette words. One DMA channel can feed the compressed input while the other
-carries the generated stream from IMGDEC DATA to GPU GP0. The GPU then performs
-the local-memory writes described by those upload packets.
+expands lossless token streams into raw words in bounded output blocks. One
+DMA channel supplies compressed words from ROM or RAM while another drains
+completed blocks to RAM or a receiving device. The CPU supplies GPU command
+headers when those words are image or palette payloads; the GPU performs the
+VRAM writes.
 
-This route changes the representation of image data, not the drawing geometry.
-The program supplies the source stream, destination fields and word counts;
-request signals pace the DMA transfers as the decoder consumes input and
-produces output. The [IMGDEC chapter](imgdec.md#sec-imgdec) specifies the
-compressed tokens, packet output, FIFO capacities and decoding costs.
+Input, decoded output and GPU packets have separate counts and lifetimes.
+Request signals pace transport, and decoder completion follows output drainage.
+The [IMGDEC chapter](imgdec.md#sec-imgdec) gives the compression operations,
+block timing, flow control and programming sequence.
 
 ### Graphics storage and drawing {#sec-console-graphics-storage-and-drawing}
 
@@ -270,7 +270,7 @@ slot controls, transfer modes and completion procedures.
 
 DMA supplies words to an operation; the receiving unit interprets those words.
 For example, a GPU upload consists of a GP0 header followed by image words. The
-DMA channel moves that sequence to the fixed GP0 address, while the GPU uses
+DMA channel selects the wired TO_GPU route, while the GPU uses
 the header to determine where its local-memory writes belong. DMA does not
 need a CPU-linear VRAM address for this transfer.
 
@@ -289,10 +289,11 @@ specified separately in the CPU reference.
 
 ### Completion and storage reuse {#sec-console-completion-and-storage-reuse}
 
-Suppose DMA reads a command buffer while the CPU begins to construct the next
-picture in that same buffer. Words not yet transferred could then belong to the
-new picture while earlier words belong to the old one. Keep the source stable
-until DMA completes, or prepare the next stream in different storage.
+An admitted DMA burst holds the CPU bus, but a job can wait for device
+requests between bursts. If the CPU rebuilds its source buffer during such a
+wait, later words can belong to a different picture from earlier ones. Other
+devices can also write shared storage. Keep the source stable until DMA
+completes, or prepare the next stream in different storage.
 
 Once those command words have been delivered, the buffer can be reused, but
 the GPU can still be drawing. If the next operation overwrites the drawing

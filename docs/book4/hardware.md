@@ -165,19 +165,20 @@ command, register and result interfaces.
 
 ### IMGDEC stream path {#sec-physical-imgdec-path}
 
-IMGDEC accepts compressed image input and produces upload data for the CPU or
-DMA to send to GFX. GFX, rather than IMGDEC, performs the video-memory writes.
-Input, output and completion are controlled through the interface in Book I.
+IMGDEC reconstructs raw words from a lossless token stream. It has an input
+FIFO, a 4096-word history and one output work block. After the block decode
+interval, the same work block supplies DATA reads; another completed-output
+queue is not required.
 
-For a streamed upload, one DMA channel can feed compressed words from ROM or
-main RAM into IMGDEC while the other is armed to drain its output to GPU GP0
-or RAM. The channels share one block engine; their input and output requests,
-and the destination's request where applicable, govern block admission. If
-output cannot be drained, backpressure can eventually fill the input path.
-IMGDEC completion requires its output to be read; it does not mean the GPU has
-already processed the upload.
+DMA feeds compressed input from ROM or main RAM and drains completed output
+to a receiving device or RAM. The CPU supplies GPU packet headers separately;
+IMGDEC has no texture-coordinate, image-size or CLUT-packet sequencer. GFX
+interprets those packets and performs VRAM writes. Input backpressure and
+output drainage are separate from the decoder's scheduled block completion.
 
-![Image-decompression input and upload paths.](figures/imgdec-datapath.svg){#fig-physical-imgdec-path}
+Book I specifies the block interface and programmer-visible timing. This
+organisation does not qualify the physical SRAM ports, clock crossings or
+board implementation.
 
 ## Shared system bus
 
@@ -221,35 +222,36 @@ no additional public register or completed cross-chip handshake is implied.
 
 ### Physical DMA sequencing
 
-In the physical transfer proposal, a DMA block reads a source word and
-completes the corresponding destination write before proceeding to the next
-word. Endpoint waits, bus arbitration and memory refresh contribute to the
-elapsed time. Completion and request handshakes, not an assumed single
-external-bus cycle, govern reuse of transferred data.
+CORE has two DMA registerfiles and one bounded burst engine. A route decoder
+connects memory to GP0, GPUREAD, IMGDEC or the APU transfer port, or connects
+IMGDEC output directly to GP0. Memory-side addresses do not select arbitrary
+console I/O ports. The route fixes both device strobes and request sources.
 
-The two channels retain separate register banks but share one block engine.
-Each channel selects its source and destination requests independently. GFX,
-APU and the cartridge sockets provide their requests to CORE; IMGDEC provides
-its requests inside CORE. Both selected conditions must allow a block to start.
-Once admitted, the block continues even if a request later drops; that change
-affects admission of the next block.
+Each admitted burst owns the CPU bus and charges source and destination
+accesses serially. The CPU does not execute or enter an interrupt during that
+interval. Other device clocks continue. Endpoint availability and memory-region
+boundaries limit a burst; requests govern admission rather than retracting
+individual words after admission.
 
-Each word uses the appropriate CORE path to main RAM, a cartridge or a system
-device. A cartridge request may select the source or destination socket for
-its own endpoint, independently of the other endpoint and of the CPU's SELECT
-register. With no cartridge request selection, a cartridge endpoint uses the
-ordinary SELECT value at the time of that access. For a
-GPU transfer, the final word of a block carries the block-end indication to
-the GPU DMA ingress. DMA completion and its interrupt report completion of
-the transfer, not completion of the GPU's drawing or the APU's sample-memory
-commit. Book I and Book III specify the request and port rules.
+The channel registerfile retains the current addresses, remaining count and
+raw CONTROL. Its configuration writes are disabled while BUSY, so no duplicate
+per-burst command-register bank is required. Separate source and destination
+socket bits select cartridge memory independently of CPU SELECT. Card DREQ
+applies to mapped-device endpoints, not ordinary ROM or RAM accesses.
 
-![Proposed DMA block service and independent endpoint selection.](figures/dma-physical-service.svg){#fig-dma-physical-service}
+The last word carries the block-end indication to GPU ingress. GPU packet
+assembly continues across bursts, without packet-alignment padding. DMA
+completion is distinct from GPU drawing and APU sample-memory service.
+Book I and Book III specify the programmer-visible connections and timing;
+physical bus arbitration, refresh and electrical timing still require
+implementation and qualification.
 
-The existing Book I numerical charges remain the current programming
-contract. The approved multi-cycle direction has not yet replaced those
-charges or fixed all software-visible timing and progress rules. Integration
-of the complete physical data, request and device paths remains to be done.
+![Bounded DMA service and wired device routes.](figures/dma-physical-service.svg){#fig-dma-physical-service}
+
+The Book I numerical charges and publication edges define the programming
+contract. They do not qualify a fitted board's SRAM ports, bus service or
+clock crossings. Integration of the complete physical data, request and
+device paths remains to be done.
 
 ### Physical GEO service
 
@@ -261,22 +263,21 @@ Book I specifies the records and completion interface.
 ![GEO operation and memory paths.](figures/geo-job-datapath.svg){#fig-physical-geo-datapath}
 
 A physical operation must account for the work and memory accesses it
-performs. Work- and memory-dependent timing is an approved direction, but its
-concrete public timing and progress rules have not replaced Book I.
+performs. Book I specifies work- and memory-dependent intervals for XFORM2,
+SAT2 and OVERLAP2D. The complete physical engine has not yet demonstrated
+these timing requirements.
 
-GEO's addressed operand and ordinary result accesses use the geometry memory
-path; in main RAM these do not address mapped I/O registers. OVERLAP2D summary
-writes are different: the four separate summary words use ordinary mapped bus
-writes, including the initial zero writes when COUNT is zero. A programmed
-summary address can therefore select an I/O register rather than RAM. A bus
-fault from such a write and a GEO operation fault are separate indications;
-completed writes are not undone.
+GEO's addressed operands, results and OVERLAP2D summaries use the geometry
+memory path. In main RAM this path accesses the stored bytes, including bytes
+at addresses reserved for CPU I/O; it does not operate mapped I/O registers.
+The summary is not a second control path to other units.
 
-The proposed CORE memory fabric distinguishes these access classes per
-request. Connecting the GEO producer and defining command acceptance and
-summary-write ordering are still open, particularly if a summary write
-addresses GEO's own registers. The physical design must not replace that
-mapped access with a RAM-only write or add an unrequested retry.
+The proposed CORE memory fabric distinguishes raw geometry requests from
+ordinary mapped requests. The GEO producer must select the geometry path for
+its summary words as well as its operands and results. Connecting that
+producer, retaining in-progress work and meeting the specified publication
+boundaries remain physical integration tasks. The programming contract and
+its memory-range rules are specified in Book I.
 
 ## Cartridge bus
 
@@ -433,7 +434,7 @@ the drawing or readback that the word requests.
 The GPU endpoint distinguishes GP0 writes from GP1 controls, GP0 reads from
 GPUSTAT reads, and CPU accesses from DMA accesses. It forwards the DMA block-end
 indication with the last word to the GPU's DMA ingress. A CPU GP0 write uses
-the CPU admission rules, not GPUSTAT's DMA packet-acceptance bit; DMA ingress
+the CPU admission rules, not GPUSTAT's DMA ingress-availability bit; DMA ingress
 uses its own rules. GP0 reads return the retained GPUREAD latch or consume the
 next ready word according to the existing CPU/DMA port ownership. These are
 separate operations, not ordinary reads and writes of a shared register.

@@ -143,7 +143,7 @@ export class RuntimeInspection {
 					const location = physical[frame.physicalFrameIndex];
 					const reference = `${this.id}/frame/${index}`;
 					const trace = { ...frame, reference, domain: location.executionDomainId, pc: location.tracePc, functionAddress: location.functionAddress };
-					this.frames.set(reference, { physical: location, frame: this.runtime.machine.cpu.activeThread.frames[frame.physicalFrameIndex], trace });
+					this.frames.set(reference, { physical: location, frame: this.runtime.machine.cpu.activeThread.frameAtDepth(frame.physicalFrameIndex), trace });
 					return trace;
 				});
 		}

@@ -10,7 +10,7 @@ int main(){unsigned count;std::cin>>count;
  for(unsigned n=0;n<count;n++){
   u32 pc,source,body,wide,op,a,b,rkb,rkc,lb,li,rb,ri,ln,rn;uint64_t lv,rv,expect;
   std::cin>>std::hex>>pc>>source>>body>>wide>>op>>a>>b>>rkb>>rkc>>lb>>li>>rb>>ri>>ln>>lv>>rn>>rv>>expect;
-  std::array<u8,8> bytes{};for(int k=0;k<4;k++){bytes[k]=(source>>(24-8*k))&255u;bytes[k+4]=(body>>(24-8*k))&255u;}
+  std::array<u8,8> bytes{};writeInstructionWord(bytes,0,source);writeInstructionWord(bytes,1,body);
   Blua32ImageLayout image;image.address=0;image.bytes=bytes;image.header.textAddress=0;image.header.textByteCount=8;
   const auto d=decodeInstructionFromStart(image,0);const int db=rk(d.b,d.rkBitsB),dc=rk(d.c,d.rkBitsC);
   if(u32(d.op)!=op||u32(d.a)!=a||u32(d.b)!=b||u32(db)!=rkb||u32(dc)!=rkc||lb!=u32(op==34?0:db<0)||li!=u32(op==34?d.b:db<0?-1-db:db)||rb!=u32(dc<0)||ri!=u32(dc<0?-1-dc:dc)){

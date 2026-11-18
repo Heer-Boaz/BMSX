@@ -27,6 +27,7 @@ local function init<init>()
 end
 init()
 starcatch = game.new()
+world:start()
 
 while true do
 	while vblank_pending == 0 do halt_until_irq end

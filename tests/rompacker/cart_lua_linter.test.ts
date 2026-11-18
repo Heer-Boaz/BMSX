@@ -20,6 +20,27 @@ async function withCartLintFixture(name: string, source: string, run: (root: str
 	}
 }
 
+for (const [name, fields, duplicate] of [
+	['integers', '[2]=1, [2]=2', true],
+	['mixed_subtypes', '[2]=1, [2.0]=2', true],
+	['negative', '[-2]=1, [-2.0]=2', true],
+	['word_literal', '[0xffffffff]=1, [-1]=2', true],
+	['wrapped_negation', '[-0x80000000]=1, [0x80000000]=2', true],
+	['rounded_float', '[16777216]=1, [16777217.0]=2', true],
+	['signed_zero', '[-0.0]=1, [0]=2', true],
+	['array_alias', '1, [1.0]=2', true],
+	['exact_integer', '[16777217]=1, [16777217.0]=2', false],
+	['distinct_negative', '[-1]=1, [-2]=2', false],
+	['distinct_fraction', '[0.25]=1, [-0.25]=2', false],
+	['distinct_kinds', '[1]=1, ["1"]=2, [true]=3', false],
+] as const) test(`duplicate table keys use int32/f32 semantics: ${name}`, async () => {
+	await withCartLintFixture(`cart_lua_linter_keys32_${name}`, `return { ${fields} }`, async root => {
+		const lint = lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]), { kind: 'filesystem' })).files.values()], profile: 'cart' });
+		if (duplicate) await assert.rejects(lint, /Duplicate table key/);
+		else await lint;
+	});
+});
+
 test('cart constructor field use does not define the World spawn options shape', async () => {
 	await withCartLintFixture('cart_lua_linter_world_ctor_options', [
 		"local prefab<const> = require('cartlib/world/prefab')",

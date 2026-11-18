@@ -4,7 +4,7 @@ import { ActionEffectObservation } from './observations/actioneffect';
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { Table } from '../../machine/ts/machine/cpu/table';
-import { asStringId, valueString, valueToString, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
+import { asStringId, asThread, valueString, valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit } from '../../machine/ts/spec/blua32/execution_domain';
 import { readSupervisorFaultReport } from '../runtime/fault_state';
 import type { BuiltFixtureProgram } from './fixture_media';
@@ -40,6 +40,7 @@ export class TestExecution implements FixtureOutput {
 	private inspectionTarget: string | undefined;
 	private readonly fixture: GuestFixture;
 	private readonly operations: FixtureOperations;
+	private readonly phaseCycleBudget: number;
 	private phase: Phase = 'bind';
 	private cancelling = false;
 	private cleanupStartCycles = 0;
@@ -62,6 +63,7 @@ export class TestExecution implements FixtureOutput {
 		private readonly capturedFrame?: (target: TestTarget, label: string) => void,
 		mode: TestExecutionMode = 'run',
 	) {
+		this.phaseCycleBudget = program.suite.tests.find(test => test.name === result.test.caseName)!.phaseCycles ?? budgets.phaseCycles;
 		this.fixture = new GuestFixture(target.runtime, program);
 		this.operations = new FixtureOperations(target, target.input, this, () => this.bindExecutionHook());
 		if (mode === 'debug') this.debugger = new TestDebugger(target.runtime, program, () => this.bindExecutionHook());
@@ -122,7 +124,7 @@ export class TestExecution implements FixtureOutput {
 		if (this.operations.waiting) {
 			return this.operations.advance(this.callArgs, this.budgets.quantumCycles);
 		}
-		const completed = this.fixture.advance(this.callArgs, Math.min(this.budgets.quantumCycles, this.budgets.phaseCycles - this.phaseCycles));
+		const completed = this.fixture.advance(this.callArgs, Math.min(this.budgets.quantumCycles, this.phaseCycleBudget - this.phaseCycles));
 		this.phaseCycles += this.fixture.lastCallCycles;
 		if (completed) {
 			if (this.phase === 'bind') {
@@ -131,7 +133,7 @@ export class TestExecution implements FixtureOutput {
 				return true;
 			}
 			const values = runtime.readCompletionValues();
-			const outcome = cpu.stringPool.toString(asStringId(values[0] as StringValue));
+			const outcome = cpu.stringPool.toString(asStringId(values[0]));
 			if (outcome === 'yielded') {
 				this.callArgs.length = 1;
 				const unsupported = this.operations.accept(values);
@@ -139,14 +141,14 @@ export class TestExecution implements FixtureOutput {
 			}
 			else {
 				if (outcome === 'failed') {
-					this.results.recordFailure(this.result, this.failure(values[1] as Thread, valueToString(values[2], cpu.stringPool)));
+					this.results.recordFailure(this.result, this.failure(asThread(values[1], cpu.gc), valueToString(values[2], cpu.stringPool)));
 				}
 				if (this.phase === 'setup' && outcome === 'returned') this.nextPhase('body');
 				else if (this.phase !== 'teardown' && this.program.suite.teardown) this.nextPhase('teardown');
 				else this.complete();
 			}
 			return true;
-		} else if (this.phaseCycles >= this.budgets.phaseCycles) this.stop('Phase exceeded its cycle budget');
+		} else if (this.phaseCycles >= this.phaseCycleBudget) this.stop('Phase exceeded its cycle budget');
 		return false;
 	}
 
@@ -167,14 +169,14 @@ export class TestExecution implements FixtureOutput {
 		this.capturedFrame?.(this.target, label);
 	}
 	public observeFsm(recorder: Table): void {
-		const observation = new FsmTransitionObservation(recorder, this.target.runtime.machine.cpu.stringPool,
+		const observation = new FsmTransitionObservation(recorder, this.target.runtime.machine.cpu.stringPool, this.target.runtime.machine.cpu.gc,
 			(sequence, time, tick, lane, previous, target, outcome) =>
 				this.results.appendFsmTransition(trace, sequence, time, tick, lane, previous, target, outcome));
 		const trace = this.results.beginFsmTransitionTrace(this.result, observation.instanceId, observation.machineId, this.program.sourceMedia.cartridgeSlots[0]!.sourceContextId);
 		this.fsm = observation;
 	}
 	public observeActionEffects(recorder: Table): void {
-		const observation = new ActionEffectObservation(recorder, this.target.runtime.machine.cpu.stringPool, {
+		const observation = new ActionEffectObservation(recorder, this.target.runtime.machine.cpu.stringPool, this.target.runtime.machine.cpu.gc, {
 			trigger: (sequence, time, tick, effect, outcome) => this.results.appendActionEffectTrigger(trace, sequence, time, tick, effect, outcome),
 			activity: (sequence, time, tick, effect, kind, count) => this.results.appendActionEffectActivity(trace, sequence, time, tick, effect, kind, count),
 		});

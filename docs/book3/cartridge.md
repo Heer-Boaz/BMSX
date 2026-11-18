@@ -59,14 +59,17 @@ instruction to the same address on that card.
 A cartridge-targeted `CP0.EXEC` samples SELECT and establishes the execution
 socket for the new entry. Since cartridge addresses are identical in both
 sockets, insertion in the other socket does not by itself require relocation.
-A cartridge-function closure contains a function-record address, not a socket
-selection; calling it uses the current execution socket. See [[Program images and startup — EXEC and cartridge entry](../book1/program-images.md#sec-memory-exec-and-cartridge-entry)]{.content-visible when-format="html"}[Book II, §3.3.3]{.content-visible when-format="pdf"}
+A closure binds the execution domain in which its function record is read.
+Calling a closure bound to a cartridge domain executes it in that socket,
+regardless of a later change to SELECT or of the caller's execution socket.
+A function record in main RAM inherits the execution domain of the code
+constructing the closure. See [[Program images and startup — EXEC and cartridge entry](../book1/program-images.md#sec-memory-exec-and-cartridge-entry)]{.content-visible when-format="html"}[Book II, §3.3.3]{.content-visible when-format="pdf"}
 and [[CPU execution control](../book1/cpu.md#sec-cpu-cp0-and-execution-control)]{.content-visible when-format="html"}[Book II, §1.13]{.content-visible when-format="pdf"}.
 
 DMA also distinguishes the address from the socket. Its source and destination
-request fields can select different sockets, allowing a direct copy from one
+socket bits can select different sockets, allowing a direct copy from one
 card to the other. Those endpoint selections are independent of the CPU data
-selector; their encodings and request conditions are given under
+selector; their encodings and mapped-device request conditions are given under
 [DMA between sockets](#sec-cartridge-dma-between-sockets).
 
 ## Cartridge controller {#sec-cartridge-cartridge-controller}
@@ -130,6 +133,11 @@ across the selection change.
 Instruction fetch and the explicit DMA socket selections bypass SELECT without
 changing it. STATUS bit 16 continues to report ordinary data selection, not
 the socket used by an instruction fetch or by a DMA endpoint.
+
+Cartridge ROM and RAM windows can supply instruction words; cartridge MMIO
+cannot. An attempted instruction fetch from MMIO raises an instruction bus
+error before reading the device. This does not prohibit ordinary data reads or
+DMA transfers through the MMIO window.
 
 The presence bits are independent of selection. Selecting an empty socket
 changes STATUS bit 16 while leaving bits 1:0 unchanged. Reads from that socket
@@ -240,7 +248,7 @@ For a protocol that publishes one DATA word and requests an interrupt:
    socket's central pending bit separately. Select the correct card before
    accessing its mailbox.
 
-For DMA, program the required DREQ levels instead; both endpoint requests and
+For DMA involving mapped devices, program the required directional DREQ level; endpoint socket bits and
 the channel's address, count and control registers must be ready before START.
 The mailbox fields are defined next, and
 [DMA between sockets](#sec-cartridge-dma-between-sockets) shows how they
@@ -342,83 +350,59 @@ is in [[Interrupt controller](../book1/irq.md#sec-irq-cpu-delivery-and-waiting)]
 
 ## DMA between sockets {#sec-cartridge-dma-between-sockets}
 
-To copy ROM data from socket 0 into RAM on socket 1, the DMA channel needs two
-addresses and two socket selections. Its read address chooses the source
-location in card ROM, while its write address chooses the destination in card
-RAM. The source and destination request fields supply their socket selections
-independently. The CPU's SELECT register need not change during the copy.
+To copy ROM data from socket 0 into RAM on socket 1, program COPY, the two
+memory addresses and the two socket bits. READ_SLOT is CONTROL bit 3 and
+WRITE_SLOT is bit 4. They select the source and destination sockets
+independently of CPU SELECT. The address selects ROM, RAM or mapped-device
+space within that socket.
 
-Each request field has two effects: it selects a request condition that must be
-satisfied before a block starts, and, for a cartridge request, it selects that
-endpoint's socket. `READ_REQUEST` controls the source; `WRITE_REQUEST` controls
-the destination. In either field, selectors 7–10 mean:
+| Source socket | Destination socket | COPY CONTROL |
+|---:|---:|---|
+| 0 | 0 | `00000000H` |
+| 1 | 0 | `00000008H` |
+| 0 | 1 | `00000010H` |
+| 1 | 1 | `00000018H` |
 
-| Selector | Request condition | Endpoint socket override |
-| --- | --- | --- |
-| 7 | Socket 0 `DREQ_WRITE` | Socket 0 |
-| 8 | Socket 0 `DREQ_READ` | Socket 0 |
-| 9 | Socket 1 `DREQ_WRITE` | Socket 1 |
-| 10 | Socket 1 `DREQ_READ` | Socket 1 |
-
-These selections are independent of one another and of SELECT. An endpoint
-with any of these four selectors may address ROM, card RAM or mailbox MMIO;
-the address selects the region within the chosen socket. In particular, the
-READ or WRITE name in a request condition does not itself restrict the
-endpoint's address range.
+The two memory addresses always advance four bytes per word. There are no
+independent read/write request selectors or programmed burst lengths.
 
 ### Request levels and block operation {#sec-cartridge-dma-block-operation}
 
-Both endpoint requests must be asserted for a block to start. Mailbox CONTROL
-bit 1 drives DREQ_READ and bit 2 drives DREQ_WRITE. Since the requests are
-levels, one CONTROL write can keep a condition asserted for successive blocks;
-there is no separate request pulse for each word. They do not report FIFO
-occupancy. An absent card, or one without a mailbox, asserts neither cartridge
-request. `FORCE` (selector 0) is always asserted and `DISABLED` (selector 15)
-is never asserted.
+ROM and RAM accesses do not require a card's DREQ. When an endpoint addresses
+cartridge mapped-device space, its selected socket must assert DREQ_READ for
+a source or DREQ_WRITE for a destination. Mailbox CONTROL bits 1 and 2 drive
+those respective levels. An absent card or a card without that device asserts
+neither request.
 
-At the start of a block, DMA captures its read and write addresses, remaining
-count, control and block length. The transfer cost elapses before the endpoint
-accesses occur. At completion, DMA reads each word and then writes it, then
-updates the channel's addresses and count. A remaining count of zero completes
-the channel. A request that drops after a block has started holds off the next
-block; it does not shorten the block already in progress.
+Mapped-device bursts contain at most sixteen words. A remaining tail can be
+shorter. A region boundary ends a burst before entering a different request
+domain. A falling request prevents the next admission but does not retract
+an admitted burst or undo its port effects. A continuously asserted mailbox
+request permits successive bursts; it does not report a streaming FIFO count.
 
-Selectors other than 7–10 supply no independent cartridge socket selection.
-A cartridge endpoint then uses SELECT **at the time of its access**, not the
-selection present at START. Changing SELECT during an active block can
-therefore redirect that endpoint. Keep selection unchanged until completion
-or use an explicit cartridge request selector.
+The DMA channel's configuration is write-disabled while BUSY. Changing CPU
+SELECT cannot reroute either memory endpoint, even between bursts. Source
+payload remains live: keep it stable until DMA DONE. See the
+[DMA reference](../book1/dma.md) for completion, STOP and bus-fault behavior.
 
-### Four-word control value {#sec-cartridge-dma-control-example}
+### Four-word COPY control {#sec-cartridge-dma-control-example}
 
-For the socket-0 ROM to socket-1 RAM copy, use source selector 8 and destination
-selector 9. Increment both addresses and choose a four-word block:
-
-| `CONTROL` field | Value | Contribution |
-| --- | --- | --- |
-| Read increment, bit 0 | 1 | `00000001H` |
-| Write increment, bit 1 | 1 | `00000002H` |
-| Read request, bits 5:2 | 8 | `00000020H` |
-| Write request, bits 9:6 | 9 | `00000240H` |
-| Block words minus 1, bits 13:10 | 3 | `00000C00H` |
-| **Combined `CONTROL`** | | **`00000E63H`** |
-
-Each increment advances four bytes per word. The resulting `00000E63H`
-requires socket 0 DREQ_READ and socket 1 DREQ_WRITE. Once both levels permit
-the block to start, the CPU's current selection cannot reroute either endpoint.
+A socket-0 ROM to socket-1 RAM copy uses CONTROL=`00000010H`: COPY in bits 2:0,
+READ_SLOT=0 and WRITE_SLOT=1. A four-word count requests one four-word burst;
+no separate DREQ programming is needed for these storage regions.
 
 ### Transfer timing {#sec-cartridge-dma-transfer-timing}
 
 DMA timing uses the 33,868,800 Hz system clock. A contiguous N-word cartridge
 span costs `8N + 4` cycles, whether it addresses card ROM, card RAM or mailbox
-MMIO. A main-RAM span costs `N + 1` cycles. Two cartridge endpoints have
-additive costs even when they select different sockets:
+MMIO. A main-RAM span costs `N + 1` cycles. Source and destination costs add on the shared bus, including when the two
+endpoints select different sockets:
 
 | Transfer, wholly within each endpoint’s region | Cycles | Four words | Sixteen words |
 | --- | --- | --- | --- |
-| Cartridge ↔ main RAM | `8N + 4` | 36 | 132 |
+| Cartridge ↔ main RAM | `9N + 5` | 41 | 149 |
 | Cartridge ↔ cartridge | `16N + 8` | 72 | 264 |
-| Cartridge ↔ installed I/O | `8N + 4` | 36 | 132 |
+| Cartridge ↔ wired internal device port | `9N + 4` | 40 | 148 |
 
 The four-word ROM(socket 0) → RAM(socket 1) block therefore takes
 `(8 × 4 + 4) + (8 × 4 + 4) = 72` cycles once started.
@@ -430,16 +414,13 @@ channel programming sequence.
 ### Two-card programming example {#sec-cartridge-two-card-programming-example}
 
 The following sequence copies four ROM words from socket 0 to RAM on socket 1.
-Assume a bootable card in socket 0 with ROM and a mailbox, and a data card in
-socket 1 with at least 32 bytes of RAM and a mailbox. The sequence owns DMA0,
-both mailbox controls, socket-1 RAM bytes 16–31 and central DMA0 pending bit 0.
-No other writer changes these resources or the selected request levels.
-Completion is polled with interrupt delivery masked. The transfer only needs
-the two programmed mailbox request levels; it does not require an interrupt
-request from either card.
+Assume a bootable card with ROM in socket 0, a card with at least 32 bytes
+of RAM in socket 1, and CPU SELECT already set to 1. The sequence owns DMA0,
+socket-1 RAM bytes 16–31 and central DMA0 pending bit 0. No other writer changes
+the source or destination. Completion is polled with interrupt delivery masked.
+Neither card needs a mailbox or asserted DREQ for this storage copy.
 
-Declare four words in socket 0's ROM, assert the read request on
-socket 0 and the write request on socket 1, then program the idle channel:
+Declare four words in socket 0's ROM, then program the idle channel:
 
 ```lua
 rodata seed: word[4] = {
@@ -447,14 +428,10 @@ rodata seed: word[4] = {
 }
 mem[0x08000008] = 0           -- Mask delivery; retain pending source bits.
 mem[0x08000004] = 1           -- Acknowledge this owner's old DMA0 pending bit.
-mem[0x08010420] = 0
-mem[0x30f00004] = 2           -- Socket 0 DREQ_READ.
-mem[0x08010420] = 1
-mem[0x30f00004] = 4           -- Socket 1 DREQ_WRITE.
 mem[0x0800000c] = seed        -- DMA0 READ_ADDR: socket-0 ROM.
 mem[0x08000010] = 0x30000010  -- DMA0 WRITE_ADDR: socket-1 RAM.
 mem[0x08000014] = 4           -- Four words, not four bytes.
-mem[0x08000018] = 0x00000e63  -- Increment both; requests 8/9; four-word block.
+mem[0x08000018] = 0x00000010  -- COPY, read socket 0, write socket 1.
 mem[0x08000020] = 1           -- START.
 while (mem[0x0800001c] & 1) ~= 0 do
 end

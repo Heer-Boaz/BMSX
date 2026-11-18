@@ -1,5 +1,6 @@
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueFromTag, valueInteger, valueNil, valueString, valueTable, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+import { evaluateNumberUnary } from '../../toolchain/ts/lua/number';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxKind, LuaTableFieldKind, LuaUnaryOperator, type LuaExpression } from '../../toolchain/ts/lua/syntax/ast';
 
@@ -29,13 +30,21 @@ function literalExpressions(text: string): readonly LuaExpression[] {
 
 function prepareLiteral(expression: LuaExpression): PreparedLuaLiteral {
 	switch (expression.kind) {
-		case LuaSyntaxKind.NilLiteralExpression: return () => null;
-		case LuaSyntaxKind.NumericLiteralExpression:
-		case LuaSyntaxKind.BooleanLiteralExpression: return () => expression.value;
+		case LuaSyntaxKind.NilLiteralExpression: return valueNil;
+		case LuaSyntaxKind.NumericLiteralExpression: {
+			const constant = expression.value;
+			const value = valueFromTag(constant.kind === 'integer' ? ValueTag.Integer : ValueTag.Float, constant.word);
+			return () => value;
+		}
+		case LuaSyntaxKind.BooleanLiteralExpression: {
+			const value = valueBool(expression.value);
+			return () => value;
+		}
 		case LuaSyntaxKind.StringLiteralExpression: return cpu => valueString(cpu.stringPool.intern(expression.value));
 		case LuaSyntaxKind.UnaryExpression:
 			if (expression.operator === LuaUnaryOperator.Negate && expression.operand.kind === LuaSyntaxKind.NumericLiteralExpression) {
-				const value = -expression.operand.value;
+				const constant = evaluateNumberUnary(expression.operator, expression.operand.value)!;
+				const value = valueFromTag(constant.kind === 'integer' ? ValueTag.Integer : ValueTag.Float, constant.word);
 				return () => value;
 			}
 			break;
@@ -45,7 +54,7 @@ function prepareLiteral(expression: LuaExpression): PreparedLuaLiteral {
 				let key: PreparedLuaLiteral;
 				switch (field.kind) {
 					case LuaTableFieldKind.Array: {
-						const index = ++arrayIndex;
+						const index = valueInteger(++arrayIndex);
 						key = () => index;
 						break;
 					}
@@ -60,7 +69,7 @@ function prepareLiteral(expression: LuaExpression): PreparedLuaLiteral {
 			return cpu => {
 				const table = cpu.createTable(arrayIndex, fields.length - arrayIndex);
 				for (const field of fields) table.set(field.key(cpu), field.value(cpu));
-				return table;
+				return valueTable(cpu.gc.reference(table));
 			};
 		}
 	}

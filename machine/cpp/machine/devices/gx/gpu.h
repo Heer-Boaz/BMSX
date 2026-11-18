@@ -6,6 +6,8 @@
 #include "spec/gx/gp1.h"
 #include "spec/gx/pcrtc.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gp0_stream.h"
+#include "machine/devices/gx/gpu_prepared_commands.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/devices/word_fifo.h"
@@ -21,24 +23,12 @@ namespace bmsx {
 constexpr u32 GX_GPU_SERVICE_RUNTIME_EDGE_MASK = 0x3u;
 constexpr u32 GX_GPU_SERVICE_TIMING_PUBLISHED = 1u << 2u;
 
-constexpr u32 GX_GPU_GP0_INGRESS_COMMAND = 0u;
-constexpr u32 GX_GPU_GP0_INGRESS_FIXED = 1u;
-constexpr u32 GX_GPU_GP0_INGRESS_IMAGE_HEADER = 2u;
-constexpr u32 GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD = 3u;
-constexpr u32 GX_GPU_GP0_INGRESS_POLYLINE_HEADER = 4u;
-constexpr u32 GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD = 5u;
-
 class Memory;
 class CPU;
 class DeviceScheduler;
 class IrqController;
 
-constexpr u32 GX_GPU_DRAW_MODE_MASK = 0x00003fffu;
 constexpr u32 GX_GPU_DRAW_MODE_GPUSTAT_MASK = 0x000007ffu;
-constexpr u32 GX_GPU_TEXTURE_WINDOW_MASK = 0x000fffffu;
-constexpr u32 GX_GPU_DRAWING_AREA_MASK = 0x000fffffu;
-constexpr u32 GX_GPU_DRAWING_OFFSET_MASK = 0x003fffffu;
-constexpr u32 GX_GPU_MASK_BIT_MODE_MASK = 0x3u;
 
 constexpr u32 GX_GPU_STATUS_INTERLACED_FIELD = 1u << 13u;
 constexpr u32 GX_GPU_STATUS_REVERSE_FLAG = 1u << 14u;
@@ -124,7 +114,7 @@ struct GxGpuIngressContextState {
 	size_t readbackFenceCommandCount = 0u;
 	u32 readbackX = 0u;
 	u32 readbackY = 0u;
-	u8 readbackVramYAddressExtensionWord = 0u;
+	u32 readbackVramYAddressExtensionWord = 0u;
 	u32 readbackWidth = 0u;
 	u32 readbackHeight = 0u;
 	u32 readbackPixelCursor = 0u;
@@ -214,9 +204,10 @@ struct GxGpuSaveState : GxGpuState {
 
 // Emitted backend operation, not every GP0 word or completion. The buffer is
 // borrowed for the callback only: no mutation, device synchronization, or guest
-// execution. Retained evidence must copy the indexed words.
+// execution. The operation words are borrowed from the emitting datapath;
+// retained evidence must copy them before the callback returns.
 struct GxGpuOperationObserver {
-	void (*emitted)(void* context, const GxGpuCommandBuffer& buffer, size_t index, i64 startCycle) = nullptr;
+	void (*emitted)(void* context, const GxGpuCommandBuffer& buffer, size_t index, i64 startCycle, std::span<const u32> words) = nullptr;
 	void* context = nullptr;
 };
 
@@ -251,6 +242,8 @@ public:
 	u32 readGp0(MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU);
 	void writeGp0(u32 word, MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU);
 	u32 readStatus();
+	void synchronizeDmaRequest();
+	void dependencyStateChanged();
 	u32 writeGp1(u32 word);
 	u32 onService(i64 nowCycles);
 	u32 readDisplayModeWord() const;
@@ -259,25 +252,41 @@ public:
 	u32 readGpuReadWord() const;
 	const GxGpuPcrtcTiming& readPcrtcTiming() const { return m_pcrtc.timing; }
 	const GxGpuDeviceOutput& readDeviceOutput();
+	// Host submission granularity, not guest FIFO capacity or device timing.
+	void setBackendSubmissionCommandLimit(size_t commands);
+	// Publication transfers command bytes to a backend owner; this outstanding
+	// dependency is completed on the machine thread, never by the GL consumer.
+	void retirePublishedCommands() {
+		m_backendSubmissionPending = true;
+		retireExecutedCommands();
+	}
+	void retirePublishedPresentation() {
+		m_backendSubmissionPending = true;
+		retirePresentedCommands();
+	}
+	void completePublishedCommands() {
+		m_backendSubmissionPending = false;
+		notifySupervisorBoundary();
+	}
+	bool backendSubmissionFencePending() const {
+		return m_backendSubmissionPending && m_supervisorIngressQuiesceRequested;
+	}
 	bool backendCommandDrainPending() const {
-		return m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
-			&& commandBufferDrainRequired()
-			&& m_commandBuffer.executedCommandCount != 0u;
+		const u8 phase = m_commandBuffer.readback.phase();
+		return m_commandBuffer.executedCommandCount != 0u
+			&& ((phase == GX_GPU_READBACK_IDLE && (commandBufferDrainRequired()
+					|| m_commandBuffer.executedCommandCount >= m_backendSubmissionCommandLimit))
+				|| (m_supervisorIngressQuiesceRequested
+					&& (phase == GX_GPU_READBACK_IDLE || phase == GX_GPU_READBACK_READY)));
 	}
 	bool backendServicePending() const {
-		const u8 phase = m_commandBuffer.readback.phase();
-		if (phase == GX_GPU_READBACK_IDLE) {
-			return backendCommandDrainPending();
-		}
-		return phase == GX_GPU_READBACK_PENDING;
+		return backendSubmissionFencePending() || backendCommandDrainPending()
+			|| m_commandBuffer.readback.phase() == GX_GPU_READBACK_PENDING;
 	}
 	bool backendServiceBlocksMachine() const {
 		const u8 phase = m_commandBuffer.readback.phase();
-		if (phase == GX_GPU_READBACK_IDLE) {
-			return m_commandBuffer.executedCommandCount != 0u
-				&& commandBufferDrainRequired();
-		}
-		return phase == GX_GPU_READBACK_PENDING || phase == GX_GPU_READBACK_SUBMITTED;
+		return backendSubmissionFencePending() || backendCommandDrainPending()
+			|| phase == GX_GPU_READBACK_PENDING || phase == GX_GPU_READBACK_SUBMITTED;
 	}
 	void presentReadyFrameOnVblankEdge();
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
@@ -300,6 +309,8 @@ public:
 	void leaveSupervisorContext();
 
 private:
+	size_t m_backendSubmissionCommandLimit = GX_GPU_COMMAND_CAPACITY;
+	bool m_backendSubmissionPending = false;
 	GxGpuOperationObserver m_operationObserver;
 	GxGpuPresentationObserver m_presentationObserver;
 	Memory& m_memory;
@@ -313,16 +324,21 @@ private:
 	u32 m_statusWord = GX_GPU_STATUS_RESET_WORD;
 	WordFifo<GX_GPU_COMMAND_FIFO_WORD_CAPACITY> m_gp0Fifo;
 	WordFifo<GX_GPU_DMA_INGRESS_WORD_CAPACITY> m_gp0DmaIngress;
-	u32 m_gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
-	u32 m_gp0IngressWordsRemaining = 0u;
-	u32 m_gp0IngressPolylineWordsPerVertex = 0u;
-	u32 m_gp0IngressPolylinePayloadPhase = 0u;
+	Gp0StreamCursor m_gp0Ingress;
+	Gp0StreamCursor m_gp0Producer;
+	GxGpuPreparedCommands m_preparedCommands;
+	GxGpuDrawState m_projectedDrawState;
+	GxGpuPacket m_executionPacket;
+	bool m_preparedTimingDirty = true;
+	bool m_processingGp0Pipeline = false;
+	u8 m_deferredServiceFlags = 0u;
+	u32 m_queuedGp0Irqs = 0u;
+	u32 m_queuedGp0Readbacks = 0u;
 	i64 m_pendingCommandCompletionCycle = 0;
 	size_t m_pendingCommandTargetCount = 0u;
 	i64 m_deviceServiceDeadlineCycle = -1;
 	GxGpuCommandBuffer m_commandBuffer;
 	GxGpuPcrtc m_pcrtc;
-	std::array<u32, GX_GPU_GP0_COMMAND_BUFFER_WORDS> m_gp0CommandWords{};
 	u32 m_gp0CommandWordCount = 0u;
 	u32 m_gp0CommandTargetWordCount = 0u;
 	u32 m_gp0ImageLoadWordsRemaining = 0u;
@@ -396,23 +412,26 @@ private:
 	void clearImageLoadState();
 	void finishImageLoadToVram(i64 commandStartCycle);
 	void flushImageLoadToVram(i64 commandStartCycle);
-	void consumeImageLoadWord(u32 word, i64 commandStartCycle);
+	template <size_t Capacity>
+	void consumeImageLoadWords(WordFifo<Capacity>& source, size_t words, i64 commandStartCycle);
 	void consumeGp0PolylinePayloadWord(u32 word, i64 commandStartCycle);
-	void beginPolylinePayload(u32 opcode, u32 commandWordCount, i64 commandStartCycle);
-	bool acceptGp0Word(u32 word);
+	void beginPolylinePayload(const GxGpuPacket& packet, i64 commandStartCycle);
+	void recordGp0ProducerWord(u32 word);
+	void rebuildGp0Producer();
+	Gp0WordAdmission acceptGp0Word(u32 word);
 	void processGp0Pipeline(i64 commandStartCycle);
 	void consumeGp0Fifo(i64 commandStartCycle);
 	void synchronizeCommandExecution(i64 nowCycles);
-	void rescheduleDeviceService(bool force = false);
+	void copyDrawState(GxGpuDrawState& state) const;
+	void prepareGp0Commands();
+	i64 preparedCommandDeadline() const;
+	void rescheduleDeviceService(bool force = false, bool ensureCompletion = false);
 	void beginCommandCompletion(i64 commandTicks, size_t targetCommandCount, i64 commandStartCycle);
-	void executeGp0Command(i64 commandStartCycle);
-	u32 gp0CommandWordCountForOpcode(u32 opcode) const;
-	u32 gp0PolygonWordCount(u32 opcode) const;
-	u32 gp0LineWordCount(u32 opcode) const;
-	u32 gp0RectangleWordCount(u32 opcode) const;
+	void executeGp0Command(const GxGpuPacket& packet, i64 commandStartCycle);
+	void emitPreparedGp0Command(const GxGpuPacket& packet, i64 commandStartCycle);
 	void emitFixedGp0Command(u8 kind, u32 opcode, u32 commandWordCount, i64 commandStartCycle);
 	void pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWordCount, i64 commandStartCycle);
-	void beginImageLoadToVram(u32 opcode, u32 commandWordCount);
+	void beginImageLoadToVram(const GxGpuPacket& packet);
 	bool commandBufferDrainRequired() const;
 	void writeDrawModeWord(u32 word);
 	void updateDrawModeStatusBits();
@@ -430,6 +449,7 @@ private:
 	void writeStatusIo();
 	bool gp0WriteReady(MappedBusSignals busSignals);
 	static u32 readGp0Thunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writeGp0PrefixThunk(void*, u32, const u32* words, u32 count, MappedBusSignals);
 	static void writeGp0Thunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static bool gp0WriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static bool gp1WriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);

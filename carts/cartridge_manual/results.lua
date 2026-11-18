@@ -22,7 +22,6 @@ struct cartridge_manual_result
 	dma_read_end: word
 	dma_write_end: word
 	dma_pending: word
-	requests: word[2]
 	received: word[4]
 	untouched: word[4]
 end

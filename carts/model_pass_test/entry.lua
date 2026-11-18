@@ -10,6 +10,7 @@ display.reset_320x240()
 world:configure({framebuffer_count=2,gameplay_interval_vblanks=1,frame_interval_vblanks=1,
 	spaces={'main'},systems={}})
 scenes.instantiate('model_pass.fixture')
+world:start()
 
 while true do
 	world:update()

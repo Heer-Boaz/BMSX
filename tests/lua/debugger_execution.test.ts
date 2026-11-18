@@ -14,7 +14,7 @@ import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/ru
 import { DebuggerSourceContext } from '../../ide/workbench/services/assistant/debugger_sources';
 import { decodeDebuggerToolRequest } from '../../ide/workbench/services/assistant/debugger_tool_protocol';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { asClosure, asThread, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { RuntimeDebuggerStopReason } from '../../ide/runtime/source_debugger';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
@@ -102,6 +102,18 @@ test('game-context Continue retires at the authoring hold before another instruc
 	assert.equal(f.runtime.machine.scheduler.currentNowCycles(), cycles);
 	assert.equal(runtimeDebuggerExecutionIntent(f.state), HostExecutionIntent.None);
 	assert.equal(f.execution.executionBlocked(), true);
+});
+
+test('retiring a suppressed activation releases instrumentation even while its frame node is retained', t => {
+	const f = fixture(t); f.stopped();
+	const thread = f.cpu.activeThread, retired = thread.currentFrame!, depth = thread.frameDepth;
+	resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
+	f.state.breakpoints.set(RESOURCE, []);
+	assert.notEqual(f.state.source.domainMask, 0, 'the stopped instruction owns resume suppression');
+	f.cpu.abortCompletionCall(depth - 1);
+	assert.equal(thread.acquireFrame(), retired, 'the retired activation remains a reusable node');
+	f.state.source.didExecute();
+	assert.equal(f.state.source.domainMask, 0, 'only active frames retain the instrumentation borrow');
 });
 
 test('workbench execution remains admitted intent while a mandatory host hold blocks its physical target', async t => {
@@ -267,7 +279,7 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		const operation = f.owner.resume(mode, 'workbench'); f.execute();
 		assert.equal((await operation.completion).reason, 'step'); assert.equal(f.line(), 7);
 		assert.equal(f.state.source.stop!.thread, parent);
-		assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('child_value')), 2);
+		assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('child_value')), valueInteger(2));
 	});
 	for (const failure of [false, true]) for (const mode of ['over', 'out'] as const)
 	test(`O${optLevel}: selected thread ${failure ? 'failure' : 'return'} completes ${mode} before resumer code`, async t => {
@@ -287,7 +299,7 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		assert.equal((await operation.completion).reason, 'thread-completed');
 		assert.equal(child.status, failure ? ThreadStatus.Failed : ThreadStatus.Dead);
 		assert.equal(f.cpu.activeThread, f.cpu.rootThread);
-		assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('root_value')), null, 'the operation never runs its resumer');
+		assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('root_value')), valueNil(), 'the operation never runs its resumer');
 		assert.equal(runtimeDebuggerExecutionRequested(f.state), false);
 	});
 	test(`O${optLevel}: a selected-thread step still honors other coroutine breakpoints`, async t => {
@@ -301,7 +313,7 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		const operation = f.owner.resume('over', 'workbench'); f.execute();
 		assert.equal((await operation.completion).reason, 'breakpoint'); assert.equal(f.line(), 2);
 		assert.equal(f.state.source.stop!.reason, RuntimeDebuggerStopReason.Breakpoint);
-		assert.equal(f.state.source.stop!.thread, f.cpu.getGlobalByKey(f.cpu.stringPool.intern('child')));
+		assert.equal(f.state.source.stop!.thread, asThread(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('child')), f.cpu.gc));
 	});
 	for (const recompile of [false, true]) test(`O${optLevel}: another thread cannot consume resume suppression at the same depth (Hot Resume ${recompile})`, t => {
 		const f = fixture(t, `require('thread_primitives'); other = function()
@@ -315,7 +327,7 @@ root_value = 1`, optLevel, THREAD_PRIMITIVES);
 		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 6);
 		const depth = f.cpu.getFrameDepth();
 		resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
-		f.cpu.beginCompletionCall(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('invoke')) as Closure);
+		f.cpu.beginCompletionCall(asClosure(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('invoke')), f.cpu.gc));
 		assert.equal(f.cpu.runUntilDepth(depth, 100_000, f.cpu.rootThread), RunResult.ExecutionStopped);
 		assert.equal(f.line(), 2); assert.equal(f.cpu.getFrameDepth(), depth);
 		assert.notEqual(f.state.source.stop!.thread, f.cpu.rootThread);
@@ -325,7 +337,7 @@ root_value = 1`, optLevel, THREAD_PRIMITIVES);
 		f.cpu.runUntilDepth(depth, 100_000, f.cpu.rootThread);
 		assert.notEqual(f.state.source.domainMask, 0, 'the parked parent still owns resume suppression');
 		f.cpu.runUntilDepth(0, 100_000);
-		assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('root_value')), 1);
+		assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('root_value')), valueInteger(1));
 		f.state.breakpoints.set(RESOURCE, []);
 		assert.equal(f.state.source.domainMask, 0, 'the last suppression releases the instrumented path');
 	});

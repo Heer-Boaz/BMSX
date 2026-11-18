@@ -12,16 +12,16 @@ bytes or a device address are required.
 | Interface | Purpose | Successful results |
 | --- | --- | --- |
 | `table.pack(...)` | Preserve values and their supplied count | One new Table |
-| `table.insert(target, value)` | Append at the maintained length plus one | One nil |
-| `table.insert(target, position, value)` | Shift and insert at a numeric key | One nil |
+| `table.insert(target, value)` | Append at the length boundary plus one | No results |
+| `table.insert(target, position, value)` | Shift and insert at a numeric key | No results |
 | `table.remove(target [, position])` | Retain one value, shift and clear the old tail | One value, possibly nil |
 | `table.concat(target [, separator [, start [, end]]])` | Join an inclusive numeric-key interval | One String |
 | `table.unpack(target [, start [, end]])` | Expand an inclusive numeric-key interval | Selected values, or zero results |
-| `table.sort(target [, compare])` | Reorder the maintained sequence in place | One nil |
+| `table.sort(target [, compare])` | Reorder the selected sequence in place | No results |
 
 These result counts are part of the interface. An ordinary bare return or
-fallthrough produces one nil; that is not the zero-result tuple returned by an
-empty `unpack` interval. [BIOS base services](bios-base.md#sec-bios-base) explains `select` and result
+fallthrough produces zero results, as does an empty `unpack` interval. A context
+requesting one result adjusts either empty tuple to one nil. [BIOS base services](bios-base.md#sec-bios-base) explains `select` and result
 adjustment. [Protected calls and coroutines](coroutines.md#sec-coroutines) explains how to
 receive an error value, including nil; earlier writes remain visible.
 
@@ -38,10 +38,10 @@ Table keys; the insertion and removal routines do not convert them into
 positions counted from the end. The relative-endpoint rule belongs only to
 `concat` and `unpack`.
 
-In the following procedures, **L** means the Table's maintained length,
+In the following procedures, **L** means the Table's length boundary,
 `#target`, captured by that call. It is not the number of all mappings, the
 greatest numeric key, a count of metatable-supplied entries, or a tuple's `n`
-field. [CPU — Stored length](cpu.md#sec-cpu-stored-length) defines the maintained length
+field. [CPU — Table length](cpu.md#sec-cpu-table-length) defines the length boundary
 and Table operations. A count stored by the cartridge is a separate value;
 use the explicit `pack`/`unpack` recipe when nil positions must be preserved.
 
@@ -63,8 +63,8 @@ order. Each assignment takes effect when reached, and preceding assignments
 remain visible if a later operation raises an error. Pack creates a new
 Table; concat and unpack do not themselves assign into the target. A callback
 or a deliberately replaced public dependency can still have its own effects.
-The library's public fields and the `select`/`tostring` globals it uses are
-ordinary mutable bindings, not permanently reserved operations.
+The library's public fields and the `select` global used by pack and unpack
+are ordinary mutable bindings, not permanently reserved operations.
 
 The functions execute ordinary instructions. Loops, tuple forwarding,
 conversions, temporary Strings and comparison callbacks contribute work; a
@@ -113,7 +113,10 @@ For example, when `L` is 4:
 | `1.9, 2.9` | `1, 2` |
 
 
-A non-`nil`, nonnumber bound, including a numeric-looking String, produces NaN in the floor division; it is not parsed as a number. NaN is neither positive nor negative, so it normalizes like zero: to 1 for a start bound or `L` for an end bound. There is no table-library argument error for this case.
+A non-`nil` bound must be a Number. Floor division of another kind raises
+`INVALID_ARGUMENT`; a numeric-looking String is not parsed. A Float NaN is a
+Number: it is neither positive nor negative and therefore normalizes like zero,
+to 1 for a start bound or `L` for an end bound.
 
 Bounds are not clamped to the default interval. The selected interval is inclusive and is empty when the normalized end precedes the normalized start. No finite-value or range-size cap is applied. Very large or infinite endpoints have no termination or resource-use guarantee.
 
@@ -146,18 +149,20 @@ Unpacking uses a recursive call chain whose depth grows linearly with the number
 table.concat(target [, separator [, start [, end]]]) -> text
 ```
 
-`table.concat` returns exactly one String, joining the selected positions in ascending order without changing the target. Each position is read by ordinary indexing. A `nil` value contributes an empty String; every other value is converted with the current global `tostring`. Separators remain between adjacent positions even when one or both positions read as `nil`.
+`table.concat` returns exactly one String, joining the selected positions in ascending order without changing the target. Each position is read by ordinary indexing. A `nil` value contributes an empty String; every other value uses the language value-to-text conversion. Separators remain between adjacent positions even when one or both positions read as `nil`.
 
 
-An omitted or explicitly `nil` separator is the empty String. Any other separator is converted with `tostring`, so the installed `tostring` accepts values other than Strings here as well. This conversion happens before the selected values are read, even for a single-position interval where no separator is inserted. An empty interval instead returns an empty String before converting the separator or reading any positions.
+An omitted or explicitly `nil` separator is the empty String. Any other separator uses the same language value-to-text conversion, including values other than Strings. This conversion happens before the selected values are read, even for a single-position interval where no separator is inserted. An empty interval instead returns an empty String before converting the separator or reading any positions.
 
 ```lua
 table.concat(packed, '|', 1, packed.n) -- "10||30|"
 table.concat({true, {}, nil, 7}, false, 1, 4)
--- "truefalsetablefalsefalse7" with the installed tostring.
+-- "truefalsetablefalsefalse7".
 ```
 
-These conversions use the live global `tostring`, not a permanently captured formatter. Replacing it can change both separator and value conversion.
+Strings retain their contents. Other values use the conversion specified
+for [CPU concatenation](cpu.md#sec-cpu-truth-length-and-text). Replacing the
+global `tostring` does not change either separator or value conversion.
 
 Concatenation divides the selected interval at `(first + last) // 2`, joins
 the two halves and inserts the separator between them. It creates intermediate
@@ -169,12 +174,17 @@ can prevent the recursive interval from shrinking.
 
 | Call | Effect | Successful return |
 | --- | --- | --- |
-| `table.insert(target, value)` | Assigns `value` to `target[#target + 1]`. | One `nil` value. |
-| `table.insert(target, position, value, ...)` | Inserts at `position // 1`, shifting the selected keys upward as described below. Arguments after `value` are ignored. | One `nil` value. |
+| `table.insert(target, value)` | Assigns `value` to `target[#target + 1]`. | No results. |
+| `table.insert(target, position, value, ...)` | Inserts at `position // 1`, shifting the selected keys upward as described below. Arguments after `value` are ignored. | No results. |
 
-Exactly one argument after `target` selects the append form. A lone explicit `nil` therefore means “append `nil`,” not “position omitted.” Every other trailing argument count selects the positional form. The signatures above require at least one argument after `target`. An indirect call such as `pcall(table.insert, target)` nevertheless reaches the positional form with no trailing arguments; both selected arguments are then `nil`, so the position arithmetic produces NaN. With a separate value, an explicit `nil` position is still passed to `// 1`.
+Exactly one argument after `target` selects the append form. A lone explicit `nil` therefore means “append `nil`,” not “position omitted.” Every other trailing argument count selects the positional form. The signatures above require at least one argument after `target`. An indirect call such as `pcall(table.insert, target)` reaches the positional form with a nil position and raises `INVALID_ARGUMENT` in the position arithmetic. With a separate value, an explicit `nil` position is also passed to `// 1`.
 
-Use a finite numeric position. This arithmetic does not parse numeric Strings, and a nonnumeric position produces NaN rather than an upfront library argument error. With a NaN position, the descending shift loop has no comparison-driven exit: it can make earlier shift writes without reaching the final insertion. A reached fault or other interruption is separate from normal completion.
+Use a finite numeric position. The position arithmetic does not parse Strings;
+another value kind raises `INVALID_ARGUMENT` before the length snapshot or any
+shift writes. A Float NaN remains a Number: the descending shift loop has no
+comparison-driven exit and can write earlier positions without reaching the
+final insertion. A reached fault or other interruption is separate from normal
+completion.
 
 For a positional insertion with a finite numeric position:
 
@@ -223,7 +233,16 @@ Removal first takes the length snapshot `L`. It then selects `p` using the table
 3. Always assign `nil` to `target[L]`.
 4. Return the retained result.
 
-Use a finite numeric explicit position. A nonnil nonnumeric position produces NaN without an upfront argument error. The shift then repeatedly reads and writes the NaN key; its comparison does not terminate the loop. It does not reach the final tail clear or returned result by normal loop termination. A reached fault or other interruption remains possible. Positions are neither checked nor clamped. Zero and negative positions refer to actual keys, not positions relative to the end. They can therefore cause shifting through zero or negative keys. A position above `L` skips the shifting but **still clears key `L`**:
+Use a finite numeric explicit position. A nonnil non-Number raises
+`INVALID_ARGUMENT` after the length snapshot and before the element read. A
+Float NaN remains a Number: the shift repeatedly reads and writes the NaN key
+and its comparison does not terminate the loop. It does not reach the final
+tail clear or returned result by normal loop termination. A reached fault or
+other interruption remains possible. Positions are neither checked nor
+clamped. Zero and negative positions refer to actual keys, not positions
+relative to the end. They can therefore cause shifting through zero or
+negative keys. A position above `L` skips the shifting but **still clears key
+`L`**:
 
 ```lua
 local values = {10, 20, 30}
@@ -240,11 +259,11 @@ Throughout these functions, element reads are ordinary table reads, including a 
 
 | Call | Ordering | Successful return |
 | --- | --- | --- |
-| `table.sort(target)` | Ordinary `<`. | One `nil` value. |
-| `table.sort(target, nil)` | Ordinary `<`. | One `nil` value. |
-| `table.sort(target, compare)` | `compare(left, right)` is truthy when `left` belongs before `right`. | One `nil` value. |
+| `table.sort(target)` | Ordinary `<`. | No results. |
+| `table.sort(target, nil)` | Ordinary `<`. | No results. |
+| `table.sort(target, compare)` | `compare(left, right)` is truthy when `left` belongs before `right`. | No results. |
 
-Sorting modifies `target` in place. It takes the length snapshot `L` first and operates on keys `1` through `L`; it does not make or return a sorted copy. If `L < 2`, it immediately returns one `nil` value without performing a comparison or checking whether `compare` can be called. Thus `table.sort({1}, false)` returns normally, whereas a nontrivial sort with `false` as its comparator attempts to call `false` and raises the ordinary non-function call error.
+Sorting modifies `target` in place. It takes the length snapshot `L` first and operates on keys `1` through `L`; it does not make or return a sorted copy. If `L < 2`, it immediately returns no results without performing a comparison or checking whether `compare` can be called. Thus `table.sort({1}, false)` returns normally, whereas a nontrivial sort with `false` as its comparator attempts to call `false` and raises the ordinary non-function call error.
 
 The sort begins by scanning from index `2` through `L`. At each index it asks whether the current value belongs before its predecessor. Falsey answers continue the scan. The first truthy answer starts reordering the **entire** range `1` through `L`, not just the remaining suffix. If the scan reaches the end, the sort itself makes no assignments; with a valid custom comparator this ordered-input path makes exactly `L - 1` comparator calls.
 
@@ -338,7 +357,7 @@ local text = table.concat(packed, '|', 1, packed.n)
 ### Edit and read a sequence {#sec-bios-table-edit-and-read-a-sequence}
 
 The following sequence has consecutive numeric keys starting at one. Append,
-sort and the omitted range endpoints use its maintained length.
+sort and the omitted range endpoints use its length boundary.
 
 ```lua
 local sequence = {9, 3, 7}

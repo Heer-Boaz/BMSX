@@ -1,6 +1,6 @@
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import type { CPU, InstructionObserverBinding } from '../../../../machine/ts/machine/cpu/cpu';
-import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
+import { numberToHost, ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import type { ValueSlots } from '../../../../machine/ts/machine/cpu/value_slots';
 import { INSTRUCTION_BYTES } from '../../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../../machine/ts/spec/blua32/opcode';
@@ -90,21 +90,21 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 		if (this.completions.has(pc)) { this.page!.ready = true; return; }
 		const pending = this.returns.get(this.cpu.getFrameDepth());
 		if (pending.kind !== undefined && pending.pc === pc && pending.thread === this.cpu.activeThread.hashId) {
-			this.page!.geometry.capture(registers.getTable(pending.register), pending.kind, this.domain, this.guest);
+			this.page!.geometry.capture(registers.get(pending.register), pending.kind, this.domain, this.guest);
 			pending.kind = undefined;
 		}
 		const call = this.calls.get(pc);
 		if (call !== undefined) {
 			if (this.page === undefined || registers.getTag(call.a) !== ValueTag.Closure) return;
-			pending.kind = this.visualKinds.get(registers.getClosure(call.a).functionAddress);
+			pending.kind = this.visualKinds.get(registers.getClosure(call.a, this.cpu.gc).functionAddress);
 			pending.pc = call.pc + INSTRUCTION_BYTES; pending.thread = this.cpu.activeThread.hashId; pending.register = call.a + 1;
 			return;
 		}
 		const store = this.stores.get(pc);
 		if (store === undefined) return;
 		if (!this.insideBuild(store.inBuild)) return;
-		const draw = registers.getTable(store.instruction.a);
-		const x = this.guest.readStringMember(draw, 'target_x') as number, y = this.guest.readStringMember(draw, 'target_y') as number;
+		const draw = registers.get(store.instruction.a);
+		const x = numberToHost(this.guest.readStringMember(draw, 'target_x')), y = numberToHost(this.guest.readStringMember(draw, 'target_y'));
 		let page: RenderPage | undefined;
 		for (let i = 0; i < this.pages.length; i++) if (this.pages[i].x === x && this.pages[i].y === y) { page = this.pages[i]; break; }
 		if (page === undefined) { page = { x, y, order: 0, ready: false, geometry: new ActorRenderGeometry() }; this.pages.push(page); }

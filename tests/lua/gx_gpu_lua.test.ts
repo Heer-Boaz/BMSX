@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import {
 	GX_GPU_PCRTC_CONFIG_WORD_COUNT,
@@ -136,6 +137,7 @@ const SYSTEM_MODULE_FILES = [
 	['math', 'machine/bios/math.lua'],
 	['math/sin', 'machine/bios/math/sin.lua'],
 	['math/trig', 'machine/bios/math/trig.lua'],
+	['math/trig/reduce', 'machine/bios/math/trig/reduce.lua'],
 ] as const;
 const CART_MODULE_FILES = [
 	['cartlib/gx/display', 'cartlib/gx/display.lua'],
@@ -246,7 +248,7 @@ test('GX cart SDK programs every public display preset from the exact raw PCRTC 
 		const width = expected.preset[GX_GPU_DISPLAY_PRESET_WIDTH_WORD];
 		const height = expected.preset[GX_GPU_DISPLAY_PRESET_HEIGHT_WORD];
 		const { memory, cpu, initialWords } = runCartMode(modeIndex);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [width, height]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(width), valueInteger(height)]);
 		const words = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
 		for (let wordIndex = 0; wordIndex < words.length; wordIndex += 1) {
 			words[wordIndex] = memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(wordIndex));
@@ -360,7 +362,7 @@ test('BIOS GX code aligns the source-alpha supervisor circuit to a retained PS2 
 		240,
 		gxGpuPair16(704, 720),
 		gxGpuPair16(320, 304),
-	]);
+	].map(valueInteger));
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_PMODE_LOW)), 0x00000003);
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_LOW)), 420 | (40 << 12));
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_HIGH)), 319 | (239 << 12));

@@ -17,6 +17,32 @@ registers and pending work; main RAM and VRAM remain shared storage. This
 distinction matters when a cartridge resumes: restoring a drawing configuration
 does not restore pixels overwritten while the BIOS was using the GPU.
 
+## Simultaneous device boundaries {#sec-system-simultaneous-device-boundaries}
+
+Device operations advance independently on the system timebase. When two or
+more already-pending boundaries occur on the same system cycle, their effects
+are applied in the following order:
+
+1. GEO record processing;
+2. DMA burst completion;
+3. APU voice and output processing;
+4. GPU command processing and PCRTC timing;
+5. APU sample-memory transfer processing;
+6. SYSTEM control;
+7. GTE processing;
+8. IMGDEC processing.
+
+The GPU command and PCRTC boundaries share one timing domain; at the same
+cycle, GPU command processing precedes PCRTC timing. A boundary made
+pending by another boundary takes effect after its cause; the same priority
+then applies to boundaries still pending at that cycle. For example, GEO
+samples a record before a DMA burst completing on the same cycle publishes its
+destination words.
+
+This is the order in which simultaneous effects become visible. It is not a
+rule for awarding a shared bus, and it does not change the DMA channel
+arbitration or the duration of an admitted transfer.
+
 ## SYSTEM specifications {#sec-system-system-specifications}
 
 | Resource | Specification |
@@ -42,13 +68,13 @@ shorter than one complete 2^32-millisecond wrap.
 ```lua
 local time_ms<const>: *word = 0x08010228
 local start<const> = *time_ms
-while ((*time_ms - start) % 0x100000000) < 100 do
+while math.ult(*time_ms - start, 100) do
 end
 local finish<const> = *time_ms
-local elapsed<const> = (finish - start) % 0x100000000
+local elapsed<const> = finish - start
 ```
 
-`elapsed` is at least 100 milliseconds, not necessarily exactly 100.
+For this interval, `elapsed` is at least 100 milliseconds, not necessarily exactly 100.
 For `start = FFFFFFF0H` and `finish = 00000054H`, the wrapping distance is
 100 milliseconds. A HALT-based wait additionally needs an enabled interrupt
 route and must recheck its time predicate after each wake-up; advancing
@@ -72,19 +98,25 @@ registers.
 
 Use aligned word reads for these registers. Writes are read-only-access faults. The reads are independent samples, not an atomic snapshot of all three quantities.
 
-`FRAME_MS_Q16` describes the currently programmed beam period. Divide its unsigned word by `00010000H` to express the reported value in milliseconds. The refresh value used to form this report is first truncated to whole millionths of a hertz; the Q16 period is then truncated and reduced to its low 32 bits. A sufficiently long period can therefore wrap the reported word without shortening the programmed beam period.
+`FRAME_MS_Q16` describes the currently programmed beam period. Its upper 16
+bits are whole milliseconds and its lower 16 bits are the fractional part.
+For a raw word `frame_ms_q16`, the expression
+`(frame_ms_q16 >> 16) + (frame_ms_q16 & 0xffff) / 65536.0` converts those
+fields to a Float in milliseconds. The refresh value used to form this report
+is first truncated to whole millionths of a hertz; the Q16 period is then
+truncated and reduced to its low 32 bits. A sufficiently long period can
+therefore wrap the reported word without shortening the programmed beam period.
 
 `CYCLES_PER_FRAME` is a whole-period cycle count, not the number of cycles remaining until the next VBlank. Fractional beam timing can make successive counts differ by one cycle. Reprogramming a beam-timing word with different bits immediately changes operational timing and restarts the beam; writing identical bits does not. These SYSTEM words describe programmed timing, not confirmation that a new image has been presented. When beam timing is stopped, both frame-timing words are zero; `TIME_MS` is not stopped with them.
 
 ### Software timing {#sec-system-software-timing}
 
-For two raw `TIME_MS` samples, compute elapsed milliseconds modulo 2^32.
-In BLua, use `(current - start) % 0x100000000` for the nonnegative wrapping
-distance. A bitwise `& 0xffffffff` instead returns a signed 32-bit result and
-cannot represent distances from `80000000H` through `FFFFFFFFH` as nonnegative
-Numbers. The modulo result measures the interval only
-when the actual elapsed time is shorter than one complete 2^32-millisecond
-period. A zero result is valid when both samples fall in the same millisecond.
+For two raw `TIME_MS` samples, Integer subtraction computes the elapsed word
+modulo 2^32. A distance whose high bit is set is represented by a negative
+Integer; use `math.ult` to compare raw distances as unsigned words. The result
+measures the interval only when the actual elapsed time is shorter than one
+complete 2^32-millisecond period. A zero result is valid when both samples
+fall in the same millisecond.
 `os.difftime` is ordinary subtraction, not wrapping hardware-time arithmetic.
 
 ## Diagnostic text output {#sec-system-diagnostic-text-output}
@@ -215,8 +247,9 @@ depends on that work. Main RAM, VRAM and APU sample RAM remain shared storage.
 | DMA boundary | No block remains in progress | An already admitted block completes; a longer BUSY transfer can retain a nonzero remaining count. No next block is admitted during this stage. |
 | GPU boundary | Ingress has stopped, no command completion is pending, readback is idle or its unread result is complete, and no commands remain queued for rendering | The completed unread result and words waiting behind it can be retained. An unfinished readback must complete before this boundary; the fence does not consume pixels. |
 
-At entry's first stage, new GEO CMD, DMA TRIGGER and GPU GP1 writes are held.
-IMGDEC lowers both DMA requests and pauses after decoding already in progress.
+At entry's first stage, new GEO CMD and GPU GP1 writes are held; DMA TRIGGER
+writes are ignored. IMGDEC lowers both DMA requests and pauses after decoding
+already in progress.
 Shared RAM and other device words remain accessible under their normal rules.
 The ordinary request path allows CPU execution during producer quiescence;
 software observing SUPERVISOR_ACTIVE can therefore still be running before NMI.
@@ -318,6 +351,7 @@ The raw Cause word uses the following values. The exception-code mask is
 | 8 | EXPLICIT_ERROR |
 | 9 | OUT_OF_MEMORY |
 | 10 | INVALID_ARGUMENT |
+| 11 | INVALID_NEXT_KEY |
 
 Interpret LuaReason with Cause rather than treating every retained reason as a
 new Lua failure.

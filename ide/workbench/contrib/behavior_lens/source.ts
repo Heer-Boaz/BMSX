@@ -1,4 +1,5 @@
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
+import { numberConstantText } from '../../../../toolchain/ts/lua/number';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -235,7 +236,7 @@ export function describeExpression(expression: LuaExpression): string {
 		case LuaSyntaxKind.StringLiteralExpression:
 			return `'${expression.value}'`;
 		case LuaSyntaxKind.NumericLiteralExpression:
-			return String(expression.value);
+			return numberConstantText(expression.value);
 		case LuaSyntaxKind.BooleanLiteralExpression:
 			return expression.value ? 'true' : 'false';
 		case LuaSyntaxKind.NilLiteralExpression:

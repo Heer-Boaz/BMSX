@@ -45,8 +45,8 @@ class RuntimeDebuggerCompletionBatchRecord implements RuntimeDebuggerCompletionB
 	}
 
 	public isPending(): boolean {
-		return this.thread.frames.length > this.firstFrameIndex
-			&& this.thread.frames[this.firstFrameIndex].returnToCompletionLatch;
+		return this.thread.frameDepth > this.firstFrameIndex
+			&& this.thread.frameAtDepth(this.firstFrameIndex).returnToCompletionLatch;
 	}
 
 	public containsFrame(thread: Thread, frameIndex: number): boolean {

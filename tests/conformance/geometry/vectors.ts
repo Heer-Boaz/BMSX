@@ -1,9 +1,10 @@
-import { numberToF32Bits, encodeSignedFix16 } from '../../../machine/ts/machine/common/numeric';
+import { numberToF32Bits } from '../../../machine/ts/common/float32';
+import { encodeSignedFix16 } from '../../../machine/ts/machine/common/numeric';
 import { GEO_SCRATCH_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import * as io from '../../../machine/ts/spec/bmsx/io';
 import * as geo from '../../../machine/ts/machine/devices/geometry/contracts';
 
-export type GeometryVector = { name: string; writes: [number, number][]; reads: number[]; pairCounterSeed: number };
+export type GeometryVector = { name: string; writes: [number, number][]; reads: number[]; pairCounterSeed: number; firstRecordPairs: number; clipCapacityBoundary: number };
 const instances = GEO_SCRATCH_BASE, shapes = GEO_SCRATCH_BASE + 0x100, vertices = GEO_SCRATCH_BASE + 0x200;
 const result = GEO_SCRATCH_BASE + 0x400, summary = GEO_SCRATCH_BASE + 0x500;
 
@@ -30,7 +31,7 @@ function vector(name: string, a: readonly number[], b: readonly number[], sat: b
 		[io.IO_GEO_STRIDE0, 20], [io.IO_GEO_STRIDE1, sat ? 16 : 0], [io.IO_GEO_STRIDE2, sat ? 8 : 0],
 		[io.IO_GEO_CMD, sat ? geo.IO_CMD_GEO_SAT2_BATCH : geo.IO_CMD_GEO_OVERLAP2D_PASS],
 	);
-	return { name, writes, pairCounterSeed: 0, reads: [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED,
+	return { name, writes, pairCounterSeed: 0, firstRecordPairs: 0, clipCapacityBoundary: 0, reads: [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED,
 		...Array.from({ length: 9 }, (_, i) => result + i * 4), ...Array.from({ length: 4 }, (_, i) => summary + i * 4)] };
 }
 
@@ -47,6 +48,32 @@ export function geometryVectors(): GeometryVector[] {
 		const encode = sat ? encodeSignedFix16 : numberToF32Bits;
 		result.push(vector(`${sat ? 'sat' : 'overlap'}-${c.name}`, c.a.map(encode), c.b.map(encode), sat));
 	}
+	for (const mode of [0, 3]) {
+		const v = vector(`full-pass-selector-${mode}`,
+			cases[0].a.map(numberToF32Bits), cases[0].b.map(numberToF32Bits), false);
+		v.writes.find(([address]) => address === io.IO_GEO_PARAM0)![1] = mode;
+		result.push(v);
+	}
+	// Both dimensions contain equal-depth contacts. Preserve the A/B/feature
+	// tie rule across separate, paid piece-pair phases, not just one polygon.
+	const compoundTie = vector('overlap-compound-equal-depth',
+		cases[0].a.map(numberToF32Bits), cases[0].b.map(numberToF32Bits), false);
+	const compoundCommand = compoundTie.writes.pop()!;
+	for (let side = 0; side < 2; ++side) {
+		const compound = GEO_SCRATCH_BASE + 0x60 + side * geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
+		const pieces = GEO_SCRATCH_BASE + 0x80 + side * 2 * geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
+		const bounds = shapes + side * 32 + geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
+		compoundTie.writes.push([instances + side * geo.GEO_OVERLAP2D_INSTANCE_BYTES, compound]);
+		[geo.GEO_OVERLAP2D_SHAPE_KIND_COMPOUND, 2, pieces - compound, bounds - compound]
+			.forEach((word, index) => compoundTie.writes.push([compound + index * 4, word]));
+		for (let piece = 0; piece < 2; ++piece) {
+			const descriptor = pieces + piece * geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
+			[geo.GEO_PRIMITIVE_CONVEX_POLY, 4, vertices + side * 32 - descriptor, bounds - descriptor]
+				.forEach((word, index) => compoundTie.writes.push([descriptor + index * 4, word]));
+		}
+	}
+	compoundTie.writes.push(compoundCommand);
+	result.push(compoundTie);
 	// Adjacent binary32 values at the touching edge; both signs of zero;
 	// normal/subnormal extremes; quiet/signaling NaNs with differing payloads.
 	const square = [0, 0, 4, 0, 4, 4, 0, 4].map(numberToF32Bits);
@@ -83,6 +110,99 @@ export function geometryVectors(): GeometryVector[] {
 			[1, 1, 5, 1, 5, 5, 1, 5].map(numberToF32Bits), false);
 		seeded.pairCounterSeed = pairCounterSeed;
 		result.push(seeded);
+	}
+	// Outer progress waits for every later pair, even when those pairs span
+	// multiple paid intervals.
+	for (const count of [2, 8]) {
+		const square = [0, 0, 4, 0, 4, 4, 0, 4].map(numberToF32Bits);
+		const v = vector(`full-pass-first-record-${count}`, square, square, false);
+		v.firstRecordPairs = count - 1;
+		const separateSummary = GEO_SCRATCH_BASE + 0x900;
+		v.reads = v.reads.map(address => address >= summary && address < summary + 16
+			? address - summary + separateSummary : address);
+		const command = v.writes.pop()!;
+		for (const write of v.writes) {
+			if (write[0] === io.IO_GEO_COUNT) write[1] = count;
+			if (write[0] === io.IO_GEO_PARAM1) write[1] = count * (count - 1) / 2;
+			if (write[0] === io.IO_GEO_DST1) write[1] = separateSummary;
+		}
+		for (let i = 2; i < count; i++) {
+			[shapes, 0, 0, 1, 1].forEach((word, j) => v.writes.push([instances + i * geo.GEO_OVERLAP2D_INSTANCE_BYTES + j * 4, word]));
+		}
+		v.writes.push(command);
+		result.push(v);
+	}
+	// The 64-vertex source is legal raw input; the two fixtures exercise the
+	// 128th output and the first rejected 129th output through registers.
+	const clip128 = [
+			2,-2, -2,1, 2,-2, 0,1, 2,-2, -2,2, 1,-2, -2,0,
+			0,0, -1,2, -1,0, -2,-2, 0,-1, -2,2, 2,-1, 1,1,
+			1,2, -2,-2, 2,2, -1,-2, 1,2, -2,-1, 0,1, 0,2,
+			-1,1, -2,-2, 2,2, 0,-2, -2,2, 2,-2, -1,2, -1,-1,
+			-2,-2, 0,2, 0,-2, 1,2, 0,-2, 2,2, 1,-1, 2,2,
+			0,1, -2,-2, 2,0, -2,2, 0,-2, 0,-2, 0,-1, 2,-2,
+			-1,2, 0,-2, 1,1, -1,2, 1,-1, -2,-2, 0,2, -1,0,
+			2,2, 1,0, 2,2, -1,0, 2,-1, 0,2, 0,-2, -1,2,
+	].map(numberToF32Bits);
+	const clip129 = [
+			2,-2, -2,1, 2,-2, 0,1, 2,-2, -2,0, 1,-2, -1,2,
+			0,0, -2,2, -1,0, -2,-2, 2,2, 0,-2, 0,2, -2,-2,
+			2,2, -2,-2, 2,2, -2,1, 2,-1, -2,-1, 0,2, -1,-1,
+			2,0, -2,-2, 0,0, 0,-2, -2,2, 2,-2, -1,2, -1,-1,
+			-1,-2, 0,2, -1,-1, 1,2, -2,-1, -1,2, 1,1, -2,0,
+			1,2, -2,-2, 2,2, -2,2, 0,-2, -2,2, 1,-1, 2,-2,
+			-1,2, -1,-2, 1,1, -2,-2, 2,0, -2,-2, 0,2, -1,0,
+			2,2, -2,-2, 1,2, -1,0, -1,2, -1,0, 2,-2, 0,2,
+	].map(numberToF32Bits);
+	const smallSquare = [-1,-1,1,-1,1,1,-1,1].map(numberToF32Bits);
+	const atCapacity = vector('overlap-clip-128', clip128, smallSquare, false);
+	atCapacity.clipCapacityBoundary = 128;
+	result.push(atCapacity);
+	const failing = vector('overlap-clip-129-after-contact', clip129, [-4,-4,4,-4,4,4,-4,4].map(numberToF32Bits), false);
+	failing.clipCapacityBoundary = 129;
+	const clipResult = GEO_SCRATCH_BASE + 0x900, clipSummary = GEO_SCRATCH_BASE + 0xa00;
+	const lastCommand = failing.writes.pop()!;
+	for (const write of failing.writes) {
+		if (write[0] === io.IO_GEO_COUNT) write[1] = 3;
+		if (write[0] === io.IO_GEO_PARAM1) write[1] = 2;
+		if (write[0] === io.IO_GEO_DST0) write[1] = clipResult;
+		if (write[0] === io.IO_GEO_DST1) write[1] = clipSummary;
+	}
+	[shapes + 64, 0, 0, 1, 1].forEach((word, index) => failing.writes.push([instances + 40 + index * 4, word]));
+	[geo.GEO_PRIMITIVE_AABB, 4, 16, 16, ...[-1,-1,1,1].map(numberToF32Bits)]
+		.forEach((word, index) => failing.writes.push([shapes + 64 + index * 4, word]));
+	for (let i = 0; i < 18; i++) failing.writes.push([clipResult + i * 4, 0xdeadbeef]);
+	failing.writes.push(lastCommand);
+	failing.reads = [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED, io.IO_IRQ_FLAGS,
+		...Array.from({length: 18}, (_, i) => clipResult + i * 4),
+		...Array.from({length: 4}, (_, i) => clipSummary + i * 4)];
+	const completed = { ...failing, name: 'overlap-contact-before-clip-fault', clipCapacityBoundary: 0,
+		writes: failing.writes.map(([address, word]): [number, number] => [address, address === io.IO_GEO_COUNT ? 2 : word]) };
+	result.push(completed);
+	result.push(failing);
+	// Exercise the bounded XFORM input/output buffer with raw fixed-point
+	// extremes, fractional products and saturation at both vertex limits.
+	for (const count of [4, geo.GEO_XFORM2_MAX_VERTICES]) {
+		const record = GEO_SCRATCH_BASE + 0x1000, source = record + 0x100, matrix = record + 0x400;
+		const destination = record + 0x500, bounds = record + 0x800;
+		const writes: [number, number][] = [];
+		const words = (address: number, values: readonly number[]) => values.forEach((word, index) => writes.push([address + index * 4, word >>> 0]));
+		words(record, [0, 0, 0, 0, count, 0]);
+		const raw = [0x7fffffff, 0x80000000, 0x10001, 0xffff7fff, 0, 0xffffffff, 0x12345678, 0x87654321];
+		words(source, Array.from({ length: count * 2 }, (_, index) => raw[index % raw.length]));
+		words(matrix, [0x7fffffff, 0x80000000, 0x17fff, 0x10001, 0xffff0000, 0x80000000]);
+		words(destination, new Array(count * 2).fill(0xdeadbeef));
+		words(bounds, new Array(4).fill(0xdeadbeef));
+		writes.push(
+			[io.IO_GEO_SRC0, record], [io.IO_GEO_SRC1, source], [io.IO_GEO_SRC2, matrix],
+			[io.IO_GEO_DST0, destination], [io.IO_GEO_DST1, bounds], [io.IO_GEO_COUNT, 1],
+			[io.IO_GEO_STRIDE0, 24], [io.IO_GEO_STRIDE1, 8], [io.IO_GEO_STRIDE2, 24],
+			[io.IO_GEO_CMD, geo.IO_CMD_GEO_XFORM2_BATCH],
+		);
+		result.push({ name: `xform-raw-${count}`, writes, pairCounterSeed: 0, firstRecordPairs: 0, clipCapacityBoundary: 0,
+			reads: [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED,
+				...Array.from({ length: count * 2 }, (_, index) => destination + index * 4),
+				...Array.from({ length: 4 }, (_, index) => bounds + index * 4)] });
 	}
 	return result;
 }

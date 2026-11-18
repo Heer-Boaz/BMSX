@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 // The fetched instruction's physical operand-field decode. Inputs are the
-// already fetched big-endian instruction words; the preceding fetch owner has
+// already fetched instruction words; the preceding fetch owner has
 // resolved alignment and bus faults. One WIDE word extends the body fields.
 // Register/constant addressing, global-name binding, branch execution, CP0,
 // VM value representation and exception entry are separate owners. Nested

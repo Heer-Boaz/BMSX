@@ -261,15 +261,12 @@ auto encodeImage(
 				record + BLUA32_CONSTANT_TAG_OFFSET,
 				static_cast<u32>(*boolean ? Blua32ConstantTag::True : Blua32ConstantTag::False)
 			);
-		} else if (const auto* number = std::get_if<f64>(&constant)) {
-			writeLE32(
-				record + BLUA32_CONSTANT_TAG_OFFSET,
-				static_cast<u32>(Blua32ConstantTag::Number)
-			);
-			writeF64LE(
-				record + BLUA32_CONSTANT_PAYLOAD_OFFSET,
-				*number
-			);
+		} else if (const auto* integer = std::get_if<i32>(&constant)) {
+			writeLE32(record + BLUA32_CONSTANT_TAG_OFFSET, static_cast<u32>(Blua32ConstantTag::Integer));
+			writeLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET, static_cast<u32>(*integer));
+		} else if (const auto* number = std::get_if<Blua32FloatConstant>(&constant)) {
+			writeLE32(record + BLUA32_CONSTANT_TAG_OFFSET, static_cast<u32>(Blua32ConstantTag::Float));
+			writeLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET, number->bits);
 		} else {
 			const StringRecord string = stringRecords.at(std::get<std::string>(constant));
 			writeLE32(

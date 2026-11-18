@@ -1,3 +1,4 @@
+import { integerConstant, numberConstantValue } from '../number';
 import { LuaBinaryOperator, LuaSyntaxKind, LuaUnaryOperator, type LuaExpression } from '../syntax/ast';
 import { LuaCompletionAnalysis, type LuaSourceControlFlow } from '../analysis/completion';
 import type { LuaStatementSequence } from '../syntax/statement_sequence';
@@ -136,14 +137,14 @@ export class LuaStaticSourceReads {
 			case LuaSyntaxKind.StringLiteralExpression: return { kind: 'string', value: expression.value };
 			case LuaSyntaxKind.BooleanLiteralExpression: return { kind: 'boolean', value: expression.value };
 			case LuaSyntaxKind.NilLiteralExpression: return { kind: 'nil' };
-			case LuaSyntaxKind.SizeOfExpression: return { kind: 'number', value: this.types.resolve(file.file, expression.typeRef).size };
-			case LuaSyntaxKind.OffsetOfExpression: return { kind: 'number', value: this.types.offsetOf(file.file, expression) };
+			case LuaSyntaxKind.SizeOfExpression: return { kind: 'number', value: integerConstant(this.types.resolve(file.file, expression.typeRef).size) };
+			case LuaSyntaxKind.OffsetOfExpression: return { kind: 'number', value: integerConstant(this.types.offsetOf(file.file, expression)) };
 			case LuaSyntaxKind.UnaryExpression: {
 				if (expression.operator === LuaUnaryOperator.Length) {
 					const declaration = this.directStorage(file, expression.operand) ?? this.moduleStorage(file, expression.operand);
 					if (declaration !== undefined) {
 						const count = this.types.storage(declaration).dimensions[0];
-						if (count !== undefined) return { kind: 'number', value: count };
+						if (count !== undefined) return { kind: 'number', value: integerConstant(count) };
 					}
 				}
 				const value = this.scalar(file, expression.operand);
@@ -195,11 +196,12 @@ export class LuaStaticSourceReads {
 			}
 			const type = base.type.dimensions.length === 0 ? base.type : indexedStructType(base.type);
 			const index = this.scalar(file, expression.index);
-			if (index?.kind === 'number' && !Number.isInteger(index.value)) {
+			if (index?.kind === 'number' && !Number.isInteger(numberConstantValue(index.value))) {
 				throw new StaticSourceError('Struct array index must be an integer when used as a compile-time offset.', file.file, expression.index.span);
 			}
 			return { storage: base.storage, type, pointerIndex: false,
-				byteOffset: index?.kind !== 'number' ? undefined : exactAddressDisplacement(base.byteOffset, index.value * type.size) };
+				byteOffset: index?.kind !== 'number' ? undefined : exactAddressDisplacement(base.byteOffset, numberConstantValue(index.value) * type.size)
+			};
 		}
 		if (expression.kind === LuaSyntaxKind.UnaryExpression && expression.operator === LuaUnaryOperator.Dereference) {
 			const base = this.typedAddress(file, expression.operand);
@@ -233,13 +235,13 @@ export class LuaStaticSourceReads {
 			&& (expression.operator === LuaBinaryOperator.Add || expression.operator === LuaBinaryOperator.Subtract)) {
 			const left = this.address(file, expression.left), right = this.scalar(file, expression.right);
 			if (left !== undefined && right?.kind === 'number') {
-				const byteOffset = exactAddressDisplacement(left.byteOffset, expression.operator === LuaBinaryOperator.Subtract ? -right.value : right.value);
+				const byteOffset = exactAddressDisplacement(left.byteOffset, expression.operator === LuaBinaryOperator.Subtract ? -numberConstantValue(right.value) : numberConstantValue(right.value));
 				return byteOffset === undefined ? undefined : { storage: left.storage, byteOffset };
 			}
 			if (expression.operator === LuaBinaryOperator.Add) {
 				const address = this.address(file, expression.right), offset = this.scalar(file, expression.left);
 				if (address !== undefined && offset?.kind === 'number') {
-					const byteOffset = exactAddressDisplacement(address.byteOffset, offset.value);
+					const byteOffset = exactAddressDisplacement(address.byteOffset, numberConstantValue(offset.value));
 					return byteOffset === undefined ? undefined : { storage: address.storage, byteOffset };
 				}
 			}

@@ -38,6 +38,8 @@ return {rectangle=rectangle,compound=compound,reflected=reflected,image=function
 for (const optLevel of [0,3] as const) {
  test(`Packed source admission shares image bindings and reserves reflected variant capacity (O${optLevel})`, t => {
   const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+world:start()
+
 local shapes<const> = require('cartlib/collision/collision_shape')
 local sprite_shapes<const> = require('cartlib/collision/sprite_shape')
 local pool<const> = require('cartlib/collision/geometry_pool')
@@ -89,6 +91,8 @@ return true
 
  test(`Repeated area publication retains translation-only geometry (O${optLevel})`, t => {
   const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+world:start()
+
 local pool<const> = require('cartlib/collision/geometry_pool')
 local collider<const> = require('cartlib/collision/collider_2d_component')
 bss cache: word[16]
@@ -168,6 +172,8 @@ return true
 
  test(`Collider source admission reserves animation bounds and separates physical geometry from presentation (O${optLevel})`, t => {
   const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+world:start()
+
 local pool<const> = require('cartlib/collision/geometry_pool')
 local collider<const> = require('cartlib/collision/collider_2d_component')
 local sprite<const> = require('cartlib/component/sprite_component')
@@ -226,6 +232,8 @@ return true
 
  test(`Canceled collider factory releases constructor-owned geometry without an attach callback (O${optLevel})`, () => {
   const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+world:start()
+
 local pool<const> = require('cartlib/collision/geometry_pool')
 local collider<const> = require('cartlib/collision/collider_2d_component')
 bss canceled_storage: word[16]
@@ -253,6 +261,8 @@ return true
 
  test(`Tile-strip source admission precedes publication and empty geometry stays absent (O${optLevel})`, t => {
   const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+world:start()
+
 local pool<const> = require('cartlib/collision/geometry_pool')
 local collider<const> = require('cartlib/collision/collider_2d_component')
 local strip_component<const> = require('cartlib/component/tile_strip_component')
@@ -314,6 +324,8 @@ return true
 
  test(`Tile-strip candidate step and area overflow leave the admitted source unchanged (O${optLevel})`, () => {
   const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+world:start()
+
 local pool<const> = require('cartlib/collision/geometry_pool')
 local collider<const> = require('cartlib/collision/collider_2d_component')
 local strip_component<const> = require('cartlib/component/tile_strip_component')
@@ -354,6 +366,8 @@ return true
 
  test(`Canceled strip collider factory releases its concrete source binding (O${optLevel})`, () => {
   const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+world:start()
+
 local pool<const> = require('cartlib/collision/geometry_pool')
 local strip_component<const> = require('cartlib/component/tile_strip_component')
 local strip_collider<const> = require('cartlib/collision/tile_strip_collider_2d_component')

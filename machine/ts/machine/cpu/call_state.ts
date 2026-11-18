@@ -2,6 +2,7 @@ import type { Thread } from './thread';
 import type { Closure, Upvalue } from './closure';
 import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_image';
 import type { ValueSlots } from './value_slots';
+import type { MappedBusSignals } from '../memory/bus_signals';
 
 export const enum ProtectedCallKind {
 	PCall,
@@ -11,10 +12,15 @@ export const enum ProtectedCallKind {
 
 export type CallFrame = {
 	thread: Thread;
+	previous: CallFrame | null;
+	next: CallFrame | null;
 	functionAddress: number;
 	executionImage: Blua32ExecutionImage;
 	decodedPage: DecodedInstructionPage | null;
 	decodedPageAddress: number;
+	decodedPageBusSignals: MappedBusSignals;
+	/** Host translation admission for the next PC, not checkpoint state. */
+	compilationEntry: boolean;
 	pc: number;
 	varargBase: number;
 	varargCount: number;
@@ -24,6 +30,8 @@ export type CallFrame = {
 	closure: Closure;
 	returnBase: number;
 	returnCount: number;
+	/** Only the activation invoked as a protected target owns its completion. */
+	protectedContinuationIndex: number;
 	top: number;
 	returnToCompletionLatch: boolean;
 	callSitePc: number;
@@ -35,7 +43,6 @@ export type CallFrame = {
 export class ProtectedCallContinuation {
 	public kind = ProtectedCallKind.PCall;
 	public caller: CallFrame | null = null;
-	public target: CallFrame | null = null;
 	public returnsToProtectedParent = false;
 	public callBase = 0;
 	public returnCount = 0;

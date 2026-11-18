@@ -4,6 +4,8 @@ import {CPU} from '../../machine/ts/machine/cpu/cpu';
 import {createDecodedInstructionPage} from '../../machine/ts/machine/cpu/execution_image';
 import {ValueSlots} from '../../machine/ts/machine/cpu/value_slots';
 import {ValueTag} from '../../machine/ts/machine/cpu/value';
+import {signExtend, writeInstructionWord} from '../../machine/ts/spec/blua32/instruction_format';
+import {decodeBlua32InstructionAtPc} from '../../toolchain/ts/rompack/disassembler';
 const data=new DataView(new ArrayBuffer(8));
 function num(v:bigint){data.setBigUint64(0,v,true);return data.getFloat64(0,true);}
 function bits(v:number){data.setFloat64(0,v,true);return data.getBigUint64(0,true);}
@@ -20,15 +22,20 @@ for(let i=0;i<32768;i++){
  if(i<16384){tags[i]=(i+1)%7===0?ValueTag.False:ValueTag.Number;scalars[i]=num(special[(i*5+1)%special.length]!);}
 }
 const cpu:any=Object.create(CPU.prototype),page=createDecodedInstructionPage(false,null,0);
+const code=new Uint8Array(8);
 const image:any={executionDomainId:0,globalSlots:new Uint32Array(1),systemGlobalSlots:new Uint32Array(1),constTags:tags,constScalars:scalars};
 const frame:any={executionImage:image,registers};let source=0,body=0,pc=0;
-cpu.executionBusSignals=0;cpu.memory={readBusFaultSequence:()=>0,readMappedBusU32BE:(address:number)=>address===pc?source:body};
+cpu.executionBusSignals=0;cpu.memory={readBusFaultSequence:()=>0,readMappedBusU32LE:(address:number)=>address===pc?source:body};
 let seed=0x9a7132d1;function random(){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return seed>>>0;}
 const ops=[24,25,26,27,28,34],count=4096;process.stdout.write(`${count}\n`);
 for(let n=0;n<count;n++){
  const op=ops[n%6]!,wide=(n>>>3)&1;body=((random()&~0xfc0000)|(op<<18))>>>0;source=wide?(random()&~0xfc0000)>>>0:body;
  pc=(random()&~0x3ff)>>>0;page.widths[0]=0;cpu.decodeInstruction(frame,page,0,pc,false);
- const a=page.a[0]!,b=page.b[0]!,rkb=page.rkB[0]!,rkc=page.rkC[0]!;
+ writeInstructionWord(code,0,source);writeInstructionWord(code,1,body);
+ const decoded=decodeBlua32InstructionAtPc(code,0,0);
+ const a=page.a[0]!,b=decoded.b,rkb=signExtend(b,9+wide*6),rkc=signExtend(decoded.c,9+wide*6);
+ if(a!==decoded.a || page.b[0] !== (op===34 ? b : rkb) || page.c[0] !== (op===34 ? decoded.c : rkc))
+  throw new Error(`CPU/disassembler operand mismatch in vector ${n}`);
  const lb=op===34?0:rkb<0?1:0,li=op===34?b:rkb<0?-1-rkb:rkb;
  const rb=rkc<0?1:0,ri=rkc<0?-1-rkc:rkc;
  const left=op===34?registers.getNumber(b):cpu.readRKNumber(frame,rkb),right=cpu.readRKNumber(frame,rkc);

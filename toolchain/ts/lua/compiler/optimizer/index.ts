@@ -1,4 +1,5 @@
-import { OpCode, decodeCallArgCount } from '../../../../../machine/ts/spec/blua32/opcode';
+import { ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
+import { OpCode, decodeValueCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import type {
 	OuterBindingDebug,
@@ -139,7 +140,7 @@ const removeNoOps = (set: InstructionSet): InstructionSet => {
 			continue;
 		}
 		const instruction = instructions[i];
-		if (instruction.op === OpCode.MOV && instruction.a === instruction.b) {
+		if (instruction.op === OpCode.MOV && instruction.c === ValueMoveKind.Copy && instruction.a === instruction.b) {
 			keep[i] = false;
 			removed += 1;
 			continue;
@@ -405,7 +406,7 @@ const computeBlockConstantIn = (
 				}
 				switch (instruction.op) {
 					case OpCode.MOV: {
-						const source = constants.get(instruction.b);
+						const source = instruction.c === ValueMoveKind.Copy ? constants.get(instruction.b) : undefined;
 						if (source) {
 							recordRegisterConstant(constants, context, instruction.a, source);
 						} else {
@@ -435,7 +436,7 @@ const computeBlockConstantIn = (
 						const operand = constants.get(instruction.b);
 						if (operand) {
 							const result = evaluateUnary(instruction.op, operand);
-							if (result !== null) {
+							if (result !== undefined) {
 								recordRegisterConstant(
 									constants,
 									context,
@@ -464,7 +465,7 @@ const computeBlockConstantIn = (
 						const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 						if (left && right) {
 							const result = evaluateBinary(instruction.op, left, right);
-							if (result !== null) {
+							if (result !== undefined) {
 								recordRegisterConstant(
 									constants,
 									context,
@@ -498,13 +499,12 @@ const computeBlockConstantIn = (
 						constants.delete(instruction.a + 1);
 						break;
 					case OpCode.VARARG: {
-						const countValue = instruction.b === 0 ? null : instruction.b;
+						const countValue = instruction.b === 0 ? null : decodeValueCount(instruction.b, 0);
 						clearRegisterRange(constants, instruction.a, countValue);
 						break;
 					}
 					case OpCode.CALL: {
-						const countValue = instruction.c === 0 ? null : instruction.c;
-						clearRegisterRange(constants, instruction.a, countValue);
+						clearRegisterRange(constants, instruction.a, null);
 						break;
 					}
 					default:
@@ -581,7 +581,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				const operand = constants.get(instruction.b);
 				if (operand) {
 					const result = evaluateUnary(instruction.op, operand);
-					if (result !== null) {
+					if (result !== undefined) {
 						const folded = replaceWithConst(instruction, instruction.a, result, context);
 						recordRegisterConstant(constants, context, instruction.a, folded);
 						continue;
@@ -607,7 +607,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 				if (left && right) {
 					const result = evaluateBinary(instruction.op, left, right);
-					if (result !== null) {
+					if (result !== undefined) {
 						const folded = replaceWithConst(instruction, instruction.a, result, context);
 						recordRegisterConstant(constants, context, instruction.a, folded);
 						continue;
@@ -617,7 +617,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 
 			switch (instruction.op) {
 				case OpCode.MOV: {
-					const source = constants.get(instruction.b);
+					const source = instruction.c === ValueMoveKind.Copy ? constants.get(instruction.b) : undefined;
 					if (source) {
 						recordRegisterConstant(constants, context, instruction.a, source);
 					} else {
@@ -641,13 +641,12 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					break;
 				}
 				case OpCode.VARARG: {
-					const countValue = instruction.b === 0 ? null : instruction.b;
+					const countValue = instruction.b === 0 ? null : decodeValueCount(instruction.b, 0);
 					clearRegisterRange(constants, instruction.a, countValue);
 					break;
 				}
 				case OpCode.CALL: {
-					const countValue = instruction.c === 0 ? null : instruction.c;
-					clearRegisterRange(constants, instruction.a, countValue);
+					clearRegisterRange(constants, instruction.a, null);
 					break;
 				}
 				case OpCode.GETSYS:
@@ -840,6 +839,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				switch (instruction.op) {
 					case OpCode.MOV: {
 						rewriteCopyInstructionOperand(instruction, 'b', copies);
+						if (instruction.c !== ValueMoveKind.Copy) break;
 						const constant = constants.get(instruction.b);
 						if (constant && constant.kind !== ConstValueKind.String) {
 							replaceWithConst(instruction, instruction.a, constant.value, context);
@@ -942,6 +942,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 
 			switch (instruction.op) {
 				case OpCode.MOV: {
+					if (instruction.c !== ValueMoveKind.Copy) { killRegister(constants, copies, instruction.a); break; }
 					const constant = constants.get(instruction.b);
 					if (constant) {
 						setConst(constants, copies, instruction.a, constant);
@@ -973,7 +974,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const operand = constants.get(instruction.b);
 					if (operand) {
 						const result = evaluateUnary(instruction.op, operand);
-						if (result !== null) {
+						if (result !== undefined) {
 							setConst(
 								constants,
 								copies,
@@ -1002,7 +1003,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 					if (left && right) {
 						const result = evaluateBinary(instruction.op, left, right);
-						if (result !== null) {
+						if (result !== undefined) {
 							setConst(
 								constants,
 								copies,
@@ -1036,7 +1037,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					killRegister(constants, copies, instruction.a + 1);
 					break;
 				case OpCode.VARARG: {
-					const countValue = instruction.b === 0 ? null : instruction.b;
+					const countValue = instruction.b === 0 ? null : decodeValueCount(instruction.b, 0);
 					if (countValue === null) {
 						clearRegisterRange(constants, instruction.a, null);
 						clearCopiesTouchingOpenRange(copies, instruction.a);
@@ -1048,15 +1049,8 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					break;
 				}
 				case OpCode.CALL: {
-					const countValue = instruction.c === 0 ? null : instruction.c;
-					if (countValue === null) {
-						clearRegisterRange(constants, instruction.a, null);
-						clearCopiesTouchingOpenRange(copies, instruction.a);
-						break;
-					}
-					for (let offset = 0; offset < countValue; offset += 1) {
-						killRegister(constants, copies, instruction.a + offset);
-					}
+					clearRegisterRange(constants, instruction.a, null);
+					clearCopiesTouchingOpenRange(copies, instruction.a);
 					break;
 				}
 				default:
@@ -1320,7 +1314,7 @@ const applyClosureTransferForInlining = (
 ): void => {
 	switch (instruction.op) {
 		case OpCode.MOV: {
-			if (closureWrittenRegisters.has(instruction.a)
+			if (instruction.c !== ValueMoveKind.Copy || closureWrittenRegisters.has(instruction.a)
 				|| closureWrittenRegisters.has(instruction.b)) {
 				closures.delete(instruction.a);
 				return;
@@ -1348,13 +1342,12 @@ const applyClosureTransferForInlining = (
 			clearRegisterRange(closures, instruction.a, instruction.b);
 			return;
 		case OpCode.VARARG: {
-			const countValue = instruction.b === 0 ? null : instruction.b;
+			const countValue = instruction.b === 0 ? null : decodeValueCount(instruction.b, 0);
 			clearRegisterRange(closures, instruction.a, countValue);
 			return;
 		}
 		case OpCode.CALL: {
-			const countValue = instruction.c === 0 ? null : instruction.c;
-			clearRegisterRange(closures, instruction.a, countValue);
+			clearRegisterRange(closures, instruction.a, null);
 			for (const register of closureWrittenRegisters) {
 				closures.delete(register);
 			}
@@ -1503,7 +1496,7 @@ const inlineFrameFitsCaller = (
 	if (frameEnd > MAX_EXT_REGISTER_A + 1) {
 		return false;
 	}
-	for (let register = call.a + call.c; register < frameEnd && register < liveOut.length; register += 1) {
+	for (let register = call.a + decodeValueCount(call.c, 0); register < frameEnd && register < liveOut.length; register += 1) {
 		if (liveOut[register] !== 0 || openUpvalues[register] !== 0) {
 			return false;
 		}
@@ -1522,8 +1515,8 @@ const buildInlineExpansion = (
 	callRange: SourceRange,
 	callee: InlineCallee,
 ): InstructionSet | null => {
-	const argCount = decodeCallArgCount(callInstruction.b, 0);
-	const resultCount = callInstruction.c;
+	const argCount = decodeValueCount(callInstruction.b, 0);
+	const resultCount = decodeValueCount(callInstruction.c, 0);
 	const callBase = callInstruction.a;
 	const { instructions, ranges } = callee.set;
 	const calleeCount = instructions.length;
@@ -1607,7 +1600,7 @@ const buildInlineExpansion = (
 				? undefined
 				: duplicateStatementRange(instruction.resumeRange, statementRanges);
 			const inlineCallSites = mapInlineCallSites(instruction.inlineCallSites);
-			const copied = Math.min(instruction.b, resultCount);
+			const copied = Math.min(decodeValueCount(instruction.b, 0), resultCount);
 			const retBase = mapRegister(instruction.a);
 			for (let offset = 0; offset < copied; offset += 1) {
 				appendInstruction({

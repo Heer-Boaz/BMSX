@@ -4,10 +4,13 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
-import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
+import { applyHotResumeClosureRevision, applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { compileFrameEvaluationTest } from '../helpers/frame_evaluation';
 import { createTestRuntime } from '../helpers/runtime_sources';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 
 for (const optLevel of [0, 3] as const) for (const stop of ['ram', 'nmi', 'irq-nmi'] as const) test(`O${optLevel}: ROM relocation preserves RAM calls and ${stop} return words`, () => {
 	const image = compileFrameEvaluationTest(`
@@ -43,4 +46,21 @@ return ram_outer() == 6`, optLevel);
 	const revision = identityHotResumeRevision(image.image);
 	applyHotResumeRelocation(cpu, buildHotResumeRelocation(cpu, [revision, null, null], cpu.getFrameDepth()));
 	assert.deepEqual(cpu.captureRuntimeState(), before, 'RAM PCs/callsites and interrupted return latches are not ROM offsets');
+});
+
+test('Hot Resume preserves a direct-entry record count independently of captured cells', () => {
+	const text = new Uint8Array(4);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1,
+		staticClosure: true, upvalueDescs: [{ inStack: true, index: 0 }] }] });
+	const { cpu } = createTestSystemCpu(image);
+	const closure = cpu.activeThread.currentFrame!.closure;
+	assert.equal(closure.recordUpvalueCount, 1);
+	assert.equal(closure.upvalues.length, 0);
+	const revisions = [identityHotResumeRevision(image.image), null, null] as const;
+	assert.doesNotThrow(() => buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth()));
+	applyHotResumeClosureRevision(cpu, revisions);
+	assert.equal(cpu.activeThread.currentFrame!.closure, closure);
+	assert.equal(closure.recordUpvalueCount, 1);
+	assert.equal(closure.upvalues.length, 0);
 });

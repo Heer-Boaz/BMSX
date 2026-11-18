@@ -2,9 +2,7 @@ import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import { valueString, type StringValue } from '../../machine/ts/machine/cpu/value';
+import { asClosure, asStringId, asTable, valueInteger, valueString, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
@@ -104,13 +102,13 @@ function fixture(worldSource = WORLD) {
 	cpu.reset(); cpu.installBootPrimitives(); const beforeBirth = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 100_000);
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), details = new ActorDetails(sources, guest);
 	const world = runtimeWorld(sources, guest, -1)!;
-	const objects = guest.readStringMember(world, '_objects') as Table;
-	const actorHashId = (objects.getInteger(1) as Table).hashId, otherHashId = (objects.getInteger(2) as Table).hashId;
+	const objects = asTable(guest.readStringMember(world, '_objects'), cpu.gc);
+	const actorHashId = guest.identityScalar(objects.getInteger(1), ValueTag.Table), otherHashId = guest.identityScalar(objects.getInteger(2), ValueTag.Table);
 	const update = (hashId = actorHashId) => tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, hashId));
 	update();
-	const target = captureActorTarget(-1, world.hashId, tree.roots, tree.roots[0]);
+	const target = captureActorTarget(-1, guest.identityScalar(world, ValueTag.Table), tree.roots, tree.roots[0]);
 	const invalidate = (reason: GuestInvalidationReason = 'execution') => { tree.release(); guest.invalidate(reason); details.invalidate(reason); };
-	const execute = (name: string) => { invalidate(); runCompletionClosure(cpu, guest.global(name) as Closure, []); update(); };
+	const execute = (name: string) => { invalidate(); runCompletionClosure(cpu, asClosure(guest.global(name), cpu.gc), []); update(); };
 	return { cpu, runtime, sources, guest, tree, details, target, update, invalidate, execute, beforeBirth, actorHashId, otherHashId };
 }
 
@@ -224,7 +222,7 @@ test('historical subject absence retains the path, but hidden live-branch admiss
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
 	assert.equal(f.details.retired, true); assert.equal(f.details.available, false); assert.equal(f.details.title, title);
 	f.details.setLocked(false);
-	const current = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, f.tree.roots, f.tree.roots[0]);
+	const current = captureActorTarget(-1, f.guest.identityScalar(runtimeWorld(f.sources, f.guest, -1)!, ValueTag.Table), f.tree.roots, f.tree.roots[0]);
 	f.details.followSelection(-1, current.worldHashId, f.actorHashId, current.path, f.tree);
 	f.details.refreshSubject(f.tree, -1, current.worldHashId, false);
 	assert.equal(f.details.retired, false); assert.equal(f.details.available, true, 'explicit unlock admits the now-selected new instance');
@@ -274,10 +272,10 @@ test('explicit selection changes refresh details without execution and mutable m
 
 test('details clears missing typed membership instead of borrowing an alias and reacquires history values', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === 1)!;
+	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === valueInteger(1))!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state);
 	const document = f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false)!, before = capturePropertyDocument(document), alive = f.cpu.captureRuntimeState();
-	const originalValue = state.value;
+	const originalObject = asTable(state.value!, f.cpu.gc);
 	f.execute('remove_numeric');
 	assert.equal(resolveActorPath(f.tree.roots, target.path), undefined);
 	assert.strictEqual(f.details.refresh(undefined, target.path, f.tree, -1, f.target.worldHashId, false), document);
@@ -286,7 +284,7 @@ test('details clears missing typed membership instead of borrowing an alias and 
 	assert.equal(f.details.refresh(undefined, target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(alive); f.update();
 	const restored = resolveActorPath(f.tree.roots, target.path)!;
-	assert.notStrictEqual(restored.value, originalValue);
+	assert.ok(asTable(restored.value!, f.cpu.gc) !== originalObject);
 	assert.strictEqual(f.details.refresh(restored, target.path, f.tree, -1, f.target.worldHashId, false), document);
 	assert.deepEqual(capturePropertyDocument(document), before);
 	f.invalidate('heap-replaced');
@@ -454,7 +452,7 @@ test('cross-actor pins keep their actor membership and reconcile one tree per wa
 	const update = ActorRuntimeTree.prototype.update;
 	let watchedUpdates = 0;
 	t.mock.method(ActorRuntimeTree.prototype, 'update', function (this: ActorRuntimeTree, ...args: Parameters<typeof update>) {
-		if (args[3]?.hashId === f.actorHashId) watchedUpdates++;
+		if (args[3] !== undefined && f.guest.identityScalar(args[3], ValueTag.Table) === f.actorHashId) watchedUpdates++;
 		return update.apply(this, args);
 	});
 	f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, f.target.worldHashId, false);
@@ -510,7 +508,7 @@ test('pinned property identities distinguish numeric and string keys with identi
 
 test('typed node pins survive history absence and recover without borrowing a same-table alias', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === 1)!;
+	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === valueInteger(1))!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state);
 	f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(target, 'state', f.details.items.find(item => item.label === 'INSTANCE DATA')!);
@@ -623,10 +621,12 @@ test('pinned callbacks reuse current loaded source mappings and clear them when 
 
 test('watch labels update independently of a stable indexed runtime property identity', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === 1)!;
+	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === valueInteger(1))!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state);
 	f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false);
 	const property = f.details.items.find(item => item.identity?.section === 'input')!;
+	assert.equal(property.identity!.key!.tag, ValueTag.Integer, 'input-slot identity is a guest Integer, not a raw host counter');
+	assert.equal(property.identity!.key!.scalar, 1);
 	const pin = f.details.watches.add(target, 'state', property), label = pin.item.label, value = pin.item.value;
 	f.execute('change_input_pattern');
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
@@ -771,13 +771,13 @@ test('table pin comparison follows restored string text even when the pool reuse
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'Data')!);
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
-	const data = f.guest.readStringMember(f.tree.roots[0].value, 'data') as Table;
-	const id = (data.getInteger(12) as StringValue).id, identity = f.guest.identity(data.getInteger(12));
+	const data = asTable(f.guest.readStringMember(f.tree.roots[0].value!, 'data'), f.cpu.gc);
+	const id = asStringId(data.getInteger(12)), identity = f.guest.identity(data.getInteger(12));
 	const text = f.guest.formatValue(data.getInteger(12)), preview = pin.item.value;
 	f.invalidate('history-restored'); f.cpu.stringPool.restoreState(beforeStrings); f.cpu.restoreRuntimeState(beforeAllocation); f.update();
 	f.execute('advance_gameplay_state'); f.execute('set_data_tail_text');
-	const restoredData = f.guest.readStringMember(f.tree.roots[0].value, 'data') as Table;
-	assert.equal((restoredData.getInteger(12) as StringValue).id, id, 'the restored pool really reused the same raw string id');
+	const restoredData = asTable(f.guest.readStringMember(f.tree.roots[0].value!, 'data'), f.cpu.gc);
+	assert.equal(asStringId(restoredData.getInteger(12)), id, 'the restored pool really reused the same raw string id');
 	assert.equal(f.guest.matchesIdentity(restoredData.getInteger(12), identity), false, 'retained semantic identity never aliases recycled storage');
 	assert.notEqual(f.guest.formatValue(restoredData.getInteger(12)), text);
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, true);

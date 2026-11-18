@@ -42,6 +42,8 @@ return { image=function(id) return images[id] end }`,
 for (const optLevel of [0, 3] as const) {
 	test(`Primary Sprite keeps owner visibility, static profiles and animation selection at their real owners (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 local sprite<const> = require('cartlib/component/sprite_component')
 local animation<const> = require('cartlib/component/sprite_animation_component')
 local sprite_object<const> = require('cartlib/sprite')
@@ -92,6 +94,8 @@ return true
 
 	test(`Scene members inherit prefab placement and visual defaults unless explicitly overridden (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 local sprite<const> = require('cartlib/component/sprite_component')
 local sprite_object<const> = require('cartlib/sprite')
 prefab.define({def_id='visual.defaults',
@@ -131,6 +135,8 @@ return true
 
 	test(`Sprite source changes preserve the concrete composite draw producer (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 local sprite<const> = require('cartlib/component/sprite_component')
 local commands<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
@@ -173,6 +179,8 @@ return true
 
 	test(`Rectangle geometry owns its dimensions and composes the retained visual affine (O${optLevel})`, t => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 local rectangle<const> = require('cartlib/component/rectangle_component')
 local commands<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
@@ -223,6 +231,8 @@ return true
 
 	test(`Visual placement composes physical, attachment and presentation without moving the object (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(checks + WORLD_CPU_SETUP + `
+world:start()
+
 local sprite<const> = require('cartlib/component/sprite_component')
 local visual<const> = require('cartlib/component/visual_component')
 local custom<const> = require('cartlib/component/custom_visual_component')
@@ -272,7 +282,7 @@ return assertion_failed
 	// These coordinates/words are the subject of the GX affine producer contract,
 	// not incidental Workbench layout. Every source keeps its admitted UV/CLUT
 	// representation while a whole batch transforms its retained local geometry.
-	test(`GX affine batches preserve source records and native atomic packets (O${optLevel})`, () => {
+	test(`GX affine batches preserve source records and dense native packets (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(checks + `
 local commands<const> = require('cartlib/gx/command_list')
 local batch<const> = require('cartlib/gx/affine_batch')
@@ -284,36 +294,36 @@ local source<const> = image.resolve('tile')
 local surface<const> = image.resolve('surface')
 batch.offset_span(draw,surface._tiles, 0,2,-3,1, 10,20, 0xffffffff)
 local output<const>: *word = words
-assert(draw.word_count==25 and output[1]==0x2d808080
+assert(draw.word_count==19 and output[1]==0x2d808080
  and output[2]==0x0014000a and output[4]==0x0018000a
  and output[6]==0x00170001 and output[8]==0x001b0001,
  'first affine surface tile lost shear or native quad order')
-assert(output[17]==0x0018000a and output[19]==0x001c000a
- and output[21]==0x001b0001 and output[23]==0x001f0001,
+assert(output[11]==0x0018000a and output[13]==0x001c000a
+ and output[15]==0x001b0001 and output[17]==0x001f0001,
  'surface batch reconstructed or ignored source offsets')
 assert(output[3]==source._quad_uv0 and output[5]==source._quad_uv1
  and output[7]==source._quad_uv2 and output[9]==source._quad_uv3,
  'affine packet changed admitted image addressing')
 commands.begin(draw,0x100,0)
 batch.repeated_image(draw,source,-1,1, 4,5, 1,1,-1,2, 10,20, 0xffffffff)
-assert(draw.word_count==41 and output[2]==0x0006000b and output[17]==0x0014000a
- and output[33]==0x00220009,'strip endpoints were replaced with generated shadow positions')
+assert(draw.word_count==28 and output[2]==0x0006000b and output[11]==0x0014000a
+ and output[20]==0x00220009,'strip endpoints were replaced with generated shadow positions')
 commands.begin(draw,0x100,0)
 local glyphs<const> = {source,source}
 local offsets<const> = {0,4}
 batch.glyph_span(draw,glyphs,offsets,1,2, -1,0,2,1, 10,20, 0xffffffff)
-assert(output[2]==0x0014000a and output[17]==0x00140006,
+assert(output[2]==0x0014000a and output[11]==0x00140006,
  'glyph span ignored local x offsets under reflection')
 commands.begin(draw,0x100,0)
 local rows<const> = {{row_index=2,sources=glyphs,columns={3,5},first_visible_source=1,last_visible_source=2}}
 batch.tile_layer(draw,rows,1,3,4, 0,1,-1,0, 10,20)
-assert(output[2]==0x00140006 and output[17]==0x001c0006,
+assert(output[2]==0x00140006 and output[11]==0x001c0006,
  'affine tile view failed to retain source columns or selected view origin')
 commands.begin(draw,0x100,0)
 draw.word_count=14
 batch.glyph_span(draw,glyphs,offsets,1,1, 1,0,0,1, 0,0, 0xff204080)
-assert(output[14]==0 and output[15]==0 and output[16]==0x2c402010 and draw.word_count==25,
- 'native textured quad crossed a DMA packet block or lost modulation')
+assert(output[14]==0x2c402010 and draw.word_count==23,
+ 'dense textured quad added transport padding or lost modulation')
 commands.begin(draw,0x100,0)
 batch.glyph_rows(draw,glyphs,offsets,1,1,1, 0,1,-2,0,10,20,0xffffffff)
 assert(output[2]==0x0014000a and output[4]==0x0016000a

@@ -48,7 +48,7 @@ test('installed global values, typed table keys, aliases and cycles are inspecte
 	assert.equal(visits, 1, 'paging walks stored entries once');
 	const entries = [...first.entries, ...remaining.entries];
 	assert.equal(entries.length, first.total);
-	assert.equal(entries.find(e => e.key.kind === 'number' && e.key.display === '1')!.value.display, 'number key');
+	assert.equal(entries.find(e => e.key.kind === 'integer' && e.key.display === '1')!.value.display, 'number key');
 	assert.equal(entries.find(e => e.key.kind === 'string' && e.key.display === '1')!.value.display, 'string key');
 	assert.deepEqual(entries.find(e => e.key.kind === 'boolean')!.value, { kind: 'boolean', display: 'false' });
 	assert.equal(entries.find(e => e.key.display === 'self')!.value.reference, probe.reference);

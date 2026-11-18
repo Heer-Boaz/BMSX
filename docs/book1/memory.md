@@ -223,7 +223,7 @@ The following directory covers the complete I/O aperture in address order. Each 
 | `08010384H` | `080103ACH` | 10 | [GTE PLUS](gte.md#sec-gte-register-reference) — operands, results, flags, command and cycles |
 | `080103ACH` | `080103E4H` | 14 | [PCRTC](pcrtc.md#sec-pcrtc) — beam timing, CSR events and IMR masks |
 | `080103E4H` | `080103FCH` | 6 | [DMA](dma.md#sec-dma-register-reference) — channel 1 |
-| `080103FCH` | `08010420H` | 9 | [IMGDEC](imgdec.md#sec-imgdec-register-reference) — configuration, status, data and progress |
+| `080103FCH` | `08010420H` | 9 | [IMGDEC](imgdec.md#sec-imgdec-register-reference) — configuration, status, data, progress and two unassigned words |
 | `08010420H` | `08010428H` | 2 | [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, §1.3]{.content-visible when-format="pdf"} — socket selection and status |
 | `08010428H` | `08010440H` | 6 | [SYSTEM](system.md#sec-system-supervisor-fault-registers) — retained supervisor fault report |
 
@@ -438,19 +438,27 @@ unready port write without raising a bus fault.
    stable through its last DMA read and wait for the final destination write
    before consuming the completed buffer.
 
-2. **Program an idle channel completely.** Set its read address, write address, count, increment choices, request selectors and block length before START. An increment advances its address by four bytes per word; a fixed address advances by zero. The programmed block-length field specifies 1 through 16 words, and the last block uses only the remaining count. Both selected requests must be asserted before a block is admitted. `FORCE` is always asserted; `DISABLED` is never asserted. For a device port, choose its real request selectors rather than use FORCE to send words while the port is not ready.
+2. **Program an idle channel.** Choose its fixed route and program the
+   memory-side addresses, exact word count and any cartridge socket bits.
+   Memory addresses advance by four bytes per word; internal device ports are
+   wired by route. A burst contains at most 256 words and is shortened by
+   endpoint capacity and region boundaries. Prepare the receiving device's
+   mode before expecting its request.
 
-3. **Start once and preserve the live inputs.** An accepted START with a nonzero count sets BUSY; START while BUSY is ignored, not queued as a second transfer. A zero count finishes immediately, before testing requests. Admission retains one block's addresses, remaining count, control and length, but not its source words. Each source word is read and written to the destination before proceeding to the next word. Bytes changed after START can therefore affect later reads; START is not a source-buffer snapshot.
+3. **Start once and preserve the source.** A nonzero count sets BUSY; START
+   while BUSY is ignored. A zero count finishes immediately without testing
+   requests. The channel's address/count/control words are write-disabled
+   while BUSY. An admitted burst holds the CPU bus, but a request wait can
+   allow CPU execution between bursts. START does not capture source bytes;
+   other devices must not overwrite them before their transfer completes.
 
-   Leave the channel's programmed address/count/control words alone through completion. Writes to those words are not automatically rejected while BUSY: an already admitted block uses its captured configuration, and its later address/count writeback can overwrite changes made meanwhile. Reprogramming a busy channel is not a way to revise that admitted block safely.
-
-4. **Wait for completion, then check the outcome.** Finish follows the final mapped transfer accesses, replaces channel status with DONE (`2`), and clears BUSY by that replacement. It also raises the channel's DMA interrupt. Wait for channel status or service its completion IRQ rather than assuming a transfer delay.
-
-   Check the fault report using the procedure above. DMA advances after a
-   faulting access: an unmapped source can supply zero, and an unmapped or
-   read-only destination can reject the write. An unready I/O write can also be
-   discarded without retry. Use the correct device requests and verify the
-   destination's applicable completion/status condition.
+4. **Wait for completion, then check the outcome.** The final mapped accesses
+   and address/count updates precede DONE and the DMA interrupt. Check the
+   fault record using the procedure above. Faulting accesses do not roll back
+   an admitted burst: a source fault supplies the bus value and the destination
+   write is still attempted. Internal console I/O is not a valid memory-side
+   endpoint; use the wired device route. Observe the destination unit's own
+   completion condition separately from DMA DONE.
 
 5. **Reuse according to the completed operation.** Once DMA has finished its source reads, that transfer no longer needs the source bytes; once its final RAM writes have completed, the RAM destination can be inspected as the completed transfer's output. A receiving device may still have work to do. DMA transport completion does not establish GPU-job completion or permission to reuse a live display surface.
 
@@ -460,13 +468,12 @@ Within installed RAM, each DMA word is read before its destination is written, a
 
 ### DMA programming example {#sec-memory-dma-programming-example}
 
-The [DMA chapter's BLua sequence](dma.md#sec-dma-copy-words-in-blua) prepares 20 source words and performs two nonoverlapping RAM copies using declared storage addresses. It programs both channels before either START and uses 16-word and four-word blocks. The two completed destination copies retain the words to inspect.
-
-The DMA chapter's [GP0 sequence](dma.md#sec-dma-send-a-command-stream-to-gp0)
-sends a five-word ROM stream, waits for DMA DONE,
-then separately waits for a GPU marker and GPU idle. These are distinct
-completion conditions; the order of software reads does not establish a
-universal ordering of DMA and device completion.
+The [DMA chapter's BLua sequence](dma.md#sec-dma-copy-words-in-blua)
+copies four initialized RAM words into a separate BSS buffer. The
+[GPU raw-image sequence](gpu.md#sec-gpu-move-a-raw-image-through-dma)
+uses the wired GP0 and GPUREAD routes for a complete upload/readback roundtrip.
+It waits for DMA DONE, then observes GPU completion separately; neither
+condition proves display publication.
 
 ## Device-specific buffer lifetimes {#sec-memory-device-specific-buffer-lifetimes}
 
@@ -508,15 +515,26 @@ Submit `COMMAND` through the CPU. CPU command submission is interlocked while a 
 
 ### IMGDEC input and output have separate lifetimes {#sec-memory-imgdec-input-and-output-have-separate-lifetimes}
 
-IMGDEC accepts supplied stream words through DATA, not a cartridge source-buffer pointer. An admitted CPU DATA write copies that word into its input storage; the decoder does not retain the original CPU-visible storage location. Texture and CLUT destination words become output command headers, not addresses that IMGDEC itself dereferences.
+IMGDEC accepts supplied stream words through DATA, not a cartridge source
+pointer. Input acceptance copies words into its FIFO. Software programs both
+compressed-input and raw-output counts; no texture destination or size is
+interpreted by this unit.
 
-DMA programming and block admission capture addresses, not the source contents. Keep the source words unchanged until their last DMA read, including repeated reads from a fixed source address. For a whole buffer with no other reader, input DMA completion ends that source transfer's need for the buffer: reuse need not wait for decoder completion or output drainage. This does not certify successful decoding; misprogrammed input writes can be counted without entering the FIFO.
+Keep a DMA source stable until input transport completes. That completion ends
+the source buffer's input lifetime, not decoding or output processing. Raw
+output contains neither image-upload nor CLUT-upload headers. The program
+supplies those headers to GP0 separately when connecting a decode to the GPU.
 
-Output is another word stream. An output DMA count must include the **three-word texture header** and, when CLUT data is present, its **three-word CLUT header**, as well as both payloads. Input words received count submissions, not consumption; decoded words count payload, not headers. Neither progress count is completion. Require normal IMGDEC DONE, not merely an IRQ: faults also raise that interrupt. When output DMA captures into RAM, also require that DMA transfer's completion before treating the destination as completed output; the final source DATA read precedes its destination write. Neither completion establishes downstream GPU execution or visible display completion.
+Decoded progress advances at whole-block completion and is not evidence that
+output has been drained. IMGDEC DONE follows the last output read; a receiving
+DMA write and downstream GPU execution have their own completion. A format
+fault also raises the decoder IRQ, without rolling back already delivered
+words or cancelling an admitted DMA burst.
 
-Do not poll DATA for freshness. An empty read returns the retained DATA latch, which input writes also change. A CPU read while DMA owns the DATA read port likewise returns that latch without popping output. OUTPUT_REQUEST describes a block threshold, not permission for an arbitrary number of reads. Extra DATA reads after successful termination are not harmless polling: they can raise the completion interrupt again.
-
-A format fault stops processing but can leave queued partial output and words already delivered. CONTROL has no ABORT operation. A new START or IMGDEC reset discards queued internal output; it does not cancel a separately admitted DMA transfer or retract prior output. Restarting IMGDEC is therefore not an all-or-nothing recovery of an arbitrary partial output stream.
+DATA is a retained latch as well as a stream port. Poll STATUS for completed
+output rather than treating repeated DATA reads as a readiness test. A new
+START resets internal input, history and block state, but does not cancel
+other units' programmed work.
 
 Use the [IMGDEC chapter](imgdec.md#sec-imgdec) and its [BLua programming sequence](imgdec.md#sec-imgdec-programming-imgdec-in-blua) for stream layout and transfer programming.
 

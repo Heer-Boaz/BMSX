@@ -3,6 +3,7 @@
 #include "machine/cpu/cpu.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/memory_access_kind.h"
+#include "spec/blua32/opcode.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
@@ -117,9 +118,9 @@ auto makeGtePlusBurstImage(
 	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_WORDS_D), 1, 0, static_cast<bmsx::u8>(words.size()));
 	bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	image.constants.reserve(words.size() + 1u);
-	image.constants.emplace_back(static_cast<bmsx::f64>(bmsx::IO_GX_GTE_PLUS_BASE));
+	image.constants.emplace_back(static_cast<bmsx::i32>(bmsx::IO_GX_GTE_PLUS_BASE));
 	for (uint32_t word : words) {
-		image.constants.emplace_back(static_cast<bmsx::f64>(word));
+		image.constants.emplace_back(static_cast<bmsx::i32>(word));
 	}
 	image.functions.push_back({
 		.firstWord = 0u,
@@ -276,7 +277,7 @@ void testCommandObservation() {
 	require(after.data[17] == 512u && after.data[18] == 256u && after.data[19] == 1024u, "RTPT matched three depths");
 	require(observed.gte.readDataRegister(15u) == after.data[14], "owner retains port alias semantics");
 	constexpr bmsx::MappedBusSignals bus = bmsx::MAPPED_BUS_MASTER_DMA | bmsx::MAPPED_BUS_DMA_BLOCK_END;
-	for (auto* harness : {&baseline, &observed}) harness->memory.writeMappedDmaU32LE(bmsx::IO_GX_GTE_COMMAND, 0x12340000u, bus);
+	for (auto* harness : {&baseline, &observed}) harness->memory.writeMappedBusU32LE(bmsx::IO_GX_GTE_COMMAND, 0x12340000u, bus);
 	require(trace.records.size() == 4u, "invalid command has a before/after pair");
 	require(!trace.records[2].after && trace.records[3].after, "invalid command observation order");
 	require(trace.records[2].command == 0x12340000u && trace.records[3].command == 0x12340000u, "invalid raw command retained");
@@ -332,8 +333,8 @@ void testCommandObservationPreservesCpu() {
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	image.functions.push_back({.firstWord = 0u, .wordCount = 5u, .maxStack = 2u});
-	image.constants.emplace_back(static_cast<bmsx::f64>(bmsx::IO_GX_GTE_COMMAND));
-	image.constants.emplace_back(static_cast<bmsx::f64>(GTE_SF | bmsx::GX_GTE_FN_RTPS));
+	image.constants.emplace_back(static_cast<bmsx::i32>(bmsx::IO_GX_GTE_COMMAND));
+	image.constants.emplace_back(static_cast<bmsx::i32>(GTE_SF | bmsx::GX_GTE_FN_RTPS));
 	GteHarness baseline(image), observed(image);
 	for (auto* harness : {&baseline, &observed}) {
 		setupIdentityProjection(harness->gte);
@@ -345,7 +346,7 @@ void testCommandObservationPreservesCpu() {
 	bmsx::InstructionObserverBinding instructionObserver;
 	instructionObserver.points[0].insert(expectedPc);
 	instructionObserver.context = &instructionObservations;
-	instructionObserver.observe = [](void* context, bmsx::ExecutionDomainId, bmsx::u32, const bmsx::Value*) {
+	instructionObserver.observe = [](void* context, bmsx::ExecutionDomainId, bmsx::u32, bmsx::ConstValueSpan) {
 		++*static_cast<int*>(context);
 	};
 	observed.cpu.setInstructionObserver(std::move(instructionObserver));
@@ -543,13 +544,13 @@ void testPlusCommandAdmission() {
 	GteHarness harness;
 	bmsx::Memory& memory = harness.memory;
 	const uint32_t commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
-	memory.writeMappedDmaU32LE(commandAddress, 0xcafe0002u, bmsx::MAPPED_BUS_MASTER_DMA);
+	memory.writeMappedBusU32LE(commandAddress, 0xcafe0002u, bmsx::MAPPED_BUS_MASTER_DMA);
 	require(memory.readMappedU32LE(commandAddress) == 0u, "GTE+ DMA command is ignored while idle");
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == 0u, "GTE+ DMA command does not start work");
 
 	memory.writeMappedU32LE(commandAddress, 0xdeadbe01u);
 	memory.writeMappedU32LE(commandAddress, 0xcafe0002u);
-	memory.writeMappedDmaU32LE(commandAddress, 0xabcd0002u, bmsx::MAPPED_BUS_MASTER_DMA);
+	memory.writeMappedBusU32LE(commandAddress, 0xabcd0002u, bmsx::MAPPED_BUS_MASTER_DMA);
 	require(memory.readMappedU32LE(commandAddress) == 0xdeadbe01u, "GTE+ active command cannot be overwritten");
 	require(!harness.scheduler.hasDueTimer(), "GTE+ rejected commands allocate no timer");
 	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
@@ -601,7 +602,7 @@ void testPlusAcceptanceAndLazyPublicationObservation() {
 	const auto commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
 	for (auto* harness : {&baseline, &observed}) {
 		auto& memory = harness->memory;
-		memory.writeMappedDmaU32LE(commandAddress, 1u, bmsx::MAPPED_BUS_MASTER_DMA);
+		memory.writeMappedBusU32LE(commandAddress, 1u, bmsx::MAPPED_BUS_MASTER_DMA);
 		memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE, pack16(10u, static_cast<bmsx::u32>(-20)));
 		memory.writeMappedU32LE(commandAddress, 0xdeadbe01u);
 		memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE, pack16(99u, 88u));
@@ -626,7 +627,7 @@ void testPlusAcceptanceAndLazyPublicationObservation() {
 		memory.writeMappedU32LE(commandAddress, 0x41u);
 		harness->scheduler.advanceTo(30);
 		require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE) == 0x81000000u, "invalid PLUS flags publish independently");
-		memory.writeMappedDmaU32LE(commandAddress, 1u, bmsx::MAPPED_BUS_MASTER_DMA);
+		memory.writeMappedBusU32LE(commandAddress, 1u, bmsx::MAPPED_BUS_MASTER_DMA);
 	}
 	const std::array<bmsx::i64, 6> cycles{0, 20, 20, 25, 25, 30}, deadlines{5, 5, 25, 25, 26, 26};
 	require(trace.records.size() == cycles.size(), "exact PLUS acceptance/publication count");
@@ -713,26 +714,35 @@ void testPlusObservationPreservesCpuInterlock() {
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	image.functions.push_back({.firstWord = 0u, .wordCount = 5u, .maxStack = 2u});
 	const auto commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
-	image.constants.emplace_back(static_cast<bmsx::f64>(commandAddress));
-	image.constants.emplace_back(static_cast<bmsx::f64>(1));
+	image.constants.emplace_back(static_cast<bmsx::i32>(commandAddress));
+	image.constants.emplace_back(1);
+	const auto& prices = bmsx::BASE_CYCLES;
+	const int load = prices[static_cast<size_t>(bmsx::OpCode::LOADK)];
+	const int store = prices[static_cast<size_t>(bmsx::OpCode::STORE_MEM_D)];
+	const int ret = prices[static_cast<size_t>(bmsx::OpCode::RET)];
+	const bmsx::i64 firstIssue = 2 * load + store;
+	const bmsx::i64 firstDeadline = firstIssue + bmsx::GX_GTE_PLUS_CYCLES_VMAD3;
+	const bmsx::i64 secondIssue = firstDeadline;
+	const bmsx::i64 secondDeadline = secondIssue + bmsx::GX_GTE_PLUS_CYCLES_VMAD3;
 	GteHarness baseline(image), observed(image);
 	PlusTrace trace;
 	observed.gte.setPlusObserver({PlusTrace::accepted, PlusTrace::published, &trace});
 	for (auto* harness : {&baseline, &observed}) {
 		require(harness->scheduler.runCpuSlice(0, 1000) == bmsx::RunResult::Halted && harness->cpu.isMemoryWriteBlocked(), "second PLUS store interlocks before acceptance");
-		require(1000 - harness->cpu.instructionBudgetRemaining == 6, "two loads and two attempted stores cost six cycles");
-		harness->scheduler.advanceTo(6);
-		require(harness->scheduler.nextDeadline() == 9, "interlock retains first command deadline");
-		harness->scheduler.advanceTo(9);
+		require(1000 - harness->cpu.instructionBudgetRemaining == 2 * load + 2 * store, "two loads and two attempted stores are charged");
+		harness->scheduler.advanceTo(2 * load + 2 * store);
+		require(harness->scheduler.nextDeadline() == firstDeadline, "interlock retains first command deadline");
+		harness->scheduler.advanceTo(firstDeadline);
 		require(harness->scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GTE, "actual scheduled GTE service wakes CPU");
 		harness->gte.onService();
 		require(!harness->cpu.isMemoryWriteBlocked(), "actual publication releases interlock");
 		require(harness->scheduler.runCpuSlice(0, 1000) == bmsx::RunResult::Halted, "retried PLUS store and return finish");
-		require(1000 - harness->cpu.instructionBudgetRemaining == 4, "retried store and return retain ordinary cycle cost");
-		harness->scheduler.advanceTo(16);
+		require(1000 - harness->cpu.instructionBudgetRemaining == ret + 2, "resumed store retains its paid base; RET charges its base and two completion slots");
+		harness->scheduler.advanceTo(secondDeadline);
 		harness->memory.readMappedU32LE(commandAddress);
 	}
-	const std::array<bmsx::i64, 4> cycles{4, 9, 11, 16}, deadlines{9, 9, 16, 16};
+	const std::array<bmsx::i64, 4> cycles{firstIssue, firstDeadline, secondIssue, secondDeadline},
+		deadlines{firstDeadline, firstDeadline, secondDeadline, secondDeadline};
 	require(trace.records.size() == cycles.size(), "one acceptance per actual retried store, one publication per job");
 	for (size_t index = 0; index < cycles.size(); index++) {
 		require(trace.records[index].accepted == ((index & 1u) == 0u) && trace.records[index].cycle == cycles[index]
@@ -768,7 +778,8 @@ void testPlusCpuBurstSaveRestoreInterlock() {
 	}};
 	GteHarness first(makeGtePlusBurstImage(burstWords));
 	first.memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, firstAddXy);
-	require(first.cpu.runUntilDepth(0, static_cast<int>(burstWords.size() + 1u)) == bmsx::RunResult::Yielded, "GTE+ burst setup stops before the mapped write");
+	require(first.cpu.runUntilDepth(0, static_cast<int>(burstWords.size() + 1u)
+		* bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::LOADK)]) == bmsx::RunResult::Yielded, "GTE+ burst setup stops before the mapped write");
 	first.memory.writeMappedU32LE(commandAddress, bmsx::GX_GTE_PLUS_FN_VMAD3);
 	first.scheduler.beginCpuSlice(10);
 	require(first.cpu.runUntilDepth(0, 10) == bmsx::RunResult::Halted, "GTE+ burst blocks the CPU");
@@ -807,7 +818,7 @@ void testPlusCpuBurstSaveRestoreInterlock() {
 	require(restored.memory.readMappedU32LE(commandAddress) == bmsx::GX_GTE_PLUS_FN_VMAD3, "GTE+ resumed burst commits command");
 	require(!restored.scheduler.hasDueTimer(), "GTE+ admitted retry allocates no timer");
 	const bmsx::GxGteState resumedState = restored.gte.captureState();
-	require(resumedState.plusPendingCycles == 3u, "GTE+ resumed command retains three cycles after return");
+	require(resumedState.plusPendingCycles == 0u, "GTE+ completes during return result placement");
 	require(!resumedState.plusInterlockArmed, "GTE+ resumed command has no interlock event");
 	completeGtePlus(restored, 3);
 	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == pack16(14u, static_cast<uint32_t>(-14)), "GTE+ resumed burst XY result");
@@ -1576,7 +1587,79 @@ void testRtpsUnrResultSaturatesWithoutDivideOverflow() {
 
 } // namespace
 
+void testNormalCompletionInterlock() {
+ for (const auto port : {bmsx::IO_GX_GTE_DATA0, bmsx::IO_GX_GTE_CONTROL0}) {
+  GteHarness h;
+  h.cpu.instructionBudgetRemaining = 100;
+  h.scheduler.beginCpuSlice(100);
+  h.memory.writeMappedU32LE(bmsx::IO_GX_GTE_COMMAND, bmsx::GX_GTE_FN_RTPT);
+  require(h.gte.captureState().normalPendingCycles == 23u, "normal pending interval");
+  h.cpu.instructionBudgetRemaining -= 7;
+  require(h.memory.readMappedU32LE(bmsx::IO_GX_GTE_CYCLES) == 23u, "CYCLES is nonblocking");
+  h.memory.readMappedU32LE(port);
+  require(h.cpu.instructionBudgetRemaining == 77, "only outstanding interval stalls");
+  h.memory.readMappedU32LE(port);
+  require(h.cpu.instructionBudgetRemaining == 77, "no repeated interval charge");
+  require(!h.scheduler.hasDueTimer(), "normal completion needs no event");
+  h.scheduler.endCpuSlice();
+ }
+ GteHarness h;
+ h.cpu.instructionBudgetRemaining = 10;
+ h.scheduler.beginCpuSlice(10);
+ h.memory.writeMappedU32LE(bmsx::IO_GX_GTE_COMMAND, bmsx::GX_GTE_FN_RTPT);
+ const auto state = h.gte.captureState();
+ h.memory.writeMappedU32LE(bmsx::IO_GX_GTE_COMMAND, bmsx::GX_GTE_FN_NCLIP);
+ require(h.cpu.instructionBudgetRemaining == -13, "command waits even across grant end");
+ require(h.gte.captureState().normalPendingCycles == 8u, "next command gets own deadline");
+ h.scheduler.endCpuSlice();
+ h.scheduler.setNowCycles(1000);
+ h.gte.restoreState(state);
+ h.cpu.instructionBudgetRemaining = 10;
+ h.scheduler.beginCpuSlice(10);
+ h.cpu.instructionBudgetRemaining -= 3;
+ h.memory.readMappedU32LE(bmsx::IO_GX_GTE_DATA0);
+ require(h.cpu.instructionBudgetRemaining == -13, "restore rebases pending interval");
+ h.scheduler.endCpuSlice();
+ h.gte.reset();
+ require(h.gte.captureState().normalPendingCycles == 0u, "reset clears deadline");
+}
+
+void testNormalCpuInstructionTiming() {
+ for (bool scalar : {false, true}) {
+  bmsx::test::Blua32TestImage image;
+  image.text.resize(7 * bmsx::INSTRUCTION_BYTES);
+  image.constants = {static_cast<bmsx::i32>(bmsx::IO_GX_GTE_COMMAND), static_cast<bmsx::i32>(bmsx::GX_GTE_FN_RTPT), static_cast<bmsx::i32>(bmsx::IO_GX_GTE_DATA0)};
+  image.functions = {{.firstWord=0, .wordCount=7, .maxStack=5}};
+  bmsx::writeInstruction(image.text,0,static_cast<bmsx::u8>(bmsx::OpCode::LOADK),0,0,0);
+  bmsx::writeInstruction(image.text,1,static_cast<bmsx::u8>(bmsx::OpCode::LOADK),1,0,1);
+  bmsx::writeInstruction(image.text,2,static_cast<bmsx::u8>(bmsx::OpCode::LOADK),2,0,2);
+  bmsx::writeInstruction(image.text,3,static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM),1,0,0);
+  bmsx::writeInstruction(image.text,4,static_cast<bmsx::u8>(bmsx::OpCode::K1),3,0,0);
+  bmsx::writeInstruction(image.text,5,static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM),4,2,0);
+  bmsx::writeInstruction(image.text,6,static_cast<bmsx::u8>(bmsx::OpCode::JMP),0,63,57,255);
+  const auto& prices = bmsx::BASE_CYCLES;
+  const int loadk = prices[static_cast<size_t>(bmsx::OpCode::LOADK)];
+  const int store = prices[static_cast<size_t>(bmsx::OpCode::STORE_MEM)];
+  const int independent = prices[static_cast<size_t>(bmsx::OpCode::K1)];
+  const int load = prices[static_cast<size_t>(bmsx::OpCode::LOAD_MEM)];
+  const int jump = prices[static_cast<size_t>(bmsx::OpCode::JMP)];
+  const int outstanding = bmsx::GX_GTE_CYCLES_RTPT - independent - load;
+  const int grant = 3 * loadk + store + independent + load + jump + outstanding;
+  GteHarness h(image);
+  if (scalar) h.cpu.setExecutionHook({[](void*,bmsx::ExecutionDomainId,bmsx::u32){return false;},nullptr,bmsx::ALL_EXECUTION_DOMAINS_MASK,0u});
+  for(int repeat=0;repeat<24;++repeat) {
+   require(h.scheduler.runCpuSlice(0,grant)==bmsx::RunResult::Yielded, "one timed loop completes");
+   require(h.cpu.instructionBudgetRemaining==0, "base instruction costs and outstanding GTE interval are charged");
+   require(h.cpu.activeThread()->currentFrame->pc==h.systemRom.textAddress, "loop returns to its entry");
+   h.scheduler.advanceTo(h.scheduler.nowCycles()+grant);
+   require(h.gte.captureState().normalPendingCycles==0, "CPU read discharged normal completion");
+  }
+ }
+}
+
 int main() {
+	testNormalCompletionInterlock();
+	testNormalCpuInstructionTiming();
 	testRtpsIdentityProjection();
 	testMmioExecution();
 	testCommandObservation();

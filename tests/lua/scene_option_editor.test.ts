@@ -1,3 +1,4 @@
+import { readLuaNumberLiteral } from '../../toolchain/ts/lua/syntax/number_expression';
 import { quoteLuaString } from '../../toolchain/ts/lua/syntax/string_literal';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -77,19 +78,20 @@ test('option acceptance edits only its source expression and shares document und
 	const retained = f.control('color');
 	retained.field.focusTarget.focus();
 	edit('color', '0xff102030');
+	assert.equal(readLuaNumberLiteral(f.view.optionProperties.find(property => property.descriptor.label === 'color')!.descriptor.field.value)! >>> 0, 0xff102030, 'signed Integer spelling retains the entered register-word bits');
 	assert.equal(f.control('color'), retained, 'accepted source generation retains the input control');
 	assert.equal(retained.field.focusTarget.hasFocus, true, 'Save can accept a value without stealing focus');
 	assert.equal(retained.pending, false);
 	retained.field.focusTarget.release();
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('0xff00aabb', '0xff102030'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('0xff00aabb', '-0x00efdfd0'));
 	f.model.undo(); f.refresh(); assert.equal(f.model.buffer.getText(), SOURCE);
-	f.model.redo(); f.refresh(); assert.equal(f.control('color').field.text, '0xff102030');
+	f.model.redo(); f.refresh(); assert.equal(f.control('color').field.text, '-0x00efdfd0');
 	const visible = f.editor.controls[f.view.optionProperties.findIndex(property => property.descriptor.label === 'visible')];
 	assert.ok(visible.kind === 'boolean'); assert.equal(visible.focusTarget.focus(), true);
 	inputFocus.handleKeyboard(new KeyInputEvent('Space', KeyModifier.none));
 	inputFocus.handleKeyboard(new KeyInputEvent('Space', KeyModifier.none, false, false)); f.refresh();
 	edit('imgid', 'enemy'); edit('region.width', '24');
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('0xff00aabb', '0xff102030').replace('visible = true', 'visible = false')
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('0xff00aabb', '-0x00efdfd0').replace('visible = true', 'visible = false')
 		.replace("imgid = 'hero'", "imgid = 'enemy'").replace('width = 16', 'width = 24'));
 });
 

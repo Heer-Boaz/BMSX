@@ -54,6 +54,7 @@ export interface PassContext {
 
 export interface RenderPass<SetupOut = unknown> {
 	name: string;
+	shouldExecute?(): boolean;
 	setup(io: IOBuilder, frame: FrameData): SetupOut; // declare dependencies
 	execute(ctx: PassContext, frame: FrameData, data: SetupOut, output: GxGpuDeviceOutput): void; // issue GL commands
 	/**
@@ -324,6 +325,7 @@ export class RenderGraphRuntime {
 			const i = order[oi];
 			if (this.reachable.length && !this.reachable[i]) continue;
 			const pass = this.passes[i];
+			if (pass.shouldExecute && !pass.shouldExecute()) continue;
 			const writes = this._passWrites[i];
 			let colorAttachmentCount = 0;
 			let depthRes: InternalTexResource = null;

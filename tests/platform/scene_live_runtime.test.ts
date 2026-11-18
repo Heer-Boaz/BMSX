@@ -7,7 +7,7 @@ import { findRuntimeActor, runtimeWorld } from '../../ide/workbench/contrib/acto
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
-import type { Table } from '../../machine/ts/machine/cpu/table';
+import { asInteger, asTable, isNil, valueBool, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { createLiveStudioFixture } from '../helpers/live_studio';
 
 async function fixture(t: TestContext, path = 'scenes/live.lua') {
@@ -40,7 +40,7 @@ test('Scene Inspect opens the exact normally initialized member in the existing 
 	assert.equal(result.status, 'available'); assert.equal(result.members.length, 1);
 	const member = result.members[0], actor = findRuntimeActor(f.sources, ide.guest, member.domain, member.actorHashId)!;
 	assert.equal(ide.guest.formatValue(ide.guest.readStringMember(actor, 'id')), 'runner');
-	assert.notEqual(ide.guest.readStringMember(actor, 'visual'), null, 'ordinary initialize created the visual');
+	assert.equal(isNil(ide.guest.readStringMember(actor, 'visual')), false, 'ordinary initialize created the visual');
 	f.inspect();
 	const pane = part.activeGroup.panes.activePane!; assert.ok(pane instanceof ActorLabEditorPane);
 	assert.equal(pane.input.actorHashId, member.actorHashId);
@@ -53,19 +53,19 @@ test('Scene Inspect opens the exact normally initialized member in the existing 
 	assert.equal(operation.result!.status, 'completed');
 	for (let frame = 0; frame < 8; frame++) await f.frame();
 	assert.equal(controller.viewport.transport.runtime === f.runtime, true);
-	assert.ok((ide.guest.readStringMember(findRuntimeActor(f.sources, ide.guest, member.domain, member.actorHashId)!, 'updates') as number) > 0);
+	assert.ok(asInteger(ide.guest.readStringMember(findRuntimeActor(f.sources, ide.guest, member.domain, member.actorHashId)!, 'updates')) > 0);
 	assert.equal(source.version, version); assert.equal(source.buffer.getText(), text);
 });
 
 test('Inspect never constructs a registered Scene which normal gameplay has not initialized', async t => {
 	const f = await fixture(t, 'scenes/text.lua');
-	const world = runtimeWorld(f.sources, f.ide.guest, 0)!, objects = f.ide.guest.readStringMember(world, '_objects') as Table;
-	const count = objects.arrayLength, identity = world.hashId;
+	const world = runtimeWorld(f.sources, f.ide.guest, 0)!, objects = asTable(f.ide.guest.readStringMember(world, '_objects'), f.runtime.machine.cpu.gc);
+	const count = objects.length(), identity = f.ide.guest.identityScalar(world, ValueTag.Table);
 	assert.equal(f.ide.sceneLive.select(f.authoring).status, 'not-live');
 	f.inspect();
 	assert.equal(f.part.activeGroup.panes.activePane === f.pane, true);
-	assert.equal(objects.arrayLength, count);
-	assert.equal(runtimeWorld(f.sources, f.ide.guest, 0)!.hashId, identity);
+	assert.equal(objects.length(), count);
+	assert.equal(f.ide.guest.identityScalar(runtimeWorld(f.sources, f.ide.guest, 0)!, ValueTag.Table), identity);
 	assert.equal(f.ide.fault.faultSnapshot, null);
 });
 
@@ -94,7 +94,7 @@ test('repeated live instances are chosen by runtime identity; edits dismiss the 
 		text: "scene_library.instantiate(live_scene.id, { runner = { id = 'second-runner' }, bystander = { id = 'second-bystander' } })\n\t" }]);
 	assert.equal(f.ide.boots.start('workspace').result!.status, 'reset');
 	f.editor.interaction.setActive(false); f.ide.transport.resumeHere();
-	await f.until(() => f.ide.guest.global('studio_test_ready') === true); f.ide.transport.pause(); f.editor.interaction.setActive(true);
+	await f.until(() => f.ide.guest.global('studio_test_ready') === valueBool(true)); f.ide.transport.pause(); f.editor.interaction.setActive(true);
 	assert.equal(f.ide.sceneLive.isCurrent(old), false, 'a new heap cannot resurrect the old instance receipt');
 	const instances = f.ide.sceneLive.select(f.authoring);
 	assert.equal(instances.members.length, 2);

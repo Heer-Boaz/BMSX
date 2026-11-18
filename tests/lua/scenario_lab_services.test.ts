@@ -28,7 +28,7 @@ import {
 	createTestSystemCpu,
 	linkRawTestSystemBlua32,
 } from '../helpers/blua32';
-import { valueString } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 
 const EMPTY_CODE = new Uint8Array(INSTRUCTION_BYTES);
 writeInstruction(EMPTY_CODE, 0, OpCode.RET, 0, 0, 0, 0);
@@ -260,20 +260,20 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 	const records = cpu.createTable(2, 0);
 	for (let index = 1; index <= 2; index += 1) {
 		const record = cpu.createTable(6, 0);
-		record.setInteger(1, index);
-		record.setInteger(2, 100 + index);
+		record.setInteger(1, valueInteger(index));
+		record.setInteger(2, valueInteger(100 + index));
 		record.setInteger(3, valueString(stringPool.intern('machine:/lane', false)));
 		record.setInteger(4, valueString(stringPool.intern(`machine:/from_${index}`, false)));
 		record.setInteger(5, valueString(stringPool.intern(`machine:/to_${index}`, false)));
-		record.setInteger(6, index === 2);
-		records.setInteger(index, record);
+		record.setInteger(6, valueBool(index === 2));
+		records.setInteger(index, valueTable(record.referenceId));
 	}
 	const channel = cpu.createTable(5, 0);
 	channel.setInteger(1, valueString(stringPool.intern('object.machine', false)));
 	channel.setInteger(2, valueString(stringPool.intern('machine', false)));
-	channel.setInteger(3, 2);
-	channel.setInteger(4, 2);
-	channel.setInteger(5, records);
+	channel.setInteger(3, valueInteger(2));
+	channel.setInteger(4, valueInteger(2));
+	channel.setInteger(5, valueTable(records.referenceId));
 
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
@@ -282,7 +282,7 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
-	const observation = new FsmTransitionObservation(channel, stringPool, (...record) => service.appendFsmTransition(trace, ...record));
+	const observation = new FsmTransitionObservation(channel, stringPool, cpu.gc, (...record) => service.appendFsmTransition(trace, ...record));
 	const trace = service.beginFsmTransitionTrace(result, observation.instanceId, observation.machineId, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	observation.drain(20);
 
@@ -297,7 +297,7 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 		trace.transitions.at(0).outcome,
 	], [1, 101, 20, 'machine:/from_1', 'machine:/to_1', 'rejected']);
 	assert.equal(trace.transitions.at(1).outcome, 'committed');
-	channel.setInteger(4, 5);
+	channel.setInteger(4, valueInteger(5));
 	assert.throws(() => observation.drain(21), /overflowed its 2-record buffer/);
 });
 
@@ -306,25 +306,25 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 	const stringPool = cpu.stringPool;
 	const records = cpu.createTable(2, 0);
 	const activation = cpu.createTable(5, 0);
-	activation.setInteger(1, 1);
-	activation.setInteger(2, 301);
+	activation.setInteger(1, valueInteger(1));
+	activation.setInteger(2, valueInteger(301));
 	activation.setInteger(3, valueString(stringPool.intern('activate', false)));
 	activation.setInteger(4, valueString(stringPool.intern('fire', false)));
-	activation.setInteger(5, 1);
-	records.setInteger(1, activation);
+	activation.setInteger(5, valueInteger(1));
+	records.setInteger(1, valueTable(activation.referenceId));
 	const rejection = cpu.createTable(5, 0);
-	rejection.setInteger(1, 2);
-	rejection.setInteger(2, 302);
+	rejection.setInteger(1, valueInteger(2));
+	rejection.setInteger(2, valueInteger(302));
 	rejection.setInteger(3, valueString(stringPool.intern('trigger', false)));
 	rejection.setInteger(4, valueString(stringPool.intern('fire', false)));
 	rejection.setInteger(5, valueString(stringPool.intern('custom_gate', false)));
-	records.setInteger(2, rejection);
+	records.setInteger(2, valueTable(rejection.referenceId));
 	const channel = cpu.createTable(5, 0);
 	channel.setInteger(1, valueString(stringPool.intern('player.1', false)));
 	channel.setInteger(2, valueString(stringPool.intern('player', false)));
-	channel.setInteger(3, 2);
-	channel.setInteger(4, 2);
-	channel.setInteger(5, records);
+	channel.setInteger(3, valueInteger(2));
+	channel.setInteger(4, valueInteger(2));
+	channel.setInteger(5, valueTable(records.referenceId));
 
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
@@ -333,7 +333,7 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
-	const observation = new ActionEffectObservation(channel, stringPool, {
+	const observation = new ActionEffectObservation(channel, stringPool, cpu.gc, {
 		trigger: (...record) => service.appendActionEffectTrigger(trace, ...record),
 		activity: (...record) => service.appendActionEffectActivity(trace, ...record),
 	});
@@ -360,7 +360,7 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 		kind: 'trigger',
 		outcome: 'custom_gate',
 	});
-	channel.setInteger(4, 5);
+	channel.setInteger(4, valueInteger(5));
 	assert.throws(() => observation.drain(21), /overflowed its 2-record buffer/);
 });
 

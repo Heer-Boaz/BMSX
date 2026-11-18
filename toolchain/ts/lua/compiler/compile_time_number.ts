@@ -1,5 +1,5 @@
-import { LuaBinaryOperator, LuaUnaryOperator } from '../syntax/ast';
-import { evaluateStaticNumberBinaryOperator } from '../static/scalar';
+import { integerConstant, evaluateNumberBinary, evaluateNumberUnary, type NumberConstant } from '../number';
+import { LuaBinaryOperator } from '../syntax/ast';
 import type {
 	ProgramLinkValueBinaryOperator,
 	ProgramLinkValueExpression,
@@ -30,25 +30,20 @@ export function resolveCompileTimeNumberBinaryOperator(
 export function evaluateProgramLinkValueExpression(
 	expression: ProgramLinkValueExpression,
 	values?: ReadonlyMap<string, number>,
-): number {
+): NumberConstant {
 	switch (expression.kind) {
 		case 'export':
 			return values === undefined
 				? expression.value
-				: values.get(expression.exportPath)!;
+				: integerConstant(values.get(expression.exportPath)!);
 		case 'number':
 			return expression.value;
-		case 'unary': {
-			const operand = evaluateProgramLinkValueExpression(expression.operand, values);
-			return expression.operator === LuaUnaryOperator.Negate
-				? -operand
-				: ~operand;
-		}
-		case 'binary':
-			return evaluateStaticNumberBinaryOperator(
-				expression.operator,
-				evaluateProgramLinkValueExpression(expression.left, values),
-				evaluateProgramLinkValueExpression(expression.right, values),
-			)!;
 	}
+	const value = expression.kind === 'unary'
+		? evaluateNumberUnary(expression.operator, evaluateProgramLinkValueExpression(expression.operand, values))
+		: evaluateNumberBinary(expression.operator,
+			evaluateProgramLinkValueExpression(expression.left, values),
+			evaluateProgramLinkValueExpression(expression.right, values));
+	if (value === undefined) throw new Error('Invalid numeric operation in a link-value expression.');
+	return value;
 }

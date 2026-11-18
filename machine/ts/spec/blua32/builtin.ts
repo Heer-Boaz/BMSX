@@ -28,9 +28,13 @@ export const enum BuiltinFunctionId {
 	GetFrameUpvalue = 26,
 	SetFrameUpvalue = 27,
 	FrameHeader = 28,
+	NumberType = 29,
+	ToInteger = 30,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 29;
+export const BUILTIN_FUNCTION_COUNT = 31;
+
+export const enum GarbageCollectionOperation { Collect = 0, Count = 1, Step = 2 }
 
 export interface LuaBootPrimitive {
 	readonly name: string;
@@ -67,4 +71,6 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_get_frame_upvalue', id: BuiltinFunctionId.GetFrameUpvalue },
 	{ name: '__bmsx_set_frame_upvalue', id: BuiltinFunctionId.SetFrameUpvalue },
 	{ name: '__bmsx_frame_header', id: BuiltinFunctionId.FrameHeader },
+	{ name: '__bmsx_number_type', id: BuiltinFunctionId.NumberType },
+	{ name: '__bmsx_tointeger', id: BuiltinFunctionId.ToInteger },
 ];

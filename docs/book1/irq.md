@@ -92,6 +92,12 @@ Masking a source does not discard its pending request. Source requests accumulat
 
 The CPU does not choose the highest-priority source or take one vector per pending bit. An accepted maskable interrupt takes the shared IRQ entry for the current execution context: the active program's entry in user mode, or the system entry in non-user mode. Software determines which pending sources to service.
 
+The active program is the image selected by the most recent successful `EXEC`
+(or the system image after reset). Calls into another image, coroutine switches
+and changes to cartridge SELECT do not replace it. The CPU reads the IRQ
+function record from that program's bound cartridge socket in user mode, or
+from the system image in non-user mode.
+
 The CPU enters the IRQ function whose absolute function-record address is in
 the selected ROM header. It supplies no function arguments. That entry routine
 runs as the exception frame and is responsible for reading source state and
@@ -178,11 +184,11 @@ controller output and execution of a cartridge handler are not the same edge.
 
 | Instruction | ISA base cost, system cycles |
 |---|---|
-| `HALT` | 1 |
-| `MFC0` | 1 |
-| `MTC0` | 1 |
-| `RFE` | 1 |
-| `LOAD_MEM`, including the IRQ entry's FLAGS read | 2 |
+| `HALT` | 2 |
+| `MFC0` | 2 |
+| `MTC0` | 2 |
+| `RFE` | 2 |
+| `LOAD_MEM`, including the IRQ entry's FLAGS read | 3 |
 
 Add these costs to the executed entry and handler instructions when budgeting
 service. Device timing continues during HALT and while a request is masked.
@@ -197,19 +203,19 @@ immediate zero constant. Its instruction-base charge is as follows:
 
 | Entry operation | Nonzero FLAGS path | Zero FLAGS path |
 |---|---|---|
-| Load FLAGS address | 1 | 1 |
-| Read FLAGS word | 2 | 2 |
-| Compare with zero | 1 | 1 |
-| Branch past the call | Skipped | 1 |
-| Load the `irq` function | 1 | — |
-| Move FLAGS into its argument | 1 | — |
-| Call `irq(flags)` | 2 | — |
-| `RFE` | 1 | 1 |
-| **Entry-sequence total, cycles** | **9** | **6** |
+| Load FLAGS address | 2 | 2 |
+| Read FLAGS word | 3 | 3 |
+| Compare with zero | 2 | 2 |
+| Branch past the call | Skipped | 2 |
+| Load the `irq` function | 2 | — |
+| Move FLAGS into its argument | 2 | — |
+| Call `irq(flags)` | 3 | — |
+| `RFE` | 2 | 2 |
+| **Entry-sequence total, cycles** | **16** | **11** |
 
 Handler execution, including its own return instruction, is extra. If the
-entry instead loads zero into a register before comparing, add one cycle to
-each path: 10 and 7 cycles. The actual entry instructions determine this
+entry instead loads zero into a register before comparing, add two cycles to
+each path: 18 and 13 cycles. The actual entry instructions determine this
 budget; it is not a fixed interrupt-entry charge or a request-to-service delay. In particular, it does
 not include time spent pending behind a closed MASK or disabled IEc.
 

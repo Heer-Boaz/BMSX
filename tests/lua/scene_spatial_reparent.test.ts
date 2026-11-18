@@ -1,3 +1,4 @@
+import { valueBool, valueFloat } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -146,11 +147,14 @@ test('required prefab source proof rejects computed class or pose contributions 
 	}
 });
 
-for (const optLevel of [0, 3] as const) test(`host parent-space solves mirror actual guest scalar order (O${optLevel})`, () => {
-	const parent2 = { xx: 2, xy: .25, yx: -1, yy: 3, ox: 1e15, oy: -1e15 };
-	const world2 = { xx: .5, xy: 2, yx: -3, yy: 1, ox: 1e15 + 4, oy: -1e15 + 8 };
-	const parent3 = { xx: 2, xy: .25, xz: -1, yx: 1, yy: -3, yz: .5, zx: -.5, zy: 1, zz: 4, ox: 1e15, oy: -1e15, oz: 1e14 };
-	const world3 = { xx: .5, xy: 2, xz: 1, yx: 0, yy: 0, yz: 0, zx: -3, zy: 1, zz: .25, ox: 1e15 + 4, oy: -1e15 + 8, oz: 1e14 - 2 };
+for (const optLevel of [0, 3] as const) test(`host parent-space solves agree with guest on exactly representable transforms (O${optLevel})`, () => {
+	// The editor solves in host geometry; guest arithmetic rounds per operation.
+	// This dyadic basis and its inverse are exact in both models, without an
+	// obsolete claim that arbitrary binary64 solves match binary32 bit-for-bit.
+	const parent2 = { xx: 2, xy: .25, yx: 0, yy: 4, ox: 1048576, oy: -1048576 };
+	const world2 = { xx: .5, xy: 2, yx: -3, yy: 1, ox: 1048576 + 4, oy: -1048576 + 8 };
+	const parent3 = { xx: 2, xy: 0, xz: 0, yx: 1, yy: -4, yz: 0, zx: -.5, zy: 1, zz: 8, ox: 1048576, oy: -1048576, oz: 262144 };
+	const world3 = { xx: .5, xy: 2, xz: 1, yx: 0, yy: 0, yz: 0, zx: -3, zy: 1, zz: .25, ox: 1048576 + 4, oy: -1048576 + 8, oz: 262144 - 2 };
 	const result2 = { ...world2 }, result3 = { ...world3 };
 	assert.equal(relativeAffine2(result2, result2, parent2), true); assert.equal(relativeAffine3(result3, result3, parent3), true);
 	const source = `local a2=require('cartlib/math/affine2') local a3=require('cartlib/math/affine3')
@@ -162,5 +166,5 @@ local r2=a2.relative_world(c2,p2) local r3=a3.relative_world(c3,p3)
 return r2,r3,${Object.keys(world2).map(key => 'c2.' + key).join(',')},${Object.keys(world3).map(key => 'c3.' + key).join(',')}`;
 	const { cpu } = createCartlibProgramHarness(source, { optLevel, modules: ['cartlib/math/affine2', 'cartlib/math/affine3'].map(path => ({ path, source: readFileSync(path + '.lua', 'utf8') })) });
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true, ...Object.values(result2), ...Object.values(result3)]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true), ...Object.values(result2).map(valueFloat), ...Object.values(result3).map(valueFloat)]);
 });

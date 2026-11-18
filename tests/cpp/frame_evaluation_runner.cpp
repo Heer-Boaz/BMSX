@@ -51,14 +51,14 @@ int main(int argc, char** argv) {
 					if (injectCompletion) {
 						const auto depth = cpu.getFrameDepth();
 						const auto pc = cpu.readFramePc(depth - 1);
-						const auto argument = bmsx::valueNumber(depth - 1);
-						cpu.beginCompletionClosureInExecutionDomain(-1,
-							*bmsx::asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("stopped_probe"))), {&argument, 1});
+						const auto argument = bmsx::valueInteger(depth - 1);
+						cpu.beginCompletionCall(
+							*bmsx::asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("stopped_probe")), cpu.gcHeap()), {&argument, 1});
 						const auto completion = cpu.runUntilDepth(depth, 30000000);
 						const auto values = runtime.readCompletionValues();
 						if (completion != bmsx::RunResult::Halted || values.size() != 4
-							|| values[0] != bmsx::valueBool(true) || values[1] != bmsx::valueNumber(43)
-							|| values[2] != bmsx::valueNil() || values[3] != bmsx::valueBool(false)
+							|| values.get(0) != bmsx::valueBool(true) || values.get(1) != bmsx::valueInteger(43)
+							|| values.get(2) != bmsx::valueNil() || values.get(3) != bmsx::valueBool(false)
 							|| cpu.getFrameDepth() != depth || cpu.readFramePc(depth - 1) != pc || !cpu.isHaltedUntilIrq()) {
 							throw std::runtime_error("named completion evaluation advanced its retained caller");
 						}
@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
 			}
 			const auto values = runtime.readCompletionValues();
 			if (result != bmsx::RunResult::Halted || values.size() != 2
-				|| values[0] != bmsx::valueBool(true) || values[1] != bmsx::valueBool(true)) {
+				|| values.get(0) != bmsx::valueBool(true) || values.get(1) != bmsx::valueBool(true)) {
 				throw std::runtime_error("firmware frame evaluation assertion failed");
 			}
 			const auto bytes = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));

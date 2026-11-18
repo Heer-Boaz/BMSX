@@ -2,6 +2,7 @@
 
 #include "common/primitives.h"
 
+#include <algorithm>
 #include <array>
 #include <vector>
 
@@ -25,6 +26,15 @@ public:
 		m_wordCount += 1u;
 	}
 
+	// count words fit the available target space.
+	void writeWords(const u32* source, size_t count) {
+		const size_t writeIndex = (m_readIndex + m_wordCount) & (Capacity - 1u);
+		const size_t first = std::min(count, Capacity - writeIndex);
+		std::copy_n(source, first, m_words.data() + writeIndex);
+		std::copy_n(source + first, count - first, m_words.data());
+		m_wordCount += count;
+	}
+
 	u32 peek(size_t index = 0u) const {
 		return m_words[(m_readIndex + index) & (Capacity - 1u)];
 	}
@@ -34,6 +44,25 @@ public:
 		m_readIndex = (m_readIndex + 1u) & (Capacity - 1u);
 		m_wordCount -= 1u;
 		return word;
+	}
+
+	// count words are available; target has room for the complete range.
+	void readWords(u32* target, size_t count) {
+		const size_t first = std::min(count, Capacity - m_readIndex);
+		std::copy_n(m_words.data() + m_readIndex, first, target);
+		std::copy_n(m_words.data(), count - first, target + first);
+		m_readIndex = (m_readIndex + count) & (Capacity - 1u);
+		m_wordCount -= count;
+	}
+
+	// Distinct FIFOs; count fits the available source words and target space.
+	template <size_t TargetCapacity>
+	void transferWords(WordFifo<TargetCapacity>& target, size_t count) {
+		const size_t writeIndex = (target.m_readIndex + target.m_wordCount) & (TargetCapacity - 1u);
+		const size_t first = std::min(count, TargetCapacity - writeIndex);
+		readWords(target.m_words.data() + writeIndex, first);
+		readWords(target.m_words.data(), count - first);
+		target.m_wordCount += count;
 	}
 
 	std::vector<u32> captureWords() const {
@@ -52,6 +81,7 @@ public:
 	}
 
 private:
+	template <size_t> friend class WordFifo;
 	std::array<u32, Capacity> m_words{};
 	size_t m_readIndex = 0u;
 	size_t m_wordCount = 0u;

@@ -3,8 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { asClosure, valueBool, valueInteger, valueNil } from '../../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../../machine/ts/machine/cpu/closure';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState, type RuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
@@ -43,9 +43,9 @@ try {
 				suspended.push(state);
 				if (name === 'completion_injection') {
 					const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
-					cpu.beginCompletionClosureInExecutionDomain(-1, cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!) as Closure, [depth - 1]);
+					cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!), cpu.gc), [valueInteger(depth - 1)]);
 					assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
-					assert.deepEqual(runtime.readCompletionValues(), [true, 43, null, false]);
+					assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueInteger(43), valueNil(), valueBool(false)]);
 					assert.equal(cpu.getFrameDepth(), depth); assert.equal(cpu.readFramePc(depth - 1), pc);
 					assert.equal(cpu.isHaltedUntilIrq(), true);
 					suspended.push(captureRuntimeSaveState(runtime));
@@ -55,7 +55,7 @@ try {
 			}
 		}
 		assert.equal(result, RunResult.Halted);
-		assert.deepEqual(runtime.readCompletionValues(), [true, true]);
+		assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueBool(true)]);
 		assert.equal(suspended.length, name === 'completion_injection' ? 2 : name === 'coroutine' ? 1 : 0);
 		assert.equal(spawnSync('build-cpp-tests/bmsx_frame_evaluation_runner', [path, name === 'completion_injection' ? 'completion' : 'run'], { stdio: 'inherit' }).status, 0);
 		for (let index = 0; index < suspended.length; index++) {

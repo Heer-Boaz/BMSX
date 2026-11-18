@@ -15,6 +15,7 @@ local tag_bin<const> = 8
 local tag_int<const> = 9
 local tag_f32<const> = 10
 local tag_set<const> = 11
+local tag_int_array<const> = 12
 local metadata_header_size<const> = 12
 
 local new_reader<const> = function(addr, label)
@@ -26,16 +27,21 @@ local new_reader<const> = function(addr, label)
 end
 
 local read_varuint<const> = function(reader)
-	local value = 0
-	local shift = 0
 	local source: *u8 = reader.pos
-	for _ = 1, 5 do
+	local first<const> = *source
+	source = source + 1
+	if first < 0x80 then
+		reader.pos = source
+		return first
+	end
+	local value = first & 0x7f
+	local shift = 7
+	for _ = 2, 5 do
 		local byte<const> = *source
 		source = source + 1
 		value = value | ((byte & 0x7f) << shift)
 		if (byte & 0x80) == 0 then
-			reader.pos = source
-			return value
+			break
 		end
 		shift = shift + 7
 	end
@@ -85,12 +91,57 @@ end
 
 local read_value
 
+local read_int_array<const> = function(reader)
+	local count<const> = read_varuint(reader)
+	local values<const> = {}
+	local source: *u8 = reader.pos
+	for index = 1, count do
+		local first<const> = *source
+		if first < 0x80 then
+			local magnitude<const> = first >> 1
+			if (first & 1) == 0 then
+				values[index] = magnitude
+			else
+				values[index] = -(magnitude + 1)
+			end
+			source = source + 1
+		else
+			reader.pos = source
+			values[index] = read_varint(reader)
+			source = reader.pos
+		end
+	end
+	reader.pos = source
+	return values
+end
+
 local read_array<const> = function(reader)
 	local count<const> = read_varuint(reader)
 	local values<const> = {}
+	local source: *u8 = reader.pos
 	for index = 1, count do
-		values[index] = read_value(reader)
+		if *source == tag_int then
+			local first<const> = source[1]
+			if first < 0x80 then
+				local magnitude<const> = first >> 1
+				if (first & 1) == 0 then
+					values[index] = magnitude
+				else
+					values[index] = -(magnitude + 1)
+				end
+				source = source + 2
+			else
+				reader.pos = source + 1
+				values[index] = read_varint(reader)
+				source = reader.pos
+			end
+		else
+			reader.pos = source
+			values[index] = read_value(reader)
+			source = reader.pos
+		end
 	end
+	reader.pos = source
 	return values
 end
 
@@ -109,7 +160,17 @@ read_value = function(reader)
 	local source<const>: *u8 = reader.pos
 	local tag<const> = *source
 	reader.pos = source + 1
-	if tag == tag_null then
+	if tag == tag_int then
+		return read_varint(reader)
+	elseif tag == tag_int_array then
+		return read_int_array(reader)
+	elseif tag == tag_arr then
+		return read_array(reader)
+	elseif tag == tag_obj then
+		return read_object(reader)
+	elseif tag == tag_str then
+		return read_string(reader)
+	elseif tag == tag_null then
 		return nil
 	elseif tag == tag_true then
 		return true
@@ -119,18 +180,10 @@ read_value = function(reader)
 		local value<const> = decode_float(read_u32le(reader.pos + 4), read_u32le(reader.pos), 8)
 		reader.pos = reader.pos + 8
 		return value
-	elseif tag == tag_str then
-		return read_string(reader)
-	elseif tag == tag_arr then
-		return read_array(reader)
 	elseif tag == tag_ref then
 		return { r = read_varuint(reader) }
-	elseif tag == tag_obj then
-		return read_object(reader)
 	elseif tag == tag_bin then
 		return read_binary(reader)
-	elseif tag == tag_int then
-		return read_varint(reader)
 	elseif tag == tag_f32 then
 		local value<const> = decode_float(read_u32le(reader.pos), 0, 4)
 		reader.pos = reader.pos + 4

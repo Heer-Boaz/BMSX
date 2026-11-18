@@ -319,29 +319,30 @@ An alignment of four means that the address must be divisible by four.
 |---|---:|---:|---|
 | `u8`, `i8` | 1 | 1 | Unsigned byte read; stores keep the low 8 bits. |
 | `u16`, `i16` | 2 | 2 | Unsigned little-endian read; stores keep the low 16 bits. |
-| `u32`, `i32` | 4 | 4 | Unsigned little-endian read; stores keep the low 32 bits. |
-| `f32` | 4 | 4 | IEEE float32; stores round the numeric value to float32. |
-| `f64` | 8 | 4 | IEEE float64 accessed as two little-endian 32-bit words. |
-| `addr` | 4 | 4 | Raw unsigned 32-bit address value, accessed like `u32`. |
-| `word` | 4 | 4 | Raw unsigned 32-bit word exposed as a numeric value. |
+| `u32`, `i32` | 4 | 4 | Little-endian word read as an Integer with the same 32 bits; stores keep the low 32 bits. |
+| `f32` | 4 | 4 | IEEE binary32; reads produce a Float and stores convert the Number to binary32. |
+| `f64` | 8 | 4 | IEEE binary64 accessed as two little-endian 32-bit words; reads round to Float. |
+| `addr` | 4 | 4 | Raw 32-bit address word, accessed like `u32`. |
+| `word` | 4 | 4 | Raw 32-bit word, read as an Integer with the same bits. |
 | `string` | 4 | 4 | Image constant-pool reference; reads the selected constant value. |
 
 
-`i8`, `i16` and `i32` have the same **unsigned load** behavior as their `u`
-counterparts. Sign extension must be explicit when a stored field represents
-a signed quantity. `word` holds a numeric register word, and `addr` holds a
-numeric address; select the target layout with an annotated view.
+`i8` and `i16` have the same unsigned load behavior as their `u` counterparts;
+their loaded values are nonnegative Integers. Sign extension must be explicit
+for an eight- or sixteen-bit signed quantity. Both `i32` and `u32` preserve
+all 32 bits in an Integer; bit 31 is its sign bit. `word` holds a device word,
+and `addr` holds address bits; select the target layout with an annotated view.
 
-To recover an eight-bit signed quantity, shift the loaded word left by 24 bits,
-then arithmetically right by 24. Use shifts of 16 for a sixteen-bit quantity;
-`raw | 0` gives the signed interpretation of a complete thirty-two-bit word.
-See [bitwise operations and shifts](cpu.md#sec-cpu-bitwise-operations-and-shifts).
+To recover an eight-bit signed quantity, toggle its sign bit and subtract that
+bit's value. Use `8000H` for a sixteen-bit quantity. A complete thirty-two-bit
+word already has the signed interpretation. Both shift directions fill with
+zero; see [bitwise operations and shifts](cpu.md#sec-cpu-bitwise-operations-and-shifts).
 
 ```lua
 bss delta: i8
 *delta = -3
 local raw = *delta                -- 253
-local signed = (raw << 24) >> 24  -- -3
+local signed = (raw ~ 0x80) - 0x80  -- -3
 ```
 
 A `string` field holds a constant reference. Its RODATA initializer selects a
@@ -383,7 +384,9 @@ data matrix: u8[2][3] = {
   A `string` initializer in `data` is rejected.
 - `f32` and `f64` initializers in `data` and `rodata` must be compile-time numbers.
   They encode IEEE 754 binary32 or binary64 in little-endian order, including inside arrays and structs.
-  `f32` rounds the computed value to binary32; `f64` retains its binary64 value. Both preserve negative zero.
+  `f32` converts the computed Number to binary32. `f64` encodes the computed
+  Integer or Float as binary64; it does not create a binary64 Number subtype.
+  Both formats preserve Float negative zero.
 
 ### Computing struct and array layouts {#sec-blua-programs-computing-struct-and-array-layouts}
 
@@ -890,16 +893,16 @@ apart, not one. Addresses are consumed as unsigned 32-bit addresses.
 
 | Map | Value transferred | Size in bytes | Required byte alignment |
 |---|---|---:|---:|
-| `mem[address]` | Raw unsigned 32-bit word, little-endian | 4 | 4 |
+| `mem[address]` | Raw 32-bit word, little-endian; loaded as an Integer | 4 | 4 |
 | `mem8[address]` | Unsigned byte | 1 | 1 |
 | `mem16le[address]` | Unsigned 16-bit integer, little-endian | 2 | 2 |
-| `mem32le[address]` | Unsigned 32-bit integer, little-endian | 4 | 4 |
+| `mem32le[address]` | Raw 32-bit integer bits, little-endian; loaded as an Integer | 4 | 4 |
 | `memf32le[address]` | Numeric IEEE float32, little-endian | 4 | 4 |
-| `memf64le[address]` | Numeric IEEE float64, little-endian | 8 | 4 |
+| `memf64le[address]` | IEEE binary64, little-endian; loaded as binary32 Float | 8 | 4 |
 
 
 
-`mem` and `mem32le` both transfer a little-endian unsigned 32-bit value. They remain distinct access
+`mem` and `mem32le` both transfer the same little-endian 32-bit word. They remain distinct access
 kinds, including their fault-access identity; `mem32le` is not a source alias for `mem`. The
 floating-point maps convert between numeric values and their stored floating representation. They do
 not return the integer bit pattern of that representation. Use an integer map when the required
@@ -1024,7 +1027,8 @@ defines saved state and entry privilege.
 
 ### Intrinsic calls: `blua32` {#sec-blua-programs-intrinsic-calls-blua32}
 
-The complete intrinsic operation set is `closure`, `trace`, and `trace_sink`. Use a direct dotted
+The complete intrinsic operation set is `closure`, `float_bits`,
+`float_from_bits`, `trace`, and `trace_sink`. Use a direct dotted
 call on `blua32`; alias calls and colon-method calls do not provide intrinsic access. Unknown
 operation names are rejected.
 
@@ -1035,6 +1039,25 @@ selects the observation, and a bound sink receives the payload values. A
 compilation can retain selected channels or erase their statements and operand
 evaluation. Keep required program work outside these optional observations.
 
+#### `blua32.float_bits(value)` and `blua32.float_from_bits(word)` {#sec-blua-programs-float-word-intrinsics}
+
+Each form takes exactly one argument and produces one result. `float_bits`
+requires a Float and returns its raw binary32 word as an Integer.
+`float_from_bits` requires an Integer and returns the Float with those word
+bits. They are reinterpreting register moves, not numerical conversions:
+
+```lua
+local minus_zero = blua32.float_from_bits(0x80000000)
+local word = blua32.float_bits(minus_zero) -- Integer word 80000000H
+```
+
+Both zero signs and all NaN payload bits are preserved. A wrong subtype raises
+`INVALID_ARGUMENT`. They emit the corresponding [numeric word move](cpu.md#sec-cpu-numeric-word-moves),
+without a function call or temporary memory. The forms are permitted in static
+functions as well as ordinary functions. Further requested results are nil;
+when the result is discarded, argument evaluation and subtype admission still
+occur. Like the other intrinsics, these names are not first-class functions.
+
 #### `blua32.closure(function_address)` {#sec-blua-programs-blua32closurefunction_address}
 
 `closure` constructs one closure from the supplied function-record address.
@@ -1043,8 +1066,10 @@ statement; requesting further results supplies nil in those positions.
 
 The address is consumed as an unsigned 32-bit function-record address in the active execution image.
 The function record is read before closure construction; an unsuccessful record
-read hard-halts execution. Function-record acquisition, capture context and
-closure execution follow the [CPU reference](cpu.md#sec-cpu).
+read hard-halts execution. The closure binds the record's function data at that
+time; changing the record later affects newly constructed closures, not this
+one. Function-record acquisition, capture context and closure execution follow
+the [CPU reference](cpu.md#sec-cpu).
 
 ```lua
 local callback = blua32.closure(function_record_address)
@@ -1129,6 +1154,14 @@ This section specifies BLua source conventions, bindings, expression results
 and control flow. Runtime values, arithmetic and instruction costs are
 specified by the [CPU reference](cpu.md#sec-cpu).
 
+::: {.callout-warning title="Pending language correction"}
+
+Function-valued `__index` support is still pending. The current table-only
+restriction is an implementation limitation, not an intended BLua language
+difference; see [Metatables and indexed reads](cpu.md#sec-cpu-metatables-and-indexed-reads).
+
+:::
+
 ### Number spellings {#sec-blua-programs-number-spellings}
 
 Decimal literals begin with a digit, or with `.` followed by a digit. A fractional dot after integer digits is part of the number only when another digit follows it. An exponent uses `e` or `E`, an optional sign, and one or more decimal digits.
@@ -1144,9 +1177,18 @@ Decimal literals begin with a digit, or with `.` followed by a digit. A fraction
 
 Hexadecimal literals begin with `0x` or `0X`. Their digits may use either case, independently of the lowercase-only identifier rule. They require at least one hexadecimal digit across the integer and fractional parts. A `p` or `P` exponent has decimal digits and scales the hexadecimal value by a power of two.
 
-A literal whose parsed numeric value is non-finite is rejected. Unary `-` is a separate operator, so `-12` is an expression rather than one signed numeric token. Use `1.0` rather than `1.` for a decimal fraction. Digit separators, binary or octal prefixes, and numeric suffixes are not supplied by these literal forms.
+An integer-spelled decimal literal within the positive Integer range produces
+an Integer; a larger decimal integer literal produces a Float. A hexadecimal
+integer literal produces an Integer from its low 32 bits. Fractional and
+exponent spellings produce Floats, rounded to binary32. A literal whose Float
+value is non-finite is rejected. Unary `-` is a separate operator, so `-12`
+is an expression rather than one signed numeric token. Use `1.0` rather than
+`1.` for a decimal fraction. Digit separators, binary or octal prefixes, and
+numeric suffixes are not supplied by these literal forms.
 
-The expressions `-0` and `-0.0` produce negative zero. Constant binding and loading do not replace either expression with positive zero.
+`-0` is Integer zero; `-0.0` is Float negative zero. `0x80000000` is Integer
+−2147483648, while decimal `2147483648` is a Float. Constant binding and
+loading preserve these subtypes and the Float zero sign.
 
 Hexadecimal spelling does not create a distinct address or register-word
 literal type. It is another spelling of a Number literal. The
@@ -1209,8 +1251,8 @@ Thus `condition and 1 or 0` yields numeric `1` for a true-valued condition and n
 
 A newline alone does not terminate `return`. An expressionless return is
 recognized only before `end`, `else`, `elseif`, `until`, or end of source;
-`return;` is not its accepted spelling. An expressionless source return supplies
-one nil, not zero results.
+`return;` is not its accepted spelling. An expressionless return or reaching the end of the function supplies zero
+results. Write `return nil` to supply one nil.
 
 A parenthesized call or variable-argument expression supplies exactly one
 result. Extra results are discarded; a call returning no values supplies nil.
@@ -1264,6 +1306,13 @@ the unshadowed loop variable is permitted and changes that same control
 variable, not a hidden copy. It affects the tail addition and next test; it
 does not trigger a new range check halfway through the body. A `break` leaves
 the loop without performing the tail addition.
+
+When both the current value and step are Integers, that addition wraps as
+Integer arithmetic. A positive-step loop whose limit is `2147483647` can
+therefore wrap to `−2147483648` after reaching the limit and continue rather
+than terminating. Use a bound that leaves room for the update, or leave the
+loop explicitly. A Float update instead rounds to binary32 and can stop
+changing when the step is smaller than the spacing at the current magnitude.
 
 An explicit zero step is accepted, not replaced by one or rejected as a
 zero-step error. It takes the second test above. With finite Numbers, a start

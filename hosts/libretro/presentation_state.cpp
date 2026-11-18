@@ -172,39 +172,42 @@ void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previ
 	}
 }
 
-bool RenderPresentationState::render(
-	VideoPresenter& presenter,
-	Runtime& runtime,
-	f64 currentTime,
-	f64 deltaTime,
-	bool pausedPresent
-) {
-	const bool runtimePresentPending = consumePresentation(m_presentationScratch);
-	const bool shouldPresent = pausedPresent || runtimePresentPending;
-	if (!shouldPresent) {
-		return false;
+const GxGpuDeviceOutput* RenderPresentationState::prepare(Runtime& runtime, bool pausedPresent, RenderPresentation& frame) {
+	const bool pending = consumePresentation(frame);
+	if (!pending && !pausedPresent) return nullptr;
+	if (!pending) {
+		frame.mode = VideoPresenter::PresentationMode::Completed;
+		frame.commitFrame = false;
 	}
-
-	const VideoPresenter::PresentationMode presentMode = runtimePresentPending
-		? m_presentationScratch.mode : VideoPresenter::PresentationMode::Completed;
-	const bool commitFrame = runtimePresentPending && m_presentationScratch.commitFrame;
-	recordPresentation(presentMode, commitFrame, pausedPresent);
-
-	const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();
-	const i32 width = static_cast<i32>(output.pcrtcScanout.outputWidth);
-	const i32 height = static_cast<i32>(output.pcrtcScanout.outputHeight);
-	const bool displayConfigurationChanged = m_pcrtcScanoutRevision != output.pcrtcScanout.revision;
-	m_pcrtcScanoutRevision = output.pcrtcScanout.revision;
-	if (displayConfigurationChanged && output.pcrtcScanout.outputActive) {
-		presenter.setScanoutSize(width, height);
-	}
-	presenter.configurePresentation(presentMode, commitFrame);
-	presenter.present(output, currentTime, deltaTime);
-	if (commitFrame) {
-		runtime.machine.gxGpu.retirePresentedCommands();
-	}
-
+	const auto& output = runtime.machine.gxGpu.readDeviceOutput();
+	frame.gpu = {output.pcrtcScanout, output.vramReplacementSerial};
+	recordPresentation(frame.mode, frame.commitFrame, pausedPresent);
 	flushDebugReport(runtime);
+	return &output;
+}
+
+void RenderPresentationState::present(
+	VideoPresenter& presenter, const RenderPresentation& frame, f64 currentTime, f64 deltaTime
+) {
+	const auto& scanout = frame.gpu.pcrtcScanout;
+	const bool displayConfigurationChanged = m_pcrtcScanoutRevision != scanout.revision;
+	m_pcrtcScanoutRevision = scanout.revision;
+	if (displayConfigurationChanged && scanout.outputActive) {
+		presenter.setScanoutSize(static_cast<i32>(scanout.outputWidth), static_cast<i32>(scanout.outputHeight));
+	}
+	presenter.configurePresentation(frame.mode, frame.commitFrame);
+	presenter.present(frame.gpu, currentTime, deltaTime);
+}
+
+bool RenderPresentationState::render(
+	VideoPresenter& presenter, Runtime& runtime, f64 currentTime, f64 deltaTime, bool pausedPresent
+) {
+	RenderPresentation frame;
+	const auto* output = prepare(runtime, pausedPresent, frame);
+	if (output == nullptr) return false;
+	presenter.backend().executeGxGpuPresentation(*output);
+	present(presenter, frame, currentTime, deltaTime);
+	if (frame.commitFrame) runtime.machine.gxGpu.retirePresentedCommands();
 	return true;
 }
 

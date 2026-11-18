@@ -1,4 +1,7 @@
 #include "host_frame.h"
+#if BMSX_ENABLE_GLES2
+#include "gles_frame_worker.h"
+#endif
 
 #include "host_overlay_menu.h"
 #include "input.h"
@@ -17,7 +20,8 @@ LibretroFrameResult runLibretroFrame(
 	RenderPresentationState& presentation,
 	VideoPresenter& presenter,
 	f64& totalTime,
-	f64 deltaTime
+	f64 deltaTime,
+	[[maybe_unused]] GlesFrameWorker* worker
 ) {
 	presentation.recordHostFrame();
 
@@ -32,6 +36,8 @@ LibretroFrameResult runLibretroFrame(
 			return LibretroFrameResult::RebootRequested;
 		case HostMenuInput::ExitGame:
 			return LibretroFrameResult::ExitRequested;
+		case HostMenuInput::SuspendGame:
+			return LibretroFrameResult::SuspendRequested;
 		case HostMenuInput::Inactive:
 		case HostMenuInput::Active:
 			break;
@@ -46,39 +52,51 @@ LibretroFrameResult runLibretroFrame(
 		rewind.service(true);
 		rewind.runPlayback(hostDeltaMs);
 	}
+	bool presented = false;
+	bool workerConsumedFrame = false;
 	if (runtime.isDrawPending() && menuExecution == HostMenuExecution::Live && !rewind.active) {
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
-		runtime.frameScheduler.run(runtime, hostDeltaMs);
-		GxGpu& gxGpu = runtime.machine.gxGpu;
-		while (gxGpu.backendServicePending()) {
-			if (gxGpu.backendCommandDrainPending()) {
-				presenter.backend().executeGxGpuCommandDrain(gxGpu);
-			} else {
-				presenter.backend().executeGxGpuReadback(gxGpu);
+#if BMSX_ENABLE_GLES2
+		if (worker != nullptr) {
+			presented = worker->run(totalTime, deltaTime);
+			workerConsumedFrame = true;
+		} else
+#endif
+		{
+			runtime.frameScheduler.run(runtime, hostDeltaMs);
+			GxGpu& gxGpu = runtime.machine.gxGpu;
+			while (gxGpu.backendServicePending()) {
+				if (gxGpu.backendCommandDrainPending()) {
+					presenter.backend().executeGxGpuCommandDrain(gxGpu);
+				} else {
+					presenter.backend().executeGxGpuReadback(gxGpu);
+				}
+				runtime.frameScheduler.synchronizeBackendService(runtime);
+				runtime.frameScheduler.run(runtime, 0.0);
 			}
-			runtime.frameScheduler.synchronizeBackendService(runtime);
-			runtime.frameScheduler.run(runtime, 0.0);
+			presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 		}
-		presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 	} else {
 		runtime.frameScheduler.clearQueuedTime();
 	}
-	if (overlayMenu.queueFrameOverlayCommands(
-		runtime,
-		presenter,
-		rewind,
-		hostFps
-	)) {
-		presentation.requestHeldPresentation();
+	if (!workerConsumedFrame) {
+		if (overlayMenu.queueFrameOverlayCommands(
+			runtime,
+			presenter,
+			rewind,
+			hostFps
+		)) {
+			presentation.requestHeldPresentation();
+		}
+		if (rewind.active) presentation.requestHeldPresentation();
+		presented = presentation.render(
+			presenter,
+			runtime,
+			totalTime,
+			deltaTime,
+			false
+		);
 	}
-	if (rewind.active) presentation.requestHeldPresentation();
-	const bool presented = presentation.render(
-		presenter,
-		runtime,
-		totalTime,
-		deltaTime,
-		false
-	);
 	if (!menuPaused && runtime.history.checkpointPending) rewind.service(true);
 	return presented ? LibretroFrameResult::Presented : LibretroFrameResult::NotPresented;
 }

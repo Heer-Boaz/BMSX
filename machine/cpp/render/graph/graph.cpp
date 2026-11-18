@@ -205,7 +205,7 @@ void RenderGraphRuntime::executePass(
 	RenderGraphPass& pass,
 	RenderGraphContext& ctx,
 	FrameData* frame,
-	const GxGpuDeviceOutput& output
+	const GxGpuPresentation& output
 ) {
 	switch (pass.kind) {
 		case RenderGraphPass::Kind::FrameTargets:
@@ -229,9 +229,6 @@ void RenderGraphRuntime::executePass(
 			pass.registry->execute("frame_resolve", nullptr, output);
 			break;
 		case RenderGraphPass::Kind::Registered: {
-			if (!pass.registry->isPassEnabled(pass.passId)) return;
-			if (pass.shouldExecute && !pass.shouldExecute(pass.presenter, pass.passContext)) return;
-
 			if (pass.writeState) {
 				RenderGraphPassContext passCtx;
 				passCtx.presenter = pass.presenter;
@@ -390,6 +387,10 @@ bool RenderGraphRuntime::resolveExecutablePass(i32 orderIndex, bool hasOrder, Ex
 		return false;
 	}
 	out.pass = &m_passes[out.index];
+	if (out.pass->kind == RenderGraphPass::Kind::Registered) {
+		if (!out.pass->registry->isPassEnabled(out.pass->passId)) return false;
+		if (out.pass->shouldExecute && !out.pass->shouldExecute(out.pass->presenter, out.pass->passContext)) return false;
+	}
 	out.targets = writeTargetsForPass(out.index);
 	if (kRenderGraphVerboseLog) {
 		std::fprintf(stderr, "[BMSX][RG] execute pass index=%d name=%s\n",
@@ -398,7 +399,7 @@ bool RenderGraphRuntime::resolveExecutablePass(i32 orderIndex, bool hasOrder, Ex
 	return true;
 }
 
-void RenderGraphRuntime::execute(FrameData* frame, const GxGpuDeviceOutput& output) {
+void RenderGraphRuntime::execute(FrameData* frame, const GxGpuPresentation& output) {
 	if (!m_compiled) compile(frame);
 	if (!m_realized) realizeAll();
 

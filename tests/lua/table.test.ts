@@ -7,10 +7,9 @@ import {
 	CPU,
 } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { Closure } from '../../machine/ts/machine/cpu/closure';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {
-	createBuiltinFunction,
+	valueBuiltinFunction, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueClosure, valueThread,
 	valueString,
 	ValueTag,
 	valueIsTable,
@@ -20,168 +19,237 @@ import {
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { runCompiledLua } from './cpu_test_harness';
+import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotTable, CPU_SNAPSHOT_VALUE_WORDS } from '../../machine/ts/machine/cpu/snapshot';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 
-test('runtime values expose one numeric representation tag', () => {
+test('runtime values expose distinct Integer and Float tags with equal payload words', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const stringValue = valueString(cpu.stringPool.intern('tagged'));
 	const table = cpu.createTable(0, 0);
-	const closure = new Closure(0x1000, [], 0);
-	const builtinFunction = createBuiltinFunction(BuiltinFunctionId.Next);
 	const values: ReadonlyArray<readonly [Value, ValueTag]> = [
-		[null, ValueTag.Nil],
-		[false, ValueTag.False],
-		[true, ValueTag.True],
-		[42, ValueTag.Number],
+		[valueNil(), ValueTag.Nil],
+		[valueBool(false), ValueTag.False],
+		[valueBool(true), ValueTag.True],
+		[valueInteger(42), ValueTag.Integer],
+		[valueFloatBits(42), ValueTag.Float],
 		[stringValue, ValueTag.String],
-		[table, ValueTag.Table],
-		[closure, ValueTag.Closure],
-		[builtinFunction, ValueTag.BuiltinFunction],
+		[valueTable(cpu.gc.reference(table)), ValueTag.Table],
+		[valueClosure(42), ValueTag.Closure],
+		[valueBuiltinFunction(BuiltinFunctionId.Next), ValueTag.BuiltinFunction],
+		[valueThread(cpu.gc.reference(cpu.rootThread)), ValueTag.Thread],
 	];
 
 	for (let index = 0; index < values.length; index += 1) {
 		assert.equal(valueTag(values[index][0]), values[index][1]);
 	}
-	assert.equal(valueIsTable(table), true);
+	assert.equal(valueIsTable(valueTable(cpu.gc.reference(table))), true);
 });
 
-test('Table stores sparse unsigned integer keys in the hash part', () => {
+test('Table stores sparse high-bit Integer words in the hash part', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 0);
-	const highKey = 0xffffffff;
-	const tokenKey = 0x84222325;
+	const highKey = valueInteger(0xffffffff);
+	const tokenKey = valueInteger(0x84222325);
 
-	table.set(highKey, 11);
-	table.set(tokenKey, 22);
+	table.set(highKey, valueInteger(11));
+	table.set(tokenKey, valueInteger(22));
 
-	assert.equal(table.get(highKey), 11);
-	assert.equal(table.get(tokenKey), 22);
-	assert.equal(table.arrayLength, 0);
+	assert.equal(table.get(highKey), valueInteger(11));
+	assert.equal(table.get(tokenKey), valueInteger(22));
+	assert.equal(table.length(), 0);
 	assert.ok(table.getTrackedHeapBytes() < 4096);
 });
 
-for (const route of ['generic', 'encoded', 'integer', 'integer-array'] as const) {
-	test(`Table ${route} hole refill includes the numeric hash tail`, () => {
+for (const route of ['generic', 'float', 'encoded', 'integer', 'integer-array'] as const) {
+	test(`Table ${route} writes preserve sequence boundaries across the numeric hash tail`, () => {
 		const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 		const table = cpu.createTable(4, 8);
 		for (let key = 1; key <= 7; key += 1) {
-			table.set(key, key * 10);
+			table.set(valueInteger(key), valueInteger(key * 10));
 		}
 		const heapBytes = table.getTrackedHeapBytes();
-		assert.equal(table.arrayLength, 7);
+		assert.equal(table.length(), 7);
 
 		for (const key of [2, 4]) {
 			switch (route) {
 				case 'generic':
-					table.set(key, null);
+					table.set(valueInteger(key), valueNil());
+					break;
+				case 'float':
+					table.set(valueFloat(key), valueNil());
 					break;
 				case 'encoded':
-					table.store(ValueTag.Number, key, null, ValueTag.Nil, NaN, null);
+					table.store(ValueTag.Integer, key, ValueTag.Nil, 0);
 					break;
 				case 'integer':
-					table.setInteger(key, null);
+					table.setInteger(key, valueNil());
 					break;
 				case 'integer-array':
-					assert.equal(table.storeIntegerArrayKey(key, ValueTag.Nil, NaN, null), true);
+					assert.equal(table.storeIntegerArrayKey(key, ValueTag.Nil, 0), true);
 					break;
 			}
-			assert.equal(table.arrayLength, key - 1);
-			assert.equal(table.get(7), 70);
+			const boundary = table.length();
+			assert.ok(boundary === 0 || table.get(valueInteger(boundary)) !== valueNil());
+			assert.equal(table.get(valueInteger(boundary + 1)), valueNil());
+			assert.equal(table.getInteger(7), valueInteger(70));
 
 			switch (route) {
 				case 'generic':
-					table.set(key, false);
+					table.set(valueInteger(key), valueBool(false));
+					break;
+				case 'float':
+					table.set(valueFloat(key), valueBool(false));
 					break;
 				case 'encoded':
-					table.store(ValueTag.Number, key, null, ValueTag.False, NaN, null);
+					table.store(ValueTag.Integer, key, ValueTag.False, 0);
 					break;
 				case 'integer':
-					table.setInteger(key, false);
+					table.setInteger(key, valueBool(false));
 					break;
 				case 'integer-array':
-					assert.equal(table.storeIntegerArrayKey(key, ValueTag.False, NaN, null), true);
+					assert.equal(table.storeIntegerArrayKey(key, ValueTag.False, 0), true);
 					break;
 			}
-			assert.equal(table.arrayLength, 7);
-			assert.equal(table.get(key), false);
+			assert.equal(table.length(), 7);
+			assert.equal(table.get(valueInteger(key)), valueBool(false));
 			assert.equal(table.getTrackedHeapBytes(), heapBytes);
 		}
 
-		table.set(9, 90);
-		assert.equal(table.arrayLength, 7);
-		table.set(8, 80);
-		assert.equal(table.arrayLength, 9);
+		table.setInteger(9, valueInteger(90));
+		assert.equal(table.length(), 7);
+		table.setInteger(8, valueInteger(80));
+		assert.equal(table.length(), 9);
 	});
 }
+
+test('Table length is a pure boundary search and writes never scan a retained suffix', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(4096, 8);
+	// Descending construction leaves a hint of one, not an eagerly scanned length.
+	for (let key = 4096; key >= 1; key--) table.setInteger(key, valueBool(false));
+	const snapshot = new CpuSnapshot(), writer = new CpuSnapshotWriter(snapshot);
+	const offset = table.captureSnapshot(writer, () => {}); writer.finish();
+	assert.equal(snapshot.word(offset + CpuSnapshotTable.LengthHint), 1);
+	assert.equal(table.length(), 4096);
+	for (let repeat = 0; repeat < 8; repeat++) {
+		table.setInteger(2048, valueNil()); table.setInteger(2048, valueBool(false));
+	}
+	const after = new CpuSnapshot(), afterWriter = new CpuSnapshotWriter(after);
+	table.captureSnapshot(afterWriter, () => {}); afterWriter.finish();
+	assert.deepEqual(after.words, snapshot.words, 'neither LEN nor distant hole refill scans or changes the raw hint');
+	// Erase the hinted entry without moving the hint (the weak-clearing owner).
+	table.clearWeakEntries(false, true, () => false);
+	assert.equal(table.length(), 0, 'a stale nonzero hint is only a search seed');
+	const cleared = new CpuSnapshot(), clearedWriter = new CpuSnapshotWriter(cleared);
+	table.captureSnapshot(clearedWriter, () => {}); clearedWriter.finish();
+	assert.equal(cleared.word(offset + CpuSnapshotTable.LengthHint), 1);
+});
+
+test('Table sparse hash boundaries include Integer boundaries up to INT32_MAX without consuming larger Float keys', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(0, 128);
+	for (let bit = 30; bit >= 0; bit--) table.setInteger(2 ** bit, valueBool(false));
+	assert.equal(table.length(), 2 ** 30);
+	table.setInteger(0x7fffffff, valueBool(false));
+	assert.equal(table.length(), 0x7fffffff);
+	table.set(valueFloat(2 ** 31), valueBool(true));
+	assert.equal(table.length(), 0x7fffffff, 'terminal sequence boundary does not wrap or loop');
+	table.setInteger(0x7fffffff, valueNil());
+	assert.equal(table.length(), 2 ** 30);
+});
+
+test('numeric hash mixing distributes negative integral keys and preserves canonical matching', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(0, 1024);
+	for (let key = -1; key >= -1024; key--) table.setInteger(key, valueInteger(key));
+	const snapshot = new CpuSnapshot(), writer = new CpuSnapshotWriter(snapshot);
+	const offset = table.captureSnapshot(writer, () => {}); writer.finish();
+	let longest = 0;
+	for (let slot = 0; slot < 1024; slot++) {
+		let count = 0;
+		for (let next = slot; next !== -1; next = snapshot.int(offset + CpuSnapshotTable.Data + next * (2 * CPU_SNAPSHOT_VALUE_WORDS + 1) + 2 * CPU_SNAPSHOT_VALUE_WORDS)) count++;
+		longest = Math.max(longest, count);
+		assert.equal(table.getInteger(-(slot + 1)), valueInteger(-(slot + 1)));
+	}
+	assert.ok(longest <= 8, `negative integers must not collapse into a single hash chain (${longest})`);
+	// The same physical buckets are checked in the C++ table inspection suite.
+	const slots = new ValueSlots(2);
+	const vectors: ReadonlyArray<readonly [Value, number]> = [
+		[valueInteger(-1), 0], [valueInteger(-2), 607], [valueInteger(-3), 190], [valueInteger(-1024), 140],
+		[valueInteger(0), 0], [valueFloat(0.5), 224], [valueFloat(1.5), 0], [valueFloat(4294967296), 24],
+		[valueFloatBits(0xffa01234), 981], [valueFloat(Infinity), 0],
+	];
+	for (const [key, bucket] of vectors) {
+		const one = cpu.createTable(0, 1024); one.set(key, valueBool(false));
+		assert.equal(one.loadStoredEntry(bucket, slots, 0), true);
+		assert.equal(slots.get(1), valueBool(false));
+	}
+	table.set(valueFloat(-0), valueBool(true)); assert.equal(table.getInteger(0), valueBool(true));
+	table.setInteger(0, valueBool(false)); assert.equal(table.get(valueFloat(-0)), valueBool(false));
+});
 
 test('Table hashes runtime object keys from value-owned identity', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 4);
-	const tableKey = cpu.createTable(0, 0);
+	const tableKey = valueTable(cpu.gc.reference(cpu.createTable(0, 0)));
 
-	table.set(tableKey, 101);
+	table.set(tableKey, valueInteger(101));
 
-	assert.equal(table.get(tableKey), 101);
+	assert.equal(table.get(tableKey), valueInteger(101));
 });
 
 test('Table hashes all NaN keys through the canonical qNaN bucket', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const buffer = new ArrayBuffer(8);
-	const words = new Uint32Array(buffer);
-	const floats = new Float64Array(buffer);
-	words[0] = 1;
-	words[1] = 0x7ff80000;
-	const firstNaN = floats[0];
-	words[0] = 2;
-	words[1] = 0x7ff80000;
-	const secondNaN = floats[0];
+	const firstNaN = valueFloatBits(0xffa00001);
+	const secondNaN = valueFloatBits(0x7fc00002);
 	const table = cpu.createTable(0, 0);
 
-	table.set(firstNaN, 11);
-	table.set(secondNaN, 22);
+	table.set(firstNaN, valueInteger(11));
+	table.set(secondNaN, valueInteger(22));
 
-	assert.equal(table.get(firstNaN), 22);
-	assert.equal(table.get(secondNaN), 22);
-	table.set(firstNaN, null);
-	assert.equal(table.get(secondNaN), null);
+	assert.equal(table.get(firstNaN), valueInteger(22));
+	assert.equal(table.get(secondNaN), valueInteger(22));
+	table.set(firstNaN, valueNil());
+	assert.equal(table.get(secondNaN), valueNil());
 });
 
 test('CPU modulus follows Lua floor-modulo semantics', () => {
-	const [negativeNormalized, fnvXorNormalized] = runCompiledLua(`
-return -1 % 0x100000000, (0x84222325 ~ 0x61) % 0x100000000
-`);
-
-	assert.equal(negativeNormalized, 0xffffffff);
-	assert.equal(fnvXorNormalized, 0x84222344);
+	const values = runCompiledLua('return -1 % 7, 1 % -7, 0x84222325 ~ 0x61');
+	assert.deepEqual(values, [valueInteger(6), valueInteger(-6), valueInteger(0x84222344)]);
 });
 
 test('physical table inspection preserves Lua iteration order and tagged values without mutation', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const table = cpu.createTable(8, 16), child = cpu.createTable(0, 0);
+	const table = cpu.createTable(8, 16), child = valueTable(cpu.gc.reference(cpu.createTable(0, 0)));
 	const removed = valueString(cpu.stringPool.intern('removed'));
-	table.set(1, -0); table.set(8, false); table.set(child, child);
-	table.set(valueString(cpu.stringPool.intern('number')), NaN);
-	table.set(false, Infinity); table.set(removed, 17); table.set(removed, null);
+	table.setInteger(1, valueFloatBits(0x80000000)); table.setInteger(8, valueBool(false)); table.set(child, child);
+	table.set(valueString(cpu.stringPool.intern('number')), valueFloatBits(0xffc01234));
+	table.set(valueBool(false), valueFloat(Infinity)); table.set(removed, valueInteger(17)); table.set(removed, valueNil());
 	const before = table.getTrackedHeapBytes(), values = new ValueSlots(4);
-	values.setNumber(0, 123); values.setNumber(3, 456);
+	values.setInteger(0, 123); values.setInteger(3, 456);
 	const physical: Value[][] = [];
 	for (let slot = 0; slot < table.storedSlotCount; slot++) {
 		if (table.loadStoredEntry(slot, values, 1)) physical.push([values.get(1), values.get(2)]);
 	}
 	const logical: Value[][] = [];
 	values.setNil(1);
-	while (table.next(values.getTag(1), values.getScalar(1), values.getReference(1), values, 1)) logical.push([values.get(1), values.get(2)]);
+	for (table.next(values.get(1), values, 1); values.getTag(1) !== ValueTag.Nil;
+		table.next(values.get(1), values, 1)) logical.push([values.get(1), values.get(2)]);
 	assert.deepEqual(physical, logical);
 	assert.equal(physical.length, 5);
-	assert.equal(values.get(0), 123);
-	assert.equal(values.get(3), 456);
+	assert.equal(values.get(0), valueInteger(123));
+	assert.equal(values.get(3), valueInteger(456));
 	assert.equal(table.getTrackedHeapBytes(), before);
+	const previous = [values.get(1), values.get(2)];
 	assert.equal(table.loadStoredEntry(1, values, 1), false);
-	assert.deepEqual([values.get(1), values.get(2)], physical.at(-1));
+	assert.deepEqual([values.get(1), values.get(2)], previous);
 });

@@ -24,6 +24,7 @@ SNESMINI_CMAKE_COMMON_ARGS = \
 	-DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 SNESMINI_MACHINE_CMAKE_ARGS = \
 	$(SNESMINI_CMAKE_COMMON_ARGS) \
+	-DBMSX_ENABLE_NATIVE_BLOCKS=ON \
 	-DBMSX_ENABLE_LTO="$(SNESMINI_ENABLE_LTO)"
 
 .PHONY: libretro-snesmini libretro-snesmini-debug
@@ -62,6 +63,8 @@ libretro-snesmini-build-inner:
 		-DBMSX_BUILD_LIBRETRO=ON \
 		-DBMSX_BUILD_LIBRETRO_HOST=OFF \
 		-DBMSX_ENABLE_GLES2=ON \
+		-DBMSX_GLES2_SOFTWARE_GX=ON \
+		-DBMSX_NATIVE_COMPILER_WORKER=ON \
 		-DBMSX_ENABLE_ZLIB=OFF \
 		-DGLESV2_LIBRARY="$(SNESMINI_SDK_USR_LIB_DIR)/libGLESv2.so"
 	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)" --parallel "$$(nproc)" --target bmsx_libretro
@@ -74,7 +77,7 @@ libretro-host-snesmini-build-inner:
 		-DBMSX_BUILD_LIBRETRO_HOST=ON \
 		-DBMSX_ENABLE_GLES2=OFF \
 		-DBMSX_ENABLE_ZLIB=ON
-	cmake --build "$(SNESMINI_BUILD_DIR_HOST)" --config "$(SNESMINI_BUILD_TYPE)" --parallel "$$(nproc)" --target bmsx_libretro_host
+	cmake --build "$(SNESMINI_BUILD_DIR_HOST)" --config "$(SNESMINI_BUILD_TYPE)" --parallel "$$(nproc)" --target bmsx_libretro_host bmsx_snesmini_input
 
 .PHONY: libretro-host-snesmini-audit-inner
 libretro-host-snesmini-audit-inner:
@@ -83,6 +86,9 @@ libretro-host-snesmini-audit-inner:
 		--artifact "$(SNESMINI_BUILD_DIR_HOST)/bmsx_libretro_host" \
 		--runtime-symbols 'libGLESv2.so.2|libGLESv2.so=$(CURDIR)/hosts/libretro_host/gles2_symbols.inc' \
 		--runtime-symbols 'libEGL.so.1|libEGL.so=$(CURDIR)/hosts/libretro_host/egl_symbols.inc'
+	python3 scripts/snesmini/check_abi.py \
+		--rootfs "$(SNESMINI_RUNTIME_ROOT)" \
+		--artifact "$(SNESMINI_BUILD_DIR_HOST)/bmsx_snesmini_input"
 	@status=0; \
 		qemu-arm-static -L "$(SNESMINI_RUNTIME_ROOT)" \
 			"$(SNESMINI_BUILD_DIR_HOST)/bmsx_libretro_host" || status=$$?; \
@@ -91,8 +97,17 @@ libretro-host-snesmini-audit-inner:
 			exit 1; \
 		fi
 	@echo "[snesmini host smoke] target loader entered the direct-host CLI"
+	@status=0; \
+		qemu-arm-static -L "$(SNESMINI_RUNTIME_ROOT)" \
+			"$(SNESMINI_BUILD_DIR_HOST)/bmsx_snesmini_input" || status=$$?; \
+		if [ "$$status" -ne 2 ]; then \
+			echo "SNES Mini input proxy did not enter its CLI through the target loader." >&2; \
+			exit 1; \
+		fi
+	@echo "[snesmini input smoke] target loader entered the input-proxy CLI"
 	@mkdir -p "$(SNESMINI_PUBLISH_DIR)"
 	cp "$(SNESMINI_BUILD_DIR_HOST)/bmsx_libretro_host" "$(SNESMINI_PUBLISH_DIR)/bmsx_libretro_host"
+	cp "$(SNESMINI_BUILD_DIR_HOST)/bmsx_snesmini_input" "$(SNESMINI_PUBLISH_DIR)/bmsx_snesmini_input"
 
 .PHONY: snesmini-qemu-build-inner
 snesmini-qemu-build-inner: libretro-snesmini-build-inner

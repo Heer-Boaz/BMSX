@@ -15,6 +15,7 @@ before(async () => {
 			export { RenderPassLibrary } from './machine/ts/render/backend/pass/library';
 			export { renderPcrtcBlendCases } from './tests/helpers/pcrtc_scanout_fixture';
 			export { renderTexturedModelCase } from './tests/helpers/textured_model_gpu';
+			export { renderCrtNoiseCases } from './tests/helpers/crt_gpu';
 			export { renderPresentationTarget } from './tests/helpers/presentation_target';
 			export { renderHostFontCases } from './tests/helpers/host_font_gpu';
 		`, resolveDir: process.cwd() },
@@ -98,6 +99,25 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} retains the old workspace
 	}
 });
 
+for (const kind of ['webgl2', 'webgpu']) test(`${kind} CRT noise uses deterministic pixel and line grain across frame phases`, async t => {
+	const browser = await chromium.launch({ args: [
+		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
+	] });
+	t.after(() => browser.close());
+	const page = await browser.newPage(), errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
+		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="320" height="240"></canvas></div>' }));
+	await page.goto('http://localhost/renderer-test/crt/'); await page.addScriptTag({ content: backendBundle });
+	const result = await page.evaluate(async kind => (globalThis as any).backendTest.renderCrtNoiseCases(document.getElementById('gamescreen'), kind), kind);
+	t.diagnostic(JSON.stringify(result));
+	assert.equal(result.glError, 0); assert.equal(result.validationError, undefined);
+	assert.deepEqual(result.gpuErrors, []); assert.deepEqual(errors, []);
+	assert.equal(result.differences.length, 9);
+	assert.ok(result.differences.every(value => value <= 1), 'grain, tint and glow agree within RGBA8 rounding');
+});
+
 for (const kind of ['webgl2', 'webgpu']) test(`${kind} and CPU render flat/raw textured model packets with affine point sampling`, async t => {
 	const browser = await chromium.launch({ args: [
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
@@ -119,11 +139,84 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} and CPU render flat/raw t
 	assert.deepEqual(result.transfers[1], [197, 901, 3, 2], 'the small high-row write reads its exclusive rectangle bounds, including WebGPU row padding');
 	assert.deepEqual(result.adjacentDifferences, [-1, -1, -1], 'adjacent texture draws retain whole-frame software parity');
 	assert.deepEqual(result.adjacentCopies, [1, 0, 1], 'an adjacent framebuffer does not dirty its texture page, but an actual write does');
+	assert.deepEqual(result.wrappedDifferences, [-1, -1], 'both UV-wrap directions sample late uploads with whole-frame software parity');
+	assert.deepEqual(result.rectangleDifferences, [-1, -1, -1, -1], 'non-power-of-two sprite flips retain whole-frame software parity');
+	assert.deepEqual(result.flatColorDifferences, [-1, -1], 'all flat color/gain bytes retain whole-frame software parity');
 	assert.deepEqual(result.samples.map(sample => sample.software), [
 		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],
 		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],
 	]);
 	assert.equal(result.validationError, undefined); assert.equal(result.glError, 0); assert.deepEqual(result.gpuErrors, []); assert.deepEqual(errors, []);
+});
+
+for (const kind of ['webgl2', 'webgpu']) test(`${kind} consumes every raw draw layout`, async t => {
+	const browser = await chromium.launch({ args: [
+		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
+	] });
+	t.after(() => browser.close());
+	const page = await browser.newPage(), errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
+		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="256" height="256"></canvas></div>' }));
+	for (const vramBytes of [2 * 1024 * 1024, 1024 * 1024]) {
+		await page.goto('http://localhost/renderer-test/draw-layouts/');
+		await page.addScriptTag({ content: backendBundle });
+		const result = await page.evaluate(async ({ kind, vramBytes }) => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), kind, vramBytes), { kind, vramBytes });
+		assert.deepEqual(result.drawLayoutDifferences, Array(20).fill(-1), 'each layout matches software pixel-for-pixel');
+		assert.equal(result.drawLayoutPixels.length, 20);
+		assert.ok(result.drawLayoutPixels.every((count: number) => count > 0), 'each case drew visible pixels');
+		assert.deepEqual(result.lineExtraWordCounts, [2, 2], 'the producer retains exactly two line vertices');
+		assert.deepEqual(result.lineExtraWordDifferences, [-1, -1], 'extra line words match software');
+		assert.ok(result.lineExtraWordPixels.every(([line, extra]: number[]) => line !== 0 && extra === 0), 'extra raw words never create a third line vertex');
+		assert.equal(result.validationError, undefined); assert.equal(result.glError, 0);
+		assert.deepEqual(result.gpuErrors, []); assert.deepEqual(errors, []);
+	}
+});
+
+for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish only drawn cells, including aliased VRAM`, async t => {
+	const browser = await chromium.launch({ args: [
+		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
+	] });
+	t.after(() => browser.close());
+	const page = await browser.newPage(), errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
+		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="256" height="256"></canvas></div>' }));
+	for (const vramBytes of [2 * 1024 * 1024, 1024 * 1024]) {
+		await page.goto('http://localhost/renderer-test/primitive-damage/');
+		await page.addScriptTag({ content: backendBundle });
+		const result = await page.evaluate(async ({ bytes, kind }) => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), kind, bytes, true), { bytes: vramBytes, kind });
+		assert.deepEqual(result.maskedRectangleWords, [0x7c00, 0x801f, 0x7c00, 0x8000, 0x7c00, 0x801f, 0x7c00, 0x8000], 'masked rectangles retain all six vertices across primitive-kind batch changes');
+		assert.equal(result.orderedReadbackPending, true, 'guest C0 requests a backend readback before rendering');
+		assert.deepEqual(result.orderedReadbackWords, [vramBytes === 1024 * 1024 ? 0x03e003e0 : 0x001f03e0], 'guest GPUREAD observes both dependent draws at the C0 fence');
+		assert.deepEqual(result.adjacentDifferences, [-1, -1, -1, -1, -1, -1]);
+		assert.deepEqual(result.adjacentPixel[5], [0, 255, 0, 0], 'an empty clipped batch cannot suppress the following draw');
+		assert.deepEqual(result.adjacentCopyRects[1], []);
+		assert.deepEqual(result.adjacentCopyRects[2], [[320, 0, 16, 16]], 'a one-pixel source write must not dirty the adjacent CLUT');
+		assert.equal(result.orderedSourceDifference, -1, 'dependent draws and changing palettes match the full software VRAM');
+		assert.equal(result.selfTextureReadback, 0x7c00, 'GPUREAD observes self-textured pixels');
+		assert.equal(result.selfTextureRestored, 0x7c00, 'restored VRAM retains self-textured pixels');
+		assert.deepEqual(result.orderedSourceWords, [31, 31, 31, 0x0421, 0x0842, 0x0c63, 0x1084,
+			0x03e0, 0x03e0, vramBytes === 1024 * 1024 ? 0x03e0 : 0x001f,
+			vramBytes === 1024 * 1024 ? 0x001f : 0, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x81ef, 0x03e0],
+			'pending sources, triangle self-reads and aliased palette writes remain ordered');
+		if (vramBytes === 1024 * 1024) {
+			assert.deepEqual(result.adjacentCopyRects[3], [[320, 0, 16, 16]], 'a write through the high logical band dirties the aliased physical texture');
+			assert.deepEqual(result.adjacentPixel[4], [57, 189, 0, 0], 'the second logical band blends over the first');
+		} else {
+			assert.deepEqual(result.adjacentPixel[4], [123, 123, 0, 0], 'separate physical bands do not alias');
+			assert.equal(result.capacityResult.commands, 4096);
+			assert.equal(result.capacityResult.difference, -1, 'the full command buffer matches software');
+			assert.deepEqual(result.capacityResult.pixel, [0, 255, 0, 0], 'the final fill reaches the sampled cell');
+			assert.deepEqual(result.capacityResult.copies, [[16, 0, 16, 16]], 'the final wrapped primitive must publish its cell');
+		}
+		assert.equal(result.glError, 0);
+		assert.equal(result.validationError, undefined);
+		assert.deepEqual(result.gpuErrors, []);
+	}
+	assert.deepEqual(errors, []);
 });
 
 test('GX WebGPU pipelines specialize only the overrides used by each stage', async t => {

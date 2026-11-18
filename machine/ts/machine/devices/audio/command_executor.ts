@@ -8,6 +8,7 @@ import type { ApuOutputMixer } from './output';
 import type { ApuSelectedSlotLatch } from './selected_slot_latch';
 import type { ApuServiceClock } from './service_clock';
 import {
+	APU_ROM_SOURCE_REVISION,
 	apuParameterProgramsSourceBuffer,
 	apuAudioSourceUsesGenerator,
 	loadApuAudioSource,
@@ -59,6 +60,7 @@ export class ApuCommandExecutor {
 		generatorDutyQ12: 0,
 	};
 	private readonly sourceView: ApuSourceByteView = {
+		revision: APU_ROM_SOURCE_REVISION,
 		bytes: EMPTY_APU_SOURCE_BYTES,
 		byteOffset: 0,
 		byteLength: 0,

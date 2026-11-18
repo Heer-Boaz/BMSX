@@ -5,12 +5,10 @@ local irq_mask<const>: *word = 0x08000008
 local gp0<const>: *word = 0x0801023c
 local gp1<const>: *word = 0x08010240
 
-rodata expected_output: word[26] = {
-	0xa0000000, 0x00400040, 0x00060004,
+rodata expected_output: word[20] = {
 	0x11112222, 0x33334444, 0x55556666, 0x55556666,
 	0x11112222, 0x33334444, 0x55556666, 0x55556666,
 	0x00000000, 0x00000000, 0x00000000, 0x00000000,
-	0xa0000000, 0x00800040, 0x00010010,
 	0x00000000, 0x03e0001f, 0x7fff7c00, 0x42104210,
 	0x001f001f, 0x03e003e0, 0x7c007c00, 0x7fff7fff,
 }
@@ -35,7 +33,7 @@ return {
 				return result.completed_phase == 4
 			end, 8)
 			assert(result.dma0_sequence == 3)
-			assert(result.dma1_sequence == 3)
+			assert(result.dma1_sequence == 4)
 			assert(result.decoder_sequence == 4)
 			for index = 0, #expected_output - 1 do
 				assert(result.ram_output[index] == expected_output[index])
@@ -54,33 +52,33 @@ return {
 				assert(observed->sequences[2] == phase + 1)
 				if phase < 2 then
 					assert(observed->status == 2)
-					assert(observed->received == 19)
+					assert(observed->received == 16)
 					assert(observed->decoded == 20)
 					assert(observed->sequences[0] == phase + 1)
-					assert(observed->sequences[1] == phase + 1)
+					assert(observed->sequences[1] == (phase == 0 and 1 or 3))
 				elseif phase == 2 then
 					assert(observed->status == 0x00000010)
-					assert(observed->received == 4)
+					assert(observed->received == 1)
 					assert(observed->decoded == 0)
 					assert(observed->sequences[0] == 2)
-					assert(observed->sequences[1] == 2)
+					assert(observed->sequences[1] == 3)
 				else
 					assert(observed->status == 2)
-					assert(observed->received == 3)
-					assert(observed->decoded == 0)
+					assert(observed->received == 2)
+					assert(observed->decoded == 3)
 					assert(observed->sequences[0] == 3)
-					assert(observed->sequences[1] == 3)
+					assert(observed->sequences[1] == 4)
 				end
 			end
 			assert((result.gpu_initial_status & 0x6c000000) == 0x44000000)
 			assert((result.gpu_idle_status & 0x6c000000) == 0x44000000)
-			assert(result.fault_header[0] == 0xa0000000)
-			assert(result.fault_header[1] == 0x00400040)
-			assert(result.fault_header[2] == 0x00060004)
-			assert(result.fault_retained_read == 0x00060004)
-			assert(result.recovery_output[0] == 0xa0000000)
-			assert(result.recovery_output[1] == 0x00200020)
-			assert(result.recovery_output[2] == 0)
+			assert(result.fault_reads[0] == 0x80000000)
+			assert(result.fault_reads[1] == 0x80000000)
+			assert(result.fault_reads[2] == 0x80000000)
+			assert(result.fault_retained_read == 0x80000000)
+			assert(result.recovery_output[0] == 0x12345678)
+			assert(result.recovery_output[1] == 0x12345678)
+			assert(result.recovery_output[2] == 0x12345678)
 			assert((result.final_irq_flags & 0x00000181) == 0)
 			assert((*irq_flags & 0x00000181) == 0)
 			assert(*irq_mask == 0)
@@ -100,7 +98,7 @@ return {
 				return (*gp1 & 0x08000000) ~= 0
 			end, 3)
 			for index = 0, 11 do
-				assert(*gp0 == expected_output[index + 3])
+				assert(*gp0 == expected_output[index])
 			end
 			assert((*gp1 & 0x08000000) == 0)
 			*gp0 = 0xc0000000
@@ -110,7 +108,7 @@ return {
 				return (*gp1 & 0x08000000) ~= 0
 			end, 3)
 			for index = 0, 7 do
-				assert(*gp0 == expected_output[index + 18])
+				assert(*gp0 == expected_output[index + 12])
 			end
 			assert((*gp1 & 0x08000000) == 0)
 			-- Probe one complete displayed row for each of the six source rows.
@@ -142,7 +140,7 @@ return {
 			end, 3)
 			assert(*gp0 == 0x0c410c41)
 			assert((*gp1 & 0x08000000) == 0)
-			t:log('26 RAM output words; 12 texture and 8 CLUT words read back; DMA0/DMA1/IMGDEC IRQ sequences 3/3/4; fault 10H received4 decoded0; retained header and START recovery; 360 displayed-row words plus outside background matched')
+			t:log('20 raw RAM output words; 12 texture and 8 CLUT words read back; DMA0/DMA1/IMGDEC IRQ sequences 3/4/4; fault 10H received1 decoded0; retained token and START recovery; 360 displayed-row words plus outside background matched')
 		end,
 	},
 }

@@ -9,6 +9,8 @@ import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 // registration may succeed before the outer compilation fails.
 for (const optLevel of [0, 3] as const) test(`Scene registration reflects successful writes in execution order (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 prefab.define({def_id='fixture.actor', class=object_2d})
 local first<const> = {objects={{member_id='first', definition_id='fixture.actor'}}}
 local second<const> = {objects={{member_id='second', definition_id='fixture.actor'}}}

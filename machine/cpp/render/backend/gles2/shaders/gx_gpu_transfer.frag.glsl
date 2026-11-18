@@ -15,6 +15,9 @@ uniform int u_setMaskBit;
 #ifdef GX_GPU_VRAM_ALIAS
 uniform int u_logicalYBase;
 #endif
+#ifdef GX_GPU_CPU_UPLOAD_SOURCE
+varying mediump vec2 v_sourceUv;
+#else
 varying vec2 v_sourceOffset;
 
 int wrapPeriod(int value, int period) {
@@ -22,41 +25,22 @@ int wrapPeriod(int value, int period) {
 	return wrapped < 0 ? wrapped + period : wrapped;
 }
 
-ivec2 rawSourceLogicalWord(ivec2 logicalCoord) {
-#ifdef GX_GPU_CPU_UPLOAD_SOURCE
-	ivec2 wrapped = ivec2(wrapPeriod(logicalCoord.x, GX_GPU_VRAM_X_ADDRESS_PERIOD),
-		wrapPeriod(logicalCoord.y, GX_GPU_TRANSFER_HEIGHT));
-#else
+vec4 rawSourceLogicalPixel(ivec2 logicalCoord) {
 	ivec2 wrapped = ivec2(
 		wrapPeriod(logicalCoord.x, GX_GPU_VRAM_X_ADDRESS_PERIOD),
 		wrapPeriod(logicalCoord.y, GX_GPU_VRAM_TEXTURE_ROWS));
-#endif
-#ifdef GX_GPU_CPU_UPLOAD_SOURCE
-	vec4 rawPixel = texture2D(
-		u_source,
-		(vec2(wrapped) + vec2(0.5))
-			/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_TRANSFER_HEIGHT)));
-#else
-	vec4 rawPixel = texture2D(
+	return texture2D(
 		u_source,
 		(vec2(wrapped) + vec2(0.5))
 			/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS)));
-#endif
-#ifdef GX_GPU_CPU_UPLOAD_SOURCE
-	int lowByte = int(rawPixel.r * 255.0 + 0.5);
-	int highByte = int(rawPixel.a * 255.0 + 0.5);
-	return ivec2(lowByte, highByte);
-#else
-	return gxWordBytes(rawPixel);
-#endif
 }
+#endif
 
-ivec2 rawVramStorageWord(ivec2 storageCoord) {
-	vec4 rawPixel = texture2D(
+vec4 rawVramStoragePixel(ivec2 storageCoord) {
+	return texture2D(
 		u_vram,
 		(vec2(storageCoord) + vec2(0.5))
 			/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS)));
-	return gxWordBytes(rawPixel);
 }
 
 
@@ -65,14 +49,20 @@ ivec2 rawVramStorageWord(ivec2 storageCoord) {
 
 void main() {
 	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
+#ifdef GX_GPU_CPU_UPLOAD_SOURCE
+	vec4 sourcePixel = texture2D(u_source, v_sourceUv);
+#else
 	ivec2 destinationLogical = storageCoord;
 #ifdef GX_GPU_VRAM_ALIAS
 	destinationLogical.y += u_logicalYBase;
 #endif
-	ivec2 sourceWord = rawSourceLogicalWord(destinationLogical + ivec2(v_sourceOffset));
-	if (u_checkMaskBit != 0 && rawVramStorageWord(storageCoord).y / 128 != 0) {
+	vec4 sourcePixel = rawSourceLogicalPixel(destinationLogical + ivec2(v_sourceOffset));
+#endif
+	// RGBA4444 already is the exact word representation used by the target.
+	// Bit 15 is the high bit of the red nibble; no RGB555 conversion is needed.
+	if (u_checkMaskBit != 0 && rawVramStoragePixel(storageCoord).r >= 0.5) {
 		discard;
 	}
-	int outputMaskBit = u_setMaskBit != 0 ? 1 : sourceWord.y / 128;
-	gl_FragColor = encodeRgb555(decodeRgb555To5(sourceWord), outputMaskBit);
+	if (u_setMaskBit != 0 && sourcePixel.r < 0.5) sourcePixel.r += 8.0 / 15.0;
+	gl_FragColor = sourcePixel;
 }

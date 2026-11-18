@@ -4,12 +4,12 @@
 
 namespace bmsx {
 
-struct GxGpuCommandBuffer;
+struct GxGpuCommandStorage;
 struct GxGpuSoftwareState;
 
 size_t executeGxGpuSoftwareCommands(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t processedCommandCount,
 	size_t commandLimit);
 

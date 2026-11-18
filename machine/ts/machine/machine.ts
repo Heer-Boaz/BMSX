@@ -1,5 +1,6 @@
 import { ApuOutputMixer } from './devices/audio/output';
 import { CPU } from './cpu/cpu';
+import { CpuExecutionBackend } from './cpu/compiled_block';
 import { ExecutionAddressSpace } from './execution_address_space';
 import { AudioController } from './devices/audio/controller';
 import type { CartridgeController } from './devices/cartridge/controller';
@@ -53,11 +54,12 @@ export class Machine {
 		public readonly memory: Memory,
 		input: InputControllerInputSource,
 		model: MachineModelSpec,
+		cpuExecutionBackend?: CpuExecutionBackend,
 	) {
 		this.cartridgeController = this.memory.cartridgeController;
 		this.irqController = new IrqController(this.memory);
 		this.executionAddressSpace = new ExecutionAddressSpace(this.memory);
-		this.cpu = new CPU(this.memory, this.irqController, this.executionAddressSpace);
+		this.cpu = new CPU(this.memory, this.irqController, this.executionAddressSpace, cpuExecutionBackend);
 		this.scheduler = new DeviceScheduler(this.cpu);
 		this.systemDebugTransmit = new SystemDebugTransmit(this.memory);
 		this.audioOutput = new ApuOutputMixer();

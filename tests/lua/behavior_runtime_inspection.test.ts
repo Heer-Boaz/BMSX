@@ -2,7 +2,7 @@ import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { asClosure, asTable, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
@@ -57,9 +57,11 @@ return component`;
 	const rewind = { active: historical, seeking: false, playing: false };
 	const choice = readStateMachineInstances(sources, guest, -1).items[0];
 	const transport = new RuntimeTransport(runtime, null!, rewind as HostRewind, null!, () => true);
+	const componentHashId = guest.identityScalar(choice.component, ValueTag.Table), machineHashId = guest.identityScalar(choice.machine, ValueTag.Table);
+	const machineObject = asTable(choice.machine, cpu.gc);
 	const inspection = new BehaviorRuntimeInspection(sources, guest, rewind as HostRewind, -1, sources.currentBlua32Media.system!,
-		{ kind: 'state_machine', componentHashId: choice.component.hashId, machineHashId: choice.machine.hashId, stateHashId: choice.machine.hashId }, transport);
-	return { runtime, cpu, guest, sources, rewind, inspection, transport, beforeBirth, choice };
+		{ kind: 'state_machine', componentHashId, machineHashId, stateHashId: machineHashId }, transport);
+	return { runtime, cpu, guest, sources, rewind, inspection, transport, beforeBirth, choice, componentHashId, machineHashId, machineObject };
 }
 
 test('visible behavior inspection compares completed observations, not paused refreshes, and reacquires history values', t => {
@@ -74,7 +76,7 @@ test('visible behavior inspection compares completed observations, not paused re
 	for (let paint = 0; paint < 1000; paint++) assert.equal(f.inspection.refresh(), undefined);
 	assert.equal(reads, 0);
 	f.guest.invalidate();
-	runCompletionClosure(f.cpu, f.guest.global('change') as Closure, []);
+	runCompletionClosure(f.cpu, asClosure(f.guest.global('change'), f.cpu.gc), []);
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.equal(current.value, 'b'); assert.equal(current.valueChanged, true);
 	assert.ok(document.every(row => row.valueChanged === (row === current)));
@@ -87,7 +89,7 @@ test('visible behavior inspection compares completed observations, not paused re
 	assert.equal(current.value, 'b'); assert.ok(document.every(row => row.valueChanged === false));
 	assert.ok(reads > observedReads);
 	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
-	assert.notStrictEqual(readStateMachineInstances(f.sources, f.guest, -1).items[0].machine, f.choice.machine);
+	assert.ok(asTable(readStateMachineInstances(f.sources, f.guest, -1).items[0].machine, f.cpu.gc) !== f.machineObject, 'history reconstructs a fresh machine object');
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.deepEqual(document.map(row => row.value), before);
 	assert.equal(current.valueChanged, true, 'restoring a previous value is a change from the last completed observation');
@@ -119,12 +121,12 @@ test('live readback retains rows and skips warmed formatting while still reading
 	assert.ok(document.every((row, index) => row === rows[index]));
 	assert.deepEqual([f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 	const previous = document.map(row => row.value);
-	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('change_data') as Closure, []);
+	f.guest.invalidate(); runCompletionClosure(f.cpu, asClosure(f.guest.global('change_data'), f.cpu.gc), []);
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.equal(document.filter((row, index) => row.value !== previous[index]).length, 1);
 	assert.equal(formatted, 1, 'changed table text is reformatted, unchanged fields are not');
 	const count = document.length;
-	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('grow_definition') as Closure, []);
+	f.guest.invalidate(); runCompletionClosure(f.cpu, asClosure(f.guest.global('grow_definition'), f.cpu.gc), []);
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.equal(document.length, count + 1, 'mutable definitions are not assumed to have immutable topology');
 });
@@ -135,11 +137,11 @@ test('retained value presentation compares mutable entries, preserves preview se
 	let data = f.guest.readStringMember(f.choice.machine, 'data');
 	const original = retained.update(data);
 	assert.equal(original, f.guest.formatStoredEntries(data));
-	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('change_data') as Closure, []);
+	f.guest.invalidate(); runCompletionClosure(f.cpu, asClosure(f.guest.global('change_data'), f.cpu.gc), []);
 	assert.notEqual(retained.update(data), original);
 	assert.equal(retained.update(data), f.guest.formatStoredEntries(data));
 	const expanded = retained.update(data);
-	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('trim_nested') as Closure, []);
+	f.guest.invalidate(); runCompletionClosure(f.cpu, asClosure(f.guest.global('trim_nested'), f.cpu.gc), []);
 	assert.notEqual(retained.update(data), expanded);
 	assert.equal(retained.update(data), f.guest.formatStoredEntries(data));
 	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored'); retained.invalidate();
@@ -150,10 +152,10 @@ test('retained value presentation compares mutable entries, preserves preview se
 test('an inspector opened during history review retains absent membership through forward replay', t => {
 	const f = fixture(true); t.after(() => f.inspection.dispose());
 	const document = f.inspection.refresh()!, before = document.map(row => row.value);
-	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('remove_component') as Closure, []);
+	f.guest.invalidate(); runCompletionClosure(f.cpu, asClosure(f.guest.global('remove_component'), f.cpu.gc), []);
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.ok(document.every(row => row.warning && row.valueChanged === false));
-	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('restore_component') as Closure, []);
+	f.guest.invalidate(); runCompletionClosure(f.cpu, asClosure(f.guest.global('restore_component'), f.cpu.gc), []);
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.deepEqual(document.map(row => row.value), before);
 	assert.ok(document.every(row => row.valueChanged === false));
@@ -173,9 +175,9 @@ test('historical absence preserves a behavior bookmark across replay and repeate
 		assert.equal(f.inspection.refresh(), undefined, 'replay execution does not admit a live branch');
 		f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
 		const restored = readStateMachineInstances(f.sources, f.guest, -1).items[0];
-		assert.equal(restored.component.hashId, f.choice.component.hashId);
-		assert.equal(restored.machine.hashId, f.choice.machine.hashId);
-		assert.notStrictEqual(restored.machine, f.choice.machine);
+		assert.equal(f.guest.identityScalar(restored.component, ValueTag.Table), f.componentHashId);
+		assert.equal(f.guest.identityScalar(restored.machine, ValueTag.Table), f.machineHashId);
+		assert.ok(asTable(restored.machine, f.cpu.gc) !== f.machineObject);
 		assert.strictEqual(f.inspection.refresh(), document);
 		assert.deepEqual(document.map(row => row.value), before);
 		assert.ok(document.every(row => row.valueChanged === false), 'unavailable membership ends the previous comparison baseline');
@@ -198,8 +200,8 @@ for (const observed of [false, true]) test(`live admission retires ${observed ? 
 	f.guest.invalidate();
 	f.cpu.runUntilDepth(0, 100_000);
 	const newChoice = readStateMachineInstances(f.sources, f.guest, -1).items[0];
-	assert.equal(newChoice.component.hashId, f.choice.component.hashId);
-	assert.equal(newChoice.machine.hashId, f.choice.machine.hashId);
+	assert.equal(f.guest.identityScalar(newChoice.component, ValueTag.Table), f.componentHashId);
+	assert.equal(f.guest.identityScalar(newChoice.machine, ValueTag.Table), f.machineHashId);
 	assert.equal(f.inspection.refresh(), undefined, 'new allocation identities cannot reactivate the retired selection');
 });
 
@@ -214,13 +216,13 @@ test('live admission keeps a restored behavior instance and later live removal r
 	assert.equal(f.inspection.interaction.running, true, 'admission resolves current membership even before the pane observes it');
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.deepEqual(document.map(row => row.value), before);
-	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('remove_component') as Closure, []);
+	f.guest.invalidate(); runCompletionClosure(f.cpu, asClosure(f.guest.global('remove_component'), f.cpu.gc), []);
 	assert.equal(readStateMachineInstances(f.sources, f.guest, -1).items.length, 0);
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.equal(f.inspection.interaction.running, false);
 	assert.ok(document.every(row => row.warning && row.valueChanged === false));
-	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('restore_component') as Closure, []);
-	assert.equal(readStateMachineInstances(f.sources, f.guest, -1).items[0].component.hashId, f.choice.component.hashId);
+	f.guest.invalidate(); runCompletionClosure(f.cpu, asClosure(f.guest.global('restore_component'), f.cpu.gc), []);
+	assert.equal(f.guest.identityScalar(readStateMachineInstances(f.sources, f.guest, -1).items[0].component, ValueTag.Table), f.componentHashId);
 	let reads = 0;
 	const read = f.guest.readStringMember.bind(f.guest);
 	t.mock.method(f.guest, 'readStringMember', (...args: Parameters<typeof read>) => { reads++; return read(...args); });
@@ -261,8 +263,8 @@ for (const observed of [false, true]) test(`discarding review retires ${observed
 	assert.equal(f.inspection.interaction.running, false, 'discard reconciles before another guest allocation');
 	f.guest.invalidate(); f.cpu.runUntilDepth(0, 100_000);
 	const replacement = readStateMachineInstances(f.sources, f.guest, -1).items[0];
-	assert.equal(replacement.component.hashId, f.choice.component.hashId);
-	assert.equal(replacement.machine.hashId, f.choice.machine.hashId);
+	assert.equal(f.guest.identityScalar(replacement.component, ValueTag.Table), f.componentHashId);
+	assert.equal(f.guest.identityScalar(replacement.machine, ValueTag.Table), f.machineHashId);
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.ok(document.every(row => row.warning && row.description.includes('SELECT A RUNTIME INSTANCE AGAIN')));
 });

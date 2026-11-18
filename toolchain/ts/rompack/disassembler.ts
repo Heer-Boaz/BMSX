@@ -1,8 +1,9 @@
 import { extractSourceRangeText } from './source_text';
 import { CLOSURE_ADDRESS_REGISTER_FLAG, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
-import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP, decodeCallArgCount } from '../../../machine/ts/spec/blua32/opcode';
+import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP, decodeValueCount } from '../../../machine/ts/spec/blua32/opcode';
 import { OPCODE_NAMES } from '../lua/opcode_metadata';
-import { formatNumber } from '../../../machine/ts/common/number_format';
+import { formatInteger } from '../../../machine/ts/common/number_format';
+import { numberConstantText } from '../lua/number';
 import {
 	type Blua32EncodedConstant,
 	type Blua32ImageLayout,
@@ -83,8 +84,7 @@ const SOURCE_COMMENT_MAX_CHARS = 120;
 
 const formatBool = (value: number): string => (value !== 0 ? 'true' : 'false');
 
-const formatCount = (value: number): string => (value === 0 ? '*' : value.toString());
-const formatCallArgCount = (value: number): string => (value === 0 ? '*' : decodeCallArgCount(value, 0).toString());
+const formatValueCount = (value: number): string => (value === 0 ? '*' : decodeValueCount(value, 0).toString());
 
 const formatBlua32Value = (constant: Blua32EncodedConstant): string => {
 	switch (constant) {
@@ -95,7 +95,7 @@ const formatBlua32Value = (constant: Blua32EncodedConstant): string => {
 		case true:
 			return 'true';
 	}
-	return typeof constant === 'string' ? JSON.stringify(constant) : formatNumber(constant);
+	return typeof constant === 'string' ? JSON.stringify(constant) : numberConstantText(constant);
 };
 
 const formatSourceConst = (
@@ -336,7 +336,7 @@ const buildInstructionOperands = (
 	const { op, a, b, c, bx, sbx, pc } = decoded;
 	switch (op) {
 		case OpCode.MOV:
-			return [registerOperand('a', 'dst', a), registerOperand('b', 'src', b)];
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'src', b), plainOperand('c', 'move kind', formatInteger(c))];
 		case OpCode.KNIL:
 			return [registerOperand('a', 'dst', a)];
 		case OpCode.KFALSE:
@@ -350,7 +350,7 @@ const buildInstructionOperands = (
 		case OpCode.KM1:
 			return [registerOperand('a', 'dst', a)];
 		case OpCode.KSMI:
-			return [registerOperand('a', 'dst', a), plainOperand('bx', 'imm', formatNumber(sbx))];
+			return [registerOperand('a', 'dst', a), plainOperand('bx', 'imm', formatInteger(sbx))];
 		case OpCode.LOADK:
 			return [registerOperand('a', 'dst', a), plainOperand('bx', 'const', formatSourceConst(source, bx, options))];
 		case OpCode.LOADKR:
@@ -426,11 +426,11 @@ const buildInstructionOperands = (
 		case OpCode.SETUP:
 			return [registerOperand('a', 'src', a), plainOperand('b', 'upvalue', `u${b}`)];
 		case OpCode.VARARG:
-			return [registerOperand('a', 'dst', a), plainOperand('b', 'count', formatCount(b))];
+			return [registerOperand('a', 'dst', a), plainOperand('b', 'count', formatValueCount(b))];
 		case OpCode.CALL:
-			return [registerOperand('a', 'callee', a), plainOperand('b', 'args', formatCallArgCount(b)), plainOperand('c', 'returns', formatCount(c))];
+			return [registerOperand('a', 'callee', a), plainOperand('b', 'args', formatValueCount(b)), plainOperand('c', 'returns', formatValueCount(c))];
 		case OpCode.RET:
-			return [registerOperand('a', 'base', a), plainOperand('b', 'count', formatCount(b))];
+			return [registerOperand('a', 'base', a), plainOperand('b', 'count', formatValueCount(b))];
 		case OpCode.LOAD_MEM_D:
 			return [registerOperand('a', 'dst', a), registerOperand('b', 'base', b), plainOperand('c', 'kind', c.toString()), plainOperand('disp', 'disp', `${decoded.disp << 2}`)];
 		case OpCode.STORE_MEM_D:
@@ -528,7 +528,7 @@ const formatInstruction = (
 	const { op, a, b, c, bx, sbx, pc } = decoded;
 	switch (op) {
 		case OpCode.MOV:
-			return `MOV r${a}, r${b}`;
+			return `MOV r${a}, r${b}${c === 0 ? "" : `, ${c}`}`;
 		case OpCode.KNIL:
 			return `KNIL r${a}`;
 		case OpCode.KFALSE:
@@ -542,7 +542,7 @@ const formatInstruction = (
 		case OpCode.KM1:
 			return `KM1 r${a}`;
 		case OpCode.KSMI:
-			return `KSMI r${a}, ${formatNumber(sbx)}`;
+			return `KSMI r${a}, ${formatInteger(sbx)}`;
 		case OpCode.LOADK:
 			return `LOADK r${a}, ${formatSourceConst(source, bx, options)}`;
 		case OpCode.LOADKR:
@@ -630,11 +630,11 @@ const formatInstruction = (
 		case OpCode.SETUP:
 			return `SETUP r${a}, u${b}`;
 		case OpCode.VARARG:
-			return `VARARG r${a}, ${formatCount(b)}`;
+			return `VARARG r${a}, ${formatValueCount(b)}`;
 		case OpCode.CALL:
-			return `CALL r${a}, ${formatCallArgCount(b)}, ${formatCount(c)}`;
+			return `CALL r${a}, ${formatValueCount(b)}, ${formatValueCount(c)}`;
 		case OpCode.RET:
-			return `RET r${a}, ${formatCount(b)}`;
+			return `RET r${a}, ${formatValueCount(b)}`;
 		case OpCode.MFC0:
 			return `MFC0 r${a}, c${b}`;
 		case OpCode.MTC0:

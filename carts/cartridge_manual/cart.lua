@@ -61,19 +61,14 @@ for slot = 0, 1 do
 	result.after_ack[slot] = *mail_status
 end
 
--- Slot0 READ request, slot1 WRITE request. No FIFO is implied.
-*cart_select = 0
-*mail_control = 2
-result.requests[0] = *mail_control
-*cart_select = 1
-*mail_control = 4
-result.requests[1] = *mail_control
+-- Storage COPY needs no cartridge DREQ. CPU remains on slot 1; DMA selects
+-- slot 0 for the ROM source and slot 1 for the RAM destination.
 result.seed_address = seed
 *dma_read = seed
 *dma_write = 0x30000010
 *dma_count = 4
--- Block4; READ_REQUEST8; WRITE_REQUEST9; increment both addresses.
-*dma_control = 0x00000e63
+-- COPY with READ_SLOT=0 and WRITE_SLOT=1.
+*dma_control = 0x00000010
 *dma_trigger = 1
 while (*dma_status & 1) ~= 0 do
 end

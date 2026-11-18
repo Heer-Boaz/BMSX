@@ -203,14 +203,14 @@ test('compact pixel readings keep exact fractional drafts and source through foc
 	const f = fixture(t, `{member_id='node',definition_id='node2',position={x=0.7761194029850,y=8.6567164179104}}`);
 	const version = f.model.version, field = f.control.controls[0];
 	assert.deepEqual(f.view.properties.map(property => property.text), ['0.78', '8.66']);
-	assert.equal(field.field.text, '0.776119402985');
+	assert.equal(field.field.text, String(Math.fround(0.776119402985)));
 	assert.equal(field.field.focusTarget.focus(), true);
 	assert.equal(field.pending, false);
 	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.version, version); assert.equal(f.model.canUndo, false);
 	field.field.focusTarget.focus(); setFieldText(field.field, '9.75', true);
 	inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none));
-	assert.equal(field.field.text, '0.776119402985'); assert.equal(field.pending, false);
+	assert.equal(field.field.text, String(Math.fround(0.776119402985))); assert.equal(field.pending, false);
 	field.field.focusTarget.focus(); setFieldText(field.field, '0.7761194029850', true);
 	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
 	f.control.update();
@@ -222,18 +222,18 @@ test('editing a compact pixel reading accepts the entered value rather than rest
 	const f = fixture(t, `{member_id='node',definition_id='node2',position={x=0.7761194029850,y=8.6567164179104}}`);
 	const field = f.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '0.78', true);
 	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none)); f.control.update();
-	assert.equal(f.model.buffer.getText(), f.source.replace('0.7761194029850', '0.78'));
-	assert.equal(f.authoring.selectedLocalTransform!.ox, 0.78);
+	assert.equal(f.model.buffer.getText(), f.source.replace('0.7761194029850', String(Math.fround(0.78))));
+	assert.equal(f.authoring.selectedLocalTransform!.ox, Math.fround(0.78));
 	f.model.undo(); f.control.update(); assert.equal(f.model.buffer.getText(), f.source);
 });
 
 test('compact 3D readings retain significant small values and expose exact drafts without rounding canonical source', t => {
 	const f = fixture(t, `{member_id='node',definition_id='node3',position={x=0.7761194029850,y=8.6567164179104,z=0.0000123456789}}`);
 	// Displayed scalar formatting is the component's explicit presentation contract.
-	assert.deepEqual(f.view.properties.map(property => property.text), ['0.776119', '8.65672', '1.23457e-05']);
-	assert.equal(f.control.controls[0].field.text, '0.776119402985'); assert.equal(f.model.buffer.getText(), f.source);
+	assert.deepEqual(f.view.properties.map(property => property.text), ['0.7761194', '8.656716', '1.234568e-05']);
+	assert.equal(f.control.controls[0].field.text, String(Math.fround(0.776119402985))); assert.equal(f.model.buffer.getText(), f.source);
 	const field = f.control.controls[2]; field.field.focusTarget.focus();
-	assert.equal(field.field.text, '0.0000123456789');
+	assert.equal(field.field.text, String(Math.fround(0.0000123456789)));
 	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none)); f.control.update();
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
@@ -241,7 +241,7 @@ test('compact 3D readings retain significant small values and expose exact draft
 test('two-decimal pixel readings preserve whole-pixel digits and omit insignificant trailing zeros', t => {
 	const f = fixture(t, `{member_id='node',definition_id='node2',position={x=1234.56789,y=-8.5}}`);
 	assert.deepEqual(f.view.properties.map(property => property.text), ['1234.57', '-8.5']);
-	assert.equal(f.control.controls[0].field.text, '1234.56789'); assert.equal(f.model.buffer.getText(), f.source);
+	assert.equal(f.control.controls[0].field.text, String(Math.fround(1234.56789))); assert.equal(f.model.buffer.getText(), f.source);
 });
 
 for (const font of ['tiny', 'msx'] as const) test(`${font} Details paints compact idle pixels and exact focused drafts without the internal authored heading`, t => {
@@ -253,11 +253,11 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} Details paints compac
 	t.mock.method(api, 'blit_text_inline_span_with_font', (text, start, end) => labels.push(text.slice(start, end)));
 	f.control.draw();
 	assert.ok(labels.includes('0.78') && labels.includes('8.66'));
-	assert.equal(labels.includes('0.776119402985'), false);
+	assert.equal(labels.includes(String(Math.fround(0.776119402985))), false);
 	// The user explicitly removed this internal heading, not the Order property.
 	assert.equal(labels.includes('AUTHORED VALUES'), false); assert.ok(labels.includes('ORDER'));
 	f.control.controls[0].field.focusTarget.focus(); labels.length = 0; f.control.draw();
-	assert.ok(labels.includes('0.776119402985')); assert.equal(labels.includes('0.78'), false);
+	assert.ok(labels.includes(String(Math.fround(0.776119402985)))); assert.equal(labels.includes('0.78'), false);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 
@@ -293,7 +293,7 @@ test('retained Details fields rebind their editing authority after scope retirem
 	assert.equal(f.model.version, version); assert.equal(f.model.buffer.getText(), f.source);
 	assert.equal(field.field.focusTarget.focus(), true);
 	setFieldText(field.field, '0.7761194029850746', true); assert.equal(field.commit(), true); f.control.update();
-	assert.equal(f.authoring.selectedLocalTransform!.ox, 0.7761194029850746);
+	assert.equal(f.authoring.selectedLocalTransform!.ox, Math.fround(0.7761194029850746));
 	assert.equal(f.model.version, version + 1);
 });
 
@@ -306,7 +306,7 @@ test('retained Details fields renew their request after an unchanged scene gets 
 	assert.equal(field.field.focusTarget.focus(), true);
 	setFieldText(field.field, '0.7761194029850746', true);
 	assert.equal(field.commit(), true); f.control.update();
-	assert.equal(f.authoring.selectedLocalTransform!.ox, 0.7761194029850746);
+	assert.equal(f.authoring.selectedLocalTransform!.ox, Math.fround(0.7761194029850746));
 	assert.equal(f.model.version, version + 1);
 });
 

@@ -1,3 +1,4 @@
+import { valueBool } from '../../machine/ts/machine/cpu/value';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import assert from 'node:assert/strict';
@@ -88,7 +89,7 @@ export async function createLiveStudioFixture(t: TestContext, presentation: 'vie
 		assert.ok(condition(), 'operation completes through normal Studio frame progress');
 	};
 	assert.equal(ide.boots.start('installed').result!.status, 'reset');
-	await until(() => ide.guest.global('studio_test_ready') === true);
+	await until(() => ide.guest.global('studio_test_ready') === valueBool(true));
 	ide.transport.pause();
 	display.workspace.layout(2400, 1080, 1);
 	editor.activate();

@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
 import { test } from 'node:test';
 
+import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
+import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { AcceptedInterruptKind } from '../../machine/ts/machine/cpu/cpu';
 import type {
 	InputControllerInputSource,
@@ -21,6 +24,12 @@ import {
 	IO_APU_TRANSFER_CONTROL,
 	IO_APU_TRANSFER_DATA,
 	IO_CART_SELECT,
+	IO_DMA0_READ_ADDR,
+	IO_DMA0_CONTROL,
+	IO_DMA0_TRANSFER_COUNT,
+	IO_DMA0_TRIGGER,
+	IO_GX_GPU_GP0,
+	IO_GX_GPU_GP1,
 	IO_INP_CTRL,
 	IO_INP_KEYS,
 	IO_INP_STATUS,
@@ -29,6 +38,8 @@ import {
 	IO_SYS_CONTROL,
 	IRQ_VBLANK,
 	SYS_CONTROL_RESET,
+	SYS_CONTROL_SUPERVISOR_FAULT,
+	SYS_CONTROL_SUPERVISOR_LEAVE,
 } from '../../machine/ts/spec/bmsx/io';
 import { CART_RAM_BASE, IO_WORD_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
@@ -37,7 +48,8 @@ import {
 } from '../../machine/ts/spec/bmsx/model';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { GX_GPU_READBACK_IDLE, GX_GPU_READBACK_PENDING, GX_GPU_READBACK_READY } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_PCRTC_SMODE1_HIGH,
@@ -130,14 +142,14 @@ test('device settlement reaches real VBlank without executing the stopped CPU or
 	const { cpu, memory } = runtime.machine, scheduler = runtime.frameScheduler;
 	memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK);
 	memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
-	const thread = cpu.activeThread, depth = thread.frames.length, pc = thread.frames[depth - 1].pc, stackTop = thread.stackTop;
+	const thread = cpu.activeThread, depth = thread.frameDepth, pc = thread.currentFrame!.pc, stackTop = thread.stackTop;
 	assert.equal(scheduler.runDevicesToNextLogicalTick(19), false);
 	assert.equal(runtime.machine.scheduler.nowCycles, 19);
 	assert.equal(scheduler.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
 	assert.equal(scheduler.lastTickSequence, 1);
 	assert.equal(input.sampleCount, 1);
 	assert.notEqual(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, 0, 'the real device edge raises its IRQ');
-	assert.equal(cpu.activeThread, thread); assert.equal(thread.frames.length, depth); assert.equal(thread.frames[depth - 1].pc, pc);
+	assert.equal(cpu.activeThread, thread); assert.equal(thread.frameDepth, depth); assert.equal(thread.currentFrame!.pc, pc);
 	assert.equal(thread.stackTop, stackTop);
 	assert.equal(scheduler.lastTickCpuUsedCycles, 0);
 	assert.equal(scheduler.lastTickBudgetGranted - scheduler.lastTickBudgetRemaining, runtime.machine.scheduler.nowCycles);
@@ -158,6 +170,123 @@ test('device settlement retains split grants at a backend fence and resumes with
 	assert.equal(runtime.machine.scheduler.nowCycles, 204);
 	assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
 	assert.equal(runtime.frameLoop.frameState.activeCpuUsedCycles, 0);
+});
+
+test('supervisor GPU service drains completed subcapacity work after device and admitted DMA deadlines', () => {
+	for (const dmaUpload of [false, true]) {
+		const { runtime } = createTickRuntime();
+		const { gxGpu: gpu, memory, systemController: system, dmaController: dma } = runtime.machine;
+		const scheduler = runtime.frameScheduler;
+		const backend = new HeadlessGPUBackend(16, 2, PSX_MACHINE_SPEC.gxGpuVramBytes);
+		const words = [0x020000ff, 0, 0x00020010];
+		if (dmaUpload) {
+			const source = RAM_BASE + 0x20000;
+			memory.writeMappedU32LE(IO_GX_GPU_GP1, 0x04000002);
+			words.forEach((word, index) => memory.writeMappedU32LE(source + index * 4, word));
+			memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
+			memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, words.length);
+			memory.writeMappedU32LE(IO_DMA0_CONTROL, 1); // RAM -> GP0
+			memory.writeMappedU32LE(IO_DMA0_TRIGGER, 1);
+		} else for (const word of words) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+		memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+		if (dmaUpload) {
+			const burst = dma.captureState().scheduledBlockCycles;
+			assert.equal(burst, 7, 'three RAM reads and GP0 writes retain their serial bus charge');
+			scheduler.runDevicesToNextLogicalTick(burst - 1);
+			assert.equal(dma.hasAdmittedWriteBlock(IO_GX_GPU_GP0), true);
+			assert.equal(gpu.captureState().supervisorIngressQuiesceRequested, false);
+			assert.equal(gpu.backendServicePending(), false);
+			assert.equal(gpu.readDeviceOutput().commandBuffer.commandCount, 0);
+			scheduler.runDevicesToNextLogicalTick(1);
+			assert.equal(dma.hasAdmittedWriteBlock(IO_GX_GPU_GP0), false);
+		}
+		const completion = gpu.captureState().pendingCommandCycles;
+		assert.ok(completion > 1);
+		scheduler.runDevicesToNextLogicalTick(completion - 1);
+		assert.equal(gpu.backendServicePending(), false, 'accepted drawing does not complete early at quiescence');
+		assert.equal(system.cpuHeld(), true);
+		scheduler.runDevicesToNextLogicalTick(1);
+		const completedAt = runtime.machine.scheduler.nowCycles;
+		assert.equal(gpu.readDeviceOutput().commandBuffer.commandCount, 1);
+		assert.equal(gpu.backendCommandDrainPending(), true, 'one completed command is sufficient at the GPU boundary');
+		scheduler.runDevicesToNextLogicalTick(19);
+		assert.equal(runtime.machine.scheduler.nowCycles, completedAt, 'backend latency does not spend guest cycles');
+		let drains = 0;
+		while (gpu.backendServicePending()) {
+			assert.equal(gpu.backendCommandDrainPending(), true);
+			backend.executeGxGpuCommandDrain(gpu);
+			++drains;
+		}
+		assert.equal(drains, 1);
+		scheduler.synchronizeBackendService();
+		scheduler.runDevicesToNextLogicalTick(0);
+		assert.equal(system.cpuHeld(), false);
+		assert.equal(system.supervisorContextActive(), true);
+		assert.equal(runtime.machine.scheduler.nowCycles, completedAt + 19);
+		assert.equal(scheduler.lastTickSequence, 0, 'supervisor entry does not wait for presentation');
+		backend.captureGxGpuVramSnapshot(gpu);
+		assert.equal(gpu.readVramSnapshotBytes()[0], 31, 'the actual backend executes the completed fill before takeover');
+
+		// LEAVE has the same GPU boundary for supervisor work.
+		for (const word of [0x0200ff00, 0, 0x00020010]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+		memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+		const leaveCycles = gpu.captureState().pendingCommandCycles;
+		scheduler.runDevicesToNextLogicalTick(leaveCycles + 1);
+		assert.equal(gpu.backendCommandDrainPending(), true);
+		assert.equal(system.cpuHeld(), true);
+		while (gpu.backendServicePending()) backend.executeGxGpuCommandDrain(gpu);
+		scheduler.synchronizeBackendService();
+		scheduler.runDevicesToNextLogicalTick(0);
+		assert.equal(system.supervisorContextActive(), false);
+		backend.captureGxGpuVramSnapshot(gpu);
+		assert.equal(readLE32(gpu.readVramSnapshotBytes(), 0), 0x03e003e0);
+	}
+});
+
+test('supervisor service completes and banks unread GPUREAD through the ordinary backend loop', () => {
+	const { runtime } = createTickRuntime();
+	const { gxGpu: gpu, memory, systemController: system } = runtime.machine;
+	const scheduler = runtime.frameScheduler;
+	const backend = new HeadlessGPUBackend(16, 2, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const bytes = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bytes.set([0x11, 0x11, 0x22, 0x22, 0x33, 0x33, 0x44, 0x44, 0x55, 0x55]);
+	gpu.replaceVramSnapshotBytes(bytes);
+	for (const word of [0xc0000000, 0, 0x00010005]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+	const completion = gpu.captureState().pendingCommandCycles;
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+	scheduler.runDevicesToNextLogicalTick(completion + 9);
+	const readback = gpu.readDeviceOutput().readbackPort;
+	assert.equal(readback.phase, GX_GPU_READBACK_PENDING);
+	assert.equal(gpu.backendCommandDrainPending(), false, 'readback must produce its bytes before retirement');
+	let readbacks = 0, drains = 0;
+	while (gpu.backendServicePending()) {
+		if (gpu.backendCommandDrainPending()) {
+			assert.equal(readback.phase, GX_GPU_READBACK_READY);
+			assert.equal(readback.pixelCursor, 0, 'retirement must not consume guest pixels');
+			backend.executeGxGpuCommandDrain(gpu);
+			++drains;
+		} else {
+			backend.executeGxGpuReadback(gpu);
+			++readbacks;
+		}
+	}
+	assert.equal(readbacks, 1);
+	assert.equal(drains, 1);
+	scheduler.synchronizeBackendService();
+	scheduler.runDevicesToNextLogicalTick(0);
+	assert.equal(system.cpuHeld(), false);
+	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(gpu.captureState().userIngressContext.readbackPhase, GX_GPU_READBACK_READY);
+	assert.equal(gpu.captureState().userIngressContext.readbackPixelCursor, 0);
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+	scheduler.runDevicesToNextLogicalTick(1);
+	assert.equal(system.supervisorContextActive(), false);
+	assert.equal(readback.phase, GX_GPU_READBACK_READY);
+	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0x22221111);
+	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0x44443333);
+	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0x5555);
+	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(scheduler.lastTickSequence, 0);
 });
 
 test('busy CPU execution publishes consumed cycles before VBlank carries the remaining grant', () => {
@@ -190,6 +319,109 @@ test('busy CPU execution publishes consumed cycles before VBlank carries the rem
 	scheduler.stepInstruction(1);
 	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted - runtime.frameLoop.frameState.activeCpuUsedCycles,
 		runtime.frameLoop.frameState.cycleBudgetRemaining, 'instruction stepping updates the same budget owner');
+});
+
+test('shared-bus DMA stops instruction execution until serial read/write completion', () => {
+	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.JMP, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.HALT, 0, 0, 0, 0);
+	const system = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 2 }],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0 });
+	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, new TickInputSource());
+	runtime.boot();
+	const { memory, cpu, dmaController } = runtime.machine;
+	const source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
+	memory.writeMappedU32LE(source, 0x12345678);
+	memory.writeMappedU32LE(0x0800000c, source);
+	memory.writeMappedU32LE(0x08000010, target);
+	memory.writeMappedU32LE(0x08000014, 256);
+	memory.writeMappedU32LE(0x08000018, 0x00000000);
+	memory.writeMappedU32LE(0x08000020, 1);
+	const frame = cpu.activeThread.frameAtDepth(cpu.activeThread.frameDepth - 1);
+	const pc = frame.pc;
+	assert.equal(dmaController.captureState().scheduledBlockCycles, 514);
+	runtime.frameScheduler.runCyclesToNextLogicalTick(513);
+	assert.equal(frame.pc, pc, 'no instruction or interrupt entry runs while DMA owns the bus');
+	assert.equal(memory.readMappedU32LE(target), 0);
+	assert.equal(dmaController.cpuBusHeld(), true);
+	runtime.frameScheduler.runCyclesToNextLogicalTick(1);
+	assert.equal(memory.readMappedU32LE(target), 0x12345678);
+	assert.equal(dmaController.cpuBusHeld(), false);
+	assert.equal(frame.pc, pc);
+	runtime.frameScheduler.runCyclesToNextLogicalTick(1);
+	assert.notEqual(frame.pc, pc, 'instruction execution resumes after bus release');
+});
+
+test('warmed generated MMIO starts DMA, yields the bus, and resumes only after real burst completion', () => {
+	const code = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	for (let word = 0; word < 5; ++word) {
+		writeInstruction(code, word, OpCode.STORE_MEM_D, word, 5, MemoryAccessKind.U32LE, word === 4 ? 5 : word);
+	}
+	writeInstruction(code, 5, OpCode.LOAD_MEM, 7, 1, MemoryAccessKind.U32LE);
+	writeInstruction(code, 6, OpCode.ADD, 6, 6, 4);
+	writeInstruction(code, 7, OpCode.JMP, 0, 63, 56, 255); // -8 words
+	const system = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 8, maxStack: 8 }],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0 });
+	const runtimes = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(cpuExecutionBackend => {
+		const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(),
+			machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend }, new TickInputSource());
+		runtime.boot();
+		return runtime;
+	});
+	const source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
+	const entry = system.image.functions[0].codeAddress;
+	for (const runtime of runtimes) {
+		const registers = runtime.machine.cpu.activeThread.frameAtDepth(0).registers;
+		[source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0].forEach((value, index) => registers.setInteger(index, value));
+		for (let word = 0; word < 256; ++word) runtime.machine.memory.writeMappedU32LE(source + word * 4, 0x12340000 + word);
+		// Five MMIO stores, 514 bus cycles, then load/add/backedge.
+		const loopCycles = 5 * BASE_CYCLES[OpCode.STORE_MEM_D] + 514
+			+ BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP];
+		runtime.frameScheduler.runCyclesToNextLogicalTick(16 * loopCycles);
+		assert.equal(runtime.machine.cpu.activeThread.frameAtDepth(0).pc, entry);
+		assert.equal(registers.getInteger(6), 16);
+	}
+	const generatedPage = runtimes[0].machine.cpu.activeThread.frameAtDepth(0).decodedPage!;
+	const triggerWord = ((entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2) + 4;
+	const trigger = generatedPage.compiledBlocks!.entries[triggerWord]!;
+	assert.ok(trigger, 'the DMA trigger has a warmed generated entry before the exclusion probes');
+	assert.ok(trigger.exits.some(exit => exit.exit === CompiledBlockExit.WriteMemory && exit.currentPc === entry + 16),
+		'the generated trigger retains the actual MMIO owner exit');
+	assert.equal(runtimes[1].machine.cpu.activeThread.frameAtDepth(0).decodedPage!.compiledBlocks, null);
+	const run = (grant: number): void => {
+		for (const runtime of runtimes) runtime.frameScheduler.runCyclesToNextLogicalTick(grant);
+		assert.deepEqual(captureRuntimeSaveState(runtimes[0]), captureRuntimeSaveState(runtimes[1]),
+			`generated and scalar machines agree at the DMA boundary after grant ${grant}`);
+	};
+	for (let iteration = 0; iteration < 2; ++iteration) {
+		for (const runtime of runtimes) {
+			for (let word = 0; word < 256; ++word) {
+				runtime.machine.memory.writeMappedU32LE(source + word * 4, 0x43210000 + iteration * 256 + word);
+				runtime.machine.memory.writeMappedU32LE(target + word * 4, 0);
+			}
+		}
+		run(5 * BASE_CYCLES[OpCode.STORE_MEM_D] + 1); // Leave budget after TRIGGER: its MMIO exit must yield, not execute the load.
+		const { cpu, memory, dmaController } = runtimes[0].machine;
+		const frame = cpu.activeThread.frameAtDepth(0);
+		assert.equal(frame.pc, entry + 20);
+		assert.equal(frame.registers.getInteger(6), 16 + iteration);
+		assert.equal(dmaController.cpuBusHeld(), true);
+		assert.equal(dmaController.captureState().scheduledBlockCycles, 513);
+		run(512);
+		assert.equal(frame.pc, entry + 20);
+		assert.equal(dmaController.cpuBusHeld(), true);
+		for (let word = 0; word < 256; ++word) assert.equal(memory.readMappedU32LE(target + word * 4), 0);
+		run(1);
+		assert.equal(frame.pc, entry + 20, 'the final DMA cycle cannot also execute the continuation');
+		assert.equal(dmaController.cpuBusHeld(), false);
+		for (let word = 0; word < 256; ++word) assert.equal(memory.readMappedU32LE(target + word * 4), 0x43210000 + iteration * 256 + word);
+		run(BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP]);
+		assert.equal(frame.pc, entry);
+		assert.equal(frame.registers.getInteger(6), 17 + iteration);
+		assert.equal(frame.registers.getInteger(7), 0x43210000 + iteration * 256, 'the resumed load observes DMA output');
+	}
 });
 
 test('runtime checkpoint storage reuses owner buffers without consuming independent snapshots', () => {

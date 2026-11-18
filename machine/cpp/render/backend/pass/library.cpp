@@ -3,6 +3,7 @@
  */
 
 #include "library.h"
+#include "render/post/crt/noise.h"
 #include "common/hash.h"
 #include "common/primitives.h"
 #include "../../video_presenter.h"
@@ -18,7 +19,6 @@ namespace bmsx {
 
 namespace {
 
-constexpr f32 kCrtNoiseOffsetScale = 1.0f / 16777216.0f;
 
 void noopRenderPass(
 	GPUBackend*,
@@ -26,7 +26,7 @@ void noopRenderPass(
 	void*,
 	RenderPassStateStorage&,
 	void*,
-	const GxGpuDeviceOutput&
+	const GxGpuPresentation&
 ) {
 }
 
@@ -103,14 +103,13 @@ void writeAutoCRTPipelineState(
 	crtState.height = static_cast<i32>(presenter->canvasSize.y);
 	crtState.srcWidth = static_cast<i32>(presenter->offscreenCanvasSize.x);
 	crtState.srcHeight = static_cast<i32>(presenter->offscreenCanvasSize.y);
-	crtState.time = static_cast<f32>(ctx.time);
 
 	crtState.colorTex = presentedHistoryTexture(ctx);
 
 	const bool applyCrt = presenter->crt_postprocessing_enabled;
 	crtState.options.applyNoise = applyCrt && presenter->applyNoise;
 	if (crtState.options.applyNoise) {
-		crtState.noiseOffset = static_cast<f32>(fmix32(ctx.frameIndex) >> 8u) * kCrtNoiseOffsetScale;
+		crtState.noisePhase = fmix32(ctx.frameIndex) & CRTPipeline::NOISE_PHASE_MASK;
 	}
 	crtState.options.noiseIntensity = presenter->noiseIntensity;
 	crtState.options.applyColorBleed = applyCrt && presenter->applyColorBleed;
@@ -267,7 +266,7 @@ bool RenderPassLibrary::has(const std::string& id) const {
 void RenderPassLibrary::execute(
 	const std::string& id,
 	void* fbo,
-	const GxGpuDeviceOutput& output
+	const GxGpuPresentation& output
 ) {
 	auto it = m_registered.find(id);
 	if (it == m_registered.end()) {

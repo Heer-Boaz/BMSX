@@ -1,3 +1,4 @@
+import { integerConstant, parseNumberConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
@@ -54,9 +55,9 @@ return -a.len, ~a.len, a.len + 4, 4 - a.len, a.len - a.len, a.len + b.len`;
 		{ path: 'a', source: a, chunk: parseLuaChunk(a, 'a.lua').chunk, linkValues: new Map([['len', 6156]]) },
 		{ path: 'b', source: b, chunk: parseLuaChunk(b, 'b.lua').chunk, linkValues: new Map([['len', 8]]) },
 	], { entrySource: source, programDomain: 'system', optLevel });
-	const aValue = { kind: 'export', exportPath: 'len', value: 6156 };
-	const bValue = { kind: 'export', exportPath: 'len', value: 8 };
-	const number = { kind: 'number', value: 4 };
+	const aValue = { kind: 'export', exportPath: 'len', value: integerConstant(6156) };
+	const bValue = { kind: 'export', exportPath: 'len', value: integerConstant(8) };
+	const number = { kind: 'number', value: integerConstant(4) };
 	assert.deepEqual(compiled.constValueRelocs.map(({ constIndex: _index, ...relocation }) => relocation), [
 		{ kind: 'link_value', modulePath: 'a', expression: { kind: 'unary', operator: LuaUnaryOperator.Negate, operand: aValue } },
 		{ kind: 'link_value', modulePath: 'a', expression: { kind: 'unary', operator: LuaUnaryOperator.BitwiseNot, operand: aValue } },
@@ -133,16 +134,16 @@ return sizeof(record), offsetof(record.rows), #records`);
 	const statement = file.chunk.body.get(file.chunk.body.length - 1);
 	assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
 	assert.deepEqual(statement.expressions.map(expression => types.constants.evaluate(file, expression)),
-		[{ kind: 'number', value: 32 }, { kind: 'number', value: 8 }, { kind: 'number', value: 2 }]);
+		[{ kind: 'number', value: integerConstant(32) }, { kind: 'number', value: integerConstant(8) }, { kind: 'number', value: integerConstant(2) }]);
 });
 
 test('static scalar operators use BLua UTF-8, numeric formatting, and tagged symbol semantics', () => {
 	assert.deepEqual(evaluateStaticBinaryOperator(LuaBinaryOperator.Concat,
-		{ kind: 'string', value: 'é' }, { kind: 'number', value: 0x100000001 }), { kind: 'string', value: 'é4.29497e+09' });
+		{ kind: 'string', value: 'é' }, { kind: 'number', value: parseNumberConstant('4294967296.0')! }), { kind: 'string', value: 'é4.294967e+09' });
 	assert.deepEqual(evaluateStaticUnaryOperator(LuaUnaryOperator.Length, { kind: 'string', value: 'é🪐' }),
-		{ kind: 'number', value: 2 });
+		{ kind: 'number', value: integerConstant(2) });
 	assert.deepEqual(evaluateStaticBinaryOperator(LuaBinaryOperator.FloorDivide,
-		{ kind: 'number', value: -7 }, { kind: 'number', value: 3 }), { kind: 'number', value: -3 });
+		{ kind: 'number', value: integerConstant(-7) }, { kind: 'number', value: integerConstant(3) }), { kind: 'number', value: integerConstant(-3) });
 	const address = { kind: 'rodata_addr' as const, symbolHandle: 'owned-symbol' };
 	assert.deepEqual(evaluateStaticUnaryOperator(LuaUnaryOperator.Not, address), { kind: 'boolean', value: false });
 	assert.equal(evaluateStaticBinaryOperator(LuaBinaryOperator.Equal, address, address), undefined);
@@ -151,7 +152,7 @@ test('static scalar operators use BLua UTF-8, numeric formatting, and tagged sym
 test('binding admission preserves external symbol identity through short-circuit expressions', () => {
 	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['identity.lua']));
 	const file = workspace.updateFile('identity.lua', 'return external.value or 3, external.value and external.value, not external.value');
-	const address = { kind: 'link_value' as const, modulePath: 'external', expression: { kind: 'number', value: 0 } };
+	const address = { kind: 'link_value' as const, modulePath: 'external', expression: { kind: 'number', value: integerConstant(0) } };
 	const types = new StructTypes(workspace.getSnapshot(), { value: () => address, storage: () => undefined });
 	const statement = file.chunk.body.get(0);
 	assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);

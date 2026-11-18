@@ -9,8 +9,6 @@ namespace bmsx {
 constexpr size_t IMGDEC_HISTORY_WORD_CAPACITY = 4096u;
 constexpr size_t IMGDEC_HISTORY_WORD_MASK = IMGDEC_HISTORY_WORD_CAPACITY - 1u;
 
-constexpr u32 IMGDEC_STREAM_MAGIC = 0x31444d49u;
-constexpr u32 IMGDEC_STREAM_HEADER_WORDS = 3u;
 
 constexpr u32 IMGDEC_TOKEN_KIND_SHIFT = 30u;
 constexpr u32 IMGDEC_TOKEN_KIND_LITERAL = 0u;

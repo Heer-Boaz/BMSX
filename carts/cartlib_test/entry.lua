@@ -50,6 +50,7 @@ cartlib_test_gte_plus_ready = true
 
 cartlib_test_ready = false
 world:clear()
+world:start()
 vblank.wait()
 cartlib_test_ready = true
 

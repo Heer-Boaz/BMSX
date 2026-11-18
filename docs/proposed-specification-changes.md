@@ -20,31 +20,134 @@ voedingsstroom goedgekeurd.
 
 ## Plaats van dit document
 
-De console wordt eerst als samenhangend fantasyconsole-ontwerp uitgewerkt. De
-onderstaande fysieke analyses blijven bewaard: ze geven aan welke keuzes en
-verschillen aandacht vragen als het ontwerp later als echte hardware wordt
-uitgevoerd. Een nog niet gekwalificeerde schakeling maakt een beschreven
-fantasyconsole-functie niet automatisch ongeldig. Omgekeerd bewijst een
-functionele beschrijving niet dat de oorspronkelijke timing fysiek haalbaar is.
+Het doel is één samenhangend consoleontwerp met een fysiek realistisch
+hardwarecontract en een efficiënte emulator. De bestaande Books I–III en de
+TypeScript- en C++-runtimes beschrijven het uitgangspunt, niet het bewijs dat
+de huidige timing, capaciteit of garanties fysiek haalbaar zijn. Een voorstel
+wordt dus niet afgewezen omdat het van die bestaande afspraken afwijkt.
+Een eenvoudiger, PSX-achtiger contract mag de huidige organisatie vervangen.
+Dit betreft het hele document, niet alleen IMGDEC en DMA.
 
-De goedgekeurde richtingen voor DMA, GEO, CPU-timing en video blijven staan als
-uitgangspunt voor de latere fysieke uitwerking. De bestaande Books I–III en de
-emulator blijven de huidige programmeercontracten totdat concrete wijzigingen samen
-worden vastgesteld en verwerkt. Ook de keuze voor mono als standaardbron met
-onafhankelijke links-/rechtsniveaus blijft bewaard; de precieze interface is
-nog een voorstel.
+De fysieke analyses helpen die nieuwe afspraken kiezen. Een nog niet
+gekwalificeerde schakeling bewijst niet dat iedere uitvoering van een functie
+onmogelijk is; omgekeerd bewijst een functionele emulator geen haalbaar
+moederbord. Elektrische en mechanische kwalificatie blijven afzonderlijk nodig.
+
+Realistische guesttiming en efficiënte hostuitvoering zijn beide vereist.
+Een nieuwe instructieduur volgt uit de gekozen machine, niet uitsluitend uit
+de snelheid van één emulatorhost. Een grotere theoretische bandbreedte bewijst
+evenmin dat ROM-streaming samen met tekenen, gamecode en geluid werkelijk
+realtime werkt. De prestatie-intentie voor normaal BLua-gebruik uit
+[CPU-uitvoering](#sec-proposal-cpu-execution) blijft daarbij behouden.
+
+Een nieuw ROM- of apparaatdataformaat moet eveneens uit het gekozen
+hardwarecontract volgen, niet uit een goedkoper pad op de SNES Mini of een
+andere emulatorhost. De packer mag bronmateriaal omzetten naar het echte
+apparaatformaat; hostspecifieke caches, voorberekende decodertoestand en
+uitvoeringsversnellingen horen niet daarom in de cartridgegegevens terecht
+te komen. Een formaatwijziging blijft mogelijk wanneer de hardwarefunctie en
+haar kosten die zelfstandig rechtvaardigen. Alleen vaststellen dat de PSX of
+N64 ook blokken gebruikt, onderbouwt geen specifieke BMSX-blokindeling of timing.
+
+Concrete wijzigingen worden samen verwerkt in de publieke handleidingen,
+beide runtimes en de betrokken BIOS-, cartridge- en testproducenten. Behoud
+van oude versies of savestates is geen ontwerpvoorwaarde; een migratie- of
+compatibiliteitslaag is niet vereist. De bestaande registerwerking blijft
+tot die gezamenlijke wijziging wel het beschreven huidige gedrag, niet een
+reden om een onrealistische afspraak te behouden. De goedgekeurde richtingen
+in het overzicht blijven uitgangspunt; nog niet gekozen numerieke grenzen
+worden hiermee niet stilzwijgend vastgesteld.
+
+## Ontwerpbesluit: eenvoud vóór behoud van het bestaande model
+
+De PSX en N64 zijn referenties voor de benodigde mechanismen, niet alleen
+voor een gewenst prestatieniveau. Een ingewikkelder BMSX-contract vereist een
+concrete functie die de meerkosten rechtvaardigt. Zonder zo'n reden wordt het
+contract vereenvoudigd, ook wanneer bestaande software, registerinterfaces,
+tests of constructiekandidaten daardoor moeten veranderen. De onderstaande
+uitwerkingsstudies leggen dus geen behoudsplicht op voor de huidige details.
+
+Voor IMGDEC en DMA betekent dit **blokverwerking als uitgangspunt**, niet een
+groter decode-quantum boven op dezelfde fijnmazige planning. De kern is een
+begrensd invoer-/uitvoerblok, bulktransport en afzonderlijke zichtbare
+voltooiing. Per-woordbuscycli in de fysieke datapath vereisen niet automatisch
+een openbaar voortgangspunt of een emulator-event per woord. De gekozen
+blokgrenzen moeten wel bepalen wanneer data, BUSY, resultaat en IRQ zichtbaar
+zijn en wanneer een gedeelde bus niet voor ander werk beschikbaar is.
+
+Dit sluit aan bij de afzonderlijke decode- en copy-outfase in
+[DuckStations MDEC](https://github.com/stenzek/duckstation/blob/master/src/core/mdec.cpp),
+de bulkoverdracht in
+[MAMEs PSX-MDEC](https://github.com/mamedev/mame/blob/master/src/devices/cpu/psx/mdec.cpp)
+en het gescheiden datatransport en voltooiingsinterrupt in
+[Mupen64Plus' PI-controller](https://github.com/mupen64plus/mupen64plus-core/blob/master/src/device/rcp/pi/pi_controller.c).
+Hun concrete timing en emulatiebenaderingen zijn geen automatisch bewijs van
+fysiek BMSX-busgedrag. Wel vervalt de aanname dat BMSX iedere bestaande kleine
+FIFO-publicatie, willekeurige I/O-naar-I/O-route of registerinterleaving moet
+blijven ondersteunen. Vaste apparaat-eindpunten en RAM als overdrachtsbuffer
+zijn volwaardige eenvoudiger alternatieven. GPU-pakketopbouw hoeft evenmin
+een taak van de beelddecompressor te blijven.
+
+Dezelfde toets geldt voor GEO/GTE, beeldcircuits, audio, input, cartridges en
+supervisorcontexten. Er wordt niet steeds extra opslag, arbitrage of een
+bijzondere geheugentoegang ontworpen om een bestaande mogelijkheid koste wat
+kost te redden. Een functie beperken of verwijderen is een geldig resultaat;
+alleen een ander opslagformaat kiezen of hetzelfde gedrag verplaatsen naar een
+nieuwe laag is nog geen vereenvoudiging van het hardwarecontract.
+
+De concrete vereenvoudiging van het apparatenmodel betreft **IMGDEC, DMA en
+APU**. Dat is geen opdracht om alle overige hardware opnieuw te ontwerpen. De
+overige voorstellen hieronder behouden hun afzonderlijke inhoud en besluitstatus.
+
+IMGDEC is uitgewerkt als een verliesloze woorddecoder zonder GPU-pakketopbouw
+of kennis van textures en palettes. De programmeerinterface, blokpublicatie en
+stroomcodering staan uitsluitend in de [IMGDEC-handleiding](book1/imgdec.md).
+DMA gebruikt vaste apparaatpaden, een BUSY-beveiligde registerfile en
+begrensde bursts met gedeeld busbezit. Het actuele contract staat in de
+[DMA-handleiding](book1/dma.md); onafhankelijke verzoekselectoren en
+willekeurige interne I/O-eindpunten zijn vervallen. De APU-interface zelf is
+nog niet vervangen.
+
+Ook automatische coherentie tussen VRAM-writes en texture-/CLUT-lezingen is
+**geen behoudseis**. Opdrachten op volgorde uitvoeren vereist niet dat de
+texturelezer iedere eerdere VRAM-write zonder expliciete handeling ziet.
+Een begrensde texturecache met invalidatie of afzonderlijk geladen
+texturegeheugen zijn alternatieven. Referenties zijn
+[DuckStations cache-clear-opdracht](https://github.com/stenzek/duckstation/blob/73c4055ad047c0c93f8143a767205330c8dfaf1a/src/core/gpu.cpp#L2793-L2801)
+en [libdragons expliciete TMEM-loads](https://github.com/DragonMinded/libdragon/blob/e356bf3f56f7afbf7e5246329562f145965cfdfc/include/rdpq_tex.h#L80-L111).
+Die modellen zijn niet onderling gelijk: cachemissers kunnen data ophalen,
+terwijl expliciet texturegeheugen door laadopdrachten wordt gevuld. De keuze
+moet capaciteit, vullen, vervangen en zichtbaarheid bepalen; toevallig oude
+data in een hosttexture is geen hardwarecontract. Er is nog geen van beide
+gekozen. Blending, mask-checks, copies, scanout en CPU-readback hebben eigen
+lees-/schrijfafhankelijkheden, die niet door deze keuze vervallen. Het huidige
+contract in [de GPU-handleiding](book1/gpu.md#sec-memory-shared-gpu-storage-and-display-publication)
+blijft beschreven totdat manuals, runtimes en opdrachtproducenten gezamenlijk
+zijn aangepast.
+
+VRAM-uitlezing moet daarbij afzonderlijk van host-snapshots worden beoordeeld.
+De PSX heeft zelf een VRAM-leespad; dat laat ook
+[DuckStations GPU-implementatie](https://github.com/stenzek/duckstation/blob/master/src/core/gpu.cpp)
+zien. Eén geordende leesoverdracht met wachttijd is iets anders dan twee
+gelijktijdig behouden volledige readback-resultaten voor cartridge en
+supervisor. Behoud van die dubbele snapshots is geen eis meer. Evenmin
+rechtvaardigen rewind of emulator-savestates een extra fysieke geheugenbank.
+Omgekeerd bewijst een dure GPU-naar-CPU-readback op één host niet dat iedere
+VRAM-leesfunctie uit de console moet verdwijnen.
 
 ## Overzicht en besluitstatus
 
 | Onderwerp | Richting | Wat nog niet vaststaat |
 |---|---|---|
-| DMA | Meer-cyclusoverdracht goedgekeurd | Zichtbare voortgang, voltooiing en timinggrenzen |
-| GEO | Werk- en geheugenafhankelijke timing goedgekeurd | Timing en voortgang per opdracht |
+| DMA | Vaste routes en begrensde bursts uitgewerkt in Book I | Fysieke integratie en kwalificatie |
+| IMGDEC | Ruwe verliesloze blokdecoder uitgewerkt in Book I | Fysieke integratie en kwalificatie |
+| GEO | Werk- en geheugenafhankelijke intervallen voor alle opdrachten uitgewerkt in Book I | Fysieke integratie en kwalificatie |
 | GTE | Gedeeld fysiek rekenpad onderzoeken | Voltooiingstijd van gewone commando's en zichtbare wachttijd; niet goedgekeurd |
 | Video | Fysiek begrensde uitvoer goedgekeurd | Exacte bemonstering, sync en gekwalificeerde grenzen |
 | GPU-uitvoeringstijd | Geheugenplanning en zichtbare commandovoltooiing verenigen | Fysieke architectuur of mogelijke timingwijziging; niet goedgekeurd |
-| GPU-readback | Snapshot van beide supervisorcontexten behouden | Of fysieke leeswachttijd de CPU-/DMA-timing of zichtbare volgorde verandert |
-| CPU-timing | Werk- en geheugenafhankelijke fysieke timing goedgekeurd, met C++-/assemblyachtige prestatie-intentie voor normaal BLua-gebruik | Concrete instructieduur, implementatie en gevolgen voor devicevolgorde en compatibiliteit |
+| GPU-texturecoherentie | Automatische zichtbaarheid van iedere VRAM-write is geen behoudseis | Texturecache of expliciete textureopslag, capaciteit en laad-/invalidatieregels |
+| GPU-readback | Eenvoudig geordend leespad beoordelen; dubbele context-snapshots niet verplicht | Functieomvang, wachttijd en afhandeling bij contextovername |
+| CPU-timing | Vaste nominale werkklassen met expliciete volumekosten als proef, met C++-/assemblyachtige prestatie-intentie voor normaal BLua-gebruik | Spelvalidatie en beoordeling van de proef; fysieke CPU en kwalificatie blijven afzonderlijk |
 | CPU-taalopslag | Eén fysiek runtimebudget inclusief globals, frames en beheer; 4 MiB publiek RAM blijft | Exacte grootte, allocatie- en OOM-regels en compatibiliteit |
 | APU-bron en stereoplaatsing | Mono als standaard; onafhankelijke niveaus links en rechts | Programmeringsinterface, representatie en compatibiliteit |
 | APU-belasting | Garantie op basis van werkelijk haalbare belasting onderzoeken | Garantiedomein, eventuele stemlimiet en gedrag bij bereiken daarvan |
@@ -59,172 +162,42 @@ nog een voorstel.
 De goedkeuring van een **richting** legt niet automatisch de genoemde
 voorbeeldwaarden of een nieuwe registerinterface vast. Omgekeerd zijn open
 constructiepunten niet vanzelf wijzigingen van het programmeercontract. Dit
-overzicht is de centrale lijst voor de voorgestelde wijzigingen; de huidige
-boeken en emulator blijven ongewijzigd totdat de concrete contracten worden
-vastgesteld en gezamenlijk worden verwerkt. De volledige bewaarde uitvoeringsstudies
+overzicht is de centrale lijst voor de voorgestelde wijzigingen. Nog niet
+vastgestelde voorstellen wijzigen de boeken en emulator niet automatisch;
+een vastgesteld contract wordt samen in handleidingen en runtimes verwerkt. De volledige bewaarde uitvoeringsstudies
 staan achter de twaalf hoofdonderwerpen in de bijlage.
 
 ## 1. DMA: fysieke voortgang en voltooiing
 
-**Huidig contract.** De [DMA-specificatie](book1/dma.md#sec-dma-calculating-a-blocks-charge)
-kent een berekende blokduur toe. Een blok van maximaal zestien woorden tussen
-I/O-poorten heeft zelfs bij zestien lees-/schrijfparen een blokcharge van één
-systeemcyclus, ongeveer 29,5 ns.
-
-**Goedgekeurde richting.** Een fysieke overdracht gebruikt meerdere cycli.
-Het ontwerp leest een woord, wacht op de bron, schrijft dat woord naar de
-bestemming en wacht op voltooiing voordat het volgende paar wordt verwerkt.
-Wachttijden, arbitrage en geheugenverversing beïnvloeden de duur. De volgorde,
-blokgrootte, registerwoorden, verzoeken, voltooiingsstatus en interrupts blijven
-functioneel behouden. Zie [fysieke DMA-volgorde](book4/hardware.md#physical-dma-sequencing).
-
-**Nog uit te werken.** De openbare timingtekst moet bepalen wanneer BUSY,
-resterende count, DONE en IRQ zichtbaar worden, inclusief wachttijden en
-concurrente bronnen. De huidige numerieke blokcharges mogen niet ongemerkt als
-fysieke verstreken cycli blijven gelden. Een concrete vervangende
-maximumdoorvoer of exacte latentie is nog niet vastgesteld. De emulator,
-de [cartridgetransfertiming](book3/cartridge.md#sec-cartridge-dma-transfer-timing)
-en eventuele APU-upload- en andere bandbreedtevoorbeelden moeten met de
-uiteindelijke keuze in overeenstemming worden gebracht.
-
-**Voorstel voor waarneembare voortgang.** De volgende volgorde maakt de
-goedgekeurde meer-cyclusrichting concreet zonder de registerindeling te wijzigen:
-
-1. START met een niet-nulcount zet de gekozen channel op BUSY. START terwijl
-   BUSY is, wordt genegeerd. Bij een nulcount volgt DONE en de channel-IRQ
-   zonder een blok of verzoek af te wachten.
-2. Bij een blokgrens beoordeelt de controller de verzoeken en legt hij de
-   adressen, resterende count en CONTROL voor het toegelaten blok vast. Een
-   later wegvallend verzoek of DISABLED onderbreekt dat blok niet. Als er geen
-   blok is toegelaten, kan een softwarewrite die de count op nul zet de
-   channel laten voltooien zonder op verzoeken te wachten.
-3. Voor ieder woord voltooit hij eerst de bronlezing en daarna de bijbehorende
-   bestemmingswrite. Een gewone DMA-busfout blijft een afzonderlijke
-   geheugenfoutmelding: na een foutieve bronlezing wordt de write nog steeds
-   geprobeerd en het toegelaten blok gaat verder. Er is geen automatische
-   herhaling of terugdraaiing van eerdere effecten.
-4. Adressen en count worden pas na het laatste woord van het blok in de
-   channelregisters teruggeschreven. Een tussentijdse softwarewrite naar die
-   woorden kan daardoor door de blokresultaten worden overschreven; CONTROL
-   blijft het laatst geprogrammeerde woord. De volgende bloktoelating gebruikt
-   de dan aanwezige registerwaarden.
-5. Na het laatste blok worden de eindadressen en nulcount gepubliceerd vóór
-   DONE en wordt daarna de bijbehorende centrale IRQ aangevraagd. DONE is
-   geen bewijs dat iedere bestemming de write accepteerde of dat een
-   ontvangend apparaat zijn eigen werk al heeft afgerond.
-
-De huidige runtimes voeren de woordparen op één geplande blokdeadline uit;
-de fysieke kandidaat spreidt ze over afzonderlijke busvoltooiingen. Daardoor
-kan de volgorde ten opzichte van CPU- en apparaatwerk veranderen, niet alleen
-de totale duur. De precieze randvolgorde van gelijktijdige registerwrites,
-reset en blokvoltooiing en de opname in beide runtimes moeten nog worden
-vastgesteld. Normale verzoeken krijgen hier geen nieuwe timeout of foutregister.
-
-**Kandidaat voor registerarbitrage.** De channelregistreigenaar bepaalt de
-volgorde op het moment van *acceptatie*, niet wanneer een andere busmaster een
-write voor het eerst aanbiedt. Een gewone write die vóór de blokpublicatie is
-geaccepteerd, is direct leesbaar, maar een later gepubliceerd blokresultaat
-overschrijft adres en count. Een conflicterende write die tijdens publicatie op
-hetzelfde channel wacht, wordt pas daarna geaccepteerd en blijft vervolgens
-staan. CONTROL is geen deel van de blokwriteback. Registers van het andere
-channel blijven afzonderlijk programmeerbaar; de twee kanalen delen wel één
-toegelaten blok en rouleren op blokgrenzen.
-
-Dit onderscheid bepaalt ook START: een geaccepteerde START met BUSY hoog
-wordt genegeerd. Een aangeboden START die pas na DONE wordt geaccepteerd, ziet
-een idle channel en kan een nieuwe transfer starten. De kandidaat verandert
-hiermee mogelijk de waarneembare volgorde ten opzichte van de huidige
-blokdeadline, maar verandert niet ongemerkt de betekenis van een al
-gaccepteerde BUSY-START. Zichtbaarheid van een gelijktijdige registerread,
-reset op de publicatierand en de gevolgen voor CPU-wachttijd blijven apart
-vast te stellen; dit is nog geen definitieve openbare timingregel.
-
-**Verzoeken, busacceptatie en apparaatresultaat.** Een requestselector bepaalt
-of een nieuw blok wordt toegelaten. Na toelating wordt de selector niet opnieuw
-gebruikt om een woordpaar te annuleren. Een fysieke bus-DATA-wacht betekent
-dat het aangevraagde woord nog niet is afgehandeld; het blok houdt die
-transactie vast. Een daadwerkelijk afgeronde DMA-write die het doelapparaat
-volgens zijn bestaande poortregels weigert, is iets anders: er ontstaat
-hierdoor niet automatisch een busfout of herhaling, en het woord telt wel mee.
-Daarom moeten de apparaatpoort en busrespons die afhandeling onderscheiden;
-een gedeassert request mag niet stilzwijgend veranderen in een afgebroken blok,
-maar evenmin mag iedere geweigerde devicewrite automatisch oneindig gaan
-wachten. Er wordt geen nieuwe fout of timeout opgelegd.
+De vastgestelde programmeerinterface staat in de [DMA-specificatie](book1/dma.md).
+De constructiekandidaat staat bij de [fysieke DMA-volgorde](book4/hardware.md#physical-dma-sequencing).
+De eerdere kandidaat met willekeurige I/O-eindpunten, aparte verzoekselectoren,
+configureerbare bloklengtes en overschrijfbare BUSY-registers is vervallen.
+GPU-pakketten mogen over bursts doorlopen; pakketuitlijning is geen
+transportvoorwaarde. De fysieke schakeling en elektrische timing moeten nog
+worden geïntegreerd en gekwalificeerd. Dat is geen reden om de geschrapte
+registerinterleavings terug te brengen.
 
 ## 2. GEO: werk- en geheugenafhankelijke timing
 
-**Huidig contract.** De [GEO-specificatie](book1/geo.md#sec-geo-work-budget-and-timing)
-rekent één record in drie cycli af en kent geen extra tijd toe aan het werk
-binnen dat record.
+De werk- en geheugenafhankelijke uitvoering van XFORM2, SAT2 en OVERLAP2D
+staat in de [GEO-specificatie](book1/geo.md#sec-geo-work-budget-and-timing).
+De eigen commandoreferenties leggen bronbemonstering, werktoerekening,
+betaling vóór publicatie en het afbreken van onvoltooid werk vast. De vaste
+recordrate is vervallen; deze programmeerregels zijn geen open alternatieven
+meer. Registerwoorden, gegevensformaten, fouten en voortgang worden
+uitsluitend in die handleiding gespecificeerd.
 
-**Goedgekeurde richting.** De uitvoering duurt afhankelijk van de werkelijke
-geheugentransfers en rekenstappen. Bewaar de commandowoorden, formaten,
-precisie, volgorde van resultaten, foutgedrag en `PROCESSED`-betekenis. Een
-voorbeeld met 64 vertices en bounds omvat in de onderzochte organisatie 140
-woordlezingen, 132 woordschrijvingen en 256 producten. Zelfs 272 ideaal
-achtereenvolgende DRAM-paginatransfers van 20 ns kosten 5,44 µs, zonder de
-verdere verwerking. Dit voorbeeld is geen universeel GEO-doorvoercijfer.
-[Constructie en aannames](book4/hardware.md#physical-geo-service).
+De tarieven gebruiken de BMSX-rekenklok en woordpaden. Het zijn gekozen
+producttarieven, geen gemeten of overgenomen PlayStation-latenties. Zij
+kwalificeren de doorvoer van de voorgestelde fysieke engine niet.
 
-**Nog uit te werken.** Definieer timing en waarneming van voortgang en
-voltooiing voor alle opdrachten; kwalificeer de echte engine. De oude vaste
-recordrate is geen aangetoonde fysieke eigenschap. Werk Book I en de emulator
-na keuze van het contract bij.
-
-**Voorstel voor waarneembare voortgang.** De engine houdt één taak actief en
-verhoogt `PROCESSED` pas nadat een buitenrecord en zijn vereiste transacties
-zijn afgerond. Een summarywrite kan een afzonderlijk geregistreerde busfout
-opleveren; dat is niet automatisch een GEO-fout. Eerder uitgevoerde writes
-kunnen al zichtbaar zijn; het record is geen automatisch atomair
-geheugenresultaat. Bij succes publiceert de engine het eindresultaat en DONE
-vóór GEO_DONE. Bij een uitvoeringsfout publiceert zij DONE, ERROR en de
-foutgegevens vóór GEO_ERROR; het falende record telt niet mee. Eerder
-uitgevoerde effecten worden niet teruggedraaid. De lokale foutbevestiging en
-de centrale IRQ-bevestiging blijven afzonderlijk.
-
-Een belangrijk geval is `OVERLAP2D_PASS` met count nul: volgens het huidige
-contract gaan vier nulwrites naar de samenvatting aan de countcontrole vooraf.
-Een fysieke uitvoering kan óf BUSY zichtbaar houden tot die writes klaar zijn,
-óf de CMD-write laten wachten voordat DONE zichtbaar wordt. Dit zijn nog te
-kiezen alternatieven; beide kunnen de huidige onmiddellijk zichtbare afhandeling
-veranderen. Ook de volgorde van ABORT of een afgewezen CMD ten opzichte van een
-al geaccepteerde geheugentransfer moet nog worden gekozen. Geen van beide
-gevallen krijgt hier stilzwijgend een nieuwe timingregel.
-Een nieuwe CMD tijdens BUSY blijft een afwijzing die de oude taak beëindigt;
-ABORT blijft een foutieve beëindiging. Reeds uitgevoerde geheugenwerkingen
-blijven in beide gevallen bestaan.
-
-De vier initiële summarywrites zijn gewone buswrites, ook wanneer `DST1` naar
-een I/O-register wijst. De CORE-geheugenroute heeft nu een afzonderlijke
-verzoekbit voor raw GEO-operandtoegang of gewone, gemapte bustoegang. Een
-gerichte simulatie controleert beide routes op hetzelfde adres en controleert
-een gemapte I/O-write. De GEO-verzoekproducer is nog niet aangesloten en moet
-die bit per verzoek leveren. Dit is nog geen volledige GEO-integratie.
-Een CMD-write laten wachten op een summarywrite naar diezelfde bezette
-I/O-eigenaar kan anders vastlopen; bij een adres naar GEO zelf is bovendien de
-herintrede en volgorde zichtbaar. Geen adresbeperking, stille omzetting naar RAM
-of oplossing voor die gevallen is hier vastgesteld.
-
-De referentierichting leest geometrie uit de opgegeven bron wanneer een
-berekening die nodig heeft. Een onderzochte werkbank die elk polygonenpaar
-eenmalig inlaadt kan bij veranderende waarden of een cartridgeapparaat met
-leesbijwerkingen ander gedrag geven dan herhaalde bronlezingen. Stel eerst de
-zichtbare leesvolgorde vast voordat die werkbank als gelijkwaardige uitvoering
-wordt gekozen; de huidige TypeScript- en C++-eigenaars lezen onder meer bij
-SAT2 de coördinaten meermalen.
-
-**Clippingwerkruimte bij ongebruikelijke invoer.** Book I noemt convexe
-polygonen, maar schrijft ook voor dat onder meer convexiteit en winding niet
-worden gecontroleerd of gerepareerd. Een gerichte proef met de bestaande
-TypeScript-clippingkern gebruikte 64 representabele, zichzelf kruisende
-vertices tegen een AABB en bereikte 144 tussenvertices, terwijl de werkruimte
-128 vertices bevat. Die smalle interne proef leverde een niet-getal als
-contactpunt; het is geen volledige registerpadtest. De C++-eigenaar gebruikt
-ook een vaste array van 128 vertices en zijn ongecontroleerde arraytoegang is
-voor deze situatie niet veilig bewezen; er is geen C++-proef met die invoer
-uitgevoerd. De representatie en het gedrag bij volle werkruimte moeten voor
-beide runtimes en de fysieke engine worden verenigd. Hier is geen verborgen
-clamp, vervangend resultaat of nieuw afkeurpad gekozen.
+**Fysieke integratie.** De GEO-verzoekproducer is nog niet op de volledige
+CORE-geheugenroute aangesloten. Die producer moet de raw-geheugenroute voor
+GEO kiezen, ook voor de samenvatting. Het bestaande onderscheid met gewone
+gemapte toegang verleent GEO geen nieuw I/O-pad. De volledige engine moet
+nog worden geïntegreerd en gekwalificeerd; de vastgelegde programmeertiming
+bewijst niet dat een fysieke uitvoering haar haalt.
 
 ### GTE: voltooiing van normale commando's
 
@@ -629,7 +602,7 @@ reeds beschikbaar register.
 Dit is een samenhangend voorstel, geen reeds toegevoegde registerinterface.
 De onderstaande adressering en teruglezing zijn één concrete kandidaat; het
 gedrag voor expliciet geschreven kanaalwoorden anders dan één of twee en de
-overgang van oude savestates blijven afzonderlijk te bepalen. Behoud de
+nieuwe savestate-representatie blijven afzonderlijk te bepalen. Behoud de
 bestaande stereo- en slotfunctionaliteit; stel hier geen nieuwe limiet voor
 gelijktijdige stemmen vast.
 
@@ -830,17 +803,19 @@ schrijven; bestaande expliciet geprogrammeerde mono-/stereobronnen behouden bij
 unity/unity hun bestaande mix. De volledige 32-bit SOURCE_CHANNELS-woorden
 anders dan één of twee worden niet stilzwijgend afgeknipt of heringevuld: hun
 PCM- en BADP-betekenis en fouten zijn nog een expliciete open productkeuze.
-Oude savestates vergen een versiegebonden migratie van staging-, queued- en
-live-niveaus, inclusief het vastleggen van inactieve-slotreadback; er wordt
-géén generieke runtimefallback voorgeschreven.
+De nieuwe savestate-representatie moet staging-, queued- en live-niveaus
+volledig vastleggen, inclusief inactieve-slotreadback. Oude savestates hoeven
+niet te worden gemigreerd; er wordt geen legacydecoder of runtimefallback
+voorgeschreven.
 
 **Implementatie-impact.** Werk de twee runtime-eigenaars, commando-opslag,
 slotbanken, geselecteerde writes, fade, savestates, adresdecode, fysiek
 rekendatapad en [Book I](book1/apu.md) gezamenlijk bij. Controleer oude
 programma's, reset- en commandovolgorde, extremen en geheugenranden. De
 resetwijziging kan met name programma's beïnvloeden die `SOURCE_CHANNELS` niet
-schrijven en nu anders falen. Bepaal ook hoe bestaande savestates worden
-ingelezen. De stereofunctie wordt niet verwijderd.
+schrijven en nu anders falen. Werk de betrokken cartridgeproducenten bij en
+toets de nieuwe states op herstel en cross-runtime replay. De stereofunctie
+wordt niet verwijderd.
 
 ## 5. APU: eventuele belasting- en timinggrenzen
 
@@ -1576,23 +1551,68 @@ Het ontwerp heeft nog geen volledig aangesloten en gekwalificeerde ASICs,
 geen gefabriceerde en doorgemeten console en de print is niet volledig gerouteerd.
 Een gerichte RTL- of rekentoets is geen vervanging voor die kwalificatie.
 
-## 11. CPU: werkelijke uitvoering en systeemklok
+## 11. CPU: werkelijke uitvoering en systeemklok {#sec-proposal-cpu-execution}
 
-**Status: werk- en geheugenafhankelijke timingrichting goedgekeurd; concrete
-productspecificatie nog uit te werken.** De
-[instructiereferentie](book1/cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries)
-geeft nu vaste basischarges op de 33,8688 MHz-systeemtijd: bijvoorbeeld één
-cyclus voor `DIV`, zonder per-registercharge voor `LOADNIL` of per-bytecharge
-voor `CONCATN`. Die charges zijn geen garantie voor de doorvoer van een
-individuele bus, maar zij bepalen wel de verhouding tussen instructievoortgang
-en waarneembare device-events.
+**Status: nominaal werkklassenmodel als proef gekozen; de fysieke CPU blijft
+ongekwalificeerd.** De eerste proef houdt één vaste instructietabel aan, met
+expliciete toeslagen voor waardeplaatsing, opslaginitialisatie, groei, tekst en
+getelde woordtransfers. Zij voegt geen cache-, bus- of geheugenmisserstatemachine
+toe. Dit is een beredeneerde schatting van relatieve werkklassen, niet een
+claim dat iedere instructie op nog niet gekozen silicium precies zo lang duurt.
+De keuze mag worden beproefd zonder eerst een volledige CPU of sluitende
+cacheorganisatie te bouwen. Hostmetingen beoordelen de uitvoerbaarheid en het
+spelgedrag; zij bepalen niet hoeveel cycles een operatie kost.
+
+| Werkklasse | Nominale basisprijs, inclusief één cycle instructieaanvoer | Motivering van de proefkeuze |
+|---|---:|---|
+| Eenvoudige register-, optel-, aftrek- en vermenigvuldigoperaties | 2 | Korte, gespecialiseerde datapaden blijven goedkoop. |
+| Namespace en upvalue lezen / schrijven | 3 / 4 | Indirecte waardetoegang, zonder toeslag voor moduleherkomst. |
+| Tabel lezen / schrijven | 4 / 5 | Sleutel-/slotselectie, actuele waarde en schrijven krijgen meer ruimte dan een registerkopie, niet de kosten van een naïeve Lua-interpreter. |
+| `SELF` | 5 | Veldtoegang met behoud van de oorspronkelijke receiver. |
+| `NEWT` | 4 | Objectadmissie en vaste metadata; capaciteitinitialisatie en latere groei blijven afzonderlijk. |
+| `CLOSURE` | 8 | Een allowance voor zes gelezen functierecordwoorden en binding; upvaluedescriptors blijven afzonderlijk. |
+| `CALL` / `RET` | 6 / 6 | Gebonden functiedoel, registervenster en controlestack; daadwerkelijke waardeplaatsing en capture-sluiting blijven afzonderlijk. |
+| `LEN` | 3 | Afzonderlijke nominale lengteklasse; geen nieuwe toeslag per tabelgrensprobe. |
+| `DIV` / `FLOORDIV` / `MOD` | 32 / 33 / 34 | Lange rekenklasse, met respectievelijk floor- of rest/tekenwerk. Geen letterlijke software-algoritmetelling voor ieder bitpatroon. |
+| `POW` | 128 | Complexe scalaire rekenklasse, viermaal de nominale deelklasse; geen prijs van één vermenigvuldiging. |
+
+De bestaande niet-genoemde basisprijzen blijven gelijk. De toeslag van een
+getelde store wordt één cycle per werkelijk opgegeven 32-bit woord, dus
+`3 + C` na geslaagde readiness-preflight in plaats van `3 + ceil(C/4)`.
+De bestaande route voert die woorden synchroon en geordend uit; er is geen
+vier-woorden-breed CPU-storepad of uitgestelde bandbreedteschuld beschreven.
+Eén woord per cycle is een optimistische nominale servicekeuze, niet een
+kwalificatie van de DRAM-controller. De readiness-volgorde, de eenmalige charge
+bij hervatten en de volledige sequentietoeslag bij een latere gedeeltelijke
+busfout veranderen niet.
+
+Dit volgt de praktische organisatie van vaste instructiegewichten met
+specifieke werk- en wachttijdtermen. Bijvoorbeeld
+[Dolphins opcode-eigenaar](https://github.com/dolphin-emu/dolphin/blob/ce74dde6e8bd765817360422c0ac04cd717b9c3a/Source/Core/Core/PowerPC/PPCTables.cpp#L415-L444)
+onderscheidt korte FP-operaties en een lange deling;
+[MAMEs FPU-eigenaar](https://github.com/mamedev/mame/blob/04124dc058df0cb6be13f7de9709c7a14252f9b8/src/devices/cpu/m68000/m68kfpu.cpp#L1988-L2262)
+gebruikt afzonderlijke vaste rest- en transcendentale klassen. Hun numerieke
+prijzen en ISA's zijn geen BMSX-hardwarebewijs en worden niet als tabel
+gekopieerd. `MOD 34` en `POW 128` zijn BMSX-proefkeuzes. Ook goedkope speciale
+operanden betalen hun gewone opcodeprijs; caches, aliassen en host-JIT-keuzes
+veranderen die niet. Gewone hash-/metatabelketens en lengteprobes blijven in
+hun nominale klasse; deze proef claimt daarvoor geen worst-case bovengrens.
+
+De [instructiereferentie](book1/cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries)
+bezit de volledige uitvoeringsregels en actuele prijzen. Die bepalen de
+verhouding tussen instructievoortgang en waarneembare device-events. De
+onveranderde systeemklok is 33,8688 MHz. Regressies moeten daarom zowel
+instructiegrenzen en foutvolgorde als echte spellen controleren; een hogere
+charge mag werk over meer frames verdelen, maar geen gastwerk laten verdwijnen.
 
 De onderzochte kandidaat deelt een binaire64-rekeneenheid tussen CPU en GEO.
 In een gerichte corpusproef duurde een geaccepteerde deling daarin maximaal 72
 klokken tot het resultaat; die proef is geen maximum voor alle bitpatronen en
 omvat niet het complete CPU-pad. De kandidaat toont dus geen overeenstemming
-met de huidige ééncycluscharge voor afhankelijke delingen. Dit is geen bewijs
-dat iedere andere mogelijke fysieke architectuur onmogelijk is.
+met de vroegere basisprijs van twee cycles voor een deling, inclusief de vaste
+cycle voor instructieaanvoer, en kwalificeert evenmin de nu overgenomen
+nominale charge van 32 cycles. Dit is geen bewijs dat iedere andere mogelijke
+fysieke architectuur onmogelijk is.
 
 **Prestatie-intentie van BLua32.** De oorspronkelijke lage charges zijn bewust
 gekozen om normaal programmeerwerk te benaderen zoals dat op vergelijkbare
@@ -1610,7 +1630,8 @@ onderscheid: `module<const>` is een statisch opgeloste naamruimte, zonder
 runtime-moduletabel; een gewone module kan juist wel een veranderlijke tabel
 als waarde exporteren. Toegang tot zo'n waarde behoudt de voorgeschreven
 tabelsemantiek, inclusief veranderlijke velden. In de huidige instructietabel
-kosten `GETT`, `GETI` en `GETFIELD` één basiscyclus en hun schrijfvarianten twee;
+kosten `GETT`, `GETI` en `GETFIELD` vier basiscycles en hun schrijfvarianten vijf,
+inclusief de vaste cycle voor instructieaanvoer;
 een dynamische tabeltoegang heeft die instructiekosten ook als de tabel uit een
 module komt. Er is geen afzonderlijke moduletabeltoeslag. Hoe de gewenste
 modulekosten en de bestaande veranderlijke modulewaarden samenkomen in fysieke
@@ -1645,10 +1666,10 @@ overgeërfde waarde zichtbaar maken en wordt daarom niet als vaste uitkomst
 vastgezet. De hint is geen publieke objectidentiteit, geen vastgelegde module-
 of cartridge-ABI en geen excuus om mutabele modulevelden in te vriezen.
 
-Dit is een concrete uitvoeringsrichting, geen bewijs dat iedere toegang in één
-systeemcyclus past. Wisselende sleutels, metatabelketens en allocatie kunnen
-meer werk vragen; er is geen vaste kostengarantie voor alle representabele
-invoer. De huidige instructieprijs is gelijk voor een dynamische
+Dit is een concrete uitvoeringsrichting, geen bewijs dat iedere toegang binnen
+de vaste basisprijs van vier cycles past. Wisselende sleutels, metatabelketens
+en allocatie kunnen meer werk vragen; er is geen vaste kostengarantie voor alle
+representabele invoer. De huidige instructieprijs is gelijk voor een dynamische
 tabel die via een module is verkregen en dezelfde tabel via een andere alias;
 de guestwaarde draagt geen afzonderlijke moduleherkomst. Als de bedoelde regel
 zou zijn dat precies dezelfde tabeltoegang via een modulealias een andere prijs
@@ -1659,8 +1680,66 @@ gebruikt in de [Luau-uitvoeringskern](https://github.com/luau-lang/luau/blob/mas
 dit is een organisatievoorbeeld, geen bewijs voor BMSX-prestaties of een keuze
 voor Luau-semantiek.
 
-**Samenhangende kandidaatrichting.** De systeemklok blijft 33,8688 MHz. De
-uitvoeringslaag realiseert dezelfde BLua32-instructies en waarden, maar hun
+**Fysieke kwalificatie, los van het nominale proefmodel.** De bestaande RTL is een
+uitvoeringskandidaat die mag worden herzien, geen norm waaraan de nieuwe CPU
+of geheugencontroller moet blijven voldoen. De huidige gesloten-paginaroute
+publiceert een DRAM-resultaat na negen klokken en kan iedere tien klokken een
+verzoek accepteren. Dat zijn eigenschappen van die controller, niet de
+minimumlatentie van de geheugenchips. De onderzochte
+[ISSI IS41LV16100-50, Rev. L](https://www.mouser.com/catalog/specsheets/issi_IS41C16100.pdf#page=1)
+ondersteunt EDO-paginatoegang: de minimale kolomcyclus binnen een open rij is
+20 ns, tegenover 84 ns voor een nieuwe random-accesscyclus. De opgegeven
+50 ns RAS-, 25 ns kolomadres- en 13 ns CAS-toegangstijden zijn maximale
+datageldigheidsvertragingen waarvoor de controller moet budgetteren. Zij zijn
+geen minimale instructieduren. Kolomsturing, capture, precharge, refresh,
+bankwisseling, arbitrage en fysieke marges blijven nodig; paginamodus geeft
+niet vanzelf één woord per systeemklok.
+
+Goedkope lokale taaloperaties zijn evenmin alleen een softwarehypothese.
+Suns [picoJava-II-programmeerhandboek, Appendix A](https://picojava-ii.github.io/docs/pj2-prog-ref.pdf#page=487)
+geeft typisch voor opgeloste `getfield_quick` één klok en voor de
+twee-woordvariant twee klokken bij directe objectreferenties, cachetreffers en
+zonder stalls of exceptions.
+Dat ontwerp heeft onder meer een 64-woord-stackcache met meerdere lees- en
+schrijfpoorten en configureerbare instructie- en datacaches; de
+[standaardconfiguratie](https://picojava-ii.github.io/docs/html/build-rtl.html)
+heeft van beide 16 KiB. Een directe load-use-afhankelijkheid voegt een klok
+toe; `invokestatic_quick` kost elf klokken. Deze getallen kwalificeren geen
+BMSX-prijzen: Java-resolutie,
+objectrepresentatie en framebeheer verschillen. Ze laten wel zien waarom
+zowel de lokale resources als de volledige uitvoeringsroute moeten worden
+begroot, niet alleen de externe geheugentoegang of de spronginstructie.
+
+De volgende begroting blijft nodig voor fysieke kwalificatie zonder eerst een
+volledige processor te bouwen. Zij blokkeert het nominale proefmodel niet:
+
+| Pad | Begroting voor fysieke kwalificatie |
+|---|---|
+| Instructieaanvoer en rekenwerk | Fetchbreedte, decoder, beschikbare operandpoorten, resultaatpoorten, afhankelijkheden en de gekozen rekeneenheid; refill en meer-cyclusrekenwerk afzonderlijk. |
+| Geheugenwoord en 64-bit waarde | Werkelijke busbreedte, lokale treffer of externe service, volgorde van deeltransfers, pagina- en bankwisseling, refresh en mededinging. |
+| Eigen tabelveld | Geldige huidige sleutel en aanwezigheid, waardeopslag en eventuele vorm- of slothint; het trefferpad én de werkelijk benodigde misserroute. Een vaste offset verkort de adresberekening, niet de externe geheugentransactie. |
+| Gebonden `CALL` en `RET` | Residente closuregegevens, actieve waardeslots, controlestack, framewisseling en PC/domeinwisseling; spills en bestaande plaatsings- en capturevolumes afzonderlijk. Gewone CALL leest het oorspronkelijke functierecord niet opnieuw. |
+| Constructie, groei en tekst | Opslagadmissie, de werkelijk gelezen of geschreven waardeslots of tekst, en hun geheugenservice; geen ongefundeerde toeslag voor het gebruik van Lua of een modulealias. |
+
+Lokale opslag moet een gekozen capaciteit, poortorganisatie en gedrag bij
+missers of verdringing hebben; de volledige taalheap wordt niet stilzwijgend
+snelle SRAM. Als een cache de waarneembare instructieduur bepaalt, behoren
+zijn timingrelevante inhoud, vervanging en invalidatie tot het machinegedrag,
+niet tot vrijblijvende host-JIT-hints. Onafhankelijke werkzaamheden mogen
+overlappen waar de gekozen resources dat daadwerkelijk toelaten.
+
+Een toekomstige fysieke uitwerking mag andere interne treffer- en misserkosten
+of een gewijzigde uitvoeringsroute gebruiken. Een timingmodel dat die kosten
+zichtbaar maakt vraagt een afzonderlijk productbesluit; het nominale proefmodel
+voegt ze niet impliciet toe. Fysieke acceptatie vereist een sluitend
+resourceschema, niet overeenstemming met de proefgetallen of Cortex-A7-hosttijd.
+Tot die begroting is gesloten, is er geen fysiek haalbaarheidsbewijs voor alle
+prijzen en evenmin een universele ondergrens van dertig klokken voor iedere
+tabeltoegang.
+
+**Afzonderlijke fysieke vervolgrichting.** De systeemklok blijft 33,8688 MHz.
+Een toekomstig fysiek timingmodel kan dezelfde BLua32-instructies en waarden
+realiseren terwijl hun
 voortgang volgt de feitelijk benodigde instructieophaling, uitvoering,
 rekenstappen, geheugenservice en eventuele wachttijd. Onafhankelijk of
 parallel verrichte werkzaamheden worden daarbij niet automatisch als losse
@@ -1678,8 +1757,10 @@ of maximale instructieduren en doorvoer zijn hier niet vastgesteld.
 2. **Geheugen en wachten.** Toegang duurt tot de betreffende geheugen- of
    apparaattransactie is afgehandeld. Arbitrage, vernieuwing en een niet-gereed
    apparaat kunnen tijd kosten. Een op gereedheid geblokkeerde store voert geen
-   write uit terwijl hij wacht; na de passende ready-gebeurtenis begint de
-   volgende poging opnieuw volgens het bestaande contract. Er wordt geen
+   write uit terwijl hij wacht; de passende ready-gebeurtenis hervat de
+   bewaarde operatie volgens de bestaande
+   [CPU-grenzen](book1/cpu.md#sec-cpu-additional-work-and-waiting), niet een nieuw
+   opgehaalde instructie. Er wordt geen
    automatische timeout, busfout of terugdraaiing van eerdere effecten
    toegevoegd. Bij een meerwoordtoegang behouden een fout en eerder uitgevoerde
    woorden hun bestaande volgorde en gevolgen.
@@ -1697,13 +1778,13 @@ of maximale instructieduren en doorvoer zijn hier niet vastgesteld.
    onderlinge volgorde behouden; een nominale instructiecharge creëert geen
    extra busbandbreedte of voltooiing van apparaatwerk.
 
-Dit is een productvoorstel, geen gemeten prestatie van een PS1-klasse CPU of
-voltooide interpretatie-implementatie. Programma's die op aantallen
-instructies of op oude charge-afstanden vertrouwen, kunnen andere timing en
-interleavings zien. De daadwerkelijke uitvoering, zichtbaarheid van
-samenvallende events en compatibiliteit moeten nog worden geconcretiseerd en
-getoetst. Books I–III en beide emulatorimplementaties blijven ongewijzigd tot
-de nieuwe contracten afzonderlijk zijn uitgewerkt en overgenomen.
+Deze fysieke vervolgrichting is geen gemeten prestatie van een PS1-klasse CPU
+of voltooide interpretatie-implementatie en wordt niet stilzwijgend door het
+nominale proefmodel ingevoerd. De proef verandert wel de genoemde charges
+gezamenlijk in Book II en beide uitvoeringen. Programma's die op oude
+charge-afstanden vertrouwen kunnen andere timing en interleavings zien; de
+bestaande instructie-, fout-, readiness- en IRQ-grenzen blijven gelden.
+Verdere fysieke contracten vragen hun eigen uitwerking en besluit.
 
 ## 12. CPU: fysieke capaciteit van taalwaarden en naamruimten
 
@@ -1753,6 +1834,29 @@ rekensnelheid, geheugenomvang, stroomopname of overeenstemming met de bestaande
 eventvolgorde. Het eerdere private DRAM- en RTL-werk blijft daarom een
 onderzoekskandidaat, geen vastgestelde eis aan het moederbord.
 
+
+## 12. Lua-compatibele byte-strings
+
+**Richting goedgekeurd; nog niet in de runtimes verwerkt.** Vervang het
+codepoint-gebaseerde String-contract door Lua-byte-strings. De huidige
+[String-referentie](book1/bios-string.md) beschrijft nog het bestaande gedrag;
+alleen het invoerbereik van `string.char` wijzigen voltooit deze overgang niet.
+
+Een String moet alle bytewaarden kunnen bewaren, inclusief nul en bytevolgorden
+die geen geldige UTF-8 vormen. `string.char` bouwt bytes; lengte, `string.byte`,
+substringposities en de overige String-bewerkingen volgen dezelfde byte-eenheid.
+UTF-8-interpretatie is een afzonderlijke tekstbewerking, met functies zoals
+`utf8.char`. De [Lua String-implementatie](https://github.com/lua/lua/blob/v5.4.8/lstrlib.c)
+en [UTF-8-bibliotheek](https://github.com/lua/lua/blob/v5.4.8/lutf8lib.c) zijn de
+referenties voor die scheiding.
+
+Werk deze wijziging samen uit in literals en compiler, BIOS, TS/C++-waarden en
+String-bewerkingen, ROM-/save-state-codecs en de tekstconsumenten in cartridges
+en tooling. Ook vergelijking, hashing en tabelsleutels moeten dezelfde bytes
+blijven onderscheiden. Decodering voor weergave mag ongeldige bytevolgorden niet
+stilzwijgend in de onderliggende gastwaarde vervangen. De concrete interne
+opslag volgt uit die gedeelde semantiek, niet uit de tekstrepresentatie van één
+host. Oude program images en saves hoeven niet compatibel te blijven.
 
 ## Bijlage: bewaarde ontwerpstudies
 

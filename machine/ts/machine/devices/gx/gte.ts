@@ -172,6 +172,7 @@ export type GxGteState = {
 	mac3: number;
 	currentSf: number;
 	lastCycles: number;
+	normalPendingCycles: number;
 	plusPendingCycles: number;
 	plusInterlockArmed: boolean;
 	plusPendingResultXy: number;
@@ -208,6 +209,7 @@ export class GxGte {
 	private accumPositiveOverflow = false;
 	private accumNegativeOverflow = false;
 	private lastCycles = 0;
+	private normalCompletionCycle = 0;
 	private plusCompletionCycle = 0;
 	private plusInterlockServiceScheduled = false;
 	private plusPendingResultXy = 0;
@@ -253,6 +255,7 @@ export class GxGte {
 		this.accumPositiveOverflow = false;
 		this.accumNegativeOverflow = false;
 		this.lastCycles = 0;
+		this.normalCompletionCycle = 0;
 		this.plusCompletionCycle = 0;
 		this.plusInterlockServiceScheduled = false;
 		this.plusPendingResultXy = 0;
@@ -280,6 +283,7 @@ export class GxGte {
 			mac3: this.mac3,
 			currentSf: this.currentSf,
 			lastCycles: this.lastCycles,
+			normalPendingCycles: Math.max(0, this.normalCompletionCycle - nowCycles),
 			plusPendingCycles: this.plusCompletionCycle === 0 ? 0 : this.plusCompletionCycle - nowCycles,
 			plusInterlockArmed: this.plusInterlockServiceScheduled,
 			plusPendingResultXy: this.plusPendingResultXy,
@@ -306,6 +310,7 @@ export class GxGte {
 		this.mac3 = state.mac3;
 		this.currentSf = state.currentSf >>> 0;
 		this.lastCycles = state.lastCycles >>> 0;
+		this.normalCompletionCycle = this.scheduler.currentNowCycles() + state.normalPendingCycles;
 		this.plusPendingResultXy = state.plusPendingResultXy >>> 0;
 		this.plusPendingResultZ = state.plusPendingResultZ >>> 0;
 		this.plusPendingFlag = state.plusPendingFlag >>> 0;
@@ -347,7 +352,15 @@ export class GxGte {
 	}
 
 
-	private static readDataRegisterThunk(context: GxGte, addr: number): number {
+	private synchronizeNormalAccess(busSignals: MappedBusSignals): void {
+		if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0 || !this.scheduler.isCpuSliceActive()) return;
+		const remaining = this.normalCompletionCycle - this.scheduler.currentNowCycles();
+		if (remaining > 0) this.cpu.instructionBudgetRemaining -= remaining;
+		this.normalCompletionCycle = 0;
+	}
+
+	private static readDataRegisterThunk(context: GxGte, addr: number, busSignals: MappedBusSignals): number {
+		context.synchronizeNormalAccess(busSignals);
 		return context.readDataRegister(((addr - IO_GX_GTE_DATA0) / IO_WORD_SIZE) >>> 0);
 	}
 
@@ -355,7 +368,8 @@ export class GxGte {
 		context.writeDataRegister(((addr - IO_GX_GTE_DATA0) / IO_WORD_SIZE) >>> 0, value);
 	}
 
-	private static readControlRegisterThunk(context: GxGte, addr: number): number {
+	private static readControlRegisterThunk(context: GxGte, addr: number, busSignals: MappedBusSignals): number {
+		context.synchronizeNormalAccess(busSignals);
 		return context.readControlRegister(((addr - IO_GX_GTE_CONTROL0) / IO_WORD_SIZE) >>> 0);
 	}
 
@@ -363,8 +377,10 @@ export class GxGte {
 		context.writeControlRegister(((addr - IO_GX_GTE_CONTROL0) / IO_WORD_SIZE) >>> 0, value);
 	}
 
-	private static writeCommandThunk(context: GxGte, _addr: number, value: number): void {
+	private static writeCommandThunk(context: GxGte, _addr: number, value: number, busSignals: MappedBusSignals): void {
+		context.synchronizeNormalAccess(busSignals);
 		context.lastCycles = context.execute(value);
+		context.normalCompletionCycle = context.scheduler.currentNowCycles() + context.lastCycles;
 		context.memory.writeIoU32(IO_GX_GTE_CYCLES, context.lastCycles);
 	}
 
@@ -377,7 +393,7 @@ export class GxGte {
 	private static writeObservedCommandThunk(context: GxGte, addr: number, value: number, busSignals: MappedBusSignals): void {
 		const observer = context.commandObserver!;
 		observer.before(value, busSignals, context.dataRegisterWords, context.controlRegisterWords);
-		GxGte.writeCommandThunk(context, addr, value);
+		GxGte.writeCommandThunk(context, addr, value, busSignals);
 		observer.after(value, busSignals, context.lastCycles, context.dataRegisterWords, context.controlRegisterWords);
 	}
 

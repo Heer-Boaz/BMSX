@@ -402,6 +402,20 @@ test('behavior lens distinguishes string and numeric table keys in view identity
 	assert.notEqual(keyed[0].rowKey, keyed[1].rowKey);
 });
 
+test('behavior lens source descriptions consume Integer words and Float constants, not host object strings', () => {
+	const source = [
+		"local fsm<const> = require('cartlib/fsm/library')",
+		"fsm.register('keys32', { states = { [16777217] = {}, [0.25] = {}, [0xffffffff] = {}, ['16777217'] = {} } })",
+	].join('\n');
+	const nodes = flatten(buildDocument('key_kinds32.lua', source).definitions);
+	// Key text is part of identifying the actual authored occurrence. Integer
+	// magnitude must survive, word literals are signed and strings remain distinct.
+	const keys = ['[16777217]', '[0.25]', '[-1]', '16777217'];
+	const keyed = nodes.filter(node => keys.includes(node.label));
+	assert.deepEqual(keyed.map(node => node.label), keys);
+	assert.equal(new Set(keyed.map(node => node.rowKey)).size, keys.length);
+});
+
 test('behavior lens preserves the authored initializer and reference of an aliased FSM handler', () => {
 	const source = [
 		"local fsm<const> = require('cartlib/fsm/library')",

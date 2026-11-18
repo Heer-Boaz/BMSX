@@ -85,25 +85,8 @@ function command_list.submit(draw)
 	draw.word_count = 0
 end
 
-local reserve_atomic<const> = function(draw, command_words)
-	local word_count = draw.word_count
-	local block_words_remaining<const> = dma.block_words - (word_count & (dma.block_words - 1))
-	if command_words <= block_words_remaining then
-		return word_count
-	end
-	local padding<const> = block_words_remaining
-	local words<const>: *word = draw.words
-	for index = word_count, word_count + padding - 1 do
-		words[index] = gp0.nop
-	end
-	word_count = word_count + padding
-	return word_count
-end
-
-command_list.reserve_atomic = reserve_atomic
-
--- The caller supplies storage in complete DMA blocks. Ordinary retained
--- writers append within that allocation; bulk triangle submission streams it.
+-- The caller owns the packet storage capacity. DMA may split the ordered
+-- word stream anywhere; GP0 retains packet assembly across ingress bursts.
 function command_list.new(words, word_capacity)
 	return setmetatable({
 		words = words,
@@ -210,7 +193,7 @@ function draw_list:semitransparent_rect(x0, y0, x1, y1, color)
 end
 
 function draw_list:line(x0, y0, x1, y1, color)
-	local index<const> = reserve_atomic(self, 3)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	words[index] = gp0.draw_line | gp0.argb_to_rgb(color)
 	words[index + 1] = gp0.pair16(x0, y0)
@@ -219,7 +202,7 @@ function draw_list:line(x0, y0, x1, y1, color)
 end
 
 local emit_quad_color<const> = function(self, opcode, x0, y0, x1, y1, x2, y2, x3, y3, color)
-	local index<const> = reserve_atomic(self, 5)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	words[index] = opcode | gp0.argb_to_rgb(color)
 	words[index + 1] = gp0.pair16(x0, y0)
@@ -238,7 +221,7 @@ function draw_list:semitransparent_quad(x0, y0, x1, y1, x2, y2, x3, y3, color)
 end
 
 function draw_list:triangle(x0, y0, x1, y1, x2, y2, color)
-	local index<const> = reserve_atomic(self, 4)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	words[index] = gp0.draw_triangle | gp0.argb_to_rgb(color)
 	words[index + 1] = gp0.pair16(x0, y0)
@@ -248,9 +231,9 @@ function draw_list:triangle(x0, y0, x1, y1, x2, y2, color)
 end
 
 -- GTE SXY words and an already prepared GP0 command retain their native form.
--- Polygon packets must stay within a GX_WRITE DMA admission block.
+-- Polygon packets share the same ordered word stream as other GP0 commands.
 function draw_list:triangle_words(command_word, sxy0_word, sxy1_word, sxy2_word)
-	local index<const> = reserve_atomic(self, 4)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	words[index] = command_word
 	words[index + 1] = sxy0_word
@@ -260,9 +243,9 @@ function draw_list:triangle_words(command_word, sxy0_word, sxy1_word, sxy2_word)
 end
 
 -- The sorted batch already owns native command/SXY words. Submit the earlier
--- prefix before streaming from offset zero, where four-word triangles cannot
--- straddle DMA admission blocks. Every run completes its RAM reads before this
--- storage is reused; GPU mode and drawing offset remain in the ordered stream.
+-- prefix before filling retained storage from offset zero. Every run completes
+-- its RAM reads before storage reuse; GPU mode and drawing offset remain in
+-- the ordered stream.
 function draw_list:triangle_words_batch(commands, xy0, xy1, xy2, order, count, first)
 	if count == 0 then
 		return
@@ -290,14 +273,14 @@ function draw_list:triangle_words_batch(commands, xy0, xy1, xy2, order, count, f
 	end
 end
 
--- Page-local UV words and one admitted Direct16 page. Keep seven-word packets
--- atomic within DMA blocks, streaming retained storage without face objects.
+-- Page-local UV words and one admitted Direct16 page. Stream seven-word
+-- packets through retained storage without face objects or transport padding.
 function draw_list:textured_triangle_words_batch(commands, xy0, xy1, xy2, uv0, uv1, uv2, order, first, last, draw_mode)
 	command_list.submit(self)
 	self:mode(draw_mode)
 	for index = first, last do
 		if self.word_count + 7 > self.word_capacity then command_list.submit(self) end
-		local at<const> = reserve_atomic(self, 7)
+		local at<const> = self.word_count
 		local packet<const>: *gp0_textured_triangle_packet = self.words + at * sizeof(word)
 		local face<const> = order[index]
 		packet.command = commands[face]
@@ -310,7 +293,7 @@ function draw_list:textured_triangle_words_batch(commands, xy0, xy1, xy2, uv0, u
 end
 
 function draw_list:quad_words(command_word, sxy0_word, sxy1_word, sxy2_word, sxy3_word)
-	local index<const> = reserve_atomic(self, 5)
+	local index<const> = self.word_count
 	local packet<const>: *gp0_quad_packet = self.words + index * sizeof(word)
 	packet.command = command_word
 	packet.position0 = sxy0_word
@@ -321,7 +304,7 @@ function draw_list:quad_words(command_word, sxy0_word, sxy1_word, sxy2_word, sxy
 end
 
 function draw_list:gouraud_triangle(x0, y0, color0, x1, y1, color1, x2, y2, color2)
-	local index<const> = reserve_atomic(self, 6)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	words[index] = gp0.draw_gouraud_triangle | gp0.argb_to_rgb(color0)
 	words[index + 1] = gp0.pair16(x0, y0)
@@ -796,7 +779,7 @@ function draw_list:direct16_quad(
 	blend_mode)
 	local draw_mode<const> = gp0.direct16_draw_mode(page_source_x, page_source_y, blend_mode)
 	self:mode(draw_mode)
-	local index<const> = reserve_atomic(self, 9)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	if (color & 0x00ffffff) == 0x00ffffff then
 		words[index] = gp0.draw_raw_textured_quad | 0x00808080
@@ -829,7 +812,7 @@ function draw_list:palette4_quad(
 	blend_mode)
 	local draw_mode<const> = gp0.palette4_draw_mode(texture_x, page_source_x, page_source_y, blend_mode)
 	self:mode(draw_mode)
-	local index<const> = reserve_atomic(self, 9)
+	local index<const> = self.word_count
 	local words<const>: *word = self.words
 	if (color & 0x00ffffff) == 0x00ffffff then
 		words[index] = gp0.draw_raw_textured_quad | 0x00808080

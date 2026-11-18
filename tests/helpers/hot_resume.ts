@@ -13,6 +13,7 @@ export function identityHotResumeRevision(image: Blua32ImageLayout): HotResumeRe
 	}
 	return {
 		previousImage: image,
+		nextImage: image,
 		revision: { functionAddresses, pcAddresses },
 	};
 }

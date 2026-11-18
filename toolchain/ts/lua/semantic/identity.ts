@@ -1,7 +1,7 @@
+import { numberConstantKey } from '../number';
 import type {
 	SemanticValueRoot,
 	OwnedValueID,
-	SemanticLiteralValue,
 	WorkspaceValueFactsInput,
 } from './value_graph';
 import type { LuaProjectModuleBindings } from './module_resolution';
@@ -21,7 +21,7 @@ export class WorkspaceValueIdentityIndex {
 	private readonly unresolvedModuleIdentityIds = new Map<string, Map<string, number>>();
 	private readonly moduleBindings: LuaProjectModuleBindings;
 	private readonly ownedIdentityIds: Map<OwnedValueID, number> = new Map();
-	private readonly literalIdentityIds: Map<SemanticLiteralValue['value'], number> = new Map();
+	private readonly literalIdentityIds: Map<string | number | boolean | null, number> = new Map();
 	private unknownIdentityId = 0;
 	private readonly identityParents: number[] = [0];
 	private readonly identityRanks: number[] = [0];
@@ -133,7 +133,7 @@ export class WorkspaceValueIdentityIndex {
 				break;
 			case 'literal':
 				identities = this.literalIdentityIds;
-				key = root.literal.value;
+				key = root.literal.kind === 'number' ? numberConstantKey(root.literal.value) : root.literal.value;
 				break;
 			case 'owned':
 				identities = this.ownedIdentityIds;

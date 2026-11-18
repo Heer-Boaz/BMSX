@@ -1,16 +1,19 @@
 #include "render/backend/software/gx_gpu_commands.h"
 
-#include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gpu_command_storage.h"
 #include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/software/gx_gpu_rasterizer.h"
 #include "render/backend/software/gx_gpu_vram.h"
+
+#include <bit>
+#include <cstring>
 
 namespace bmsx {
 namespace {
 
 void executeFillRectangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u16 colorWord = gxGpuSoftwareRgb888WordToRgb555(commandBuffer.words[wordStart]);
@@ -39,7 +42,7 @@ void executeFillRectangle(
 
 void executeCpuToVram(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 xyWord = commandBuffer.words[wordStart + 1u];
@@ -59,6 +62,22 @@ void executeCpuToVram(
 		const u32 rowRemaining = emittedPixels - emittedPixel;
 		const u32 rowWidth = rowRemaining < width ? rowRemaining : width;
 		const u32 targetY = gxGpuVramYAddress(y + row, vramYAddressExtensionWord);
+		if constexpr (std::endian::native == std::endian::little) {
+			if (!checkMaskBit && !setMaskBit) {
+				// Raw upload words already contain the two VRAM pixels in order.
+				// Split only at X wrap; an odd row continues in the same payload word.
+				const u32 first = std::min(rowWidth, GX_GPU_VRAM_X_ADDRESS_PERIOD - static_cast<u32>(x));
+				const size_t target = gxGpuSoftwareVramIndex(software, x, static_cast<i32>(targetY));
+				const u8* source = reinterpret_cast<const u8*>(commandBuffer.words.data() + payloadWordStart)
+					+ emittedPixel * sizeof(u16);
+				std::memcpy(software.vram.data() + target, source, first * sizeof(u16));
+				if (first != rowWidth) {
+					std::memcpy(software.vram.data() + target - x, source + first * sizeof(u16), (rowWidth - first) * sizeof(u16));
+				}
+				emittedPixel += rowWidth;
+				continue;
+			}
+		}
 		for (u32 column = 0u; column < rowWidth; column += 1u) {
 			const u32 payloadWord = commandBuffer.words[payloadWordStart + (emittedPixel >> 1u)];
 			gxGpuSoftwareWriteMaskedVramWord(
@@ -117,7 +136,7 @@ void copyVramArea(
 
 void executeVramToVram(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 sourceWord = commandBuffer.words[wordStart + 1u];
@@ -138,88 +157,53 @@ void executeVramToVram(
 
 void executeDrawPolygon(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
-	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
+	const u32 record = commandBuffer.commandDrawIndex[commandIndex];
+	const u32 positionStride = commandBuffer.drawPositionStride[record];
+	const u32 colorStride = commandBuffer.drawColorStride[record];
 	const u32 drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
 	const i32 dx = gxGpuSigned11(drawingOffsetWord);
 	const i32 dy = gxGpuDrawingOffsetY(drawingOffsetWord);
-	const bool ditherEnabled = gxGpuDitheredPolygon(drawModeWord, opcode);
-	const bool gouraud = gxGpuCommandGouraud(opcode);
-	if (gxGpuCommandTextureEnabled(opcode)) {
-		if (gouraud) {
-			const u32 color0 = commandBuffer.words[wordStart];
-			const u32 xy0 = commandBuffer.words[wordStart + 1u];
-			const u32 texture0 = commandBuffer.words[wordStart + 2u];
-			const u32 color1 = commandBuffer.words[wordStart + 3u];
-			const u32 xy1 = commandBuffer.words[wordStart + 4u];
-			const u32 texture1 = commandBuffer.words[wordStart + 5u];
-			const u32 color2 = commandBuffer.words[wordStart + 6u];
-			const u32 xy2 = commandBuffer.words[wordStart + 7u];
-			const u32 texture2 = commandBuffer.words[wordStart + 8u];
-			drawGxGpuSoftwareTexturedTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, gxGpuTextureU(texture0), gxGpuTextureV(texture0), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2), ditherEnabled);
-			if (gxGpuCommandQuadPolygon(opcode)) {
-				const u32 color3 = commandBuffer.words[wordStart + 9u];
-				const u32 xy3 = commandBuffer.words[wordStart + 10u];
-				const u32 texture3 = commandBuffer.words[wordStart + 11u];
-				drawGxGpuSoftwareTexturedTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3, gxGpuTextureU(texture3), gxGpuTextureV(texture3), ditherEnabled);
-			}
-			return;
-		}
-
-		const u32 color = commandBuffer.words[wordStart];
-		const u32 xy0 = commandBuffer.words[wordStart + 1u];
-		const u32 texture0 = commandBuffer.words[wordStart + 2u];
-		const u32 xy1 = commandBuffer.words[wordStart + 3u];
-		const u32 texture1 = commandBuffer.words[wordStart + 4u];
-		const u32 xy2 = commandBuffer.words[wordStart + 5u];
-		const u32 texture2 = commandBuffer.words[wordStart + 6u];
-		drawGxGpuSoftwareTexturedTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color, gxGpuTextureU(texture0), gxGpuTextureV(texture0), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, gxGpuTextureU(texture2), gxGpuTextureV(texture2), ditherEnabled);
-		if (gxGpuCommandQuadPolygon(opcode)) {
-			const u32 xy3 = commandBuffer.words[wordStart + 7u];
-			const u32 texture3 = commandBuffer.words[wordStart + 8u];
-			drawGxGpuSoftwareTexturedTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, gxGpuTextureU(texture2), gxGpuTextureV(texture2), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color, gxGpuTextureU(texture3), gxGpuTextureV(texture3), ditherEnabled);
-		}
-		return;
-	}
-	if (gouraud) {
-		const u32 color0 = commandBuffer.words[wordStart];
-		const u32 xy0 = commandBuffer.words[wordStart + 1u];
-		const u32 color1 = commandBuffer.words[wordStart + 2u];
-		const u32 xy1 = commandBuffer.words[wordStart + 3u];
-		const u32 color2 = commandBuffer.words[wordStart + 4u];
-		const u32 xy2 = commandBuffer.words[wordStart + 5u];
-		drawGxGpuSoftwareTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, ditherEnabled);
-		if (gxGpuCommandQuadPolygon(opcode)) {
-			const u32 color3 = commandBuffer.words[wordStart + 6u];
-			const u32 xy3 = commandBuffer.words[wordStart + 7u];
-			drawGxGpuSoftwareTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3, ditherEnabled);
-		}
-		return;
-	}
-
-	const u32 color = commandBuffer.words[wordStart];
+	const bool ditherEnabled = gxGpuDitheredPolygon(commandBuffer.commandDrawModeWord[commandIndex], opcode);
 	const u32 xy0 = commandBuffer.words[wordStart + 1u];
-	const u32 xy1 = commandBuffer.words[wordStart + 2u];
-	const u32 xy2 = commandBuffer.words[wordStart + 3u];
-	drawGxGpuSoftwareTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, ditherEnabled);
-	if (gxGpuCommandQuadPolygon(opcode)) {
-		const u32 xy3 = commandBuffer.words[wordStart + 4u];
-		drawGxGpuSoftwareTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color, ditherEnabled);
+	const u32 xy1 = commandBuffer.words[wordStart + 1u + positionStride];
+	const u32 xy2 = commandBuffer.words[wordStart + 1u + positionStride * 2u];
+	const u32 color0 = commandBuffer.words[wordStart];
+	const u32 color1 = commandBuffer.words[wordStart + colorStride];
+	const u32 color2 = commandBuffer.words[wordStart + colorStride * 2u];
+	if (gxGpuCommandTextureEnabled(opcode)) {
+		const u32 texture0 = commandBuffer.words[wordStart + 2u];
+		const u32 texture1 = commandBuffer.words[wordStart + 2u + positionStride];
+		const u32 texture2 = commandBuffer.words[wordStart + 2u + positionStride * 2u];
+		drawGxGpuSoftwareTexturedTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, gxGpuTextureU(texture0), gxGpuTextureV(texture0), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2), ditherEnabled);
+		if (commandBuffer.drawVertexCount[record] == 4u) {
+			const u32 xy3 = commandBuffer.words[wordStart + 1u + positionStride * 3u];
+			const u32 color3 = commandBuffer.words[wordStart + colorStride * 3u];
+			const u32 texture3 = commandBuffer.words[wordStart + 2u + positionStride * 3u];
+			drawGxGpuSoftwareTexturedTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3, gxGpuTextureU(texture3), gxGpuTextureV(texture3), ditherEnabled);
+		}
+		return;
+	}
+	drawGxGpuSoftwareTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, ditherEnabled);
+	if (commandBuffer.drawVertexCount[record] == 4u) {
+		const u32 xy3 = commandBuffer.words[wordStart + 1u + positionStride * 3u];
+		const u32 color3 = commandBuffer.words[wordStart + colorStride * 3u];
+		drawGxGpuSoftwareTriangle(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3, ditherEnabled);
 	}
 }
 
 void executeDrawRectangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 colorWord = commandBuffer.words[wordStart];
 	const u32 xyWord = commandBuffer.words[wordStart + 1u];
-	const u32 sizeWord = commandBuffer.words[wordStart + commandBuffer.commandWordCount[commandIndex] - 1u];
+	const u32 sizeWord = commandBuffer.words[wordStart + commandBuffer.drawSizeOffset[commandBuffer.commandDrawIndex[commandIndex]]];
 	const u32 width = gxGpuCommandRectangleWidth(opcode, sizeWord);
 	const u32 height = gxGpuCommandRectangleHeight(opcode, sizeWord);
 	const u32 drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
@@ -234,52 +218,40 @@ void executeDrawRectangle(
 
 void executeDrawLine(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
-	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
+	const u32 record = commandBuffer.commandDrawIndex[commandIndex];
+	const u32 positionStride = commandBuffer.drawPositionStride[record];
+	const u32 colorStride = commandBuffer.drawColorStride[record];
 	const u32 drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
 	const i32 dx = gxGpuSigned11(drawingOffsetWord);
 	const i32 dy = gxGpuDrawingOffsetY(drawingOffsetWord);
 	const u32 color0 = commandBuffer.words[wordStart];
 	const u32 xy0 = commandBuffer.words[wordStart + 1u];
-	if (gxGpuCommandGouraud(opcode)) {
-		const u32 color1 = commandBuffer.words[wordStart + 2u];
-		const u32 xy1 = commandBuffer.words[wordStart + 3u];
-		drawGxGpuSoftwareLineSegment(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1);
-		return;
-	}
-	const u32 xy1 = commandBuffer.words[wordStart + 2u];
-	drawGxGpuSoftwareLineSegment(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color0);
+	const u32 color1 = commandBuffer.words[wordStart + colorStride];
+	const u32 xy1 = commandBuffer.words[wordStart + 1u + positionStride];
+	drawGxGpuSoftwareLineSegment(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1);
 }
 
 void executeDrawPolyline(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
-	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
-	const u32 wordEnd = wordStart + commandBuffer.commandWordCount[commandIndex];
+	const u32 record = commandBuffer.commandDrawIndex[commandIndex];
+	const u32 positionStride = commandBuffer.drawPositionStride[record];
+	const u32 colorStride = commandBuffer.drawColorStride[record];
 	const u32 drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
 	const i32 dx = gxGpuSigned11(drawingOffsetWord);
 	const i32 dy = gxGpuDrawingOffsetY(drawingOffsetWord);
-	if (gxGpuCommandGouraud(opcode)) {
-		u32 color0 = commandBuffer.words[wordStart];
-		u32 xy0 = commandBuffer.words[wordStart + 1u];
-		for (u32 wordIndex = wordStart + 2u; wordIndex + 1u < wordEnd; wordIndex += 2u) {
-			const u32 color1 = commandBuffer.words[wordIndex];
-			const u32 xy1 = commandBuffer.words[wordIndex + 1u];
-			drawGxGpuSoftwareLineSegment(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1);
-			color0 = color1;
-			xy0 = xy1;
-		}
-		return;
-	}
-	const u32 color = commandBuffer.words[wordStart];
+	u32 color0 = commandBuffer.words[wordStart];
 	u32 xy0 = commandBuffer.words[wordStart + 1u];
-	for (u32 wordIndex = wordStart + 2u; wordIndex < wordEnd; wordIndex += 1u) {
-		const u32 xy1 = commandBuffer.words[wordIndex];
-		drawGxGpuSoftwareLineSegment(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color);
+	for (u32 vertex = 1u; vertex < commandBuffer.drawVertexCount[record]; ++vertex) {
+		const u32 color1 = commandBuffer.words[wordStart + vertex * colorStride];
+		const u32 xy1 = commandBuffer.words[wordStart + 1u + vertex * positionStride];
+		drawGxGpuSoftwareLineSegment(software, commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1);
+		color0 = color1;
 		xy0 = xy1;
 	}
 }
@@ -288,7 +260,7 @@ void executeDrawPolyline(
 
 size_t executeGxGpuSoftwareCommands(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t processedCommandCount,
 	size_t commandLimit) {
 	for (size_t commandIndex = processedCommandCount; commandIndex < commandLimit; commandIndex += 1u) {

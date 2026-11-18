@@ -41,6 +41,7 @@ enum class BinTag : u8 {
 	Int = 9,
 	F32 = 10,
 	Set = 11,
+	IntArray = 12, // varuint count followed by count zigzag varints, without element tags.
 };
 
 /* ============================================================================

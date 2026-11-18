@@ -37,9 +37,13 @@ enum class BuiltinFunctionId : uint8_t {
 	GetFrameUpvalue = 26,
 	SetFrameUpvalue = 27,
 	FrameHeader = 28,
+	NumberType = 29,
+	ToInteger = 30,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 29u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 31u;
+
+enum class GarbageCollectionOperation : int32_t { Collect = 0, Count = 1, Step = 2 };
 
 struct LuaBootPrimitive {
 	std::string_view name;
@@ -76,6 +80,8 @@ inline constexpr std::array<LuaBootPrimitive, BUILTIN_FUNCTION_COUNT> LUA_BOOT_P
 	{ "__bmsx_get_frame_upvalue", BuiltinFunctionId::GetFrameUpvalue },
 	{ "__bmsx_set_frame_upvalue", BuiltinFunctionId::SetFrameUpvalue },
 	{ "__bmsx_frame_header", BuiltinFunctionId::FrameHeader },
+	{ "__bmsx_number_type", BuiltinFunctionId::NumberType },
+	{ "__bmsx_tointeger", BuiltinFunctionId::ToInteger },
 }};
 
 } // namespace bmsx

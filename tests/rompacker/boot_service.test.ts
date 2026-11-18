@@ -188,7 +188,7 @@ test('Reboot captures entry and text at admission, resets through the exclusive 
 
 test('preparation rejection preserves the installed execution and does not poison the queue', async t => {
 	const f = await fixture(t);
-	const media = f.sources.currentBlua32Media, frame = f.cpu.activeThread.frames.at(-1);
+	const media = f.sources.currentBlua32Media, frame = f.cpu.activeThread.currentFrame!;
 	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '\nend end\n' }]);
 	const result = await f.service.reboot().completion;
 	assert.equal(result.status, 'rejected');
@@ -197,7 +197,7 @@ test('preparation rejection preserves the installed execution and does not poiso
 	await f.tasks.join();
 	assert.equal(f.tasks.ready, true);
 	assert.equal(f.sources.currentBlua32Media, media);
-	assert.equal(f.cpu.activeThread.frames.at(-1), frame);
+	assert.equal(f.cpu.activeThread.currentFrame!, frame);
 	assert.equal(f.resets(), 0);
 	f.model.undo();
 	assert.deepEqual(await f.service.reboot().completion, { status: 'reset', reset: true, installed: true });

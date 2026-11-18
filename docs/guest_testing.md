@@ -35,6 +35,22 @@ It deliberately does not support dynamically generated suites. Helpers remain
 ordinary `require` modules. Return values do not encode runner commands or
 pass/fail: normal completion passes; an assertion/error fails.
 
+A test that deliberately performs more work in one phase may declare a larger
+machine-cycle allowance without relaxing the limit for other cases:
+
+```lua
+return {
+    kind = 'unit',
+    phase_cycles = { long_scan = 67737600 },
+    tests = { long_scan = function(t) --[[ long bounded scan ]] end },
+}
+```
+
+The names must identify cases in the suite and each allowance must be a positive
+integer literal. It applies independently to each setup, body and teardown phase
+of that case. Yielding to a test operation does not reset the phase allowance.
+Module initialization, cleanup, total case cycles and tick limits remain separate.
+
 Each case gets a **fresh physical Runtime, CPU, heap, devices and input**.
 Setup and body share a fresh fixture table. Teardown runs after successful or
 failed setup/body; failed setup skips the body. Separate retained coroutines

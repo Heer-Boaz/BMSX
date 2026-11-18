@@ -6,6 +6,7 @@
 #define BMSX_GLES2_BACKEND_H
 
 #include "render/backend/backend.h"
+#include "render/backend/gles2/draw_state.h"
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -14,6 +15,8 @@
 #include <GLES2/gl2.h>
 
 namespace bmsx {
+
+enum class GxGpuDrawTargetMode { FullVram, SmallNibbles, SmallRgb5, SmallRgb5Mali };
 
 void applyGLES2TextureParams(const TextureParams& params);
 
@@ -26,6 +29,8 @@ struct GLES2Texture {
 	bool logicalSrgb = false;
 };
 
+struct GxGpuCommandStorage;
+struct GxGpuReadbackRequest;
 struct OpenGLES2GxGpuState;
 struct OpenGLES2GxGpuStateDeleter {
 	void operator()(OpenGLES2GxGpuState* state) const noexcept;
@@ -51,11 +56,14 @@ struct GxCpuToVramProfileFrame {
 
 class OpenGLES2Backend : public GPUBackend {
 public:
+	GLES2DrawState drawState;
 	using FramebufferGetter = uintptr_t (*)();
 	using ProcAddress = void (*)();
 	using ProcAddressGetter = ProcAddress (*)(const char*);
 
-	OpenGLES2Backend(i32 width, i32 height, bool profileGxUploads, u32 gxGpuVramByteCount);
+	OpenGLES2Backend(i32 width, i32 height, bool profileGxUploads, u32 gxGpuVramByteCount,
+		GxGpuDrawTargetMode drawTargetMode = GxGpuDrawTargetMode::FullVram);
+	GxGpuDrawTargetMode gxGpuDrawTargetMode() const { return m_gx_draw_target_mode; }
 	~OpenGLES2Backend() override;
 
 	BackendType type() const override { return BackendType::OpenGLES2; }
@@ -87,8 +95,12 @@ public:
 	void beginFrame() override;
 	void endFrame() override;
 	FrameStats getFrameStats() const override { return m_stats; }
+	void executeGxGpuPresentation(const GxGpuDeviceOutput& output) override;
 	void executeGxGpuCommandDrain(GxGpu& gxGpu) override;
 	void executeGxGpuReadback(GxGpu& gxGpu) override;
+	void executeGxGpuCommands(const GxGpuCommandStorage& commands);
+	void replaceGxGpuVramSnapshot(std::span<const u8> bytes, u64 serial);
+	void readGxGpuVram(const GxGpuReadbackRequest& request, u8* pixels);
 	void finishGxGpuReadbacks() override;
 	void captureGxGpuVramSnapshot(GxGpu& gxGpu) override;
 
@@ -96,6 +108,8 @@ public:
 	bool readyForTextureUpload() const override { return m_context_ready; }
 
 	void setContextCallbacks(FramebufferGetter framebufferGetter, ProcAddressGetter procAddressGetter);
+	// Called once when an external context owner hands execution back to us.
+	void invalidateContextState();
 	void onContextReset();
 	void onContextDestroy();
 	void onContextLost();
@@ -103,7 +117,6 @@ public:
 	void setActiveTextureUnit(i32 unit);
 	void bindTexture2D(TextureHandle tex);
 	void invalidateTextureBindingCache();
-	void setBlendColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha);
 	GLuint framebufferName(void* target) const;
 	void setRenderTarget(GLuint fbo, i32 width, i32 height);
 	GLuint compileShader(
@@ -141,6 +154,7 @@ public:
 	u32 contextGeneration() const { return m_context_generation; }
 	bool profilesGxUploads() const { return m_profile_gx_uploads; }
 	u32 gxGpuVramTextureRows() const { return m_gx_gpu_vram_texture_rows; }
+	void beginGxCpuToVramProfileFrame();
 	bool readGxCpuToVramProfileFrame(u64 afterRenderFrameSerial, GxCpuToVramProfileFrame& frame) const;
 	void recordGxCpuToVramUpload(u64 logicalBytes, u64 hostCalls, u64 hostBytes, u64 cpuNanoseconds);
 
@@ -155,30 +169,23 @@ private:
 		void* framebuffer,
 		RenderPassStateStorage& state,
 		void* context,
-		const GxGpuDeviceOutput& output);
+		const GxGpuPresentation& output);
 
 	static constexpr i32 kTrackedTextureUnits = 16;
 	void bindTextureForUpload(GLuint texture, const TextureParams& params);
 	FramebufferGetter m_get_framebuffer = nullptr;
 	ProcAddressGetter m_get_proc_address = nullptr;
-	GLuint m_current_fbo = 0;
 	GLuint m_backbuffer_fbo = 0;
 	i32 m_default_width = 0;
 	i32 m_default_height = 0;
-	i32 m_target_width = 0;
-	i32 m_target_height = 0;
 	FrameStats m_stats{};
 	bool m_profile_gx_uploads = false;
+	GxGpuDrawTargetMode m_gx_draw_target_mode;
 	u32 m_gx_gpu_vram_texture_rows = 0u;
 	GxCpuToVramProfileFrame m_gx_cpu_to_vram_profile_frame{};
 	i32 m_active_texture_unit = -1;
 	std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};
 	u32 m_touched_texture_units = 0u;
-	GLfloat m_blend_red = 0.0f;
-	GLfloat m_blend_green = 0.0f;
-	GLfloat m_blend_blue = 0.0f;
-	GLfloat m_blend_alpha = 0.0f;
-	bool m_blend_color_valid = false;
 	std::unique_ptr<OpenGLES2Pipelines> m_pipelines;
 	GLuint m_readback_fbo = 0;
 	u32 m_context_generation = 0;

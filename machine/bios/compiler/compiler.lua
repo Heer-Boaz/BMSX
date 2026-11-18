@@ -1,3 +1,4 @@
+local number_type<const> = __bmsx_number_type
 local bytecode<const> = require('compiler/bytecode')
 local isa<const> = require('bmsx/blua32')
 local semantic<const> = require('compiler/semantic')
@@ -59,12 +60,18 @@ local is_number_literal<const> = function(expression)
 end
 
 local add_constant<const> = function(state, value)
-	local index = state.program.constant_index_by_value[value]
+	local indices = state.program.constant_index_by_value
+	local key = value
+	if number_type(value) == 'float' then
+		indices = state.program.float_constant_index_by_bits
+		key = blua32.float_bits(value)
+	end
+	local index = indices[key]
 	if index == nil then
 		local const_pool<const> = state.program.const_pool
 		index = #const_pool + 1
 		const_pool[index] = value
-		state.program.constant_index_by_value[value] = index
+		indices[key] = index
 	end
 	state.direct_constant_by_index[index] = true
 	return index
@@ -137,7 +144,7 @@ prepare_value_operands = function(state, expression)
 		return
 	end
 	if kind == syntax.call_expression then
-		prepare_value_operands(state, expression.callee)
+		if expression.word_move == nil then prepare_value_operands(state, expression.callee) end
 		local method_name<const> = expression.method_name
 		if method_name ~= nil then
 			expression.method_constant_index = add_constant(state, method_name)
@@ -155,9 +162,9 @@ prepare_value_operands = function(state, expression)
 	end
 	local value<const> = expression.constant_value
 	if is_number_literal(expression)
+		and number_type(value) == 'integer'
 		and value >= isa.min_signed_bx
-		and value <= isa.max_signed_bx
-		and value % 1 == 0 then
+		and value <= isa.max_signed_bx then
 		expression.immediate_number = value
 		if value ~= 0 and value ~= 1 and value ~= -1 then
 			return
@@ -189,7 +196,7 @@ materialize_wide_immediates = function(state, expression)
 		return
 	end
 	if kind == syntax.call_expression then
-		materialize_wide_immediates(state, expression.callee)
+		if expression.word_move == nil then materialize_wide_immediates(state, expression.callee) end
 		local arguments<const> = expression.arguments
 		for index = 1, #arguments do
 			materialize_wide_immediates(state, arguments[index])
@@ -434,7 +441,7 @@ emit_path = function(
 			bytecode.emit_abc(instruction_words, isa.op_mov, name_register,
 				constant_register(state, expression.constant_index), 0)
 			bytecode.emit_abc(instruction_words, isa.op_call, call_base,
-				1 + isa.fixed_call_arg_count_bias, 1)
+				1 + isa.fixed_value_count_bias, 1 + isa.fixed_value_count_bias)
 			if not use_target then
 				bytecode.emit_abc(instruction_words, isa.op_mov, target, call_base, 0)
 			end
@@ -591,9 +598,16 @@ local emit_call_expression<const> = function(
 	expression,
 	target,
 	target_is_temporary,
-	result_count
+	result_operand
 )
 	local temporary_base<const> = state.free_register
+	if expression.word_move ~= nil then
+		local source<const> = emit_value(state, instruction_words, expression.arguments[1], target, target_is_temporary)
+		local mode<const> = expression.word_move == 'float_bits' and isa.move_float_bits or isa.move_float_from_bits
+		bytecode.emit_abc(instruction_words, isa.op_mov, target, source, mode)
+		state.free_register = temporary_base
+		return target
+	end
 	local use_target<const> = target_is_temporary
 		and target >= state.temporary_register_base
 		and target + 1 == temporary_base
@@ -647,13 +661,13 @@ local emit_call_expression<const> = function(
 	end
 	local arguments<const> = expression.arguments
 	local argument_count<const> = #arguments
-	local argument_operand = argument_count + isa.fixed_call_arg_count_bias
+	local argument_operand = argument_count + isa.fixed_value_count_bias
 		+ (method_name ~= nil and 1 or 0)
 	for index = 1, argument_count do
 		local argument_target<const> = reserve_register(state)
 		local argument<const> = arguments[index]
 		if index == argument_count and argument.kind == syntax.call_expression
-			and argument.expands_results then
+			and argument.expands_results and argument.word_move == nil then
 			emit_call_expression(state, instruction_words, argument, argument_target, true, 0)
 			argument_operand = 0
 		else
@@ -680,7 +694,7 @@ local emit_call_expression<const> = function(
 		isa.op_call,
 		call_base,
 		argument_operand,
-		result_count
+		result_operand
 	)
 	if not use_target then
 		bytecode.emit_abc(
@@ -863,7 +877,7 @@ emit_value = function(
 			expression,
 			target,
 			target_is_temporary,
-			1
+			1 + isa.fixed_value_count_bias
 		)
 	end
 	if kind == syntax.unary_expression
@@ -972,7 +986,7 @@ local emit_assignment<const> = function(
 				bytecode.emit_abc(instruction_words, isa.op_mov, value_target, value_register, 0)
 			end
 			bytecode.emit_abc(instruction_words, isa.op_call, call_base,
-				2 + isa.fixed_call_arg_count_bias, 0)
+				2 + isa.fixed_value_count_bias, isa.fixed_value_count_bias)
 			state.free_register = call_base
 			return
 		end
@@ -1138,14 +1152,7 @@ local emit_return_statement<const> = function(state, instruction_words, statemen
 	local expressions<const> = statement.expressions
 	local expression_count<const> = #expressions
 	if expression_count == 0 then
-		bytecode.emit_abc(
-			instruction_words,
-			isa.op_knil,
-			return_target,
-			0,
-			0
-		)
-		bytecode.emit_abc(instruction_words, isa.op_ret, return_target, 1, 0)
+		bytecode.emit_abc(instruction_words, isa.op_ret, return_target, isa.fixed_value_count_bias, 0)
 		return
 	end
 	for index = 2, expression_count do
@@ -1155,7 +1162,7 @@ local emit_return_statement<const> = function(state, instruction_words, statemen
 		local target_register<const> = return_target + index - 1
 		local expression<const> = expressions[index]
 		if index == expression_count and expression.kind == syntax.call_expression
-			and expression.expands_results then
+			and expression.expands_results and expression.word_move == nil then
 			-- The final call owns the last temporary and sets the physical top.
 			-- RET forwards the prefix and tuple without moving or packing it.
 			emit_call_expression(state, instruction_words, expression, target_register, true, 0)
@@ -1183,7 +1190,7 @@ local emit_return_statement<const> = function(state, instruction_words, statemen
 		instruction_words,
 		isa.op_ret,
 		return_target,
-		expression_count,
+		expression_count + isa.fixed_value_count_bias,
 		0
 	)
 end
@@ -1625,7 +1632,7 @@ emit_statement = function(state, instruction_words, statement)
 			statement.expression,
 			target,
 			true,
-			1
+			isa.fixed_value_count_bias
 		)
 	elseif kind == syntax.local_statement then
 		emit_local_statement(state, instruction_words, statement)
@@ -1743,8 +1750,7 @@ local compile_function<const> = function(state)
 	if #statements == 0
 		or statements[#statements].kind ~= syntax.return_statement then
 		local return_register<const> = reserve_register(state)
-		bytecode.emit_abc(instruction_words, isa.op_knil, return_register, 0, 0)
-		bytecode.emit_abc(instruction_words, isa.op_ret, return_register, 1, 0)
+		bytecode.emit_abc(instruction_words, isa.op_ret, return_register, isa.fixed_value_count_bias, 0)
 	end
 
 	return {
@@ -1893,6 +1899,7 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register, environme
 	local program<const> = {
 		const_pool = {},
 		constant_index_by_value = {},
+		float_constant_index_by_bits = {},
 		environment = environment,
 		external_scope = external_scope,
 	}

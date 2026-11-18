@@ -11,7 +11,7 @@ drawing area, coordinate offset, texture page, blending and mask controls.
 Commands and their parameters form a stream of 32-bit words written to GP0.
 The GPU assembles complete packets and executes them in order. CPU stores feed
 a sixteen-word command FIFO. DMA supplies the same stream through a separate
-sixteen-word ingress buffer, handing each admitted block to the command FIFO
+256-word ingress buffer, handing each admitted block to the command FIFO
 at block end. Packet framing continues across those block boundaries. GP1 is
 the separate control port for reset, DMA direction, state queries and GPU mode
 settings.
@@ -169,7 +169,7 @@ costs. Drawing, texture lookup and display sampling share local memory.
 | GP0 — `0801023CH` | Write command/input words; read GPUREAD |
 | GP1 — `08010240H` | Write control words; read GPUSTAT, not the last control word |
 | GP0 input FIFO | 16 thirty-two-bit words |
-| Separate DMA ingress | 16 thirty-two-bit words; not another 16 CPU FIFO slots |
+| Separate DMA ingress | 256 thirty-two-bit words; not another 16 CPU FIFO slots |
 | Ordinary programming access | Thirty-two-bit words, four-byte alignment |
 | Input coordinates | Each supplied X and Y is signed eleven-bit: −1024…1023 |
 | Drawing offset | Separate signed eleven-bit X and Y values |
@@ -188,9 +188,9 @@ affine interpolation and ordered local-memory writes are detailed in the
 primitive sections. Display-window sizes are programmed separately through PCRTC.
 
 **Issue cost and command completion.** An ordinary scalar word load or store,
-including its displacement form, has a **two-system-cycle base cost**. Address
+including its displacement form, has a **three-system-cycle base cost**. Address
 and value preparation, control flow and readiness waits are additional. A
-word-sequence store instead charges two base cycles plus its word count divided
+word-sequence store instead charges three base cycles plus its word count divided
 by four, rounded upward. The sequence advances the destination by four
 bytes per word: starting at GP0 reaches GP1 next, not another GP0 stream word.
 
@@ -247,7 +247,7 @@ bits subsequently change with the scanout position.
 ### Access and ordering {#sec-gpu-access-and-ordering}
 
 Use aligned word operations for normal programming. Ordinary scalar word loads
-and stores, including their displacement forms, have a two-system-cycle base
+and stores, including their displacement forms, have a three-system-cycle base
 cost; preparation, control flow and a blocked store's wait/retry are separate.
 
 | Access | Port effect |
@@ -278,10 +278,10 @@ repeated writes to the GP0 stream port.
 | --- | --- | --- |
 | 31 | Displayed-line parity | Beam-derived; calculation below. Not command readiness. |
 | 30:29 | DMA direction | GP1 direction low two bits: 0 off, 1 FIFO, 2 CPU→GP0, 3 GPUREAD→CPU. |
-| 28 | DMA packet acceptance | The packet-state test below; not a general CPU-store-ready bit. |
+| 28 | DMA ingress available | Separate ingress is empty and no system ingress stop is active; not a general CPU-store-ready bit. |
 | 27 | Readback ready | One exactly when a readback stream is READY, not merely when its header has been accepted. |
 | 26 | Idle | One only under all idle conditions below. |
-| 25 | DMA request | Direction 0: zero. Direction 1: DMA ingress empty and GP0 FIFO has room. Direction 2: bit 28. Direction 3: bit 27. A system ingress stop suppresses the write-side requests for directions 1 and 2. |
+| 25 | DMA request | Direction 0: zero. Directions 1 and 2: bit 28. Direction 3: bit 27. A system ingress stop suppresses the write-side requests for directions 1 and 2. |
 | 24 | GPU interrupt request | Latched by GP0(1Fh); GP1(02h) clears this GPU request latch. |
 | 23 | Display disabled | GP1 display-disable low bit; one means disabled. |
 | 22 | Vertical-interlace mode | GP1 display-mode bit 5. |
@@ -317,21 +317,18 @@ If the beam is stopped, bits 13 and 31 retain their existing values.
 input FIFOs are empty, and no incomplete fixed packet, image-upload payload or
 open polyline remains. It does not acknowledge a new displayed picture.
 
-**Bit 28** first requires idle readback, no system ingress stop and empty DMA
-ingress. After those requirements:
-
-- During an image-upload payload, it is one when the GP0 FIFO has room.
-- During a polyline payload, it is zero.
-- With no partial packet and no FIFO words, it is one.
-- Otherwise it is one only for a nonpolygon, nonline packet with fewer
-  accumulated words than its target length.
+**Bit 28** is one when the separate DMA ingress buffer is empty and no
+system ingress stop is active. It depends on storage availability, not on the
+opcode, partial-packet length, an open polyline or pending readback. Those
+conditions can delay parsing after admission without preventing an empty
+ingress buffer from accepting the next burst.
 
 **A direct CPU GP0 word store** instead requires no system ingress stop, empty
 DMA ingress, a physical GP0 FIFO count below sixteen, and no DMA ownership of
 the GP0 write port. It need not wait for GPU idle or readback completion if a
-word can still be admitted. A polygon or line prefix can therefore clear bit 28
-while a CPU word store remains admissible. Do not substitute bit 28 for this
-store-admission protocol.
+word can still be admitted. Conversely, DMA ingress availability does not
+establish free CPU FIFO space or release DMA ownership. Do not substitute
+bit 28 for the CPU store-admission protocol.
 
 The scalar CPU store checks admission before writing. If blocked, it waits and
 retries; no command word has yet been accepted. GP1's store-admission gate is
@@ -405,7 +402,7 @@ unless explicitly described as retained. An accepted GP1 write applies its
 control directly to programmed state. It does not join the GP0 FIFO or acquire
 a separate queued raster-completion interval.
 
-An ordinary scalar word store has a two-system-cycle base cost, separate from
+An ordinary scalar word store has a three-system-cycle base cost, separate from
 instruction preparation and any admission wait. GP0 busy status does not by
 itself prevent a GP1 store: GP1 admission is the system supervisor-quiesce gate.
 The reset and clear controls can therefore be issued while GP0 has an incomplete
@@ -496,8 +493,8 @@ readback does not prove that a new displayed presentation has latched.
 | Direction | Selection | GPUSTAT bit 25, DMA request |
 |---|---|---|
 | 0 | Off | Zero |
-| 1 | FIFO | DMA ingress empty and GP0 FIFO has room |
-| 2 | CPU→GP0 | GPUSTAT bit 28, DMA packet acceptance |
+| 1 | FIFO | GPUSTAT bit 28, DMA ingress available |
+| 2 | CPU→GP0 | GPUSTAT bit 28, DMA ingress available |
 | 3 | GPUREAD→CPU | GPUSTAT bit 27, readback READY |
 
 GPUSTAT bits 30:29 return the selected direction. A system ingress stop
@@ -856,14 +853,15 @@ transfer owning GP0's write port excludes direct CPU writes even if the physical
 GP0 FIFO has room. Do not use the FIFO's free space or GPUSTAT bit 28 as permission
 to interleave CPU words into that DMA-owned stream.
 
-DMA writes first enter a **separate sixteen-word ingress FIFO**, not sixteen
+DMA writes first enter a **separate 256-word ingress FIFO**, not sixteen
 extra CPU FIFO slots. At the end of an admitted DMA block, its words are handed
 to the GP0 command FIFO in order. They continue the current packet or payload,
 subject to command-completion and readback barriers.
 
-The DMA write-ready check at this boundary tests whether ingress is stopped.
-The DMA controller owns block sizing and admission; that limited check is not
-permission to submit an arbitrarily large block to sixteen-word storage. Channel
+DMA admission requires an empty, unpaused ingress buffer and admits at most
+its 256-word capacity. The controller owns burst sizing; GP0 preserves packet
+assembly across bursts, including polygons and polylines. Packet padding to a
+DMA boundary is unnecessary. Channel
 addresses, counts and transfer controls belong to the DMA interface, not an
 additional GPU register map.
 
@@ -3571,7 +3569,7 @@ Upload execution and the readback command each cost one tick, independently of a
 
 E1–E6, IRQ request and non-NOP unmatched GP0 operations also cost one tick; their selected register/IRQ effect occurs when execution begins, before command completion. Boundary-discarded NOPs have no queued cost interval. GP1 controls have no separate queued raster-cost interval. For example, an IRQ behind a 32×4 fill starting at cycle 0 executes and raises at 49, then completes at 50; the IRQ does not prove presentation has finished.
 
-Finally, budget the **CPU work**. A scalar word issue has two base CPU cycles;
+Finally, budget the **CPU work**. A scalar word issue has three base CPU cycles;
 include address/value preparation, control flow and admission waits as well.
 CPU issue and GPU execution can overlap. The following complete timeline
 shows how their costs combine for one fill-and-fence sequence.
@@ -3581,7 +3579,7 @@ shows how their costs combine for one fill-and-fence sequence.
 The following complete instruction sequence supplies a
 32×4 red fill, queues an IRQ marker, waits for it, saves the observed status,
 acknowledges both IRQ latches, checks idle separately, saves that status and
-returns. **Its cost is 83 system cycles**, not 83 plus the fill's command interval.
+returns. **Its cost is 113 system cycles**, not 113 plus the fill's command interval.
 CPU issue/polling and GPU work overlap.
 
 The schedule includes address setup, loads and stores, status tests, taken
@@ -3595,7 +3593,7 @@ is idle, with empty input, no partial packet or readback, its IRQ request clear,
 and no pending competing work. The reset drawing/display state supplies no row
 suppression. DMA does not own either port, ingress is not stopped, the controller
 pending and mask words are zero, and no IRQ, fault or other bus master interrupts
-the interval. The beam remains on reset line parity zero throughout these 83
+the interval. The beam remains on reset line parity zero throughout these 113
 cycles. Startup, the caller and initialization that establishes these preconditions
 are outside this stated interval.
 
@@ -3620,8 +3618,8 @@ assumed preloaded:
 | r11 | GPU idle status mask `04000000H`, bit 26 |
 
 r12 holds a GPUSTAT read; r13 holds its masked test. The twelve LOADK instructions
-cost twelve cycles. All memory operations below are scalar displaced **Word**
-loads/stores with two-cycle base cost. An address `base+4` uses displacement 1;
+cost twenty-four cycles. All memory operations below are scalar displaced **Word**
+loads/stores with three-cycle base cost. An address `base+4` uses displacement 1;
 no extra address ADD is hidden in this schedule. Every GP0 store uses the same
 r0 address, not an incrementing destination.
 
@@ -3630,7 +3628,7 @@ r0 address, not an incrementing destination.
 The operation column describes ISA effects, not BLua source syntax. EQ uses
 A=1: if the masked value differs from zero, skip the following JMP. Thus a clear
 status bit executes the backward branch; a set bit exits the polling loop.
-BAND, EQ and an executed JMP each cost one cycle. A skipped JMP is not issued.
+BAND, EQ and an executed JMP each cost two cycles. A skipped JMP is not issued.
 
 | Instruction index | Operation |
 |---|---|
@@ -3651,17 +3649,17 @@ BAND, EQ and an executed JMP each cost one cycle. A skipped JMP is not issued.
 | 25 | EQ: compare r13 with r3; skip instruction 26 when unequal |
 | 26 | JMP: jump to instruction 23 |
 | 27 | STORE_MEM_D: r12 → Word[r10+4], retain idle observation |
-| 28 | RET: return, two cycles |
+| 28 | RET: return, six cycles |
 
 There are 29 stored instruction words, but loops change the executed count. In
-this case instructions 16…19 execute nine unsuccessful passes, followed by
+this case instructions 16…19 execute five unsuccessful passes, followed by
 one successful pass 16…18. Instructions 23…25 succeed at the first idle check;
 JMP at instruction 26 is not issued.
 
 This is an execution fence and status readout, not image readback or a displayed
 frame. A C0 image read requires its separate READY/ownership/count protocol and
 has no fixed whole-transfer latency established by the one-tick command cost.
-Neither the 83-cycle function nor a sum of drawing costs establishes physical bus
+Neither the 113-cycle function nor a sum of drawing costs establishes physical bus
 bandwidth, sustained fill rate or the CPU cost of a complete game frame.
 
 ### Follow issue, command completion and readout {#sec-gpu-follow-issue-command-completion-and-readout}
@@ -3671,40 +3669,41 @@ instruction's charged endpoint:
 
 | Cycle | Event |
 |---|---|
-| 12 | All constants are loaded |
-| 14,16,18 | The three fill words are accepted; the complete fill starts at 18 |
-| 20 | IRQ marker accepted behind the active fill, without waiting for idle |
-| 22,27,…,62 | Nine completed status reads find GPU IRQ bit 24 clear |
-| 67 | Fill reaches `18+49`; marker executes and sets IRQ. The tenth read sees IRQ set but idle clear |
-| 68 | The marker's own one-tick interval completes |
-| 69 | BAND/EQ finish selecting the successful IRQ path; JMP at instruction 19 is skipped |
-| 71 | First retained status is written to result word 0 |
-| 73,75 | GPU request and controller pending latches are acknowledged separately |
-| 77 | First separate idle read completes with bit 26 set |
-| 79 | Idle BAND/EQ complete; JMP at instruction 26 is skipped |
-| 81,83 | Second status is retained, then RET completes |
+| 24 | All constants are loaded |
+| 27,30,33 | The three fill words are accepted; the complete fill starts at 33 |
+| 36 | IRQ marker accepted behind the active fill, without waiting for idle |
+| 39,48,…,75 | Five completed status reads find GPU IRQ bit 24 clear |
+| 82 | Fill reaches `33+49`; the marker executes and sets IRQ |
+| 83 | The marker's own one-tick interval completes |
+| 84 | The sixth read sees IRQ set and the GPU idle |
+| 88 | BAND/EQ finish selecting the successful IRQ path; JMP at instruction 19 is skipped |
+| 91 | First retained status is written to result word 0 |
+| 94,97 | GPU request and controller pending latches are acknowledged separately |
+| 100 | First separate idle read completes with bit 26 set |
+| 104 | Idle BAND/EQ complete; JMP at instruction 26 is skipped |
+| 107,113 | Second status is retained, then RET completes |
 
 The fill costs 98 command ticks, 49 cycles. The marker adds its own one-cycle
-interval: completion of the queued work is at 68, not at the first IRQ observation
-at 67. Under the stated reset/parity conditions, the saved words are `11922000H`
-(IRQ set, idle clear) and `14922000H` (IRQ clear, idle set). In general, beam and
+interval: completion of the queued work is at 83, before the first IRQ observation
+at 84. Under the stated reset/parity conditions, the saved words are `15922000H`
+(IRQ set, idle set) and `14922000H` (IRQ clear, idle set). In general, beam and
 configuration fields must be interpreted rather than compared with these whole
 example constants.
 
 | Executed work | Instructions | CPU cycles |
 |---|---:|---:|
-| Address/value setup | 12 LOADK | 12 |
-| Supply fill and marker | 4 stores | 8 |
-| Nine unsuccessful IRQ passes | 9×(load, BAND, EQ, JMP) | 45 |
-| Successful IRQ pass | load, BAND, EQ | 4 |
-| Retain IRQ status; acknowledge GPU and controller | 3 stores | 6 |
-| Successful idle check | load, BAND, EQ | 4 |
-| Retain idle status | 1 store | 2 |
-| Return | 1 RET | 2 |
-| **Complete entered-function interval** | **63** | **83** |
+| Address/value setup | 12 LOADK | 24 |
+| Supply fill and marker | 4 stores | 12 |
+| Five unsuccessful IRQ passes | 5×(load, BAND, EQ, JMP) | 45 |
+| Successful IRQ pass | load, BAND, EQ | 7 |
+| Retain IRQ status; acknowledge GPU and controller | 3 stores | 9 |
+| Successful idle check | load, BAND, EQ | 7 |
+| Retain idle status | 1 store | 3 |
+| Return | 1 RET | 6 |
+| **Complete entered-function interval** | **47** | **113** |
 
 No direct CPU store stalls in this sequence; the marker fits in the input while
-the fill executes. The 49 IRQ-poll cycles are still charged CPU work, not free
+the fill executes. The 52 IRQ-poll cycles are still charged CPU work, not free
 waiting. Replacing polling with an interrupt handler changes setup, entry,
 acknowledgement and resumption costs and needs its own budget.
 
@@ -3714,12 +3713,15 @@ Move an image along this route: RAM → fixed GP0 port → GPU local memory → 
 
 This example owns DMA0 and the GPU ports, masks interrupts, and polls completion. It uploads a raw 9 × 9 image at local-memory coordinate (96, 64), then reads the same rectangle into a separate RAM buffer. It does not program PCRTC or display the image.
 
-| Transfer | GP1 direction | DMA CONTROL | Read endpoint | Write endpoint | Requests |
-|---|---:|---:|---|---|---|
-| RAM → GP0 | 2 (`04000002H`) | `00003C41H` | RAM, incrementing | GP0, fixed | Read FORCE; write GX_WRITE |
-| GPUREAD → RAM | 3 (`04000003H`) | `00003C0AH` | GPUREAD, fixed | RAM, incrementing | Read GX_READ; write FORCE |
+| Transfer | GP1 direction | DMA ROUTE | Programmed address | Admission |
+|---|---:|---:|---|---|
+| RAM → GP0 | 2 (`04000002H`) | 1 TO_GPU | READ_ADDR in RAM | Empty, unpaused GPU ingress |
+| GPUREAD → RAM | 3 (`04000003H`) | 2 FROM_GPU | WRITE_ADDR in RAM | Ready packed readback words |
 
-Both controls select up to 16 words per block. COUNT counts words, not pixels or bytes. Each admitted block captures its addresses, count, and control; requests are sampled at admission. Both request selectors must permit admission. FORCE permits it unconditionally.
+COUNT counts words, not pixels or bytes. Device ports are wired by ROUTE;
+there are no separate endpoint addresses or request selectors. Each transfer
+below fits in one burst. Channel configuration remains write-disabled while
+BUSY, and an admitted burst holds the CPU bus until its completion.
 
 ### Upload, read back and release the ports {#sec-gpu-upload-read-back-and-release-the-ports}
 
@@ -3759,9 +3761,8 @@ local irq_mask<const>: *word = 0x08000008
 *gp0 = 0xe6000000                  -- No mask check or force-mask
 *gp1 = 0x04000002                  -- CPU-to-GP0 DMA request selection
 dma[0] = upload                   -- READ_ADDR
-dma[1] = 0x0801023c                -- WRITE_ADDR: fixed GP0
 dma[2] = 44                        -- TRANSFER_COUNT
-dma[3] = 0x00003c41                -- CONTROL: up to sixteen words/block
+dma[3] = 1                         -- TO_GPU; destination is wired.
 dma[5] = 1                         -- TRIGGER
 while (dma[4] & 2) == 0 do         -- STATUS.DONE
 end
@@ -3775,10 +3776,9 @@ end
 while (*gp1 & 0x08000000) == 0 do  -- READY, not idle
 end
 *gp1 = 0x04000003
-dma[0] = 0x0801023c                -- Fixed GPUREAD
 dma[1] = returned                  -- Incrementing RAM destination
 dma[2] = 41
-dma[3] = 0x00003c0a
+dma[3] = 2                         -- FROM_GPU; source is wired.
 dma[5] = 1
 while (dma[4] & 2) == 0 do
 end
@@ -3801,26 +3801,28 @@ Readback fills **41 words**, 164 bytes, without headers. Returned words 0, 4,
 39 and 40 are respectively `00020001H`, `000A0009H`, `0050004FH` and
 `00000051H`. The final unused halfword reads zero. At DONE, each DMA COUNT is
 zero; upload advanced its RAM source by 176 bytes and readback advanced its RAM
-destination by 164 bytes. The GP0/GPUREAD endpoint addresses did not advance.
+destination by 164 bytes. Only memory-side addresses advance; unused address registers retain their words.
 The final GPUREAD latch is 00000051H, and another CPU read with no READY stream
 returns that latch rather than an extra pixel.
 
 ### Account for admitted transfer time {#sec-gpu-account-for-admitted-transfer-time}
 
-Installed RAM timing charges one cycle per word plus one per burst; the I/O side charges zero. Transfers between these regions use the larger side charge.
+Installed RAM timing charges one cycle per word plus one per burst. Each I/O
+access costs one cycle per word. Source reads and destination writes use the
+shared bus serially, so a RAM/I/O burst of N words costs 2N + 1 cycles.
 
 | Transfer | Words | Admitted blocks | Block charges | Total |
 |---|---:|---|---|---:|
-| Upload packet | 44 | 16 + 16 + 12 | 17 + 17 + 13 | 47 cycles |
-| READY readback | 41 | 16 + 16 + 9 | 17 + 17 + 10 | 44 cycles |
+| Upload packet | 44 | 44 | 89 | 89 cycles |
+| READY readback | 41 | 41 | 83 | 83 cycles |
 
-These are admitted DMA charges, not end-to-end measurements. They exclude CPU preparation, request waits, other channels, readback preparation, and display timing. The final blocks are partial blocks, not padded sixteen-word transfers.
+These are admitted DMA charges, not end-to-end measurements. They exclude CPU preparation, request waits, other channels, readback preparation, and display timing. Neither transfer is padded to the 256-word burst limit.
 
 ### Keep completion boundaries separate {#sec-gpu-keep-completion-boundaries-separate}
 
-DMA **DONE** means the channel finished its transfers. GP0 DMA words first enter a separate sixteen-word ingress buffer and pass to the command FIFO at block end. The GPU must still consume the counted A0 payload and complete the upload. Neither channel DONE nor packet acceptance alone establishes command completion.
+DMA **DONE** means the channel finished its transfers. GP0 DMA words first enter a separate 256-word ingress buffer and pass to the command FIFO at block end. The GPU must still consume the counted A0 payload and complete the upload. Neither channel DONE nor packet acceptance alone establishes command completion.
 
-After the readback drain, an ordered GPU marker and GPU idle are polled separately. GPUSTAT bit 28 reports packet acceptance, bit 27 reports pixel **READY**, and bit 26 reports idle; idle excludes executing commands, FIFO contents, incomplete packets, image uploads, open polylines and active readback. GPU and controller acknowledgements remain separate.
+After the readback drain, an ordered GPU marker and GPU idle are polled separately. GPUSTAT bit 28 reports DMA ingress availability, bit 27 reports pixel **READY**, and bit 26 reports idle; idle excludes executing commands, FIFO contents, incomplete packets, image uploads, open polylines and active readback. GPU and controller acknowledgements remain separate.
 
 Wait for READY before reading image data. Consuming the last word clears
 READY and its DMA request, allowing parsing to advance to the queued marker.

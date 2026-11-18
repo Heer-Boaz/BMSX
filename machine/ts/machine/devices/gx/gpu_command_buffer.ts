@@ -1,4 +1,9 @@
-import { DMA_REQUEST_GX_READ } from '../../../spec/bmsx/io';
+import {
+	GX_GPU_COMMAND_DRAW_POLYGON, GX_GPU_COMMAND_DRAW_LINE, GX_GPU_COMMAND_DRAW_POLYLINE,
+	GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_COMMAND_READ_VRAM_TO_CPU, type GxGpuPacket,
+} from './gpu_packet';
+export { GX_GPU_COMMAND_DRAW_POLYGON, GX_GPU_COMMAND_DRAW_LINE, GX_GPU_COMMAND_DRAW_POLYLINE, GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_COMMAND_COPY_VRAM_TO_VRAM, GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_COMMAND_READ_VRAM_TO_CPU, GX_GPU_SKIPPED_LINE_NONE } from './gpu_packet';
+import { DmaEndpoint } from '../dma/endpoints';
 import type { DmaController } from '../dma/controller';
 import {
 	GX_GPU_TRANSFER_MAX_BYTE_COUNT,
@@ -12,16 +17,6 @@ export const GX_GPU_COMMAND_CAPACITY = 4096;
 export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
 export const GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT = 3 + (GX_GPU_TRANSFER_MAX_PIXEL_COUNT >>> 1);
 export const GX_GPU_COMMAND_WORD_DRAIN_THRESHOLD = GX_GPU_COMMAND_WORD_CAPACITY - GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT;
-export const GX_GPU_SKIPPED_LINE_NONE = 2;
-
-export const GX_GPU_COMMAND_DRAW_POLYGON = 1;
-export const GX_GPU_COMMAND_DRAW_LINE = 2;
-export const GX_GPU_COMMAND_DRAW_POLYLINE = 3;
-export const GX_GPU_COMMAND_DRAW_RECTANGLE = 4;
-export const GX_GPU_COMMAND_FILL_RECTANGLE = 5;
-export const GX_GPU_COMMAND_COPY_VRAM_TO_VRAM = 6;
-export const GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM = 7;
-export const GX_GPU_COMMAND_READ_VRAM_TO_CPU = 8;
 export const GX_GPU_READBACK_IDLE = 0;
 export const GX_GPU_READBACK_PENDING = 1;
 export const GX_GPU_READBACK_SUBMITTED = 2;
@@ -73,8 +68,14 @@ export type GxGpuCommandBufferView = {
 	readonly commandDrawingOffsetWord: ArrayLike<number>;
 	readonly commandMaskBitModeWord: ArrayLike<number>;
 	readonly commandSkippedLineParity: ArrayLike<number>;
+	readonly commandDrawIndex: ArrayLike<number>;
+	readonly drawVertexCount: ArrayLike<number>;
+	readonly drawPositionStride: ArrayLike<number>;
+	readonly drawColorStride: ArrayLike<number>;
+	readonly drawSizeOffset: ArrayLike<number>;
 	readonly words: Uint32Array;
 	readonly wordBytes: Uint8Array;
+	readonly wordHalves: Uint16Array;
 };
 
 export type GxGpuReadbackView = {
@@ -227,17 +228,15 @@ class GxGpuReadbackPort extends GxGpuReadbackContext implements GxGpuReadbackPor
 			this.width = 0;
 			this.height = 0;
 			this.pixelCursor = 0;
-			this.updateDmaRequest();
 		}
+		this.updateDmaRequest();
 		return word >>> 0;
 	}
 
 	private updateDmaRequest(): void {
-		const requestBit = 1 << DMA_REQUEST_GX_READ;
-		this.dmaController.setRequestLines(
-			requestBit,
-			this.dmaReadEnabled && this.phase === GX_GPU_READBACK_READY ? requestBit : 0,
-		);
+		const words = this.dmaReadEnabled && this.phase === GX_GPU_READBACK_READY
+			? (this.width * this.height - this.pixelCursor + 1) >>> 1 : 0;
+		this.dmaController.setEndpointCapacity(DmaEndpoint.GpuRead, words);
 	}
 }
 
@@ -260,6 +259,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.executedCommandCount = 0;
 		this.presentCommandCount = 0;
 		this.wordCount = 0;
+		this.drawCount = 0;
 		this.readback.reset();
 	}
 
@@ -268,20 +268,28 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public executedCommandCount = 0;
 	public presentCommandCount = 0;
 	public wordCount = 0;
+	public drawCount = 0;
 	public readonly commandKind = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandOpcode = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandWordStart = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandWordCount = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandDrawModeWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
-	public readonly commandVramYAddressExtensionWord = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
+	public readonly commandVramYAddressExtensionWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandTextureWindowWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandDrawingAreaTopLeftWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandDrawingAreaBottomRightWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandDrawingOffsetWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandMaskBitModeWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandSkippedLineParity = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
+	// A dense layout record refers to the raw command span, not another packet.
+	public readonly commandDrawIndex = new Uint16Array(GX_GPU_COMMAND_CAPACITY);
+	public readonly drawVertexCount = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
+	public readonly drawPositionStride = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
+	public readonly drawColorStride = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
+	public readonly drawSizeOffset = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly words = new Uint32Array(GX_GPU_COMMAND_WORD_CAPACITY);
 	public readonly wordBytes = new Uint8Array(this.words.buffer);
+	public readonly wordHalves = new Uint16Array(this.words.buffer);
 	public readonly readback: GxGpuReadbackPort;
 
 	public constructor(dmaController: DmaController) {
@@ -301,6 +309,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 				return;
 			}
 			this.commandCount = commandIndex;
+			this.drawCount = this.commandDrawIndex[commandIndex];
 			this.wordCount = this.commandWordStart[commandIndex];
 			if (this.presentCommandCount > commandIndex) {
 				this.presentCommandCount = commandIndex;
@@ -309,6 +318,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		}
 		if (this.readback.phase === GX_GPU_READBACK_PENDING && this.readback.fenceCommandCount !== 0) {
 			this.commandCount = this.readback.fenceCommandCount - 1;
+			this.drawCount = this.commandDrawIndex[this.commandCount];
 			this.wordCount = this.commandWordStart[this.commandCount];
 			if (this.executedCommandCount > this.commandCount) {
 				this.executedCommandCount = this.commandCount;
@@ -376,6 +386,8 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandDrawingOffsetWord.set(state.commandDrawingOffsetWord, 0);
 		this.commandMaskBitModeWord.set(state.commandMaskBitModeWord, 0);
 		this.commandSkippedLineParity.set(state.commandSkippedLineParity, 0);
+		this.drawCount = 0;
+		for (let index = 0; index < this.commandCount; index += 1) this.appendDrawLayout(index);
 		this.words.set(state.words, 0);
 		this.readback.phase = state.readbackPhase;
 		this.readback.fenceCommandCount = state.readbackFenceCommandCount;
@@ -394,6 +406,8 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 			return 0;
 		}
 		const oldCommandCount = this.commandCount;
+		const retiredDraws = retiredCommands === oldCommandCount ? this.drawCount : this.commandDrawIndex[retiredCommands];
+		const remainingDraws = this.drawCount - retiredDraws;
 		const oldWordCount = this.wordCount;
 		const retiredWords = retiredCommands === oldCommandCount
 			? this.commandWordStart[retiredCommands - 1] + this.commandWordCount[retiredCommands - 1]
@@ -412,9 +426,18 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandDrawingOffsetWord.copyWithin(0, retiredCommands, oldCommandCount);
 		this.commandMaskBitModeWord.copyWithin(0, retiredCommands, oldCommandCount);
 		this.commandSkippedLineParity.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandDrawIndex.copyWithin(0, retiredCommands, oldCommandCount);
 		for (let commandIndex = 0; commandIndex < remainingCommands; commandIndex += 1) {
 			this.commandWordStart[commandIndex] -= retiredWords;
+			this.commandDrawIndex[commandIndex] -= retiredDraws;
 		}
+		if (retiredDraws !== 0) {
+			this.drawVertexCount.copyWithin(0, retiredDraws, this.drawCount);
+			this.drawPositionStride.copyWithin(0, retiredDraws, this.drawCount);
+			this.drawColorStride.copyWithin(0, retiredDraws, this.drawCount);
+			this.drawSizeOffset.copyWithin(0, retiredDraws, this.drawCount);
+		}
+		this.drawCount = remainingDraws;
 		this.words.copyWithin(0, retiredWords, oldWordCount);
 		this.commandCount = remainingCommands;
 		this.executedCommandCount -= retiredCommands;
@@ -490,6 +513,53 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandDrawingOffsetWord[commandIndex] = drawingOffsetWord >>> 0;
 		this.commandMaskBitModeWord[commandIndex] = maskBitModeWord >>> 0;
 		this.commandSkippedLineParity[commandIndex] = skippedLineParity;
+		this.appendDrawLayout(commandIndex);
 		this.commandCount = commandIndex + 1;
+	}
+
+	public pushPreparedCommand(packet: GxGpuPacket, wordStart: number): void {
+		const index = this.commandCount++, state = packet.drawState;
+		this.commandKind[index] = packet.kind;
+		this.commandOpcode[index] = packet.opcode;
+		this.commandWordStart[index] = wordStart;
+		this.commandWordCount[index] = packet.wordCount;
+		this.commandDrawModeWord[index] = state.drawModeWord;
+		this.commandVramYAddressExtensionWord[index] = state.vramYAddressExtensionWord;
+		this.commandTextureWindowWord[index] = state.textureWindowWord;
+		this.commandDrawingAreaTopLeftWord[index] = state.drawingAreaTopLeftWord;
+		this.commandDrawingAreaBottomRightWord[index] = state.drawingAreaBottomRightWord;
+		this.commandDrawingOffsetWord[index] = state.drawingOffsetWord;
+		this.commandMaskBitModeWord[index] = state.maskBitModeWord;
+		this.commandSkippedLineParity[index] = state.skippedLineParity;
+		this.commandDrawIndex[index] = this.drawCount;
+		if (packet.kind >= GX_GPU_COMMAND_DRAW_POLYGON && packet.kind <= GX_GPU_COMMAND_DRAW_RECTANGLE) {
+			const draw = this.drawCount++;
+			this.drawVertexCount[draw] = packet.vertexCount;
+			this.drawPositionStride[draw] = packet.positionStride;
+			this.drawColorStride[draw] = packet.colorStride;
+			this.drawSizeOffset[draw] = packet.sizeOffset;
+		}
+	}
+
+	private appendDrawLayout(index: number): void {
+		this.commandDrawIndex[index] = this.drawCount;
+		const kind = this.commandKind[index];
+		if (kind < GX_GPU_COMMAND_DRAW_POLYGON || kind > GX_GPU_COMMAND_DRAW_RECTANGLE) return;
+		const opcode = this.commandOpcode[index];
+		const gouraud = (opcode >>> 4) & 1;
+		let stride = 1;
+		let vertices = 1;
+		if (kind === GX_GPU_COMMAND_DRAW_POLYGON) {
+			stride += ((opcode >>> 2) & 1) + gouraud;
+			vertices = 3 + ((opcode >>> 3) & 1);
+		} else if (kind === GX_GPU_COMMAND_DRAW_LINE || kind === GX_GPU_COMMAND_DRAW_POLYLINE) {
+			stride += gouraud;
+			vertices = kind === GX_GPU_COMMAND_DRAW_LINE ? 2 : 1 + (((this.commandWordCount[index] - 2) / stride) | 0);
+		}
+		const record = this.drawCount++;
+		this.drawVertexCount[record] = vertices;
+		this.drawPositionStride[record] = stride;
+		this.drawColorStride[record] = kind !== GX_GPU_COMMAND_DRAW_RECTANGLE && gouraud !== 0 ? stride : 0;
+		this.drawSizeOffset[record] = kind === GX_GPU_COMMAND_DRAW_RECTANGLE ? this.commandWordCount[index] - 1 : 0;
 	}
 }

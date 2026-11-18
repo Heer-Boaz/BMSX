@@ -1,57 +1,67 @@
 #include "machine/devices/dma/controller.h"
 
+#include "common/compiler.h"
+
 #include "machine/cpu/cpu.h"
+#include "machine/devices/gx/gpu.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 
 namespace bmsx {
+namespace {
+constexpr DmaEndpoint ReadEndpoints[] = {
+	DmaEndpoint::Memory, DmaEndpoint::Memory, DmaEndpoint::GpuRead, DmaEndpoint::Memory,
+	DmaEndpoint::ImgDecRead, DmaEndpoint::ImgDecRead, DmaEndpoint::Memory, DmaEndpoint::ApuRead,
+};
+constexpr DmaEndpoint WriteEndpoints[] = {
+	DmaEndpoint::Memory, DmaEndpoint::GpuWrite, DmaEndpoint::Memory, DmaEndpoint::ImgDecWrite,
+	DmaEndpoint::Memory, DmaEndpoint::GpuWrite, DmaEndpoint::ApuWrite, DmaEndpoint::Memory,
+};
+constexpr u32 EndpointAddresses[] = {
+	IO_GX_GPU_GP0, IO_GX_GPU_GP0, IO_APU_TRANSFER_DATA, IO_APU_TRANSFER_DATA,
+	IO_IMGDEC_DATA, IO_IMGDEC_DATA,
+};
+DmaEndpoint capacityEndpoint(DmaEndpoint endpoint, u32 address, u32 control, bool read) {
+	if (endpoint != DmaEndpoint::Memory || address < CART_MMIO_BASE || address >= CART_MMIO_END) return endpoint;
+	if (read) return ((control >> DMA_CONTROL_READ_SLOT_SHIFT) & 1u) != 0u ? DmaEndpoint::Cartridge1Read : DmaEndpoint::Cartridge0Read;
+	return ((control >> DMA_CONTROL_WRITE_SLOT_SHIFT) & 1u) != 0u ? DmaEndpoint::Cartridge1Write : DmaEndpoint::Cartridge0Write;
+}
+} // namespace
 
 DmaController::DmaController(Memory& memory, CPU& cpu, IrqController& irq, DeviceScheduler& scheduler)
 	: m_memory(memory)
 	, m_cpu(cpu)
 	, m_irq(irq)
 	, m_scheduler(scheduler) {
+	m_endpointCapacity[static_cast<u32>(DmaEndpoint::Memory)] = DMA_BURST_WORD_CAPACITY;
 	for (u32 channel = 0u; channel < IO_DMA_CHANNEL_COUNT; channel += 1u) {
-		m_memory.mapIoWrite(IO_DMA_CONTROLS[channel], this, &DmaController::onChannelConfigWriteThunk);
-		m_memory.mapIoWrite(IO_DMA_READ_ADDRS[channel], this, &DmaController::onAddressWriteThunk);
-		m_memory.mapIoWrite(IO_DMA_WRITE_ADDRS[channel], this, &DmaController::onAddressWriteThunk);
-		m_memory.mapIoWrite(IO_DMA_TRANSFER_COUNTS[channel], this, &DmaController::onChannelConfigWriteThunk);
-		m_memory.mapIoWrite(IO_DMA_TRIGGERS[channel], this, &DmaController::onTriggerWriteThunk);
-		m_memory.mapIoWriteReady(IO_DMA_TRIGGERS[channel], &DmaController::triggerWriteReadyThunk);
+		m_memory.mapIoWrite(IO_DMA_CONTROLS[channel], this, &DmaController::onChannelConfigWriteThunk, IoWriteStorage::Device);
+		m_memory.mapIoWrite(IO_DMA_READ_ADDRS[channel], this, &DmaController::onChannelConfigWriteThunk, IoWriteStorage::Device);
+		m_memory.mapIoWrite(IO_DMA_WRITE_ADDRS[channel], this, &DmaController::onChannelConfigWriteThunk, IoWriteStorage::Device);
+		m_memory.mapIoWrite(IO_DMA_TRANSFER_COUNTS[channel], this, &DmaController::onChannelConfigWriteThunk, IoWriteStorage::Device);
+		m_memory.mapIoWrite(IO_DMA_TRIGGERS[channel], this, &DmaController::onTriggerWriteThunk, IoWriteStorage::Device);
 	}
-}
-
-bool DmaController::triggerWriteReadyThunk(void* context, u32, MappedBusSignals) {
-	return !static_cast<DmaController*>(context)->m_supervisorQuiesceRequested;
-}
-
-void DmaController::onAddressWriteThunk(void* context, u32 address, u32 value, MappedBusSignals) {
-	auto& controller = *static_cast<DmaController*>(context);
-	const u32 channel = address == IO_DMA_READ_ADDRS[1] || address == IO_DMA_WRITE_ADDRS[1] ? 1u : 0u;
-	DmaChannelState& registers = controller.m_registers.channels[channel];
-	if (address == IO_DMA_READ_ADDRS[channel]) {
-		registers.readAddressWord = value;
-	} else {
-		registers.writeAddressWord = value;
-	}
-	if (!controller.m_cpu.isMemoryWriteBlocked()) {
-		return;
-	}
-	controller.resumeCpuWriteIfPortReleased(controller.m_cpu.stalledMemoryWriteAddress());
 }
 
 void DmaController::onChannelConfigWriteThunk(void* context, u32 address, u32 value, MappedBusSignals) {
 	auto& controller = *static_cast<DmaController*>(context);
-	const u32 channel = address == IO_DMA_CONTROLS[1] || address == IO_DMA_TRANSFER_COUNTS[1] ? 1u : 0u;
-	DmaChannelState& registers = controller.m_registers.channels[channel];
-	if (address == IO_DMA_CONTROLS[channel]) {
+	const u32 channel = address >= IO_DMA1_READ_ADDR ? 1u : 0u;
+	if (controller.busy(channel)) {
+		return;
+	}
+	controller.m_memory.writeIoU32(address, value);
+	auto& registers = controller.m_registers.channels[channel];
+	if (address == IO_DMA_READ_ADDRS[channel]) {
+		registers.readAddressWord = value;
+	} else if (address == IO_DMA_WRITE_ADDRS[channel]) {
+		registers.writeAddressWord = value;
+	} else if (address == IO_DMA_CONTROLS[channel]) {
 		registers.controlWord = value;
 	} else {
 		registers.transferCountWord = value;
 	}
-	controller.arbitrate(controller.m_scheduler.currentNowCycles());
 }
 
 void DmaController::onTriggerWriteThunk(void* context, u32 address, u32 value, MappedBusSignals) {
@@ -60,17 +70,30 @@ void DmaController::onTriggerWriteThunk(void* context, u32 address, u32 value, M
 }
 
 void DmaController::onTriggerWrite(u32 channel, u32 value) {
-	m_memory.writeIoU32(IO_DMA_TRIGGERS[channel], 0u);
+	if (m_supervisorQuiesceRequested || m_activeChannel == channel) {
+		return;
+	}
+	if ((value & DMA_TRIGGER_STOP) != 0u) {
+		const u32 hadGpuDemand = gpuCommandServiceDemand();
+		finishChannel(channel, 0u);
+		arbitrate(m_scheduler.currentNowCycles());
+		if (hadGpuDemand != gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
+		return;
+	}
 	if ((value & DMA_TRIGGER_START) == 0u || busy(channel)) {
 		return;
 	}
 	DmaChannelState& registers = m_registers.channels[channel];
+	const u32 route = registers.controlWord & DMA_CONTROL_ROUTE_MASK;
+	const bool gpuJob = registers.transferCountWord != 0u && (ReadEndpoints[route] == DmaEndpoint::GpuRead || WriteEndpoints[route] == DmaEndpoint::GpuWrite);
+	if (gpuJob) m_gpu->synchronizeDmaRequest();
 	registers.statusWord = DMA_STATUS_BUSY;
 	m_memory.writeIoU32(IO_DMA_STATUSES[channel], DMA_STATUS_BUSY);
 	if (registers.transferCountWord == 0u) {
 		finishChannel(channel);
 	}
 	arbitrate(m_scheduler.currentNowCycles());
+	if (gpuJob && gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 }
 
 void DmaController::setTiming(
@@ -98,41 +121,78 @@ void DmaController::setTiming(
 	}
 }
 
-void DmaController::setRequestLines(u32 mask, u32 asserted) {
-	const u32 next = (m_requestLines & ~mask) | (asserted & mask);
-	if (next == m_requestLines) {
-		return;
-	}
-	m_requestLines = next;
+void DmaController::setEndpointCapacity(DmaEndpoint endpoint, u32 words) {
+	auto& capacity = m_endpointCapacity[static_cast<u32>(endpoint)];
+	if (capacity == words) return;
+	const bool gpuEndpoint = endpoint == DmaEndpoint::GpuRead || endpoint == DmaEndpoint::GpuWrite;
+	const u32 hadGpuDemand = gpuEndpoint ? 0u : gpuCommandServiceDemand();
+	capacity = words;
+	// A source request can arrive after lazy GPU progress; publish both sides
+	// before admission. GPU's own request update must not re-enter this catch-up.
+	if (!gpuEndpoint && (gpuCommandServiceDemand() & ~hadGpuDemand) != 0u && !m_restorePending) m_gpu->synchronizeDmaRequest();
 	arbitrate(m_scheduler.currentNowCycles());
+	if (!gpuEndpoint && hadGpuDemand != gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
+}
+
+void DmaController::setEndpointRequests(DmaEndpoint first, u32 firstWords, DmaEndpoint second, u32 secondWords) {
+	auto& a = m_endpointCapacity[static_cast<u32>(first)];
+	auto& b = m_endpointCapacity[static_cast<u32>(second)];
+	if (a == firstWords && b == secondWords) return;
+	const u32 hadGpuDemand = gpuCommandServiceDemand();
+	a = firstWords;
+	b = secondWords;
+	if ((gpuCommandServiceDemand() & ~hadGpuDemand) != 0u && !m_restorePending) m_gpu->synchronizeDmaRequest();
+	arbitrate(m_scheduler.currentNowCycles());
+	if (hadGpuDemand != gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 }
 
 bool DmaController::ownsReadPort(u32 address) const {
-	for (u32 channel = 0u; channel < IO_DMA_CHANNEL_COUNT; channel += 1u) {
-		if (busy(channel) && channelReadAddress(channel) == address) {
-			return true;
-		}
+	for (const auto& registers : m_registers.channels) {
+		const auto endpoint = ReadEndpoints[registers.controlWord & DMA_CONTROL_ROUTE_MASK];
+		if ((registers.statusWord & DMA_STATUS_BUSY) != 0u && endpoint != DmaEndpoint::Memory
+			&& EndpointAddresses[static_cast<u32>(endpoint)] == address) return true;
 	}
 	return false;
 }
 
 bool DmaController::ownsWritePort(u32 address) const {
-	for (u32 channel = 0u; channel < IO_DMA_CHANNEL_COUNT; channel += 1u) {
-		if (busy(channel) && channelWriteAddress(channel) == address) {
-			return true;
-		}
+	for (const auto& registers : m_registers.channels) {
+		const auto endpoint = WriteEndpoints[registers.controlWord & DMA_CONTROL_ROUTE_MASK];
+		if ((registers.statusWord & DMA_STATUS_BUSY) != 0u && endpoint != DmaEndpoint::Memory
+			&& EndpointAddresses[static_cast<u32>(endpoint)] == address) return true;
 	}
 	return false;
 }
 
 bool DmaController::hasAdmittedWriteBlock(u32 address) const {
-	return m_activeChannel != IO_DMA_CHANNEL_COUNT
-		&& m_scheduledWriteAddressWord == address;
+	if (m_activeChannel == IO_DMA_CHANNEL_COUNT) return false;
+	const auto endpoint = WriteEndpoints[m_registers.channels[m_activeChannel].controlWord & DMA_CONTROL_ROUTE_MASK];
+	return endpoint != DmaEndpoint::Memory && EndpointAddresses[static_cast<u32>(endpoint)] == address;
+}
+
+u32 DmaController::gpuCommandServiceDemand() const {
+	// An admitted burst owns the engine. Completion catches GPU requests up
+	// before another channel can be admitted. A closed admission gate cannot wait.
+	if (m_activeChannel != IO_DMA_CHANNEL_COUNT || m_supervisorAdmissionQuiesceRequested) return 0u;
+	u32 demand = 0u;
+	for (const auto& registers : m_registers.channels) {
+		const u32 route = registers.controlWord & DMA_CONTROL_ROUTE_MASK;
+		if ((registers.statusWord & DMA_STATUS_BUSY) == 0u) continue;
+		if (ReadEndpoints[route] == DmaEndpoint::GpuRead) {
+			const auto other = capacityEndpoint(WriteEndpoints[route], registers.writeAddressWord, registers.controlWord, false);
+			if (m_endpointCapacity[static_cast<u32>(other)] != 0u) demand |= 1u << static_cast<u32>(DmaEndpoint::GpuRead);
+		} else if (WriteEndpoints[route] == DmaEndpoint::GpuWrite) {
+			const auto other = capacityEndpoint(ReadEndpoints[route], registers.readAddressWord, registers.controlWord, true);
+			if (m_endpointCapacity[static_cast<u32>(other)] != 0u) demand |= 1u << static_cast<u32>(DmaEndpoint::GpuWrite);
+		}
+	}
+	return demand;
 }
 
 void DmaController::reset() {
 	clearLiveTransfer();
-	m_requestLines = 0u;
+	m_endpointCapacity.fill(0);
+	m_endpointCapacity[static_cast<u32>(DmaEndpoint::Memory)] = DMA_BURST_WORD_CAPACITY;
 	m_supervisorQuiesceRequested = false;
 	m_supervisorAdmissionQuiesceRequested = false;
 	clearUserContext();
@@ -140,47 +200,34 @@ void DmaController::reset() {
 
 void DmaController::onService(i64) {
 	const u32 channel = m_activeChannel;
-	const u32 blockWords = m_scheduledBlockWords;
-	u32 readAddress = m_scheduledReadAddressWord;
-	u32 writeAddress = m_scheduledWriteAddressWord;
-	const u32 releasedReadAddress = readAddress;
-	const u32 releasedWriteAddress = writeAddress;
-	u32 transferCount = m_scheduledTransferCountWord;
-	const u32 control = m_scheduledControlWord;
-	const u32 readStep = (control & DMA_CONTROL_READ_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
-	const u32 writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
-	const u32 readRequest = (control & DMA_CONTROL_READ_REQUEST_MASK) >> DMA_CONTROL_READ_REQUEST_SHIFT;
-	const u32 writeRequest = (control & DMA_CONTROL_WRITE_REQUEST_MASK) >> DMA_CONTROL_WRITE_REQUEST_SHIFT;
-	const MappedBusSignals readBusSignals = MAPPED_BUS_MASTER_DMA | cartridgeSlotSignals(readRequest);
-	const MappedBusSignals writeBusSignals = MAPPED_BUS_MASTER_DMA | cartridgeSlotSignals(writeRequest);
-	const i64 previousBlockDeadline = m_serviceDeadline;
+	auto& registers = m_registers.channels[channel];
+	const u32 control = registers.controlWord, route = control & DMA_CONTROL_ROUTE_MASK;
+	const auto read = ReadEndpoints[route], write = WriteEndpoints[route];
+	const u32 readStep = read == DmaEndpoint::Memory ? IO_WORD_SIZE : 0u;
+	const u32 writeStep = write == DmaEndpoint::Memory ? IO_WORD_SIZE : 0u;
+	const u32 readAddress = readStep != 0u ? registers.readAddressWord : EndpointAddresses[static_cast<u32>(read)];
+	const u32 writeAddress = writeStep != 0u ? registers.writeAddressWord : EndpointAddresses[static_cast<u32>(write)];
+	const MappedBusSignals readSignals = MAPPED_BUS_MASTER_DMA | (readStep != 0u ? MAPPED_BUS_DMA_MEMORY
+		| mappedBusSignalsForCartridgeSlot((control >> DMA_CONTROL_READ_SLOT_SHIFT) & 1u) : 0u);
+	const MappedBusSignals writeSignals = MAPPED_BUS_MASTER_DMA | (writeStep != 0u ? MAPPED_BUS_DMA_MEMORY
+		| mappedBusSignalsForCartridgeSlot((control >> DMA_CONTROL_WRITE_SLOT_SHIFT) & 1u) : 0u);
+	const u32 words = m_scheduledBlockWords;
+	const i64 previousDeadline = m_serviceDeadline;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 	m_serviceActive = true;
-	for (u32 slot = 0u; slot < blockWords; slot += 1u) {
-		const MappedBusSignals blockEnd = slot + 1u == blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0u;
-		const u32 word = m_memory.readMappedDmaU32LE(readAddress, readBusSignals | blockEnd);
-		m_memory.writeMappedDmaU32LE(writeAddress, word, writeBusSignals | blockEnd);
-		readAddress += readStep;
-		writeAddress += writeStep;
-		transferCount -= 1u;
-	}
-	DmaChannelState& registers = m_registers.channels[channel];
-	registers.readAddressWord = readAddress;
-	registers.writeAddressWord = writeAddress;
-	registers.transferCountWord = transferCount;
-	m_memory.writeIoU32(IO_DMA_READ_ADDRS[channel], readAddress);
-	m_memory.writeIoU32(IO_DMA_WRITE_ADDRS[channel], writeAddress);
-	m_memory.writeIoU32(IO_DMA_TRANSFER_COUNTS[channel], transferCount);
+	m_memory.transferDmaBlock(readAddress, writeAddress, words, readStep, writeStep, readSignals, writeSignals);
+	registers.readAddressWord += words * readStep;
+	registers.writeAddressWord += words * writeStep;
+	registers.transferCountWord -= words;
+	m_memory.writeIoU32(IO_DMA_READ_ADDRS[channel], registers.readAddressWord);
+	m_memory.writeIoU32(IO_DMA_WRITE_ADDRS[channel], registers.writeAddressWord);
+	m_memory.writeIoU32(IO_DMA_TRANSFER_COUNTS[channel], registers.transferCountWord);
 	m_serviceActive = false;
 	clearAdmittedBlock();
-	resumeCpuWriteIfPortReleased(releasedReadAddress);
-	if (releasedWriteAddress != releasedReadAddress) {
-		resumeCpuWriteIfPortReleased(releasedWriteAddress);
-	}
-	if (transferCount == 0u) {
-		finishChannel(channel);
-	}
-	arbitrate(previousBlockDeadline);
+	if (registers.transferCountWord == 0u) finishChannel(channel);
+	if (gpuCommandServiceDemand()) m_gpu->synchronizeDmaRequest();
+	arbitrate(previousDeadline);
+	if (gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 }
 
 DmaControllerState DmaController::captureState() const {
@@ -193,10 +240,6 @@ DmaControllerState DmaController::captureState() const {
 	state.scheduledBlockCycles = m_scheduledBlockWords == 0u
 		? 0
 		: m_serviceDeadline - m_scheduler.currentNowCycles();
-	state.scheduledReadAddressWord = m_scheduledReadAddressWord;
-	state.scheduledWriteAddressWord = m_scheduledWriteAddressWord;
-	state.scheduledTransferCountWord = m_scheduledTransferCountWord;
-	state.scheduledControlWord = m_scheduledControlWord;
 	state.supervisorQuiesceRequested = m_supervisorQuiesceRequested;
 	state.supervisorAdmissionQuiesceRequested = m_supervisorAdmissionQuiesceRequested;
 	state.userNextChannel = m_userNextChannel;
@@ -211,10 +254,6 @@ void DmaController::restoreState(const DmaControllerState& state, i64 nowCycles)
 	m_activeChannel = state.activeChannel;
 	m_nextChannel = state.nextChannel;
 	m_scheduledBlockWords = state.scheduledBlockWords;
-	m_scheduledReadAddressWord = state.scheduledReadAddressWord;
-	m_scheduledWriteAddressWord = state.scheduledWriteAddressWord;
-	m_scheduledTransferCountWord = state.scheduledTransferCountWord;
-	m_scheduledControlWord = state.scheduledControlWord;
 	m_serviceDeadline = nowCycles + state.scheduledBlockCycles;
 	m_serviceActive = false;
 	m_restorePending = true;
@@ -237,8 +276,10 @@ void DmaController::beginSupervisorControlQuiesce() {
 }
 
 void DmaController::beginSupervisorQuiesce() {
+	const u32 hadGpuDemand = gpuCommandServiceDemand();
 	m_supervisorQuiesceRequested = true;
 	m_supervisorAdmissionQuiesceRequested = true;
+	if (hadGpuDemand != gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 	notifySupervisorBoundary();
 }
 
@@ -251,6 +292,7 @@ void DmaController::enterSupervisorContext() {
 }
 
 void DmaController::leaveSupervisorContext() {
+	const u32 hadGpuDemand = gpuCommandServiceDemand();
 	clearLiveTransfer();
 	m_registers.channels = m_userRegisters.channels;
 	m_registers.mirror(m_memory);
@@ -259,6 +301,7 @@ void DmaController::leaveSupervisorContext() {
 	m_supervisorAdmissionQuiesceRequested = false;
 	clearUserContext();
 	arbitrate(m_scheduler.currentNowCycles());
+	if (hadGpuDemand != gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 }
 
 void DmaController::clearLiveTransfer() {
@@ -279,23 +322,18 @@ void DmaController::clearUserContext() {
 void DmaController::clearAdmittedBlock() {
 	m_activeChannel = IO_DMA_CHANNEL_COUNT;
 	m_scheduledBlockWords = 0u;
-	m_scheduledReadAddressWord = 0u;
-	m_scheduledWriteAddressWord = 0u;
-	m_scheduledTransferCountWord = 0u;
-	m_scheduledControlWord = 0u;
 	m_serviceDeadline = 0;
 }
 
-void DmaController::finishChannel(u32 channel) {
-	const u32 readAddress = channelReadAddress(channel);
-	const u32 writeAddress = channelWriteAddress(channel);
-	m_registers.channels[channel].statusWord = DMA_STATUS_DONE;
-	m_memory.writeIoU32(IO_DMA_STATUSES[channel], DMA_STATUS_DONE);
-	m_irq.raise(channel == 0u ? IRQ_DMA0_DONE : IRQ_DMA1_DONE);
-	resumeCpuWriteIfPortReleased(readAddress);
-	if (writeAddress != readAddress) {
-		resumeCpuWriteIfPortReleased(writeAddress);
-	}
+void DmaController::finishChannel(u32 channel, u32 status) {
+	auto& registers = m_registers.channels[channel];
+	const u32 route = registers.controlWord & DMA_CONTROL_ROUTE_MASK;
+	registers.statusWord = status;
+	m_memory.writeIoU32(IO_DMA_STATUSES[channel], status);
+	if ((status & DMA_STATUS_DONE) != 0u) m_irq.raise(channel == 0u ? IRQ_DMA0_DONE : IRQ_DMA1_DONE);
+	const auto read = ReadEndpoints[route], write = WriteEndpoints[route];
+	if (read != DmaEndpoint::Memory) resumeCpuWriteIfPortReleased(EndpointAddresses[static_cast<u32>(read)]);
+	if (write != DmaEndpoint::Memory) resumeCpuWriteIfPortReleased(EndpointAddresses[static_cast<u32>(write)]);
 }
 
 void DmaController::resumeCpuWriteIfPortReleased(u32 address) {
@@ -324,135 +362,54 @@ void DmaController::arbitrate(i64 anchorCycle) {
 			finishChannel(channel);
 			continue;
 		}
-		if (requestAsserted(channel)) {
-			admitBlock(channel, anchorCycle);
+		const auto& registers = m_registers.channels[channel];
+		const u32 control = registers.controlWord;
+		const u32 route = control & DMA_CONTROL_ROUTE_MASK;
+		const auto read = ReadEndpoints[route], write = WriteEndpoints[route];
+		const u32 readAddress = read == DmaEndpoint::Memory ? registers.readAddressWord : EndpointAddresses[static_cast<u32>(read)];
+		const u32 writeAddress = write == DmaEndpoint::Memory ? registers.writeAddressWord : EndpointAddresses[static_cast<u32>(write)];
+		const auto readCapacity = capacityEndpoint(read, readAddress, control, true);
+		const auto writeCapacity = capacityEndpoint(write, writeAddress, control, false);
+		u32 words = std::min({registers.transferCountWord, DMA_BURST_WORD_CAPACITY,
+			m_endpointCapacity[static_cast<u32>(readCapacity)], m_endpointCapacity[static_cast<u32>(writeCapacity)]});
+		if (words == 0u) continue;
+		const auto readRegion = m_memory.mappedRegion(readAddress);
+		const auto writeRegion = m_memory.mappedRegion(writeAddress);
+		if (read == DmaEndpoint::Memory) words = m_memory.mappedRegionWordSpan(readAddress, words, readRegion);
+		if (write == DmaEndpoint::Memory) words = m_memory.mappedRegionWordSpan(writeAddress, words, writeRegion);
+		if (words != 0u) {
+			const i64 blockCycles = regionSpanCycles(readRegion, words) + regionSpanCycles(writeRegion, words);
+			const u32 hadGpuDemand = gpuCommandServiceDemand();
+			m_activeChannel = channel;
+			m_scheduledBlockWords = words;
+			m_serviceDeadline = anchorCycle + blockCycles;
+			m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
+			m_scheduler.requestYieldForEarlierDeadline(m_scheduler.currentNowCycles());
 			m_nextChannel = (channel + 1u) % IO_DMA_CHANNEL_COUNT;
+			if (hadGpuDemand) m_gpu->dependencyStateChanged();
 			return;
 		}
 	}
 	notifySupervisorBoundary();
 }
 
-void DmaController::admitBlock(u32 channel, i64 anchorCycle) {
-	const DmaChannelState& registers = m_registers.channels[channel];
-	const u32 remaining = registers.transferCountWord;
-	const u32 control = registers.controlWord;
-	const u32 programmedBlockWords = ((control & DMA_CONTROL_BLOCK_WORDS_MASK) >> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1u;
-	const u32 blockWords = remaining < programmedBlockWords ? remaining : programmedBlockWords;
-	const u32 readStep = (control & DMA_CONTROL_READ_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
-	const u32 writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
-	u32 readAddress = registers.readAddressWord;
-	u32 writeAddress = registers.writeAddressWord;
-	MemoryRegionKind readRegion = m_memory.mappedRegion(readAddress);
-	MemoryRegionKind writeRegion = m_memory.mappedRegion(writeAddress);
-	u32 readRegionWords = readStep == 0u
-		? blockWords
-		: m_memory.mappedRegionWordSpan(readAddress, blockWords, readRegion);
-	u32 writeRegionWords = writeStep == 0u
-		? blockWords
-		: m_memory.mappedRegionWordSpan(writeAddress, blockWords, writeRegion);
-	bool readRegionStart = true;
-	bool writeRegionStart = true;
-	u32 wordsRemaining = blockWords;
-	i64 blockCycles = 0;
-	while (wordsRemaining != 0u) {
-		const u32 spanWords = readRegionWords < writeRegionWords ? readRegionWords : writeRegionWords;
-		const i64 readCycles = regionSpanCycles(readRegion, spanWords, readRegionStart);
-		const i64 writeCycles = regionSpanCycles(writeRegion, spanWords, writeRegionStart);
-		blockCycles += readRegion == writeRegion
-			&& (readRegion == MemoryRegionKind::Ram || readRegion == MemoryRegionKind::Cartridge)
-			? readCycles + writeCycles
-			: readCycles > writeCycles ? readCycles : writeCycles;
-		wordsRemaining -= spanWords;
-		readRegionWords -= spanWords;
-		writeRegionWords -= spanWords;
-		readRegionStart = false;
-		writeRegionStart = false;
-		readAddress += spanWords * readStep;
-		writeAddress += spanWords * writeStep;
-		if (wordsRemaining != 0u && readRegionWords == 0u) {
-			readRegion = m_memory.mappedRegion(readAddress);
-			readRegionWords = m_memory.mappedRegionWordSpan(readAddress, wordsRemaining, readRegion);
-			readRegionStart = true;
-		}
-		if (wordsRemaining != 0u && writeRegionWords == 0u) {
-			writeRegion = m_memory.mappedRegion(writeAddress);
-			writeRegionWords = m_memory.mappedRegionWordSpan(writeAddress, wordsRemaining, writeRegion);
-			writeRegionStart = true;
-		}
-	}
-	if (blockCycles == 0) {
-		blockCycles = 1;
-	}
-	m_activeChannel = channel;
-	m_scheduledBlockWords = blockWords;
-	m_scheduledReadAddressWord = registers.readAddressWord;
-	m_scheduledWriteAddressWord = registers.writeAddressWord;
-	m_scheduledTransferCountWord = remaining;
-	m_scheduledControlWord = control;
-	m_serviceDeadline = anchorCycle + blockCycles;
-	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
-}
-
-i64 DmaController::regionSpanCycles(MemoryRegionKind region, u32 wordCount, bool regionStart) const {
+i64 DmaController::regionSpanCycles(MemoryRegionKind region, u32 wordCount) const {
 	switch (region) {
 	case MemoryRegionKind::Ram:
-		return static_cast<i64>(wordCount) * m_ramCyclesPerWord + (regionStart ? m_ramBurstSetupCycles : 0);
+		return static_cast<i64>(wordCount) * m_ramCyclesPerWord + m_ramBurstSetupCycles;
 	case MemoryRegionKind::SystemRom:
 		return static_cast<i64>(wordCount) * m_systemRomCyclesPerWord;
 	case MemoryRegionKind::Cartridge:
-		return static_cast<i64>(wordCount) * m_cartRomCyclesPerWord + (regionStart ? m_cartRomBurstSetupCycles : 0);
+		return static_cast<i64>(wordCount) * m_cartRomCyclesPerWord + m_cartRomBurstSetupCycles;
 	case MemoryRegionKind::Io:
 	case MemoryRegionKind::Other:
-		return 0;
+		return wordCount;
 	}
-	__builtin_unreachable();
-}
-
-bool DmaController::requestAsserted(u32 channel) const {
-	const u32 control = m_registers.channels[channel].controlWord;
-	const u32 readRequest = (control & DMA_CONTROL_READ_REQUEST_MASK) >> DMA_CONTROL_READ_REQUEST_SHIFT;
-	const u32 writeRequest = (control & DMA_CONTROL_WRITE_REQUEST_MASK) >> DMA_CONTROL_WRITE_REQUEST_SHIFT;
-	return requestLineAsserted(readRequest) && requestLineAsserted(writeRequest);
-}
-
-bool DmaController::requestLineAsserted(u32 request) const {
-	if (request == DMA_REQUEST_FORCE) {
-		return true;
-	}
-	if (request == DMA_REQUEST_DISABLED) {
-		return false;
-	}
-	return (m_requestLines & (1u << request)) != 0u;
-}
-
-MappedBusSignals DmaController::cartridgeSlotSignals(u32 request) {
-	switch (request) {
-	case DMA_REQUEST_CARTRIDGE_SLOT0_READ:
-	case DMA_REQUEST_CARTRIDGE_SLOT0_WRITE:
-		return mappedBusSignalsForCartridgeSlot(0u);
-	case DMA_REQUEST_CARTRIDGE_SLOT1_READ:
-	case DMA_REQUEST_CARTRIDGE_SLOT1_WRITE:
-		return mappedBusSignalsForCartridgeSlot(1u);
-	default:
-		return 0u;
-	}
+	BMSX_UNREACHABLE();
 }
 
 bool DmaController::busy(u32 channel) const {
 	return (m_registers.channels[channel].statusWord & DMA_STATUS_BUSY) != 0u;
-}
-
-u32 DmaController::channelReadAddress(u32 channel) const {
-	return channel == m_activeChannel
-		? m_scheduledReadAddressWord
-		: m_registers.channels[channel].readAddressWord;
-}
-
-u32 DmaController::channelWriteAddress(u32 channel) const {
-	return channel == m_activeChannel
-		? m_scheduledWriteAddressWord
-		: m_registers.channels[channel].writeAddressWord;
 }
 
 void DmaController::notifySupervisorBoundary() {

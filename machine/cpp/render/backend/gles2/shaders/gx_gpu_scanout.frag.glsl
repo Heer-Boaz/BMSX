@@ -12,6 +12,29 @@ uniform sampler2D u_vram;
 uniform ivec4 u_circuit[5];
 uniform ivec4 u_interlace;
 
+#ifdef GX_GPU_CACHED_TARGETS
+uniform sampler2D u_cachedVram0;
+uniform sampler2D u_cachedVram1;
+uniform ivec4 u_cachedRect0;
+uniform ivec4 u_cachedRect1;
+#endif
+
+ivec2 scanoutWordAt(ivec2 coord) {
+#ifdef GX_GPU_CACHED_TARGETS
+	// Coverage lookup must use the same edge addressing as the word sampler.
+	coord = ivec2(coord.x < 0 ? 0 : (coord.x >= GX_GPU_VRAM_X_ADDRESS_PERIOD ? GX_GPU_VRAM_X_ADDRESS_PERIOD - 1 : coord.x),
+		coord.y < 0 ? 0 : (coord.y >= GX_GPU_VRAM_TEXTURE_ROWS ? GX_GPU_VRAM_TEXTURE_ROWS - 1 : coord.y));
+	if (coord.x >= u_cachedRect0.x && coord.y >= u_cachedRect0.y
+		&& coord.x < u_cachedRect0.x + u_cachedRect0.z && coord.y < u_cachedRect0.y + u_cachedRect0.w)
+		return gxTargetWordBytes(texture2D(u_cachedVram0, (vec2(coord - u_cachedRect0.xy) + vec2(0.5)) / vec2(u_cachedRect0.zw)));
+	if (coord.x >= u_cachedRect1.x && coord.y >= u_cachedRect1.y
+		&& coord.x < u_cachedRect1.x + u_cachedRect1.z && coord.y < u_cachedRect1.y + u_cachedRect1.w)
+		return gxTargetWordBytes(texture2D(u_cachedVram1, (vec2(coord - u_cachedRect1.xy) + vec2(0.5)) / vec2(u_cachedRect1.zw)));
+#endif
+	return gxWordBytes(texture2D(u_vram, (vec2(coord) + vec2(0.5))
+		/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS))));
+}
+
 int wrapPowerOfTwo(int value, int period) {
 	int wrapped = value - (value / period) * period;
 	return wrapped < 0 ? wrapped + period : wrapped;
@@ -22,22 +45,14 @@ ivec2 rawWordAtAddress(int address) {
 	int logicalX = wrappedAddress
 		- (wrappedAddress / GX_GPU_VRAM_X_ADDRESS_PERIOD) * GX_GPU_VRAM_X_ADDRESS_PERIOD;
 	int logicalY = wrappedAddress / GX_GPU_VRAM_X_ADDRESS_PERIOD;
-	vec2 texcoord = vec2(
-		(float(logicalX) + 0.5) / float(GX_GPU_VRAM_X_ADDRESS_PERIOD),
-		(float(logicalY) + 0.5) / float(GX_GPU_VRAM_TEXTURE_ROWS));
-	vec4 rawPixel = texture2D(u_vram, texcoord);
-	return gxWordBytes(rawPixel);
+	return scanoutWordAt(ivec2(logicalX, logicalY));
 }
 
 ivec2 rawGx16WordAtAddress(int address) {
 	int wrappedAddress = address - (address / GX_GPU_VRAM_INSTALLED_WORDS) * GX_GPU_VRAM_INSTALLED_WORDS;
 	int logicalY = wrappedAddress / GX_GPU_VRAM_X_ADDRESS_PERIOD;
 	int logicalX = wrappedAddress - logicalY * GX_GPU_VRAM_X_ADDRESS_PERIOD;
-	vec2 texcoord = vec2(
-		(float(logicalX) + 0.5) / float(GX_GPU_VRAM_X_ADDRESS_PERIOD),
-		(float(logicalY) + 0.5) / float(GX_GPU_VRAM_TEXTURE_ROWS));
-	vec4 rawPixel = texture2D(u_vram, texcoord);
-	return gxWordBytes(rawPixel);
+	return scanoutWordAt(ivec2(logicalX, logicalY));
 }
 
 ivec4 rgb555Pixel(ivec2 word) {
@@ -128,8 +143,7 @@ ivec4 circuitPixel(int outputX, int outputY) {
 		column -= (column / 1024) * 1024;
 	}
 	row -= (row / GX_GPU_VRAM_TEXTURE_ROWS) * GX_GPU_VRAM_TEXTURE_ROWS;
-	return rgb555Pixel(gxWordBytes(texture2D(u_vram,
-		(vec2(column, row) + vec2(0.5)) / vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS)))));
+	return rgb555Pixel(scanoutWordAt(ivec2(column, row)));
 
 #else
 	int sourceXNumerator = u_circuit[2].x + (outputX - u_circuit[1].y) * u_circuit[2].z;

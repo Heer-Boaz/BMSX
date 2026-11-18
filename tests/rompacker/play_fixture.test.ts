@@ -14,8 +14,7 @@ import type { FixtureOutput } from '../../ide/testing/fixture_operations';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
-import { valueToString } from '../../machine/ts/machine/cpu/value';
-import type { Table } from '../../machine/ts/machine/cpu/table';
+import { asInteger, asTable, valueBool, valueInteger, valueNil, valueToString } from '../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { Input } from '../../hosts/common/input/manager';
 import { InputChannel } from '../../hosts/common/input/channel';
@@ -87,8 +86,8 @@ test('physical viewport routing reaches only the selected independent machine th
 	};
 	const samples = (target: typeof primary | typeof secondary) => {
 		const cpu = target.runtime.machine.cpu;
-		const game = cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))) as Table;
-		return game.getStringKey(cpu.stringPool.intern('down_samples')) as number;
+		const game = asTable(cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))), cpu.gc);
+		return asInteger(game.getStringKey(cpu.stringPool.intern('down_samples')));
 	};
 	input.guestInputRecipient = channel;
 	advance(primary); advance(secondary);
@@ -132,13 +131,13 @@ return {kind='integration',
 		for (let grant = 0; play.admitting && grant < 10000; grant++) play.advance();
 		assert.equal(play.state, 'ready'); assert.equal(input.fixture.samples, 3);
 		const cpu = target.runtime.machine.cpu, pool = cpu.stringPool;
-		const game = cpu.getGlobalByKey(pool.intern(buildModuleExportSlotName('game', []))) as Table;
+		const game = asTable(cpu.getGlobalByKey(pool.intern(buildModuleExportSlotName('game', []))), cpu.gc);
 		const down = pool.intern('down_samples'), scriptedSamples = input.fixture.samples;
 		input.interactive = true;
 		const until = target.runtime.frameScheduler.lastTickSequence + 4;
 		for (let grant = 0; target.runtime.frameScheduler.lastTickSequence < until && grant < 1000; grant++) target.advanceGame(65536);
 		assert.equal(target.runtime.frameScheduler.lastTickSequence, until);
-		assert.ok((game.getStringKey(down) as number) > 2, 'human samples reach normal gameplay IRQ');
+		assert.ok(asInteger(game.getStringKey(down)) > 2, 'human samples reach normal gameplay IRQ');
 		assert.equal(input.fixture.samples, scriptedSamples, 'the fixture port does not run during human play');
 		input.interactive = false; play.stop();
 		for (let grant = 0; play.admitting && grant < 10000; grant++) play.advance();
@@ -221,18 +220,18 @@ return {kind='integration',
 		f.drain(); assert.equal(f.play.state, 'ready');
 		const cpu = f.target.runtime.machine.cpu, pool = cpu.stringPool;
 		const slot = pool.intern(buildModuleExportSlotName('game', []));
-		const priorGame = cpu.getGlobalByKey(slot) as Table;
+		const priorGame = asTable(cpu.getGlobalByKey(slot), cpu.gc);
 		const marker = pool.intern('marker'), closed = pool.intern('closed');
 		const saved = captureRuntimeSaveState(f.target.runtime);
-		priorGame.setStringKey(marker, 25);
+		priorGame.setStringKey(marker, valueInteger(25));
 		applyRuntimeSaveState(f.target.runtime, saved, RuntimeRestoreOrigin.HistorySeek);
-		const restoredGame = cpu.getGlobalByKey(slot) as Table;
+		const restoredGame = asTable(cpu.getGlobalByKey(slot), cpu.gc);
 		assert.notEqual(restoredGame, priorGame, 'rewind installs the physical saved heap');
-		assert.equal(restoredGame.getStringKey(marker), 12);
+		assert.equal(restoredGame.getStringKey(marker), valueInteger(12));
 		f.play.stop(); f.drain();
 		assert.equal(f.play.state, 'stopped'); assert.deepEqual(f.logs, ['cleanup']);
-		assert.equal(restoredGame.getStringKey(closed), true);
-		assert.equal(priorGame.getStringKey(closed), null, 'teardown must not write the discarded heap');
+		assert.equal(restoredGame.getStringKey(closed), valueBool(true));
+		assert.equal(priorGame.getStringKey(closed), valueNil(), 'teardown must not write the discarded heap');
 	});
 
 	test(`O${optLevel}: authored setup failure retains its real thread and still performs bounded teardown`, async t => {

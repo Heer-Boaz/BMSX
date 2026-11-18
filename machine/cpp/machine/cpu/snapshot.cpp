@@ -1,5 +1,7 @@
 #include "machine/cpu/snapshot.h"
-#include "machine/cpu/table.h"
+
+#include "common/compiler.h"
+#include "machine/cpu/gc_heap.h"
 #include "machine/cpu/closure.h"
 #include "machine/cpu/thread.h"
 #include <algorithm>
@@ -20,18 +22,14 @@ u32 CpuSnapshot::addObject() {
 }
 
 Value CpuSnapshotReader::readValue(u32 offset) const {
-	switch (static_cast<CpuSnapshotValueTag>(snapshot.word(offset))) {
-		case CpuSnapshotValueTag::Nil: return valueNil();
-		case CpuSnapshotValueTag::False: return valueBool(false);
-		case CpuSnapshotValueTag::True: return valueBool(true);
-		case CpuSnapshotValueTag::Number: return valueNumber(snapshot.number(offset + 1));
-		case CpuSnapshotValueTag::String: return valueString(snapshot.word(offset + 1));
-		case CpuSnapshotValueTag::BuiltinFunction: return valueBuiltinFunction(&m_builtins[snapshot.word(offset + 1)]);
-		case CpuSnapshotValueTag::Table: return valueTable(static_cast<Table*>(m_objects[snapshot.word(offset + 1)]));
-		case CpuSnapshotValueTag::Thread: return valueThread(static_cast<Thread*>(m_objects[snapshot.word(offset + 1)]));
-		case CpuSnapshotValueTag::Closure: return valueClosure(static_cast<Closure*>(m_objects[snapshot.word(offset + 1)]));
+	const auto tag = static_cast<ValueTag>(snapshot.word(offset));
+	u32 payload = snapshot.word(offset + 1);
+	switch (tag) {
+		case ValueTag::Table: case ValueTag::Thread: case ValueTag::Closure:
+			payload = m_heap.reference(m_objects[payload]); break;
+		default: break;
 	}
-	__builtin_unreachable();
+	return valueFromTag(tag, payload);
 }
 
 } // namespace bmsx

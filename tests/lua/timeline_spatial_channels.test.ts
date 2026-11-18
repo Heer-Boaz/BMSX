@@ -14,6 +14,8 @@ const modules = [...WORLD_CPU_MODULES, ...['cartlib/apu', 'cartlib/world/base_sy
 	path, source: readFileSync(`${path}.lua`, 'utf8'),
 }))];
 const setup = WORLD_CPU_SETUP + `
+world:start()
+
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local program<const> = require('cartlib/timeline/program')
 local visual2<const> = require('cartlib/component/visual_2d_component')
@@ -272,6 +274,8 @@ assert(not denied and visual.order==2, 'raw visual order write bypassed its owne
 
 	test(`whole-program phase scheduling precedes physics and delays cross-phase reentrant playback (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local timeline_system<const> = require('cartlib/timeline/timeline_system')
 local manager<const> = require('cartlib/world/system_manager')
@@ -351,6 +355,8 @@ observed[11]=manual.presentation
 	});
 	test(`external-clock phases retain unconsumed elapsed time across a schedule abort and freeze inactive Spaces (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local timeline_system<const> = require('cartlib/timeline/timeline_system')
 local source<const> = require('cartlib/timeline/clock_source')

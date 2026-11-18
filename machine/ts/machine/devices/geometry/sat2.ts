@@ -29,210 +29,269 @@ import {
 	GEO_SAT2_MAX_POLY_VERTICES,
 	GEO_SHAPE_CONVEX_POLY,
 	GEO_VERTEX2_BYTES,
-	GEO_VERTEX2_X_OFFSET,
-	GEO_VERTEX2_Y_OFFSET,
 } from './contracts';
 import { GEOMETRY_WORD_ALIGN_MASK, geometryIndexedAddr, geometryIndexedSpanFits } from './addressing';
 import { GeometryProjectionSpan } from './projection';
 import type { GeometryJobState } from './job';
 import type { Memory } from '../../memory/memory';
+import type { MemoryWordCounters } from '../../memory/word_counters';
+import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import {
 	FIX16_SCALE,
 	saturateRoundedI32,
 	toSignedWord,
 } from '../../common/numeric';
 
-const GEO_FAULT_NONE = 0;
-
 function packSat2Meta(axisIndex: number, shapeSelector: number): number {
 	return (((shapeSelector & GEO_SAT_META_AXIS_MASK) << GEO_SAT_META_SHAPE_SHIFT) | (axisIndex & GEO_SAT_META_AXIS_MASK)) >>> 0;
 }
 
+export enum GeometrySat2Phase { Record, LoadA, LoadB, Compute, Publish, Complete }
+
+export type GeometrySat2Progress = {
+	phase: GeometrySat2Phase;
+	vertexAddressA: number; vertexAddressB: number;
+	countA: number; countB: number; resultAddress: number;
+	verticesA: Uint32Array; verticesB: Uint32Array; result: Uint32Array;
+	pendingMemory: MemoryWordCounters;
+	pendingWorkUnits: number; pendingFault: number;
+};
+
 export class GeometrySat2Unit {
 	private readonly projectionA = new GeometryProjectionSpan();
 	private readonly projectionB = new GeometryProjectionSpan();
+	private readonly state: GeometrySat2Progress = {
+		phase: GeometrySat2Phase.Record,
+		vertexAddressA: 0, vertexAddressB: 0, countA: 0, countB: 0, resultAddress: 0,
+		verticesA: new Uint32Array(GEO_SAT2_MAX_POLY_VERTICES * 2),
+		verticesB: new Uint32Array(GEO_SAT2_MAX_POLY_VERTICES * 2),
+		result: new Uint32Array(5),
+		pendingMemory: { ramWords: 0, systemRomWords: 0, cartridgeWords: 0, otherWords: 0 },
+		pendingWorkUnits: 0, pendingFault: 0,
+	};
 
 	public constructor(private readonly memory: Memory) {}
 
-	public processRecord(job: GeometryJobState): number {
-		const recordIndex = job.processed;
-		const pairAddr = geometryIndexedAddr(job.src0, recordIndex, job.stride0);
-		if (!geometryIndexedSpanFits(job.src0, recordIndex, job.stride0, GEO_SAT2_PAIR_BYTES)) {
-			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
-		}
-		if (!this.memory.isReadableMainMemoryRange(pairAddr, GEO_SAT2_PAIR_BYTES)) {
-			return GEO_FAULT_SRC_RANGE;
-		}
-		const flags = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_FLAGS_OFFSET);
-		const shapeAIndex = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET);
-		const resultIndex = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_RESULT_INDEX_OFFSET);
-		const shapeBIndex = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_SHAPE_B_INDEX_OFFSET);
-		const pairFlags = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_FLAGS2_OFFSET);
-		if (flags !== 0 || pairFlags !== 0) {
-			return GEO_FAULT_BAD_RECORD_FLAGS;
-		}
-		const resultAddr = geometryIndexedAddr(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES);
-		if (!geometryIndexedSpanFits(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES, GEO_SAT2_RESULT_BYTES)
-			|| !this.memory.isRamRange(resultAddr, GEO_SAT2_RESULT_BYTES)) {
-			return GEO_FAULT_DST_RANGE;
-		}
-		const shapeADescAddr = geometryIndexedAddr(job.src1, shapeAIndex, job.stride1);
-		const shapeBDescAddr = geometryIndexedAddr(job.src1, shapeBIndex, job.stride1);
-		if (!geometryIndexedSpanFits(job.src1, shapeAIndex, job.stride1, GEO_SAT2_DESC_BYTES)
-			|| !geometryIndexedSpanFits(job.src1, shapeBIndex, job.stride1, GEO_SAT2_DESC_BYTES)
-			|| !this.memory.isReadableMainMemoryRange(shapeADescAddr, GEO_SAT2_DESC_BYTES)
-			|| !this.memory.isReadableMainMemoryRange(shapeBDescAddr, GEO_SAT2_DESC_BYTES)) {
-			return GEO_FAULT_SRC_RANGE;
-		}
-		const shapeAFlags = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_FLAGS_OFFSET);
-		const shapeAVertexCount = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
-		const shapeAVertexOffsetBytes = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
-		const shapeAReserved = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_RESERVED_OFFSET);
-		const shapeBFlags = this.memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_FLAGS_OFFSET);
-		const shapeBVertexCount = this.memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
-		const shapeBVertexOffsetBytes = this.memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
-		const shapeBReserved = this.memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_RESERVED_OFFSET);
-		if (shapeAFlags !== GEO_SHAPE_CONVEX_POLY
-			|| shapeBFlags !== GEO_SHAPE_CONVEX_POLY
-			|| shapeAReserved !== 0
-			|| shapeBReserved !== 0) {
-			return GEO_FAULT_DESCRIPTOR_KIND;
-		}
-		if (shapeAVertexCount < 3 || shapeBVertexCount < 3) {
-			return GEO_FAULT_BAD_VERTEX_COUNT;
-		}
-		if ((shapeAVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) !== 0 || (shapeBVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) !== 0) {
-			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
-		}
-		if (shapeAVertexCount > GEO_SAT2_MAX_POLY_VERTICES
-			|| shapeBVertexCount > GEO_SAT2_MAX_POLY_VERTICES) {
-			return GEO_FAULT_BAD_VERTEX_COUNT;
-		}
-		const shapeAVertexBytes = shapeAVertexCount * GEO_VERTEX2_BYTES;
-		const shapeBVertexBytes = shapeBVertexCount * GEO_VERTEX2_BYTES;
-		const shapeAVertexAddr = geometryIndexedAddr(job.src2, shapeAVertexOffsetBytes, 1);
-		const shapeBVertexAddr = geometryIndexedAddr(job.src2, shapeBVertexOffsetBytes, 1);
-		if (!geometryIndexedSpanFits(job.src2, shapeAVertexOffsetBytes, 1, shapeAVertexBytes)
-			|| !geometryIndexedSpanFits(job.src2, shapeBVertexOffsetBytes, 1, shapeBVertexBytes)
-			|| !this.memory.isReadableMainMemoryRange(shapeAVertexAddr, shapeAVertexBytes)
-			|| !this.memory.isReadableMainMemoryRange(shapeBVertexAddr, shapeBVertexBytes)) {
-			return GEO_FAULT_SRC_RANGE;
-		}
-		let centerAX = 0;
-		let centerAY = 0;
-		let vertexXAddr = shapeAVertexAddr + GEO_VERTEX2_X_OFFSET;
-		let vertexYAddr = shapeAVertexAddr + GEO_VERTEX2_Y_OFFSET;
-		for (let vertexIndex = 0; vertexIndex < shapeAVertexCount; vertexIndex += 1) {
-			centerAX += toSignedWord(this.memory.readU32(vertexXAddr));
-			centerAY += toSignedWord(this.memory.readU32(vertexYAddr));
-			vertexXAddr += GEO_VERTEX2_BYTES;
-			vertexYAddr += GEO_VERTEX2_BYTES;
-		}
-		let centerBX = 0;
-		let centerBY = 0;
-		vertexXAddr = shapeBVertexAddr + GEO_VERTEX2_X_OFFSET;
-		vertexYAddr = shapeBVertexAddr + GEO_VERTEX2_Y_OFFSET;
-		for (let vertexIndex = 0; vertexIndex < shapeBVertexCount; vertexIndex += 1) {
-			centerBX += toSignedWord(this.memory.readU32(vertexXAddr));
-			centerBY += toSignedWord(this.memory.readU32(vertexYAddr));
-			vertexXAddr += GEO_VERTEX2_BYTES;
-			vertexYAddr += GEO_VERTEX2_BYTES;
-		}
-		centerAX /= shapeAVertexCount;
-		centerAY /= shapeAVertexCount;
-		centerBX /= shapeBVertexCount;
-		centerBY /= shapeBVertexCount;
-		let bestOverlap = Infinity;
-		let bestAxisX = 0;
-		let bestAxisY = 0;
-		let bestAxisIndex = 0;
-		let bestShapeSelector = GEO_SAT_META_SHAPE_SRC;
-		let sawAxis = false;
-		for (let shapeSelector = GEO_SAT_META_SHAPE_SRC; shapeSelector <= GEO_SAT_META_SHAPE_AUX; shapeSelector += 1) {
-			const axisBase = shapeSelector === GEO_SAT_META_SHAPE_SRC ? shapeAVertexAddr : shapeBVertexAddr;
-			const axisCount = shapeSelector === GEO_SAT_META_SHAPE_SRC ? shapeAVertexCount : shapeBVertexCount;
-			for (let edgeIndex = 0; edgeIndex < axisCount; edgeIndex += 1) {
-				const currentAddr = axisBase + edgeIndex * GEO_VERTEX2_BYTES;
-				const nextIndex = edgeIndex + 1 === axisCount ? 0 : edgeIndex + 1;
-				const nextAddr = axisBase + nextIndex * GEO_VERTEX2_BYTES;
-				const x0 = toSignedWord(this.memory.readU32(currentAddr + GEO_VERTEX2_X_OFFSET));
-				const y0 = toSignedWord(this.memory.readU32(currentAddr + GEO_VERTEX2_Y_OFFSET));
-				const x1 = toSignedWord(this.memory.readU32(nextAddr + GEO_VERTEX2_X_OFFSET));
-				const y1 = toSignedWord(this.memory.readU32(nextAddr + GEO_VERTEX2_Y_OFFSET));
-				const nx = -(y1 - y0);
-				const ny = x1 - x0;
-				const axisLength = Math.sqrt((nx * nx) + (ny * ny));
-				if (!(axisLength > 0)) {
-					continue;
-				}
-				sawAxis = true;
-				const ax = nx / axisLength;
-				const ay = ny / axisLength;
-				this.projectVertexSpanInto(shapeAVertexAddr, shapeAVertexCount, ax, ay, this.projectionA);
-				this.projectVertexSpanInto(shapeBVertexAddr, shapeBVertexCount, ax, ay, this.projectionB);
-				const sepA = this.projectionA.min - this.projectionB.max;
-				const sepB = this.projectionB.min - this.projectionA.max;
-				if (sepA > 0 || sepB > 0) {
-					this.writeResult(resultAddr, 0, 0, 0, 0, 0);
-					return GEO_FAULT_NONE;
-				}
-				const overlap = Math.min(this.projectionA.max, this.projectionB.max) - Math.max(this.projectionA.min, this.projectionB.min);
-				if (overlap < bestOverlap) {
-					bestOverlap = overlap;
-					bestAxisX = ax;
-					bestAxisY = ay;
-					bestAxisIndex = edgeIndex;
-					bestShapeSelector = shapeSelector;
-				}
-			}
-		}
-		if (!sawAxis) {
-			return GEO_FAULT_DESCRIPTOR_KIND;
-		}
-		const deltaX = centerBX - centerAX;
-		const deltaY = centerBY - centerAY;
-		if (((deltaX * bestAxisX) + (deltaY * bestAxisY)) < 0) {
-			bestAxisX = -bestAxisX;
-			bestAxisY = -bestAxisY;
-		}
-		this.writeResult(
-			resultAddr,
-			1,
-			saturateRoundedI32(bestAxisX * FIX16_SCALE),
-			saturateRoundedI32(bestAxisY * FIX16_SCALE),
-			saturateRoundedI32(bestOverlap),
-			packSat2Meta(bestAxisIndex, bestShapeSelector),
-		);
-		return GEO_FAULT_NONE;
+	public reset(): void {
+		const s = this.state;
+		s.phase = GeometrySat2Phase.Record;
+		s.vertexAddressA = s.vertexAddressB = s.countA = s.countB = s.resultAddress = 0;
+		s.verticesA.fill(0); s.verticesB.fill(0); s.result.fill(0);
+		s.pendingMemory.ramWords = s.pendingMemory.systemRomWords = s.pendingMemory.cartridgeWords = s.pendingMemory.otherWords = 0;
+		s.pendingWorkUnits = s.pendingFault = 0;
 	}
 
-	private projectVertexSpanInto(base: number, count: number, ax: number, ay: number, out: GeometryProjectionSpan): void {
-		let min = Number.POSITIVE_INFINITY;
-		let max = Number.NEGATIVE_INFINITY;
-		let xAddr = base + GEO_VERTEX2_X_OFFSET;
-		let yAddr = base + GEO_VERTEX2_Y_OFFSET;
-		for (let vertexIndex = 0; vertexIndex < count; vertexIndex += 1) {
-			const px = toSignedWord(this.memory.readU32(xAddr));
-			const py = toSignedWord(this.memory.readU32(yAddr));
-			const projection = (px * ax) + (py * ay);
-			if (projection < min) {
-				min = projection;
-			}
-			if (projection > max) {
-				max = projection;
-			}
-			xAddr += GEO_VERTEX2_BYTES;
-			yAddr += GEO_VERTEX2_BYTES;
-		}
-		out.min = min;
-		out.max = max;
+	public beginJob(): void {
+		const s = this.state;
+		s.phase = GeometrySat2Phase.Record;
+		s.pendingMemory.ramWords = s.pendingMemory.systemRomWords = s.pendingMemory.cartridgeWords = s.pendingMemory.otherWords = 0;
+		s.pendingWorkUnits = s.pendingFault = 0;
+	}
+	public progress(): GeometrySat2Progress { return this.state; }
+	public captureState(): GeometrySat2Progress {
+		const s = this.state;
+		return { ...s, verticesA: s.verticesA.slice(), verticesB: s.verticesB.slice(), result: s.result.slice(), pendingMemory: { ...s.pendingMemory } };
+	}
+	public restoreState(saved: GeometrySat2Progress): void {
+		const s = this.state;
+		s.phase = saved.phase;
+		s.vertexAddressA = saved.vertexAddressA;
+		s.vertexAddressB = saved.vertexAddressB;
+		s.countA = saved.countA;
+		s.countB = saved.countB;
+		s.resultAddress = saved.resultAddress;
+		s.verticesA.set(saved.verticesA); s.verticesB.set(saved.verticesB); s.result.set(saved.result);
+		Object.assign(s.pendingMemory, saved.pendingMemory);
+		s.pendingWorkUnits = saved.pendingWorkUnits; s.pendingFault = saved.pendingFault;
 	}
 
-	private writeResult(addr: number, hit: number, nx: number, ny: number, depth: number, meta: number): void {
-		this.memory.writeU32(addr + GEO_SAT2_RESULT_HIT_OFFSET, hit >>> 0);
-		this.memory.writeU32(addr + GEO_SAT2_RESULT_NX_OFFSET, nx >>> 0);
-		this.memory.writeU32(addr + GEO_SAT2_RESULT_NY_OFFSET, ny >>> 0);
-		this.memory.writeU32(addr + GEO_SAT2_RESULT_DEPTH_OFFSET, depth >>> 0);
-		this.memory.writeU32(addr + GEO_SAT2_RESULT_META_OFFSET, meta >>> 0);
+	public processStep(job: GeometryJobState): void {
+		const s = this.state, memory = this.memory, words = s.pendingMemory;
+		words.ramWords = words.systemRomWords = words.cartridgeWords = words.otherWords = 0;
+		s.pendingWorkUnits = s.pendingFault = 0;
+		switch (s.phase) {
+			case GeometrySat2Phase.Record: {
+				const pairAddr = geometryIndexedAddr(job.src0, job.processed, job.stride0);
+				if (!geometryIndexedSpanFits(job.src0, job.processed, job.stride0, GEO_SAT2_PAIR_BYTES)) {
+					s.pendingFault = GEO_FAULT_BAD_RECORD_ALIGNMENT;
+					s.phase = GeometrySat2Phase.Complete;
+					return;
+				}
+				if (!memory.isReadableMainMemoryRange(pairAddr, GEO_SAT2_PAIR_BYTES)) {
+					s.pendingFault = GEO_FAULT_SRC_RANGE;
+					s.phase = GeometrySat2Phase.Complete;
+					return;
+				}
+				const flags = memory.readU32(pairAddr + GEO_SAT2_PAIR_FLAGS_OFFSET, words);
+				const indexA = memory.readU32(pairAddr + GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET, words);
+				const resultIndex = memory.readU32(pairAddr + GEO_SAT2_PAIR_RESULT_INDEX_OFFSET, words);
+				const indexB = memory.readU32(pairAddr + GEO_SAT2_PAIR_SHAPE_B_INDEX_OFFSET, words);
+				const flags2 = memory.readU32(pairAddr + GEO_SAT2_PAIR_FLAGS2_OFFSET, words);
+				if (flags !== 0 || flags2 !== 0) {
+					s.pendingFault = GEO_FAULT_BAD_RECORD_FLAGS;
+					s.phase = GeometrySat2Phase.Complete;
+					return;
+				}
+				const resultAddress = geometryIndexedAddr(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES);
+				if (!geometryIndexedSpanFits(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES, GEO_SAT2_RESULT_BYTES)
+					|| !memory.isRamRange(resultAddress, GEO_SAT2_RESULT_BYTES)) {
+					s.pendingFault = GEO_FAULT_DST_RANGE;
+					s.phase = GeometrySat2Phase.Complete;
+					return;
+				}
+				const descA = geometryIndexedAddr(job.src1, indexA, job.stride1);
+				const descB = geometryIndexedAddr(job.src1, indexB, job.stride1);
+				if (!geometryIndexedSpanFits(job.src1, indexA, job.stride1, GEO_SAT2_DESC_BYTES)
+					|| !geometryIndexedSpanFits(job.src1, indexB, job.stride1, GEO_SAT2_DESC_BYTES)
+					|| !memory.isReadableMainMemoryRange(descA, GEO_SAT2_DESC_BYTES)
+					|| !memory.isReadableMainMemoryRange(descB, GEO_SAT2_DESC_BYTES)) {
+					s.pendingFault = GEO_FAULT_SRC_RANGE;
+					s.phase = GeometrySat2Phase.Complete;
+					return;
+				}
+				const kindA = memory.readU32(descA + GEO_SAT2_DESC_FLAGS_OFFSET, words);
+				const countA = memory.readU32(descA + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET, words);
+				const offsetA = memory.readU32(descA + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET, words);
+				const reservedA = memory.readU32(descA + GEO_SAT2_DESC_RESERVED_OFFSET, words);
+				const kindB = memory.readU32(descB + GEO_SAT2_DESC_FLAGS_OFFSET, words);
+				const countB = memory.readU32(descB + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET, words);
+				const offsetB = memory.readU32(descB + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET, words);
+				const reservedB = memory.readU32(descB + GEO_SAT2_DESC_RESERVED_OFFSET, words);
+				if (kindA !== GEO_SHAPE_CONVEX_POLY || kindB !== GEO_SHAPE_CONVEX_POLY || reservedA !== 0 || reservedB !== 0) {
+					s.pendingFault = GEO_FAULT_DESCRIPTOR_KIND;
+					s.phase = GeometrySat2Phase.Complete;
+					return;
+				}
+				if (countA < 3 || countB < 3) {
+					s.pendingFault = GEO_FAULT_BAD_VERTEX_COUNT;
+					s.phase = GeometrySat2Phase.Complete;
+					return;
+				}
+				if ((offsetA & GEOMETRY_WORD_ALIGN_MASK) !== 0 || (offsetB & GEOMETRY_WORD_ALIGN_MASK) !== 0) {
+					s.pendingFault = GEO_FAULT_BAD_RECORD_ALIGNMENT;
+					s.phase = GeometrySat2Phase.Complete;
+					return;
+				}
+				if (countA > GEO_SAT2_MAX_POLY_VERTICES || countB > GEO_SAT2_MAX_POLY_VERTICES) {
+					s.pendingFault = GEO_FAULT_BAD_VERTEX_COUNT;
+					s.phase = GeometrySat2Phase.Complete;
+					return;
+				}
+				const addressA = geometryIndexedAddr(job.src2, offsetA, 1), addressB = geometryIndexedAddr(job.src2, offsetB, 1);
+				const bytesA = countA * GEO_VERTEX2_BYTES, bytesB = countB * GEO_VERTEX2_BYTES;
+				if (!geometryIndexedSpanFits(job.src2, offsetA, 1, bytesA) || !geometryIndexedSpanFits(job.src2, offsetB, 1, bytesB)
+					|| !memory.isReadableMainMemoryRange(addressA, bytesA) || !memory.isReadableMainMemoryRange(addressB, bytesB)) {
+					s.pendingFault = GEO_FAULT_SRC_RANGE;
+					s.phase = GeometrySat2Phase.Complete;
+					return;
+				}
+				s.vertexAddressA = addressA;
+				s.vertexAddressB = addressB;
+				s.countA = countA;
+				s.countB = countB;
+				s.resultAddress = resultAddress;
+				s.phase = GeometrySat2Phase.LoadA;
+				return;
+			}
+			case GeometrySat2Phase.LoadA:
+				for (let i = 0; i < s.countA * 2; ++i) {
+					s.verticesA[i] = memory.readU32(s.vertexAddressA + i * 4, words);
+				}
+				s.phase = GeometrySat2Phase.LoadB;
+				return;
+			case GeometrySat2Phase.LoadB:
+				for (let i = 0; i < s.countB * 2; ++i) {
+					s.verticesB[i] = memory.readU32(s.vertexAddressB + i * 4, words);
+				}
+				s.phase = GeometrySat2Phase.Compute;
+				return;
+			case GeometrySat2Phase.Compute: {
+				let centerAX = 0, centerAY = 0, centerBX = 0, centerBY = 0;
+				for (let i = 0; i < s.countA; ++i) {
+					centerAX += toSignedWord(s.verticesA[i * 2]);
+					centerAY += toSignedWord(s.verticesA[i * 2 + 1]);
+				}
+				for (let i = 0; i < s.countB; ++i) {
+					centerBX += toSignedWord(s.verticesB[i * 2]);
+					centerBY += toSignedWord(s.verticesB[i * 2 + 1]);
+				}
+				s.pendingWorkUnits += s.countA + s.countB + 4;
+				centerAX /= s.countA;
+				centerAY /= s.countA;
+				centerBX /= s.countB;
+				centerBY /= s.countB;
+				let bestOverlap = Infinity, bestAxisX = 0, bestAxisY = 0, bestAxisIndex = 0;
+				let bestShapeSelector = GEO_SAT_META_SHAPE_SRC, sawAxis = false, separated = false;
+				for (let selector = GEO_SAT_META_SHAPE_SRC; selector <= GEO_SAT_META_SHAPE_AUX && !separated; ++selector) {
+					const vertices = selector === GEO_SAT_META_SHAPE_SRC ? s.verticesA : s.verticesB;
+					const count = selector === GEO_SAT_META_SHAPE_SRC ? s.countA : s.countB;
+					for (let edge = 0; edge < count; ++edge) {
+						const next = edge + 1 === count ? 0 : edge + 1;
+						const x0 = toSignedWord(vertices[edge * 2]), y0 = toSignedWord(vertices[edge * 2 + 1]);
+						const x1 = toSignedWord(vertices[next * 2]), y1 = toSignedWord(vertices[next * 2 + 1]);
+						const nx = -(y1 - y0), ny = x1 - x0;
+						const length = Math.sqrt(nx * nx + ny * ny);
+						s.pendingWorkUnits += 2;
+						if (!(length > 0)) continue;
+						sawAxis = true;
+						s.pendingWorkUnits += 2 + s.countA + s.countB;
+						const ax = nx / length, ay = ny / length;
+						this.projectVertexSpanInto(s.verticesA, s.countA, ax, ay, this.projectionA);
+						this.projectVertexSpanInto(s.verticesB, s.countB, ax, ay, this.projectionB);
+						if (this.projectionA.min - this.projectionB.max > 0 || this.projectionB.min - this.projectionA.max > 0) {
+							separated = true;
+							break;
+						}
+						const overlap = Math.min(this.projectionA.max, this.projectionB.max) - Math.max(this.projectionA.min, this.projectionB.min);
+						if (overlap < bestOverlap) {
+							bestOverlap = overlap;
+							bestAxisX = ax;
+							bestAxisY = ay;
+							bestAxisIndex = edge;
+							bestShapeSelector = selector;
+						}
+					}
+				}
+				if (!sawAxis) {
+					s.pendingFault = GEO_FAULT_DESCRIPTOR_KIND;
+					s.phase = GeometrySat2Phase.Complete;
+					return;
+				}
+				if (separated) {
+					s.result.fill(0);
+				} else {
+					if ((centerBX - centerAX) * bestAxisX + (centerBY - centerAY) * bestAxisY < 0) {
+						bestAxisX = -bestAxisX;
+						bestAxisY = -bestAxisY;
+					}
+					s.result[0] = 1;
+					s.result[1] = saturateRoundedI32(bestAxisX * FIX16_SCALE) >>> 0;
+					s.result[2] = saturateRoundedI32(bestAxisY * FIX16_SCALE) >>> 0;
+					s.result[3] = saturateRoundedI32(bestOverlap) >>> 0;
+					s.result[4] = packSat2Meta(bestAxisIndex, bestShapeSelector);
+				}
+				words.ramWords += GEO_SAT2_RESULT_BYTES / IO_WORD_SIZE;
+				s.phase = GeometrySat2Phase.Publish;
+				return;
+			}
+			case GeometrySat2Phase.Publish:
+				memory.writeU32(s.resultAddress + GEO_SAT2_RESULT_HIT_OFFSET, s.result[0]);
+				memory.writeU32(s.resultAddress + GEO_SAT2_RESULT_NX_OFFSET, s.result[1]);
+				memory.writeU32(s.resultAddress + GEO_SAT2_RESULT_NY_OFFSET, s.result[2]);
+				memory.writeU32(s.resultAddress + GEO_SAT2_RESULT_DEPTH_OFFSET, s.result[3]);
+				memory.writeU32(s.resultAddress + GEO_SAT2_RESULT_META_OFFSET, s.result[4]);
+				s.phase = GeometrySat2Phase.Complete;
+				return;
+		}
+	}
+
+	private projectVertexSpanInto(vertices: Uint32Array, count: number, ax: number, ay: number, out: GeometryProjectionSpan): void {
+		let min = Number.POSITIVE_INFINITY, max = Number.NEGATIVE_INFINITY;
+		for (let i = 0; i < count; ++i) {
+			const projection = toSignedWord(vertices[i * 2]) * ax + toSignedWord(vertices[i * 2 + 1]) * ay;
+			if (projection < min) min = projection;
+			if (projection > max) max = projection;
+		}
+		out.min = min; out.max = max;
 	}
 }

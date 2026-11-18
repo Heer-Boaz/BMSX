@@ -1,3 +1,4 @@
+import type { NumberConstant } from '../number';
 import { LuaSourceLocations, type LuaSyntaxSpan } from './source_locations';
 import { createLuaSourceUnit, type LuaSourceUnitPlacement } from './source_layout';
 import { LuaSyntaxError } from '../errors';
@@ -1411,13 +1412,10 @@ export class LuaParser {
 
 	private parseNumericLiteral(): LuaNumericLiteralExpression {
 		const token = this.advance();
-		if (typeof token.literal !== 'number') {
-			throw this.error(token, 'Expected numeric literal.');
-		}
 		return {
 			kind: LuaSyntaxKind.NumericLiteralExpression,
 			span: this.spanFromTokenAndToken(token, token),
-			value: token.literal,
+			value: token.literal as NumberConstant,
 		};
 	}
 

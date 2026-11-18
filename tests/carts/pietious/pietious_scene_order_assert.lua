@@ -1,4 +1,5 @@
 local registry<const> = require('cartlib/registry')
+local world<const> = require('cartlib/world/world')
 
 local scenes<const> = require('cartlib/world/scene_library')
 
@@ -7,6 +8,7 @@ return {
 	tests = {
 		authored_order_preserves_roles = function(t)
 			t:wait_until('game fixture', function() return registry:get('d') ~= nil end, 120)
+			t:at_boundary(world:request_mutation_boundary(), 120)
 			local definition<const> = scenes.definition('pietious.gameplay')
 			-- Studio Up/Down changes authored order, not the role of either member.
 			local player_member<const> = definition.members_by_id.player

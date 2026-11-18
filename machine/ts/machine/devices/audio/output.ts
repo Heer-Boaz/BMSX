@@ -4,13 +4,14 @@ import { BiquadFilterState } from './biquad_filter';
 import { loadApuBadpSeekTable, type ApuBadpDecoderState, type ApuBadpSeekTable } from './badp_decoder';
 import {
 	createApuBadpDecoderState,
+	createApuBadpTransition,
 	readApuBadpFrameAt,
 	resetApuBadpDecoder,
 } from './badp_decoder_hot_path';
 import { ApuOutputRing } from './output_ring';
 import { interpolateApuPcmSample, readApuPcmSample } from './pcm_decoder_hot_path';
 import { resolveApuPhaseStep, type ApuPhaseStep } from './playback';
-import { apuAudioSourceUsesGenerator, type ApuSourceByteView } from './source';
+import { APU_ROM_SOURCE_REVISION, apuAudioSourceUsesGenerator, type ApuSourceByteView } from './source';
 import {
 	captureApuOutputVoiceState,
 	restoreApuOutputVoiceState,
@@ -59,6 +60,8 @@ type ApuOutputVoice = ApuOutputVoiceStateAccess & {
 	phaseStepRemainder: number;
 	usesBadp: boolean;
 	badp: ApuBadpDecoderState;
+	badpTransition: ReturnType<typeof createApuBadpTransition>;
+	sourceRevision: ApuSourceByteView['revision'];
 };
 
 const EMPTY_SOURCE_BYTES = new Uint8Array(0);
@@ -112,6 +115,8 @@ export class ApuOutputMixer {
 				filter: new BiquadFilterState(),
 				usesBadp: false,
 				badp: createApuBadpDecoderState(),
+				badpTransition: createApuBadpTransition(),
+				sourceRevision: APU_ROM_SOURCE_REVISION,
 			};
 		}
 	}
@@ -461,6 +466,7 @@ export class ApuOutputMixer {
 		record.channels = source.channels;
 		record.bitsPerSample = source.bitsPerSample;
 		record.sourceBytes = sourceBytes.bytes;
+		record.sourceRevision = sourceBytes.revision;
 		record.dataOffset = sourceBytes.byteOffset + source.dataOffset;
 		record.frames = source.frameCount;
 		record.generatorKind = source.generatorKind;
@@ -547,6 +553,9 @@ export class ApuOutputMixer {
 	}
 
 	private wrapLoopCursor(cursorQ16: number, loopStartQ16: number, loopEndQ16: number): number {
+		if (cursorQ16 >= loopStartQ16 && cursorQ16 < loopEndQ16) {
+			return cursorQ16;
+		}
 		const lengthQ16 = loopEndQ16 - loopStartQ16;
 		let wrapped = (cursorQ16 - loopStartQ16) % lengthQ16;
 		if (wrapped < 0) {

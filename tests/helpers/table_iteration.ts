@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { linkTestSystemBlua32 } from './blua32';
-import { COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
+import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
 
 /** Actual BIOS pairs/next and collectable keys, shared by both CPU runtimes. */
 export function compileTableIterationTest(body: string, optLevel: 0 | 3) {
@@ -12,7 +12,8 @@ coroutine = require('coroutine')
 ${body}`;
 	const modules = [
 		{ path: 'table_iteration_boot', source: 'collectgarbage = __bmsx_collect_garbage' },
-		{ path: 'base', source: readFileSync('machine/bios/base.lua', 'utf8') },
+		...BASE_FIRMWARE_MODULES,
+		{ path: 'table', source: readFileSync('machine/bios/table.lua', 'utf8') },
 		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
 		...COROUTINE_FIRMWARE_MODULES,
 	];
@@ -22,9 +23,46 @@ ${body}`;
 }
 
 export const tableIterationVectors = {
+	invalid_continuation: `
+local function rejects(values, key)
+ local ok, message = pcall(next, values, key)
+ assert(not ok and message == "invalid key to 'next'")
+end
+rejects({}, 'missing')
+local values<const> = { 11, 22, 33 }
+rejects(values, 'missing')
+rejects(values, false)
+rejects(values, 64)
+values[2] = nil
+local key, value = next(values, 2)
+assert(key == 3 and value == 33, 'a deleted array key remains a continuation')
+local flags<const> = { [false] = 41 }
+key, value = next(flags)
+assert(key == false and value == 41)
+assert(next(flags, key) == nil, 'false is a valid continuation, not exhaustion')
+return true`,
+
+	bios_unpack_multiple_returns: `
+local table<const> = require('table')
+local source<const> = {}
+for index = 1, 64 do if (index % 7) ~= 0 then source[index] = index end end
+for _, count in ipairs({1,7,8,9,14,15,16,31,64}) do
+ local values<const> = table.pack(table.unpack(source,1,count))
+ assert(values.n == count)
+ for index = 1, count do
+  if (index % 7) == 0 then assert(values[index] == nil)
+  else assert(values[index] == index) end
+ end
+end
+local large<const> = 0x7ffffffe
+local edge<const> = {[large]=11,[large+1]=22}
+local pair<const> = table.pack(table.unpack(edge,large,large+1))
+assert(pair.n==2 and pair[1]==11 and pair[2]==22)
+return true`,
+
 	mixed_current_deletion: `
 local function capture(value) return function() return value end end
-local keys<const> = { false, true, 0, -1, 0.25, 0xffffffff, 'field', next }
+local keys<const> = { false, true, 0, -1, 0.25, 0x80000000, 'field', next }
 for index = 1, 16 do
  keys[#keys + 1] = index
  keys[#keys + 1] = 'field_' .. index

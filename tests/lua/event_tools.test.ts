@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/runtime_tools';
 import { decodeEventToolRequest } from '../../ide/workbench/services/assistant/event_tool_protocol';
@@ -19,8 +19,8 @@ test('Studio tools share automatic history with the viewer, page snapshots and r
 	const started = await tools.execute('studio_event_history', { target, action: 'status' });
 	assert.ok('status' in started.data);
 	assert.equal(started.data.status, 'live');
-	const fn = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
-	cpu.beginCompletionCall(fn, [3]);
+	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), cpu.gc);
+	cpu.beginCompletionCall(fn, [valueInteger(3)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	const request = { target, generation: events.generation, sequence: 1, count: 1 };
 	const page = await tools.execute('studio_read_events', request);
@@ -28,7 +28,7 @@ test('Studio tools share automatic history with the viewer, page snapshots and r
 	assert.deepEqual(page.data.events, [events.at(1)]);
 	const payload = page.data.events[0].payload;
 	assert.ok(payload.kind === 'table');
-	assert.deepEqual(payload.entries.find(entry => entry.key.kind === 'string' && entry.key.value === 'value')!.value, { kind: 'number', value: 2 });
+	assert.deepEqual(payload.entries.find(entry => entry.key.kind === 'string' && entry.key.value === 'value')!.value, { kind: 'integer', value: 2 });
 	const seek = { target, generation: events.generation, sequence: request.sequence };
 	assert.throws(() => tools.execute('studio_seek_event', seek), /retained physical recording/);
 	assert.throws(() => tools.execute('studio_seek_event', { ...seek, target: 'foreign' }), /authoring target/);
@@ -38,7 +38,7 @@ test('Studio tools share automatic history with the viewer, page snapshots and r
 	assert.throws(() => tools.execute('studio_seek_event', seek), /cleared/);
 	assert.equal(events.count, 0);
 	const generation = events.generation, sequence = events.endSequence;
-	cpu.beginCompletionCall(fn, [events.capacity + 1]); cpu.runUntilDepth(0, 10_000_000);
+	cpu.beginCompletionCall(fn, [valueInteger(events.capacity + 1)]); cpu.runUntilDepth(0, 10_000_000);
 	assert.throws(() => tools.execute('studio_read_events', { target, generation, sequence, count: 1 }), /expired/);
 	assert.throws(() => tools.execute('studio_seek_event', { target, generation, sequence }), /expired/);
 	await tools.execute('studio_event_history', { target, action: 'status' });
@@ -73,8 +73,8 @@ test('event navigation is admitted by recording provenance and cancelled by the 
 	const history = runtime.history;
 	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
 	history.captureCheckpoint();
-	const fn = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
-	cpu.beginCompletionCall(fn, [1]);
+	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), cpu.gc);
+	cpu.beginCompletionCall(fn, [valueInteger(1)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	const event = f.events.at(0);
 	assert.equal(f.events.canSeek(event), false, 'an emission in the live unfinished interval has no retained endpoint yet');

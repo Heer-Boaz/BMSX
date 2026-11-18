@@ -96,7 +96,7 @@ export class RuntimeGpuHistory implements GxGpuOperationObserver {
 		else this.revision++;
 	}
 	public dispose(): void { if (this.observing) this.runtime.machine.gxGpu.setOperationObserver(null); this.storage = undefined; }
-	public emitted(buffer: GxGpuCommandBufferView, index: number, startCycle: number): void {
+	public emitted(buffer: GxGpuCommandBufferView, index: number, startCycle: number, operationWords: Uint32Array, operationWordStart: number): void {
 		const mode = this.runtime.history.mode;
 		if (mode === HistoryMode.Replaying || mode === HistoryMode.Reviewing) return;
 		const storage = this.storage!, count = buffer.commandWordCount[index];
@@ -114,9 +114,9 @@ export class RuntimeGpuHistory implements GxGpuOperationObserver {
 		record.drawingAreaTopLeftWord = buffer.commandDrawingAreaTopLeftWord[index]; record.drawingAreaBottomRightWord = buffer.commandDrawingAreaBottomRightWord[index];
 		record.drawingOffsetWord = buffer.commandDrawingOffsetWord[index]; record.maskBitModeWord = buffer.commandMaskBitModeWord[index];
 		record.skippedLineParity = buffer.commandSkippedLineParity[index];
-		const source = buffer.commandWordStart[index], start = this.wordCursor % this.wordCapacity, tail = Math.min(count, this.wordCapacity - start);
-		for (let offset = 0; offset < tail; offset++) storage.words[start + offset] = buffer.words[source + offset];
-		for (let offset = tail; offset < count; offset++) storage.words[offset - tail] = buffer.words[source + offset];
+		const start = this.wordCursor % this.wordCapacity, tail = Math.min(count, this.wordCapacity - start);
+		for (let offset = 0; offset < tail; offset++) storage.words[start + offset] = operationWords[operationWordStart + offset];
+		for (let offset = tail; offset < count; offset++) storage.words[offset - tail] = operationWords[operationWordStart + offset];
 		this.wordCursor += count; this.endSequence++; this.revision++;
 	}
 }

@@ -1,3 +1,5 @@
+import { PendingMemoryKind } from '../../machine/ts/machine/cpu/memory_operation';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -19,8 +21,12 @@ import {
 	APU_SLOT_PHASE_IDLE,
 	APU_SLOT_PHASE_PLAYING,
 } from '../../machine/ts/machine/devices/audio/contracts';
-import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
-import { GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD } from '../../machine/ts/machine/devices/gx/gpu';
+import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT, GEO_OVERLAP2D_INSTANCE_WORDS,
+	GEO_SAT2_MAX_POLY_VERTICES, GEO_XFORM2_MAX_VERTICES } from '../../machine/ts/machine/devices/geometry/contracts';
+import { GeometryOverlap2dPhase } from '../../machine/ts/machine/devices/geometry/overlap2d';
+import { GeometryXform2Phase } from '../../machine/ts/machine/devices/geometry/xform2';
+import { GeometrySat2Phase } from '../../machine/ts/machine/devices/geometry/sat2';
+import { GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD } from '../../machine/ts/machine/devices/gx/gp0_stream';
 import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } from '../../machine/ts/spec/gx/pcrtc';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
@@ -55,12 +61,14 @@ function numberedWords(count: number): number[] {
 
 function createRuntimeSaveState(): RuntimeSaveState {
 	const snapshot = new CpuSnapshotWriter(new CpuSnapshot());
-	snapshot.reserveWords(3 * CPU_SNAPSHOT_VALUE_WORDS);
-	snapshot.setWord(0, ValueTag.Number);
-	snapshot.setNumber(1, 7);
-	snapshot.setWord(3, ValueTag.Number);
-	snapshot.setNumber(4, 42);
-	snapshot.setWord(6, ValueTag.Nil);
+	const integer = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
+	snapshot.setWord(integer, ValueTag.Integer);
+	snapshot.setWord(integer + 1, 0x80000001);
+	const float = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
+	snapshot.setWord(float, ValueTag.Float);
+	snapshot.setWord(float + 1, 0xffc00000);
+	const nil = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
+	snapshot.setWord(nil, ValueTag.Nil);
 	const ram = new Uint8Array(PSX_MACHINE_SPEC.ramBytes);
 	ram.set([1, 2, 3, 4]);
 	const audioRegisterWords = numberedWords(APU_PARAMETER_REGISTER_COUNT);
@@ -118,10 +126,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					nextChannel: 1,
 					scheduledBlockWords: 5,
 					scheduledBlockCycles: 17,
-					scheduledReadAddressWord: 0x01002010,
-					scheduledWriteAddressWord: 0x0801023c,
-					scheduledTransferCountWord: 5,
-					scheduledControlWord: 5,
 					supervisorQuiesceRequested: true,
 					supervisorAdmissionQuiesceRequested: true,
 					userChannels: [
@@ -144,28 +148,24 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				},
 				imgDec: {
 					inputWordCountWord: 37,
-					textureDestinationWord: 0x00200040,
-					textureSizeWord: 0x00010040,
-					clutDestinationWord: 0x00400100,
+					outputWordCountWord: 48,
 					controlWord: 0,
 					statusWord: 0x00000001,
 					dataWord: 0x12345678,
 					inputWordsReceived: 32,
 					decodedWordCount: 24,
-					textureWordCount: 40,
-					clutWordCount: 8,
 					outputWordsRead: 13,
-					decodePhase: 7,
-					outputStage: 1,
+					decodePhase: 4,
+					blockPhase: 1,
+					blockReadIndex: 0,
+					blockCyclesRemaining: 4,
 					runWordsRemaining: 16,
 					repeatWord: 0x87654321,
 					backReferenceDistance: 8,
 					supervisorQuiesceRequested: true,
 					inputWords: [0x11111111, 0x22222222],
-					outputWords: [0x33333333, 0x44444444],
+					blockWords: [0x33333333, 0x44444444],
 					historyWords: [1, 2, 3, 4, 5, 6, 7, 8],
-					scheduledDecodeWords: 2,
-					scheduledDecodeCycles: 4,
 				},
 				geometry: {
 					phase: GEOMETRY_CONTROLLER_PHASE_BUSY,
@@ -188,8 +188,44 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						exactPairCount: 4,
 						broadphasePairCount: 5,
 					},
+					xform: {
+						phase: GeometryXform2Phase.Publish,
+						dstAddress: 0x080d0100, boundsAddress: 0x080d0200,
+						vertexCount: 7, hasBounds: true,
+						vertices: Uint32Array.from(numberedWords(GEO_XFORM2_MAX_VERTICES * 2)),
+						bounds: Uint32Array.of(0x80000000, 0xffffffff, 1, 0x7fffffff),
+						pendingMemory: { ramWords: 2, systemRomWords: 0, cartridgeWords: 0, otherWords: 0 },
+						pendingWorkUnits: 1, pendingFault: 0,
+					},
+					sat: {
+						phase: GeometrySat2Phase.Compute,
+						vertexAddressA: 0x080d1000, vertexAddressB: 0x080d1200,
+						countA: 64, countB: 63, resultAddress: 0x080d1400,
+						verticesA: Uint32Array.from(numberedWords(GEO_SAT2_MAX_POLY_VERTICES * 2)),
+						verticesB: new Uint32Array(GEO_SAT2_MAX_POLY_VERTICES * 2).fill(0xffffffff),
+						result: Uint32Array.of(1, 0xffffffff, 0x80000000, 0x7fffffff, 0xffff),
+						pendingMemory: { ramWords: 0, systemRomWords: 0, cartridgeWords: 126, otherWords: 0 },
+						pendingWorkUnits: 0, pendingFault: 0,
+					},
+					overlap: {
+						phase: GeometryOverlap2dPhase.CompletePiece, instanceBIndex: 31, pairMeta: 32,
+						shapeAAddr: 0x1000, shapeBAddr: 0x2000,
+						shapeAOffset: 0x30, shapeBOffset: 0x40,
+						countA: 3, countB: 4, pieceA: 1, pieceB: 2,
+						compoundA: true, compoundB: false, bestHit: true,
+						bestPieceA: 5, bestPieceB: 6, bestFeature: 7,
+						bestDepth: 0.25, bestNx: -1, bestNy: -0, bestPx: 3.5, bestPy: 4.5,
+						instanceA: Uint32Array.from(numberedWords(GEO_OVERLAP2D_INSTANCE_WORDS)),
+						instanceB: new Uint32Array(GEO_OVERLAP2D_INSTANCE_WORDS).fill(0xffffffff),
+						boundsA: Float64Array.of(-1, 2, 3, 4),
+						pendingWork: { axes: 8, projectionVertices: 64, averageVertices: 8,
+							clipVertices: 12, clipEdges: 16, squareRoots: 8, divisions: 24 },
+						pendingWriteFlags: 3, afterPublishPhase: GeometryOverlap2dPhase.Pair,
+						pendingMemory: { ramWords: 12, systemRomWords: 13, cartridgeWords: 14, otherWords: 15 },
+						pendingFault: 9,
+					},
 					workCarry: 12,
-					availableWorkUnits: 1,
+					pendingCycles: 17,
 					supervisorQuiesceRequested: true,
 				},
 				gxGpu: {
@@ -346,6 +382,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					mac3: -4,
 					currentSf: 1,
 					lastCycles: 8,
+					normalPendingCycles: 3,
 					plusPendingCycles: 4,
 					plusInterlockArmed: true,
 					plusPendingResultXy: 0x000efff2,
@@ -433,9 +470,10 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					apuFaultDetail: 0x1234,
 				},
 				stringPool: {
+					freeIds: [3, 2], slots: 4, sweep: 1, sweepEnd: 4,
 					entries: [
-						{ id: 0, value: 'rom literal', tracked: false },
-						{ id: 1, value: 'runtime literal', tracked: true },
+						{ id: 0, value: 'rom literal', tracked: false, reachable: true },
+						{ id: 1, value: 'runtime literal', tracked: true, reachable: false },
 					],
 				},
 				input: {
@@ -510,18 +548,20 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				nextObjectHashId: 0xfedcba98,
 				hardHalted: true,
 				luaHeap: { trackedBytes: 2345, nextCollectionBytes: 1048576 },
+				gc: { phase: 4, white: 1, sweep: 0, allocations: [0], colors: [3], gray: [], grayAgain: [], threads: [], weak: [] },
 				executionCartridgeSlot: 0,
+				programExecutionDomainId: 0,
 				systemGlobals: [
-				{ key: 1, value: 0 },
+				{ key: 1, value: integer },
 			],
 				globalSlots: [
-					{ key: 3, value: 3 },
+					{ key: 3, value: float },
 				],
-				stringIndexTable: 6,
+				stringIndexTable: nil,
 			rootThreadRef: 0,
 			activeThreadRef: 0,
 			completionThreadRef: 0,
-			threads: [{ status: 1, entryRef: -1, resumerRef: -1, callBase: 0, returnCount: 0, stackCapacity: 8, error: 0, openUpvalues: [],
+			threads: [{ status: 1, entryRef: -1, resumerRef: -1, callBase: 0, returnCount: 0, stackCapacity: 8, stack: [], error: 0, openUpvalues: [],
 
 				frames: [],
 			protectedCalls: [{
@@ -543,6 +583,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			interruptEventPending: false,
 			memoryWriteBlocked: false,
 			memoryWriteBlockedAddress: 0,
+			pendingMemory: { kind: PendingMemoryKind.WordStores, instructionPc: 0xfffffffc, nextPc: 0, address: 0x12345678, accessKind: MemoryAccessKind.Word, registerIndex: 7, wordCount: 9 },
 			statusWord: CPU_STATUS_CART_ENTRY,
 			causeWord: 0,
 			epcWord: 0,
@@ -561,6 +602,15 @@ function createRuntimeSaveState(): RuntimeSaveState {
 	};
 }
 
+for (const domain of [-1, 0, 1] as const) test(`runtime save-state codec preserves independent program domain ${domain}`, () => {
+	const state = createRuntimeSaveState();
+	state.cpuState.programExecutionDomainId = domain;
+	state.cpuState.executionCartridgeSlot = domain === -1 ? 1 : -1;
+	const restored = decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	assert.equal(restored.cpuState.programExecutionDomainId, domain);
+	assert.equal(restored.cpuState.executionCartridgeSlot, state.cpuState.executionCartridgeSlot);
+});
+
 test('runtime save-state codec preserves string pool ROM/runtime ownership', () => {
 	const state = createRuntimeSaveState();
 
@@ -570,7 +620,8 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
 	);
 
-	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
+	assert.deepEqual(decoded.machineState.machine.stringPool, state.machineState.machine.stringPool);
+	assert.deepEqual(decoded.cpuState.gc, state.cpuState.gc);
 	assert.deepEqual(decoded.machineState.machine.cartridge, state.machineState.machine.cartridge);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.machine.dma, state.machineState.machine.dma);
@@ -603,17 +654,24 @@ test('runtime save-state codec preserves GPUREAD bytes and raw phase bits', () =
 	readyReadback.readbackPhase = GX_GPU_READBACK_READY;
 	readyReadback.readbackX = 1023;
 	readyReadback.readbackY = 511;
+	readyReadback.commandVramYAddressExtensionWord[0] = 0xfedcba98;
+	readyReadback.readbackVramYAddressExtensionWord = 0x100;
+	ready.machineState.machine.gxGpu.userIngressContext.readbackVramYAddressExtensionWord = 0x80000000;
 	readyReadback.readbackWidth = 3;
 	readyReadback.readbackHeight = 1;
 	readyReadback.readbackPixelCursor = 1;
 	readyReadback.readbackPixelBytes = new Uint8Array([0x11, 0x11, 0x22, 0x22, 0x33, 0x33]);
-	const decodedReady = decodeRuntimeSaveState(
+	const decodedState = decodeRuntimeSaveState(
 		encodeRuntimeSaveState(ready),
 		PSX_MACHINE_SPEC.ramBytes,
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
-	).machineState.machine.gxGpu.commandBuffer;
+	);
+	const decodedReady = decodedState.machineState.machine.gxGpu.commandBuffer;
 	assert.equal(decodedReady.readbackPhase, GX_GPU_READBACK_READY);
 	assert.equal(decodedReady.readbackPixelCursor, 1);
+	assert.equal(decodedReady.commandVramYAddressExtensionWord[0], 0xfedcba98);
+	assert.equal(decodedReady.readbackVramYAddressExtensionWord, 0x100);
+	assert.equal(decodedState.machineState.machine.gxGpu.userIngressContext.readbackVramYAddressExtensionWord, 0x80000000);
 	assert.deepEqual(decodedReady.readbackPixelBytes, readyReadback.readbackPixelBytes);
 
 	const submitted = createRuntimeSaveState();
@@ -633,8 +691,9 @@ test('runtime save-state codec preserves exception frame metadata', () => {
 		pc: 44,
 		closureRef: 7,
 		stackCapacity: 8,
-		registers: [state.cpuState.stringIndexTable],
-		varargs: [],
+		stackBase: 0,
+		varargBase: 0,
+		varargCount: 0,
 		returnBase: 1,
 		returnCount: 0,
 		top: 1,

@@ -63,8 +63,8 @@ public:
 	 * Call a CPU closure from native code. The returned span is invalidated by
 	 * subsequent CPU execution, call entry, reset, or state restore.
 	 */
-	auto callClosure(Closure& fn, BuiltinArgsView args = {}) -> std::span<const Value>;
-	auto readCompletionValues() const -> std::span<const Value>;
+	auto callClosure(Closure& fn, BuiltinArgsView args = {}) -> ConstValueSpan;
+	auto readCompletionValues() const -> ConstValueSpan;
 	bool completionCallPending() const;
 
 	void resetHardwareState();

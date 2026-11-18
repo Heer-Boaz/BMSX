@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1190" role="img" aria-labelledby="title desc">
 <title id="title">GEO addressed geometry and collision jobs</title>
-<desc id="desc">The CPU programs and launches a GEO job within CORE. GEO reads addressed records from system ROM, main RAM or the selected cartridge bus, and writes ordinary result spans to main RAM through its geometry memory path. OVERLAP2D also writes summary words through the ordinary mapped bus; these may address RAM or I/O. The controller publishes status and progress and requests an interrupt on completion or fault. Software constructs drawing packets separately for GFX. The physical producer and ordering are not yet integrated.</desc>
+<desc id="desc">The CPU programs and launches a GEO job within CORE. GEO reads addressed records from system ROM, main RAM or the selected cartridge bus, and writes results through its raw geometry memory path. OVERLAP2D summary words use that same path, not mapped CPU I/O. The controller publishes status and progress and requests an interrupt on completion or fault. Software constructs drawing packets separately for GFX. Integration of the physical producer remains incomplete.</desc>
 <defs>
  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
  <style>text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:29px;font-weight:bold}.head{font-size:22px;font-weight:bold}.small{font-size:18px}.minor{font-size:17px}.device{fill:#f8fafb;stroke:#91a9b8;stroke-width:2}.unit{fill:#e1edf4;stroke:#294b68;stroke-width:2}.store{fill:#f3f6f8;stroke:#294b68;stroke-width:2}.engine{fill:#eaf4ec;stroke:#426b53;stroke-width:2}.line{fill:none;stroke:#294b68;stroke-width:2.5;marker-end:url(#arrow)}</style>
@@ -73,12 +73,12 @@
 <path d="M180 320V680H840V810H895" class="line"/>
 
 <rect x="60" y="912" width="1440" height="230" rx="8" fill="#fff8e8" stroke="#9b6d21" stroke-width="2" stroke-dasharray="8 5"/>
-<text x="92" y="949" class="head">Separate OVERLAP2D summary path — mapped bus</text>
+<text x="92" y="949" class="head">OVERLAP2D summary — the same raw geometry path</text>
 <rect x="92" y="968" width="310" height="52" rx="6" class="engine"/><text x="247" y="1001" text-anchor="middle" class="small">OVERLAP2D summary</text>
-<rect x="500" y="968" width="330" height="52" rx="6" class="unit"/><text x="665" y="1001" text-anchor="middle" class="small">CORE mapped bus decoder</text>
-<rect x="928" y="968" width="400" height="52" rx="6" class="store"/><text x="1128" y="1001" text-anchor="middle" class="small">Addressed RAM or mapped I/O</text>
+<rect x="500" y="968" width="330" height="52" rx="6" class="unit"/><text x="665" y="1001" text-anchor="middle" class="small">CORE raw geometry path</text>
+<rect x="928" y="968" width="400" height="52" rx="6" class="store"/><text x="1128" y="1001" text-anchor="middle" class="small">Addressed memory</text>
 <path d="M402 994 H500" class="line"/><path d="M830 994 H928" class="line"/>
-<text x="92" y="1050" class="small">Four zero words at launch, also when COUNT is zero; later summary words follow the same mapped path.</text>
-<text x="92" y="1080" class="small">DST1 is not prevalidated as RAM; a bus fault is distinct from a GEO fault.</text>
-<text x="92" y="1110" class="minor">Request-class selection, launch ordering, reentrant access, timing and clipping capacity remain open.</text>
+<text x="92" y="1050" class="small">GEO pays for its initial summary before publishing it, including when COUNT is zero.</text>
+<text x="92" y="1080" class="small">At CPU I/O addresses in main RAM, GEO accesses RAM bytes rather than device registers.</text>
+<text x="92" y="1110" class="minor">The physical producer and its publication sequencing remain to be integrated and qualified.</text>
 </svg>

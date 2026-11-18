@@ -6,6 +6,7 @@
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 
+#include <algorithm>
 #include <bit>
 
 namespace bmsx {
@@ -97,6 +98,7 @@ void GxGte::reset() {
 	m_accumPositiveOverflow = false;
 	m_accumNegativeOverflow = false;
 	m_lastCycles = 0u;
+	m_normalCompletionCycle = 0;
 	m_plusCompletionCycle = 0;
 	m_plusInterlockServiceScheduled = false;
 	m_plusPendingResultXy = 0u;
@@ -123,6 +125,7 @@ GxGteState GxGte::captureState() {
 	state.mac3 = m_mac3;
 	state.currentSf = m_currentSf;
 	state.lastCycles = m_lastCycles;
+	state.normalPendingCycles = static_cast<u32>(std::max<i64>(0, m_normalCompletionCycle - m_scheduler.currentNowCycles()));
 	state.plusPendingCycles = m_plusCompletionCycle == 0
 		? 0u
 		: static_cast<u32>(m_plusCompletionCycle - m_scheduler.currentNowCycles());
@@ -145,6 +148,7 @@ void GxGte::restoreState(const GxGteState& state) {
 	m_mac3 = state.mac3;
 	m_currentSf = state.currentSf;
 	m_lastCycles = state.lastCycles;
+	m_normalCompletionCycle = m_scheduler.currentNowCycles() + state.normalPendingCycles;
 	m_plusPendingResultXy = state.plusPendingResultXy;
 	m_plusPendingResultZ = state.plusPendingResultZ;
 	m_plusPendingFlag = state.plusPendingFlag;
@@ -187,8 +191,19 @@ void GxGte::publishPlusCompletion() {
 }
 
 
-u32 GxGte::readDataRegisterThunk(void* context, u32 addr, MappedBusSignals) {
+// As in a clocked coprocessor, only dependent CPU bus accesses consume the
+// outstanding interval. Arithmetic can run ahead internally; raw observations
+// do not advance the processor. No scheduler event is needed for idle completion.
+void GxGte::synchronizeNormalAccess(MappedBusSignals busSignals) {
+	if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u || !m_scheduler.isCpuSliceActive()) return;
+	const i64 remaining = m_normalCompletionCycle - m_scheduler.currentNowCycles();
+	if (remaining > 0) m_cpu.instructionBudgetRemaining -= static_cast<int>(remaining);
+	m_normalCompletionCycle = 0;
+}
+
+u32 GxGte::readDataRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals) {
 	GxGte& gte = *static_cast<GxGte*>(context);
+	gte.synchronizeNormalAccess(busSignals);
 	return gte.readDataRegister((addr - IO_GX_GTE_DATA0) / IO_WORD_SIZE);
 }
 
@@ -197,8 +212,9 @@ void GxGte::writeDataRegisterThunk(void* context, u32 addr, u32 value, MappedBus
 	gte.writeDataRegister((addr - IO_GX_GTE_DATA0) / IO_WORD_SIZE, value);
 }
 
-u32 GxGte::readControlRegisterThunk(void* context, u32 addr, MappedBusSignals) {
+u32 GxGte::readControlRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals) {
 	GxGte& gte = *static_cast<GxGte*>(context);
+	gte.synchronizeNormalAccess(busSignals);
 	return gte.readControlRegister((addr - IO_GX_GTE_CONTROL0) / IO_WORD_SIZE);
 }
 
@@ -207,10 +223,12 @@ void GxGte::writeControlRegisterThunk(void* context, u32 addr, u32 value, Mapped
 	gte.writeControlRegister((addr - IO_GX_GTE_CONTROL0) / IO_WORD_SIZE, value);
 }
 
-void GxGte::writeCommandThunk(void* context, u32 addr, u32 value, MappedBusSignals) {
+void GxGte::writeCommandThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals) {
 	(void)addr;
 	GxGte& gte = *static_cast<GxGte*>(context);
+	gte.synchronizeNormalAccess(busSignals);
 	gte.m_lastCycles = gte.execute(value);
+	gte.m_normalCompletionCycle = gte.m_scheduler.currentNowCycles() + gte.m_lastCycles;
 	gte.m_memory.writeIoU32(IO_GX_GTE_CYCLES, gte.m_lastCycles);
 }
 

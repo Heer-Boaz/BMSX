@@ -339,6 +339,68 @@ void testEveryControllerMenuTapAndRewindHold() {
 	}
 }
 
+void testConfiguredGamepadExitHold() {
+	for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) {
+		for (u16 released : std::array<u16, 3>{0, Select, Start}) {
+			InputFixture fixture;
+			fixture.input.setGamepadHoldAction(HostMenuShortcutAction::ExitGame);
+			joypads[player] = MenuChord;
+			fixture.tickAt(100);
+			fixture.tickAt(599);
+			require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+				"configured exit waits for the full hold on each controller");
+			joypads[player] = released;
+			fixture.tickAt(600);
+			require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::ExitGame,
+				"held or sparsely released controller chord exits once at the deadline");
+			fixture.tickAt(1000);
+			require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+				"exit cannot repeat or become a menu tap on release");
+		}
+		InputFixture fixture;
+		fixture.input.setGamepadHoldAction(HostMenuShortcutAction::ExitGame);
+		joypads[player] = MenuChord;
+		fixture.tickAt(100);
+		joypads[player] = 0;
+		fixture.tickAt(599);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Menu,
+			"a short chord still opens the menu with exit configured");
+	}
+	InputFixture fixture;
+	fixture.input.setGamepadHoldAction(HostMenuShortcutAction::ExitGame);
+	joypads[0] = Start;
+	fixture.tickAt(100);
+	joypads[0] = MenuChord;
+	fixture.tickAt(200);
+	fixture.tickAt(1000);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+		"a preheld Start cannot accidentally trigger exit");
+	joypads[0] = 0;
+	fixture.tickAt(1100);
+	joypads[0] = MenuChord;
+	fixture.tickAt(1200);
+	fixture.input.setGamepadHoldAction(HostMenuShortcutAction::Rewind);
+	fixture.tickAt(1700);
+	joypads[0] = 0;
+	fixture.tickAt(1800);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+		"changing the action cancels an in-flight gamepad gesture");
+	joypads[0] = MenuChord;
+	fixture.tickAt(1900);
+	fixture.tickAt(2400);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind,
+		"the next gesture uses the newly configured action");
+	joypads[0] = 0;
+	fixture.tickAt(2500);
+	fixture.input.setGamepadHoldAction(HostMenuShortcutAction::ExitGame);
+	fixture.input.postKeyboardEvent(RETROK_RCTRL, true);
+	fixture.input.postKeyboardEvent(RETROK_RALT, true);
+	fixture.tickAt(2600);
+	fixture.tickAt(3100);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind,
+		"the controller option does not change the physical keyboard shortcut");
+}
+
 void testSparsePollAndPreheldTargetClassification() {
 	for (u16 released : std::array<u16, 3>{0, Select, Start}) {
 		InputFixture fixture;
@@ -702,6 +764,7 @@ int main() {
 	testOrdinaryHardwareXAndZCannotBecomeGamepadHostShortcuts();
 	testHardwareTerminalAndMenuChordsRemainIndependentOfGamepadContext();
 	testEveryControllerMenuTapAndRewindHold();
+	testConfiguredGamepadExitHold();
 	testSparsePollAndPreheldTargetClassification();
 	testMenuGestureSourcesStayIndependent();
 	testConcurrentSourcesPreferTheLongAction();

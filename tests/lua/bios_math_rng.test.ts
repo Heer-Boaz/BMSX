@@ -17,6 +17,7 @@ test('firmware math RNG state is initialized guest RAM owned by the math module'
 	const modules = [
 		{ path: 'math', file: 'machine/bios/math.lua' },
 		{ path: 'math/trig', file: 'machine/bios/math/trig.lua' },
+		{ path: 'math/trig/reduce', file: 'machine/bios/math/trig/reduce.lua' },
 	].map(module => {
 		const source = readFileSync(module.file, 'utf8');
 		return {
@@ -25,7 +26,7 @@ test('firmware math RNG state is initialized guest RAM owned by the math module'
 			source,
 		};
 	});
-	const compiled = compileLuaChunkToProgram(parseSource(entrySource, 'entry.lua'), modules, { entrySource });
+	const compiled = compileLuaChunkToProgram(parseSource(entrySource, 'entry.lua'), modules, { entrySource, programDomain: 'system' });
 	const image = encodeCompiledProgramObject(compiled);
 	assert.equal(compiled.moduleProtoMap.has('math'), true);
 	assert.deepEqual(Array.from(image.sections.data.bytes.slice(0, 4)), [0x78, 0x56, 0x34, 0x12]);

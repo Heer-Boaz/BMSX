@@ -1,6 +1,6 @@
 # BIOS math library {#sec-bios-math}
 
-The BIOS math library supplies numeric operations, angular functions and a shared pseudorandom generator. Its `math` Table contains twenty-five callable entries and four numeric constants. Numbers use binary64 arithmetic; a function preserves the input scale unless its definition states a unit or representation conversion.
+The BIOS math library supplies numeric operations, angular functions and a shared pseudorandom generator. Its `math` Table contains twenty-five callable entries and four numeric constants. Numbers have Integer and binary32 Float subtypes; a function preserves the input scale unless its definition states a unit or representation conversion.
 
 ## Calling the library {#sec-bios-math-calling-the-library}
 
@@ -9,11 +9,9 @@ constants. Call its functions directly. The separate named import `math/sin`
 uses turn-phase words and integer Q16 results; the ordinary trigonometric
 functions use radians and unscaled Numbers.
 
-Numbers use binary64 arithmetic. Descriptions such as “integer component”
-and the result `"integer"` classify a Number's value; they do not select a
-second numeric type. A function preserves the input scale unless its entry
-specifies a unit conversion. Register-word conversion follows the
-[CPU rules](cpu.md#sec-cpu-values-and-numeric-instructions).
+Integers and Floats are distinct Number subtypes. A function preserves the
+input scale unless its entry specifies a unit conversion. Register-word
+conversion follows the [CPU rules](cpu.md#sec-cpu-values-and-numeric-instructions).
 
 Missing fixed parameters arrive as nil and surplus arguments are discarded.
 `min` and `max` receive a variable argument tail, including its nil positions.
@@ -24,87 +22,78 @@ adjustment.
 
 The formulas in this chapter use these explanatory operations:
 
-- **`D(a, b)`**: BLua `a // b`. Form the binary64 quotient `q = a / b`,
-  truncate it toward zero as `t`, then return `t - 1` when `t > q`, otherwise
-  `t`. Floating division and rounding precede selection of the result.
-- **`T(x)`**: truncate toward zero, using `-D(-x, 1)` for negative `x` and
-  `D(x, 1)` otherwise.
-- **`M(a, b)`**: BLua `a % b`. Form the truncation-based floating remainder
-  `r`; when `r` is positive and `b` negative, or `r` negative and `b` positive,
-  return `r + b`. Otherwise return `r`, including its zero sign.
+- **`D(a, b)`** means BLua `a // b`, with the Integer and Float rules of the
+  CPU reference.
+- **`T(x)`** means the mathematical value of `x` truncated toward zero; it is
+  not an additional public function.
+- **`M(a, b)`** means BLua `a % b`, with the Integer and Float rules of the
+  CPU reference.
 
-Arithmetic on a non-Number yields NaN. Numeric Strings require an explicit
-`tonumber` conversion. Number/Number and String/String pairs support ordering;
-other kind pairs compare false. NaN is unordered and the two numeric zero
-signs compare equal. See [numeric instructions](cpu.md#sec-cpu-values-and-numeric-instructions).
+Unless an entry states otherwise, an arithmetic parameter must be a Number.
+Strings require an explicit `tonumber` conversion. Integer overflow wraps;
+Float arithmetic rounds to binary32. NaN is unordered and the Integer zero and
+both Float zero signs compare equal. See [numeric instructions](cpu.md#sec-cpu-values-and-numeric-instructions).
 
-These rules apply to the written formulas, including overflow, division by
-zero and rounding of intermediate values. In particular, `fmod` uses its
-quotient formula while `ult` compares modulo results.
+These rules apply at each operation in a written formula. They do not turn a
+mathematical description of a word operation into an additional public call.
 
 ## Constants {#sec-bios-math-constants}
 
 | Field | Numeric value | Meaning and limits |
 |------------------|-----------------------------------------------|-----------------------------------|
 | `math.huge` | Positive infinity, initialized by `1.0 / 0.0` | A numeric infinity, not a maximum finite number or an argument validator. |
-| `math.mininteger` | `-9007199254740991` | The exported lower integer constant. It does not bound all numbers or all values accepted by `tointeger`. |
-| `math.maxinteger` | `9007199254740991` | The exported upper integer constant. The pair is symmetric, not the asymmetric bounds of a signed 64-bit integer. |
-| `math.pi` | Literal `3.141592653589793238462643383279502884`, stored as a number | The literal spelling does not imply that every displayed decimal digit survives in binary64 precision. |
+| `math.mininteger` | Integer −2147483648, word `80000000H` | The least Integer. |
+| `math.maxinteger` | Integer `2147483647` | The greatest Integer. |
+| `math.pi` | Float with binary32 bits `40490FDBH` | Approximately 3.1415927410125732 radians per half turn. |
 
 These are value fields, not callable functions. They are not fixed-point constants, register words, or precision metadata. There is no exported NaN constant among the fields covered here, although several operations can produce numeric NaN.
 
 ## `math.abs(value)` {#sec-bios-math-mathabsvalue}
 
-Returns one value: `-value` when `value < 0`, otherwise the original value.
-For Numbers this gives the magnitude, preserving either zero sign. Negative
-infinity becomes positive infinity; NaN and non-Number values are returned
-unchanged. A missing argument therefore returns nil.
+Returns one Number of the input subtype. For an Integer, the result is its
+magnitude in 32-bit arithmetic: the minimum Integer wraps to itself. A Float
+returns its magnitude, including positive zero for either zero sign, positive
+infinity for either infinity, and NaN for NaN. A non-Number raises an error.
 
 ## `math.floor(value)` {#sec-bios-math-mathfloorvalue}
 
-Returns one Number, `D(value, 1)`. For finite values it selects the lower whole
-value at unit spacing in the supplied scale. Infinities and signed zero retain
-their signs; NaN and non-Number input produce NaN.
+Returns one Number, rounded toward negative infinity. If the input is an
+Integer, it is returned unchanged. If a finite Float's rounded result fits in
+an Integer, the result is that Integer; otherwise it is a Float. NaN and
+infinities remain Floats. A non-Number raises an error.
 
 ## `math.ceil(value)` {#sec-bios-math-mathceilvalue}
 
-Returns one Number, `-D(-value, 1)`. For finite values it selects the upper
-whole value at unit spacing. Its infinity, signed-zero and non-Number cases
-are the same as `floor`.
+Returns one Number, rounded toward positive infinity, with the same subtype,
+range and non-Number rules as `math.floor`.
 
 ## `math.round(value)` {#sec-bios-math-mathroundvalue}
 
-Returns one Number. For `value >= 0`, the result is `D(value + 0.5, 1)`;
-otherwise it is `-D((-value) + 0.5, 1)`. Exact halfway values within ordinary
-finite precision round away from zero. At large magnitudes, the addition of
-`0.5` is itself subject to binary64 rounding.
-
-Both zero signs produce positive zero. A negative value whose rounded
-magnitude becomes zero produces negative zero. Infinities retain their signs;
-NaN and non-Number inputs produce NaN.
+Returns one Number rounded to the nearest integral value, with exact halfway
+values rounded away from zero. If the input is an Integer, it is returned
+unchanged. A finite Float whose rounded result fits in an Integer produces an
+Integer; otherwise it produces a Float. NaN and infinities remain Floats.
+A non-Number raises an error.
 
 ## `math.fmod(left, right)` {#sec-bios-math-mathfmodleft-right}
 
-Returns one Number, calculated in this order:
-
-```text
-left - (T(left / right) * right)
-```
-
-The result uses the input scale. Division can overflow before truncation,
-including for finite operands. A zero divisor, an infinity operand, NaN or a
-non-Number operand produces NaN. A zero numerator and finite nonzero divisor
-produce positive zero, including for a negative-zero numerator.
+Returns the remainder of division with the quotient truncated toward zero.
+A nonzero remainder has the dividend's sign. Two Integers produce an Integer;
+Integer division by zero raises an error, and `math.fmod(0x80000000, -1)` is
+Integer zero. Otherwise operands are converted to Float and the result is a
+Float. A Float zero divisor or an infinite dividend produces NaN; a finite
+Float dividend and an infinite divisor produce the dividend. A non-Number
+raises an error.
 
 ## `math.modf(value)` {#sec-bios-math-mathmodfvalue}
 
-Returns two Numbers: the integer component `T(value)`, then
-`value - T(value)`. The first result truncates toward zero; the residual
-retains its signed contribution rather than being made positive.
-
-For either zero sign, the first result keeps that sign and the residual is
-positive zero. An infinity returns that infinity followed by NaN. NaN or
-non-Number input returns two NaNs. Both components use the original scale.
+Returns two Numbers: the value truncated toward zero, then its fractional
+remainder. For an Integer input, the first result is the original Integer and
+the second is Float positive zero. For a finite Float, the first result is an
+Integer when its value is in Integer range, otherwise a Float; the second is a
+Float. A whole Float has a positive-zero remainder. Either infinity returns
+itself followed by Float positive zero. NaN returns two NaNs. A non-Number
+raises an error.
 
 ## `math.min(first, ...)` {#sec-bios-math-mathminfirst}
 
@@ -138,37 +127,29 @@ The mixed-kind, NaN and nil-tail behavior is the same as for `min`.
 
 ## `math.tointeger(value)` {#sec-bios-math-mathtointegervalue}
 
-Returns one Number when `value` is a finite Number equal to `T(value)`;
-otherwise returns one nil. Thus finite whole values are accepted, fractions
-are rejected, and either zero sign is preserved. Accepted whole values may
-lie outside the exported `mininteger` and `maxinteger` constants. This call
-classifies integrality; use explicit word conversion for a register encoding.
+Returns an Integer unchanged. A finite Float with an exact integral value in
+the signed 32-bit Integer range produces the corresponding Integer. Every
+other value produces nil; neither a fraction nor a numeric String is rounded
+or parsed.
 
 ## `math.type(value)` {#sec-bios-math-mathtypevalue}
 
-Returns `"integer"` for a Number accepted by `tointeger`, `"float"` for other
-Numbers, and nil for other kinds. Infinities and NaN classify as `"float"`.
-Either zero sign classifies as `"integer"`. These labels describe values in
-the single Number representation.
+Returns `"integer"` for an Integer, `"float"` for a Float, and nil for a
+non-Number. This describes the stored subtype: `math.type(2.0)` is `"float"`
+although `2.0 == 2` is true. NaN and both zero signs are Floats.
 
 ## `math.ult(left, right)` {#sec-bios-math-mathultleft-right}
 
-Returns one Boolean:
-
-```text
-M(left, 4294967296.0) < M(right, 4294967296.0)
-```
-
-For integer inputs this compares their modulo-2^32 residues. Fractional
-inputs participate directly in modulo without truncation. Equal zero residues
-compare false regardless of their signs. Infinity, NaN or non-Number input
-produces an unordered residue and therefore false.
+Returns one Boolean. Each input must be an Integer or a Float with an exact
+Integer value in range. Compare their 32-bit words as unsigned: for example,
+`math.ult(0, -1)` is true. An input that cannot be converted raises an error.
+This interpretation does not change either input's stored value.
 
 ## `math.sign(value)` {#sec-bios-math-mathsignvalue}
 
-Returns one Number: `1` for `value > 0`, `-1` for `value < 0`, otherwise `0`.
-This includes the corresponding signs for infinities. Either zero sign, NaN
-and non-Number input produce positive zero. The result is dimensionless.
+Returns Integer `1` for a Number greater than zero, Integer `-1` for a Number
+less than zero, and Integer `0` for either zero or NaN. The two infinities
+return their respective signs. A non-Number raises an error.
 
 ## Execution cost and library bindings {#sec-bios-math-execution-cost-and-library-bindings}
 
@@ -178,16 +159,15 @@ through `select`; selecting one final result leaves those preceding calls
 in place. For `n` ordinary positive selector positions, the selected suffixes
 contain `n + (n - 1) + ... + 1` values in total.
 
-The primitive surcharges are one cycle for `type` or `select`, and two for
+The primitive surcharges are one cycle for `type`, `math.type`,
+`math.tointeger` or `select`, and two for
 `error`, in addition to executed BIOS instructions and ordinary calls. Use
 [CPU cycle accounting](cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries) when
 budgeting a complete operation.
 
 Reassigning a Math field leaves the library's saved numeric operations and
-constants unchanged. `math.type` retains its integrality operation;
-`math.type` and `tointeger` read the current global `type`. `min` and `max`
-read current `select` and `error`. Their entries describe the installed
-[base functions](bios-base.md#sec-bios-base).
+constants unchanged. `min` and `max` read current `select` and `error`. Their entries describe the
+installed [base functions](bios-base.md#sec-bios-base).
 
 ## Angles and transcendental operations {#sec-bios-math-angles-and-transcendental-operations}
 
@@ -217,12 +197,12 @@ fixed parameters. An explicit `nil` selects the alternate forms `math.atan(y, ni
 No other parameter has a default.
 
 The formulas below use the Number arithmetic and `D` and `T` notation defined
-earlier. For word conversion, bit masks and signed right shifts, see
+earlier. For word conversion, bit masks and shifts, see
 [Bitwise operations and shifts](cpu.md#sec-cpu-bitwise-operations-and-shifts).
 The formulas specify the approximations and their operation order.
-Rounding follows Number arithmetic at each step. Nonnumeric arguments follow
-the same arithmetic rules and produce the results stated below; numeric text
-requires explicit conversion.
+These functions convert Integer inputs to Float before their calculations and
+return Floats. Rounding follows binary32 arithmetic at each step. A nonnumeric
+required argument raises an error; numeric text requires explicit conversion.
 
 Here `pi` is the BIOS Number constant and `h = pi * 0.5`. The calculations
 use their original constants and numeric operations after public Math fields
@@ -243,26 +223,26 @@ math.rad(value): value * (pi / 180)
 ```
 
 There is no magnitude reduction or fixed-point conversion. Either zero sign
-is preserved, infinities retain their sign, and NaN or a nonnumeric argument
-produces NaN.
+is preserved, infinities retain their sign, and NaN produces NaN. A
+nonnumeric argument raises an error.
 
 ### Sine, cosine and tangent {#sec-bios-math-sine-cosine-and-tangent}
 
-These functions accept radian-scale Numbers and return dimensionless binary64
+These functions accept radian-scale Numbers and return dimensionless binary32
 approximations. They do **not** convert their arguments to 32-bit phases or
 quantize their results to Q16. Small angles therefore retain their floating-point
 scale: `math.sin(0.000001)` is nonzero.
 
-Argument reduction covers the full finite binary64 range. Large angles are
+Argument reduction covers the full finite binary32 range. Large angles are
 not reduced by taking a remainder against a single rounded `2*pi` constant.
 
 | Input | `math.sin` | `math.cos` | `math.tan` |
 |---|---|---|---|
-| `+0` | `+0` | `1` | `+0` |
-| `-0` | `-0` | `1` | `-0` |
+| Float `+0` | Float `+0` | Float `1.0` | Float `+0` |
+| Float `-0` | Float `-0` | Float `1.0` | Float `-0` |
 | NaN or either infinity | NaN | NaN | NaN |
 
-The result is a binary64 approximation. For example, `math.pi / 2` is a
+The result is a binary32 approximation. For example, `math.pi / 2` is a
 rounded Number rather than an exact tangent pole, so its tangent can be large
 and finite. Argument reduction and cancellation affect the executed path and
 cycle count.
@@ -332,14 +312,13 @@ rows are considered before either remaining `y`-axis row.
 | `x < 0`, otherwise | `A(y / x) - pi` |
 | `y > 0` | `h` |
 | `y < 0` | `-h` |
-| Otherwise | Literal positive zero. |
+| Otherwise | Float positive zero. |
 
 
-The result uses radian scale. A supplied `false` is not the nil form:
-`math.atan(1, false)` reaches the axis branch and returns `h`. A nonnumeric
-`y` in the nil form produces NaN through `P`. Numeric NaN in the two-value
-form is handled by the self-inequality checks. With numerical zero axes,
-the last row returns positive zero regardless of either zero sign. These
+The result uses radian scale. A supplied `false` is not the nil form and
+raises an error. Numeric NaN in the two-value form is handled by the
+self-inequality checks. With numerical zero axes, the last row returns
+Float positive zero regardless of either zero sign. These
 polynomial and branch rules also determine results at infinite arguments;
 the approximation is not a correctly rounded `atan2` operation.
 
@@ -352,17 +331,18 @@ math.acos(value): h - asin(value)
 
 Their results are in radians. Numerical inputs outside `[-1, 1]` produce NaN
 through the square root and angle calculation, rather than an explicit domain
-error. Missing or nonnumeric inputs likewise reach NaN through the arithmetic.
+error. Missing or nonnumeric inputs raise an error.
 The inverse-sine calculation includes the square root's normalization and
 refinements; inverse-angle work is therefore not uniformly fixed. No uniform
 inverse-trigonometric accuracy or result-range guarantee is specified here.
 
 ### Square root {#sec-bios-math-square-root}
 
-`math.sqrt(value)` first returns NaN for `value < 0`, then returns `value`
-unchanged if it equals zero or positive infinity. Consequently negative
-infinity produces NaN, positive infinity is preserved, and either zero sign
-is preserved.
+`math.sqrt(value)` converts a Number to Float, first returns NaN for
+`value < 0`, then returns `value` unchanged if it equals zero or positive
+infinity. Consequently negative infinity produces NaN, positive infinity is
+preserved, and either Float zero sign is preserved. Integer zero produces
+Float positive zero. A non-Number raises an error.
 
 
 For other inputs, initialize `normalized = value` and `scale = 1`, then
@@ -383,8 +363,8 @@ estimate = (estimate + normalized / estimate) * 0.5
 
 and return `estimate * scale`. Positive finite values are normalized using
 powers of four and a power-of-two scale. The normalization work depends on
-magnitude. NaN and nonnumeric inputs skip both loops and produce NaN during
-refinement arithmetic. The eight refinements and the displayed scaling
+magnitude. NaN skips both loops and produces NaN during refinement arithmetic.
+The eight refinements and the displayed scaling
 specify the approximation; the executed normalization path determines its
 variable part of the cycle count.
 
@@ -397,8 +377,8 @@ ordered:
 | Condition | Result |
 | --- | --- |
 | `value ~= value` | NaN |
-| `value > 709.782712893384` | Positive infinity. |
-| `value < -745.133219101941` | Literal zero. |
+| `value > 88.72283935546875` | Positive infinity. |
+| `value < -103.972076416015625` | Float positive zero. |
 
 The two numerical cutoffs are **strict**: equality proceeds to the
 approximation. Both infinities take their corresponding cutoff branch.
@@ -438,9 +418,7 @@ while power > 0:   result *= 2;     power -= 1
 ```
 
 The resulting Number is the positive approximation. There are exactly 16
-series updates, but the scaling work varies. Nonnumeric input passes the
-initial comparisons, produces NaN in reduction and the series, and skips the
-scaling loops.
+series updates, but the scaling work varies. Nonnumeric input raises an error.
 
 For negative inputs, the positive intermediate can overflow **before** the
 reciprocal is taken. The reciprocal then becomes zero even when the argument
@@ -495,8 +473,8 @@ sum = sum + term / denominator
 ```
 
 The natural result is `(2 * sum) + (exponent * ln2)`, using the same retained
-`ln2` as the exponential. NaN and nonnumeric inputs skip normalization and
-produce NaN through the arithmetic.
+`ln2` as the exponential. NaN skips normalization and produces NaN through
+the arithmetic. A nonnumeric input raises an error.
 
 `math.log(value, base)` calculates `natural = N(value)` **first**, before
 selecting the base branch:
@@ -512,7 +490,7 @@ Here `ln10 = 2.30258509299404568402` is another retained Number constant.
 The general-base branch applies the displayed division to every supplied
 base. Since `N(1)` is zero, base one causes division by zero and
 `math.log(1, 1)` produces NaN. A supplied false or another nonnumeric base
-produces NaN through `N(base)`; only nil selects the natural-log form.
+raises an error; only nil selects the natural-log form.
 
 The divisions can produce infinities, signed zeros or NaN. Natural
 normalization depends on input magnitude, followed by 15 series updates;
@@ -525,87 +503,63 @@ All decimal constants above are rounded to their stored Number values.
 
 ### `math.random([lower [, upper]])` → Number {#sec-bios-math-mathrandomlower-upper-number}
 
-Returns exactly one Number on success. The function has two fixed parameters and no variable-argument parameter. An omitted fixed parameter arrives as nil. False is not nil and does not request an omitted-argument default. See [calls, closures, globals, and tables](cpu.md#sec-cpu-calls-closures-globals-and-tables) for the call model.
+With no bound, advance the generator once and return one Float in **[0, 1)**.
+With one bound, return an Integer in `[1, lower]`. With two bounds, return an
+Integer in `[lower, upper]`. Both endpoints are included. Supplied bounds are
+Integers or Floats with an exact Integer value in range; a nonnumeric,
+fractional or out-of-range bound raises an error. A one-bound upper limit less
+than one or a two-bound interval with `upper < lower` also raises an error.
+A failed call does not advance the generator.
 
-Both bound-rejection branches call the current public `error` binding. The raised String behavior below assumes its installed BIOS definition.
+An omitted final bound arrives as nil. `random()` and `random(nil, upper)`
+select the unbounded form; `random(lower, nil)` selects the one-bound form.
+False is not nil and does not select an omitted-argument form.
 
-Every call advances the shared generator **before inspecting either bound**. Consequently, an explicit bound error consumes an update, as does a call whose result is NaN.
+For the unbounded form, let `s` be the new 32-bit state, interpreted as an
+unsigned word. The result is the Float `(s >> 8) * 2^(-24)`, where `>>` is a
+logical word shift. This calculation uses the high 24 bits and has exact
+binary32 results from zero through `1 - 2^(-24)`.
 
+For a bounded form, let `lo` and `hi` be the selected Integer endpoints, and
+let `width = hi - lo + 1` be calculated mathematically, without 32-bit wrap.
+The returned Integer is:
 
-The branches are selected in this order:
+```text
+lo + trunc((s * width) / 2^32)
+```
 
-1. If `lower` is nil, return the unit sample immediately. `upper` is not examined. Thus `random()` and `random(nil, upper)` select this branch, including `random(nil, false)`.
-2. Otherwise, if `upper` is nil, truncate `lower` toward zero to obtain `upper_int`. If `upper_int < 1`, raise exactly:
-
-   ```text
-   random upper bound must be positive.
-   ```
-
-   Otherwise return:
-
-   ```text
-   trunc(value * upper_int) + 1
-   ```
-
-3. Otherwise, truncate `lower` first and `upper` second to obtain `lower_int` and `upper_int`. If `upper_int < lower_int`, raise exactly:
-
-   ```text
-   random upper bound must be greater than or equal to lower bound.
-   ```
-
-   Otherwise return:
-
-   ```text
-   lower_int + trunc(value * ((upper_int - lower_int) + 1))
-   ```
-
-
-Here `value` is the unit sample already generated. In these formulas, `trunc` denotes the private truncation operation, not an additional public function. For finite Numbers it truncates toward zero.
-
-The unit sample lies in **[0, 1)**: zero is included and one is excluded. Its largest possible value is `1 - 2^-32`. For ordinary finite bounded inputs, the source-defined closed integer intervals are **[1, upper_int]** for one bound and **[lower_int, upper_int]** for two bounds. Both endpoints of those interval definitions are included. The formulas above remain authoritative: floating arithmetic and rounding do not support extending this description into a guarantee for every extreme Number, or a promise that every integer is sampled or equally likely.
-
-`random(u)` and `random(u, nil)` use the one-bound branch. Fractional finite bounds are truncated, not rounded to the nearest integer. A one-bound zero, negative integer, or finite value that truncates below one takes the positive-bound error.
-
-Supply finite Number bounds for a bounded integer result. Nonnumeric or NaN
-bounds propagate NaN through the result formula after consuming a generator
-update. With a positive-infinity upper bound, the result is positive infinity
-for a positive unit sample and NaN for zero. A negative-infinity upper bound
-raises the positive-bound error. These cases follow ordinary
-[Number arithmetic](cpu.md#sec-cpu-values-and-numeric-instructions).
+The product and division in this definition are exact integer operations;
+`width` can be as large as `2^32`. This specifies the mapping without
+requiring a Float conversion. Each bounded call advances the generator once.
+The mapping does not promise that every value is equally frequent over a
+finite series of calls.
 
 ### `math.randomseed([seed])` → nil {#sec-bios-math-mathrandomseedseed-nil}
 
-Returns **exactly one nil result**, not an empty result list. It has one fixed parameter and no variable-argument parameter.
+Returns exactly one nil. With an explicit seed, the argument must be an
+Integer or a Float with an exact Integer value in range; its 32 bits replace
+the generator state. A nonnumeric, fractional or out-of-range seed raises an
+error without changing that state. Seeding does not advance the generator.
 
-If `seed` is nil, including an omitted parameter, the function calls the current `os.clock()` binding, multiplies that result by 1000, applies the private truncation operation, reduces it modulo `4294967296.0`, and stores it in the shared generator word. With the BIOS-defined `os.clock`, the source expression is:
-
-```text
-trunc(((*time_ms / 1000) * 1000)) % 4294967296.0
-```
-
-Here `time_ms` denotes the unsigned millisecond word sampled by the BIOS clock function. The divide-then-multiply expression is significant; it is not replaced here by a direct word value. The seed therefore depends on the sampled system counter, rather than a civil clock or an entropy source. See [[system services](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"}.
-
-Otherwise, the function stores:
-
-```text
-trunc(seed) % 4294967296.0
-```
-
-An explicit seed does not use the clock. Finite seeds are truncated toward zero, reduced using positive-modulus semantics, and stored as an unsigned word. Both `-1` and `-1.9` therefore store `FFFFFFFFH`; zero stores zero. False selects this supplied-seed branch, not the clock branch. Nonnumeric seeds, NaN, and either infinity reach a NaN modulus result and store word zero. There is no local explicit seed error.
-
-Seeding performs no generation step or warm-up loop and returns no seed value. After seeding zero, the next unit output is exactly `1013904223 / 4294967296`.
+If the seed is nil, including an omitted argument, the BIOS reads the system
+`TIME_MS` word and copies its 32 bits into the generator state. This is console
+time, not a civil clock or an entropy source. See
+[[system services](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"}.
 
 ### Generator state and update {#sec-bios-math-generator-state-and-update}
 
-The public bindings are `math.random` and `math.randomseed`. They use one shared 32-bit generator state, initialized to `12345678H` during BIOS startup. The Math Table provides no separate state-access interface.
-
-Each generation step reads the old word and computes:
+The public bindings `math.random` and `math.randomseed` use one shared 32-bit
+state word, initialized to `12345678H` during BIOS startup. Each generation
+step reads the old word and keeps the low 32 bits of
 
 ```text
-((old * 1664525) + 1013904223) % 4294967296.0
+old * 1664525 + 1013904223
 ```
 
-The result becomes the new unsigned 32-bit state. Dividing that state by `4294967296.0` gives the unit sample. Seeding replaces the same state; all callers advance and seed this one stream.
+as the new state. This is wrapping word arithmetic. After seeding zero, the
+next state is `3C6EF35FH` and the next unbounded Float is exactly
+`3960563 / 16777216`. Seeding replaces the same state; all callers advance
+and seed this one stream.
 
 
 ## Programming examples {#sec-bios-math-programming-examples}
@@ -647,4 +601,4 @@ local replay<const> = math.random()
 
 `first` and `replay` are equal, approximately `0.236456`; `die` is `3`.
 All users of the library share this state, so an intervening call advances the
-same sequence. A rejected bound also consumes an update, as specified above.
+same sequence. A rejected bound leaves the next draw unchanged.

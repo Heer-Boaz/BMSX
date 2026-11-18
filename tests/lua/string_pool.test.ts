@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -13,6 +13,24 @@ function createCpu(): CPU {
 	return new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 }
 
+test('codepoint indexing uses the host representation without changing Unicode positions or snapshot state', () => {
+	const pool = createCpu().stringPool;
+	for (const text of [Array.from({ length: 128 }, (_, code) => String.fromCharCode(code)).join(''),
+		'Aé雪\0Z', 'β😀A🚀\0é', '😀', 'a'.repeat(4096), '雪'.repeat(65), 'β😀A🚀\0é'.repeat(23)]) {
+		const id = pool.intern(text);
+		const expected = Array.from(text, char => char.codePointAt(0)!);
+		const state = pool.captureState();
+		for (let index = expected.length - 1; index >= 0; index -= 1) {
+			assert.equal(pool.codepointAt(id, index), expected[index]);
+		}
+		assert.deepEqual(pool.captureState(), state);
+		pool.restoreState(state);
+		for (let index = 0; index < expected.length; index += 1) {
+			assert.equal(pool.codepointAt(id, index), expected[index]);
+		}
+	}
+});
+
 test('collection removes unreachable text from the intern index and snapshots without accumulating IDs', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	const baselineBytes = cpu.collectTrackedHeapBytes(), baseline = pool.captureState();
@@ -21,8 +39,10 @@ test('collection removes unreachable text from the intern index and snapshots wi
 		for (let index = 0; index < 128; index += 1) pool.intern(`garbage-${round}-${index}-${suffix}`);
 		assert.equal(cpu.collectTrackedHeapBytes(), baselineBytes);
 		assert.equal(pool.find(`garbage-${round}-0-${suffix}`), undefined);
-		assert.deepEqual(pool.captureState(), baseline,
-			'actual text and snapshot storage return to the permanent CPU roots, not just the RAM counter');
+		assert.deepEqual(pool.captureState().entries, baseline.entries,
+			'actual text returns to the permanent CPU roots, not just the RAM counter');
+		assert.equal(pool.captureState().slots, baseline.slots + 128, 'vacant ID storage is reused, not accumulated each cycle');
+		assert.equal(pool.captureState().freeIds.length, 128);
 	}
 });
 
@@ -30,15 +50,18 @@ test('untracked literals and empty strings are collectible; recycled slots publi
 	const cpu = createCpu(), pool = cpu.stringPool;
 	const baselineTracked = pool.trackedLuaHeapBytes();
 	const old = pool.intern('retired literal', false);
-	pool.intern('');
+	const empty = pool.intern('');
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.find('retired literal'), undefined);
 	assert.equal(pool.find(''), undefined);
 	const replacement = pool.intern('β😀');
-	assert.equal(replacement, old);
+	assert.equal(replacement, empty, 'sweep returns freed IDs in directory order; the last returned slot is reused first');
 	assert.equal(pool.toString(replacement), 'β😀');
 	assert.equal(pool.codepointCount(replacement), 2);
+	assert.equal(pool.codepointAt(replacement, 0), 0x3b2);
+	assert.equal(pool.codepointAt(replacement, 1), 0x1f600);
 	assert.equal(pool.trackedLuaHeapBytes(), baselineTracked + 6);
+	assert.equal(pool.intern('second replacement'), old);
 });
 
 test('promoting an existing untracked entry roots it across reservation-triggered collection', () => {
@@ -96,27 +119,44 @@ test('sparse snapshots reproduce the canonical free-ID order after partial reuse
 test('reusing an unreachable deleted string-key ID cannot resurrect its old mapping', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	const root = pool.intern('table root', false), table = cpu.createTable(0, 8);
-	cpu.setGlobalByKey(root, ValueTag.Table, NaN, table);
+	cpu.setGlobalByKey(root, valueTable(cpu.gc.reference(table)));
 	const removed = pool.intern('removed key');
-	table.setStringKey(removed, 19);
-	table.setStringKey(removed, null);
+	table.setStringKey(removed, valueInteger(19));
+	table.setStringKey(removed, valueNil());
 	const retained = pool.intern('retained key');
-	table.setStringKey(retained, 23);
+	table.setStringKey(retained, valueInteger(23));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.find('removed key'), undefined);
 	const replacement = pool.intern('replacement key');
 	assert.equal(replacement, removed);
-	assert.equal(table.getStringKey(replacement), null);
-	table.setStringKey(replacement, 29);
-	assert.equal(table.get(valueString(replacement)), 29);
-	assert.equal(table.getStringKey(retained), 23);
+	assert.equal(table.getStringKey(replacement), valueNil());
+	table.setStringKey(replacement, valueInteger(29));
+	assert.equal(table.get(valueString(replacement)), valueInteger(29));
+	assert.equal(table.getStringKey(retained), valueInteger(23));
 	const entry = new ValueSlots(2), keys: string[] = [];
-	let keyTag: ValueTag = ValueTag.Nil, keyScalar = NaN;
-	while (table.next(keyTag, keyScalar, null, entry, 0)) {
+	for (table.next(entry.get(0), entry, 0); entry.getTag(0) !== ValueTag.Nil;
+		table.next(entry.get(0), entry, 0)) {
 		assert.equal(entry.getTag(0), ValueTag.String);
-		keyTag = ValueTag.String;
-		keyScalar = entry.getStringId(0);
-		keys.push(pool.toString(keyScalar));
+		keys.push(pool.toString(entry.getStringId(0)));
 	}
 	assert.deepEqual(keys.sort(), ['replacement key', 'retained key']);
+});
+
+
+test('sparse codepoint indexes are reclaimed with their strings and rebuilt on ID reuse', () => {
+	const cpu = createCpu(), pool = cpu.stringPool;
+	cpu.collectTrackedHeapBytes();
+	const baseline = pool.trackedLuaHeapBytes();
+	const text = 'β😀A🚀\0é'.repeat(23);
+	const old = pool.intern(text);
+	assert.equal(pool.trackedLuaHeapBytes(), baseline + 14 * 23, 'only encoded guest payload is charged, not the host stride index');
+	assert.equal(pool.codepointAt(old, 128), 'A'.codePointAt(0));
+	cpu.collectTrackedHeapBytes();
+	assert.equal(pool.trackedLuaHeapBytes(), baseline);
+	const id = pool.intern('😀'.repeat(65));
+	assert.equal(id, old);
+	assert.equal(pool.codepointAt(id, 64), 0x1f600);
+	cpu.collectTrackedHeapBytes();
+	assert.equal(pool.intern('ascii'), old);
+	assert.equal(pool.codepointAt(old, 4), 105);
 });

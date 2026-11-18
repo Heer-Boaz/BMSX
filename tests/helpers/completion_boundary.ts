@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { asClosure, valueBool } from '../../machine/ts/machine/cpu/value';
 
 /** Host completion roots interrupt retained Lua execution but do not become its callee. */
 export const completionBoundaryVectors = {
@@ -42,7 +42,7 @@ export function exerciseCompletionBoundary(cpu: CPU, name: string): void {
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const thread = cpu.activeThread, depth = cpu.getFrameDepth(), protectedDepth = thread.protectedCallDepth;
-	cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('probe')) as Closure);
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));
 	for (let grant = 0; grant < 10000 && cpu.completionCallPending() && cpu.readExceptionReturnFrameDepth() === -1; grant++) {
 		cpu.runUntilDepth(depth, 1, thread);
 	}
@@ -57,6 +57,6 @@ export function exerciseCompletionBoundary(cpu: CPU, name: string): void {
 		assert.equal(cpu.completionCallPending(), false);
 		assert.equal(cpu.getFrameDepth(), depth);
 		const values = []; cpu.readCompletionValues(values);
-		assert.deepEqual(values, [true], 'protected calls and child coroutines within a completion root still work');
+		assert.deepEqual(values, [valueBool(true)], 'protected calls and child coroutines within a completion root still work');
 	}
 }

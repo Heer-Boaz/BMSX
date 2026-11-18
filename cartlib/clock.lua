@@ -43,14 +43,10 @@ local frame_delta_milliseconds<const> = function()
 	return *cartlib_frame_delta_milliseconds_q16 / 0x00010000
 end
 
--- SYS_TIME_MS is a wrapping hardware word. Durations shorter than one complete
--- word period use the unsigned distance between two retained samples.
+-- SYS_TIME_MS is a wrapping hardware word. Sample intervals must be shorter
+-- than 2^31 milliseconds; Integer subtraction crosses either word boundary.
 local elapsed_milliseconds<const> = function(start_time_ms, current_time_ms)
-	local elapsed<const> = current_time_ms - start_time_ms
-	if elapsed < 0 then
-		return elapsed + 0x100000000
-	end
-	return elapsed
+	return current_time_ms - start_time_ms
 end
 
 return {

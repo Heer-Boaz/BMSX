@@ -32,6 +32,11 @@ bool audioSuspended = false;
 unsigned suspensions = 0;
 unsigned resumptions = 0;
 unsigned shutdowns = 0;
+BmsxShutdownReasonV1 shutdownReason = BMSX_SHUTDOWN_REASON_UNSPECIFIED;
+unsigned shutdownReasons = 0;
+bool acceptShutdownReason = true;
+const char* gamepadHoldAction = nullptr;
+bool variablesUpdated = false;
 constexpr uint16_t quickMenu = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT)
 	| (1u << RETRO_DEVICE_ID_JOYPAD_START);
 uint16_t buttons = 0;
@@ -69,14 +74,22 @@ bool environment(unsigned command, void* data) {
 			auto& variable = *static_cast<retro_variable*>(data);
 			if (std::strcmp(variable.key, "bmsx_render_backend") == 0) { variable.value = "software"; return true; }
 			if (std::strcmp(variable.key, "bmsx_crt_postprocessing") == 0) { variable.value = "off"; return true; }
+			if (std::strcmp(variable.key, "bmsx_gamepad_hold_action") == 0 && gamepadHoldAction) {
+				variable.value = gamepadHoldAction; return true;
+			}
 			return false;
 		}
+		case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
+			*static_cast<bool*>(data) = variablesUpdated; variablesUpdated = false; return true;
 		case BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1:
 			inputLifecycle = *static_cast<BmsxInputLifecycleInterfaceV1*>(data); return true;
 		case RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK:
 			keyboardCallback = *static_cast<retro_keyboard_callback*>(data); return true;
 		case BMSX_ENVIRONMENT_GET_AUDIO_TRANSPORT_INTERFACE:
 			static_cast<BmsxAudioTransportInterface*>(data)->set_suspended = setAudioSuspended; return true;
+		case BMSX_ENVIRONMENT_SET_SHUTDOWN_REASON_V1:
+			if (!acceptShutdownReason) return false;
+			shutdownReason = *static_cast<BmsxShutdownReasonV1*>(data); ++shutdownReasons; return true;
 		case RETRO_ENVIRONMENT_SHUTDOWN:
 			++shutdowns; return true;
 		default: return false;
@@ -317,7 +330,8 @@ int main(int argc, char** argv) {
 		press(quickMenu);
 		press(1u << RETRO_DEVICE_ID_JOYPAD_UP);
 		press(menuAccept); // Exit from the paused menu.
-		require(shutdowns == 1, "the paused menu must still allow game exit");
+		require(shutdowns == 1 && shutdownReasons == 1 && shutdownReason == BMSX_SHUTDOWN_REASON_EXIT_GAME,
+			"the paused menu requests game exit without a suspend");
 		retro_unload_game(); retro_deinit();
 		require(!inputLifecycle.cancel_keyboard && !inputLifecycle.cancel_gamepad, "deinit revokes callbacks before their input owner is destroyed");
 		retro_init();
@@ -328,6 +342,41 @@ int main(int argc, char** argv) {
 		require(!audioSuspended, "frontend reset must leave audio transport running");
 		retro_unload_game(); retro_deinit();
 		require(!inputLifecycle.cancel_keyboard && !inputLifecycle.cancel_gamepad, "final teardown cannot retain a dangling input callback");
+
+		// Clover configures the same classifier to request a suspend and frontend shutdown.
+		gamepadHoldAction = "exit";
+		retro_init();
+		retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+		require(retro_load_game(&game), "exit-hold cartridge admission failed");
+		press(quickMenu);
+		require(audioSuspended, "a short configured chord still opens the menu");
+		press(quickMenu);
+		require(!audioSuspended, "a short configured chord still closes the menu");
+		buttons = quickMenu; frame();
+		gamepadHoldAction = "rewind"; variablesUpdated = true; frame();
+		std::this_thread::sleep_for(std::chrono::milliseconds(510));
+		frame();
+		buttons = 0; frame();
+		require(shutdowns == 1 && !audioSuspended,
+			"a live option change cancels the pending chord rather than reinterpreting it");
+		gamepadHoldAction = "exit"; variablesUpdated = true; frame();
+		buttons = quickMenu; frame();
+		std::this_thread::sleep_for(std::chrono::milliseconds(510));
+		frame();
+		require(shutdowns == 2 && shutdownReasons == 2 && shutdownReason == BMSX_SHUTDOWN_REASON_SUSPEND && !audioSuspended,
+			"a configured long chord requests a suspend instead of opening rewind");
+		const auto cloverState = captureBytes();
+		require(!cloverState.empty(), "the frontend can serialize after the shutdown request");
+		buttons = 0; frame();
+		require(shutdowns == 2 && !audioSuspended, "releasing the long chord cannot repeat shutdown or open the menu");
+		acceptShutdownReason = false;
+		buttons = quickMenu; frame();
+		std::this_thread::sleep_for(std::chrono::milliseconds(510));
+		frame();
+		require(shutdowns == 3 && shutdownReasons == 2,
+			"frontends without the private reason still receive normal libretro shutdown");
+		buttons = 0; frame();
+		retro_unload_game(); retro_deinit();
 		std::cout << "RUNTIME-LIBRETRO-MENU-PAUSE:PASS\n";
 		std::cout << "RUNTIME-LIBRETRO-REWIND-ABI:PASS\n";
 		return 0;

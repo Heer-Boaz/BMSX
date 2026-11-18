@@ -4,8 +4,28 @@
 #include <stdint.h>
 
 #include "bmsx_libretro.h"
+#include "execution_profile.h"
 
 enum { BMSX_FRAME_TIMING_BUCKET_COUNT = 4097 };
+enum { BMSX_FRAME_TIMING_SLOW_FRAME_COUNT = 32 };
+
+typedef struct BmsxSlowFrameSample {
+	uint64_t host_frame;
+	uint64_t host_run_start_monotonic_ns;
+	uint64_t retro_run_ns;
+	uint64_t host_main_thread_cpu_ns;
+	uint64_t host_process_cpu_ns;
+	uint64_t final_blit_ns;
+	uint64_t swap_ns;
+	bool dropped;
+	bool presented;
+	bool has_gx_upload;
+	BmsxGxUploadProfileFrameV1 gx_upload;
+	bool has_native_compilation;
+	BmsxNativeCompilationProfile native_compilation;
+	bool has_execution;
+	BmsxExecutionProfileInterval execution;
+} BmsxSlowFrameSample;
 
 typedef struct BmsxFrameTimingHistogram {
 	uint64_t buckets[BMSX_FRAME_TIMING_BUCKET_COUNT];
@@ -22,6 +42,8 @@ typedef struct BmsxFrameTimingReport {
 	uint64_t presented_frames;
 	uint64_t dropped_presentations;
 	uint64_t gx_profiled_frames;
+	uint64_t native_profiled_frames;
+	BmsxNativeCompilationProfile native_compilation;
 	uint64_t gx_cpu_to_vram_commands;
 	uint64_t gx_logical_bytes;
 	uint64_t gx_host_calls;
@@ -29,6 +51,8 @@ typedef struct BmsxFrameTimingReport {
 	uint64_t gx_cpu_nanoseconds;
 	uint64_t gx_max_frame_nanoseconds;
 	uint64_t gx_max_command_nanoseconds;
+	BmsxSlowFrameSample slow_frames[BMSX_FRAME_TIMING_SLOW_FRAME_COUNT];
+	unsigned slow_frame_count;
 } BmsxFrameTimingReport;
 
 typedef struct BmsxFrameTimingState {
@@ -45,13 +69,20 @@ typedef struct BmsxFrameTimingState {
 } BmsxFrameTimingState;
 
 void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
+		uint64_t host_frame,
+		uint64_t host_run_start_monotonic_ns,
 		uint64_t retro_run_ns,
 		uint64_t final_blit_ns,
 		bool final_blit_ran,
 		uint64_t swap_ns,
 		bool swap_ran,
 		bool dropped,
-		bool presented);
+		bool presented,
+		const BmsxGxUploadProfileFrameV1* gx_upload,
+		const BmsxNativeCompilationProfile* native_compilation,
+		const BmsxExecutionProfileInterval* execution,
+		uint64_t host_main_thread_cpu_ns,
+		uint64_t host_process_cpu_ns);
 void bmsx_frame_timing_record_gx_upload(
 	BmsxFrameTimingReport* report,
 	const BmsxGxUploadProfileFrameV1* frame);

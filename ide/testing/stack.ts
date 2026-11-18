@@ -13,14 +13,16 @@ export class TestStack {
 
 	public constructor(public readonly thread: Thread, program: BuiltFixtureProgram,
 		public readonly origin: 'failed-thread' | 'quarantined-cpu' | 'stopped-thread') {
-		this.physical = thread.frames.map((frame, index, frames) => {
+		const physical: RuntimeStackFrame[] = [];
+		for (let frame = thread.firstFrame!, index = 0; index < thread.frameDepth; ++index, frame = frame.next!) {
 			const domain = frame.executionImage.executionDomainId, image = (domain === -1 ? program.sourceMedia.system : program.sourceMedia.cartridgeSlots[domain])!;
-			const child = frames[index + 1];
-			return { executionDomainId: domain, toolingImage: image, functionAddress: frame.functionAddress,
+			const child = frame === thread.currentFrame ? null : frame.next;
+			physical.push({ executionDomainId: domain, toolingImage: image, functionAddress: frame.functionAddress,
 				functionIndex: blua32FunctionIndexAtAddress(image.layout, frame.functionAddress),
-				tracePc: child !== undefined && !child.returnToCompletionLatch ? child.callSitePc
-					: frame.pc - (origin === 'failed-thread' && child === undefined ? INSTRUCTION_BYTES : 0) };
-		});
+				tracePc: child !== null && !child.returnToCompletionLatch ? child.callSitePc
+					: frame.pc - (origin === 'failed-thread' && child === null ? INSTRUCTION_BYTES : 0) });
+		}
+		this.physical = physical;
 		const stack = buildLuaStackFrames(this.physical);
 		this.frames = stack.frames;
 		this.sources = stack.sources;

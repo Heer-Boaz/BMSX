@@ -392,6 +392,8 @@ void ApuOutputMixer::buildVoiceFromData(
 	record.channels = source.channels;
 	record.bitsPerSample = source.bitsPerSample;
 	record.sourceBytes = sourceBytes.bytes.data();
+	record.sourceRevision = sourceBytes.revision;
+	record.badpTransition.target = -1;
 	record.dataOffset = source.dataOffset;
 	record.frames = source.frameCount;
 	record.generatorKind = source.generatorKind;
@@ -455,6 +457,7 @@ void ApuOutputMixer::applyVoiceLoopBounds(VoiceRecord& record, const ApuAudioSou
 void ApuOutputMixer::seekVoice(VoiceRecord& record, u32 startFrame) {
 	record.cursorQ16 = static_cast<i64>(startFrame) * static_cast<i64>(APU_RATE_STEP_Q16_ONE);
 	record.phaseRemainder = 0;
+	record.badpTransition.target = -1;
 	if (record.usesBadp) {
 		resetApuBadpDecoder(
 			record.sourceBytes + record.dataOffset,
@@ -477,6 +480,8 @@ void ApuOutputMixer::readVoiceFrame(VoiceRecord& record, size_t frame) {
 			record.channels,
 			record.badpSeekTable,
 			record.badp,
+			record.badpTransition,
+			record.sourceRevision,
 			frame,
 			left,
 			right
@@ -494,6 +499,9 @@ void ApuOutputMixer::readVoiceFrame(VoiceRecord& record, size_t frame) {
 }
 
 i64 ApuOutputMixer::wrapLoopCursor(i64 cursorQ16, i64 loopStartQ16, i64 loopEndQ16) {
+	if (cursorQ16 >= loopStartQ16 && cursorQ16 < loopEndQ16) {
+		return cursorQ16;
+	}
 	const i64 lengthQ16 = loopEndQ16 - loopStartQ16;
 	i64 wrapped = (cursorQ16 - loopStartQ16) % lengthQ16;
 	if (wrapped < 0) {

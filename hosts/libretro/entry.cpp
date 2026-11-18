@@ -20,9 +20,16 @@
 #include <span>
 
 #include "audio_output.h"
+#include "common/compiler.h"
 #include "bmsx_libretro.h"
 #include "content.h"
 #include "host_frame.h"
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+#include "native_gate_profile.h"
+#endif
+#if BMSX_ENABLE_GLES2
+#include "gles_frame_worker.h"
+#endif
 #include "host_overlay_menu.h"
 #include "input.h"
 #include "libretro_state.h"
@@ -100,17 +107,55 @@ static std::string g_system_dir;
 
 static std::unique_ptr<bmsx::LibretroInput> g_input;
 static std::unique_ptr<bmsx::LibretroAudioOutput> g_audio_output;
-static std::unique_ptr<bmsx::LibretroVideoOutput> g_video_output;
+static bmsx::LibretroVideoOutput g_video_output;
 static std::unique_ptr<bmsx::VideoPresenter> g_video_presenter;
 static std::unique_ptr<bmsx::Font> g_default_font;
 static const bmsx::SoftwarePresentationTarget* g_software_target = nullptr;
 static std::unique_ptr<bmsx::LibretroContent> g_content;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+static bool g_profile_native_compilation = false;
+
+static void RETRO_CALLCONV read_native_compilation_profile(BmsxNativeCompilationProfile* output) {
+	const auto profile = g_content->runtime.machine.cpu.readNativeCompilationProfile();
+	*output = {
+		profile.prepareRequests, profile.regionsPublished, profile.entriesPublished,
+		profile.sourceInstructions, profile.emittedCodeBytes, profile.codeBytes, profile.peakCodeBytes,
+		profile.prepareNanoseconds, profile.maxPrepareNanoseconds, profile.discoveryNanoseconds,
+		profile.retirementNanoseconds, profile.compilationNanoseconds, profile.mergedRegions,
+		profile.mergedCodeBytes, profile.capacityFlushes, profile.capacityRetiredCodeBytes,
+		profile.maxPrepareDomain, profile.maxPrepareCartridgeSlot, profile.maxPrepareRootPc, profile.maxPreparePagePc,
+	};
+}
+#endif
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+static void RETRO_CALLCONV read_execution_profile(BmsxExecutionProfile* output) {
+	const auto& machine = g_content->runtime.machine;
+	const auto& gc = machine.cpu.diagnosticGcProfile();
+	*output = {
+		machine.scheduler.nowCycles(), machine.scheduler.diagnosticCpuSliceCount,
+		machine.scheduler.diagnosticCpuSliceConsumedCycles,
+		gc.collections, gc.totalNanoseconds, gc.rootsNanoseconds, gc.traceNanoseconds,
+		gc.weakNanoseconds, gc.sweepNanoseconds, gc.stringReclaimNanoseconds,
+		gc.fullCollections, gc.steps, gc.maxStepNanoseconds, gc.stepsOver2ms, gc.stepsOver8ms, gc.markAgainNanoseconds, gc.atomicNanoseconds,
+		machine.scheduler.diagnosticNativeOriginCycles, machine.scheduler.diagnosticInterpreterRuntimeCycles,
+		machine.scheduler.diagnosticNativeOpcodes.newt, machine.scheduler.diagnosticNativeOpcodes.call,
+		machine.scheduler.diagnosticNativeOpcodes.setfield, machine.scheduler.diagnosticNativeOpcodes.concat,
+		machine.scheduler.diagnosticNativeOpcodes.concatn,
+		machine.scheduler.diagnosticInterpreterOpcodes.newt, machine.scheduler.diagnosticInterpreterOpcodes.call,
+		machine.scheduler.diagnosticInterpreterOpcodes.setfield, machine.scheduler.diagnosticInterpreterOpcodes.concat,
+		machine.scheduler.diagnosticInterpreterOpcodes.concatn,
+	};
+}
+#endif
 static std::optional<bmsx::OnScreenKeyboard> g_keyboard_model;
 static std::optional<bmsx::HostOnScreenKeyboard> g_keyboard_view;
 static std::optional<bmsx::HostKeyboardInteraction> g_keyboard_interaction;
 static std::optional<bmsx::HostOverlayMenu> g_overlay_menu;
 static std::optional<bmsx::RenderPresentationState> g_presentation;
 static std::optional<bmsx::HostRewind> g_rewind;
+#if BMSX_ENABLE_GLES2
+static std::unique_ptr<bmsx::GlesFrameWorker> g_gles_frame_worker;
+#endif
 static double g_frame_time_sec =
 	static_cast<double>(bmsx::HZ_SCALE)
 	/ static_cast<double>(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED);
@@ -129,17 +174,7 @@ static void RETRO_CALLCONV cancel_gamepad_input(unsigned port) {
 	g_input->cancelGamepadControlShortcutGesture(port);
 }
 
-static retro_system_av_info g_cached_av_info{};
-static bool g_cached_av_info_valid = false;
-static retro_system_av_info g_frontend_av_info{};
-static bool g_frontend_av_info_valid = false;
 static int64_t g_current_ufps_scaled = bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
-
-enum class AvInfoNotification : uint8_t {
-	None,
-	Geometry,
-	System,
-};
 
 #if BMSX_ENABLE_GLES2
 static bool RETRO_CALLCONV read_gx_upload_profile_frame(
@@ -164,62 +199,12 @@ static bool RETRO_CALLCONV read_gx_upload_profile_frame(
 }
 #endif
 
-static void initialize_default_av_info(retro_system_av_info& av) {
-	std::memset(&av, 0, sizeof(av));
-	av.geometry.base_width = bmsx::gxGpuDisplayModeScreenWidth(bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD);
-	av.geometry.base_height = static_cast<unsigned>(bmsx::gxGpuVerticalVisibleLines(bmsx::GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD));
-	av.geometry.max_width = 1920u;
-	av.geometry.max_height = 1080u;
-	av.geometry.aspect_ratio = static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_HEIGHT);
-	av.timing.sample_rate = bmsx::DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
-	av.timing.fps = static_cast<double>(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED) / static_cast<double>(bmsx::HZ_SCALE);
-}
-
 static void sync_current_av_info(int64_t ufps_scaled) {
-	if (!g_cached_av_info_valid) {
-		initialize_default_av_info(g_cached_av_info);
-	}
-	g_cached_av_info.timing.fps = static_cast<double>(ufps_scaled) / static_cast<double>(bmsx::HZ_SCALE);
-	g_cached_av_info_valid = true;
+	g_video_output.setFrameRate(ufps_scaled);
 	g_current_ufps_scaled = ufps_scaled;
-	g_frame_time_sec = 1.0 / g_cached_av_info.timing.fps;
-	g_video_presenter->setScanoutSize(
-		static_cast<bmsx::i32>(g_cached_av_info.geometry.base_width),
-		static_cast<bmsx::i32>(g_cached_av_info.geometry.base_height));
-	g_audio_output->setSampleRate(g_cached_av_info.timing.sample_rate);
-}
-
-static AvInfoNotification pending_av_info_notification() {
-	if (!g_frontend_av_info_valid
-			|| g_cached_av_info.geometry.max_width != g_frontend_av_info.geometry.max_width
-			|| g_cached_av_info.geometry.max_height != g_frontend_av_info.geometry.max_height
-			|| g_cached_av_info.timing.fps != g_frontend_av_info.timing.fps
-			|| g_cached_av_info.timing.sample_rate != g_frontend_av_info.timing.sample_rate) {
-		return AvInfoNotification::System;
-	}
-	if (g_cached_av_info.geometry.base_width != g_frontend_av_info.geometry.base_width
-			|| g_cached_av_info.geometry.base_height != g_frontend_av_info.geometry.base_height
-			|| g_cached_av_info.geometry.aspect_ratio != g_frontend_av_info.geometry.aspect_ratio) {
-		return AvInfoNotification::Geometry;
-	}
-	return AvInfoNotification::None;
-}
-
-static AvInfoNotification publish_pending_av_info() {
-	const AvInfoNotification notification = pending_av_info_notification();
-	switch (notification) {
-		case AvInfoNotification::None:
-			return notification;
-		case AvInfoNotification::Geometry:
-			environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &g_cached_av_info.geometry);
-			break;
-		case AvInfoNotification::System:
-			environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &g_cached_av_info);
-			break;
-	}
-	g_frontend_av_info = g_cached_av_info;
-	g_frontend_av_info_valid = true;
-	return notification;
+	const auto& timing = g_video_output.avInfo().timing;
+	g_frame_time_sec = 1.0 / timing.fps;
+	g_audio_output->setSampleRate(timing.sample_rate);
 }
 
 static void RETRO_CALLCONV keyboard_event(bool down, unsigned keycode, uint32_t character, uint16_t key_modifiers) {
@@ -229,6 +214,9 @@ static void RETRO_CALLCONV keyboard_event(bool down, unsigned keycode, uint32_t 
 }
 
 static constexpr const char* kOptionRewindRecording = "bmsx_rewind_recording";
+static constexpr const char* kOptionGamepadHoldAction = "bmsx_gamepad_hold_action";
+static constexpr const char* kGamepadHoldRewind = "rewind";
+static constexpr const char* kGamepadHoldExit = "exit";
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
 static constexpr const char* kRenderBackendSoftware = "software";
 static constexpr const char* kRenderBackendGLES2 = "gles2";
@@ -446,6 +434,16 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		{{kToggleOff, "Off"}, {kToggleOn, "On"}, {nullptr, nullptr}},
 		kDefaultRewindRecordingName
 	},
+	{
+		kOptionGamepadHoldAction,
+		"Select + Start Hold",
+		"Select + Start Hold",
+		"Choose the action for holding Select and Start on a controller.",
+		"Choose the action for holding Select and Start on a controller.",
+		"host",
+		{{kGamepadHoldRewind, "Rewind"}, {kGamepadHoldExit, "Exit Game"}, {nullptr, nullptr}},
+		kGamepadHoldRewind
+	},
 	{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
@@ -584,6 +582,13 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		{{kToggleOff, "Off"}, {kToggleOn, "On"}, {nullptr, nullptr}},
 		kDefaultRewindRecordingName
 	},
+	{
+		kOptionGamepadHoldAction,
+		"Select + Start Hold",
+		"Choose the action for holding Select and Start on a controller.",
+		{{kGamepadHoldRewind, "Rewind"}, {kGamepadHoldExit, "Exit Game"}, {nullptr, nullptr}},
+		kGamepadHoldRewind
+	},
 	{nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
@@ -612,6 +617,7 @@ static retro_variable g_option_vars[] = {
 	{kOptionDither, nullptr},
 	{kOptionHostShowUsageGizmo, nullptr},
 	{kOptionRewindRecording, nullptr},
+	{kOptionGamepadHoldAction, "Select + Start Hold; rewind|exit"},
 	{nullptr, nullptr}
 };
 
@@ -639,6 +645,7 @@ static bool read_crt_aperture_enabled();
 static bmsx::DeviceQuantizeMode read_device_quantize_mode();
 static bool read_toggle_option(const char* key, const char* label, bool default_value);
 static bool read_resource_usage_gizmo_enabled();
+static bmsx::HostMenuShortcutAction read_gamepad_hold_action();
 
 /* ============================================================================
  * Libretro callback setters
@@ -692,7 +699,7 @@ static bool isHardwareBackendActive() {
 		case HardwareContextLifecycle::Fatal:
 			return false;
 	}
-	__builtin_unreachable();
+	BMSX_UNREACHABLE();
 }
 
 static bool offerGxUploadProfileInterface(retro_environment_t environment) {
@@ -941,6 +948,14 @@ static bool read_resource_usage_gizmo_enabled() {
 	return read_toggle_option(kOptionHostShowUsageGizmo, "Show Usage Gizmo", false);
 }
 
+static bmsx::HostMenuShortcutAction read_gamepad_hold_action() {
+	retro_variable var{kOptionGamepadHoldAction, nullptr};
+	return environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value
+		&& std::strcmp(var.value, kGamepadHoldExit) == 0
+		? bmsx::HostMenuShortcutAction::ExitGame
+		: bmsx::HostMenuShortcutAction::Rewind;
+}
+
 static bool read_toggle_option(const char* key, const char* label, bool default_value) {
 	retro_variable var;
 	var.key = key;
@@ -1036,6 +1051,7 @@ void retro_set_environment(retro_environment_t cb) {
 	// RetroArch may reinstall this callback inside one core session. AV publication
 	// validity follows retro_init/retro_deinit, not the callback function address.
 	environ_cb = cb;
+	g_video_output.setEnvironment(cb);
 	if (g_input) {
 		BmsxInputLifecycleInterfaceV1 lifecycle{cancel_keyboard_input, cancel_gamepad_input};
 		cb(BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1, &lifecycle);
@@ -1149,9 +1165,19 @@ static void sync_runtime_timing(bmsx::Runtime& runtime) {
 }
 
 static void activate_runtime(bmsx::Runtime& runtime) {
+#if BMSX_ENABLE_GLES2
+	g_gles_frame_worker.reset();
+	const char* threaded = std::getenv("BMSX_GLES2_THREADED");
+	if (g_active_backend == bmsx::BackendType::OpenGLES2 && threaded != nullptr && std::strcmp(threaded, "1") == 0) {
+		g_gles_frame_worker = std::make_unique<bmsx::GlesFrameWorker>(runtime,
+			*g_video_presenter, *g_input, *g_presentation, *g_overlay_menu);
+		logging.log(RETRO_LOG_INFO, "[BMSX] Threaded GLES submission enabled\n");
+	}
+#endif
 	g_rewind.emplace(runtime, *g_video_presenter, *g_presentation);
 	const bool recordRewind = read_toggle_option(kOptionRewindRecording, "Rewind Recording", kDefaultRewindRecording);
 	g_rewind->setRecordingEnabled(recordRewind);
+	g_input->setGamepadHoldAction(read_gamepad_hold_action());
 	logging.log(RETRO_LOG_INFO, "[BMSX] Rewind recording %s\n", recordRewind ? "enabled" : "disabled");
 	g_audio_output->resetPlayback();
 	g_presentation->reset(*g_video_presenter, runtime);
@@ -1161,6 +1187,9 @@ static void activate_runtime(bmsx::Runtime& runtime) {
 }
 
 static void unload_content() {
+#if BMSX_ENABLE_GLES2
+	g_gles_frame_worker.reset();
+#endif
 	const bool wasLoaded = g_content != nullptr;
 	if (wasLoaded) {
 		g_input->reset();
@@ -1183,6 +1212,9 @@ static bool load_default_content() {
 		*g_input,
 		logging);
 	if (!g_content) return false;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	g_content->runtime.machine.cpu.setNativeCompilationProfiling(g_profile_native_compilation);
+#endif
 	activate_runtime(g_content->runtime);
 	logging.log(RETRO_LOG_INFO, "[BMSX] Booted system ROM firmware\n");
 	return true;
@@ -1198,6 +1230,9 @@ static bool load_content_from_paths(
 		*g_input,
 		logging);
 	if (!g_content) return false;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	g_content->runtime.machine.cpu.setNativeCompilationProfiling(g_profile_native_compilation);
+#endif
 	activate_runtime(g_content->runtime);
 	return true;
 }
@@ -1226,6 +1261,7 @@ static void destroy_hardware_context() {
 #if BMSX_ENABLE_GLES2
 	auto& presenter = *g_video_presenter;
 	auto& backend = static_cast<bmsx::OpenGLES2Backend&>(presenter.backend());
+	backend.invalidateContextState();
 	backend.captureGxGpuVramSnapshot(g_content->runtime.machine.gxGpu);
 	presenter.releaseRenderPipeline();
 	presenter.clearTextures();
@@ -1253,7 +1289,19 @@ static void lose_hardware_context() {
  */
 
 void retro_init(void) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	bmsx::resetLibretroNativeGateProfile();
+#endif
 	logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	BmsxNativeCompilationProfileInterface nativeCompilationProfile{read_native_compilation_profile};
+	g_profile_native_compilation = environ_cb(BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE,
+		&nativeCompilationProfile);
+#endif
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	BmsxExecutionProfileInterface executionProfile{read_execution_profile};
+	environ_cb(BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE, &executionProfile);
+#endif
 	const RenderBackendPreference preference = read_backend_preference();
 	const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
 	g_crt_postprocessing_enabled = read_crt_postprocessing_enabled();
@@ -1298,8 +1346,7 @@ void retro_init(void) {
 		}
 	}
 
-	initialize_default_av_info(g_cached_av_info);
-	g_cached_av_info_valid = true;
+	g_video_output.resetAvInfo();
 	g_current_ufps_scaled = bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
 
 	g_input = std::make_unique<bmsx::LibretroInput>(g_supervisor_request_line_cb);
@@ -1311,7 +1358,6 @@ void retro_init(void) {
 	environ_cb(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &rumbleInterface);
 	g_input->installRumbleInterface(rumbleInterface);
 	g_audio_output = std::make_unique<bmsx::LibretroAudioOutput>();
-	g_video_output = std::make_unique<bmsx::LibretroVideoOutput>(g_cached_av_info);
 
 	const bmsx::i32 viewportWidth = static_cast<bmsx::i32>(
 		bmsx::gxGpuDisplayModeScreenWidth(bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD));
@@ -1320,17 +1366,32 @@ void retro_init(void) {
 		bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD);
 	std::unique_ptr<bmsx::GPUBackend> backend;
 	switch (g_active_backend) {
-		case bmsx::BackendType::OpenGLES2:
+		case bmsx::BackendType::OpenGLES2: {
 #if BMSX_ENABLE_GLES2
+#if defined(BMSX_PLATFORM_SNESMINI)
+			auto targetMode = bmsx::GxGpuDrawTargetMode::SmallNibbles;
+#else
+			auto targetMode = bmsx::GxGpuDrawTargetMode::FullVram;
+#endif
+			if (const char* target = std::getenv("BMSX_GLES2_TARGETS")) {
+				if (std::strcmp(target, "nibbles") == 0) targetMode = bmsx::GxGpuDrawTargetMode::SmallNibbles;
+				else if (std::strcmp(target, "rgb5") == 0) targetMode = bmsx::GxGpuDrawTargetMode::SmallRgb5;
+#if defined(BMSX_PLATFORM_SNESMINI)
+				else if (std::strcmp(target, "rgb5-mali") == 0) targetMode = bmsx::GxGpuDrawTargetMode::SmallRgb5Mali;
+#endif
+				else if (std::strcmp(target, "full") != 0) throw std::runtime_error("Unknown BMSX_GLES2_TARGETS mode");
+			}
 			backend = std::make_unique<bmsx::OpenGLES2Backend>(
 				viewportWidth,
 				viewportHeight,
 				profile_gx_uploads,
-				bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+				bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes,
+				targetMode);
 			break;
 #else
 			throw std::runtime_error("OpenGLES2 backend disabled at compile time.");
 #endif
+		}
 		case bmsx::BackendType::Software: {
 			auto softwareBackend = std::make_unique<bmsx::SoftwareBackend>(
 				viewportWidth,
@@ -1344,9 +1405,8 @@ void retro_init(void) {
 			throw std::runtime_error("Unsupported libretro backend.");
 	}
 	backend->resizePresentationTarget(viewportWidth, viewportHeight);
-	g_video_output->setDisplaySize(viewportWidth, viewportHeight, viewportWidth, viewportHeight);
 	g_video_presenter = std::make_unique<bmsx::VideoPresenter>(
-		*g_video_output,
+		g_video_output,
 		std::move(backend),
 		viewportWidth,
 		viewportHeight);
@@ -1415,12 +1475,11 @@ void retro_deinit(void) {
 	g_keyboard_model.reset();
 	g_video_presenter.reset();
 	g_default_font.reset();
-	g_video_output.reset();
 	g_audio_output.reset();
 	g_input.reset();
 	g_software_target = nullptr;
 	g_hw_context_lifecycle = HardwareContextLifecycle::Software;
-	g_frontend_av_info_valid = false;
+	g_video_output.clearFrontendAvInfo();
 }
 
 unsigned retro_api_version(void) { return RETRO_API_VERSION; }
@@ -1435,13 +1494,7 @@ void retro_get_system_info(struct retro_system_info* info) {
 }
 
 void retro_get_system_av_info(struct retro_system_av_info* info) {
-	if (!g_cached_av_info_valid) {
-		initialize_default_av_info(g_cached_av_info);
-		g_cached_av_info_valid = true;
-	}
-	*info = g_cached_av_info;
-	g_frontend_av_info = g_cached_av_info;
-	g_frontend_av_info_valid = true;
+	g_video_output.getSystemAvInfo(*info);
 
 	logging.log(
 		RETRO_LOG_INFO,
@@ -1547,9 +1600,16 @@ void retro_unload_game(void) {
  */
 
 void retro_reset(void) {
+#if BMSX_ENABLE_GLES2
+	if (isHardwareBackendActive())
+		static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend()).invalidateContextState();
+#endif
 	logging.log(RETRO_LOG_INFO, "[BMSX] Reset\n");
 	if (g_content) {
 		g_content->runtime.rebootSystem();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		g_content->runtime.machine.cpu.prepareSystemNativeCode();
+#endif
 		activate_runtime(g_content->runtime);
 	} else if (!load_default_content()) {
 		logging.log(
@@ -1561,10 +1621,14 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	bmsx::NativeGateProfileFrame gateProfile(
+		g_content ? &g_content->runtime.machine.cpu : nullptr, logging.log);
+#endif
 	// Libretro video notifications belong to retro_run. Publishing a change that
 	// was queued by reset/state work first lets a synchronous frontend context
 	// reset enter the lifecycle switch below in this same frame.
-	publish_pending_av_info();
+	g_video_output.publishPendingAvInfo();
 	switch (g_hw_context_lifecycle) {
 		case HardwareContextLifecycle::Software:
 		case HardwareContextLifecycle::Ready:
@@ -1603,6 +1667,10 @@ void retro_run(void) {
 		case HardwareContextLifecycle::Fatal:
 			return;
 	}
+#if BMSX_ENABLE_GLES2
+	if (isHardwareBackendActive())
+		static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend()).invalidateContextState();
+#endif
 	bool vars_updated = false;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &vars_updated) && vars_updated) {
 		const RenderBackendPreference new_preference = read_backend_preference();
@@ -1619,6 +1687,7 @@ void retro_run(void) {
 		if (!recordRewind && g_overlay_menu->executionMode() == bmsx::HostMenuExecution::Rewind)
 			g_overlay_menu->resetInputState(*g_input, *g_rewind);
 		g_rewind->setRecordingEnabled(recordRewind);
+		g_input->setGamepadHoldAction(read_gamepad_hold_action());
 		const bool new_crt = read_crt_postprocessing_enabled();
 		if (new_crt != g_crt_postprocessing_enabled) {
 			g_crt_postprocessing_enabled = new_crt;
@@ -1681,6 +1750,12 @@ void retro_run(void) {
 		}
 	}
 	const bool hardware_frame = isHardwareBackendActive();
+#if BMSX_ENABLE_GLES2
+	if (hardware_frame) {
+		auto& backend = static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend());
+		if (backend.profilesGxUploads()) backend.beginGxCpuToVramProfileFrame();
+	}
+#endif
 	const bmsx::f64 deltaTime = g_frame_time_sec;
 	g_input->poll(
 		static_cast<bmsx::i32>(g_video_presenter->displayedViewportSize.x),
@@ -1697,15 +1772,27 @@ void retro_run(void) {
 			*g_presentation,
 			*g_video_presenter,
 			g_total_time,
-			deltaTime);
+			deltaTime
+#if BMSX_ENABLE_GLES2
+			, g_gles_frame_worker.get()
+#endif
+		);
 		switch (frameResult) {
 			case bmsx::LibretroFrameResult::RebootRequested:
 				runtime.rebootSystem();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				runtime.machine.cpu.prepareSystemNativeCode();
+#endif
 				activate_runtime(runtime);
 				break;
 			case bmsx::LibretroFrameResult::ExitRequested:
+			case bmsx::LibretroFrameResult::SuspendRequested: {
+				BmsxShutdownReasonV1 reason = frameResult == bmsx::LibretroFrameResult::ExitRequested
+					? BMSX_SHUTDOWN_REASON_EXIT_GAME : BMSX_SHUTDOWN_REASON_SUSPEND;
+				environ_cb(BMSX_ENVIRONMENT_SET_SHUTDOWN_REASON_V1, &reason);
 				environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
 				break;
+			}
 			case bmsx::LibretroFrameResult::NotPresented:
 			case bmsx::LibretroFrameResult::Presented:
 				break;
@@ -1749,15 +1836,15 @@ void retro_run(void) {
 	if (timing_changed) {
 		sync_current_av_info(runtime_ufps_scaled);
 	}
-	const AvInfoNotification av_info_notification = publish_pending_av_info();
+	const bmsx::LibretroAvInfoNotification av_info_notification = g_video_output.publishPendingAvInfo();
 	const bool suppress_hardware_frame =
-		hardware_frame && av_info_notification == AvInfoNotification::System;
+		hardware_frame && av_info_notification == bmsx::LibretroAvInfoNotification::System;
 
 	// Output video
 	const bool publish_video_frame =
 		video_frame_presented && !suppress_hardware_frame;
 	if (hardware_frame) {
-		const auto& geometry = g_cached_av_info.geometry;
+		const auto& geometry = g_video_output.avInfo().geometry;
 		video_cb(
 			publish_video_frame ? RETRO_HW_FRAME_BUFFER_VALID : nullptr,
 			geometry.base_width,
@@ -1794,6 +1881,10 @@ bool retro_serialize(void* data, size_t size) {
 	}
 	bool serialized = false;
 	try {
+#if BMSX_ENABLE_GLES2
+		if (isHardwareBackendActive())
+			static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend()).invalidateContextState();
+#endif
 		g_video_presenter->backend().captureGxGpuVramSnapshot(
 			g_content->runtime.machine.gxGpu);
 		serialized = bmsx::serializeLibretroState(
@@ -1821,6 +1912,15 @@ bool retro_unserialize(const void* data, size_t size) {
 				size));
 		if (restored) {
 			g_audio_output->resetPlayback();
+			auto& runtime = g_content->runtime;
+			const auto& scanout = runtime.machine.gxGpu.readDeviceOutput().pcrtcScanout;
+			if (scanout.outputActive) {
+				const auto width = static_cast<bmsx::i32>(scanout.outputWidth);
+				const auto height = static_cast<bmsx::i32>(scanout.outputHeight);
+				g_video_output.stageDisplaySize(width, height, width, height);
+			}
+			sync_current_av_info(runtime.timing.ufpsScaled);
+			sync_runtime_timing(runtime);
 			g_presentation->requestRestoredPresentation();
 		}
 	} catch (const std::exception& error) {

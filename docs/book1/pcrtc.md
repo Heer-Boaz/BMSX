@@ -545,11 +545,11 @@ contiguous through a multiword instruction. Writes to `CSR_HIGH` and `IMR_HIGH` 
 accepted but ignored; they do not raise READ_ONLY faults.
 
 **CPU transfer costs.** Each ordinary scalar register-word load or store instruction,
-including its displacement form, has a two-system-cycle base cost. PCRTC adds no
+including its displacement form, has a three-system-cycle base cost. PCRTC adds no
 write-ready wait. Address and value preparation, polling and surrounding control
 flow have their own instruction costs. Thus 22 separately issued configuration
-stores contribute 44 base cycles before preparation or display-edge waiting; they
-do not form an atomic display update. A word-sequence store instead costs two base
+stores contribute 66 base cycles before preparation or display-edge waiting; they
+do not form an atomic display update. A word-sequence store instead costs three base
 cycles plus `n/4` rounded upward for its `n` words. Respect the two address ranges.
 Immediate readback confirms programmed words. Use a subsequent VBlank entry to
 establish that the display latch has taken them.

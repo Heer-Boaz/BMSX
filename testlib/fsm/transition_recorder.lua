@@ -7,6 +7,15 @@ transition_recorder.__index = transition_recorder
 -- instance identity lives in fields 1-3; field 4 publishes complete records
 -- from the fixed-capacity array in field 5.
 function transition_recorder.new(machine, capacity)
+	-- Round storage to a power of two: the word counter and slot mask then
+	-- wrap together, without a second publication field or a divided cursor.
+	local mask = capacity - 1
+	mask = mask | (mask >> 1)
+	mask = mask | (mask >> 2)
+	mask = mask | (mask >> 4)
+	mask = mask | (mask >> 8)
+	mask = mask | (mask >> 16)
+	capacity = mask + 1
 	local records<const> = {}
 	for i = 1, capacity do
 		records[i] = { 0, 0, '', '', '', false }
@@ -28,7 +37,8 @@ end
 -- suspended scenario consumer.
 function transition_recorder:record(lane, previous, target, committed)
 	local sequence<const> = self[4] + 1
-	local record<const> = self[5][((sequence - 1) % self[3]) + 1]
+	local record<const> = self[5][((sequence - 1) & (self[3] - 1)) + 1]
+	-- A changed slot generation also exposes overwrite before publication.
 	record[1] = sequence
 	record[2] = clock.milliseconds()
 	record[3] = lane.def_id

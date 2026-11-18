@@ -24,8 +24,6 @@ local pointer_buttons<const>: *word = icu.pointer_buttons_address
 local pointer_position_x_q16<const>: *word = icu.pointer_x_q16_address
 local pointer_position_y_q16<const>: *word = icu.pointer_y_q16_address
 local pointer_wheel_q16<const>: *word = icu.pointer_wheel_q16_address
-local word_sign_mask<const> = 0x80000000
-local word_range<const> = 0x100000000
 local gamepad_bits<const> = {
 	['a'] = 0x00000000, ['b'] = 0x00000001, ['x'] = 0x00000002, ['y'] = 0x00000003,
 	['lb'] = 0x00000004, ['rb'] = 0x00000005, ['lt'] = 0x00000006, ['rt'] = 0x00000007,
@@ -264,10 +262,10 @@ local sample_axis_group<const> = function(player, group, frame)
 	local raw_value<const> = *axis
 	local positive_q16 = 0
 	local negative_q16 = 0
-	if raw_value & word_sign_mask == 0 then
+	if raw_value >= 0 then
 		positive_q16 = raw_value
 	else
-		negative_q16 = word_range - raw_value
+		negative_q16 = -raw_value
 	end
 	local positive_states<const> = group.positive_states
 	for i = 1, #positive_states do
@@ -338,17 +336,18 @@ local sample_new_binding_state<const> = function(player, state, frame)
 		local raw_value<const> = *axis
 		local magnitude_q16 = 0
 		if state.axis_positive then
-			if raw_value & word_sign_mask == 0 then
+			if raw_value >= 0 then
 				magnitude_q16 = raw_value
 			end
-		elseif raw_value & word_sign_mask ~= 0 then
-			magnitude_q16 = word_range - raw_value
+		elseif raw_value < 0 then
+			magnitude_q16 = -raw_value
 		end
 		state.value_q16 = magnitude_q16
 		local pressed<const> = magnitude_q16 >= state.axis_actuation_q16
 		if pressed ~= state.pressed then
 			apply_digital_edge(player, state, pressed, frame)
 		end
+		return
 	end
 	sample_value_binding(player, state, frame)
 end

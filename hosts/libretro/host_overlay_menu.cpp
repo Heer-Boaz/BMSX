@@ -284,7 +284,9 @@ HostMenuExecution HostOverlayMenu::executionMode() const {
 }
 
 HostMenuInput HostOverlayMenu::tickInput(Runtime& runtime, LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs) {
-	if (input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind) {
+	if (input.hostMenuShortcutAction() == HostMenuShortcutAction::ExitGame) {
+		return HostMenuInput::SuspendGame;
+	} else if (input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind) {
 		if (m_page != Page::Rewind && rewind.available()) transitionTo(Page::Rewind, input, rewind);
 	} else if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X)) {
 		transitionTo(m_page == Page::Keyboard ? Page::Closed : Page::Keyboard, input, rewind);
@@ -468,6 +470,28 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 		queueRenderCommands(runtime, presenter, rewind);
 		return true;
 	}
+	HostResourceUsage usage{};
+	if (presenter.showResourceUsageGizmo) usage = HostResourceUsage::capture(runtime);
+	return queueLiveOverlayCommands(presenter, hostFps, usage);
+}
+
+HostResourceUsage HostResourceUsage::capture(const Runtime& runtime) {
+	const f64 vramBytes = static_cast<f64>(runtime.machine.gxGpu.readVramSnapshotBytes().size());
+	return {{static_cast<f64>(runtime.cpuUsageCyclesUsed()),
+		static_cast<f64>(BASE_RAM_USED_SIZE + runtime.machine.cpu.luaHeap().usedBytes()), vramBytes},
+		{static_cast<f64>(runtime.cpuUsageCyclesGranted()),
+		static_cast<f64>(runtime.machine.memory.ramByteCount()), vramBytes}};
+}
+
+bool HostOverlayMenu::livePresentationRequired(const VideoPresenter& presenter) const {
+	return m_page == Page::Keyboard || m_showFps || presenter.showResourceUsageGizmo;
+}
+
+bool HostOverlayMenu::queueLiveOverlayCommands(VideoPresenter& presenter, f64 hostFps, const HostResourceUsage& usage) {
+	if (m_page == Page::Keyboard) {
+		m_keyboard.view.queueRenderCommands(presenter);
+		return true;
+	}
 	clearRenderCommands(presenter);
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
@@ -493,19 +517,8 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 	}
 	if (presenter.showResourceUsageGizmo) {
 		layoutUsageGizmo(presenter.visibleViewportBounds);
-		const double gxGpuVramBytes = static_cast<double>(
-			runtime.machine.gxGpu.readVramSnapshotBytes().size());
-		const std::array<double, UsageBarCount> used{
-			static_cast<double>(runtime.cpuUsageCyclesUsed()),
-			static_cast<double>(
-				BASE_RAM_USED_SIZE + runtime.machine.cpu.luaHeap().usedBytes()),
-			gxGpuVramBytes,
-		};
-		const std::array<double, UsageBarCount> total{
-			static_cast<double>(runtime.cpuUsageCyclesGranted()),
-			static_cast<double>(runtime.machine.memory.ramByteCount()),
-			gxGpuVramBytes,
-		};
+		const auto& used = usage.used;
+		const auto& total = usage.total;
 		queueCommand(rectKind, Host2DRef{.rect = &m_usagePanelRect});
 		for (i32 index = 0; index < UsageBarCount; index += 1) {
 			const size_t offset = static_cast<size_t>(index);

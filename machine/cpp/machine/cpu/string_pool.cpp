@@ -1,11 +1,22 @@
 #include "machine/cpu/string_pool.h"
 
 #include "common/utf8.h"
+#include "machine/common/numeric.h"
 #include "machine/cpu/lua_heap.h"
 
 #include <utility>
+#include <algorithm>
 
 namespace bmsx {
+
+int compareStringIds(const StringPool* pool, StringId left, StringId right, int* remainingCycles) {
+	*remainingCycles -= std::min(pool->codepointCount(left), pool->codepointCount(right));
+	return pool->toString(left).compare(pool->toString(right));
+}
+
+int stringCodepointCount(const StringPool* pool, StringId id) noexcept {
+	return pool->codepointCount(id);
+}
 
 StringPool::StringPool(LuaHeap& luaHeap)
 	: m_luaHeap(luaHeap) {
@@ -29,6 +40,7 @@ StringId StringPool::internText(Text&& value, bool tracked) {
 	auto it = m_stringMap.find(value);
 	if (it != m_stringMap.end()) {
 		const StringId id = it->second;
+		markReachable(id);
 		InternedString& stringEntry = *m_entries[static_cast<size_t>(id)];
 		if (tracked && stringEntry.trackedByteLength == 0) {
 			const size_t byteLength = utf8ByteLength(stringEntry.value);
@@ -82,13 +94,29 @@ int StringPool::codepointCount(StringId id) const {
 	return entry(id).codepointCount;
 }
 
+uint32_t StringPool::codepointAt(StringId id, size_t index) const {
+	const InternedString& stringEntry = entry(id);
+	const std::string& text = stringEntry.value;
+	if (static_cast<size_t>(stringEntry.codepointCount) == text.size()) {
+		return utf8ByteAt(text, index);
+	}
+	const size_t block = index >> 5u;
+	size_t byteIndex = block == 0u ? 0u : stringEntry.codepointBlockOffsets[block - 1u];
+	for (size_t current = block << 5u; current < index; ++current) {
+		byteIndex = nextUtf8Index(text, byteIndex);
+	}
+	return readUtf8Codepoint(text, byteIndex);
+}
+
 StringPoolState StringPool::captureState() const {
 	StringPoolState state;
 	for (const auto& entry : m_entries) {
 		if (entry) {
-			state.entries.push_back(StringPoolStateEntry{ entry->id, entry->value, entry->trackedByteLength > 0 });
+			state.entries.push_back(StringPoolStateEntry{ entry->id, entry->value, entry->trackedByteLength > 0, m_reachable[entry->id] });
 		}
 	}
+	state.freeIds = m_freeIds; state.slots = m_entries.size();
+	state.sweep = m_sweep; state.sweepEnd = m_sweepEnd;
 	return state;
 }
 
@@ -100,11 +128,14 @@ void StringPool::restoreState(const StringPoolState& state) {
 	m_trackedBytes = 0;
 	for (const StringPoolStateEntry& stateEntry : state.entries) {
 		InternedString& stringEntry = insert(stateEntry.id, stateEntry.value);
+		m_reachable[stateEntry.id] = stateEntry.reachable;
 		if (stateEntry.tracked) {
 			stringEntry.trackedByteLength = utf8ByteLength(stringEntry.value);
 			m_trackedBytes += stringEntry.trackedByteLength;
 		}
 	}
+	m_entries.resize(state.slots); m_reachable.resize(state.slots, false);
+	m_freeIds = state.freeIds; m_sweep = state.sweep; m_sweepEnd = state.sweepEnd;
 	m_luaHeap.adjustForRestore(previousTrackedBytes, m_trackedBytes);
 }
 
@@ -119,36 +150,34 @@ void StringPool::endLocalRoots() {
 
 void StringPool::beginReachabilityEpoch() {
 	m_reachable.assign(m_entries.size(), false);
-	for (const StringId id : m_localRoots) m_reachable[id] = true;
+	markLocalRoots();
+}
+
+void StringPool::markLocalRoots() {
+	for (auto id : m_localRoots) markReachable(id);
 }
 
 void StringPool::markReachable(StringId id) {
 	m_reachable[static_cast<size_t>(id)] = true;
 }
 
-void StringPool::reclaimUnreachable() {
-	size_t reclaimed = 0;
-	m_freeIds.clear();
-	for (size_t id = 0; id < m_entries.size(); ++id) {
-		InternedString* stringEntry = m_entries[id].get();
-		if (!stringEntry) {
-			m_freeIds.push_back(static_cast<StringId>(id));
-			continue;
-		}
-		if (m_reachable[id]) {
-			continue;
-		}
-		reclaimed += stringEntry->trackedByteLength;
-		m_stringMap.erase(std::string_view(stringEntry->value));
-		m_entries[id].reset();
-		m_freeIds.push_back(static_cast<StringId>(id));
+void StringPool::beginSweep() { m_sweep = 0; m_sweepEnd = m_entries.size(); }
+size_t StringPool::sweepStep(size_t words) {
+	size_t work = 0, reclaimed = 0;
+	while (static_cast<size_t>(m_sweep) < m_sweepEnd && work < words) {
+		const auto id = static_cast<size_t>(m_sweep++);
+		auto* entry = m_entries[id].get();
+		++work;
+		if (!entry) continue;
+		work += ceilDiv4(static_cast<int>(entry->trackedByteLength));
+		if (m_reachable[id]) continue;
+		reclaimed += entry->trackedByteLength;
+		m_stringMap.erase(std::string_view(entry->value));
+		m_entries[id].reset(); m_freeIds.push_back(static_cast<StringId>(id));
 	}
-	while (!m_entries.empty() && !m_entries.back()) {
-		m_entries.pop_back();
-		m_freeIds.pop_back();
-	}
-	m_trackedBytes -= reclaimed;
-	m_luaHeap.release(reclaimed);
+	m_trackedBytes -= reclaimed; m_luaHeap.release(reclaimed);
+	if (static_cast<size_t>(m_sweep) == m_sweepEnd) { m_sweep = -1; m_sweepEnd = 0; }
+	return work;
 }
 
 const StringPool::InternedString& StringPool::entry(StringId id) const {
@@ -162,6 +191,15 @@ StringPool::InternedString& StringPool::insert(StringId id, Text&& value) {
 	stringEntry->id = id;
 	stringEntry->value = std::forward<Text>(value);
 	stringEntry->codepointCount = utf8CodepointCount(stringEntry->value);
+	// Host indexing metadata is derived, not guest RAM or serialized state.
+	if (static_cast<size_t>(stringEntry->codepointCount) != stringEntry->value.size() && stringEntry->codepointCount > 32) {
+		stringEntry->codepointBlockOffsets = std::make_unique<uint32_t[]>((stringEntry->codepointCount - 1) >> 5);
+		size_t offset = 0;
+		for (int index = 0; index < stringEntry->codepointCount; ++index) {
+			if (index != 0 && (index & 31) == 0) stringEntry->codepointBlockOffsets[(index >> 5) - 1] = static_cast<uint32_t>(offset);
+			offset = nextUtf8Index(stringEntry->value, offset);
+		}
+	}
 	InternedString& inserted = *stringEntry;
 	insertEntry(std::move(stringEntry));
 	return inserted;
@@ -173,6 +211,8 @@ void StringPool::insertEntry(std::unique_ptr<InternedString> entry) {
 		for (size_t vacant = m_entries.size(); vacant < id; ++vacant) m_freeIds.push_back(static_cast<StringId>(vacant));
 		m_entries.resize(static_cast<size_t>(id) + 1u);
 	}
+	if (m_reachable.size() < m_entries.size()) m_reachable.resize(m_entries.size(), false);
+	m_reachable[id] = true;
 	m_entries[id] = std::move(entry);
 	m_stringMap.emplace(std::string_view(m_entries[id]->value), id);
 }

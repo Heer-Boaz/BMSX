@@ -116,7 +116,7 @@ not a promised boot latency or CPU-cycle budget.
   Pairs: count 3, sum 66, with no hash-order dependency.
 - Ipairs: count 2, sum 30, stops at slot 3's nil; slot 4 still contains 90.
 - Select: input count 3, suffix count 2 preserving nil then 9, empty suffix
-  count 0. Print's ordinary fallthrough produces one nil result.
+  count 0. Print explicitly returns one nil.
 - Owned global: 11 read by ordinary name, then 22 still present after the
   protected error, then cleared to nil. No builtin is rebound and no previous
   public state is captured or restored.

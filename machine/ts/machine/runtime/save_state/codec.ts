@@ -1,3 +1,6 @@
+import type { GcState } from '../../cpu/gc_heap';
+import type { PendingMemoryKind } from '../../cpu/memory_operation';
+import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
 import type { MachineSaveState } from '../../save_state';
 import type { CpuFrameState, CpuThreadState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
@@ -12,7 +15,10 @@ import type { DmaControllerState } from '../../devices/dma/controller';
 import type { DmaChannelState } from '../../devices/dma/registers';
 import type { GeometryControllerPhase } from '../../devices/geometry/contracts';
 import type { GeometryJobState } from '../../devices/geometry/job';
+import type { GeometryOverlap2dPhase, GeometryOverlap2dProgress } from '../../devices/geometry/overlap2d';
 import type { GeometryControllerState } from '../../devices/geometry/save_state';
+import type { GeometryXform2Phase, GeometryXform2Progress } from '../../devices/geometry/xform2';
+import type { GeometrySat2Phase, GeometrySat2Progress } from '../../devices/geometry/sat2';
 import type { InputControllerState } from '../../devices/input/save_state';
 import type { InputControllerRegisterState } from '../../devices/input/registers';
 import type { ImgDecControllerState } from '../../devices/imgdec/controller';
@@ -30,7 +36,9 @@ import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
 import type { ExecutionDomainId } from '../../../spec/blua32/execution_domain';
 import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SAMPLE_RAM_BYTES, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT, APU_TRANSFER_FIFO_WORD_CAPACITY } from '../../../spec/audio/apu';
-import { GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../devices/geometry/contracts';
+import { GEOMETRY_CONTROLLER_REGISTER_COUNT, GEO_OVERLAP2D_INSTANCE_WORDS, GEO_SAT2_MAX_POLY_VERTICES,
+	GEO_SAT2_RESULT_BYTES, GEO_XFORM2_AABB_BYTES, GEO_XFORM2_MAX_VERTICES, GEO_VERTEX2_BYTES } from '../../devices/geometry/contracts';
+import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../devices/input/contracts';
 import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } from '../../../spec/gx/pcrtc';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
@@ -197,6 +205,7 @@ function writeStringPoolStateEntry(writer: BinarySink, state: StringPoolStateEnt
 	writer.u32(state.id);
 	writer.string(state.value);
 	writer.bool(state.tracked);
+	writer.bool(state.reachable);
 }
 
 function readStringPoolStateEntry(reader: BinaryReader): StringPoolStateEntry {
@@ -204,6 +213,7 @@ function readStringPoolStateEntry(reader: BinaryReader): StringPoolStateEntry {
 		id: reader.u32(),
 		value: reader.string(),
 		tracked: reader.bool(),
+		reachable: reader.bool(),
 	};
 }
 
@@ -212,11 +222,18 @@ function writeStringPoolState(writer: BinarySink, state: StringPoolState): void 
 	for (const value of state.entries) {
 		writeStringPoolStateEntry(writer, value);
 	}
+	writer.u32(state.slots);
+	writer.i32(state.sweep);
+	writer.u32(state.sweepEnd);
+	writer.u32(state.freeIds.length);
+	writer.u32s(state.freeIds);
 }
 
 function readStringPoolState(reader: BinaryReader): StringPoolState {
 	return {
 		entries: reader.array(readStringPoolStateEntry),
+		slots: reader.u32(), sweep: reader.i32(), sweepEnd: reader.u32(),
+		freeIds: Array.from(reader.u32s(reader.u32())),
 	};
 }
 
@@ -278,6 +295,97 @@ function readGeometryJobState(reader: BinaryReader): GeometryJobState {
 	};
 }
 
+function writeGeometryOverlapProgress(writer: BinarySink, state: GeometryOverlap2dProgress): void {
+	writer.u32(state.phase); writer.u32(state.instanceBIndex); writer.u32(state.pairMeta);
+	writer.u32(state.shapeAAddr); writer.u32(state.shapeBAddr);
+	writer.u32(state.shapeAOffset); writer.u32(state.shapeBOffset);
+	writer.u32(state.countA); writer.u32(state.countB); writer.u32(state.pieceA); writer.u32(state.pieceB);
+	writer.bool(state.compoundA); writer.bool(state.compoundB); writer.bool(state.bestHit);
+	writer.u32(state.bestPieceA); writer.u32(state.bestPieceB); writer.u32(state.bestFeature);
+	writer.f64(state.bestDepth); writer.f64(state.bestNx); writer.f64(state.bestNy);
+	writer.f64(state.bestPx); writer.f64(state.bestPy);
+	writer.u32s(state.instanceA); writer.u32s(state.instanceB);
+	for (const value of state.boundsA) writer.f64(value);
+	writer.u32(state.pendingWork.axes); writer.u32(state.pendingWork.projectionVertices);
+	writer.u32(state.pendingWork.averageVertices); writer.u32(state.pendingWork.clipVertices);
+	writer.u32(state.pendingWork.clipEdges); writer.u32(state.pendingWork.squareRoots);
+	writer.u32(state.pendingWork.divisions);
+	writer.u32(state.pendingWriteFlags); writer.u32(state.afterPublishPhase);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingFault);
+}
+
+function readGeometryOverlapProgress(reader: BinaryReader): GeometryOverlap2dProgress {
+	return {
+		phase: reader.u32() as GeometryOverlap2dPhase,
+		instanceBIndex: reader.u32(), pairMeta: reader.u32(),
+		shapeAAddr: reader.u32(), shapeBAddr: reader.u32(),
+		shapeAOffset: reader.u32(), shapeBOffset: reader.u32(),
+		countA: reader.u32(), countB: reader.u32(), pieceA: reader.u32(), pieceB: reader.u32(),
+		compoundA: reader.bool(), compoundB: reader.bool(), bestHit: reader.bool(),
+		bestPieceA: reader.u32(), bestPieceB: reader.u32(), bestFeature: reader.u32(),
+		bestDepth: reader.f64(), bestNx: reader.f64(), bestNy: reader.f64(),
+		bestPx: reader.f64(), bestPy: reader.f64(),
+		instanceA: reader.u32Array(GEO_OVERLAP2D_INSTANCE_WORDS),
+		instanceB: reader.u32Array(GEO_OVERLAP2D_INSTANCE_WORDS),
+		boundsA: Float64Array.of(reader.f64(), reader.f64(), reader.f64(), reader.f64()),
+		pendingWork: {
+			axes: reader.u32(), projectionVertices: reader.u32(),
+			averageVertices: reader.u32(), clipVertices: reader.u32(),
+			clipEdges: reader.u32(), squareRoots: reader.u32(), divisions: reader.u32(),
+		},
+		pendingWriteFlags: reader.u32(), afterPublishPhase: reader.u32() as GeometryOverlap2dPhase,
+		pendingMemory: { ramWords: reader.u32(), systemRomWords: reader.u32(), cartridgeWords: reader.u32(), otherWords: reader.u32() },
+		pendingFault: reader.u32(),
+	};
+}
+
+function writeGeometryXformProgress(writer: BinarySink, state: GeometryXform2Progress): void {
+	writer.u32(state.phase);
+	writer.u32(state.dstAddress); writer.u32(state.boundsAddress);
+	writer.u32(state.vertexCount); writer.bool(state.hasBounds);
+	writer.u32s(state.vertices); writer.u32s(state.bounds);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingWorkUnits); writer.u32(state.pendingFault);
+}
+
+function readGeometryXformProgress(reader: BinaryReader): GeometryXform2Progress {
+	return {
+		phase: reader.u32() as GeometryXform2Phase,
+		dstAddress: reader.u32(), boundsAddress: reader.u32(),
+		vertexCount: reader.u32(), hasBounds: reader.bool(),
+		vertices: reader.u32Array(GEO_XFORM2_MAX_VERTICES * GEO_VERTEX2_BYTES / IO_WORD_SIZE),
+		bounds: reader.u32Array(GEO_XFORM2_AABB_BYTES / IO_WORD_SIZE),
+		pendingMemory: { ramWords: reader.u32(), systemRomWords: reader.u32(), cartridgeWords: reader.u32(), otherWords: reader.u32() },
+		pendingWorkUnits: reader.u32(), pendingFault: reader.u32(),
+	};
+}
+
+function writeGeometrySatProgress(writer: BinarySink, state: GeometrySat2Progress): void {
+	writer.u32(state.phase);
+	writer.u32(state.vertexAddressA); writer.u32(state.vertexAddressB);
+	writer.u32(state.countA); writer.u32(state.countB); writer.u32(state.resultAddress);
+	writer.u32s(state.verticesA); writer.u32s(state.verticesB); writer.u32s(state.result);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingWorkUnits); writer.u32(state.pendingFault);
+}
+
+function readGeometrySatProgress(reader: BinaryReader): GeometrySat2Progress {
+	return {
+		phase: reader.u32() as GeometrySat2Phase,
+		vertexAddressA: reader.u32(), vertexAddressB: reader.u32(),
+		countA: reader.u32(), countB: reader.u32(), resultAddress: reader.u32(),
+		verticesA: reader.u32Array(GEO_SAT2_MAX_POLY_VERTICES * GEO_VERTEX2_BYTES / IO_WORD_SIZE),
+		verticesB: reader.u32Array(GEO_SAT2_MAX_POLY_VERTICES * GEO_VERTEX2_BYTES / IO_WORD_SIZE),
+		result: reader.u32Array(GEO_SAT2_RESULT_BYTES / IO_WORD_SIZE),
+		pendingMemory: { ramWords: reader.u32(), systemRomWords: reader.u32(), cartridgeWords: reader.u32(), otherWords: reader.u32() },
+		pendingWorkUnits: reader.u32(), pendingFault: reader.u32(),
+	};
+}
+
 function writeGeometryControllerState(writer: BinarySink, state: GeometryControllerState): void {
 	writer.u32(state.phase);
 	writer.u32s(state.registerWords);
@@ -285,8 +393,11 @@ function writeGeometryControllerState(writer: BinarySink, state: GeometryControl
 	if (state.activeJob !== null) {
 		writeGeometryJobState(writer, state.activeJob);
 	}
+	writeGeometryXformProgress(writer, state.xform);
+	writeGeometrySatProgress(writer, state.sat);
+	writeGeometryOverlapProgress(writer, state.overlap);
 	writer.i64(state.workCarry);
-	writer.u32(state.availableWorkUnits);
+	writer.i64(state.pendingCycles);
 	writer.bool(state.supervisorQuiesceRequested);
 }
 
@@ -295,8 +406,11 @@ function readGeometryControllerState(reader: BinaryReader): GeometryControllerSt
 		phase: reader.u32() as GeometryControllerPhase,
 		registerWords: reader.u32s(GEOMETRY_CONTROLLER_REGISTER_COUNT),
 		activeJob: reader.bool() ? readGeometryJobState(reader) : null,
+		xform: readGeometryXformProgress(reader),
+		sat: readGeometrySatProgress(reader),
+		overlap: readGeometryOverlapProgress(reader),
 		workCarry: reader.i64(),
-		availableWorkUnits: reader.u32(),
+		pendingCycles: reader.i64(),
 		supervisorQuiesceRequested: reader.bool(),
 	};
 }
@@ -317,7 +431,7 @@ function writeGxGpuCommandBufferState(writer: BinarySink, state: GxGpuCommandBuf
 	writer.u32(state.commandDrawModeWord.length);
 	writer.u32s(state.commandDrawModeWord);
 	writer.u32(state.commandVramYAddressExtensionWord.length);
-	writer.u8s(state.commandVramYAddressExtensionWord);
+	writer.u32s(state.commandVramYAddressExtensionWord);
 	writer.u32(state.commandTextureWindowWord.length);
 	writer.u32s(state.commandTextureWindowWord);
 	writer.u32(state.commandDrawingAreaTopLeftWord.length);
@@ -336,7 +450,7 @@ function writeGxGpuCommandBufferState(writer: BinarySink, state: GxGpuCommandBuf
 	writer.u64(state.readbackFenceCommandCount);
 	writer.u32(state.readbackX);
 	writer.u32(state.readbackY);
-	writer.u8(state.readbackVramYAddressExtensionWord);
+	writer.u32(state.readbackVramYAddressExtensionWord);
 	writer.u32(state.readbackWidth);
 	writer.u32(state.readbackHeight);
 	writer.u32(state.readbackPixelCursor);
@@ -355,7 +469,7 @@ function readGxGpuCommandBufferState(reader: BinaryReader): GxGpuCommandBufferSt
 		commandWordStart: reader.u32s(reader.u32()),
 		commandWordCount: reader.u32s(reader.u32()),
 		commandDrawModeWord: reader.u32s(reader.u32()),
-		commandVramYAddressExtensionWord: reader.u8s(reader.u32()),
+		commandVramYAddressExtensionWord: reader.u32s(reader.u32()),
 		commandTextureWindowWord: reader.u32s(reader.u32()),
 		commandDrawingAreaTopLeftWord: reader.u32s(reader.u32()),
 		commandDrawingAreaBottomRightWord: reader.u32s(reader.u32()),
@@ -367,7 +481,7 @@ function readGxGpuCommandBufferState(reader: BinaryReader): GxGpuCommandBufferSt
 		readbackFenceCommandCount: reader.u64(),
 		readbackX: reader.u32(),
 		readbackY: reader.u32(),
-		readbackVramYAddressExtensionWord: reader.u8(),
+		readbackVramYAddressExtensionWord: reader.u32(),
 		readbackWidth: reader.u32(),
 		readbackHeight: reader.u32(),
 		readbackPixelCursor: reader.u32(),
@@ -454,7 +568,7 @@ function writeGxGpuIngressContextState(writer: BinarySink, state: GxGpuIngressCo
 	writer.u64(state.readbackFenceCommandCount);
 	writer.u32(state.readbackX);
 	writer.u32(state.readbackY);
-	writer.u8(state.readbackVramYAddressExtensionWord);
+	writer.u32(state.readbackVramYAddressExtensionWord);
 	writer.u32(state.readbackWidth);
 	writer.u32(state.readbackHeight);
 	writer.u32(state.readbackPixelCursor);
@@ -488,7 +602,7 @@ function readGxGpuIngressContextState(reader: BinaryReader): GxGpuIngressContext
 		readbackFenceCommandCount: reader.u64(),
 		readbackX: reader.u32(),
 		readbackY: reader.u32(),
-		readbackVramYAddressExtensionWord: reader.u8(),
+		readbackVramYAddressExtensionWord: reader.u32(),
 		readbackWidth: reader.u32(),
 		readbackHeight: reader.u32(),
 		readbackPixelCursor: reader.u32(),
@@ -653,6 +767,7 @@ function writeGxGteState(writer: BinarySink, state: GxGteState): void {
 	writer.i64(state.mac3);
 	writer.u32(state.currentSf);
 	writer.u32(state.lastCycles);
+	writer.u32(state.normalPendingCycles);
 	writer.u32(state.plusPendingCycles);
 	writer.bool(state.plusInterlockArmed);
 	writer.u32(state.plusPendingResultXy);
@@ -671,6 +786,7 @@ function readGxGteState(reader: BinaryReader): GxGteState {
 		mac3: reader.i64(),
 		currentSf: reader.u32(),
 		lastCycles: reader.u32(),
+		normalPendingCycles: reader.u32(),
 		plusPendingCycles: reader.u32(),
 		plusInterlockArmed: reader.bool(),
 		plusPendingResultXy: reader.u32(),
@@ -877,10 +993,6 @@ function writeDmaControllerState(writer: BinarySink, state: DmaControllerState):
 	writer.u32(state.nextChannel);
 	writer.u32(state.scheduledBlockWords);
 	writer.i64(state.scheduledBlockCycles);
-	writer.u32(state.scheduledReadAddressWord);
-	writer.u32(state.scheduledWriteAddressWord);
-	writer.u32(state.scheduledTransferCountWord);
-	writer.u32(state.scheduledControlWord);
 	writer.bool(state.supervisorQuiesceRequested);
 	writer.bool(state.supervisorAdmissionQuiesceRequested);
 	for (const value of state.userChannels) {
@@ -896,10 +1008,6 @@ function readDmaControllerState(reader: BinaryReader): DmaControllerState {
 		nextChannel: reader.u32(),
 		scheduledBlockWords: reader.u32(),
 		scheduledBlockCycles: reader.i64(),
-		scheduledReadAddressWord: reader.u32(),
-		scheduledWriteAddressWord: reader.u32(),
-		scheduledTransferCountWord: reader.u32(),
-		scheduledControlWord: reader.u32(),
 		supervisorQuiesceRequested: reader.bool(),
 		supervisorAdmissionQuiesceRequested: reader.bool(),
 		userChannels: [readDmaChannelState(reader), readDmaChannelState(reader)],
@@ -909,58 +1017,50 @@ function readDmaControllerState(reader: BinaryReader): DmaControllerState {
 
 function writeImgDecControllerState(writer: BinarySink, state: ImgDecControllerState): void {
 	writer.u32(state.inputWordCountWord);
-	writer.u32(state.textureDestinationWord);
-	writer.u32(state.textureSizeWord);
-	writer.u32(state.clutDestinationWord);
+	writer.u32(state.outputWordCountWord);
 	writer.u32(state.controlWord);
 	writer.u32(state.statusWord);
 	writer.u32(state.dataWord);
 	writer.u32(state.inputWordsReceived);
 	writer.u32(state.decodedWordCount);
-	writer.u32(state.textureWordCount);
-	writer.u32(state.clutWordCount);
 	writer.u32(state.outputWordsRead);
 	writer.u32(state.decodePhase);
-	writer.u32(state.outputStage);
 	writer.u32(state.runWordsRemaining);
 	writer.u32(state.repeatWord);
 	writer.u32(state.backReferenceDistance);
+	writer.u32(state.blockPhase);
+	writer.u32(state.blockReadIndex);
+	writer.i64(state.blockCyclesRemaining);
 	writer.bool(state.supervisorQuiesceRequested);
 	writer.u32(state.inputWords.length);
 	writer.u32s(state.inputWords);
-	writer.u32(state.outputWords.length);
-	writer.u32s(state.outputWords);
+	writer.u32(state.blockWords.length);
+	writer.u32s(state.blockWords);
 	writer.u32(state.historyWords.length);
 	writer.u32s(state.historyWords);
-	writer.u32(state.scheduledDecodeWords);
-	writer.i64(state.scheduledDecodeCycles);
 }
 
 function readImgDecControllerState(reader: BinaryReader): ImgDecControllerState {
 	return {
 		inputWordCountWord: reader.u32(),
-		textureDestinationWord: reader.u32(),
-		textureSizeWord: reader.u32(),
-		clutDestinationWord: reader.u32(),
+		outputWordCountWord: reader.u32(),
 		controlWord: reader.u32(),
 		statusWord: reader.u32(),
 		dataWord: reader.u32(),
 		inputWordsReceived: reader.u32(),
 		decodedWordCount: reader.u32(),
-		textureWordCount: reader.u32(),
-		clutWordCount: reader.u32(),
 		outputWordsRead: reader.u32(),
 		decodePhase: reader.u32(),
-		outputStage: reader.u32(),
 		runWordsRemaining: reader.u32(),
 		repeatWord: reader.u32(),
 		backReferenceDistance: reader.u32(),
+		blockPhase: reader.u32(),
+		blockReadIndex: reader.u32(),
+		blockCyclesRemaining: reader.i64(),
 		supervisorQuiesceRequested: reader.bool(),
 		inputWords: reader.u32s(reader.u32()),
-		outputWords: reader.u32s(reader.u32()),
+		blockWords: reader.u32s(reader.u32()),
 		historyWords: reader.u32s(reader.u32()),
-		scheduledDecodeWords: reader.u32(),
-		scheduledDecodeCycles: reader.i64(),
 	};
 }
 
@@ -1060,11 +1160,10 @@ function writeCpuFrameState(writer: BinarySink, state: CpuFrameState): void {
 	writer.u32(state.functionAddress);
 	writer.u32(state.pc);
 	writer.i32(state.closureRef);
+	writer.i32(state.stackBase);
 	writer.i32(state.stackCapacity);
-	writer.u32(state.registers.length);
-	writer.u32s(state.registers);
-	writer.u32(state.varargs.length);
-	writer.u32s(state.varargs);
+	writer.i32(state.varargBase);
+	writer.i32(state.varargCount);
 	writer.i32(state.returnBase);
 	writer.i32(state.returnCount);
 	writer.i32(state.top);
@@ -1079,9 +1178,10 @@ function readCpuFrameState(reader: BinaryReader): CpuFrameState {
 		functionAddress: reader.u32(),
 		pc: reader.u32(),
 		closureRef: reader.i32(),
+		stackBase: reader.i32(),
 		stackCapacity: reader.i32(),
-		registers: reader.u32s(reader.u32()),
-		varargs: reader.u32s(reader.u32()),
+		varargBase: reader.i32(),
+		varargCount: reader.i32(),
 		returnBase: reader.i32(),
 		returnCount: reader.i32(),
 		top: reader.i32(),
@@ -1133,6 +1233,8 @@ function writeCpuThreadState(writer: BinarySink, state: CpuThreadState): void {
 	writer.i32(state.callBase);
 	writer.i32(state.returnCount);
 	writer.u64(state.stackCapacity);
+	writer.u32(state.stack.length);
+	writer.u32s(state.stack);
 	writer.u32(state.error);
 	writer.u32(state.frames.length);
 	for (const value of state.frames) {
@@ -1154,6 +1256,7 @@ function readCpuThreadState(reader: BinaryReader): CpuThreadState {
 		callBase: reader.i32(),
 		returnCount: reader.i32(),
 		stackCapacity: reader.u64(),
+		stack: reader.u32s(reader.u32()),
 		error: reader.u32(),
 		frames: reader.array(readCpuFrameState),
 		protectedCalls: reader.array(readCpuProtectedCallState),
@@ -1163,6 +1266,7 @@ function readCpuThreadState(reader: BinaryReader): CpuThreadState {
 
 function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void {
 	writer.i32(state.executionCartridgeSlot);
+	writer.i32(state.programExecutionDomainId);
 	writer.u32(state.systemGlobals.length);
 	for (const value of state.systemGlobals) {
 		writeCpuRootValueState(writer, value);
@@ -1187,12 +1291,20 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(state.nextObjectHashId);
 	writer.bool(state.hardHalted);
 	writeLuaHeapState(writer, state.luaHeap);
+	writeGcState(writer, state.gc);
 	writer.u32(state.lastPc);
 	writer.i32(state.haltedUntilIrqThreadRef);
 	writer.i32(state.haltedUntilIrqFrameDepth);
 	writer.bool(state.interruptEventPending);
 	writer.bool(state.memoryWriteBlocked);
 	writer.u32(state.memoryWriteBlockedAddress);
+	writer.u32(state.pendingMemory.kind);
+	writer.u32(state.pendingMemory.instructionPc);
+	writer.u32(state.pendingMemory.nextPc);
+	writer.u32(state.pendingMemory.address);
+	writer.u32(state.pendingMemory.accessKind);
+	writer.i32(state.pendingMemory.registerIndex);
+	writer.i32(state.pendingMemory.wordCount);
 	writer.u32(state.statusWord);
 	writer.u32(state.causeWord);
 	writer.u32(state.epcWord);
@@ -1211,6 +1323,7 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 	return {
 		executionCartridgeSlot: reader.i32() as ExecutionDomainId,
+		programExecutionDomainId: reader.i32() as ExecutionDomainId,
 		systemGlobals: reader.array(readCpuRootValueState),
 		globalSlots: reader.array(readCpuRootValueState),
 		stringIndexTable: reader.u32(),
@@ -1225,12 +1338,19 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 		nextObjectHashId: reader.u32(),
 		hardHalted: reader.bool(),
 		luaHeap: readLuaHeapState(reader),
+		gc: readGcState(reader),
 		lastPc: reader.u32(),
 		haltedUntilIrqThreadRef: reader.i32(),
 		haltedUntilIrqFrameDepth: reader.i32(),
 		interruptEventPending: reader.bool(),
 		memoryWriteBlocked: reader.bool(),
 		memoryWriteBlockedAddress: reader.u32(),
+		pendingMemory: {
+			kind: reader.u32() as PendingMemoryKind,
+			instructionPc: reader.u32(), nextPc: reader.u32(), address: reader.u32(),
+			accessKind: reader.u32() as MemoryAccessKind,
+			registerIndex: reader.i32(), wordCount: reader.i32(),
+		},
 		statusWord: reader.u32(),
 		causeWord: reader.u32(),
 		epcWord: reader.u32(),
@@ -1303,6 +1423,33 @@ function writeApuOutputState(writer: BinarySink, state: ApuOutputState): void {
 function readApuOutputState(reader: BinaryReader): ApuOutputState {
 	return {
 		voices: reader.array(readApuOutputVoiceState),
+	};
+}
+
+function writeGcState(writer: BinarySink, state: GcState): void {
+	writer.u32(state.phase);
+	writer.u32(state.white);
+	writer.i32(state.sweep);
+	writer.u32(state.allocations.length);
+	writer.u32s(state.allocations);
+	writer.u32(state.colors.length);
+	writer.u32s(state.colors);
+	writer.u32(state.gray.length);
+	writer.u32s(state.gray);
+	writer.u32(state.grayAgain.length);
+	writer.u32s(state.grayAgain);
+	writer.u32(state.threads.length);
+	writer.u32s(state.threads);
+	writer.u32(state.weak.length);
+	writer.u32s(state.weak);
+}
+function readGcState(reader: BinaryReader): GcState {
+	return {
+		phase: reader.u32(), white: reader.u32(), sweep: reader.i32(),
+		allocations: Array.from(reader.u32s(reader.u32())), colors: Array.from(reader.u32s(reader.u32())),
+		gray: Array.from(reader.u32s(reader.u32())), grayAgain: Array.from(reader.u32s(reader.u32())),
+		threads: Array.from(reader.u32s(reader.u32())),
+		weak: Array.from(reader.u32s(reader.u32())),
 	};
 }
 

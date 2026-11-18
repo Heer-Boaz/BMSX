@@ -5,8 +5,8 @@ uniform sampler2D u_texture;
 uniform vec2 u_srcResolution;
 uniform vec2 u_srcTexel;
 
-uniform float u_time;
-uniform float u_random;
+uniform sampler2D u_noise;
+uniform vec2 u_noiseOffset;
 
 uniform bool u_enableNoise;
 uniform bool u_enableColorBleed;
@@ -40,15 +40,6 @@ const float BLACK_SOFT   = 0.060;
 in vec2 v_texcoord;
 out vec4 outputColor;
 
-
-float hashNoise(vec2 uv, float t){
-	vec2 wrappedUV = mod(uv, vec2(1024.0));
-	float wrappedT = mod(t, 4096.0);
-	vec3 p = vec3(wrappedUV * 0.1, wrappedT * 0.0001);
-	p = fract(p * vec3(12.9898, 78.233, 43758.5453));
-	p += dot(p, p.yzx + 19.19);
-	return fract((p.x + p.y) * p.z);
-}
 
 struct BlurContrast { vec3 center; vec3 blurred; float contrast; };
 
@@ -89,6 +80,22 @@ BlurContrast applyBlurAndContrast(vec2 uv, vec2 sourcePixel){
 	bc.center = centerColor;
 	bc.blurred = blurred * K_NORM;
 	bc.contrast = abs(dot(centerColor, LUMA) - dot(neighborhood - centerColor, LUMA) * 0.125);
+	return bc;
+}
+
+// Only four taps of the contrast kernel have nonzero weights in each
+// nearest-sampling phase. Blur itself still uses the original nine taps.
+BlurContrast applyContrast(vec2 uv, vec2 sourcePixel) {
+	vec2 side = (step(vec2(0.5), fract(sourcePixel)) * 2.0 - 1.0) * u_srcTexel;
+	vec3 center = texture(u_texture, uv).rgb;
+	vec3 horizontal = texture(u_texture, uv + vec2(side.x, 0.0)).rgb;
+	vec3 vertical = texture(u_texture, uv + vec2(0.0, side.y)).rgb;
+	vec3 diagonal = texture(u_texture, uv + side).rgb;
+	vec3 neighborhood = (diagonal + vertical * 2.0) + (horizontal + center * 2.0) * 2.0;
+	BlurContrast bc;
+	bc.center = center;
+	bc.blurred = center;
+	bc.contrast = abs(dot(center, LUMA) - dot(neighborhood - center, LUMA) * 0.125);
 	return bc;
 }
 
@@ -139,10 +146,11 @@ vec3 applyFringing(vec3 color, vec2 uv, float centerGreen, float contrast, float
 }
 
 vec3 applyNoise(vec3 color, vec2 sourcePixel){
-	float lineNoise= hashNoise(vec2(0.0, float(int(sourcePixel.y)) + u_time * 30.0), 0.0) - 0.5;
-	float pixNoise = hashNoise(sourcePixel + vec2(u_random), u_time) - 0.5;
+	ivec2 coord = ivec2(sourcePixel) + ivec2(u_noiseOffset);
+	coord -= (coord / ivec2(512, 256)) * ivec2(512, 256);
+	vec2 grain = texture(u_noise, (vec2(coord) + vec2(0.5)) / vec2(512.0, 256.0)).rg - vec2(0.5);
 	float lum      = dot(color, LUMA);
-	float n        = mix(pixNoise, lineNoise, 0.35);
+	float n        = mix(grain.r, grain.g, 0.35);
 	float k        = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lum);
 	float amp      = u_noiseIntensity * mix(0.2, 1.0, 1.0 - lum);
 	return color * (n * amp * k);
@@ -151,8 +159,10 @@ vec3 applyNoise(vec3 color, vec2 sourcePixel){
 void main(){
 	vec2 sourcePixel = v_texcoord * u_srcResolution;
 	BlurContrast bc;
-	if (u_enableBlur || u_enableFringing || u_enableAperture || u_enableScanlines) {
+	if (u_enableBlur) {
 		bc = applyBlurAndContrast(v_texcoord, sourcePixel);
+	} else if (u_enableFringing || u_enableAperture || u_enableScanlines) {
+		bc = applyContrast(v_texcoord, sourcePixel);
 	} else {
 		bc.center = texture(u_texture, v_texcoord).rgb;
 		bc.blurred = bc.center;

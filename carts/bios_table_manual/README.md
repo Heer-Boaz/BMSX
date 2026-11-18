@@ -87,8 +87,8 @@ tabs, not spaces; `Empty ranges` contains an empty argument between two tabs.
 Packed tuple	10	nil	30	nil
 Tuple counts	4	4
 Packed concat	10||30|
-Mutation	1	3	4
-Ascending	1	5.5,7,8,9
+Mutation	0	3	4
+Ascending	0	5.5,7,8,9
 Default unpack	5.5	7	8	9
 Default unpack count	4
 Negative range	7:8:9
@@ -112,7 +112,7 @@ Frame 4 is that observation endpoint, not a boot-latency or CPU-cycle promise.
 - The ordinary sequence starts as 9,3,7. Insert position 2 value 5.5; remove
   position 3 returns 3; append 8. Length is 4. Default sort yields 5.5,7,8,9,
   and default unpack returns four values. Counted insert and sort each return
-  one nil result. Default-length concat produces `5.5,7,8,9`.
+  zero results. Default-length concat produces `5.5,7,8,9`.
 - Negative concat endpoints -3,-1 give `7:8:9`; zero endpoints 0,0 give
   `5.5:7:8:9`. Reversed range 3,2 gives an empty concat String of length zero
   and zero unpack results.

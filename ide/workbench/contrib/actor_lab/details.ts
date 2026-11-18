@@ -1,3 +1,4 @@
+import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import { actorNodeLabel } from './labels';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { GuestInvalidationReason, SuspendedGuestSession } from '../../../runtime/suspended_guest';
@@ -153,7 +154,7 @@ export class ActorDetails {
 			} else {
 				const world = runtimeWorld(this.sources, this.guest, subject.domain);
 				this.runtime.update(this.sources, this.guest, subject.domain,
-					world?.hashId === subject.worldHashId ? findWorldActor(this.guest, world, subject.actorHashId) : undefined);
+					world !== undefined && this.guest.identityScalar(world, ValueTag.Table) === subject.worldHashId ? findWorldActor(this.guest, world, subject.actorHashId) : undefined);
 				this.subjectTree = this.runtime;
 			}
 		}

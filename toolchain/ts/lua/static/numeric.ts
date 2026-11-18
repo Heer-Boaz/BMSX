@@ -1,8 +1,8 @@
+import { integerConstant, evaluateNumberBinary, evaluateNumberUnary, type NumberConstant } from '../number';
 import { LuaBinaryOperator, LuaSyntaxKind, LuaUnaryOperator, type LuaExpression, type LuaIdentifierExpression,
 	type LuaIndexExpression, type LuaMemberExpression, type LuaOffsetOfExpression, type LuaSizeOfExpression } from '../syntax/ast';
-import { evaluateStaticNumberBinaryOperator } from './scalar';
 
-export type StaticNumericValue<Link extends { readonly kind: 'link_value' }> = { kind: 'number'; value: number } | Link;
+export type StaticNumericValue<Link extends { readonly kind: 'link_value' }> = { kind: 'number'; value: NumberConstant } | Link;
 
 /** One numeric expression grammar; each owner supplies its own bindings and symbolic link operations. */
 export interface StaticNumericContext<Scope, Link extends { readonly kind: 'link_value' }> {
@@ -21,19 +21,19 @@ export function evaluateStaticNumeric<Scope, Link extends { readonly kind: 'link
 		case LuaSyntaxKind.IdentifierExpression:
 		case LuaSyntaxKind.MemberExpression:
 		case LuaSyntaxKind.IndexExpression: return context.resolveNumeric(scope, expression);
-		case LuaSyntaxKind.SizeOfExpression: return { kind: 'number', value: context.numericSize(scope, expression) };
-		case LuaSyntaxKind.OffsetOfExpression: return { kind: 'number', value: context.numericOffset(scope, expression) };
+		case LuaSyntaxKind.SizeOfExpression: return { kind: 'number', value: integerConstant(context.numericSize(scope, expression)) };
+		case LuaSyntaxKind.OffsetOfExpression: return { kind: 'number', value: integerConstant(context.numericOffset(scope, expression)) };
 		case LuaSyntaxKind.UnaryExpression: {
 			if (expression.operator === LuaUnaryOperator.Length) {
 				const value = context.numericLength(scope, expression.operand);
-				return value === undefined ? undefined : { kind: 'number', value };
+				return value === undefined ? undefined : { kind: 'number', value: integerConstant(value) };
 			}
 			if (expression.operator !== LuaUnaryOperator.Negate && expression.operator !== LuaUnaryOperator.BitwiseNot) return;
 			const operand = evaluateStaticNumeric(context, scope, expression.operand);
 			if (operand === undefined) return;
-			return operand.kind === 'number'
-				? { kind: 'number', value: expression.operator === LuaUnaryOperator.Negate ? -operand.value : ~operand.value }
-				: context.numericLinkUnary(expression.operator, operand);
+			if (operand.kind === 'link_value') return context.numericLinkUnary(expression.operator, operand);
+			const value = evaluateNumberUnary(expression.operator, operand.value);
+			return value === undefined ? undefined : { kind: 'number', value };
 		}
 		case LuaSyntaxKind.BinaryExpression: {
 			const left = evaluateStaticNumeric(context, scope, expression.left);
@@ -41,7 +41,7 @@ export function evaluateStaticNumeric<Scope, Link extends { readonly kind: 'link
 			if (left === undefined || right === undefined) return;
 			if (left.kind === 'number') {
 				if (right.kind === 'number') {
-					const value = evaluateStaticNumberBinaryOperator(expression.operator, left.value, right.value);
+					const value = evaluateNumberBinary(expression.operator, left.value, right.value);
 					return value === undefined ? undefined : { kind: 'number', value };
 				}
 				return context.numericLinkBinary(expression.operator, right, left, false);

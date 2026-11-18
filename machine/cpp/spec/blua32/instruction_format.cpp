@@ -27,18 +27,18 @@ void writeInstruction(std::span<uint8_t> code, int index, uint8_t op, uint8_t a,
 
 void writeInstructionWord(std::span<uint8_t> code, int index, uint32_t word) {
 	const size_t offset = static_cast<size_t>(index) * INSTRUCTION_BYTES;
-	code[offset] = static_cast<uint8_t>((word >> 24) & 0xff);
-	code[offset + 1] = static_cast<uint8_t>((word >> 16) & 0xff);
-	code[offset + 2] = static_cast<uint8_t>((word >> 8) & 0xff);
-	code[offset + 3] = static_cast<uint8_t>(word & 0xff);
+	code[offset] = static_cast<uint8_t>(word & 0xff);
+	code[offset + 1] = static_cast<uint8_t>((word >> 8) & 0xff);
+	code[offset + 2] = static_cast<uint8_t>((word >> 16) & 0xff);
+	code[offset + 3] = static_cast<uint8_t>((word >> 24) & 0xff);
 }
 
 uint32_t readInstructionWord(std::span<const uint8_t> code, int index) {
 	const size_t offset = static_cast<size_t>(index) * INSTRUCTION_BYTES;
-	return (static_cast<uint32_t>(code[offset]) << 24)
-		| (static_cast<uint32_t>(code[offset + 1]) << 16)
-		| (static_cast<uint32_t>(code[offset + 2]) << 8)
-		| static_cast<uint32_t>(code[offset + 3]);
+	return static_cast<uint32_t>(code[offset])
+		| (static_cast<uint32_t>(code[offset + 1]) << 8)
+		| (static_cast<uint32_t>(code[offset + 2]) << 16)
+		| (static_cast<uint32_t>(code[offset + 3]) << 24);
 }
 
 } // namespace bmsx

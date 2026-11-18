@@ -9,6 +9,7 @@ import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpe
 for (const optLevel of [0, 3] as const) {
 	test(`World prepares batch identities and poses before constructors, then publishes, wires and activates (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
 local order<const> = {}
 local base<const> = setmetatable({}, { __index = object_3d })
 local actor<const> = {}
@@ -139,6 +140,7 @@ single:mark_for_disposal()
 
 	test(`World terminal requests stop later construction and lifecycle callbacks (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
 local initialized = 0
 local constructed = 0
 local spawned = 0
@@ -253,6 +255,7 @@ assert(factory_attached == 0 and factory_detached == 0,
 
 	test(`World drains reentrant spawns after the current ready batch and cancels pending Scenes (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
 local order<const> = {}
 local actor<const> = {}
 local component<const> = setmetatable({}, { __index = base_component })
@@ -359,6 +362,7 @@ unload_child:mark_for_disposal()
 
 	test(`Scenes retain exact prefab construction mappings and methods for staged member admission (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
 local shared_state<const> = { lives = 3 }
 local defaults<const> = { revision = 'old', shared_state = shared_state }
 local base<const> = setmetatable({ initialize = function(self)
@@ -445,6 +449,7 @@ replacement:dispose()
 
 	test(`World admits a class used as its own base and owns each instance tag set (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
 local declared_tags<const> = { ['fixture.shared'] = true }
 local class<const> = setmetatable({
 	initialize = function(self) self.initialized = self:helper() end,
@@ -485,6 +490,7 @@ assert(#registry:entries('fixture.shared') == 0 and #registry:entries('fixture.f
 
 	test(`Scene registration rejects unresolved prefabs and duplicate members before runtime construction (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
 local constructed = 0
 prefab.define({def_id='cold.actor',
  class=setmetatable({ ctor = function() constructed = constructed + 1 end }, {__index=world_object})})
@@ -508,6 +514,7 @@ assert(not duplicate and scenes.definition('cold.duplicate') == nil and construc
 	});
 	test(`FSM subscriptions bind with the batch before peer activation but dispatch only after startup (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
 local events<const> = require('cartlib/event_emitter')
 local library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -567,6 +574,7 @@ assert(events._subscriptions_by_subscriber[machine] == nil, 'FSM teardown retain
 
 	test(`Terminal teardown consumes custom-unbind resources and dynamic self-removing attachments (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
 local owner_unbound = 0
 local late_attached = 0
 local late_detached = 0

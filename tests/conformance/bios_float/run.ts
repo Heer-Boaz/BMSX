@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { valueBool } from '../../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -18,7 +19,7 @@ for (const [command, args] of [
 	['cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_frame_evaluation_runner', '--parallel', '2']],
 ] as const) assert.equal(spawnSync(command, args, { stdio: 'inherit' }).status, 0);
 
-const modules = ['base', 'table', 'string/base', 'string/utf8', 'string/pack', 'string/float/encode', 'string/float/decode'].map(path => {
+const modules = ['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/utf8', 'string/pack', 'string/float/encode', 'string/float/decode'].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 	return { path, source, chunk: parseLuaChunk(source, `${path}.lua`) };
 });
@@ -32,10 +33,21 @@ const values = [0, -0, Number.MIN_VALUE, -Number.MIN_VALUE, Number.MAX_VALUE, -N
 	(2 - 2 ** -23) * 2 ** 127, (2 - 2 ** -24) * 2 ** 127];
 const bits = new DataView(new ArrayBuffer(8));
 const rows: string[] = [];
-for (const value of values) for (const size of [4, 8]) {
-	if (size === 4) bits.setFloat32(0, value, true);
-	else bits.setFloat64(0, value, true);
-	rows.push(`{${Object.is(value, -0) ? '-0.0' : value}, ${size}, ${size === 4 ? bits.getUint32(0, true) : bits.getUint32(4, true)}, ${size === 4 ? 0 : bits.getUint32(0, true)}}`);
+// Supply binary64 *fields* as two words; never put a host double in a
+// guest literal. DataView independently narrows the field, then widens the
+// resulting binary32 value for the encoder.
+for (const value of values) {
+	bits.setFloat64(0, value, true);
+	const high = bits.getUint32(4, true), low = bits.getUint32(0, true);
+	bits.setFloat32(0, value, true);
+	const word = bits.getUint32(0, true);
+	bits.setFloat64(0, bits.getFloat32(0, true), true);
+	rows.push(`{decode(0x${high.toString(16)}, 0x${low.toString(16)}, 8), 4, 0x${word.toString(16)}, 0}`);
+	rows.push(`{blua32.float_from_bits(0x${word.toString(16)}), 8, 0x${bits.getUint32(4, true).toString(16)}, 0x${bits.getUint32(0, true).toString(16)}}`);
+}
+for (const integer of [16777217, 2147483647, -2147483648]) {
+	bits.setFloat64(0, integer, true);
+	rows.push(`{0x${(integer >>> 0).toString(16)}, 8, 0x${bits.getUint32(4, true).toString(16)}, 0x${bits.getUint32(0, true).toString(16)}}`);
 }
 const source = `require('base')
 local fields<const> = require('string/pack')
@@ -61,7 +73,7 @@ for index = 1, #rows do
   for octet = 1, row[2] do
    local digit_index<const> = endian_index == 1 and octet or row[2] + 1 - octet
    local word<const> = (row[2] == 4 or digit_index > 4) and row[3] or row[4]
-   local expected_digit<const> = (word // (256 ^ ((digit_index - 1) % 4))) % 256
+   local expected_digit<const> = (word >> (8 * ((digit_index - 1) % 4))) & 0xff
    if byte(packed, octet) ~= expected_digit then return false, false end
   end
  end
@@ -76,8 +88,8 @@ local value = *numbers[0]
 local zero = *numbers[1]
 local inf = *numbers[2]
 local nan = *numbers[3]
-return *rounded == '1.23457' and ('' .. value) == *rounded
-    and *negative_zero == '-0' and ('' .. zero) == *negative_zero,
+return *rounded == '1.234567' and ('' .. value) == *rounded
+    and *negative_zero == '-0.0' and ('' .. zero) == *negative_zero,
     *infinity == 'inf' and ('' .. inf) == *infinity
     and *not_a_number == 'nan' and ('' .. nan) == *not_a_number`;
 const participantSource = `data carried: word = 7
@@ -118,7 +130,7 @@ try {
 			let result = RunResult.Yielded;
 			for (let grant = 0; grant < 300 && result === RunResult.Yielded; grant++) result = runtime.machine.cpu.runUntilDepth(0, 100000);
 			assert.equal(result, RunResult.Halted);
-			assert.deepEqual(runtime.readCompletionValues(), [true, true]);
+			assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueBool(true)]);
 			assert.equal(spawnSync('build-cpp-tests/bmsx_frame_evaluation_runner', [path, 'run'], { stdio: 'inherit' }).status, 0);
 			const native = decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.state`)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 			assert.deepEqual(native, captureRuntimeSaveState(runtime), `${name} O${optLevel}: complete TS/C++ state parity`);

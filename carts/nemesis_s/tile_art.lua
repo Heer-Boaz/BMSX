@@ -1,5 +1,5 @@
--- Native tile names use the shared image cache. Authored composites are
--- rectangle packet views consumed by tile_layer, not drawable image objects.
+-- Stage bank cells are rectangle packet views consumed by tile_layer,
+-- not separate drawable image assets.
 -- Every direct16 bank occupies one texture page: its cells share the size
 -- and live draw mode while retaining only their own page-local UV word.
 local image<const> = require('cartlib/gx/image')
@@ -39,7 +39,6 @@ function tile_art.new(spec)
 end
 
 function tile_art:resolve(id)
-    if type(id)=='string' then return image.resolve(id) end
     local offset<const> = id-1
     local bank<const> = self.banks[offset//1024+1]
     local index<const> = (offset%1024)+1

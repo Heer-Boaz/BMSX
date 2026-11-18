@@ -31,7 +31,7 @@ export async function prepareModelTextures(model: GLTFModel): Promise<ModelTextu
 		}
 		for (let index = 3; index < rgba.length; index += 4) rgba[index] = 255;
 		const texture = encodeDirect16GxTexture(width, height, rgba);
-		return { width, height,
-			stream: new Uint8Array(encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount)) };
+		return { width, height, decodedWords: texture.words.byteLength >>> 2,
+			stream: new Uint8Array(encodeImgDecStream(texture.words)) };
 	}));
 }

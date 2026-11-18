@@ -1,4 +1,3 @@
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import type { RuntimeInspection } from '../../../runtime/inspection';
 import type { RuntimeLuaFunctionSource } from '../../../runtime/lua_inspection';
 import type { BehaviorInspectionProperty } from '../behavior_lens/inspection';
@@ -8,10 +7,10 @@ import { actorActions } from './operations';
 import { readActorMethods } from './methods';
 import { captureActorTarget } from './target';
 import { prepareLuaArguments } from '../../../runtime/lua_literal';
-import { valueTag, ValueTag } from '../../../../machine/ts/machine/cpu/value';
+import { valueTag, valueNil, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import type { ActorInvocation } from './execution';
 
-type InspectedActor = { readonly value: Table; tree?: ActorRuntimeTree; rows?: ActorInspectionRow[] };
+type InspectedActor = { readonly value: Value; tree?: ActorRuntimeTree; rows?: ActorInspectionRow[] };
 type ActorInspectionProperty = Pick<BehaviorInspectionProperty, 'label' | 'value' | 'description' | 'warning'> & {
 	readonly source?: Pick<RuntimeLuaFunctionSource, 'resource' | 'range'> & { readonly origin: 'installed' };
 };
@@ -32,14 +31,15 @@ export class ActorRuntimeInspection {
 		const roots = this.roots;
 		if (roots.status !== 'available') return { inspection: inspection.id, domain: roots.domain, status: roots.status };
 		const entries = [];
-		for (let i = start, end = Math.min(start + count, roots.objects.arrayLength); i < end; i++) {
-			const actor = roots.objects.getInteger(i + 1) as Table;
-			const reference = `${inspection.id}/actor/${actor.hashId}`;
+		const total = roots.objects.length();
+		for (let i = start, end = Math.min(start + count, total); i < end; i++) {
+			const actor = roots.objects.getInteger(i + 1);
+			const reference = `${inspection.id}/actor/${guest.identityScalar(actor, ValueTag.Table)}`;
 			if (!this.actors.has(reference)) this.actors.set(reference, { value: actor });
 			entries.push({ reference, object: values.describe(actor), id: values.describe(guest.readStringMember(actor, 'id')),
 				definitionId: values.describe(guest.readStringMember(actor, 'definition_id')), active: guest.isTruthy(guest.readStringMember(actor, 'active')) });
 		}
-		return { inspection: inspection.id, domain: roots.domain, status: roots.status, start, total: roots.objects.arrayLength, actors: entries };
+		return { inspection: inspection.id, domain: roots.domain, status: roots.status, start, total, actors: entries };
 	}
 
 	public tree(reference: string, start: number, count: number) {
@@ -71,7 +71,7 @@ export class ActorRuntimeInspection {
 			}));
 		}
 		return { inspection: inspection.id, domain: this.roots!.domain, ...this.describe(row),
-			component: inspection.values.describe(node.component), receiver: inspection.values.describe(node.receiver), properties: row.properties };
+			component: inspection.values.describe(node.component === null ? valueNil() : node.component), receiver: inspection.values.describe(node.receiver === null ? valueNil() : node.receiver), properties: row.properties };
 	}
 
 	public operations(reference: string) {
@@ -89,13 +89,13 @@ export class ActorRuntimeInspection {
 		const row = this.nodes.get(reference);
 		if (row === undefined) throw new Error('Actor node is not part of the current inspected tree.');
 		const args = prepareLuaArguments(source), guest = inspection.guest;
-		const target = captureActorTarget(this.roots!.domain, runtimeWorld(inspection.sources, guest, this.roots!.domain)!.hashId,
+		const target = captureActorTarget(this.roots!.domain, guest.identityScalar(runtimeWorld(inspection.sources, guest, this.roots!.domain)!, ValueTag.Table),
 			this.actors.get(row.actor)!.tree!.roots, row.node);
 		if (kind === 'action') {
 			if (!actorActions(row.node).some(action => action.method === method)) throw new Error('Action is not available on this actor node.');
 			return { kind, target, method, args };
 		}
-		const closure = guest.readStringMember(row.node.value, method);
+		const closure = guest.readStringMember(row.node.value!, method);
 		if (valueTag(closure) !== ValueTag.Closure) throw new Error('Selected member is not a stored Lua method.');
 		return { kind, target, method, args, identity: guest.identity(closure) };
 	}
@@ -112,7 +112,7 @@ export class ActorRuntimeInspection {
 	private describe(row: ActorInspectionRow) {
 		const { node } = row, { values } = this.inspection;
 		return { reference: row.reference, actor: row.actor, parent: row.parent, kind: node.kind, label: node.label,
-			key: values.describe(node.key), object: values.describe(node.value),
+			key: values.describe(node.key), object: values.describe(node.value!),
 			activity: { value: node.active, basis: ACTIVITY_BASIS[node.kind] }, children: node.children.length };
 	}
 	public dispose(): void {

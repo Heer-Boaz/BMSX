@@ -1,6 +1,7 @@
 local syntax<const> = require('compiler/syntax')
 
 local semantic<const> = {}
+local numeric_word_moves<const> = { float_bits = true, float_from_bits = true }
 
 local fail<const> = function(chunk_name, message, node)
 	error('[load:' .. chunk_name .. '] ' .. message .. ' at '
@@ -241,10 +242,19 @@ bind_value = function(state, expression)
 		return
 	end
 	if kind == syntax.call_expression then
+		expression.word_move = nil
 		bind_value(state, expression.callee)
 		local arguments<const> = expression.arguments
-		for index = 1, #arguments do
-			bind_value(state, arguments[index])
+		for index = 1, #arguments do bind_value(state, arguments[index]) end
+		local callee<const> = expression.callee
+		if expression.method_name == nil and callee.kind == syntax.member_expression then
+			local base<const> = callee.base
+			if base.kind == syntax.identifier_expression
+				and (base.global_key == 'blua32' or base.environment_key == 'blua32')
+				and numeric_word_moves[callee.identifier] then
+				if #arguments ~= 1 then fail(state.chunk_name, 'numeric word move expects one argument', expression) end
+				expression.word_move = callee.identifier
+			end
 		end
 		return
 	end

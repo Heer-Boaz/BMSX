@@ -23,6 +23,8 @@ import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test
 // firmware-generated functions, not a second implementation of their kernels.
 // https://github.com/bevyengine/bevy/blob/main/examples/stress_tests/transform_hierarchy.rs
 const fixture = WORLD_CPU_SETUP + `
+world:start()
+
 local affine2<const> = require('cartlib/math/affine2')
 local affine3<const> = require('cartlib/math/affine3')
 local visual2<const> = require('cartlib/component/visual_2d_component')
@@ -194,7 +196,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 		assert.equal(domain, 0);
 		const read = readSites.get(pc);
 		if (read !== undefined) {
-			const frame = cpu.activeThread.frames[cpu.activeThread.frames.length - 1];
+			const frame = cpu.activeThread.frameAtDepth(cpu.activeThread.frameDepth - 1);
 			const page = frame.decodedPage!;
 			const offset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 			// Consume the CPU owner's already-decoded operands. AOT field keys
@@ -203,7 +205,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 			let field;
 			if (read.op === OpCode.GETFIELD) field = images.cartImage.constants[page.c[offset]];
 			else {
-				const key = page.rkC[offset];
+				const key = page.c[offset];
 				if (key < 0) field = images.cartImage.constants[-1 - key];
 				else if (registers.getTag(key) === ValueTag.String) field = cpu.stringPool.toString(registers.getStringId(key));
 			}

@@ -81,10 +81,9 @@ local direct_query_contact<const> = {
 
 local unpack_geo_fault<const> = function()
 	local fault<const> = *geo_fault_register
-	local fault_u<const> = fault < 0 and (fault + 0x100000000) or fault
-	local fault_code<const> = (fault_u >> 0x00000010) & 0x0000ffff
-	local fault_index<const> = fault_u & 0x0000ffff
-	return fault_u, fault_code, fault_index
+	local fault_code<const> = (fault >> 0x00000010) & 0x0000ffff
+	local fault_index<const> = fault & 0x0000ffff
+	return fault, fault_code, fault_index
 end
 
 local raise_geo_fault<const> = function(label)

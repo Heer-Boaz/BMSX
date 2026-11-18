@@ -1,3 +1,4 @@
+import { numberConstantValue } from '../lua/number';
 import { LuaSyntaxError } from '../lua/errors';
 import { toLuaModulePath } from '../lua/module_path';
 import { findLuaModuleExport } from '../lua/semantic/module_bindings';
@@ -7,6 +8,7 @@ import { LuaSyntaxKind, type LuaChunk, type LuaExpression, type LuaSourceRange }
 export type GuestTestCase = {
 	readonly name: string;
 	readonly range: LuaSourceRange;
+	readonly phaseCycles?: number;
 };
 
 export type GuestTestSuite = {
@@ -32,7 +34,7 @@ export function discoverGuestTestSuite(chunk: LuaChunk, sourcePath: string): Gue
 		if (fields.has(name)) {
 			throw new LuaSyntaxError(`Duplicate suite field '${name}'.`, sourcePath, range.start.line, range.start.column);
 		}
-		if (name !== 'kind' && name !== 'tests' && name !== 'setup' && name !== 'teardown') {
+		if (name !== 'kind' && name !== 'tests' && name !== 'setup' && name !== 'teardown' && name !== 'phase_cycles') {
 			throw new LuaSyntaxError(`Unknown suite field '${name}'.`, sourcePath, range.start.line, range.start.column);
 		}
 		if ((name === 'setup' || name === 'teardown') && value.kind !== LuaSyntaxKind.FunctionExpression) {
@@ -68,6 +70,33 @@ export function discoverGuestTestSuite(chunk: LuaChunk, sourcePath: string): Gue
 	if (tests.length !== declarations.fields.length) {
 		const range = chunk.locations.range(declarations.span);
 		throw new LuaSyntaxError('Tests must have static string names.', sourcePath, range.start.line, range.start.column);
+	}
+	const phaseCycles = fields.get('phase_cycles');
+	if (phaseCycles !== undefined) {
+		if (phaseCycles.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+			throw new LuaSyntaxError("Suite 'phase_cycles' must be a table of test names and positive integer cycle budgets.", sourcePath, phaseCycles.range.start.line, phaseCycles.range.start.column);
+		}
+		const budgets = new Map<string, number>();
+		visitNamedTableFields(phaseCycles.value, (name, value, field) => {
+			const fieldRange = chunk.locations.range(field.span);
+			if (budgets.has(name)) {
+				throw new LuaSyntaxError(`Duplicate phase cycle budget for test '${name}'.`, sourcePath, fieldRange.start.line, fieldRange.start.column);
+			}
+			if (!names.has(name)) {
+				throw new LuaSyntaxError(`Phase cycle budget names unknown test '${name}'.`, sourcePath, fieldRange.start.line, fieldRange.start.column);
+			}
+			if (value.kind !== LuaSyntaxKind.NumericLiteralExpression || !Number.isInteger(numberConstantValue(value.value)) || numberConstantValue(value.value) <= 0) {
+				throw new LuaSyntaxError(`Phase cycle budget for test '${name}' must be a positive integer literal.`, sourcePath, fieldRange.start.line, fieldRange.start.column);
+			}
+			budgets.set(name, numberConstantValue(value.value));
+		});
+		if (budgets.size !== phaseCycles.value.fields.length) {
+			throw new LuaSyntaxError('Phase cycle budgets must have static test names.', sourcePath, phaseCycles.range.start.line, phaseCycles.range.start.column);
+		}
+		for (let index = 0; index < tests.length; ++index) {
+			const budget = budgets.get(tests[index].name);
+			if (budget !== undefined) tests[index] = { ...tests[index], phaseCycles: budget };
+		}
 	}
 	return {
 		modulePath: toLuaModulePath(sourcePath), sourcePath, kind: kind.value,

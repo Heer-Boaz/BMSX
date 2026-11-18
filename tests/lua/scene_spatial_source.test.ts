@@ -250,7 +250,7 @@ test('unavailable affected geometry or parent expressions veto removal without c
 });
 
 test('successive member deletions round-trip overflowed affine Numbers through canonical named source', t => {
-	const f = fixture(t, `{member_id='parent',definition_id='node2',transform={xx=1e308,xy=0,yx=0,yy=1,ox=0,oy=0}},
+	const f = fixture(t, `{member_id='parent',definition_id='node2',transform={xx=3e38,xy=0,yx=0,yy=1,ox=0,oy=0}},
  {member_id='child',definition_id='node2',parent='parent',transform={xx=2,xy=0,yx=0,yy=1,ox=0,oy=0}},
  {member_id='leaf',definition_id='node2',parent='child'}`);
 	for (const [id, expected] of [['child', [Infinity,0,0,1,0,0]], ['leaf', [Infinity,0,NaN,1,NaN,0]]] as const) {
@@ -264,7 +264,7 @@ test('successive member deletions round-trip overflowed affine Numbers through c
 });
 
 test('world-preserving reparent can rewrite a transform produced with closed Number encodings', t => {
-	const f = fixture(t, `{member_id='parent',definition_id='node2',transform={xx=1e308,xy=0,yx=0,yy=1,ox=0,oy=0}},
+	const f = fixture(t, `{member_id='parent',definition_id='node2',transform={xx=(1/0),xy=0,yx=0,yy=1,ox=0,oy=0}},
  {member_id='child',definition_id='node2',parent='parent',transform={xx=2,xy=0,yx=0,yy=1,ox=0,oy=0}},
  {member_id='target',definition_id='node2',transform={xx=2,xy=0,yx=0,yy=2,ox=0,oy=0}}`);
 	f.select('child');

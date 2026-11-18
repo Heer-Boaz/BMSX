@@ -35,8 +35,7 @@ export function materializeCpuCompletionValues(cpu: CPU): Value[] {
 }
 
 /** Complete one actual guest call and report its machine-cycle charge. */
-export function runCompletionClosure(cpu: CPU, closure: Closure, args: Value[]): number {
-	const budget = 10_000_000;
+export function runCompletionClosure(cpu: CPU, closure: Closure, args: Value[], budget = 10_000_000): number {
 	cpu.beginCompletionCall(closure, args);
 	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
 	return budget - cpu.instructionBudgetRemaining;

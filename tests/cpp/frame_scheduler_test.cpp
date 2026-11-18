@@ -1,4 +1,6 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/native_block.h"
+#include "machine/cpu/execution_image.h"
 #include "common/endian.h"
 #include "spec/audio/apu.h"
 #include "machine/devices/input/contracts.h"
@@ -6,6 +8,7 @@
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
 #include "machine/scheduler/frame.h"
+#include "render/backend/backend.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/model.h"
@@ -14,13 +17,16 @@
 #include "support/boot_rom_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/blua32_test_rom.h"
+#include "support/cpu_execution_parity.h"
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/instruction_format.h"
+#include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/opcode.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <stdexcept>
 #include <vector>
 
@@ -80,6 +86,174 @@ struct TickRuntimeFixture {
 	}
 };
 
+void testRuntimeRestoreRearmsCpuGp0Wait() {
+	using namespace bmsx;
+	test::Blua32TestImage image;
+	image.text.resize(5u * INSTRUCTION_BYTES);
+	std::span<u8> code(image.text);
+	writeInstruction(code, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+	writeInstruction(code, 1, static_cast<u8>(OpCode::LOADK), 1, 0, 1);
+	writeInstruction(code, 2, static_cast<u8>(OpCode::STORE_MEM_D), 1, 0, static_cast<u8>(MemoryAccessKind::U32LE));
+	writeInstruction(code, 3, static_cast<u8>(OpCode::RET), 0, 0, 0);
+	writeInstruction(code, 4, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	image.functions = {{.firstWord = 0u, .wordCount = 4u, .maxStack = 2u}, {.firstWord = 4u, .wordCount = 1u}};
+	image.constants = {static_cast<i32>(IO_GX_GPU_GP0), i32{0x1f000000}};
+	image.irqFunctionIndex = 1u;
+	image.exceptionFunctionIndex = 1u;
+	for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	TickInputSource input;
+	Runtime runtime(RuntimeOptions{rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	auto& memory = runtime.machine.memory;
+	auto& scheduler = runtime.machine.scheduler;
+	auto& cpu = runtime.machine.cpu;
+	auto& gpu = runtime.machine.gxGpu;
+	const u32 mode = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
+	memory.writeMappedU32LE(mode, memory.readMappedU32LE(mode) | GX_GPU_PCRTC_SMODE1_SINT);
+	gpu.onService(scheduler.currentNowCycles());
+	for (u32 word : {0x020000ffu, 0u, 0x00010001u}) gpu.writeGp0(word);
+	for (u32 i = 0; i < GX_GPU_COMMAND_FIFO_WORD_CAPACITY; ++i) gpu.writeGp0(0xe1000000u);
+	require(scheduler.runCpuSlice(0, 20) == RunResult::Halted && cpu.isMemoryWriteBlocked(), "CPU is blocked at GP0 before checkpoint");
+	scheduler.advanceTo(20 - cpu.instructionBudgetRemaining);
+	const auto state = captureRuntimeSaveState(runtime);
+	scheduler.advanceTo(29);
+	require(scheduler.popDueTimer() == DEVICE_SERVICE_GPU, "original wait has GPU completion");
+	gpu.onService(29);
+	require(!cpu.isMemoryWriteBlocked(), "original GPU completion releases CPU");
+	applyRuntimeSaveState(runtime, state);
+	require(cpu.isMemoryWriteBlocked(), "CPU wait restored after device state");
+	require(scheduler.nextDeadline() == 29, "restored CPU dependency rearms GPU completion deadline");
+	scheduler.advanceTo(29);
+	require(scheduler.popDueTimer() == DEVICE_SERVICE_GPU, "restored wait schedules GPU completion");
+	gpu.onService(29);
+	require(!cpu.isMemoryWriteBlocked(), "restored GPU completion releases CPU");
+	for (int i = 0; i < 4 && cpu.getFrameDepth() > 0; ++i) scheduler.runCpuSlice(0, 20);
+	require(cpu.getFrameDepth() == 0, "restored GP0 store and return retire");
+}
+
+void testSupervisorGpuServiceAtDeviceBoundaries() {
+	using namespace bmsx;
+	for (const bool dmaUpload : {false, true}) {
+		TickRuntimeFixture fixture;
+		auto& runtime = fixture.runtime;
+		auto& gpu = runtime.machine.gxGpu;
+		auto& memory = runtime.machine.memory;
+		auto& system = runtime.machine.systemController;
+		auto& dma = runtime.machine.dmaController;
+		auto& scheduler = runtime.frameScheduler;
+		SoftwareBackend backend(16, 2, PSX_MACHINE_SPEC.gxGpuVramBytes);
+		const std::array<u32, 3> words{0x020000ffu, 0u, 0x00020010u};
+		if (dmaUpload) {
+			const u32 source = RAM_BASE + 0x20000;
+			memory.writeMappedU32LE(IO_GX_GPU_GP1, 0x04000002);
+			for (size_t index = 0; index < words.size(); ++index) memory.writeMappedU32LE(source + index * 4, words[index]);
+			memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
+			memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, static_cast<u32>(words.size()));
+			memory.writeMappedU32LE(IO_DMA0_CONTROL, 1); // RAM -> GP0
+			memory.writeMappedU32LE(IO_DMA0_TRIGGER, 1);
+		} else for (const u32 word : words) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+		memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+		if (dmaUpload) {
+			const auto burst = dma.captureState().scheduledBlockCycles;
+			require(burst == 7, "three RAM reads and GP0 writes retain their serial bus charge");
+			scheduler.runDevicesToNextLogicalTick(runtime, burst - 1);
+			require(dma.hasAdmittedWriteBlock(IO_GX_GPU_GP0), "the admitted DMA burst has not completed early");
+			require(!gpu.captureState().supervisorIngressQuiesceRequested, "GPU quiescence waits for the admitted bus work");
+			require(!gpu.backendServicePending() && gpu.readDeviceOutput().commandBuffer.commandCount == 0,
+				"unpublished DMA data cannot request backend execution");
+			scheduler.runDevicesToNextLogicalTick(runtime, 1);
+			require(!dma.hasAdmittedWriteBlock(IO_GX_GPU_GP0), "the last bus cycle releases the admitted burst");
+		}
+		const auto completion = gpu.captureState().pendingCommandCycles;
+		require(completion > 1, "the fill has a future command deadline");
+		scheduler.runDevicesToNextLogicalTick(runtime, completion - 1);
+		require(!gpu.backendServicePending() && system.cpuHeld(), "accepted drawing does not complete early at quiescence");
+		scheduler.runDevicesToNextLogicalTick(runtime, 1);
+		const auto completedAt = runtime.machine.scheduler.nowCycles();
+		require(gpu.readDeviceOutput().commandBuffer.commandCount == 1 && gpu.backendCommandDrainPending(),
+			"one completed command is sufficient at the GPU boundary");
+		scheduler.runDevicesToNextLogicalTick(runtime, 19);
+		require(runtime.machine.scheduler.nowCycles() == completedAt, "backend latency does not spend guest cycles");
+		unsigned drains = 0;
+		while (gpu.backendServicePending()) {
+			require(gpu.backendCommandDrainPending(), "the live host service loop selects the completed command prefix");
+			backend.executeGxGpuCommandDrain(gpu);
+			++drains;
+		}
+		require(drains == 1, "the completed subcapacity prefix is submitted once");
+		scheduler.synchronizeBackendService(runtime);
+		scheduler.runDevicesToNextLogicalTick(runtime, 0);
+		require(!system.cpuHeld() && system.supervisorContextActive(), "service releases supervisor context entry");
+		require(runtime.machine.scheduler.nowCycles() == completedAt + 19, "only the retained grant resumes");
+		require(scheduler.lastTickSequence == 0, "supervisor entry does not wait for presentation");
+		backend.captureGxGpuVramSnapshot(gpu);
+		require(gpu.readVramSnapshotBytes()[0] == 31, "the actual backend executes the completed fill before takeover");
+
+		// LEAVE has the same GPU boundary for supervisor work.
+		for (const u32 word : {0x0200ff00u, 0u, 0x00020010u}) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+		memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+		const auto leaveCycles = gpu.captureState().pendingCommandCycles;
+		scheduler.runDevicesToNextLogicalTick(runtime, leaveCycles + 1);
+		require(gpu.backendCommandDrainPending() && system.cpuHeld(), "LEAVE also waits for completed supervisor drawing");
+		while (gpu.backendServicePending()) backend.executeGxGpuCommandDrain(gpu);
+		scheduler.synchronizeBackendService(runtime);
+		scheduler.runDevicesToNextLogicalTick(runtime, 0);
+		require(!system.supervisorContextActive(), "backend service releases the return to USER");
+		backend.captureGxGpuVramSnapshot(gpu);
+		require(readLE32(gpu.readVramSnapshotBytes().data()) == 0x03e003e0, "supervisor pixels persist in shared VRAM");
+	}
+}
+
+void testSupervisorServiceBanksUnreadReadback() {
+	using namespace bmsx;
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& gpu = runtime.machine.gxGpu;
+	auto& memory = runtime.machine.memory;
+	auto& system = runtime.machine.systemController;
+	auto& scheduler = runtime.frameScheduler;
+	SoftwareBackend backend(16, 2, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	std::vector<u8> bytes(PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const std::array<u8, 10> samples{0x11, 0x11, 0x22, 0x22, 0x33, 0x33, 0x44, 0x44, 0x55, 0x55};
+	std::copy(samples.begin(), samples.end(), bytes.begin());
+	gpu.replaceVramSnapshotBytes(bytes);
+	for (const u32 word : {0xc0000000u, 0u, 0x00010005u}) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+	const auto completion = gpu.captureState().pendingCommandCycles;
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+	scheduler.runDevicesToNextLogicalTick(runtime, completion + 9);
+	auto& readback = gpu.readDeviceOutput().readbackPort;
+	require(readback.phase() == GX_GPU_READBACK_PENDING && !gpu.backendCommandDrainPending(),
+		"readback must produce its bytes before retirement");
+	unsigned readbacks = 0, drains = 0;
+	while (gpu.backendServicePending()) {
+		if (gpu.backendCommandDrainPending()) {
+			require(readback.phase() == GX_GPU_READBACK_READY && readback.pixelCursor() == 0,
+				"retirement must not consume guest pixels");
+			backend.executeGxGpuCommandDrain(gpu);
+			++drains;
+		} else {
+			backend.executeGxGpuReadback(gpu);
+			++readbacks;
+		}
+	}
+	require(readbacks == 1 && drains == 1, "the ordinary service loop completes and retires the readback fence once");
+	scheduler.synchronizeBackendService(runtime);
+	scheduler.runDevicesToNextLogicalTick(runtime, 0);
+	require(!system.cpuHeld() && readback.phase() == GX_GPU_READBACK_IDLE, "supervisor starts with empty active readback");
+	const auto state = gpu.captureState();
+	require(state.userIngressContext.readbackPhase == GX_GPU_READBACK_READY && state.userIngressContext.readbackPixelCursor == 0,
+		"USER retains all completed unread pixels at context entry");
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+	scheduler.runDevicesToNextLogicalTick(runtime, 1);
+	require(!system.supervisorContextActive() && readback.phase() == GX_GPU_READBACK_READY, "LEAVE restores the completed USER result");
+	require(memory.readMappedU32LE(IO_GX_GPU_GP0) == 0x22221111u, "the first unread pixel pair is unchanged");
+	require(memory.readMappedU32LE(IO_GX_GPU_GP0) == 0x44443333u, "the next unread pair is unchanged");
+	require(memory.readMappedU32LE(IO_GX_GPU_GP0) == 0x5555u, "the odd final pixel is unchanged");
+	require(readback.phase() == GX_GPU_READBACK_IDLE && scheduler.lastTickSequence == 0,
+		"only guest reads consume the result, without a presentation edge");
+}
+
 void testBusyCpuBudgetAtVblank() {
 	bmsx::test::Blua32TestImage image;
 	image.text.resize(bmsx::INSTRUCTION_BYTES);
@@ -95,6 +269,18 @@ void testBusyCpuBudgetAtVblank() {
 	require(scheduler.lastTickBudgetGranted - scheduler.lastTickCpuUsedCycles == scheduler.lastTickBudgetRemaining,
 		"VBlank reads the consumed CPU budget before carrying the remainder");
 	require(scheduler.lastTickCpuUsedCycles == runtime.machine.scheduler.nowCycles(), "busy CPU cycles match machine time");
+#if defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	const auto timed = runtime.machine.scheduler.diagnosticCpuTiming;
+	require(timed.slices > 0 && timed.consumedCycles == scheduler.lastTickCpuUsedCycles,
+		"CPU timing charges actual busy-loop consumption, not the granted budget");
+	require(timed.wallNanoseconds > 0 && timed.threadNanoseconds > 0,
+		"busy execution is measured by both Linux clocks");
+#endif
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	require(runtime.machine.scheduler.diagnosticCpuSliceCount > 0
+		&& runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles == scheduler.lastTickCpuUsedCycles,
+		"CPU-slice diagnostics account for the busy loop's execution");
+#endif
 	require(scheduler.captureState().carriedCycleBudget == scheduler.lastTickBudgetRemaining, "only unspent cycles carry");
 
 	const auto before = runtime.machine.scheduler.nowCycles();
@@ -112,6 +298,141 @@ void testBusyCpuBudgetAtVblank() {
 		"instruction stepping updates the same budget owner");
 }
 
+void testDmaSharedBusStopsCpu() {
+	using namespace bmsx;
+	test::Blua32TestImage image;
+	image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMP), 0, 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0, 0);
+	image.functions.push_back({.firstWord = 0, .wordCount = 2});
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	TickInputSource input;
+	Runtime runtime({system.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	auto& memory = runtime.machine.memory;
+	auto& cpu = runtime.machine.cpu;
+	auto& dma = runtime.machine.dmaController;
+	const u32 source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
+	memory.writeMappedU32LE(source, 0x12345678);
+	memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
+	memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, target);
+	memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 256);
+	memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000000);
+	memory.writeMappedU32LE(IO_DMA0_TRIGGER, 1);
+	const int depth = static_cast<int>(cpu.activeThread()->frameDepth) - 1;
+	const u32 pc = cpu.readFramePc(depth);
+	require(dma.captureState().scheduledBlockCycles == 514, "both serial RAM sides occupy 257 bus cycles");
+	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 513);
+	require(cpu.readFramePc(depth) == pc && dma.cpuBusHeld(), "CPU instructions wait while DMA owns the bus");
+	require(memory.readMappedU32LE(target) == 0, "block data is not published early");
+	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 1);
+	require(memory.readMappedU32LE(target) == 0x12345678 && !dma.cpuBusHeld(), "DMA publishes data then releases the bus");
+	require(cpu.readFramePc(depth) == pc, "no instruction is charged to the final DMA cycle");
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	require(runtime.machine.scheduler.diagnosticCpuSliceCount == 0
+		&& runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles == 0,
+		"CPU-slice diagnostics exclude all 514 DMA-held cycles");
+#endif
+	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 1);
+	require(cpu.readFramePc(depth) != pc, "CPU instruction execution resumes after the burst");
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	std::fprintf(stderr, "DMA boundary CPU diagnostics: slices=%llu consumed=%lld native_origin=%lld interpreter_runtime=%lld\n",
+		static_cast<unsigned long long>(runtime.machine.scheduler.diagnosticCpuSliceCount),
+		static_cast<long long>(runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles),
+		static_cast<long long>(runtime.machine.scheduler.diagnosticNativeOriginCycles),
+		static_cast<long long>(runtime.machine.scheduler.diagnosticInterpreterRuntimeCycles));
+	require(runtime.machine.scheduler.diagnosticCpuSliceCount == 1
+		&& runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles == BASE_CYCLES[static_cast<size_t>(OpCode::JMP)],
+		"CPU-slice diagnostics count only the resumed instruction");
+	require(runtime.machine.scheduler.diagnosticNativeOriginCycles
+		+ runtime.machine.scheduler.diagnosticInterpreterRuntimeCycles
+		== runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles,
+		"the resumed instruction's backend charges exclude all DMA-held time");
+#endif
+}
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void testWarmedGeneratedDmaSharedBus() {
+	using namespace bmsx;
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	for (u8 word = 0; word < 5; ++word) {
+		writeInstruction(image.text, word, static_cast<u8>(OpCode::STORE_MEM_D), word, 5,
+			static_cast<u8>(MemoryAccessKind::U32LE), word == 4 ? 5 : word);
+	}
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::LOAD_MEM), 7, 1, static_cast<u8>(MemoryAccessKind::U32LE));
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::ADD), 6, 6, 4);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::JMP), 0, 63, 56, 255); // -8 words
+	image.functions.push_back({.firstWord = 0, .wordCount = 8, .maxStack = 8});
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	TickInputSource generatedInput, referenceInput;
+	Runtime generated({system.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, generatedInput);
+	Runtime reference({system.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, referenceInput);
+	generated.boot(); reference.boot();
+	// The existing observation route is the scalar C++ reference, not another native cache.
+	reference.machine.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
+		nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+	const std::array<Runtime*, 2> runtimes{&generated, &reference};
+	const u32 source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
+	const u32 entry = system.textAddress;
+	constexpr int warmBursts = NATIVE_BLOCK_COMPILATION_THRESHOLD + 8;
+	for (auto* runtime : runtimes) {
+		auto& frame = *runtime->machine.cpu.activeThread()->frameAtDepth(0);
+		const std::array<u32, 8> values{source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0};
+		for (size_t index = 0; index < values.size(); ++index) frame.registers.set(index, valueInteger(values[index]));
+		for (u32 word = 0; word < 256; ++word) runtime->machine.memory.writeMappedU32LE(source + word * 4, 0x12340000 + word);
+		// Five MMIO stores, 514 bus cycles, then load/add/backedge.
+		const int loopCycles = 5 * BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_D)] + 514
+			+ BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
+			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+		runtime->frameScheduler.runCyclesToNextLogicalTick(*runtime, warmBursts * loopCycles);
+		require(frame.pc == entry && frame.registers.get(6) == valueInteger(warmBursts), "the real DMA loop warms through its admitted bursts");
+	}
+	auto& generatedFrame = *generated.machine.cpu.activeThread()->frameAtDepth(0);
+	const auto& page = *generatedFrame.decodedPage;
+	const u32 triggerWord = ((entry & MAPPED_PAGE_BYTE_MASK) >> 2u) + 4u;
+	test::waitForNativeEntry(generated.machine.cpu, page, triggerWord);
+	require(page.nativeBlocks && page.nativeBlocks->entries[triggerWord] && page.nativeCode[triggerWord],
+		"the DMA trigger has a warmed native entry before the exclusion probes");
+	const auto& trigger = *page.nativeBlocks->entries[triggerWord];
+	require(std::any_of(trigger.sideExits.begin(), trigger.sideExits.end(), [entry](const auto& exit) {
+		return exit.exit == NativeBlockExit::WriteMemory && exit.currentPc == entry + 16;
+	}), "the generated trigger retains the actual MMIO owner exit");
+	require(!reference.machine.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks,
+		"the reference remains interpreter-only");
+	const auto run = [&](i64 grant) {
+		for (auto* runtime : runtimes) runtime->frameScheduler.runCyclesToNextLogicalTick(*runtime, grant);
+		require(encodeRuntimeSaveState(captureRuntimeSaveState(generated)) == encodeRuntimeSaveState(captureRuntimeSaveState(reference)),
+			"generated and scalar machines agree at the same DMA boundary");
+	};
+	for (u32 iteration = 0; iteration < 2; ++iteration) {
+		for (auto* runtime : runtimes) for (u32 word = 0; word < 256; ++word) {
+			runtime->machine.memory.writeMappedU32LE(source + word * 4, 0x43210000 + iteration * 256 + word);
+			runtime->machine.memory.writeMappedU32LE(target + word * 4, 0);
+		}
+		run(5 * BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_D)] + 1); // TRIGGER yields before the following load.
+		auto& memory = generated.machine.memory;
+		auto& dma = generated.machine.dmaController;
+		require(generatedFrame.pc == entry + 20 && generatedFrame.registers.get(6) == valueInteger(warmBursts + iteration),
+			"the generated DMA-trigger store yields before its following load or counter update");
+		require(dma.cpuBusHeld() && dma.captureState().scheduledBlockCycles == 513, "the real DMA owns the remaining bus interval");
+		run(512);
+		require(generatedFrame.pc == entry + 20 && dma.cpuBusHeld(), "native execution stays excluded until burst completion");
+		for (u32 word = 0; word < 256; ++word) require(memory.readMappedU32LE(target + word * 4) == 0, "no DMA word is published early");
+		run(1);
+		require(generatedFrame.pc == entry + 20 && !dma.cpuBusHeld(), "the final DMA cycle cannot also execute the continuation");
+		for (u32 word = 0; word < 256; ++word) require(memory.readMappedU32LE(target + word * 4) == 0x43210000 + iteration * 256 + word,
+			"the completed burst publishes every raw source word");
+		run(BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
+			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)]);
+		require(generatedFrame.pc == entry && generatedFrame.registers.get(6) == valueInteger(warmBursts + 1 + iteration), "generated execution resumes exactly once after bus release");
+		require(generatedFrame.registers.get(7) == valueInteger(0x43210000 + iteration * 256), "the resumed load observes DMA output");
+	}
+}
+#endif
+
 void testDeviceSettlementRetainsCpuStop() {
 	TickRuntimeFixture fixture;
 	auto& runtime = fixture.runtime;
@@ -120,17 +441,22 @@ void testDeviceSettlementRetainsCpuStop() {
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
 	auto* thread = cpu.activeThread();
-	const auto depth = thread->frames.size();
-	const auto pc = thread->frames.back()->pc;
+	const auto depth = thread->frameDepth;
+	const auto pc = thread->currentFrame->pc;
 	const auto stackTop = thread->stackTop;
 	require(!scheduler.runDevicesToNextLogicalTick(runtime, 19), "partial device grant stops before VBlank");
 	require(runtime.machine.scheduler.nowCycles() == 19, "devices consume the exact partial grant");
 	require(scheduler.runDevicesToNextLogicalTick(runtime, runtime.timing.cycleBudgetPerFrame), "device timers reach the real video edge");
 	require(scheduler.lastTickSequence == 1 && fixture.input.sampleCount == 1, "VBlank publishes its ordinary tick and input sample");
 	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0, "VBlank latches its pending IRQ");
-	require(cpu.activeThread() == thread && thread->frames.size() == depth && thread->frames.back()->pc == pc && thread->stackTop == stackTop,
+	require(cpu.activeThread() == thread && thread->frameDepth == depth && thread->currentFrame->pc == pc && thread->stackTop == stackTop,
 		"device settlement neither executes the stopped CPU nor enters its pending interrupt");
 	require(scheduler.lastTickCpuUsedCycles == 0, "device cycles are not CPU execution");
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	require(runtime.machine.scheduler.diagnosticCpuSliceCount == 0
+		&& runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles == 0,
+		"device settlement does not manufacture CPU-slice consumption");
+#endif
 	require(scheduler.lastTickBudgetGranted - scheduler.lastTickBudgetRemaining == runtime.machine.scheduler.nowCycles(), "only unspent device budget carries");
 }
 
@@ -604,6 +930,25 @@ void testNormalHostExecutionKeepsExistingSchedulerContract() {
 	);
 }
 
+void testGpuRawExtensionWordCodec() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	for (const bmsx::u32 word : {0x600000ffu, 0u, 0x00010001u}) runtime.machine.gxGpu.writeGp0(word);
+	auto state = bmsx::captureRuntimeSaveState(runtime);
+	auto& gpu = state.machineState.machine.gxGpu;
+	require(!gpu.commandBuffer.commandVramYAddressExtensionWord.empty(), "rectangle is present in the saved command stream");
+	gpu.commandBuffer.commandVramYAddressExtensionWord[0] = 0xfedcba98u;
+	gpu.commandBuffer.readbackVramYAddressExtensionWord = 0x100u;
+	gpu.userIngressContext.readbackVramYAddressExtensionWord = 0x80000000u;
+	const auto bytes = bmsx::encodeRuntimeSaveState(state);
+	const auto decoded = bmsx::decodeRuntimeSaveState(bytes, bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const auto& actual = decoded.machineState.machine.gxGpu;
+	require(actual.commandBuffer.commandVramYAddressExtensionWord[0] == 0xfedcba98u
+		&& actual.commandBuffer.readbackVramYAddressExtensionWord == 0x100u
+		&& actual.userIngressContext.readbackVramYAddressExtensionWord == 0x80000000u,
+		"the native codec preserves full raw extension words in command, readback and user ingress state");
+}
+
 void testRuntimeCheckpointStorage() {
 	TickRuntimeFixture fixture(bmsx::CartridgeSocketMediaPair{{
 		bmsx::CartridgeCardMedia{std::nullopt, 12u, true},
@@ -1055,6 +1400,14 @@ void testRuntimeResetNotification() {
 }
 
 int main() {
+	testRuntimeRestoreRearmsCpuGp0Wait();
+	testGpuRawExtensionWordCodec();
+	testSupervisorGpuServiceAtDeviceBoundaries();
+	testSupervisorServiceBanksUnreadReadback();
+	testDmaSharedBusStopsCpu();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	testWarmedGeneratedDmaSharedBus();
+#endif
 	testDeviceSettlementRetainsCpuStop();
 	testDeviceSettlementBackendFence();
 	testBusyCpuBudgetAtVblank();

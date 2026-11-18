@@ -4,8 +4,8 @@ The BIOS supplies functions for value checks, numeric and text conversion,
 Table traversal, argument selection, global-name access and console output.
 Use the installed global names directly after normal BIOS startup.
 
-This chapter covers sixteen base functions, including direct Table access and
-metatable selection. [Protected calls and coroutines](coroutines.md#sec-coroutines)
+This chapter covers the base functions, including direct Table access,
+metatable selection and allocation-pool management. [Protected calls and coroutines](coroutines.md#sec-coroutines)
 specifies `error`, `pcall` and `xpcall`. Device registers and retained fault
 words are described in [[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"}.
 
@@ -21,6 +21,7 @@ Choose the operation according to the representation being used:
 | Access a global by a computed name | `getglobal(name)`, `setglobal(name, value)` | These select ordinary global bindings, not keys in a global-environment Table. |
 | Read or write a Table's own mapping | `rawget`, `rawset` | Bypasses inherited reads; see [Table and metatable access](#sec-bios-base-table-and-metatable-access). |
 | Inspect or set a Table's metatable | `getmetatable`, `setmetatable` | The supported inherited-read and weak-reference rules are in the [CPU reference](cpu.md#sec-cpu-metatables-and-indexed-reads). |
+| Inspect or advance collection | `collectgarbage(option)` | Counts the language-allocation budget, not addressable RAM or video memory. A step is not a guaranteed maximum pause. |
 
 ## Installed program environment {#sec-bios-base-installed-program-environment}
 
@@ -40,7 +41,7 @@ The base installation provides these public names:
 - `next`, `type`, `setmetatable`, `getmetatable`, `rawget`, `rawset`;
 - `getglobal`, `setglobal`, `select`;
 - `error`, `pcall`, `xpcall`, `assert`;
-- `rawequal`, `tostring`, `tonumber`, `print`, `ipairs`, `pairs`.
+- `rawequal`, `tostring`, `tonumber`, `print`, `ipairs`, `pairs`, `collectgarbage`.
 
 This is the base installation inventory, not a restriction on names that a program or module may introduce. The entries below give the base-function contracts; [name-based global access](#sec-bios-base-getglobalname-and-setglobalname-value) selects bindings during execution.
 
@@ -73,6 +74,39 @@ reads the current global `next`; `print` reads current `select` and `tostring`;
 String method lookup uses the installed String-index Table. Reassigning the
 `string` global leaves that method Table in place. The routine references
 describe any further dependency relevant to replacing an installed binding.
+
+## Allocation-pool management {#sec-bios-base-collectgarbage}
+
+Use `collectgarbage(option)` to observe the shared language-allocation pool or
+advance reclamation at a convenient point, such as a loading screen. Automatic
+collection continues without these calls.
+
+| Option | Operation and single result |
+| --- | --- |
+| Omitted, nil or `'collect'` | Finish an active cycle, then complete one fresh cycle; return `0`. |
+| `'count'` | Return occupied budget in KiB, including unreachable allocations not yet reclaimed. |
+| `'capacity'` | Return total language-allocation capacity in KiB. This does not include addressable RAM or VRAM. |
+| `'step'` | Perform one incremental step, starting a cycle if idle. Return true if that step finishes the cycle, false otherwise. |
+
+One KiB is 1,024 bytes; fractional KiB are retained. Counts use the canonical
+allocation sizes in the [CPU reference](cpu.md#sec-cpu-collection-work-charge),
+not the size or number of user fields alone. Reading a count does not collect.
+An unlisted option raises an error. The service captures its collection and
+error primitives when installed; replacing public bindings does not alter them.
+
+```lua
+local occupied_kib = collectgarbage('count')
+local capacity_kib = collectgarbage('capacity')
+local cycle_finished = collectgarbage('step')
+```
+
+A step targets 4,096 work cycles, but one large object or the final atomic
+remark can exceed that target. It is not a display-frame wait or a promise to
+finish within a fixed time. Full collection is synchronous and is best kept
+out of time-critical play. Both explicit forms consume the work cycles they
+perform; they do not make reclamation free. Each underlying collection-control
+primitive call adds 4 cycles beyond `CALL`, with ordinary result-placement
+charges. Count and capacity use that primitive without collection work.
 
 ## Value checks and conversion {#sec-bios-base-value-checks-and-conversion}
 
@@ -168,7 +202,7 @@ An omitted argument converts as nil; surplus arguments are ignored.
 | Negative infinity | `-inf` |
 | Positive infinity | `inf` |
 
-The category words are literal text, not addresses, names, or structural dumps. Number conversion uses the CPU chapter's **default Number-to-String formatter**. Positive and negative zero are preserved as `0` and `-0`; exact integer magnitudes strictly below `1000000` use the formatter's integer shortcut. Consult that formatter's contract for finite normalization and rounding. `tostring` has no formatting argument and does not offer a precision or notation selector.
+The category words are literal text, not addresses, names, or structural dumps. Number conversion uses the CPU chapter's **default Number-to-String formatter**. An Integer is written exactly in signed decimal. Float positive and negative zero are `0.0` and `-0.0`; finite nonzero Floats use the formatter's seven-significant-digit rule. `tostring` has no formatting argument and does not offer a precision or notation selector.
 
 ### `tonumber(value [, base])` {#sec-bios-base-tonumbervalue-base}
 
@@ -210,7 +244,7 @@ The decimal form may end with an exponent introduced by `e` or `E`. The exponent
 
 #### Explicit-base String form {#sec-bios-base-explicit-base-string-form}
 
-The supported bases are integer Numbers from `2` through `36`, inclusive. After leading whitespace and an optional sign, this form reads one or more digits valid for that base, then permits only trailing whitespace and the end of the String. It does not accept a fractional point or provide a separate exponent syntax.
+The supported bases are Numbers with exact integral values from `2` through `36`, inclusive. After leading whitespace and an optional sign, this form reads one or more digits valid for that base, then permits only trailing whitespace and the end of the String. It does not accept a fractional point or provide a separate exponent syntax.
 
 No prefix is stripped in the explicit-base form. In particular, selecting base sixteen does not give `0x` or `0X` special treatment: their characters are processed by the same digit rules as every other character. Letters such as `e` are digits when their values fit the chosen base, not exponent markers. Use the default form, rather than an explicit base, when requesting decimal fractions or decimal exponents.
 
@@ -225,16 +259,36 @@ For a nonnil base, the installed function performs these operations in order:
 4. Parse the String using that base, returning a Number or `nil`.
 
 Supply the base as a Number. The String-value check precedes its arithmetic
-and range checks; a numeric String supplied as the base fails the integer
-comparison. Error reporting uses the current global `error`, and kind checks
-use current `type`. [Protected calls](coroutines.md#sec-coroutines) receive a raised value.
+and range checks; floor division of a non-Number base raises
+`INVALID_ARGUMENT`, including for a numeric String. Error reporting uses the
+current global `error`, and kind checks use current `type`.
+[Protected calls](coroutines.md#sec-coroutines) receive a raised value.
 
 
 #### Arithmetic and execution cost {#sec-bios-base-arithmetic-and-execution-cost}
 
-The explicit-base parser accumulates each digit as `value * base + digit`, using Number arithmetic. Decimal integer accumulation starts at `0` and processes digits left to right as `value = value * 10 + digit`. Fractional scanning starts with divisor `10`; each digit contributes `digit / divisor` to the current value, after which the divisor is multiplied by `10`. It does not collect all fractional digits for one final division. Exponent magnitude likewise starts at `0` and accumulates left to right as `exponent = exponent * 10 + digit`. Its signed magnitude controls repeated multiplication or division by ten, changing the exponent by one step each time. After scaling and successful trailing-whitespace/end validation, the decimal parser applies the leading sign as `sign * value`. These successive operations are not a single ideal decimal conversion: rounding and range behavior follow the arithmetic actually performed. Exponent scaling has no iteration cap or finite-value rejection. Very large parsed exponents do not carry a termination or bounded-running-time guarantee.
+The default decimal form returns an Integer when its spelling has neither a
+decimal point nor an exponent and its signed value fits the Integer range.
+Otherwise it returns a Float: round the signed mathematical decimal value
+directly to binary32, to nearest with ties to even. A magnitude beyond the
+Float range rounds to infinity, and underflow retains the sign of zero. For
+example, `tonumber('-2147483648')` is the minimum Integer,
+`tonumber('2147483648')` is a Float, and `tonumber('-0.0')` is Float negative
+zero. The sign belongs to this String conversion; it is not a separate source
+unary operator.
 
-There is no fixed total cycle count for `assert`, `rawequal`, `tostring`, or `tonumber`: their executed operations, result handling, conversions, and parsing work contribute to the cost. `type` adds one cycle, separate from call and return instruction costs, with no additional per-argument or per-result charge.
+The default prefixed hexadecimal form and the explicit-base form return an
+Integer formed from the low 32 bits of the signed mathematical result. For
+example, `tonumber('0xffffffff')` and `tonumber('ffffffff', 16)` both return
+Integer −1. The conversion and its result subtype do not depend on how many
+digits were needed to spell that word.
+
+There is no fixed total cycle count for `assert`, `rawequal`, `tostring`, or
+`tonumber`: their executed operations, result handling, conversions and parsing
+work contribute to the cost. The String-codepoint primitive adds two cycles;
+Float word transfers use the two-cycle numeric word moves. Primitive charges
+are separate from ordinary call and return costs. `type` adds one cycle with no additional
+per-argument or per-result charge.
 
 ## Table and metatable access {#sec-bios-base-table-and-metatable-access}
 
@@ -253,7 +307,7 @@ All four functions below require a Table as their first argument; otherwise they
 
 
 For `rawget` and `rawset`, a nil key raises `INDEX_NIL` (4). `rawset` uses the
-ordinary [stored-length mutation rules](cpu.md#sec-cpu-stored-length).
+ordinary [Table-length boundary rules](cpu.md#sec-cpu-table-length).
 
 
 ## Traversal, argument selection, globals, and output {#sec-bios-base-traversal-argument-selection-globals-and-output}
@@ -273,7 +327,8 @@ A successful step returns exactly two results, `(key, value)`. Array keys are Nu
 
 Use the returned key to continue traversal of the same Table. An array key
 within the current capacity resumes after that slot even if its value has
-become nil. An unrecognized non-array continuation key ends traversal.
+become nil. An unrecognized non-array continuation key raises `INVALID_NEXT_KEY`
+(11), with the message `invalid key to 'next'`.
 Existing fields may be changed or set to nil during traversal. A returned key
 remains a valid continuation after its mapping is removed, and removing an
 entry does not cause unrelated entries to be skipped. Do not add previously
@@ -281,6 +336,16 @@ absent fields during a traversal: insertion may reorganize the Table's storage
 and changes which entries subsequent steps visit.
 
 `next` visits stored entries, not values supplied by inherited ordinary indexing. Its returned key is also the continuation control for a subsequent step. Test that key for nil when detecting exhaustion: false is not an exhaustion marker.
+
+The traversal examines array positions after the supplied continuation, then
+hash positions. Each examined array position costs one additional cycle;
+each examined hash position costs two, for its key and value. Empty and deleted
+positions count, and a successful step includes the returned position. Exhaustion
+pays for all positions examined before reaching the end. An invalid continuation
+faults without examining any following positions or producing a result tuple.
+This is the same one-cycle-per-Value-slot cadence used for Table initialization.
+The step completes, including its result tuple and traversal charge, before the
+next instruction begins or a pending interrupt is accepted.
 
 ### `pairs(target)` {#sec-bios-base-pairstarget}
 
@@ -375,9 +440,9 @@ For a comparison of the resulting text and monitor display, see
 
 ### Faults and incremental cycle charges {#sec-bios-base-faults-and-incremental-cycle-charges}
 
-Keep iterator construction separate from iterator execution when handling errors. `next` checks its Table argument when called. `pairs` and `ipairs` construct their triples without checking the target; faults arise when their iterators attempt their respective traversal or indexing operations. The primitive argument faults used here have the messages `Attempted to iterate a non-table value.` and `Invalid argument.` as specified above. Ordinary indexing and calls retain their own failure behavior. See [Protected calls and coroutines](coroutines.md#sec-coroutines) for receiving failures.
+Keep iterator construction separate from iterator execution when handling errors. `next` checks its Table argument and continuation key when called. `pairs` and `ipairs` construct their triples without checking the target; faults arise when their iterators attempt their respective traversal or indexing operations. The primitive argument faults used here have the messages `Attempted to iterate a non-table value.`, `invalid key to 'next'`, and `Invalid argument.` as specified above. Ordinary indexing and calls retain their own failure behavior. See [Protected calls and coroutines](coroutines.md#sec-coroutines) for receiving failures.
 
-Each invocation of `next`, `select`, `getglobal`, or `setglobal` adds **one cycle**, with no additional per-argument or per-result charge. This increment is separate from call and return instructions and the surrounding operation. `pairs`, `ipairs`, and `print` execute ordinary instructions, including their calls, branches, indexing, conversion, and console work. The one-cycle increment is not their total call cost. See [[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} for the execution and timing model.
+Each invocation of `next`, `select`, `getglobal`, or `setglobal` adds **one base cycle**, with no additional per-argument or per-result charge from these primitives. `next` also pays for the positions examined as specified under [Table traversal](#sec-bios-base-nexttable-key). These increments are separate from call and return instructions and their value-placement charges. `pairs`, `ipairs`, and `print` execute ordinary instructions, including their calls, branches, indexing, conversion, and console work. The one-cycle increment is not their total call cost. See [[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} for the execution and timing model.
 
 ## Programming examples {#sec-bios-base-programming-examples}
 

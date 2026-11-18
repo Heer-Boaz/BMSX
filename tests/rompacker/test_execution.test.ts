@@ -33,6 +33,7 @@ import { readSupervisorFaultReport } from '../../ide/runtime/fault_state';
 const source = `
 return {
  kind = 'unit',
+ phase_cycles = { long_budget = 200000 },
  setup = function(t, fixture) fixture.count = 9 end,
  teardown = function(t, fixture) assert(fixture.count == 10); t:log('cleanup') end,
  tests = {
@@ -41,12 +42,14 @@ return {
    cleanup_failure = function(t, fixture) error('body failure') end,
    timeout = function(t, fixture) while true do fixture.count = 10 end end,
    unit_wait = function(t, fixture) fixture.count = 10; t:wait_ticks(1) end,
+   short_budget = function(t, fixture) for i=1,5000 do fixture.count = 10 end end,
+   long_budget = function(t, fixture) for i=1,5000 do fixture.count = 10 end end,
  },
 }`;
 
 for (const optLevel of [0, 3] as const) {
 for (const workload of ['GEO', 'GPU'] as const)
-test(`O${optLevel}: a fixture drains a held ${workload} fault boundary with bounded device grants before reporting the physical fault`, async () => {
+test(`O${optLevel}: a fixture drains a held ${workload} fault boundary with bounded device/backend service before reporting the physical fault`, async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-fixture-fault-drain-'));
 	const resumed = DYNAMIC_RAM_BASE + 0x4000;
 	try {
@@ -112,6 +115,7 @@ mem[${resumed}] = 2`,
 			assert.notEqual(cpu.readExceptionReturnFrameDepth(), -1);
 			assert.equal(readSupervisorFaultReport(runtime), undefined);
 			const frameState = runtime.frameLoop.captureState(), pc = cpu.readCurrentInstructionPc();
+			const gpuCommands = machine.gxGpu.readDeviceOutput().commandBuffer.executedCommandCount;
 			let advanced = 0;
 			for (let grant = 0; execution.active && machine.systemController.cpuHeld() && grant < 1000; grant++) {
 				target.serviceBackend();
@@ -125,7 +129,11 @@ mem[${resumed}] = 2`,
 				advanced += consumed;
 			}
 			assert.equal(machine.systemController.cpuHeld(), false, 'bounded device grants finish supervisor quiescence');
-			assert.ok(advanced > 0, 'quiescence advances to a future hardware deadline');
+			if (workload === 'GEO') assert.ok(advanced > 0, 'unfinished geometry advances to its hardware deadline');
+			else {
+				assert.ok(gpuCommands > 0, 'completed GPU commands still await actual backend execution');
+				assert.equal(machine.gxGpu.readDeviceOutput().commandBuffer.commandCount, 0, 'backend service retires the real command fence');
+			}
 			assert.deepEqual(runtime.frameLoop.captureState(), frameState, 'fixture grants preserve the game frame owner');
 			for (let grant = 0; execution.active && grant < 1000; grant++) execution.advance();
 			assert.equal(execution.active, false);
@@ -170,9 +178,9 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 			for (let grant = 0; execution.active && grant < 10000; grant += 1) execution.advance();
 			assert.equal(execution.active, false);
 			assert.equal(target.runtime.frameScheduler.lastTickSequence, 0, 'unit execution requires no game ticks');
-			if (index === 0) {
+			if (index === 0 || index === 6) {
 				assert.equal(result.state, 'passed', JSON.stringify(result.failures));
-				assert.deepEqual([result.logs.at(0).text, result.logs.at(1).text], ['body', 'cleanup']);
+				if (index === 0) assert.deepEqual([result.logs.at(0).text, result.logs.at(1).text], ['body', 'cleanup']);
 			} else {
 				assert.equal(result.state, 'failed');
 				assert.equal(result.failures[0].phase, 'body');
@@ -182,7 +190,7 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 					assert.equal(result.logs.at(0).text, 'cleanup');
 					assert.ok(target.runtime.machine.cpu.captureRuntimeState().threads.some(thread => thread.status === ThreadStatus.Failed && thread.frames.length > 0));
 				} else if (index === 2) assert.deepEqual(result.failures.map(failure => failure.phase), ['body', 'teardown']);
-				else if (index === 3) {
+				else if (index === 3 || index === 5) {
 					assert.match(result.failures[0].message, /cycle budget/);
 					const inspection = execution.inspect();
 					const failure = inspection.state.failures[0];
@@ -199,8 +207,8 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 			execution.dispose();
 		}
 		results.completeRun(run);
-		assert.equal(run.passedCount, 1);
-		assert.equal(run.failedCount, 4);
+		assert.equal(run.passedCount, 2);
+		assert.equal(run.failedCount, 5);
 		const setupSource = `return { kind = 'unit',
  setup = function(t, fixture) fixture.started = true; error('setup failed') end,
  teardown = function(t, fixture) assert(fixture.started); error('cleanup failed') end,

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import * as v from '../../machine/ts/machine/cpu/value';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/event_history';
@@ -43,7 +43,7 @@ return data.health`, { optLevel, modules: renamed ? [{
 	assert.deepEqual(events.at(2).payload, { kind: 'nil' });
 	const data = events.at(0).payload;
 	assert.ok(data.kind === 'table');
-	assert.deepEqual(data.entries.find(entry => entry.key.kind === 'string' && entry.key.value === 'health')!.value, { kind: 'number', value: 9 });
+	assert.deepEqual(data.entries.find(entry => entry.key.kind === 'string' && entry.key.value === 'health')!.value, { kind: 'integer', value: 9 });
 	assert.deepEqual(data.entries.find(entry => entry.key.kind === 'string' && entry.key.value === 'self')!.value, { kind: 'reference', id: data.id });
 });
 
@@ -51,14 +51,14 @@ test('automatic history wraps and survives pane closure and debugger reconfigura
 	const { cpu, runtime, sources } = eventHistoryRuntime(compileEventHistoryFixture());
 	const events = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
 	cpu.runUntilDepth(0, BUDGET);
-	const fn = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
+	const fn = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), cpu.gc);
 	const pane = new EventViewerInput(events), projection = pane.projection;
-	cpu.beginCompletionCall(fn, [1]); cpu.runUntilDepth(0, BUDGET);
+	cpu.beginCompletionCall(fn, [v.valueInteger(1)]); cpu.runUntilDepth(0, BUDGET);
 	const first = events.at(0);
 	projection.update(events, 'fixture');
 	assert.equal(projection.rows.length, 1);
 	pane.dispose();
-	cpu.beginCompletionCall(fn, [events.capacity + 3]); cpu.runUntilDepth(0, BUDGET);
+	cpu.beginCompletionCall(fn, [v.valueInteger(events.capacity + 3)]); cpu.runUntilDepth(0, BUDGET);
 	assert.equal(events.count, events.capacity);
 	assert.equal(events.expired, 4);
 	assert.equal(events.firstSequence, 4);
@@ -66,23 +66,23 @@ test('automatic history wraps and survives pane closure and debugger reconfigura
 	assert.equal(projection.rows[0].sequence, 4);
 	assert.equal(projection.rows.length, events.capacity);
 	assert.ok(first.payload.kind === 'table');
-	assert.deepEqual(first.payload.entries.find(entry => entry.key.kind === 'string' && entry.key.value === 'value')!.value, { kind: 'number', value: 1 });
+	assert.deepEqual(first.payload.entries.find(entry => entry.key.kind === 'string' && entry.key.value === 'value')!.value, { kind: 'integer', value: 1 });
 	const end = events.endSequence;
 	runtime.history.mode = HistoryMode.Replaying;
-	cpu.beginCompletionCall(fn, [2]); cpu.runUntilDepth(0, BUDGET);
+	cpu.beginCompletionCall(fn, [v.valueInteger(2)]); cpu.runUntilDepth(0, BUDGET);
 	assert.equal(events.endSequence, end, 'replay does not duplicate historical emissions');
 	runtime.history.mode = HistoryMode.Disabled;
 	const debuggerState = createRuntimeDebuggerState(runtime, sources);
 	resetRuntimeDebuggerExecution(debuggerState);
-	cpu.beginCompletionCall(fn, [1]); cpu.runUntilDepth(0, BUDGET);
+	cpu.beginCompletionCall(fn, [v.valueInteger(1)]); cpu.runUntilDepth(0, BUDGET);
 	assert.equal(events.at(end).timeline, first.timeline, 'debugger creation/reset must neither replace the observer nor split its timeline');
 	events.beginTimeline();
-	cpu.beginCompletionCall(fn, [1]); cpu.runUntilDepth(0, BUDGET);
+	cpu.beginCompletionCall(fn, [v.valueInteger(1)]); cpu.runUntilDepth(0, BUDGET);
 	assert.ok(events.at(end + 1).timeline > events.at(end).timeline);
 	events.clear(); projection.update(events, 'fixture');
 	assert.equal(projection.rows.length, 0);
 	assert.equal(events.expired, 0);
-	cpu.beginCompletionCall(fn, [1]); cpu.runUntilDepth(0, BUDGET);
+	cpu.beginCompletionCall(fn, [v.valueInteger(1)]); cpu.runUntilDepth(0, BUDGET);
 	projection.update(events, 'fixture');
 	assert.equal(projection.rows.length, 1);
 });
@@ -96,8 +96,8 @@ test('a source breakpoint stops before trace execution and continuing emits exac
 	const fnIndex = image.symbols!.metadata.functionDisplayNames.indexOf('event_emitter.emit');
 	const pc = image.layout.functions[fnIndex].codeAddress;
 	state.source.install(sources.currentBlua32Media, [new Map(), new Map([[pc, 0]]), new Map()]);
-	const fn = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
-	cpu.beginCompletionCall(fn, [1]);
+	const fn = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), cpu.gc);
+	cpu.beginCompletionCall(fn, [v.valueInteger(1)]);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.ExecutionStopped);
 	assert.equal(events.count, 0);
 	state.source.resume(RuntimeDebuggerResumeMode.Continue);
@@ -129,8 +129,8 @@ test('observation preserves guest cycles, heap and complete CPU state', () => {
 	const events = new RuntimeEventHistory(observed.runtime, observed.sources, new RuntimeInstructionObservers(observed.runtime.machine.cpu));
 	for (const { cpu } of [baseline, observed]) {
 		assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
-		const fn = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
-		cpu.beginCompletionCall(fn, [1000]);
+		const fn = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), cpu.gc);
+		cpu.beginCompletionCall(fn, [v.valueInteger(1000)]);
 		assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
 	}
 	assert.equal(events.count, 1000);
@@ -139,15 +139,18 @@ test('observation preserves guest cycles, heap and complete CPU state', () => {
 	assert.deepEqual(observed.cpu.captureRuntimeState(), baseline.cpu.captureRuntimeState());
 });
 
-test('numeric snapshots preserve full precision and IEEE special values across JSON', () => {
+test('numeric snapshots preserve Integer/Float tags and every IEEE bit across JSON', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
-	const snapshot = new GuestValueSnapshot(cpu.stringPool), slots = new ValueSlots(7);
-	const values = [1234567, 0.123456789012345, -0, Infinity, -Infinity, NaN, 0];
-	values.forEach((value, index) => slots.setNumber(index, value));
+	const snapshot = new GuestValueSnapshot(cpu.stringPool, cpu.gc), slots = new ValueSlots(10);
+	const values = [v.valueInteger(16777217), v.valueFloat(16777216), v.valueInteger(0), v.valueFloatBits(0),
+		v.valueFloatBits(0x80000000), v.valueFloatBits(0x7f800000), v.valueFloatBits(0xff800000),
+		v.valueFloatBits(0x7fc00000), v.valueFloatBits(0xffa12345), v.valueFloatBits(1)];
+	values.forEach((value, index) => slots.set(index, value));
 	snapshot.begin();
 	const captured = values.map((_value, index) => snapshot.read(slots, index));
-	assert.deepEqual(captured, [1234567, 0.123456789012345, '-0', 'inf', '-inf', 'nan', 0]
-		.map(value => ({ kind: 'number', value })));
+	assert.deepEqual(captured, [{ kind: 'integer', value: 16777217 }, { kind: 'float', bits: 0x4b800000 },
+		{ kind: 'integer', value: 0 }, ...[0, 0x80000000, 0x7f800000, 0xff800000, 0x7fc00000, 0xffa12345, 1]
+			.map(bits => ({ kind: 'float', bits }))]);
 	slots.clear(values.length);
 	assert.deepEqual(JSON.parse(JSON.stringify(captured)), captured);
 });
@@ -155,20 +158,20 @@ test('numeric snapshots preserve full precision and IEEE special values across J
 test('string snapshots retain exact UTF-16 units across pool restore and scratch reuse', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
 	const pool = cpu.stringPool, saved = pool.captureState();
-	const reader = new GuestValueSnapshot(pool), values = new ValueSlots(1);
+	const reader = new GuestValueSnapshot(pool, cpu.gc), values = new ValueSlots(1);
 	// Neither UTF-8 nor TextDecoder roundtrips preserve all of these code units.
 	const text = '\uFEFF\0\uD800z\uDC00\uD83D\uDE80é\r\n';
 	reader.begin();
-	values.setStringId(0, pool.intern(text));
+	values.setString(0, pool.intern(text));
 	const complete = reader.read(values, 0);
 	const remaining = VALUE_SNAPSHOT_CHARACTERS - text.length;
-	values.setStringId(0, pool.intern('x'.repeat(remaining - 1) + '\uD83D\uDE80'));
+	values.setString(0, pool.intern('x'.repeat(remaining - 1) + '\uD83D\uDE80'));
 	const truncated = reader.read(values, 0);
 	const exhausted = reader.read(values, 0);
 	values.clear(1);
 	pool.restoreState(saved);
 	reader.begin();
-	values.setStringId(0, pool.intern('new value'));
+	values.setString(0, pool.intern('new value'));
 	reader.read(values, 0);
 	assert.deepEqual(complete, { kind: 'string', value: text, omitted: false });
 	assert.deepEqual(truncated, { kind: 'string', value: 'x'.repeat(remaining - 1) + '\uD83D', omitted: true });
@@ -178,11 +181,11 @@ test('string snapshots retain exact UTF-16 units across pool restore and scratch
 
 test('snapshot work includes vacant storage and shares its scan budget across nested values', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
-	const reader = new GuestValueSnapshot(cpu.stringPool), values = new ValueSlots(1);
+	const reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), values = new ValueSlots(1);
 	const child = cpu.createTable(VALUE_SNAPSHOT_SLOTS, 0), root = cpu.createTable(2, 0);
-	child.set(VALUE_SNAPSHOT_SLOTS, 17);
-	root.set(1, child); root.set(2, 42);
-	values.set(0, root);
+	child.setInteger(VALUE_SNAPSHOT_SLOTS, v.valueInteger(17));
+	root.setInteger(1, v.valueTable(cpu.gc.reference(child))); root.setInteger(2, v.valueInteger(42));
+	values.set(0, v.valueTable(cpu.gc.reference(root)));
 	reader.begin();
 	const result = reader.read(values, 0);
 	assert.ok(result.kind === 'table');
@@ -193,7 +196,7 @@ test('snapshot work includes vacant storage and shares its scan budget across ne
 	assert.equal(nested.entries.length, 0);
 	assert.equal(nested.omitted, true);
 	// This is one emission-wide budget, not a fresh allowance per argument.
-	values.set(0, cpu.createTable(1, 0));
+	values.setTable(0, cpu.gc.reference(cpu.createTable(1, 0)));
 	const exhausted = reader.read(values, 0);
 	assert.ok(exhausted.kind === 'table');
 	assert.equal(exhausted.omitted, true);
@@ -205,16 +208,16 @@ test('snapshot work includes vacant storage and shares its scan budget across ne
 
 test('snapshot entry boundary distinguishes an exhausted budget from fully visited empty storage', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
-	const reader = new GuestValueSnapshot(cpu.stringPool), values = new ValueSlots(1);
+	const reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), values = new ValueSlots(1);
 	const table = cpu.createTable(VALUE_SNAPSHOT_ENTRIES + 1, 0);
-	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES; index++) table.set(index, index);
-	values.set(0, table);
+	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES; index++) table.setInteger(index, v.valueInteger(index));
+	values.set(0, v.valueTable(cpu.gc.reference(table)));
 	reader.begin();
 	const complete = reader.read(values, 0);
 	assert.ok(complete.kind === 'table');
 	assert.equal(complete.entries.length, VALUE_SNAPSHOT_ENTRIES);
 	assert.equal(complete.omitted, false);
-	table.set(VALUE_SNAPSHOT_ENTRIES + 1, false);
+	table.setInteger(VALUE_SNAPSHOT_ENTRIES + 1, v.valueBool(false));
 	reader.begin();
 	const truncated = reader.read(values, 0);
 	assert.ok(truncated.kind === 'table');
@@ -231,15 +234,15 @@ test('independent instruction consumers share physical points and dispose withou
 	let visits = 0;
 	const release = observers.add({ points: [new Set(), new Set(binding.points.map(point => point.pc)), new Set()], observe() { visits++; } });
 	cpu.runUntilDepth(0, BUDGET);
-	const fn = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
-	cpu.beginCompletionCall(fn, [2]); cpu.runUntilDepth(0, BUDGET);
+	const fn = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), cpu.gc);
+	cpu.beginCompletionCall(fn, [v.valueInteger(2)]); cpu.runUntilDepth(0, BUDGET);
 	assert.equal(events.count, 2); assert.equal(visits, 2);
 	events.dispose();
-	cpu.beginCompletionCall(fn, [3]); cpu.runUntilDepth(0, BUDGET);
+	cpu.beginCompletionCall(fn, [v.valueInteger(3)]); cpu.runUntilDepth(0, BUDGET);
 	assert.equal(events.count, 2); assert.equal(visits, 5);
 	const replacement = new RuntimeEventHistory(runtime, sources, observers);
 	release();
-	cpu.beginCompletionCall(fn, [1]); cpu.runUntilDepth(0, BUDGET);
+	cpu.beginCompletionCall(fn, [v.valueInteger(1)]); cpu.runUntilDepth(0, BUDGET);
 	assert.equal(replacement.count, 1); assert.equal(visits, 5);
 	replacement.dispose(); observers.dispose();
 });

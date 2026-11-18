@@ -56,7 +56,7 @@ concat_range = function(target, separator, first, last)
 		if value == nil then
 			return ''
 		end
-		return tostring(value)
+		return '' .. value
 	end
 	local midpoint<const> = (first + last) // 2
 	return concat_range(target, separator, first, midpoint) .. separator .. concat_range(target, separator, midpoint + 1, last)
@@ -72,7 +72,7 @@ table.concat = function(target, separator_arg, start_arg, end_arg)
 	end
 	local separator = ''
 	if separator_arg ~= nil then
-		separator = tostring(separator_arg)
+		separator = '' .. separator_arg
 	end
 	return concat_range(target, separator, start_index, end_index)
 end
@@ -80,10 +80,27 @@ end
 
 local unpack_range
 unpack_range = function(target, index, last)
-	if index == last then
-		return target[index]
-	end
-	return target[index], unpack_range(target, index + 1, last)
+	if index == last then return target[index] end
+	local a<const> = target[index]
+	index = index + 1
+	if index == last then return a, target[index] end
+	local b<const> = target[index]
+	index = index + 1
+	if index == last then return a, b, target[index] end
+	local c<const> = target[index]
+	index = index + 1
+	if index == last then return a, b, c, target[index] end
+	local d<const> = target[index]
+	index = index + 1
+	if index == last then return a, b, c, d, target[index] end
+	local e<const> = target[index]
+	index = index + 1
+	if index == last then return a, b, c, d, e, target[index] end
+	local f<const> = target[index]
+	index = index + 1
+	if index == last then return a, b, c, d, e, f, target[index] end
+	local g<const> = target[index]
+	return a, b, c, d, e, f, g, unpack_range(target, index + 1, last)
 end
 
 

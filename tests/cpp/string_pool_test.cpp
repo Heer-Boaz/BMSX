@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "common/utf8.h"
 #include "machine/cpu/lua_heap.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
@@ -39,6 +40,30 @@ struct PoolMachine {
 	CPU cpu{memory, irq, addresses};
 };
 
+void indexCodepointsAcrossRepresentations() {
+	PoolMachine machine;
+	auto& pool = machine.cpu.stringPool();
+	std::string ascii;
+	for (int code = 0; code < 128; ++code) ascii.push_back(static_cast<char>(code));
+	std::string unicode;
+	for (int i = 0; i < 23; ++i) unicode += std::string("β😀A🚀\0é", 14);
+	for (const auto& text : {ascii, std::string("Aé雪\0Z", 8),
+		std::string("β😀A🚀\0é", 14), std::string("😀"), std::string(4096, 'a'), unicode}) {
+		const auto id = pool.intern(text);
+		std::vector<u32> expected;
+		for (size_t offset = 0; offset < text.size();) expected.push_back(readUtf8Codepoint(text, offset));
+		const auto state = pool.captureState();
+		for (size_t index = expected.size(); index > 0; --index) {
+			require(pool.codepointAt(id, index - 1u) == expected[index - 1u], "random indexing preserves complete Unicode scalars");
+		}
+		requireSameSnapshot(pool.captureState(), state);
+		pool.restoreState(state);
+		for (size_t index = 0; index < expected.size(); ++index) {
+			require(pool.codepointAt(id, index) == expected[index], "indexing survives snapshot restore");
+		}
+	}
+}
+
 void reclaimTextAndSnapshotStorage() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
@@ -62,13 +87,34 @@ void recycleUnicodeAndUntrackedStrings() {
 	auto& pool = cpu.stringPool();
 	const auto baselineTracked = pool.trackedLuaHeapBytes();
 	const auto old = pool.intern("retired literal", false);
-	pool.intern("");
+	const auto empty = pool.intern("");
 	cpu.collectHeap();
 	require(!pool.find("retired literal") && !pool.find(""), "ROM accounting and empty payloads do not imply immortality");
 	const auto replacement = pool.intern("β😀");
-	require(replacement == old, "dead trailing IDs are recycled without growing the pool");
+	require(replacement == empty, "sweep returns directory IDs in order, reused in LIFO order");
 	require(pool.toString(replacement) == "β😀" && pool.codepointCount(replacement) == 2, "recycled slots publish the new Unicode metadata");
+	require(pool.codepointAt(replacement, 0) == 0x3b2u && pool.codepointAt(replacement, 1) == 0x1f600u, "recycled IDs index the new content");
 	require(pool.trackedLuaHeapBytes() == baselineTracked + 6, "new runtime text owns its actual UTF-8 payload bytes");
+	require(pool.intern("second replacement") == old, "other vacant IDs are reused before extending the directory");
+}
+
+void reclaimCodepointIndexes() {
+	PoolMachine machine;
+	auto& cpu = machine.cpu; auto& pool = cpu.stringPool();
+	cpu.collectHeap();
+	const auto baseline = pool.trackedLuaHeapBytes();
+	std::string text;
+	for (int i = 0; i < 23; ++i) text += std::string("β😀A🚀\0é", 14);
+	const auto old = pool.intern(text);
+	require(pool.trackedLuaHeapBytes() == baseline + 14 * 23, "host stride metadata does not debit guest RAM");
+	require(pool.codepointAt(old, 128) == 'A', "long indexes address the correct stride");
+	cpu.collectHeap();
+	require(pool.trackedLuaHeapBytes() == baseline, "GC releases the long Unicode payload");
+	text.clear(); for (int i = 0; i < 65; ++i) text += "😀";
+	const auto id = pool.intern(text);
+	require(id == old && pool.codepointAt(id, 64) == 0x1f600, "reused IDs build the new sparse index");
+	cpu.collectHeap();
+	require(pool.intern("ascii") == old && pool.codepointAt(old, 4) == 'i', "directly indexed strings do not reuse stale offsets");
 }
 
 void promoteAcrossReservationCollection() {
@@ -103,9 +149,9 @@ void retainNestedMaterializationRoots() {
 		require(!pool.find("inner string") && pool.find("outer string") == outerId, "inner roots retire without releasing the outer phase");
 		auto* table = cpu.createTable();
 		const auto key = pool.intern("nested key");
-		table->setStringKey(key, valueNumber(7));
+		table->setStringKey(key, valueInteger(7));
 		cpu.collectHeap();
-		require(asNumber(table->getStringKey(key)) == 7, "the same CPU materialization phase owns tables and strings");
+		require(table->getStringKey(key) == valueInteger(7), "the same CPU materialization phase owns tables and strings");
 	}
 	cpu.collectHeap();
 	require(!pool.find("outer string") && !pool.find("nested key"), "CPU scope retirement releases string roots");
@@ -139,21 +185,21 @@ void reuseDeletedStringKeyId() {
 	auto& pool = cpu.stringPool();
 	const auto root = pool.intern("table root", false);
 	auto* table = cpu.createTable(0, 8);
-	cpu.setGlobalByKey(root, valueTable(table));
+	cpu.setGlobalByKey(root, valueTable(cpu.gcHeap().reference(table)));
 	const auto removed = pool.intern("removed key");
-	table->setStringKey(removed, valueNumber(19));
+	table->setStringKey(removed, valueInteger(19));
 	table->setStringKey(removed, valueNil());
 	const auto retained = pool.intern("retained key");
-	table->setStringKey(retained, valueNumber(23));
+	table->setStringKey(retained, valueInteger(23));
 	cpu.collectHeap();
 	require(!pool.find("removed key"), "dead hash nodes do not own their former string text");
 	const auto replacement = pool.intern("replacement key");
 	require(replacement == removed && isNil(table->getStringKey(replacement)), "recycled IDs do not resurrect removed mappings");
-	table->setStringKey(replacement, valueNumber(29));
-	require(asNumber(table->getStringKey(replacement)) == 29 && asNumber(table->getStringKey(retained)) == 23, "a new mapping coexists with retained keys");
+	table->setStringKey(replacement, valueInteger(29));
+	require(table->getStringKey(replacement) == valueInteger(29) && table->getStringKey(retained) == valueInteger(23), "a new mapping coexists with retained keys");
 	Value key = valueNil(), value = valueNil();
 	std::vector<std::string> keys;
-	while (table->nextEntry(key, key, value)) {
+	for (table->nextEntry(key, key, value); !isNil(key); table->nextEntry(key, key, value)) {
 		require(valueIsString(key), "the fixture's live mappings retain string representation");
 		keys.push_back(pool.toString(asStringId(key)));
 	}
@@ -166,15 +212,14 @@ test::Blua32TestImage externalCallImage() {
 	image.text.resize(4 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 3}, {.firstWord = 3, .wordCount = 1, .numParams = 1, .maxStack = 512, .staticClosure = false}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	return image;
 }
 
 void admitExternalArgumentsAcrossStackGrowth() {
-	for (const bool explicitDomain : {false, true}) {
 		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, externalCallImage());
 		Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory);
@@ -183,34 +228,33 @@ void admitExternalArgumentsAcrossStackGrowth() {
 		cpu.reset();
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the real image returns a dynamic callee");
 		const auto completion = cpu.readCompletionValues();
-		require(valueIsClosure(completion[0]), "call admission receives an actual guest closure");
-		auto* closure = asClosure(completion[0]);
+		require(valueIsClosure(completion.get(0)), "call admission receives an actual guest closure");
+		auto* closure = asClosure(completion.get(0), cpu.gcHeap());
 		const std::string text(4096, 'a');
 		const auto id = cpu.stringPool().intern(text);
 		const std::array args{valueString(id)};
 		const auto heap = cpu.luaHeap().captureState();
 		cpu.luaHeap().restoreState({heap.trackedBytes, 0});
-		if (explicitDomain) cpu.beginCompletionClosureInExecutionDomain(-1, *closure, BuiltinArgsView(args.data(), args.size()));
-		else cpu.beginCompletionCall(*closure, BuiltinArgsView(args.data(), args.size()));
+		cpu.beginCompletionCall(*closure, BuiltinArgsView(args.data(), args.size()));
 		require(cpu.stringPool().find(text) == id, "stack growth cannot collect incoming host arguments");
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the admitted callee returns normally");
 		const auto result = cpu.readCompletionValues();
-		require(result.size() == 1 && valueIsString(result[0]) && asStringId(result[0]) == id, "the real call preserves the original string ID");
+		require(result.size() == 1 && valueIsString(result.get(0)) && asStringId(result.get(0)) == id, "the real call preserves the original string ID");
 		require(cpu.stringPool().toString(id) == text, "the result owns its original payload");
-		const BuiltinArgsView forwarded(result.data(), result.size());
-		if (explicitDomain) cpu.beginCompletionClosureInExecutionDomain(-1, *closure, forwarded);
-		else cpu.beginCompletionCall(*closure, forwarded);
+		const BuiltinArgsView forwarded(result);
+		cpu.beginCompletionCall(*closure, forwarded);
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "completion-latch arguments can be admitted as the next call's input");
 		const auto forwardedResult = cpu.readCompletionValues();
-		require(forwardedResult.size() == 1 && asStringId(forwardedResult[0]) == id, "admission consumes its retained argument copy before clearing the old latch");
-	}
+		require(forwardedResult.size() == 1 && asStringId(forwardedResult.get(0)) == id, "admission consumes its retained argument copy before clearing the old latch");
 }
 } // namespace
 
 int main() {
 	try {
+		indexCodepointsAcrossRepresentations();
 		reclaimTextAndSnapshotStorage();
 		recycleUnicodeAndUntrackedStrings();
+		reclaimCodepointIndexes();
 		promoteAcrossReservationCollection();
 		retainNestedMaterializationRoots();
 		replaySparseAllocationOrder();

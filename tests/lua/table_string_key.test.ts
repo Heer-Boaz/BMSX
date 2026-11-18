@@ -1,0 +1,138 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { ValueTag, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
+import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
+import { TABLE_STORE_REQUIRES_GROWTH, TableLookupStatus, type TableLookupResult } from '../../machine/ts/machine/cpu/table';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { cartridgeSlots } from '../helpers/cartridge';
+
+test('known string chains preserve mixed-key collisions, cached updates, tombstones and rehash order', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const keys: number[] = [];
+	for (let n = 0; keys.length < 16; n += 1) {
+		const key = cpu.stringPool.intern(`collision_${n}`);
+		if ((Math.imul(key, 2654435761) & 31) === 0) keys.push(key);
+	}
+	const generic = cpu.createTable(0, 4);
+	const strings = cpu.createTable(0, 4);
+	const object = cpu.createTable();
+	object.hashId = 0;
+	const objectKey = valueTable(cpu.gc.reference(object));
+	const values: Value[] = [valueBool(false), valueFloatBits(0x80000000), valueFloat(5.25), valueFloatBits(0xffc01234), valueFloat(Infinity), objectKey, valueString(keys[0]), valueNil()];
+	const slots = new ValueSlots(2);
+	let prediction = 0;
+	const compare = () => {
+		const bytes = strings.getTrackedHeapBytes();
+		for (const key of keys) {
+			const expected = generic.get(valueString(key));
+			assert.equal(strings.getStringKey(key), expected);
+			strings.loadStringKey(key, slots, 0);
+			assert.equal(slots.get(0), expected);
+			prediction = strings.loadStringKeyCached(key, prediction, slots, 0);
+			assert.equal(slots.get(0), expected);
+		}
+		assert.equal(strings.getTrackedHeapBytes(), bytes, 'lookups reserve no guest storage');
+		// Physical iteration order is serialized state, not an incidental layout.
+		assert.equal(strings.storedSlotCount, generic.storedSlotCount);
+		for (let slot = 0; slot < generic.storedSlotCount; slot += 1) {
+			const a = generic.loadStoredEntry(slot, slots, 0);
+			const b = strings.loadStoredEntry(slot, slots, 0);
+			assert.equal(b, a);
+			if (!a) continue;
+			const key = slots.get(0), value = slots.get(1);
+			generic.loadStoredEntry(slot, slots, 0);
+			assert.equal(slots.get(0), key);
+			assert.equal(slots.get(1), value);
+		}
+	};
+	compare();
+	for (const key of [valueInteger(0), valueBool(false), objectKey]) {
+		generic.set(key, valueInteger(19));
+		strings.set(key, valueInteger(19));
+	}
+	for (let n = 0; n < 256; n += 1) {
+		const key = keys[(n * 7) & 15];
+		const value = values[(n >> 4) & 7];
+		generic.set(valueString(key), value);
+		slots.set(0, value);
+		if ((n & 1) === 0) {
+			const before = strings.getTrackedHeapBytes();
+			const slot = strings.storeStringKeyWithoutGrowth(key, slots.getTag(0), slots.getPayload(0));
+			assert.equal(strings.getTrackedHeapBytes(), before, 'bounded mutation reserves no storage');
+			if (slot === TABLE_STORE_REQUIRES_GROWTH)
+				strings.storeStringKey(key, slots.getTag(0), slots.getPayload(0));
+		} else {
+			prediction = strings.storeStringKeyCached(key, prediction, slots.getTag(0), slots.getPayload(0));
+		}
+		if ((n & 15) === 0) {
+			generic.setInteger((n >> 4) + 1, valueInteger(n));
+			strings.setInteger((n >> 4) + 1, valueInteger(n));
+		}
+		compare();
+	}
+	generic.set(objectKey, valueNil());
+	strings.set(objectKey, valueNil());
+	compare();
+	generic.clear();
+	strings.clear();
+	compare();
+});
+
+test('known string lookup follows changing inherited fields and preserves false and signed zero', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const key = cpu.stringPool.intern('field');
+	const indexKey = cpu.stringPool.intern('__index');
+	const parent = cpu.createTable(0, 2);
+	parent.setStringKey(key, valueBool(false));
+	const metatable = cpu.createTable(0, 1);
+	metatable.setStringKey(indexKey, valueTable(cpu.gc.reference(parent)));
+	const child = cpu.createTable();
+	child.metatable = metatable;
+	const slots = new ValueSlots(1);
+	const result: TableLookupResult = { values: slots, slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved };
+	child.resolveStringIndex(indexKey, key, result);
+	assert.equal(result.status, TableLookupStatus.Resolved);
+	assert.equal(slots.get(0), valueBool(false));
+	child.resolveStringIndexCached(indexKey, key, -1, result);
+	let prediction = result.slot;
+	assert.equal(result.extraVisits, 1);
+	assert.ok(prediction >= 0);
+	assert.equal(slots.get(0), valueBool(false));
+	parent.storeStringKey(key, ValueTag.Nil, 0);
+	child.resolveStringIndexCached(indexKey, key, prediction, result);
+	prediction = result.slot;
+	assert.equal(prediction, -1);
+	assert.equal(slots.get(0), valueNil());
+	parent.storeStringKey(key, ValueTag.Float, 0x80000000);
+	child.resolveStringIndex(indexKey, key, result);
+	assert.equal(result.status, TableLookupStatus.Resolved);
+	assert.equal(slots.get(0), valueFloatBits(0x80000000));
+});
+
+
+test('rejected string-store growth retains the exhausted cursor for allocating completion', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(0, 1), present = cpu.stringPool.intern('full'), missing = cpu.stringPool.intern('new');
+	table.setStringKey(present, valueInteger(73));
+	const beforeWriter = new CpuSnapshotWriter(new CpuSnapshot());
+	const beforeOffset = table.captureSnapshot(beforeWriter, () => {}), before = beforeWriter.finish();
+	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Integer, 19), TABLE_STORE_REQUIRES_GROWTH);
+	const afterWriter = new CpuSnapshotWriter(new CpuSnapshot());
+	const afterOffset = table.captureSnapshot(afterWriter, () => {}), after = afterWriter.finish();
+	assert.equal(before.word(beforeOffset + CpuSnapshotTable.HashFree), 0);
+	assert.equal(after.int(afterOffset + CpuSnapshotTable.HashFree), -1);
+	assert.equal(table.getStringKey(present), valueInteger(73)); assert.equal(table.getStringKey(missing), valueNil());
+	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Integer, 19), TABLE_STORE_REQUIRES_GROWTH);
+	table.setStringKey(present, valueNil());
+	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Integer, 19), 0);
+	assert.equal(table.storedSlotCount, 1);
+	assert.equal(table.getStringKey(missing), valueInteger(19));
+});

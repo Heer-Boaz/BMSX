@@ -61,8 +61,10 @@ export async function runStudioTerminal(test: StudioFixture) {
 	await command('lua bios_terminal_probe'); await test.capture?.('bios-reopened');
 	await command('cont');
 	await until(() => !ide.editor.terminal.active && test.tasks.ready, 'BIOS terminal: CONT returns to held cartridge');
+	for (let frame = runtime.machine.cpu.activeThread.currentFrame; frame !== null; frame = frame.previous) {
+		check(!frame.isNonMaskableExceptionFrame, 'CONT leaves no active NMI frame');
+	}
 	check((runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) === 0
-		&& !runtime.machine.cpu.activeThread.frames.some(frame => frame.isNonMaskableExceptionFrame)
 		&& !ide.debugger.plans.controlActive && test.execution.userPaused,
 		'CONT leaves the physical supervisor without clearing independent host pause (the caller may still be an IRQ)');
 	const held = cycles();
@@ -89,15 +91,18 @@ export async function runStudioTerminal(test: StudioFixture) {
 		await until(() => (runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_RESUMABLE) !== 0,
 			'BIOS terminal: supervisor entry from a source stop');
 		for (let index = 0; index < 20; index++) await frame();
-		const nmi = cpu.activeThread.frames.findIndex((_frame, index) => cpu.isNonMaskableExceptionFrame(index));
+		let nmi = -1;
+		for (let index = 0; index < cpu.getFrameDepth(); ++index) {
+			if (cpu.isNonMaskableExceptionFrame(index)) { nmi = index; break; }
+		}
 		check(nmi > 0 && ide.debugger.source.stop === undefined && !ide.luaEvaluation.contextAvailable(oldContext),
 			'physical admission retires the old source/frame context, rather than promising pinned evaluation semantics');
-		const pcs = cpu.activeThread.frames.slice(0, nmi).map(frame => frame.pc);
+		const pcs = Array.from({ length: nmi }, (_, index) => cpu.readFramePc(index));
 		await command('cont');
 		await until(() => !ide.editor.terminal.active && test.tasks.ready, 'BIOS terminal: hold the physical NMI return');
-		check(cpu.getFrameDepth() === nmi && cpu.activeThread.frames.every((frame, index) => frame.pc === pcs[index])
+		check(cpu.getFrameDepth() === nmi && pcs.every((pc, index) => cpu.readFramePc(index) === pc)
 			&& ide.debugger.source.stop !== stop && !ide.luaEvaluation.contextAvailable(oldContext),
-			`CONT holds the real NMI caller before execution, without resurrecting the retired breakpoint: expected=${JSON.stringify(pcs)}, actual=${JSON.stringify(cpu.activeThread.frames.map(frame => frame.pc))}, depth=${nmi}/${cpu.getFrameDepth()}`);
+			`CONT holds the real NMI caller before execution, without resurrecting the retired breakpoint: expected=${JSON.stringify(pcs)}, actual=${JSON.stringify(Array.from({ length: cpu.getFrameDepth() }, (_, index) => cpu.readFramePc(index)))}, depth=${nmi}/${cpu.getFrameDepth()}`);
 	});
 	return { renderer: 'shared', terminal: true };
 }

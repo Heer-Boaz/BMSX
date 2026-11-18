@@ -16,18 +16,17 @@ local source<const>: *word = 0x08010360
 local display_extent<const>: *word = 0x08010368
 local pcrtc_csr<const>: *word = 0x080103d4
 
--- Header: twelve texture words and eight CLUT words. Tokens: literal two,
+-- Raw payload: twelve texture words and eight CLUT words. Tokens: literal two,
 -- repeat two, back-reference four at distance four, zero four, literal eight.
-rodata stream: word[19] = {
-	0x31444d49, 0x0000000c, 0x00000008,
+rodata stream: word[16] = {
 	0x00000001, 0x11112222, 0x33334444,
 	0x40000001, 0x55556666, 0x80001003, 0xc0000003,
 	0x00000007, 0x00000000, 0x03e0001f, 0x7fff7c00, 0x42104210,
 	0x001f001f, 0x03e003e0, 0x7c007c00, 0x7fff7fff,
 }
 -- The first payload token requests distance one before any history exists.
-rodata fault_stream: word[4] = { 0x31444d49, 3, 0, 0x80000000 }
-rodata recovery_stream: word[3] = { 0x31444d49, 0, 0 }
+rodata fault_stream: word[1] = { 0x80000000 }
+rodata recovery_stream: word[2] = { 0x40000002, 0x12345678 }
 
 -- A purple destination makes fetched-zero transparency visible. The raw
 -- palette4 quad samples only the texture and CLUT uploaded by phase 2.
@@ -79,18 +78,14 @@ local ram_dma0_sequence<const> = result.dma0_sequence
 local ram_dma1_sequence<const> = result.dma1_sequence
 local ram_decoder_sequence<const> = result.decoder_sequence
 decoder->input_word_count = #stream
-decoder->texture_destination = 0x00400040
-decoder->texture_size = 0x00060004
-decoder->clut_destination = 0x00800040
-dma1->read_address = 0x08010414
+decoder->output_word_count = 20
 dma1->write_address = &result.ram_output[0]
-dma1->count = 26
-dma1->control = 0x00003c1a
+dma1->count = 20
+dma1->control = 0x00000004
 dma1->trigger = 1
 dma0->read_address = stream
-dma0->write_address = 0x08010414
 dma0->count = #stream
-dma0->control = 0x00003d41
+dma0->control = 0x00000003
 dma0->trigger = 1
 result.phases[0].armed_status[0] = dma0->status
 result.phases[0].armed_status[1] = dma1->status
@@ -126,25 +121,30 @@ result.gpu_initial_status = *gp1
 local gpu_dma0_sequence<const> = result.dma0_sequence
 local gpu_dma1_sequence<const> = result.dma1_sequence
 local gpu_decoder_sequence<const> = result.decoder_sequence
+*gp0 = 0xa0000000
+*gp0 = 0x00400040
+*gp0 = 0x00060004
 decoder->input_word_count = #stream
-decoder->texture_destination = 0x00400040
-decoder->texture_size = 0x00060004
-decoder->clut_destination = 0x00800040
-dma1->read_address = 0x08010414
-dma1->write_address = 0x0801023c
-dma1->count = 26
-dma1->control = 0x00003c58
+decoder->output_word_count = 20
+dma1->count = 12
+dma1->control = 0x00000005
 dma1->trigger = 1
 dma0->read_address = stream
-dma0->write_address = 0x08010414
 dma0->count = #stream
-dma0->control = 0x00003d41
+dma0->control = 0x00000003
 dma0->trigger = 1
 result.phases[1].armed_status[0] = dma0->status
 result.phases[1].armed_status[1] = dma1->status
 decoder->control = 1
+while result.dma1_sequence == gpu_dma1_sequence do halt_until_irq end
+*gp0 = 0xa0000000
+*gp0 = 0x00800040
+*gp0 = 0x00010010
+dma1->count = 8
+dma1->control = 0x00000005
+dma1->trigger = 1
 while result.dma0_sequence == gpu_dma0_sequence
-	or result.dma1_sequence == gpu_dma1_sequence do
+	or result.dma1_sequence ~= gpu_dma1_sequence + 2 do
 	halt_until_irq
 end
 while result.decoder_sequence == gpu_decoder_sequence do
@@ -169,9 +169,7 @@ result.completed_phase = 2
 -- particular, there is no output channel left waiting for an impossible DREQ.
 local fault_decoder_sequence<const> = result.decoder_sequence
 decoder->input_word_count = #fault_stream
-decoder->texture_destination = 0x00400040
-decoder->texture_size = 0x00060004
-decoder->clut_destination = 0x00800040
+decoder->output_word_count = 3
 decoder->control = 1
 for index = 0, #fault_stream - 1 do
 	decoder->data = fault_stream[index]
@@ -186,10 +184,9 @@ result.phases[2].dma_count[0] = dma0->count
 result.phases[2].dma_count[1] = dma1->count
 result.phases[2].dma_status[0] = dma0->status
 result.phases[2].dma_status[1] = dma1->status
--- FORMAT_FAULT leaves the already-published A0 header readable. An empty
--- DATA read retains the last word; it does not restart or complete the stream.
+-- FORMAT_FAULT publishes no output; every DATA read retains the input token.
 for index = 0, 2 do
-	result.fault_header[index] = decoder->data
+	result.fault_reads[index] = decoder->data
 end
 result.fault_retained_read = decoder->data
 result.phases[2].sequences[0] = result.dma0_sequence
@@ -197,24 +194,20 @@ result.phases[2].sequences[1] = result.dma1_sequence
 result.phases[2].sequences[2] = result.decoder_sequence
 result.completed_phase = 3
 
--- 4. START replaces the faulted stream. A minimal valid stream still emits
--- its three-word texture header, into a distinct BSS destination.
+-- 4. START replaces the faulted stream and emits three repeated raw words
+-- into a distinct BSS destination.
 local recovery_dma0_sequence<const> = result.dma0_sequence
 local recovery_dma1_sequence<const> = result.dma1_sequence
 local recovery_decoder_sequence<const> = result.decoder_sequence
 decoder->input_word_count = #recovery_stream
-decoder->texture_destination = 0x00200020
-decoder->texture_size = 0
-decoder->clut_destination = 0
-dma1->read_address = 0x08010414
+decoder->output_word_count = 3
 dma1->write_address = &result.recovery_output[0]
 dma1->count = 3
-dma1->control = 0x00003c1a
+dma1->control = 0x00000004
 dma1->trigger = 1
 dma0->read_address = recovery_stream
-dma0->write_address = 0x08010414
 dma0->count = #recovery_stream
-dma0->control = 0x00003d41
+dma0->control = 0x00000003
 dma0->trigger = 1
 result.phases[3].armed_status[0] = dma0->status
 result.phases[3].armed_status[1] = dma1->status
@@ -239,7 +232,7 @@ result.phases[3].sequences[2] = result.decoder_sequence
 *irq_mask = 0
 
 -- All four jobs are complete. The successful GP0 upload is still in VRAM;
--- the later fault and recovery jobs did not submit their headers to GP0.
+-- the later fault and recovery jobs did not write GP0.
 for index = 0, #picture_commands - 1 do
 	*gp0 = picture_commands[index]
 end

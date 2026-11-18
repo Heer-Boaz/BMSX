@@ -148,10 +148,7 @@ function bytecode.write_instruction_words(instruction_words, address)
 	local target: *u32 = address
 	for index = 1, #instruction_words do
 		local word<const> = instruction_words[index]
-		*target = ((word >> 24) & 0x000000ff)
-			| ((word >> 8) & 0x0000ff00)
-			| ((word << 8) & 0x00ff0000)
-			| (word << 24)
+		*target = word
 		target = target + isa.instruction_bytes
 	end
 end

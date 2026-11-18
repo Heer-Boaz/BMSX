@@ -1,3 +1,4 @@
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -28,7 +29,7 @@ return first(), second()`;
 		assert.notEqual(slots[0], slots[1]);
 		const descriptors = program.protos.flatMap(proto => proto.upvalueDescs);
 		assert.deepEqual(descriptors, [{ inStack: true, index: 2 }, { inStack: true, index: 3 }]);
-		assert.deepEqual(runCompiledLua(source, PATH, level), [10, 20]);
+		assert.deepEqual(runCompiledLua(source, PATH, level), [valueInteger(10), valueInteger(20)]);
 	}
 });
 
@@ -58,7 +59,7 @@ return read()`;
 		assert.deepEqual(program.protos[outerIndex].upvalueDescs, [{ inStack: true, index: 0 }]);
 		assert.deepEqual(program.protos[readIndex].upvalueDescs, [{ inStack: false, index: 0 }]);
 		assert.deepEqual(program.protos[writeIndex].upvalueDescs, [{ inStack: false, index: 0 }]);
-		assert.deepEqual(runCompiledLua(source, PATH, level), [42]);
+		assert.deepEqual(runCompiledLua(source, PATH, level), [valueInteger(42)]);
 	}
 });
 
@@ -73,7 +74,7 @@ return first(), second()`;
 	assert.equal(locals.length, 2);
 	assert.equal(locals[0].functionId, locals[1].functionId);
 	assert.notDeepEqual(locals[0].definition, locals[1].definition);
-	assert.deepEqual(runCompiledLua(source, PATH, 3), [1, 2]);
+	assert.deepEqual(runCompiledLua(source, PATH, 3), [valueInteger(1), valueInteger(2)]);
 });
 
 test('implicit receivers belong to their defining methods, not the shared self spelling', () => {
@@ -91,7 +92,7 @@ return first:read()(), second:read()()`;
 	assert.equal(receivers.length, 2);
 	assert.notEqual(receivers[0].functionId, receivers[1].functionId);
 	assert.notDeepEqual(receivers[0].definition, receivers[1].definition);
-	assert.deepEqual(runCompiledLua(source, PATH, 3), [11, 22]);
+	assert.deepEqual(runCompiledLua(source, PATH, 3), [valueInteger(11), valueInteger(22)]);
 });
 
 test('locals without nested functions need no shared declaration records', () => {
@@ -129,7 +130,7 @@ return make(20)(5)`;
 	assert.deepEqual(metadata.upvalueBindingsByProto[index], [bindings.find(slot =>
 		metadata.lexicalDeclarations[slot.declarationIndex].name === 'mutable')!.declarationIndex]);
 	assert.equal(program.protos[index].upvalueDescs.length, 1);
-	assert.deepEqual(runCompiledLua(source, PATH, level), [42]);
+	assert.deepEqual(runCompiledLua(source, PATH, level), [valueInteger(42)]);
 });
 
 for (const level of [0, 3] as const) test(`O${level}: definition scopes select shadowing and recursive declarations before code generation`, () => {
@@ -199,6 +200,6 @@ return outer(5)`;
 	}
 	assert.deepEqual(runCompiledLua(`${source.replace('return outer(5)', 'local read = outer(5)')}
 local first, second, parameter = read()
-return first.answer, second.answer, parameter`, PATH, level), [11, 20, 5],
+return first.answer, second.answer, parameter`, PATH, level), [valueInteger(11), valueInteger(20), valueInteger(5)],
 		'a const binding does not freeze table members');
 });

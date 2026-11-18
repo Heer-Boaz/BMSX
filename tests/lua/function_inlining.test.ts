@@ -1,3 +1,4 @@
+import { valueBool, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -91,8 +92,8 @@ return run(6)
 `;
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [7]);
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [7]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [valueInteger(7)]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(7)]);
 	assert.doesNotMatch(disassembleEntry(optimized), /\bCALL\b/);
 });
 
@@ -108,100 +109,57 @@ return forward()
 `;
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [3, 4]);
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [3, 4]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [valueInteger(3), valueInteger(4)]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(3), valueInteger(4)]);
 	assert.match(disassembleEntry(optimized), /\bCALL\b/);
 });
 
-test('inlining does not overwrite a caller register live above the CALL results', () => {
-	const calleeInstructions: Instruction[] = [
-		{ op: OpCode.K1, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.RET, a: 0, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-	];
-	const callerInstructions: Instruction[] = [
-		{ op: OpCode.GETGL, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CALL, a: 0, b: 1, c: 1, format: 'ABC', rkMask: 0, target: null, callProtoIndex: 0 },
-		{ op: OpCode.ADD, a: 0, b: 0, c: 3, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.RET, a: 0, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-	];
-	const context: OptimizationContext = {
-		currentFunctionId: 'caller',
-		constPool: [],
-		constIndex: () => 0,
-		getClosureUpvalues: () => [],
-		getProtoMeta: () => ({ numParams: 0, isVararg: false, maxStack: 4, upvalueDescs: [] }),
-		getProtoInstructionSet: () => ({
-			instructions: calleeInstructions,
-			ranges: calleeInstructions.map(() => null),
-		}),
-		getProtoFunctionId: () => 'callee',
-		getProtoLocalSlots: () => [],
-		getProtoOuterBindings: () => [],
-		relocatedConstIndices: new Set<number>(),
-		closureWrittenRegisters: new Set<number>(),
-	};
-	const optimized = optimizeInstructions(
-		callerInstructions,
-		callerInstructions.map((_instruction, index) => index === 2 ? INLINE_TEST_RANGE : null),
-		3,
-		context,
-	);
-
-	assert.ok(optimized.instructions.some(instruction => instruction.op === OpCode.CALL));
+test('the compiler keeps live expression operands below nested CALL scratch', () => {
+	const source = `
+local leaf = function(value)
+ local a, b, c, d, e, f = value, value+1, value+2, value+3, value+4, value+5
+ return a+b+c+d+e+f
+end
+local receiver = { value=13 }
+function receiver:mix(first, second) return self.value + first * 10 + second end
+local held = { value=17 }
+held.value = held.value + receiver:mix(leaf(2), leaf(3))
+return held.value, leaf(1) + leaf(4), receiver:mix(leaf(5), (leaf(6)))
+`;
+	for (const optLevel of [0, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [valueInteger(333), valueInteger(60), valueInteger(514)]);
+	}
 });
 
-test('inlining does not overwrite a register retained by an open closure', () => {
-	const calleeInstructions: Instruction[] = [
-		{ op: OpCode.K1, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.RET, a: 0, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-	];
-	const callerInstructions: Instruction[] = [
-		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CLOSURE, a: 4, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CALL, a: 0, b: 1, c: 1, format: 'ABC', rkMask: 0, target: null, callProtoIndex: 0 },
-		{ op: OpCode.RET, a: 4, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-	];
-	const context: OptimizationContext = {
-		currentFunctionId: 'caller',
-		constPool: [],
-		constIndex: () => 0,
-		getClosureUpvalues: protoIndex => protoIndex === 1 ? [{ inStack: true, index: 3 }] : [],
-		getProtoMeta: () => ({ numParams: 0, isVararg: false, maxStack: 4, upvalueDescs: [] }),
-		getProtoInstructionSet: protoIndex => protoIndex === 0 ? {
-			instructions: calleeInstructions,
-			ranges: calleeInstructions.map(() => null),
-		} : null,
-		getProtoFunctionId: protoIndex => protoIndex === 0 ? 'callee' : 'capturing_closure',
-		getProtoLocalSlots: () => [],
-		getProtoOuterBindings: () => [],
-		relocatedConstIndices: new Set<number>(),
-		closureWrittenRegisters: new Set<number>(),
-	};
-	const optimized = optimizeInstructions(
-		callerInstructions,
-		callerInstructions.map((_instruction, index) => index === 3 ? INLINE_TEST_RANGE : null),
-		3,
-		context,
-	);
-
-	assert.ok(optimized.instructions.some(instruction => instruction.op === OpCode.CALL));
+test('inlining and nested calls preserve captured locals below their scratch suffix', () => {
+	const source = `
+local captured = 41
+local reader = function() return captured end
+local callee<const> = function(value)
+ local a, b, c, d = value, value+1, value+2, value+3
+ return a+b+c+d
+end
+local first = callee(reader())
+captured = captured + 1
+return reader(), first, callee(reader()), captured
+`;
+	for (const optLevel of [0, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [valueInteger(42), valueInteger(170), valueInteger(174), valueInteger(42)]);
+	}
 });
 
 test('inlining can reuse a future capture slot before its closure is opened', () => {
 	const calleeInstructions: Instruction[] = [
+		{ op: OpCode.K1, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
 		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.RET, a: 0, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.RET, a: 0, b: 2, c: 0, format: 'ABC', rkMask: 0, target: null },
 	];
 	const callerInstructions: Instruction[] = [
 		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CALL, a: 0, b: 1, c: 1, format: 'ABC', rkMask: 0, target: null, callProtoIndex: 0 },
+		{ op: OpCode.CALL, a: 0, b: 1, c: 2, format: 'ABC', rkMask: 0, target: null, callProtoIndex: 0 },
 		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
 		{ op: OpCode.CLOSURE, a: 4, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.RET, a: 4, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.RET, a: 4, b: 2, c: 0, format: 'ABC', rkMask: 0, target: null },
 	];
 	const context: OptimizationContext = {
 		currentFunctionId: 'caller',
@@ -248,7 +206,7 @@ return first, second, sequence, only, missing
 	for (const optLevel of [0, 3] as const) {
 		assert.deepEqual(
 			runCompiledLua(source, INLINE_TEST_PATH, optLevel),
-			[1, 2, 3, 7, null],
+			[valueInteger(1), valueInteger(2), valueInteger(3), valueInteger(7), valueNil()],
 		);
 	}
 });
@@ -265,8 +223,8 @@ return result, total
 `;
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [7, 7]);
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [7, 7]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [valueInteger(7), valueInteger(7)]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(7), valueInteger(7)]);
 	assert.doesNotMatch(disassembleEntry(optimized), /\bCALL\b/);
 });
 
@@ -289,7 +247,7 @@ return caller()
 		[image.image.functions[callerProtoIndex].address],
 	);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [7]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(7)]);
 	assert.match(callerDisassembly, /\bCALL\b/);
 });
 
@@ -314,8 +272,8 @@ return nested()
 	const nestedProtoIndex = compiled.metadata.protoIds.findIndex(id => id.startsWith(`${outerProtoId}/anon:`));
 	const nestedParentCapture = compiled.program.protos[nestedProtoIndex].upvalueDescs.find(desc => !desc.inStack)!;
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [22]);
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [22]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [valueInteger(22)]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(22)]);
 	const outerBindings = compiled.metadata.upvalueBindingsByProto[outerProtoIndex];
 	assert.deepEqual(outerBindings.map(index => compiled.metadata.lexicalDeclarations[index].name), ['retained']);
 	const nestedBindings = compiled.metadata.upvalueBindingsByProto[nestedProtoIndex];
@@ -349,7 +307,7 @@ return current()
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 	const disassembly = disassembleEntry(optimized);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [2]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(2)]);
 	assert.match(disassembly, /\bCALL\b/, 'the post-mutation dynamic call must remain a CALL');
 });
 
@@ -367,7 +325,7 @@ return current(), replace
 `;
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3).slice(0, 1), [1]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3).slice(0, 1), [valueInteger(1)]);
 	assert.match(disassembleEntry(optimized), /\bCALL\b/);
 });
 
@@ -394,7 +352,7 @@ local direct<const> = increment(4)
 return escaped == increment, escaped(5), direct
 `;
 	for (const optLevel of [0, 3] as const) {
-		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [true, 6, 5]);
+		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [valueBool(true), valueInteger(6), valueInteger(5)]);
 	}
 });
 
@@ -408,7 +366,7 @@ return first(9, 10)
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 	const disassembly = disassembleEntry(optimized);
 
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [9, 10]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(9), valueInteger(10)]);
 	assert.match(disassembly, /\bCALL\b/);
 });
 
@@ -448,5 +406,5 @@ return run(42)`;
 	for (const slot of compiled.metadata.localSlotsByProto[runIndex]) {
 		if (slot.registerIndex >= maxStack) assert.deepEqual(slot.liveWordRanges, [], 'the same rule applies to eliminated inline locals');
 	}
-	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [42]);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [valueInteger(42)]);
 });

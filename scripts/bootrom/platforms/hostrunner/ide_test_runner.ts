@@ -3,7 +3,7 @@ import * as path from 'node:path';
 
 import { extractErrorMessage } from '../../../../ide/common/errors';
 import type { HeadlessIdeHarness } from '../../../../ide/testing/headless_harness';
-import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
+import * as value from '../../../../machine/ts/machine/cpu/value';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { InputEventWriter, InputEvt } from '../../../../hosts/common/input/contracts';
 import type { HostControlInputEvent } from '../../../../hosts/common/control/protocol';
@@ -102,20 +102,19 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		debuggerStopped: () => options.ide.isDebuggerStopped(),
 		reboot: () => options.ide.reboot(),
 		command: options.ide.executeCommand,
-		openLuaSource: (path: string) => options.ide.openLuaSource(path),
+		openLuaSource: (path: string, contextId?: string) => options.ide.openLuaSource(path, contextId),
 		replaceActiveCodeSource: (source: string) => options.ide.replaceActiveCodeSource(source),
 	};
 
 	log('starting');
 	// eslint-disable-next-line no-new-func -- dev-only headless IDE test scenario.
-	const factory = new Function('t', 'assert', 'numberValueTag', 'tableValueTag', `"use strict"; return (async () => {\n${source}\n})();`) as (
+	const factory = new Function('t', 'assert', 'value', `"use strict"; return (async () => {\n${source}\n})();`) as (
 		ctx: typeof t,
 		assertFn: typeof assert,
-		numberValueTag: ValueTag,
-		tableValueTag: ValueTag,
+		valueApi: typeof value,
 	) => Promise<void>;
 	try {
-		await factory(t, assert, ValueTag.Number, ValueTag.Table);
+		await factory(t, assert, value);
 	} catch (error) {
 		log(`FAILED: ${extractErrorMessage(error)}`);
 		throw error;

@@ -230,7 +230,7 @@ occurs. This is not an exact-mode-name or allowed-character check.
 Acceptance never selects a binary decoder. The scan uses one-based String
 codepoint positions, not UTF-8 byte offsets. Non-String values undergo the same
 length and String-codepoint operations. A
-Table supplies its maintained length to the length operation. In particular,
+Table supplies its length boundary to the length operation. In particular,
 `false` reaches a length failure before parsing, with the reason String
 `"Attempted to get length of an unsupported value."`.
 
@@ -352,7 +352,24 @@ There are no long comments or long quoted strings. LF advances the source line; 
 | Decimal exponent | `1e3`, `2.5E-2`; `e` or `E` may be followed by a sign, then must have decimal digits. |
 | Hexadecimal integer | `0x2a`, `0X2A`; at least one hexadecimal digit is required. |
 
-A leading sign is an operator, not part of the numeric literal. These spellings do not specify additional numeric range or rounding guarantees.
+A leading sign is an operator, not part of the numeric literal. Within the
+forms listed here, Integer and Float selection, binary32 rounding and literal
+range follow the [BLua literal rules](blua-programs.md#sec-blua-programs-number-spellings).
+A decimal spelling without a fraction or exponent produces an Integer when
+its positive value fits the Integer range; a larger decimal spelling produces
+a Float. A hexadecimal integer supplies its low 32 bits as an Integer.
+Fraction and exponent spellings produce Floats. A literal that would produce
+an infinite Float is rejected.
+
+The resulting subtype and Float zero sign are observable in loaded programs,
+just as in linked programs:
+
+```lua
+local chunk = assert(load('return 2, 2.0, -0.0'))
+local a, b, c = chunk()
+-- math.type(a) is 'integer'; math.type(b) and math.type(c) are 'float'.
+-- a == b, but 1.0 / c is -math.huge.
+```
 
 
 ### Quoted strings {#sec-bios-loader-quoted-strings}
@@ -493,8 +510,8 @@ An ordinary call evaluates its callee before evaluating its arguments. A method 
 | Final return expression | An unparenthesized call forwards its result tuple after any preceding return values. |
 | Earlier return expression | A call supplies one result. |
 | Parenthesized call | Does not expand its result tuple. |
-| Bare `return` | Returns one `nil` result. |
-| Function fallthrough | Returns one `nil` result. |
+| Bare `return` | Returns zero results. |
+| Function fallthrough | Returns zero results. |
 
 
 For example, `return a, f()` forwards the results of `f` after `a`; `return a, (f())` uses one result from `f`. Likewise, `g(a, f())` expands the final call, while `g(a, (f()))` does not.
@@ -680,11 +697,11 @@ All 27 factory callables return one value. `compile_syntax` also returns exactly
 | Constructed use | Result handling |
 |---|---|
 | Call used in a single-value expression position | Requests one result. |
-| Call statement | Requests one result and discards it; the statement returns no language value. |
+| Call statement | Requests zero results; the statement returns no language value. |
 | Final argument of another call | Expands the call's result tuple only when the final node is a call expression with truthy `expands_results`. |
 | Final expression of a return list | Uses the same call-kind and `expands_results` rule for tuple expansion. |
 | Fixed return list without a final expanding call | Returns its expression count. |
-| Empty return, or function fallthrough | Returns **one nil value**. |
+| Empty return, or function fallthrough | Returns zero results. An explicit `return nil` supplies one nil. |
 
 `call_expression` sets `expands_results = true`. To represent a final call restricted to one result, set that owned call node's `expands_results` field to `false` before compilation. There is no separate factory callable for this operation.
 

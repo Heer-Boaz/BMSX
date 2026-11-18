@@ -95,7 +95,7 @@ test('palette4 production keeps packed texels and the CLUT in one destination-fr
 
 test('ROM inspection decodes raw system textures and decompressed cart texture streams', () => {
 	const direct = encodeDirect16GxTexture(1, 1, new Uint8ClampedArray([0xff, 0x00, 0x00, 0xff]));
-	const directImgDec = encodeImgDecStream(direct.words, direct.textureWordCount, direct.clutWordCount);
+	const directImgDec = encodeImgDecStream(direct.words);
 	const directMeta = {
 		width: 1,
 		height: 1,
@@ -107,7 +107,7 @@ test('ROM inspection decodes raw system textures and decompressed cart texture s
 		[255, 0, 0, 255],
 	);
 	assert.deepEqual(
-		Array.from(decodeGxTextureImage(decodeImgDecStream(directImgDec).payload, direct, directMeta).rgba),
+		Array.from(decodeGxTextureImage(decodeImgDecStream(directImgDec, direct.textureWordCount + direct.clutWordCount), direct, directMeta).rgba),
 		[255, 0, 0, 255],
 	);
 
@@ -117,7 +117,7 @@ test('ROM inspection decodes raw system textures and decompressed cart texture s
 		0x00, 0xff, 0x00, 0xff,
 		0x00, 0x00, 0xff, 0xff,
 	]));
-	const paletteImgDec = encodeImgDecStream(palette.words, palette.textureWordCount, palette.clutWordCount);
+	const paletteImgDec = encodeImgDecStream(palette.words);
 	const paletteMeta = {
 		width: 1,
 		height: 1,
@@ -125,7 +125,7 @@ test('ROM inspection decodes raw system textures and decompressed cart texture s
 		textureV: 0,
 	};
 	assert.deepEqual(
-		Array.from(decodeGxTextureImage(decodeImgDecStream(paletteImgDec).payload, palette, paletteMeta).rgba),
+		Array.from(decodeGxTextureImage(decodeImgDecStream(paletteImgDec, palette.textureWordCount + palette.clutWordCount), palette, paletteMeta).rgba),
 		[0, 255, 0, 255],
 	);
 });

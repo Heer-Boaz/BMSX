@@ -82,21 +82,18 @@ function apu.seconds_to_samples(seconds)
 end
 
 function apu.ms_to_samples(ms)
-	return ms * output_sample_rate_hz / 1000
+	return ms * (output_sample_rate_hz / 1000)
 end
 
--- The APU publishes the low word of its retained output-sample sequence. Its
--- wrap period exceeds 27 hours; shorter audio-clock intervals use the unsigned
--- sample distance and convert once at the timeline-system boundary.
+-- The APU publishes the low word of its retained output-sample sequence.
+-- Inter-sample intervals must be shorter than 2^31 samples (over 13 hours).
+-- Subtract as words before converting once at the timeline-system boundary.
 function apu.sample_sequence()
 	return *sample_sequence
 end
 
 function apu.elapsed_milliseconds(start_sample, current_sample)
 	local elapsed<const> = current_sample - start_sample
-	if elapsed < 0 then
-		return (elapsed + 0x100000000) * output_sample_milliseconds
-	end
 	return elapsed * output_sample_milliseconds
 end
 

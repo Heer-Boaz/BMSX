@@ -1,4 +1,4 @@
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
+import { isNil, numberToHost, ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { ResourceDomain } from '../../../common/resource';
@@ -73,12 +73,12 @@ export class SceneLivePositions {
 		const index = source.member.memberIndex - 1;
 		context.select(source.document, source.version, { kind: 'member', scene: source.scene, entry: source.scene.objects[index], index });
 		const local = context.selectedLocalTransform;
-		const actor = findRuntimeActor(this.sources, this.guest, source.member.domain, source.member.actorHashId) as Table;
-		if (local?.family !== '2d' || this.guest.readStringMember(actor, 'ox') !== local.ox || this.guest.readStringMember(actor, 'oy') !== local.oy) {
+		const actor = findRuntimeActor(this.sources, this.guest, source.member.domain, source.member.actorHashId)!;
+		if (local?.family !== '2d' || numberToHost(this.guest.readStringMember(actor, 'ox')) !== local.ox || numberToHost(this.guest.readStringMember(actor, 'oy')) !== local.oy) {
 			context.dispose(); return;
 		}
-		const parent = this.guest.readStringMember(actor, 'parent') as Table | null;
-		const binding = new SceneLivePosition(source.member, context, local.ox, local.oy, parent === null ? 0 : parent.hashId, () => this.pending.add(binding));
+		const parent = this.guest.readStringMember(actor, 'parent');
+		const binding = new SceneLivePosition(source.member, context, local.ox, local.oy, isNil(parent) ? 0 : this.guest.identityScalar(parent, ValueTag.Table), () => this.pending.add(binding));
 		this.bindings.add(binding); return binding;
 	}
 	public afterHostFrame(): void {

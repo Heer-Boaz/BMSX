@@ -51,19 +51,18 @@ void screenshot_set_output_dir(const char* output_dir) {
 bool screenshot_save_png(const char* filename, uint32_t width, uint32_t height, const uint8_t* rgba_data) {
 	if (!filename || width == 0 || height == 0 || !rgba_data) return false;
 	
-	// Ensure output directory exists
-	mkdir(g_screenshot_dir, 0755);
-	
 	char full_path[kScreenshotPathMax];
-	const size_t dir_len = strlen(g_screenshot_dir);
-	const size_t file_len = strlen(filename);
-	if (dir_len + 1 + file_len >= sizeof(full_path)) {
-		fprintf(stderr, "[SCREENSHOT] Output path is too long: %s/%s\n", g_screenshot_dir, filename);
+	int path_length;
+	if (filename[0] == '/') {
+		path_length = snprintf(full_path, sizeof(full_path), "%s", filename);
+	} else {
+		mkdir(g_screenshot_dir, 0755);
+		path_length = snprintf(full_path, sizeof(full_path), "%s/%s", g_screenshot_dir, filename);
+	}
+	if (path_length < 0 || (size_t)path_length >= sizeof(full_path)) {
+		fprintf(stderr, "[SCREENSHOT] Output path is too long: %s\n", filename);
 		return false;
 	}
-	memcpy(full_path, g_screenshot_dir, dir_len);
-	full_path[dir_len] = '/';
-	memcpy(full_path + dir_len + 1, filename, file_len + 1);
 	
 	FILE* f = fopen(full_path, "wb");
 	if (!f) {
@@ -125,7 +124,10 @@ bool screenshot_save_png(const char* filename, uint32_t width, uint32_t height, 
 		return false;
 	}
 	
-	fclose(f);
+	if (fclose(f) != 0) {
+		fprintf(stderr, "[SCREENSHOT] Failed to finish PNG file: %s\n", full_path);
+		return false;
+	}
 	fprintf(stderr, "[SCREENSHOT] Saved: %s\n", full_path);
 	return true;
 }
