@@ -95,6 +95,15 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, varargCount), SLJIT_R2, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, stackBase), SLJIT_R3, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, thread));
+	// CALL can enter the depth of a retained IRQ wait just as RET can.
+	// Decline before placement: the semantic CALL commits the new frame and
+	// stops at its entry with the unused part of the grant intact.
+	const auto cpu = CPU::nativeFrameOffsets();
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeCpuRunState, cpu));
+	auto* differentThread = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), cpu.haltedThread);
+	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), thread.frameDepth, SLJIT_IMM, 1);
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), cpu.haltedDepth), coldDispatch);
+	sljit_set_label(differentThread, sljit_emit_label(compiler));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_GREATER, SLJIT_R3, 0,
 		SLJIT_MEM1(SLJIT_R1), thread.stackCapacity), coldDispatch);
 	sljit_emit_op2(compiler, SLJIT_SUB, SLJIT_R2, 0,

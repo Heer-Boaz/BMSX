@@ -331,6 +331,55 @@ void protectedBuiltinPlacementCycles() {
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void haltedReceivingFrame() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, 1, 2);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4},
+		{.firstWord = 4, .wordCount = 2, .numParams = 1}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	const int call = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1; // One missing formal.
+	const int ret = BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1; // One result.
+	for (bool scalar : {true, false}) for (bool returning : {false, true}) {
+		CpuMachine machine(image, scalar);
+		auto& cpu = machine.cpu;
+		cpu.runUntilDepth(0, 1); // Bind the closure.
+		if (returning) cpu.runUntilDepth(0, call + BASE_CYCLES[static_cast<u8>(OpCode::K1)]);
+		auto state = cpu.captureRuntimeState();
+		state.haltedUntilIrqThreadRef = state.activeThreadRef;
+		state.haltedUntilIrqFrameDepth = returning ? 1 : 2;
+		cpu.restoreRuntimeState(state);
+		cpu.activeThread()->acquireFrame(); // The call gate can reuse a node without allocating.
+		if (!scalar) {
+			cpu.prepareSystemNativeCode();
+			const auto& lookup = *cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
+			for (int offset : {2, 3, 4}) {
+				const u32 pc = machine.rom.textAddress + offset * INSTRUCTION_BYTES;
+				const auto* page = lookup.find(pc, 0);
+				require(page && page->nativeCode && page->nativeCode[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
+					"both frame destinations and CALL must have published code");
+			}
+		}
+		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && cpu.isHaltedUntilIrq()
+			&& cpu.instructionBudgetRemaining == 100 - (returning ? ret : call),
+			"frame transition completes and charges placement before the matching HALT, without entering the receiver");
+		const int depth = returning ? 0 : 1;
+		require(cpu.getFrameDepth() == depth + 1
+			&& cpu.readFramePc(depth) == machine.rom.textAddress + (returning ? 3 : 4) * INSTRUCTION_BYTES
+			&& cpu.readFrameRegister(depth, 0) == (returning ? valueInteger(1) : valueNil()),
+			"HALT retains the exact receiver PC and initialized result or formal");
+		cpu.clearHaltUntilIrq();
+		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && cpu.getFrameDepth() == 0
+			&& cpu.readCompletionValues().get(0) == valueInteger(1),
+			"waking resumes the receiving instruction without replaying the frame transition");
+	}
+}
+
 void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTarget, bool ramRecord, bool alias, int maxStack = 8, int grant = -1) {
 	test::Blua32TestImage image;
 	image.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
@@ -1142,6 +1191,7 @@ int main() {
 		rootReturnPlacementCycles();
 		errorHandlerReturnPlacementCycles();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		haltedReceivingFrame();
 		for (const int grant : {1, 3, 5}) {
 			nativeCallRouting(3, 1, false, false, false, false, false, 8, grant);
 			nativeCallRouting(3, 1, true, false, false, false, false, 8, grant);
