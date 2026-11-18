@@ -25,6 +25,10 @@ export const IO_WORD_SIZE = 4;
 export const IO_REGION_SIZE = 0x00040000; // 256 KB
 
 export const GEO_SCRATCH_SIZE = 0x00080000; // 512 KB
+// The language heap extends from the active image's page-rounded static end to
+// the runtime management area at the top of installed RAM.
+export const HEAP_PAGE_SIZE = 0x00001000; // 4 KB
+export const RUNTIME_MANAGEMENT_SIZE = 0x00004000; // 16 KB
 export const MIN_RAM_SIZE = IO_REGION_SIZE + GEO_SCRATCH_SIZE;
 export const DYNAMIC_RAM_BASE = RAM_BASE + MIN_RAM_SIZE;
 

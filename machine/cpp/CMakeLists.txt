@@ -283,6 +283,7 @@ add_library(bmsx_core STATIC
 	machine/cpu/snapshot.cpp
 	machine/cpu/execution_image.cpp
 	machine/cpu/gc_heap.cpp
+	machine/cpu/heap_allocator.cpp
 	machine/cpu/lua_heap.cpp
 	machine/cpu/table.cpp
 	machine/cpu/value.cpp
@@ -702,6 +703,12 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_dirty_regions_test.cpp)
 	target_include_directories(bmsx_gx_gpu_dirty_regions_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 	add_test(NAME bmsx_gx_gpu_dirty_regions_tests COMMAND bmsx_gx_gpu_dirty_regions_tests)
+	add_executable(bmsx_heap_allocator_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/heap_allocator_conformance_runner.cpp)
+	target_link_libraries(bmsx_heap_allocator_conformance_runner PRIVATE bmsx_core)
+	if(BMSX_SNESMINI_TARGET)
+		target_link_options(bmsx_heap_allocator_conformance_runner PRIVATE -static-libstdc++ -static-libgcc)
+	endif()
 	add_executable(bmsx_pow_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/pow_conformance_runner.cpp)
 	target_link_libraries(bmsx_pow_conformance_runner PRIVATE bmsx_core)
