@@ -24,7 +24,7 @@ test::Blua32TestImage image(OpCode operation = OpCode::HALT, bool wide = false) 
 	writeInstruction(result.text, word++, static_cast<u8>(OpCode::KSMI), 7, 0, 37);
 	writeInstruction(result.text, word++, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	result.functions = {{.firstWord=0, .wordCount=word, .maxStack=8}};
-	result.constants = {std::monostate{}, 12.0, std::string("ROM text does not own guest text bytes")};
+	result.constants = {std::monostate{}, 12, std::string("ROM text does not own guest text bytes")};
 	result.systemGlobalNames = {"system", "system"};
 	result.globalNames = {"global", "global"};
 	return result;
@@ -50,22 +50,22 @@ struct Machine {
 
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	// __index7 + __mode6 + Thread(64+8*8) + static root Closure16.
-	require(cpu.luaHeap().usedBytes() == 157, "boot pool is the literal canonical allocation sum, not host object sizes");
+	// __index7 + __mode6 + Thread(64+8*5) + static root Closure16.
+	require(cpu.luaHeap().usedBytes() == 133, "boot pool is the literal canonical allocation sum, not host object sizes");
 	cpu.instructionBudgetRemaining = 7;
 	cpu.luaHeap().collectRuntime();
-	// Thread32*4 + Closure4*2 + roots12*3 + directory17 + text(2+2) =193.
-	require(cpu.instructionBudgetRemaining == -186, "runtime collection adds193 for object passes, three root passes and String work");
-	require(cpu.luaHeap().usedBytes() == 157, "readonly ROM String bytes are not charged as allocated text");
+	// Thread26*4 + Closure4*2 + roots12*3 + directory17 + text(2+2) =169.
+	require(cpu.instructionBudgetRemaining == -162, "runtime collection adds169 for object passes, three root passes and String work");
+	require(cpu.luaHeap().usedBytes() == 133, "readonly ROM String bytes are not charged as allocated text");
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers[0] = valueTable(cpu.createTable(2, 3)); //32+16+80=128.
-	frame.registers[1] = valueString(cpu.stringPool().intern("é😀")); //6 UTF8 bytes.
+	frame.registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(2, 3)))); //32+10+56=98.
+	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
 	frame.top = 2;
-	require(cpu.luaHeap().usedBytes() == 291, "canonical reserved table capacity and UTF8 text bytes agree");
+	require(cpu.luaHeap().usedBytes() == 237, "canonical reserved table capacity and UTF8 text bytes agree");
 	cpu.instructionBudgetRemaining = 7;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == -253 && cpu.luaHeap().usedBytes() == 291,
-		"base193 + Table32*2 + String(1+2) =260; each allocation rounds separately");
+	require(cpu.instructionBudgetRemaining == -215 && cpu.luaHeap().usedBytes() == 237,
+		"base169 + Table25*2 + String(1+2) =222; each allocation rounds separately");
 	const auto threshold = cpu.luaHeap().captureState();
 	require(threshold.nextCollectionBytes == 1048576, "the existing minimum collection threshold is unchanged");
 	cpu.instructionBudgetRemaining = 123;
@@ -73,10 +73,10 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.instructionBudgetRemaining == 123, "host/reset raw collection does not bill guest work");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().captureState().trackedBytes == 291,
+	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().captureState().trackedBytes == 237,
 		"snapshot capture/restore does not collect or bill runtime work and preserves canonical accounting");
 	cpu.reset();
-	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == 157,
+	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == 133,
 		"reset installation and raw maintenance collection do not execute or bill guest work");
 }
 
@@ -85,19 +85,19 @@ void explicitCollectionAndNoReplay() {
 		Machine generated(image(OpCode::CALL, wide)), scalar(image(OpCode::CALL, wide), true);
 		for (auto* m : {&generated, &scalar}) {
 			auto& frame = *m->cpu.rootThread()->currentFrame;
-			frame.registers[0] = m->cpu.createBuiltinFunction(BuiltinFunctionId::CollectGarbage);
+			frame.registers.set(0, m->cpu.createBuiltinFunction(BuiltinFunctionId::CollectGarbage));
 			frame.top = 1;
 		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining == -228,
-			"explicit primitive retains CALL32+primitive4+collection193 after short grant, without receiving slots");
+			&& generated.cpu.instructionBudgetRemaining == -204,
+			"explicit primitive retains CALL32+primitive4+collection169 after short grant, without receiving slots");
 		require(generated.cpu.readFramePc(0) == generated.rom.textAddress + (wide ? 8 : 4)
 			&& isNil(generated.cpu.readFrameRegister(0, 7)), "collection completes but cannot execute its successor");
 		test::runCpuParity(generated.cpu, scalar.cpu, 0);
 		require(generated.cpu.instructionBudgetRemaining == 0 && isNil(generated.cpu.readFrameRegister(0, 7)),
 			"zero grant performs no replay or collection");
 		test::runCpuParity(generated.cpu, scalar.cpu, 2);
-		require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.readFrameRegister(0, 7) == valueNumber(37),
+		require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.readFrameRegister(0, 7) == valueInteger(37),
 			"fresh grant executes only the actual successor, not the completed builtin");
 	}
 }
@@ -110,12 +110,12 @@ void allocationCollectionAndFailure() {
 			m->cpu.luaHeap().restoreState({before.trackedBytes, 0});
 		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining == -119,
-			"automatic GC bills first marking92 plus NEWT24 and four initialized Values exactly once");
-		require(generated.cpu.luaHeap().usedBytes() == 225 && valueIsTable(generated.cpu.readFrameRegister(0, 0))
-			&& isNil(generated.cpu.readFrameRegister(0, 7)), "request68 is admitted after collection, not included in its bill");
+			&& generated.cpu.instructionBudgetRemaining == -107,
+			"automatic GC bills first marking80 plus NEWT24 and four initialized Values exactly once");
+		require(generated.cpu.luaHeap().usedBytes() == 189 && valueIsTable(generated.cpu.readFrameRegister(0, 0))
+			&& isNil(generated.cpu.readFrameRegister(0, 7)), "request56 is admitted after collection, not included in its bill");
 		test::runCpuParity(generated.cpu, scalar.cpu, 2);
-		require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.readFrameRegister(0, 7) == valueNumber(37),
+		require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.readFrameRegister(0, 7) == valueInteger(37),
 			"allocation and GC are not replayed on the next grant");
 	}
 	Machine failure(image()); auto& cpu = failure.cpu;
@@ -123,8 +123,8 @@ void allocationCollectionAndFailure() {
 	bool failed = false;
 	try { cpu.luaHeap().reserve(4 * 1024 * 1024); }
 	catch (const LuaOutOfMemorySignal&) { failed = true; }
-	require(failed && cpu.instructionBudgetRemaining == -192 && cpu.luaHeap().usedBytes() == 157,
-		"failed oversized admission retains literal193 collection charge, not pending request bytes");
+	require(failed && cpu.instructionBudgetRemaining == -168 && cpu.luaHeap().usedBytes() == 133,
+		"failed oversized admission retains literal169 collection charge, not pending request bytes");
 	cpu.runUntilDepth(0, 1);
 	require(cpu.instructionBudgetRemaining == -1, "out-of-run reserve debt is transient and overwritten by the next run grant");
 }
@@ -132,7 +132,7 @@ void allocationCollectionAndFailure() {
 void allActivatedImagesAndUniqueGlobals() {
 	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image());
 	auto cartSource = image();
-	cartSource.constants = {std::monostate{}, 1.0, 2.0, std::string("card0")};
+	cartSource.constants = {std::monostate{}, 1, 2, std::string("card0")};
 	cartSource.globalNames = {"global", "card0", "card0"};
 	const auto card0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartSource);
 	cartSource.constants = {std::string("card1")};
@@ -145,17 +145,17 @@ void allActivatedImagesAndUniqueGlobals() {
 	cpu.writeFrameExecution(0, 1, card1.functionAddresses[0], card1.textAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], system.textAddress);
 	cpu.collectHeap();
-	require(cpu.luaHeap().usedBytes() == 157, "retired closures and readonly image payloads do not inflate the live pool");
+	require(cpu.luaHeap().usedBytes() == 133, "retired closures and readonly image payloads do not inflate the live pool");
 	cpu.instructionBudgetRemaining = 5;
 	cpu.luaHeap().collectRuntime();
 	// C=3+4+1, S=1, G=3; all activated images remain roots, not only the current system image.
-	require(cpu.instructionBudgetRemaining == -238,
-		"literal243 bills three root passes over all resident images and unique namespaces");
+	require(cpu.instructionBudgetRemaining == -214,
+		"literal219 bills three root passes over all resident images and unique namespaces");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	cpu.instructionBudgetRemaining = 5;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == -238, "restored residency and registered ranges reproduce the same collection bill");
+	require(cpu.instructionBudgetRemaining == -214, "restored residency and registered ranges reproduce the same collection bill");
 }
 
 void temporaryRootsAndUnreachablePool() {
@@ -163,39 +163,39 @@ void temporaryRootsAndUnreachablePool() {
 	Table* table = cpu.createTable(); //32; retained only by the reserve temporary root.
 	const auto id = cpu.stringPool().intern("é😀"); //6; another temporary root.
 	const auto before = cpu.luaHeap().captureState();
-	require(before.trackedBytes == 195, "precollection includes currently unreachable allocations");
+	require(before.trackedBytes == 171, "precollection includes currently unreachable allocations");
 	cpu.luaHeap().restoreState({before.trackedBytes, 0});
 	cpu.instructionBudgetRemaining = 1;
-	cpu.luaHeap().reserve(0, valueTable(table), valueString(id));
-	// First marking92 + live Table8 =100; atomic and reclamation remain.
-	require(cpu.instructionBudgetRemaining == -99 && cpu.luaHeap().usedBytes() == 195
+	cpu.luaHeap().reserve(0, valueTable(cpu.gcHeap().reference(table)), valueString(id));
+	// First marking80 + live Table8 =88; atomic and reclamation remain.
+	require(cpu.instructionBudgetRemaining == -87 && cpu.luaHeap().usedBytes() == 171
 		&& cpu.stringPool().toString(id) == "é😀", "all reserve temporary roots survive the first incremental pass");
-	while (cpu.collecting()) cpu.stepHeap(valueTable(table), valueString(id), valueNil());
+	while (cpu.collecting()) cpu.stepHeap(valueTable(cpu.gcHeap().reference(table)), valueString(id), valueNil());
 	cpu.instructionBudgetRemaining = 1;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == -203 && cpu.luaHeap().usedBytes() == 157,
+	require(cpu.instructionBudgetRemaining == -179 && cpu.luaHeap().usedBytes() == 133,
 		"dead Table incurs8 sweep words, not another mark pass; its String incurs3 words");
 }
 
 void incrementalStateAndBarriers() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto* roots = cpu.createTable(1024, 0);
-	cpu.rootThread()->currentFrame->registers[0] = valueTable(roots);
+	cpu.rootThread()->currentFrame->registers.set(0, valueTable(cpu.gcHeap().reference(roots)));
 	cpu.rootThread()->currentFrame->top = 1;
 	const auto field = cpu.stringPool().intern("child");
 	for (int i = 1; i <= 1000; ++i) {
 		auto* item = cpu.createTable(1, 1);
-		item->setStringKey(field, valueBool(false)); roots->setInteger(i, valueTable(item));
+		item->setStringKey(field, valueBool(false)); roots->setInteger(i, valueTable(cpu.gcHeap().reference(item)));
 		auto* dead = cpu.createTable(1, 0);
-		dead->setInteger(1, valueTable(cpu.createTable()));
+		dead->setInteger(1, valueTable(cpu.gcHeap().reference(cpu.createTable())));
 	}
 	for (int i = 0; i < 320; ++i) cpu.stringPool().intern("dead-" + std::to_string(i) + std::string(256, 'x'));
-	auto* target = asTable(roots->getInteger(1000));
+	auto* target = asTable(roots->getInteger(1000), cpu.gcHeap());
 	require(cpu.stepHeap(valueNil(), valueNil(), valueNil()) >= GC_STEP_WORDS && target->gcColor == 3,
 		"mutations target a black allocation while marking is incomplete");
 	auto* child = cpu.createTable();
-	target->setInteger(1, valueTable(child));
-	target->setStringKey(field, valueTable(child));
+	target->setInteger(1, valueTable(cpu.gcHeap().reference(child)));
+	target->setStringKey(field, valueTable(cpu.gcHeap().reference(child)));
 	target->writeBarrier(); target->metatable = cpu.createTable();
 	const auto childId = child->hashId;
 	u32 phases = 0, bornId = 0;
@@ -205,7 +205,7 @@ void incrementalStateAndBarriers() {
 		if (state.gc.phase == GcPhase::Sweep && bornId == 0) {
 			auto* born = cpu.createTable(); bornId = born->hashId;
 			auto* frame = cpu.rootThread()->currentFrame;
-			frame->registers[1] = valueTable(born); frame->top = 2;
+			frame->registers.set(1, valueTable(cpu.gcHeap().reference(born))); frame->top = 2;
 			state = cpu.captureRuntimeState();
 		}
 		const auto strings = cpu.stringPool().captureState();
@@ -222,12 +222,12 @@ void incrementalStateAndBarriers() {
 		cpu.stepHeap(valueNil(), valueNil(), valueNil());
 	}
 	require(phases == 59, "snapshot/restore exercised Mark, Atomic, Sweep, Strings and Pause");
-	roots = asTable(cpu.rootThread()->currentFrame->registers[0]);
-	target = asTable(roots->getInteger(1000));
-	require(asTable(target->getInteger(1))->hashId == childId
-		&& asTable(target->getStringKey(field))->hashId == childId && target->metatable,
+	roots = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
+	target = asTable(roots->getInteger(1000), cpu.gcHeap());
+	require(asTable(target->getInteger(1), cpu.gcHeap())->hashId == childId
+		&& asTable(target->getStringKey(field), cpu.gcHeap())->hashId == childId && target->metatable,
 		"barriers preserve changed array, hash and metatable edges");
-	require(asTable(cpu.rootThread()->currentFrame->registers[1])->hashId == bornId,
+	require(asTable(cpu.rootThread()->currentFrame->registers.get(1), cpu.gcHeap())->hashId == bornId,
 		"an allocation born during sweep is retained");
 	require(!cpu.stringPool().find("dead-0" + std::string(256, 'x')), "incremental String sweep reclaims dead text");
 	cpu.collectHeap();
@@ -240,40 +240,40 @@ void incrementalSharedWeakMode() {
 	auto& cpu = machine.cpu;
 	auto* roots = cpu.createTable(1024, 0);
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers[0] = valueTable(roots);
+	frame.registers.set(0, valueTable(cpu.gcHeap().reference(roots)));
 	frame.top = 1;
-	for (int i = 1; i <= 1000; ++i) roots->setInteger(i, valueTable(cpu.createTable()));
+	for (int i = 1; i <= 1000; ++i) roots->setInteger(i, valueTable(cpu.gcHeap().reference(cpu.createTable())));
 	const auto modeKey = cpu.stringPool().intern("__mode");
 	auto* metatable = cpu.createTable(0, 1);
 	metatable->setStringKey(modeKey, valueString(cpu.stringPool().intern("v")));
-	auto* weak = asTable(roots->getInteger(1000));
+	auto* weak = asTable(roots->getInteger(1000), cpu.gcHeap());
 	weak->metatable = metatable;
 	auto* child = cpu.createTable();
-	weak->setInteger(1, valueTable(child));
+	weak->setInteger(1, valueTable(cpu.gcHeap().reference(child)));
 	cpu.stepHeap(valueNil(), valueNil(), valueNil());
 	require(cpu.captureRuntimeState().gc.phase == GcPhase::Mark && weak->gcColor == 3
 		&& weak->gcWeakListed && child->gcColor != 3, "weak entry has not retained its child before the mode change");
 	metatable->setStringKey(modeKey, valueNil());
 	while (cpu.collecting()) cpu.stepHeap(valueNil(), valueNil(), valueNil());
-	require(weak->getInteger(1) == valueTable(child), "atomic remark observes the shared metatable change");
+	require(weak->getInteger(1) == valueTable(cpu.gcHeap().reference(child)), "atomic remark observes the shared metatable change");
 	cpu.collectHeap();
-	require(weak->getInteger(1) == valueTable(child), "the newly strong entry retains its child in the next cycle");
+	require(weak->getInteger(1) == valueTable(cpu.gcHeap().reference(child)), "the newly strong entry retains its child in the next cycle");
 }
 
 void secondMarkPassAndCredit() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers[0] = valueTable(cpu.createTable(4096, 0)); frame.top = 1;
+	frame.registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(4096, 0)))); frame.top = 1;
 	const auto before = cpu.luaHeap().usedBytes();
 	cpu.luaHeap().restoreState({before, before}); cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
 	const size_t work = static_cast<size_t>(-cpu.instructionBudgetRemaining);
-	require(work > 8192 && cpu.luaHeap().captureState().nextCollectionBytes == before + work / 16,
+	require(work > GC_STEP_WORDS && cpu.luaHeap().captureState().nextCollectionBytes == before + work / 16,
 		"oversized marking earns its actual allocation credit before the pending request");
 	u32 phases = 0;
 	for (int i = 0; i < 12; ++i) {
-		auto* target = asTable(cpu.rootThread()->currentFrame->registers[0]);
-		target->setInteger(1, valueNumber(i));
+		auto* target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
+		target->setInteger(1, valueInteger(i));
 		cpu.stepHeap(valueNil(), valueNil(), valueNil());
 		const auto state = cpu.captureRuntimeState(); phases |= 1u << static_cast<u32>(state.gc.phase);
 		const auto strings = cpu.stringPool().captureState();
@@ -284,28 +284,28 @@ void secondMarkPassAndCredit() {
 		if (state.gc.phase == GcPhase::Atomic) break;
 	}
 	require((phases & 12u) == 12u, "continuous stores do not restart either incremental mark pass indefinitely");
-	auto* target = asTable(cpu.rootThread()->currentFrame->registers[0]);
-	auto* late = cpu.createTable(); target->setInteger(2, valueTable(late));
+	auto* target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
+	auto* late = cpu.createTable(); target->setInteger(2, valueTable(cpu.gcHeap().reference(late)));
 	while (cpu.collecting()) cpu.stepHeap(valueNil(), valueNil(), valueNil());
-	require(target->getInteger(2) == valueTable(late), "final remark retains writes after the second pass");
+	require(target->getInteger(2) == valueTable(cpu.gcHeap().reference(late)), "final remark retains writes after the second pass");
 }
 
 void stackShrinkAndAdmission() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto* thread = cpu.rootThread(); auto& frame = *thread->currentFrame;
-	cpu.luaHeap().reserve((1024 - thread->stackCapacity) * 8); thread->resizeStack(1024);
-	frame.registers[0] = valueNumber(123); frame.top = 1;
+	cpu.luaHeap().reserve((1024 - thread->stackCapacity) * 5); thread->resizeStack(1024);
+	frame.registers.set(0, valueInteger(123)); frame.top = 1;
 	const size_t before = cpu.luaHeap().usedBytes();
 	cpu.collectHeap();
-	require(thread->stackCapacity == 512 && cpu.luaHeap().usedBytes() == before - 512 * 8,
+	require(thread->stackCapacity == 512 && cpu.luaHeap().usedBytes() == before - 512 * 5,
 		"sweep halves the cold stack and releases exactly its canonical slot bytes");
-	frame.registers[0] = valueNumber(456);
-	require(thread->stack[frame.stackBase] == valueNumber(456), "frame register view is rebound by the Thread owner");
+	frame.registers.set(0, valueInteger(456));
+	require(thread->stack.get(frame.stackBase) == valueInteger(456), "frame register view is rebound by the Thread owner");
 	frame.stackCapacity = 200;
 	auto* child = thread->acquireFrame();
 	child->stackBase = 2; child->stackCapacity = 8; child->top = 0;
 	child->closure = frame.closure; child->executionImage = frame.executionImage;
-	child->registers = thread->stack + 2;
+	child->registers = thread->stack.view().subspan(2, 8);
 	thread->enterFrame(child); thread->stackTop = 10;
 	cpu.collectHeap();
 	require(thread->stackCapacity == 512, "all caller windows participate in the shrink hysteresis");
@@ -313,9 +313,9 @@ void stackShrinkAndAdmission() {
 	cpu.luaHeap().collectRuntime(valueNil(), valueNil(), valueNil(), thread);
 	require(thread->stackCapacity == 512, "growth admission keeps the allocation being grown stable");
 	cpu.luaHeap().restoreState({cpu.luaHeap().usedBytes(), 0});
-	cpu.luaHeap().reserve((2048 - 512) * 8, valueNil(), valueNil(), valueNil(), thread);
+	cpu.luaHeap().reserve((2048 - 512) * 5, valueNil(), valueNil(), valueNil(), thread);
 	thread->resizeStack(2048);
-	require(frame.registers[0] == valueNumber(456), "growth preserves values after prior shrink");
+	require(frame.registers.get(0) == valueInteger(456), "growth preserves values after prior shrink");
 	const auto state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
 	require(std::ranges::equal(state.snapshot.words(), cpu.captureRuntimeState().snapshot.words()),
 		"shrunken and regrown stack storage survives snapshot replay");
@@ -323,15 +323,15 @@ void stackShrinkAndAdmission() {
 
 void highRetainedPacing() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	auto* retained = cpu.createTable(262144, 0);
+	auto* retained = cpu.createTable(419430, 0);
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers[0] = valueTable(retained); frame.top = 1;
+	frame.registers.set(0, valueTable(cpu.gcHeap().reference(retained))); frame.top = 1;
 	cpu.collectHeap();
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const auto before = cpu.diagnosticGcProfile();
 #endif
 	for (int i = 0; i < 24000; ++i) cpu.createTable(8, 0);
-	require(cpu.luaHeap().usedBytes() <= cpu.luaHeap().capacity() && frame.registers[0] == valueTable(retained),
+	require(cpu.luaHeap().usedBytes() <= cpu.luaHeap().capacity() && frame.registers.get(0) == valueTable(cpu.gcHeap().reference(retained)),
 		"retained pool and transient allocation coexist inside the physical capacity");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const auto after = cpu.diagnosticGcProfile();

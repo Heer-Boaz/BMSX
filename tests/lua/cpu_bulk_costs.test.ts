@@ -6,14 +6,12 @@ import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Table } from '../../machine/ts/machine/cpu/table';
-import { createBuiltinFunction, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueFloat, valueNil, valueString, valueTable, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { BASE_RAM_USED_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -36,19 +34,19 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   const runNext = (table: Table, after: Value, slots: number, expected: Value[]) => {
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    frame.registers.set(0, next);
-   frame.registers.setTable(1, table);
+   frame.registers.setTable(1, cpu.gc.reference(table));
    frame.registers.set(2, after);
-   frame.registers.setNumber(7, 91);
+   frame.registers.setInteger(7, 91);
    assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
    assert.equal(cpu.instructionBudgetRemaining, -slots - expected.length,
     'NEXT adds only inspected Value slots to its existing primitive and result-placement costs');
    assert.equal(frame.top, expected.length, 'success returns two values; exhaustion returns one nil');
    assert.deepEqual(Array.from({ length: frame.top }, (_, index) => frame.registers.get(index)), expected);
    assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
-   assert.equal(frame.registers.getNumber(7), 91, 'the instruction following the admitted primitive does not execute');
+   assert.equal(frame.registers.getInteger(7), 91, 'the instruction following the admitted primitive does not execute');
   };
   const warm = cpu.createTable();
-  for (let repeat = 0; repeat < 72; ++repeat) runNext(warm, null, 0, [null]);
+  for (let repeat = 0; repeat < 72; ++repeat) runNext(warm, valueNil(), 0, [valueNil()]);
   if (backend === CpuExecutionBackend.JavaScript) {
    assert.equal(frame.decodedPage!.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal.exit,
     CompiledBlockExit.Call, 'the measured NEXT calls use a warmed generated call entry');
@@ -56,19 +54,19 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 
   for (const [array, hash, slots] of [[5, 0, 5], [0, 3, 8], [5, 3, 13]]) {
    const empty = cpu.createTable(array, hash);
-   for (let repeat = 0; repeat < 3; ++repeat) runNext(empty, null, slots, [null]);
+   for (let repeat = 0; repeat < 3; ++repeat) runNext(empty, valueNil(), slots, [valueNil()]);
   }
   const sparse = cpu.createTable(8, 0);
-  sparse.setInteger(3, 33);
-  sparse.setInteger(7, 77);
-  runNext(sparse, null, 3, [3, 33]);
-  runNext(sparse, 3, 4, [7, 77]);
-  runNext(sparse, 7, 1, [null]);
-  runNext(sparse, 8, 0, [null]);
-  runNext(sparse, 2, 1, [3, 33]);
+  sparse.setInteger(3, valueInteger(33));
+  sparse.setInteger(7, valueInteger(77));
+  runNext(sparse, valueNil(), 3, [valueInteger(3), valueInteger(33)]);
+  runNext(sparse, valueInteger(3), 4, [valueInteger(7), valueInteger(77)]);
+  runNext(sparse, valueInteger(7), 1, [valueNil()]);
+  runNext(sparse, valueInteger(8), 0, [valueNil()]);
+  runNext(sparse, valueInteger(2), 1, [valueInteger(3), valueInteger(33)]);
 
   const hash = cpu.createTable(0, 8);
-  for (let index = 0; index < 8; ++index) hash.setStringKey(cpu.stringPool.intern(`next-${index}`), index + 10);
+  for (let index = 0; index < 8; ++index) hash.setStringKey(cpu.stringPool.intern(`next-${index}`), valueInteger(index + 10));
   const stored = new ValueSlots(2);
   const keys: Value[] = [], values: Value[] = [];
   for (let slot = 0; slot < 8; ++slot) {
@@ -76,16 +74,16 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
    keys.push(stored.get(0));
    values.push(stored.get(1));
   }
-  for (let slot = 0; slot < 8; ++slot) if (slot !== 1 && slot !== 4) hash.set(keys[slot], null);
-  runNext(hash, null, 4, [keys[1], values[1]]);
+  for (let slot = 0; slot < 8; ++slot) if (slot !== 1 && slot !== 4) hash.set(keys[slot], valueNil());
+  runNext(hash, valueNil(), 4, [keys[1], values[1]]);
   runNext(hash, keys[1], 6, [keys[4], values[4]]);
   runNext(hash, keys[2], 4, [keys[4], values[4]]);
-  runNext(hash, keys[4], 6, [null]);
+  runNext(hash, keys[4], 6, [valueNil()]);
 
   const falseKey = cpu.createTable(0, 1);
-  falseKey.set(false, false);
-  runNext(falseKey, null, 2, [false, false]);
-  runNext(falseKey, false, 0, [null]);
+  falseKey.set(valueBool(false), valueBool(false));
+  runNext(falseKey, valueNil(), 2, [valueBool(false), valueBool(false)]);
+  runNext(falseKey, valueBool(false), 0, [valueNil()]);
  });
 
  test(`NEXT source result counts remain one nil or a key/value pair (${backend})`, () => {
@@ -106,7 +104,7 @@ return true`, 3);
   assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
   const values: Value[] = [];
   cpu.readCompletionValues(values);
-  assert.deepEqual(values, [true]);
+  assert.deepEqual(values, [valueBool(true)]);
  });
 
  for (const [array, hash, capacity] of [[0, 0, 0], [1, 0, 0], [0, 1, 1], [7, 3, 4], [13, 5, 8], [0, 31, 32], [9, 33, 64], [63, 63, 64]]) {
@@ -128,7 +126,7 @@ return true`, 3);
    assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
    assert.equal(cpu.instructionBudgetRemaining, 0 - (array + 2 * capacity));
    assert.equal(cpu.rootThread.currentFrame!.pc, image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
-   assert.equal(cpu.rootThread.currentFrame!.registers.getTable(0).storedSlotCount, array + capacity);
+   assert.equal(cpu.rootThread.currentFrame!.registers.getTable(0, cpu.gc).storedSlotCount, array + capacity);
   });
  }
 
@@ -141,9 +139,9 @@ return true`, 3);
   const frame = cpu.rootThread.currentFrame!;
   const entry = image.image.functions[0].codeAddress;
   const keys = Array.from({ length: 16 }, (_, index) => cpu.stringPool.intern(`growth-${index}`));
-  frame.registers.setTable(0, cpu.createTable(0, 16));
-  frame.registers.setStringId(1, keys[0]);
-  frame.registers.setNumber(2, 73);
+  frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(0, 16)));
+  frame.registers.setString(1, keys[0]);
+  frame.registers.setInteger(2, 73);
   cpu.runUntilDepth(0, 10000);
   if (backend === CpuExecutionBackend.JavaScript) {
    assert.ok(frame.decodedPage!.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES],
@@ -151,11 +149,11 @@ return true`, 3);
   }
   for (const initialCapacity of [0, 16]) {
    const table = cpu.createTable(0, initialCapacity);
-   frame.registers.setTable(0, table);
+   frame.registers.setTable(0, cpu.gc.reference(table));
    let initializedSlots = 0;
    let previousCapacity = table.storedSlotCount;
    for (let index = 0; index < keys.length; index += 1) {
-    frame.registers.setStringId(1, keys[index]);
+    frame.registers.setString(1, keys[index]);
     cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
     const capacityExpected = initialCapacity || (1 << (32 - Math.clz32(index)));
     const surcharge = capacityExpected === previousCapacity ? 0 : 4 * previousCapacity + 2 * capacityExpected + 2 * index;
@@ -164,7 +162,7 @@ return true`, 3);
     assert.equal(cpu.instructionBudgetRemaining, surcharge ? 1 - surcharge : 1 - BASE_CYCLES[OpCode.JMP]);
     assert.equal(frame.pc, surcharge ? entry + INSTRUCTION_BYTES : entry,
      'growth finishes atomically and stops before the following instruction');
-    assert.equal(table.getStringKey(keys[index]), 73);
+    assert.equal(table.getStringKey(keys[index]), valueInteger(73));
     const capacity = table.storedSlotCount;
     assert.equal(capacity, initialCapacity || (1 << (32 - Math.clz32(index))));
     if (capacity !== previousCapacity) initializedSlots += 2 * capacity;
@@ -185,14 +183,14 @@ return true`, 3);
    const frame = cpu.rootThread.currentFrame!, r = frame.registers;
    const entry = image.image.functions[0].codeAddress;
    const integer = op === OpCode.SETI;
-   const key = integer ? 1 : valueString(cpu.stringPool.intern('field'));
+   const key = integer ? valueInteger(1) : valueString(cpu.stringPool.intern('field'));
    const prepare = (capacity: number) => {
     const table = cpu.createTable(integer ? capacity : 0, integer ? 0 : capacity);
     if (op === OpCode.CALL) {
-     r.set(0, createBuiltinFunction(BuiltinFunctionId.RawSet)); r.setTable(1, table);
-     r.set(2, key); r.setNumber(3, 73);
+     r.setBuiltinFunction(0, BuiltinFunctionId.RawSet); r.setTable(1, cpu.gc.reference(table));
+     r.set(2, key); r.setInteger(3, 73);
     } else {
-     r.setTable(0, table); r.set(1, key); r.setNumber(2, 73);
+     r.setTable(0, cpu.gc.reference(table)); r.set(1, key); r.setInteger(2, 73);
     }
     return table;
    };
@@ -208,7 +206,7 @@ return true`, 3);
    const initialization = integer ? 1 : 2;
    assert.equal(cpu.instructionBudgetRemaining, 1 - initialization);
    assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
-   assert.equal(table.get(key), 73);
+   assert.equal(table.get(key), valueInteger(73));
   });
  }
 
@@ -223,7 +221,7 @@ return true`, 3);
    const { cpu } = createTestSystemCpu(image, backend);
    const frame = cpu.rootThread.currentFrame!, r = frame.registers;
    const entry = image.image.functions[0].codeAddress;
-   r.setTable(0, cpu.createTable(0, 1)); r.set(1, valueString(cpu.stringPool.intern('warm'))); r.setNumber(2, 73);
+   r.setTable(0, cpu.gc.reference(cpu.createTable(0, 1))); r.set(1, valueString(cpu.stringPool.intern('warm'))); r.setInteger(2, 73);
    cpu.runUntilDepth(0, 10000);
    if (backend === CpuExecutionBackend.JavaScript) {
     assert.ok(frame.decodedPage!.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]);
@@ -233,38 +231,39 @@ return true`, 3);
    const array = scenario === 'array-growth' ? 2 : scenario === 'array-to-hash' ? 8 : scenario === 'mixed' ? 4 : 0;
    const hash = scenario === 'hash-to-array' || scenario === 'mixed' || scenario === 'same-capacity' || scenario === 'weak-collection' ? 2 : scenario === 'failed-growth' ? 1024 : 0;
    const table = cpu.createTable(array, hash);
-   r.setTable(0, table); r.setNumber(2, 73); frame.top = 5;
-   let surcharge: number, capacity: number;
+   r.setTable(0, cpu.gc.reference(table)); r.setInteger(2, 73); frame.top = 5;
+   let surcharge: number, capacity: number, retainedSlots = 0;
    if (scenario === 'array-growth') {
-    table.setInteger(1, 11); table.setInteger(2, 22); r.setNumber(1, 3);
+    table.setInteger(1, valueInteger(11)); table.setInteger(2, valueInteger(22)); r.setInteger(1, 3);
     surcharge = 10; capacity = 4;
    } else if (scenario === 'hash-to-array') {
-    table.setInteger(1, 11); table.setInteger(3, 33); r.setNumber(1, 2);
+    table.setInteger(1, valueInteger(11)); table.setInteger(3, valueInteger(33)); r.setInteger(1, 2);
     surcharge = 14; capacity = 4;
    } else if (scenario === 'array-to-hash') {
-    table.setInteger(8, 88); r.set(1, field);
+    table.setInteger(8, valueInteger(88)); r.set(1, field);
     surcharge = 22; capacity = 2;
    } else if (scenario === 'mixed') {
-    table.setInteger(1, 11); table.setInteger(4, 44); table.set(field, 55); table.set(other, 66);
+    table.setInteger(1, valueInteger(11)); table.setInteger(4, valueInteger(44)); table.set(field, valueInteger(55)); table.set(other, valueInteger(66));
     r.set(1, valueString(cpu.stringPool.intern('third')));
     surcharge = 32; capacity = 5;
    } else if (scenario === 'same-capacity') {
-    table.set(field, 55); table.set(other, 66); table.set(other, null);
+    table.set(field, valueInteger(55)); table.set(other, valueInteger(66)); table.set(other, valueNil());
     r.set(1, valueString(cpu.stringPool.intern('third')));
     surcharge = 14; capacity = 2;
    } else if (scenario === 'weak-collection') {
     const mode = cpu.createTable(0, 1);
     mode.setStringKey(cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v'))); table.metatable = mode;
-    table.set(field, cpu.createTable()); table.set(other, cpu.createTable());
+    table.set(field, valueTable(cpu.gc.reference(cpu.createTable()))); table.set(other, valueTable(cpu.gc.reference(cpu.createTable())));
     r.set(1, valueString(cpu.stringPool.intern('third')));
     const heap = cpu.luaHeap.captureState();
     cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
     cpu.stringPool.intern('g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 16));
     surcharge = 16; capacity = 4;
    } else {
-    for (let i = 0; i < 1024; ++i) table.set(i + 0.5, i);
-    r.setNumber(1, 1024.5);
-    r.setTable(4, cpu.createTable((PSX_MACHINE_SPEC.ramBytes - BASE_RAM_USED_SIZE - cpu.luaHeap.usedBytes() - 4096) >>> 3));
+    for (let i = 0; i < 1024; ++i) table.set(valueFloat(i + 0.5), valueInteger(i));
+    r.setFloat(1, 1024.5);
+    retainedSlots = ((cpu.luaHeap.capacity() - cpu.luaHeap.usedBytes() - 4096) / 5) | 0;
+    r.setTable(4, cpu.gc.reference(cpu.createTable(retainedSlots)));
     cpu.collectTrackedHeapBytes(); // Isolate failed admission from any preceding assist cycle.
     surcharge = 2048; capacity = 1024;
    }
@@ -272,10 +271,11 @@ return true`, 3);
    if (scenario === 'weak-collection' || scenario === 'failed-growth') {
     const strings = cpu.stringPool.captureState();
     const stringWork = strings.slots + strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
-    // Weak case: Thread128 + Closure8 + weak Table90 + mode26 + two dead Values16 + dead warm Table13.
+    // Weak case: Thread104 + Closure8 + weak Table75 + mode24 + two dead Tables16 + dead warm Table12.
     // Strong case: all objects scan and sweep, with two extra Thread remarks.
-    gcCycles = stringWork + (scenario === 'weak-collection' ? 281
-      : 2 * ((cpu.luaHeap.usedBytes() - cpu.stringPool.trackedLuaHeapBytes()) / 4) + 2 * (64 + cpu.rootThread.stackRegisters.capacity() * 8) / 4);
+    gcCycles = stringWork + (scenario === 'weak-collection' ? 239
+      : 4 * ceilDiv4(64 + 5 * cpu.rootThread.stackRegisters.capacity()) + 8
+       + 2 * ceilDiv4(32 + 14 * 1024) + 2 * ceilDiv4(32 + 5 * retainedSlots));
    }
    const key = r.get(1);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
@@ -285,12 +285,12 @@ return true`, 3);
    assert.equal(table.storedSlotCount, capacity);
    if (scenario === 'failed-growth') {
     assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-    assert.equal(table.get(key), null, 'failed admission performs no insertion');
-    assert.equal(table.get(0.5), 0, 'existing mappings survive failed admission');
+    assert.equal(table.get(key), valueNil(), 'failed admission performs no insertion');
+    assert.equal(table.get(valueFloat(0.5)), valueInteger(0), 'existing mappings survive failed admission');
    } else {
-    assert.equal(table.get(key), 73);
+    assert.equal(table.get(key), valueInteger(73));
     if (scenario === 'weak-collection') {
-     assert.equal(table.get(field), null); assert.equal(table.get(other), null);
+     assert.equal(table.get(field), valueNil()); assert.equal(table.get(other), valueNil());
     }
    }
   });
@@ -305,9 +305,9 @@ return true`, 3);
   scheduler.setNowCycles(73);
   const r = cpu.rootThread.currentFrame!.registers, table = cpu.createTable();
   const key = valueString(cpu.stringPool.intern('field'));
-  r.setTable(0, table); r.set(1, key); r.setNumber(2, 91); cpu.rootThread.currentFrame!.top = 3;
+  r.setTable(0, cpu.gc.reference(table)); r.set(1, key); r.setInteger(2, 91); cpu.rootThread.currentFrame!.top = 3;
   cpu.instructionBudgetRemaining = 29;
-  table.set(key, 37);
+  table.set(key, valueInteger(37));
   assert.equal(cpu.instructionBudgetRemaining, 27);
   assert.equal(scheduler.currentNowCycles(), 73, 'host storage work does not advance machine time');
   const saved = cpu.captureRuntimeState();
@@ -318,7 +318,7 @@ return true`, 3);
   assert.equal(scheduler.currentNowCycles(), 73);
   assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
   assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.SETT], 'the next execution owns a fresh grant');
-  assert.equal(cpu.rootThread.currentFrame!.registers.getTable(0).get(key), 91);
+  assert.equal(cpu.rootThread.currentFrame!.registers.getTable(0, cpu.gc).get(key), valueInteger(91));
  });
 
 }

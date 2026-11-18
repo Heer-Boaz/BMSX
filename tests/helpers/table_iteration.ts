@@ -12,8 +12,9 @@ coroutine = require('coroutine')
 ${body}`;
 	const modules = [
 		{ path: 'table_iteration_boot', source: 'collectgarbage = __bmsx_collect_garbage' },
-		{ path: 'base', source: readFileSync('machine/bios/base.lua', 'utf8') },
-		{ path: 'table', source: readFileSync('machine/bios/table.lua', 'utf8') },
+		...['base', 'number/parse', 'number/decimal', 'table'].map(path => ({
+			path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
+		})),
 		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
 		...COROUTINE_FIRMWARE_MODULES,
 	];

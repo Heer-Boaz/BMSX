@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { integerConstant } from '../../toolchain/ts/lua/number';
+import { ValueTag, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -24,29 +25,29 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 	writeInstruction(text, word++, operation, 0, operation === OpCode.NEWT ? 2 : 1, 1);
 	writeInstruction(text, word++, OpCode.KSMI, 7, 0, 37);
 	writeInstruction(text, word++, OpCode.HALT, 0, 0, 0);
-	return { text, functions: [{ firstWord: 0, wordCount: word, maxStack: 8 }], constants: [null, 12, 'ROM text does not own guest text bytes'],
+	return { text, functions: [{ firstWord: 0, wordCount: word, maxStack: 8 }], constants: [null, integerConstant(12), 'ROM text does not own guest text bytes'],
 		systemGlobalNames: ['system', 'system'], globalNames: ['global', 'global'] };
 }
 
 test('runtime GC bills actual canonical scans, reclamation and three unique root passes', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
-	assert.equal(cpu.luaHeap.usedBytes(), 157, '__index7 + __mode6 + Thread(64+8×8) + rootClosure16');
+	assert.equal(cpu.luaHeap.usedBytes(), 133, '__index7 + __mode6 + Thread(64+8×5) + rootClosure16');
 	cpu.instructionBudgetRemaining = 7; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, -186, 'Thread32×4 + Closure4×2 + roots12×3 + directory17 + text(2+2) =193');
-	assert.equal(cpu.luaHeap.usedBytes(), 157, 'ROM-backed strings and host object shapes are not pool text bytes');
+	assert.equal(cpu.instructionBudgetRemaining, -162, 'Thread26×4 + Closure4×2 + roots12×3 + directory17 + text(2+2) =169');
+	assert.equal(cpu.luaHeap.usedBytes(), 133, 'ROM-backed strings and host object shapes are not pool text bytes');
 	const frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, cpu.createTable(2, 3)); //32+16+4×20=128.
-	frame.registers.setStringId(1, cpu.stringPool.intern('é😀')); //6 canonical UTF8 bytes, not3 UTF16 units.
+	frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(2, 3))); //32+10+4×14=98.
+	frame.registers.setString(1, cpu.stringPool.intern('é😀')); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
-	assert.equal(cpu.luaHeap.usedBytes(), 291);
+	assert.equal(cpu.luaHeap.usedBytes(), 237);
 	cpu.instructionBudgetRemaining = 7; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, -253, 'base193 + Table32×2 + String(1slot+2words) =260');
-	assert.equal(cpu.luaHeap.usedBytes(), 291);
+	assert.equal(cpu.instructionBudgetRemaining, -215, 'base169 + Table25×2 + String(1slot+2words) =222');
+	assert.equal(cpu.luaHeap.usedBytes(), 237);
 	assert.equal(cpu.luaHeap.captureState().nextCollectionBytes, 1048576);
 	cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'raw host collection is unbilled');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
-	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), 291);
+	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), 237);
 	cpu.reset();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'reset maintenance does not implicitly collect or bill the retained transient grant');
 });
@@ -57,19 +58,19 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, pc = frame.pc;
 		for (let warm = 0; warm < COMPILED_BLOCK_THRESHOLD + 2; ++warm) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			frame.registers.setEncoded(0, ValueTag.BuiltinFunction, BuiltinFunctionId.CollectGarbage, null); frame.top = 1;
+			frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.top = 1;
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		}
 		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		frame.registers.setEncoded(0, ValueTag.BuiltinFunction, BuiltinFunctionId.CollectGarbage, null); frame.registers.setNil(7); frame.top = 1;
+		frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.registers.setNil(7); frame.top = 1;
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, -228, 'CALL32 + primitive4 + collection193, no receiving slots');
-		assert.equal(frame.pc, pc + (wide ? 2 : 1) * INSTRUCTION_BYTES); assert.equal(frame.registers.get(7), null);
+		assert.equal(cpu.instructionBudgetRemaining, -204, 'CALL32 + primitive4 + collection169, no receiving slots');
+		assert.equal(frame.pc, pc + (wide ? 2 : 1) * INSTRUCTION_BYTES); assert.equal(frame.registers.get(7), valueNil());
 		assert.equal(cpu.runUntilDepth(0, 0), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
-		assert.equal(frame.registers.get(7), null);
+		assert.equal(frame.registers.get(7), valueNil());
 		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
-		assert.equal(frame.registers.getNumber(7), 37, 'fresh grant executes successor, not CALL/collection again');
+		assert.equal(frame.registers.get(7), valueInteger(37), 'fresh grant executes successor, not CALL/collection again');
 	});
 
 	test(`allocation-triggered GC charges pre-request pool before initialization (${backend}, WIDE=${wide})`, () => {
@@ -82,15 +83,15 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 		frame.registers.setNil(0); frame.top = 0;
 		cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
-		assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), 157);
+		assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), 133);
 		const heap = cpu.luaHeap.captureState(); cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: 0 });
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc); frame.registers.setNil(7);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, -119, 'NEWT24 + initialized4 + first mark32+4+32 + roots12×2 =120');
-		assert.equal(cpu.luaHeap.usedBytes(), 225, 'request68 is admitted after collection and excluded from B_pre');
-		assert.equal(frame.registers.getTag(0), ValueTag.Table); assert.equal(frame.registers.get(7), null);
+		assert.equal(cpu.instructionBudgetRemaining, -107, 'NEWT24 + initialized4 + first mark26+4+26 + roots12×2 =108');
+		assert.equal(cpu.luaHeap.usedBytes(), 189, 'request56 is admitted after collection and excluded from B_pre');
+		assert.equal(frame.registers.getTag(0), ValueTag.Table); assert.equal(frame.registers.get(7), valueNil());
 		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
-		assert.equal(frame.registers.getNumber(7), 37);
+		assert.equal(frame.registers.get(7), valueInteger(37));
 	});
 }
 
@@ -98,35 +99,35 @@ test('failed allocation retains the collection debit, not pending request bytes'
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	cpu.instructionBudgetRemaining = 1;
 	assert.throws(() => cpu.luaHeap.reserve(PSX_MACHINE_SPEC.ramBytes - BASE_RAM_USED_SIZE + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
-	assert.equal(cpu.instructionBudgetRemaining, -192); assert.equal(cpu.luaHeap.usedBytes(), 157);
+	assert.equal(cpu.instructionBudgetRemaining, -168); assert.equal(cpu.luaHeap.usedBytes(), 133);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted); assert.equal(cpu.instructionBudgetRemaining, -1);
 });
 
 test('all activated image constants and unique namespace slots remain priced across restore', () => {
 	const system = source();
-	const first = linkRawTestBlua32Pair(system, { ...source(), constants: [null, 1, 2, 'card0'], globalNames: ['global', 'card0', 'card0'] });
+	const first = linkRawTestBlua32Pair(system, { ...source(), constants: [null, integerConstant(1), integerConstant(2), 'card0'], globalNames: ['global', 'card0', 'card0'] });
 	const second = linkRawTestBlua32Pair(system, { ...source(), constants: ['card1'], globalNames: ['global', 'card1'] });
 	const memory = new Memory({ systemRom: first.systemRomBytes, cartridgeSlots: cartridgeSlots(first.cartRomBytes, second.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
 	const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory)); cpu.reset();
 	cpu.writeFrameExecution(0, 0, first.cartSymbols.functionAddresses[0], first.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, 1, second.cartSymbols.functionAddresses[0], second.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, first.systemSymbols.functionAddresses[0], first.systemImage.functions[0].codeAddress);
-	cpu.collectTrackedHeapBytes(); assert.equal(cpu.luaHeap.usedBytes(), 157);
+	cpu.collectTrackedHeapBytes(); assert.equal(cpu.luaHeap.usedBytes(), 133);
 	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, -238, 'Thread128 + Closure8 + roots28×3 + directory19 + text4 =243');
+	assert.equal(cpu.instructionBudgetRemaining, -214, 'Thread104 + Closure8 + roots28×3 + directory19 + text4 =219');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
-	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime(); assert.equal(cpu.instructionBudgetRemaining, -238);
+	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime(); assert.equal(cpu.instructionBudgetRemaining, -214);
 });
 
 test('temporary roots survive charged steps; unreachable allocations pay reclamation but no mark scan', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const table = cpu.createTable(), id = cpu.stringPool.intern('é😀');
-	const heap = cpu.luaHeap.captureState(); assert.equal(heap.trackedBytes, 195);
+	const heap = cpu.luaHeap.captureState(); assert.equal(heap.trackedBytes, 171);
 	cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: 0 }); cpu.instructionBudgetRemaining = 1;
-	cpu.luaHeap.reserve(0, ValueTag.Table, NaN, table, ValueTag.String, id, null);
-	assert.equal(cpu.instructionBudgetRemaining, -99, 'first mark92 + live Table8 =100; atomic and reclamation remain');
-	assert.equal(cpu.luaHeap.usedBytes(), 195); assert.equal(cpu.stringPool.toString(id), 'é😀');
-	while (cpu.gc.active()) cpu.gc.step(ValueTag.Table, NaN, table, ValueTag.String, id, null);
+	cpu.luaHeap.reserve(0, valueTable(cpu.gc.reference(table)), valueString(id));
+	assert.equal(cpu.instructionBudgetRemaining, -87, 'first mark80 + live Table8 =88; atomic and reclamation remain');
+	assert.equal(cpu.luaHeap.usedBytes(), 171); assert.equal(cpu.stringPool.toString(id), 'é😀');
+	while (cpu.gc.active()) cpu.gc.step(valueTable(cpu.gc.reference(table)), valueString(id));
 	cpu.instructionBudgetRemaining = 1; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, -203); assert.equal(cpu.luaHeap.usedBytes(), 157);
+	assert.equal(cpu.instructionBudgetRemaining, -179); assert.equal(cpu.luaHeap.usedBytes(), 133);
 });
