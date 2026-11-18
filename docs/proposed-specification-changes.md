@@ -2178,7 +2178,8 @@ Ter vergelijking:
 De nieuwe recordgroottes verhogen de last met de size-class-afronding (gemiddeld
 ruim 10%), de stringkoppen, de framerecords, en de globals en constantenpools
 die nu nog niet worden belast. Een meting van de piek tijdens gameplay met de
-nieuwe groottes volgt in fase 2, zodra tabellen echte records zijn. Blijkt de
+nieuwe groottes volgt in fase 3, zodra tabellen echte records zijn; fase 2 meet
+eerst de gameplaypiek onder de huidige charges. Blijkt de
 marge te klein, dan zijn de BIOS-codearena en de cartridge-BSS de eerste
 hefbomen. Een grotere RAM-omvang is een productkeuze die hier niet wordt
 gemaakt.
@@ -2193,7 +2194,7 @@ gemaakt.
 | O4 | Wie zet de vloer bij EXEC | (a) EXEC uit de velden van het doelbeeld. (b) De BIOS vóór EXEC via een nieuw CP0-register | **(a).** Reset heeft de regel toch nodig, en (a) dekt elke EXEC-route |
 | O5 | Closurebinding | (a) De bestaande regel houden: closure `S(20 + 4U)`. (b) De closure leest het functierecord bij CALL: `S(16 + 4U)`, plus een recordread per CALL | **(a).** Sluit aan bij de CPU-uitvoeringsrichting in §11 |
 | O6 | Constantenpools en globalbanken | (a) RAM-objecten, belast. (b) Afgeleide hostcaches, onbelast | **(a).** Eén machinetoestand. Globals tellen volgens de goedgekeurde budgetrichting mee |
-| O7 | Moment van de handleidingwijziging | (a) In één keer na akkoord; de runtimes volgen per fase. (b) Per fase | **(a).** De handleiding is de specificatie. Tot fase 7 houdt de overzichtstabel bij welk deel de runtimes al volgen |
+| O7 | Moment van de handleidingwijziging | (a) In één keer na akkoord; de runtimes volgen per fase. (b) Per fase, samen met de runtimes | **(b).** Dit document schrijft voor dat een vastgesteld contract samen in handleidingen en runtimes wordt verwerkt; (a) zou de handleidingen fasenlang laten afwijken. De infrastructuurfase wijzigt dan alleen wat zij invoert: heapgebied, vloer, beheergebied, fetchweigering en de spiegelregel. De belastingsrijen en recordregels volgen met de fase die ze invoert |
 
 ### 12.10 Hoofdstukken die mee veranderen
 
@@ -2208,7 +2209,7 @@ gemaakt.
 | `book1/cpu.md` | Instruction alignment and read faults | Geen fetch uit het heapgebied (O1) |
 | `book1/cpu.md` | EXEC en Execution domains | EXEC zet de vloer; mislukking door bezette pagina's; socketbinding van cartridgestrings (O3) |
 | `book1/blua-programs.md` | Language execution storage and byte RAM; Values are not byte buffers | Herschrijven: taalwaarden hebben records in RAM, maar hun indeling is geen programmeerinterface. Kopiëren behoudt identiteit. De zin "not a cartridge-addressable byte stack" blijft in betekenis |
-| `book1/program-images.md` | BLua32 executable image | De velden `30H`/`34H` en `40H`–`50H` worden gelezen |
+| `book1/program-images.md` | BLua32 executable image | De velden `30H`/`34H` en `44H`–`50H` worden gelezen |
 | `book1/program-images.md` | Constant and name records | Tag 4 en het naamrecord verwijzen naar stringrecords. Recordindeling, ROM-stringtabel en FNV-1a erbij. Samen met de byte-strings |
 | `book1/program-images.md` | Reset and cartridge startup; State at cartridge entry | De vloer bij reset en EXEC; BIOS-objecten bovenin |
 | `book1/coroutines.md` | Opslag van threads | Framerecords in het stackblok (fase 6); de betekenis van `Out of memory.` blijft |
@@ -2226,7 +2227,7 @@ noemt.
 
 ### 12.11 Fasering
 
-1. **Dit voorstel, daarna de handleidingen** (O7).
+1. **Dit voorstel.** De handleidingen veranderen per fase, samen met de runtimes (O7).
 2. **Infrastructuur.**
    - De vloer en het beheergebied.
    - De allocator met size classes, in TS en C++ gespiegeld en bitgelijk.
@@ -2234,12 +2235,18 @@ noemt.
      eerste gebruiker.
    - Eén `ArrayBuffer` met `Uint8Array`- en `Uint32Array`-views in TS.
    - De fetchweigering (O1).
-   - `K` als capaciteit van `LuaHeap`. Dat is een zichtbare daling van 3,5 MiB
-     naar ongeveer 2,84 MiB.
+   - Een meting van de piekbezetting tijdens gameplay onder de huidige charges,
+     met de bestaande demotijdlijnen. Tot nu toe zijn alleen opstartpieken
+     zonder invoer gemeten, en voor Pietious geen.
+
+   `LuaHeap` houdt in deze fase zijn huidige capaciteit. Zo veroorzaakt de
+   infrastructuur geen geheugenfout die nog niemand heeft onderzocht.
 
    Vóór de gespiegelde edits komen de representatietabel en de hete
    callsites.
-3. **Tabellen**, met een meting van de piekbezetting.
+3. **Tabellen.** `K` wordt de capaciteit, een zichtbare daling van 3,5 MiB naar
+   ongeveer 2,84 MiB. Daarbij komt een nieuwe meting van de piekbezetting met
+   echte tabelrecords.
 4. **Closures en captured-variable-cellen.**
 5. **Strings**, samen met de byte-strings.
 6. **Threads en frames.**
