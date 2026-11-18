@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { Closure, Upvalue } from '../../machine/ts/machine/cpu/closure';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueFloatBits, valueFromTag, valueInteger, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
@@ -21,33 +21,32 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 22 }] });
 	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-	const upvalue = Object.assign(new Upvalue(), { hashId: 100, open: true, index: 8, frame,
-		valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null });
+	const upvalue = new Upvalue();
+	upvalue.open = true; upvalue.index = 8; upvalue.frame = frame;
+	cpu.gc.track(upvalue);
 	const bound = frame.closure;
-	frame.closure = new Closure(bound.functionAddress, [upvalue], 0, bound.codeAddress,
-		bound.numParams, bound.maxStack, bound.flags, bound.upvalueTableAddress, bound.executionDomainId, bound.recordUpvalueCount, false);
+	frame.closure = new Closure(bound.functionAddress, Uint32Array.of(cpu.gc.reference(upvalue)), 0, bound.codeAddress,
+		bound.numParams, bound.maxStack, bound.flags, bound.upvalueTableAddress, bound.executionDomainId, 1, false);
+	cpu.gc.track(frame.closure);
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!;
 	const other = { ...frame, registers: new ValueSlots(22) };
-	const table = cpu.createTable(), string = cpu.stringPool.intern('upvalue');
-	for (const source of ['own', 'other', 'closed']) for (const tag of [ValueTag.False, ValueTag.Number, ValueTag.String, ValueTag.Table]) {
-		const scalar = tag === ValueTag.False ? 37 : tag === ValueTag.Number ? -0 : tag === ValueTag.String ? string : NaN;
-		const reference = tag === ValueTag.Table ? table : null;
+	const values = [valueFromTag(ValueTag.False, 37), valueInteger(-1), valueFloatBits(0x80000000), valueFloatBits(0xffc01234),
+		valueString(cpu.stringPool.intern('upvalue')), valueTable(cpu.gc.reference(cpu.createTable()))];
+	for (const source of ['own', 'other', 'closed']) for (const value of values) {
 		upvalue.open = source !== 'closed'; upvalue.frame = source === 'own' ? frame : source === 'other' ? other : null;
-		upvalue.valueTag = tag; upvalue.valueScalar = scalar; upvalue.valueReference = reference;
-		other.registers.setEncoded(8, tag, scalar, reference);
+		upvalue.value = value;
+		other.registers.set(8, value);
 		for (const grant of [1, 64]) {
-			r.setEncoded(2, tag, scalar, reference);
-			r.setNumber(8, 73); r.setNumber(20, 74); r.setNumber(21, 75);
+			r.set(2, value);
+			r.setInteger(8, 73); r.setInteger(20, 74); r.setInteger(21, 75);
 			const state = { remainingCycles: grant, registerTop: 3, memoryAddress: 0, lengthWork: { probes: 0 } };
-			block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, state);
+			block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state);
 			for (const register of grant === 1 ? [8, 20] : [8, 20, 21]) {
-				assert.equal(r.getTag(register), tag, `${source} upvalue tag R${register}`);
-				assert.ok(Object.is(r.getScalar(register), scalar), `${source} upvalue raw scalar R${register}`);
-				assert.equal(r.getReference(register), reference, `${source} upvalue reference R${register}`);
+				assert.equal(r.get(register), value, `${source} upvalue tag and payload R${register}`);
 			}
-			if (grant === 1) assert.equal(r.getNumber(21), 75, 'an unexecuted successor leaves its destination intact');
+			if (grant === 1) assert.equal(r.getInteger(21), 75, 'an unexecuted successor leaves its destination intact');
 		}
 	}
 });
@@ -62,33 +61,33 @@ test('output locals become observable only after their definition, including hel
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 22 }] });
 	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0);
-	frame.registers.setNumber(1, DYNAMIC_RAM_BASE);
+	frame.registers.setInteger(1, DYNAMIC_RAM_BASE);
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!;
 	const old = cpu.createTable(), source = cpu.createTable();
 	for (const mapped of [false, true]) for (const grant of [1, 64]) {
 		const r = new ValueSlots(22);
-		r.setEncoded(0, ValueTag.False, 37, null);
-		r.setNumber(1, mapped ? DYNAMIC_RAM_BASE : IO_BASE);
-		r.setTable(2, source); r.setTable(20, old);
-		r.setNumber(21, -0);
+		r.setEncoded(0, ValueTag.False, 37);
+		r.setInteger(1, mapped ? DYNAMIC_RAM_BASE : IO_BASE);
+		r.setTable(2, cpu.gc.reference(source)); r.setTable(20, cpu.gc.reference(old));
+		r.set(21, valueFloatBits(0x80000000));
 		memory.writeMappedWord(DYNAMIC_RAM_BASE, 71);
 		const writes = new Uint32Array(22), store = r.setEncoded.bind(r);
-		r.setEncoded = (register, tag, scalar, reference) => { ++writes[register]; store(register, tag, scalar, reference); };
+		r.setEncoded = (register, tag, word) => { ++writes[register]; store(register, tag, word); };
 		const state = { remainingCycles: grant, registerTop: 3, memoryAddress: 0, lengthWork: { probes: 0 } };
-		const exit = block.region.exits[block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, state)];
+		const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state)];
 		if (!mapped) {
 			assert.equal(exit.exit, CompiledBlockExit.ReadMemory);
-			assert.equal(r.getTag(0), ValueTag.False); assert.equal(r.getScalar(0), 37);
-			assert.equal(r.getTable(20), old); assert.equal(writes[20], 0);
-			assert.ok(Object.is(r.getNumber(21), -0)); assert.equal(state.registerTop, 3);
+			assert.equal(r.getTag(0), ValueTag.False); assert.equal(r.getPayload(0), 37);
+			assert.equal(r.getTable(20, cpu.gc), old); assert.equal(writes[20], 0);
+			assert.equal(r.get(21), valueFloatBits(0x80000000)); assert.equal(state.registerTop, 3);
 		} else {
-			assert.equal(r.getNumber(0), 71); assert.equal(r.getTable(20), source);
+			assert.equal(r.getInteger(0), 71); assert.equal(r.getTable(20, cpu.gc), source);
 			if (grant === 1) {
-				assert.ok(Object.is(r.getNumber(21), -0)); assert.equal(state.registerTop, 21);
+				assert.equal(r.get(21), valueFloatBits(0x80000000)); assert.equal(state.registerTop, 21);
 			} else {
-				assert.equal(r.getTable(21), source); assert.equal(state.registerTop, 22);
+				assert.equal(r.getTable(21, cpu.gc), source); assert.equal(state.registerTop, 22);
 			}
 		}
 	}
