@@ -71,7 +71,7 @@ for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBacke
     if (!little) octets.reverse();
     const [decoded, position, packed] = call(v.valueInteger(2), value, v.valueInteger(byteCount), v.valueBool(little));
     assert.deepEqual([decoded, position], [roundtrip, v.valueInteger(byteCount + 1)]);
-    assert.equal(cpu.stringPool.toString(v.asStringId(packed)), String.fromCharCode(...octets));
+    assert.equal(cpu.stringPool.bytes(v.asStringId(packed)), String.fromCharCode(...octets));
    }
   }
   // These are external binary64 fields, not binary64 guest Numbers. Include
