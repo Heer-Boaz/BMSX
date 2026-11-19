@@ -96,7 +96,7 @@ function run(lines: readonly string[]): string[] {
 				output.push('F');
 				break;
 			}
-			case 'W': memory.ram32[a >>> 2] = b; output.push('W'); break;
+			case 'W': memory.ramView.setUint32(a, b, true); output.push('W'); break;
 			case 'H': {
 				let hash = 0x811c9dc5;
 				for (let offset = management; offset < management + RUNTIME_MANAGEMENT_SIZE; offset += 1) {

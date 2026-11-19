@@ -4,6 +4,9 @@ export const SYSTEM_ROM_BASE = 0x00000000;
 export const SYSTEM_ROM_SIZE = 0x01000000; // 16 MB
 
 export const RAM_BASE = 0x08000000;
+export const MAIN_RAM_SIZE = 0x00400000;
+// The CPU record port decodes only the installed RAM's aligned word address.
+export const RAM_RECORD_WORD_MASK = MAIN_RAM_SIZE - 4;
 export const MAX_RAM_SIZE = 0x08000000; // 128 MB address window
 
 export const CART_ROM_BASE = RAM_BASE + MAX_RAM_SIZE;

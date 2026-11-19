@@ -13,6 +13,7 @@
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/memory_map.h"
 #include "common/primitives.h"
+#include "common/endian.h"
 
 namespace bmsx {
 
@@ -51,6 +52,15 @@ public:
 	u8* ramData() { return m_ram.data(); }
 	size_t ramByteCount() const { return m_ram.size(); }
 	const MappedPageWriteWatches& ramWriteWatches() const { return m_ramPageWriteWatches; }
+	// The CPU record port addresses physical RAM, including bytes under MMIO.
+	u32 readRamRecordWord(u32 address) const {
+		return readLE32(m_ram.data() + (address & RAM_RECORD_WORD_MASK));
+	}
+	void writeRamRecordWord(u32 address, u32 value) {
+		const u32 offset = address & RAM_RECORD_WORD_MASK;
+		writeLE32(m_ram.data() + offset, value);
+		invalidateRamWrite(offset, sizeof(u32));
+	}
 	// Runtime-owned RAM writes bypass the bus but still reach decoded-code watches.
 	void invalidateRamWrite(size_t offset, size_t byteLength) {
 		m_ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, m_mappedPageInvalidator);

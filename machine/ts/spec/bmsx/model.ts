@@ -1,4 +1,5 @@
 import { HZ_SCALE } from './timing';
+import { MAIN_RAM_SIZE } from './memory_map';
 
 // Installed machine-model hardware facts shared by product targets and emulators.
 
@@ -51,7 +52,7 @@ export const PSX_MACHINE_SPEC: MachineModelSpec = {
 	dmaCartRomCyclesPerWord: PSX_DMA_CART_ROM_CYCLES_PER_WORD,
 	dmaCartRomBurstSetupCycles: PSX_DMA_CART_ROM_BURST_SETUP_CYCLES,
 	imgDecCyclesPerOutputWord: PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD,
-	ramBytes: 0x00400000,
+	ramBytes: MAIN_RAM_SIZE,
 	gxGpuVramBytes: 0x00200000,
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };

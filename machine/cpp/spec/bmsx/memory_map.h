@@ -10,6 +10,9 @@ constexpr uint32_t SYSTEM_ROM_BASE = 0x00000000u;
 constexpr uint32_t SYSTEM_ROM_SIZE = 0x01000000u; // 16 MB
 
 constexpr uint32_t RAM_BASE = 0x08000000u;
+constexpr uint32_t MAIN_RAM_SIZE = 0x00400000u;
+// The CPU record port decodes only the installed RAM's aligned word address.
+constexpr uint32_t RAM_RECORD_WORD_MASK = MAIN_RAM_SIZE - 4u;
 constexpr uint32_t MAX_RAM_SIZE = 0x08000000u; // 128 MB address window
 
 constexpr uint32_t CART_ROM_BASE = RAM_BASE + MAX_RAM_SIZE;

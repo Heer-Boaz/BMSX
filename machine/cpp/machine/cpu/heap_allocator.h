@@ -53,11 +53,8 @@ private:
 	u32 pageForFloor(u32 address) const;
 	u32 partialHead(bool owned, u32 classIndex) const;
 	u32 entry(u32 page) const;
-	u32 read(u32 offset) const;
-	void write(u32 offset, u32 value);
 
 	Memory& m_memory;
-	u8* m_ram;
 	u32 m_management;
 	u32 m_pageLimit;
 	u32 m_minimumFloorPage;

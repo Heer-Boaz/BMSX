@@ -334,7 +334,7 @@ void testDmaMemorySpansRetainOrderedWords() {
 	}
 }
 
-struct DmaInvalidationTrace final : bmsx::MappedPageInvalidator {
+struct MemoryInvalidationTrace final : bmsx::MappedPageInvalidator {
 	std::vector<std::array<bmsx::u64, 3>> words;
 	void invalidateMappedWords(bmsx::u64 key, bmsx::u32 first, bmsx::u32 end) override {
 		words.push_back({key, first, end});
@@ -342,12 +342,42 @@ struct DmaInvalidationTrace final : bmsx::MappedPageInvalidator {
 	void invalidateMappedRange(bmsx::u64, bmsx::u64) override {}
 };
 
+void testCpuRecordWordsMirrorWithoutUsingTheBus() {
+	using namespace bmsx;
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	constexpr u32 end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes;
+	constexpr u32 page = end - MAPPED_PAGE_BYTE_SIZE;
+	constexpr u32 last = MAPPED_PAGE_BYTE_SIZE / sizeof(u32) - 1u;
+	MemoryInvalidationTrace trace;
+	memory.attachMappedPageInvalidator(trace);
+	MappedPageBinding binding{};
+	memory.bindMappedPage(page, MAPPED_BUS_MASTER_CPU, binding);
+	binding.writeWatch.armWord(last);
+	u32 ioWrites = 0u;
+	memory.mapIoWrite(IO_GX_GPU_GP0, &ioWrites, [](void* count, u32, u32, MappedBusSignals) {
+		++*static_cast<u32*>(count);
+	});
+	const u32 sequence = memory.readBusFaultSequence();
+	memory.writeRamRecordWord(0xffffffffu, 0x89abcdefu);
+	memory.writeRamRecordWord(end, 0x40302010u);
+	memory.writeRamRecordWord(IO_GX_GPU_GP0 + PSX_MACHINE_SPEC.ramBytes + 3u, 0x12345678u);
+	require(memory.readRamRecordWord(end - 1u) == 0x89abcdefu, "record word decoding aligns the last byte");
+	require(memory.readRamRecordWord(RAM_BASE) == 0x40302010u, "the next record word mirrors to RAM offset zero");
+	require(memory.readRamRecordWord(IO_GX_GPU_GP0) == 0x12345678u, "record writes can reach the RAM under MMIO");
+	require(memory.readMappedU32LE(end - sizeof(u32)) == 0x89abcdefu, "the bus and record port share physical RAM");
+	require(ioWrites == 0u && memory.readBusFaultSequence() == sequence, "record accesses bypass registers and bus faults");
+	const std::vector<std::array<u64, 3>> expected{{page, last, last + 1u}};
+	require(trace.words == expected, "record stores notify the watch at the physical destination");
+	memory.readMappedU32LE(end);
+	require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED, "only the record port mirrors RAM");
+}
+
 void testDmaMemorySpansInvalidateWatchedCode() {
 	using namespace bmsx;
 	std::array<u8, 16> rom{};
 	rom.fill(0x5a);
 	Memory memory(MemoryInit{rom, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
-	DmaInvalidationTrace trace;
+	MemoryInvalidationTrace trace;
 	memory.attachMappedPageInvalidator(trace);
 	const u32 page = DYNAMIC_RAM_BASE, destination = page + MAPPED_PAGE_BYTE_SIZE - 4u;
 	MappedPageBinding binding{};
@@ -375,6 +405,7 @@ int main() {
 	testDmaPrefixesAreRevokedByScalarRebindingAndRespectPermissions();
 	testIncrementingDmaIoDoesNotReuseFixedPort();
 	testDmaMemorySpansRetainOrderedWords();
+	testCpuRecordWordsMirrorWithoutUsingTheBus();
 	testDmaMemorySpansInvalidateWatchedCode();
 	return 0;
 }

@@ -9,6 +9,7 @@ import {
 	IO_BASE,
 	IO_WORD_SIZE,
 	RAM_BASE,
+	RAM_RECORD_WORD_MASK,
 	SYSTEM_ROM_BASE,
 	SYSTEM_ROM_SIZE,
 } from '../../spec/bmsx/memory_map';
@@ -194,7 +195,7 @@ export class Memory {
 	private readonly ram: Uint8Array;
 	public readonly ramView: DataView;
 	// Little-endian word view of the same storage for runtime-owned RAM records.
-	public readonly ram32: Uint32Array;
+	private readonly ram32: Uint32Array;
 	private readonly ramPageWriteWatches: MappedPageWriteWatches;
 	private mappedPageInvalidator: MappedPageInvalidator | null = null;
 	private readonly ioSlots: Uint32Array;
@@ -254,6 +255,17 @@ export class Memory {
 	}
 
 	public ramWriteWatches(): MappedPageWriteWatches { return this.ramPageWriteWatches; }
+
+	// The CPU record port addresses physical RAM, including bytes under MMIO.
+	public readRamRecordWord(address: number): number {
+		return this.ram32[(address & RAM_RECORD_WORD_MASK) >>> 2];
+	}
+
+	public writeRamRecordWord(address: number, value: number): void {
+		const offset = address & RAM_RECORD_WORD_MASK;
+		this.ram32[offset >>> 2] = value;
+		this.invalidateRamWrite(offset, 4);
+	}
 
 	// Runtime-owned RAM writes bypass the bus but still reach decoded-code watches.
 	public invalidateRamWrite(offset: number, byteLength: number): void {

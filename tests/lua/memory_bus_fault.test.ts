@@ -322,6 +322,37 @@ test('DMA memory spans retain ordered words across ROM, sockets, overlaps and ph
 	}
 });
 
+test('CPU record words mirror and align each access without using the bus', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const alias = PSX_MACHINE_SPEC.ramBytes;
+	const page = RAM_BASE + alias - MAPPED_PAGE_BYTE_SIZE;
+	const end = RAM_BASE + alias;
+	const invalidations: Array<readonly [number, number, number]> = [];
+	memory.attachMappedPageInvalidator({
+		invalidateMappedWords(key, first, end) { invalidations.push([key, first, end]); },
+		invalidateMappedRange() {},
+	});
+	const binding: MappedPageBinding = { key: 0, cacheable: false, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 };
+	memory.bindMappedPage(page, MAPPED_BUS_MASTER_CPU, binding);
+	const last = (MAPPED_PAGE_BYTE_SIZE >>> 2) - 1;
+	binding.writeWatches!.armWord(binding.writeWatchIndex, last);
+	let ioWrites = 0;
+	memory.mapIoWrite(IO_GX_GPU_GP0, memory, () => { ++ioWrites; });
+	const sequence = memory.readBusFaultSequence();
+	memory.writeRamRecordWord(0xffffffff, 0x89abcdef);
+	memory.writeRamRecordWord(end, 0x40302010);
+	memory.writeRamRecordWord(IO_GX_GPU_GP0 + alias + 3, 0x12345678);
+	assert.equal(memory.readRamRecordWord(end - 1), 0x89abcdef);
+	assert.equal(memory.readRamRecordWord(RAM_BASE), 0x40302010);
+	assert.equal(memory.readRamRecordWord(IO_GX_GPU_GP0), 0x12345678);
+	assert.equal(memory.readMappedU32LE(end - 4), 0x89abcdef);
+	assert.equal(ioWrites, 0);
+	assert.equal(memory.readBusFaultSequence(), sequence);
+	assert.deepEqual(invalidations, [[page, last, last + 1]]);
+	memory.readMappedU32LE(end);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+});
+
 test('DMA memory span invalidates watched code across page boundaries', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(16).fill(0x5a), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const page = DYNAMIC_RAM_BASE, destination = page + MAPPED_PAGE_BYTE_SIZE - 4;

@@ -2,6 +2,7 @@
 
 #include "common/primitives.h"
 #include "spec/bmsx/timing.h"
+#include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
 
@@ -56,7 +57,7 @@ inline constexpr MachineModelSpec PSX_MACHINE_SPEC = {
 	PSX_DMA_CART_ROM_CYCLES_PER_WORD,
 	PSX_DMA_CART_ROM_BURST_SETUP_CYCLES,
 	PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD,
-	0x00400000u,
+	MAIN_RAM_SIZE,
 	0x00200000u,
 	PSX_GEO_WORK_UNITS_PER_SEC,
 };
