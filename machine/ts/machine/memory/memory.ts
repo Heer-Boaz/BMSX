@@ -201,6 +201,7 @@ export class Memory {
 	// Little-endian word view of the same storage for runtime-owned RAM records.
 	// Same physical bytes through the aligned native word port.
 	public readonly ramWords: Uint32Array;
+	public readonly ramFloats: Float32Array;
 	private readonly ramPageWriteWatches: MappedPageWriteWatches;
 	private mappedPageInvalidator: MappedPageInvalidator | null = null;
 	private readonly ioSlots: Uint32Array;
@@ -233,6 +234,7 @@ export class Memory {
 		this.instructionEnd = RAM_BASE + ramByteCount;
 		this.ramView = new DataView(this.ram.buffer);
 		this.ramWords = new Uint32Array(this.ram.buffer, 0, ramByteCount >>> 2);
+		this.ramFloats = new Float32Array(this.ram.buffer, 0, ramByteCount >>> 2);
 		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount, true);
 		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);

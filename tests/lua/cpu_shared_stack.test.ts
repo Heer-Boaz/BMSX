@@ -1,3 +1,4 @@
+import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { FrameField, FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -13,6 +14,20 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { compileCoroutineTest } from '../helpers/coroutine';
+
+test('copies between distinct windows of the same RAM in physical overlap order', () => {
+	const { memory } = createTestSystemCpu(compileCoroutineTest('return true', 0));
+	const source = new ValueSlots(0), target = new ValueSlots(0);
+	const offset = DYNAMIC_RAM_BASE - RAM_BASE;
+	source.bindRam(memory, offset, 8);
+	target.bindRam(memory, offset + 4, 8);
+	const values = [valueInteger(9), valueBool(true), valueFloat(-1.5), valueNil(), valueInteger(-13), valueBool(false)];
+	for (let i = 0; i < values.length; ++i) source.set(i, values[i]);
+	target.copyRangeFrom(source, 0, 0, values.length);
+	assert.deepEqual(values.map((_, i) => target.get(i)), values);
+	assert.equal(target.getFloat(2), -1.5);
+	assert.equal(memory.ramWords[(offset >>> 2) + 1], 9);
+});
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 	test(`fixed CALL reuses supplied slots and preserves only its lower caller prefix (${backend})`, () => {
