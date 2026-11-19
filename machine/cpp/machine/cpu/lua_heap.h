@@ -2,6 +2,7 @@
 
 #include <cstddef>
 
+#include "common/primitives.h"
 #include "machine/cpu/value.h"
 
 namespace bmsx {
@@ -32,6 +33,9 @@ public:
 		Value root2 = valueNil(),
 		Thread* growingStack = nullptr
 	);
+	// Physical backing for a record. extraBytes charges its still-host-backed
+	// header without publishing that charge on an unsuccessful allocation.
+	u32 allocateRecord(u32 bytes, bool owned, size_t extraBytes, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
 	void collectRuntime(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);
 	bool stepRuntime();
 	void restoreAllocate(size_t byteCount) { m_trackedBytes += byteCount; }
@@ -44,6 +48,7 @@ public:
 	size_t capacity() const;
 
 private:
+	bool admit(size_t bytes, Value root0, Value root1, Value root2, Thread*);
 	void creditStep(size_t work);
 	static constexpr size_t MIN_COLLECTION_BYTES = 1024 * 1024;
 

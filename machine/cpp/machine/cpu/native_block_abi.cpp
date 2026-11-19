@@ -17,8 +17,8 @@ void NativeBlockAbi::emitRamAddress(sljit_compiler* compiler, sljit_s32 destinat
 	if constexpr (pinnedRam) {
 		sljit_emit_op2(compiler, SLJIT_ADD, destination, 0, offset, 0, PINNED_RAM, 0);
 	} else {
-		sljit_emit_op1(compiler, SLJIT_MOV_P, destination, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, ram));
-		sljit_emit_op2(compiler, SLJIT_ADD, destination, 0, destination, 0, offset, 0);
+		sljit_emit_op2(compiler, SLJIT_ADD, destination, 0, offset, 0,
+			SLJIT_MEM1(state), offsetof(NativeBlockRunState, ram));
 	}
 }
 

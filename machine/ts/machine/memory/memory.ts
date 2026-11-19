@@ -10,6 +10,7 @@ import {
 	IO_WORD_SIZE,
 	RAM_BASE,
 	RAM_RECORD_WORD_MASK,
+	MAIN_RAM_SIZE,
 	SYSTEM_ROM_BASE,
 	SYSTEM_ROM_SIZE,
 } from '../../spec/bmsx/memory_map';
@@ -265,6 +266,15 @@ export class Memory {
 		const offset = address & RAM_RECORD_WORD_MASK;
 		this.ram32[offset >>> 2] = value;
 		this.invalidateRamWrite(offset, 4);
+	}
+
+	public readRamRecordByte(address: number): number {
+		return this.ram[address & (MAIN_RAM_SIZE - 1)];
+	}
+	public writeRamRecordByte(address: number, value: number): void {
+		const offset = address & (MAIN_RAM_SIZE - 1);
+		this.ram[offset] = value;
+		this.invalidateRamWrite(offset, 1);
 	}
 
 	// Runtime-owned RAM writes bypass the bus but still reach decoded-code watches.

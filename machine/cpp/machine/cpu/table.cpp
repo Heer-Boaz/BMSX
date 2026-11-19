@@ -10,18 +10,16 @@
 namespace bmsx {
 
 namespace {
-constexpr size_t kTableHeapBytes = 32;
-constexpr size_t kTableArraySlotHeapBytes = 5;
-constexpr size_t kTableHashSlotHeapBytes = 14;
 constexpr int32_t kTableHashNextEnd = -1;
 } // namespace
-Table::Table(GcHeap& heap, size_t arrayCapacity, size_t hashCapacity)
-	: m_heap(heap) {
-	allocateStorage(arrayCapacity, hashCapacity);
+
+Table::Table(GcHeap& heap, size_t arrayCapacity, size_t hashCapacity, u32 storage)
+	: m_heap(heap), m_values{&heap.memory, 0, 0} {
+	bindStorage(arrayCapacity, hashCapacity, storage);
 }
 
-Table::~Table() {
-	if (m_values.words()) m_heap.tableStorage.deallocate(m_values.words(), trackedHeapBytes() - kTableHeapBytes);
+u32 Table::storageBytes(size_t arraySize, size_t hashSize) {
+	return static_cast<u32>(arraySize * 5 + hashSize * 14);
 }
 
 size_t Table::hashCapacity(int hashSize) {
@@ -31,9 +29,8 @@ size_t Table::hashCapacity(int hashSize) {
 }
 
 size_t Table::trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity) {
-	return kTableHeapBytes
-		+ (arrayCapacity * kTableArraySlotHeapBytes)
-		+ (hashCapacity * kTableHashSlotHeapBytes);
+	const u32 bytes = storageBytes(arrayCapacity, hashCapacity);
+	return HEADER_BYTES + (bytes ? heapAllocationBytes(bytes) : 0u);
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -45,7 +42,7 @@ size_t Table::trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCap
 #endif
 TableNativeFieldOffsets Table::nativeFieldOffsets() {
 	return {offsetof(Table, m_hashSize),
-		offsetof(Table, m_values) + ValueSpan::wordsOffset(), offsetof(Table, m_values) + ValueSpan::tagsOffset(),
+		offsetof(Table, m_values) + offsetof(TableValues, words), offsetof(Table, m_values) + offsetof(TableValues, tags),
 		offsetof(Table, m_arraySize), offsetof(Table, m_lengthHint), offsetof(Table, metatable)};
 }
 #if defined(__GNUC__)
@@ -90,7 +87,7 @@ int Table::findNodeIndex(const Value& key, bool matchDead) const {
 	const uint32_t deadKeyHashId = collectableKey ? valueObjectHashId(key, m_heap) : 0;
 	const size_t mask = m_hashSize - 1;
 	int index = static_cast<int>(hashValue(key) & mask);
-	while (index >= 0) {
+	for (size_t remaining = m_hashSize; index >= 0 && remaining != 0; --remaining) {
 		const size_t slot = static_cast<size_t>(index);
 		const Value nodeKey = m_values.get(hashKeySlot(slot));
 		if ((!isNil(nodeKey) && keyEquals(nodeKey, key))
@@ -100,7 +97,7 @@ int Table::findNodeIndex(const Value& key, bool matchDead) const {
 				&& valuePayload(m_values.get(hashValueSlot(slot))) == deadKeyHashId)) {
 			return index;
 		}
-		index = m_hashNext[slot];
+		index = hashNext(slot);
 	}
 	return -1;
 }
@@ -120,12 +117,12 @@ int Table::findStringNodeIndex(StringId key) const {
 	}
 	const Value keyValue = valueString(key);
 	int index = static_cast<int>(hashValue(keyValue) & (m_hashSize - 1u));
-	while (index >= 0) {
+	for (size_t remaining = m_hashSize; index >= 0 && remaining != 0; --remaining) {
 		const size_t slot = static_cast<size_t>(index);
 		if (m_values.get(hashKeySlot(slot)) == keyValue) {
 			return index;
 		}
-		index = m_hashNext[slot];
+		index = hashNext(slot);
 	}
 	return -1;
 }
@@ -205,21 +202,13 @@ void Table::resize(
 	const Value& key,
 	const Value& value
 ) {
-	const size_t previousBytes = trackedHeapBytes();
-	const size_t resizedBytes = trackedHeapBytesForCapacities(newArraySize, newHashSize);
-	if (resizedBytes > previousBytes) {
-		m_heap.budget.reserve(resizedBytes - previousBytes, valueTable(m_heap.reference(this)), key, value);
-	}
-	const ValueSpan oldValues = m_values;
-	const size_t oldArraySize = m_arraySize;
-	const auto releaseOld = [this, previousBytes](void* storage) {
-		m_heap.tableStorage.deallocate(storage, previousBytes - kTableHeapBytes);
-	};
-	std::unique_ptr<void, decltype(releaseOld)> oldStorage(m_values.words(), releaseOld);
-	m_values = {};
-	const size_t oldHashSize = m_hashSize;
-
-	allocateStorage(newArraySize, newHashSize);
+	const u32 storage = m_heap.budget.allocateRecord(storageBytes(newArraySize, newHashSize), true, 0,
+		valueTable(m_heap.reference(this)), key, value);
+	const auto oldValues = m_values;
+	const size_t oldArraySize = m_arraySize, oldHashSize = m_hashSize;
+	const size_t oldBytes = trackedHeapBytes() - HEADER_BYTES;
+	bindStorage(newArraySize, newHashSize, storage);
+	initializeStorage();
 	m_heap.budget.accountTableStorageWork(newArraySize + 2 * newHashSize);
 
 	size_t relocatedSlots = 0;
@@ -237,29 +226,32 @@ void Table::resize(
 		}
 	}
 	m_heap.budget.accountTableStorageWork(oldArraySize + 2 * oldHashSize + relocatedSlots);
-	oldStorage.reset();
-	if (resizedBytes < previousBytes) {
-		m_heap.budget.release(previousBytes - resizedBytes);
-	}
+	if (oldValues.words != 0) m_heap.arena.free(RAM_BASE + oldValues.words);
+	m_heap.budget.release(oldBytes);
 }
 
-void Table::allocateStorage(size_t arraySize, size_t hashSize) {
-	const size_t valueCount = arraySize + hashSize * 2;
-	const size_t byteCount = valueCount * 5 + hashSize * sizeof(i32);
-	void* storage = byteCount == 0 ? nullptr : m_heap.tableStorage.allocate(byteCount);
-	if (m_values.words()) m_heap.tableStorage.deallocate(m_values.words(), trackedHeapBytes() - kTableHeapBytes);
-	auto* words = static_cast<u32*>(storage);
-	m_hashNext = hashSize == 0 ? nullptr : reinterpret_cast<i32*>(words + valueCount);
-	auto* tags = valueCount == 0 ? nullptr : reinterpret_cast<uint8_t*>(words + valueCount + hashSize);
-	m_values = {words, tags, valueCount};
+void Table::bindStorage(size_t arraySize, size_t hashSize, u32 address) {
+	const u32 slots = static_cast<u32>(arraySize + hashSize * 2);
+	m_values.words = address & RAM_RECORD_WORD_MASK;
+	m_hashLinks = m_values.words + slots * 4u;
+	m_values.tags = m_hashLinks + static_cast<u32>(hashSize) * 4u;
 	m_arraySize = arraySize;
 	m_hashSize = hashSize;
-	m_hashFree = hashSize == 0 ? -1 : static_cast<int>(hashSize) - 1;
-	if (valueCount != 0) {
-		std::fill_n(words, valueCount, u32{0});
-		std::fill_n(tags, valueCount, uint8_t{0});
-	}
-	std::fill_n(m_hashNext, hashSize, kTableHashNextEnd);
+	m_hashFree = static_cast<int>(hashSize) - 1;
+}
+
+void Table::initializeStorage() {
+	const u32 bytes = storageBytes(m_arraySize, m_hashSize);
+	if (bytes == 0) return;
+	u8* ram = m_heap.memory.ramData();
+	std::fill(ram + m_values.words, ram + m_hashLinks, u8{0});
+	std::fill(ram + m_hashLinks, ram + m_values.tags, u8{0xff});
+	std::fill(ram + m_values.tags, ram + m_values.words + bytes, u8{0});
+	m_heap.memory.invalidateRamWrite(m_values.words, bytes);
+}
+
+void Table::freeStorage() {
+	if (m_values.words != 0) m_heap.arena.free(RAM_BASE + m_values.words);
 }
 
 // Storage redistribution must not change the logical boundary hint.
@@ -304,21 +296,23 @@ int Table::insertHashWithoutGrowth(const Value& key, const Value& value) noexcep
 	if (mainIndexOfOccupied != mainIndex) {
 		m_values.set(hashKeySlot(freeSlot), mainKey);
 		m_values.set(hashValueSlot(freeSlot), m_values.get(hashValueSlot(mainSlot)));
-		m_hashNext[freeSlot] = m_hashNext[mainSlot];
+		setHashNext(freeSlot, hashNext(mainSlot));
 		int prev = mainIndexOfOccupied;
-		while (m_hashNext[static_cast<size_t>(prev)] != mainIndex) {
-			prev = m_hashNext[static_cast<size_t>(prev)];
+		for (size_t remaining = m_hashSize; remaining != 0; --remaining) {
+			const int next = hashNext(static_cast<size_t>(prev));
+			if (next == mainIndex || next < 0) break;
+			prev = next;
 		}
-		m_hashNext[static_cast<size_t>(prev)] = freeIndex;
+		setHashNext(static_cast<size_t>(prev), freeIndex);
 		m_values.set(hashKeySlot(mainSlot), key);
 		m_values.set(hashValueSlot(mainSlot), value);
-		m_hashNext[mainSlot] = kTableHashNextEnd;
+		setHashNext(mainSlot, kTableHashNextEnd);
 		return mainIndex;
 	}
 	m_values.set(hashKeySlot(freeSlot), key);
 	m_values.set(hashValueSlot(freeSlot), value);
-	m_hashNext[freeSlot] = m_hashNext[mainSlot];
-	m_hashNext[mainSlot] = freeIndex;
+	setHashNext(freeSlot, hashNext(mainSlot));
+	setHashNext(mainSlot, freeIndex);
 	return freeIndex;
 }
 
@@ -470,6 +464,13 @@ int Table::setStringKey(StringId key, const Value& value) {
 	return rawSet(keyValue, pendingValue);
 }
 
+int Table::storeStringKeyInNative(Table* table, StringId key, const Value& value) noexcept {
+	// Hash maintenance can write any linked record word. Never invalidate code
+	// from a returning native leaf: the dispatcher owns that instruction then.
+	if (table->m_heap.memory.ramWriteWatches().anyWatched()) return TABLE_STORE_REQUIRES_GROWTH;
+	return storeStringKeyWithoutGrowth(table, key, value);
+}
+
 int Table::storeStringKeyWithoutGrowth(Table* table, StringId key, const Value& value) noexcept {
 	table->writeBarrier();
 	const Value keyValue = valueString(key);
@@ -548,7 +549,8 @@ i32 Table::length(const Table* table, u32* work) noexcept {
 void Table::clear() {
 	const size_t previousBytes = trackedHeapBytes();
 	m_lengthHint = 0;
-	allocateStorage(0, 0);
+	freeStorage();
+	bindStorage(0, 0, 0);
 	m_heap.budget.release(previousBytes - trackedHeapBytes());
 }
 
@@ -604,61 +606,27 @@ size_t Table::nextEntry(const Value& rawAfter, Value& key, Value& value) const {
 }
 
 u32 Table::captureSnapshot(CpuSnapshot& snapshot, const CpuSnapshotValueWriter& writeValue) const {
-	const u32 arrayCapacity = static_cast<u32>(m_arraySize);
-	const u32 hashSize = static_cast<u32>(m_hashSize);
-	const u32 offset = snapshot.reserveWords(SNAP_TABLE_DATA + arrayCapacity * CPU_SNAPSHOT_VALUE_WORDS + hashSize * (2 * CPU_SNAPSHOT_VALUE_WORDS + 1));
+	const u32 offset = snapshot.reserveWords(SNAP_TABLE_SIZE);
 	snapshot.setWord(offset + SNAP_TABLE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Table));
 	snapshot.setWord(offset + SNAP_TABLE_HASH_ID, hashId);
-	snapshot.setWord(offset + SNAP_TABLE_LENGTH_HINT, static_cast<u32>(m_lengthHint));
-	snapshot.setWord(offset + SNAP_TABLE_ARRAY_CAPACITY, arrayCapacity);
-	snapshot.setWord(offset + SNAP_TABLE_HASH_SIZE, hashSize);
+	snapshot.setWord(offset + SNAP_TABLE_LENGTH_HINT, m_lengthHint);
+	snapshot.setWord(offset + SNAP_TABLE_ARRAY_CAPACITY, static_cast<u32>(m_arraySize));
+	snapshot.setWord(offset + SNAP_TABLE_HASH_SIZE, static_cast<u32>(m_hashSize));
 	snapshot.setWord(offset + SNAP_TABLE_HASH_FREE, static_cast<u32>(m_hashFree));
+	snapshot.setWord(offset + SNAP_TABLE_STORAGE, storageAddress());
 	writeValue(offset + SNAP_TABLE_METATABLE, metatable ? valueTable(m_heap.reference(metatable)) : valueNil());
-	u32 cursor = offset + SNAP_TABLE_DATA;
-	for (size_t index = 0; index < m_arraySize; ++index) {
-		writeValue(cursor, m_values.get(index));
-		cursor += CPU_SNAPSHOT_VALUE_WORDS;
-	}
-	for (size_t index = 0; index < m_hashSize; ++index) {
-		writeValue(cursor, m_values.get(hashKeySlot(index)));
-		writeValue(cursor + CPU_SNAPSHOT_VALUE_WORDS, m_values.get(hashValueSlot(index)));
-		snapshot.setWord(cursor + 2 * CPU_SNAPSHOT_VALUE_WORDS, static_cast<u32>(m_hashNext[index]));
-		cursor += 2 * CPU_SNAPSHOT_VALUE_WORDS + 1;
-	}
 	return offset;
 }
 
 void Table::restoreSnapshot(const CpuSnapshotReader& reader, u32 offset) {
-	const auto& snapshot = reader.snapshot;
-	const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
-	const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
-	if (m_arraySize != arrayCapacity || m_hashSize != hashSize) prepareRestoreStorage(arrayCapacity, hashSize);
-	m_lengthHint = snapshot.word(offset + SNAP_TABLE_LENGTH_HINT);
-	m_hashFree = snapshot.integer(offset + SNAP_TABLE_HASH_FREE);
+	m_lengthHint = reader.snapshot.word(offset + SNAP_TABLE_LENGTH_HINT);
+	m_hashFree = reader.snapshot.integer(offset + SNAP_TABLE_HASH_FREE);
 	const Value savedMetatable = reader.readValue(offset + SNAP_TABLE_METATABLE);
 	metatable = isNil(savedMetatable) ? nullptr : asTable(savedMetatable, m_heap);
-	u32 cursor = offset + SNAP_TABLE_DATA;
-	for (size_t index = 0; index < m_arraySize; ++index) {
-		m_values.set(index, reader.readValue(cursor));
-		cursor += CPU_SNAPSHOT_VALUE_WORDS;
-	}
-	for (size_t index = 0; index < m_hashSize; ++index) {
-		m_values.set(hashKeySlot(index), reader.readValue(cursor));
-		m_values.set(hashValueSlot(index), reader.readValue(cursor + CPU_SNAPSHOT_VALUE_WORDS));
-		m_hashNext[index] = snapshot.integer(cursor + 2 * CPU_SNAPSHOT_VALUE_WORDS);
-		cursor += 2 * CPU_SNAPSHOT_VALUE_WORDS + 1;
-	}
 }
 
 size_t Table::trackedHeapBytes() const {
 	return trackedHeapBytesForCapacities(m_arraySize, m_hashSize);
-}
-
-void Table::prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity) {
-	const size_t previousBytes = trackedHeapBytes();
-	m_lengthHint = 0;
-	allocateStorage(arrayCapacity, hashCapacity);
-	m_heap.budget.adjustForRestore(previousBytes, trackedHeapBytes());
 }
 
 

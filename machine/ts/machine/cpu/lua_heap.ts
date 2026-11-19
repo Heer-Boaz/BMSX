@@ -1,3 +1,4 @@
+import { heapAllocationBytes } from './heap_allocator';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
 import type { Thread } from './thread';
@@ -23,9 +24,15 @@ export class LuaHeap {
 		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(),
 		growingStack: Thread | null = null,
 	): void {
+		this.admit(byteCount, root0, root1, root2, growingStack);
+		this.trackedBytes += byteCount;
+	}
+
+	private admit(byteCount: number, root0: Value, root1: Value, root2: Value, growingStack: Thread | null): boolean {
 		const capacity = this.capacity();
 		let nextBytes = this.trackedBytes + byteCount;
-		if (nextBytes > capacity) {
+		const exhausted = nextBytes > capacity;
+		if (exhausted) {
 			this.collectRuntime(root0, root1, root2, growingStack);
 		} else if (nextBytes > this.nextCollectionBytes) {
 			const work = this.cpu.gc.step(
@@ -35,7 +42,26 @@ export class LuaHeap {
 		}
 		nextBytes = this.trackedBytes + byteCount;
 		if (nextBytes > capacity) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		this.trackedBytes = nextBytes;
+		return exhausted;
+	}
+
+	public allocateRecord(bytes: number, owned: boolean, extraBytes: number,
+		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {
+		const charged = (bytes === 0 ? 0 : heapAllocationBytes(bytes)) + extraBytes;
+		const collected = this.admit(charged, root0, root1, root2, null);
+		if (bytes === 0) {
+			this.trackedBytes += charged;
+			return 0;
+		}
+		const arena = this.cpu.heapAllocator;
+		let address = arena.allocate(bytes, owned);
+		if (address === 0 && !collected) {
+			this.collectRuntime(root0, root1, root2);
+			if (this.trackedBytes + charged <= this.capacity()) address = arena.allocate(bytes, owned);
+		}
+		if (address === 0) throw LUA_OUT_OF_MEMORY_SIGNAL;
+		this.trackedBytes += charged;
+		return address;
 	}
 
 	public collectRuntime(

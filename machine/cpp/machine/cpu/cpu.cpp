@@ -83,7 +83,7 @@ CPU::CPU(
 	, m_luaHeap(*this)
 	, m_stringPool(m_luaHeap)
 	, m_indexKey(valueString(m_stringPool.intern("__index")))
-	, m_heap(*this, m_luaHeap, m_stringPool, m_stringPool.intern("__mode"))
+	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool, m_stringPool.intern("__mode"))
 	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling", false))) {
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	m_luaFaultErrorValues.fill(valueNil());
@@ -133,13 +133,14 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 
 Table* CPU::createTable(int arraySize, int hashSize) {
 	const size_t hashCapacity = Table::hashCapacity(hashSize);
-	m_luaHeap.reserve(Table::trackedHeapBytesForCapacities(static_cast<size_t>(arraySize), hashCapacity));
+	const u32 storage = m_luaHeap.allocateRecord(Table::storageBytes(arraySize, hashCapacity), true, Table::HEADER_BYTES);
 	Table* table = m_heap.allocate<Table>(
 		ObjType::Table,
 		m_heap,
 		static_cast<size_t>(arraySize),
-		hashCapacity
+		hashCapacity, storage
 	);
+	table->initializeStorage();
 	trackLocalRoot(valueTable(m_heap.reference(table)));
 	return table;
 }
@@ -188,7 +189,7 @@ void CPU::reset() {
 	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
-	m_heapAllocator.reset(systemBoot.staticEnd);
+	if (!setProgramHeapFloor(systemBoot.staticEnd)) { hardHalt(); return; }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
 #endif
@@ -960,10 +961,12 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		const auto* object = pendingObjects[id];
 		u32 offset;
 		if (m_heap.sweepGarbage(object)) {
-			offset = snapshot.reserveWords(3);
+			offset = snapshot.reserveWords(4);
 			snapshot.setWord(offset, static_cast<u32>(CpuSnapshotObjectKind::Garbage));
 			snapshot.setWord(offset + 1, object->hashId);
 			snapshot.setWord(offset + 2, static_cast<u32>(m_heap.allocationBytes(object)));
+			snapshot.setWord(offset + 3, object->type == ObjType::Table ? static_cast<const Table*>(object)->storageAddress()
+				: object->type == ObjType::Garbage ? static_cast<const GarbageAllocation*>(object)->storage : 0);
 			snapshot.setObjectWord(id, offset);
 			continue;
 		}
@@ -1081,7 +1084,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			case CpuSnapshotObjectKind::Garbage: {
 				const auto bytes = snapshot.word(offset + 2);
 				m_luaHeap.restoreAllocate(bytes);
-				auto* object = m_heap.allocate<GarbageAllocation>(ObjType::Garbage, bytes);
+				auto* object = m_heap.allocate<GarbageAllocation>(ObjType::Garbage, bytes, snapshot.word(offset + 3));
 				object->restored = true;
 				object->hashId = snapshot.word(offset + 1);
 				restoredObjects[index] = object;
@@ -1108,7 +1111,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
 				const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
 				m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(arrayCapacity, hashSize));
-				Table* table = m_heap.allocate<Table>(ObjType::Table, m_heap, arrayCapacity, hashSize);
+				Table* table = m_heap.allocate<Table>(ObjType::Table, m_heap, arrayCapacity, hashSize, snapshot.word(offset + SNAP_TABLE_STORAGE));
 				table->restored = true;
 				table->hashId = snapshot.word(offset + SNAP_TABLE_HASH_ID);
 				restoredObjects[index] = table;

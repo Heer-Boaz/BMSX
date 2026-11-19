@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
+import { Table } from '../../machine/ts/machine/cpu/table';
 import { valueBool, valueInteger, valueFloat, valueNil, valueString, valueTable, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -271,11 +271,11 @@ return true`, 3);
    if (scenario === 'weak-collection' || scenario === 'failed-growth') {
     const strings = cpu.stringPool.captureState();
     const stringWork = strings.slots + strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
-    // Weak case: Thread104 + Closure8 + weak Table75 + mode24 + two dead Tables16 + dead warm Table12.
+    // Weak case: Thread104 + Closure8 + weak Table80 + mode24 + two dead Tables16 + dead warm Table12.
     // Strong case: all objects scan and sweep, with two extra Thread remarks.
-    gcCycles = stringWork + (scenario === 'weak-collection' ? 239
+    gcCycles = stringWork + (scenario === 'weak-collection' ? 244
       : 4 * ceilDiv4(64 + 5 * cpu.rootThread.stackRegisters.capacity()) + 8
-       + 2 * ceilDiv4(32 + 14 * 1024) + 2 * ceilDiv4(32 + 5 * retainedSlots));
+       + 2 * ceilDiv4(Table.trackedHeapBytesForCapacities(0, 1024)) + 2 * ceilDiv4(Table.trackedHeapBytesForCapacities(retainedSlots, 0)));
    }
    const key = r.get(1);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);

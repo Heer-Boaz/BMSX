@@ -50,6 +50,8 @@ private:
 	void emitArraySlot(bool load, int value, NativeBlockExitSite&);
 	void emitStringSlot(bool load, int value, NativeBlockExitSite&);
 	void emitTableSlotTransfer(bool load, int value);
+	void emitTablePlaneAddress(sljit_s32 destination, sljit_sw field);
+	void emitTableWriteWatch(NativeBlockExitSite&);
 	void emitLength(const DecodedInstruction&, NativeBlockExitSite&);
 	// R2 is the host address; result is a word in R0 or external binary64 in FR0.
 	void emitBackingLoad(MemoryAccessKind kind, bool unaligned);

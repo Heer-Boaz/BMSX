@@ -27,10 +27,12 @@ static_assert(MAPPED_PAGE_WATCH_GROUP_COUNT <= 8u);
 struct MappedPageWriteWatch {
 	u8* groups = nullptr;
 	u32* words = nullptr;
+	u32* watchedPages = nullptr;
 
 	void armWord(u32 word) {
 		const u32 group = word >> 5u;
 		words[group] |= 1u << (word & 31u);
+		if (*groups == 0u) ++*watchedPages;
 		*groups |= static_cast<u8>(1u << group);
 	}
 
@@ -42,7 +44,10 @@ struct MappedPageWriteWatch {
 			if ((watched & bit) == 0u) return false;
 			const u32 remaining = watched & ~bit;
 			words[group] = remaining;
-			if (remaining == 0u) *groups &= static_cast<u8>(~(1u << group));
+			if (remaining == 0u) {
+				*groups &= static_cast<u8>(~(1u << group));
+				if (*groups == 0u) --*watchedPages;
+			}
 			return true;
 		}
 		const u32 firstGroup = firstWord >> 5u;
@@ -59,6 +64,7 @@ struct MappedPageWriteWatch {
 			words[group] = remaining;
 			if (remaining == 0u) *groups &= static_cast<u8>(~groupBit);
 		}
+		if (affected && *groups == 0u) --*watchedPages;
 		return affected;
 	}
 };
@@ -72,6 +78,7 @@ struct MappedPageBinding {
 
 class MappedPageWriteWatches {
 public:
+	bool anyWatched() const { return m_watchedPages != 0u; }
 	const u8* groupData() const { return reinterpret_cast<const u8*>(m_storage.get()); }
 
 	explicit MappedPageWriteWatches(size_t byteLength) {
@@ -87,12 +94,14 @@ public:
 		const size_t page = offset >> MAPPED_PAGE_BYTE_SHIFT;
 		out.writeWatch = {
 			reinterpret_cast<u8*>(m_storage.get()) + page,
-			m_words + page * MAPPED_PAGE_WATCH_GROUP_COUNT
+			m_words + page * MAPPED_PAGE_WATCH_GROUP_COUNT,
+			&m_watchedPages
 		};
 	}
 
 	void clear() {
 		std::fill_n(m_storage.get(), m_wordCount, 0u);
+		m_watchedPages = 0;
 	}
 
 	void invalidateWrite(
@@ -121,6 +130,7 @@ private:
 	std::unique_ptr<u32[]> m_storage;
 	u32* m_words;
 	size_t m_wordCount;
+	u32 m_watchedPages = 0;
 };
 
 } // namespace bmsx

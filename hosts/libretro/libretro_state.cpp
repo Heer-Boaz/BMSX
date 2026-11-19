@@ -9,7 +9,7 @@
 namespace bmsx {
 namespace {
 
-constexpr u32 kSaveStateMagic = 0x32534d42u; // BMS2: saved heap-reference slots
+constexpr u32 kSaveStateMagic = 0x33534d42u; // BMS3: table bodies are stored in the RAM image
 constexpr size_t kSaveStateHeaderBytes = 8u;
 constexpr size_t kSaveStateBasePayloadCapacityBytes = 0x01000000u;
 

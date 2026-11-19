@@ -58,14 +58,14 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.instructionBudgetRemaining == -162, "runtime collection adds169 for object passes, three root passes and String work");
 	require(cpu.luaHeap().usedBytes() == 133, "readonly ROM String bytes are not charged as allocated text");
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(2, 3)))); //32+10+56=98.
+	frame.registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(2, 3)))); //32+S(10+56)=112.
 	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
 	frame.top = 2;
-	require(cpu.luaHeap().usedBytes() == 237, "canonical reserved table capacity and UTF8 text bytes agree");
+	require(cpu.luaHeap().usedBytes() == 251, "canonical reserved table capacity and UTF8 text bytes agree");
 	cpu.instructionBudgetRemaining = 7;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == -215 && cpu.luaHeap().usedBytes() == 237,
-		"base169 + Table25*2 + String(1+2) =222; each allocation rounds separately");
+	require(cpu.instructionBudgetRemaining == -221 && cpu.luaHeap().usedBytes() == 251,
+		"base169 + Table28*2 + String(1+2) =228");
 	const auto threshold = cpu.luaHeap().captureState();
 	require(threshold.nextCollectionBytes == 1048576, "the existing minimum collection threshold is unchanged");
 	cpu.instructionBudgetRemaining = 123;
@@ -73,7 +73,7 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.instructionBudgetRemaining == 123, "host/reset raw collection does not bill guest work");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().captureState().trackedBytes == 237,
+	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().captureState().trackedBytes == 251,
 		"snapshot capture/restore does not collect or bill runtime work and preserves canonical accounting");
 	cpu.reset();
 	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == 133,

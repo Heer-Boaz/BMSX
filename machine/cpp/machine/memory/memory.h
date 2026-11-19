@@ -61,6 +61,12 @@ public:
 		writeLE32(m_ram.data() + offset, value);
 		invalidateRamWrite(offset, sizeof(u32));
 	}
+	u8 readRamRecordByte(u32 address) const { return m_ram[address & (MAIN_RAM_SIZE - 1u)]; }
+	void writeRamRecordByte(u32 address, u8 value) {
+		const u32 offset = address & (MAIN_RAM_SIZE - 1u);
+		m_ram[offset] = value;
+		invalidateRamWrite(offset, 1u);
+	}
 	// Runtime-owned RAM writes bypass the bus but still reach decoded-code watches.
 	void invalidateRamWrite(size_t offset, size_t byteLength) {
 		m_ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, m_mappedPageInvalidator);

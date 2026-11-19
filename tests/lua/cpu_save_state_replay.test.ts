@@ -135,6 +135,7 @@ test('restore retains weak referents until the original allocation-triggered col
 	cpu.setGlobalByKey(weakKey, valueTable(cpu.gc.reference(weak)));
 	// These allocations have left guest accounting debt but are unreachable.
 	for (let index = 0; index < 17; index += 1) cpu.createTable(256, 0);
+	const ram = cpu.memory.captureSaveState();
 	const anchor = cpu.captureRuntimeState();
 	const strings = cpu.stringPool.captureState();
 	const allocateUntilCollected = (): number => {
@@ -150,6 +151,7 @@ test('restore retains weak referents until the original allocation-triggered col
 	const expected = cpu.captureRuntimeState();
 	for (let pass = 0; pass < 3; pass += 1) {
 		cpu.stringPool.restoreState(strings);
+		cpu.memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(anchor);
 		assert.deepEqual(cpu.captureRuntimeState(), anchor);
 		assert.equal(allocateUntilCollected(), expectedCount);
@@ -221,6 +223,7 @@ test('CPU snapshots reuse exclusive storage across graph growth, cycles and a sh
 		child.setInteger(1, valueTable(cpu.gc.reference(root)));
 		root.setInteger(index, valueTable(cpu.gc.reference(child)));
 	}
+	const retainedMemory = cpu.memory.captureSaveState();
 	const retained = cpu.captureRuntimeState();
 	const retainedWords = retained.snapshot.words.slice();
 	const retainedObjects = retained.snapshot.objectWords.slice();
@@ -247,6 +250,7 @@ test('CPU snapshots reuse exclusive storage across graph growth, cycles and a sh
 	assert.deepEqual(recycled, cpu.captureRuntimeState(), 'unused capacity is not machine state');
 	assert.deepEqual(retained.snapshot.words, retainedWords, 'a different checkpoint must remain intact');
 	assert.deepEqual(retained.snapshot.objectWords, retainedObjects);
+	cpu.memory.restoreSaveState(retainedMemory);
 	cpu.restoreRuntimeState(retained);
 	const restored = asTable(cpu.getGlobalByKey(key), cpu.gc);
 	assert.notEqual(restored.getInteger(1), restored.getInteger(2), 'equal allocation ids do not merge objects');
@@ -303,10 +307,12 @@ test('table boundary hints and mixed numeric hash layout survive restore without
 	for (let n = 64; n > 0; n--) table.setInteger(n, valueBool(false));
 	for (let n = -1; n >= -64; n--) table.setInteger(n, valueInteger(n));
 	cpu.setGlobalByKey(key, valueTable(cpu.gc.reference(table)));
+	const ram = cpu.memory.captureSaveState();
 	const state = cpu.captureRuntimeState();
 	assert.equal(table.length(), 64);
 	assert.deepEqual(cpu.captureRuntimeState(), state, 'inspection does not normalize a non-boundary hint');
 	table.setInteger(1, valueNil()); table.setInteger(64, valueNil()); table.setInteger(-32, valueInteger(999));
+	cpu.memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
 	const restored = asTable(cpu.getGlobalByKey(key), cpu.gc);
 	assert.equal(restored.length(), 64);

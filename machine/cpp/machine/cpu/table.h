@@ -10,7 +10,7 @@
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
-#include "machine/cpu/value_slots.h"
+#include "machine/memory/memory.h"
 #include "machine/cpu/snapshot.h"
 
 namespace bmsx {
@@ -41,8 +41,12 @@ struct TableNativeFieldOffsets {
 
 class Table : public GCObject {
 public:
-	Table(GcHeap& heap, size_t arrayCapacity = 0, size_t hashCapacity = 0);
-	~Table();
+	Table(GcHeap& heap, size_t arrayCapacity, size_t hashCapacity, u32 storage);
+	static constexpr u32 HEADER_BYTES = 32;
+	static u32 storageBytes(size_t arraySize, size_t hashSize);
+	void initializeStorage();
+	void freeStorage();
+	u32 storageAddress() const { return m_values.words ? RAM_BASE + m_values.words : 0; }
 	Table(const Table&) = delete;
 	Table& operator=(const Table&) = delete;
 	static size_t hashCapacity(int hashSize);
@@ -71,6 +75,7 @@ public:
 	int setStringKey(StringId key, const Value& value);
 	// Completes mutations within allocated storage; growth leaves the mapping unchanged.
 	static int storeStringKeyWithoutGrowth(Table* table, StringId key, const Value& value) noexcept;
+	static int storeStringKeyInNative(Table* table, StringId key, const Value& value) noexcept;
 	void setStringKeyCached(StringId key, const Value& value, int& predictedSlot);
 	Table* metatableIndexTable(StringId indexKey) const;
 	void resolveIndex(StringId indexKey, const Value& key, TableLookupResult& result) const {
@@ -158,7 +163,6 @@ public:
 	u32 captureSnapshot(CpuSnapshot& snapshot, const CpuSnapshotValueWriter& writeValue) const;
 	void restoreSnapshot(const CpuSnapshotReader& reader, u32 offset);
 	size_t trackedHeapBytes() const;
-	void prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity);
 
 	Table* metatable = nullptr;
 	bool gcWeakListed = false;
@@ -197,7 +201,25 @@ private:
 	int getFreeIndex();
 	void rehash(const Value& key, const Value& value);
 	void resize(size_t newArraySize, size_t newHashSize, const Value& key, const Value& value);
-	void allocateStorage(size_t arraySize, size_t hashSize);
+	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
+	struct TableValues {
+		Memory* memory;
+		u32 words, tags;
+		Value get(size_t index) const {
+			return valueFromTag(static_cast<ValueTag>(memory->readRamRecordByte(tags + static_cast<u32>(index))),
+				memory->readRamRecordWord(words + static_cast<u32>(index) * 4u));
+		}
+		void set(size_t index, Value value) const {
+			memory->writeRamRecordWord(words + static_cast<u32>(index) * 4u, valuePayload(value));
+			memory->writeRamRecordByte(tags + static_cast<u32>(index), static_cast<u8>(valueTag(value)));
+		}
+	};
+	i32 hashNext(size_t index) const {
+		return static_cast<i32>(m_values.memory->readRamRecordWord(m_hashLinks + static_cast<u32>(index) * 4u));
+	}
+	void setHashNext(size_t index, i32 next) {
+		m_values.memory->writeRamRecordWord(m_hashLinks + static_cast<u32>(index) * 4u, static_cast<u32>(next));
+	}
 	int rawSet(const Value& key, const Value& value);
 	int insertHash(const Value& key, const Value& value);
 	int insertHashWithoutGrowth(const Value& key, const Value& value) noexcept;
@@ -223,10 +245,10 @@ private:
 	}
 
 	GcHeap& m_heap;
-	ValueSpan m_values;
+	TableValues m_values;
 	size_t m_arraySize = 0;
 	u32 m_lengthHint = 0;
-	int32_t* m_hashNext = nullptr;
+	u32 m_hashLinks = 0;
 	size_t m_hashSize = 0;
 	int m_hashFree = -1;
 };

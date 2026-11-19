@@ -34,8 +34,8 @@ struct NativeBlockAbi {
 	// S0/S1 = slot planes, R0/R1 = signed indices relative to those bases.
 	// R2 is the copy count; R3 is the nil tail when padding is requested.
 	static void emitFramePlacement(sljit_compiler*, bool moveFormals, bool pad);
-	// destination = host address of the main-RAM byte offset in `offset`; the two
-	// registers must differ. The only way generated code reaches the RAM base.
+	// destination = host address of the main-RAM byte offset in `offset`.
+	// The only way generated code reaches the RAM base.
 	static void emitRamAddress(sljit_compiler*, sljit_s32 destination, sljit_s32 offset);
 	static constexpr sljit_s32 words = SLJIT_S0, tags = SLJIT_S1, state = SLJIT_S2, budget = SLJIT_S3;
 	// The main-RAM base is pinned in S4 only where the value cache keeps all of

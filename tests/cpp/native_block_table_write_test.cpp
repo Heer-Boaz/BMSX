@@ -216,6 +216,37 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 	}
 }
 
+void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
+	auto* table = cpu.createTable(4096, 0);
+	const u32 words = table->storageAddress();
+	const u32 tags = words + 4096u * 4u;
+	DecodedInstruction store{};
+	store.op = static_cast<u8>(OpCode::SETI);
+	store.a = 0; store.b = 1; store.c = 2; store.width = 1;
+	store.baseCycles = BASE_CYCLES[store.op];
+	const std::array source{NativeBlockInstruction{&store, 0x1000u}};
+	size_t bytes = 0;
+	auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	ValueSlots registers(3);
+	registers.set(0, valueTable(cpu.gcHeap().reference(table)));
+	registers.set(2, valueFloatBits(0x80000000u));
+	NativeBlockRunState state{.registers = registers.view(), .heap = &cpu.gcHeap()};
+	for (const u32 address : {words, tags}) {
+		table->setInteger(1, valueInteger(101));
+		MappedPageBinding binding;
+		memory.bindMappedPage(address, MAPPED_BUS_MASTER_CPU, binding);
+		binding.writeWatch.armWord((address & MAPPED_PAGE_BYTE_MASK) >> 2);
+		state.remainingCycles = 100;
+		require(block->run(state) == &block->sideExits.front() && table->getInteger(1) == valueInteger(101),
+			"watching either plane leaves before either part of the store");
+		table->setInteger(1, registers.get(2));
+		require(!memory.ramWriteWatches().anyWatched() && table->getInteger(1) == registers.get(2),
+			"the record write invalidates the physical code watch");
+	}
+	state.remainingCycles = 100;
+	require(block->run(state) == &block->terminal, "an unwatched RAM slot still stores in generated code");
+}
+
 void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
 	std::array<DecodedInstruction, 4> decoded{};
 	std::array<NativeBlockInstruction, 4> source{};
@@ -439,6 +470,7 @@ int main() {
 		readsRetainNativeFrame(cpu, memory);
 		storesRetainNativeFrame(cpu, memory);
 		compactArraySlots(cpu, memory);
+		watchedTableWordOrTagLeavesBeforeWriting(cpu, memory);
 		boundaryLengthRetainsNativeFrame(cpu, memory);
 		guardedTableFactsFollowRegisterDefinitions(cpu, memory);
 		tableFactsAreValidatedAtIndependentRegionEntries(cpu, memory);

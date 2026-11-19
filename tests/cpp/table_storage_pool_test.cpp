@@ -23,36 +23,35 @@ int main() {
 		const auto key = cpu.stringPool().intern("retired");
 		const auto before = cpu.luaHeap().captureState();
 		auto* first = cpu.createTable(3, 4);
+
+		const u32 bodyAddress = first->storageAddress();
 		first->setInteger(3, valueInteger(99));
+		require(memory.readMappedU32LE(bodyAddress + 2 * 4u) == 99u, "array payload lives in guest RAM");
+		memory.writeMappedU32LE(bodyAddress + 2 * 4u, 11u);
+		require(first->getInteger(3) == valueInteger(11), "table reads consume the physical bytes");
+		require(cpu.heapAllocator().occupiedBytes() == 80u, "one arena allocation contains the entire body");
 		first->setStringKey(key, valueBool(false));
 		first->clear();
 		require(cpu.luaHeap().usedBytes() == before.trackedBytes + 32,
-			"retained host blocks do not remain occupied in the guest heap");
-		// Different exact capacities share one rounded host allocation class.
+			"cleared tables retain only the table header charge");
+		// Different exact capacities can share one guest size class.
 		auto* second = cpu.createTable(4, 4);
-		require(second->trackedHeapBytes() == 108, "host size classes do not round guest capacities");
+		require(second->trackedHeapBytes() == 112u && second->storageAddress() == bodyAddress, "the freed guest size class is reused");
 		for (int index = 1; index <= 4; ++index)
 			require(isNil(second->getInteger(index)), "reused array slots are initialized to nil");
 		require(isNil(second->getStringKey(key)), "reused hash storage does not retain old keys or values");
 		second->setStringKey(key, valueInteger(73));
 		for (int index = 1; index <= 300; ++index) second->setInteger(index, valueInteger(index));
 		for (int index = 1; index <= 300; ++index)
-			require(second->getInteger(index) == valueInteger(index), "growth across the pooling cutoff preserves entries");
+			require(second->getInteger(index) == valueInteger(index), "growth across the page allocation boundary preserves entries");
 		require(second->getStringKey(key) == valueInteger(73), "mixed array/hash growth preserves the hash entry");
-		const auto beforeRestore = cpu.luaHeap().usedBytes() - second->trackedHeapBytes();
-		second->prepareRestoreStorage(5, 2);
-		require(second->trackedHeapBytes() == 85 && cpu.luaHeap().usedBytes() == beforeRestore + 85,
-			"restore preparation retains exact non-power-of-two capacities and occupied bytes");
-		for (int index = 1; index <= 5; ++index)
-			require(isNil(second->getInteger(index)), "replacement storage starts fresh after shrinking");
-		require(isNil(second->getStringKey(key)), "replacement hash links and keys start fresh");
 		second->clear();
 		first->clear();
 		require(cpu.luaHeap().usedBytes() == before.trackedBytes + 64,
-			"empty tables keep only their canonical headers, independent of host cache residency");
+			"empty tables keep only their canonical headers, and release both bodies");
 		require(cpu.luaHeap().captureState().nextCollectionBytes == before.nextCollectionBytes,
-			"host recycling neither invokes nor reschedules guest collection");
-		std::cout << "Table storage pool tests passed\n";
+			"recycling does not reschedule guest collection");
+		std::cout << "Table guest storage tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';

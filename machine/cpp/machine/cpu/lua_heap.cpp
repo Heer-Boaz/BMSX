@@ -24,12 +24,18 @@ void LuaHeap::reserve(
 	Value root2,
 	Thread* growingStack
 ) {
+	admit(byteCount, root0, root1, root2, growingStack);
+	m_trackedBytes += byteCount;
+}
+
+bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, Thread* growingStack) {
 #if defined(BMSX_GC_STRESS)
 	stressHeapAllocation(*this);
 #endif
 	const size_t limit = capacity();
 	size_t nextBytes = m_trackedBytes + byteCount;
-	if (nextBytes > limit) {
+	const bool exhausted = nextBytes > limit;
+	if (exhausted) {
 		collectRuntime(root0, root1, root2, growingStack);
 	} else if (nextBytes > m_nextCollectionBytes) {
 		const size_t work = m_cpu.stepHeap(root0, root1, root2, growingStack);
@@ -38,7 +44,25 @@ void LuaHeap::reserve(
 	}
 	nextBytes = m_trackedBytes + byteCount;
 	if (nextBytes > limit) throw LuaOutOfMemorySignal{};
-	m_trackedBytes = nextBytes;
+	return exhausted;
+}
+
+u32 LuaHeap::allocateRecord(u32 bytes, bool owned, size_t extraBytes, Value root0, Value root1, Value root2) {
+	const size_t charged = (bytes ? heapAllocationBytes(bytes) : 0u) + extraBytes;
+	const bool collected = admit(charged, root0, root1, root2, nullptr);
+	if (bytes == 0u) {
+		m_trackedBytes += charged;
+		return 0u;
+	}
+	auto& arena = m_cpu.heapAllocator();
+	u32 address = arena.allocate(bytes, owned);
+	if (!address && !collected) {
+		collectRuntime(root0, root1, root2);
+		if (m_trackedBytes + charged <= capacity()) address = arena.allocate(bytes, owned);
+	}
+	if (!address) throw LuaOutOfMemorySignal{};
+	m_trackedBytes += charged;
+	return address;
 }
 
 void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, Thread* growingStack) {

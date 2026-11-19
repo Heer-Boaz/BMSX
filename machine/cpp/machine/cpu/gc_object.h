@@ -33,8 +33,9 @@ struct GCObject {
 
 // A sweep snapshot keeps the allocation's retirement work, not dead pointers.
 struct GarbageAllocation : GCObject {
-	explicit GarbageAllocation(size_t bytes) : bytes(bytes) {}
+	GarbageAllocation(size_t bytes, uint32_t storage) : bytes(bytes), storage(storage) {}
 	size_t bytes;
+	uint32_t storage;
 };
 
 } // namespace bmsx

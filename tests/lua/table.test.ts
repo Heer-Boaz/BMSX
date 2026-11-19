@@ -19,7 +19,7 @@ import {
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { runCompiledLua } from './cpu_test_harness';
-import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotTable, CPU_SNAPSHOT_VALUE_WORDS } from '../../machine/ts/machine/cpu/snapshot';
+import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 
 test('runtime values expose distinct Integer and Float tags with equal payload words', () => {
@@ -163,6 +163,25 @@ test('Table sparse hash boundaries include Integer boundaries up to INT32_MAX wi
 	assert.equal(table.length(), 2 ** 30);
 });
 
+test('table values come directly from the allocator-owned RAM block', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(2, 1);
+	table.setInteger(1, valueInteger(71));
+	const base = table.storageAddress();
+	assert.equal(cpu.heapAllocator.occupiedBytes(), 24, 'the 24-byte body is one physical allocation');
+	assert.equal(memory.readMappedU32LE(base), 71);
+	assert.equal(memory.readMappedU32LE(base + 4 * 4), 0xffffffff, 'the hash-chain word follows the four payload words');
+	const tags = base + 5 * 4;
+	assert.equal(memory.readMappedU8(tags), ValueTag.Integer);
+	memory.writeMappedU32LE(base, 94);
+	assert.equal(table.getInteger(1), valueInteger(94));
+	memory.writeMappedU8(tags, ValueTag.Nil);
+	assert.equal(valueTag(table.getInteger(1)), ValueTag.Nil);
+	table.clear();
+	assert.equal(cpu.heapAllocator.occupiedBytes(), 0, 'clearing releases only the owned body');
+});
+
 test('numeric hash mixing distributes negative integral keys and preserves canonical matching', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
@@ -170,10 +189,11 @@ test('numeric hash mixing distributes negative integral keys and preserves canon
 	for (let key = -1; key >= -1024; key--) table.setInteger(key, valueInteger(key));
 	const snapshot = new CpuSnapshot(), writer = new CpuSnapshotWriter(snapshot);
 	const offset = table.captureSnapshot(writer, () => {}); writer.finish();
+	const links = snapshot.word(offset + CpuSnapshotTable.Storage) + 1024 * 2 * 4;
 	let longest = 0;
 	for (let slot = 0; slot < 1024; slot++) {
 		let count = 0;
-		for (let next = slot; next !== -1; next = snapshot.int(offset + CpuSnapshotTable.Data + next * (2 * CPU_SNAPSHOT_VALUE_WORDS + 1) + 2 * CPU_SNAPSHOT_VALUE_WORDS)) count++;
+		for (let next = slot; next !== -1; next = (memory.readMappedU32LE(links + next * 4) | 0)) count++;
 		longest = Math.max(longest, count);
 		assert.equal(table.getInteger(-(slot + 1)), valueInteger(-(slot + 1)));
 	}

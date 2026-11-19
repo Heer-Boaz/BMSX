@@ -1172,7 +1172,8 @@ retained Threads can keep other objects alive; mutually referencing objects
 can be reclaimed when the whole group becomes unreachable. Weak Table behavior
 is defined in [Weak references and collection](#sec-cpu-weak-references-and-collection).
 Allocation may invoke collection before it succeeds. If the requested growth
-still exceeds capacity, it raises the Lua out-of-memory error. If language
+still exceeds capacity, or no suitably sized contiguous block can be
+allocated, it raises the Lua out-of-memory error. If language
 error handling does not handle it, the CPU takes a Trap exception with
 LuaFaultReason `9` (`OUT_OF_MEMORY`).
 
@@ -1195,11 +1196,19 @@ The occupied-byte counts used for admission and collection work are:
 
 | Allocation | Occupied budget bytes |
 | --- | --- |
-| Table with array capacity `A` and hash capacity `H` | `32 + 5A + 14H` |
+| Table with array capacity `A` and hash capacity `H` | `32 + S(5A + 14H)` |
 | Closure with `U` captured-variable references | `16 + 4U` |
 | Captured-variable cell | `20` |
 | Thread with `V` reserved Value slots | `64 + 5V` |
 | Allocated String text | UTF-8 byte length |
+
+A Table's slots and links occupy one block in the language heap. `S(0) = 0`;
+there is no block for an empty layout. Up to 64 bytes, round up to a multiple
+of 8. From 65 through 2048 bytes, use four size classes per doubling
+(80, 96, 112, 128, 160, and so on). Larger blocks round up to a multiple of
+4096 bytes. When the layout grows, both blocks are in use until the entries
+have been moved; `count` below capacity does not by itself guarantee space
+for the new block.
 
 A reserved Value slot occupies four payload bytes and one kind byte, regardless
 of its current value. A hash node holds a key slot, a value slot and a four-byte

@@ -1,4 +1,6 @@
 import type { CPU } from './cpu';
+import type { Memory } from '../memory/memory';
+import type { HeapAllocator } from './heap_allocator';
 import { GcObject, GcKind, GarbageAllocation } from './gc_object';
 import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from './closure';
 import { Table } from './table';
@@ -49,7 +51,7 @@ export class GcHeap {
 		if (valueTag(key) === ValueTag.String) this.cpu.stringPool.markReachable(valuePayload(key));
 		if (valueTag(value) === ValueTag.String) this.cpu.stringPool.markReachable(valuePayload(value));
 	};
-	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, private readonly modeKey: number) {}
+	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory, public readonly arena: HeapAllocator, private readonly modeKey: number) {}
 	public reference(object: GcObject): number { return object.referenceId; }
 	/** Consumes a live id produced by this heap; the Value tag supplies its kind. */
 	public object(reference: number): GcObject { return this.references[reference] as GcObject; }
@@ -252,6 +254,9 @@ export class GcHeap {
 						if (this.sweepGarbage(object)) {
 							this.unlink(object);
 							this.releaseReference(object);
+							if (object.gcKind === GcKind.Table) (object as Table).freeStorage();
+							else if (object.gcKind === GcKind.Garbage && (object as GarbageAllocation).storage !== 0)
+								this.arena.free((object as GarbageAllocation).storage);
 							this.budget.release(bytes);
 						} else {
 							object.gcColor = this.white;

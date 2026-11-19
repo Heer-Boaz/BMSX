@@ -403,7 +403,7 @@ export class CPU implements MappedPageInvalidator {
 		this.rootThread.status = ThreadStatus.Running;
 		this.indexKey = this.stringPool.intern('__index');
 		this.modeKey = this.stringPool.intern('__mode');
-		this.gc = new GcHeap(this, this.luaHeap, this.modeKey);
+		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator, this.modeKey);
 		this.gc.track(this.rootThread);
 		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_UNKNOWN] = this.stringPool.intern('Attempted to get length of an unsupported value.', false);
@@ -428,8 +428,9 @@ export class CPU implements MappedPageInvalidator {
 
 	public createTable(arraySize: number = 0, hashSize: number = 0): Table {
 		const hashCapacity = Table.hashCapacity(hashSize);
-		this.luaHeap.reserve(Table.trackedHeapBytesForCapacities(arraySize, hashCapacity));
-		const table = new Table(this.gc, arraySize, hashCapacity);
+		const storage = this.luaHeap.allocateRecord(Table.storageBytes(arraySize, hashCapacity), true, Table.HEADER_BYTES);
+		const table = new Table(this.gc, arraySize, hashCapacity, storage);
+		table.initializeStorage();
 		table.hashId = this.allocateObjectHashId();
 		this.gc.track(table);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(this.gc.reference(table)));
@@ -653,7 +654,7 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = false;
 		this.staticClosuresByAddress.clear();
 		this.memory.clearMappedPageWriteWatches();
-		this.heapAllocator.reset(systemBoot.staticEnd);
+		if (!this.setProgramHeapFloor(systemBoot.staticEnd)) { this.hardHalt(); return; }
 		this.executionImagesByDomain.fill(null);
 		this.systemImage = this.activateExecutionImage(systemBoot);
 		this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1] = this.systemImage;
@@ -4101,8 +4102,10 @@ export class CPU implements MappedPageInvalidator {
 			const kind = pendingKinds[id];
 			let offset: number;
 			if (this.gc.sweepGarbage(object)) {
-				offset = writer.reserveWords(3); writer.setWord(offset, CpuSnapshotObjectKind.Garbage);
+				offset = writer.reserveWords(4); writer.setWord(offset, CpuSnapshotObjectKind.Garbage);
 				writer.setWord(offset + 1, object.hashId); writer.setWord(offset + 2, this.gc.allocationBytes(object));
+				writer.setWord(offset + 3, kind === CpuSnapshotObjectKind.Table ? (object as Table).storageAddress()
+					: kind === CpuSnapshotObjectKind.Garbage ? (object as GarbageAllocation).storage : 0);
 				writer.setObjectWord(id, offset); continue;
 			}
 			switch (kind) {
@@ -4217,7 +4220,7 @@ export class CPU implements MappedPageInvalidator {
 				case CpuSnapshotObjectKind.Garbage: {
 					const bytes = snapshot.word(offset + 2);
 					this.luaHeap.restoreAllocate(bytes);
-					const object = new GarbageAllocation(bytes); object.hashId = snapshot.word(offset + 1);
+					const object = new GarbageAllocation(bytes, snapshot.word(offset + 3)); object.hashId = snapshot.word(offset + 1);
 					this.gc.track(object); object.restored = true;
 					restoredObjects[index] = object;
 					break;
@@ -4240,7 +4243,7 @@ export class CPU implements MappedPageInvalidator {
 					const arrayCapacity = snapshot.word(offset + CpuSnapshotTable.ArrayCapacity);
 					const hashSize = snapshot.word(offset + CpuSnapshotTable.HashSize);
 					this.luaHeap.restoreAllocate(Table.trackedHeapBytesForCapacities(arrayCapacity, hashSize));
-					const table = new Table(this.gc, arrayCapacity, hashSize);
+					const table = new Table(this.gc, arrayCapacity, hashSize, snapshot.word(offset + CpuSnapshotTable.Storage));
 					this.gc.track(table); table.restored = true;
 					table.hashId = snapshot.word(offset + CpuSnapshotTable.HashId);
 					restoredObjects[index] = table;

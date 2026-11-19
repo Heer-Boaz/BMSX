@@ -403,7 +403,14 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 					auto* object = m_sweep;
 					m_sweep = object->next;
 					work += ceilDiv4(static_cast<int>(allocationBytes(object)));
-					if (sweepGarbage(object)) { unlink(object); destroyObject(object); }
+					if (sweepGarbage(object)) {
+						if (object->type == ObjType::Table) static_cast<Table*>(object)->freeStorage();
+						else if (object->type == ObjType::Garbage) {
+							const u32 storage = static_cast<const GarbageAllocation*>(object)->storage;
+							if (storage) arena.free(storage);
+						}
+						unlink(object); destroyObject(object);
+					}
 					else {
 						object->gcColor = m_white;
 						if (object->type == ObjType::Thread && object != growingStack) {

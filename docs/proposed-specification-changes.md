@@ -2404,8 +2404,10 @@ al "outside reserved storage". Het heapgebied valt onder die regel zodra
 3. **GEO-reservering weg — uitgevoerd.** Geheugenkaart, linker, `cartlib`,
    de bare-metal-demo en de handleidingen gebruiken programma-eigen buffers.
    `K` is opnieuw bepaald uit de gebouwde ROM’s (12.11).
-4. **Tabellen.** `K` is de capaciteit. Nog te doen: tabelrecords naar gast-RAM,
-   daarna de gameplaypiek opnieuw meten met de nieuwe boekhouding.
+4. **Tabellen.** `K` is de capaciteit. De payload-, tag- en hashvlakken
+   staan samen in één toegewezen RAM-blok; hun bezetting gebruikt size
+   classes. De kop, de adresidentiteit en de uiteindelijke collectiekosten
+   volgen nog. Meet daarna de gameplaypiek met de nieuwe boekhouding.
 5. **Closures en captured-variable-cellen**, met de prototypes (O5).
 6. **Strings**, samen met de byte-strings.
 7. **Threads en frames.**

@@ -204,6 +204,7 @@ void replayWeakCollectionSchedule() {
 	weak->setInteger(1, bmsx::valueTable(cpu.gcHeap().reference(cpu.createTable())));
 	cpu.setGlobalByKey(weakKey, bmsx::valueTable(cpu.gcHeap().reference(weak)));
 	for (int index = 0; index < 17; ++index) cpu.createTable(256, 0);
+	const auto savedRam = cpu.memory().captureSaveState();
 	const auto anchor = cpu.captureRuntimeState();
 	const auto strings = cpu.stringPool().captureState();
 	const auto allocateUntilCollected = [&]() {
@@ -219,6 +220,7 @@ void replayWeakCollectionSchedule() {
 	const auto expected = cpu.captureRuntimeState();
 	for (int pass = 0; pass < 3; ++pass) {
 		cpu.stringPool().restoreState(strings);
+		cpu.memory().restoreSaveState(savedRam);
 		cpu.restoreRuntimeState(anchor);
 		require(cpu.captureRuntimeState().luaHeap.trackedBytes == anchor.luaHeap.trackedBytes, "unreachable allocation debt survives restore");
 		require(allocateUntilCollected() == expectedCount, "collection must happen after the same allocation");
@@ -312,6 +314,7 @@ void reuseSnapshotStorage() {
 		child->setInteger(1, bmsx::valueTable(cpu.gcHeap().reference(root)));
 		root->setInteger(index, bmsx::valueTable(cpu.gcHeap().reference(child)));
 	}
+	const auto savedRam = cpu.memory().captureSaveState();
 	const auto retained = cpu.captureRuntimeState();
 	auto recycled = cpu.captureRuntimeState();
 	const auto* words = recycled.snapshot.words().data();
@@ -337,6 +340,7 @@ void reuseSnapshotStorage() {
 	const auto fresh = cpu.captureRuntimeState();
 	require(std::ranges::equal(recycled.snapshot.words(), fresh.snapshot.words()), "recycled storage has no stale active words");
 	require(std::ranges::equal(recycled.snapshot.objectWords(), fresh.snapshot.objectWords()), "recycled index has no stale object records");
+	cpu.memory().restoreSaveState(savedRam);
 	cpu.restoreRuntimeState(retained);
 	auto* restored = bmsx::asTable(cpu.getGlobalByKey(key), cpu.gcHeap());
 	require(restored->getInteger(1) != restored->getInteger(2), "equal allocation ids do not merge snapshot identities");
@@ -410,11 +414,13 @@ void preserveDynamicGlobalRegisters() {
 	cpu.setGlobalByKey(nilKey, bmsx::valueNil());
 	cpu.collectHeap();
 	const auto strings = cpu.stringPool().captureState();
+	const auto ram = cpu.memory().captureSaveState();
 	const auto state = cpu.captureRuntimeState();
 	cpu.setGlobalByKey(key, bmsx::valueNil());
 	cpu.setGlobalByKey(cpu.stringPool().intern("future"), bmsx::valueInteger(100));
 	cpu.collectHeap();
 	cpu.stringPool().restoreState(strings);
+	cpu.memory().restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
 	require(cpu.globalSlotCount() == count + 259, "dynamic register membership restores exactly");
 	for (int index = 0; index < 257; ++index) {
