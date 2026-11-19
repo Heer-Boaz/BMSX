@@ -424,8 +424,9 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 					auto* object = m_sweep;
 					m_sweep = object->next;
 					if (object->type == ObjType::Table) continue;
-					work += ceilDiv4(static_cast<int>(allocationBytes(object)));
+					work += object->type == ObjType::Upvalue ? 1 : ceilDiv4(static_cast<int>(allocationBytes(object)));
 					if (sweepGarbage(object)) {
+						if (object->type == ObjType::Upvalue) arena.free(static_cast<Upvalue*>(object)->address);
 						unlink(object); destroyObject(object);
 					}
 					else {

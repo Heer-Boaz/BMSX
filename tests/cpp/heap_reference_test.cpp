@@ -151,6 +151,34 @@ void builtinIdentitiesStayOutsideTheGcHeap() {
 			"builtin ids survive restore including zero");
 }
 
+void closedCellLivesInRam() {
+	Machine machine; auto& cpu = machine.cpu; auto& heap = cpu.gcHeap();
+	auto& frame = *cpu.rootThread()->currentFrame;
+	auto* closure = asClosure(frame.registers.get(1), heap);
+	const u32 key = cpu.stringPool().intern("saved_capture");
+	cpu.setGlobalByKey(key, frame.registers.get(1));
+	auto* cell = static_cast<Upvalue*>(heap.object(closure->upvalues[0]));
+	const u32 address = cell->address;
+	frame.registers.set(0, valueFloatBits(0xffa12345u));
+	cpu.abortCompletionCall(0);
+	auto& memory = machine.memory;
+	require(!cell->open && memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == 0xffa12345u
+		&& memory.readRamRecordByte(address + UPVALUE_VALUE_TAG) == static_cast<u8>(ValueTag::Float),
+		"closing a capture writes the exact value to the allocated cell");
+	const auto saved = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	memory.writeRamRecordWord(address + UPVALUE_VALUE_WORD, 0x80000000u);
+	require(cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0x80000000u), "closed capture reads the physical word");
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(saved);
+	closure = asClosure(cpu.getGlobalByKey(key), heap);
+	require(cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u), "restore rebinds the saved cell");
+	const auto occupied = cpu.heapAllocator().occupiedBytes();
+	cpu.setGlobalByKey(key, valueNil());
+	cpu.collectHeap();
+	require(cpu.heapAllocator().occupiedBytes() == occupied - UPVALUE_HEAP_BYTES, "collection releases the raw cell");
+}
+
 void isolatedHeaps() {
 	Machine first, second;
 	auto* a = first.cpu.createTable(); auto* b = second.cpu.createTable();
@@ -164,7 +192,7 @@ void isolatedHeaps() {
 int main() {
 	try {
 		liveReferencesAndReuse(); restoreRebindsWithoutRetainingDiscardedFutures(); incrementalRestore();
-		builtinIdentitiesStayOutsideTheGcHeap(); isolatedHeaps();
+		builtinIdentitiesStayOutsideTheGcHeap(); closedCellLivesInRam(); isolatedHeaps();
 		std::cout << "heap reference tests passed\n";
 		return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

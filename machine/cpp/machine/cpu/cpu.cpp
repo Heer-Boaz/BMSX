@@ -956,7 +956,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	for (u32 id = 0; id < pendingObjects.size(); ++id) {
 		const auto* object = pendingObjects[id];
 		u32 offset;
-		if (object->type != ObjType::Table && m_heap.sweepGarbage(object)) {
+		if (object->type != ObjType::Table && object->type != ObjType::Upvalue && m_heap.sweepGarbage(object)) {
 			offset = snapshot.reserveWords(3);
 			snapshot.setWord(offset, static_cast<u32>(CpuSnapshotObjectKind::Garbage));
 			snapshot.setWord(offset + 1, object->hashId);
@@ -998,19 +998,20 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 			}
 			case ObjType::Upvalue: {
 				const auto* upvalue = static_cast<const Upvalue*>(object);
-				offset = snapshot.reserveWords(SNAP_UPVALUE_VALUE + CPU_SNAPSHOT_VALUE_WORDS);
+				offset = snapshot.reserveWords(SNAP_UPVALUE_SIZE);
+				const bool open = upvalue->open && !m_heap.sweepGarbage(upvalue);
 				snapshot.setWord(offset + SNAP_UPVALUE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Upvalue));
 				snapshot.setWord(offset + SNAP_UPVALUE_HASH_ID, upvalue->hashId);
-				snapshot.setWord(offset + SNAP_UPVALUE_OPEN, upvalue->open);
+				snapshot.setWord(offset + SNAP_UPVALUE_OPEN, open);
 				snapshot.setWord(offset + SNAP_UPVALUE_INDEX, static_cast<u32>(upvalue->index));
 				int frameIndex = -1;
-				if (upvalue->open) {
+				if (open) {
 					frameIndex = 0;
 					for (auto* frame = upvalue->frame->thread->firstFrame; frame != upvalue->frame; frame = frame->next) ++frameIndex;
 				}
-				snapshot.setWord(offset + SNAP_UPVALUE_THREAD_REF, upvalue->open ? captureObject(upvalue->frame->thread) : static_cast<u32>(-1));
+				snapshot.setWord(offset + SNAP_UPVALUE_THREAD_REF, open ? captureObject(upvalue->frame->thread) : static_cast<u32>(-1));
 				snapshot.setWord(offset + SNAP_UPVALUE_FRAME_INDEX, static_cast<u32>(frameIndex));
-				writeValue(offset + SNAP_UPVALUE_VALUE, upvalue->open ? upvalue->frame->registers.get(upvalue->index) : upvalue->value());
+				snapshot.setWord(offset + SNAP_UPVALUE_ADDRESS, upvalue->address);
 				break;
 			}
 			default: BMSX_UNREACHABLE();
@@ -1154,12 +1155,11 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			}
 			case CpuSnapshotObjectKind::Upvalue: {
 				m_luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
-				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
+				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue, m_memory, snapshot.word(offset + SNAP_UPVALUE_ADDRESS));
 				upvalue->restored = true;
-				upvalue->open = false;
+				upvalue->open = snapshot.word(offset + SNAP_UPVALUE_OPEN) != 0;
 				upvalue->index = snapshot.integer(offset + SNAP_UPVALUE_INDEX);
 				upvalue->frame = nullptr;
-				upvalue->setValue(valueNil());
 				upvalue->hashId = snapshot.word(offset + SNAP_UPVALUE_HASH_ID);
 				restoredObjects[index] = upvalue;
 				break;
@@ -1182,12 +1182,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				}
 				break;
 			}
-			case CpuSnapshotObjectKind::Upvalue: {
-				auto* upvalue = static_cast<Upvalue*>(restoredObjects[index]);
-				upvalue->open = snapshot.word(offset + SNAP_UPVALUE_OPEN) != 0;
-				upvalue->setValue(upvalue->open ? valueNil() : reader.readValue(offset + SNAP_UPVALUE_VALUE));
-				break;
-			}
+			case CpuSnapshotObjectKind::Upvalue: break;
 		}
 	}
 
@@ -2782,7 +2777,12 @@ Closure* CPU::createClosure(CallFrame& frame) {
 	}
 	const size_t closureHeapBytes = kClosureHeapBytes
 		+ (static_cast<size_t>(functionRecord.upvalueCount) * kClosureUpvalueSlotHeapBytes);
-	m_luaHeap.reserve(closureHeapBytes + (newUpvalueCount * UPVALUE_HEAP_BYTES));
+	if (newUpvalueCount != 0) {
+		m_captureAddressScratch.resize(newUpvalueCount);
+		m_luaHeap.allocateCaptureCells(closureHeapBytes, m_captureAddressScratch);
+	} else {
+		m_luaHeap.reserve(closureHeapBytes);
+	}
 	auto* closure = allocateTrackedClosure(
 		functionRecord.address,
 		functionRecord.upvalueCount
@@ -2794,10 +2794,11 @@ Closure* CPU::createClosure(CallFrame& frame) {
 	closure->upvalueTableAddress = functionRecord.upvalueTableAddress;
 	closure->recordUpvalueCount = functionRecord.upvalueCount;
 	closure->executionDomainId = functionRecord.image->executionDomainId;
+	size_t nextCell = 0;
 	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
 		Upvalue* upvalue = m_closureUpvalueScratch[index];
 		if (!upvalue) {
-			upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
+			upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue, m_memory, m_captureAddressScratch[nextCell++]);
 			upvalue->open = true;
 			upvalue->index = static_cast<int>(
 				m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_INDEX_MASK

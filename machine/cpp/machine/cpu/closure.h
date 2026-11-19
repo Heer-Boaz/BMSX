@@ -10,19 +10,24 @@
 namespace bmsx {
 
 struct CallFrame;
-inline constexpr size_t UPVALUE_HEAP_BYTES = 20;
+class Memory;
+inline constexpr u32 UPVALUE_HEAP_BYTES = 16;
+inline constexpr u8 UPVALUE_RECORD_KIND = 11;
+inline constexpr u32 UPVALUE_VALUE_TAG = 3;
+inline constexpr u32 UPVALUE_VALUE_WORD = 4;
 
 struct Upvalue : GCObject {
+	Upvalue(Memory& memory, u32 address) : memory(memory), address(address) {}
+	Memory& memory;
+	const u32 address;
 	bool open = false;
 	int index = 0;
 	CallFrame* frame = nullptr;
-	uint32_t valueWord = 0;
-	ValueTag valueKind = ValueTag::Nil;
-	Value value() const { return valueFromTag(valueKind, valueWord); }
-	void setValue(Value value) { valueWord = valuePayload(value); valueKind = valueTag(value); }
+	Value value() const;
+	void setValue(Value value);
 	Upvalue* nextOpen = nullptr;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	struct NativeOffsets { size_t open, index, frame, valueWord, valueKind; };
+	struct NativeOffsets { size_t open, index, frame, address; };
 	static NativeOffsets nativeOffsets();
 #endif
 };

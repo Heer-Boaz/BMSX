@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <span>
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
@@ -36,6 +37,9 @@ public:
 	// A record with optional separately allocated backing. Record and backing
 	// are charged together, after both allocations are admitted.
 	u32 allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
+	// Legacy closure bytes and its new cells share one admission, before any
+	// slot is linked into a live frame.
+	void allocateCaptureCells(size_t closureBytes, std::span<u32> addresses);
 	void collectRuntime(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);
 	bool stepRuntime();
 	void restoreAllocate(size_t byteCount) { m_trackedBytes += byteCount; }

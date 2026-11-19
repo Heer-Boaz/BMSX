@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { Closure, Upvalue } from '../../machine/ts/machine/cpu/closure';
+import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/closure';
 import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -142,7 +142,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const frame = cpu.rootThread.frameAtDepth(0);
-		const open = new Upvalue(), closed = new Upvalue();
+		const open = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0)), closed = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
 		open.hashId = 100; open.open = true; open.frame = frame;
 		closed.hashId = 101;
 		cpu.gc.track(open); cpu.gc.track(closed);

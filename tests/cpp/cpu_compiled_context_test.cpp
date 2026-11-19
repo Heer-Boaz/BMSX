@@ -240,7 +240,8 @@ void hotUpvalueAlias() {
 		closure->executionDomainId = frame.closure->executionDomainId;
 		closure->hashId = heap.allocateHashId();
 		for (int c = 0; c < 2; ++c) {
-			auto* cell = heap.allocate<Upvalue>(ObjType::Upvalue);
+			auto* cell = heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
+				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
 			cell->hashId = heap.allocateHashId();
 			cell->open = c == 0; cell->frame = c == 0 ? &frame : nullptr;
 			closure->upvalues[c] = heap.reference(cell);
@@ -307,8 +308,10 @@ void rawContextValues(CpuMachine& machine) {
 	ValueSlots outerRegisters(1);
 	CallFrame frame, outer; frame.registers = registers.view(); outer.registers = outerRegisters.view();
 	auto& heap = cpu.gcHeap();
-	auto& open = *heap.allocate<Upvalue>(ObjType::Upvalue);
-	auto& closed = *heap.allocate<Upvalue>(ObjType::Upvalue);
+	auto& open = *heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
+				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
+	auto& closed = *heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
+				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
 	open.open = true; open.frame = &frame;
 	frame.closure = heap.allocateClosure(2);
 	frame.closure->upvalues[0] = heap.reference(&open);
@@ -316,7 +319,7 @@ void rawContextValues(CpuMachine& machine) {
 	ContextBlock captures(machine, {{OpCode::K1, 0}, {OpCode::GETUP, 1}, {OpCode::KSMI, 2, 0, 0, 9},
 		{OpCode::SETUP, 2}, {OpCode::ADD, 3, 0, 1}, {OpCode::GETUP, 4}, {OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	registers.clear(0, registers.capacity());
-	NativeBlockRunState alias{.registers = registers.view(), .frame = &frame, .heap = &heap, .remainingCycles = 100};
+	NativeBlockRunState alias{.registers = registers.view(), .frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
 	require(captures.block->run(alias) == &captures.block->sideExits[0] && alias.registerTop == 3
 		&& registers.get(0) == valueInteger(1) && registers.get(1) == valueInteger(1) && registers.get(2) == valueInteger(9)
 		&& registers.get(3) == valueNil(), "the self-alias guard publishes the exact prefix before writing a captured register");
@@ -325,12 +328,26 @@ void rawContextValues(CpuMachine& machine) {
 		{OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	for (const auto value : values) {
 		registers.clear(0, registers.capacity()); registers.set(12, value); outerRegisters.set(0, valueInteger(1));
-		NativeBlockRunState state{.registers = registers.view(), .frame = &frame, .heap = &heap, .remainingCycles = 100};
+		NativeBlockRunState state{.registers = registers.view(), .frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
 		require(outerRead.block->run(state) == &outerRead.block->terminal && registers.get(0) == valueInteger(1)
 			&& registers.get(1) == valueInteger(1) && registers.get(3) == valueInteger(2)
 			&& registers.get(6) == value && closed.value() == value && state.registerTop == 7,
 			"native outer and closed cells preserve raw values without invalidating unrelated register definitions");
 	}
+	const auto previous = closed.value();
+	const u32 watched = closed.address + UPVALUE_VALUE_WORD;
+	MappedPageBinding binding;
+	machine.memory.bindMappedPage(watched, MAPPED_BUS_MASTER_CPU, binding);
+	binding.writeWatch.armWord((watched & MAPPED_PAGE_BYTE_MASK) >> 2);
+	registers.set(12, valueFloatBits(0xffa54321u));
+	NativeBlockRunState watchedStore{.registers = registers.view(), .frame = &frame, .heap = &heap,
+		.remainingCycles = 100, .ram = machine.memory.ramData()};
+	const auto* exit = outerRead.block->run(watchedStore);
+	require(exit->exit == NativeBlockExit::WriteUpvalue && closed.value() == previous,
+		"watched SETUP exits before writing either lane");
+	closed.setValue(registers.get(12));
+	require(!machine.memory.ramWriteWatches().anyWatched() && closed.value() == valueFloatBits(0xffa54321u),
+		"the semantic path publishes the closed cell through RAM's write watch");
 	const std::array literals{valueNil(), valueBool(false), valueBool(true), values[6], valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(11)};
 	ValueSlots constants(literals.size());
 	for (size_t i = 0; i < literals.size(); ++i) constants.set(i, literals[i]);

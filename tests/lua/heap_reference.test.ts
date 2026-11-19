@@ -1,6 +1,9 @@
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
+import { UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, Upvalue } from '../../machine/ts/machine/cpu/closure';
+import { asClosure, valueFloatBits, valueNil } from '../../machine/ts/machine/cpu/value';
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { test } from 'node:test';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
@@ -121,4 +124,28 @@ test('builtin functions retain their own ids outside the GC directory', () => {
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	const restored = cpu.rootThread.currentFrame!.registers.getTable(0, cpu.gc);
 	for (const builtin of BUILTIN_FUNCTIONS) assert.equal(restored.records.getInteger(restored.address, builtin.id + 1), valueBuiltinFunction(builtin.id));
+});
+
+
+test('a closed capture is read from RAM, rewound with RAM and released by collection', () => {
+	const cpu = machine(), frame = cpu.rootThread.currentFrame!, memory = cpu.memory;
+	const key = cpu.stringPool.intern('saved_capture');
+	cpu.setGlobalByKey(key, frame.registers.get(1));
+	const closure = frame.registers.getClosure(1, cpu.gc);
+	const cell = cpu.gc.object(closure.upvalues[0]) as Upvalue;
+	const address = cell.address;
+	frame.registers.setFloatBits(0, 0xffa12345);
+	cpu.abortCompletionCall(0);
+	assert.equal(cell.open, false);
+	assert.equal(memory.readRamRecordWord(address + UPVALUE_VALUE_WORD), 0xffa12345);
+	assert.equal(memory.readRamRecordByte(address + UPVALUE_VALUE_TAG), ValueTag.Float);
+	const checkpoint = captureCpuCheckpoint(cpu);
+	memory.writeRamRecordWord(address + UPVALUE_VALUE_WORD, 0x80000000);
+	assert.equal(cpu.readClosureUpvalue(closure, 0), valueFloatBits(0x80000000));
+	restoreCpuCheckpoint(cpu, checkpoint);
+	assert.equal(cpu.readClosureUpvalue(asClosure(cpu.getGlobalByKey(key), cpu.gc), 0), valueFloatBits(0xffa12345));
+	const occupied = cpu.heapAllocator.occupiedBytes();
+	cpu.setGlobalByKey(key, valueNil());
+	cpu.collectTrackedHeapBytes();
+	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - UPVALUE_HEAP_BYTES);
 });

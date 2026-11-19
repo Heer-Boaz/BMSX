@@ -4,6 +4,8 @@
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/closure.h"
 
+#include <bit>
+
 namespace bmsx {
 void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction) {
 	const auto op = static_cast<OpCode>(instruction.op);
@@ -52,14 +54,30 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 	auto* open = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	if (instruction.op == static_cast<u8>(OpCode::SETUP)) {
 		fault(open, *openWrite, m_cache.state());
+		sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), fields.address,
+			SLJIT_IMM, MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES);
+		// The complete aligned cell is on one page. A watch takes the existing
+		// semantic exit before either byte lane is changed.
+		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R0, 0, SLJIT_R3, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0),
+			reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
+		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0), *openWrite, m_cache.state());
+		NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R3, SLJIT_R3);
 		emitRawLoad(instruction.a, SLJIT_R0, SLJIT_R1);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), fields.valueWord, SLJIT_R0, 0);
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R2), fields.valueKind, SLJIT_R1, 0);
+		if constexpr (std::endian::native == std::endian::big)
+			sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_WORD, SLJIT_R0, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_TAG, SLJIT_R1, 0);
 		emitGcWriteBarrier(m_compiler, SLJIT_R2, SLJIT_R0, SLJIT_R1);
 		return;
 	}
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), fields.valueWord);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), fields.valueKind);
+	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), fields.address,
+		SLJIT_IMM, MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES);
+	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R3, SLJIT_R3);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_WORD);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_TAG);
 	auto* ready = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 	sljit_set_label(open, sljit_emit_label(m_compiler));
 	// Open cells can alias any active register window in the shared stack.

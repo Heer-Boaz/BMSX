@@ -330,6 +330,7 @@ export class CPU implements MappedPageInvalidator {
 	private readonly localRoots: Value[] = [];
 	private localRootScopeDepth = 0;
 	private closureUpvalueWords = new Uint32Array(0);
+	private captureAddresses = new Uint32Array(0);
 	private readonly tableScratch = new ValueSlots(2);
 	private readonly tableLookupResult: TableLookupResult = {
 		values: this.tableScratch, slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
@@ -3066,15 +3067,21 @@ export class CPU implements MappedPageInvalidator {
 			upvalues[index] = frame.closure.upvalues[upvalueIndex];
 		}
 		const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
-		this.luaHeap.reserve(heapBytes + (newUpvalueCount * UPVALUE_HEAP_BYTES));
+		if (newUpvalueCount !== 0) {
+			if (this.captureAddresses.length < newUpvalueCount) this.captureAddresses = new Uint32Array(newUpvalueCount);
+			this.luaHeap.allocateCaptureCells(heapBytes, this.captureAddresses, newUpvalueCount);
+		} else {
+			this.luaHeap.reserve(heapBytes);
+		}
 		const closure = new Closure(functionRecord.address, upvalues, heapBytes, functionRecord.codeAddress, functionRecord.numParams, functionRecord.maxStack, functionRecord.flags, functionRecord.upvalueTableAddress, functionRecord.image.executionDomainId, functionRecord.upvalueCount, false);
 		closure.hashId = this.allocateObjectHashId();
 		this.gc.track(closure);
+		let nextCell = 0;
 		for (let index = 0; index < functionRecord.upvalueCount; index += 1) {
 			if (upvalues[index]) {
 				continue;
 			}
-			const upvalue = new Upvalue();
+			const upvalue = new Upvalue(this.memory, this.captureAddresses[nextCell++]);
 			upvalue.hashId = this.allocateObjectHashId();
 			upvalue.open = true;
 			upvalue.index = upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK;
@@ -3094,8 +3101,7 @@ export class CPU implements MappedPageInvalidator {
 		while (upvalue) {
 			const next = upvalue.nextOpen;
 			upvalue.writeBarrier();
-			upvalue.valueTag = frame.registers.getTag(upvalue.index);
-			upvalue.valueWord = frame.registers.getPayload(upvalue.index);
+			upvalue.setEncoded(frame.registers.getTag(upvalue.index), frame.registers.getPayload(upvalue.index));
 			upvalue.open = false;
 			upvalue.frame = null;
 			upvalue.nextOpen = null;
@@ -3129,8 +3135,7 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		upvalue.writeBarrier();
-		upvalue.valueTag = registers.getTag(registerIndex);
-		upvalue.valueWord = registers.getPayload(registerIndex);
+		upvalue.setEncoded(registers.getTag(registerIndex), registers.getPayload(registerIndex));
 	}
 
 	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
@@ -4099,7 +4104,7 @@ export class CPU implements MappedPageInvalidator {
 			const object = pendingObjects[id];
 			const kind = pendingKinds[id];
 			let offset: number;
-			if (kind !== CpuSnapshotObjectKind.Table && this.gc.sweepGarbage(object)) {
+			if (kind !== CpuSnapshotObjectKind.Table && kind !== CpuSnapshotObjectKind.Upvalue && this.gc.sweepGarbage(object)) {
 				offset = writer.reserveWords(3); writer.setWord(offset, CpuSnapshotObjectKind.Garbage);
 				writer.setWord(offset + 1, object.hashId); writer.setWord(offset + 2, this.gc.allocationBytes(object));
 				writer.setObjectWord(id, offset); continue;
@@ -4138,19 +4143,15 @@ export class CPU implements MappedPageInvalidator {
 				}
 				case CpuSnapshotObjectKind.Upvalue: {
 					const upvalue = object as Upvalue;
-					offset = writer.reserveWords(CpuSnapshotUpvalue.Value + CPU_SNAPSHOT_VALUE_WORDS);
+					offset = writer.reserveWords(CpuSnapshotUpvalue.Size);
+					const open = upvalue.open && !this.gc.sweepGarbage(upvalue);
 					writer.setWord(offset + CpuSnapshotUpvalue.Kind, kind);
 					writer.setWord(offset + CpuSnapshotUpvalue.HashId, upvalue.hashId);
-					writer.setWord(offset + CpuSnapshotUpvalue.Open, upvalue.open ? 1 : 0);
+					writer.setWord(offset + CpuSnapshotUpvalue.Open, open ? 1 : 0);
 					writer.setWord(offset + CpuSnapshotUpvalue.Index, upvalue.index);
-					writer.setWord(offset + CpuSnapshotUpvalue.ThreadRef, upvalue.open ? captureObject(upvalue.frame!.thread, CpuSnapshotObjectKind.Thread) : -1);
-					writer.setWord(offset + CpuSnapshotUpvalue.FrameIndex, upvalue.open ? upvalue.frame!.thread.frameIndex(upvalue.frame!) : -1);
-					if (upvalue.open) {
-						const registers = upvalue.frame!.registers;
-						writeValue(offset + CpuSnapshotUpvalue.Value, registers.get(upvalue.index));
-					} else {
-						writeValue(offset + CpuSnapshotUpvalue.Value, upvalue.value);
-					}
+					writer.setWord(offset + CpuSnapshotUpvalue.ThreadRef, open ? captureObject(upvalue.frame!.thread, CpuSnapshotObjectKind.Thread) : -1);
+					writer.setWord(offset + CpuSnapshotUpvalue.FrameIndex, open ? upvalue.frame!.thread.frameIndex(upvalue.frame!) : -1);
+					writer.setWord(offset + CpuSnapshotUpvalue.Address, upvalue.address);
 					break;
 				}
 			}
@@ -4280,8 +4281,9 @@ export class CPU implements MappedPageInvalidator {
 				}
 				case CpuSnapshotObjectKind.Upvalue:
 					this.luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
-					const upvalue = new Upvalue();
+					const upvalue = new Upvalue(this.memory, snapshot.word(offset + CpuSnapshotUpvalue.Address));
 					this.gc.track(upvalue); upvalue.restored = true;
+					upvalue.open = snapshot.word(offset + CpuSnapshotUpvalue.Open) !== 0;
 					upvalue.hashId = snapshot.word(offset + CpuSnapshotUpvalue.HashId);
 					upvalue.index = snapshot.int(offset + CpuSnapshotUpvalue.Index);
 					restoredObjects[index] = upvalue;
@@ -4302,13 +4304,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 					break;
 				}
-				case CpuSnapshotObjectKind.Upvalue: {
-					const upvalue = restoredObjects[index] as Upvalue;
-					upvalue.open = snapshot.word(offset + CpuSnapshotUpvalue.Open) !== 0;
-					reader.readValue(offset + CpuSnapshotUpvalue.Value);
-					upvalue.value = upvalue.open ? valueNil() : reader.value();
-					break;
-				}
+				case CpuSnapshotObjectKind.Upvalue: break;
 			}
 		}
 

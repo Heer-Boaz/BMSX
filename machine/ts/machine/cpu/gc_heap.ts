@@ -284,8 +284,10 @@ export class GcHeap {
 					while (this.sweep !== null && work < GC_STEP_WORDS) {
 						const object = this.sweep; this.sweep = object.gcNext;
 						if (object.gcKind === GcKind.Table) continue;
-						const bytes = this.allocationBytes(object); work += ceilDiv4(bytes);
+						const bytes = this.allocationBytes(object);
+						work += object.gcKind === GcKind.Upvalue ? 1 : ceilDiv4(bytes);
 						if (this.sweepGarbage(object)) {
+							if (object.gcKind === GcKind.Upvalue) this.arena.free((object as Upvalue).address);
 							this.unlink(object);
 							this.releaseReference(object);
 							this.budget.release(bytes);

@@ -1202,7 +1202,7 @@ The occupied-byte counts used for admission are:
 | --- | --- |
 | Table with array capacity `A` and hash capacity `H` | `32 + S(5A + 14H)` |
 | Closure with `U` captured-variable references | `16 + 4U` |
-| Captured-variable cell | `20` |
+| Captured-variable cell | `16` |
 | Thread with `V` reserved Value slots | `64 + 5V` |
 | Allocated String text | UTF-8 byte length |
 
@@ -1236,9 +1236,11 @@ Collection work consumes cycles as follows:
 | Work | Cycles |
 | --- | --- |
 | Scan a Table | `8 + A + 2H`; eight header words and one cycle for each reserved Value slot |
-| Scan a closure, captured-variable cell or Thread | `ceil(occupied allocation bytes / 4)` |
+| Scan a closure or Thread | `ceil(occupied allocation bytes / 4)` |
+| Scan a captured-variable cell | `4` |
 | Examine a Table record for reclamation | `1` per visited block in an object page, including a free slot; a page run is one block |
-| Examine a closure, captured-variable cell or Thread for reclamation | `ceil(occupied allocation bytes / 4)` |
+| Examine a closure or Thread for reclamation | `ceil(occupied allocation bytes / 4)` |
+| Examine a captured-variable cell for reclamation | `1` |
 | Read the constant and global root ranges | `2C + 3(S + G)` per pass |
 | Examine a weak-key Table in one dependency-convergence pass | `A + 2H` |
 | Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |

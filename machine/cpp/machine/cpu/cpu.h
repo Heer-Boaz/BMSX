@@ -595,6 +595,7 @@ private:
 
 	std::vector<Upvalue*> m_closureUpvalueScratch;
 	std::vector<u32> m_closureUpvalueWordScratch;
+	std::vector<u32> m_captureAddressScratch;
 	std::vector<StringId> m_systemGlobalNames;
 	ValueSlots m_systemGlobalValues;
 	std::unordered_map<StringId, size_t> m_systemGlobalSlotByKey;

@@ -39,7 +39,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 			const tag = registers.tagOperand(a), word = registers.wordOperand(a);
 			return `{const u=h.object(frame.closure.upvalues[${b}]);if(u.open){if(u.frame===frame) ${registers.exit(exit)}
 				u.frame.registers.setEncoded(u.index,${tag},${word});}
-				else{u.writeBarrier();u.valueTag=${tag};u.valueWord=${word};}}`;
+				else{u.writeBarrier();u.setEncoded(${tag},${word});}}`;
 		}
 		case OpCode.VARARG: {
 			if (b === 1) return '';

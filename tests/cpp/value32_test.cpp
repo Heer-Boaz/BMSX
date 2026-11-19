@@ -40,8 +40,6 @@ void storageAndFrames() {
 	second->registers.set(0, valueInteger(123)); thread.resizeStack(96);
 	require(second->registers.get(0) == valueInteger(123) && first->registers.get(3) == valueFloatBits(0xffc00000), "nested frame windows survive relocation");
 	thread.leaveFrame(); require(thread.currentFrame == first, "ordinary return retains caller");
-	Upvalue upvalue; upvalue.setValue(valueFloatBits(0x7fa54321));
-	require(upvalue.value() == valueFloatBits(0x7fa54321), "closed upvalue copies word and kind");
 	static_assert(sizeof(*Closure{}.upvalues) == sizeof(uint32_t));
 }
 void valuesAndText() {

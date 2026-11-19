@@ -1,3 +1,4 @@
+import { UPVALUE_HEAP_BYTES, UPVALUE_RECORD_KIND } from './closure';
 import { heapAllocationBytes } from './heap_allocator';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
@@ -64,6 +65,39 @@ export class LuaHeap {
 				}
 			}
 			if (attempt === 0) this.collectRuntime(root0, root1, root2);
+		}
+		throw LUA_OUT_OF_MEMORY_SIGNAL;
+	}
+
+	/** Admit the closure and its new cells before publishing frame links. */
+	public allocateCaptureCells(closureBytes: number, addresses: Uint32Array, newCount: number): void {
+		const charged = closureBytes + newCount * UPVALUE_HEAP_BYTES;
+		const collected = this.admit(charged, valueNil(), valueNil(), valueNil(), null);
+		const arena = this.cpu.heapAllocator;
+		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
+			let count = 0;
+			if (this.trackedBytes + charged <= this.capacity()) {
+				for (; count < newCount; ++count) {
+					// The open-list descriptor owns the cell until frames are physical.
+					const address = arena.allocate(UPVALUE_HEAP_BYTES, true);
+					if (address === 0) break;
+					addresses[count] = address;
+				}
+				if (count === newCount) {
+					const memory = this.cpu.memory;
+					for (let index = 0; index < newCount; ++index) {
+						const address = addresses[index];
+						memory.writeRamRecordWord(address, UPVALUE_RECORD_KIND);
+						memory.writeRamRecordWord(address + 4, 0);
+						memory.writeRamRecordWord(address + 8, 0);
+						memory.writeRamRecordWord(address + 12, 0);
+					}
+					this.trackedBytes += charged;
+					return;
+				}
+			}
+			while (count !== 0) arena.free(addresses[--count]);
+			if (attempt === 0) this.collectRuntime();
 		}
 		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}

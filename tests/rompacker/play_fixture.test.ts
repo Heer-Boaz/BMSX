@@ -14,7 +14,7 @@ import type { FixtureOutput } from '../../ide/testing/fixture_operations';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
-import { asInteger, asTable, valueBool, valueInteger, valueNil, valueToString } from '../../machine/ts/machine/cpu/value';
+import { asInteger, asTable, valueBool, valueInteger, valueToString } from '../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { Input } from '../../hosts/common/input/manager';
 import { InputChannel } from '../../hosts/common/input/channel';

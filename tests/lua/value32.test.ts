@@ -4,7 +4,6 @@ import { test } from 'node:test';
 import * as v from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { Thread } from '../../machine/ts/machine/cpu/thread';
-import { Upvalue } from '../../machine/ts/machine/cpu/closure';
 import { formatFloat, formatInteger } from '../../machine/ts/common/number_format';
 import { f32BitsToNumber } from '../../machine/ts/common/float32';
 
@@ -83,8 +82,6 @@ test('actual ValueSlots and Thread frame windows use five-byte backing', () => {
 	second.registers.setInteger(0, 123); thread.resizeStack(96);
 	assert.equal(second.registers.getInteger(0), 123); assert.equal(first.registers.get(3), v.valueFloatBits(0xffc00000));
 	thread.leaveFrame(); assert.equal(thread.currentFrame, first);
-	const upvalue = new Upvalue(); upvalue.value = v.valueFloatBits(0x7fa54321);
-	assert.equal(upvalue.valueWord, 0x7fa54321); assert.equal(upvalue.value, v.valueFloatBits(0x7fa54321));
 });
 
 test('seven-digit Float text agrees with exact binary rational rounding over the full exponent range', () => {

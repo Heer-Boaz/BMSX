@@ -1168,7 +1168,7 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_cpu32_memory_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu32_memory_tests COMMAND bmsx_cpu32_memory_tests)
 	add_executable(bmsx_value32_tests ../../tests/cpp/value32_test.cpp
-		machine/cpu/thread.cpp machine/cpu/closure.cpp)
+		machine/cpu/thread.cpp)
 	target_include_directories(bmsx_value32_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 	if(BMSX_ENABLE_NATIVE_BLOCKS)
 		target_compile_definitions(bmsx_value32_tests PRIVATE BMSX_ENABLE_NATIVE_BLOCKS=1)

@@ -70,6 +70,37 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backing
 	throw LuaOutOfMemorySignal{};
 }
 
+void LuaHeap::allocateCaptureCells(size_t closureBytes, std::span<u32> addresses) {
+	const size_t charged = closureBytes + addresses.size() * UPVALUE_HEAP_BYTES;
+	const bool collected = admit(charged, valueNil(), valueNil(), valueNil(), nullptr);
+	auto& arena = m_cpu.heapAllocator();
+	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
+		size_t count = 0;
+		if (m_trackedBytes + charged <= capacity()) {
+			for (; count < addresses.size(); ++count) {
+				// The open-list descriptor owns the cell until frames are physical.
+				const u32 address = arena.allocate(UPVALUE_HEAP_BYTES, true);
+				if (!address) break;
+				addresses[count] = address;
+			}
+			if (count == addresses.size()) {
+				auto& memory = m_cpu.memory();
+				for (u32 address : addresses) {
+					memory.writeRamRecordWord(address, UPVALUE_RECORD_KIND);
+					memory.writeRamRecordWord(address + 4, 0);
+					memory.writeRamRecordWord(address + 8, 0);
+					memory.writeRamRecordWord(address + 12, 0);
+				}
+				m_trackedBytes += charged;
+				return;
+			}
+		}
+		while (count != 0) arena.free(addresses[--count]);
+		if (attempt == 0) collectRuntime();
+	}
+	throw LuaOutOfMemorySignal{};
+}
+
 void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, Thread* growingStack) {
 	m_cpu.instructionBudgetRemaining -= static_cast<int>(m_cpu.collectHeap(root0, root1, root2, growingStack));
 }
