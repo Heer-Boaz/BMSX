@@ -20,6 +20,7 @@ const MAX_PAGES = 1024;
 // little-endian word in guest RAM; partial-list links store page + 1.
 const FLOOR = 0x000;
 const OCCUPIED = 0x004;
+const SWEEP_PAGE = 0x008;
 const PARTIAL_HEADS = 0x040;
 const AVAILABLE_PAGES = 0x200;
 const PAGE_ENTRIES = 0x1000;
@@ -111,6 +112,50 @@ export class HeapAllocator {
 
 	public occupiedBytes(): number {
 		return this.memory.readRamRecordWord(this.management + OCCUPIED);
+	}
+
+	public beginObjectSweep(): void {
+		this.memory.writeRamRecordWord(this.management + SWEEP_PAGE, this.floorPage());
+	}
+
+	public objectSweepActive(): boolean {
+		return this.memory.readRamRecordWord(this.management + SWEEP_PAGE) < this.pageLimit;
+	}
+
+	public sweepObjects(allowance: number, visit: (address: number) => boolean): number {
+		const cursor = this.management + SWEEP_PAGE;
+		let page = this.memory.readRamRecordWord(cursor);
+		if (page >= this.pageLimit) return 0;
+		let work = 0;
+		while (page < this.pageLimit && work < allowance) {
+			const pageEntry = this.entry(page);
+			const info = this.memory.readRamRecordWord(pageEntry);
+			const base = RAM_BASE + (page << PAGE_SHIFT);
+			++page;
+			switch (info & 0xff) {
+				case PageKind.ObjectRun:
+					++work;
+					page += Math.min((this.memory.readRamRecordWord(pageEntry + 4) - 1) >>> 0, this.pageLimit - page);
+					if (this.memory.readRamRecordByte(base) !== 0) visit(base);
+					break;
+				case PageKind.ObjectSlots: {
+					const classIndex = (info >>> 8) & 0xff;
+					// The class and bump come from cartridge-writable management RAM.
+					if (classIndex >= CLASS_COUNT) break;
+					const stride = HEAP_CLASS_BYTES[classIndex];
+					const end = Math.min(this.memory.readRamRecordWord(pageEntry + 8) & 0xffff, HEAP_PAGE_SIZE);
+					let live = info >>> 16;
+					for (let slot = 0; slot + stride <= end; slot += stride) {
+						++work;
+						const address = base + slot;
+						if (this.memory.readRamRecordByte(address) !== 0 && visit(address) && --live === 0) break;
+					}
+					break;
+				}
+			}
+		}
+		this.memory.writeRamRecordWord(cursor, page);
+		return work;
 	}
 
 	// Returns the guest address of the allocation, or 0 when no slot or page run fits.

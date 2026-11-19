@@ -1,4 +1,3 @@
-import { Table } from '../../machine/ts/machine/cpu/table';
 import { utf8ByteLength } from '../../machine/ts/common/utf8';
 import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
 import assert from 'node:assert/strict';
@@ -247,7 +246,7 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 	}
 	const strings = js.stringPool.captureState();
 	// All allocated objects are live: mark+sweep, two Thread remarks and three global-root passes.
-	const gcCycles = (8 + 690000) + ceilDiv4(Table.trackedHeapBytesForCapacities(690000, 0)) + 2 * 4
+	const gcCycles = (8 + 690000) + 1 + 2 * 4
 		+ 4 * ceilDiv4(64 + js.rootThread.stackRegisters.capacity() * 5) + 9 + strings.slots
 		+ strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
 	runCpuParity(js, ref, BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.NEWT]);

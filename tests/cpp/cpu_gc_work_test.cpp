@@ -64,8 +64,8 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.luaHeap().usedBytes() == 251, "canonical reserved table capacity and UTF8 text bytes agree");
 	cpu.instructionBudgetRemaining = 7;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == -211 && cpu.luaHeap().usedBytes() == 251,
-		"base169 + Table(8+2+8 scan, 28 sweep) + String(1+2) =218");
+	require(cpu.instructionBudgetRemaining == -184 && cpu.luaHeap().usedBytes() == 251,
+		"base169 + Table(8+2+8 scan, 1 sweep) + String(1+2) =191");
 	const auto threshold = cpu.luaHeap().captureState();
 	require(threshold.nextCollectionBytes == 1048576, "the existing minimum collection threshold is unchanged");
 	cpu.instructionBudgetRemaining = 123;
@@ -173,8 +173,8 @@ void temporaryRootsAndUnreachablePool() {
 	while (cpu.collecting()) cpu.stepHeap(valueTable(cpu.gcHeap().reference(table)), valueString(id), valueNil());
 	cpu.instructionBudgetRemaining = 1;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == -179 && cpu.luaHeap().usedBytes() == 133,
-		"dead Table incurs8 sweep words, not another mark pass; its String incurs3 words");
+	require(cpu.instructionBudgetRemaining == -172 && cpu.luaHeap().usedBytes() == 133,
+		"dead Table incurs one block visit, not another mark pass; its String incurs3 words");
 }
 
 void incrementalStateAndBarriers() {

@@ -317,6 +317,7 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 	m_weakTables.clear(); m_threads.clear();
 	m_white ^= 1u;
 	m_sweep = m_objects;
+	arena.beginObjectSweep();
 	m_phase = GcPhase::Sweep;
 	return work;
 }
@@ -350,6 +351,23 @@ void GcHeap::destroyObject(GCObject* object) {
 			delete static_cast<Upvalue*>(object);
 			break;
 	}
+}
+
+bool GcHeap::sweepRecord(void* context, u32 address) {
+	auto& heap = *static_cast<GcHeap*>(context);
+	// Until all metadata migrates, only a registered Table has a physical record.
+	auto* table = heap.tableAt(address);
+	if (!table) return false;
+	if (!heap.sweepGarbage(table)) {
+		table->gcColor = heap.m_white;
+		return false;
+	}
+	if (heap.m_sweep == table) heap.m_sweep = table->next;
+	heap.m_tableRecords[(address & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES] = nullptr;
+	table->freeRecord();
+	heap.unlink(table);
+	heap.destroyObject(table);
+	return true;
 }
 
 size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack) {
@@ -401,22 +419,13 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);
 #endif
+				work += arena.sweepObjects(GC_STEP_WORDS - work, this, &GcHeap::sweepRecord);
 				while (m_sweep && work < GC_STEP_WORDS) {
 					auto* object = m_sweep;
 					m_sweep = object->next;
+					if (object->type == ObjType::Table) continue;
 					work += ceilDiv4(static_cast<int>(allocationBytes(object)));
 					if (sweepGarbage(object)) {
-						if (object->type == ObjType::Table) {
-							auto* table = static_cast<Table*>(object);
-							m_tableRecords[(table->address() & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES] = nullptr;
-							table->freeRecord();
-						}
-						else if (object->type == ObjType::Garbage) {
-							const u32 storage = static_cast<const GarbageAllocation*>(object)->storage;
-							if (storage) arena.free(storage);
-							const u32 record = static_cast<const GarbageAllocation*>(object)->record;
-							if (record) arena.free(record);
-						}
 						unlink(object); destroyObject(object);
 					}
 					else {
@@ -429,7 +438,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 						}
 					}
 				}
-				if (!m_sweep && work < GC_STEP_WORDS) {
+				if (!m_sweep && work < GC_STEP_WORDS && !arena.objectSweepActive()) {
 					m_grayAgain = nullptr;
 					m_phase = GcPhase::Strings;
 					m_stringPool.beginSweep();

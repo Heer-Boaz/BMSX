@@ -80,3 +80,32 @@ test('the floor cannot rise over an allocated page and never drops below the sta
 	assert.equal(heap.setFloor(RAM_BASE), true);
 	assert.equal(heap.floorAddress(), DYNAMIC_RAM_BASE, 'the heap never extends into the reserved region');
 });
+
+test('object sweep resumes from RAM, visits vacant issued slots and skips owned pages', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const heap = new HeapAllocator(memory);
+	const first = heap.allocate(32, false), vacant = heap.allocate(32, false), last = heap.allocate(32, false);
+	const owned = heap.allocate(HEAP_PAGE_SIZE * 2, true);
+	const run = heap.allocate(HEAP_PAGE_SIZE * 3, false);
+	for (const address of [first, vacant, last, owned, run])
+		memory.writeRamRecordWord(address, 1); // independently visible nonzero record kind
+	heap.free(vacant);
+
+	const visits: number[] = [];
+	const retire = (address: number) => { visits.push(address); heap.free(address); return true; };
+	heap.beginObjectSweep();
+	assert.equal(heap.sweepObjects(1, retire), 1, 'the run counts once and is now free');
+	assert.deepEqual(visits, [run]);
+	assert.ok(heap.objectSweepActive());
+	const midSweep = memory.captureSaveState();
+
+	for (let replay = 0; replay < 2; ++replay) {
+		memory.restoreSaveState(midSweep);
+		visits.length = 0;
+		assert.equal(heap.sweepObjects(1, retire), 3, 'sweep finishes the issued slots in the page including the hole');
+		assert.deepEqual(visits, [first, last]);
+		assert.equal(heap.occupiedBytes(), HEAP_PAGE_SIZE * 2);
+		assert.equal(memory.readRamRecordWord(owned), 1);
+		assert.ok(!heap.objectSweepActive());
+	}
+});

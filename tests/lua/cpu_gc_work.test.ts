@@ -40,7 +40,7 @@ test('runtime GC bills actual canonical scans, reclamation and three unique root
 	frame.top = 2;
 	assert.equal(cpu.luaHeap.usedBytes(), 251);
 	cpu.instructionBudgetRemaining = 7; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, -211, 'base169 + Table(8+2+8 scan, 28 sweep) + String(1slot+2words) =218');
+	assert.equal(cpu.instructionBudgetRemaining, -184, 'base169 + Table(8+2+8 scan, 1 sweep) + String(1slot+2words) =191');
 	assert.equal(cpu.luaHeap.usedBytes(), 251);
 	assert.equal(cpu.luaHeap.captureState().nextCollectionBytes, 1048576);
 	cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
@@ -128,5 +128,5 @@ test('temporary roots survive charged steps; unreachable allocations pay reclama
 	assert.equal(cpu.luaHeap.usedBytes(), 171); assert.equal(cpu.stringPool.toString(id), 'é😀');
 	while (cpu.gc.active()) cpu.gc.step(valueTable(cpu.gc.reference(table)), valueString(id));
 	cpu.instructionBudgetRemaining = 1; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, -179); assert.equal(cpu.luaHeap.usedBytes(), 133);
+	assert.equal(cpu.instructionBudgetRemaining, -172); assert.equal(cpu.luaHeap.usedBytes(), 133);
 });

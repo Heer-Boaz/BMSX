@@ -142,11 +142,11 @@ void rebuildWork(bool scalar) {
    const auto strings = cpu.stringPool().captureState();
    gcCycles = strings.slots;
    for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
-   // Weak graph: Thread104 + Closure8 + weak Table56 + mode22 + two dead Tables16 + warm Table12.
-   gcCycles += scenario == "weak-collection" ? 218
+   // Weak graph: Thread104 + Closure8 + 41 weak Table + 11 metatable + 3 dead Table visits.
+   gcCycles += scenario == "weak-collection" ? 167
     : 4 * ceilDiv4(64 + 5 * cpu.rootThread()->stackCapacity) + 8
-      + (8 + 2 * 1024) + ceilDiv4(Table::trackedHeapBytesForCapacities(0, 1024))
-      + (8 + retainedSlots) + ceilDiv4(Table::trackedHeapBytesForCapacities(retainedSlots, 0));
+      + (8 + 2 * 1024)
+      + (8 + retainedSlots) + 3;
   }
   const Value key = r.get(1); machine.restart();
   if (cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + 1) != RunResult::Yielded

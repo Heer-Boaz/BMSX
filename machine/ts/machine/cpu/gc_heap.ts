@@ -213,9 +213,26 @@ export class GcHeap {
 			table.forEachStoredEntry(this.weakStrings); table.gcWeakListed = false;
 		}
 		this.cpu.pruneStaticClosures(); this.threads.length = 0; this.weak.length = 0;
-		this.white ^= 1; this.sweep = this.objects; this.phase = GcPhase.Sweep;
+		this.white ^= 1; this.sweep = this.objects;
+		this.arena.beginObjectSweep(); this.phase = GcPhase.Sweep;
 		return work;
 	}
+	private readonly sweepRecord = (address: number): boolean => {
+		// Until all metadata migrates, only a registered Table has a physical record.
+		const table = this.tableAt(address);
+		if (table === null) return false;
+		if (!this.sweepGarbage(table)) {
+			table.gcColor = this.white;
+			return false;
+		}
+		if (this.sweep === table) this.sweep = table.gcNext;
+		const bytes = table.getTrackedHeapBytes();
+		this.tableRecords[(address & RAM_RECORD_WORD_MASK) >>> 5] = null;
+		table.freeRecord();
+		this.unlink(table); this.releaseReference(table);
+		this.budget.release(bytes);
+		return true;
+	};
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingStack: Thread | null = null): number {
 		this.diagnostics?.beginStep();
 		try { return this.stepWork(t0, t1, t2, growingStack); }
@@ -254,21 +271,14 @@ export class GcHeap {
 					return this.atomic(t0, t1, t2);
 				case GcPhase.Sweep:
 					this.diagnostics?.phase('sweepNanoseconds');
+					work += this.arena.sweepObjects(GC_STEP_WORDS - work, this.sweepRecord);
 					while (this.sweep !== null && work < GC_STEP_WORDS) {
 						const object = this.sweep; this.sweep = object.gcNext;
+						if (object.gcKind === GcKind.Table) continue;
 						const bytes = this.allocationBytes(object); work += ceilDiv4(bytes);
 						if (this.sweepGarbage(object)) {
 							this.unlink(object);
 							this.releaseReference(object);
-							if (object.gcKind === GcKind.Table) {
-								const table = object as Table;
-								this.tableRecords[(table.address & RAM_RECORD_WORD_MASK) >>> 5] = null;
-								table.freeRecord();
-							} else if (object.gcKind === GcKind.Garbage) {
-								const { storage, record } = object as GarbageAllocation;
-								if (storage !== 0) this.arena.free(storage);
-								if (record !== 0) this.arena.free(record);
-							}
 							this.budget.release(bytes);
 						} else {
 							object.gcColor = this.white;
@@ -280,7 +290,7 @@ export class GcHeap {
 							}
 						}
 					}
-					if (this.sweep === null && work < GC_STEP_WORDS) { this.grayAgain = null; this.phase = GcPhase.Strings; this.cpu.stringPool.beginSweep(); }
+					if (this.sweep === null && work < GC_STEP_WORDS && !this.arena.objectSweepActive()) { this.grayAgain = null; this.phase = GcPhase.Strings; this.cpu.stringPool.beginSweep(); }
 					break;
 				case GcPhase.Strings:
 					this.diagnostics?.phase('stringReclaimNanoseconds');

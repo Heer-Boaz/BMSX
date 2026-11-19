@@ -4101,13 +4101,9 @@ export class CPU implements MappedPageInvalidator {
 			const object = pendingObjects[id];
 			const kind = pendingKinds[id];
 			let offset: number;
-			if (this.gc.sweepGarbage(object)) {
-				offset = writer.reserveWords(5); writer.setWord(offset, CpuSnapshotObjectKind.Garbage);
+			if (kind !== CpuSnapshotObjectKind.Table && this.gc.sweepGarbage(object)) {
+				offset = writer.reserveWords(3); writer.setWord(offset, CpuSnapshotObjectKind.Garbage);
 				writer.setWord(offset + 1, object.hashId); writer.setWord(offset + 2, this.gc.allocationBytes(object));
-				writer.setWord(offset + 3, kind === CpuSnapshotObjectKind.Table ? (object as Table).storageAddress()
-					: kind === CpuSnapshotObjectKind.Garbage ? (object as GarbageAllocation).storage : 0);
-				writer.setWord(offset + 4, kind === CpuSnapshotObjectKind.Table ? (object as Table).address
-					: kind === CpuSnapshotObjectKind.Garbage ? (object as GarbageAllocation).record : 0);
 				writer.setObjectWord(id, offset); continue;
 			}
 			switch (kind) {
@@ -4223,7 +4219,7 @@ export class CPU implements MappedPageInvalidator {
 				case CpuSnapshotObjectKind.Garbage: {
 					const bytes = snapshot.word(offset + 2);
 					this.luaHeap.restoreAllocate(bytes);
-					const object = new GarbageAllocation(bytes, snapshot.word(offset + 3), snapshot.word(offset + 4)); object.hashId = snapshot.word(offset + 1);
+					const object = new GarbageAllocation(bytes); object.hashId = snapshot.word(offset + 1);
 					this.gc.track(object); object.restored = true;
 					restoredObjects[index] = object;
 					break;

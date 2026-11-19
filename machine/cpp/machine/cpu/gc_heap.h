@@ -102,6 +102,7 @@ private:
 	size_t remark(Value root0, Value root1, Value root2);
 	size_t atomic(Value root0, Value root1, Value root2);
 	void destroyObject(GCObject* object);
+	static bool sweepRecord(void* context, u32 address);
 	void unlink(GCObject* object);
 	CPU& m_cpu;
 	GCObject* m_objects = nullptr;

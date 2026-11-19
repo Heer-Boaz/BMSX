@@ -271,12 +271,12 @@ return true`, 3);
    if (scenario === 'weak-collection' || scenario === 'failed-growth') {
     const strings = cpu.stringPool.captureState();
     const stringWork = strings.slots + strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
-    // Weak case: Thread104 + Closure8 + weak Table56 + mode22 + two dead Tables16 + dead warm Table12.
+    // Weak case: Thread104 + Closure8 + 41 weak Table + 11 metatable + 3 dead Table visits.
     // Strong case: all objects scan and sweep, with two extra Thread remarks.
-    gcCycles = stringWork + (scenario === 'weak-collection' ? 218
+    gcCycles = stringWork + (scenario === 'weak-collection' ? 167
       : 4 * ceilDiv4(64 + 5 * cpu.rootThread.stackRegisters.capacity()) + 8
-       + (8 + 2 * 1024) + ceilDiv4(Table.trackedHeapBytesForCapacities(0, 1024))
-       + (8 + retainedSlots) + ceilDiv4(Table.trackedHeapBytesForCapacities(retainedSlots, 0)));
+       + (8 + 2 * 1024)
+       + (8 + retainedSlots) + 3);
    }
    const key = r.get(1);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);

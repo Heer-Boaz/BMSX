@@ -19,6 +19,7 @@ constexpr u32 MAX_PAGES = 1024u;
 // little-endian word in guest RAM; partial-list links store page + 1.
 constexpr u32 FLOOR = 0x000u;
 constexpr u32 OCCUPIED = 0x004u;
+constexpr u32 SWEEP_PAGE = 0x008u;
 constexpr u32 PARTIAL_HEADS = 0x040u;
 constexpr u32 AVAILABLE_PAGES = 0x200u;
 constexpr u32 PAGE_ENTRIES = 0x1000u;
@@ -94,6 +95,52 @@ u32 HeapAllocator::capacityBytes() const {
 
 u32 HeapAllocator::occupiedBytes() const {
 	return m_memory.readRamRecordWord(m_management + OCCUPIED);
+}
+
+void HeapAllocator::beginObjectSweep() {
+	m_memory.writeRamRecordWord(m_management + SWEEP_PAGE, floorPage());
+}
+
+bool HeapAllocator::objectSweepActive() const {
+	return m_memory.readRamRecordWord(m_management + SWEEP_PAGE) < m_pageLimit;
+}
+
+size_t HeapAllocator::sweepObjects(size_t allowance, void* context, SweepVisitor visit) {
+	const u32 cursor = m_management + SWEEP_PAGE;
+	u32 page = m_memory.readRamRecordWord(cursor);
+	if (page >= m_pageLimit) return 0;
+	size_t work = 0;
+	while (page < m_pageLimit && work < allowance) {
+		const u32 pageEntry = entry(page);
+		const u32 info = m_memory.readRamRecordWord(pageEntry);
+		const u32 base = RAM_BASE + (page << PAGE_SHIFT);
+		++page;
+		switch (info & 0xffu) {
+			case ObjectRun:
+				++work;
+				page += std::min(m_memory.readRamRecordWord(pageEntry + 4u) - 1u, m_pageLimit - page);
+				if (m_memory.readRamRecordByte(base) != 0u) visit(context, base);
+				break;
+			case ObjectSlots: {
+				const u32 classIndex = (info >> 8) & 0xffu;
+				// The class and bump come from cartridge-writable management RAM.
+				if (classIndex >= CLASS_COUNT) break;
+				const u32 stride = HEAP_CLASS_BYTES[classIndex];
+				const u32 end = std::min(m_memory.readRamRecordWord(pageEntry + 8u) & 0xffffu, HEAP_PAGE_SIZE);
+				u32 live = info >> 16;
+				for (u32 slot = 0; slot + stride <= end; slot += stride) {
+					++work;
+					const u32 address = base + slot;
+					if (m_memory.readRamRecordByte(address) != 0u && visit(context, address) && --live == 0u)
+						break; // The allocator released the page.
+				}
+				break;
+			}
+			default: break;
+		}
+	}
+	m_memory.writeRamRecordWord(cursor, page);
+	return work;
 }
 
 u32 HeapAllocator::allocate(u32 byteCount, bool owned) {

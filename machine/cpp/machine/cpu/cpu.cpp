@@ -956,15 +956,11 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	for (u32 id = 0; id < pendingObjects.size(); ++id) {
 		const auto* object = pendingObjects[id];
 		u32 offset;
-		if (m_heap.sweepGarbage(object)) {
-			offset = snapshot.reserveWords(5);
+		if (object->type != ObjType::Table && m_heap.sweepGarbage(object)) {
+			offset = snapshot.reserveWords(3);
 			snapshot.setWord(offset, static_cast<u32>(CpuSnapshotObjectKind::Garbage));
 			snapshot.setWord(offset + 1, object->hashId);
 			snapshot.setWord(offset + 2, static_cast<u32>(m_heap.allocationBytes(object)));
-			snapshot.setWord(offset + 3, object->type == ObjType::Table ? static_cast<const Table*>(object)->storageAddress()
-				: object->type == ObjType::Garbage ? static_cast<const GarbageAllocation*>(object)->storage : 0);
-			snapshot.setWord(offset + 4, object->type == ObjType::Table ? static_cast<const Table*>(object)->address()
-				: object->type == ObjType::Garbage ? static_cast<const GarbageAllocation*>(object)->record : 0);
 			snapshot.setObjectWord(id, offset);
 			continue;
 		}
@@ -1083,7 +1079,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			case CpuSnapshotObjectKind::Garbage: {
 				const auto bytes = snapshot.word(offset + 2);
 				m_luaHeap.restoreAllocate(bytes);
-				auto* object = m_heap.allocate<GarbageAllocation>(ObjType::Garbage, bytes, snapshot.word(offset + 3), snapshot.word(offset + 4));
+				auto* object = m_heap.allocate<GarbageAllocation>(ObjType::Garbage, bytes);
 				object->restored = true;
 				object->hashId = snapshot.word(offset + 1);
 				restoredObjects[index] = object;

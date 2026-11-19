@@ -14,6 +14,7 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 using namespace bmsx;
@@ -101,12 +102,44 @@ void execRefusesLivePagesBelowTheFloor() {
 	require(readLE32(machine.memory.ramData() + marker) == 0x5eed5eedu, "cartridge BSS stays untouched");
 }
 
+void objectSweepResumesFromRam() {
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	HeapAllocator heap(memory);
+	const u32 first = heap.allocate(32, false), vacant = heap.allocate(32, false), last = heap.allocate(32, false);
+	const u32 owned = heap.allocate(2u * HEAP_PAGE_SIZE, true);
+	const u32 run = heap.allocate(3u * HEAP_PAGE_SIZE, false);
+	for (const u32 address : {first, vacant, last, owned, run}) memory.writeRamRecordWord(address, 1);
+	heap.free(vacant);
+	struct Visits { HeapAllocator& heap; std::vector<u32> addresses; } visits{heap, {}};
+	auto retire = +[](void* context, u32 address) -> bool {
+		auto& sweep = *static_cast<Visits*>(context);
+		sweep.addresses.push_back(address);
+		sweep.heap.free(address);
+		return true;
+	};
+
+	heap.beginObjectSweep();
+	require(heap.sweepObjects(1, &visits, retire) == 1 && visits.addresses == std::vector<u32>{run},
+		"an object run counts once");
+	require(heap.objectSweepActive(), "the sweep still has object pages to visit");
+	const auto midSweep = memory.captureSaveState();
+	for (int replay = 0; replay < 2; ++replay) {
+		memory.restoreSaveState(midSweep);
+		visits.addresses.clear();
+		require(heap.sweepObjects(1, &visits, retire) == 3 && visits.addresses == std::vector<u32>{first, last},
+			"the current page is indivisible, including its vacant issued slot");
+		require(heap.occupiedBytes() == 2u * HEAP_PAGE_SIZE && memory.readRamRecordWord(owned) == 1
+			&& !heap.objectSweepActive(), "the owner retains its block and the cursor reaches the end");
+	}
+}
+
 } // namespace
 
 int main() {
 	try {
 		capacityFollowsTheFloorAcrossResetExecAndRestore();
 		execRefusesLivePagesBelowTheFloor();
+		objectSweepResumesFromRam();
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';
 		return 1;

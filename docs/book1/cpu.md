@@ -1233,7 +1233,8 @@ Collection work consumes cycles as follows:
 | --- | --- |
 | Scan a Table | `8 + A + 2H`; eight header words and one cycle for each reserved Value slot |
 | Scan a closure, captured-variable cell or Thread | `ceil(occupied allocation bytes / 4)` |
-| Examine one allocation for reclamation, whether kept or freed | `ceil(occupied allocation bytes / 4)` |
+| Examine a Table record for reclamation | `1` per visited block in an object page, including a free slot; a page run is one block |
+| Examine a closure, captured-variable cell or Thread for reclamation | `ceil(occupied allocation bytes / 4)` |
 | Read the constant and global root ranges | `2C + 3(S + G)` per pass |
 | Examine a weak-key Table in one dependency-convergence pass | `A + 2H` |
 | Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |
@@ -1242,11 +1243,13 @@ Collection work consumes cycles as follows:
 | Copy retained Thread storage when shrinking from `V` to `V/2` slots | `2 × ceil(5 × (V/2) / 4)` |
 
 For charges based on bytes, round each allocation or String independently.
-A repeated scan costs
-again; unreachable objects that are not scanned still incur their reclamation
-work. Read-only String text supplied by a program image has no allocated-text
+A repeated scan costs again; unreachable objects that are not scanned still
+incur their reclamation work. Read-only String text supplied by a program image has no allocated-text
 charge, but its directory slot and constant or registered-name roots still
-participate. Directory slots are reused after reclamation, not removed; their
+participate. The sweep examines slots that the allocator has issued on an
+object page, not its unused tail, and leaves the page as soon as it is released.
+Table backing blocks are released with their records and are not separate sweep
+visits. String-directory slots are reused after reclamation, not removed; their
 high-water extent and reuse order carry across collection cycles.
 
 `C` counts constant Value slots in all activated program images. `S` and `G`
@@ -1263,7 +1266,8 @@ convergence and weak-entry clearing are also indivisible. These operations can
 exceed the step target: it is not a maximum instruction latency. The final
 atomic remark starts in a separate step, rather than extending the last
 incremental marking step. Reclamation of
-objects and Strings resumes from its previous position on the next step.
+objects and Strings resumes from its previous position on the next step. An
+object page already being examined is completed before the sweep advances.
 
 Writes to already scanned objects enter a changed-object queue rather than
 immediately restarting their first scan. The second pass drains the queue as

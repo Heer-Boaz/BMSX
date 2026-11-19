@@ -41,6 +41,13 @@ public:
 	u32 allocate(u32 byteCount, bool owned);
 	void free(u32 address);
 
+	// Sweep only independently allocated records. Each issued slot is a visit,
+	// including a vacant one. Owned blocks are released by their record.
+	using SweepVisitor = bool (*)(void*, u32);
+	void beginObjectSweep();
+	bool objectSweepActive() const;
+	size_t sweepObjects(size_t allowance, void* context, SweepVisitor visit);
+
 private:
 	u32 allocateRun(u32 byteCount, bool owned);
 	i32 takeTopPage();
