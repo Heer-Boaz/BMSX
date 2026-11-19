@@ -20,7 +20,7 @@ static void exerciseCompletionBoundary(bmsx::CPU& cpu, bool fault) {
 	auto* thread = cpu.activeThread();
 	const int depth = cpu.getFrameDepth();
 	const auto protectedDepth = thread->protectedDepth();
-	cpu.beginCompletionCall(*bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe")), cpu.gcHeap()));
+	cpu.beginCompletionCall(bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe")), cpu.gcHeap()));
 	for (int grant = 0; grant < 10000 && cpu.completionCallPending() && cpu.readExceptionReturnFrameDepth() == -1; ++grant) {
 		cpu.runUntilDepth(depth, 1, thread);
 	}
@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
 				if (std::string(argv[index]).find("halted_tooling_call-") != std::string::npos) {
 					if (cpu.runUntilDepth(0, 100000) != bmsx::RunResult::Halted || !cpu.isHaltedUntilIrq()) throw std::runtime_error("root did not HALT");
 					const int depth = cpu.getFrameDepth();
-					cpu.beginCompletionCall(*bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe")), cpu.gcHeap()));
+					cpu.beginCompletionCall(bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe")), cpu.gcHeap()));
 					for (int grant = 0; grant < 10000; ++grant) {
 						const auto status = cpu.runUntilDepth(depth, 17, cpu.rootThread());
 						const auto snapshot = cpu.captureRuntimeState();

@@ -123,12 +123,12 @@ void hotVarargFrames(int fixed) {
 	for (const int count : {0, 2, 63}) {
 		for (auto* m : {&native, &scalar}) {
 			auto& cpu = m->cpu; auto* thread = cpu.activeThread();
-			Closure* closure = thread->frameAtDepth(1)->attachedClosure();
+			u32 closure = thread->frameAtDepth(1)->closureAddress();
 			cpu.writeFrameExecution(1, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[1], m->rom.textAddress + 24u * INSTRUCTION_BYTES);
 			require(cpu.runUntilDepth(1, 2) == RunResult::Halted, "the saved varargs frame returns at its actual depth boundary");
 			auto& root = *thread->frameAtDepth(0);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + 3u * INSTRUCTION_BYTES);
-			root.registers.set(0, valueClosure(cpu.gcHeap().reference(closure)));
+			root.registers.set(0, valueClosure(closure));
 			for (int i = 0; i < count; ++i) root.registers.set(i + 1, i == 0 ? valueBool(false) : i == count - 1 ? valueNil() : valueInteger(i));
 			root.writeControl(bmsx::FrameField::Top, count + 1);
 			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && static_cast<bmsx::i32>(thread->frameAtDepth(1)->readControl(bmsx::FrameField::VarargCount)) == count,
@@ -284,12 +284,13 @@ void hotUpvalueAlias() {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
 		auto& heap = m->cpu.gcHeap();
 		std::array<u32, 2> cells{};
-		auto* closure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2, false, cells), *frame.attachedClosure()->prototype, false);
-		closure->initializeRecord(heap.white(), 2);
+		const auto prototype = ClosureRecord::readBinding(heap.memory, frame.closureAddress());
+		const u32 closure = heap.budget.allocateClosureRecord(2, false, cells);
+		ClosureRecord::initialize(heap.memory, closure, prototype, heap.white(), 2, false, false);
 		Upvalue::bindOpen(heap.memory, cells[0], frame.thread->address, frame.stackBase(), 0);
-		closure->setCaptureAddress(0, cells[0]);
-		closure->setCaptureAddress(1, cells[1]);
-		frame.writeControl(bmsx::FrameField::Closure, closure->address); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1100);
+		ClosureRecord::setCaptureAddress(heap.memory, closure, 0, cells[0]);
+		ClosureRecord::setCaptureAddress(heap.memory, closure, 1, cells[1]);
+		frame.writeControl(bmsx::FrameField::Closure, closure); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1100);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& first = *native.cpu.activeThread()->frameAtDepth(0);
@@ -335,8 +336,8 @@ void rawContextValues(CpuMachine& machine) {
 	auto& cpu = machine.cpu;
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueFloat(std::numeric_limits<float>::infinity()),
-		valueString(cpu.stringPool().intern("context")), valueTable(cpu.createTable().address()), valueClosure(cpu.gcHeap().reference(cpu.activeThread()->frameAtDepth(0)->attachedClosure())),
-		valueThread(cpu.gcHeap().reference(cpu.activeThread()))};
+		valueString(cpu.stringPool().intern("context")), valueTable(cpu.createTable().address()), valueClosure(cpu.activeThread()->frameAtDepth(0)->closureAddress()),
+		valueThread(cpu.activeThread()->address)};
 	ContextBlock globals(machine, {{OpCode::SETGL, 12, 0, 0, 1}, {OpCode::GETGL, 0, 0, 0, 1},
 		{OpCode::SETSYS, 0, 0, 0, 1}, {OpCode::GETSYS, 1, 0, 0, 1}, {OpCode::K1, 2},
 		{OpCode::SETGL, 2}, {OpCode::LOADNIL, 15, 0}, {OpCode::JMP}});
@@ -367,13 +368,13 @@ void rawContextValues(CpuMachine& machine) {
 	frame.registers = captureRegisters;
 	auto& heap = cpu.gcHeap();
 	std::array<u32, 2> cells{};
-	auto* boundClosure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2, false, cells), {}, false);
+	const u32 boundClosure = heap.budget.allocateClosureRecord(2, false, cells);
 	const u32 open = cells[0], closed = cells[1];
 	Upvalue::bindOpen(machine.memory, open, owner->address, 0, 0);
-	boundClosure->initializeRecord(heap.white(), 2);
-	frame.writeControl(bmsx::FrameField::Closure, boundClosure->address);
-	boundClosure->setCaptureAddress(0, open);
-	boundClosure->setCaptureAddress(1, closed);
+	ClosureRecord::initialize(heap.memory, boundClosure, {}, heap.white(), 2, false, false);
+	frame.writeControl(bmsx::FrameField::Closure, boundClosure);
+	ClosureRecord::setCaptureAddress(heap.memory, boundClosure, 0, open);
+	ClosureRecord::setCaptureAddress(heap.memory, boundClosure, 1, closed);
 	ContextBlock captures(machine, {{OpCode::K1, 0}, {OpCode::GETUP, 1}, {OpCode::KSMI, 2, 0, 0, 9},
 		{OpCode::SETUP, 2}, {OpCode::ADD, 3, 0, 1}, {OpCode::GETUP, 4}, {OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	captureRegisters.clear(0, captureRegisters.size());
@@ -432,7 +433,7 @@ void rawContextValues(CpuMachine& machine) {
 	const u32 rawCell = DYNAMIC_RAM_BASE + 0x600u;
 	machine.memory.writeRamRecordByte(rawCell, UPVALUE_RECORD_KIND);
 	require(heap.cellRecordAddress(rawCell) == 0u, "an unallocated header is not a GC cell");
-	machine.memory.writeRamRecordWord(boundClosure->address + CLOSURE_CAPTURE_WORDS + sizeof(u32), rawCell | 0x80000000u);
+	machine.memory.writeRamRecordWord(boundClosure + CLOSURE_CAPTURE_WORDS + sizeof(u32), rawCell | 0x80000000u);
 	captureRegisters.set(12, valueFloatBits(0x80000000u));
 	NativeBlockRunState addressed{.registers = captureRegisters, .frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
@@ -478,7 +479,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 	frame.writeControl(bmsx::FrameField::StackBase, 16);
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(0),
-		valueTable(machine.cpu.createTable().address()), valueThread(machine.cpu.gcHeap().reference(machine.cpu.activeThread()))};
+		valueTable(machine.cpu.createTable().address()), valueThread(machine.cpu.activeThread()->address)};
 	ContextBlock empty(machine, {{OpCode::VARARG, 31, 0}, {OpCode::JMP}});
 	frame.writeControl(bmsx::FrameField::VarargCount, 0); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
 	for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));

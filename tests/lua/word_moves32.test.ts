@@ -49,7 +49,7 @@ for (const kind of ['float_bits','float_from_bits']) test(`generated ${kind}: wa
   const results:v.Value[]=[];cpu.readCompletionValues(results);
   assert.deepEqual(results,[kind==='float_bits'?v.valueInteger(0xffa12345):v.valueFloatBits(0xffa12345)]);
  }
- assert.ok(owner.compiledCodeLookup?.find(closure.prototypeRecord.codeAddress,0)?.compiledBlocks,'the warm word move must enter generated code');
+ assert.ok(owner.compiledCodeLookup?.find(cpu.captureClosureBinding(closure).codeAddress,0)?.compiledBlocks,'the warm word move must enter generated code');
  cpu.beginCompletionCall(closure,[kind==='float_bits'?v.valueInteger(1):v.valueFloat(1)]);
  cpu.runUntilDepth(0,2);
  assert.equal(cpu.readLuaFaultReasonWord(),10);

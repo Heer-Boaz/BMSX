@@ -55,18 +55,14 @@ constexpr u8 tableRecordKind = static_cast<u8>(ValueTag::Table);
 constexpr u32 tableSlotClass = heapClassIndex(TableRecord::HEADER_BYTES);
 constexpr u32 cellSlotClass = heapClassIndex(UPVALUE_HEAP_BYTES);
 }
-void GCObject::setGcColor(uint8_t color) {
-	gcMemory->writeRamRecordByte(static_cast<u32>(gcRecord - gcMemory->ramData()) + GC_COLOR_OFFSET, color);
-}
-
 bool GcHeap::markValue(Value v) {
 	switch (valueTag(v)) {
 		case ValueTag::Thread:
-			return markObject(asThread(v, *this));
+			return markThread(asThread(v, *this));
 		case ValueTag::Table:
 			return markTable(valuePayload(v));
 		case ValueTag::Closure:
-			return markObject(asClosure(v, *this));
+			return markClosure(valuePayload(v));
 		case ValueTag::BuiltinFunction:
 			return false;
 		case ValueTag::String:
@@ -82,33 +78,26 @@ bool GcHeap::markValue(Value v) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
-size_t GcHeap::nativePhysicalRecordsOffset() { return offsetof(GcHeap, m_recordBase); }
 size_t GcHeap::nativeControlOffset() { return offsetof(GcHeap, m_controlOffset); }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
 #endif
-void GcHeap::track(GCObject* object) {
-	const u32 address = physicalAddress(object);
-	physicalSlot(address) = object;
-	object->gcRecord = memory.ramData() + (address & GC_RECORD_MASK);
-	object->gcMemory = &memory;
-	object->previous = nullptr;
-	object->next = m_objects;
-	if (m_objects) m_objects->previous = object;
-	m_objects = object;
+void GcHeap::trackThread(Thread* thread) {
+	threadSlot(thread->address) = thread;
+	thread->previousAttached = nullptr;
+	thread->nextAttached = m_attachedThreads;
+	if (m_attachedThreads) m_attachedThreads->previousAttached = thread;
+	m_attachedThreads = thread;
 }
-Closure* GcHeap::bindClosureRecord(u32 address, const FunctionPrototype& prototype, bool canonical) {
-	const auto entry = m_prototypes.try_emplace(prototype, 0u).first;
-	auto* closure = new Closure(memory, address, entry->first, canonical);
-	++entry->second;
-	closure->type = ObjType::Closure;
-	track(closure);
-	return closure;
+Thread* GcHeap::attachThread(u32 address) {
+	auto* thread = new Thread(*this, address);
+	trackThread(thread);
+	return thread;
 }
 GcHeap::~GcHeap() {
-	while (m_objects) {
-		auto* object = m_objects; m_objects = object->next; destroyObject(object);
+	while (m_attachedThreads) {
+		auto* thread = m_attachedThreads; m_attachedThreads = thread->nextAttached; delete thread;
 	}
 }
 void GcHeap::enqueue(u32 address, u32 link, u32 queue) {
@@ -176,9 +165,24 @@ size_t GcHeap::visitList(u32 list, Visitor&& visitor) {
 	return work;
 }
 
-bool GcHeap::markObject(GCObject* object) {
-	if (!object || object->gcColor() != white()) return false;
-	enqueue(physicalAddress(object), GC_RECORD_LINK, GC_TRACE_HEAD);
+bool GcHeap::markThread(Thread* thread) {
+	if (!thread || thread->nativeRecord[GC_COLOR_OFFSET] != white()) return false;
+	enqueue(thread->address, GC_RECORD_LINK, GC_TRACE_HEAD);
+	return true;
+}
+
+u32 GcHeap::closureRecordAddress(u32 address) const {
+	const u32 offset = address & GC_RECORD_MASK;
+	return offset < arena.managementOffset() && memory.readRamRecordByte(offset) == static_cast<u8>(ValueTag::Closure)
+		&& arena.issuedObjectStart(offset) ? RAM_BASE + offset : 0u;
+}
+
+bool GcHeap::markClosure(u32 address) {
+	const u32 offset = address & GC_RECORD_MASK;
+	const u32 whiteClosure = static_cast<u8>(ValueTag::Closure) | (static_cast<u32>(white()) << (GC_COLOR_OFFSET * 8u));
+	if (offset >= arena.managementOffset() || (memory.readRamRecordWord(offset) & 0xffffu) != whiteClosure
+		|| !arena.issuedObjectStart(offset)) return false;
+	enqueue(RAM_BASE + offset, GC_RECORD_LINK, GC_TRACE_HEAD);
 	return true;
 }
 
@@ -209,18 +213,16 @@ bool GcHeap::markTable(u32 address) {
 size_t GcHeap::markCell(u32 cell) {
 	if (cell == 0u || memory.readRamRecordByte(cell + GC_COLOR_OFFSET) != white()) return 0;
 	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3u);
-	if (Upvalue::isOpen(memory, cell)) markObject(threadAt(memory.readRamRecordWord(cell + UPVALUE_OWNER)));
+	if (Upvalue::isOpen(memory, cell)) markThread(threadAt(memory.readRamRecordWord(cell + UPVALUE_OWNER)));
 	markValue(Upvalue::load(memory, cell));
 	return UPVALUE_HEAP_BYTES / sizeof(u32);
 }
 
 void GcHeap::armThreadStackWatches() {
-	for (auto* object = m_objects; object; object = object->next)
-		if (object->type == ObjType::Thread) {
-			auto* thread = static_cast<Thread*>(object);
-			thread->armStackWatch();
-			thread->armFrameWindowWatches();
-		}
+	for (auto* thread = m_attachedThreads; thread; thread = thread->nextAttached) {
+		thread->armStackWatch();
+		thread->armFrameWindowWatches();
+	}
 }
 
 bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
@@ -238,9 +240,7 @@ bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
 			} else rebound |= thread->observeStackWrite() && thread == active;
 		}
 	}
-	for (auto* object = m_objects; object; object = object->next) {
-		if (object->type != ObjType::Thread) continue;
-		auto* thread = static_cast<Thread*>(object);
+	for (auto* thread = m_attachedThreads; thread; thread = thread->nextAttached) {
 		rebound |= thread->observeFrameWindowWrites(first, end) && thread == active;
 	}
 	return rebound;
@@ -279,15 +279,17 @@ uint8_t GcHeap::tableWeakMode(const TableRecord& table) {
 
 bool GcHeap::valueIsAlive(Value value) const {
 	switch (valueTag(value)) {
-		case ValueTag::Thread:
-			return isAlive(asThread(value, *this));
+		case ValueTag::Thread: {
+			const Thread* thread = asThread(value, *this);
+			return thread && isAlive(thread->address);
+		}
 		case ValueTag::Table: {
 			const u32 address = tableRecordAddress(valuePayload(value));
 			return address != 0u && memory.readRamRecordByte(address + GC_COLOR_OFFSET) != white();
 		}
 		case ValueTag::Closure: {
-			const Closure* closure = asClosure(value, *this);
-			return isAlive(closure);
+			const u32 closure = asClosure(value, *this);
+			return closure != 0u && isAlive(closure);
 		}
 		default:
 			return true;
@@ -297,15 +299,16 @@ bool GcHeap::valueIsAlive(Value value) const {
 size_t GcHeap::trace(bool atomic) {
 	const u32 index = indexWord(GC_TRACE_HEAD);
 	const u32 offset = index << GC_RECORD_SHIFT, address = RAM_BASE + offset;
-	const u32 slotClass = arena.issuedObjectSlotClass(offset);
-	const bool table = slotClass == tableSlotClass && (offset & (TableRecord::HEADER_BYTES - 1u)) == 0u
-		&& memory.readRamRecordByte(address) == tableRecordKind;
-	const bool cell = slotClass == cellSlotClass && (offset & (UPVALUE_HEAP_BYTES - 1u)) == 0u
-		&& memory.readRamRecordByte(address) == UPVALUE_RECORD_KIND && !Upvalue::isOpen(memory, address);
-	auto* obj = table || cell ? nullptr : m_records[index];
+	const u8 kind = offset < arena.managementOffset() ? memory.readRamRecordByte(address) : 0u;
+	const bool table = kind == tableRecordKind && (offset & (TableRecord::HEADER_BYTES - 1u)) == 0u
+		&& arena.issuedObjectSlotClass(offset) == tableSlotClass;
+	const bool cell = kind == UPVALUE_RECORD_KIND && (offset & (UPVALUE_HEAP_BYTES - 1u)) == 0u
+		&& arena.issuedObjectSlotClass(offset) == cellSlotClass && !Upvalue::isOpen(memory, address);
+	const bool closure = kind == static_cast<u8>(ValueTag::Closure) && arena.issuedObjectStart(offset);
+	auto* thread = table || cell || closure ? nullptr : threadAt(address);
 	// A link is clocked only by a queued record. Consuming its color bounds
 	// malformed cycles as well as preventing a duplicate scan.
-	if ((!table && !cell && !obj) || memory.readRamRecordByte(address + GC_COLOR_OFFSET) != 2u) {
+	if ((!table && !cell && !closure && !thread) || memory.readRamRecordByte(address + GC_COLOR_OFFSET) != 2u) {
 		memory.writeRamRecordWord(m_controlOffset + GC_TRACE_HEAD, 0u);
 		return 0;
 	}
@@ -319,45 +322,39 @@ size_t GcHeap::trace(bool atomic) {
 		markValue(Upvalue::load(memory, address));
 		return UPVALUE_HEAP_BYTES / sizeof(u32);
 	}
-	switch (obj->type) {
-		case ObjType::Thread: {
-			auto* thread = static_cast<Thread*>(obj);
-			size_t cellWork = 0;
-			if (!atomic) appendVisit(GC_THREAD_VISITS, thread->address);
-			markObject(thread->resumer());
-			markObject(thread->entry());
-			markValue(thread->error());
-			int liveTop = thread->currentFrame ? thread->currentFrame->stackBase()
-				+ std::min(thread->currentFrame->readWindow(FrameField::Top), thread->currentFrame->stackCapacity()) : 0;
-			CallFrame* frame = thread->firstFrame;
-			for (size_t depth = 0; depth < thread->frameDepth(); ++depth, frame = frame->next) {
-				markObject(frame->attachedClosure());
-				u32 address = frame->readControl(FrameField::OpenHead);
-				for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
-					const u32 cell = openCellAddress(address);
-					if (cell == 0u) break;
-					cellWork += markCell(cell);
-					const u32 slot = memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
-					if (slot < thread->stackCapacity)
-						liveTop = std::max(liveTop, static_cast<int>(slot + 1));
-					address = memory.readRamRecordWord(cell + UPVALUE_NEXT);
-				}
-			}
-			for (int slot = 0; slot < liveTop; ++slot) markValue(thread->stack.get(slot));
-			if (static_cast<size_t>(liveTop) < thread->stackCapacity)
-				thread->stack.clear(liveTop, thread->stackCapacity - liveTop);
-			thread->trimFrames();
-			return cellWork + ceilDiv4(static_cast<int>(allocationBytes(thread)));
-		}
-		case ObjType::Closure: {
-			auto* closure = static_cast<Closure*>(obj);
-			const u32 count = closure->upvalueCount();
-			size_t work = 3u + count;
-			for (u32 index = 0; index < count; ++index) work += markCell(cellRecordAddress(closure->captureAddress(index)));
-			return work;
+	if (closure) {
+		const u32 count = ClosureRecord::captureCount(memory, address);
+		size_t work = 3u + count;
+		for (u32 index = 0; index < count; ++index)
+			work += markCell(cellRecordAddress(ClosureRecord::captureAddress(memory, address, index)));
+		return work;
+	}
+	size_t cellWork = 0;
+	if (!atomic) appendVisit(GC_THREAD_VISITS, thread->address);
+	markThread(thread->resumer());
+	markClosure(thread->entry());
+	markValue(thread->error());
+	int liveTop = thread->currentFrame ? thread->currentFrame->stackBase()
+		+ std::min(thread->currentFrame->readWindow(FrameField::Top), thread->currentFrame->stackCapacity()) : 0;
+	CallFrame* frame = thread->firstFrame;
+	for (size_t depth = 0; depth < thread->frameDepth(); ++depth, frame = frame->next) {
+		markClosure(frame->closureAddress());
+		u32 address = frame->readControl(FrameField::OpenHead);
+		for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
+			const u32 cell = openCellAddress(address);
+			if (cell == 0u) break;
+			cellWork += markCell(cell);
+			const u32 slot = memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
+			if (slot < thread->stackCapacity)
+				liveTop = std::max(liveTop, static_cast<int>(slot + 1));
+			address = memory.readRamRecordWord(cell + UPVALUE_NEXT);
 		}
 	}
-	BMSX_UNREACHABLE();
+	for (int slot = 0; slot < liveTop; ++slot) markValue(thread->stack.get(slot));
+	if (static_cast<size_t>(liveTop) < thread->stackCapacity)
+		thread->stack.clear(liveTop, thread->stackCapacity - liveTop);
+	thread->trimFrames();
+	return cellWork + ceilDiv4(static_cast<int>(allocationBytes(thread)));
 }
 
 size_t GcHeap::traceTable(u32 address) {
@@ -446,33 +443,17 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 	setPhase(GcPhase::Sweep);
 	return work + m_stringPool.takeMarkWork();
 }
-void GcHeap::unlink(GCObject* object) {
-	if (object->previous) object->previous->next = object->next;
-	else m_objects = object->next;
-	if (object->next) object->next->previous = object->previous;
-}
-void GcHeap::destroyObject(GCObject* object) {
-	switch (object->type) {
-		case ObjType::Thread:
-
-			delete static_cast<Thread*>(object);
-			break;
-		case ObjType::Closure: {
-			auto* closure = static_cast<Closure*>(object);
-			auto prototype = m_prototypes.find(*closure->prototype);
-			if (--prototype->second == 0) m_prototypes.erase(prototype);
-
-			delete closure;
-			break;
-		}
-	}
+void GcHeap::unlinkThread(Thread* thread) {
+	if (thread->previousAttached) thread->previousAttached->nextAttached = thread->nextAttached;
+	else m_attachedThreads = thread->nextAttached;
+	if (thread->nextAttached) thread->nextAttached->previousAttached = thread->previousAttached;
 }
 
 i32 GcHeap::sweepRecord(void* context, u32 address) {
 	const auto& sweep = *static_cast<SweepContext*>(context);
 	auto& heap = sweep.heap;
 	const u8 kind = heap.memory.readRamRecordByte(address);
-	if (kind == tableRecordKind || kind == UPVALUE_RECORD_KIND) {
+	if (kind == tableRecordKind || kind == UPVALUE_RECORD_KIND || kind == static_cast<u8>(ValueTag::Closure)) {
 		if (heap.memory.readRamRecordByte(address + GC_COLOR_OFFSET) == (sweep.white ^ 1u)) {
 			if (kind == tableRecordKind) TableRecord(heap, address).freeRecord();
 			else heap.arena.free(address);
@@ -481,21 +462,19 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
 		return 1;
 	}
-	auto& slot = heap.physicalSlot(address);
-	auto* object = slot;
-	if (!object) return 1;
-	auto* thread = object->type == ObjType::Thread ? static_cast<Thread*>(object) : nullptr;
-	const i32 work = thread ? ceilDiv4(static_cast<int>(heap.allocationBytes(thread))) : 1;
-	if (object->gcColor() != (sweep.white ^ 1u)) {
-		object->setGcColor(sweep.white);
-		return work + (thread && thread != sweep.growingStack ? 2 * ceilDiv4(thread->shrinkStack()) : 0);
+	auto* thread = heap.threadAt(address);
+	if (!thread) return 1;
+	const i32 work = ceilDiv4(static_cast<int>(heap.allocationBytes(thread)));
+	if (thread->nativeRecord[GC_COLOR_OFFSET] != (sweep.white ^ 1u)) {
+		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
+		return work + (thread != sweep.growingStack ? 2 * ceilDiv4(thread->shrinkStack()) : 0);
 	}
 
-	slot = nullptr;
-	if (thread) thread->freeStack();
+	heap.threadSlot(address) = nullptr;
+	thread->freeStack();
 	heap.arena.free(address);
-	heap.unlink(object);
-	heap.destroyObject(object);
+	heap.unlinkThread(thread);
+	delete thread;
 	return -work;
 }
 
@@ -590,16 +569,16 @@ size_t GcHeap::collect(Value root0, Value root1, Value root2, Thread* growingSta
 void GcHeap::discardAttachments(Thread* retainedRoot) {
 	// RAM has already been loaded. Destroy derived objects without freeing
 	// their guest storage or following any edge in the restored heap.
-	auto* object = std::exchange(m_objects, nullptr);
-	while (object) {
-		auto* next = object->next;
-		physicalSlot(physicalAddress(object)) = nullptr;
-		if (object != retainedRoot) destroyObject(object);
-		object = next;
+	auto* thread = std::exchange(m_attachedThreads, nullptr);
+	while (thread) {
+		auto* next = thread->nextAttached;
+		threadSlot(thread->address) = nullptr;
+		if (thread != retainedRoot) delete thread;
+		thread = next;
 	}
 	if (retainedRoot) {
 		retainedRoot->detachFrameViews();
-		track(retainedRoot);
+		trackThread(retainedRoot);
 	}
 }
 } // namespace bmsx

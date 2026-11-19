@@ -23,13 +23,13 @@ void copyStackControl(Memory& memory, u8* destination, u32 source, u32 bytes) {
 Thread::Thread(GcHeap& heap, u32 address) : address(address),
 	nativeRecord(heap.memory.ramData() + (address & RAM_RECORD_WORD_MASK)), heap(heap) {}
 
-void Thread::initializeRecord(Closure* entry) {
+void Thread::initializeRecord(u32 entry) {
 	const u32 offset = address & (MAIN_RAM_SIZE - 1u);
 	auto* record = heap.memory.ramData() + offset;
 	const u32 block = read(ThreadField::StackBlock);
 	std::fill_n(record, THREAD_HEAP_BYTES, u8{0});
 	writeLE32(record, THREAD_RECORD_KIND | (static_cast<u32>(heap.white()) << 8u));
-	writeLE32(record + static_cast<u32>(ThreadField::Entry), entry ? entry->address : 0u);
+	writeLE32(record + static_cast<u32>(ThreadField::Entry), entry);
 	writeLE32(record + static_cast<u32>(ThreadField::StackBlock), block);
 	writeLE32(record + static_cast<u32>(ThreadField::StackCapacity), THREAD_INITIAL_VALUES);
 	writeLE32(record + static_cast<u32>(ThreadField::FrameCapacity), THREAD_INITIAL_FRAMES);
@@ -51,11 +51,6 @@ Thread* Thread::resumer() const {
 	return owner == 0u ? nullptr : heap.threadAt(owner);
 }
 void Thread::setResumer(Thread* thread) { write(ThreadField::Resumer, thread ? thread->address : 0u); }
-Closure* Thread::entry() const {
-	const u32 closure = read(ThreadField::Entry);
-	return closure == 0u ? nullptr : heap.closureAt(closure);
-}
-void Thread::setEntry(Closure* closure) { write(ThreadField::Entry, closure ? closure->address : 0u); }
 i32 Thread::callBase() const { return static_cast<i32>(read(ThreadField::CallBase)); }
 i32 Thread::returnCount() const { return static_cast<i32>(read(ThreadField::ReturnCount)); }
 void Thread::setReturnWindow(i32 base, i32 count) {

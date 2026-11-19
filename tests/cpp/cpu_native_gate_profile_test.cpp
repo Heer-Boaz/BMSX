@@ -82,7 +82,7 @@ struct Machine {
 	}
 	void closure() {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[2], rom.textAddress + MAPPED_PAGE_BYTE_SIZE);
-		const auto value = valueClosure(cpu.gcHeap().reference(cpu.rootThread()->currentFrame->attachedClosure()));
+		const auto value = valueClosure(cpu.rootThread()->currentFrame->closureAddress());
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
 		cpu.rootThread()->currentFrame->registers.set(12, value);
 	}

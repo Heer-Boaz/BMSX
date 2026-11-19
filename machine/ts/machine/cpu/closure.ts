@@ -1,5 +1,4 @@
-import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK, GcObject, GcKind } from './gc_object';
-import { heapAllocationBytes } from './heap_allocator';
+import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from './gc_object';
 import { ValueTag } from './value';
 import { readLE32 } from '../../common/endian';
 import type { Memory, MemoryByteView } from '../memory/memory';
@@ -28,43 +27,6 @@ export function sameFunctionPrototype(a: Readonly<FunctionPrototype>, b: Readonl
 		&& a.recordUpvalueCount === b.recordUpvalueCount;
 }
 
-type RetainedPrototype = Readonly<FunctionPrototype> & { retainedClosures: number };
-
-export class FunctionPrototypePool {
-	private readonly byAddress = new Map<number, RetainedPrototype[]>();
-
-	public retain(record: Readonly<FunctionPrototype>): Readonly<FunctionPrototype> {
-		let versions = this.byAddress.get(record.functionAddress);
-		if (versions === undefined) {
-			versions = [];
-			this.byAddress.set(record.functionAddress, versions);
-		} else {
-			for (let i = 0; i < versions.length; ++i) {
-				const existing = versions[i];
-				if (sameFunctionPrototype(existing, record)) {
-					++existing.retainedClosures;
-					return existing;
-				}
-			}
-		}
-		const prototype: RetainedPrototype = {
-			functionAddress: record.functionAddress, codeAddress: record.codeAddress, numParams: record.numParams,
-			maxStack: record.maxStack, flags: record.flags, upvalueTableAddress: record.upvalueTableAddress,
-			recordUpvalueCount: record.recordUpvalueCount, executionDomainId: record.executionDomainId, retainedClosures: 1,
-		};
-		versions.push(prototype);
-		return prototype;
-	}
-
-	public release(prototype: Readonly<FunctionPrototype>): void {
-		const retained = prototype as RetainedPrototype;
-		if (--retained.retainedClosures !== 0) return;
-		const versions = this.byAddress.get(retained.functionAddress)!;
-		versions.splice(versions.indexOf(retained), 1);
-		if (versions.length === 0) this.byAddress.delete(retained.functionAddress);
-	}
-}
-
 export const CLOSURE_BINDING_FLAGS = 2;
 export const CLOSURE_BINDING_DOMAIN_MASK = 3;
 export const CLOSURE_CANONICAL = 4;
@@ -78,79 +40,69 @@ export function closureRecordBytes(captures: number, latched = false): number {
 	return CLOSURE_CAPTURE_WORDS + 4 * captures + (latched ? CLOSURE_LATCHED_PROTOTYPE_BYTES : 0);
 }
 
-export class Closure extends GcObject {
-	public constructor(
-		private readonly memory: Memory,
-		public readonly address: number,
-		public prototypeRecord: Readonly<FunctionPrototype>,
-		public readonly canonical: boolean,
-	) {
-		super(GcKind.Closure);
+export function executionDomain(memory: Memory, address: number): ExecutionDomainId {
+	const bank = memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_BINDING_DOMAIN_MASK;
+	return (bank >= 2 ? 1 : bank - 1) as ExecutionDomainId;
+}
+export function captureCount(memory: Memory, address: number): number {
+	const low = memory.readRamRecordWord(address + GC_RECORD_LINK) >>> GC_GRAY_INDEX_BITS;
+	const high = memory.readRamRecordByte(address + CLOSURE_COUNT_HIGH_BYTE) & 0x7f;
+	return low | (high << CLOSURE_COUNT_LOW_BITS);
+}
+export function captureAddress(memory: Memory, address: number, index: number): number {
+	return memory.readRamRecordWord(address + CLOSURE_CAPTURE_WORDS + index * 4);
+}
+export function setCaptureAddress(memory: Memory, address: number, index: number, reference: number): void {
+	memory.writeRamRecordWord(address + CLOSURE_CAPTURE_WORDS + index * 4, reference);
+}
+export function initializeRecord(memory: Memory, address: number, prototype: Readonly<FunctionPrototype>, canonical: boolean, white: number, count: number, latched = false): void {
+	const flags = (prototype.executionDomainId + 1) | (canonical ? CLOSURE_CANONICAL : 0) | (latched ? CLOSURE_LATCHED_PROTOTYPE : 0);
+	memory.writeRamRecordWord(address, ValueTag.Closure | (white << 8) | (flags << 16) | ((count >>> CLOSURE_COUNT_LOW_BITS) << 24));
+	memory.writeRamRecordWord(address + GC_RECORD_LINK, count << GC_GRAY_INDEX_BITS);
+	writePrototypeWords(memory, address, prototype, latched, count);
+}
+export function writeBinding(memory: Memory, address: number, prototype: Readonly<FunctionPrototype>): void {
+	const flags = memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
+	memory.writeRamRecordByte(address + CLOSURE_BINDING_FLAGS, (flags & ~CLOSURE_BINDING_DOMAIN_MASK) | (prototype.executionDomainId + 1));
+	writePrototypeWords(memory, address, prototype, (flags & CLOSURE_LATCHED_PROTOTYPE) !== 0, captureCount(memory, address));
+}
+function writePrototypeWords(memory: Memory, address: number, prototype: Readonly<FunctionPrototype>, latched: boolean, count: number): void {
+	memory.writeRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS, prototype.functionAddress);
+	if (latched) {
+		const tail = address + CLOSURE_CAPTURE_WORDS + count * 4;
+		memory.writeRamRecordWord(tail, prototype.codeAddress);
+		memory.writeRamRecordWord(tail + 4, prototype.numParams);
+		memory.writeRamRecordWord(tail + 8, prototype.maxStack);
+		memory.writeRamRecordWord(tail + 12, prototype.flags);
+		memory.writeRamRecordWord(tail + 16, prototype.upvalueTableAddress);
+		memory.writeRamRecordWord(tail + 20, prototype.recordUpvalueCount);
 	}
-	public get heapBytes(): number {
-		return heapAllocationBytes(closureRecordBytes(this.upvalueCount,
-			(this.memory.readRamRecordByte(this.address + CLOSURE_BINDING_FLAGS) & CLOSURE_LATCHED_PROTOTYPE) !== 0));
+}
+// The caller owns this latch. CALL never allocates a decoded prototype object.
+export function readBinding(memory: Memory, address: number, flags: number, view: MemoryByteView, target: FunctionPrototype): void {
+	target.functionAddress = memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
+	const bank = flags & CLOSURE_BINDING_DOMAIN_MASK;
+	target.executionDomainId = (bank >= 2 ? 1 : bank - 1) as ExecutionDomainId;
+	if ((flags & CLOSURE_LATCHED_PROTOTYPE) !== 0) {
+		const tail = address + CLOSURE_CAPTURE_WORDS + captureCount(memory, address) * 4;
+		target.codeAddress = memory.readRamRecordWord(tail);
+		target.numParams = memory.readRamRecordWord(tail + 4);
+		target.maxStack = memory.readRamRecordWord(tail + 8);
+		target.flags = memory.readRamRecordWord(tail + 12);
+		target.upvalueTableAddress = memory.readRamRecordWord(tail + 16);
+		target.recordUpvalueCount = memory.readRamRecordWord(tail + 20);
+		return;
 	}
-	public get upvalueCount(): number { return Closure.captureCount(this.memory, this.address); }
-	public static captureCount(memory: Memory, address: number): number {
-		const low = memory.readRamRecordWord(address + GC_RECORD_LINK) >>> GC_GRAY_INDEX_BITS;
-		const high = memory.readRamRecordByte(address + CLOSURE_COUNT_HIGH_BYTE) & 0x7f;
-		return low | (high << CLOSURE_COUNT_LOW_BITS);
+	if (!memory.bindRomByteView(target.functionAddress, BLUA32_FUNCTION_RECORD_SIZE, bank >>> 1, view)) {
+		// Undriven ROM lanes, not a second host-side binding authority.
+		target.codeAddress = target.numParams = target.maxStack = target.flags = target.upvalueTableAddress = target.recordUpvalueCount = 0;
+		return;
 	}
-	public initializeRecord(white: number, count: number, latched = false): void {
-		const prototype = this.prototypeRecord;
-		const flags = (prototype.executionDomainId + 1)
-			| (this.canonical ? CLOSURE_CANONICAL : 0) | (latched ? CLOSURE_LATCHED_PROTOTYPE : 0);
-		this.memory.writeRamRecordWord(this.address, ValueTag.Closure | (white << 8)
-			| (flags << 16) | ((count >>> CLOSURE_COUNT_LOW_BITS) << 24));
-		this.memory.writeRamRecordWord(this.address + GC_RECORD_LINK, count << GC_GRAY_INDEX_BITS);
-		this.memory.writeRamRecordWord(this.address + CLOSURE_PROTOTYPE_ADDRESS, prototype.functionAddress);
-		if (latched) {
-			const tail = this.address + CLOSURE_CAPTURE_WORDS + count * 4;
-			this.memory.writeRamRecordWord(tail, prototype.codeAddress);
-			this.memory.writeRamRecordWord(tail + 4, prototype.numParams);
-			this.memory.writeRamRecordWord(tail + 8, prototype.maxStack);
-			this.memory.writeRamRecordWord(tail + 12, prototype.flags);
-			this.memory.writeRamRecordWord(tail + 16, prototype.upvalueTableAddress);
-			this.memory.writeRamRecordWord(tail + 20, prototype.recordUpvalueCount);
-		}
-	}
-	public static readBinding(memory: Memory, address: number, flags: number, view: MemoryByteView): FunctionPrototype {
-		const functionAddress = memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-		const bank = flags & CLOSURE_BINDING_DOMAIN_MASK;
-		const executionDomainId = (bank >= 2 ? 1 : bank - 1) as ExecutionDomainId;
-		if ((flags & CLOSURE_LATCHED_PROTOTYPE) !== 0) {
-			const tail = address + CLOSURE_CAPTURE_WORDS + Closure.captureCount(memory, address) * 4;
-			return {
-				functionAddress, executionDomainId,
-				codeAddress: memory.readRamRecordWord(tail),
-				numParams: memory.readRamRecordWord(tail + 4),
-				maxStack: memory.readRamRecordWord(tail + 8),
-				flags: memory.readRamRecordWord(tail + 12),
-				upvalueTableAddress: memory.readRamRecordWord(tail + 16),
-				recordUpvalueCount: memory.readRamRecordWord(tail + 20),
-			};
-		}
-		// Unconnected ROM data lanes read zero without invoking a bus device.
-		if (!memory.bindRomByteView(functionAddress, BLUA32_FUNCTION_RECORD_SIZE, bank >>> 1, view)) {
-			return { functionAddress, executionDomainId, codeAddress: 0, numParams: 0, maxStack: 0, flags: 0, upvalueTableAddress: 0, recordUpvalueCount: 0 };
-		}
-		const { bytes, byteOffset } = view;
-		return {
-			functionAddress, executionDomainId,
-			codeAddress: readLE32(bytes, byteOffset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET),
-			numParams: readLE32(bytes, byteOffset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET),
-			maxStack: readLE32(bytes, byteOffset + BLUA32_FUNCTION_MAX_STACK_OFFSET),
-			flags: readLE32(bytes, byteOffset + BLUA32_FUNCTION_FLAGS_OFFSET),
-			upvalueTableAddress: readLE32(bytes, byteOffset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET),
-			recordUpvalueCount: readLE32(bytes, byteOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET),
-		};
-	}
-
-	public captureAddress(index: number): number {
-		return this.memory.readRamRecordWord(this.address + CLOSURE_CAPTURE_WORDS + index * 4);
-	}
-	public setCaptureAddress(index: number, reference: number): void {
-		this.memory.writeRamRecordWord(this.address + CLOSURE_CAPTURE_WORDS + index * 4, reference);
-	}
+	const { bytes, byteOffset } = view;
+	target.codeAddress = readLE32(bytes, byteOffset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
+	target.numParams = readLE32(bytes, byteOffset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET);
+	target.maxStack = readLE32(bytes, byteOffset + BLUA32_FUNCTION_MAX_STACK_OFFSET);
+	target.flags = readLE32(bytes, byteOffset + BLUA32_FUNCTION_FLAGS_OFFSET);
+	target.upvalueTableAddress = readLE32(bytes, byteOffset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET);
+	target.recordUpvalueCount = readLE32(bytes, byteOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET);
 }

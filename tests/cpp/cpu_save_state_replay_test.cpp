@@ -147,9 +147,9 @@ void capturesUsePhysicalRecords() {
 	SnapshotMachine machine(image);
 	auto& cpu = machine.runtime.machine.cpu;
 	cpu.runUntilDepth(0, 1000);
-	const auto* closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
-	const auto address = closure->captureAddress(0);
-	require(address != closure->address && cpu.gcHeap().cellRecordAddress(address) == address
+	const auto closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
+	const auto address = bmsx::ClosureRecord::captureAddress(cpu.memory(), closure, 0);
+	require(address != closure && cpu.gcHeap().cellRecordAddress(address) == address
 		&& !bmsx::Upvalue::isOpen(cpu.memory(), address)
 		&& bmsx::Upvalue::load(cpu.memory(), address) == cpu.readCompletionValues().get(0),
 		"closure points to a distinct closed record retaining its table");
@@ -171,8 +171,8 @@ void inspectOpenAndClosedClosure() {
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::ExecutionStopped, "stop after capture, before the defining frame returns");
 	const auto open = cpu.captureRuntimeState();
 	const auto openRam = cpu.memory().captureSaveState();
-	const auto* closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
-	const auto capture = closure->captureAddress(0);
+	auto closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
+	const auto capture = bmsx::ClosureRecord::captureAddress(cpu.memory(), closure, 0);
 	require(bmsx::Upvalue::isOpen(cpu.memory(), capture), "fixture capture is open");
 	const auto table = cpu.readFrameRegister(0, 0);
 	require(cpu.readClosureUpvalue(closure, 0) == table, "read the live defining register without calling the closure");
@@ -181,13 +181,13 @@ void inspectOpenAndClosedClosure() {
 	cpu.setExecutionHook({});
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "defining frame returns normally");
 	closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
-	require(closure->captureAddress(0) == capture && !bmsx::Upvalue::isOpen(cpu.memory(), capture),
+	require(bmsx::ClosureRecord::captureAddress(cpu.memory(), closure, 0) == capture && !bmsx::Upvalue::isOpen(cpu.memory(), capture),
 		"closing the capture preserves its address");
 	require(cpu.readClosureUpvalue(closure, 0) == table, "closed cell keeps the same value");
 	cpu.memory().restoreSaveState(openRam);
 	cpu.restoreRuntimeState(open);
 	closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
-	require(closure->captureAddress(0) == capture && bmsx::Upvalue::isOpen(cpu.memory(), capture),
+	require(bmsx::ClosureRecord::captureAddress(cpu.memory(), closure, 0) == capture && bmsx::Upvalue::isOpen(cpu.memory(), capture),
 		"restoring the same capture address restores its open state");
 	require(cpu.readClosureUpvalue(closure, 0) == cpu.readFrameRegister(0, 0), "restored read follows the restored frame");
 }
@@ -268,14 +268,14 @@ void restoreUnrootedCanonicalClosure() {
 	cpu.restoreRuntimeState(cold);
 	cpu.memory().restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
-	require(cpu.gcHeap().closureAt(probe.record) != nullptr, "restore reattaches the canonical record without a host object list");
+	require(cpu.gcHeap().closureRecordAddress(probe.record) == probe.record, "restore retains the physical canonical record without a host object list");
 	cpu.runUntilDepth(0, 1000);
 	require(bmsx::valuePayload(cpu.readCompletionValues().get(0)) == expectedId, "warm cache restore must preserve the next guest allocation identity");
 
 	cpu.memory().restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
 	while (cpu.gcHeap().phase() != bmsx::GcPhase::Sweep) cpu.stepHeap(bmsx::valueNil(), bmsx::valueNil(), bmsx::valueNil());
-	require(cpu.gcHeap().sweepGarbage(cpu.gcHeap().closureAt(probe.record)),
+	require(cpu.gcHeap().sweepGarbage(probe.record),
 		"fixture has a physically allocated but retired canonical closure");
 	const auto sweep = cpu.captureRuntimeState();
 	const auto sweepRam = cpu.memory().captureSaveState();

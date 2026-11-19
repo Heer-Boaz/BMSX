@@ -85,7 +85,7 @@ void scalarNumbers() {
 	for (OpCode op : {OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW,
 			 OpCode::BAND, OpCode::BOR, OpCode::BXOR, OpCode::SHL, OpCode::SHR}) {
 		Number32Machine m(operation(op));
-		Closure* closure = m.cpu.activeThread()->currentFrame->attachedClosure();
+		u32 closure = m.cpu.activeThread()->currentFrame->closureAddress();
 		bool first = true;
 		for (Value a : values)
 			for (Value b : values) {
@@ -96,7 +96,7 @@ void scalarNumbers() {
 					continue;
 				}
 				if (!first)
-					m.cpu.beginCompletionCall(*closure);
+					m.cpu.beginCompletionCall(closure);
 				first = false;
 				auto registers = m.cpu.activeThread()->currentFrame->registers;
 				registers.set(0, a);
@@ -142,12 +142,12 @@ void unaryAndCompare() {
 		valueFromTag(ValueTag::True, 1), valueFromTag(ValueTag::True, 2), valueNil()};
 	for (auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) {
 		Number32Machine m(operation(op));
-		auto* closure = m.cpu.activeThread()->currentFrame->attachedClosure();
+		auto closure = m.cpu.activeThread()->currentFrame->closureAddress();
 		bool first = true;
 		for (Value a : values)
 			for (Value b : values) {
 				if (!first)
-					m.cpu.beginCompletionCall(*closure);
+					m.cpu.beginCompletionCall(closure);
 				first = false;
 				auto regs = m.cpu.activeThread()->currentFrame->registers;
 				regs.set(0, a);

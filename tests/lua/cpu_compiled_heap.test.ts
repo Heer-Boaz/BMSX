@@ -54,7 +54,7 @@ for (const destination of [0, 1, 2]) test(`compiled CONCAT converts every value 
 			else switch (kind - primitives.length) {
 				case 0: r.setString(0, cpu.stringPool.intern(textToByteString('λ\0🍻'))); break;
 				case 1: r.setTable(0, cpu.createTable(0, 0)); break;
-				case 2: r.setClosure(0, cpu.gc.reference(root.closure)); break;
+				case 2: r.setClosure(0, root.closure); break;
 				case 3: r.setThread(0, cpu.gc.reference(cpu.rootThread)); break;
 			}
 			r.setString(1, cpu.stringPool.intern('!'));
@@ -228,7 +228,7 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 			cpu.setGlobalByKey(cpu.stringPool.find('target')!, valueInteger(image.symbols.functionAddresses[index]));
 		}
 		assert.equal(js.runUntilDepth(0, 4), ref.runUntilDepth(0, 4)); assertParity(js, ref);
-		assert.equal(frame.registers.getClosure(source, js.gc).prototypeRecord.functionAddress, image.symbols.functionAddresses[index]);
+		assert.equal(js.captureClosureBinding(frame.registers.getClosure(source, js.gc)).functionAddress, image.symbols.functionAddresses[index]);
 	}
 });
 

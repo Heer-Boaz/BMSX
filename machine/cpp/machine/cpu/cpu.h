@@ -12,7 +12,6 @@
 #include <string>
 #include <type_traits>
 #include <unordered_map>
-#include <list>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -202,7 +201,7 @@ public:
 	Value createBuiltinFunction(BuiltinFunctionId id);
 	TableRecord createTable(int arraySize = 0, int hashSize = 0);
 
-	void beginCompletionCall(Closure& closure, BuiltinArgsView args = {});
+	void beginCompletionCall(u32 closure, BuiltinArgsView args = {});
 	void beginCompletionCallInExecutionDomain(
 		ExecutionDomainId executionDomainId,
 		u32 functionAddress
@@ -273,7 +272,7 @@ public:
 	Value readFrameRegister(int frameIndex, int registerIndex) const;
 	int getFrameUpvalueCount(int frameIndex) const;
 	Value readFrameUpvalue(int frameIndex, int upvalueIndex) const;
-	Value readClosureUpvalue(const Closure* closure, int upvalueIndex) const;
+	Value readClosureUpvalue(u32 closure, int upvalueIndex) const;
 	u32 readEpcWord() const;
 	u32 readCauseWord() const;
 	u32 readBadAddressWord() const;
@@ -355,7 +354,7 @@ private:
 	bool decodeBackedInstruction(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
 		u32 pc, MappedBusSignals busSignals);
 #endif
-	Closure* staticClosureForRecord(const FunctionPrototype& record);
+	u32 staticClosureForRecord(const FunctionPrototype& record);
 	FunctionPrototype decodePrototype(const Blua32FunctionRecordLatch& record) const;
 	bool readFunctionRecord(
 		Blua32ExecutionImage& image,
@@ -370,12 +369,12 @@ private:
 	void executeFunctionAddress(u32 functionAddress);
 	bool setProgramHeapFloor(u32 staticEnd);
 	void executeControlWrite(CallFrame& frame, int source, int field);
-	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
+	CallFrame* pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
-	CallFrame* pushFrame(Closure* closure, BuiltinArgsView args,
+	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
 		int returnBase, int returnCount, bool returnToCompletionLatch, bool exception = false);
-	Closure* allocateClosure(const FunctionPrototype&, u32 count, bool canonical, std::span<u32> cells = {});
-	Closure* createClosure(CallFrame& frame);
+	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical, std::span<u32> cells = {});
+	u32 createClosure(CallFrame& frame);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void executeConcat(CallFrame& frame, int destination, int left, int right);
 	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
@@ -502,7 +501,7 @@ private:
 	Thread* m_rootThread = nullptr;
 	Thread* m_activeThread = nullptr;
 	Thread* m_completionThread = nullptr;
-	Thread* createThread(Closure* entry);
+	Thread* createThread(u32 entry);
 	bool coroutineYieldable(const Thread& thread) const;
 	void returnToResumer(int sourceBase, int count, bool succeeded);
 	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc);
@@ -525,7 +524,7 @@ private:
 	GcHeap m_heap;
 	std::array<Value, LUA_FAULT_REASON_INVALID_NEXT_KEY + 1u> m_luaFaultErrorValues;
 	Value m_errorInErrorHandlingValue;
-	std::unordered_map<u32, std::list<Closure*>> m_staticClosuresByAddress;
+	std::unordered_map<u32, std::vector<u32>> m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
 
 	ScratchBuffer<BuiltinResults> m_builtinResultScratch;

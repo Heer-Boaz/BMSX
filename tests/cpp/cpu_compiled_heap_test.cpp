@@ -170,8 +170,8 @@ void concatKindsAndAliases(int destination) {
 			else switch (kind - values.size()) {
 				case 0: frame.registers.set(0, valueString(m->cpu.stringPool().intern(extra[0]))); break;
 				case 1: frame.registers.set(0, valueTable(m->cpu.createTable(0, 0).address())); break;
-				case 2: frame.registers.set(0, valueClosure(m->cpu.gcHeap().reference(frame.attachedClosure()))); break;
-				case 3: frame.registers.set(0, valueThread(m->cpu.gcHeap().reference(m->cpu.activeThread()))); break;
+				case 2: frame.registers.set(0, valueClosure(frame.closureAddress())); break;
+				case 3: frame.registers.set(0, valueThread(m->cpu.activeThread()->address)); break;
 			}
 			frame.registers.set(1, valueString(m->cpu.stringPool().intern("!")));
 		}
@@ -369,7 +369,7 @@ void closureAddressAlias(int source) {
 			m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[index]));
 		}
 		require(native.cpu.runUntilDepth(0, 4) == scalar.cpu.runUntilDepth(0, 4), "both live operand paths consume the same grant"); requireParity(native, scalar);
-		require(asClosure(native.cpu.readFrameRegister(0, source), native.cpu.gcHeap())->prototype->functionAddress == native.rom.functionAddresses[index], "the full source address is sampled before its slot is replaced");
+		require(ClosureRecord::readBinding(native.cpu.memory(), asClosure(native.cpu.readFrameRegister(0, source), native.cpu.gcHeap())).functionAddress == native.rom.functionAddresses[index], "the full source address is sampled before its slot is replaced");
 	}
 }
 

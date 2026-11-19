@@ -302,7 +302,7 @@ struct ExternalClosureFixture {
 	SystemRuntimeFixture system;
 	bmsx::Runtime& runtime;
 	bmsx::CPU& cpu;
-	std::array<bmsx::Closure*, 2> closures{};
+	std::array<bmsx::u32, 2> closures{};
 
 	ExternalClosureFixture()
 		: system(
@@ -739,8 +739,8 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system reset firmware enters the selected cartridge through CP0.EXEC");
 	require(cpu.activeCartridgeSlot() == 0, "CP0.EXEC latches physically selected cartridge slot 0");
 	const bmsx::Value slot0ClosureValue = cpu.getGlobalByKey(publishedClosureName);
-	bmsx::Closure* slot0Closure = bmsx::asClosure(slot0ClosureValue, cpu.gcHeap());
-	require(slot0Closure->prototype->executionDomainId == 0, "slot 0 closure binds its execution domain");
+	bmsx::u32 slot0Closure = bmsx::asClosure(slot0ClosureValue, cpu.gcHeap());
+	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure).executionDomainId == 0, "slot 0 closure binds its execution domain");
 	require(cpu.getGlobalByKey(publishedValueName) == bmsx::valueInteger(111), "slot 0 startup executes its published closure");
 	const bmsx::StringId savedClosureName = cpu.stringPool().intern("saved_closure");
 	const bmsx::StringId closureTableName = cpu.stringPool().intern("closure_table");
@@ -750,29 +750,29 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	cpu.setGlobalByKey(closureTableName, bmsx::valueTable(closureTable.address()));
 
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
-	require(slot0Closure->prototype->executionDomainId == 0, "data selection does not change the closure domain");
+	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure).executionDomainId == 0, "data selection does not change the closure domain");
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI enters the system execution selector");
-	require(slot0Closure->prototype->executionDomainId == 0, "entering a system exception does not change the closure domain");
+	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure).executionDomainId == 0, "entering a system exception does not change the closure domain");
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system NMI handler enters the selected cartridge through CP0.EXEC");
 	require(cpu.activeCartridgeSlot() == 1, "CP0.EXEC latches physically selected cartridge slot 1");
 	const bmsx::Value slot1ClosureValue = cpu.getGlobalByKey(publishedClosureName);
-	bmsx::Closure* slot1Closure = bmsx::asClosure(slot1ClosureValue, cpu.gcHeap());
+	bmsx::u32 slot1Closure = bmsx::asClosure(slot1ClosureValue, cpu.gcHeap());
 	require(slot1Closure != slot0Closure, "different execution domains own distinct canonical closures");
-	require(slot1Closure->prototype != slot0Closure->prototype
-		&& slot1Closure->prototype->functionAddress == slot0Closure->prototype->functionAddress, "same mapped address in different cartridge domains retains separate prototypes");
-	require(slot1Closure->prototype->executionDomainId == 1, "slot 1 closure binds its execution domain");
+	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot1Closure) != bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure)
+		&& bmsx::ClosureRecord::readBinding(cpu.memory(), slot1Closure).functionAddress == bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure).functionAddress, "same mapped address in different cartridge domains retains separate prototypes");
+	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot1Closure).executionDomainId == 1, "slot 1 closure binds its execution domain");
 	require(closureTable.get(slot0ClosureValue) == bmsx::valueInteger(77) && bmsx::isNil(closureTable.get(slot1ClosureValue)),
 		"closure table keys retain their own execution domain");
 	require(cpu.getGlobalByKey(publishedValueName) == bmsx::valueInteger(222), "slot 1 startup executes the canonical closure against slot 1 code");
-	require(runtime.callClosure(*slot0Closure).get(0) == bmsx::valueInteger(111), "slot 0 closure executes its bound socket while slot 1 is active");
-	require(runtime.callClosure(*slot1Closure).get(0) == bmsx::valueInteger(222), "slot 1 closure executes its bound socket");
+	require(runtime.callClosure(slot0Closure).get(0) == bmsx::valueInteger(111), "slot 0 closure executes its bound socket while slot 1 is active");
+	require(runtime.callClosure(slot1Closure).get(0) == bmsx::valueInteger(222), "slot 1 closure executes its bound socket");
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0u);
 	require(
 		cpu.activeCartridgeSlot() == 1,
 		"data-bus cartridge selection does not replace the post-unwind execution domain"
 	);
-	require(slot0Closure->prototype->executionDomainId == 0, "data and execution selection do not redirect the slot 0 closure");
+	require(bmsx::ClosureRecord::readBinding(cpu.memory(), slot0Closure).executionDomainId == 0, "data and execution selection do not redirect the slot 0 closure");
 
 	const std::vector<bmsx::u8> saveBytes =
 		bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
@@ -794,16 +794,16 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	bmsx::TableRecord restoredTable = bmsx::asTable(cpu.getGlobalByKey(closureTableName), cpu.gcHeap());
 	require(bmsx::asClosure(restoredClosureValue, cpu.gcHeap()) == slot0Closure, "wire restore preserves canonical static closure identity");
 	require(restoredTable.get(restoredClosureValue) == bmsx::valueInteger(77), "wire restore preserves closure-keyed table entries");
-	bmsx::Closure* restoredPublished = bmsx::asClosure(cpu.getGlobalByKey(publishedClosureName), cpu.gcHeap());
-	require(restoredPublished != slot0Closure && restoredPublished->prototype->executionDomainId == 1, "wire restore preserves the distinct slot 1 closure");
+	bmsx::u32 restoredPublished = bmsx::asClosure(cpu.getGlobalByKey(publishedClosureName), cpu.gcHeap());
+	require(restoredPublished != slot0Closure && bmsx::ClosureRecord::readBinding(cpu.memory(), restoredPublished).executionDomainId == 1, "wire restore preserves the distinct slot 1 closure");
 	require(cpu.activeCartridgeSlot() == 1, "wire restore preserves slot 1 as the physical execution source");
-	require(bmsx::asClosure(restoredClosureValue, cpu.gcHeap())->prototype->executionDomainId == 0, "wire restore retains the slot 0 closure's domain");
+	require(bmsx::ClosureRecord::readBinding(cpu.memory(), bmsx::asClosure(restoredClosureValue, cpu.gcHeap())).executionDomainId == 0, "wire restore retains the slot 0 closure's domain");
 	require(
 		cpu.getGlobalByKey(publishedValueName) == bmsx::valueInteger(222),
 		"wire restore preserves the slot 1 closure result"
 	);
-	require(runtime.callClosure(*bmsx::asClosure(restoredClosureValue, cpu.gcHeap())).get(0) == bmsx::valueInteger(111), "restored slot 0 closure executes slot 0 code");
-	require(runtime.callClosure(*restoredPublished).get(0) == bmsx::valueInteger(222), "restored slot 1 closure executes slot 1 code");
+	require(runtime.callClosure(bmsx::asClosure(restoredClosureValue, cpu.gcHeap())).get(0) == bmsx::valueInteger(111), "restored slot 0 closure executes slot 0 code");
+	require(runtime.callClosure(restoredPublished).get(0) == bmsx::valueInteger(222), "restored slot 1 closure executes slot 1 code");
 }
 
 void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWireFormat() {
@@ -818,14 +818,14 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cartridge startup publishes the first non-static closure");
 	const bmsx::Value firstClosureValue = cpu.getGlobalByKey(publishedClosureName);
-	bmsx::Closure* firstClosure = bmsx::asClosure(firstClosureValue, cpu.gcHeap());
+	bmsx::u32 firstClosure = bmsx::asClosure(firstClosureValue, cpu.gcHeap());
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI re-enters the system execution selector");
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cartridge startup publishes the second non-static closure");
 	const bmsx::Value secondClosureValue = cpu.getGlobalByKey(publishedClosureName);
-	bmsx::Closure* secondClosure = bmsx::asClosure(secondClosureValue, cpu.gcHeap());
+	bmsx::u32 secondClosure = bmsx::asClosure(secondClosureValue, cpu.gcHeap());
 	require(firstClosure != secondClosure, "non-static closure creation retains object identity");
-	require(firstClosure->prototype == secondClosure->prototype, "distinct non-static closures share one decoded prototype");
+	require(bmsx::ClosureRecord::readBinding(cpu.memory(), firstClosure) == bmsx::ClosureRecord::readBinding(cpu.memory(), secondClosure), "distinct non-static closures retain the same published function binding");
 
 	const bmsx::StringId firstName = cpu.stringPool().intern("first_closure");
 	const bmsx::StringId secondName = cpu.stringPool().intern("second_closure");
@@ -848,11 +848,11 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 
 	const bmsx::Value restoredFirstValue = cpu.getGlobalByKey(firstName);
 	const bmsx::Value restoredSecondValue = cpu.getGlobalByKey(secondName);
-	bmsx::Closure* restoredFirst = bmsx::asClosure(restoredFirstValue, cpu.gcHeap());
-	bmsx::Closure* restoredSecond = bmsx::asClosure(restoredSecondValue, cpu.gcHeap());
+	bmsx::u32 restoredFirst = bmsx::asClosure(restoredFirstValue, cpu.gcHeap());
+	bmsx::u32 restoredSecond = bmsx::asClosure(restoredSecondValue, cpu.gcHeap());
 	bmsx::TableRecord restoredTable = bmsx::asTable(cpu.getGlobalByKey(tableName), cpu.gcHeap());
 	require(restoredFirst != restoredSecond, "wire restore retains distinct non-static closure identities");
-	require(restoredFirst->prototype == restoredSecond->prototype, "wire restore reestablishes shared prototype storage");
+	require(bmsx::ClosureRecord::readBinding(cpu.memory(), restoredFirst) == bmsx::ClosureRecord::readBinding(cpu.memory(), restoredSecond), "wire restore preserves the common published function binding");
 	require(restoredTable.get(restoredFirstValue) == bmsx::valueInteger(11), "wire restore retains the first closure table key");
 	require(restoredTable.get(restoredSecondValue) == bmsx::valueInteger(22), "wire restore retains the second closure table key");
 }
@@ -870,15 +870,15 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "slot 0 publishes the dynamic closure");
 	const bmsx::Value dynamicClosureValue = cpu.getGlobalByKey(publishedClosureName);
-	bmsx::Closure* dynamicClosure = bmsx::asClosure(dynamicClosureValue, cpu.gcHeap());
+	bmsx::u32 dynamicClosure = bmsx::asClosure(dynamicClosureValue, cpu.gcHeap());
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI enters the system execution selector");
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "slot 1 publishes the canonical closure");
 	const bmsx::Value canonicalClosureValue = cpu.getGlobalByKey(publishedClosureName);
-	bmsx::Closure* canonicalClosure = bmsx::asClosure(canonicalClosureValue, cpu.gcHeap());
+	bmsx::u32 canonicalClosure = bmsx::asClosure(canonicalClosureValue, cpu.gcHeap());
 	require(dynamicClosure != canonicalClosure, "mixed cartridge closure modes retain distinct object identities");
-	require(dynamicClosure->prototype->functionAddress == canonicalClosure->prototype->functionAddress, "mixed cartridge closure modes share one raw address");
+	require(bmsx::ClosureRecord::readBinding(cpu.memory(), dynamicClosure).functionAddress == bmsx::ClosureRecord::readBinding(cpu.memory(), canonicalClosure).functionAddress, "mixed cartridge closure modes share one raw address");
 
 	const bmsx::StringId dynamicName = cpu.stringPool().intern("dynamic_closure");
 	const bmsx::StringId canonicalName = cpu.stringPool().intern("canonical_closure");
@@ -936,11 +936,11 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	);
 	bmsx::CPU& cpu = fixture.runtime.machine.cpu;
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
-	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
+	bmsx::u32 closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
 	const bmsx::StringId closureKey = cpu.stringPool().intern("completion_call");
-	cpu.setGlobalByKey(closureKey, bmsx::valueClosure(cpu.gcHeap().reference(closure)));
+	cpu.setGlobalByKey(closureKey, bmsx::valueClosure(closure));
 
-	cpu.beginCompletionCall(*closure);
+	cpu.beginCompletionCall(closure);
 	require(cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "completion call remains in flight before RET");
 	const bmsx::CpuRuntimeState state = cpu.captureRuntimeState();
 	require(
@@ -954,8 +954,8 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	cpu.collectHeap();
 	require(bmsx::valuePayload(cpu.readCompletionValues().get(0)) == restoredTable.address(), "completion latch roots its restored heap result");
 
-	bmsx::Closure* restoredClosure = bmsx::asClosure(cpu.getGlobalByKey(closureKey), cpu.gcHeap());
-	const bmsx::ConstValueSpan results = fixture.runtime.callClosure(*restoredClosure);
+	bmsx::u32 restoredClosure = bmsx::asClosure(cpu.getGlobalByKey(closureKey), cpu.gcHeap());
+	const bmsx::ConstValueSpan results = fixture.runtime.callClosure(restoredClosure);
 	const auto latch = cpu.readCompletionValues();
 	require(results.words() == latch.words() && results.tags() == latch.tags(), "Runtime borrows the CPU completion latch without copying");
 	bmsx::TableRecord borrowedTable = bmsx::asTable(results.get(0), cpu.gcHeap());
@@ -970,10 +970,10 @@ void testCpuAbortsPhysicalCompletionCallAtMarkedRoot() {
 	);
 	bmsx::CPU& cpu = fixture.runtime.machine.cpu;
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
-	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
+	bmsx::u32 closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
 	const int completionFrameIndex = cpu.getFrameDepth();
-	cpu.beginCompletionCall(*closure);
-	cpu.beginCompletionCall(*closure);
+	cpu.beginCompletionCall(closure);
+	cpu.beginCompletionCall(closure);
 
 	require(cpu.readFrameReturnsToCompletionLatch(completionFrameIndex), "completion root retains its raw return latch");
 	require(cpu.readFrameReturnsToCompletionLatch(completionFrameIndex + 1), "later completion root retains its raw return latch");
@@ -992,9 +992,9 @@ void testSuspendedCompletionReturnsAtPhysicalCpuHold() {
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
-	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
+	bmsx::u32 closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
 	const bmsx::StringId closureKey = cpu.stringPool().intern("held_completion_call");
-	cpu.setGlobalByKey(closureKey, bmsx::valueClosure(cpu.gcHeap().reference(closure)));
+	cpu.setGlobalByKey(closureKey, bmsx::valueClosure(closure));
 
 	runtime.machine.scheduler.reset();
 	bmsx::SystemControllerState systemState = runtime.machine.systemController.captureState();
@@ -1003,7 +1003,7 @@ void testSuspendedCompletionReturnsAtPhysicalCpuHold() {
 	runtime.machine.systemController.restoreState(systemState);
 	runtime.machine.scheduler.scheduleDeviceService(bmsx::DEVICE_SERVICE_SYSTEM, 7);
 	const int baseDepth = cpu.getFrameDepth();
-	cpu.beginCompletionCall(*bmsx::asClosure(cpu.getGlobalByKey(closureKey), cpu.gcHeap()));
+	cpu.beginCompletionCall(bmsx::asClosure(cpu.getGlobalByKey(closureKey), cpu.gcHeap()));
 
 	require(
 		runtime.cpuExecution.runSuspendedUntilDepth(runtime, baseDepth)
@@ -1032,7 +1032,7 @@ void testExternalClosureAdvancesToGteInterlockDeadline() {
 		},
 		.context = &accepted,
 	});
-	const bmsx::ConstValueSpan out = fixture.runtime.callClosure(*fixture.closures[0]);
+	const bmsx::ConstValueSpan out = fixture.runtime.callClosure(fixture.closures[0]);
 	fixture.runtime.machine.gxGte.setPlusObserver({});
 	require(accepted == std::vector<std::array<bmsx::i64, 2>>{{cycleBefore + 7, cycleBefore + 12}, {cycleBefore + 12, cycleBefore + 17}},
 		"both commands are admitted exactly once, with the retained retry accepted at the first completion edge without another store base");
@@ -1057,7 +1057,7 @@ void testExternalClosureVectorsPendingNmiThroughCpuEntry() {
 	const bmsx::i64 cycleBefore = fixture.runtime.machine.scheduler.nowCycles();
 	fixture.cpu.requestNonMaskableInterrupt();
 
-	const bmsx::ConstValueSpan out = fixture.runtime.callClosure(*fixture.closures[1]);
+	const bmsx::ConstValueSpan out = fixture.runtime.callClosure(fixture.closures[1]);
 
 	require(
 		fixture.runtime.machine.scheduler.nowCycles()

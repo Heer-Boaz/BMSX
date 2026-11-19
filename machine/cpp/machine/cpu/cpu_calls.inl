@@ -8,9 +8,9 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 		hardHalt();
 		return;
 	}
-	Closure* closure = createClosure(frame);
+	const u32 closure = createClosure(frame);
 	if (!closure) return;
-	frame.registers.set(destination, valueClosure(m_heap.reference(closure)));
+	frame.registers.set(destination, valueClosure(closure));
 	frame.setTop(std::max(frame.readWindow(FrameField::Top), destination + 1));
 }
 
@@ -18,7 +18,7 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
 	const int argCount = decodeValueCount(b, std::max(frame.readWindow(FrameField::Top) - a - 1, 0));
 	const Value callee = frame.registers.get(a);
 	if (valueIsClosure(callee)) {
-		Closure* closure = asClosure(callee, m_heap);
+		const u32 closure = asClosure(callee, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		CallFrame* pushed = pushFrame(frame, closure, a + 1, argCount, a, c, false,
 			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES);

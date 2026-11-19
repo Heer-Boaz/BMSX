@@ -1,4 +1,3 @@
-import type { Closure } from '../cpu/closure';
 import { EMPTY_CALL_ARGS, type Value } from '../cpu/value';
 import type { RuntimeOptions } from './options';
 import { FrameLoopState } from './frame/loop';
@@ -91,7 +90,7 @@ export class Runtime {
 	}
 
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */
-	public callClosure(fn: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): ReadonlyArray<Value> {
+	public callClosure(fn: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): ReadonlyArray<Value> {
 		const cpu = this.machine.cpu;
 		const scheduler = this.machine.scheduler;
 		if (scheduler.isCpuSliceActive()) {

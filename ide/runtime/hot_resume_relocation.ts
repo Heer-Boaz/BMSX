@@ -1,3 +1,4 @@
+import { writeBinding, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
 import {
 	blua32FunctionIndexAtAddress,
 	type Blua32ImageLayout,
@@ -45,19 +46,21 @@ export function buildHotResumeRelocation(
 	const latchBase = frameCallSiteBase + frameCount * FRAME_CALL_SITE_WORDS;
 	const relocation = new Uint32Array(latchBase + LATCH_WORDS);
 	const unmappedWords: string[] = [];
+	let binding: FunctionPrototype | undefined;
 	cpu.visitReachableClosures(closure => {
-		const target = revisions[closure.prototypeRecord.executionDomainId + 1];
+		binding = cpu.captureClosureBinding(closure, binding);
+		const target = revisions[binding.executionDomainId + 1];
 		if (target === null) return;
-		const index = blua32FunctionIndexAtAddress(target.previousImage, closure.prototypeRecord.functionAddress);
+		const index = blua32FunctionIndexAtAddress(target.previousImage, binding.functionAddress);
 		if (index === -1) return;
 		const address = target.revision.functionAddresses[index];
 		if (address === 0) {
-			unmappedWords.push(`closure 0x${closure.prototypeRecord.functionAddress.toString(16)}`);
+			unmappedWords.push(`closure 0x${binding.functionAddress.toString(16)}`);
 			return;
 		}
 		const newIndex = blua32FunctionIndexAtAddress(target.nextImage, address);
-		if (target.nextImage.functions[newIndex].upvalues.length !== closure.prototypeRecord.recordUpvalueCount) {
-			unmappedWords.push(`closure 0x${closure.prototypeRecord.functionAddress.toString(16)} captures`);
+		if (target.nextImage.functions[newIndex].upvalues.length !== binding.recordUpvalueCount) {
+			unmappedWords.push(`closure 0x${binding.functionAddress.toString(16)} captures`);
 		}
 	});
 
@@ -165,19 +168,24 @@ export function buildHotResumeRelocation(
 
 /** Apply source correspondence to live ROM closures, retaining their object identity and captures. */
 export function applyHotResumeClosureRevision(cpu: CPU, revisions: HotResumeRevisions): void {
+	let binding: FunctionPrototype | undefined;
 	cpu.visitReachableClosures(closure => {
-		const target = revisions[closure.prototypeRecord.executionDomainId + 1];
+		binding = cpu.captureClosureBinding(closure, binding);
+		const target = revisions[binding.executionDomainId + 1];
 		if (target === null) return;
-		const index = blua32FunctionIndexAtAddress(target.previousImage, closure.prototypeRecord.functionAddress);
+		const index = blua32FunctionIndexAtAddress(target.previousImage, binding.functionAddress);
 		if (index === -1) return;
 		const functionAddress = target.revision.functionAddresses[index];
 		const image = target.nextImage;
 		const nextFunction = image.functions[blua32FunctionIndexAtAddress(image, functionAddress)];
-		cpu.gc.rebindClosurePrototype(closure, {
-			functionAddress, codeAddress: nextFunction.codeAddress, numParams: nextFunction.numParams,
-			maxStack: nextFunction.maxStack, flags: nextFunction.flags, upvalueTableAddress: nextFunction.upvalueTableAddress,
-			recordUpvalueCount: nextFunction.upvalues.length, executionDomainId: closure.prototypeRecord.executionDomainId,
-		});
+		binding.functionAddress = functionAddress;
+		binding.codeAddress = nextFunction.codeAddress;
+		binding.numParams = nextFunction.numParams;
+		binding.maxStack = nextFunction.maxStack;
+		binding.flags = nextFunction.flags;
+		binding.upvalueTableAddress = nextFunction.upvalueTableAddress;
+		binding.recordUpvalueCount = nextFunction.upvalues.length;
+		writeBinding(cpu.memory, closure, binding);
 	});
 	cpu.reindexCanonicalClosures();
 }

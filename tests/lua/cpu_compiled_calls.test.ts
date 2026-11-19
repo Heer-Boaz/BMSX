@@ -79,9 +79,9 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			const state = cpu.captureRuntimeState();
 			cpu.restoreRuntimeState(state);
 			const restored = cpu.rootThread.currentFrame!.closure!;
-			assert.equal(restored.address, closure.address, 'the active frame retains its physical closure reference');
-			assert.equal(restored.prototypeRecord.functionAddress, record);
-			assert.equal(restored.prototypeRecord.maxStack, 1024, 'the restored binding still supplies the published stack extent');
+			assert.equal(restored, closure, 'the active frame retains its physical closure reference');
+			assert.equal(cpu.captureClosureBinding(restored).functionAddress, record);
+			assert.equal(cpu.captureClosureBinding(restored).maxStack, 1024, 'the restored binding still supplies the published stack extent');
 			assert.equal(cpu.runUntilDepth(1, 50), RunResult.Halted);
 			assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(4), valueInteger(7));
 		}

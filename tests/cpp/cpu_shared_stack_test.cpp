@@ -172,8 +172,8 @@ void capturedSlotSurvivesOpenTop(int top) {
 	cpu.collectHeap(); cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	require(valueIsTable(cpu.activeThread()->currentFrame->registers.get(2)), "an open capture owns its slot even above lowered top");
 	cpu.setExecutionHook({}); cpu.runUntilDepth(0, 100);
-	auto* closure = asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("read")), cpu.gcHeap());
-	cpu.beginCompletionCall(*closure); cpu.runUntilDepth(0, 100);
+	auto closure = asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("read")), cpu.gcHeap());
+	cpu.beginCompletionCall(closure); cpu.runUntilDepth(0, 100);
 	const auto values = cpu.readCompletionValues();
 	require(values.size() == 1 && valueIsTable(values.get(0)), "closing the capture retains its value after the source frame returns");
 }

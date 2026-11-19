@@ -614,10 +614,10 @@ void comparisonDatapathsRespectEveryValueKind() {
 	NativeBlockRunState nativeRunState;
 	auto& strings = cpu.stringPool();
 	auto& heap = cpu.gcHeap();
-	auto* firstClosure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(0), {}, false);
-	firstClosure->initializeRecord(heap.white(), 0);
-	auto* secondClosure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(0), {}, false);
-	secondClosure->initializeRecord(heap.white(), 0);
+	const u32 firstClosure = heap.budget.allocateClosureRecord(0);
+	ClosureRecord::initialize(heap.memory, firstClosure, {}, heap.white(), 0, false, false);
+	const u32 secondClosure = heap.budget.allocateClosureRecord(0);
+	ClosureRecord::initialize(heap.memory, secondClosure, {}, heap.white(), 0, false, false);
 	const std::array values{valueNil(), valueFromTag(ValueTag::Nil, 37), valueBool(false),
 		valueFromTag(ValueTag::False, 37), valueBool(true), valueFromTag(ValueTag::True, 37),
 		valueInteger(0), valueFloat(-0.0), valueInteger(1), valueInteger(-1), valueFloat(0.25),
@@ -626,10 +626,10 @@ void comparisonDatapathsRespectEveryValueKind() {
 		valueString(strings.intern("")), valueString(strings.intern("a")),
 		valueString(strings.intern(std::string_view("a\0b", 3))),
 		valueString(strings.intern("\xee\x80\x80")), valueString(strings.intern("\xf0\x90\x80\x80")),
-		valueTable(cpu.createTable().address()), valueTable(cpu.createTable().address()), valueClosure(heap.reference(firstClosure)), valueClosure(heap.reference(secondClosure)),
+		valueTable(cpu.createTable().address()), valueTable(cpu.createTable().address()), valueClosure(firstClosure), valueClosure(secondClosure),
 		valueFromTag(ValueTag::Table, 37), valueFromTag(ValueTag::Table, 0x80000025u),
 		valueFromTag(ValueTag::BuiltinFunction, 37), valueFromTag(ValueTag::BuiltinFunction, 0x80000025u),
-		valueThread(heap.reference(cpu.activeThread())), valueThread(cpu.activeThread()->address - THREAD_HEAP_BYTES), valueBuiltinFunction(BuiltinFunctionId::Type),
+		valueThread(cpu.activeThread()->address), valueThread(cpu.activeThread()->address - THREAD_HEAP_BYTES), valueBuiltinFunction(BuiltinFunctionId::Type),
 		valueBuiltinFunction(BuiltinFunctionId::Next)};
 	size_t bytes = 0;
 	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (const bool expected : {false, true}) {

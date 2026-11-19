@@ -395,7 +395,7 @@ void sweepCoroutineRecord() {
 	auto* thread = gc.threadAt(address);
 	require(thread != nullptr, "coroutine builtin published a physical Thread reference");
 	const auto bytes = gc.allocationBytes(thread);
-	frame.registers.set(1, valueClosure(thread->entry()->address));
+	frame.registers.set(1, valueClosure(thread->entry()));
 	frame.writeControl(FrameField::Top, 2);
 	const auto sweep = [&] {
 		while (gc.phase() != GcPhase::Sweep) gc.step(valueNil(), valueNil(), valueNil());

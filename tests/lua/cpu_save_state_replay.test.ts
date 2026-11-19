@@ -1,3 +1,5 @@
+import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
+import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
@@ -65,9 +67,9 @@ return function() return root end
 	const state = cpu.captureRuntimeState();
 	const result = state.completionValues[0];
 	const descriptor = asClosure(result, cpu.gc);
-	assert.equal(valuePayload(result), descriptor.address);
-	const cell = descriptor.captureAddress(0);
-	assert.notEqual(cell, descriptor.address);
+	assert.equal(valuePayload(result), descriptor);
+	const cell = ClosureRecord.captureAddress(cpu.memory, descriptor, 0);
+	assert.notEqual(cell, descriptor);
 	assert.equal(cpu.gc.cellRecordAddress(cell), cell);
 	assert.equal(Upvalue.isOpen(cpu.memory, cell), false);
 	assert.ok(valueIsTable(Upvalue.load(cpu.memory, cell)));
@@ -186,7 +188,7 @@ test('a materialized but unrooted canonical closure remains part of the checkpoi
 	cpu.restoreRuntimeState(cold);
 	cpu.memory.restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
-	assert.equal(cpu.gc.closureAt(closureAddress)?.address, closureAddress);
+	assert.equal(cpu.gc.closureRecordAddress(closureAddress), closureAddress);
 	assert.deepEqual(cpu.captureRuntimeState(), warm);
 	cpu.runUntilDepth(0, 1000);
 	assert.deepEqual(cpu.captureRuntimeState(), expected);
@@ -194,7 +196,7 @@ test('a materialized but unrooted canonical closure remains part of the checkpoi
 	cpu.memory.restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
 	while (cpu.gc.phase() !== GcPhase.Sweep) cpu.gc.step();
-	assert.ok(cpu.gc.sweepGarbage(cpu.gc.closureAt(closureAddress)!));
+	assert.equal(cpu.memory.readRamRecordByte(closureAddress + GC_COLOR_OFFSET), cpu.gc.white() ^ 1);
 	const sweep = cpu.captureRuntimeState(), sweepRam = cpu.memory.captureSaveState();
 	const build = () => {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, entry);

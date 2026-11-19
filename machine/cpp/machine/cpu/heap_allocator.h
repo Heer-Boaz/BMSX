@@ -14,6 +14,11 @@ class Memory;
 inline constexpr u32 HEAP_STRING_METADATA_OFFSET = 0x300u;
 inline constexpr u32 HEAP_COLLECTION_TARGET_OFFSET = 0x340u;
 inline constexpr u32 HEAP_GC_CONTROL_OFFSET = 0x344u;
+inline constexpr u32 HEAP_PAGE_ENTRIES = 0x1000u;
+inline constexpr u32 HEAP_PAGE_ENTRY_BYTES = 12u;
+inline constexpr u32 HEAP_BUMP_SHIFT = 3u;
+inline constexpr u32 HEAP_PAGE_LINK_MASK = 0x3ffu;
+enum HeapPageKind : u32 { Unused, ObjectSlots, OwnedSlots, ObjectRun, OwnedRun, RunTail };
 
 // Requests up to half a page share 4 KB pages of one size class: multiples of
 // 8 bytes through 64, then four classes per doubling. Larger requests take the
@@ -25,6 +30,16 @@ inline constexpr std::array<u16, 28> HEAP_CLASS_BYTES{
 	320, 384, 448, 512, 640, 768, 896, 1024,
 	1280, 1536, 1792, 2048,
 };
+// A page offset is at most 4095. Rounded-up Q16 reciprocals therefore
+// recover the exact quotient at every slot start; multiplication by the class
+// stride distinguishes those starts from the intervening byte offsets.
+inline constexpr u32 HEAP_SLOT_RECIPROCAL_BITS = 16u;
+inline constexpr auto HEAP_CLASS_SLOT_RECIPROCALS = [] {
+	std::array<u16, HEAP_CLASS_BYTES.size()> result{};
+	for (size_t i = 0; i < result.size(); ++i)
+		result[i] = static_cast<u16>(((1u << HEAP_SLOT_RECIPROCAL_BITS) + HEAP_CLASS_BYTES[i] - 1u) / HEAP_CLASS_BYTES[i]);
+	return result;
+}();
 
 constexpr u32 heapClassIndex(u32 byteCount) {
 	if (byteCount <= 64u) return ((byteCount + 7u) >> 3) - 1u;
@@ -52,6 +67,8 @@ public:
 	u32 occupiedBytes() const;
 	// Decode the page class and issued range. The record port selects alignment.
 	u32 issuedObjectSlotClass(u32 offset) const;
+	// Variable-size records must begin at an issued slot or a run head.
+	bool issuedObjectStart(u32 offset) const;
 	// Returns the guest address of the allocation, or 0 when no slot or page run fits.
 	u32 allocate(u32 byteCount, bool owned);
 	void free(u32 address);

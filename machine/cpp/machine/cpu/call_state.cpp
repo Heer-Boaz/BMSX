@@ -12,10 +12,6 @@ void CallFrame::bindControl(Memory& memory, u32 offset) {
 	nativeControl = memory.ramData() + controlOffset;
 }
 
-Closure* CallFrame::attachedClosure() const {
-	return thread->heap.closureAt(readControl(FrameField::Closure));
-}
-
 bool CallFrame::hasControlFlag(u32 mask) const {
 	return (readControl(FrameField::Flags) & mask) != 0;
 }

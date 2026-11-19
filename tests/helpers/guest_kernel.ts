@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
-import { closureRecordBytes, type Closure } from '../../machine/ts/machine/cpu/closure';
+import { closureRecordBytes } from '../../machine/ts/machine/cpu/closure';
 import { UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 
 /** Count successful heap reservations, including allocate-then-collect churn. */
-export function profileWarmGuestKernel(cpu: CPU, kernel: Closure, iterations: number, budget = 10_000_000) {
+export function profileWarmGuestKernel(cpu: CPU, kernel: number, iterations: number, budget = 10_000_000) {
 	cpu.beginCompletionCall(kernel, [valueInteger(64)]);
 	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
 	const heap = cpu.luaHeap;

@@ -472,12 +472,12 @@ test('closure records bind their selected socket and survive cross-domain calls 
 			closures.push(frame.registers.getClosure(0, cpu.gc));
 		}
 		assert.notEqual(closures[0], closures[1]);
-		assert.equal(closures[0].prototypeRecord.executionDomainId, 0);
-		assert.equal(closures[1].prototypeRecord.executionDomainId, 1);
-		assert.equal(closures[0].prototypeRecord.codeAddress, pair.cartImage.functions[0].codeAddress);
-		assert.equal(closures[1].prototypeRecord.codeAddress, pair.cartImage.functions[1].codeAddress);
-		frame.registers.setClosure(0, cpu.gc.reference(closures[0]));
-		frame.registers.setClosure(1, cpu.gc.reference(closures[1]));
+		assert.equal(cpu.captureClosureBinding(closures[0]).executionDomainId, 0);
+		assert.equal(cpu.captureClosureBinding(closures[1]).executionDomainId, 1);
+		assert.equal(cpu.captureClosureBinding(closures[0]).codeAddress, pair.cartImage.functions[0].codeAddress);
+		assert.equal(cpu.captureClosureBinding(closures[1]).codeAddress, pair.cartImage.functions[1].codeAddress);
+		frame.registers.setClosure(0, closures[0]);
+		frame.registers.setClosure(1, closures[1]);
 		const state = cpu.captureRuntimeState();
 		cpu.restoreRuntimeState(state);
 		for (const slot of [0, 1]) {

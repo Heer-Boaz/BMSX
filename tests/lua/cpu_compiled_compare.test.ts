@@ -34,7 +34,7 @@ function values(cpu: CPU): Value[] {
 	return [valueNil(), valueBool(false), valueBool(true), valueInteger(0), valueFloat(-0), valueInteger(1), valueInteger(-1),
 		valueInteger(16777217), valueFloat(16777216), valueFloat(1), valueFloat(0.25), valueFloatBits(0xffc01234), valueFloat(Infinity), valueFloat(-Infinity),
 		...['', 'a', 'a\0b', '\ue000', '\u{10000}', 'é'].map(text => valueString(cpu.stringPool.intern(text))),
-		valueTable(cpu.createTable()), valueTable(cpu.createTable()), valueClosure(cpu.gc.reference(closure)),
+		valueTable(cpu.createTable()), valueTable(cpu.createTable()), valueClosure(closure),
 		valueThread(cpu.gc.reference(cpu.rootThread)), valueThread(cpu.gc.reference(cpu.createThread(closure))),
 		valueBuiltinFunction(BuiltinFunctionId.Type), valueBuiltinFunction(BuiltinFunctionId.Next)];
 }

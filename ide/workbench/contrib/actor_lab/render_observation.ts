@@ -1,3 +1,4 @@
+import { CLOSURE_PROTOTYPE_ADDRESS } from '../../../../machine/ts/machine/cpu/closure';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import type { CPU, InstructionObserverBinding } from '../../../../machine/ts/machine/cpu/cpu';
 import { numberToHost, ValueTag } from '../../../../machine/ts/machine/cpu/value';
@@ -96,7 +97,7 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 		const call = this.calls.get(pc);
 		if (call !== undefined) {
 			if (this.page === undefined || registers.getTag(call.a) !== ValueTag.Closure) return;
-			pending.kind = this.visualKinds.get(registers.getClosure(call.a, this.cpu.gc).prototypeRecord.functionAddress);
+			pending.kind = this.visualKinds.get(this.cpu.memory.readRamRecordWord(registers.getClosure(call.a, this.cpu.gc) + CLOSURE_PROTOTYPE_ADDRESS));
 			pending.pc = call.pc + INSTRUCTION_BYTES; pending.thread = this.cpu.activeThread.address; pending.register = call.a + 1;
 			return;
 		}

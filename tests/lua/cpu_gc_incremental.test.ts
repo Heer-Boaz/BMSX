@@ -228,7 +228,7 @@ test('a coroutine header is swept with the object page and its stack is released
 	const { gc } = cpu, frame = cpu.rootThread.currentFrame!;
 	const address = valuePayload(frame.registers.get(0)), thread = gc.threadAt(address)!;
 	const bytes = gc.allocationBytes(thread);
-	frame.registers.setClosure(1, thread.entry!.address);
+	frame.registers.setClosure(1, thread.entry);
 	frame.top = 2;
 	const sweep = () => {
 		while (gc.phase() !== GcPhase.Sweep) gc.step();

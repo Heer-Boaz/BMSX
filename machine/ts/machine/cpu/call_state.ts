@@ -1,5 +1,5 @@
 import type { Thread } from './thread';
-import { CLOSURE_CAPTURE_WORDS, Closure } from './closure';
+import { CLOSURE_CAPTURE_WORDS, captureCount } from './closure';
 import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_image';
 import { ValueSlots } from './value_slots';
 import { MAPPED_BUS_MASTER_CPU, type MappedBusSignals } from '../memory/bus_signals';
@@ -44,7 +44,7 @@ export class CallFrame {
 	public controlOffset = 0;
 
 	public readonly controlMemory: Memory;
-	public constructor(public readonly thread: Thread, public previous: CallFrame | null, private readonly heap: GcHeap) {
+	public constructor(public readonly thread: Thread, public previous: CallFrame | null, heap: GcHeap) {
 		this.controlMemory = heap.memory;
 	}
 
@@ -92,8 +92,8 @@ export class CallFrame {
 	}
 	public get closureAddress(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Closure); }
 	public set closureAddress(address: number) { this.controlMemory.writeRamRecordWord(this.controlOffset + FrameField.Closure, address); }
-	public get closure(): Closure { return this.heap.closureAt(this.closureAddress)!; }
-	public get captureCount(): number { return Closure.captureCount(this.controlMemory, this.closureAddress); }
+	public get closure(): number { return this.closureAddress; }
+	public get captureCount(): number { return captureCount(this.controlMemory, this.closureAddress); }
 	public captureAddress(index: number): number {
 		return this.controlMemory.readRamRecordWord(this.closureAddress + CLOSURE_CAPTURE_WORDS + index * 4);
 	}

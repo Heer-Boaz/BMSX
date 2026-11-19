@@ -27,7 +27,7 @@ enum class ThreadField : u32 {
 // Eighteen count bits span the largest control reservation in the RAM bank.
 constexpr u32 THREAD_CONTROL_COUNT_MASK = (1u << 18) - 1;
 
-struct Thread : GCObject {
+struct Thread {
 	Thread(GcHeap& heap, u32 address);
 	Thread(const Thread&) = delete;
 	Thread& operator=(const Thread&) = delete;
@@ -85,14 +85,14 @@ struct Thread : GCObject {
 	static NativeOffsets nativeOffsets();
 #endif
 
-	void initializeRecord(Closure* entry);
+	void initializeRecord(u32 entry);
 	const u32 address;
 	ThreadStatus status() const;
 	void setStatus(ThreadStatus status);
 	Thread* resumer() const;
 	void setResumer(Thread* thread);
-	Closure* entry() const;
-	void setEntry(Closure* closure);
+	u32 entry() const { return read(ThreadField::Entry); }
+	void setEntry(u32 closure) { write(ThreadField::Entry, closure); }
 	i32 callBase() const;
 	i32 returnCount() const;
 	void setReturnWindow(i32 base, i32 count);
@@ -110,6 +110,9 @@ struct Thread : GCObject {
 	u8* const nativeRecord;
 private:
 	friend struct CallFrame;
+	friend class GcHeap;
+	Thread* nextAttached = nullptr;
+	Thread* previousAttached = nullptr;
 	void replaceStack(u32 block, size_t capacity, u32 frames, u32 continuations);
 	u32 frameCapacity() const;
 	u32 protectedCapacity() const;

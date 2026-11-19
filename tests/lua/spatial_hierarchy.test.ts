@@ -2,7 +2,6 @@ import { valueInteger, asClosure, valuePayload } from '../../machine/ts/machine/
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test_harness';
 
@@ -29,7 +28,7 @@ return first_failed_assertion`;
 	return { cpu, codeBytes: images.cartImage.textBytes.byteLength, allocated, retained };
 }
 
-function measureWarmKernel(cpu: CPU, run: Closure, iterations: number) {
+function measureWarmKernel(cpu: CPU, run: number, iterations: number) {
 	const profile = profileWarmGuestKernel(cpu, run, iterations, 50_000_000);
 	assert.equal(profile.reservations, 0, 'successful reservations expose transient allocation even if collection hides it');
 	assert.equal(profile.reservedBytes, 0);

@@ -111,7 +111,7 @@ CPU::CPU(
 		builtin.cyclePerArg = cost.perArg;
 		builtin.cyclePerRet = cost.perRet;
 	}
-	m_rootThread = createThread(nullptr);
+	m_rootThread = createThread(0u);
 	m_rootThread->setStatus(ThreadStatus::Running);
 	m_activeThread = m_rootThread;
 	m_completionThread = m_rootThread;
@@ -142,12 +142,11 @@ TableRecord CPU::createTable(int arraySize, int hashSize) {
 	return table;
 }
 
-Closure* CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool canonical, std::span<u32> cells) {
+u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool canonical, std::span<u32> cells) {
 	const bool latched = !m_functionRecordLatch.romBacked;
 	const u32 address = m_luaHeap.allocateClosureRecord(count, latched, cells);
-	Closure* closure = m_heap.bindClosureRecord(address, prototype, canonical);
-	closure->initializeRecord(m_heap.white(), count, latched);
-	return closure;
+	ClosureRecord::initialize(m_memory, address, prototype, m_heap.white(), count, canonical, latched);
+	return address;
 }
 
 void CPU::reset() {
@@ -205,7 +204,7 @@ void CPU::reset() {
 		hardHalt();
 		return;
 	}
-	Closure* systemResetClosure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
+	u32 systemResetClosure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
 	pushFrame(systemResetClosure, {}, 0, 0, false);
 	collectHeap();
 }
@@ -456,23 +455,27 @@ FunctionPrototype CPU::decodePrototype(const Blua32FunctionRecordLatch& record) 
 	return result;
 }
 
-Closure* CPU::staticClosureForRecord(const FunctionPrototype& record) {
+u32 CPU::staticClosureForRecord(const FunctionPrototype& record) {
 	auto found = m_staticClosuresByAddress.find(record.functionAddress);
-	Closure* first = nullptr;
+	u32 first = 0u;
 	if (found != m_staticClosuresByAddress.end()) {
-		for (Closure* closure : found->second) {
-			if (*closure->prototype == record && (!first || closure->address < first->address)) first = closure;
+		for (const u32 closure : found->second) {
+			const u32 header = m_memory.readRamRecordWord(closure);
+			if ((first == 0u || closure < first) && (header & 0xffu) == static_cast<u8>(ValueTag::Closure)
+				&& (header & (CLOSURE_CANONICAL << (8u * CLOSURE_BINDING_FLAGS))) != 0u
+				&& ClosureRecord::readBinding(m_memory, closure) == record)
+				first = closure;
 		}
 	}
-	if (first) return first;
-	Closure* closure = allocateClosure(record, 0, true);
+	if (first != 0u) return first;
+	const u32 closure = allocateClosure(record, 0, true);
 	m_staticClosuresByAddress[record.functionAddress].push_back(closure);
 	return closure;
 }
 
 void CPU::pruneStaticClosures() {
 	for (auto entry = m_staticClosuresByAddress.begin(); entry != m_staticClosuresByAddress.end();) {
-		entry->second.remove_if([this](const Closure* closure) { return !m_heap.isAlive(closure); });
+		std::erase_if(entry->second, [this](u32 closure) { return !m_heap.isAlive(closure); });
 		if (entry->second.empty()) entry = m_staticClosuresByAddress.erase(entry);
 		else ++entry;
 	}
@@ -807,23 +810,23 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_pendingMemory.kind = PendingMemoryKind::None;
 	m_hardHalted = false;
 	m_yieldRequested = false;
-	Closure* closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
+	u32 closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
 	pushFrame(closure, {}, 0, 0, false);
 }
 
-void CPU::beginCompletionCall(Closure& closure, BuiltinArgsView args) {
+void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
 	// Call injection takes over the physical instruction stream. The suspended
 	// frame retains its PC; an unaccepted endpoint access must not follow it.
 	abortStalledMemoryWrite();
 	auto roots = acquireLocalRoots();
-	trackLocalRoot(valueClosure(m_heap.reference(&closure)));
+	trackLocalRoot(valueClosure(closure));
 	for (size_t index = 0; index < args.size(); ++index) trackLocalRoot(args[index]);
 	// The input span may borrow the completion latch being cleared below.
 	args = BuiltinArgsView(m_localRoots.data() + m_localRoots.size() - args.size(), args.size());
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	m_completionThread = m_activeThread;
 	m_yieldRequested = false;
-	pushFrame(&closure, args, 0, 0, true);
+	pushFrame(closure, args, 0, 0, true);
 }
 
 void CPU::beginCompletionCallInExecutionDomain(
@@ -834,7 +837,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 		hardHalt();
 		return;
 	}
-	beginCompletionCall(*staticClosureForRecord(decodePrototype(m_functionRecordLatch)));
+	beginCompletionCall(staticClosureForRecord(decodePrototype(m_functionRecordLatch)));
 }
 
 CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) const {
@@ -901,15 +904,14 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		auto& heap = cpu.m_heap;
 		switch (cpu.m_memory.readRamRecordByte(address)) {
 			case THREAD_RECORD_KIND:
-				if (!heap.threadAt(address)) heap.allocate<Thread>(ObjType::Thread, heap, address);
+				if (!heap.threadAt(address)) heap.attachThread(address);
 				break;
 			case static_cast<u8>(ValueTag::Closure): {
 				const u8 binding = cpu.m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
-				const auto record = Closure::readBinding(cpu.m_memory, address, binding);
-				const bool canonical = (binding & CLOSURE_CANONICAL) != 0u;
-				auto* closure = heap.bindClosureRecord(address, record, canonical);
-				if (canonical && !heap.sweepGarbage(closure))
-					cpu.m_staticClosuresByAddress[record.functionAddress].push_back(closure);
+				if ((binding & CLOSURE_CANONICAL) != 0u && !heap.sweepGarbage(address)) {
+					const u32 functionAddress = cpu.m_memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
+					cpu.m_staticClosuresByAddress[functionAddress].push_back(address);
+				}
 				break;
 			}
 		}
@@ -931,7 +933,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
 	m_heap.visitThreads([&](Thread& thread) {
-		if (m_heap.sweepGarbage(&thread)) thread.bindStack(); // The remaining sweep still charges its storage.
+		if (m_heap.sweepGarbage(thread.address)) thread.bindStack(); // The remaining sweep still charges its storage.
 		else {
 			bindPhysicalFrames(thread);
 			thread.armStackWatch();
@@ -1071,13 +1073,13 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			m_stringIndexTable = args[0];
 			break;
 		case BuiltinFunctionId::CoroutineCreate: {
-			Closure* closure = !args.empty() && valueIsClosure(args[0]) ? asClosure(args[0], m_heap) : nullptr;
+			u32 closure = !args.empty() && valueIsClosure(args[0]) ? asClosure(args[0], m_heap) : 0u;
 			if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			out.push_back(valueThread(m_heap.reference(createThread(closure))));
+			out.push_back(valueThread(createThread(closure)->address));
 			break;
 		}
 		case BuiltinFunctionId::CoroutineRunning:
-			out.push_back(valueThread(m_heap.reference(m_activeThread)));
+			out.push_back(valueThread(m_activeThread->address));
 			out.push_back(valueBool(m_activeThread == m_rootThread));
 			break;
 		case BuiltinFunctionId::CoroutineStatus:
@@ -1121,12 +1123,12 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 	}
 }
 
-Thread* CPU::createThread(Closure* entry) {
+Thread* CPU::createThread(u32 entry) {
 	const u32 address = m_luaHeap.allocateRecord(THREAD_HEAP_BYTES, false, THREAD_INITIAL_BACKING_BYTES, static_cast<u32>(ThreadField::StackBlock),
-		entry ? valueClosure(entry->address) : valueNil());
-	auto* thread = m_heap.allocate<Thread>(ObjType::Thread, m_heap, address);
+		entry ? valueClosure(entry) : valueNil());
+	auto* thread = m_heap.attachThread(address);
 	thread->initializeRecord(entry);
-	trackLocalRoot(valueThread(m_heap.reference(thread)));
+	trackLocalRoot(valueThread(thread->address));
 	return thread;
 }
 
@@ -1194,8 +1196,8 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 	target->setStatus(ThreadStatus::Running);
 	m_activeThread = target;
 	if (fresh) {
-		pushFrame(caller, target->entry(), base + 2, argc - 1, 0, 0, false, 0);
-		target->setEntry(nullptr);
+		pushFrame(caller, m_heap.closureRecordAddress(target->entry()), base + 2, argc - 1, 0, 0, false, 0);
+		target->setEntry(0u);
 	} else {
 		resumeFrameBank();
 		CallFrame& frame = *target->currentFrame;
@@ -1227,7 +1229,7 @@ void CPU::closeThread(Thread& thread) {
 	thread.setProtectedDepth(0);
 	thread.stack.clear(0, thread.stackCapacity);
 	thread.setStackTop(0);
-	thread.setEntry(nullptr);
+	thread.setEntry(0u);
 	thread.setStatus(ThreadStatus::Dead);
 }
 
@@ -1276,7 +1278,7 @@ void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBa
 void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, int argumentBase, int argumentCount) {
 	CallFrame& caller = protectedCaller(continuationIndex);
 	if (valueIsClosure(target)) {
-		Closure* closure = asClosure(target, m_heap);
+		u32 closure = asClosure(target, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		auto* frame = pushFrame(caller, closure, argumentBase, argumentCount, 0, 0, false, caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES);
 		if (frame) frame->writeControl(FrameField::Protected, continuationIndex);
@@ -1643,7 +1645,7 @@ CallFrame* CPU::enterException(
 		return nullptr;
 	}
 	try {
-		Closure* closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
+		u32 closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
 		CallFrame* frame = pushFrame(closure, {}, 0, 0, false, true);
 		frame->writeControl(FrameField::CallSite, epcWord);
 		frame->addControlFlags(FRAME_EXCEPTION | (causeWord == CPU_CAUSE_NMI ? FRAME_NMI : 0));
@@ -1704,7 +1706,9 @@ RunResult CPU::runLoop(
 	int nativeFirstDispatchCycles = 0;
 	bool forceScalarOnce = false;
 	NativeCpuRunState nativeState{.state = {}, .cpu = this, .targetDepth = targetDepth,
-		.systemRom = &m_memory.systemRomStorage(), .error = {}};
+		.systemRom = &m_memory.systemRomStorage(),
+		.cartridgeRoms = {m_memory.cartridgeController().romStorage(0), m_memory.cartridgeController().romStorage(1)},
+		.error = {}};
 #endif
 	for (;;) {
 		try {
@@ -2303,8 +2307,8 @@ Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
 	return Upvalue::load(m_memory, frame.captureAddress(static_cast<u32>(upvalueIndex)));
 }
 
-Value CPU::readClosureUpvalue(const Closure* closure, int upvalueIndex) const {
-	return Upvalue::load(m_memory, closure->captureAddress(static_cast<u32>(upvalueIndex)));
+Value CPU::readClosureUpvalue(u32 closure, int upvalueIndex) const {
+	return Upvalue::load(m_memory, ClosureRecord::captureAddress(m_memory, closure, static_cast<u32>(upvalueIndex)));
 }
 
 u32 CPU::readEpcWord() const {
@@ -2360,13 +2364,13 @@ void CPU::writeFrameExecution(
 	}
 	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
 		&& functionRecord.upvalueCount == 0u) {
-		frame.writeControl(FrameField::Closure, staticClosureForRecord(decodePrototype(functionRecord))->address);
+		frame.writeControl(FrameField::Closure, staticClosureForRecord(decodePrototype(functionRecord)));
 	} else {
 		const u32 count = frame.captureCount();
-		Closure* replacement = allocateClosure(decodePrototype(functionRecord), count, false);
+		u32 replacement = allocateClosure(decodePrototype(functionRecord), count, false);
 		for (u32 index = 0; index < count; ++index)
-			replacement->setCaptureAddress(index, frame.captureAddress(index));
-		frame.writeControl(FrameField::Closure, replacement->address);
+			ClosureRecord::setCaptureAddress(m_memory, replacement, index, frame.captureAddress(index));
+		frame.writeControl(FrameField::Closure, replacement);
 	}
 	frame.writeControl(FrameField::Function, functionRecord.address);
 	frame.executionImage = functionRecord.image;
@@ -2412,7 +2416,7 @@ void CPU::linkOpenUpvalue(CallFrame& frame, u32 cell, u32 slot) {
 	else frame.writeControl(FrameField::OpenHead, cell);
 }
 
-Closure* CPU::createClosure(CallFrame& frame) {
+u32 CPU::createClosure(CallFrame& frame) {
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
 		&& functionRecord.upvalueCount == 0u) {
@@ -2432,7 +2436,7 @@ Closure* CPU::createClosure(CallFrame& frame) {
 			m_closureCellScratch.clear();
 			m_closureUpvalueWordScratch.clear();
 			hardHalt();
-			return nullptr;
+			return 0u;
 		}
 		m_closureUpvalueWordScratch[index] = upvalueWord;
 		const u32 upvalueIndex = upvalueWord & BLUA32_UPVALUE_INDEX_MASK;
@@ -2445,7 +2449,7 @@ Closure* CPU::createClosure(CallFrame& frame) {
 		}
 	}
 	m_captureAddressScratch.resize(newUpvalueCount);
-	auto* closure = allocateClosure(decodePrototype(functionRecord), functionRecord.upvalueCount, false, m_captureAddressScratch);
+	const u32 closure = allocateClosure(decodePrototype(functionRecord), functionRecord.upvalueCount, false, m_captureAddressScratch);
 	size_t nextCell = 0;
 	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
 		u32 address = m_closureCellScratch[index];
@@ -2454,7 +2458,7 @@ Closure* CPU::createClosure(CallFrame& frame) {
 			linkOpenUpvalue(frame, address, static_cast<u32>(frame.stackBase())
 				+ (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_INDEX_MASK));
 		}
-		closure->setCaptureAddress(index, address);
+		ClosureRecord::setCaptureAddress(m_memory, closure, index, address);
 	}
 	m_closureCellScratch.clear();
 	m_closureUpvalueWordScratch.clear();
@@ -2476,9 +2480,9 @@ int CPU::closeUpvalues(CallFrame& frame) {
 	return closed;
 }
 
-CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
+CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
 	int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc) {
-	const FunctionPrototype& functionRecord = *closure->prototype;
+	const FunctionPrototype functionRecord = ClosureRecord::readBinding(m_memory, closure);
 	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
 	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop();
@@ -2490,11 +2494,11 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	const int stackBase = vararg ? argumentBase + argCount : argumentBase;
 	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
 	auto* frame = m_activeThread->acquireFrame();
-	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true);
+	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(closure), true);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc,
 		frameBankWord(functionRecord.executionDomainId) | (returnToCompletionLatch ? FRAME_COMPLETION : 0u),
-		varargBase, varargCount, returnBase, returnCount, top, closure->address, stackBase, static_cast<int>(targetCapacity));
+		varargBase, varargCount, returnBase, returnCount, top, closure, stackBase, static_cast<int>(targetCapacity));
 	const int copiedCount = std::min(top, argCount);
 	if (vararg || !sharedStack) {
 		frame->registers.copyFrom(caller.thread->stack, 0, callerArgBase, copiedCount);
@@ -2517,9 +2521,9 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	return frame;
 }
 
-CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
+CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 	int returnBase, int returnCount, bool returnToCompletionLatch, bool exception) {
-	const FunctionPrototype& functionRecord = *closure->prototype;
+	const FunctionPrototype functionRecord = ClosureRecord::readBinding(m_memory, closure);
 	const size_t argCount = args.size();
 	auto* frame = m_activeThread->acquireFrame();
 	const int argumentBase = m_activeThread->stackTop();
@@ -2530,11 +2534,11 @@ CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 	const int varargBase = argumentBase + top;
 	const int stackBase = vararg ? argumentBase + static_cast<int>(argCount) : argumentBase;
 	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
-	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true, exception);
+	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(closure), true, exception);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress,
 		frameBankWord(functionRecord.executionDomainId) | (returnToCompletionLatch ? FRAME_COMPLETION : 0u),
-		varargBase, varargCount, returnBase, returnCount, top, closure->address, stackBase, static_cast<int>(targetCapacity));
+		varargBase, varargCount, returnBase, returnCount, top, closure, stackBase, static_cast<int>(targetCapacity));
 	const int copiedCount = std::min(top, static_cast<int>(argCount));
 	for (int i = 0; i < copiedCount; ++i) frame->registers.set(i, args[i]);
 	frame->registers.clear(copiedCount, top - copiedCount);
@@ -2735,7 +2739,7 @@ void CPU::clearCallStack() {
 		m_activeThread->setStackTop(0);
 		Thread* thread = m_activeThread;
 		thread->setStatus(ThreadStatus::Dead);
-		thread->setEntry(nullptr);
+		thread->setEntry(0u);
 		thread->setError(valueNil());
 		if (thread == m_rootThread) break;
 		m_activeThread = thread->resumer() == nullptr ? m_rootThread : thread->resumer();
@@ -2815,10 +2819,10 @@ void CPU::markRoots(GcHeap& heap) {
 			heap.markValue(image->constPool.get(index));
 		}
 	}
-	heap.markObject(m_rootThread);
-	heap.markObject(m_activeThread);
-	heap.markObject(m_completionThread);
-	heap.markObject(m_haltedUntilIrqThread);
+	heap.markThread(m_rootThread);
+	heap.markThread(m_activeThread);
+	heap.markThread(m_completionThread);
+	heap.markThread(m_haltedUntilIrqThread);
 }
 
 // end repeated-sequence-acceptable

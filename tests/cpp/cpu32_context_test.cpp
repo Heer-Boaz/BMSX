@@ -230,14 +230,14 @@ test::Blua32TestImage capturedChunk(bool onlyStore = false, bool suspendFactory 
 	image.closureRelocations = {{first + 1, test::blua32TestFunctionAddress(RomImageDomain::System, 0)}};
 	return image;
 }
-Closure* beginCaptured(Number32Machine& machine, bool suspended = false) {
+u32 beginCaptured(Number32Machine& machine, bool suspended = false) {
 	require(machine.cpu.runUntilDepth(0, 1000) == RunResult::Halted, "factory returns a real captured closure");
-	auto* closure = asClosure(suspended ? machine.cpu.activeThread()->currentFrame->registers.get(9)
+	auto closure = asClosure(suspended ? machine.cpu.activeThread()->currentFrame->registers.get(9)
 										: machine.cpu.readCompletionValues().get(0),
 		machine.cpu.gcHeap());
 	machine.cpu.setGlobalByKey(
-		*machine.cpu.stringPool().find("saved"), valueClosure(machine.cpu.gcHeap().reference(closure)));
-	machine.cpu.beginCompletionCall(*closure);
+		*machine.cpu.stringPool().find("saved"), valueClosure(closure));
+	machine.cpu.beginCompletionCall(closure);
 	return closure;
 }
 void captures() {
@@ -249,9 +249,9 @@ void captures() {
 				CallFrame* parents[2]{};
 				for (int i = 0; i < 2; ++i) {
 					auto& m = i == 0 ? native : scalar;
-					auto* closure = beginCaptured(m, source != 0);
+					auto closure = beginCaptured(m, source != 0);
 					auto* frame = m.cpu.activeThread()->currentFrame;
-					const u32 cell = closure->captureAddress(0);
+					const u32 cell = ClosureRecord::captureAddress(m.cpu.memory(), closure, 0);
 					if (source != 0) {
 						parents[i] = frame->previous;
 						parents[i]->registers.set(8, value);
@@ -292,11 +292,11 @@ void closedBarrierAfterHeapGrowth() {
 		// Churn allocator pages before admitting the closure and its new cell.
 		for (int n = 0; n < 600; ++n)
 			m.cpu.createTable();
-		auto* closure = beginCaptured(m);
+		auto closure = beginCaptured(m);
 		auto child = m.cpu.createTable(1);
 		child.setInteger(1, valueInteger(123));
 		children[i] = child.address();
-		const u32 cell = closure->captureAddress(0);
+		const u32 cell = ClosureRecord::captureAddress(m.cpu.memory(), closure, 0);
 		cells[i] = cell;
 		m.cpu.gcHeap().step(valueNil(), valueNil(), valueNil());
 		require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 3, "collector has scanned the closed cell before mutation");

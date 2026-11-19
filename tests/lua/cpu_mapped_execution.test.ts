@@ -1,3 +1,4 @@
+import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
@@ -163,8 +164,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	const closures = materializeCpuCompletionValues(cpu).map(value => asClosure(value, cpu.gc));
-	assert.equal(closures[0].prototypeRecord.functionAddress, RAM_FUNCTION_ADDRESS);
-	assert.equal(closures[1].prototypeRecord.functionAddress, RAM_FUNCTION_ADDRESS);
+	assert.equal(cpu.captureClosureBinding(closures[0]).functionAddress, RAM_FUNCTION_ADDRESS);
+	assert.equal(cpu.captureClosureBinding(closures[1]).functionAddress, RAM_FUNCTION_ADDRESS);
 	const closure = closures[1];
 
 	cpu.beginCompletionCall(closure);
@@ -249,12 +250,12 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, RAM_FUNCTION_ADDRESS);
 	assert.equal(countVersions(), 2, 'a new direct-entry closure remains indexed when stack growth collects');
 	const active = cpu.rootThread.currentFrame!;
-	assert.equal(active.closure.prototypeRecord.recordUpvalueCount, 3);
-	assert.equal(active.closure.upvalueCount, 0, 'direct entry has no captured slots');
+	assert.equal(cpu.captureClosureBinding(active.closure).recordUpvalueCount, 3);
+	assert.equal(ClosureRecord.captureCount(cpu.memory, active.closure), 0, 'direct entry has no captured slots');
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	assert.equal(cpu.rootThread.currentFrame!.closure.prototypeRecord.recordUpvalueCount, 3);
-	assert.equal(cpu.rootThread.currentFrame!.closure.upvalueCount, 0);
+	assert.equal(cpu.captureClosureBinding(cpu.rootThread.currentFrame!.closure).recordUpvalueCount, 3);
+	assert.equal(ClosureRecord.captureCount(cpu.memory, cpu.rootThread.currentFrame!.closure), 0);
 	cpu.runUntilDepth(1, 100);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 });

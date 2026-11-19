@@ -1,3 +1,4 @@
+import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -55,12 +56,12 @@ test('Hot Resume preserves a direct-entry record count independently of captured
 		staticClosure: true, upvalueDescs: [{ inStack: true, index: 0 }] }] });
 	const { cpu } = createTestSystemCpu(image);
 	const closure = cpu.activeThread.currentFrame!.closure;
-	assert.equal(closure.prototypeRecord.recordUpvalueCount, 1);
-	assert.equal(closure.upvalueCount, 0);
+	assert.equal(cpu.captureClosureBinding(closure).recordUpvalueCount, 1);
+	assert.equal(ClosureRecord.captureCount(cpu.memory, closure), 0);
 	const revisions = [identityHotResumeRevision(image.image), null, null] as const;
 	assert.doesNotThrow(() => buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth()));
 	applyHotResumeClosureRevision(cpu, revisions);
 	assert.equal(cpu.activeThread.currentFrame!.closure, closure);
-	assert.equal(closure.prototypeRecord.recordUpvalueCount, 1);
-	assert.equal(closure.upvalueCount, 0);
+	assert.equal(cpu.captureClosureBinding(closure).recordUpvalueCount, 1);
+	assert.equal(ClosureRecord.captureCount(cpu.memory, closure), 0);
 });

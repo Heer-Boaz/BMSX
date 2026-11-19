@@ -1,3 +1,4 @@
+import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isOpen } from '../../machine/ts/machine/cpu/upvalue';
@@ -91,11 +92,11 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CLOSURE] - 2, 'rebinding already-open cells still processes descriptors');
 		const second = cpu.rootThread.currentFrame!.registers.getClosure(3, cpu.gc);
-		assert.notEqual(first.captureAddress(0), first.captureAddress(1));
-		assert.equal(first.captureAddress(0), second.captureAddress(0));
+		assert.notEqual(ClosureRecord.captureAddress(cpu.memory, first, 0), ClosureRecord.captureAddress(cpu.memory, first, 1));
+		assert.equal(ClosureRecord.captureAddress(cpu.memory, first, 0), ClosureRecord.captureAddress(cpu.memory, second, 0));
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - 2 - 2, 'two distinct open captures, plus two received closure values');
-		assert.equal(isOpen(cpu.memory, first.captureAddress(0)), false);
+		assert.equal(isOpen(cpu.memory, ClosureRecord.captureAddress(cpu.memory, first, 0)), false);
 	});
 	for (const wanted of [0, 1, 5]) test(`nested builtin protection charges every receiving range (${backend}, C=${wanted})`, () => {
 		const text = new Uint8Array(5 * INSTRUCTION_BYTES);
@@ -202,7 +203,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('error'), valueBuiltinFunction(BuiltinFunctionId.Error));
 		while (cpu.activeThread.currentFrame!.pc !== image.image.functions[1].codeAddress + 4 * INSTRUCTION_BYTES) cpu.runUntilDepth(0, 1);
-		const capture = cpu.activeThread.currentFrame!.registers.getClosure(2, cpu.gc).captureAddress(0);
+		const capture = ClosureRecord.captureAddress(cpu.memory, cpu.activeThread.currentFrame!.registers.getClosure(2, cpu.gc), 0);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 1 - 4);
 		assert.equal(isOpen(cpu.memory, capture), false);
@@ -222,7 +223,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.runUntilDepth(0, 1);
 		const frame = cpu.rootThread.currentFrame!;
 		frame.enterException(false);
-		const capture = frame.registers.getClosure(2, cpu.gc).captureAddress(0);
+		const capture = ClosureRecord.captureAddress(cpu.memory, frame.registers.getClosure(2, cpu.gc), 0);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RFE] - 1);
 		assert.equal(isOpen(cpu.memory, capture), false);
@@ -259,7 +260,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	while (cpu.activeThread === cpu.rootThread) cpu.runUntilDepth(0, 1);
 	const child = cpu.activeThread;
 	while (cpu.activeThread !== cpu.rootThread) cpu.runUntilDepth(0, 1);
-	const capture = child.currentFrame!.registers.getClosure(2, cpu.gc).captureAddress(0);
+	const capture = ClosureRecord.captureAddress(cpu.memory, child.currentFrame!.registers.getClosure(2, cpu.gc), 0);
 	assert.equal(isOpen(cpu.memory, capture), true);
 	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.GETSYS] + BASE_CYCLES[OpCode.MOV]);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);

@@ -97,8 +97,9 @@ for (const optLevel of [0, 3] as const) {
 			if (phase >= 1 && phase < 8) {
 				for (let evaluator = 0; evaluator < (phase >= 5 ? 2 : 1); evaluator++) {
 					const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find(evaluator === 0 ? 'fsm_evaluator' : 'fsm_other')!), cpu.gc);
-					assert.equal(closure.prototypeRecord.executionDomainId, firmware.executionDomainId);
-					const address = closure.prototypeRecord.functionAddress;
+					const binding = cpu.captureClosureBinding(closure);
+					assert.equal(binding.executionDomainId, firmware.executionDomainId);
+					const address = binding.functionAddress;
 					const code = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
 					const bytecodeBytes = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
 					assert.ok(address >= DYNAMIC_RAM_BASE && address + BLUA32_FUNCTION_RECORD_SIZE <= RAM_BASE + PSX_MACHINE_SPEC.ramBytes
@@ -121,7 +122,7 @@ for (const optLevel of [0, 3] as const) {
 				if (phase >= 4) {
 					const bindings = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('fsm_bindings')!));
 					for (let index = 1; index <= 32; index++)
-						assert.equal(asClosure(cpu.gc.tables.getInteger(bindings, index), cpu.gc).prototypeRecord.functionAddress, primaryFunction);
+						assert.equal(cpu.captureClosureBinding(asClosure(cpu.gc.tables.getInteger(bindings, index), cpu.gc)).functionAddress, primaryFunction);
 				}
 			}
 			const state = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));

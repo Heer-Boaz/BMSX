@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { Closure } from '../../machine/ts/machine/cpu/closure';
+import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
@@ -168,13 +168,12 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		const frame = cpu.rootThread.frameAtDepth(0);
 		const bound = frame.closure;
 		const cells = new Uint32Array(2);
-		const replacement = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(2, false, cells, cells.length), bound.prototypeRecord, false);
+		const replacement = cpu.luaHeap.allocateClosureRecord(2, false, cells, cells.length);
 		Upvalue.bindOpen(cpu.memory, cells[0], frame.thread.address, frame.stackBase, 0);
-		replacement.initializeRecord(cpu.gc.white(), 2);
-		replacement.setCaptureAddress(0, cells[0]);
-		replacement.setCaptureAddress(1, cells[1]);
-		cpu.gc.track(replacement);
-		frame.closureAddress = replacement.address;
+		ClosureRecord.initializeRecord(cpu.memory, replacement, cpu.captureClosureBinding(bound), false, cpu.gc.white(), 2);
+		ClosureRecord.setCaptureAddress(cpu.memory, replacement, 0, cells[0]);
+		ClosureRecord.setCaptureAddress(cpu.memory, replacement, 1, cells[1]);
+		frame.closureAddress = replacement;
 		cpu.runUntilDepth(0, 50 * loopCycles);
 	}
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
@@ -191,7 +190,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		assert.equal(frame.registers.get(6), frame.registers.get(12));
 		assert.equal(frame.top, 7, 'SETUP does not extend top to its source register');
 	}
-	const upvalue = frame.closure.captureAddress(0);
+	const upvalue = ClosureRecord.captureAddress(js.memory, frame.closure, 0);
 	Upvalue.close(js.gc, upvalue); Upvalue.store(js.gc, upvalue, ValueTag.Integer, 1);
 	const r = frame.registers, writes = new Uint32Array(16);
 	observeRegisterStores(r, index => { ++writes[index]; });
@@ -256,7 +255,7 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 			assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const root = cpu.rootThread.frameAtDepth(0);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES);
-			root.registers.setClosure(0, cpu.gc.reference(closure));
+			root.registers.setClosure(0, closure);
 			for (let i = 0; i < count; ++i) root.registers.set(i + 1, i === 0 ? valueBool(false) : i === 1 ? valueNil() : valueInteger(i));
 			root.top = count + 1;
 			assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);

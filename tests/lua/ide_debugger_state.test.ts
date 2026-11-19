@@ -518,7 +518,7 @@ end
 	const values: Value[] = []; cpu.readCompletionValues(values);
 	const driver = asClosure(values[0], cpu.gc);
 	const guest = new SuspendedGuestSession(runtime);
-	const source = (asClosure(guest.global('ram_body'), cpu.gc)).prototypeRecord.functionAddress;
+	const source = cpu.captureClosureBinding((asClosure(guest.global('ram_body'), cpu.gc))).functionAddress;
 	const record = new Uint8Array(BLUA32_FUNCTION_RECORD_SIZE);
 	memory.readBytesInto(source, record, record.length);
 	const code = new Uint8Array(memory.readMappedU32LE(source + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET));

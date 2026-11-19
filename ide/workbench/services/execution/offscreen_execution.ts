@@ -1,5 +1,4 @@
 import { OffscreenMachine } from '../../../../hosts/common/offscreen_machine';
-import type { Closure } from '../../../../machine/ts/machine/cpu/closure';
 import type { Value } from '../../../../machine/ts/machine/cpu/value';
 import { ALL_EXECUTION_DOMAINS_MASK } from '../../../../machine/ts/spec/blua32/execution_domain';
 import { captureActiveRuntimeFault, RuntimeGuestFault } from '../../../runtime/fault_state';
@@ -49,7 +48,7 @@ export class OffscreenExecution {
 		});
 	}
 
-	public async call(closure: Closure, args: readonly Value[]): Promise<readonly Value[]> {
+	public async call(closure: number, args: readonly Value[]): Promise<readonly Value[]> {
 		const values: Value[] = [];
 		await this.execute(async () => {
 			const runtime = this.runtime, cpu = runtime.machine.cpu, thread = cpu.activeThread, depth = thread.frameDepth;

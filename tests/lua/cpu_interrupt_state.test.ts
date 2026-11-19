@@ -910,7 +910,7 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
 	const closureKey = cpu.stringPool.intern('completion_call');
-	cpu.setGlobalByKey(closureKey, valueClosure(cpu.gc.reference(closure)));
+	cpu.setGlobalByKey(closureKey, valueClosure(closure));
 
 	cpu.beginCompletionCall(closure);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);

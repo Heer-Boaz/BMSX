@@ -46,7 +46,7 @@ void checkReferences(CPU& cpu) {
 				require(heap.tableRecordAddress(address) == address, "an issued table is decoded by its RAM header");
 				break;
 			case static_cast<u8>(ValueTag::Closure):
-				require(heap.closureAt(address) && heap.closureAt(address)->address == address, "issued closure record has its view");
+				require(heap.closureRecordAddress(address) == address, "an issued closure is decoded by its RAM header");
 				break;
 			case UPVALUE_RECORD_KIND:
 				require(heap.cellRecordAddress(address) == address, "an issued cell is decoded by its RAM header");
@@ -61,12 +61,12 @@ void checkReferences(CPU& cpu) {
 
 void liveReferencesAndReuse() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
-	static_assert(sizeof(decltype(cpu.gcHeap().reference(cpu.rootThread()))) == sizeof(u32));
+	static_assert(sizeof(decltype(cpu.rootThread()->address)) == sizeof(u32));
 	const Value captured = frame.registers.get(1);
-	auto* closure = asClosure(captured, cpu.gcHeap());
-	const u32 cell = closure->captureAddress(0);
-	require(valuePayload(captured) == closure->address, "the register contains the raw closure address");
-	require(cpu.gcHeap().closureAt(cell) == nullptr, "a cell address cannot resolve to a closure");
+	auto closure = asClosure(captured, cpu.gcHeap());
+	const u32 cell = ClosureRecord::captureAddress(cpu.memory(), closure, 0);
+	require(valuePayload(captured) == closure, "the register contains the raw closure address");
+	require(cpu.gcHeap().closureRecordAddress(cell) == 0u, "a cell address cannot resolve to a closure");
 	checkReferences(cpu);
 	auto roots = cpu.createTable(512);
 	frame.registers.set(0,valueTable(roots.address())); frame.writeControl(bmsx::FrameField::Top, 2);
@@ -163,14 +163,14 @@ void builtinIdentitiesStayOutsideTheGcHeap() {
 void closedCellLivesInRam() {
 	Machine machine; auto& cpu = machine.cpu; auto& heap = cpu.gcHeap();
 	auto& frame = *cpu.rootThread()->currentFrame;
-	auto* closure = asClosure(frame.registers.get(1), heap);
+	auto closure = asClosure(frame.registers.get(1), heap);
 	const u32 key = cpu.stringPool().intern("saved_capture");
 	cpu.setGlobalByKey(key, frame.registers.get(1));
-	const u32 address = closure->captureAddress(0);
+	const u32 address = ClosureRecord::captureAddress(cpu.memory(), closure, 0);
 	require(heap.cellRecordAddress(address) == address, "capture is an issued allocator record");
 	require(heap.openCellAddress(address + MAIN_RAM_SIZE) == address, "a mirrored open link selects the same physical cell");
 	auto& memory = machine.memory;
-	require(memory.readRamRecordWord(closure->address + CLOSURE_CAPTURE_WORDS) == address,
+	require(memory.readRamRecordWord(closure + CLOSURE_CAPTURE_WORDS) == address,
 		"closure owns the physical capture word");
 	require(memory.readRamRecordByte(address + UPVALUE_FLAGS) == UPVALUE_OPEN
 		&& memory.readRamRecordWord(address + UPVALUE_OWNER) == frame.thread->address
@@ -202,7 +202,7 @@ void closedCellLivesInRam() {
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(saved);
 	closure = asClosure(cpu.getGlobalByKey(key), heap);
-	require(closure->captureAddress(0) == address && cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u),
+	require(ClosureRecord::captureAddress(cpu.memory(), closure, 0) == address && cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u),
 		"restore retains the saved capture address and word");
 	cpu.collectHeap();
 	const auto occupied = cpu.heapAllocator().occupiedBytes();
@@ -219,9 +219,9 @@ void closureAndCellPagesChargeVacantSlots() {
 	auto& cpu = machine.cpu;
 	auto& heap = cpu.gcHeap();
 	auto& frame = *cpu.rootThread()->currentFrame;
-	auto* closure = asClosure(frame.registers.get(1), heap);
-	const u32 closureAddress = closure->address;
-	const u32 cellAddress = closure->captureAddress(0);
+	auto closure = asClosure(frame.registers.get(1), heap);
+	const u32 closureAddress = closure;
+	const u32 cellAddress = ClosureRecord::captureAddress(cpu.memory(), closure, 0);
 	const auto sweep = [&]() {
 		while (heap.phase() != GcPhase::Sweep)
 			heap.step(valueNil(), valueNil(), valueNil());
@@ -232,7 +232,7 @@ void closureAndCellPagesChargeVacantSlots() {
 	const auto occupied = sweep();
 	frame.registers.set(1, valueNil());
 	require(sweep() == occupied, "reclaiming an issued closure costs one slot visit");
-	require(heap.closureAt(closureAddress) == nullptr &&
+	require(heap.closureRecordAddress(closureAddress) == 0u &&
 		cpu.memory().readRamRecordByte(closureAddress) == 0, "allocator sweep retires the closure slot");
 	require(heap.openCellAddress(cellAddress) == cellAddress, "an open frame still roots the cell");
 	require(sweep() == occupied, "a free closure slot on a surviving object page still costs one visit");

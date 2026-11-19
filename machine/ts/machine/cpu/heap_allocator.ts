@@ -97,6 +97,22 @@ export class HeapAllocator {
 			? (info >>> 8) & 0xff : 0xff;
 	}
 
+	/** Variable-size records begin at an issued slot or a run head. */
+	public issuedObjectStart(offset: number): boolean {
+		const page = offset >>> PAGE_SHIFT;
+		if (page >= this.pageLimit) return false;
+		const descriptor = this.entry(page);
+		const info = this.memory.readRamRecordWord(descriptor);
+		const within = offset & PAGE_MASK;
+		const kind = info & 0xff;
+		if (kind === PageKind.ObjectRun) return within === 0;
+		const sizeClass = (info >>> 8) & 0xff;
+		if (kind !== PageKind.ObjectSlots || sizeClass >= CLASS_COUNT) return false;
+		const stride = HEAP_CLASS_BYTES[sizeClass];
+		const issued = (this.memory.readRamRecordWord(descriptor + 8) & LINK_MASK) << BUMP_SHIFT;
+		return within + stride <= issued && within % stride === 0;
+	}
+
 	public reset(floorAddress: number): void {
 		this.memory.ramData().fill(0, this.management, this.management + RUNTIME_MANAGEMENT_SIZE);
 		this.memory.invalidateRamWrite(this.management, RUNTIME_MANAGEMENT_SIZE);

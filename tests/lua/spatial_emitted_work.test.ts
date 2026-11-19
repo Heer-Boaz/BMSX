@@ -1,8 +1,8 @@
+import { CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { ValueTag, asClosure, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
@@ -115,8 +115,8 @@ probe = {
 }
 `;
 
-function inspectInstalledKernel(cpu: CPU, image: Blua32ImageLayout, closure: Closure, owner: string) {
-	const address = closure.prototypeRecord.functionAddress;
+function inspectInstalledKernel(cpu: CPU, image: Blua32ImageLayout, closure: number, owner: string) {
+	const address = cpu.captureClosureBinding(closure).functionAddress;
 	const codeAddress = cpu.memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
 	const codeBytes = cpu.memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
 	const maxStackSlots = cpu.memory.readMappedU32LE(address + BLUA32_FUNCTION_MAX_STACK_OFFSET);
@@ -168,7 +168,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 		const tracks = valuePayload(cpu.gc.tables.getStringKey(program, cpu.stringPool.find('tracks')!));
 		const runners = valuePayload(cpu.gc.tables.getStringKey(tracks, cpu.stringPool.find('spatial_runners')!));
 		const closure = asClosure(cpu.gc.tables.getInteger(runners, 1), cpu.gc);
-		assert.ok(!images.cartImage.functions.some(fn => fn.address === closure.prototypeRecord.functionAddress), 'inspect actual RAM firmware output, not an AOT stand-in');
+		assert.ok(!images.cartImage.functions.some(fn => fn.address === cpu.captureClosureBinding(closure).functionAddress), 'inspect actual RAM firmware output, not an AOT stand-in');
 		const group = inspectInstalledKernel(cpu, images.cartImage, closure, `spatial-group-${index}`);
 		assert.equal(group.calls.length, 1, 'one publication per group, independent of two/six/twelve coefficient width');
 		assert.equal(group.methodLookups, 0);
@@ -181,7 +181,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 			assert.equal(inspected.methodLookups, 0);
 			// The production evaluation factory shares one shape-specialized
 			// evaluator between these entries; it is one installed code owner.
-			if (!kernels.some(kernel => kernel.closure.prototypeRecord.functionAddress === inspected.closure.prototypeRecord.functionAddress)) kernels.push(inspected);
+			if (!kernels.some(kernel => cpu.captureClosureBinding(kernel.closure).functionAddress === cpu.captureClosureBinding(inspected.closure).functionAddress)) kernels.push(inspected);
 		}
 	}
 	const sites = new Map(kernels.flatMap(kernel => kernel.calls.map(call => [call.pc, { ...call, owner: kernel.owner }] as const)));
@@ -196,7 +196,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 	// firmware compiler's bus; register observations belong to that domain.
 	const points = [new Set<number>(), new Set<number>(), new Set<number>()] as const;
 	for (const kernel of kernels) {
-		const domainPoints = points[kernel.closure.prototypeRecord.executionDomainId + 1];
+		const domainPoints = points[cpu.captureClosureBinding(kernel.closure).executionDomainId + 1];
 		for (const { pc } of kernel.calls) domainPoints.add(pc);
 		for (const { pc } of kernel.reads) domainPoints.add(pc);
 	}
@@ -225,7 +225,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 		}
 		const site = sites.get(pc)!;
 		assert.equal(registers.getTag(site.calleeSlot), ValueTag.Closure);
-		const callee = registers.getClosure(site.calleeSlot, cpu.gc).prototypeRecord.functionAddress;
+		const callee = cpu.memory.readRamRecordWord(registers.getClosure(site.calleeSlot, cpu.gc) + CLOSURE_PROTOTYPE_ADDRESS);
 		let callees = observed.get(site.owner);
 		if (callees === undefined) { callees = new Map(); observed.set(site.owner, callees); }
 		callees.set(callee, (callees.get(callee) || 0) + 1);
@@ -240,7 +240,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 		const writer = asClosure(cpu.gc.tables.getInteger(valuePayload(cpu.gc.tables.getStringKey(entry, cpu.stringPool.find('channel_writers')!)), 1), cpu.gc);
 		const calls = observed.get(`spatial-group-${index}`)!;
 		assert.equal(calls.size, 1);
-		assert.ok(calls.has(writer.prototypeRecord.functionAddress), 'the sole group call must be its admitted substantive writer');
+		assert.ok(calls.has(cpu.captureClosureBinding(writer).functionAddress), 'the sole group call must be its admitted substantive writer');
 	}
 	const measurements = [];
 	for (const name of ['run2','run3','visual','tick']) {
@@ -252,7 +252,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 	}
 	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('check')!), cpu.gc), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-	const addressOwners = new Map(kernels.map(kernel => [kernel.closure.prototypeRecord.functionAddress, kernel.owner]));
+	const addressOwners = new Map(kernels.map(kernel => [cpu.captureClosureBinding(kernel.closure).functionAddress, kernel.owner]));
 	const callOwners = [...observed].map(([owner, targets]) => ({ owner, targets: [...targets].map(([address, calls]) => {
 		const index = images.cartImage.functions.findIndex(fn => fn.address === address);
 		return { callee: addressOwners.get(address) || images.cartSymbols.metadata.functionDisplayNames[index], calls };

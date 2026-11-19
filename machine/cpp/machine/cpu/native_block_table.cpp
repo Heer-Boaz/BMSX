@@ -1,6 +1,7 @@
 #include "machine/cpu/native_block_compiler.h"
 #include "machine/cpu/native_value_emit.h"
 #include "machine/cpu/execution_image.h"
+#include "machine/cpu/gc_object.h"
 #include "machine/cpu/table.h"
 
 namespace bmsx {

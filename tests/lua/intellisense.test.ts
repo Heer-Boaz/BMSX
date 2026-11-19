@@ -1,3 +1,4 @@
+import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { asClosure, numberToHost, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { TEST_SYSTEM_CONTEXT_ID, createTestRuntime, createTestRuntimeRomPayload, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
@@ -673,15 +674,15 @@ halt_until_irq`;
 		assert.strictEqual(correspondence.update(callback), cached);
 		assert.deepEqual(runtimeLuaFunctionSource(bridge.sources, guest, callback), location);
 		// Hot Resume changes physical call targets without replacing the allocation identity.
-		const closure = asClosure(callback, cpu.gc), oldAddress = closure.prototypeRecord.functionAddress;
-		guest.cpu.gc.rebindClosurePrototype(closure, { ...closure.prototypeRecord, functionAddress: asClosure(guest.global('other_callback'), guest.cpu.gc).prototypeRecord.functionAddress });
+		const closure = asClosure(callback, cpu.gc), oldAddress = cpu.captureClosureBinding(closure).functionAddress;
+		ClosureRecord.writeBinding(cpu.memory, closure, { ...cpu.captureClosureBinding(closure), functionAddress: guest.cpu.captureClosureBinding(asClosure(guest.global('other_callback'), guest.cpu.gc)).functionAddress });
 		assert.notStrictEqual(correspondence.update(callback), cached);
 		assert.deepEqual(correspondence.update(callback), runtimeLuaFunctionSource(bridge.sources, guest, callback));
 		// A mapped cartridge address does not imply a cartridge is installed on that bus.
-		guest.cpu.gc.rebindClosurePrototype(closure, { ...closure.prototypeRecord, functionAddress: CART_ROM_BASE });
+		ClosureRecord.writeBinding(cpu.memory, closure, { ...cpu.captureClosureBinding(closure), functionAddress: CART_ROM_BASE });
 		assert.equal(correspondence.update(callback), undefined);
 		assert.equal(runtimeLuaFunctionSource(bridge.sources, guest, callback), undefined);
-		guest.cpu.gc.rebindClosurePrototype(closure, { ...closure.prototypeRecord, functionAddress: oldAddress });
+		ClosureRecord.writeBinding(cpu.memory, closure, { ...cpu.captureClosureBinding(closure), functionAddress: oldAddress });
 		const restored = correspondence.update(callback);
 		bridge.sources.currentBlua32Media = { ...bridge.sources.currentBlua32Media };
 		assert.notStrictEqual(correspondence.update(callback), restored);

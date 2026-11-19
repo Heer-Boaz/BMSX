@@ -1,3 +1,4 @@
+import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { blua32RomStrings } from '../../toolchain/ts/rompack/blua32_rom_strings';
 import { applyHotResumeClosureRevision, applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { executionDomainBit, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -330,7 +331,7 @@ test('unused retained capture initializers survive O3 for newly created closures
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const closure = materializeCpuCompletionValues(cpu)[0];
 	cpu.setGlobalByKey(cpu.stringPool.intern('__test_closure'), closure);
-	assert.equal(asClosure(closure, cpu.gc).upvalueCount, 2);
+	assert.equal(ClosureRecord.captureCount(cpu.memory, asClosure(closure, cpu.gc)), 2);
 	cpu.beginCompletionCall(asClosure(closure, cpu.gc));
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(22)]);

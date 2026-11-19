@@ -1,6 +1,7 @@
+import { CLOSURE_PROTOTYPE_ADDRESS, executionDomain } from '../../machine/ts/machine/cpu/closure';
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import type { GcObject } from '../../machine/ts/machine/cpu/gc_object';
+import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { StringId, StringPool } from '../../machine/ts/machine/cpu/string_pool';
 import {
 	TABLE_INDEX_CHAIN_LIMIT,
@@ -11,7 +12,7 @@ import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { EMPTY_CALL_ARGS, type Value, asInteger, asStringId, asClosure, isTruthy, valueNil, valuePayload, valueIsTable, valueToString, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
-import { observedTableLifetime } from './table_lifetimes';
+import { observedRecordLifetime } from './record_lifetimes';
 
 export type SuspendedGuestValue = Value;
 /** Owned semantic identity within one physical heap; RAM String addresses can be reused. */
@@ -69,7 +70,7 @@ export class SuspendedGuestSession {
 	// Observations can outlive an allocation. Give a lifetime token only to
 	// attachments that this inspector actually sees; the VM and its saves do
 	// not need an allocation serial for every guest object.
-	private readonly observedLifetimes = new WeakMap<GcObject, number>();
+	private readonly observedLifetimes = new WeakMap<Thread, number>();
 	private nextObservedLifetime = 1;
 	private readonly storedParts: string[] = [];
 	private readonly formatStoredEntry = (key: Value, entry: Value): void => {
@@ -145,10 +146,10 @@ export class SuspendedGuestSession {
 	public observedIdentityScalar(value: Value, tag: Exclude<ValueTag, ValueTag.String>): number;
 	public observedIdentityScalar(value: Value, tag: ValueTag): number | string;
 	public observedIdentityScalar(value: Value, tag: ValueTag): number | string {
-		let attachment: GcObject;
+		let attachment: Thread;
 		switch (tag) {
-			case ValueTag.Table: return observedTableLifetime(this.cpu.gc, valuePayload(value));
-			case ValueTag.Closure: attachment = asClosure(value, this.cpu.gc); break;
+			case ValueTag.Table: return observedRecordLifetime(this.cpu.gc, valuePayload(value));
+			case ValueTag.Closure: return observedRecordLifetime(this.cpu.gc, valuePayload(value));
 			case ValueTag.Thread: attachment = this.cpu.gc.threadAt(valuePayload(value))!; break;
 			default: return this.identityScalar(value, tag);
 		}
@@ -215,8 +216,8 @@ export class SuspendedGuestSession {
 	public functionLocation(value: SuspendedGuestValue, target?: RuntimeFunctionLocationBuffer): RuntimeFunctionLocation | undefined {
 		if (valueTag(value) !== ValueTag.Closure) return undefined;
 		const closure = asClosure(value, this.cpu.gc);
-		const address = closure.prototypeRecord.functionAddress;
-		const domain = closure.prototypeRecord.executionDomainId;
+		const address = this.cpu.memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
+		const domain = executionDomain(this.cpu.memory, closure);
 		if (target === undefined) return { domain, address };
 		target.domain = domain; target.address = address;
 		return target;

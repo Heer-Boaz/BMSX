@@ -1,7 +1,6 @@
 import { ThreadField } from './thread_record';
-import { GcObject, GcKind } from './gc_object';
+import { GC_COLOR_OFFSET } from './gc_object';
 import { CallFrame, FrameField, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind } from './call_state';
-import type { Closure } from './closure';
 import type { GcHeap } from './gc_heap';
 import { valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
@@ -33,7 +32,11 @@ function copyStackControl(ram: Uint8Array, destination: number, source: number, 
 }
 
 /** Retained language execution state. Physical CPU/IRQ/bus state is not thread-local. */
-export class Thread extends GcObject {
+export class Thread {
+	public gcNext: Thread | null = null;
+	public gcPrevious: Thread | null = null;
+	public get gcColor(): number { return this.heap.memory.readRamRecordByte(this.address + GC_COLOR_OFFSET); }
+	public set gcColor(color: number) { this.heap.memory.writeRamRecordByte(this.address + GC_COLOR_OFFSET, color); }
 	public firstFrame: CallFrame | null = null;
 	public currentFrame: CallFrame | null = null;
 	public get frameDepth(): number { return this.read(ThreadField.FrameDepth) & CONTROL_COUNT_MASK; }
@@ -46,17 +49,16 @@ export class Thread extends GcObject {
 	private boundProtectedCapacity = 0;
 	private readonly recordWordOffset: number;
 	public constructor(private readonly heap: GcHeap, public readonly address: number) {
-		super(GcKind.Thread);
 		this.recordWordOffset = (address & RAM_RECORD_WORD_MASK) >>> 2;
 	}
 
-	public initializeRecord(entry: Closure | null): void {
+	public initializeRecord(entry: number): void {
 		const memory = this.heap.memory, offset = this.recordWordOffset * 4;
 		const ram = memory.ramData();
 		const block = this.read(ThreadField.StackBlock);
 		ram.fill(0, offset, offset + THREAD_HEAP_BYTES);
 		writeLE32(ram, offset + ThreadField.Header, THREAD_RECORD_KIND | (this.heap.white() << 8));
-		writeLE32(ram, offset + ThreadField.Entry, entry === null ? 0 : entry.address);
+		writeLE32(ram, offset + ThreadField.Entry, entry);
 		writeLE32(ram, offset + ThreadField.StackBlock, block);
 		writeLE32(ram, offset + ThreadField.StackCapacity, THREAD_INITIAL_VALUES);
 		writeLE32(ram, offset + ThreadField.FrameCapacity, THREAD_INITIAL_FRAMES);
@@ -79,11 +81,8 @@ export class Thread extends GcObject {
 		return owner === 0 ? null : this.heap.threadAt(owner);
 	}
 	public set resumer(thread: Thread | null) { this.write(ThreadField.Resumer, thread === null ? 0 : thread.address); }
-	public get entry(): Closure | null {
-		const closure = this.read(ThreadField.Entry);
-		return closure === 0 ? null : this.heap.closureAt(closure);
-	}
-	public set entry(closure: Closure | null) { this.write(ThreadField.Entry, closure === null ? 0 : closure.address); }
+	public get entry(): number { return this.read(ThreadField.Entry); }
+	public set entry(closure: number) { this.write(ThreadField.Entry, closure); }
 	public get callBase(): number { return this.read(ThreadField.CallBase) | 0; }
 	public get returnCount(): number { return this.read(ThreadField.ReturnCount) | 0; }
 	public setReturnWindow(base: number, count: number): void {

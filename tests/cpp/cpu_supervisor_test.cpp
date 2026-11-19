@@ -803,15 +803,15 @@ void testMappedRamFunctionExecution() {
 		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
 		"ROM creates a closure for a mapped RAM function record"
 	);
-	bmsx::Closure* directClosure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
-	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
+	bmsx::u32 directClosure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
+	bmsx::u32 closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
 	require(
-		directClosure->prototype->functionAddress == RAM_FUNCTION_ADDRESS
-			&& closure->prototype->functionAddress == RAM_FUNCTION_ADDRESS,
+		bmsx::ClosureRecord::readBinding(cpu.memory(), directClosure).functionAddress == RAM_FUNCTION_ADDRESS
+			&& bmsx::ClosureRecord::readBinding(cpu.memory(), closure).functionAddress == RAM_FUNCTION_ADDRESS,
 		"direct and register-addressed closures retain the mapped RAM function address"
 	);
 
-	cpu.beginCompletionCall(*closure);
+	cpu.beginCompletionCall(closure);
 	require(
 		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
 		"RAM code calls a ROM function and returns"
@@ -827,7 +827,7 @@ void testMappedRamFunctionExecution() {
 	bmsx::writeInstruction(replacement, 1, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	memory.writeBytes(RAM_CODE_ADDRESS, replacement.data(), replacement.size());
 
-	cpu.beginCompletionCall(*closure);
+	cpu.beginCompletionCall(closure);
 	require(
 		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
 		"the same RAM closure executes after its code changes"
@@ -875,18 +875,18 @@ void testBoundClosureRetainsCartridgeSocket() {
 	auto& cpu = machine.cpu;
 	const bmsx::u32 address = machine.cartRom.functionAddresses[0];
 	cpu.beginCompletionCallInExecutionDomain(0, address);
-	auto* first = cpu.activeThread()->currentFrame->attachedClosure();
+	auto first = cpu.activeThread()->currentFrame->closureAddress();
 	require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted, "slot 0 closure returns");
 	cpu.beginCompletionCallInExecutionDomain(1, address);
-	auto* second = cpu.activeThread()->currentFrame->attachedClosure();
+	auto second = cpu.activeThread()->currentFrame->closureAddress();
 	require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted, "slot 1 closure returns");
-	require(first != second && first->prototype->functionAddress == second->prototype->functionAddress
-		&& first->prototype->executionDomainId == 0 && second->prototype->executionDomainId == 1,
+	require(first != second && bmsx::ClosureRecord::readBinding(cpu.memory(), first).functionAddress == bmsx::ClosureRecord::readBinding(cpu.memory(), second).functionAddress
+		&& bmsx::ClosureRecord::readBinding(cpu.memory(), first).executionDomainId == 0 && bmsx::ClosureRecord::readBinding(cpu.memory(), second).executionDomainId == 1,
 		"same cartridge address in different sockets has distinct closures");
 	for (int i = 0; i < 12; ++i) {
 		machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, i & 1);
-		auto* closure = (i & 1) ? first : second;
-		cpu.beginCompletionCall(*closure);
+		auto closure = (i & 1) ? first : second;
+		cpu.beginCompletionCall(closure);
 		require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted,
 			"bound closure returns despite subsequent socket selection");
 		require(cpu.readCompletionValues().get(0) == bmsx::valueInteger(((i & 1) ? 0 : 1)),
@@ -1256,10 +1256,10 @@ void testBoundClosureArguments() {
 	CpuTestMachine machine(std::move(image));
 	auto& cpu = machine.cpu;
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "capture factory returns");
-	auto* closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
+	auto closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
 	for (const auto [argument, expected] : {std::pair{3, 10}, std::pair{5, 15}}) {
 		const std::array args{bmsx::valueInteger(argument)};
-		cpu.beginCompletionCall(*closure, {args.data(), args.size()});
+		cpu.beginCompletionCall(closure, {args.data(), args.size()});
 		require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "bound-closure call returns");
 		require(cpu.readCompletionValues().get(0) == bmsx::valueInteger(expected), "arguments update the original capture");
 	}

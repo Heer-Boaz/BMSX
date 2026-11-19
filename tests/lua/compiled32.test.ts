@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { Closure } from '../../machine/ts/machine/cpu/closure';
+import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -21,12 +21,12 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 	cpu.reset();
 	const firstFrame = cpu.activeThread.currentFrame!, owner = firstFrame.executionImage;
 	const cells = new Uint32Array(1);
-	const closure = new Closure(memory, cpu.luaHeap.allocateClosureRecord(1, false, cells, cells.length), firstFrame.closure.prototypeRecord, false);
-	closure.initializeRecord(cpu.gc.white(), 1); cpu.gc.track(closure);
-	firstFrame.closureAddress = closure.address;
+	const closure = cpu.luaHeap.allocateClosureRecord(1, false, cells, cells.length);
+	ClosureRecord.initializeRecord(cpu.memory, closure, cpu.captureClosureBinding(firstFrame.closure), false, cpu.gc.white(), 1);
+	firstFrame.closureAddress = closure;
 	const table = cpu.createTable(1, 1), field = cpu.stringPool.find('field')!;
-	const upvalue = cells[0]; closure.setCaptureAddress(0, upvalue);
-	const other = cpu.createThread(null);
+	const upvalue = cells[0]; ClosureRecord.setCaptureAddress(cpu.memory, closure, 0, upvalue);
+	const other = cpu.createThread(0);
 	other.resizeStack(24);
 	function setup(scenario: Scenario, value = v.valueInteger(3), source = 'closed') {
 		const frame = cpu.activeThread.currentFrame!, r = frame.registers;
@@ -70,7 +70,7 @@ for (const scenario of ['chain', 'table', 'memory', 'upvalue', 'words', 'control
 				m.setup(scenario,scenario==='control'?v.valueInteger(0):v.valueInteger(3));m.cpu.runUntilDepth(0, 1000);
 			}
 		}
-		const js = machines[1], page = js.owner.compiledCodeLookup!.find(js.closure.prototypeRecord.codeAddress, 0)!;
+		const js = machines[1], page = js.owner.compiledCodeLookup!.find(js.cpu.captureClosureBinding(js.closure).codeAddress, 0)!;
 		assert.ok(page.compiledBlocks, 'real CPU execution must install a generated region');
 		const regions = new Set(page.compiledBlocks.entries.filter(block => block !== null).map(block => block.region));
 		let generatedRuns = 0;

@@ -2,8 +2,8 @@ import { MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes, heapClassIndex, type HeapAllocator } from './heap_allocator';
-import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT, GcObject, GcKind } from './gc_object';
-import { type Closure, FunctionPrototypePool, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
+import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from './gc_object';
+import * as Closure from './closure';
 import { UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from './upvalue';
 import * as Upvalue from './upvalue';
 import { TableRecords } from './table';
@@ -40,15 +40,14 @@ export class GcHeap {
 	public diagnostics: GcDiagnostics | null = null;
 	// An inspector may end the lifetimes it observed; allocation never
 	// creates host identities. A replacement invalidates the whole view.
-	public onTableRetirement: ((address: number | null) => void) | null = null;
-	private objects: GcObject | null = null;
+	public onRecordRetirement: ((address: number | null) => void) | null = null;
+	private objects: Thread | null = null;
 	private readonly controlOffset: number;
 	public phase(): GcPhase {
 		return GC_PHASE_SELECTOR[this.memory.readRamRecordByte(this.controlOffset) & 7];
 	}
 	public white(): number { return this.memory.readRamRecordByte(this.controlOffset + 1) & 1; }
 	private setPhase(phase: GcPhase): void { this.memory.writeRamRecordByte(this.controlOffset, phase); }
-	private readonly prototypes = new FunctionPrototypePool();
 	private readonly scratch = new ValueSlots(1);
 	private mode = 0;
 	private changed = false;
@@ -63,7 +62,10 @@ export class GcHeap {
 				const address = this.tableRecordAddress(valuePayload(value));
 				return address !== 0 && this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) !== this.white();
 			}
-			case ValueTag.Closure: return this.isAlive(this.closureAt(valuePayload(value)));
+			case ValueTag.Closure: {
+				const address = this.closureRecordAddress(valuePayload(value));
+				return address !== 0 && this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) !== this.white();
+			}
 			case ValueTag.Thread: return this.isAlive(this.threadAt(valuePayload(value)));
 			default: return true;
 		}
@@ -79,8 +81,8 @@ export class GcHeap {
 		this.controlOffset = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	}
 	public readonly tables = new TableRecords(this);
-	// Host attachments share one position for each aligned physical record start.
-	private readonly records = new Array<GcObject | null>(MAIN_RAM_SIZE / GC_RECORD_ALIGNMENT).fill(null);
+	// Only Thread execution views have host attachments; Closures are raw RAM records.
+	private readonly records = new Array<Thread | null>(MAIN_RAM_SIZE / THREAD_HEAP_BYTES).fill(null);
 	public tableRecordAddress(address: number): number {
 		const offset = address & (MAIN_RAM_SIZE - TableRecords.HEADER_BYTES);
 		return this.arena.issuedObjectSlotClass(offset) === TABLE_SIZE_CLASS
@@ -91,54 +93,40 @@ export class GcHeap {
 		return this.arena.issuedObjectSlotClass(offset) === CELL_SIZE_CLASS
 			&& this.memory.readRamRecordByte(offset) === UPVALUE_RECORD_KIND ? RAM_BASE + offset : 0;
 	}
-	public closureAt(address: number): Closure | null {
-		const object = this.records[(address & GC_RECORD_MASK) >>> 3];
-		return object?.gcKind === GcKind.Closure ? object as Closure : null;
+	public closureRecordAddress(address: number): number {
+		const offset = address & GC_RECORD_MASK;
+		return offset < this.arena.managementOffset() && this.memory.readRamRecordByte(offset) === ValueTag.Closure && this.arena.issuedObjectStart(offset) ? RAM_BASE + offset : 0;
 	}
 	public openCellAddress(address: number): number {
 		const cell = this.cellRecordAddress(address);
 		return cell !== 0 && Upvalue.isOpen(this.memory, cell) ? cell : 0;
 	}
 	public threadAt(address: number): Thread | null {
-		const object = this.records[(address & GC_RECORD_MASK) >>> 3];
-		return object?.gcKind === GcKind.Thread ? object as Thread : null;
+		const offset = address & GC_RECORD_MASK;
+		return (offset & (THREAD_HEAP_BYTES - 1)) === 0 ? this.records[offset / THREAD_HEAP_BYTES] : null;
 	}
-	public reference(object: GcObject): number { return object.address; }
+	public reference(object: Thread): number { return object.address; }
 	public hash(value: Value): number {
 		switch (valueTag(value)) {
 			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return scalarValueHash(valueInteger(valuePayload(value)));
 			default: return scalarValueHash(value);
 		}
 	}
-	public track(object: GcObject): void {
-		if (object.gcKind === GcKind.Closure) {
-			const closure = object as Closure;
-			closure.prototypeRecord = this.prototypes.retain(closure.prototypeRecord);
-		}
-		this.records[(object.address & GC_RECORD_MASK) >>> 3] = object;
-		object.gcOwner = this;
+	public track(object: Thread): void {
+		this.records[(object.address & GC_RECORD_MASK) / THREAD_HEAP_BYTES] = object;
 		object.gcPrevious = null; object.gcNext = this.objects;
 		if (this.objects !== null) this.objects.gcPrevious = object;
 		this.objects = object;
 	}
-	public rebindClosurePrototype(closure: Closure, record: Readonly<FunctionPrototype>): void {
-		const previous = closure.prototypeRecord;
-		closure.prototypeRecord = this.prototypes.retain(record);
-		this.memory.writeRamRecordWord(closure.address + CLOSURE_PROTOTYPE_ADDRESS, record.functionAddress);
-		this.prototypes.release(previous);
-	}
-	private releaseHostMetadata(object: GcObject): void {
-		if (object.gcKind === GcKind.Closure) this.prototypes.release((object as Closure).prototypeRecord);
-	}
-	private unlink(object: GcObject): void {
+	private unlink(object: Thread): void {
 		if (object.gcPrevious !== null) object.gcPrevious.gcNext = object.gcNext;
 		else this.objects = object.gcNext;
 		if (object.gcNext !== null) object.gcNext.gcPrevious = object.gcPrevious;
 		object.gcNext = null; object.gcPrevious = null;
 	}
 	public active(): boolean { return this.phase() !== GcPhase.Pause; }
-	public isAlive(object: GcObject | null): boolean { return object !== null && object.gcColor !== this.white(); }
-	public sweepGarbage(object: GcObject): boolean {
+	public isAlive(object: Thread | null): boolean { return object !== null && object.gcColor !== this.white(); }
+	public sweepGarbage(object: Thread): boolean {
 		return this.phase() === GcPhase.Sweep && object.gcColor === (this.white() ^ 1);
 	}
 	public changedHeadOffset(): number { return this.controlOffset + GC_CHANGED_HEAD; }
@@ -212,7 +200,7 @@ export class GcHeap {
 		this.tables.forEachStoredEntry(table, this.weakStrings);
 		return slots;
 	};
-	public markObject(object: GcObject | null): boolean {
+	public markObject(object: Thread | null): boolean {
 		if (object === null || object.gcColor !== this.white()) return false;
 		this.enqueue(object.address, GC_RECORD_LINK, GC_TRACE_HEAD);
 		return true;
@@ -230,10 +218,16 @@ export class GcHeap {
 		this.markValue(Upvalue.load(this.memory, cell));
 		return UPVALUE_HEAP_BYTES >>> 2;
 	}
+	public markClosure(address: number): boolean {
+		const offset = address & GC_RECORD_MASK;
+		if (offset >= this.arena.managementOffset() || (this.memory.readRamRecordWord(offset) & 0xffff) !== (ValueTag.Closure | (this.white() << 8)) || !this.arena.issuedObjectStart(offset)) return false;
+		this.enqueue(RAM_BASE + offset, GC_RECORD_LINK, GC_TRACE_HEAD);
+		return true;
+	}
 	public markValue(value: Value): boolean {
 		switch (valueTag(value)) {
 			case ValueTag.Table: return this.markTable(valuePayload(value));
-			case ValueTag.Closure: return this.markObject(this.closureAt(valuePayload(value)));
+			case ValueTag.Closure: return this.markClosure(valuePayload(value));
 			case ValueTag.Thread: return this.markObject(this.threadAt(valuePayload(value)));
 			case ValueTag.String: this.cpu.stringPool.markReachable(valuePayload(value)); break;
 		}
@@ -242,7 +236,7 @@ export class GcHeap {
 	public markSlot(slots: ValueSlots, index: number): void { this.markValue(slots.get(index)); }
 	public visitThreads(visit: (thread: Thread) => void): void {
 		for (let object = this.objects; object !== null; object = object.gcNext)
-			if (object.gcKind === GcKind.Thread) visit(object as Thread);
+			visit(object);
 	}
 	public armThreadStackWatches(): void {
 		this.visitThreads(thread => { thread.armStackWatch(); thread.armFrameWindowWatches(); });
@@ -291,9 +285,10 @@ export class GcHeap {
 			&& this.memory.readRamRecordByte(address) === ValueTag.Table;
 		const cell = slotClass === CELL_SIZE_CLASS && (offset & (UPVALUE_HEAP_BYTES - 1)) === 0
 			&& this.memory.readRamRecordByte(address) === UPVALUE_RECORD_KIND && !Upvalue.isOpen(this.memory, address);
-		const object = table || cell ? null : this.records[index];
+		const closure = offset < this.arena.managementOffset() && this.memory.readRamRecordByte(address) === ValueTag.Closure && this.arena.issuedObjectStart(offset);
+		const object = table || cell || closure ? null : this.threadAt(address);
 		// Only a queued color clocks the link, even for malformed cycles.
-		if ((!table && !cell && object === null) || this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) !== 2) {
+		if ((!table && !cell && !closure && object === null) || this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) !== 2) {
 			this.memory.writeRamRecordWord(this.controlOffset + GC_TRACE_HEAD, 0);
 			return 0;
 		}
@@ -314,39 +309,35 @@ export class GcHeap {
 			this.markValue(Upvalue.load(this.memory, address));
 			return UPVALUE_HEAP_BYTES >>> 2;
 		}
-		switch (object!.gcKind) {
-			case GcKind.Closure: {
-				const closure = object as Closure, count = closure.upvalueCount;
-				let work = 3 + count;
-				for (let index = 0; index < count; ++index) work += this.markCell(this.cellRecordAddress(closure.captureAddress(index)));
-				return work;
-			}
-			case GcKind.Thread: {
-				const thread = object as Thread;
-				let cellWork = 0;
-				if (!atomic) this.appendVisit(GC_THREAD_VISITS, thread.address);
-				this.markObject(thread.resumer); this.markObject(thread.entry); this.markValue(thread.error);
-				let liveTop = thread.currentFrame === null ? 0 : thread.currentFrame.stackBase + Math.min(thread.currentFrame.top, thread.currentFrame.stackCapacity);
-				let frame = thread.firstFrame!;
-				for (let depth = 0; depth < thread.frameDepth; ++depth, frame = frame.next!) {
-					this.markObject(this.closureAt(frame.closureAddress));
-					let address = frame.openUpvalueHead;
-					for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
-						const cell = this.openCellAddress(address);
-						if (cell === 0) break;
-						cellWork += this.markCell(cell);
-						const slot = this.memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
-						if (slot < thread.stackRegisters.capacity()) liveTop = Math.max(liveTop, slot + 1);
-						address = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
-					}
-				}
-				for (let i = 0; i < liveTop; ++i) this.markSlot(thread.stackRegisters, i);
-				if (liveTop < thread.stackRegisters.capacity())
-					thread.stackRegisters.clear(thread.stackRegisters.capacity() - liveTop, liveTop);
-				thread.trimFrames();
-				return cellWork + ceilDiv4(this.allocationBytes(thread));
+		if (closure) {
+			const count = Closure.captureCount(this.memory, address);
+			let work = 3 + count;
+			for (let index = 0; index < count; ++index) work += this.markCell(this.cellRecordAddress(Closure.captureAddress(this.memory, address, index)));
+			return work;
+		}
+		const thread = object!;
+		let cellWork = 0;
+		if (!atomic) this.appendVisit(GC_THREAD_VISITS, thread.address);
+		this.markObject(thread.resumer); this.markClosure(thread.entry); this.markValue(thread.error);
+		let liveTop = thread.currentFrame === null ? 0 : thread.currentFrame.stackBase + Math.min(thread.currentFrame.top, thread.currentFrame.stackCapacity);
+		let frame = thread.firstFrame!;
+		for (let depth = 0; depth < thread.frameDepth; ++depth, frame = frame.next!) {
+			this.markClosure(frame.closureAddress);
+			let address = frame.openUpvalueHead;
+			for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
+				const cell = this.openCellAddress(address);
+				if (cell === 0) break;
+				cellWork += this.markCell(cell);
+				const slot = this.memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
+				if (slot < thread.stackRegisters.capacity()) liveTop = Math.max(liveTop, slot + 1);
+				address = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
 			}
 		}
+		for (let i = 0; i < liveTop; ++i) this.markSlot(thread.stackRegisters, i);
+		if (liveTop < thread.stackRegisters.capacity())
+			thread.stackRegisters.clear(thread.stackRegisters.capacity() - liveTop, liveTop);
+		thread.trimFrames();
+		return cellWork + ceilDiv4(this.allocationBytes(thread));
 	}
 	/** Called with the current trace queue empty; mutations stay separate until this pass. */
 	private remark(t0: Value, t1: Value, t2: Value): number {
@@ -378,32 +369,31 @@ export class GcHeap {
 	private readonly sweepRecord = (growingStack: Thread | null, address: number): number => {
 		const white = this.white();
 		const kind = this.memory.readRamRecordByte(address);
-		if (kind === ValueTag.Table || kind === UPVALUE_RECORD_KIND) {
+		if (kind === ValueTag.Table || kind === UPVALUE_RECORD_KIND || kind === ValueTag.Closure) {
 			if (this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) === (white ^ 1)) {
 				if (kind === ValueTag.Table) {
 					this.tables.freeRecord(address);
-					this.onTableRetirement?.(address);
-				} else this.arena.free(address);
+					this.onRecordRetirement?.(address);
+				} else { this.arena.free(address); if (kind === ValueTag.Closure) this.onRecordRetirement?.(address); }
 				return -1;
 			}
 			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, white);
 			return 1;
 		}
-		const index = (address & GC_RECORD_MASK) >>> 3;
-		const object = this.records[index];
+		const index = (address & GC_RECORD_MASK) / THREAD_HEAP_BYTES;
+		const object = this.threadAt(address);
 		if (object === null) return 1;
-		const thread = object.gcKind === GcKind.Thread ? object as Thread : null;
-		const work = thread !== null ? ceilDiv4(this.allocationBytes(thread)) : 1;
+		const thread = object;
+		const work = ceilDiv4(this.allocationBytes(thread));
 		if (object.gcColor !== (white ^ 1)) {
 			object.gcColor = white;
-			return work + (thread !== null && thread !== growingStack ? 2 * ceilDiv4(thread.shrinkStack()) : 0);
+			return work + (thread !== growingStack ? 2 * ceilDiv4(thread.shrinkStack()) : 0);
 		}
 
 		this.records[index] = null;
-		if (thread !== null) thread.freeStack();
+		thread.freeStack();
 		this.arena.free(address);
 		this.unlink(object);
-		this.releaseHostMetadata(object);
 		return -work;
 	};
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingStack: Thread | null = null): number {
@@ -467,16 +457,15 @@ export class GcHeap {
 		return work;
 	}
 	public discardAttachments(retainedRoot: Thread | null): void {
-		this.onTableRetirement?.(null);
+		this.onRecordRetirement?.(null);
 		// Host-only disposal: never free or follow references in restored RAM.
 		let object = this.objects;
 		this.objects = null;
 		while (object !== null) {
 			const next = object.gcNext;
-			this.records[(object.address & GC_RECORD_MASK) >>> 3] = null;
+			this.records[(object.address & GC_RECORD_MASK) / THREAD_HEAP_BYTES] = null;
 			object.gcPrevious = null;
 			object.gcNext = null;
-			if (object !== retainedRoot) this.releaseHostMetadata(object);
 			object = next;
 		}
 		if (retainedRoot !== null) {

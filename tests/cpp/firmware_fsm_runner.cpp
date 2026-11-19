@@ -81,9 +81,9 @@ int main(int argc, char** argv) {
 			if (phase >= 1 && phase < 8) {
 				const auto count = phase >= 5 ? 2 : 1;
 				for (int evaluator = 0; evaluator < count; ++evaluator) {
-					const auto& closure = *asClosure(cpu.getGlobalByKey(*cpu.stringPool().find(evaluator == 0 ? "fsm_evaluator" : "fsm_other")), cpu.gcHeap());
-					require(closure.prototype->executionDomainId == firmware->executionDomainId, "inspect the evaluator in its firmware execution image");
-					const u32 address = closure.prototype->functionAddress;
+					const auto closure = asClosure(cpu.getGlobalByKey(*cpu.stringPool().find(evaluator == 0 ? "fsm_evaluator" : "fsm_other")), cpu.gcHeap());
+					require(ClosureRecord::readBinding(cpu.memory(), closure).executionDomainId == firmware->executionDomainId, "inspect the evaluator in its firmware execution image");
+					const u32 address = ClosureRecord::readBinding(cpu.memory(), closure).functionAddress;
 					const u32 code = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
 					const u32 bytes = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
 					require(address >= DYNAMIC_RAM_BASE && address + BLUA32_FUNCTION_RECORD_SIZE <= RAM_BASE + PSX_MACHINE_SPEC.ramBytes
@@ -125,7 +125,7 @@ int main(int argc, char** argv) {
 				if (phase >= 4) {
 					const auto& bindings = asTable(cpu.getGlobalByKey(*cpu.stringPool().find("fsm_bindings")), cpu.gcHeap());
 					for (int index = 1; index <= 32; ++index)
-						require(asClosure(bindings.getInteger(index), cpu.gcHeap())->prototype->functionAddress == primaryFunction,
+						require(ClosureRecord::readBinding(cpu.memory(), asClosure(bindings.getInteger(index), cpu.gcHeap())).functionAddress == primaryFunction,
 							"same-shape binding regenerated code instead of sharing the factory's evaluator");
 				}
 			}

@@ -60,12 +60,12 @@ struct CallFrame {
 	void setTop(i32 top) {
 		writeControl(FrameField::Top, (readControl(FrameField::Top) & ~FRAME_WINDOW_MASK) | static_cast<u32>(top));
 	}
-	Closure* attachedClosure() const;
+	u32 closureAddress() const { return readControl(FrameField::Closure); }
 	u32 captureAddress(u32 index) const {
-		return controlMemory->readRamRecordWord(Closure::captureWordAddress(readControl(FrameField::Closure), index));
+		return controlMemory->readRamRecordWord(ClosureRecord::captureWordAddress(readControl(FrameField::Closure), index));
 	}
 	u32 captureCount() const {
-		return Closure::captureCount(*controlMemory, readControl(FrameField::Closure));
+		return ClosureRecord::captureCount(*controlMemory, readControl(FrameField::Closure));
 	}
 	ExecutionDomainId savedExecutionBank() const {
 		const u32 flags = readControl(FrameField::Flags);

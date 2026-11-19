@@ -63,7 +63,7 @@ public:
 	 * Call a CPU closure from native code. The returned span is invalidated by
 	 * subsequent CPU execution, call entry, reset, or state restore.
 	 */
-	auto callClosure(Closure& fn, BuiltinArgsView args = {}) -> ConstValueSpan;
+	auto callClosure(u32 fn, BuiltinArgsView args = {}) -> ConstValueSpan;
 	auto readCompletionValues() const -> ConstValueSpan;
 	bool completionCallPending() const;
 

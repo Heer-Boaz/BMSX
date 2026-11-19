@@ -1,6 +1,5 @@
 #pragma once
 
-#include <unordered_map>
 #include <vector>
 #include "common/compiler.h"
 #include "machine/cpu/heap_allocator.h"
@@ -42,21 +41,15 @@ public:
 	HeapAllocator& arena;
 	u32 tableRecordAddress(u32 address) const;
 	u32 cellRecordAddress(u32 address) const;
-	Closure* closureAt(u32 address) const { return attachedRecord<Closure, ObjType::Closure>(address); }
+	u32 closureRecordAddress(u32 address) const;
 	u32 openCellAddress(u32 address) const;
-	Thread* threadAt(u32 address) const { return attachedRecord<Thread, ObjType::Thread>(address); }
-	void discardAttachments(Thread* retainedRoot);
-	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
-		auto* object = new T(std::forward<Args>(args)...);
-		object->type = type;
-		track(object);
-		return object;
+	Thread* threadAt(u32 address) const {
+		const u32 offset = address & GC_RECORD_MASK;
+		return (offset & (THREAD_HEAP_BYTES - 1u)) == 0u ? m_threadsBySlot[offset / THREAD_HEAP_BYTES] : nullptr;
 	}
-	Closure* bindClosureRecord(u32 address, const FunctionPrototype&, bool canonical);
-	u32 reference(const GCObject* object) const { return physicalAddress(object); }
-	u32 reference(const Closure* closure) const { return closure->address; }
+	Thread* attachThread(u32 address);
+	void discardAttachments(Thread* retainedRoot);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	static size_t nativePhysicalRecordsOffset();
 	static size_t nativeControlOffset();
 #endif
 	uint32_t hash(Value value) const {
@@ -67,8 +60,7 @@ public:
 		}
 	}
 	template<class Visitor> void visitThreads(Visitor&& visit) {
-		for (auto* object = m_objects; object; object = object->next)
-			if (object->type == ObjType::Thread) visit(*static_cast<Thread*>(object));
+		for (auto* thread = m_attachedThreads; thread; thread = thread->nextAttached) visit(*thread);
 	}
 	GcPhase phase() const {
 		// Two unconnected selector inputs do not clock the collector.
@@ -78,35 +70,25 @@ public:
 	}
 	u8 white() const { return memory.readRamRecordByte(m_controlOffset + 1u) & 1u; }
 	bool active() const { return phase() != GcPhase::Pause; }
-	bool sweepGarbage(const GCObject* object) const {
-		return phase() == GcPhase::Sweep && object->gcColor() == (white() ^ 1u);
+	bool sweepGarbage(u32 address) const {
+		return phase() == GcPhase::Sweep && memory.readRamRecordByte(address + GC_COLOR_OFFSET) == (white() ^ 1u);
 	}
-	bool isAlive(const GCObject* object) const { return object && object->gcColor() != white(); }
+	bool isAlive(u32 address) const { return memory.readRamRecordByte(address + GC_COLOR_OFFSET) != white(); }
 	size_t allocationBytes(const Thread* thread) const;
 	void armThreadStackWatches();
 	bool observeStackWrites(u32 first, u32 end, const Thread* active);
 	size_t step(Value root0, Value root1, Value root2, Thread* growingStack = nullptr);
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);
 	bool markValue(Value value);
-	bool markObject(GCObject* object);
+	bool markThread(Thread* thread);
 	void writeBarrier(u32 address, u32 link) {
 		if (memory.readRamRecordByte(address + GC_COLOR_OFFSET) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
 	}
 	u32 changedHeadOffset() const { return m_controlOffset + GC_CHANGED_HEAD; }
 private:
-	static u32 physicalAddress(const GCObject* object) {
-		switch (object->type) {
-			case ObjType::Closure: return static_cast<const Closure*>(object)->address;
-			case ObjType::Thread: return static_cast<const Thread*>(object)->address;
-		}
-		BMSX_UNREACHABLE();
-	}
-	GCObject*& physicalSlot(u32 address) { return m_records[(address & GC_RECORD_MASK) / GC_RECORD_ALIGNMENT]; }
-	template<class T, ObjType kind> T* attachedRecord(u32 address) const {
-		auto* object = m_records[(address & GC_RECORD_MASK) / GC_RECORD_ALIGNMENT];
-		return object && object->type == kind ? static_cast<T*>(object) : nullptr;
-	}
-	void track(GCObject* object);
+	Thread*& threadSlot(u32 address) { return m_threadsBySlot[(address & GC_RECORD_MASK) / THREAD_HEAP_BYTES]; }
+	void trackThread(Thread* thread);
+	bool markClosure(u32 address);
 	uint8_t tableWeakMode(const TableRecord& table);
 	bool markTable(u32 address);
 	size_t traceTable(u32 address);
@@ -121,24 +103,20 @@ private:
 	size_t trace(bool atomic);
 	size_t remark(Value root0, Value root1, Value root2);
 	size_t atomic(Value root0, Value root1, Value root2);
-	void destroyObject(GCObject* object);
 	struct SweepContext { GcHeap& heap; const Thread* growingStack; u8 white; };
 	static i32 sweepRecord(void* context, u32 address);
-	void unlink(GCObject* object);
+	void unlinkThread(Thread* thread);
 	CPU& m_cpu;
-	GCObject* m_objects = nullptr;
+	Thread* m_attachedThreads = nullptr;
 	void setPhase(GcPhase phase) { memory.writeRamRecordByte(m_controlOffset, static_cast<u8>(phase)); }
 	StringId m_modeKey;
 	StringPool& m_stringPool;
 	const u32 m_controlOffset;
-	// Map nodes are stable across rehash; erasure is tied to the last closure.
-	std::unordered_map<FunctionPrototype, size_t, FunctionPrototypeHash> m_prototypes;
-	std::vector<GCObject*> m_records = std::vector<GCObject*>(MAIN_RAM_SIZE / GC_RECORD_ALIGNMENT);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	GCObject* const* const m_recordBase = m_records.data();
-#endif
+	// Only Thread execution views need a host attachment. Other kinds are
+	// resolved from RAM; 64-byte Thread slots index this directory directly.
+	std::vector<Thread*> m_threadsBySlot = std::vector<Thread*>(MAIN_RAM_SIZE / THREAD_HEAP_BYTES);
 };
 
-inline Closure* asClosure(Value value, const GcHeap& heap) { return heap.closureAt(valuePayload(value)); }
+inline u32 asClosure(Value value, const GcHeap& heap) { return heap.closureRecordAddress(valuePayload(value)); }
 inline Thread* asThread(Value value, const GcHeap& heap) { return heap.threadAt(valuePayload(value)); }
 } // namespace bmsx

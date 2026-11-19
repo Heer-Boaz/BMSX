@@ -1,14 +1,14 @@
 import type { GcHeap } from '../../machine/ts/machine/cpu/gc_heap';
 
-type TableLifetimes = { observed: Map<number, number>; nextId: number };
-const byHeap = new WeakMap<GcHeap, TableLifetimes>();
+type RecordLifetimes = { observed: Map<number, number>; nextId: number };
+const byHeap = new WeakMap<GcHeap, RecordLifetimes>();
 
 /** Tool-local lifetime tokens are assigned only to observed guest records. */
-export function observedTableLifetime(heap: GcHeap, address: number): number {
+export function observedRecordLifetime(heap: GcHeap, address: number): number {
 	let lifetimes = byHeap.get(heap);
 	if (lifetimes === undefined) {
 		const observed = new Map<number, number>();
-		heap.onTableRetirement = retired => {
+		heap.onRecordRetirement = retired => {
 			if (retired === null) observed.clear();
 			else observed.delete(retired);
 		};

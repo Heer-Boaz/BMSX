@@ -12,6 +12,7 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 namespace {
 using namespace bmsx;
@@ -52,7 +53,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 			"both executions retain the same caller, callee and result ranges after stack growth");
 		for (int reg = 0; reg < a.stackCapacity(); ++reg) {
 			const Value left = a.registers.get(reg), right = b.registers.get(reg);
-			if (valueIsClosure(left)) require(valueIsClosure(right) && asClosure(left, native.cpu.gcHeap())->prototype->functionAddress == asClosure(right, scalar.cpu.gcHeap())->prototype->functionAddress,
+			if (valueIsClosure(left)) require(valueIsClosure(right) && ClosureRecord::readBinding(native.cpu.memory(), asClosure(left, native.cpu.gcHeap())).functionAddress == ClosureRecord::readBinding(scalar.cpu.memory(), asClosure(right, scalar.cpu.gcHeap())).functionAddress,
 				"corresponding closures retain the same raw function address");
 			else require(left == right, "every retained numeric/tagged register agrees across call transitions");
 		}
@@ -159,7 +160,7 @@ void inactiveFrameMetadata() {
 	for (auto* machine : {&generated, &scalar}) {
 		auto& cpu = machine->cpu;
 		auto* root = cpu.activeThread()->currentFrame;
-		cpu.beginCompletionCall(*asClosure(root->registers.get(0), cpu.gcHeap()));
+		cpu.beginCompletionCall(asClosure(root->registers.get(0), cpu.gcHeap()));
 	}
 	test::runCpuParity(generated.cpu, scalar.cpu, 1, 1);
 	auto* spare = generated.cpu.activeThread()->currentFrame;
@@ -193,11 +194,11 @@ void inactiveFrameMetadata() {
 		auto& cpu = machine->cpu;
 		auto* thread = cpu.activeThread();
 		auto* reused = thread->currentFrame->next;
-		auto* closure = asClosure(thread->currentFrame->registers.get(1), cpu.gcHeap());
+		auto closure = asClosure(thread->currentFrame->registers.get(1), cpu.gcHeap());
 		const auto capacity = thread->stackCapacity;
-		cpu.beginCompletionCall(*closure);
+		cpu.beginCompletionCall(closure);
 		require(thread->currentFrame == reused && thread->stackCapacity > capacity
-			&& reused->attachedClosure() == closure && reused->registers.words() == thread->stack.words() + reused->stackBase()
+			&& reused->closureAddress() == closure && reused->registers.words() == thread->stack.words() + reused->stackBase()
 			&& reused->registers.tags() == thread->stack.tags() + reused->stackBase()
 			&& reused->executionImage == reused->previous->executionImage,
 			"a real activation reuses the node and rebinds all pointers after Value-stack growth");
@@ -280,11 +281,11 @@ void valueRangePlacementCycles() {
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		CpuMachine machine(image, scalar);
 		machine.cpu.runUntilDepth(0, 1);
-		auto* closure = asClosure(machine.cpu.readFrameRegister(0, 0), machine.cpu.gcHeap());
+		auto closure = asClosure(machine.cpu.readFrameRegister(0, 0), machine.cpu.gcHeap());
 		const std::array args{valueInteger(17), valueInteger(29), valueInteger(31)};
 		const int placed = op == OpCode::LOADNIL ? operand : operand == 0 ? 3 : operand - 1;
 		for (int call = 0; call < 20; ++call) {
-			machine.cpu.beginCompletionCall(*closure, BuiltinArgsView(args.data(), args.size()));
+			machine.cpu.beginCompletionCall(closure, BuiltinArgsView(args.data(), args.size()));
 			const int base = machine.cpu.activeThread()->currentFrame->stackBase();
 			require(machine.cpu.runUntilDepth(1, 1000) == RunResult::Halted
 				&& machine.cpu.instructionBudgetRemaining == 1000 - BASE_CYCLES[static_cast<u8>(op)] - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - placed,
@@ -317,14 +318,14 @@ void closureBindingAndClosingCycles() {
 		machine.cpu.runUntilDepth(0, 1);
 		for (int call = 0; call < 2; ++call) require(machine.cpu.runUntilDepth(0, 1) == RunResult::Yielded
 			&& machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] - 2, "every descriptor costs one even when an earlier closure already opened its cell");
-		auto* first = asClosure(machine.cpu.readFrameRegister(0, 2), machine.cpu.gcHeap());
-		auto* second = asClosure(machine.cpu.readFrameRegister(0, 3), machine.cpu.gcHeap());
-		require(first->captureAddress(0) == second->captureAddress(0) && first->captureAddress(1) == second->captureAddress(1),
+		auto first = asClosure(machine.cpu.readFrameRegister(0, 2), machine.cpu.gcHeap());
+		auto second = asClosure(machine.cpu.readFrameRegister(0, 3), machine.cpu.gcHeap());
+		require(ClosureRecord::captureAddress(machine.cpu.memory(), first, 0) == ClosureRecord::captureAddress(machine.cpu.memory(), second, 0) && ClosureRecord::captureAddress(machine.cpu.memory(), first, 1) == ClosureRecord::captureAddress(machine.cpu.memory(), second, 1),
 			"successive closures share both captured cells");
 		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 2 - 2,
 			"RET charges two distinct open cells, not four descriptors, and two received values");
-		require(!Upvalue::isOpen(machine.cpu.memory(), first->captureAddress(0))
-			&& !Upvalue::isOpen(machine.cpu.memory(), first->captureAddress(1)), "both charged captures are closed");
+		require(!Upvalue::isOpen(machine.cpu.memory(), ClosureRecord::captureAddress(machine.cpu.memory(), first, 0))
+			&& !Upvalue::isOpen(machine.cpu.memory(), ClosureRecord::captureAddress(machine.cpu.memory(), first, 1)), "both charged captures are closed");
 	}
 }
 
@@ -571,7 +572,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	auto* thread = machine.cpu.activeThread();
 	auto* callee = thread->currentFrame;
 	auto* caller = callee->previous;
-	auto* closure = callee->attachedClosure();
+	auto closure = callee->closureAddress();
 	require(thread->protectedDepth() == 1 && caller->readControl(FrameField::Protected) == 0
 		&& callee->readControl(FrameField::Protected) == static_cast<u32>(-1), "native return admission concerns the target activation, not its protected subtree");
 	const std::array<Value, 6> payloads{valueNil(), valueBool(false), valueFloatBits(0x80000000),
@@ -626,8 +627,8 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		"native RET charges the receiving range once and cannot execute the next body with an exhausted grant");
 	require(callee->decodedPage == nullptr && callee->compilationEntry && thread->currentFrame == caller,
 		"native retirement keeps the inactive record out of the live window");
-	machine.cpu.beginCompletionCall(*closure);
-	require(thread->currentFrame == callee && callee->attachedClosure() == closure && callee->executionImage == caller->executionImage
+	machine.cpu.beginCompletionCall(closure);
+	require(thread->currentFrame == callee && callee->closureAddress() == closure && callee->executionImage == caller->executionImage
 		&& callee->registers.words() == thread->stack.words() + callee->stackBase()
 			&& callee->registers.tags() == thread->stack.tags() + callee->stackBase() && callee->hasControlFlag(FRAME_COMPLETION)
 		&& callee->readControl(FrameField::Protected) == static_cast<u32>(-1) && !callee->hasControlFlag(FRAME_EXCEPTION) && !callee->hasControlFlag(FRAME_NMI),
@@ -704,7 +705,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 		for (size_t i = thread->stackTop(); i < thread->stackCapacity; ++i) thread->stack.set(i, valueInteger(63));
 		const std::array<Value, 5> payloads{valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueBool(true),
 			valueString(machine->cpu.stringPool().intern("frame-argument")), valueInteger(99)};
-		machine->cpu.beginCompletionCall(*asClosure(caller->registers.get(6), machine->cpu.gcHeap()), BuiltinArgsView(payloads.data(), args));
+		machine->cpu.beginCompletionCall(asClosure(caller->registers.get(6), machine->cpu.gcHeap()), BuiltinArgsView(payloads.data(), args));
 		auto* callee = thread->currentFrame;
 		require(callee->stackCapacity() == std::max({maxStack, params, 1}) && static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::Top)) == params && callee->hasControlFlag(FRAME_COMPLETION),
 			"raw argument calls retain the same frame sizing and completion owner");
@@ -769,7 +770,7 @@ void failedCallAdmission() {
 		auto* caller = thread->currentFrame;
 		if (completion) {
 			bool rejected = false;
-			try { machine.cpu.beginCompletionCall(*asClosure(caller->registers.get(0), machine.cpu.gcHeap())); }
+			try { machine.cpu.beginCompletionCall(asClosure(caller->registers.get(0), machine.cpu.gcHeap())); }
 			catch (const LuaOutOfMemorySignal&) { rejected = true; }
 			require(rejected && thread->frameDepth() == 1 && thread->stackTop() == 8,
 				"failed completion admission never publishes an unallocated stack extent");
@@ -923,10 +924,10 @@ void rootReturnPlacementCycles() {
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		CpuMachine machine(image, scalar);
 		machine.cpu.runUntilDepth(0, 1);
-		auto* closure = asClosure(machine.cpu.activeThread()->currentFrame->registers.get(0), machine.cpu.gcHeap());
+		auto closure = asClosure(machine.cpu.activeThread()->currentFrame->registers.get(0), machine.cpu.gcHeap());
 		const Value args[]{valueInteger(17), valueInteger(29)};
 		for (int call = 0; call < 16; ++call) {
-			machine.cpu.beginCompletionCall(*closure, BuiltinArgsView(args, 2));
+			machine.cpu.beginCompletionCall(closure, BuiltinArgsView(args, 2));
 			require(machine.cpu.runUntilDepth(1, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 2,
 				"completion-latch RET charges its two produced slots even with an exhausted grant");
 			require(machine.cpu.readCompletionValues().size() == 2 && machine.cpu.readCompletionValues().get(0) == args[0]
@@ -1007,7 +1008,7 @@ void weakCanonicalClosuresAndStaticEntry() {
 		require(countVersions() == 1 && machine.cpu.luaHeap().usedBytes() < bytesBefore,
 			"guest GC removes unreachable record versions from the weak index and heap");
 		const auto last = asClosure(machine.cpu.readFrameRegister(0, 0), machine.cpu.gcHeap());
-		require(last->prototype->maxStack == 64, "the live closure survives guest GC");
+		require(ClosureRecord::readBinding(machine.cpu.memory(), last).maxStack == 64, "the live closure survives guest GC");
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 4096);
 		const auto pressure = std::pair{machine.cpu.luaHeap().usedBytes(), machine.cpu.luaHeap().collectionTarget()};
@@ -1015,13 +1016,13 @@ void weakCanonicalClosuresAndStaticEntry() {
 		machine.cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, record);
 		require(machine.cpu.luaHeap().collectionTarget() > pressure.first + 32,
 			"callee stack growth collected while admitting a freshly created canonical closure");
-		const auto direct = machine.cpu.activeThread()->currentFrame->attachedClosure();
-		require(direct->prototype->recordUpvalueCount == 3 && direct->upvalueCount() == 0,
+		const auto direct = machine.cpu.activeThread()->currentFrame->closureAddress();
+		require(ClosureRecord::readBinding(machine.cpu.memory(), direct).recordUpvalueCount == 3 && ClosureRecord::captureCount(machine.cpu.memory(), direct) == 0,
 			"direct STATIC entry binds raw descriptor count but has no captured slots");
 		const auto directState = machine.cpu.captureRuntimeState();
 		machine.cpu.restoreRuntimeState(directState);
-		const auto restored = machine.cpu.activeThread()->currentFrame->attachedClosure();
-		require(restored->prototype->recordUpvalueCount == 3 && restored->upvalueCount() == 0,
+		const auto restored = machine.cpu.activeThread()->currentFrame->closureAddress();
+		require(ClosureRecord::readBinding(machine.cpu.memory(), restored).recordUpvalueCount == 3 && ClosureRecord::captureCount(machine.cpu.memory(), restored) == 0,
 			"snapshot preserves the distinction without reading nonexistent upvalues");
 	}
 }
@@ -1207,32 +1208,31 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		require(machine->cpu.readFrameRegister(0, 4) == valueInteger(-1), "the new closure calls its separate prototype");
 		const auto oldFunction = machine->cpu.readFrameRegister(0, 1);
 		const auto newFunction = machine->cpu.readFrameRegister(0, 0);
-		require(oldFunction != newFunction && asClosure(oldFunction, machine->cpu.gcHeap())->prototype != asClosure(newFunction, machine->cpu.gcHeap())->prototype
-			&& asClosure(oldFunction, machine->cpu.gcHeap())->prototype->codeAddress != asClosure(newFunction, machine->cpu.gcHeap())->prototype->codeAddress,
+		require(oldFunction != newFunction && ClosureRecord::readBinding(machine->cpu.memory(), asClosure(oldFunction, machine->cpu.gcHeap())) != ClosureRecord::readBinding(machine->cpu.memory(), asClosure(newFunction, machine->cpu.gcHeap()))
+			&& ClosureRecord::readBinding(machine->cpu.memory(), asClosure(oldFunction, machine->cpu.gcHeap())).codeAddress != ClosureRecord::readBinding(machine->cpu.memory(), asClosure(newFunction, machine->cpu.gcHeap())).codeAddress,
 			"different static prototypes have distinct canonical closures");
-		const u32 oldCode = asClosure(oldFunction, machine->cpu.gcHeap())->prototype->codeAddress;
-		const u32 newCode = asClosure(newFunction, machine->cpu.gcHeap())->prototype->codeAddress;
+		const u32 oldCode = ClosureRecord::readBinding(machine->cpu.memory(), asClosure(oldFunction, machine->cpu.gcHeap())).codeAddress;
+		const u32 newCode = ClosureRecord::readBinding(machine->cpu.memory(), asClosure(newFunction, machine->cpu.gcHeap())).codeAddress;
 		const auto snapshot = machine->cpu.captureRuntimeState();
 		const auto ram = machine->memory.captureSaveState();
 		machine->cpu.restoreRuntimeState(snapshot);
 		const auto restoredOld = machine->cpu.readFrameRegister(0, 1);
 		const auto restoredNew = machine->cpu.readFrameRegister(0, 0);
-		require(restoredOld != restoredNew && asClosure(restoredOld, machine->cpu.gcHeap())->prototype->codeAddress == oldCode
-			&& asClosure(restoredNew, machine->cpu.gcHeap())->prototype->codeAddress == newCode,
+		require(restoredOld != restoredNew && ClosureRecord::readBinding(machine->cpu.memory(), asClosure(restoredOld, machine->cpu.gcHeap())).codeAddress == oldCode
+			&& ClosureRecord::readBinding(machine->cpu.memory(), asClosure(restoredNew, machine->cpu.gcHeap())).codeAddress == newCode,
 			"snapshot restores both distinct canonical prototypes");
 		// A hot-resume relocation can bind two previously distinct closures to
 		// identical records. Their identities and hash keys must still survive.
 		const u32 oldAddress = valuePayload(oldFunction), newAddress = valuePayload(newFunction);
 		machine->memory.writeRamRecordWord(oldAddress + CLOSURE_PROTOTYPE_ADDRESS, secondRecord);
 		for (u32 field = 0; field < CLOSURE_LATCHED_PROTOTYPE_BYTES; field += sizeof(u32)) {
-			machine->memory.writeRamRecordWord(Closure::captureWordAddress(oldAddress, 0) + field,
-				machine->memory.readRamRecordWord(Closure::captureWordAddress(newAddress, 0) + field));
+			machine->memory.writeRamRecordWord(ClosureRecord::captureWordAddress(oldAddress, 0) + field,
+				machine->memory.readRamRecordWord(ClosureRecord::captureWordAddress(newAddress, 0) + field));
 		}
 		machine->cpu.restoreRuntimeState(snapshot);
 		const auto relocatedOld = asClosure(machine->cpu.readFrameRegister(0, 1), machine->cpu.gcHeap());
 		const auto relocatedNew = asClosure(machine->cpu.readFrameRegister(0, 0), machine->cpu.gcHeap());
-		require(relocatedOld != relocatedNew && relocatedOld->prototype == relocatedNew->prototype
-			&& relocatedOld->address != relocatedNew->address,
+		require(relocatedOld != relocatedNew && ClosureRecord::readBinding(machine->memory, relocatedOld) == ClosureRecord::readBinding(machine->memory, relocatedNew),
 			"restore preserves distinct physical identities even when bound records coincide");
 		machine->memory.restoreSaveState(ram);
 		machine->cpu.restoreRuntimeState(snapshot);
@@ -1249,10 +1249,114 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	}
 	requireParity(native, scalar);
 }
+
+void rawClosureCallBinding(bool ramRecord, bool marker) {
+	const u32 sourceRecord = DYNAMIC_RAM_BASE + 0x1800u;
+	test::Blua32TestImage image;
+	image.text.resize(4 * MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 4, 1, 2);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	for (u32 page = 1; page <= 2; ++page) {
+		writeInstruction(image.text, page * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::KSMI), 0, 0, page == 1 ? 11 : 27);
+		writeInstruction(image.text, page * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	}
+	writeInstruction(image.text, 3 * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::SETGL), 7, 0, 0);
+	writeInstruction(image.text, 3 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord=0, .wordCount=5, .maxStack=16},
+		{.firstWord=DECODED_PAGE_WORDS, .wordCount=2, .maxStack=8, .staticClosure=false},
+		{.firstWord=2 * DECODED_PAGE_WORDS, .wordCount=2, .maxStack=8, .staticClosure=false},
+		{.firstWord=3 * DECODED_PAGE_WORDS, .wordCount=2, .maxStack=8}};
+	image.closureRelocations = {{1, ramRecord ? sourceRecord : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	image.globalNames = {"rawBindingMarker"};
+	CpuMachine generated(image, false), scalar(image, true);
+	for (auto* machine : {&generated, &scalar}) {
+		if (ramRecord) machine->memory.writeBytes(sourceRecord,
+			machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (machine == &generated) machine->cpu.prepareSystemNativeCode();
+#endif
+		machine->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]);
+		require(machine->cpu.readFramePc(0) == machine->rom.textAddress + 2 * INSTRUCTION_BYTES,
+			"CLOSURE construction finishes before the first CALL");
+		machine->cpu.runUntilDepth(0, 100);
+		require(machine->cpu.isHaltedUntilIrq() && machine->cpu.readFrameRegister(0, 4) == valueInteger(11),
+			"one real call/return admits the spare frame before testing the native gate");
+		machine->cpu.clearHaltUntilIrq();
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0],
+			machine->rom.textAddress + 2 * INSTRUCTION_BYTES);
+		auto* frame = machine->cpu.activeThread()->currentFrame;
+		const u32 closure = valuePayload(frame->registers.get(0));
+		require(ClosureRecord::readBinding(machine->memory, closure).codeAddress
+			== machine->rom.textAddress + MAPPED_PAGE_BYTE_SIZE, "the newly constructed closure binds the original code record");
+		if (ramRecord) {
+			// Updating the source record does not change the construction-time RAM latch.
+			machine->memory.writeMappedU32LE(sourceRecord + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, machine->rom.textAddress);
+			const u32 tail = ClosureRecord::captureWordAddress(closure, 0);
+			require(machine->memory.readRamRecordWord(tail) == machine->rom.textAddress + MAPPED_PAGE_BYTE_SIZE,
+				"a RAM prototype is sampled once by CLOSURE, independently of later source stores");
+			machine->memory.writeMappedU32LE(tail, machine->rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE);
+		} else {
+			machine->memory.writeMappedU32LE(closure + CLOSURE_PROTOTYPE_ADDRESS, machine->rom.functionAddresses[2]);
+		}
+		frame->registers.set(12, valueInteger(73));
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	if (marker) {
+		auto& cpu = generated.cpu;
+		auto* owner = cpu.activeThread()->currentFrame->executionImage;
+		const u32 targetPc = generated.rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE;
+		const u32 markerPc = generated.rom.textAddress + 3 * MAPPED_PAGE_BYTE_SIZE;
+		auto* target = owner->nativeCodeLookup->find(targetPc, 0);
+		auto* alternate = owner->nativeCodeLookup->find(markerPc, 0);
+		require(target && alternate && target->nativeCode && alternate->nativeCode,
+			"both raw target and independent marker have real native publications");
+		target->nativeCode[(targetPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]
+			= alternate->nativeCode[(markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+		cpu.runUntilDepth(0, 100);
+		require(cpu.getGlobalByKey(cpu.stringPool().intern("rawBindingMarker")) == valueInteger(73)
+			&& cpu.getFrameDepth() == 2, "native CALL reads the live raw binding and enters its independently redirected native target without C++ replay");
+		return;
+	}
+#else
+	(void)marker;
+#endif
+	const auto savedCpu = generated.cpu.captureRuntimeState();
+	const auto savedRam = generated.memory.captureSaveState();
+	for (const bool restore : {false, true}) {
+		for (auto* machine : {&generated, &scalar}) {
+			if (restore) {
+				machine->memory.restoreSaveState(savedRam);
+				machine->cpu.restoreRuntimeState(savedCpu);
+			}
+		}
+		for (const int grant : {0, 1, 2, 3, 5, 32, 1, 100}) {
+			test::runCpuParity(generated.cpu, scalar.cpu, grant);
+			requireParity(generated, scalar);
+			require(generated.cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState()
+				&& test::sameLanguageRam(generated.cpu, scalar.cpu), "all guest RAM and CPU latches agree at every raw-binding grant boundary");
+		}
+		require(generated.cpu.isHaltedUntilIrq() && generated.cpu.readFrameRegister(0, 4) == valueInteger(27),
+			"new CALL uses the current closure binding without changing an already active frame");
+	}
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
 	try {
+		for (const bool ram : {false, true}) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			rawClosureCallBinding(ram, true);
+#endif
+			rawClosureCallBinding(ram, false);
+		}
+		if (argc == 2 && std::string_view(argv[1]) == "--raw-bindings-only") {
+			std::cout << "Raw closure CALL binding tests passed\n";
+			return 0;
+		}
 		rewriteActiveReturnAddress();
 		ownedValueStack();
 		reusableFrameChain();

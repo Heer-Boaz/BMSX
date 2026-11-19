@@ -12,7 +12,6 @@
 
 namespace bmsx {
 class GcHeap;
-struct Closure;
 struct Thread;
 
 // Only transient complete values use this transport word. Persistent slots use
@@ -116,7 +115,7 @@ inline uint32_t scalarValueHash(Value value) {
 		default: BMSX_UNREACHABLE();
 	}
 }
-Closure* asClosure(Value value, const GcHeap& heap);
+uint32_t asClosure(Value value, const GcHeap& heap);
 Thread* asThread(Value value, const GcHeap& heap);
 
 int appendValueString(std::string& out, Value value, const StringPool& strings);

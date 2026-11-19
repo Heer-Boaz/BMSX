@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { Closure } from '../../machine/ts/machine/cpu/closure';
+import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { ValueTag, valueTag, valuePayload, valueFloatBits, valueFromTag, valueInteger, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
@@ -25,17 +25,16 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 	const bound = frame.closure;
 	const cells = new Uint32Array(1);
-	const replacement = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(1, false, cells, cells.length), bound.prototypeRecord, false);
+	const replacement = cpu.luaHeap.allocateClosureRecord(1, false, cells, cells.length);
 	const upvalue = cells[0];
 	Upvalue.bindOpen(cpu.memory, upvalue, frame.thread.address, frame.stackBase + 8, 0);
-	replacement.initializeRecord(cpu.gc.white(), 1);
-	replacement.setCaptureAddress(0, upvalue);
-	cpu.gc.track(replacement);
-	frame.closureAddress = replacement.address;
+	ClosureRecord.initializeRecord(cpu.memory, replacement, cpu.captureClosureBinding(bound), false, cpu.gc.white(), 1);
+	ClosureRecord.setCaptureAddress(cpu.memory, replacement, 0, upvalue);
+	frame.closureAddress = replacement;
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!;
-	const other = cpu.createThread(null);
+	const other = cpu.createThread(0);
 	other.resizeStack(22);
 	const values = [valueFromTag(ValueTag.False, 37), valueInteger(-1), valueFloatBits(0x80000000), valueFloatBits(0xffc01234),
 		valueString(cpu.stringPool.intern('upvalue')), valueTable(cpu.createTable())];

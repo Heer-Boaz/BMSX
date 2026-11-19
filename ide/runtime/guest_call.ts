@@ -1,5 +1,4 @@
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
-import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { ALL_EXECUTION_DOMAINS_MASK, type ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
@@ -11,7 +10,7 @@ import type { RuntimeDebuggerSourceStop } from './source_debugger';
 
 export type RuntimeGuestCall = {
 	readonly domain: ExecutionDomainId;
-	readonly closure: Closure;
+	readonly closure: number;
 	/** Materialize new guest values only after the mutation has been admitted. */
 	readonly args: () => readonly Value[];
 };
