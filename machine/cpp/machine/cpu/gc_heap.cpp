@@ -109,17 +109,69 @@ GcHeap::~GcHeap() {
 		auto* object = m_objects; m_objects = object->next; destroyObject(object);
 	}
 }
-void GcHeap::enqueue(u32 address, u32 link, u32 queue, bool closure) {
-	const u32 previous = head(queue);
-	const u32 captureCountBits = closure ? memory.readRamRecordWord(address + link) & ~GC_GRAY_INDEX_MASK : 0u;
-	memory.writeRamRecordWord(address + link, captureCountBits | previous);
+void GcHeap::enqueue(u32 address, u32 link, u32 queue) {
+	const u32 previous = indexWord(queue);
+	const u32 otherBits = link == GC_RECORD_LINK ? memory.readRamRecordWord(address + link) & ~GC_GRAY_INDEX_MASK : 0u;
+	memory.writeRamRecordWord(address + link, otherBits | previous);
 	memory.writeRamRecordByte(address + GC_COLOR_OFFSET, 2);
 	memory.writeRamRecordWord(m_controlOffset + queue, (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT);
 }
 
+// The regular gray index occupies the low bits of +4. Tables and Threads
+// also wire an independent visit link through its high bits and byte 3.
+static constexpr u32 VISIT_LINK_LOW_BITS = 32u - GC_GRAY_INDEX_BITS;
+static constexpr u8 VISIT_LINK_HIGH_MASK = GC_GRAY_INDEX_MASK >> VISIT_LINK_LOW_BITS;
+
+void GcHeap::setVisitLink(u32 address, u8 meta, u32 index) {
+	const u32 gray = memory.readRamRecordWord(address + GC_RECORD_LINK) & GC_GRAY_INDEX_MASK;
+	memory.writeRamRecordWord(address + GC_RECORD_LINK, gray | (index << GC_GRAY_INDEX_BITS));
+	memory.writeRamRecordByte(address + GC_VISIT_HEADER_BYTE,
+		(meta & ~VISIT_LINK_HIGH_MASK) | (index >> VISIT_LINK_LOW_BITS));
+}
+
+void GcHeap::appendVisit(u32 list, u32 address) {
+	const u8 meta = memory.readRamRecordByte(address + GC_VISIT_HEADER_BYTE);
+	if (meta & GC_VISIT_MEMBER) return;
+	const u32 index = (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT;
+	const u32 tail = indexWord(list + GC_VISIT_TAIL);
+	setVisitLink(address, meta | GC_VISIT_MEMBER, 0u);
+	if (tail != 0u) {
+		const u32 last = tail << GC_RECORD_SHIFT;
+		setVisitLink(last, memory.readRamRecordByte(last + GC_VISIT_HEADER_BYTE), index);
+	} else {
+		memory.writeRamRecordWord(m_controlOffset + list, index);
+	}
+	memory.writeRamRecordWord(m_controlOffset + list + GC_VISIT_TAIL, index);
+	const u32 count = indexWord(list + GC_VISIT_COUNT);
+	memory.writeRamRecordWord(m_controlOffset + list + GC_VISIT_COUNT, (count + 1u) & GC_GRAY_INDEX_MASK);
+}
+
+template<ObjType Kind, bool Drain, class Visitor>
+size_t GcHeap::visitList(u32 list, Visitor&& visitor) {
+	u32 index = indexWord(list);
+	u32 remaining = indexWord(list + GC_VISIT_COUNT);
+	size_t work = 0;
+	while (index != 0u && remaining-- != 0u) {
+		const u32 address = index << GC_RECORD_SHIFT;
+		const u8 meta = memory.readRamRecordByte(address + GC_VISIT_HEADER_BYTE);
+		auto* record = m_records[index];
+		// Only the matching, linked record clocks the list port.
+		if (!(meta & GC_VISIT_MEMBER) || !record || record->type != Kind) break;
+		const u32 low = memory.readRamRecordWord(address + GC_RECORD_LINK) >> GC_GRAY_INDEX_BITS;
+		index = low | ((meta & VISIT_LINK_HIGH_MASK) << VISIT_LINK_LOW_BITS);
+		if constexpr (Drain) setVisitLink(address, meta & ~GC_VISIT_MEMBER, 0u);
+		work += visitor(record);
+	}
+	if constexpr (Drain) {
+		memory.writeRamRecordPair(m_controlOffset + list, 0u, 0u);
+		memory.writeRamRecordWord(m_controlOffset + list + GC_VISIT_COUNT, 0u);
+	}
+	return work;
+}
+
 bool GcHeap::markObject(GCObject* object) {
 	if (!object || object->gcColor() != white()) return false;
-	enqueue(physicalAddress(object), GC_RECORD_LINK, GC_TRACE_HEAD, object->type == ObjType::Closure);
+	enqueue(physicalAddress(object), GC_RECORD_LINK, GC_TRACE_HEAD);
 	return true;
 }
 
@@ -215,7 +267,7 @@ bool GcHeap::valueIsAlive(Value value) const {
 }
 
 size_t GcHeap::trace(bool atomic) {
-	const u32 index = head(GC_TRACE_HEAD);
+	const u32 index = indexWord(GC_TRACE_HEAD);
 	auto* obj = m_records[index];
 	// A link is clocked only by a queued record. Consuming its color bounds
 	// malformed cycles as well as preventing a duplicate scan.
@@ -227,13 +279,13 @@ size_t GcHeap::trace(bool atomic) {
 	const u32 link = address + (obj->type == ObjType::Upvalue ? UPVALUE_NEXT : GC_RECORD_LINK);
 	const u32 packed = memory.readRamRecordWord(link);
 	memory.writeRamRecordWord(m_controlOffset + GC_TRACE_HEAD, packed & GC_GRAY_INDEX_MASK);
-	memory.writeRamRecordWord(link, obj->type == ObjType::Closure ? packed & ~GC_GRAY_INDEX_MASK : 0u);
+	memory.writeRamRecordWord(link, obj->type != ObjType::Upvalue ? packed & ~GC_GRAY_INDEX_MASK : 0u);
 	obj->setGcColor(3);
 	switch (obj->type) {
 		case ObjType::Thread: {
 			auto* thread = static_cast<Thread*>(obj);
 			size_t cellWork = 0;
-			if (!atomic) m_threads.push_back(thread);
+			if (!atomic) appendVisit(GC_THREAD_VISITS, thread->address);
 			markObject(thread->resumer());
 			markObject(thread->entry());
 			markValue(thread->error());
@@ -263,10 +315,7 @@ size_t GcHeap::trace(bool atomic) {
 			auto* table = static_cast<Table*>(obj);
 			markObject(table->metatable());
 			const uint8_t weakMode = tableWeakMode(*table);
-			if (weakMode != 0 && !table->gcWeakListed) {
-				table->gcWeakListed = true;
-				m_weakTables.push_back(table);
-			}
+			if (weakMode != 0) appendVisit(GC_WEAK_VISITS, table->address());
 			if ((weakMode & kTableWeakKeys) == 0) {
 				table->forEachEntry([this, weakMode](Value key, Value value) {
 					markValue(key);
@@ -297,13 +346,16 @@ size_t GcHeap::remark(Value root0, Value root1, Value root2) {
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcPhaseMeasurement measurement(profile.rootsNanoseconds);
 #endif
-	for (auto* thread : m_threads) writeBarrier(thread->address, GC_RECORD_LINK);
+	const auto requeue = [&](GCObject* record) {
+		writeBarrier(physicalAddress(record), GC_RECORD_LINK);
+		return 0u;
+	};
+	visitList<ObjType::Thread, true>(GC_THREAD_VISITS, requeue);
 	// Also observe mode changes made through a shared metatable.
-	for (auto* table : m_weakTables) writeBarrier(table->address(), GC_RECORD_LINK);
-	m_threads.clear();
+	visitList<ObjType::Table, false>(GC_WEAK_VISITS, requeue);
 	// The current trace queue is empty. Further writes go to grayAgain, so
 	// mutation cannot continually put the same object in this pass's queue.
-	memory.writeRamRecordPair(m_controlOffset + GC_TRACE_HEAD, head(GC_CHANGED_HEAD), 0u);
+	memory.writeRamRecordPair(m_controlOffset + GC_TRACE_HEAD, indexWord(GC_CHANGED_HEAD), 0u);
 	m_cpu.markRoots(*this);
 	m_stringPool.markLocalRoots();
 	markValue(root0); markValue(root1); markValue(root2);
@@ -319,22 +371,22 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcPhaseMeasurement measurement(profile.traceNanoseconds);
 #endif
-	while (head(GC_TRACE_HEAD) != 0u) {
+	while (indexWord(GC_TRACE_HEAD) != 0u) {
 		work += trace(true);
 		work += m_stringPool.takeMarkWork();
 	}
 	bool changed;
 	do {
 		changed = false;
-		for (size_t index = 0; index < m_weakTables.size(); ++index) {
-			auto* table = m_weakTables[index];
-			if (tableWeakMode(*table) != kTableWeakKeys) continue;
-			work += table->scanSlots();
+		work += visitList<ObjType::Table, false>(GC_WEAK_VISITS, [&](GCObject* record) -> size_t {
+			auto* table = static_cast<Table*>(record);
+			if (tableWeakMode(*table) != kTableWeakKeys) return 0;
 			table->forEachEntry([&](Value key, Value value) {
 				if (valueIsAlive(key) && markValue(value)) changed = true;
 			});
-		}
-		while (head(GC_TRACE_HEAD) != 0u) {
+			return table->scanSlots();
+		});
+		while (indexWord(GC_TRACE_HEAD) != 0u) {
 			work += trace(true);
 			work += m_stringPool.takeMarkWork();
 		}
@@ -342,19 +394,19 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	measurement.phase(profile.weakNanoseconds);
 #endif
-	for (auto* table : m_weakTables) {
+	work += visitList<ObjType::Table, true>(GC_WEAK_VISITS, [&](GCObject* record) {
+		auto* table = static_cast<Table*>(record);
 		const auto mode = tableWeakMode(*table);
-		work += table->scanSlots();
+		const auto slots = table->scanSlots();
 		table->clearWeakEntries((mode & 1) != 0, (mode & 2) != 0,
 			[this](Value value) { return valueIsAlive(value); });
 		table->forEachEntry([this](Value key, Value value) {
 			if (valueIsString(key)) m_stringPool.markReachable(asStringId(key));
 			if (valueIsString(value)) m_stringPool.markReachable(asStringId(value));
 		});
-		table->gcWeakListed = false;
-	}
+		return slots;
+	});
 	m_cpu.pruneStaticClosures();
-	m_weakTables.clear(); m_threads.clear();
 	memory.writeRamRecordByte(m_controlOffset + 1u, white() ^ 1u);
 	arena.beginObjectSweep();
 	setPhase(GcPhase::Sweep);
@@ -447,7 +499,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 					GcPhaseMeasurement traceTime(phase() == GcPhase::Mark ? profile.traceNanoseconds : profile.markAgainNanoseconds);
 #endif
-					while (head(GC_TRACE_HEAD) != 0u && work < GC_STEP_WORDS) {
+					while (indexWord(GC_TRACE_HEAD) != 0u && work < GC_STEP_WORDS) {
 						work += trace(false);
 						work += m_stringPool.takeMarkWork();
 					}
@@ -525,10 +577,6 @@ void GcHeap::restoreState(const GcState& state, const std::vector<GCObject*>& ob
 		if (previous) previous->next = object; else m_objects = object;
 		previous = object;
 	}
-	m_threads.clear(); m_weakTables.clear();
-	for (auto ref : state.threads) m_threads.push_back(static_cast<Thread*>(objects[ref]));
-	for (auto ref : state.weak) {
-		auto* table = static_cast<Table*>(objects[ref]); table->gcWeakListed = true; m_weakTables.push_back(table);
-	}
+
 }
 } // namespace bmsx

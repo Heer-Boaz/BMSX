@@ -499,7 +499,6 @@ export class TableRecords {
 }
 
 export class Table extends GcObject {
-	public gcWeakListed = false;
 	constructor(private readonly heap: GcHeap, public readonly address: number) { super(GcKind.Table); }
 	public get records(): TableRecords { return this.heap.tables; }
 	public get metatable(): Table | null {

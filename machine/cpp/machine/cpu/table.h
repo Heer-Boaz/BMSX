@@ -271,7 +271,6 @@ public:
 	Table* metatable() const;
 	void setMetatable(Table* table) { setMetatableAddress(table ? table->address() : 0u); }
 	u32 captureSnapshot(CpuSnapshot& snapshot) const;
-	bool gcWeakListed = false;
 };
 
 } // namespace bmsx

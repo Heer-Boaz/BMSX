@@ -218,8 +218,7 @@ void incrementalStateAndBarriers() {
 		cpu.memory().restoreSaveState(ram); cpu.restoreRuntimeState(state);
 		const auto after = cpu.captureRuntimeState();
 		require(std::ranges::equal(state.snapshot.words(), after.snapshot.words())
-			&& state.gc.allocations == after.gc.allocations
-			&& state.gc.threads == after.gc.threads && state.gc.weak == after.gc.weak,
+			&& state.gc.allocations == after.gc.allocations,
 			"restore preserves collector cursors, queues and dead allocation work, not dead graph pointers");
 		require(cpu.memory().captureSaveState().ram == ram.ram, "restoration never rewrites raw mark colors or phase");
 		if (!cpu.collecting()) break;
@@ -251,17 +250,40 @@ void incrementalSharedWeakMode() {
 	auto* metatable = cpu.createTable(0, 1);
 	metatable->setStringKey(modeKey, valueString(cpu.stringPool().intern("v")));
 	auto* weak = asTable(roots->getInteger(1000), cpu.gcHeap());
+	auto* following = asTable(roots->getInteger(999), cpu.gcHeap());
 	weak->setMetatable(metatable);
+	following->setMetatable(metatable);
 	auto* child = cpu.createTable();
-	weak->setInteger(1, valueTable(cpu.gcHeap().reference(child)));
+	const Value childValue = valueTable(child->address());
+	weak->setInteger(1, childValue);
 	cpu.stepHeap(valueNil(), valueNil(), valueNil());
-	require(cpu.gcHeap().phase() == GcPhase::Mark && weak->gcColor() == 3
-		&& weak->gcWeakListed && child->gcColor() != 3, "weak entry has not retained its child before the mode change");
+	const auto index = [](u32 address) { return (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT; };
+	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	require(cpu.gcHeap().phase() == GcPhase::Mark && weak->gcColor() == 3 && child->gcColor() != 3
+		&& machine.memory.readRamRecordWord(control + GC_WEAK_VISITS) == index(weak->address())
+		&& machine.memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_TAIL) == index(following->address())
+		&& machine.memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_COUNT) == 2,
+		"the weak visit list records the two Tables in discovery order without keeping the weak value alive");
+	require(machine.memory.readRamRecordWord(control + GC_THREAD_VISITS) == index(cpu.rootThread()->address)
+		&& machine.memory.readRamRecordWord(control + GC_THREAD_VISITS + GC_VISIT_COUNT) == 1,
+		"the scanned Thread is pending its next remark");
+	const u32 weakAddress = weak->address(), metaAddress = metatable->address();
+	const auto saved = cpu.captureRuntimeState();
+	const auto ram = machine.memory.captureSaveState();
+	machine.memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(saved);
+	require(machine.memory.captureSaveState().ram == ram.ram, "RAM restores both pending visit lists without rewriting them");
+	metatable = cpu.gcHeap().tableAt(metaAddress);
+	weak = cpu.gcHeap().tableAt(weakAddress);
 	metatable->setStringKey(modeKey, valueNil());
 	while (cpu.collecting()) cpu.stepHeap(valueNil(), valueNil(), valueNil());
-	require(weak->getInteger(1) == valueTable(cpu.gcHeap().reference(child)), "atomic remark observes the shared metatable change");
+	require(weak->getInteger(1) == childValue && cpu.gcHeap().tableAt(valuePayload(childValue)),
+		"atomic remark observes the shared metatable change after restore");
+	require(machine.memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_COUNT) == 0
+		&& machine.memory.readRamRecordWord(control + GC_THREAD_VISITS + GC_VISIT_COUNT) == 0,
+		"both physical lists are empty after collection");
 	cpu.collectHeap();
-	require(weak->getInteger(1) == valueTable(cpu.gcHeap().reference(child)), "the newly strong entry retains its child in the next cycle");
+	require(weak->getInteger(1) == childValue, "the newly strong entry retains its child in the next cycle");
 }
 
 void consumesSelfLinkedGrayEdge() {

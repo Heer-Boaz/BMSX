@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { GcPhase, GC_STEP_WORDS } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
 import { ValueTag, asTable, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -136,24 +136,40 @@ test('final remark observes weak-to-strong changes through a shared metatable', 
 	frame.top = 1;
 	for (let i = 1; i <= 1000; ++i) roots.records.setInteger(roots.address, i, valueTable(cpu.gc.reference(cpu.createTable())));
 	const modeKey = cpu.stringPool.intern('__mode');
-	const metatable = cpu.createTable(0, 1);
+	let metatable = cpu.createTable(0, 1);
 	metatable.records.setStringKey(metatable.address, modeKey, valueString(cpu.stringPool.intern('v')));
-	const weak = asTable(roots.records.getInteger(roots.address, 1000), cpu.gc);
+	let weak = asTable(roots.records.getInteger(roots.address, 1000), cpu.gc);
+	const following = asTable(roots.records.getInteger(roots.address, 999), cpu.gc);
 	weak.metatable = metatable;
-	const child = cpu.createTable();
-	weak.records.setInteger(weak.address, 1, valueTable(cpu.gc.reference(child)));
+	following.metatable = metatable;
+	const child = cpu.createTable(), childValue = valueTable(child.address);
+	weak.records.setInteger(weak.address, 1, childValue);
 	cpu.gc.step();
+	const { memory } = cpu, control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const index = (address: number) => (address & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT;
 	assert.equal(cpu.gc.phase(), GcPhase.Mark);
 	assert.equal(weak.gcColor, 3);
-	assert.equal(weak.gcWeakListed, true);
 	assert.notEqual(child.gcColor, 3, 'the weak entry has not retained its child');
+	assert.equal(memory.readRamRecordWord(control + GC_WEAK_VISITS), index(weak.address));
+	assert.equal(memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_TAIL), index(following.address));
+	assert.equal(memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_COUNT), 2);
+	assert.equal(memory.readRamRecordWord(control + GC_THREAD_VISITS), index(cpu.rootThread.address));
+	assert.equal(memory.readRamRecordWord(control + GC_THREAD_VISITS + GC_VISIT_COUNT), 1);
+
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	assert.deepEqual(memory.captureSaveState().ram, ram.ram, 'restore does not reconstruct visit metadata');
+	metatable = cpu.gc.tableAt(metatable.address)!;
+	weak = cpu.gc.tableAt(weak.address)!;
 	// Only the shared mode table is written, not the table holding the edge.
 	metatable.records.setStringKey(metatable.address, modeKey, valueNil());
 	while (cpu.gc.active()) cpu.gc.step();
-	assert.equal(weak.records.getInteger(weak.address, 1), valueTable(cpu.gc.reference(child)));
-	assert.ok(cpu.gc.captureState(object => object.hashId).allocations.includes(child.hashId));
+	assert.equal(weak.records.getInteger(weak.address, 1), childValue);
+	assert.ok(cpu.gc.tableAt(child.address), 'the shared weak-to-strong change is still seen after restore');
+	assert.equal(memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_COUNT), 0);
+	assert.equal(memory.readRamRecordWord(control + GC_THREAD_VISITS + GC_VISIT_COUNT), 0);
 	cpu.collectTrackedHeapBytes();
-	assert.equal(weak.records.getInteger(weak.address, 1), valueTable(cpu.gc.reference(child)));
+	assert.equal(weak.records.getInteger(weak.address, 1), childValue);
 });
 
 test('changed objects wait for a finite second pass and retain later writes across restore', () => {

@@ -17,7 +17,7 @@ inline constexpr size_t GC_STEP_WORDS = 4096;
 inline constexpr size_t GC_ASSIST_BYTES = 256;
 enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
 struct GcState {
-	std::vector<u32> allocations, threads, weak;
+	std::vector<u32> allocations;
 };
 
 // Physical records start on an eight-byte boundary, including size-class slots.
@@ -26,6 +26,14 @@ inline constexpr u32 GC_RECORD_MASK = MAIN_RAM_SIZE - GC_RECORD_ALIGNMENT;
 static_assert(GC_GRAY_INDEX_MASK == GC_RECORD_MASK >> GC_RECORD_SHIFT);
 inline constexpr u32 GC_TRACE_HEAD = 4u;
 inline constexpr u32 GC_CHANGED_HEAD = 8u;
+// Each visit list has a head, tail and record count. The first two words
+// start on a pair boundary. Offsets are relative to HEAP_GC_CONTROL_OFFSET.
+inline constexpr u32 GC_THREAD_VISITS = 12u;
+inline constexpr u32 GC_WEAK_VISITS = 28u;
+inline constexpr u32 GC_VISIT_TAIL = 4u;
+inline constexpr u32 GC_VISIT_COUNT = 8u;
+inline constexpr u32 GC_VISIT_HEADER_BYTE = 3u;
+inline constexpr u8 GC_VISIT_MEMBER = 0x40u;
 
 class GcHeap {
 public:
@@ -77,8 +85,6 @@ public:
 	template<class Ref> GcState captureState(Ref&& ref) const {
 		GcState state;
 		for (auto* object = m_objects; object; object = object->next) state.allocations.push_back(ref(object));
-		for (auto* object : m_threads) state.threads.push_back(ref(object));
-		for (auto* object : m_weakTables) state.weak.push_back(ref(object));
 		return state;
 	}
 	void restoreState(const GcState& state, const std::vector<GCObject*>& objects);
@@ -124,8 +130,12 @@ private:
 	void track(GCObject* object);
 	uint8_t tableWeakMode(const Table& table) const;
 	bool valueIsAlive(Value value) const;
-	u32 head(u32 queue) const { return memory.readRamRecordWord(m_controlOffset + queue) & GC_GRAY_INDEX_MASK; }
-	void enqueue(u32 address, u32 link, u32 queue, bool closure = false);
+	u32 indexWord(u32 queue) const { return memory.readRamRecordWord(m_controlOffset + queue) & GC_GRAY_INDEX_MASK; }
+	void enqueue(u32 address, u32 link, u32 queue);
+	void appendVisit(u32 list, u32 address);
+	void setVisitLink(u32 address, u8 meta, u32 index);
+	template<ObjType Kind, bool Drain, class Visitor>
+	size_t visitList(u32 list, Visitor&& visitor);
 	size_t markCell(Upvalue* cell);
 	size_t trace(bool atomic);
 	size_t remark(Value root0, Value root1, Value root2);
@@ -136,8 +146,6 @@ private:
 	void unlink(GCObject* object);
 	CPU& m_cpu;
 	GCObject* m_objects = nullptr;
-	std::vector<Thread*> m_threads;
-	std::vector<Table*> m_weakTables;
 	u32 m_nextObjectHashId = 1;
 	void setPhase(GcPhase phase) { memory.writeRamRecordByte(m_controlOffset, static_cast<u8>(phase)); }
 	StringId m_modeKey;

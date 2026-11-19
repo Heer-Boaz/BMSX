@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x49534d42u; // BMSI
+constexpr u32 kSaveStateSignature = 0x4a534d42u; // BMSJ
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1174,16 +1174,13 @@ CpuSnapshot readCpuSnapshot(BinaryReader& reader) {
 }
 
 template<class Writer> void writeGcState(Writer& writer, const GcState& state) {
-	for (const auto* values : {&state.allocations, &state.threads, &state.weak}) {
-		writer.u32(static_cast<u32>(values->size()));
-		writer.u32s(*values);
-	}
+	writer.u32(static_cast<u32>(state.allocations.size()));
+	writer.u32s(state.allocations);
 }
 GcState readGcState(BinaryReader& reader) {
 	GcState state;
-	for (auto* values : {&state.allocations, &state.threads, &state.weak}) {
-		values->resize(reader.u32()); reader.u32s(*values);
-	}
+	state.allocations.resize(reader.u32());
+	reader.u32s(state.allocations);
 	return state;
 }
 

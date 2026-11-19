@@ -202,13 +202,19 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 		}
 		if (generic) {
 			auto* child = cpu.createTable();
-			cpu.gcHeap().step(ref, valueTable(cpu.gcHeap().reference(model)), valueNil());
+			auto* metatable = cpu.createTable(0, 1);
+			metatable->setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+			table->setMetatable(metatable);
+			model->setMetatable(metatable);
+			cpu.gcHeap().step(valueTable(model->address()), ref, valueNil());
 			require(table->gcColor() == 3, "array receiver was actually scanned before inserting the new edge");
 			registers.set(1, valueInteger(1));
 			registers.set(2, valueTable(cpu.gcHeap().reference(child)));
 			const Value previous = table->getInteger(1);
 			const u32 header = table->address();
 			const u32 head = cpu.gcHeap().changedHeadOffset();
+			const u32 weakLink = memory.readRamRecordWord(header + GC_RECORD_LINK) & ~GC_GRAY_INDEX_MASK;
+			require(weakLink != 0, "the table is also linked to a second weak table");
 			model->setInteger(1, valueInteger(303));
 			const u32 previousHead = memory.readRamRecordWord(head);
 			require(previousHead == ((model->address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT), "scalar Table write publishes the prior link");
@@ -226,7 +232,7 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 			}
 			state.remainingCycles = 100;
 			require(block->run(state) == &block->terminal && memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 2
-				&& memory.readRamRecordWord(header + GC_RECORD_LINK) == previousHead
+				&& memory.readRamRecordWord(header + GC_RECORD_LINK) == (weakLink | previousHead)
 				&& memory.readRamRecordWord(head) == ((header & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
 				"a native array hit links the scanned Table onto the physical changed queue");
 		}

@@ -44,6 +44,18 @@ void NativeBlockCompiler::emitGrayChange(NativeBlockExitSite& exit, sljit_s32 of
 	if constexpr (std::endian::native == std::endian::big)
 		sljit_emit_op1(c, SLJIT_REV32, link, 0, link, 0);
 	sljit_emit_op2(c, SLJIT_AND32, link, 0, link, 0, SLJIT_IMM, GC_GRAY_INDEX_MASK);
+	if (linkOffset == GC_RECORD_LINK) {
+		// Merge the low gray index without disturbing the visit-list link
+		// in the high bits. Rebuild the head port after reusing scratch.
+		sljit_emit_op1(c, SLJIT_MOV32, scratch, 0, SLJIT_MEM1(record), linkOffset);
+		if constexpr (std::endian::native == std::endian::big)
+			sljit_emit_op1(c, SLJIT_REV32, scratch, 0, scratch, 0);
+		sljit_emit_op2(c, SLJIT_AND32, scratch, 0, scratch, 0, SLJIT_IMM, ~GC_GRAY_INDEX_MASK);
+		sljit_emit_op2(c, SLJIT_OR32, link, 0, link, 0, scratch, 0);
+		sljit_emit_op1(c, SLJIT_MOV_P, scratch, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+		sljit_emit_op2(c, SLJIT_ADD32, scratch, 0, SLJIT_MEM1(scratch), GcHeap::nativeControlOffset(), SLJIT_IMM, GC_CHANGED_HEAD);
+		NativeBlockAbi::emitRamAddress(c, scratch, scratch);
+	}
 	if constexpr (std::endian::native == std::endian::big)
 		sljit_emit_op1(c, SLJIT_REV32, link, 0, link, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(record), linkOffset, link, 0);
