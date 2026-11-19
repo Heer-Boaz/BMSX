@@ -115,7 +115,6 @@ CPU::CPU(
 	}
 	m_rootView.select(createThread(0u));
 	m_rootView.bindStack();
-	m_rootView.armStackWatch();
 	m_rootView.setStatus(ThreadStatus::Running);
 	m_activeThread = &m_rootView;
 	m_completionThreadAddress = m_rootView.address;
@@ -187,7 +186,6 @@ void CPU::reset() {
 	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
-	armThreadViewWatches();
 	if (!setProgramHeapFloor(systemBoot.staticEnd)) { hardHalt(); return; }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
@@ -267,12 +265,9 @@ void CPU::decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddre
 void CPU::releaseImageData(Blua32ExecutionImage& image) {
 	if (const u32 base = std::exchange(image.globalMapBase, 0u)) {
 		m_heapAllocator.free(base);
-		m_memory.invalidateRamWrite(base & RAM_RECORD_WORD_MASK, image.globalMapBytes());
 	}
 	if (const u32 base = std::exchange(image.constantBase, 0u)) {
-		image.constantsWatched = false;
 		m_heapAllocator.free(base);
-		m_memory.invalidateRamWrite(base & RAM_RECORD_WORD_MASK, image.constPool.size() * 5u);
 	}
 }
 
@@ -338,8 +333,6 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 			registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
 				m_systemGlobalBank, base + 4u * globalNameCount);
 		}
-		// Decoded global operands and their generated immediates depend on these bytes.
-		m_memory.ramWriteWatches().armCodeRange(base & RAM_RECORD_WORD_MASK, bytes);
 	}
 	if (constantCount != 0u) {
 		image->constantBase = restoring ? (*restoredBases)[0] : m_luaHeap.allocateRecord(constantCount * 5u, true, 0, 0);
@@ -581,96 +574,33 @@ void CPU::bindPhysicalFrames(Thread& thread) {
 		frame->executionImage = m_executionImagesByDomain[static_cast<size_t>(frame->savedExecutionBank() + 1)].get();
 }
 
-void CPU::armThreadViewWatches() {
-	visitThreadViews([](Thread& thread) { thread.armBoundViewWatches(); });
-}
-
 Thread& CPU::bindThread(u32 address) {
 	if (address == m_rootView.address) return m_rootView;
 	for (auto& view : m_transferViews) if (view.address == address) return view;
 	// A transfer may still borrow the current bank for arguments/results.
 	auto& view = m_activeThread == &m_transferViews[0] ? m_transferViews[1] : m_transferViews[0];
-	if (view.address != 0u) {
-		view.disarmViewWatches();
-		view.select(0u);
-		armThreadViewWatches();
-	}
 	view.select(address);
 	bindPhysicalFrames(view);
-	view.armBoundViewWatches();
 	return view;
 }
 
 void CPU::retireThreadView(u32 address) {
 	for (auto& view : m_transferViews) {
 		if (view.address != address) continue;
-		view.disarmViewWatches();
 		view.select(0u);
-		armThreadViewWatches();
 		return;
 	}
 }
 
-void CPU::invalidateMappedViews(u64 key, u32 firstWord, u32 endWord) {
-	const u32 first = static_cast<u32>(key) + firstWord * 4u;
-	const u32 end = static_cast<u32>(key) + endWord * 4u;
-	bool disarmedGeometry = false;
+void CPU::rebindRelocatedThread(u32 address) {
 	visitThreadViews([&](Thread& thread) {
-		const u32 descriptor = thread.address + static_cast<u32>(ThreadField::StackBlock);
-		const u32 depth = thread.address + static_cast<u32>(ThreadField::FrameDepth);
-		if (first <= depth && depth < end) {
-			thread.disarmViewWatches();
-			disarmedGeometry = true;
-			bindPhysicalFrames(thread);
-			thread.armBoundViewWatches();
-			m_activeStackRebound |= &thread == m_activeThread;
-		} else if (first < descriptor + 16u && end > descriptor) {
-			thread.disarmViewWatches();
-			disarmedGeometry = true;
-			m_activeStackRebound |= thread.observeStackWrite() && &thread == m_activeThread;
-		}
+		if (thread.address != address) return;
+		thread.bindStack();
+		m_activeStackRebound |= &thread == m_activeThread;
 	});
-	// Rebinding may have removed still-shared words from the old aperture.
-	if (disarmedGeometry) armThreadViewWatches();
-	visitThreadViews([&](Thread& thread) {
-		m_activeStackRebound |= thread.observeFrameWindowWrites(first, end) && &thread == m_activeThread;
-	});
-}
-
-void CPU::invalidateImageDataDependencies(u64 key, u32 firstWord, u32 endWord) {
-	const u64 first = key + firstWord * 4u, end = key + endWord * 4u;
-	for (auto& image : m_executionImagesByDomain) {
-		if (!image) continue;
-		const u64 names = image->globalMapBase, namesEnd = names + image->globalMapBytes();
-		const bool remap = names != 0u && first < namesEnd && end > names;
-		const u64 constants = image->constantBase;
-		const bool recode = image->constantsWatched && first < constants + image->constPool.size() * 5u && end > constants;
-		if (!remap && !recode) continue;
-		if (remap) {
-			const u64 from = std::max(first, names), to = std::min(end, namesEnd);
-			m_memory.ramWriteWatches().armCodeRange((from - RAM_BASE) & RAM_RECORD_WORD_MASK, to - from);
-		}
-		if (recode) {
-			image->constantsWatched = false;
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-			image->workerConstantsCurrent = false;
-#endif
-		}
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-		if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle() && m_pendingNativeCompilation.image == image.get())
-			m_pendingNativeCompilation.invalidated = true;
-#endif
-		for (auto& [key, page] : image->decodedPages) {
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			page.retireNativeBlocks();
-#endif
-			if (remap) page.refreshState.fill(DECODED_REFRESH_DECODE);
-		}
-	}
 }
 
 void CPU::invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) {
-	invalidateImageDataDependencies(key, firstWord, endWord);
 	invalidateDecodedWords(key, firstWord, endWord);
 	if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 		invalidateDecodedWords(
@@ -694,15 +624,6 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
 		if (!image) {
 			continue;
-		}
-		// A shrinking instruction aperture clears shared translation masks.
-		// Global-name remaps and embedded constants remain data dependencies.
-		for (const auto [base, bytes] : {
-			std::pair{image->globalMapBase, static_cast<size_t>(image->globalMapBytes())},
-			std::pair{image->constantBase, image->constantsWatched ? image->constPool.size() * 5u : 0u}}) {
-			const u64 from = std::max(firstKey, static_cast<u64>(base));
-			const u64 to = std::min(endKey, static_cast<u64>(base) + bytes);
-			if (from < to) m_memory.ramWriteWatches().armCodeRange(from - RAM_BASE, to - from);
 		}
 		for (auto& [key, page] : image->decodedPages) {
 			if (key >= invalidationStart && key < endKey) {
@@ -994,7 +915,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
 	bindPhysicalFrames(m_rootView);
-	m_rootView.armStackWatch();
 	m_activeThread = &bindThread(state.activeThreadAddress);
 	if (auto* current = m_activeThread->currentFrame) current->executionImage = m_activeExecutionImage;
 	m_completionThreadAddress = state.completionThreadAddress;
@@ -2110,7 +2030,7 @@ dispatch_native_block: {
 					.globalValues = m_globalBank.values(), .systemGlobalValues = m_systemGlobalBank.values(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.readWindow(FrameField::Top),
-					.ram = m_memory.ramData(), .stackOffset = thread.stackOffset(), .stackBytes = thread.backingByteLength(),
+					.ram = m_memory.ramData(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 					.diagnosticOpcodes = {},
 #endif

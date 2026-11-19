@@ -573,7 +573,7 @@ void pairedJumpFaultsOnlyOnTheNextGrant() {
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}, {.firstWord = 8, .wordCount = 1}};
 	image.exceptionFunctionIndex = 1;
 	CpuMachine native(image, false), scalar(image, true);
-	const u32 end = native.memory.ramInstructionEnd(), start = end - 4u * INSTRUCTION_BYTES;
+	const u32 end = native.memory.ramBusEnd(), start = end - 4u * INSTRUCTION_BYTES;
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(start, image.text.data(), 4u * INSTRUCTION_BYTES);
 		auto& r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
@@ -608,7 +608,7 @@ void skipFetchBoundaries() {
 		image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 4}, {.firstWord = 1, .wordCount = 1}};
 		image.exceptionFunctionIndex = 1;
 		CpuMachine native(image, false), scalar(image, true);
-		const u32 end = native.memory.ramInstructionEnd();
+		const u32 end = native.memory.ramBusEnd();
 		const u32 nextPc = end - (skippedWide ? INSTRUCTION_BYTES : 0u);
 		const u32 pc = nextPc - (currentWide ? 2u : 1u) * INSTRUCTION_BYTES;
 		std::array<u8, 2 * INSTRUCTION_BYTES> code{};

@@ -180,7 +180,6 @@ struct Blua32ExecutionImage {
 	u32 staticEnd = 0;
 	u32 constantBase = 0;
 	ConstValueSpan constPool;
-	bool constantsWatched = false;
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	// Immutable during a job. Refresh only after a write to the guest bank
 	// and when the previous job no longer reads this compilation input.

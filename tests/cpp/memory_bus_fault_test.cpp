@@ -20,9 +20,9 @@ void require(bool condition, const char* message) {
 	}
 }
 
-void requireBusFault(const bmsx::Memory& memory, uint32_t access) {
+void requireBusFault(const bmsx::Memory& memory, uint32_t access, uint32_t address = UNMAPPED_ADDRESS) {
 	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_UNMAPPED, "floating mapped access latches an unmapped fault");
-	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == UNMAPPED_ADDRESS, "floating mapped access latches the first cycle address");
+	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == address, "mapped access latches the first faulting cycle address");
 	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS) == access, "floating mapped access latches its transaction width");
 }
 
@@ -103,6 +103,100 @@ void testMappedReadViewsRespectPhysicalBoundaries() {
 		require(!memory.bindMappedReadView(address, 0u, MAPPED_BUS_MASTER_CPU, view), "a zero-byte request admits no direct read");
 	Memory empty(MemoryInit{system, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	require(!empty.bindMappedReadView(CART_ROM_BASE, 32u, MAPPED_BUS_MASTER_CPU, view), "an absent socket supplies no direct ROM backing");
+}
+
+void testPublicRamBusAperture() {
+	using namespace bmsx;
+	std::array<u8, 1> empty{};
+	Memory memory(MemoryInit{{empty.data(), 0u}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+	const u32 end = DYNAMIC_RAM_BASE + 2u * MAPPED_PAGE_BYTE_SIZE;
+	memory.setRamBusEnd(end);
+	memory.writeRamRecordWord(end - 4u, 0x12345678u);
+	require(memory.readMappedU8(end - 1u) == 0x12u && memory.readMappedU16LE(end - 2u) == 0x1234u
+		&& memory.readMappedU32LE(end - 4u) == 0x12345678u, "every public scalar width reaches assigned RAM");
+	require(memory.readMappedBusU32LE(end - 4u, MAPPED_BUS_INSTRUCTION_FETCH) == 0x12345678u,
+		"public DATA/BSS remains executable");
+	memory.writeMappedU8(end - 1u, 0x91u); memory.writeMappedU16LE(end - 2u, 0x8765u);
+	require(memory.readRamRecordWord(end - 4u) == 0x87655678u, "public subword writes retain their lanes");
+	Span<const u8> view;
+	MappedPageBinding binding{};
+	for (const MappedBusSignals signals : std::array<MappedBusSignals, 3>{MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY, MAPPED_BUS_INSTRUCTION_FETCH}) {
+		require(memory.bindMappedReadView(end - 4u, 4u, signals, view), "direct views admit the complete public final word");
+		require(!memory.bindMappedReadView(end - 4u, 5u, signals, view), "a direct view cannot cross the aperture");
+		memory.bindMappedPage(end - MAPPED_PAGE_BYTE_SIZE, signals, binding);
+		require(binding.readBytes != nullptr, "the last public page supplies backing");
+		memory.bindMappedPage(end, signals, binding);
+		require(binding.readBytes == nullptr && !memory.bindMappedReadView(end, 4u, signals, view), "private pages supply no direct bus backing");
+	}
+	for (const u32 address : {end, RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 0x4000u, RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u}) {
+		memory.writeRamRecordWord(address, 0x89abcdefu);
+		for (const u32 width : {BUS_FAULT_ACCESS_U8, BUS_FAULT_ACCESS_U16, BUS_FAULT_ACCESS_U32, BUS_FAULT_ACCESS_WORD, BUS_FAULT_ACCESS_F32, BUS_FAULT_ACCESS_F64}) {
+			memory.clearBusFault(); const u32 sequence = memory.readBusFaultSequence();
+			double result = 1;
+			switch (width) {
+			case BUS_FAULT_ACCESS_U8: result = memory.readMappedU8(address); break;
+			case BUS_FAULT_ACCESS_U16: result = memory.readMappedU16LE(address); break;
+			case BUS_FAULT_ACCESS_U32: result = memory.readMappedU32LE(address); break;
+			case BUS_FAULT_ACCESS_WORD: result = memory.readMappedWord(address); break;
+			case BUS_FAULT_ACCESS_F32: result = memory.readMappedF32LE(address); break;
+			case BUS_FAULT_ACCESS_F64: result = memory.readMappedF64LE(address); break;
+			}
+			require(result == 0, "private scalar reads supply the fault bus value");
+			requireBusFault(memory, BUS_FAULT_ACCESS_READ | width, address);
+			require(memory.readBusFaultSequence() == sequence + 1u, "a rejected scalar issues one faulting bus cycle");
+			memory.clearBusFault();
+			switch (width) {
+			case BUS_FAULT_ACCESS_U8: memory.writeMappedU8(address, 0u); break;
+			case BUS_FAULT_ACCESS_U16: memory.writeMappedU16LE(address, 0u); break;
+			case BUS_FAULT_ACCESS_U32: memory.writeMappedU32LE(address, 0u); break;
+			case BUS_FAULT_ACCESS_WORD: memory.writeMappedWord(address, 0u); break;
+			case BUS_FAULT_ACCESS_F32: memory.writeMappedF32LE(address, 0.0f); break;
+			case BUS_FAULT_ACCESS_F64: memory.writeMappedF64LE(address, 0.0); break;
+			}
+			requireBusFault(memory, BUS_FAULT_ACCESS_WRITE | width, address);
+			require(memory.readRamRecordWord(address) == 0x89abcdefu, "ordinary stores cannot modify CPU-private bytes");
+		}
+		memory.clearBusFault();
+		require(memory.readMappedBusU32LE(address, MAPPED_BUS_INSTRUCTION_FETCH) == 0u, "private RAM supplies no instruction word");
+		requireBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, address);
+	}
+	memory.clearBusFault(); memory.writeMappedU32LE(end - 3u, 0u);
+	requireBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, end - 3u);
+	require(memory.readRamRecordWord(end - 4u) == 0x87655678u, "a crossing U32 commits no partial bytes");
+	memory.clearBusFault(); memory.writeMappedF64LE(end - 4u, 1.0);
+	requireBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64, end);
+	require(memory.readRamRecordWord(end - 4u) == 0u && memory.readRamRecordWord(end) == 0x89abcdefu,
+		"F64 retains its admitted first cycle but cannot write its private second cycle");
+	memory.setRamBusEnd(end + MAPPED_PAGE_BYTE_SIZE); memory.clearBusFault();
+	require(memory.readMappedU32LE(end) == 0x89abcdefu, "a larger live end exposes newly assigned static RAM");
+	memory.setRamBusEnd(end); memory.clearBusFault();
+	require(memory.readMappedU32LE(end) == 0u, "shrinking the end revokes ordinary RAM access");
+	requireBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, end);
+	memory.writeRamRecordWord(end, 0x76543210u);
+	require(memory.readRamRecordWord(end) == 0x76543210u, "the physical record port is independent of the public aperture");
+}
+
+void testDmaPublicRamBusAperture() {
+	using namespace bmsx;
+	std::array<u8, 1> empty{};
+	Memory memory(MemoryInit{{empty.data(), 0u}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+	const u32 end = DYNAMIC_RAM_BASE + 2u * MAPPED_PAGE_BYTE_SIZE, publicWords = DYNAMIC_RAM_BASE + 0x80u;
+	const MappedBusSignals signals = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY;
+	memory.setRamBusEnd(end);
+	memory.writeRamRecordWord(end - 4u, 0x12345678u); memory.writeRamRecordWord(end, 0x89abcdefu);
+	memory.transferDmaBlock(end - 4u, publicWords, 2u, 4u, 4u, signals, signals);
+	require(memory.readRamRecordWord(publicWords) == 0x12345678u && memory.readRamRecordWord(publicWords + 4u) == 0u,
+		"DMA preserves the public source prefix and cannot leak private bytes");
+	requireBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, end);
+	memory.clearBusFault(); memory.writeRamRecordWord(publicWords + 4u, 0x76543210u);
+	memory.transferDmaBlock(publicWords, end - 4u, 2u, 4u, 4u, signals, signals);
+	require(memory.readRamRecordWord(end - 4u) == 0x12345678u && memory.readRamRecordWord(end) == 0x89abcdefu,
+		"DMA preserves its public destination prefix without modifying a private destination");
+	requireBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, end);
+	memory.clearBusFault(); memory.setRamBusEnd(end + MAPPED_PAGE_BYTE_SIZE);
+	memory.transferDmaBlock(publicWords, end - 4u, 2u, 4u, 4u, signals, signals);
+	require(memory.readRamRecordWord(end) == 0x76543210u && memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_NONE,
+		"the DMA span fast path uses the current enlarged public aperture");
 }
 
 void testFloatingMappedTransactionsKeepTheirBusWidth() {
@@ -397,6 +491,8 @@ void testDmaMemorySpansInvalidateWatchedCode() {
 int main() {
 	testRawWordCountersFollowDecodedRegion();
 	testMappedReadViewsRespectPhysicalBoundaries();
+	testPublicRamBusAperture();
+	testDmaPublicRamBusAperture();
 	testFloatingMappedTransactionsKeepTheirBusWidth();
 	testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary();
 	testSystemStatusRejectsMappedWrites();

@@ -14,10 +14,9 @@ void require(bool value, const char* message) {
 }
 
 struct Watches final : MappedPageInvalidator {
-	int code = 0, views = 0;
+	int code = 0;
 	void invalidateMappedWords(u64, u32, u32) override { ++code; }
 	void invalidateMappedRange(u64, u64) override {}
-	void invalidateMappedViews(u64, u32, u32) override { ++views; }
 };
 }
 
@@ -34,19 +33,17 @@ int main() {
 	constexpr u32 code = DYNAMIC_RAM_BASE - RAM_BASE + 0x80u;
 	constexpr u32 dma = DYNAMIC_RAM_BASE - RAM_BASE + 0x3ffcu;
 	constexpr u32 mirror = DYNAMIC_RAM_BASE - RAM_BASE + 0x71f0u;
-	require(!watches.anyWatched() && !watches.anyWatched(code, 4), "history does not act as a code or view watch");
-	watches.armCodeRange(code, 4);
-	memory.armRamViewWord(code);
-	memory.armRamViewWord(code + 4);
+	require(!watches.anyWatched() && !watches.anyWatched(code, 4), "history does not act as a code watch");
+	watches.armCodeRange(code, 8);
 	memory.writeU32(RAM_BASE + code + 8, 7);
-	require(counter.code == 0 && counter.views == 0, "page write does not consume unrelated watched words");
+	require(counter.code == 0, "page write does not consume unrelated watched words");
 	writeLE32(memory.ramData() + code, 1);
-	memory.invalidateRamWrite(code, 4, false);
-	require(counter.code == 1 && counter.views == 0 && !watches.anyWatched(code, 4, false) && watches.anyWatched(code, 4),
-		"owner publication consumes the code word without consuming its armed view");
+	memory.invalidateRamWrite(code, 4);
+	require(counter.code == 1 && !watches.anyWatched(code, 4) && watches.anyWatched(code + 4, 4),
+		"owner publication consumes its exact code word without consuming the adjacent watch");
 	memory.writeRamRecordByte(MAIN_RAM_SIZE + code, 1);
 	memory.writeU32(RAM_BASE + code + 4, 2);
-	require(counter.code == 1 && counter.views == 2 && !watches.anyWatched(), "normal and mirrored writes still invalidate their exact views");
+	require(counter.code == 2 && !watches.anyWatched(), "history remains armed after normal and mirrored writes consume the exact code watches");
 	memory.transferDmaBlock(0, RAM_BASE + dma, 2, 4, 4, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
 	memory.writeRamRecordByte(MAIN_RAM_SIZE + mirror, 9);
 	archive.capture(memory, &first, second);

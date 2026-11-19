@@ -289,7 +289,7 @@ for (const [currentWide, skippedWide] of [[false, false], [true, false], [false,
 		writeInstruction(text, 0, OpCode.HALT, 0, 0, 0); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }, { firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
 		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
-		const end = machines[0].memory.ramInstructionEnd(), nextPc = end - (skippedWide ? INSTRUCTION_BYTES : 0);
+		const end = machines[0].memory.ramBusEnd(), nextPc = end - (skippedWide ? INSTRUCTION_BYTES : 0);
 		const pc = nextPc - (currentWide ? 2 : 1) * INSTRUCTION_BYTES;
 		const code = new Uint8Array((currentWide || skippedWide ? 2 : 1) * INSTRUCTION_BYTES);
 		let word = 0;

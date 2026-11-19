@@ -139,8 +139,8 @@ Memory::Memory(const MemoryInit& init, u32 ramByteCount)
 	: m_systemRom(init.systemRom)
 	, m_cartridgeController(init.cartridgeSlots)
 	, m_ram(ramByteCount)
-	, m_ramInstructionEnd(RAM_BASE + ramByteCount)
-	, m_ramPageWriteWatches(ramByteCount, true)
+	, m_ramBusEnd(RAM_BASE + ramByteCount)
+	, m_ramPageWriteWatches(ramByteCount)
 	, m_ioSlots(IO_SLOT_COUNT, 0u)
 	, m_ioReadHandlers(IO_SLOT_COUNT)
 	, m_ioWriteHandlers(IO_SLOT_COUNT) {
@@ -174,11 +174,10 @@ void Memory::clearMappedPageWriteWatches() {
 	m_cartridgeController.clearMappedPageWriteWatches();
 }
 
-void Memory::setRamInstructionEnd(u32 end) {
-	const u32 old = m_ramInstructionEnd;
-	m_ramInstructionEnd = end;
-	// Translation masks share their bank with image-data dependencies. Drop
-	// obsolete fetch watches first; the CPU re-arms its still-live data ranges.
+void Memory::setRamBusEnd(u32 end) {
+	const u32 old = m_ramBusEnd;
+	m_ramBusEnd = end;
+	// The old range no longer supplies instruction words.
 	if (end < old) m_ramPageWriteWatches.clearCodeRange(end - RAM_BASE, old - end);
 	if (old != end && m_mappedPageInvalidator)
 		m_mappedPageInvalidator->invalidateMappedRange(std::min(old, end), std::max(old, end));
@@ -207,8 +206,7 @@ void Memory::bindMappedPage(
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset < m_ram.size()) {
 			out.cacheable = true;
-			if (offset + MAPPED_PAGE_BYTE_SIZE <= m_ram.size()
-				&& ((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) == 0u || addr < m_ramInstructionEnd)) {
+			if (isRamRange(addr, MAPPED_PAGE_BYTE_SIZE)) {
 				out.readBytes = m_ram.data() + offset;
 			}
 			m_ramPageWriteWatches.bind(offset, out);
@@ -295,11 +293,11 @@ void Memory::restoreSaveState(const MemorySaveState& state) {
 }
 
 MemoryBusState Memory::captureBusState() const {
-	return {m_ramInstructionEnd, m_busFaultCode, m_busFaultAddr, m_busFaultAccess};
+	return {m_ramBusEnd, m_busFaultCode, m_busFaultAddr, m_busFaultAccess};
 }
 
 void Memory::restoreBusState(const MemoryBusState& state) {
-	m_ramInstructionEnd = state.ramInstructionEnd;
+	m_ramBusEnd = state.ramBusEnd;
 	if (m_mappedPageInvalidator) {
 		m_mappedPageInvalidator->invalidateMappedRange(
 			RAM_BASE,
@@ -319,7 +317,7 @@ u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const {
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset < m_ram.size()) {
+		if (addr < m_ramBusEnd) {
 			return m_ram[offset];
 		}
 	} else if (addr < CART_BUS_END) {
@@ -353,13 +351,8 @@ void Memory::writeIoSlot(int slot, uint32_t addr, u32 value, u32 faultAccess, Ma
 }
 
 bool Memory::writeRamU8(uint32_t addr, u8 value) {
-	if (addr < RAM_BASE) {
-		return false;
-	}
-	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-	if (offset >= m_ram.size()) {
-		return false;
-	}
+	if (!isRamRange(addr, 1u)) return false;
+	const size_t offset = addr - RAM_BASE;
 	m_ram[offset] = value;
 	m_ramPageWriteWatches.invalidateWrite(
 		offset,
@@ -371,13 +364,8 @@ bool Memory::writeRamU8(uint32_t addr, u8 value) {
 }
 
 bool Memory::writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value) {
-	if (addr < RAM_BASE) {
-		return false;
-	}
-	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-	if (offset + byteLength > m_ram.size()) {
-		return false;
-	}
+	if (!isRamRange(addr, byteLength)) return false;
+	const size_t offset = addr - RAM_BASE;
 	if (byteLength == 2) {
 		writeLE16(m_ram.data() + offset, value);
 	} else {
@@ -475,7 +463,7 @@ uint32_t Memory::readRawU32(uint32_t addr, MemoryWordCounters* counters) const {
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + sizeof(uint32_t) <= m_ram.size()) {
+		if (isRamRange(addr, sizeof(u32))) {
 			if constexpr (Count) ++counters->ramWords;
 			return readLE32(m_ram.data() + offset);
 		}
@@ -507,7 +495,7 @@ uint32_t Memory::readMappedU16LE(uint32_t addr) const {
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + 2u <= m_ram.size()) {
+		if (isRamRange(addr, 2u)) {
 			return readLE16(m_ram.data() + offset);
 		}
 	} else if (addr <= CART_BUS_END - 2u) {
@@ -545,8 +533,7 @@ uint32_t Memory::readMappedBusU32LE(
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + 4u <= m_ram.size()
-			&& ((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) == 0u || addr < m_ramInstructionEnd)) {
+		if (isRamRange(addr, 4u)) {
 			return readLE32(m_ram.data() + offset);
 		}
 	} else if (addr <= CART_BUS_END - 4u) {
@@ -759,19 +746,11 @@ void Memory::writeMappedF64LE(uint32_t addr, double value) {
 }
 
 void Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
-	size_t offset = 0;
-	if (addr >= RAM_BASE) {
-		offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + length <= m_ram.size()) {
-			std::memcpy(m_ram.data() + offset, data, length);
-			m_ramPageWriteWatches.invalidateWrite(
-				offset,
-				length,
-				RAM_BASE,
-				m_mappedPageInvalidator
-			);
-			return;
-		}
+	if (isRamRange(addr, length)) {
+		const size_t offset = addr - RAM_BASE;
+		std::memcpy(m_ram.data() + offset, data, length);
+		m_ramPageWriteWatches.invalidateWrite(offset, length, RAM_BASE, m_mappedPageInvalidator);
+		return;
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
 }
@@ -784,7 +763,7 @@ void Memory::readBytes(uint32_t addr, u8* out, size_t length) const {
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (length <= m_ram.size() && offset <= m_ram.size() - length) {
+		if (isRamRange(addr, length)) {
 			std::memcpy(out, m_ram.data() + offset, length);
 			return;
 		}
@@ -804,8 +783,7 @@ bool Memory::isReadableMainMemoryRange(uint32_t addr, size_t length) const {
 		return length <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - length;
 	}
 	if (addr < CART_ROM_BASE) {
-		return length <= m_ram.size()
-			&& static_cast<size_t>(addr - RAM_BASE) <= m_ram.size() - length;
+		return isRamRange(addr, length);
 	}
 	return length <= CART_BUS_END - CART_ROM_BASE
 		&& static_cast<size_t>(addr - CART_ROM_BASE) <= CART_BUS_END - CART_ROM_BASE - length;
@@ -837,10 +815,7 @@ bool Memory::bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals b
 }
 
 bool Memory::isRamRange(uint32_t addr, size_t length) const {
-	return addr >= RAM_BASE
-		&& addr < CART_ROM_BASE && length <= CART_ROM_BASE - addr
-		&& length <= m_ram.size()
-		&& static_cast<size_t>(addr - RAM_BASE) <= m_ram.size() - length;
+	return addr >= RAM_BASE && addr <= m_ramBusEnd && length <= m_ramBusEnd - addr;
 }
 
 MemoryRegionKind Memory::mappedRegion(uint32_t addr) const {
@@ -859,7 +834,7 @@ MemoryRegionKind Memory::mappedRegion(uint32_t addr) const {
 u32 Memory::mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind region) const {
 	constexpr u64 systemRomEnd = static_cast<u64>(SYSTEM_ROM_BASE) + SYSTEM_ROM_SIZE;
 	const u64 ioEnd = static_cast<u64>(IO_BASE) + IO_SLOT_COUNT * IO_WORD_SIZE;
-	const u64 ramEnd = static_cast<u64>(RAM_BASE) + m_ram.size();
+	const u64 ramEnd = m_ramBusEnd;
 	u64 boundary;
 	switch (region) {
 	case MemoryRegionKind::SystemRom:

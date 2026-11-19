@@ -1517,7 +1517,7 @@ void successorFetchOrdering() {
 					for (const bool warm : {false, true}) {
 						CpuMachine machine(image, ramBytes);
 						auto& cpu = machine.cpu;
-						const u32 faultAddress = machine.memory.ramInstructionEnd();
+						const u32 faultAddress = machine.memory.ramBusEnd();
 						const u32 currentPc = faultAddress - (wideSuccessor ? 2u : 1u) * INSTRUCTION_BYTES;
 						const u32 successorPc = currentPc + INSTRUCTION_BYTES;
 						std::vector<u8> instructions((wideSuccessor ? 2u : 1u) * INSTRUCTION_BYTES);

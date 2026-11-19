@@ -229,7 +229,7 @@ for (const op of [OpCode.SHR, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW]) test(`mu
 	let reads = 0, writes = 0;
 	observeRegisterPayloadReads(r, () => { ++reads; });
 	observeRegisterStores(r, () => { ++writes; });
-	assert.equal(block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, { remainingCycles: 1, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } })].nextPc, image.image.functions[0].codeAddress);
+	assert.equal(block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, { remainingCycles: 1, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } })].nextPc, image.image.functions[0].codeAddress);
 	assert.equal(reads, 0, 'the generated block consumes local numeric definitions, not their stale slot values');
 	assert.equal(writes, 5, 'each final numeric slot is published once instead of after every instruction');
 	const result = op === OpCode.SHR ? 0 : op === OpCode.MOD ? luaModulo(66, 72)
@@ -502,7 +502,7 @@ test('field cache hits stay in one generated block and misses publish only the e
 		f.registers.setInteger(4, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 	}
-	const directExit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, { remainingCycles: 10, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } })];
+	const directExit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, { remainingCycles: 10, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } })];
 	assert.equal(directExit.nextPc, image.image.functions[0].codeAddress,
 		'both field hits and arithmetic reach the final branch without a host side exit');
 	// Direct region calls bypass the CPU's usual publication of exit metadata.

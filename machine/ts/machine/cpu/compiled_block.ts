@@ -287,7 +287,7 @@ export function emitJavaScriptBlock(
 			source.push(`const ${base}=${tag}===${ValueTag.Integer}?${payload}:(${tag}===${ValueTag.Float}?fw(${payload}):null);if(${base}===null) ${numericFault}`);
 			const address = displaced ? `(${base}+${page.disp[word] * 4})>>>0` : base;
 			const memoryExit = `{S.memoryAddress=a;${registers.exit(exitIndex)}}`;
-			if (words) source.push(emitWordStores(page, word, address, memoryExit, numericFault, memory, registers));
+			if (words) source.push(emitWordStores(page, word, address, memoryExit, numericFault, registers));
 			else source.push(emitMemoryAccess(page, word, address, memoryExit, numericFault, memory, registers));
 		} else if (arithmetic) {
 			source.push(emitArithmetic(page, word, registers, numericFault));

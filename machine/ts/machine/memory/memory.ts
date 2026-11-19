@@ -169,7 +169,7 @@ type StoredIoWriteReadyHandler = (
 ) => boolean;
 
 export type MemoryBusState = {
-	ramInstructionEnd: number;
+	ramBusEnd: number;
 	busFaultCode: number;
 	busFaultAddr: number;
 	busFaultAccess: number;
@@ -196,7 +196,7 @@ export class Memory {
 	private readonly systemRom: RomStorage;
 	public readonly cartridgeController: CartridgeController;
 	private readonly ram: Uint8Array;
-	private instructionEnd: number;
+	private busEnd: number;
 	public readonly ramView: DataView;
 	// Little-endian word view of the same storage for runtime-owned RAM records.
 	// Same physical bytes through the aligned native word port.
@@ -231,11 +231,11 @@ export class Memory {
 		this.dmaRomView = { bytes: init.systemRom, byteOffset: 0, byteLength: 0 };
 		this.cartridgeController = new CartridgeController(init.cartridgeSlots);
 		this.ram = new Uint8Array(ramByteCount);
-		this.instructionEnd = RAM_BASE + ramByteCount;
+		this.busEnd = RAM_BASE + ramByteCount;
 		this.ramView = new DataView(this.ram.buffer);
 		this.ramWords = new Uint32Array(this.ram.buffer, 0, ramByteCount >>> 2);
 		this.ramFloats = new Float32Array(this.ram.buffer, 0, ramByteCount >>> 2);
-		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount, true);
+		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount);
 		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
 		this.ioWriteContexts = new Array<unknown>(IO_SLOT_COUNT);
@@ -292,9 +292,14 @@ export class Memory {
 		this.invalidateRamWrite(offset, 1);
 	}
 
-	// Runtime-owned RAM writes bypass the bus but still reach decoded-code watches.
-	public invalidateRamWrite(offset: number, byteLength: number, reportViews = true): void {
-		this.ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, this.mappedPageInvalidator!, reportViews);
+	// Private heap writes need only rewind tracking. Physical aliases below the
+	// public boundary still consume their actual decoded-instruction watches.
+	public invalidateRamWrite(offset: number, byteLength: number): void {
+		if (offset >= this.busEnd - RAM_BASE) {
+			if (this.ramPageWriteWatches.historyEpoch() & 1) this.ramPageWriteWatches.consumeHistoryWrites(offset, byteLength);
+			return;
+		}
+		this.ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, this.mappedPageInvalidator!);
 	}
 
 	public systemRomStorage(): RomStorage { return this.systemRom; }
@@ -316,13 +321,12 @@ export class Memory {
 		this.cartridgeController.clearMappedPageWriteWatches();
 	}
 
-	public ramInstructionEnd(): number { return this.instructionEnd; }
+	public ramBusEnd(): number { return this.busEnd; }
 
-	public setRamInstructionEnd(end: number): void {
-		const old = this.instructionEnd;
-		this.instructionEnd = end;
-		// Translation and image-data watches share a bank. The CPU re-arms its
-		// live data ranges after the obsolete fetch watches have been cleared.
+	public setRamBusEnd(end: number): void {
+		const old = this.busEnd;
+		this.busEnd = end;
+		// The old range no longer supplies instruction words.
 		if (end < old) this.ramPageWriteWatches.clearCodeRange(end - RAM_BASE, old - end);
 		if (old !== end) this.mappedPageInvalidator?.invalidateMappedRange(Math.min(old, end), Math.max(old, end));
 	}
@@ -349,8 +353,7 @@ export class Memory {
 			const offset = addr - RAM_BASE;
 			if (offset < this.ram.byteLength) {
 				out.cacheable = true;
-				if (offset + MAPPED_PAGE_BYTE_SIZE <= this.ram.byteLength
-					&& ((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) === 0 || addr < this.instructionEnd)) {
+				if (this.isRamRange(addr, MAPPED_PAGE_BYTE_SIZE)) {
 					out.readBytes = this.ram;
 					out.readByteOffset = offset;
 				}
@@ -449,7 +452,7 @@ export class Memory {
 
 	public captureBusState(): MemoryBusState {
 		return {
-			ramInstructionEnd: this.instructionEnd,
+			ramBusEnd: this.busEnd,
 			busFaultCode: this.busFaultCode,
 			busFaultAddr: this.busFaultAddr,
 			busFaultAccess: this.busFaultAccess,
@@ -457,7 +460,7 @@ export class Memory {
 	}
 
 	public restoreBusState(state: MemoryBusState): void {
-		this.instructionEnd = state.ramInstructionEnd;
+		this.busEnd = state.ramBusEnd;
 		if (this.mappedPageInvalidator !== null) {
 			this.mappedPageInvalidator.invalidateMappedRange(
 				RAM_BASE,
@@ -513,7 +516,7 @@ export class Memory {
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
-			if (offset < this.ram.byteLength) {
+			if (addr < this.busEnd) {
 				return this.ram[offset];
 			}
 		} else if (addr < CART_BUS_END) {
@@ -548,26 +551,16 @@ export class Memory {
 	}
 
 	private writeRamU8(addr: number, value: number): boolean {
-		if (addr < RAM_BASE) {
-			return false;
-		}
+		if (!this.isRamRange(addr, 1)) return false;
 		const offset = addr - RAM_BASE;
-		if (offset >= this.ram.byteLength) {
-			return false;
-		}
 		this.ram[offset] = value & 0xff;
 		this.ramPageWriteWatches.invalidateWrite(offset, 1, RAM_BASE, this.mappedPageInvalidator!);
 		return true;
 	}
 
 	private writeRamWordLE(addr: number, byteLength: 2 | 4, value: number): boolean {
-		if (addr < RAM_BASE) {
-			return false;
-		}
+		if (!this.isRamRange(addr, byteLength)) return false;
 		const offset = addr - RAM_BASE;
-		if (offset + byteLength > this.ram.byteLength) {
-			return false;
-		}
 		if (byteLength === 2) {
 			writeLE16(this.ram, offset, value);
 		} else {
@@ -662,7 +655,7 @@ export class Memory {
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
-			if (offset + 4 <= this.ram.byteLength) {
+			if (this.isRamRange(addr, 4)) {
 				if (counters !== null) counters.ramWords = (counters.ramWords + 1) >>> 0;
 				return readLE32(this.ram, offset);
 			}
@@ -686,7 +679,7 @@ export class Memory {
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const ramOffset = addr - RAM_BASE;
-			if (ramOffset + 2 <= this.ram.byteLength) {
+			if (this.isRamRange(addr, 2)) {
 				return readLE16(this.ram, ramOffset);
 			}
 		} else if (addr <= CART_BUS_END - 2) {
@@ -725,8 +718,7 @@ export class Memory {
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const ramOffset = addr - RAM_BASE;
-			if (ramOffset + 4 <= this.ram.byteLength
-				&& ((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) === 0 || addr < this.instructionEnd)) {
+			if (this.isRamRange(addr, 4)) {
 				return readLE32(this.ram, ramOffset);
 			}
 		} else if (addr <= CART_BUS_END - 4) {
@@ -929,7 +921,7 @@ export class Memory {
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
-			if (length <= this.ram.byteLength && offset <= this.ram.byteLength - length) {
+			if (this.isRamRange(addr, length)) {
 				out.set(this.ram.subarray(offset, offset + length), dstOffset);
 				return;
 			}
@@ -949,7 +941,7 @@ export class Memory {
 			return length <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - length;
 		}
 		if (addr < CART_ROM_BASE) {
-			return length <= this.ram.byteLength && addr - RAM_BASE <= this.ram.byteLength - length;
+			return this.isRamRange(addr, length);
 		}
 		return length <= CART_BUS_END - CART_ROM_BASE
 			&& addr - CART_ROM_BASE <= CART_BUS_END - CART_ROM_BASE - length;
@@ -969,8 +961,7 @@ export class Memory {
 	}
 
 	public isRamRange(addr: number, length: number): boolean {
-		return addr >= RAM_BASE && addr < CART_ROM_BASE && length <= CART_ROM_BASE - addr
-			&& addr - RAM_BASE + length <= this.ram.byteLength;
+		return addr >= RAM_BASE && addr + length <= this.busEnd;
 	}
 
 	public bindMappedReadView(addr: number, length: number, busSignals: MappedBusSignals, out: MemoryByteView): boolean {
@@ -1003,7 +994,7 @@ export class Memory {
 	public mappedRegionWordSpan(addr: number, wordLimit: number, region: MemoryRegionKind): number {
 		const systemRomEnd = SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE;
 		const ioEnd = IO_BASE + this.ioByteLength;
-		const ramEnd = RAM_BASE + this.ram.byteLength;
+		const ramEnd = this.busEnd;
 		let boundary: number;
 		switch (region) {
 			case MemoryRegionKind.SystemRom:
@@ -1040,35 +1031,21 @@ export class Memory {
 	}
 
 	public writeBytes(addr: number, bytes: Uint8Array): void {
-		if (addr >= RAM_BASE) {
+		if (this.isRamRange(addr, bytes.byteLength)) {
 			const offset = addr - RAM_BASE;
-			if (offset + bytes.byteLength <= this.ram.byteLength) {
-				this.ram.set(bytes, offset);
-				this.ramPageWriteWatches.invalidateWrite(
-					offset,
-					bytes.byteLength,
-					RAM_BASE,
-					this.mappedPageInvalidator!,
-				);
-				return;
-			}
+			this.ram.set(bytes, offset);
+			this.ramPageWriteWatches.invalidateWrite(offset, bytes.byteLength, RAM_BASE, this.mappedPageInvalidator!);
+			return;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
 	}
 
 	public writeBytesFrom(src: Uint8Array, srcOffset: number, dstAddr: number, length: number): void {
-		if (dstAddr >= RAM_BASE) {
+		if (this.isRamRange(dstAddr, length)) {
 			const offset = dstAddr - RAM_BASE;
-			if (offset + length <= this.ram.byteLength) {
-				this.ram.set(src.subarray(srcOffset, srcOffset + length), offset);
-				this.ramPageWriteWatches.invalidateWrite(
-					offset,
-					length,
-					RAM_BASE,
-					this.mappedPageInvalidator!,
-				);
-				return;
-			}
+			this.ram.set(src.subarray(srcOffset, srcOffset + length), offset);
+			this.ramPageWriteWatches.invalidateWrite(offset, length, RAM_BASE, this.mappedPageInvalidator!);
+			return;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, dstAddr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
 	}

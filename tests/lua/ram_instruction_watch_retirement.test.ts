@@ -11,53 +11,45 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_CODE, IO_SYS_BUS_FAULT_ADDR } from '../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 
-test('shrinking executable RAM removes stale fetch watches but preserves views and history', () => {
+test('shrinking public RAM retires code watches without disarming history', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(4), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	let codeWrites = 0, viewWrites = 0;
+	let codeWrites = 0;
 	const ranges: number[][] = [];
 	memory.attachMappedPageInvalidator({
 		invalidateMappedWords: () => { ++codeWrites; },
-		invalidateMappedViews: () => { ++viewWrites; },
 		invalidateMappedRange: (first, end) => { ranges.push([first, end]); },
 	});
 	const watches = memory.ramWriteWatches(), first = DYNAMIC_RAM_BASE - RAM_BASE;
-	const retired = first + MAPPED_PAGE_BYTE_SIZE, view = retired + 4;
-	watches.armCodeRange(first, 4); watches.armCodeRange(retired, 8);
-	watches.armViewWord(view >>> MAPPED_PAGE_BYTE_SHIFT, (view & MAPPED_PAGE_BYTE_MASK) >>> 2);
-	watches.armHistoryWrites();
-	memory.setRamInstructionEnd(RAM_BASE + retired);
+	const retired = first + MAPPED_PAGE_BYTE_SIZE;
+	watches.armCodeRange(first, 4); watches.armCodeRange(retired, 8); watches.armHistoryWrites();
+	memory.setRamBusEnd(RAM_BASE + retired);
 	assert.deepEqual(ranges, [[RAM_BASE + retired, RAM_BASE + MAIN_RAM_SIZE]]);
-	assert.equal(watches.anyWatched(first, 4, false), true);
-	assert.equal(watches.anyWatched(retired, 8, false), false);
-	assert.equal(watches.anyWatched(view, 4), true);
+	assert.equal(watches.anyWatched(first, 4), true);
+	assert.equal(watches.anyWatched(retired, 8), false);
 	assert.equal(watches.historyPageDirty(retired >>> MAPPED_PAGE_BYTE_SHIFT, (retired >>> MAPPED_PAGE_BYTE_SHIFT) + 1), false);
 	memory.writeRamRecordWord(retired, 7);
-	assert.deepEqual([codeWrites, viewWrites], [0, 0], 'a newly NX word takes the ordinary data-write path');
+	assert.equal(codeWrites, 0, 'a private record write has no obsolete fetch watch');
 	assert.equal(watches.historyPageDirty(retired >>> MAPPED_PAGE_BYTE_SHIFT, (retired >>> MAPPED_PAGE_BYTE_SHIFT) + 1), true);
-	memory.writeRamRecordWord(view, 8);
-	memory.writeRamRecordWord(first, 9);
-	assert.deepEqual([codeWrites, viewWrites], [1, 1]);
+	memory.writeRamRecordWord(first, 9); assert.equal(codeWrites, 1);
 });
 
 test('retirement clears exactly its code-word range across watch groups and pages', () => {
-	const watches = new MappedPageWriteWatches(3 * MAPPED_PAGE_BYTE_SIZE, true);
-	watches.armCodeRange(0, 3 * MAPPED_PAGE_BYTE_SIZE);
-	watches.armViewWord(1, 17);
-	watches.armHistoryWrites();
+	const watches = new MappedPageWriteWatches(3 * MAPPED_PAGE_BYTE_SIZE);
+	watches.armCodeRange(0, 3 * MAPPED_PAGE_BYTE_SIZE); watches.armHistoryWrites();
 	const first = 31 * 4, end = 2 * MAPPED_PAGE_BYTE_SIZE + 4;
 	watches.clearCodeRange(first, end - first);
 	for (let word = 0; word < 3 * MAPPED_PAGE_BYTE_SIZE / 4; ++word)
-		assert.equal(watches.anyWatched(word * 4, 4, false), word * 4 < first || word * 4 >= end);
-	assert.equal(watches.anyWatched(MAPPED_PAGE_BYTE_SIZE + 17 * 4, 4), true);
+		assert.equal(watches.anyWatched(word * 4, 4), word * 4 < first || word * 4 >= end);
 	assert.equal(watches.historyPageDirty(0, 3), false);
 });
 
-test('live global remaps and embedded constants stay watched in newly NX RAM', () => {
+test('ordinary writes cannot mutate private image maps or embedded constants', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.GETGL, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.LOADK, 1, 0, 0);
@@ -71,21 +63,16 @@ test('live global remaps and embedded constants stay watched in newly NX RAM', (
 	cpu.setGlobalByKey(cpu.stringPool.find('second')!, valueInteger(20));
 	assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Yielded);
 	assert.equal(frame.registers.getInteger(2), 17);
-	assert.equal(execution.constantsWatched, true, 'the real compiled region embeds constants');
-	const floor = memory.ramInstructionEnd();
-	memory.setRamInstructionEnd(RAM_BASE + MAIN_RAM_SIZE);
-	memory.setRamInstructionEnd(floor);
-	const watches = memory.ramWriteWatches();
-	assert.equal(watches.anyWatched(execution.globalMapBase - RAM_BASE, 8, false), true);
-	assert.equal(watches.anyWatched(execution.constantBase - RAM_BASE, 5, false), true);
-	memory.writeRamRecordWord(execution.globalMapBase, memory.readRamRecordWord(execution.globalMapBase + 4));
+	assert.ok(frame.decodedPage!.compiledBlocks!.entries[(image.image.functions[0].codeAddress & MAPPED_PAGE_BYTE_MASK) >>> 2], 'the fixture exercises a real compiled region');
+	for (const [address, replacement] of [[execution.globalMapBase, memory.readRamRecordWord(execution.globalMapBase + 4)], [execution.constantBase, 13]]) {
+		assert.ok(address >= memory.ramBusEnd()); const before = memory.readRamRecordWord(address);
+		memory.clearBusFault(); memory.writeMappedU32LE(address, replacement);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), address);
+		assert.equal(memory.readRamRecordWord(address), before, 'private image words are not a public mutation interface');
+	}
 	cpu.runUntilDepth(0, 128);
-	assert.equal(frame.registers.getInteger(2), 27, 'the decoder observes the actual remapped global slot');
-	memory.writeRamRecordWord(execution.constantBase, 13);
-	assert.equal(execution.constantsWatched, false, 'constant mutation retires the code that embedded its old value');
-	cpu.runUntilDepth(0, 128);
-	assert.equal(frame.registers.getInteger(2), 33);
-	assert.equal(memory.readBusFaultSequence(), 0);
+	assert.equal(frame.registers.getInteger(2), 17, 'compiled guest lookup and constants retain their original semantics');
 });
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
@@ -94,7 +81,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }] }, RAM_CODE_FIXTURE_BYTES);
 		const { cpu, memory } = createTestSystemCpu(image, backend);
-		const end = memory.ramInstructionEnd() - MAPPED_PAGE_BYTE_SIZE, pc = end - INSTRUCTION_BYTES;
+		const end = memory.ramBusEnd() - MAPPED_PAGE_BYTE_SIZE, pc = end - INSTRUCTION_BYTES;
 		const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 		writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
 		writeInstruction(code, 1, OpCode.K1, 0, 0, 0);
@@ -103,9 +90,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		cpu.runUntilDepth(0, 1);
 		assert.equal(frame.registers.getInteger(0), 1);
-		assert.equal(memory.ramWriteWatches().anyWatched(end - RAM_BASE, 4, false), true);
-		memory.setRamInstructionEnd(end);
-		assert.equal(memory.ramWriteWatches().anyWatched(end - RAM_BASE, 4, false), false);
+		assert.equal(memory.ramWriteWatches().anyWatched(end - RAM_BASE, 4), true);
+		memory.setRamBusEnd(end);
+		assert.equal(memory.ramWriteWatches().anyWatched(end - RAM_BASE, 4), false);
 		writeInstruction(code, 1, OpCode.K0, 0, 0, 0);
 		memory.writeBytes(end, code.subarray(INSTRUCTION_BYTES));
 		frame.registers.setInteger(0, 71);

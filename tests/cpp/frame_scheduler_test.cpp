@@ -969,7 +969,7 @@ void testRuntimeCheckpointStorage() {
 	std::vector<bmsx::u8> vram(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 	for (bmsx::u32 pass = 1; pass <= 4; ++pass) {
 		const bmsx::u32 word = 0xfedcba00u | pass;
-		memory.writeU32(bmsx::RAM_BASE + bmsx::PSX_MACHINE_SPEC.ramBytes - 4, word);
+		memory.writeRamRecordWord(bmsx::PSX_MACHINE_SPEC.ramBytes - 4, word);
 		for (bmsx::u32 slot = 0; slot < 2; ++slot) {
 			memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0x80000000u | slot);
 			memory.writeMappedU32LE(bmsx::CART_RAM_BASE + machine.cartridge.slots[slot]->ram->size() - 4, word ^ slot);

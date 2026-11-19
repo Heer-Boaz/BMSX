@@ -60,6 +60,7 @@ void ramScalarDatapathsAndGuards() {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
+	memory.setRamBusEnd(DYNAMIC_RAM_BASE + test::RAM_CODE_FIXTURE_BYTES);
 	const std::array values{valueInteger(0), valueInteger(-1), valueInteger(INT32_MIN), valueInteger(16777217),
 		valueFloat(-0.f), valueFloat(0.25f), valueFloat(-1.75f), valueFloat(0x1p32f),
 		valueFloatBits(1), valueFloatBits(0x7f7fffffu), valueFloatBits(0x7f800000u),
@@ -76,7 +77,7 @@ void ramScalarDatapathsAndGuards() {
 		const std::array source{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};
 		auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		for (const u32 target : {DYNAMIC_RAM_BASE + 0x204u, DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u,
-			RAM_BASE + PSX_MACHINE_SPEC.ramBytes - width}) for (const Value value : values) {
+			memory.ramBusEnd() - width}) for (const Value value : values) {
 			ValueSlots registers(3); registers.set(0, value); registers.set(1, valueInteger(target - static_cast<u32>(store.disp) * 4u)); registers.set(2, valueNil());
 			const auto offset = target - RAM_BASE;
 			std::memset(memory.ramData() + offset, 0xb6, width);
@@ -108,7 +109,7 @@ void ramScalarDatapathsAndGuards() {
 			RAM_BASE + PSX_MACHINE_SPEC.ramBytes, 0xffffffffu, DYNAMIC_RAM_BASE + 1u}) {
 			ValueSlots registers(3); registers.set(0, valueInteger(7)); registers.set(1, valueInteger(address - static_cast<u32>(store.disp) * 4u)); registers.set(2, valueInteger(99));
 			const bool direct = address >= RAM_BASE + IO_SLOT_COUNT * IO_WORD_SIZE
-				&& address <= RAM_BASE + PSX_MACHINE_SPEC.ramBytes - width
+				&& address <= memory.ramBusEnd() - width
 				&& (address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[format]) == 0u;
 			const auto* exit = block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles});
 			require((exit == &block->terminal) == direct, "IO, faults and alignment leave before accessing raw RAM");
@@ -142,6 +143,16 @@ void ramScalarDatapathsAndGuards() {
 	load.op = static_cast<u8>(OpCode::LOAD_MEM); load.a = 2;
 	const std::array numericSource{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};
 	auto numeric = NativeBlock::compile(numericSource, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	const u32 publicEnd = memory.ramBusEnd();
+	registers.set(1, valueInteger(target));
+	memory.setRamBusEnd(target + 4u);
+	require(block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::WriteMemory
+		&& readLE64(memory.ramData() + target - RAM_BASE) == before,
+		"a published F64 block uses the new live aperture and exits before its bus continuation");
+	memory.setRamBusEnd(publicEnd);
+	require(block->run(nativeRunState = {.registers = registers.view(), .remainingCycles = block->terminal.cycles}) == &block->terminal,
+		"the same published block readmits its destination after the aperture grows");
+
 	// F64LE is a conversion. F32LE above instead preserves the exact input bits.
 	for (u32 high = 0; high <= 0xffffu; ++high) {
 		const auto value = valueFloatBits((high << 16) | 0x9abcu);
@@ -213,6 +224,7 @@ void coldExitsPreserveAddressOperands() {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
+	memory.setRamBusEnd(DYNAMIC_RAM_BASE + test::RAM_CODE_FIXTURE_BYTES);
 	for (const auto op : {OpCode::LOAD_MEM, OpCode::LOAD_MEM_D, OpCode::STORE_MEM, OpCode::STORE_MEM_D}) {
 		const bool displaced = op == OpCode::LOAD_MEM_D || op == OpCode::STORE_MEM_D;
 		for (const bool constant : {false, true}) for (const u32 address : {IO_BASE, 0xfffffffcu, 0xfffffffdu}) {
@@ -382,7 +394,7 @@ void generatedBusOrdering() {
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		frame.registers.set(0, valueFloat(3.25f)); frame.registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x1004));
 		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
-		const u32 target = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u;
+		const u32 target = machine.memory.ramBusEnd() - 4u;
 		machine.memory.writeMappedWord(target, 0xaaaaaaaau);
 		frame.registers.set(1, valueInteger(target));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);

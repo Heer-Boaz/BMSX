@@ -31,8 +31,7 @@ import {
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { CART_ROM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { gxGpuPair16 } from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_DISPLAY_DISPFB_GX16_1024_LAYOUT_WORD,
@@ -81,7 +80,6 @@ import {
 } from '../helpers/blua32';
 
 const PCRTC_SENTINEL_BASE = 0xa5000000;
-const SYSTEM_TEXTURE_UPLOAD_ADDRESS = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 0x100;
 const SYSTEM_BOOT_SOURCE = `
 math = require('math')
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
@@ -144,7 +142,7 @@ const gxRegisterModule = {
 systemModules.push(gxDisplayPresetModule, gxRegisterModule);
 const cartModules = [gxDisplayPresetModule, gxRegisterModule, ...sourceModules(CART_MODULE_FILES)];
 const systemAssetsSource = `module<const>
-local bin_gx_system_texture_addr<const> = ${SYSTEM_TEXTURE_UPLOAD_ADDRESS}
+data bin_gx_system_texture_addr: word[3] = { 0, ${gxGpuPair16(768, 960)}, ${gxGpuPair16(256, 64)} }
 return {
 	bin_gx_system_texture_addr = bin_gx_system_texture_addr,
 }`;
@@ -333,8 +331,6 @@ test('BIOS GX reset programs the same 320x240 raw preset without touching circui
 
 test('BIOS GX code aligns the source-alpha supervisor circuit to a retained PS2 DTV origin', () => {
 	const { memory, cpu } = createTestSystemCpu(biosImage);
-	memory.writeMappedU32LE(SYSTEM_TEXTURE_UPLOAD_ADDRESS + 4, gxGpuPair16(768, 960));
-	memory.writeMappedU32LE(SYSTEM_TEXTURE_UPLOAD_ADDRESS + 8, gxGpuPair16(256, 64));
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [
 		320,

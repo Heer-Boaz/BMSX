@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
-import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SHIFT } from '../../machine/ts/machine/memory/mapped_page';
+import { MAPPED_PAGE_BYTE_SHIFT } from '../../machine/ts/machine/memory/mapped_page';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -10,11 +10,10 @@ import { cartridgeSlots } from '../helpers/cartridge';
 
 test('rewind shares clean pages, tracks DMA and mirrors, and branches from the installed version', () => {
 	const memory = new Memory({ systemRom: Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	let codeWrites = 0, viewWrites = 0;
+	let codeWrites = 0;
 	memory.attachMappedPageInvalidator({
 		invalidateMappedWords: () => { ++codeWrites; },
 		invalidateMappedRange: () => {},
-		invalidateMappedViews: () => { ++viewWrites; },
 	});
 	const watches = memory.ramWriteWatches(), archive = new RamHistory();
 	archive.start(memory);
@@ -24,19 +23,18 @@ test('rewind shares clean pages, tracks DMA and mirrors, and branches from the i
 	const dma = DYNAMIC_RAM_BASE - RAM_BASE + 0x3ffc;
 	const mirror = DYNAMIC_RAM_BASE - RAM_BASE + 0x71f0;
 	assert.equal(watches.anyWatched(code, 4), false, 'history does not act as a code watch');
-	watches.armCodeRange(code, 4);
-	watches.armViewWord(code >>> MAPPED_PAGE_BYTE_SHIFT, (code & MAPPED_PAGE_BYTE_MASK) >>> 2);
-	watches.armViewWord((code + 4) >>> MAPPED_PAGE_BYTE_SHIFT, ((code + 4) & MAPPED_PAGE_BYTE_MASK) >>> 2);
+	watches.armCodeRange(code, 8);
 	memory.writeU32(RAM_BASE + code + 8, 7);
-	assert.deepEqual([codeWrites, viewWrites], [0, 0]);
+	assert.equal(codeWrites, 0);
 	memory.ramView.setUint32(code, 1, true);
-	memory.invalidateRamWrite(code, 4, false);
-	assert.deepEqual([codeWrites, viewWrites], [1, 0]);
-	assert.equal(watches.anyWatched(code, 4, false), false);
-	assert.equal(watches.anyWatched(code, 4), true);
+	memory.invalidateRamWrite(code, 4);
+	assert.equal(codeWrites, 1);
+	assert.equal(watches.anyWatched(code, 4), false);
+	assert.equal(watches.anyWatched(code + 4, 4), true, 'publication leaves the adjacent code word watched');
 	memory.writeRamRecordByte(MAIN_RAM_SIZE + code, 1);
 	memory.writeU32(RAM_BASE + code + 4, 2);
-	assert.deepEqual([codeWrites, viewWrites], [1, 2]);
+	assert.equal(codeWrites, 2);
+	assert.equal(watches.anyWatched(code, 8), false, 'history admission survives after both code watches are consumed');
 	memory.transferDmaBlock(0, RAM_BASE + dma, 2, 4, 4, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
 	memory.writeRamRecordByte(MAIN_RAM_SIZE + mirror, 9);
 	const second = archive.capture(memory, first);

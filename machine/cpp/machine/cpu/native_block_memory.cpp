@@ -17,12 +17,10 @@ void NativeBlockCompiler::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit
 	auto* clear = sljit_emit_cmp(c, SLJIT_EQUAL, bits, 0, SLJIT_IMM, 0);
 	sljit_emit_op2(c, SLJIT_AND32, group, 0, bits, 0, SLJIT_IMM, MAPPED_WATCH_HISTORY_CLEAN);
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, group, 0, SLJIT_IMM, 0), slow, m_cache.state());
-	// Active frame windows routinely arm words in a RAM page. The cold
-	// lookup uses exact word masks instead of retiring unrelated stores.
+	// Retire decoded words only if the write overlaps their exact mask.
 	sljit_emit_op2(c, SLJIT_LSHR32, group, 0, address, addressArg, SLJIT_IMM, MAPPED_WATCH_GROUP_BYTE_SHIFT - 2u);
 	sljit_emit_op2(c, SLJIT_AND32, group, 0, group, 0, SLJIT_IMM, -4);
 	sljit_emit_op1(c, SLJIT_MOV32, bits, 0, SLJIT_MEM1(group), reinterpret_cast<sljit_sw>(m_bindings.ramCodeWatchWords));
-	sljit_emit_op2(c, SLJIT_OR32, bits, 0, bits, 0, SLJIT_MEM1(group), reinterpret_cast<sljit_sw>(m_bindings.ramViewWatchWords));
 	sljit_emit_op2(c, SLJIT_LSHR32, group, 0, address, addressArg, SLJIT_IMM, 2);
 	sljit_emit_op2(c, SLJIT_MLSHR32, bits, 0, bits, 0, group, 0);
 	sljit_emit_op2(c, SLJIT_AND32, bits, 0, bits, 0, SLJIT_IMM, wordMask);
@@ -182,17 +180,12 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 		IO_SLOT_COUNT * IO_WORD_SIZE), slow, m_cache.state());
-	auto* ramMiss = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, m_bindings.ramBytes - width);
+	// The public bus stops at the live heap floor, not at physical RAM's end.
+	// Keep the owner's address stable so a published block sees later changes.
+	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_MEM0(),
+		reinterpret_cast<sljit_sw>(m_bindings.ramBusEnd), SLJIT_IMM, RAM_BASE + width);
+	auto* ramMiss = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_R2, 0);
 	if (!load) fault(ramMiss, slow, m_cache.state());
-	// The bank aliases ordinary RAM. Publish dirty register lanes before a
-	// read or store that overlaps it, and do not reuse cache facts after
-	// that store. End-of-access minus bank-base covers partial overlaps too.
-	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, width - 1u);
-	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R2, 0,
-		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackOffset));
-	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R3, 0,
-		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackBytes), SLJIT_IMM, width - 1u);
-	fault(sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_R3, 0), slow, m_cache.state());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R1, 0);
 	if (words) {
 		// A watch anywhere in the sequence hands the untouched instruction to the bus.

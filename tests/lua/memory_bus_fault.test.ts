@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+	BUS_FAULT_ACCESS_U8,
+	BUS_FAULT_ACCESS_U16,
 	BUS_FAULT_ACCESS_F32,
 	BUS_FAULT_ACCESS_F64,
 	BUS_FAULT_ACCESS_U32,
@@ -27,7 +29,7 @@ import {
 import { CART_MMIO_BASE, CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE, IO_BASE, IO_WORD_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory, NO_BLOCKED_MAPPED_WRITE, type MemoryByteView } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_PAGE_BYTE_SIZE, type MappedPageBinding } from '../../machine/ts/machine/memory/mapped_page';
-import { MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_DMA_MEMORY, mappedBusSignalsForCartridgeSlot, type MappedBusSignals } from '../../machine/ts/machine/memory/bus_signals';
+import { MAPPED_BUS_INSTRUCTION_FETCH, MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_DMA_MEMORY, mappedBusSignalsForCartridgeSlot, type MappedBusSignals } from '../../machine/ts/machine/memory/bus_signals';
 import { readLE32 } from '../../machine/ts/common/endian';
 
 const UNMAPPED_ADDRESS = 0x06000000;
@@ -130,11 +132,91 @@ test('IO word permissions apply to CPU and DMA without changing raw register val
 	}
 });
 
-function assertBusFault(memory: Memory, access: number): void {
+function assertBusFault(memory: Memory, access: number, address = UNMAPPED_ADDRESS): void {
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
-	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), UNMAPPED_ADDRESS);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), address);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), access);
 }
+
+test('the live public RAM aperture excludes private records from CPU, fetch and direct views', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const end = DYNAMIC_RAM_BASE + 2 * MAPPED_PAGE_BYTE_SIZE;
+	memory.setRamBusEnd(end);
+	memory.writeRamRecordWord(end - 4, 0x12345678);
+	assert.equal(memory.readMappedU8(end - 1), 0x12);
+	assert.equal(memory.readMappedU16LE(end - 2), 0x1234);
+	assert.equal(memory.readMappedU32LE(end - 4), 0x12345678);
+	assert.equal(memory.readMappedBusU32LE(end - 4, MAPPED_BUS_INSTRUCTION_FETCH), 0x12345678,
+		'public DATA/BSS bytes remain executable');
+	memory.writeMappedU8(end - 1, 0x91); memory.writeMappedU16LE(end - 2, 0x8765);
+	assert.equal(memory.readRamRecordWord(end - 4), 0x87655678);
+	const view: MemoryByteView = { bytes: memory.ramData(), byteOffset: 0, byteLength: 0 };
+	const binding: MappedPageBinding = { key: 0, cacheable: false, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 };
+	for (const signals of [MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY, MAPPED_BUS_INSTRUCTION_FETCH]) {
+		assert.equal(memory.bindMappedReadView(end - 4, 4, signals, view), true);
+		assert.equal(memory.bindMappedReadView(end - 4, 5, signals, view), false);
+		memory.bindMappedPage(end - MAPPED_PAGE_BYTE_SIZE, signals, binding);
+		assert.notEqual(binding.readBytes, null);
+		memory.bindMappedPage(end, signals, binding);
+		assert.equal(binding.readBytes, null);
+		assert.equal(memory.bindMappedReadView(end, 4, signals, view), false);
+	}
+	for (const address of [end, RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 0x4000, RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4]) {
+		memory.writeRamRecordWord(address, 0x89abcdef);
+		for (const [width, read, write] of [
+			[BUS_FAULT_ACCESS_U8, () => memory.readMappedU8(address), () => memory.writeMappedU8(address, 0)],
+			[BUS_FAULT_ACCESS_U16, () => memory.readMappedU16LE(address), () => memory.writeMappedU16LE(address, 0)],
+			[BUS_FAULT_ACCESS_U32, () => memory.readMappedU32LE(address), () => memory.writeMappedU32LE(address, 0)],
+			[BUS_FAULT_ACCESS_WORD, () => memory.readMappedWord(address), () => memory.writeMappedWord(address, 0)],
+			[BUS_FAULT_ACCESS_F32, () => memory.readMappedF32LE(address), () => memory.writeMappedF32LE(address, 0)],
+			[BUS_FAULT_ACCESS_F64, () => memory.readMappedF64LE(address), () => memory.writeMappedF64LE(address, 0)],
+		] as const) {
+			memory.clearBusFault(); const sequence = memory.readBusFaultSequence();
+			assert.equal(read(), 0); assertBusFault(memory, BUS_FAULT_ACCESS_READ | width, address);
+			assert.equal(memory.readBusFaultSequence(), sequence + 1);
+			memory.clearBusFault(); write(); assertBusFault(memory, BUS_FAULT_ACCESS_WRITE | width, address);
+			assert.equal(memory.readRamRecordWord(address), 0x89abcdef, 'the bus cannot modify CPU-private bytes');
+		}
+		memory.clearBusFault();
+		assert.equal(memory.readMappedBusU32LE(address, MAPPED_BUS_INSTRUCTION_FETCH), 0);
+		assertBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, address);
+	}
+	memory.clearBusFault();
+	memory.writeMappedU32LE(end - 3, 0); assertBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, end - 3);
+	assert.equal(memory.readRamRecordWord(end - 4), 0x87655678, 'a crossing U32 commits no partial bytes');
+	memory.clearBusFault();
+	memory.writeMappedF64LE(end - 4, 1); assertBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64, end);
+	assert.equal(memory.readRamRecordWord(end - 4), 0, 'the admitted first F64 cycle remains committed');
+	assert.equal(memory.readRamRecordWord(end), 0x89abcdef, 'the second F64 cycle cannot enter the private range');
+	memory.setRamBusEnd(end + MAPPED_PAGE_BYTE_SIZE); memory.clearBusFault();
+	assert.equal(memory.readMappedU32LE(end), 0x89abcdef, 'moving the live end exposes newly assigned static RAM');
+	memory.setRamBusEnd(end); memory.clearBusFault();
+	assert.equal(memory.readMappedU32LE(end), 0); assertBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, end);
+	memory.writeRamRecordWord(end, 0x76543210);
+	assert.equal(memory.readRamRecordWord(end), 0x76543210, 'the physical record port is independent of the public bus end');
+});
+
+test('DMA spans obey the public RAM aperture on both source and destination', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const end = DYNAMIC_RAM_BASE + 2 * MAPPED_PAGE_BYTE_SIZE, publicWords = DYNAMIC_RAM_BASE + 0x80;
+	const signals = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY;
+	memory.setRamBusEnd(end);
+	memory.writeRamRecordWord(end - 4, 0x12345678); memory.writeRamRecordWord(end, 0x89abcdef);
+	memory.transferDmaBlock(end - 4, publicWords, 2, 4, 4, signals, signals);
+	assert.equal(memory.readRamRecordWord(publicWords), 0x12345678);
+	assert.equal(memory.readRamRecordWord(publicWords + 4), 0, 'a private source supplies the fault bus value, not its payload');
+	assertBusFault(memory, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, end);
+	memory.clearBusFault(); memory.writeRamRecordWord(publicWords + 4, 0x76543210);
+	memory.transferDmaBlock(publicWords, end - 4, 2, 4, 4, signals, signals);
+	assert.equal(memory.readRamRecordWord(end - 4), 0x12345678);
+	assert.equal(memory.readRamRecordWord(end), 0x89abcdef, 'a private DMA destination does not receive the second word');
+	assertBusFault(memory, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, end);
+	memory.clearBusFault();
+	memory.setRamBusEnd(end + MAPPED_PAGE_BYTE_SIZE);
+	memory.transferDmaBlock(publicWords, end - 4, 2, 4, 4, signals, signals);
+	assert.equal(memory.readRamRecordWord(end), 0x76543210);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
+});
 
 test('floating mapped transactions retain their bus width and stop after a faulting first F64 cycle', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);

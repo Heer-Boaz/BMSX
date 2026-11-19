@@ -16,10 +16,9 @@
 namespace bmsx {
 
 NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, StringId indexKey, CPU* cpu)
-	: ramBytes(memory.ramByteCount()), ram(memory.ramData()),
+	: ramBytes(memory.ramByteCount()), ram(memory.ramData()), ramBusEnd(memory.ramBusEndAddress()),
 	  ramWriteGroups(memory.ramWriteWatches().groupData()),
 	  ramCodeWatchWords(memory.ramWriteWatches().codeWordMasks()),
-	  ramViewWatchWords(memory.ramWriteWatches().viewWordMasks()),
 	  cartridgeSelection(&memory.cartridgeController().selectionWord()),
 	  cartridgeRom{memory.cartridgeController().romStorage(0), memory.cartridgeController().romStorage(1)},
 	  systemRom(&memory.systemRomStorage()), strings(&pool), indexKey(indexKey), cpu(cpu) {}

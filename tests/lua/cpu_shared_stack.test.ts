@@ -1,8 +1,8 @@
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { FrameField, FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SHIFT } from '../../machine/ts/machine/memory/mapped_page';
+import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -195,85 +195,46 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript])
-test(`an active physical stack aliases bus loads and stores without losing code watches (${backend})`, () => {
-	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
-	writeInstruction(text, 0, OpCode.KSMI, 0, 0, 37);
-	writeInstruction(text, 1, OpCode.LOAD_MEM, 1, 4, 0);
-	writeInstruction(text, 2, OpCode.STORE_MEM, 5, 4, 0);
-	writeInstruction(text, 3, OpCode.MOV, 2, 0, 0);
-	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] });
-	const { cpu } = createTestSystemCpu(image, backend);
-	const fn = image.image.functions[0];
-	const cycles = BASE_CYCLES[OpCode.KSMI] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.STORE_MEM]
-		+ BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP];
-	const thread = cpu.rootThread, regs = thread.currentFrame!.registers;
-	regs.setInteger(4, DYNAMIC_RAM_BASE); regs.setInteger(5, 73);
-	cpu.runUntilDepth(0, 512 * cycles);
+test(`an active stack stays private to the physical record port (${backend})`, () => {
+	const text = new Uint8Array(3 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.MOV, 1, 0, 0);
+	writeInstruction(text, 1, OpCode.KSMI, 2, 0, 37);
+	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8 }] });
+	const { cpu, memory } = createTestSystemCpu(image, backend);
+	const fn = image.image.functions[0], thread = cpu.rootThread, regs = thread.currentFrame!.registers;
+	const cycles = BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.KSMI] + BASE_CYCLES[OpCode.JMP];
+	regs.setInteger(0, 41); cpu.runUntilDepth(0, 512 * cycles);
 	if (backend === CpuExecutionBackend.JavaScript)
 		assert.ok(thread.currentFrame!.decodedPage!.compiledBlocks!.entries[(fn.codeAddress & MAPPED_PAGE_BYTE_MASK) >>> 2],
-			'the alias regression exercises a warmed JavaScript entry');
-	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, fn.address, fn.codeAddress);
-	const offset = thread.stackOffset();
-	regs.setInteger(4, RAM_BASE + offset);
-	cpu.runUntilDepth(0, 512 * cycles);
-	assert.equal(regs.getInteger(1), 37, 'a bus read observes the preceding dirty register');
-	assert.equal(regs.getInteger(2), 73, 'a bus write invalidates the resident register value');
-	assert.equal(cpu.memory.readRamRecordWord(RAM_BASE + offset), 73);
-	const watches = cpu.memory.ramWriteWatches();
-	const page = offset >>> MAPPED_PAGE_BYTE_SHIFT, word = (offset & MAPPED_PAGE_BYTE_MASK) >>> 2;
-	watches.armWord(page, word);
-	watches.armWord(page, word + 7);
+			'the private-stack regression exercises a warmed JavaScript entry');
+	const offset = thread.stackOffset(), slot = RAM_BASE + offset;
+	assert.ok(slot >= memory.ramBusEnd());
+	memory.clearBusFault(); assert.equal(memory.readMappedU32LE(slot), 0);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+	memory.clearBusFault(); memory.writeMappedU32LE(slot, 73);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+	assert.equal(regs.getInteger(0), 41, 'ordinary bus stores cannot alter a private register');
+	memory.writeRamRecordWord(slot, 73);
+	assert.equal(regs.getInteger(0), 73, 'the already bound Value plane is physical RAM');
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, fn.address, fn.codeAddress);
 	cpu.runUntilDepth(0, cycles);
-	assert.equal(watches.anyWatched(offset, 4), false, 'the stack write consumed its exact word watch');
-	assert.equal(watches.anyWatched(offset + 7 * 4, 4), true, 'the unused slot remains watched');
-	watches.invalidateWrite(offset + 7 * 4, 4, RAM_BASE, cpu);
-	assert.equal(watches.anyWatched(offset + 7 * 4, 4), false, 'unrelated descriptor watches need not be consumed');
-	const frame = thread.currentFrame!;
-	const baseWord = RAM_BASE + frame.controlOffset + FrameField.StackBase;
-	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, fn.address, fn.codeAddress);
-	regs.setInteger(3, 123); regs.setInteger(4, baseWord); regs.setInteger(5, 0xfff00001);
-	cpu.runUntilDepth(0, cycles);
-	assert.equal(thread.stackRegisters.getInteger(3), 0, 'the next instruction sees the newly selected register window');
-	assert.equal(frame.stackBase, 1, 'upper geometry bits do not drive the slot index');
-	assert.equal(thread.stackTop, 9);
-	regs.setInteger(0, 99);
-	assert.equal(cpu.memory.readRamRecordWord(offset + 4), 99, 'the external write rebinds the frame view');
-	cpu.memory.writeMappedU32LE(baseWord, 0);
-	const relocatedControl = MAIN_RAM_SIZE - 4 + ((thread.stackRegisters.byteLength() + 3) & ~3);
-	for (let i = 0; i < FRAME_CONTROL_BYTES; i += 4)
-		cpu.memory.writeRamRecordWord(relocatedControl + i, cpu.memory.readRamRecordWord(frame.controlOffset + i));
-	const descriptor = thread.address + ThreadField.StackBlock, descriptorOffset = descriptor - RAM_BASE;
-	watches.armWord(descriptorOffset >>> MAPPED_PAGE_BYTE_SHIFT, (descriptorOffset & MAPPED_PAGE_BYTE_MASK) >>> 2);
-	cpu.memory.writeMappedU32LE(descriptor, RAM_BASE + MAIN_RAM_SIZE - 4);
-	assert.equal(watches.anyWatched(descriptorOffset, 4, false), false, 'the overlapping code watch is consumed');
-	assert.equal(watches.anyWatched(descriptorOffset, 4), true, 'the stack view rearms independently');
-	assert.ok(thread.stackRegisters.ramMirrored(), 'the relocated bank needs the physical record port');
-	regs.setInteger(0, 123);
-	regs.setFloatBits(1, 0xffc00042);
-	assert.equal(cpu.memory.readRamRecordWord(MAIN_RAM_SIZE - 4), 123);
-	assert.equal(cpu.memory.readRamRecordWord(0), 0xffc00042, 'only the record port wraps payload addresses');
-	assert.equal(cpu.memory.readRamRecordByte(28), ValueTag.Integer);
-	assert.equal(cpu.memory.readRamRecordByte(29), ValueTag.Float, 'the byte plane wraps separately');
-	assert.equal(regs.getPayload(1), 0xffc00042);
+	assert.equal(regs.getInteger(1), 73, 'warmed execution reads the private physical register');
+	const checkpoint = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	regs.setInteger(1, 7); memory.restoreSaveState(ram); cpu.restoreRuntimeState(checkpoint);
+	assert.equal(cpu.readFrameRegister(0, 1), valueInteger(73), 'restore rebinds the active private Value plane');
+});
+
+test('physical Value windows wrap payloads and tags independently without a bus alias', () => {
+	const { memory } = createTestSystemCpu(compileCoroutineTest('return true', 0));
+	const regs = new ValueSlots(0); regs.bindRam(memory, MAIN_RAM_SIZE - 4, 8);
+	assert.equal(regs.ramMirrored(), true);
+	regs.setInteger(0, 123); regs.setFloatBits(1, 0xffc00042);
+	assert.equal(memory.readRamRecordWord(MAIN_RAM_SIZE - 4), 123);
+	assert.equal(memory.readRamRecordWord(0), 0xffc00042);
+	assert.equal(memory.readRamRecordByte(28), ValueTag.Integer);
+	assert.equal(memory.readRamRecordByte(29), ValueTag.Float);
 	regs.copyWithin(1, 0, 2);
 	assert.equal(regs.getInteger(1), 123);
-	assert.equal(regs.getPayload(2), 0xffc00042, 'wrapped overlap copies have memmove order');
-	const checkpoint = cpu.captureRuntimeState();
-	const ram = cpu.memory.captureSaveState();
-	regs.setInteger(1, 7);
-	cpu.memory.restoreSaveState(ram);
-	cpu.restoreRuntimeState(checkpoint);
-	assert.equal(cpu.readFrameRegister(0, 1), valueInteger(123), 'restoring RAM restores a wrapped register bank');
-	const depthWord = thread.address + ThreadField.FrameDepth;
-	cpu.memory.writeMappedU32LE(depthWord, 0xfffc0000);
-	assert.equal(thread.frameDepth, 0);
-	assert.equal(thread.currentFrame, null, 'depth selects no activation without executing or clearing it');
-	cpu.memory.restoreSaveState(ram);
-	cpu.restoreRuntimeState(checkpoint);
-	assert.equal(cpu.memory.readRamRecordWord(depthWord), 1);
-	assert.equal(cpu.getFrameDepth(), 1);
-	assert.equal(cpu.readFrameRegister(0, 1), valueInteger(123), 'restore derives the active frame only from RAM');
-
+	assert.equal(regs.getPayload(2), 0xffc00042, 'wrapped overlap copies retain memmove order and raw NaN bits');
 });

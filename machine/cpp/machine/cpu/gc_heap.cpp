@@ -434,6 +434,7 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 	if (heap.memory.readRamRecordByte(address + GC_COLOR_OFFSET) != (sweep.white ^ 1u)) {
 		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
 		const u32 relocated = address != sweep.growingThread ? ThreadRecord::shrinkStack(heap, address, layout) : 0u;
+		if (relocated != 0u) heap.m_cpu.rebindRelocatedThread(address);
 		return work + 2 * ceilDiv4(relocated);
 	}
 

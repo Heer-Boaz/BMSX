@@ -244,8 +244,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			return nullptr;
 		}
 		thread.recordNativeWrites(cpu.m_memory.ramWriteWatches());
-		state.stackOffset = thread.stackOffset();
-		state.stackBytes = thread.backingByteLength();
 		frame = thread.currentFrame;
 		if (transition == NativeBlockTransition::NextInstruction && continuation) {
 			// These helpers neither change frames nor operate a device. Keep the

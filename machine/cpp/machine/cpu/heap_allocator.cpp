@@ -52,7 +52,7 @@ void HeapAllocator::reset(u32 floorAddress) {
 	m_memory.invalidateRamWrite(m_management, RUNTIME_MANAGEMENT_SIZE);
 	const u32 page = pageForFloor(floorAddress);
 	setAvailable(page, m_pageLimit, true);
-	m_memory.setRamInstructionEnd(RAM_BASE + (page << PAGE_SHIFT));
+	m_memory.setRamBusEnd(RAM_BASE + (page << PAGE_SHIFT));
 }
 
 bool HeapAllocator::setFloor(u32 floorAddress) {
@@ -66,7 +66,7 @@ bool HeapAllocator::setFloor(u32 floorAddress) {
 	} else if (next < current) {
 		setAvailable(next, current, true);
 	}
-	m_memory.setRamInstructionEnd(RAM_BASE + (next << PAGE_SHIFT));
+	m_memory.setRamBusEnd(RAM_BASE + (next << PAGE_SHIFT));
 	return true;
 }
 
@@ -346,7 +346,7 @@ bool HeapAllocator::isAvailable(u32 page) const {
 }
 
 u32 HeapAllocator::floorPage() const {
-	return (m_memory.ramInstructionEnd() - RAM_BASE) >> PAGE_SHIFT;
+	return (m_memory.ramBusEnd() - RAM_BASE) >> PAGE_SHIFT;
 }
 
 u32 HeapAllocator::pageForFloor(u32 address) const {

@@ -139,7 +139,7 @@ CartridgeControllerState readCartridgeControllerState(BinaryReader& reader) {
 }
 
 template<class Writer> void writeMemoryBusState(Writer& writer, const MemoryBusState& state) {
-	writer.u32(state.ramInstructionEnd);
+	writer.u32(state.ramBusEnd);
 	writer.u32(state.busFaultCode);
 	writer.u32(state.busFaultAddr);
 	writer.u32(state.busFaultAccess);
@@ -147,7 +147,7 @@ template<class Writer> void writeMemoryBusState(Writer& writer, const MemoryBusS
 
 MemoryBusState readMemoryBusState(BinaryReader& reader) {
 	MemoryBusState state;
-	state.ramInstructionEnd = reader.u32();
+	state.ramBusEnd = reader.u32();
 	state.busFaultCode = reader.u32();
 	state.busFaultAddr = reader.u32();
 	state.busFaultAccess = reader.u32();

@@ -129,7 +129,7 @@ export class ThreadRecords {
 		const descriptor = (address + ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
 		writeLE32(ram, descriptor, block); writeLE32(ram, descriptor + 4, capacity);
 		writeLE32(ram, descriptor + 8, frames); writeLE32(ram, descriptor + 12, continuations);
-		memory.invalidateRamWrite(descriptor, 16, false);
+		memory.invalidateRamWrite(descriptor, 16);
 		this.arena.free(old.block);
 	}
 	public shrinkStack(address: number, layout: ThreadLayout): number {

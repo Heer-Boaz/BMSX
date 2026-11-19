@@ -20,7 +20,7 @@ namespace bmsx {
 enum class MemoryRegionKind { Ram, SystemRom, Cartridge, Io, Other };
 
 struct MemoryBusState {
-	u32 ramInstructionEnd = 0;
+	u32 ramBusEnd = 0;
 	uint32_t busFaultCode = BUS_FAULT_NONE;
 	uint32_t busFaultAddr = 0;
 	uint32_t busFaultAccess = 0;
@@ -57,16 +57,6 @@ public:
 	size_t ramByteCount() const { return m_ram.size(); }
 	MappedPageWriteWatches& ramWriteWatches() { return m_ramPageWriteWatches; }
 	const MappedPageWriteWatches& ramWriteWatches() const { return m_ramPageWriteWatches; }
-	void armRamViewWord(u32 offset) {
-		MappedPageBinding page{};
-		m_ramPageWriteWatches.bind(offset, page);
-		page.writeWatch.armViewWord((offset & MAPPED_PAGE_BYTE_MASK) >> 2u);
-	}
-	void disarmRamViewWord(u32 offset) {
-		MappedPageBinding page{};
-		m_ramPageWriteWatches.bind(offset, page);
-		page.writeWatch.disarmViewWord((offset & MAPPED_PAGE_BYTE_MASK) >> 2u);
-	}
 	// The CPU record port addresses physical RAM, including bytes under MMIO.
 	u32 readRamRecordWord(u32 address) const {
 		return readLE32(m_ram.data() + (address & RAM_RECORD_WORD_MASK));
@@ -88,16 +78,21 @@ public:
 		m_ram[offset] = value;
 		invalidateRamWrite(offset, 1u);
 	}
-	// Runtime-owned RAM writes bypass the bus but still reach decoded-code watches.
-	void invalidateRamWrite(size_t offset, size_t byteLength, bool reportViews = true) {
-		m_ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, m_mappedPageInvalidator, reportViews);
+	// The record port can mirror into public RAM. Those physical writes still
+	// retire decoded code. Private writes are visible only to rewind.
+	void invalidateRamWrite(size_t offset, size_t byteLength) {
+		if (RAM_BASE + offset < m_ramBusEnd)
+			m_ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, m_mappedPageInvalidator);
+		else if (m_ramPageWriteWatches.historyEpoch() & 1u)
+			m_ramPageWriteWatches.consumeHistoryWrites(offset, byteLength);
 	}
 	const Span<const u8>& systemRomStorage() const { return m_systemRom; }
 	void installSystemRom(std::span<const u8> rom);
 	void attachMappedPageInvalidator(MappedPageInvalidator& invalidator);
 	void detachMappedPageInvalidator();
-	u32 ramInstructionEnd() const { return m_ramInstructionEnd; }
-	void setRamInstructionEnd(u32 end);
+	u32 ramBusEnd() const { return m_ramBusEnd; }
+	const u32* ramBusEndAddress() const { return &m_ramBusEnd; }
+	void setRamBusEnd(u32 end);
 	void clearMappedPageWriteWatches();
 	void bindMappedPage(uint32_t addr, MappedBusSignals busSignals, MappedPageBinding& out);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
@@ -183,7 +178,7 @@ private:
 	Span<const u8> m_systemRom;
 	CartridgeController m_cartridgeController;
 	std::vector<u8> m_ram;
-	u32 m_ramInstructionEnd;
+	u32 m_ramBusEnd;
 	MappedPageWriteWatches m_ramPageWriteWatches;
 	MappedPageInvalidator* m_mappedPageInvalidator = nullptr;
 	mutable std::vector<u32> m_ioSlots;

@@ -14,7 +14,6 @@ import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kin
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, IO_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function memoryLoop(op: OpCode, kind: MemoryAccessKind, displacement = 0) {
@@ -50,7 +49,7 @@ test('compiled memory exits retain the computed raw guest address', () => {
 				: CompiledBlockExit.WriteMemory;
 		for (const address of [IO_BASE, 0xfffffffc, 0xfffffffd]) {
 			frame.registers.setInteger(1, (address - (displaced ? 1020 : 0)) >>> 0);
-			const run = { remainingCycles: 100, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
+			const run = { remainingCycles: 100, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
 			const exit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, run)];
 			assert.equal(exit.exit, expected);
 			assert.equal(run.memoryAddress, address, 'cold paths publish the post-displacement u32 without executing the transfer');
@@ -95,7 +94,7 @@ test('cached values reach field, memory and fault owners without stale tags or n
 	const entry = image.image.functions[0].codeAddress;
 	const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.sourceWords, 13);
-	assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, { remainingCycles: loopCycles, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } })].nextPc, image.image.functions[0].codeAddress);
+	assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, { remainingCycles: loopCycles, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } })].nextPc, image.image.functions[0].codeAddress);
 	machines[1].cpu.runUntilDepth(0, loopCycles);
 	assert.equal(machines[0].memory.readMappedWord(address), 0);
 	assert.equal(machines[0].memory.readMappedWord(address + 4), 0x7ff80000);
@@ -132,7 +131,7 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 		assert.equal(block.sourceWords, 5);
 		const loopCycles = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[displaced ? OpCode.STORE_MEM_D : OpCode.STORE_MEM]
 			+ BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP] + (format === MemoryAccessKind.F64LE ? 2 : 0);
-		assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, { remainingCycles: loopCycles, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } })].nextPc, image.image.functions[0].codeAddress,
+		assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, { remainingCycles: loopCycles, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } })].nextPc, image.image.functions[0].codeAddress,
 			'RAM and dependent instructions stay in the generated function');
 		for (const value of [valueInteger(-1), valueInteger(16777217), valueFloat(-0), valueFloat(0.25), valueFloat(-1.75),
 			valueFloat(2 ** 32 + 512), valueFloat(-(2 ** 32) - 512), valueFloatBits(0x7f7fffff), valueFloatBits(1),
@@ -155,8 +154,8 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 		const loads = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }] }, RAM_CODE_FIXTURE_BYTES);
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const machine = createTestSystemCpu(loads, backend);
-			machine.cpu.rootThread.frameAtDepth(0).registers.setInteger(1, RAM_BASE + PSX_MACHINE_SPEC.ramBytes - widths[format]);
-			machine.cpu.rootThread.frameAtDepth(0).registers.setInteger(3, RAM_BASE + PSX_MACHINE_SPEC.ramBytes - widths[format]);
+			machine.cpu.rootThread.frameAtDepth(0).registers.setInteger(1, machine.memory.ramBusEnd() - widths[format]);
+			machine.cpu.rootThread.frameAtDepth(0).registers.setInteger(3, machine.memory.ramBusEnd() - widths[format]);
 			machine.cpu.runUntilDepth(0, 1200);
 			assert.equal(machine.cpu.readFrameRegister(0, 2), format >= MemoryAccessKind.F32LE ? valueFloat(0) : valueInteger(0));
 			if (backend === CpuExecutionBackend.JavaScript) assert.ok(machine.cpu.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.sourceUnits > 0);
@@ -233,7 +232,7 @@ test('a generated F64 load retains its destination when the second bus transfer 
 		frame.registers.setInteger(1, DYNAMIC_RAM_BASE + 0x404 - 1020);
 		cpu.runUntilDepth(0, 1200);
 		frame.registers.setInteger(0, 73); frame.top = 0;
-		frame.registers.setInteger(1, RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4 - 1020);
+		frame.registers.setInteger(1, memory.ramBusEnd() - 4 - 1020);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
 		assert.equal(frame.registers.getInteger(0), 73);

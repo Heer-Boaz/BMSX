@@ -1428,7 +1428,7 @@ void testInstructionFetchExceptionsEnterTheSystemVector() {
 
 	{
 		CpuTestMachine machine(image);
-		const bmsx::u32 instructionPc = machine.memory.ramInstructionEnd() - 2u * bmsx::INSTRUCTION_BYTES;
+		const bmsx::u32 instructionPc = machine.memory.ramBusEnd() - 2u * bmsx::INSTRUCTION_BYTES;
 		const bmsx::u32 prefixPc = instructionPc + bmsx::INSTRUCTION_BYTES;
 		const bmsx::u32 bodyPc = prefixPc + bmsx::INSTRUCTION_BYTES;
 		std::array<bmsx::u8, 2u * bmsx::INSTRUCTION_BYTES> instructions{};

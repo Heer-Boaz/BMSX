@@ -220,10 +220,6 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 	handlers[static_cast<size_t>(NativeBlockExit::WriteIndex)] = &CPU::compiledWriteIndexExit;
 	handlers[static_cast<size_t>(NativeBlockExit::ReadInteger)] = &CPU::compiledReadIntegerExit;
 	handlers[static_cast<size_t>(NativeBlockExit::WriteInteger)] = &CPU::compiledWriteIntegerExit;
-	if (!image.constantsWatched && image.constPool.size() != 0u) {
-		m_memory.ramWriteWatches().armCodeRange(image.constantBase & RAM_RECORD_WORD_MASK, image.constPool.size() * 5u);
-		image.constantsWatched = true;
-	}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (!immediate) {
 		auto& pendingJob = m_pendingNativeCompilation;

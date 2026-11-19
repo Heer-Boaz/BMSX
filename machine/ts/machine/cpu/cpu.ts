@@ -272,7 +272,7 @@ export class CPU implements MappedPageInvalidator {
 	private readonly compiledCodeCache = new CompiledCodeCache();
 	private readonly tableLengthWork: TableLengthWork = { probes: 0 };
 	private readonly compiledRunState: CompiledRegionRunState = {
-		remainingCycles: 0, registerTop: 0, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: this.tableLengthWork,
+		remainingCycles: 0, registerTop: 0, memoryAddress: 0, lengthWork: this.tableLengthWork,
 	};
 	private readonly registerBuiltinArgsScratch = new ScratchBuffer<BuiltinArgsView>(
 		() => new BuiltinArgsView(),
@@ -372,11 +372,10 @@ export class CPU implements MappedPageInvalidator {
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = this.stringPool.intern('Out of memory.');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = this.stringPool.intern('Invalid argument.');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = this.stringPool.intern("invalid key to 'next'");
-		this.rootThread = new Thread(this.gc, this);
-		this.threadBanks = [this.rootThread, new Thread(this.gc, this), new Thread(this.gc, this)];
+		this.rootThread = new Thread(this.gc);
+		this.threadBanks = [this.rootThread, new Thread(this.gc), new Thread(this.gc)];
 		this.rootThread.bindAddress(this.createThread(0));
 		this.rootThread.bindStack();
-		this.rootThread.armStackWatch();
 		this.rootThread.status = ThreadStatus.Running;
 		this.activeThread = this.rootThread;
 		this.completionThread = this.rootThread.address;
@@ -598,7 +597,6 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = false;
 		this.staticClosuresByAddress.clear();
 		this.memory.clearMappedPageWriteWatches();
-		this.armThreadStackWatches();
 		if (!this.setProgramHeapFloor(systemBoot.staticEnd)) { this.hardHalt(); return; }
 		for (const image of this.executionImagesByDomain) if (image !== null) this.releaseImageData(image);
 		this.executionImagesByDomain.fill(null);
@@ -696,12 +694,9 @@ export class CPU implements MappedPageInvalidator {
 		if (names !== 0) {
 			image.globalMapBase = 0;
 			this.heapAllocator.free(names);
-			this.memory.invalidateRamWrite(names & RAM_RECORD_WORD_MASK, 4 * (image.globalNameCount + image.systemNameCount));
 		}
 		if (constants !== 0) {
-			image.constantsWatched = false;
 			this.heapAllocator.free(constants);
-			this.memory.invalidateRamWrite(constants & RAM_RECORD_WORD_MASK, image.constTags.length * 5);
 		}
 	}
 
@@ -766,7 +761,6 @@ export class CPU implements MappedPageInvalidator {
 				this.registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
 					this.systemGlobalBank, globalMapBase + 4 * globalNameCount);
 			}
-			this.memory.ramWriteWatches().armCodeRange(globalMapBase & RAM_RECORD_WORD_MASK, mapBytes);
 		}
 		const constantBase = restoring ? restoredConstantBase : constantCount === 0 ? 0
 			: this.luaHeap.allocateRecord(constantCount * 5, true, 0, 0);
@@ -782,7 +776,7 @@ export class CPU implements MappedPageInvalidator {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
 			staticEnd: executionBoot.staticEnd,
-			constantBase, constantsWatched: false,
+			constantBase,
 			constTags,
 			constWords,
 			globalMapBase, globalNameCount, systemNameCount: systemGlobalNameCount,
@@ -974,22 +968,9 @@ export class CPU implements MappedPageInvalidator {
 	public bindThread(address: number): Thread {
 		for (const bank of this.threadBanks) if (bank.address === address) return bank;
 		const bank = this.threadBanks[1] !== this.activeThread ? this.threadBanks[1] : this.threadBanks[2];
-		this.releaseThreadView(bank);
 		bank.bindAddress(address);
 		this.bindPhysicalFrames(bank);
-		bank.armStackWatch();
 		return bank;
-	}
-	public armThreadStackWatches(): void {
-		for (const bank of this.threadBanks) if (bank.address !== 0) {
-			bank.armStackWatch(); bank.armFrameWindowWatches();
-		}
-	}
-	private releaseThreadView(bank: Thread): void {
-		if (bank.address !== 0) bank.disarmWatches();
-		bank.bindAddress(0);
-		// Watches are bitmaps, not ownership counts. Aliased surviving banks re-arm.
-		this.armThreadStackWatches();
 	}
 	public refreshThreadView(address: number, relocated: boolean): void {
 		for (const bank of this.threadBanks) if (bank.address === address) {
@@ -997,17 +978,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 	public retireThreadView(address: number): void {
-		for (const bank of this.threadBanks) if (bank.address === address) this.releaseThreadView(bank);
-	}
-	private observeThreadWrites(first: number, end: number): void {
-		for (const bank of this.threadBanks) {
-			if (bank.address === 0) continue;
-			const descriptor = bank.address + ThreadField.StackBlock, depth = bank.address + ThreadField.FrameDepth;
-			if (first <= depth && depth < end) {
-				this.bindPhysicalFrames(bank); bank.armStackWatch();
-			} else if (first < descriptor + 16 && end > descriptor) bank.observeStackWrite();
-			bank.observeFrameWindowWrites(first, end);
-		}
+		for (const bank of this.threadBanks) if (bank.address === address) bank.bindAddress(0);
 	}
 	public readThreadStatus(address: number): ThreadStatus { return this.memory.readRamRecordWord(address + ThreadField.Status); }
 	public readThreadResumer(address: number): number {
@@ -1047,33 +1018,7 @@ export class CPU implements MappedPageInvalidator {
 			frame.executionImage = this.executionImagesByDomain[frame.savedExecutionBank + 1]!;
 	}
 
-	public invalidateMappedViews(key: number, firstWord: number, endWord: number): void {
-		this.observeThreadWrites(key + firstWord * 4, key + endWord * 4);
-	}
-
-	private invalidateImageDataDependencies(key: number, firstWord: number, endWord: number): void {
-		const first = key + firstWord * 4, end = key + endWord * 4;
-		for (const image of this.executionImagesByDomain) {
-			if (image === null) continue;
-			const names = image.globalMapBase, namesEnd = names + 4 * (image.globalNameCount + image.systemNameCount);
-			const remap = names !== 0 && first < namesEnd && end > names;
-			const constants = image.constantBase;
-			const recode = image.constantsWatched && first < constants + 5 * image.constTags.length && end > constants;
-			if (!remap && !recode) continue;
-			if (remap) {
-				const from = Math.max(first, names), to = Math.min(end, namesEnd);
-				this.memory.ramWriteWatches().armCodeRange((from - RAM_BASE) & RAM_RECORD_WORD_MASK, to - from);
-			}
-			if (recode) image.constantsWatched = false;
-			for (const page of image.decodedPages.values()) {
-				this.compiledCodeCache.retirePage(page);
-				if (remap) page.refreshState.fill(DECODED_REFRESH_DECODE);
-			}
-		}
-	}
-
 	public invalidateMappedWords(key: number, firstWord: number, endWord: number): void {
-		this.invalidateImageDataDependencies(key, firstWord, endWord);
 		this.invalidateDecodedWords(key, firstWord, endWord);
 		if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 			this.invalidateDecodedWords(
@@ -1092,16 +1037,6 @@ export class CPU implements MappedPageInvalidator {
 			const image = this.executionImagesByDomain[imageIndex];
 			if (image === null) {
 				continue;
-			}
-			// Restore only live image-data watches after an aperture shrink clears
-			// their shared bank; descriptor views and history use separate masks.
-			const namesFrom = Math.max(firstKey, image.globalMapBase);
-			const namesTo = Math.min(endKey, image.globalMapBase + 4 * (image.globalNameCount + image.systemNameCount));
-			if (namesFrom < namesTo) this.memory.ramWriteWatches().armCodeRange(namesFrom - RAM_BASE, namesTo - namesFrom);
-			if (image.constantsWatched) {
-				const from = Math.max(firstKey, image.constantBase);
-				const to = Math.min(endKey, image.constantBase + 5 * image.constTags.length);
-				if (from < to) this.memory.ramWriteWatches().armCodeRange(from - RAM_BASE, to - from);
 			}
 			for (const [key, page] of image.decodedPages) {
 				if (key >= invalidationStart && key < endKey) {
@@ -2488,10 +2423,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		for (const region of merged) this.compiledCodeCache.retireRegion(page, region);
 		const image = frame.executionImage;
-		if (!image.constantsWatched && image.constTags.length !== 0) {
-			this.memory.ramWriteWatches().armCodeRange(image.constantBase & RAM_RECORD_WORD_MASK, image.constTags.length * 5);
-			image.constantsWatched = true;
-		}
+
 		const region = compileJavaScriptRegion(page, plans, image, this.memory, this.stringPool,
 			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.gc);
 		this.compiledCodeCache.install(page, region);
@@ -2537,8 +2469,6 @@ export class CPU implements MappedPageInvalidator {
 			let registerTop = frame.top;
 			let exit: CompiledBlockExitSite;
 			const run = this.compiledRunState;
-			run.stackOffset = thread.stackOffset();
-			run.stackBytes = thread.backingByteLength();
 			for (;;) {
 				run.remainingCycles = remaining; run.registerTop = registerTop;
 				exit = current.region.exits[current.region.execute(registers, image.constWords, page, frame, current.entry, run)];
@@ -4048,7 +3978,7 @@ export class CPU implements MappedPageInvalidator {
 		this.clearCompletionValues();
 		this.staticClosuresByAddress.clear();
 		this.gc.onRecordRetirement?.(null);
-		for (const bank of this.threadBanks) this.releaseThreadView(bank);
+		for (const bank of this.threadBanks) bank.bindAddress(0);
 		this.memory.clearMappedPageWriteWatches();
 		// The allocator scan does not advance a saved in-flight sweep.
 		this.heapAllocator.visitObjectRecords(this, (cpu, address) => {
@@ -4080,7 +4010,6 @@ export class CPU implements MappedPageInvalidator {
 
 		this.rootThread.bindAddress(state.rootThreadAddress);
 		this.bindPhysicalFrames(this.rootThread);
-		this.rootThread.armStackWatch();
 		this.activeThread = this.rootThread;
 		this.activeThread = this.bindThread(state.activeThreadAddress);
 		if (this.activeThread.currentFrame !== null) this.activeThread.currentFrame.executionImage = this.activeExecutionImage;

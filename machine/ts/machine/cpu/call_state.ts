@@ -82,8 +82,8 @@ export class CallFrame {
 		writeLE32(ram, (offset + FrameField.StackCapacity) & RAM_RECORD_WORD_MASK, capacity);
 		this.registers.rebind(this.thread.stackRegisters, base, capacity);
 		const first = Math.min(FRAME_CONTROL_BYTES, MAIN_RAM_SIZE - offset);
-		memory.invalidateRamWrite(offset, first, false);
-		if (first !== FRAME_CONTROL_BYTES) memory.invalidateRamWrite(0, FRAME_CONTROL_BYTES - first, false);
+		memory.invalidateRamWrite(offset, first);
+		if (first !== FRAME_CONTROL_BYTES) memory.invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
 	}
 	public growRegisterWindow(capacity: number): void {
 		const memory = this.controlMemory, address = (this.controlOffset + FrameField.StackCapacity) & RAM_RECORD_WORD_MASK;
@@ -91,7 +91,7 @@ export class CallFrame {
 		const base = this.stackBase;
 		this.registers.rebind(this.thread.stackRegisters, base, capacity);
 		if (this === this.thread.currentFrame) this.thread.stackTop = base + capacity;
-		memory.invalidateRamWrite(address, 4, false);
+		memory.invalidateRamWrite(address, 4);
 	}
 	public get closureAddress(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Closure); }
 	public set closureAddress(address: number) { this.controlMemory.writeRamRecordWord(this.controlOffset + FrameField.Closure, address); }

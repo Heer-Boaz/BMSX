@@ -538,7 +538,7 @@ test('numeric lookahead cannot take a successor fetch fault before current effec
 						const irq = new IrqController(memory);
 						const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 						cpu.reset();
-						const faultAddress = memory.ramInstructionEnd();
+						const faultAddress = memory.ramBusEnd();
 						const currentPc = faultAddress - (wideSuccessor ? 2 : 1) * INSTRUCTION_BYTES;
 						const successorPc = currentPc + INSTRUCTION_BYTES;
 						const instructions = new Uint8Array((wideSuccessor ? 2 : 1) * INSTRUCTION_BYTES);

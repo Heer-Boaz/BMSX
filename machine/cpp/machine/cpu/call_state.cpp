@@ -39,8 +39,8 @@ void CallFrame::initializeControl(u32 function, u32 pc, u32 callSite, u32 flags,
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::StackCapacity)) & RAM_RECORD_WORD_MASK), static_cast<u32>(capacity));
 	registers = thread->stack.subspan(base, capacity);
 	const u32 first = std::min(FRAME_CONTROL_BYTES, MAIN_RAM_SIZE - controlOffset);
-	controlMemory->invalidateRamWrite(controlOffset, first, false);
-	if (first != FRAME_CONTROL_BYTES) controlMemory->invalidateRamWrite(0, FRAME_CONTROL_BYTES - first, false);
+	controlMemory->invalidateRamWrite(controlOffset, first);
+	if (first != FRAME_CONTROL_BYTES) controlMemory->invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
 }
 
 void CallFrame::growRegisterWindow(i32 capacity) {
@@ -49,7 +49,7 @@ void CallFrame::growRegisterWindow(i32 capacity) {
 	const int base = stackBase();
 	registers = thread->stack.subspan(base, capacity);
 	if (this == thread->currentFrame) thread->setStackTop(base + capacity);
-	controlMemory->invalidateRamWrite(address, sizeof(u32), false);
+	controlMemory->invalidateRamWrite(address, sizeof(u32));
 }
 
 } // namespace bmsx

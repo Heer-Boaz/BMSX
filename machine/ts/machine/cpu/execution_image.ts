@@ -76,7 +76,6 @@ export type Blua32ExecutionImage = {
 	irqFunctionAddress: number;
 	staticEnd: number;
 	constantBase: number;
-	constantsWatched: boolean;
 	constTags: Uint8Array;
 	constWords: Uint32Array;
 	globalMapBase: number;

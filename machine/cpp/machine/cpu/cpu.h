@@ -162,7 +162,6 @@ public:
 #endif
 	void invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) override;
 	void bindPhysicalFrames(Thread& thread);
-	void invalidateMappedViews(u64 key, u32 firstWord, u32 endWord) override;
 	void invalidateMappedRange(u64 firstKey, u64 endKey) override;
 
 	void reset();
@@ -331,7 +330,6 @@ private:
 	size_t collectionRootWordCount() const;
 	void decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddress, ValueSpan constants);
 	void releaseImageData(Blua32ExecutionImage& image);
-	void invalidateImageDataDependencies(u64 key, u32 firstWord, u32 endWord);
 	void registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination);
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot boot,
 		std::optional<std::array<u32, 2>> restoredBases = std::nullopt);
@@ -504,7 +502,7 @@ private:
 	u32 createThread(u32 entry);
 	Thread& bindThread(u32 address);
 	void retireThreadView(u32 address);
-	void armThreadViewWatches();
+	void rebindRelocatedThread(u32 address);
 	template<class Visitor> void visitThreadViews(Visitor&& visitor) {
 		if (m_rootView.address != 0u) visitor(m_rootView);
 		for (auto& view : m_transferViews) if (view.address != 0u) visitor(view);

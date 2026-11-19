@@ -108,9 +108,11 @@ The language runtime owns main RAM above the active program's static storage.
 Its heap extends from the **heap floor** to `083FC000H`; the 16 KiB from
 `083FC000H` to the end of installed RAM hold its management data. Do not
 place DATA, BSS or buffers in either range. Their contents are not a
-programming interface. Neither range supplies instructions; a fetch from it is an
-instruction bus error. Ordinary stores and device writes into them are not
-rejected: they change runtime state, with the consequences of a program error.
+programming interface. The CPU accesses them through its language-runtime
+port, not through the system bus. To ordinary loads and stores, instruction
+fetches, DMA, and other devices, addresses in these ranges are unmapped.
+The normal bus-fault rules apply. DATA and BSS below the floor remain
+accessible on the system bus and may contain executable code.
 
 The heap floor is the end of the active image's static storage, the larger
 of its DATA run end and its BSS end, rounded up to a multiple of 4 KiB. It is

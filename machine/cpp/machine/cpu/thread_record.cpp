@@ -63,7 +63,7 @@ void relocateStack(GcHeap& heap, u32 address, const ThreadStackLayout& from, con
 	std::fill(protectedRecords + occupied, words + bytes, u8{0});
 	memory.invalidateRamWrite(to.offset(), bytes);
 
-	// The four geometry lanes change together; execution views rebind at the port.
+	// Publish the new geometry before releasing the old backing.
 	const u32 descriptor = (address + static_cast<u32>(ThreadField::StackBlock)) & RAM_RECORD_WORD_MASK;
 	auto* geometry = memory.ramData() + descriptor;
 	writeLE32(geometry, to.block);

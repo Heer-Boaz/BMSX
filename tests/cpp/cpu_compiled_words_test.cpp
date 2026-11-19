@@ -33,8 +33,8 @@ struct CpuMachine {
 	IrqController irq;
 	ExecutionAddressSpace addresses;
 	CPU cpu;
-	CpuMachine(const test::Blua32TestImage& image, bool scalar = false)
-		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES))
+	CpuMachine(const test::Blua32TestImage& image, bool scalar = false, u32 bssBytes = test::RAM_CODE_FIXTURE_BYTES)
+		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, bssBytes))
 		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
 		cpu.reset();
@@ -142,7 +142,7 @@ void pageTailBeforeFetchFault(bool wide) {
 	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 4}, {.firstWord = 1, .wordCount = 1}};
 	image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
-	const u32 end = native.memory.ramInstructionEnd(), width = wide ? 2u : 1u, pc = end - width * INSTRUCTION_BYTES;
+	const u32 end = native.memory.ramBusEnd(), width = wide ? 2u : 1u, pc = end - width * INSTRUCTION_BYTES;
 	std::array<u8, 2 * INSTRUCTION_BYTES> code{};
 	if (wide) writeInstruction(code, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(code, width - 1u, static_cast<u8>(OpCode::K1), 3, 0, 0);
@@ -418,18 +418,20 @@ void previousChargesSurviveLaterExit(bool blocked) {
 	for (auto* m : {&native, &scalar}) {
 		m->memory.mapIoWrite(IO_BASE + 0x5000u, nullptr, [](void*, u32, u32, MappedBusSignals) { throw std::runtime_error("not ready"); });
 		m->memory.mapIoWriteReady(IO_BASE + 0x5000u, [](void*, u32, MappedBusSignals) { return false; });
-		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.writeControl(bmsx::FrameField::Top, 0); frame.registers.set(1, valueInteger(blocked ? IO_BASE + 0x5000u : RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u));
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.writeControl(bmsx::FrameField::Top, 0); frame.registers.set(1, valueInteger(blocked ? IO_BASE + 0x5000u : m->memory.ramBusEnd() - 4u));
 		frame.registers.set(7, valueInteger(99)); frame.registers.set(20, valueInteger(73));
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress); m->cpu.runUntilDepth(0, 20);
 		require(frame.registers.get(7) == valueInteger(99) && static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 7, "the failing second store does not execute or publish a later definition");
 		if (blocked) require(m->cpu.instructionBudgetRemaining == 7, "a later blocked preflight excludes only its own surcharge");
-		else require(m->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR && m->memory.readMappedWord(RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u) == 73u, "a later fault keeps its committed word");
+		else require(m->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR && m->memory.readMappedWord(m->memory.ramBusEnd() - 4u) == 73u, "a later fault keeps its committed word");
 	}
 	requireParity(native, scalar);
 }
 
 void terminalSpanStartsWithOneCycle(int count, bool displaced) {
-	const auto image = wordLoop(count, displaced); CpuMachine native(image), scalar(image, true);
+	const auto image = wordLoop(count, displaced);
+	const u32 bssBytes = std::max(test::RAM_CODE_FIXTURE_BYTES, 0x4000u + static_cast<u32>(count) * 4u);
+	CpuMachine native(image, false, bssBytes), scalar(image, true, bssBytes);
 	const u32 start = native.rom.textAddress + 3u * INSTRUCTION_BYTES, target = DYNAMIC_RAM_BASE + 0x4000u;
 	const int charge = 3 + count;
 	for (int attempt = 0; attempt < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++attempt) for (auto* m : {&native, &scalar}) {

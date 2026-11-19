@@ -1725,7 +1725,7 @@ test('instruction fetch faults enter the system exception vector at the physical
 
 	{
 		const { cpu, memory } = createTestSystemCpu(image);
-		const instructionPc = memory.ramInstructionEnd() - 2 * INSTRUCTION_BYTES;
+		const instructionPc = memory.ramBusEnd() - 2 * INSTRUCTION_BYTES;
 		const prefixPc = instructionPc + INSTRUCTION_BYTES;
 		const bodyPc = prefixPc + INSTRUCTION_BYTES;
 		const instructions = new Uint8Array(2 * INSTRUCTION_BYTES);

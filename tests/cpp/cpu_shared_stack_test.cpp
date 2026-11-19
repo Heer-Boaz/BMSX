@@ -2,9 +2,11 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
+#include "spec/bmsx/io.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 
+#include <array>
 #include <iostream>
 #include <stdexcept>
 
@@ -178,104 +180,53 @@ void capturedSlotSurvivesOpenTop(int top) {
 	require(values.size() == 1 && valueIsTable(values.get(0)), "closing the capture retains its value after the source frame returns");
 }
 
-void memoryAliasesActiveStack() {
+void privatePhysicalStack() {
 	test::Blua32TestImage image;
-	image.text.resize(5 * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::KSMI), 0, 0, 37);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::LOAD_MEM), 1, 4, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::STORE_MEM), 5, 4, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::MOV), 2, 0, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
-	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}};
+	image.text.resize(3 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 1, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::KSMI), 2, 0, 37);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}};
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); cpu.reset();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	cpu.setNativeCompilationProfiling(true);
-	cpu.prepareSystemNativeCode();
+	cpu.setNativeCompilationProfiling(true); cpu.prepareSystemNativeCode();
 #endif
-	const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)]
-		+ BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
-	auto* thread = cpu.activeThread();
-	auto& regs = thread->currentFrame->registers;
-	regs.set(4, valueInteger(DYNAMIC_RAM_BASE));
-	regs.set(5, valueInteger(73));
-	cpu.runUntilDepth(0, 512 * cycles);
+	const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	auto* thread = cpu.activeThread(); auto& regs = thread->currentFrame->registers;
+	regs.set(0, valueInteger(41)); cpu.runUntilDepth(0, 512 * cycles);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	require(cpu.readNativeCompilationProfile().entriesPublished != 0u, "the alias regression exercises a warmed native entry");
+	require(cpu.readNativeCompilationProfile().entriesPublished != 0u, "the private-stack regression exercises a warmed native entry");
 #endif
+	const u32 offset = thread->stackOffset(), slot = RAM_BASE + offset;
+	require(slot >= memory.ramBusEnd(), "the actual stack resides outside the public aperture");
+	memory.clearBusFault(); require(memory.readMappedU32LE(slot) == 0u, "a private stack supplies no ordinary bus payload");
+	require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED, "an ordinary private-stack read faults");
+	memory.clearBusFault(); memory.writeMappedU32LE(slot, 73u);
+	require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED && regs.get(0) == valueInteger(41), "an ordinary bus store cannot alter the private register");
+	memory.writeRamRecordWord(slot, 73u);
+	require(regs.get(0) == valueInteger(73), "the bound Value plane is the physical RAM");
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-	const u32 slot = RAM_BASE + thread->stackOffset();
-	regs.set(4, valueInteger(slot));
-	cpu.runUntilDepth(0, 512 * cycles);
-	require(regs.get(1) == valueInteger(37), "a bus read observes the preceding dirty register");
-	require(regs.get(2) == valueInteger(73), "a bus write invalidates the resident register value");
-	require(memory.readRamRecordWord(slot) == 73u && regs.get(0) == valueInteger(73),
-		"both CPU registers and bus accesses refer to the actual guest RAM bytes");
+	cpu.runUntilDepth(0, cycles);
+	require(regs.get(1) == valueInteger(73), "warmed execution reads the private physical register");
+	const auto checkpoint = cpu.captureRuntimeState(); const auto ram = memory.captureSaveState();
+	regs.set(1, valueInteger(7)); memory.restoreSaveState(ram); cpu.restoreRuntimeState(checkpoint);
+	require(cpu.readFrameRegister(0, 1) == valueInteger(73), "restore rebinds the active private Value plane");
+}
 
-	MappedPageBinding binding{};
-	const u32 slotOffset = slot & MAPPED_PAGE_BYTE_MASK;
-	memory.bindMappedPage(slot & ~MAPPED_PAGE_BYTE_MASK, MAPPED_BUS_MASTER_CPU, binding);
-	binding.writeWatch.armWord(slotOffset / INSTRUCTION_BYTES);
-	binding.writeWatch.armWord(slotOffset / INSTRUCTION_BYTES + 7);
-	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-	cpu.runUntilDepth(0, cycles);
-	require(!binding.writeWatch.consume(slotOffset / INSTRUCTION_BYTES, slotOffset / INSTRUCTION_BYTES + 1),
-		"the stack write consumed the watch on that exact word");
-	require(binding.writeWatch.consume(slotOffset / INSTRUCTION_BYTES + 7, slotOffset / INSTRUCTION_BYTES + 8),
-		"the unused slot's watch survived");
-	auto* frame = thread->currentFrame;
-	const u32 baseWord = RAM_BASE + frame->controlOffset + static_cast<u32>(FrameField::StackBase);
-	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-	regs.set(3, valueInteger(123)); regs.set(4, valueInteger(baseWord)); regs.set(5, valueInteger(0xfff00001u));
-	cpu.runUntilDepth(0, cycles);
-	require(thread->stack.get(3) == valueInteger(0), "the next instruction reads the newly selected register window");
-	require(frame->stackBase() == 1 && thread->stackTop() == 9, "the frame base lane decodes the internal slot bits");
-	regs.set(0, valueInteger(99));
-	require(memory.readRamRecordWord(slot + sizeof(u32)) == 99u, "an external geometry write rebinds the register window");
-	memory.writeMappedU32LE(baseWord, 0);
-	// Relocating the whole physical stack must also move its control records.
-	const u32 relocated = MAIN_RAM_SIZE - 4u;
-	const u32 relocatedControl = relocated + ((thread->stackByteLength() + 3u) & ~3u);
-	for (u32 i = 0; i < FRAME_CONTROL_BYTES; i += sizeof(u32))
-		memory.writeRamRecordWord(relocatedControl + i, memory.readRamRecordWord(frame->controlOffset + i));
-	// A cartridge write changes the physical register aperture even if it
-	// straddles RAM's end. The two lanes wrap independently at the record port.
-	const u32 descriptor = thread->address + static_cast<u32>(ThreadField::StackBlock);
-	const u32 descriptorOffset = descriptor - RAM_BASE;
-	MappedPageBinding descriptorPage{};
-	memory.bindMappedPage(descriptor & ~MAPPED_PAGE_BYTE_MASK, MAPPED_BUS_MASTER_CPU, descriptorPage);
-	descriptorPage.writeWatch.armWord((descriptor & MAPPED_PAGE_BYTE_MASK) / sizeof(u32));
-	memory.writeMappedU32LE(descriptor, RAM_BASE + MAIN_RAM_SIZE - 4u);
-	const auto& watches = memory.ramWriteWatches();
-	require(!watches.anyWatched(descriptorOffset, 4, false) && watches.anyWatched(descriptorOffset, 4),
-		"a shared write consumes the code watch and rearms only the stack view");
-	require(thread->stack.mirrored(), "the relocated bank needs the physical record port");
-	regs.set(0, valueInteger(123));
-	regs.set(1, valueFloatBits(0xffc00042));
+void wrappedPhysicalValues() {
+	std::array<u8, 1> empty{};
+	Memory memory(MemoryInit{{empty.data(), 0u}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+	ValueSpan regs(memory, MAIN_RAM_SIZE - 4u, 28u, 8u);
+	require(regs.mirrored(), "a wrapped Value window uses the physical port");
+	regs.set(0, valueInteger(123)); regs.set(1, valueFloatBits(0xffc00042u));
 	require(memory.readRamRecordWord(MAIN_RAM_SIZE - 4u) == 123u && memory.readRamRecordWord(0u) == 0xffc00042u,
-		"only the record port wraps payload addresses");
-	require(memory.readRamRecordByte(28u) == static_cast<u8>(ValueTag::Integer)
-		&& memory.readRamRecordByte(29u) == static_cast<u8>(ValueTag::Float)
-		&& regs.get(1) == valueFloatBits(0xffc00042), "the independently wrapped tags preserve the raw Value");
+		"payload accesses wrap at physical RAM independently from tags");
+	require(memory.readRamRecordByte(28u) == static_cast<u8>(ValueTag::Integer) && memory.readRamRecordByte(29u) == static_cast<u8>(ValueTag::Float),
+		"the tag plane retains its separate wrapped address");
 	regs.copyFrom(regs, 1, 0, 2);
-	require(regs.get(1) == valueInteger(123) && regs.get(2) == valueFloatBits(0xffc00042), "wrapped overlap copies have memmove order");
-	const auto checkpoint = cpu.captureRuntimeState();
-	const auto ram = memory.captureSaveState();
-	regs.set(1, valueInteger(7));
-	memory.restoreSaveState(ram);
-	cpu.restoreRuntimeState(checkpoint);
-	require(cpu.readFrameRegister(0, 1) == valueInteger(123), "restoring RAM restores a wrapped register bank");
-
-	const u32 depthWord = thread->address + static_cast<u32>(ThreadField::FrameDepth);
-	memory.writeMappedU32LE(depthWord, 0xfffc0000u);
-	require(cpu.getFrameDepth() == 0 && thread->currentFrame == nullptr && cpu.runUntilDepth(0, 30) == RunResult::Halted,
-		"a mapped depth write selects no activation without running or clearing the dormant frame");
-	memory.restoreSaveState(ram);
-	cpu.restoreRuntimeState(checkpoint);
-	require(memory.readRamRecordWord(depthWord) == 1 && cpu.getFrameDepth() == 1
-		&& cpu.readFrameRegister(0, 1) == valueInteger(123), "restore derives the activation cursor only from RAM");
-
+	require(regs.get(1) == valueInteger(123) && regs.get(2) == valueFloatBits(0xffc00042u), "wrapped overlap copies retain memmove order and raw NaN bits");
 }
 
 }
@@ -285,7 +236,7 @@ int main() {
 		slidingFixedCall(true);
 		slidingFixedCall(false);
 		formalReservationRoots(true); formalReservationRoots(false);
-		memoryAliasesActiveStack();
+		privatePhysicalStack(); wrappedPhysicalValues();
 		capturedSlotSurvivesOpenTop(0); capturedSlotSurvivesOpenTop(31);
 		for (bool interpreted : {true, false}) for (bool open : {false, true}) slidingVarargCall(interpreted, open);
 		std::cout << "shared stack tests passed\n";

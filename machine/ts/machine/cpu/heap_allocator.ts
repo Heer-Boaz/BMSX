@@ -118,7 +118,7 @@ export class HeapAllocator {
 		this.memory.invalidateRamWrite(this.management, RUNTIME_MANAGEMENT_SIZE);
 		const floorPage = this.pageForFloor(floorAddress);
 		this.setAvailable(floorPage, this.pageLimit, true);
-		this.memory.setRamInstructionEnd(RAM_BASE + (floorPage << PAGE_SHIFT));
+		this.memory.setRamBusEnd(RAM_BASE + (floorPage << PAGE_SHIFT));
 	}
 
 	// Raising the floor is refused while an allocated page lies below it.
@@ -135,7 +135,7 @@ export class HeapAllocator {
 		} else if (next < current) {
 			this.setAvailable(next, current, true);
 		}
-		this.memory.setRamInstructionEnd(RAM_BASE + (next << PAGE_SHIFT));
+		this.memory.setRamBusEnd(RAM_BASE + (next << PAGE_SHIFT));
 		return true;
 	}
 
@@ -409,7 +409,7 @@ export class HeapAllocator {
 	}
 
 	private floorPage(): number {
-		return (this.memory.ramInstructionEnd() - RAM_BASE) >>> PAGE_SHIFT;
+		return (this.memory.ramBusEnd() - RAM_BASE) >>> PAGE_SHIFT;
 	}
 
 	private pageForFloor(address: number): number {

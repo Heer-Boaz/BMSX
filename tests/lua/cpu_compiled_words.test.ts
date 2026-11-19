@@ -13,8 +13,7 @@ import { OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
-import { DYNAMIC_RAM_BASE, IO_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { DYNAMIC_RAM_BASE, IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -23,7 +22,7 @@ function assertParity(a: CPU, b: CPU): void {
 	assert.equal(a.readCurrentInstructionPc(), b.readCurrentInstructionPc()); assert.equal(a.lastPc, b.lastPc);
 }
 
-function wordLoop(count: number, displaced = false) {
+function wordLoop(count: number, displaced = false, bssBytes = RAM_CODE_FIXTURE_BYTES) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 6, 0, 0); writeInstruction(text, 1, OpCode.MOV, 8, 12, 0);
 	writeInstruction(text, 2, OpCode.K1, 9, 0, 0);
@@ -33,7 +32,7 @@ function wordLoop(count: number, displaced = false) {
 	writeInstruction(text, 5, OpCode.ADD, 7, 6, 9); writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
 	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0); writeInstruction(text, 33, OpCode.HALT, 0, 0, 0);
 	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: Math.max(16, 8 + count) },
-		{ firstWord: 32, wordCount: 2 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
+		{ firstWord: 32, wordCount: 2 }], exceptionFunctionIndex: 1 }, bssBytes);
 }
 
 test('generated execution admits every executable BLua32 opcode; WIDE remains a decode prefix', () => {
@@ -93,7 +92,7 @@ for (const wide of [false, true]) test(`a compiled nonterminal at the executable
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 },
 		{ firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
-	const end = js.memory.ramInstructionEnd(), width = wide ? 2 : 1, pc = end - width * INSTRUCTION_BYTES;
+	const end = js.memory.ramBusEnd(), width = wide ? 2 : 1, pc = end - width * INSTRUCTION_BYTES;
 	const code = new Uint8Array(width * INSTRUCTION_BYTES);
 	if (wide) writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(code, width - 1, OpCode.K1, 3, 0, 0);
@@ -229,12 +228,11 @@ test('counted preflight blocks on a later IO word before an earlier bus fault or
 	assertParity(js.cpu, ref.cpu); assert.deepEqual(devices[0], devices[1]);
 });
 
-test('counted stores commit their RAM prefix before faulting beyond installed RAM', () => {
+test('counted stores commit their public RAM prefix before faulting at the live aperture', () => {
 	const image = wordLoop(5);
-	const end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes;
-	const target = end - 3 * 4;
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const end = js.memory.ramBusEnd(), target = end - 3 * 4;
 	for (const { cpu, memory } of [js, scalar]) {
 		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setInteger(0, DYNAMIC_RAM_BASE);
@@ -316,12 +314,12 @@ for (const blocked of [false, true]) test(`later counted blocks retain earlier c
 	assert.ok(second); assert.equal(second.region, block.region); assert.equal(second.exits[0].cycles, 3);
 	for (const { cpu, memory } of [js, ref]) {
 		memory.mapIoWrite(IO_BASE + 0x5000, null, () => assert.fail('not ready')); memory.mapIoWriteReady(IO_BASE + 0x5000, () => false);
-		const frame = cpu.rootThread.frameAtDepth(0); frame.top = 0; frame.registers.setInteger(1, blocked ? IO_BASE + 0x5000 : RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.top = 0; frame.registers.setInteger(1, blocked ? IO_BASE + 0x5000 : memory.ramBusEnd() - 4);
 		frame.registers.setInteger(7, 99); frame.registers.setInteger(20, 73);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc); cpu.runUntilDepth(0, 20);
 		assert.equal(frame.registers.getInteger(7), 99); assert.equal(frame.top, 7);
 		if (blocked) assert.equal(cpu.instructionBudgetRemaining, 7);
-		else { assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_DATA_BUS_ERROR); assert.equal(memory.readMappedWord(RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4), 73); }
+		else { assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_DATA_BUS_ERROR); assert.equal(memory.readMappedWord(memory.ramBusEnd() - 4), 73); }
 	}
 	assertParity(js.cpu, ref.cpu); assert.deepEqual(js.memory.ramData(), ref.memory.ramData());
 });
@@ -343,7 +341,7 @@ test('bulk source publication neither discards clean SSA values nor repeats thei
 });
 
 for (const displaced of [false, true]) for (const count of [0, 1, 4, 5, 1025, displaced ? 4095 : 32767]) test(`a terminal word span starts with one cycle and never starts its successor (count=${count}, displaced=${displaced})`, () => {
-	const image = wordLoop(count, displaced), start = image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES;
+	const image = wordLoop(count, displaced, Math.max(RAM_CODE_FIXTURE_BYTES, 0x4000 + count * 4)), start = image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES;
 	const target = DYNAMIC_RAM_BASE + 0x4000, charge = 3 + (count);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	for (let attempt = 0; attempt < 12; ++attempt) for (const { cpu } of [js, ref]) {

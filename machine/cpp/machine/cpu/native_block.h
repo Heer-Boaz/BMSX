@@ -58,8 +58,6 @@ struct NativeBlockRunState {
 	void* exitCode = nullptr;
 	// Host base of guest main RAM; the gate pins it for the whole native frame.
 	u8* ram = nullptr;
-	u32 stackOffset = 0;
-	u32 stackBytes = 0;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticNativeOpcodeCounts diagnosticOpcodes;
 #endif
@@ -133,9 +131,9 @@ struct NativeCodeBindings {
 	NativeCodeBindings(Memory& memory, StringPool& strings, StringId indexKey, CPU* cpu = nullptr);
 	u32 ramBytes = 0;
 	u8* ram = nullptr;
+	const u32* ramBusEnd = nullptr;
 	const u32* ramWriteGroups = nullptr;
 	const u32* ramCodeWatchWords = nullptr;
-	const u32* ramViewWatchWords = nullptr;
 	const u32* cartridgeSelection = nullptr;
 	std::array<const Span<const u8>*, 2> cartridgeRom{};
 	const Span<const u8>* systemRom = nullptr;

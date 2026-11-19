@@ -113,7 +113,7 @@ for (const kind of ['ascending', 'descending'] as const) test(`published JS regi
 	const page = frame.decodedPage!, block = page.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
 	assert.ok(block && 18 > block.admissionCycles, 'the real generated body is admitted, not an interpreter fallback');
 	frame.registers.setInteger(6, 91); frame.registers.setNil(8); cpu.gc.tables.setInteger(marker, 1, valueInteger(-1));
-	const state = { remainingCycles: 18, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
+	const state = { remainingCycles: 18, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
 	const exit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, state)];
 	assert.equal(exit.nextPc, base + starts[3] * INSTRUCTION_BYTES);
 	assert.equal(state.remainingCycles, kind === 'ascending' ? -1 : -145);

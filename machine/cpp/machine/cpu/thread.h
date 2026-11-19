@@ -7,8 +7,6 @@ namespace bmsx {
 struct Thread {
 	Thread(GcHeap& heap, u32 address = 0u);
 	void select(u32 address);
-	void disarmViewWatches();
-	void armBoundViewWatches();
 	Thread(const Thread&) = delete;
 	Thread& operator=(const Thread&) = delete;
 	~Thread();
@@ -32,10 +30,6 @@ struct Thread {
 	void resizeStack(size_t capacity, Value root = valueNil());
 	void reserveFrame(size_t values, Value root = valueNil(), bool exception = false);
 	void bindStack();
-	void armStackWatch();
-	bool observeStackWrite();
-	bool observeFrameWindowWrites(u32 first, u32 end);
-	void armFrameWindowWatches();
 	u32 stackOffset() const;
 	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
 	u32 backingByteLength() const { return boundBackingBytes; }
@@ -89,7 +83,6 @@ private:
 	u32 frameCapacity() const;
 	u32 protectedCapacity() const;
 	u32 frameControlAddress(u32 index) const;
-	void armFrameWindowWatch(const CallFrame& frame, u32 index);
 	CallFrame* frameNode(CallFrame* previous);
 	void bindFrameControl(CallFrame& frame, u32 address, u32 index);
 	void publishDepth(u32 depth);
@@ -100,7 +93,6 @@ private:
 	u32 boundBackingBytes = 0;
 	u32 boundFrameCapacity = 0;
 	u32 boundProtectedCapacity = 0;
-	u32 watchedFrameCount = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	u32 recordedWriteEpoch = 0;
 #endif

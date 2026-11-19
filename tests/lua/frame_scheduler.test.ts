@@ -439,7 +439,7 @@ test('runtime checkpoint storage reuses owner buffers without consuming independ
 	const vram = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
 	for (let pass = 1; pass <= 4; pass += 1) {
 		const word = (0xfedcba00 | pass) >>> 0;
-		memory.writeU32(RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4, word);
+		memory.writeRamRecordWord(PSX_MACHINE_SPEC.ramBytes - 4, word);
 		for (let slot = 0; slot < 2; slot += 1) {
 			memory.writeMappedU32LE(IO_CART_SELECT, (0x80000000 | slot) >>> 0);
 			memory.writeMappedU32LE(CART_RAM_BASE + regions[3 + slot].byteLength - 4, word ^ slot);

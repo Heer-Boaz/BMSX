@@ -36,7 +36,7 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 			for (let prior = 0; prior < n; prior++) cpu.gc.tables.setStringKey(table, cpu.stringPool.intern(`prior_${prior}`), valueInteger(prior));
 			for (const value of [values[n], valueNil(), values[n]]) {
 				r.setTable(0, table); r.set(3, values[n]); r.set(4, value);
-				const before = cpu.gc.tables.getTrackedHeapBytes(table), state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
+				const before = cpu.gc.tables.getTrackedHeapBytes(table), state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
 				const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state)];
 				assert.equal(exit.exit, CompiledBlockExit.Continue, 'new keys, nil deletion and resurrection need no CPU semantic exit');
 				assert.equal(cpu.gc.tables.getStringKey(table, key), constant ? valueBool(false) : value);
@@ -47,7 +47,7 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 			}
 		}
 		const empty = cpu.createTable(); r.setTable(0, empty); r.set(3, values[3]); r.set(4, values[3]); r.setNil(9);
-		const state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
+		const state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
 		const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state)];
 		assert.equal(exit.exit, generic ? CompiledBlockExit.WriteIndex : CompiledBlockExit.WriteField);
 		assert.equal(cpu.gc.tables.storedSlotCount(empty), 0); assert.equal(cpu.gc.tables.getStringKey(empty, key), valueNil());

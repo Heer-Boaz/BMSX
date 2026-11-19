@@ -41,9 +41,10 @@ supply their addresses or separate request selectors.
 
 Memory endpoints access system ROM, main RAM and the selected cartridge's ROM,
 RAM or mapped devices through the normal memory map. They cannot access the
-console's internal I/O aperture. An internal I/O address on a memory endpoint
-causes an unmapped-access bus fault, not a register operation. Device routes
-are the only DMA connections to the listed internal ports.
+console's internal I/O aperture or the CPU's
+[private language storage](memory.md#sec-memory-language-heap). Both ranges
+cause an unmapped-access bus fault when addressed through a memory endpoint.
+Device routes are the only DMA connections to the listed internal ports.
 
 An address register unused by the selected route retains its raw word and does
 not advance. For example, WRITE_ADDR does not determine the destination of

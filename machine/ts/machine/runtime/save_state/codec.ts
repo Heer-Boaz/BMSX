@@ -165,7 +165,7 @@ function readCartridgeControllerState(reader: BinaryReader): CartridgeController
 }
 
 function writeMemoryBusState(writer: BinarySink, state: MemoryBusState): void {
-	writer.u32(state.ramInstructionEnd);
+	writer.u32(state.ramBusEnd);
 	writer.u32(state.busFaultCode);
 	writer.u32(state.busFaultAddr);
 	writer.u32(state.busFaultAccess);
@@ -173,7 +173,7 @@ function writeMemoryBusState(writer: BinarySink, state: MemoryBusState): void {
 
 function readMemoryBusState(reader: BinaryReader): MemoryBusState {
 	return {
-		ramInstructionEnd: reader.u32(),
+		ramBusEnd: reader.u32(),
 		busFaultCode: reader.u32(),
 		busFaultAddr: reader.u32(),
 		busFaultAccess: reader.u32(),

@@ -65,7 +65,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	js.setSystemGlobalByKey(js.stringPool.find('copied')!, valueInteger(23));
 	js.memory.ramWriteWatches().armCodeRange(tag, 1);
 	const run = { remainingCycles: loopCycles, registerTop: frame.top, memoryAddress: 0,
-		stackOffset: js.rootThread.stackOffset(), stackBytes: js.rootThread.backingByteLength(), lengthWork: { probes: 0 } };
+		lengthWork: { probes: 0 } };
 	const exit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, run)];
 	assert.equal(exit.exit, CompiledBlockExit.WriteSystemGlobal);
 	assert.equal(run.remainingCycles, loopCycles - BASE_CYCLES[OpCode.GETGL] - BASE_CYCLES[OpCode.SETSYS]);
@@ -195,7 +195,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	const r = frame.registers, writes = new Uint32Array(16);
 	observeRegisterStores(r, index => { ++writes[index]; });
 	const block = page.compiledBlocks!.entries[entry]!, run = {
-		remainingCycles: block.region.entries.reduce((cycles, entry) => cycles + entry.terminal.cycles, 0), registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 },
+		remainingCycles: block.region.entries.reduce((cycles, entry) => cycles + entry.terminal.cycles, 0), registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 },
 	};
 	const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, run)];
 	assert.equal(exit.nextPc, image.image.functions[0].codeAddress); assert.equal(run.remainingCycles, 0);
