@@ -122,7 +122,9 @@ import {
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
-import { Closure, CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, Upvalue, UPVALUE_RECORD_KIND, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, sameFunctionPrototype } from './closure';
+import { Closure, CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, sameFunctionPrototype } from './closure';
+import { UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, UPVALUE_VALUE_WORD, UPVALUE_OWNER } from './upvalue';
+import * as Upvalue from './upvalue';
 import { ValueSlots } from './value_slots';
 import { GlobalBank, type GlobalBankState } from './global_bank';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
@@ -443,31 +445,31 @@ export class CPU implements MappedPageInvalidator {
 		this.builtinResultsScratchIndex -= 1;
 	}
 
-	private findOpenUpvalue(frame: CallFrame, index: number): Upvalue | null {
+	private findOpenUpvalue(frame: CallFrame, index: number): number {
 		const slot = (frame.stackBase + index) >>> 0;
 		let address = frame.openUpvalueHead;
 		for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
-			const upvalue = this.gc.openCellAt(address);
-			if (upvalue === null) break;
-			const current = upvalue.stackSlot;
-			if (current <= slot) return current === slot ? upvalue : null;
-			address = upvalue.nextAddress;
+			const cell = this.gc.openCellAddress(address);
+			if (cell === 0) break;
+			const current = this.memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
+			if (current <= slot) return current === slot ? cell : 0;
+			address = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
 		}
-		return null;
+		return 0;
 	}
 
-	private linkOpenUpvalue(frame: CallFrame, upvalue: Upvalue, slot: number): void {
-		let previous: Upvalue | null = null;
+	private linkOpenUpvalue(frame: CallFrame, cell: number, slot: number): void {
+		let previous = 0;
 		let next = frame.openUpvalueHead;
 		for (let remaining = UPVALUE_CHAIN_LIMIT; next !== 0 && remaining !== 0; --remaining) {
-			const current = this.gc.openCellAt(next);
-			if (current === null || current.stackSlot <= slot) break;
+			const current = this.gc.openCellAddress(next);
+			if (current === 0 || this.memory.readRamRecordWord(current + UPVALUE_VALUE_WORD) <= slot) break;
 			previous = current;
-			next = current.nextAddress;
+			next = this.memory.readRamRecordWord(current + UPVALUE_NEXT);
 		}
-		upvalue.bind(frame.thread.address, slot, next);
-		if (previous === null) frame.openUpvalueHead = upvalue.address;
-		else previous.nextAddress = upvalue.address;
+		Upvalue.bindOpen(this.memory, cell, frame.thread.address, slot, next);
+		if (previous === 0) frame.openUpvalueHead = cell;
+		else this.memory.writeRamRecordWord(previous + UPVALUE_NEXT, cell);
 	}
 
 	// TODO: Admit function-valued __index through VM call/return continuations in
@@ -3035,12 +3037,9 @@ export class CPU implements MappedPageInvalidator {
 			upvalueWords[index] = word;
 			const upvalueIndex = word & BLUA32_UPVALUE_INDEX_MASK;
 			if ((word & BLUA32_UPVALUE_IN_STACK_MASK) !== 0) {
-				const upvalue = this.findOpenUpvalue(frame, upvalueIndex);
-				if (upvalue) {
-					upvalues[index] = upvalue.address;
-				} else {
-					newUpvalueCount += 1;
-				}
+				const cell = this.findOpenUpvalue(frame, upvalueIndex);
+				upvalues[index] = cell;
+				if (cell === 0) newUpvalueCount += 1;
 				continue;
 			}
 			upvalues[index] = frame.captureAddress(upvalueIndex);
@@ -3057,10 +3056,9 @@ export class CPU implements MappedPageInvalidator {
 				closure.setCaptureAddress(index, upvalues[index]);
 				continue;
 			}
-			const upvalue = new Upvalue(this.memory, this.captureAddresses[nextCell++]);
-			this.gc.track(upvalue);
-			this.linkOpenUpvalue(frame, upvalue, (frame.stackBase + (upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK)) >>> 0);
-			closure.setCaptureAddress(index, upvalue.address);
+			const cell = this.captureAddresses[nextCell++];
+			this.linkOpenUpvalue(frame, cell, (frame.stackBase + (upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK)) >>> 0);
+			closure.setCaptureAddress(index, cell);
 		}
 		this.charge(count);
 		return closure;
@@ -3069,12 +3067,12 @@ export class CPU implements MappedPageInvalidator {
 	private closeUpvalues(frame: CallFrame): number {
 		let closed = 0;
 		let address = frame.openUpvalueHead;
-		frame.openUpvalueHead = 0;
+		if (address !== 0) frame.openUpvalueHead = 0;
 		while (address !== 0 && closed < UPVALUE_CHAIN_LIMIT) {
-			const upvalue = this.gc.openCellAt(address);
-			if (upvalue === null) break;
-			address = upvalue.nextAddress;
-			upvalue.close();
+			const cell = this.gc.openCellAddress(address);
+			if (cell === 0) break;
+			address = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
+			Upvalue.close(this.gc, cell);
 			++closed;
 		}
 		return closed;
@@ -3086,8 +3084,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private copyRegisterToUpvalue(address: number, registers: ValueSlots, registerIndex: number): void {
-		if (!Upvalue.isOpen(this.memory, address)) this.gc.writeBarrier(address & UPVALUE_ADDRESS_MASK, UPVALUE_NEXT);
-		Upvalue.store(this.memory, address, registers.getTag(registerIndex), registers.getPayload(registerIndex));
+		Upvalue.store(this.gc, address, registers.getTag(registerIndex), registers.getPayload(registerIndex));
 	}
 
 	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
@@ -3970,9 +3967,6 @@ export class CPU implements MappedPageInvalidator {
 					}
 					break;
 				}
-				case UPVALUE_RECORD_KIND:
-					cpu.gc.track(new Upvalue(cpu.memory, address));
-					break;
 			}
 			return 1;
 		});
@@ -4041,7 +4035,7 @@ export class CPU implements MappedPageInvalidator {
 
 	public visitReachableClosures(visitor: (closure: Closure) => void): void {
 		const objects: number[] = [];
-		const upvalues: Upvalue[] = [];
+		const upvalues: number[] = [];
 		const seen = new Set<number>();
 		const add = (value: Value): void => {
 			const tag = valueTag(value);
@@ -4075,14 +4069,14 @@ export class CPU implements MappedPageInvalidator {
 		}
 		while (objects.length > 0 || upvalues.length > 0) {
 			if (upvalues.length > 0) {
-				const upvalue = upvalues.pop()!;
-				if (seen.has(upvalue.address)) continue;
-				seen.add(upvalue.address);
-				if (upvalue.open) {
-					const thread = this.gc.threadAt(upvalue.ownerAddress);
+				const cell = upvalues.pop()!;
+				if (seen.has(cell)) continue;
+				seen.add(cell);
+				if (Upvalue.isOpen(this.memory, cell)) {
+					const thread = this.gc.threadAt(this.memory.readRamRecordWord(cell + UPVALUE_OWNER));
 					if (thread !== null) objects.push(thread.address);
 				}
-				add(upvalue.value);
+				add(Upvalue.load(this.memory, cell));
 				continue;
 			}
 			const address = objects.pop()!;
@@ -4093,8 +4087,8 @@ export class CPU implements MappedPageInvalidator {
 					const closure = this.gc.closureAt(address)!;
 					visitor(closure);
 					for (let index = 0, count = closure.upvalueCount; index < count; ++index) {
-						const cell = this.gc.cellAt(closure.captureAddress(index));
-						if (cell !== null) upvalues.push(cell);
+						const cell = this.gc.cellRecordAddress(closure.captureAddress(index));
+						if (cell !== 0) upvalues.push(cell);
 					}
 					break;
 				}
@@ -4114,10 +4108,10 @@ export class CPU implements MappedPageInvalidator {
 						add(valueClosure(frame.closureAddress));
 						let address = frame.openUpvalueHead;
 						for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
-							const upvalue = this.gc.openCellAt(address);
-							if (upvalue === null) break;
-							upvalues.push(upvalue);
-							address = upvalue.nextAddress;
+							const cell = this.gc.openCellAddress(address);
+							if (cell === 0) break;
+							upvalues.push(cell);
+							address = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
 						}
 					}
 					break;

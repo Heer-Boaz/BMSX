@@ -4,6 +4,7 @@
 
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
+#include "machine/cpu/upvalue.h"
 
 namespace bmsx {
 
@@ -96,12 +97,8 @@ u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> ce
 			}
 			if (count == cells.size()) {
 				auto& memory = m_cpu.memory();
-				for (u32 cell : cells) {
-					memory.writeRamRecordWord(cell, UPVALUE_RECORD_KIND | (static_cast<u32>(m_cpu.gcHeap().white()) << 8u));
-					memory.writeRamRecordWord(cell + 4u, 0u);
-					memory.writeRamRecordWord(cell + 8u, 0u);
-					memory.writeRamRecordWord(cell + 12u, 0u);
-				}
+				const u8 white = m_cpu.gcHeap().white();
+				for (u32 cell : cells) Upvalue::initialize(memory, cell, white);
 				return closure;
 			}
 			while (count != 0) arena.free(cells[--count]);

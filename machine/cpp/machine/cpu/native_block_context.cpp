@@ -2,7 +2,7 @@
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/native_value_emit.h"
 #include "machine/cpu/call_state.h"
-#include "machine/cpu/closure.h"
+#include "machine/cpu/upvalue.h"
 #include "machine/cpu/thread.h"
 
 #include <bit>
@@ -74,7 +74,7 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 	if constexpr (std::endian::native == std::endian::big)
 		sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
 	auto* c = m_compiler;
-	sljit_emit_op2(c, SLJIT_AND, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_IMM, MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES);
+	sljit_emit_op2(c, SLJIT_AND, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_IMM, UPVALUE_ADDRESS_MASK);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_FLAGS);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, UPVALUE_OPEN);

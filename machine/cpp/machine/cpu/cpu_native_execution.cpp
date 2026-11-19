@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/upvalue.h"
 #include "machine/cpu/native_execution.h"
 #include "machine/cpu/value_arithmetic.h"
 
@@ -182,7 +183,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			break;
 		}
 		case NativeBlockExit::WriteUpvalue:
-			cpu.writeUpvalue(frame->captureAddress(exit->exitB), frame->registers.get(exit->exitA));
+			Upvalue::store(cpu.m_heap, frame->captureAddress(exit->exitB), frame->registers.get(exit->exitA));
 			break;
 		case NativeBlockExit::InvalidOperand:
 		case NativeBlockExit::InvalidConstant:

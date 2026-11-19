@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/closure';
+import { Closure } from '../../machine/ts/machine/cpu/closure';
+import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -165,14 +166,13 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const frame = cpu.rootThread.frameAtDepth(0);
-		const open = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0)), closed = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
-		open.bind(frame.thread.address, frame.stackBase, 0);
-		cpu.gc.track(open); cpu.gc.track(closed);
 		const bound = frame.closure;
-		const replacement = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(2), bound.prototypeRecord, false);
+		const cells = new Uint32Array(2);
+		const replacement = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(2, false, cells, cells.length), bound.prototypeRecord, false);
+		Upvalue.bindOpen(cpu.memory, cells[0], frame.thread.address, frame.stackBase, 0);
 		replacement.initializeRecord(cpu.gc.white(), 2);
-		replacement.setCaptureAddress(0, open.address);
-		replacement.setCaptureAddress(1, closed.address);
+		replacement.setCaptureAddress(0, cells[0]);
+		replacement.setCaptureAddress(1, cells[1]);
 		cpu.gc.track(replacement);
 		frame.closureAddress = replacement.address;
 		cpu.runUntilDepth(0, 50 * loopCycles);
@@ -191,8 +191,8 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		assert.equal(frame.registers.get(6), frame.registers.get(12));
 		assert.equal(frame.top, 7, 'SETUP does not extend top to its source register');
 	}
-	const upvalue = js.gc.cellAt(frame.closure.captureAddress(0)) as Upvalue;
-	upvalue.close(); upvalue.value = valueInteger(1);
+	const upvalue = frame.closure.captureAddress(0);
+	Upvalue.close(js.gc, upvalue); Upvalue.store(js.gc, upvalue, ValueTag.Integer, 1);
 	const r = frame.registers, setEncoded = r.setEncoded.bind(r), writes = new Uint32Array(16);
 	r.setEncoded = (index, tag, word) => { ++writes[index]; setEncoded(index, tag, word); };
 	const block = page.compiledBlocks!.entries[entry]!, run = {

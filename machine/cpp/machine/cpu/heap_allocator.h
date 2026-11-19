@@ -50,8 +50,8 @@ public:
 	u32 floorAddress() const;
 	u32 capacityBytes() const;
 	u32 occupiedBytes() const;
-	// The record port supplies an aligned physical slot offset.
-	bool isIssuedObjectSlot(u32 offset, u32 sizeClass) const;
+	// Decode the page class and issued range. The record port selects alignment.
+	u32 issuedObjectSlotClass(u32 offset) const;
 	// Returns the guest address of the allocation, or 0 when no slot or page run fits.
 	u32 allocate(u32 byteCount, bool owned);
 	void free(u32 address);

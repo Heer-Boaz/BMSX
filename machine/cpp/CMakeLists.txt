@@ -383,7 +383,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp machine/cpu/native_block_abi.cpp
 		machine/cpu/native_block_builtin.cpp machine/cpu/native_block_call.cpp machine/cpu/native_block_return.cpp machine/cpu/native_block_frames.cpp
 		machine/cpu/native_block_registers.cpp machine/cpu/native_block_numeric.cpp machine/cpu/native_block_compare.cpp
-		machine/cpu/closure.cpp machine/cpu/native_block_context.cpp machine/cpu/native_block_control.cpp machine/cpu/native_block_length.cpp machine/cpu/native_block_table.cpp machine/cpu/native_block_memory.cpp machine/cpu/native_block_edges.cpp machine/cpu/native_block_liveness.cpp
+		machine/cpu/closure.cpp machine/cpu/upvalue.cpp machine/cpu/native_block_context.cpp machine/cpu/native_block_control.cpp machine/cpu/native_block_length.cpp machine/cpu/native_block_table.cpp machine/cpu/native_block_memory.cpp machine/cpu/native_block_edges.cpp machine/cpu/native_block_liveness.cpp
 		machine/cpu/cpu_native_blocks.cpp machine/cpu/cpu_native_execution.cpp machine/cpu/cpu_native_prepare.cpp)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)
 	target_link_libraries(bmsx_core PRIVATE bmsx_sljit)

@@ -488,7 +488,7 @@ DISPATCH_LABEL(GETUP) {
 	const int a = decoded->a;
 	const int b = decoded->b;
 	const u32 address = FRAME.captureAddress(static_cast<u32>(b));
-	SET_REGISTER_FAST(a, readUpvalue(address));
+	SET_REGISTER_FAST(a, Upvalue::load(m_memory, address));
 	DISPATCH_NEXT();
 }
 
@@ -496,7 +496,7 @@ DISPATCH_LABEL(SETUP) {
 	const int a = decoded->a;
 	const int b = decoded->b;
 	const u32 address = FRAME.captureAddress(static_cast<u32>(b));
-	writeUpvalue(address, REG(a));
+	Upvalue::store(m_heap, address, REG(a));
 	DISPATCH_NEXT();
 }
 

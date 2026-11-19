@@ -1,5 +1,5 @@
 import { GC_COLOR_OFFSET } from './gc_object';
-import { UPVALUE_ADDRESS_MASK, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './closure';
+import { UPVALUE_ADDRESS_MASK, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './upvalue';
 import { ThreadField } from './thread_record';
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueTag } from './value';

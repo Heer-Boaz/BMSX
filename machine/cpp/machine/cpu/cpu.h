@@ -383,10 +383,8 @@ private:
 	bool executeCall(CallFrame& frame, int a, int b, int c);
 	bool executeReturn(CallFrame& frame, int a, int b);
 	void executeVararg(CallFrame& frame, int a, int b);
-	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
-	void linkOpenUpvalue(CallFrame& frame, Upvalue& upvalue, u32 slot);
-	Value readUpvalue(u32 address) const;
-	void writeUpvalue(u32 address, const Value& value);
+	u32 findOpenUpvalue(const CallFrame& frame, int index) const;
+	void linkOpenUpvalue(CallFrame& frame, u32 cell, u32 slot);
 	void writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount);
 	void writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values);
 	void setRegister(CallFrame& frame, int index, Value value);

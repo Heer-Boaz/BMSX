@@ -1,3 +1,4 @@
+#include "machine/cpu/upvalue.h"
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/common/numeric.h"
@@ -322,7 +323,8 @@ void closureBindingAndClosingCycles() {
 			"successive closures share both captured cells");
 		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 2 - 2,
 			"RET charges two distinct open cells, not four descriptors, and two received values");
-		require(!static_cast<Upvalue*>(machine.cpu.gcHeap().cellAt(first->captureAddress(0)))->isOpen() && !static_cast<Upvalue*>(machine.cpu.gcHeap().cellAt(first->captureAddress(1)))->isOpen(), "both charged captures are closed");
+		require(!Upvalue::isOpen(machine.cpu.memory(), first->captureAddress(0))
+			&& !Upvalue::isOpen(machine.cpu.memory(), first->captureAddress(1)), "both charged captures are closed");
 	}
 }
 

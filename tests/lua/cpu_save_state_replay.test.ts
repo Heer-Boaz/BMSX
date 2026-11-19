@@ -3,6 +3,7 @@ import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
+import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, valueTable, valueIsTable, valueFloat, valueFloatBits, valueInteger, valueBool, valueNil, valueBuiltinFunction, type Value, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
@@ -65,11 +66,11 @@ return function() return root end
 	const result = state.completionValues[0];
 	const descriptor = asClosure(result, cpu.gc);
 	assert.equal(valuePayload(result), descriptor.address);
-	const cell = cpu.gc.cellAt(descriptor.captureAddress(0))!;
-	assert.notEqual(cell.address, descriptor.address);
-	assert.equal(cell.open, false);
-	assert.ok(valueIsTable(cell.value));
-
+	const cell = descriptor.captureAddress(0);
+	assert.notEqual(cell, descriptor.address);
+	assert.equal(cpu.gc.cellRecordAddress(cell), cell);
+	assert.equal(Upvalue.isOpen(cpu.memory, cell), false);
+	assert.ok(valueIsTable(Upvalue.load(cpu.memory, cell)));
 });
 
 test('repeated restore replays the full CPU state independently of fresh execution grants', () => {

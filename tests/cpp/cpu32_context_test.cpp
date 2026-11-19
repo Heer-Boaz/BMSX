@@ -1,3 +1,4 @@
+#include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
 #include "support/number32_cpu_fixture.h"
 #include "support/cpu_execution_parity.h"
@@ -250,7 +251,7 @@ void captures() {
 					auto& m = i == 0 ? native : scalar;
 					auto* closure = beginCaptured(m, source != 0);
 					auto* frame = m.cpu.activeThread()->currentFrame;
-					auto* upvalue = static_cast<Upvalue*>(m.cpu.gcHeap().cellAt(closure->captureAddress(0)));
+					const u32 cell = closure->captureAddress(0);
 					if (source != 0) {
 						parents[i] = frame->previous;
 						parents[i]->registers.set(8, value);
@@ -258,11 +259,11 @@ void captures() {
 							// Redirect the live open cell into the injected frame, retaining
 							// actual thread/frame ownership and its matching open-cell chain.
 							parents[i]->writeControl(FrameField::OpenHead, 0);
-							upvalue->bind(frame->thread->address, frame->stackBase() + 8, frame->readControl(FrameField::OpenHead));
-							frame->writeControl(FrameField::OpenHead, upvalue->address);
+							Upvalue::bindOpen(m.cpu.memory(), cell, frame->thread->address, frame->stackBase() + 8, frame->readControl(FrameField::OpenHead));
+							frame->writeControl(FrameField::OpenHead, cell);
 						}
 					}
-					upvalue->setValue(value);
+					Upvalue::store(m.cpu.gcHeap(), cell, value);
 					frame->registers.set(0, value);
 					frame->registers.set(1, valueFloatBits(0x7fc12345));
 				}
@@ -281,38 +282,38 @@ void captures() {
 						"open outer-frame writes retain every Float/Integer bit");
 			}
 }
-void closedBarrierAndDirectoryGrowth() {
+void closedBarrierAfterHeapGrowth() {
 	const auto image = capturedChunk(true);
 	Number32Machine native(image), scalar(image, false);
 	u32 children[2];
-	Upvalue* upvalues[2];
+	u32 cells[2];
 	for (int i = 0; i < 2; ++i) {
 		auto& m = i == 0 ? native : scalar;
-		// Construct the capture AFTER directory growth: looking up an old id
-		// through freed backing can appear to work while those bytes are intact.
+		// Churn allocator pages before admitting the closure and its new cell.
 		for (int n = 0; n < 600; ++n)
 			m.cpu.createTable();
 		auto* closure = beginCaptured(m);
 		auto child = m.cpu.createTable(1);
 		child.setInteger(1, valueInteger(123));
 		children[i] = child.address();
-		auto* upvalue = static_cast<Upvalue*>(m.cpu.gcHeap().cellAt(closure->captureAddress(0)));
-		upvalues[i] = upvalue;
+		const u32 cell = closure->captureAddress(0);
+		cells[i] = cell;
 		m.cpu.gcHeap().step(valueNil(), valueNil(), valueNil());
-		require(upvalue->gcColor() == 3, "collector has scanned the closed cell before mutation");
+		require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 3, "collector has scanned the closed cell before mutation");
 		m.cpu.activeThread()->currentFrame->registers.set(0, valueTable(child.address()));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 1);
 	parity(native, scalar);
-	for (auto* cell : upvalues)
-		require(cell->gcColor() == 2, "closed native write queues the scanned cell again");
+	require(native.cpu.memory().readRamRecordByte(cells[0] + GC_COLOR_OFFSET) == 2
+		&& scalar.cpu.memory().readRamRecordByte(cells[1] + GC_COLOR_OFFSET) == 2,
+		"closed writes queue the scanned cell again");
 	test::runCpuParity(native.cpu, scalar.cpu, 100);
 	parity(native, scalar);
 	requireNative(native.cpu,2);
 	for (int i = 0; i < 2; ++i) {
 		auto& m = i == 0 ? native : scalar;
 		m.cpu.collectHeap();
-		const auto child = asTable(upvalues[i]->value(), m.cpu.gcHeap());
+		const auto child = asTable(Upvalue::load(m.cpu.memory(), cells[i]), m.cpu.gcHeap());
 		require(child.address() == children[i] && child.getInteger(1) == valueInteger(123),
 			"a child introduced by a closed-cell write survives the incremental collector");
 	}
@@ -330,7 +331,7 @@ int main() {
 		std::cerr << "captures\n";
 		captures();
 		std::cerr << "closed barrier\n";
-		closedBarrierAndDirectoryGrowth();
+		closedBarrierAfterHeapGrowth();
 		std::cout << "Native compact constants, control, lengths, captures and barriers passed\n";
 		return 0;
 	} catch (const std::exception& error) {

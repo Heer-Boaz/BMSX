@@ -7,7 +7,8 @@ import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { FRAME_CONTROL_BYTES, FrameField, ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
-import { CLOSURE_CAPTURE_WORDS, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/closure';
+import { CLOSURE_CAPTURE_WORDS } from '../../machine/ts/machine/cpu/closure';
+import { UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';

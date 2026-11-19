@@ -1,3 +1,4 @@
+#include "machine/cpu/upvalue.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
@@ -148,9 +149,10 @@ void capturesUsePhysicalRecords() {
 	cpu.runUntilDepth(0, 1000);
 	const auto* closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
 	const auto address = closure->captureAddress(0);
-	const auto* cell = cpu.gcHeap().cellAt(address);
-	require(address != closure->address && cell && !cell->isOpen()
-		&& cell->value() == cpu.readCompletionValues().get(0), "closure points to a distinct closed record retaining its table");
+	require(address != closure->address && cpu.gcHeap().cellRecordAddress(address) == address
+		&& !bmsx::Upvalue::isOpen(cpu.memory(), address)
+		&& bmsx::Upvalue::load(cpu.memory(), address) == cpu.readCompletionValues().get(0),
+		"closure points to a distinct closed record retaining its table");
 }
 
 void inspectOpenAndClosedClosure() {
@@ -170,7 +172,8 @@ void inspectOpenAndClosedClosure() {
 	const auto open = cpu.captureRuntimeState();
 	const auto openRam = cpu.memory().captureSaveState();
 	const auto* closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
-	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().cellAt(closure->captureAddress(0)))->isOpen(), "fixture capture is open");
+	const auto capture = closure->captureAddress(0);
+	require(bmsx::Upvalue::isOpen(cpu.memory(), capture), "fixture capture is open");
 	const auto table = cpu.readFrameRegister(0, 0);
 	require(cpu.readClosureUpvalue(closure, 0) == table, "read the live defining register without calling the closure");
 	const auto afterRead = cpu.captureRuntimeState();
@@ -178,12 +181,14 @@ void inspectOpenAndClosedClosure() {
 	cpu.setExecutionHook({});
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "defining frame returns normally");
 	closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
-	require(!static_cast<bmsx::Upvalue*>(cpu.gcHeap().cellAt(closure->captureAddress(0)))->isOpen(), "fixture capture is closed");
+	require(closure->captureAddress(0) == capture && !bmsx::Upvalue::isOpen(cpu.memory(), capture),
+		"closing the capture preserves its address");
 	require(cpu.readClosureUpvalue(closure, 0) == table, "closed cell keeps the same value");
 	cpu.memory().restoreSaveState(openRam);
 	cpu.restoreRuntimeState(open);
 	closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
-	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().cellAt(closure->captureAddress(0)))->isOpen(), "restore replaces the closure with its open capture");
+	require(closure->captureAddress(0) == capture && bmsx::Upvalue::isOpen(cpu.memory(), capture),
+		"restoring the same capture address restores its open state");
 	require(cpu.readClosureUpvalue(closure, 0) == cpu.readFrameRegister(0, 0), "restored read follows the restored frame");
 }
 

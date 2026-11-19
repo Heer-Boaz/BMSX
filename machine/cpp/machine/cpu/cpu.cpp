@@ -1,6 +1,7 @@
 #include "machine/cpu/cpu.h"
 
 #include <bit>
+#include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 #include "machine/cpu/native_compiler_worker.h"
@@ -911,9 +912,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 					cpu.m_staticClosuresByAddress[record.functionAddress].push_back(closure);
 				break;
 			}
-			case UPVALUE_RECORD_KIND:
-				heap.allocate<Upvalue>(ObjType::Upvalue, cpu.m_memory, address);
-				break;
 		}
 		return 1;
 	});
@@ -1059,8 +1057,8 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::SetFrameUpvalue: {
 			const auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
 			const u32 address = frame.captureAddress(integerOperand(args[2]));
-			if (fn.id == BuiltinFunctionId::SetFrameUpvalue) writeUpvalue(address, args[3]);
-			else out.push_back(readUpvalue(address));
+			if (fn.id == BuiltinFunctionId::SetFrameUpvalue) Upvalue::store(m_heap, address, args[3]);
+			else out.push_back(Upvalue::load(m_memory, address));
 			break;
 		}
 		case BuiltinFunctionId::StringChar:
@@ -2302,11 +2300,11 @@ int CPU::getFrameUpvalueCount(int frameIndex) const {
 
 Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
 	const CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
-	return readUpvalue(frame.captureAddress(static_cast<u32>(upvalueIndex)));
+	return Upvalue::load(m_memory, frame.captureAddress(static_cast<u32>(upvalueIndex)));
 }
 
 Value CPU::readClosureUpvalue(const Closure* closure, int upvalueIndex) const {
-	return readUpvalue(closure->captureAddress(static_cast<u32>(upvalueIndex)));
+	return Upvalue::load(m_memory, closure->captureAddress(static_cast<u32>(upvalueIndex)));
 }
 
 u32 CPU::readEpcWord() const {
@@ -2387,31 +2385,31 @@ void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
 	m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->writeControl(FrameField::CallSite, pc);
 }
 
-Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
+u32 CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
 	const u32 slot = static_cast<u32>(frame.stackBase()) + static_cast<u32>(index);
 	u32 address = frame.readControl(FrameField::OpenHead);
 	for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
-		auto* upvalue = m_heap.openCellAt(address);
-		if (!upvalue) break;
-		const u32 current = upvalue->stackSlot();
-		if (current <= slot) return current == slot ? upvalue : nullptr;
-		address = upvalue->nextAddress();
+		const u32 cell = m_heap.openCellAddress(address);
+		if (cell == 0u) break;
+		const u32 current = m_memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
+		if (current <= slot) return current == slot ? cell : 0u;
+		address = m_memory.readRamRecordWord(cell + UPVALUE_NEXT);
 	}
-	return nullptr;
+	return 0u;
 }
 
-void CPU::linkOpenUpvalue(CallFrame& frame, Upvalue& upvalue, u32 slot) {
-	Upvalue* previous = nullptr;
+void CPU::linkOpenUpvalue(CallFrame& frame, u32 cell, u32 slot) {
+	u32 previous = 0u;
 	u32 next = frame.readControl(FrameField::OpenHead);
 	for (u32 remaining = UPVALUE_CHAIN_LIMIT; next != 0 && remaining != 0; --remaining) {
-		auto* current = m_heap.openCellAt(next);
-		if (!current || current->stackSlot() <= slot) break;
+		const u32 current = m_heap.openCellAddress(next);
+		if (current == 0u || m_memory.readRamRecordWord(current + UPVALUE_VALUE_WORD) <= slot) break;
 		previous = current;
-		next = current->nextAddress();
+		next = m_memory.readRamRecordWord(current + UPVALUE_NEXT);
 	}
-	upvalue.bind(frame.thread->address, slot, next);
-	if (previous) previous->setNextAddress(upvalue.address);
-	else frame.writeControl(FrameField::OpenHead, upvalue.address);
+	Upvalue::bindOpen(m_memory, cell, frame.thread->address, slot, next);
+	if (previous != 0u) m_memory.writeRamRecordWord(previous + UPVALUE_NEXT, cell);
+	else frame.writeControl(FrameField::OpenHead, cell);
 }
 
 Closure* CPU::createClosure(CallFrame& frame) {
@@ -2439,12 +2437,9 @@ Closure* CPU::createClosure(CallFrame& frame) {
 		m_closureUpvalueWordScratch[index] = upvalueWord;
 		const u32 upvalueIndex = upvalueWord & BLUA32_UPVALUE_INDEX_MASK;
 		if ((upvalueWord & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
-			Upvalue* upvalue = findOpenUpvalue(frame, static_cast<int>(upvalueIndex));
-			if (upvalue) {
-				m_closureCellScratch[index] = upvalue->address;
-			} else {
-				newUpvalueCount += 1;
-			}
+			const u32 cell = findOpenUpvalue(frame, static_cast<int>(upvalueIndex));
+			m_closureCellScratch[index] = cell;
+			newUpvalueCount += cell == 0u;
 		} else {
 			m_closureCellScratch[index] = frame.captureAddress(upvalueIndex);
 		}
@@ -2456,8 +2451,7 @@ Closure* CPU::createClosure(CallFrame& frame) {
 		u32 address = m_closureCellScratch[index];
 		if (address == 0u && (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
 			address = m_captureAddressScratch[nextCell++];
-			auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue, m_memory, address);
-			linkOpenUpvalue(frame, *upvalue, static_cast<u32>(frame.stackBase())
+			linkOpenUpvalue(frame, address, static_cast<u32>(frame.stackBase())
 				+ (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_INDEX_MASK));
 		}
 		closure->setCaptureAddress(index, address);
@@ -2473,24 +2467,13 @@ int CPU::closeUpvalues(CallFrame& frame) {
 	u32 address = frame.readControl(FrameField::OpenHead);
 	if (address != 0) frame.writeControl(FrameField::OpenHead, 0);
 	while (address != 0 && closed < static_cast<int>(UPVALUE_CHAIN_LIMIT)) {
-		auto* upvalue = m_heap.openCellAt(address);
-		if (!upvalue) break;
-		address = upvalue->nextAddress();
-		upvalue->close(m_heap);
+		const u32 cell = m_heap.openCellAddress(address);
+		if (cell == 0u) break;
+		address = m_memory.readRamRecordWord(cell + UPVALUE_NEXT);
+		Upvalue::close(m_heap, cell);
 		++closed;
 	}
 	return closed;
-}
-
-Value CPU::readUpvalue(u32 address) const {
-	return Upvalue::load(m_memory, address);
-}
-
-void CPU::writeUpvalue(u32 address, const Value& value) {
-	if (!Upvalue::isOpen(m_memory, address)) {
-		m_heap.writeBarrier(address & (MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES), UPVALUE_NEXT);
-	}
-	Upvalue::store(m_memory, address, value);
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,

@@ -1,87 +1,14 @@
 import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK, GcObject, GcKind } from './gc_object';
 import { heapAllocationBytes } from './heap_allocator';
-import { ValueTag, valueFromTag, valueTag, valuePayload, type Value } from './value';
-import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
-import { readLE32, writeLE32 } from '../../common/endian';
+import { ValueTag } from './value';
+import { readLE32 } from '../../common/endian';
 import type { Memory, MemoryByteView } from '../memory/memory';
-import { ThreadField } from './thread_record';
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET,
 	BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 } from '../../spec/blua32/image_format';
-
-export const UPVALUE_HEAP_BYTES = 16;
-export const UPVALUE_ADDRESS_MASK = MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES;
-export const UPVALUE_RECORD_KIND = 11;
-export const UPVALUE_FLAGS = 2;
-export const UPVALUE_OPEN = 1;
-export const UPVALUE_VALUE_TAG = 3;
-export const UPVALUE_VALUE_WORD = 4;
-export const UPVALUE_OWNER = 8;
-export const UPVALUE_NEXT = 12;
-export const UPVALUE_CHAIN_LIMIT = MAIN_RAM_SIZE / UPVALUE_HEAP_BYTES;
-
-export class Upvalue extends GcObject {
-	public get open(): boolean { return Upvalue.isOpen(this.memory, this.address); }
-	public get stackSlot(): number { return this.memory.readRamRecordWord(this.address + UPVALUE_VALUE_WORD); }
-	public get ownerAddress(): number { return this.memory.readRamRecordWord(this.address + UPVALUE_OWNER); }
-	public get nextAddress(): number { return this.memory.readRamRecordWord(this.address + UPVALUE_NEXT); }
-	public set nextAddress(next: number) { this.memory.writeRamRecordWord(this.address + UPVALUE_NEXT, next); }
-	public get value(): Value { return Upvalue.load(this.memory, this.address); }
-	public set value(value: Value) { this.setEncoded(valueTag(value), valuePayload(value)); }
-	public setEncoded(tag: ValueTag, word: number): void { Upvalue.store(this.memory, this.address, tag, word); }
-	public static isOpen(memory: Memory, address: number): boolean {
-		return (memory.readRamRecordByte((address & UPVALUE_ADDRESS_MASK) + UPVALUE_FLAGS) & UPVALUE_OPEN) !== 0;
-	}
-	public bind(owner: number, slot: number, next: number): void {
-		const offset = this.address & UPVALUE_ADDRESS_MASK;
-		const ram = this.memory.ramData();
-		ram[offset + UPVALUE_FLAGS] = UPVALUE_OPEN;
-		writeLE32(ram, offset + UPVALUE_VALUE_WORD, slot);
-		writeLE32(ram, offset + UPVALUE_OWNER, owner);
-		writeLE32(ram, offset + UPVALUE_NEXT, next);
-		this.memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
-	}
-	public close(): void {
-		const captured = this.value;
-		const offset = this.address & UPVALUE_ADDRESS_MASK;
-		const ram = this.memory.ramData();
-		ram[offset + UPVALUE_FLAGS] &= ~UPVALUE_OPEN;
-		ram[offset + UPVALUE_VALUE_TAG] = valueTag(captured);
-		writeLE32(ram, offset + UPVALUE_VALUE_WORD, valuePayload(captured));
-		writeLE32(ram, offset + UPVALUE_OWNER, 0);
-		writeLE32(ram, offset + UPVALUE_NEXT, 0);
-		this.memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
-		this.gcOwner.writeBarrier(this.address, UPVALUE_NEXT);
-	}
-	public static load(memory: Memory, address: number): Value {
-		const cell = address & UPVALUE_ADDRESS_MASK;
-		const word = memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
-		if ((memory.readRamRecordByte(cell + UPVALUE_FLAGS) & UPVALUE_OPEN) === 0)
-			return valueFromTag(memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG), word);
-		const owner = memory.readRamRecordWord(cell + UPVALUE_OWNER);
-		const block = memory.readRamRecordWord(owner + ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
-		const capacity = memory.readRamRecordWord(owner + ThreadField.StackCapacity);
-		return valueFromTag(memory.readRamRecordByte(block + capacity * 4 + word), memory.readRamRecordWord(block + word * 4));
-	}
-	public static store(memory: Memory, address: number, tag: ValueTag, word: number): void {
-		const cell = address & UPVALUE_ADDRESS_MASK;
-		if ((memory.readRamRecordByte(cell + UPVALUE_FLAGS) & UPVALUE_OPEN) === 0) {
-			memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, word);
-			memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, tag);
-			return;
-		}
-		const owner = memory.readRamRecordWord(cell + UPVALUE_OWNER);
-		const slot = memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
-		const block = memory.readRamRecordWord(owner + ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
-		const capacity = memory.readRamRecordWord(owner + ThreadField.StackCapacity);
-		memory.writeRamRecordWord(block + slot * 4, word);
-		memory.writeRamRecordByte(block + capacity * 4 + slot, tag);
-	}
-	public constructor(private readonly memory: Memory, public readonly address: number) { super(GcKind.Upvalue); }
-}
 
 export type FunctionPrototype = {
 	functionAddress: number;

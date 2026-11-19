@@ -1,5 +1,6 @@
 #include "machine/cpu/gc_heap.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/upvalue.h"
 #include "machine/common/numeric.h"
 #include <algorithm>
 #include <new>
@@ -51,6 +52,8 @@ private:
 
 constexpr uint8_t kTableWeakKeys = 1, kTableWeakValues = 2;
 constexpr u8 tableRecordKind = static_cast<u8>(ValueTag::Table);
+constexpr u32 tableSlotClass = heapClassIndex(TableRecord::HEADER_BYTES);
+constexpr u32 cellSlotClass = heapClassIndex(UPVALUE_HEAP_BYTES);
 }
 void GCObject::setGcColor(uint8_t color) {
 	gcMemory->writeRamRecordByte(static_cast<u32>(gcRecord - gcMemory->ramData()) + GC_COLOR_OFFSET, color);
@@ -181,8 +184,19 @@ bool GcHeap::markObject(GCObject* object) {
 
 u32 GcHeap::tableRecordAddress(u32 address) const {
 	const u32 offset = address & (MAIN_RAM_SIZE - TableRecord::HEADER_BYTES);
-	return arena.isIssuedObjectSlot(offset, heapClassIndex(TableRecord::HEADER_BYTES))
+	return arena.issuedObjectSlotClass(offset) == tableSlotClass
 		&& memory.readRamRecordByte(offset) == tableRecordKind ? RAM_BASE + offset : 0u;
+}
+
+u32 GcHeap::cellRecordAddress(u32 address) const {
+	const u32 offset = address & UPVALUE_ADDRESS_MASK;
+	return arena.issuedObjectSlotClass(offset) == cellSlotClass
+		&& memory.readRamRecordByte(offset) == UPVALUE_RECORD_KIND ? RAM_BASE + offset : 0u;
+}
+
+u32 GcHeap::openCellAddress(u32 address) const {
+	const u32 cell = cellRecordAddress(address);
+	return cell != 0u && Upvalue::isOpen(memory, cell) ? cell : 0u;
 }
 
 bool GcHeap::markTable(u32 address) {
@@ -192,11 +206,11 @@ bool GcHeap::markTable(u32 address) {
 	return true;
 }
 
-size_t GcHeap::markCell(Upvalue* cell) {
-	if (!cell || cell->gcColor() != white()) return 0;
-	cell->setGcColor(3);
-	if (cell->isOpen()) markObject(threadAt(cell->ownerAddress()));
-	markValue(cell->value());
+size_t GcHeap::markCell(u32 cell) {
+	if (cell == 0u || memory.readRamRecordByte(cell + GC_COLOR_OFFSET) != white()) return 0;
+	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3u);
+	if (Upvalue::isOpen(memory, cell)) markObject(threadAt(memory.readRamRecordWord(cell + UPVALUE_OWNER)));
+	markValue(Upvalue::load(memory, cell));
 	return UPVALUE_HEAP_BYTES / sizeof(u32);
 }
 
@@ -282,22 +296,29 @@ bool GcHeap::valueIsAlive(Value value) const {
 
 size_t GcHeap::trace(bool atomic) {
 	const u32 index = indexWord(GC_TRACE_HEAD);
-	const u32 address = RAM_BASE + (index << GC_RECORD_SHIFT);
-	const bool table = tableRecordAddress(address) == address;
-	auto* obj = table ? nullptr : m_records[index];
+	const u32 offset = index << GC_RECORD_SHIFT, address = RAM_BASE + offset;
+	const u32 slotClass = arena.issuedObjectSlotClass(offset);
+	const bool table = slotClass == tableSlotClass && (offset & (TableRecord::HEADER_BYTES - 1u)) == 0u
+		&& memory.readRamRecordByte(address) == tableRecordKind;
+	const bool cell = slotClass == cellSlotClass && (offset & (UPVALUE_HEAP_BYTES - 1u)) == 0u
+		&& memory.readRamRecordByte(address) == UPVALUE_RECORD_KIND && !Upvalue::isOpen(memory, address);
+	auto* obj = table || cell ? nullptr : m_records[index];
 	// A link is clocked only by a queued record. Consuming its color bounds
 	// malformed cycles as well as preventing a duplicate scan.
-	if ((!table && !obj) || memory.readRamRecordByte(address + GC_COLOR_OFFSET) != 2u) {
+	if ((!table && !cell && !obj) || memory.readRamRecordByte(address + GC_COLOR_OFFSET) != 2u) {
 		memory.writeRamRecordWord(m_controlOffset + GC_TRACE_HEAD, 0u);
 		return 0;
 	}
-	const bool cell = !table && obj->type == ObjType::Upvalue;
 	const u32 link = address + (cell ? UPVALUE_NEXT : GC_RECORD_LINK);
 	const u32 packed = memory.readRamRecordWord(link);
 	memory.writeRamRecordWord(m_controlOffset + GC_TRACE_HEAD, packed & GC_GRAY_INDEX_MASK);
 	memory.writeRamRecordWord(link, cell ? 0u : packed & ~GC_GRAY_INDEX_MASK);
 	memory.writeRamRecordByte(address + GC_COLOR_OFFSET, 3u);
 	if (table) return traceTable(address);
+	if (cell) {
+		markValue(Upvalue::load(memory, address));
+		return UPVALUE_HEAP_BYTES / sizeof(u32);
+	}
 	switch (obj->type) {
 		case ObjType::Thread: {
 			auto* thread = static_cast<Thread*>(obj);
@@ -313,13 +334,13 @@ size_t GcHeap::trace(bool atomic) {
 				markObject(frame->attachedClosure());
 				u32 address = frame->readControl(FrameField::OpenHead);
 				for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
-					auto* upvalue = openCellAt(address);
-					if (!upvalue) break;
-					cellWork += markCell(upvalue);
-					const u32 slot = upvalue->stackSlot();
+					const u32 cell = openCellAddress(address);
+					if (cell == 0u) break;
+					cellWork += markCell(cell);
+					const u32 slot = memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
 					if (slot < thread->stackCapacity)
 						liveTop = std::max(liveTop, static_cast<int>(slot + 1));
-					address = upvalue->nextAddress();
+					address = memory.readRamRecordWord(cell + UPVALUE_NEXT);
 				}
 			}
 			for (int slot = 0; slot < liveTop; ++slot) markValue(thread->stack.get(slot));
@@ -332,13 +353,9 @@ size_t GcHeap::trace(bool atomic) {
 			auto* closure = static_cast<Closure*>(obj);
 			const u32 count = closure->upvalueCount();
 			size_t work = 3u + count;
-			for (u32 index = 0; index < count; ++index) work += markCell(cellAt(closure->captureAddress(index)));
+			for (u32 index = 0; index < count; ++index) work += markCell(cellRecordAddress(closure->captureAddress(index)));
 			return work;
 		}
-		case ObjType::Upvalue:
-			// Only closed, changed cells enter the queue.
-			markValue(static_cast<Upvalue*>(obj)->value());
-			return UPVALUE_HEAP_BYTES / sizeof(u32);
 	}
 	BMSX_UNREACHABLE();
 }
@@ -448,19 +465,17 @@ void GcHeap::destroyObject(GCObject* object) {
 			delete closure;
 			break;
 		}
-		case ObjType::Upvalue:
-
-			delete static_cast<Upvalue*>(object);
-			break;
 	}
 }
 
 i32 GcHeap::sweepRecord(void* context, u32 address) {
 	const auto& sweep = *static_cast<SweepContext*>(context);
 	auto& heap = sweep.heap;
-	if (heap.memory.readRamRecordByte(address) == tableRecordKind) {
+	const u8 kind = heap.memory.readRamRecordByte(address);
+	if (kind == tableRecordKind || kind == UPVALUE_RECORD_KIND) {
 		if (heap.memory.readRamRecordByte(address + GC_COLOR_OFFSET) == (sweep.white ^ 1u)) {
-			TableRecord(heap, address).freeRecord();
+			if (kind == tableRecordKind) TableRecord(heap, address).freeRecord();
+			else heap.arena.free(address);
 			return -1;
 		}
 		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);

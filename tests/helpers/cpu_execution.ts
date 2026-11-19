@@ -1,4 +1,4 @@
-import { UPVALUE_RECORD_KIND } from '../../machine/ts/machine/cpu/closure';
+import { UPVALUE_RECORD_KIND } from '../../machine/ts/machine/cpu/upvalue';
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';

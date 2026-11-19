@@ -1,4 +1,5 @@
-import { UPVALUE_HEAP_BYTES, UPVALUE_RECORD_KIND, closureRecordBytes } from './closure';
+import { closureRecordBytes } from './closure';
+import { UPVALUE_HEAP_BYTES, initialize as initializeCell } from './upvalue';
 import { HEAP_COLLECTION_TARGET_OFFSET, heapAllocationBytes } from './heap_allocator';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
@@ -94,13 +95,8 @@ export class LuaHeap {
 				}
 				if (count === newCount) {
 					const memory = this.cpu.memory;
-					for (let index = 0; index < newCount; ++index) {
-						const cell = cells[index];
-						memory.writeRamRecordWord(cell, UPVALUE_RECORD_KIND | (this.cpu.gc.white() << 8));
-						memory.writeRamRecordWord(cell + 4, 0);
-						memory.writeRamRecordWord(cell + 8, 0);
-						memory.writeRamRecordWord(cell + 12, 0);
-					}
+					const white = this.cpu.gc.white();
+					for (let index = 0; index < newCount; ++index) initializeCell(memory, cells[index], white);
 					return closure;
 				}
 				while (count !== 0) arena.free(cells[--count]);

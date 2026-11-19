@@ -8,7 +8,7 @@ export const GC_GRAY_INDEX_BITS = 19;
 export const GC_GRAY_INDEX_MASK = (1 << GC_GRAY_INDEX_BITS) - 1;
 
 /** Collector-owned allocation header; separate from a guest Value's tag. */
-export const enum GcKind { Closure, Upvalue, Thread }
+export const enum GcKind { Closure, Thread }
 export abstract class GcObject {
 	// 0/1 alternate white generations; 2 is queued gray, 3 is scanned black.
 	public abstract readonly address: number;

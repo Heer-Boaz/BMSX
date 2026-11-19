@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/closure';
+import { Closure } from '../../machine/ts/machine/cpu/closure';
+import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { ValueTag, valueFloatBits, valueFromTag, valueInteger, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueTag, valuePayload, valueFloatBits, valueFromTag, valueInteger, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
@@ -21,13 +22,13 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 22 }] });
 	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-	const upvalue = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
-	upvalue.bind(frame.thread.address, frame.stackBase + 8, 0);
-	cpu.gc.track(upvalue);
 	const bound = frame.closure;
-	const replacement = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(1), bound.prototypeRecord, false);
+	const cells = new Uint32Array(1);
+	const replacement = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(1, false, cells, cells.length), bound.prototypeRecord, false);
+	const upvalue = cells[0];
+	Upvalue.bindOpen(cpu.memory, upvalue, frame.thread.address, frame.stackBase + 8, 0);
 	replacement.initializeRecord(cpu.gc.white(), 1);
-	replacement.setCaptureAddress(0, upvalue.address);
+	replacement.setCaptureAddress(0, upvalue);
 	cpu.gc.track(replacement);
 	frame.closureAddress = replacement.address;
 	cpu.runUntilDepth(0, 1024);
@@ -39,11 +40,11 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 		valueString(cpu.stringPool.intern('upvalue')), valueTable(cpu.createTable())];
 	for (const source of ['own', 'other', 'closed']) for (const value of values) {
 		if (source === 'closed') {
-			if (upvalue.open) upvalue.close();
+			if (Upvalue.isOpen(cpu.memory, upvalue)) Upvalue.close(cpu.gc, upvalue);
 		} else {
-			upvalue.bind(source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
+			Upvalue.bindOpen(cpu.memory, upvalue, source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
 		}
-		upvalue.value = value;
+		Upvalue.store(cpu.gc, upvalue, valueTag(value), valuePayload(value));
 		for (const grant of [1, 64]) {
 			r.set(2, value);
 			r.setInteger(8, 73); r.setInteger(20, 74); r.setInteger(21, 75);

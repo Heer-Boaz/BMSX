@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
-import { UPVALUE_HEAP_BYTES, closureRecordBytes, type Closure } from '../../machine/ts/machine/cpu/closure';
+import { closureRecordBytes, type Closure } from '../../machine/ts/machine/cpu/closure';
+import { UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 
 /** Count successful heap reservations, including allocate-then-collect churn. */

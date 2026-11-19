@@ -41,12 +41,9 @@ public:
 	Memory& memory;
 	HeapAllocator& arena;
 	u32 tableRecordAddress(u32 address) const;
-	Upvalue* cellAt(u32 address) const { return attachedRecord<Upvalue, ObjType::Upvalue>(address & ~(UPVALUE_HEAP_BYTES - 1)); }
+	u32 cellRecordAddress(u32 address) const;
 	Closure* closureAt(u32 address) const { return attachedRecord<Closure, ObjType::Closure>(address); }
-	Upvalue* openCellAt(u32 address) const {
-		auto* cell = cellAt(address);
-		return cell && cell->isOpen() ? cell : nullptr;
-	}
+	u32 openCellAddress(u32 address) const;
 	Thread* threadAt(u32 address) const { return attachedRecord<Thread, ObjType::Thread>(address); }
 	void discardAttachments(Thread* retainedRoot);
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
@@ -100,7 +97,6 @@ private:
 	static u32 physicalAddress(const GCObject* object) {
 		switch (object->type) {
 			case ObjType::Closure: return static_cast<const Closure*>(object)->address;
-			case ObjType::Upvalue: return static_cast<const Upvalue*>(object)->address;
 			case ObjType::Thread: return static_cast<const Thread*>(object)->address;
 		}
 		BMSX_UNREACHABLE();
@@ -121,7 +117,7 @@ private:
 	void setVisitLink(u32 address, u8 meta, u32 index);
 	template<u8 Kind, bool Drain, class Visitor>
 	size_t visitList(u32 list, Visitor&& visitor);
-	size_t markCell(Upvalue* cell);
+	size_t markCell(u32 cell);
 	size_t trace(bool atomic);
 	size_t remark(Value root0, Value root1, Value root2);
 	size_t atomic(Value root0, Value root1, Value root2);

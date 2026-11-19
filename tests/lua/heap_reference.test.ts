@@ -1,7 +1,8 @@
-import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
-import { CLOSURE_CAPTURE_WORDS, closureRecordBytes, UPVALUE_HEAP_BYTES, UPVALUE_RECORD_KIND, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, Upvalue } from '../../machine/ts/machine/cpu/closure';
+import { CLOSURE_CAPTURE_WORDS, closureRecordBytes } from '../../machine/ts/machine/cpu/closure';
+import { UPVALUE_HEAP_BYTES, UPVALUE_RECORD_KIND, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, isOpen } from '../../machine/ts/machine/cpu/upvalue';
 import { asClosure, valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { test } from 'node:test';
@@ -14,7 +15,6 @@ import { ValueStorage } from '../../machine/ts/machine/cpu/value_storage';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function machine(): CPU {
@@ -37,7 +37,7 @@ function checkReferences(cpu: CPU): void {
 		switch (cpu.memory.readRamRecordByte(address)) {
 			case ValueTag.Table: assert.equal(gc.tableRecordAddress(address), address); break;
 			case ValueTag.Closure: assert.equal(gc.closureAt(address)?.address, address); break;
-			case UPVALUE_RECORD_KIND: assert.equal(gc.cellAt(address)?.address, address); break;
+			case UPVALUE_RECORD_KIND: assert.equal(gc.cellRecordAddress(address), address); break;
 			case THREAD_RECORD_KIND: assert.equal(gc.threadAt(address)?.address, address); break;
 		}
 	}
@@ -47,9 +47,9 @@ function checkReferences(cpu: CPU): void {
 test('32-bit object payloads survive heap growth and collection', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	const captured = frame.registers.getClosure(1, cpu.gc);
-	const cell = cpu.gc.cellAt(captured.captureAddress(0))!;
+	const cell = captured.captureAddress(0);
 	assert.equal(frame.registers.getPayload(1), captured.address);
-	assert.equal(cpu.gc.closureAt(cell.address), null);
+	assert.equal(cpu.gc.closureAt(cell), null);
 	checkReferences(cpu);
 	const roots = cpu.createTable(512), slots = new ValueStorage(400);
 	frame.registers.setTable(0, roots); frame.top = 2;
@@ -145,9 +145,10 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	const key = cpu.stringPool.intern('saved_capture');
 	cpu.setGlobalByKey(key, frame.registers.get(1));
 	const closure = frame.registers.getClosure(1, cpu.gc);
-	const cell = cpu.gc.cellAt(closure.captureAddress(0)) as Upvalue;
-	const address = cell.address;
-	assert.equal(memory.readRamRecordWord(closure.address + CLOSURE_CAPTURE_WORDS), cell.address);
+	const address = closure.captureAddress(0);
+	assert.equal(cpu.gc.cellRecordAddress(address), address);
+	assert.equal(cpu.gc.openCellAddress(address + MAIN_RAM_SIZE), address, 'a mirrored open link selects the same physical cell');
+	assert.equal(memory.readRamRecordWord(closure.address + CLOSURE_CAPTURE_WORDS), address);
 	assert.equal(memory.readRamRecordByte(address + UPVALUE_FLAGS), UPVALUE_OPEN);
 	assert.equal(memory.readRamRecordWord(address + UPVALUE_OWNER), frame.thread.address);
 	assert.equal(memory.readRamRecordWord(address + UPVALUE_VALUE_WORD), frame.stackBase);
@@ -159,15 +160,17 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	frame.registers.setFloatBits(0, 0xffa12345);
 	assert.equal(cpu.readClosureUpvalue(closure, 0), valueFloatBits(0xffa12345));
 	const rawCell = DYNAMIC_RAM_BASE + 0x600;
+	memory.writeRamRecordByte(rawCell, UPVALUE_RECORD_KIND);
 	memory.writeRamRecordByte(rawCell + UPVALUE_FLAGS, UPVALUE_OPEN);
 	memory.writeRamRecordWord(rawCell + UPVALUE_OWNER, frame.thread.address | 0x80000000);
 	memory.writeRamRecordWord(rawCell + UPVALUE_VALUE_WORD, frame.stackBase);
 	memory.writeRamRecordWord(closure.address + CLOSURE_CAPTURE_WORDS, rawCell | 0x80000000);
+	assert.equal(cpu.gc.cellRecordAddress(rawCell), 0, 'a header outside the allocator does not make a live GC cell');
 	assert.equal(cpu.readClosureUpvalue(closure, 0), valueFloatBits(0xffa12345), 'a raw open cell needs no host attachment');
 	memory.writeRamRecordWord(closure.address + CLOSURE_CAPTURE_WORDS, address);
 	frame.thread.resizeStack(oldCapacity);
 	cpu.abortCompletionCall(0);
-	assert.equal(cell.open, false);
+	assert.equal(isOpen(memory, address), false);
 	assert.equal(memory.readRamRecordWord(address + UPVALUE_VALUE_WORD), 0xffa12345);
 	assert.equal(memory.readRamRecordByte(address + UPVALUE_VALUE_TAG), ValueTag.Float);
 	const checkpoint = captureCpuCheckpoint(cpu);
@@ -181,12 +184,16 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	restoreCpuCheckpoint(cpu, open);
 	cpu.rootThread.currentFrame!.registers.setInteger(0, 44);
 	restoreCpuCheckpoint(cpu, checkpoint);
-	assert.equal(cpu.readClosureUpvalue(asClosure(cpu.getGlobalByKey(key), cpu.gc), 0), valueFloatBits(0xffa12345));
+	const restored = asClosure(cpu.getGlobalByKey(key), cpu.gc);
+	assert.equal(restored.captureAddress(0), address);
+	assert.equal(cpu.readClosureUpvalue(restored, 0), valueFloatBits(0xffa12345));
 	cpu.collectTrackedHeapBytes();
 	const occupied = cpu.heapAllocator.occupiedBytes();
 	cpu.setGlobalByKey(key, valueNil());
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - heapAllocationBytes(closureRecordBytes(1)) - UPVALUE_HEAP_BYTES);
+	assert.equal(cpu.gc.cellRecordAddress(address), 0, 'a retired capture has no issued header');
+	assert.equal(memory.readRamRecordByte(address), 0);
 });
 
 test('a vacant closure slot costs a visit while its object page remains in use', () => {
@@ -204,6 +211,6 @@ test('a vacant closure slot costs a visit while its object page remains in use',
 	assert.equal(sweep(), occupied, 'reclaiming an issued closure costs one visit');
 	assert.equal(cpu.memory.readRamRecordByte(closure.address), 0);
 	assert.equal(gc.closureAt(closure.address), null);
-	assert.equal(gc.cellAt(cellAddress)!.open, true, 'an open frame still roots the cell');
+	assert.equal(gc.openCellAddress(cellAddress), cellAddress, 'an open frame still roots the cell');
 	assert.equal(sweep(), occupied, 'a free slot still costs one visit');
 });

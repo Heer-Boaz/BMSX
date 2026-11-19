@@ -94,12 +94,14 @@ u32 HeapAllocator::occupiedBytes() const {
 	return m_memory.readRamRecordWord(m_management + OCCUPIED);
 }
 
-bool HeapAllocator::isIssuedObjectSlot(u32 offset, u32 sizeClass) const {
+u32 HeapAllocator::issuedObjectSlotClass(u32 offset) const {
 	const u32 page = offset >> PAGE_SHIFT;
-	if (page >= m_pageLimit) return false;
+	if (page >= m_pageLimit) return 0xffu;
 	const u32 descriptor = entry(page);
-	return (m_memory.readRamRecordWord(descriptor) & 0xffffu) == (ObjectSlots | (sizeClass << 8u))
-		&& ((offset & PAGE_MASK) >> BUMP_SHIFT) < (m_memory.readRamRecordWord(descriptor + 8u) & LINK_MASK);
+	const u32 info = m_memory.readRamRecordWord(descriptor);
+	return (info & 0xffu) == ObjectSlots
+		&& ((offset & PAGE_MASK) >> BUMP_SHIFT) < (m_memory.readRamRecordWord(descriptor + 8u) & LINK_MASK)
+		? (info >> 8u) & 0xffu : 0xffu;
 }
 
 void HeapAllocator::beginObjectSweep() {

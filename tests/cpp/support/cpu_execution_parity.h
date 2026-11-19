@@ -1,5 +1,6 @@
 #pragma once
 
+#include "machine/cpu/upvalue.h"
 #include <chrono>
 #include <cstring>
 #include <stdexcept>

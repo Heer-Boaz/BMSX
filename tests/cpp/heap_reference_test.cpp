@@ -1,3 +1,4 @@
+#include "machine/cpu/upvalue.h"
 #include "support/cpu_execution_parity.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/value_storage.h"
@@ -48,7 +49,7 @@ void checkReferences(CPU& cpu) {
 				require(heap.closureAt(address) && heap.closureAt(address)->address == address, "issued closure record has its view");
 				break;
 			case UPVALUE_RECORD_KIND:
-				require(heap.cellAt(address) && heap.cellAt(address)->address == address, "issued cell record has its view");
+				require(heap.cellRecordAddress(address) == address, "an issued cell is decoded by its RAM header");
 				break;
 			case THREAD_RECORD_KIND:
 				require(heap.threadAt(address) && heap.threadAt(address)->address == address, "issued Thread record has its view");
@@ -63,9 +64,9 @@ void liveReferencesAndReuse() {
 	static_assert(sizeof(decltype(cpu.gcHeap().reference(cpu.rootThread()))) == sizeof(u32));
 	const Value captured = frame.registers.get(1);
 	auto* closure = asClosure(captured, cpu.gcHeap());
-	auto* cell = cpu.gcHeap().cellAt(closure->captureAddress(0));
+	const u32 cell = closure->captureAddress(0);
 	require(valuePayload(captured) == closure->address, "the register contains the raw closure address");
-	require(cpu.gcHeap().closureAt(cell->address) == nullptr, "a cell address cannot resolve to a closure");
+	require(cpu.gcHeap().closureAt(cell) == nullptr, "a cell address cannot resolve to a closure");
 	checkReferences(cpu);
 	auto roots = cpu.createTable(512);
 	frame.registers.set(0,valueTable(roots.address())); frame.writeControl(bmsx::FrameField::Top, 2);
@@ -165,10 +166,11 @@ void closedCellLivesInRam() {
 	auto* closure = asClosure(frame.registers.get(1), heap);
 	const u32 key = cpu.stringPool().intern("saved_capture");
 	cpu.setGlobalByKey(key, frame.registers.get(1));
-	auto* cell = static_cast<Upvalue*>(heap.cellAt(closure->captureAddress(0)));
-	const u32 address = cell->address;
+	const u32 address = closure->captureAddress(0);
+	require(heap.cellRecordAddress(address) == address, "capture is an issued allocator record");
+	require(heap.openCellAddress(address + MAIN_RAM_SIZE) == address, "a mirrored open link selects the same physical cell");
 	auto& memory = machine.memory;
-	require(memory.readRamRecordWord(closure->address + CLOSURE_CAPTURE_WORDS) == cell->address,
+	require(memory.readRamRecordWord(closure->address + CLOSURE_CAPTURE_WORDS) == address,
 		"closure owns the physical capture word");
 	require(memory.readRamRecordByte(address + UPVALUE_FLAGS) == UPVALUE_OPEN
 		&& memory.readRamRecordWord(address + UPVALUE_OWNER) == frame.thread->address
@@ -185,7 +187,7 @@ void closedCellLivesInRam() {
 		"the open record follows the new stack block without being rewritten");
 	frame.thread->resizeStack(oldCapacity);
 	cpu.abortCompletionCall(0);
-	require(!cell->isOpen() && memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == 0xffa12345u
+	require(!Upvalue::isOpen(memory, address) && memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == 0xffa12345u
 		&& memory.readRamRecordByte(address + UPVALUE_VALUE_TAG) == static_cast<u8>(ValueTag::Float),
 		"closing a capture writes the exact value to the allocated cell");
 	const auto saved = cpu.captureRuntimeState();
@@ -200,13 +202,16 @@ void closedCellLivesInRam() {
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(saved);
 	closure = asClosure(cpu.getGlobalByKey(key), heap);
-	require(cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u), "restore rebinds the saved cell");
+	require(closure->captureAddress(0) == address && cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u),
+		"restore retains the saved capture address and word");
 	cpu.collectHeap();
 	const auto occupied = cpu.heapAllocator().occupiedBytes();
 	cpu.setGlobalByKey(key, valueNil());
 	cpu.collectHeap();
 	require(cpu.heapAllocator().occupiedBytes() == occupied - heapAllocationBytes(closureRecordBytes(1)) - UPVALUE_HEAP_BYTES,
 		"collection releases both raw records");
+	require(heap.cellRecordAddress(address) == 0u && memory.readRamRecordByte(address) == 0u,
+		"the freed capture has no live record header");
 }
 
 void closureAndCellPagesChargeVacantSlots() {
@@ -229,7 +234,7 @@ void closureAndCellPagesChargeVacantSlots() {
 	require(sweep() == occupied, "reclaiming an issued closure costs one slot visit");
 	require(heap.closureAt(closureAddress) == nullptr &&
 		cpu.memory().readRamRecordByte(closureAddress) == 0, "allocator sweep retires the closure slot");
-	require(heap.cellAt(cellAddress) && heap.cellAt(cellAddress)->isOpen(), "an open frame still roots the cell");
+	require(heap.openCellAddress(cellAddress) == cellAddress, "an open frame still roots the cell");
 	require(sweep() == occupied, "a free closure slot on a surviving object page still costs one visit");
 }
 

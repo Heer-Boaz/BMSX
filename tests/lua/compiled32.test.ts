@@ -3,7 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/closure';
+import { Closure } from '../../machine/ts/machine/cpu/closure';
+import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -19,11 +20,12 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory), backend);
 	cpu.reset();
 	const firstFrame = cpu.activeThread.currentFrame!, owner = firstFrame.executionImage;
-	const closure = new Closure(memory, cpu.luaHeap.allocateClosureRecord(1), firstFrame.closure.prototypeRecord, false);
+	const cells = new Uint32Array(1);
+	const closure = new Closure(memory, cpu.luaHeap.allocateClosureRecord(1, false, cells, cells.length), firstFrame.closure.prototypeRecord, false);
 	closure.initializeRecord(cpu.gc.white(), 1); cpu.gc.track(closure);
 	firstFrame.closureAddress = closure.address;
 	const table = cpu.createTable(1, 1), field = cpu.stringPool.find('field')!;
-	const upvalue = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));cpu.gc.track(upvalue);closure.setCaptureAddress(0, upvalue.address);
+	const upvalue = cells[0]; closure.setCaptureAddress(0, upvalue);
 	const other = cpu.createThread(null);
 	other.resizeStack(24);
 	function setup(scenario: Scenario, value = v.valueInteger(3), source = 'closed') {
@@ -47,11 +49,11 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 		}
 		if (scenario === 'upvalue') {
 			if (source === 'closed') {
-				if (upvalue.open) upvalue.close();
+				if (Upvalue.isOpen(memory, upvalue)) Upvalue.close(cpu.gc, upvalue);
 			} else {
-				upvalue.bind(source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
+				Upvalue.bindOpen(memory, upvalue, source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
 			}
-			upvalue.value = value;other.stackRegisters.set(8, value);
+			Upvalue.store(cpu.gc, upvalue, v.valueTag(value), v.valuePayload(value)); other.stackRegisters.set(8, value);
 			r.set(0, value);r.set(1, v.valueFloatBits(0xffa54321));
 		}
 	}
@@ -87,7 +89,7 @@ for (const scenario of ['chain', 'table', 'memory', 'upvalue', 'words', 'control
 					const completion:v.Value[]=[];m.cpu.readCompletionValues(completion);
 					return { result, remaining:m.cpu.instructionBudgetRemaining, pc:frame.pc, top:frame.top,
 						registers:Array.from({ length:24 },(_,i)=>frame.registers.get(i)), completion,
-						epc:m.cpu.readEpcWord(),fault:m.cpu.readLuaFaultReasonWord(),upvalue:m.upvalue.value,
+						epc:m.cpu.readEpcWord(),fault:m.cpu.readLuaFaultReasonWord(),upvalue:Upvalue.load(m.cpu.memory, m.upvalue),
 						other:m.other.stackRegisters.get(8),saved:m.cpu.getGlobalByKey(m.cpu.stringPool.find('saved')!),
 						memory:[m.cpu.memory.readMappedU32LE(DYNAMIC_RAM_BASE+0x200),m.cpu.memory.readMappedU32LE(DYNAMIC_RAM_BASE+0x204)] };
 				});
