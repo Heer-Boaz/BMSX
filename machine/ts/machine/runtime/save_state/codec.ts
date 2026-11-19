@@ -3,7 +3,7 @@ import type { PendingMemoryKind } from '../../cpu/memory_operation';
 import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
 import type { MachineSaveState } from '../../save_state';
-import type { CpuFrameState, CpuThreadState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
+import type { CpuFrameState, CpuThreadState, CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
 import { CpuSnapshot } from '../../cpu/snapshot';
 import type { LuaHeapState } from '../../cpu/lua_heap';
 import type { IrqControllerState } from '../../devices/irq/save_state';
@@ -43,7 +43,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x57524d42; // BMRW
+const SAVE_STATE_SIGNATURE = 0x58524d42; // BMRX
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1133,6 +1133,7 @@ function writeCpuFrameState(writer: BinarySink, state: CpuFrameState): void {
 	writer.bool(state.isExceptionFrame);
 	writer.bool(state.isNonMaskableExceptionFrame);
 	writer.u32(state.openUpvalueHead);
+	writer.i32(state.protectedContinuationIndex);
 }
 
 function readCpuFrameState(reader: BinaryReader): CpuFrameState {
@@ -1152,28 +1153,7 @@ function readCpuFrameState(reader: BinaryReader): CpuFrameState {
 		isExceptionFrame: reader.bool(),
 		isNonMaskableExceptionFrame: reader.bool(),
 		openUpvalueHead: reader.u32(),
-	};
-}
-
-function writeCpuProtectedCallState(writer: BinarySink, state: CpuProtectedCallState): void {
-	writer.u8(state.kind);
-	writer.i32(state.callerFrameIndex);
-	writer.i32(state.targetFrameIndex);
-	writer.bool(state.returnsToProtectedParent);
-	writer.i32(state.callBase);
-	writer.i32(state.returnCount);
-	writer.i32(state.handlerRegister);
-}
-
-function readCpuProtectedCallState(reader: BinaryReader): CpuProtectedCallState {
-	return {
-		kind: reader.u8(),
-		callerFrameIndex: reader.i32(),
-		targetFrameIndex: reader.i32(),
-		returnsToProtectedParent: reader.bool(),
-		callBase: reader.i32(),
-		returnCount: reader.i32(),
-		handlerRegister: reader.i32(),
+		protectedContinuationIndex: reader.i32(),
 	};
 }
 
@@ -1195,17 +1175,12 @@ function writeCpuThreadState(writer: BinarySink, state: CpuThreadState): void {
 	for (const value of state.frames) {
 		writeCpuFrameState(writer, value);
 	}
-	writer.u32(state.protectedCalls.length);
-	for (const value of state.protectedCalls) {
-		writeCpuProtectedCallState(writer, value);
-	}
 }
 
 function readCpuThreadState(reader: BinaryReader): CpuThreadState {
 	return {
 		stackTop: reader.u32(),
 		frames: reader.array(readCpuFrameState),
-		protectedCalls: reader.array(readCpuProtectedCallState),
 	};
 }
 

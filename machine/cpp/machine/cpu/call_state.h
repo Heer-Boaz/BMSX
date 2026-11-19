@@ -20,6 +20,11 @@ enum class ProtectedCallKind : uint8_t {
 	XPCallHandler,
 };
 
+enum class ProtectedField : u32 { Flags = 0, Caller = 4, Base = 8, Wanted = 12, Handler = 16 };
+constexpr u32 PROTECTED_CALL_BYTES = 20;
+constexpr u32 PROTECTED_CALL_KIND_MASK = 0xffu;
+constexpr u32 PROTECTED_CALL_PARENT = 1u << 8;
+
 struct CallFrame {
 	Thread* thread = nullptr;
 	CallFrame* previous = nullptr;
@@ -52,15 +57,6 @@ struct CallFrame {
 	bool isExceptionFrame = false;
 	bool isNonMaskableExceptionFrame = false;
 	u32 openUpvalueHead = 0;
-};
-
-struct ProtectedCallContinuation {
-	ProtectedCallKind kind = ProtectedCallKind::PCall;
-	CallFrame* caller = nullptr;
-	bool returnsToProtectedParent = false;
-	int callBase = 0;
-	int returnCount = 0;
-	int handlerRegister = -1;
 };
 
 } // namespace bmsx

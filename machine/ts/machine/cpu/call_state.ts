@@ -40,11 +40,7 @@ export type CallFrame = {
 	openUpvalueHead: number;
 };
 
-export class ProtectedCallContinuation {
-	public kind = ProtectedCallKind.PCall;
-	public caller: CallFrame | null = null;
-	public returnsToProtectedParent = false;
-	public callBase = 0;
-	public returnCount = 0;
-	public handlerRegister = -1;
-}
+export const enum ProtectedField { Flags = 0, Caller = 4, Base = 8, Wanted = 12, Handler = 16 }
+export const PROTECTED_CALL_BYTES = 20;
+export const PROTECTED_CALL_KIND_MASK = 0xff;
+export const PROTECTED_CALL_PARENT = 1 << 8;

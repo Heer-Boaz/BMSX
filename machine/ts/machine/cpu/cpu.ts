@@ -141,7 +141,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './call_state';
+import { ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, type CallFrame } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, ThreadField, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { LuaHeap, type LuaHeapState } from './lua_heap';
@@ -179,16 +179,7 @@ export type CpuFrameState = {
 	isExceptionFrame: boolean;
 	isNonMaskableExceptionFrame: boolean;
 	openUpvalueHead: number;
-};
-
-export type CpuProtectedCallState = {
-	kind: ProtectedCallKind;
-	callerFrameIndex: number;
-	targetFrameIndex: number;
-	returnsToProtectedParent: boolean;
-	callBase: number;
-	returnCount: number;
-	handlerRegister: number;
+	protectedContinuationIndex: number;
 };
 
 export type CpuRootValueState = {
@@ -199,7 +190,6 @@ export type CpuRootValueState = {
 export type CpuThreadState = {
 	stackTop: number;
 	frames: CpuFrameState[];
-	protectedCalls: CpuProtectedCallState[];
 };
 
 export type CpuRuntimeState = {
@@ -595,11 +585,7 @@ export class CPU implements MappedPageInvalidator {
 	private clearCallStack(): void {
 		this.abortStalledMemoryWrite();
 		for (;;) {
-			for (let index = 0; index < this.activeThread.protectedCallDepth; index += 1) {
-				const continuation = this.activeThread.protectedCallContinuations.peek(index);
-				continuation.caller = null;
-			}
-			this.activeThread.protectedCallDepth = 0;
+			this.activeThread.protectedDepth = 0;
 			while (this.activeThread.frameDepth > 0) {
 				const frame = this.activeThread.currentFrame!;
 				this.closeUpvalues(frame);
@@ -1817,14 +1803,9 @@ export class CPU implements MappedPageInvalidator {
 			if (chargeCaptures) this.charge(closed);
 			frame.thread.leaveFrame();
 		}
-		while (this.activeThread.protectedCallDepth > 0) {
-			const continuation = this.activeThread.protectedCallContinuations.peek(this.activeThread.protectedCallDepth - 1);
-			if (this.activeThread.frameIndex(continuation.caller!) >= 0) {
-				break;
-			}
-			continuation.caller = null;
-			this.activeThread.protectedCallDepth -= 1;
-		}
+		let depth = this.activeThread.protectedDepth;
+		while (depth > 0 && this.activeThread.protectedWord(depth - 1, ProtectedField.Caller) >= this.activeThread.frameDepth) --depth;
+		this.activeThread.protectedDepth = depth;
 	}
 
 	private charge(cycles: number): void {
@@ -3394,8 +3375,10 @@ export class CPU implements MappedPageInvalidator {
 		if (thread === this.rootThread) return false;
 		for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
 			if (frame.isExceptionFrame || frame.returnToCompletionLatch) return false;
-		for (let index = 0; index < thread.protectedCallDepth; index += 1) {
-			if (thread.protectedCallContinuations.peek(index).kind === ProtectedCallKind.XPCallHandler) return false;
+		const depth = thread.protectedDepth;
+		for (let index = 0; index < depth; ++index) {
+			if ((thread.protectedWord(index, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallHandler)
+				return false;
 		}
 		return true;
 	}
@@ -3485,11 +3468,7 @@ export class CPU implements MappedPageInvalidator {
 			this.charge(this.closeUpvalues(thread.currentFrame));
 			thread.leaveFrame();
 		}
-		for (let index = 0; index < thread.protectedCallDepth; index += 1) {
-			const continuation = thread.protectedCallContinuations.peek(index);
-			continuation.caller = null;
-		}
-		thread.protectedCallDepth = 0;
+		thread.protectedDepth = 0;
 		thread.stackRegisters.clear(thread.stackRegisters.capacity());
 		thread.stackTop = 0;
 		thread.entry = null;
@@ -3538,15 +3517,9 @@ export class CPU implements MappedPageInvalidator {
 				throw new LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 			}
 		}
-		const continuationIndex = this.activeThread.protectedCallDepth;
-		const continuation = this.activeThread.protectedCallContinuations.get(continuationIndex);
-		this.activeThread.protectedCallDepth = continuationIndex + 1;
-		continuation.kind = id === BuiltinFunctionId.PCall ? ProtectedCallKind.PCall : ProtectedCallKind.XPCallBody;
-		continuation.caller = caller;
-		continuation.returnsToProtectedParent = returnsToProtectedParent;
-		continuation.callBase = callBase;
-		continuation.returnCount = returnCount;
-		continuation.handlerRegister = id === BuiltinFunctionId.XPCall ? argumentBase + 1 : -1;
+		const kind = id === BuiltinFunctionId.PCall ? ProtectedCallKind.PCall : ProtectedCallKind.XPCallBody;
+		const continuationIndex = this.activeThread.pushProtectedCall(kind, returnsToProtectedParent, callBase,
+			returnCount, id === BuiltinFunctionId.XPCall ? argumentBase + 1 : -1);
 
 		const targetArgumentOffset = id === BuiltinFunctionId.PCall ? 1 : 2;
 		this.invokeProtectedTarget(
@@ -3567,8 +3540,7 @@ export class CPU implements MappedPageInvalidator {
 		argumentBase: number,
 		argumentCount: number,
 	): void {
-		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
-		const caller = continuation.caller!;
+		const caller = this.protectedCaller(continuationIndex);
 		const targetTag = targetPresent
 			? targetRegisters.getTag(targetRegister)
 			: ValueTag.Nil;
@@ -3593,7 +3565,8 @@ export class CPU implements MappedPageInvalidator {
 				const builtinId = targetRegisters.getBuiltinFunctionId(targetRegister);
 				this.charge(BUILTIN_FUNCTIONS[builtinId].cost.base);
 				if (builtinId === BuiltinFunctionId.PCall || builtinId === BuiltinFunctionId.XPCall) {
-					this.startProtectedCall(builtinId, caller, continuation.callBase, 0, argumentBase, argumentCount, true);
+					this.startProtectedCall(builtinId, caller, this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0,
+						0, argumentBase, argumentCount, true);
 					return;
 				}
 				const builtinArgs = this.acquireRegisterBuiltinArgs();
@@ -3614,8 +3587,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private finishProtectedCallFromBuiltinResults(continuationIndex: number, values: BuiltinResults): void {
-		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
-		if (continuation.kind === ProtectedCallKind.XPCallHandler) {
+		if ((this.activeThread.protectedWord(continuationIndex, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallHandler) {
 			if (values.length > 0) {
 				this.finishProtectedCallWithError(
 					continuationIndex,
@@ -3629,14 +3601,13 @@ export class CPU implements MappedPageInvalidator {
 			}
 			return;
 		}
-		const resultCount = this.writeProtectedResultsFromBuiltinResults(continuation, true, values);
+		const resultCount = this.writeProtectedResultsFromBuiltinResults(continuationIndex, true, values);
 		this.charge(resultCount);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
 
 	private finishProtectedCallFromRegisters(continuationIndex: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
-		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
-		if (continuation.kind === ProtectedCallKind.XPCallHandler) {
+		if ((this.activeThread.protectedWord(continuationIndex, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallHandler) {
 			if (sourceCount > 0) {
 				this.finishProtectedCallWithError(
 					continuationIndex,
@@ -3650,7 +3621,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			return;
 		}
-		const resultCount = this.writeProtectedResultsFromRegisters(continuation, true, source, sourceBase, sourceCount);
+		const resultCount = this.writeProtectedResultsFromRegisters(continuationIndex, true, source, sourceBase, sourceCount);
 		this.charge(resultCount);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
@@ -3659,82 +3630,91 @@ export class CPU implements MappedPageInvalidator {
 		continuationIndex: number,
 		error: Value,
 	): void {
-		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
-		const caller = continuation.caller!;
-		const resultCount = decodeValueCount(continuation.returnCount, 2);
+		const caller = this.protectedCaller(continuationIndex);
+		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
+		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
+		const resultCount = decodeValueCount(returnCount, 2);
 		if (resultCount > 0) {
-			const registers = this.ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
-			registers.setBoolean(continuation.callBase, false);
+			const registers = this.ensureRegisterCapacity(caller, callBase + resultCount - 1);
+			registers.setBoolean(callBase, false);
 			if (resultCount > 1) {
-				registers.set(continuation.callBase + 1, error);
+				registers.set(callBase + 1, error);
 				for (let index = 2; index < resultCount; index += 1) {
-					registers.setNil(continuation.callBase + index);
+					registers.setNil(callBase + index);
 				}
 			}
 		}
-		caller.top = continuation.callBase + resultCount;
+		caller.top = callBase + resultCount;
 		this.charge(resultCount);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
 
 	private writeProtectedResultsFromBuiltinResults(
-		continuation: ProtectedCallContinuation,
+		continuationIndex: number,
 		prefix: boolean,
 		values: BuiltinResults,
 	): number {
-		const caller = continuation.caller!;
-		const resultCount = decodeValueCount(continuation.returnCount, values.length + 1);
+		const caller = this.protectedCaller(continuationIndex);
+		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
+		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
+		const resultCount = decodeValueCount(returnCount, values.length + 1);
 		if (resultCount > 0) {
-			const registers = this.ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
-			registers.setBoolean(continuation.callBase, prefix);
+			const registers = this.ensureRegisterCapacity(caller, callBase + resultCount - 1);
+			registers.setBoolean(callBase, prefix);
 			const copiedCount = Math.min(values.length, resultCount - 1);
 			if (copiedCount > 0) {
-				values.copyTo(registers, continuation.callBase + 1, copiedCount);
+				values.copyTo(registers, callBase + 1, copiedCount);
 			}
 			for (let index = copiedCount + 1; index < resultCount; index += 1) {
-				registers.setNil(continuation.callBase + index);
+				registers.setNil(callBase + index);
 			}
 		}
-		caller.top = continuation.callBase + resultCount;
+		caller.top = callBase + resultCount;
 		return resultCount;
 	}
 
 	private writeProtectedResultsFromRegisters(
-		continuation: ProtectedCallContinuation,
+		continuationIndex: number,
 		prefix: boolean,
 		source: ValueSlots,
 		sourceBase: number,
 		sourceCount: number,
 	): number {
-		const caller = continuation.caller!;
-		const resultCount = decodeValueCount(continuation.returnCount, sourceCount + 1);
+		const caller = this.protectedCaller(continuationIndex);
+		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
+		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
+		const resultCount = decodeValueCount(returnCount, sourceCount + 1);
 		if (resultCount > 0) {
-			const registers = this.ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
+			const registers = this.ensureRegisterCapacity(caller, callBase + resultCount - 1);
 			const copiedCount = Math.min(sourceCount, resultCount - 1);
 			if (copiedCount > 0) {
 				if (registers === source) {
-					registers.copyWithin(continuation.callBase + 1, sourceBase, copiedCount);
+					registers.copyWithin(callBase + 1, sourceBase, copiedCount);
 				} else {
-					registers.copyRangeFrom(source, continuation.callBase + 1, sourceBase, copiedCount);
+					registers.copyRangeFrom(source, callBase + 1, sourceBase, copiedCount);
 				}
 			}
-			registers.setBoolean(continuation.callBase, prefix);
+			registers.setBoolean(callBase, prefix);
 			for (let index = copiedCount + 1; index < resultCount; index += 1) {
-				registers.setNil(continuation.callBase + index);
+				registers.setNil(callBase + index);
 			}
 		}
-		caller.top = continuation.callBase + resultCount;
+		caller.top = callBase + resultCount;
 		return resultCount;
 	}
 
+	private protectedCaller(continuationIndex: number): CallFrame {
+		const caller = this.activeThread.protectedCaller(continuationIndex);
+		if (caller === null) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		return caller;
+	}
+
 	private finishProtectedContinuation(continuationIndex: number, resultCount: number): void {
-		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
-		const caller = continuation.caller!;
-		const callBase = continuation.callBase;
-		const returnsToProtectedParent = continuation.returnsToProtectedParent;
-		continuation.caller = null;
-		this.activeThread.protectedCallDepth = continuationIndex;
-		if (returnsToProtectedParent) {
+		const flags = this.activeThread.protectedWord(continuationIndex, ProtectedField.Flags);
+		this.activeThread.protectedDepth = continuationIndex;
+		if ((flags & PROTECTED_CALL_PARENT) !== 0) {
+			const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
+			const caller = this.protectedCaller(continuationIndex);
 			this.finishProtectedCallFromRegisters(continuationIndex - 1, caller.registers, callBase, resultCount);
 		}
 	}
@@ -3743,40 +3723,30 @@ export class CPU implements MappedPageInvalidator {
 		error: Value,
 	): boolean {
 		for (;;) {
-			if (this.activeThread.protectedCallDepth === 0) {
-				return false;
-			}
-			const continuationIndex = this.activeThread.protectedCallDepth - 1;
-			const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
-			const caller = continuation.caller!;
-			const callerIndex = this.activeThread.frameIndex(caller);
-			for (let frame = this.activeThread.currentFrame!; frame !== caller; frame = frame.previous!) {
+			const depth = this.activeThread.protectedDepth;
+			if (depth === 0) return false;
+			const continuationIndex = depth - 1;
+			const callerIndex = this.activeThread.protectedWord(continuationIndex, ProtectedField.Caller);
+			if (callerIndex >= this.activeThread.frameDepth) return false;
+			let caller = this.activeThread.currentFrame!;
+			for (let at = this.activeThread.frameDepth - 1; at > callerIndex; --at, caller = caller.previous!) {
 				// Completion roots return to their latch, not the interrupted caller.
-				if (frame.isExceptionFrame || frame.returnToCompletionLatch) {
-					return false;
-				}
+				if (caller.isExceptionFrame || caller.returnToCompletionLatch) return false;
 			}
 			this.unwindToDepth(callerIndex + 1, true);
-			if (continuation.kind !== ProtectedCallKind.XPCallBody) {
-				if (continuation.kind === ProtectedCallKind.XPCallHandler) {
-					this.finishProtectedCallWithError(
-						continuationIndex,
-						valueString(this.errorInErrorHandlingStringId),
-					);
-				} else {
-					this.finishProtectedCallWithError(
-						continuationIndex,
-						error
-					);
-				}
+			const kind = this.activeThread.protectedWord(continuationIndex, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK;
+			if (kind !== ProtectedCallKind.XPCallBody) {
+				this.finishProtectedCallWithError(continuationIndex, kind === ProtectedCallKind.XPCallHandler
+					? valueString(this.errorInErrorHandlingStringId) : error);
 				return true;
 			}
 
-			continuation.kind = ProtectedCallKind.XPCallHandler;
-			const handlerRegister = continuation.handlerRegister;
-			const registers = this.ensureRegisterCapacity(caller, continuation.callBase);
-			registers.set(continuation.callBase, error);
-			this.bumpRegisterTop(caller, continuation.callBase);
+			this.activeThread.setProtectedKind(continuationIndex, ProtectedCallKind.XPCallHandler);
+			const handlerRegister = this.activeThread.protectedWord(continuationIndex, ProtectedField.Handler) | 0;
+			const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
+			const registers = this.ensureRegisterCapacity(caller, callBase);
+			registers.set(callBase, error);
+			this.bumpRegisterTop(caller, callBase);
 			this.charge(1);
 			try {
 				this.invokeProtectedTarget(
@@ -3784,7 +3754,7 @@ export class CPU implements MappedPageInvalidator {
 					caller.registers,
 					handlerRegister,
 					true,
-					continuation.callBase,
+					callBase,
 					1,
 				);
 				return true;
@@ -3949,7 +3919,7 @@ export class CPU implements MappedPageInvalidator {
 		const threads: CpuThreadState[] = [];
 		const captureThread = (thread: Thread): number => {
 			if (this.gc.sweepGarbage(thread)) {
-				return threads.push({ stackTop: 0, frames: [], protectedCalls: [] }) - 1;
+				return threads.push({ stackTop: 0, frames: [] }) - 1;
 			}
 			const frames = new Array<CpuFrameState>(thread.frameDepth);
 			let frame = thread.firstFrame!;
@@ -3971,32 +3941,12 @@ export class CPU implements MappedPageInvalidator {
 					isExceptionFrame: frame.isExceptionFrame,
 					isNonMaskableExceptionFrame: frame.isNonMaskableExceptionFrame,
 					openUpvalueHead: frame.openUpvalueHead,
+					protectedContinuationIndex: frame.protectedContinuationIndex,
 				};
 			}
-			const protectedCalls = new Array<CpuProtectedCallState>(thread.protectedCallDepth);
-			for (let index = 0; index < thread.protectedCallDepth; index += 1) {
-				const continuation = thread.protectedCallContinuations.peek(index);
-				const caller = continuation.caller!;
-				protectedCalls[index] = {
-					kind: continuation.kind,
-					callerFrameIndex: thread.frameIndex(caller),
-					targetFrameIndex: -1,
-					returnsToProtectedParent: continuation.returnsToProtectedParent,
-					callBase: continuation.callBase,
-					returnCount: continuation.returnCount,
-					handlerRegister: continuation.handlerRegister,
-				};
-			}
-
-			let protectedFrame = thread.firstFrame!;
-			for (let frameIndex = 0; frameIndex < thread.frameDepth; ++frameIndex, protectedFrame = protectedFrame.next!) {
-				if (protectedFrame.protectedContinuationIndex >= 0)
-					protectedCalls[protectedFrame.protectedContinuationIndex].targetFrameIndex = frameIndex;
-			}
-
 			const index = threads.length;
 			threads.push({
-				stackTop: thread.stackTop, frames, protectedCalls,
+				stackTop: thread.stackTop, frames,
 			});
 			return index;
 		};
@@ -4160,7 +4110,6 @@ export class CPU implements MappedPageInvalidator {
 			this.rootThread.currentFrame!.openUpvalueHead = 0;
 			this.rootThread.leaveFrame();
 		}
-		this.rootThread.protectedCallDepth = 0;
 		const previousCanonical = new Map(this.staticClosuresByAddress);
 		this.staticClosuresByAddress.clear();
 		// Allocate every identity before resolving edges, including cycles and weak references.
@@ -4297,24 +4246,10 @@ export class CPU implements MappedPageInvalidator {
 				frame.isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
 				frame.top = frameState.top;
 				frame.openUpvalueHead = frameState.openUpvalueHead;
+				frame.protectedContinuationIndex = frameState.protectedContinuationIndex;
 				this.activeThread.enterFrame(frame);
 			}
 			thread.bindStack();
-			for (let index = 0; index < saved.protectedCalls.length; index += 1) {
-				const continuationState = saved.protectedCalls[index];
-				const continuation = this.activeThread.protectedCallContinuations.get(index);
-				continuation.kind = continuationState.kind;
-				continuation.caller = this.activeThread.frameAtDepth(continuationState.callerFrameIndex);
-				if (continuationState.targetFrameIndex >= 0) {
-					this.activeThread.frameAtDepth(continuationState.targetFrameIndex).protectedContinuationIndex = index;
-				}
-				continuation.returnsToProtectedParent = continuationState.returnsToProtectedParent;
-				continuation.callBase = continuationState.callBase;
-				continuation.returnCount = continuationState.returnCount;
-				continuation.handlerRegister = continuationState.handlerRegister;
-			}
-			this.activeThread.protectedCallDepth = saved.protectedCalls.length;
-
 		}
 		this.activeThread = restoredObjects[state.activeThreadRef] as Thread;
 		this.completionThread = restoredObjects[state.completionThreadRef] as Thread;

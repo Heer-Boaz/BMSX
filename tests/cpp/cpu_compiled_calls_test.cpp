@@ -237,17 +237,24 @@ void protectedNestedFrames() {
 		for (int grant = 0; grant < 20 && machine.cpu.getFrameDepth() != 3; ++grant) machine.cpu.runUntilDepth(0, 1);
 		require(machine.cpu.getFrameDepth() == 3, "protected body invokes an ordinary child activation");
 		auto* thread = machine.cpu.activeThread();
-		require(thread->protectedCallDepth == 1 && thread->currentFrame->protectedContinuationIndex == -1
+		require(thread->protectedDepth() == 1 && thread->currentFrame->protectedContinuationIndex == -1
 			&& thread->currentFrame->previous->protectedContinuationIndex == 0, "only the protected target owns its return obligation");
 		const auto state = machine.cpu.captureRuntimeState();
-		require(state.threads[0].protectedCalls[0].targetFrameIndex == 1, "snapshot preserves the existing target-depth representation");
+		const auto ram = machine.cpu.memory().captureSaveState();
+		const auto originalStack = thread->stackOffset();
+		thread->resizeStack(80);
+		require(thread->stackOffset() != originalStack && thread->protectedWord(0, ProtectedField::Wanted) == 3
+			&& thread->protectedWord(0, ProtectedField::Caller) == 0,
+			"a live protected call relocates with its stack");
+		machine.cpu.memory().restoreSaveState(ram);
+		require(state.threads[0].frames[1].protectedContinuationIndex == 0, "the target frame stores a continuation index");
 		machine.cpu.restoreRuntimeState(state);
 		thread = machine.cpu.activeThread();
 		require(thread->currentFrame->protectedContinuationIndex == -1
 			&& thread->currentFrame->previous->protectedContinuationIndex == 0, "restore installs protection on the target rather than its subtree");
-		require(machine.cpu.runUntilDepth(2, 100) == RunResult::Halted && thread->protectedCallDepth == 1,
+		require(machine.cpu.runUntilDepth(2, 100) == RunResult::Halted && thread->protectedDepth() == 1,
 			"ordinary child return must not finish protection");
-		require(machine.cpu.runUntilDepth(0, 100) == RunResult::Halted && thread->protectedCallDepth == 0,
+		require(machine.cpu.runUntilDepth(0, 100) == RunResult::Halted && thread->protectedDepth() == 0,
 			"only the protected target completes its continuation");
 		const auto values = machine.cpu.readCompletionValues();
 		require(values.size() == 2 && values.get(0) == valueBool(true) && values.get(1) == valueInteger(7), "protected result prefix remains exact");
@@ -560,7 +567,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	auto* callee = thread->currentFrame;
 	auto* caller = callee->previous;
 	auto* closure = callee->closure;
-	require(thread->protectedCallDepth == 1 && caller->protectedContinuationIndex == 0
+	require(thread->protectedDepth() == 1 && caller->protectedContinuationIndex == 0
 		&& callee->protectedContinuationIndex == -1, "native return admission concerns the target activation, not its protected subtree");
 	const std::array<Value, 6> payloads{valueNil(), valueBool(false), valueFloatBits(0x80000000),
 		valueString(machine.cpu.stringPool().intern("native-return-payload")), caller->registers.get(4), valueFloatBits(0xffa12345)};
@@ -599,7 +606,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 
 	const auto routeResult = machine.cpu.runUntilDepth(0, grant);
 	require(routeResult == RunResult::Yielded && thread->currentFrame == caller
-		&& thread->frameDepth == 2 && thread->protectedCallDepth == 1, "ordinary native return retains its protected parent and exact grant boundary");
+		&& thread->frameDepth == 2 && thread->protectedDepth() == 1, "ordinary native return retains its protected parent and exact grant boundary");
 	require(caller->top == base + count, "fixed, open and empty returns assign exact caller top even after a late cold exit");
 	for (int index = 0; index < copied; ++index) require(caller->registers.get(base + index) == payloads[index],
 		"native and late-cold result movement preserve every raw tagged and numeric bit");
@@ -621,7 +628,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		"a real activation rebinds the retired native node without inheriting protection or exception state");
 	callee->registers.set(1, valueInteger(17)); callee->top = 2;
 	require(machine.cpu.runUntilDepth(2, returnBase + 1) == RunResult::Halted && thread->currentFrame == caller
-		&& thread->protectedCallDepth == 1 && machine.cpu.instructionBudgetRemaining == 0,
+		&& thread->protectedDepth() == 1 && machine.cpu.instructionBudgetRemaining == 0,
 		"the reused node returns once without completing its protected parent or resuming the redirected continuation");
 	const auto results = machine.cpu.readCompletionValues();
 	require(results.size() == 1 && results.get(0) == valueInteger(17), "reused native nodes return the new activation's own value");
@@ -825,16 +832,19 @@ void protectedReturnPlacementCycles() {
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
 		while (machine.cpu.getFrameDepth() != 2) machine.cpu.runUntilDepth(0, 1);
 		auto* thread = machine.cpu.activeThread();
-		require(thread->protectedCallDepth == 2, "nested builtin pcall owns two result ranges");
+		require(thread->protectedDepth() == 2, "nested builtin pcall owns two result ranges");
 		thread->currentFrame->registers.set(0, valueInteger(17)); thread->currentFrame->registers.set(1, valueInteger(29));
 		const bool failFirst = wanted == static_cast<int>(PSX_MACHINE_SPEC.ramBytes + 1);
-		thread->protectedCallContinuations.get(failFirst ? 1 : 0).returnCount = failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted;
+		const u32 controls = thread->stackOffset() + ((thread->stackByteLength() + 3u) & ~3u);
+		machine.cpu.memory().writeRamRecordWord(controls + (failFirst ? PROTECTED_CALL_BYTES : 0)
+			+ static_cast<u32>(ProtectedField::Wanted), failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted);
 		const bool fault = wanted >= static_cast<int>(PSX_MACHINE_SPEC.ramBytes);
 		// The failed success-range admission is followed by protected error-range admission, which also fails.
 		// Both emergency collections scan/reclaim the compact five-byte stack slots.
 		// Completing the inner return drops its closure before the first scan: three fewer mark words.
 		// Each collection also visits 16 intern buckets and marks/visits the 14 RAM roots.
-		const int gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14) : 0;
+		// Two reserved 20-byte continuations add ten words at each of three scans and at sweep.
+		const int gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14 + 4 * (2 * PROTECTED_CALL_BYTES / 4)) : 0;
 		bool rejected = false;
 		try { require(machine.cpu.runUntilDepth(1, 2) == RunResult::Halted, "protected return completes at caller"); }
 		catch (const LuaOutOfMemorySignal&) { rejected = true; }

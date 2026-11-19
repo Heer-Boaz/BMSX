@@ -40,7 +40,6 @@ import {
 } from '../../machine/ts/machine/runtime/save_state/codec';
 import { CpuSnapshot, CpuSnapshotWriter, CPU_SNAPSHOT_VALUE_WORDS } from '../../machine/ts/machine/cpu/snapshot';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
-import { ProtectedCallKind } from '../../machine/ts/machine/cpu/call_state';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
 import { DMA_STATUS_BUSY } from '../../machine/ts/spec/bmsx/io';
@@ -557,15 +556,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			threads: [{
 				stackTop: 0,
 				frames: [],
-				protectedCalls: [{
-					kind: ProtectedCallKind.XPCallHandler,
-					callerFrameIndex: 2,
-					targetFrameIndex: -1,
-					returnsToProtectedParent: true,
-					callBase: 4,
-					returnCount: 3,
-					handlerRegister: 7,
-				}],
 			}],
 			completionValues: [],
 			snapshot: snapshot.finish(),
@@ -695,6 +685,7 @@ test('runtime save-state codec preserves exception frame metadata', () => {
 		isExceptionFrame: true,
 		isNonMaskableExceptionFrame: true,
 		openUpvalueHead: 0,
+		protectedContinuationIndex: 2,
 	}];
 
 	const decoded = decodeRuntimeSaveState(

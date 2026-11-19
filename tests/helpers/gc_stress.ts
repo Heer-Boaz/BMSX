@@ -30,6 +30,31 @@ export function installAllocationStress(cpu: CPU): { allocations: number } {
 }
 
 export const gcStressVectors = {
+	protected_stack_relocation: `
+local function descend(depth, value)
+  if depth == 0 then
+    collectgarbage()
+    local replacement = coroutine.yield(value)
+    return { replacement }
+  end
+  local ok, result = pcall(descend, depth - 1, value)
+  assert(ok)
+  return result
+end
+for turn = 1, 8 do
+  local worker = coroutine.create(function() return descend(12, turn) end)
+  local started, yielded = coroutine.resume(worker)
+  assert(started and yielded == turn)
+  local pressure = {}
+  for slot = 1, 16 do pressure[slot] = { turn, slot } end
+  collectgarbage()
+  local completed, value = coroutine.resume(worker, pressure[16])
+  assert(completed and value[1] == pressure[16])
+  collectgarbage()
+  assert(coroutine.status(worker) == 'dead')
+end
+return true`,
+
 	stack_relocation_and_control: `
 local function deep(n, value)
   local a, b, c, d, e, f = value, value + 1, value + 2, value + 3, value + 4, value + 5

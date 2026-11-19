@@ -5,7 +5,7 @@ import { heapAllocationBytes, type HeapAllocator } from './heap_allocator';
 import { GcObject, GcKind, GarbageAllocation } from './gc_object';
 import { type Closure, type Upvalue, UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, FunctionPrototypePool, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
 import { Table, TableRecords } from './table';
-import { Thread, ThreadField, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
+import { Thread, ThreadField, THREAD_HEAP_BYTES } from './thread';
 import { ValueTag, valueTag, valuePayload, scalarValueHash, valueInteger, valueNil, type Value } from './value';
 import { ValueSlots } from './value_slots';
 import type { LuaHeap } from './lua_heap';
@@ -184,7 +184,7 @@ export class GcHeap {
 			case GcKind.Table: return this.tables.getTrackedHeapBytes((object as Table).address);
 			case GcKind.Closure: return (object as Closure).heapBytes;
 			case GcKind.Upvalue: return UPVALUE_HEAP_BYTES;
-			case GcKind.Thread: return THREAD_HEAP_BYTES + heapAllocationBytes((object as Thread).stackRegisters.byteLength());
+			case GcKind.Thread: return THREAD_HEAP_BYTES + heapAllocationBytes((object as Thread).backingByteLength());
 			case GcKind.Garbage: return (object as GarbageAllocation).bytes;
 		}
 	}
@@ -374,8 +374,7 @@ export class GcHeap {
 							object.gcColor = this.white;
 							if (object.gcKind === GcKind.Thread && object !== growingStack) {
 								const thread = object as Thread;
-								const released = thread.shrinkStack();
-								if (released !== 0) work += 2 * ceilDiv4(thread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES);
+								work += 2 * ceilDiv4(thread.shrinkStack());
 							}
 						}
 					}

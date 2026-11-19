@@ -120,16 +120,7 @@ struct CpuFrameState {
 	bool isExceptionFrame = false;
 	bool isNonMaskableExceptionFrame = false;
 	u32 openUpvalueHead = 0;
-};
-
-struct CpuProtectedCallState {
-	ProtectedCallKind kind = ProtectedCallKind::PCall;
-	int callerFrameIndex = -1;
-	int targetFrameIndex = -1;
-	bool returnsToProtectedParent = false;
-	int callBase = 0;
-	int returnCount = 0;
-	int handlerRegister = -1;
+	i32 protectedContinuationIndex = -1;
 };
 
 struct CpuRootValueState {
@@ -140,7 +131,6 @@ struct CpuRootValueState {
 struct CpuThreadState {
 	u32 stackTop = 0;
 	std::vector<CpuFrameState> frames;
-	std::vector<CpuProtectedCallState> protectedCalls;
 };
 
 struct CpuRuntimeState {
@@ -360,13 +350,14 @@ private:
 	void runBuiltinError(BuiltinArgsView args);
 	void startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBase, int returnCount,
 		int argumentBase, int argumentCount, bool returnsToProtectedParent);
-	void invokeProtectedTarget(size_t continuationIndex, Value target, int argumentBase, int argumentCount);
-	void finishProtectedCall(size_t continuationIndex, const Value* values, int valueCount);
-	void finishProtectedCall(size_t continuationIndex, CallFrame& source, int sourceBase, int sourceCount);
-	void finishProtectedCallWithError(size_t continuationIndex, Value errorValue);
-	int writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, const Value* values, int valueCount);
-	int writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, CallFrame& source, int sourceBase, int sourceCount);
-	void finishProtectedContinuation(size_t continuationIndex, int resultCount);
+	void invokeProtectedTarget(u32 continuationIndex, Value target, int argumentBase, int argumentCount);
+	void finishProtectedCall(u32 continuationIndex, const Value* values, int valueCount);
+	void finishProtectedCall(u32 continuationIndex, CallFrame& source, int sourceBase, int sourceCount);
+	void finishProtectedCallWithError(u32 continuationIndex, Value errorValue);
+	CallFrame& protectedCaller(u32 continuationIndex);
+	int writeProtectedResults(u32 continuationIndex, bool prefix, const Value* values, int valueCount);
+	int writeProtectedResults(u32 continuationIndex, bool prefix, CallFrame& source, int sourceBase, int sourceCount);
+	void finishProtectedContinuation(u32 continuationIndex, int resultCount);
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
 	size_t collectionRootWordCount() const;

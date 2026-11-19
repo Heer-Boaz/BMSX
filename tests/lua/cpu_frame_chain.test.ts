@@ -5,7 +5,8 @@ import { ValueTag, valueBool, valueBuiltinFunction, valueInteger, valueString, t
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
+import { ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
+import { ThreadField, THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -85,22 +86,41 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
 		for (let grant = 0; grant < 20 && cpu.getFrameDepth() !== 3; ++grant) cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.getFrameDepth(), 3);
-		assert.equal(cpu.rootThread.protectedCallDepth, 1);
+		assert.equal(cpu.rootThread.protectedDepth, 1);
 		assert.equal(cpu.rootThread.currentFrame!.protectedContinuationIndex, -1);
 		assert.equal(cpu.rootThread.currentFrame!.previous!.protectedContinuationIndex, 0);
 		const snapshot = cpu.captureRuntimeState();
-		assert.equal(snapshot.threads[0].protectedCalls[0].targetFrameIndex, 1);
+		assert.equal(snapshot.threads[0].frames[1].protectedContinuationIndex, 0);
+		const ram = cpu.memory.captureSaveState();
+		const oldStack = cpu.rootThread.stackOffset();
+		cpu.rootThread.resizeStack(80);
+		assert.notEqual(cpu.rootThread.stackOffset(), oldStack);
+		assert.equal(cpu.rootThread.protectedWord(0, ProtectedField.Flags), 0);
+		assert.equal(cpu.rootThread.protectedWord(0, ProtectedField.Caller), 0);
+		assert.equal(cpu.rootThread.protectedWord(0, ProtectedField.Wanted), 3);
+		cpu.memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(snapshot);
 		assert.deepEqual(cpu.captureRuntimeState(), snapshot);
 		assert.equal(cpu.rootThread.currentFrame!.protectedContinuationIndex, -1);
 		assert.equal(cpu.rootThread.currentFrame!.previous!.protectedContinuationIndex, 0);
 		assert.equal(cpu.runUntilDepth(2, 100), RunResult.Halted);
-		assert.equal(cpu.rootThread.protectedCallDepth, 1, 'ordinary child return must not finish protection');
+		assert.equal(cpu.rootThread.protectedDepth, 1, 'ordinary child return must not finish protection');
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 		const values: Value[] = []; cpu.readCompletionValues(values);
 		assert.deepEqual(values, [valueBool(true), valueInteger(7)]);
-		assert.equal(cpu.rootThread.protectedCallDepth, 0);
+		assert.equal(cpu.rootThread.protectedDepth, 0);
 		assert.equal(cpu.rootThread.firstFrame!.next!.protectedContinuationIndex, -1);
+
+		cpu.memory.restoreSaveState(ram);
+		cpu.restoreRuntimeState(snapshot);
+		const block = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.StackBlock);
+		const slots = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.StackCapacity);
+		const control = block + ((slots * THREAD_STACK_SLOT_BYTES + 3) & ~3);
+		cpu.memory.writeRamRecordWord(control + ProtectedField.Wanted, 4);
+		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
+		const caller = cpu.rootThread.currentFrame!;
+		assert.equal(caller.top, 3, 'return placement consumes the RAM record, not a cached host continuation');
+		assert.equal(cpu.rootThread.protectedDepth, 0);
 	});
 
 	test(`collection while admitting a callee preserves prepared identity and only active roots (${backend})`, () => {

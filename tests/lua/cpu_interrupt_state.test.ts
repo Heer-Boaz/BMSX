@@ -759,7 +759,7 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 		assert.equal(cpu.runUntilDepth(0, 1), cpu.getFrameDepth() === 0 ? RunResult.Halted : RunResult.Yielded);
 		if (!restoredProtectedCall && cpu.getFrameDepth() > 0) {
 			const state = cpu.captureRuntimeState();
-			if (state.threads[0].protectedCalls.length > 0) {
+			if (cpu.rootThread.protectedDepth > 0) {
 				cpu.restoreRuntimeState(state);
 				restoredProtectedCall = true;
 			}
@@ -791,7 +791,7 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_inner')), valueBool(true));
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_a')), valueInteger(3));
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_b')), valueInteger(4));
-	assert.deepEqual(cpu.captureRuntimeState().threads[0].protectedCalls, []);
+	assert.equal(cpu.rootThread.protectedDepth, 0);
 });
 
 test('CPU closure calls that execute HALT without a scheduled interrupt park without host exception', () => {

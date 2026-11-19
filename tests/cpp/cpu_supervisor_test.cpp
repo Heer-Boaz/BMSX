@@ -1666,7 +1666,7 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	require(machine.cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::GETSYS)]
 		+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE)] + 1) == bmsx::RunResult::Yielded, "pcall body should remain preemptible");
 	bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
-	require(state.threads[0].protectedCalls.size() == 1u, "save state should retain the active protected call");
+	require(machine.cpu.rootThread()->protectedDepth() == 1u && state.threads[0].frames[1].protectedContinuationIndex == 0, "save state should retain the active protected call");
 	machine.cpu.restoreRuntimeState(state);
 	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "restored pcall should complete");
 	require(machine.cpu.readCompletionValues().size() == 3u && bmsx::isTruthy(machine.cpu.readCompletionValues().get(0)), "pcall should return success");

@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
+import { PROTECTED_CALL_BYTES, ProtectedField } from '../../machine/ts/machine/cpu/call_state';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
@@ -190,14 +191,17 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
 			while (cpu.getFrameDepth() !== 2) cpu.runUntilDepth(0, 1);
 			const thread = cpu.rootThread;
-			assert.equal(thread.protectedCallDepth, 2);
+			assert.equal(thread.protectedDepth, 2);
 			thread.currentFrame!.registers.setInteger(0, 17); thread.currentFrame!.registers.setInteger(1, 29);
 			const failFirst = wanted === PSX_MACHINE_SPEC.ramBytes + 1;
-			thread.protectedCallContinuations.peek(failFirst ? 1 : 0).returnCount = failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted;
+			const controls = thread.stackOffset() + ((thread.stackRegisters.byteLength() + 3) & ~3);
+			cpu.memory.writeRamRecordWord(controls + (failFirst ? PROTECTED_CALL_BYTES : 0) + ProtectedField.Wanted,
+				failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted);
 			const fault = wanted >= PSX_MACHINE_SPEC.ramBytes;
 			// Both success- and error-placement collect. If the inner return completed,
 			// its closure is already dead at the first scan. Both passes visit the RAM String index.
-			const gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14) : 0;
+			// Two reserved 20-byte continuations add ten words at each of three scans and at sweep.
+			const gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14 + 4 * (2 * PROTECTED_CALL_BYTES / 4)) : 0;
 			if (fault) assert.throws(() => cpu.runUntilDepth(1, 2), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			else assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const outer = wanted === 0 ? 4 : wanted - 1;

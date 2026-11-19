@@ -2,7 +2,6 @@
 
 #include "machine/cpu/gc_object.h"
 
-#include "common/scratchbuffer.h"
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/value.h"
 
@@ -17,7 +16,8 @@ constexpr u32 THREAD_RECORD_KIND = 4u;
 
 enum class ThreadField : u32 {
 	Header = 0, Status = 8, Resumer = 12, Entry = 16, StackBlock = 24, StackCapacity = 28,
-	ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52
+	ProtectedCapacity = 36, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
+	ProtectedDepth = 60
 };
 
 struct Thread : GCObject {
@@ -44,8 +44,15 @@ struct Thread : GCObject {
 	void freeStack();
 	u32 stackOffset() const;
 	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
+	u32 backingByteLength() const;
 	bool stackRequiresScalar() const;
 	size_t shrinkStack();
+	u32 protectedDepth() const;
+	void setProtectedDepth(u32 depth);
+	u32 protectedWord(u32 index, ProtectedField field) const;
+	void setProtectedKind(u32 index, ProtectedCallKind kind);
+	CallFrame* protectedCaller(u32 index) const;
+	u32 pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int wanted, int handler);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	struct NativeOffsets { size_t currentFrame, frameDepth, stackTop, stackWords, stackTags, stackCapacity; };
 	static NativeOffsets nativeOffsets();
@@ -75,10 +82,10 @@ struct Thread : GCObject {
 	ValueSpan stack;
 	size_t stackCapacity = 0;
 	int stackTop = 0;
-	ScratchBuffer<ProtectedCallContinuation> protectedCallContinuations{1};
-	size_t protectedCallDepth = 0;
 private:
-	void replaceStack(u32 block, size_t capacity);
+	void replaceStack(u32 block, size_t capacity, u32 protectedCapacity);
+	u32 protectedCapacity() const;
+	u32 protectedAddress(u32 index) const;
 	u32 read(ThreadField field) const;
 	void write(ThreadField field, u32 word);
 	GcHeap& heap;

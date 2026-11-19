@@ -5,6 +5,14 @@
 #include <algorithm>
 
 namespace bmsx {
+namespace {
+// Eighteen count bits cover every 20-byte record that can fit in physical RAM.
+constexpr u32 PROTECTED_COUNT_MASK = (1u << 18) - 1;
+constexpr u32 controlOffset(u32 values) { return (values * THREAD_STACK_SLOT_BYTES + 3u) & ~3u; }
+constexpr u32 backingBytes(u32 values, u32 protectedCapacity) {
+	return controlOffset(values) + protectedCapacity * PROTECTED_CALL_BYTES;
+}
+}
 
 Thread::Thread(GcHeap& heap, u32 address) : address(address), heap(heap) {}
 
@@ -15,7 +23,7 @@ void Thread::initializeRecord(Closure* entry) {
 	std::fill_n(record, THREAD_HEAP_BYTES, u8{0});
 	writeLE32(record, THREAD_RECORD_KIND);
 	writeLE32(record + static_cast<u32>(ThreadField::Entry), entry ? entry->address : 0u);
-		writeLE32(record + static_cast<u32>(ThreadField::StackBlock), block);
+	writeLE32(record + static_cast<u32>(ThreadField::StackBlock), block);
 	writeLE32(record + static_cast<u32>(ThreadField::StackCapacity), 8u);
 	bindStack();
 	heap.memory.invalidateRamWrite(offset, THREAD_HEAP_BYTES);
@@ -72,6 +80,52 @@ Thread::~Thread() {
 }
 
 u32 Thread::stackOffset() const { return stack.wordAddress(); }
+u32 Thread::backingByteLength() const { return backingBytes(static_cast<u32>(stack.size()), protectedCapacity()); }
+u32 Thread::protectedCapacity() const { return read(ThreadField::ProtectedCapacity) & PROTECTED_COUNT_MASK; }
+u32 Thread::protectedDepth() const { return read(ThreadField::ProtectedDepth) & PROTECTED_COUNT_MASK; }
+void Thread::setProtectedDepth(u32 depth) { write(ThreadField::ProtectedDepth, depth); }
+u32 Thread::protectedAddress(u32 index) const {
+	return stackOffset() + controlOffset(static_cast<u32>(stack.size())) + index * PROTECTED_CALL_BYTES;
+}
+u32 Thread::protectedWord(u32 index, ProtectedField field) const {
+	return heap.memory.readRamRecordWord(protectedAddress(index) + static_cast<u32>(field));
+}
+void Thread::setProtectedKind(u32 index, ProtectedCallKind kind) {
+	const u32 flags = protectedWord(index, ProtectedField::Flags);
+	heap.memory.writeRamRecordWord(protectedAddress(index) + static_cast<u32>(ProtectedField::Flags),
+		(flags & ~PROTECTED_CALL_KIND_MASK) | static_cast<u32>(kind));
+}
+CallFrame* Thread::protectedCaller(u32 index) const {
+	const u32 depth = protectedWord(index, ProtectedField::Caller);
+	// A bus-written index outside the active window has no activation.
+	if (depth >= frameDepth) return nullptr;
+	CallFrame* frame = currentFrame;
+	for (size_t at = frameDepth - 1; at > depth; --at) frame = frame->previous;
+	return frame;
+}
+u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int wanted, int handler) {
+	const u32 index = protectedDepth();
+	const u32 reserved = protectedCapacity();
+	if (index == reserved) {
+		const u32 capacity = reserved == 0 ? 1 : reserved * 2;
+		const u32 bytes = backingBytes(static_cast<u32>(stack.size()), capacity);
+		replaceStack(heap.budget.allocateStack(bytes, this, valueNil()), stack.size(), capacity);
+	}
+	const u32 addr = protectedAddress(index) & RAM_RECORD_WORD_MASK;
+	auto& memory = heap.memory;
+	auto* ram = memory.ramData();
+	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Flags)) & RAM_RECORD_WORD_MASK),
+		static_cast<u32>(kind) | (parent ? PROTECTED_CALL_PARENT : 0));
+	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Caller)) & RAM_RECORD_WORD_MASK), static_cast<u32>(frameDepth - 1));
+	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Base)) & RAM_RECORD_WORD_MASK), static_cast<u32>(base));
+	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Wanted)) & RAM_RECORD_WORD_MASK), static_cast<u32>(wanted));
+	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Handler)) & RAM_RECORD_WORD_MASK), static_cast<u32>(handler));
+	const u32 first = std::min(PROTECTED_CALL_BYTES, MAIN_RAM_SIZE - addr);
+	memory.invalidateRamWrite(addr, first);
+	if (first != PROTECTED_CALL_BYTES) memory.invalidateRamWrite(0, PROTECTED_CALL_BYTES - first);
+	setProtectedDepth(index + 1);
+	return index;
+}
 
 bool Thread::stackRequiresScalar() const {
 	const auto& watches = heap.memory.ramWriteWatches();
@@ -110,14 +164,16 @@ bool Thread::observeStackWrite() {
 
 void Thread::resizeStack(size_t capacity, Value root) {
 	if (capacity == stackCapacity) return;
-	const auto bytes = static_cast<u32>(capacity * THREAD_STACK_SLOT_BYTES);
-	replaceStack(heap.budget.allocateStack(bytes, this, root), capacity);
+	const u32 continuations = protectedCapacity();
+	const auto bytes = backingBytes(static_cast<u32>(capacity), continuations);
+	replaceStack(heap.budget.allocateStack(bytes, this, root), capacity, continuations);
 }
 
 void Thread::freeStack() { heap.arena.free(read(ThreadField::StackBlock)); }
 
-void Thread::replaceStack(u32 block, size_t capacity) {
+void Thread::replaceStack(u32 block, size_t capacity, u32 continuationCapacity) {
 	const size_t previousSize = stack.size();
+	const u32 previousBytes = backingByteLength();
 	const u32 oldBlock = read(ThreadField::StackBlock);
 	auto* words = heap.memory.ramData() + (block & RAM_RECORD_WORD_MASK);
 	auto* tags = words + capacity * sizeof(u32);
@@ -131,25 +187,39 @@ void Thread::replaceStack(u32 block, size_t capacity) {
 	}
 	std::memset(words + retained * sizeof(u32), 0, (capacity - retained) * sizeof(u32));
 	std::memset(tags + retained, 0, capacity - retained);
-	heap.memory.invalidateRamWrite(block & RAM_RECORD_WORD_MASK, capacity * THREAD_STACK_SLOT_BYTES);
+	auto* protectedRecords = words + controlOffset(static_cast<u32>(capacity));
+	const u32 occupied = std::min({protectedDepth(), protectedCapacity(), continuationCapacity}) * PROTECTED_CALL_BYTES;
+	if (occupied != 0) {
+		const u32 oldRecords = protectedAddress(0) & RAM_RECORD_WORD_MASK;
+		const u32 first = std::min(occupied, MAIN_RAM_SIZE - oldRecords);
+		std::memmove(protectedRecords, heap.memory.ramData() + oldRecords, first);
+		std::memmove(protectedRecords + first, heap.memory.ramData(), occupied - first);
+	}
+	const u32 bytes = backingBytes(static_cast<u32>(capacity), continuationCapacity);
+	std::fill(words + capacity * THREAD_STACK_SLOT_BYTES, protectedRecords, u8{0});
+	std::fill(protectedRecords + occupied, words + bytes, u8{0});
+	heap.memory.invalidateRamWrite(block & RAM_RECORD_WORD_MASK, bytes);
+	write(ThreadField::ProtectedCapacity, continuationCapacity);
 	// The mapped watch installs the published window and rebinds its frames.
 	heap.memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::StackBlock), block, static_cast<u32>(capacity));
 	heap.arena.free(oldBlock);
-	heap.budget.release(heapAllocationBytes(static_cast<u32>(previousSize * THREAD_STACK_SLOT_BYTES)));
+	heap.budget.release(heapAllocationBytes(previousBytes));
 }
 
 size_t Thread::shrinkStack() {
 	size_t used = static_cast<size_t>(stackTop);
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
 		used = std::max(used, static_cast<size_t>(frame->stackBase + frame->stackCapacity));
-	if (stackCapacity <= 16 || used * 3 >= stackCapacity) return 0;
-	const size_t released = stackCapacity / 2;
-	const auto bytes = static_cast<u32>(released * THREAD_STACK_SLOT_BYTES);
+	const u32 priorProtected = protectedCapacity();
+	const u32 nextProtected = priorProtected > 4 && 3ull * protectedDepth() < priorProtected ? priorProtected / 2 : priorProtected;
+	const size_t nextValues = stackCapacity > 16 && used * 3 < stackCapacity ? stackCapacity / 2 : stackCapacity;
+	if (nextValues == stackCapacity && nextProtected == priorProtected) return 0;
+	const auto bytes = backingBytes(static_cast<u32>(nextValues), nextProtected);
 	const u32 block = heap.arena.allocate(bytes, true);
 	if (block == 0u) return 0; // Collection cannot recursively collect for a shrink.
 	heap.budget.restoreAllocate(heapAllocationBytes(bytes));
-	replaceStack(block, released);
-	return released;
+	replaceStack(block, nextValues, nextProtected);
+	return bytes;
 }
 
 CallFrame* Thread::acquireFrame() {

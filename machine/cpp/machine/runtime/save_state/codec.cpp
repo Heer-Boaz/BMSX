@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x57524d42u; // BMRW
+constexpr u32 kSaveStateSignature = 0x58524d42u; // BMRX
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1164,6 +1164,7 @@ template<class Writer> void writeCpuFrameState(Writer& writer, const CpuFrameSta
 	writer.boolean(state.isExceptionFrame);
 	writer.boolean(state.isNonMaskableExceptionFrame);
 	writer.u32(state.openUpvalueHead);
+	writer.i32(state.protectedContinuationIndex);
 }
 
 CpuFrameState readCpuFrameState(BinaryReader& reader) {
@@ -1183,28 +1184,7 @@ CpuFrameState readCpuFrameState(BinaryReader& reader) {
 	state.isExceptionFrame = reader.boolean();
 	state.isNonMaskableExceptionFrame = reader.boolean();
 	state.openUpvalueHead = reader.u32();
-	return state;
-}
-
-template<class Writer> void writeCpuProtectedCallState(Writer& writer, const CpuProtectedCallState& state) {
-	writer.u8(static_cast<u8>(state.kind));
-	writer.i32(state.callerFrameIndex);
-	writer.i32(state.targetFrameIndex);
-	writer.boolean(state.returnsToProtectedParent);
-	writer.i32(state.callBase);
-	writer.i32(state.returnCount);
-	writer.i32(state.handlerRegister);
-}
-
-CpuProtectedCallState readCpuProtectedCallState(BinaryReader& reader) {
-	CpuProtectedCallState state;
-	state.kind = static_cast<ProtectedCallKind>(reader.u8());
-	state.callerFrameIndex = reader.i32();
-	state.targetFrameIndex = reader.i32();
-	state.returnsToProtectedParent = reader.boolean();
-	state.callBase = reader.i32();
-	state.returnCount = reader.i32();
-	state.handlerRegister = reader.i32();
+	state.protectedContinuationIndex = reader.i32();
 	return state;
 }
 
@@ -1226,10 +1206,6 @@ template<class Writer> void writeCpuThreadState(Writer& writer, const CpuThreadS
 	for (const auto& value : state.frames) {
 		writeCpuFrameState(writer, value);
 	}
-	writer.u32(static_cast<u32>(state.protectedCalls.size()));
-	for (const auto& value : state.protectedCalls) {
-		writeCpuProtectedCallState(writer, value);
-	}
 }
 
 CpuThreadState readCpuThreadState(BinaryReader& reader) {
@@ -1239,11 +1215,6 @@ CpuThreadState readCpuThreadState(BinaryReader& reader) {
 	state.frames.reserve(framesCount);
 	for (u32 index = 0; index < framesCount; ++index) {
 		state.frames.push_back(readCpuFrameState(reader));
-	}
-	const u32 protectedCallsCount = reader.u32();
-	state.protectedCalls.reserve(protectedCallsCount);
-	for (u32 index = 0; index < protectedCallsCount; ++index) {
-		state.protectedCalls.push_back(readCpuProtectedCallState(reader));
 	}
 	return state;
 }

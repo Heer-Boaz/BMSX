@@ -154,7 +154,7 @@ size_t GcHeap::allocationBytes(const GCObject* object) const {
 		case ObjType::Table: return static_cast<const Table*>(object)->trackedHeapBytes();
 		case ObjType::Closure: return heapAllocationBytes(closureRecordBytes(static_cast<const Closure*>(object)->upvalueCount));
 		case ObjType::Upvalue: return UPVALUE_HEAP_BYTES;
-		case ObjType::Thread: return THREAD_HEAP_BYTES + heapAllocationBytes(static_cast<const Thread*>(object)->stackByteLength());
+		case ObjType::Thread: return THREAD_HEAP_BYTES + heapAllocationBytes(static_cast<const Thread*>(object)->backingByteLength());
 		case ObjType::Garbage: return static_cast<const GarbageAllocation*>(object)->bytes;
 	}
 	BMSX_UNREACHABLE();
@@ -468,8 +468,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 						object->gcColor = m_white;
 						if (object->type == ObjType::Thread && object != growingStack) {
 							auto* thread = static_cast<Thread*>(object);
-							const size_t released = thread->shrinkStack();
-							if (released != 0) work += 2 * ceilDiv4(thread->stackCapacity * THREAD_STACK_SLOT_BYTES);
+							work += 2 * ceilDiv4(thread->shrinkStack());
 						}
 					}
 				}

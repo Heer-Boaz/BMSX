@@ -1,12 +1,11 @@
 import { GcObject, GcKind } from './gc_object';
-import { ScratchBuffer } from '../../common/scratchbuffer';
-import { ProtectedCallContinuation, type CallFrame } from './call_state';
+import { PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind, type CallFrame } from './call_state';
 import type { Closure } from './closure';
 import type { GcHeap } from './gc_heap';
 import { heapAllocationBytes } from './heap_allocator';
 import { valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
-import { MAIN_RAM_SIZE } from '../../spec/bmsx/memory_map';
+import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueSlots } from './value_slots';
 import { MAPPED_BUS_MASTER_CPU } from '../memory/bus_signals';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SHIFT } from '../memory/mapped_page';
@@ -17,7 +16,15 @@ export const THREAD_STACK_SLOT_BYTES = 5;
 export const THREAD_RECORD_KIND = 4;
 export const enum ThreadField {
 	Header = 0, Status = 8, Resumer = 12, Entry = 16, StackBlock = 24, StackCapacity = 28,
-	ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
+	ProtectedCapacity = 36, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
+	ProtectedDepth = 60,
+}
+
+// Eighteen count bits cover every 20-byte record that can fit in physical RAM.
+const PROTECTED_COUNT_MASK = (1 << 18) - 1;
+function controlOffset(values: number): number { return (values * THREAD_STACK_SLOT_BYTES + 3) & ~3; }
+function backingBytes(values: number, protectedCapacity: number): number {
+	return controlOffset(values) + protectedCapacity * PROTECTED_CALL_BYTES;
 }
 
 /** Retained language execution state. Physical CPU/IRQ/bus state is not thread-local. */
@@ -27,8 +34,6 @@ export class Thread extends GcObject {
 	public frameDepth = 0;
 	public readonly stackRegisters = new ValueSlots(0);
 	public stackTop = 0;
-	public readonly protectedCallContinuations = new ScratchBuffer(() => new ProtectedCallContinuation(), 1);
-	public protectedCallDepth = 0;
 	public constructor(private readonly heap: GcHeap, public readonly address: number) { super(GcKind.Thread); }
 
 	public initializeRecord(entry: Closure | null): void {
@@ -72,6 +77,51 @@ export class Thread extends GcObject {
 	}
 
 	public stackOffset(): number { return this.stackRegisters.ramOffset(); }
+	public backingByteLength(): number {
+		return backingBytes(this.stackRegisters.capacity(), this.protectedCapacity);
+	}
+	private get protectedCapacity(): number { return this.read(ThreadField.ProtectedCapacity) & PROTECTED_COUNT_MASK; }
+	public get protectedDepth(): number { return this.read(ThreadField.ProtectedDepth) & PROTECTED_COUNT_MASK; }
+	public set protectedDepth(depth: number) { this.write(ThreadField.ProtectedDepth, depth); }
+	private protectedAddress(index: number): number {
+		return this.stackOffset() + controlOffset(this.stackRegisters.capacity()) + index * PROTECTED_CALL_BYTES;
+	}
+	public protectedWord(index: number, field: ProtectedField): number {
+		return this.heap.memory.readRamRecordWord(this.protectedAddress(index) + field);
+	}
+	public setProtectedKind(index: number, kind: ProtectedCallKind): void {
+		const flags = this.protectedWord(index, ProtectedField.Flags);
+		this.heap.memory.writeRamRecordWord(this.protectedAddress(index) + ProtectedField.Flags, (flags & ~PROTECTED_CALL_KIND_MASK) | kind);
+	}
+	public protectedCaller(index: number): CallFrame | null {
+		const depth = this.protectedWord(index, ProtectedField.Caller);
+		if (depth >= this.frameDepth) return null;
+		let frame = this.currentFrame!;
+		for (let at = this.frameDepth - 1; at > depth; --at) frame = frame.previous!;
+		return frame;
+	}
+	public pushProtectedCall(kind: ProtectedCallKind, parent: boolean, base: number, wanted: number, handler: number): number {
+		const index = this.protectedDepth;
+		const reserved = this.protectedCapacity;
+		if (index === reserved) {
+			const capacity = reserved === 0 ? 1 : reserved * 2;
+			const values = this.stackRegisters.capacity();
+			const block = this.heap.budget.allocateStack(backingBytes(values, capacity), this, valueNil());
+			this.replaceStack(block, values, capacity);
+		}
+		const address = this.protectedAddress(index) & RAM_RECORD_WORD_MASK;
+		const memory = this.heap.memory, ram = memory.ramData();
+		writeLE32(ram, (address + ProtectedField.Flags) & RAM_RECORD_WORD_MASK, kind | (parent ? PROTECTED_CALL_PARENT : 0));
+		writeLE32(ram, (address + ProtectedField.Caller) & RAM_RECORD_WORD_MASK, this.frameDepth - 1);
+		writeLE32(ram, (address + ProtectedField.Base) & RAM_RECORD_WORD_MASK, base);
+		writeLE32(ram, (address + ProtectedField.Wanted) & RAM_RECORD_WORD_MASK, wanted);
+		writeLE32(ram, (address + ProtectedField.Handler) & RAM_RECORD_WORD_MASK, handler);
+		const first = Math.min(PROTECTED_CALL_BYTES, MAIN_RAM_SIZE - address);
+		memory.invalidateRamWrite(address, first);
+		if (first !== PROTECTED_CALL_BYTES) memory.invalidateRamWrite(0, PROTECTED_CALL_BYTES - first);
+		this.protectedDepth = index + 1;
+		return index;
+	}
 
 	public stackRequiresScalar(): boolean {
 		return this.stackRegisters.ramMirrored() || this.stackTop > this.stackRegisters.capacity()
@@ -110,16 +160,34 @@ export class Thread extends GcObject {
 
 	public resizeStack(capacity: number, root = valueNil()): void {
 		if (capacity === this.stackRegisters.capacity()) return;
-		this.replaceStack(this.heap.budget.allocateStack(capacity * THREAD_STACK_SLOT_BYTES, this, root), capacity);
+		const protectedCapacity = this.protectedCapacity;
+		const block = this.heap.budget.allocateStack(backingBytes(capacity, protectedCapacity), this, root);
+		this.replaceStack(block, capacity, protectedCapacity);
 	}
 
 	public freeStack(): void { this.heap.arena.free(this.read(ThreadField.StackBlock)); }
 
-	private replaceStack(block: number, capacity: number): void {
+	private replaceStack(block: number, capacity: number, continuationCapacity: number): void {
+		const memory = this.heap.memory, ram = memory.ramData();
 		const oldBlock = this.read(ThreadField.StackBlock);
-		const oldBytes = this.stackRegisters.byteLength();
-		this.stackRegisters.bindRam(this.heap.memory, block & (MAIN_RAM_SIZE - 4), capacity, true);
-		this.heap.memory.writeRamRecordPair(this.address + ThreadField.StackBlock, block, capacity);
+		const oldBytes = this.backingByteLength();
+		const start = block & (MAIN_RAM_SIZE - 4);
+		const oldRecords = this.protectedAddress(0) & (MAIN_RAM_SIZE - 4);
+		const records = start + controlOffset(capacity);
+		const occupied = Math.min(this.protectedDepth, this.protectedCapacity, continuationCapacity) * PROTECTED_CALL_BYTES;
+		const bytes = backingBytes(capacity, continuationCapacity);
+		this.stackRegisters.bindRam(memory, start, capacity, true);
+		if (occupied !== 0) {
+			const first = Math.min(occupied, MAIN_RAM_SIZE - oldRecords);
+			ram.copyWithin(records, oldRecords, oldRecords + first);
+			ram.copyWithin(records + first, 0, occupied - first);
+		}
+		ram.fill(0, start + capacity * THREAD_STACK_SLOT_BYTES, records);
+		ram.fill(0, records + occupied, start + bytes);
+		const endOfValues = start + capacity * THREAD_STACK_SLOT_BYTES;
+		if (endOfValues < start + bytes) memory.invalidateRamWrite(endOfValues, start + bytes - endOfValues);
+		this.write(ThreadField.ProtectedCapacity, continuationCapacity);
+		memory.writeRamRecordPair(this.address + ThreadField.StackBlock, block, capacity);
 		this.rebindFrames();
 		this.heap.arena.free(oldBlock);
 		this.heap.budget.release(heapAllocationBytes(oldBytes));
@@ -129,15 +197,16 @@ export class Thread extends GcObject {
 		let used = this.stackTop;
 		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
 			used = Math.max(used, frame.stackBase + frame.stackCapacity);
-		const capacity = this.stackRegisters.capacity();
-		if (capacity <= 16 || used * 3 >= capacity) return 0;
-		const released = capacity >>> 1;
-		const bytes = released * THREAD_STACK_SLOT_BYTES;
+		const capacity = this.stackRegisters.capacity(), priorProtected = this.protectedCapacity;
+		const nextProtected = priorProtected > 4 && this.protectedDepth * 3 < priorProtected ? priorProtected >>> 1 : priorProtected;
+		const nextValues = capacity > 16 && used * 3 < capacity ? capacity >>> 1 : capacity;
+		if (nextValues === capacity && nextProtected === priorProtected) return 0;
+		const bytes = backingBytes(nextValues, nextProtected);
 		const block = this.heap.arena.allocate(bytes, true);
 		if (block === 0) return 0; // Collection cannot recursively collect for a shrink.
 		this.heap.budget.restoreAllocate(heapAllocationBytes(bytes));
-		this.replaceStack(block, released);
-		return released;
+		this.replaceStack(block, nextValues, nextProtected);
+		return bytes;
 	}
 
 	/** Prepare the first inactive node; stack growth can collect before entry. */
