@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include "machine/cpu/thread_record.h"
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/history/ram_history.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/model.h"
@@ -38,6 +39,79 @@ static void exerciseCompletionBoundary(bmsx::CPU& cpu, bool fault) {
 	}
 }
 
+static void exerciseNestedHistory(bmsx::Runtime& runtime) {
+	using namespace bmsx;
+	auto& cpu = runtime.machine.cpu;
+	auto& memory = runtime.machine.memory;
+	const u32 root = cpu.rootThread()->address;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	cpu.setNativeCompilationProfiling(true);
+	cpu.prepareSystemNativeCode();
+	if (cpu.readNativeCompilationProfile().entriesPublished == 0) throw std::runtime_error("nested history has no prepared native entries");
+#endif
+	RamHistory history;
+	RamHistory::PageMap initialPages, midPages, finalPages;
+	history.capture(memory, nullptr, initialPages);
+	RuntimeSaveState mid, final;
+	std::unordered_set<u32> observedThreads;
+	bool capturedMid = false;
+	auto result = RunResult::Yielded;
+	for (int grant = 0; grant < 10000 && result == RunResult::Yielded; ++grant) {
+		result = cpu.runUntilDepth(0, 17);
+		if (cpu.activeThread()->address != root) observedThreads.insert(cpu.activeThread()->address);
+		if (cpu.readExceptionReturnFrameDepth() != -1) throw std::runtime_error("nested history entered a machine fault");
+		if (!capturedMid && observedThreads.size() == 3) {
+			if (result != RunResult::Yielded || cpu.activeThread()->address == root) throw std::runtime_error("nested history lost its active third coroutine");
+			captureRuntimeCheckpointState(runtime, mid);
+			mid.ram.assign(memory.ramData(), memory.ramData() + memory.ramByteCount());
+			history.capture(memory, &initialPages, midPages);
+			capturedMid = true;
+		}
+	}
+	const auto values = runtime.readCompletionValues();
+	if (!capturedMid || observedThreads.size() != 3 || result != RunResult::Halted
+		|| cpu.activeThread()->address != root || cpu.activeThread()->status() != ThreadStatus::Running
+		|| cpu.getFrameDepth() != 0 || values.size() != 1 || values.get(0) != valueBool(true))
+		throw std::runtime_error("nested history did not finish all three uninterrupted coroutine records");
+	const int finalRemaining = cpu.instructionBudgetRemaining;
+	captureRuntimeCheckpointState(runtime, final);
+	final.ram.assign(memory.ramData(), memory.ramData() + memory.ramByteCount());
+	history.capture(memory, &midPages, finalPages);
+
+	history.restore(memory, finalPages, midPages);
+	applyRuntimeCheckpointState(runtime, mid, RuntimeRestoreOrigin::HistorySeek);
+	if (cpu.captureRuntimeState() != mid.cpuState
+		|| !std::equal(memory.ramData(), memory.ramData() + memory.ramByteCount(), mid.ram.begin()))
+		throw std::runtime_error("dirty history backward restore differs from the CPU/RAM oracle");
+	history.restore(memory, midPages, finalPages);
+	applyRuntimeCheckpointState(runtime, final, RuntimeRestoreOrigin::HistorySeek);
+	if (cpu.captureRuntimeState() != final.cpuState
+		|| !std::equal(memory.ramData(), memory.ramData() + memory.ramByteCount(), final.ram.begin()))
+		throw std::runtime_error("dirty history forward restore differs from the CPU/RAM oracle");
+
+	history.restore(memory, finalPages, midPages);
+	applyRuntimeCheckpointState(runtime, mid, RuntimeRestoreOrigin::HistorySeek);
+	if (cpu.runUntilDepth(0, 17) != RunResult::Yielded) throw std::runtime_error("uncaptured coroutine prefix did not remain runnable");
+	if (std::equal(memory.ramData(), memory.ramData() + memory.ramByteCount(), mid.ram.begin()))
+		throw std::runtime_error("uncaptured coroutine prefix made no physical RAM writes");
+	history.restore(memory, midPages, midPages);
+	applyRuntimeCheckpointState(runtime, mid, RuntimeRestoreOrigin::HistorySeek);
+	if (cpu.captureRuntimeState() != mid.cpuState
+		|| !std::equal(memory.ramData(), memory.ramData() + memory.ramByteCount(), mid.ram.begin()))
+		throw std::runtime_error("same-map dirty restore differs from the CPU/RAM oracle");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	cpu.prepareSystemNativeCode();
+#endif
+	result = RunResult::Yielded;
+	for (int grant = 0; grant < 10000 && result == RunResult::Yielded; ++grant) result = cpu.runUntilDepth(0, 17);
+	if (result != RunResult::Halted || cpu.instructionBudgetRemaining != finalRemaining
+		|| cpu.activeThread()->address != root || cpu.activeThread()->status() != ThreadStatus::Running
+		|| cpu.captureRuntimeState() != final.cpuState
+		|| !std::equal(memory.ramData(), memory.ramData() + memory.ramByteCount(), final.ram.begin()))
+		throw std::runtime_error("dirty history suffix replay differs from the original final CPU/RAM or debt");
+	std::cout << "COROUTINE-DIRTY-HISTORY:PASS\n";
+}
+
 int main(int argc, char** argv) {
 	try {
 		for (int index = 1; index < argc; ++index) {
@@ -51,6 +125,8 @@ int main(int argc, char** argv) {
 			const bmsx::u32 rootThread = cpu.rootThread()->address;
 			if (std::string(argv[index]).find("completion_") != std::string::npos) {
 				exerciseCompletionBoundary(cpu, std::string(argv[index]).find("completion_fault_") != std::string::npos);
+			} else if (std::string(argv[index]).find("nested_three_banks-") != std::string::npos) {
+				exerciseNestedHistory(runtime);
 			} else {
 				if (std::string(argv[index]).find("halted_tooling_call-") != std::string::npos) {
 					if (cpu.runUntilDepth(0, 100000) != bmsx::RunResult::Halted || !cpu.isHaltedUntilIrq()) throw std::runtime_error("root did not HALT");
@@ -72,11 +148,6 @@ int main(int argc, char** argv) {
 				}
 				auto result = bmsx::RunResult::Yielded;
 				const bool interruptVector = std::string(argv[index]).find("interrupted-") != std::string::npos;
-				const bool uninterrupted = std::string(argv[index]).find("nested_three_banks-") != std::string::npos;
-				std::unordered_set<bmsx::u32> observedThreads;
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-				if (uninterrupted) cpu.prepareSystemNativeCode();
-#endif
 				bool interrupted = false;
 				for (int grant = 0; grant < 10000 && result == bmsx::RunResult::Yielded; ++grant) {
 					if (interruptVector && !interrupted && cpu.activeThread()->address != rootThread
@@ -87,17 +158,12 @@ int main(int argc, char** argv) {
 						interrupted = true;
 					}
 					result = cpu.runUntilDepth(0, 17);
-					if (uninterrupted) {
-						if (cpu.activeThread()->address != rootThread) observedThreads.insert(cpu.activeThread()->address);
-					} else {
-						const auto state = cpu.captureRuntimeState();
-						cpu.restoreRuntimeState(state);
-						if (cpu.captureRuntimeState() != state) throw std::runtime_error("thread snapshot round trip");
-					}
+					const auto state = cpu.captureRuntimeState();
+					cpu.restoreRuntimeState(state);
+					if (cpu.captureRuntimeState() != state) throw std::runtime_error("thread snapshot round trip");
 					if (!interruptVector && cpu.readExceptionReturnFrameDepth() != -1) throw std::runtime_error("unexpected machine fault");
 				}
 				const auto values = runtime.readCompletionValues();
-				if (uninterrupted && observedThreads.size() != 3) throw std::runtime_error("three nonroot records did not execute without an intervening restore");
 				if (result != bmsx::RunResult::Halted || cpu.getFrameDepth() != 0 || values.size() != 1 || values.get(0) != bmsx::valueBool(true)) throw std::runtime_error("coroutine assertion failed");
 			}
 			if (std::string(argv[index]).find("protected_and_failed-") != std::string::npos) {
