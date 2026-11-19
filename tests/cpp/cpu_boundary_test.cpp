@@ -47,7 +47,7 @@ struct CpuMachine {
 	CPU cpu;
 
 	explicit CpuMachine(test::Blua32TestImage image, u32 ramBytes = PSX_MACHINE_SPEC.ramBytes)
-		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image))
+		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES))
 		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, ramBytes)
 		, irq(memory), executionAddressSpace(memory), cpu(memory, irq, executionAddressSpace) {
 		cpu.reset();
@@ -790,7 +790,7 @@ void compactAndPaddedRomFunctionRecordsAgree() {
 		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 4}, {.firstWord = 4, .wordCount = 2}};
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
-		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 		if (padded) rom.bytes.resize((rom.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~static_cast<size_t>(MAPPED_PAGE_BYTE_MASK));
 		Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory);
@@ -1031,7 +1031,7 @@ void instructionFetchRejectsCartridgeMmio() {
 		writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 1}, {.firstWord = 1, .wordCount = 1}};
 		image.exceptionFunctionIndex = 1;
-		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 		auto slots = test::cartridgeSlots();
 		slots[selected] = CartridgeCardMedia{std::nullopt, std::nullopt, true};
 		Memory memory(MemoryInit{rom.bytes, slots}, PSX_MACHINE_SPEC.ramBytes);
@@ -1076,7 +1076,7 @@ void instructionFetchRejectsCartridgeMmio() {
 	}
 	{
 		const auto image = returnImage(OpCode::HALT, 0, 0, 0);
-		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 		const std::array<u8, 4> card0{0x11, 0x22, 0x33, 0x44};
 		const std::array<u8, 4> card1{0x55, 0x66, 0x77, 0x88};
 		Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots(card0, card1)}, PSX_MACHINE_SPEC.ramBytes);
@@ -1106,7 +1106,7 @@ void instructionFetchRejectsCartridgeMmio() {
 		writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 1}, {.firstWord = 1, .wordCount = 1}};
 		image.exceptionFunctionIndex = 1;
-		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 		auto slots = test::cartridgeSlots();
 		slots[0] = CartridgeCardMedia{std::nullopt, CART_RAM_SIZE, true};
 		Memory memory(MemoryInit{rom.bytes, slots}, PSX_MACHINE_SPEC.ramBytes);
@@ -1353,7 +1353,7 @@ void changedWideFusionBodyInvalidatesItsCrossPageHead() {
 void writableCodeWatchesBelongToTheirPhysicalSocket() {
 	for (const bool instrumented : {false, true}) {
 		auto image = returnImage();
-		const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 		CartridgeSocketMediaPair media{};
 		for (auto& slot : media) slot = CartridgeCardMedia{std::nullopt, 2u * MAPPED_PAGE_BYTE_SIZE, false};
 		Memory memory(MemoryInit{system.bytes, media}, PSX_MACHINE_SPEC.ramBytes);
@@ -1395,7 +1395,7 @@ void writableCodeWatchesBelongToTheirPhysicalSocket() {
 void cachedInstructionBindingsFollowThePhysicalSelector() {
 	for (const bool instrumented : {false, true}) {
 		auto image = returnImage(OpCode::HALT); image.functions[0].maxStack = 2;
-		const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 		std::array<std::vector<u8>, 2> cards;
 		for (u32 slot = 0; slot < 2; ++slot) {
 			cards[slot].resize(MAPPED_PAGE_BYTE_SIZE);
@@ -1509,7 +1509,7 @@ void successorFetchOrdering() {
 	image.functions[0].maxStack = 3;
 	image.functions.push_back({.firstWord = 1, .wordCount = 1});
 	image.exceptionFunctionIndex = 1;
-	// A partial backing page proves cacheability is not a readable-successor capability.
+	// The configured executable end takes precedence over either installed extent.
 	for (const u32 ramBytes : {PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.ramBytes - 16u}) {
 		for (const auto [op, expected] : {std::pair{OpCode::ADD, 4}, {OpCode::SHL, 6}, {OpCode::SHR, 1}}) {
 			for (const bool wideSuccessor : {false, true}) {
@@ -1517,7 +1517,7 @@ void successorFetchOrdering() {
 					for (const bool warm : {false, true}) {
 						CpuMachine machine(image, ramBytes);
 						auto& cpu = machine.cpu;
-						const u32 faultAddress = RAM_BASE + ramBytes;
+						const u32 faultAddress = machine.memory.ramInstructionEnd();
 						const u32 currentPc = faultAddress - (wideSuccessor ? 2u : 1u) * INSTRUCTION_BYTES;
 						const u32 successorPc = currentPc + INSTRUCTION_BYTES;
 						std::vector<u8> instructions((wideSuccessor ? 2u : 1u) * INSTRUCTION_BYTES);
@@ -1715,8 +1715,8 @@ void imageTextImport() {
 }
 
 void bootAddressWrap() {
-	auto system = test::encodeBlua32TestRom(RomImageDomain::System, returnImage());
-	auto cart = test::encodeBlua32TestRom(RomImageDomain::Cartridge, returnImage());
+	auto system = test::encodeBlua32TestRom(RomImageDomain::System, returnImage(), test::RAM_CODE_FIXTURE_BYTES);
+	auto cart = test::encodeBlua32TestRom(RomImageDomain::Cartridge, returnImage(), test::RAM_CODE_FIXTURE_BYTES);
 	writeLE32(cart.bytes.data() + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, 0xfffffff0u);
 	Memory memory(MemoryInit{system.bytes, test::cartridgeSlots(cart.bytes)}, PSX_MACHINE_SPEC.ramBytes);
 	ExecutionAddressSpace addressSpace(memory);

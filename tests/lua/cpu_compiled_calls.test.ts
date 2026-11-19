@@ -14,7 +14,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_CALL_NON_FUNCTION } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 	test(`compiled cross-page calls: open counts ${open}, RAM record offset ${recordOffset}`, () => {
@@ -34,7 +34,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		const image = linkRawTestSystemBlua32({ text, functions: [
 			{ firstWord: 0, wordCount: 8, maxStack: 8 },
 			{ firstWord: DECODED_PAGE_WORDS, wordCount: 3, numParams: 2, maxStack: 8 },
-		], constants: [integerConstant(3), integerConstant(4)], closureRelocations: [{ wordIndex: 1, functionAddress: record }] });
+		], constants: [integerConstant(3), integerConstant(4)], closureRelocations: [{ wordIndex: 1, functionAddress: record }] }, RAM_CODE_FIXTURE_BYTES);
 		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 		// Supplied fixed arguments already occupy the callee window: no placement surcharge.
 		const callEntryCycles = BASE_CYCLES[OpCode.MOV] + 2 * BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.CALL];
@@ -114,7 +114,7 @@ test('CALL shares supplied argument slots without clearing them', () => {
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 6, maxStack: 8 },
 		{ firstWord: 6, wordCount: 2, numParams: 1, maxStack: 8 },
-	], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+	], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] }, RAM_CODE_FIXTURE_BYTES);
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
@@ -174,7 +174,7 @@ for (const { numParams, maxStack, argCount } of [
 		], closureRelocations: [
 			{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 2) },
 			{ wordIndex: 4, functionAddress: blua32TestFunctionAddress(0, 1) },
-		] });
+		] }, RAM_CODE_FIXTURE_BYTES);
 		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 		// The first guest call retains backing storage before the raw function
 		// record with parameters beyond maxStack is ever entered.
@@ -249,7 +249,7 @@ test('CALL retains varargs below the relocated fixed-parameter window', () => {
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 5, maxStack: 8 },
 		{ firstWord: 5, wordCount: 2, numParams: 1, maxStack: 4, isVararg: true },
-	], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+	], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] }, RAM_CODE_FIXTURE_BYTES);
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
@@ -305,7 +305,7 @@ for (const wide of [false, true]) test(`generated CALL/RET preserve full state a
 	writeInstruction(text, calleeStart + 2, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: calleeStart, maxStack: 8 }, { firstWord: calleeStart, wordCount: 2 }, { firstWord: calleeStart + 2, wordCount: 1 },
-	], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });
+	], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] }, RAM_CODE_FIXTURE_BYTES);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	assert.equal(runCpuParity(js, ref, 10001), RunResult.Yielded);
@@ -344,7 +344,7 @@ for (const editReturn of [false, true]) test(`CALL keeps its bound record when t
 	writeInstruction(text, 7, OpCode.RET, 0, 2, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 6, maxStack: 8 }, { firstWord: 6, wordCount: 2 },
-	], closureRelocations: [{ wordIndex: 1, functionAddress: recordAddress }] });
+	], closureRelocations: [{ wordIndex: 1, functionAddress: recordAddress }] }, RAM_CODE_FIXTURE_BYTES);
 	const states = [];
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const { cpu, memory } = createTestSystemCpu(image, backend);

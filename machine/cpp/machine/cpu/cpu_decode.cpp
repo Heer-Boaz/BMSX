@@ -222,7 +222,7 @@ bool CPU::decodeInstruction(
 		MappedPageBinding binding;
 		m_memory.bindMappedPage(
 			nextPc & ~MAPPED_PAGE_BYTE_MASK,
-			m_executionBusSignals,
+			m_executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH,
 			binding
 		);
 		if (!binding.readBytes) {
@@ -247,7 +247,7 @@ bool CPU::decodeBackedInstruction(
 	u32 pc, MappedBusSignals busSignals
 ) {
 	MappedPageBinding binding;
-	m_memory.bindMappedPage(pc & ~MAPPED_PAGE_BYTE_MASK, busSignals, binding);
+	m_memory.bindMappedPage(pc & ~MAPPED_PAGE_BYTE_MASK, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 	if (!binding.cacheable || !binding.readBytes) return false;
 	const u32 sourceWord = readLE32(binding.readBytes + pageOffset * INSTRUCTION_BYTES);
 	u32 bodyWord = sourceWord;
@@ -255,7 +255,7 @@ bool CPU::decodeBackedInstruction(
 	if (((sourceWord >> 18) & 0x3fu) == static_cast<u32>(OpCode::WIDE)) {
 		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
 			MappedPageBinding bodyBinding;
-			m_memory.bindMappedPage(pc + INSTRUCTION_BYTES, busSignals, bodyBinding);
+			m_memory.bindMappedPage(pc + INSTRUCTION_BYTES, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, bodyBinding);
 			if (!bodyBinding.cacheable || !bodyBinding.readBytes) return false;
 			bodyPage = &decodedPageForAddress(image, bodyBinding);
 			bodyWord = readLE32(bodyBinding.readBytes);

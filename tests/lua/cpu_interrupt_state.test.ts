@@ -60,7 +60,7 @@ import { Machine } from '../../machine/ts/machine/machine';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
-import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -78,7 +78,7 @@ import {
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
-	createTestBlua32PairCpu,
+	RAM_CODE_FIXTURE_BYTES, createTestBlua32PairCpu,
 	createTestSystemCpu,
 	blua32TestFunctionAddress,
 	linkRawTestBlua32Pair,
@@ -136,7 +136,7 @@ function makeHaltTestImages(startupFunctionIndex: number): TestBlua32ImagePair {
 			startupFunctionIndex,
 			irqFunctionIndex: 2,
 			exceptionFunctionIndex: 2,
-		},
+		}, RAM_CODE_FIXTURE_BYTES,
 	);
 }
 
@@ -182,7 +182,7 @@ function makeCompletionLatchTestImage(): TestBlua32Image {
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 2,
 		exceptionFunctionIndex: 2,
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 }
 
 const COMPLETION_LATCH_TEST_IMAGE = makeCompletionLatchTestImage();
@@ -303,7 +303,7 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, 
 			startupFunctionIndex: 0,
 			irqFunctionIndex: 1,
 			exceptionFunctionIndex: 1,
-		},
+		}, RAM_CODE_FIXTURE_BYTES,
 	);
 	const memory = new Memory({ systemRom: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes, images.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
 	const irqController = new IrqController(memory);
@@ -1440,7 +1440,7 @@ test('BLua32 branches fetch adjacent mapped instructions without function-range 
 			],
 			irqFunctionIndex: 1,
 			exceptionFunctionIndex: 1,
-		});
+		}, RAM_CODE_FIXTURE_BYTES);
 		const { cpu } = createTestSystemCpu(image);
 
 		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
@@ -1456,7 +1456,7 @@ test('unmapped CLOSURE records hard-halt without entering host error handling', 
 		text: code,
 		functions: [{ firstWord: 0, wordCount: 2 }],
 		closureRelocations: [{ wordIndex: 1, functionAddress: 0x06000000 }],
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	const { cpu } = createTestSystemCpu(image);
 
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
@@ -1642,7 +1642,7 @@ test('CPU mapped bus errors enter the system exception vector without committing
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 1,
 		exceptionFunctionIndex: 1,
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	const { memory, cpu } = createTestBlua32PairCpu(images);
 	const systemExceptionAddress = images.systemSymbols.functionAddresses[1];
 
@@ -1663,7 +1663,7 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	const systemBurstImage = linkRawTestSystemBlua32({
 		...systemSource,
 		startupFunctionIndex: 2,
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	memory.installSystemRom(systemBurstImage.romBytes);
 	cpu.reset();
 	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK] + 5 * BASE_CYCLES[OpCode.K1]
@@ -1694,7 +1694,7 @@ test('instruction fetch faults enter the system exception vector at the physical
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 1,
 		exceptionFunctionIndex: 1,
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	const entryFunctionAddress = image.symbols.functionAddresses[0];
 	const exceptionFunctionAddress = image.symbols.functionAddresses[1];
 
@@ -1729,7 +1729,7 @@ test('instruction fetch faults enter the system exception vector at the physical
 
 	{
 		const { cpu, memory } = createTestSystemCpu(image);
-		const instructionPc = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 2 * INSTRUCTION_BYTES;
+		const instructionPc = memory.ramInstructionEnd() - 2 * INSTRUCTION_BYTES;
 		const prefixPc = instructionPc + INSTRUCTION_BYTES;
 		const bodyPc = prefixPc + INSTRUCTION_BYTES;
 		const instructions = new Uint8Array(2 * INSTRUCTION_BYTES);
@@ -1772,7 +1772,7 @@ test('CPU mapped memory accepts byte addresses and four-byte-aligned f64 address
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 1,
 		exceptionFunctionIndex: 1,
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	const { memory, cpu } = createTestSystemCpu(image);
 	memory.writeMappedU8(byteAddress, 0x5a);
 	memory.writeMappedF64LE(f64Address, Math.PI);
@@ -1816,7 +1816,7 @@ test('CPU address errors vector before any mapped-memory bus cycle or destinatio
 			startupFunctionIndex: 1,
 			irqFunctionIndex: 0,
 			exceptionFunctionIndex: 0,
-		});
+		}, RAM_CODE_FIXTURE_BYTES);
 		const { memory, cpu } = createTestSystemCpu(image);
 		memory.writeMappedU32LE(alignedAddress, 0x11223344);
 		memory.writeMappedU32LE(alignedAddress + 4, 0x55667788);
@@ -1908,7 +1908,7 @@ test('an atomic CPU instruction completes across the GPUREAD deadline before ser
 		text: code,
 		functions: [{ firstWord: 0, wordCount: instructionCount + 1 }],
 		functionIds: ['gpu_read_deadline'],
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	machine.memory.installSystemRom(image.romBytes);
 	cpu.reset();
 	machine.gxGpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);

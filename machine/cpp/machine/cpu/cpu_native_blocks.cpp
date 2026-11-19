@@ -80,7 +80,7 @@ void CPU::prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage
 #endif
 	const u32 pagePc = pc & ~MAPPED_PAGE_BYTE_MASK;
 	MappedPageBinding binding;
-	m_memory.bindMappedPage(pagePc, busSignals, binding);
+	m_memory.bindMappedPage(pagePc, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 	NativeCompilationSource source(image, page, binding, pagePc, busSignals,
 		m_memory.cartridgeController().selectedSlot(busSignals));
 	source.enqueue(pc, true, nullptr, true);

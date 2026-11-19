@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { CART_ROM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
@@ -56,4 +60,47 @@ test('EXEC refuses a cartridge whose statics overlap a live heap page before wri
 	assert.equal(cpu.captureRuntimeState().hardHalted, true);
 	assert.equal(heap.floorAddress(), pageRound(systemEnd));
 	assert.equal(memory.ramView.getUint32(marker & ~3, true), 0x5eed5eed, 'cartridge BSS stays untouched');
+});
+
+test('warm RAM code is retired when the floor shrinks and WIDE obeys both fetches', () => {
+	const { cpu, memory, executionAddressSpace } = bootPair();
+	const pc = cpu.heapAllocator.floorAddress();
+	const system = executionAddressSpace.resolveSystemDomain();
+	const select = (address: number) => cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.startupFunctionAddress, address);
+	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.K1, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.JMP, 0, 63, 62, 255);
+	memory.writeBytes(pc, code);
+	assert.equal(cpu.heapAllocator.setFloor(pc + HEAP_PAGE_SIZE), true);
+	select(pc);
+	const loop = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
+	cpu.runUntilDepth(0, 100 * loop);
+	assert.equal(cpu.readFrameRegister(0, 0), valueInteger(1));
+	const page = cpu.rootThread.currentFrame!.decodedPage!;
+	assert.ok(page.compiledBlocks?.entries[0], 'a warm executable page is translated');
+	const ram = memory.captureSaveState(), saved = cpu.captureRuntimeState();
+	assert.equal(cpu.heapAllocator.setFloor(pc), true);
+	assert.ok(!page.compiledBlocks?.entries[0], 'the floor change retires coded entries');
+	assert.equal(memory.readMappedU32LE(pc), readInstructionWord(code, 0));
+	cpu.runUntilDepth(0, 1);
+	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR);
+	assert.equal(cpu.readEpcWord(), pc);
+
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(saved);
+	writeInstruction(code, 0, OpCode.K0, 0, 0, 0);
+	memory.writeBytes(pc, code);
+	cpu.runUntilDepth(0, loop);
+	assert.equal(cpu.readFrameRegister(0, 0), valueInteger(0));
+
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(saved);
+	assert.equal(cpu.heapAllocator.setFloor(pc), true);
+	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.K1, 0, 0, 0);
+	memory.writeBytes(pc - INSTRUCTION_BYTES, code);
+	select(pc - INSTRUCTION_BYTES);
+	cpu.runUntilDepth(0, 1);
+	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR);
+	assert.equal(cpu.readEpcWord(), pc - INSTRUCTION_BYTES);
 });

@@ -89,8 +89,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			}
 			assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), savedSeed); assert.equal(cpu.luaHeap.usedBytes(), heap);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
-			const before = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 5); const after = cpu.captureRuntimeState(), debt = cpu.instructionBudgetRemaining;
-			cpu.restoreRuntimeState(before); cpu.runUntilDepth(0, 5); frame = cpu.rootThread.currentFrame!;
+			const memory = cpu.memory.captureSaveState(), before = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 5); const after = cpu.captureRuntimeState(), debt = cpu.instructionBudgetRemaining;
+			cpu.memory.restoreSaveState(memory); cpu.restoreRuntimeState(before); cpu.runUntilDepth(0, 5); frame = cpu.rootThread.currentFrame!;
 			assert.equal(cpu.instructionBudgetRemaining, debt); assert.ok(isDeepStrictEqual(cpu.captureRuntimeState(), after));
 			// String LEN must ignore any previous Table probe output.
 			frame.registers.set(0, valueString(cpu.stringPool.intern(textToByteString('é😀\0'))));

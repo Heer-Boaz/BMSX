@@ -56,6 +56,8 @@ import { buildBlua32Tail } from '../../toolchain/ts/rompack/blua32_tail';
 import { cartridgeSlots } from './cartridge';
 
 const TEST_EXECUTABLE_OFFSET = 0x100;
+// Reserve BSS in fixtures that execute code generated in main RAM.
+export const RAM_CODE_FIXTURE_BYTES = 0x10000;
 const LINK_TARGET_RAM_BYTES = PSX_MACHINE_SPEC.ramBytes;
 
 export function blua32TestFunctionAddress(romBaseAddress: number, functionIndex: number): number {
@@ -193,14 +195,17 @@ function testImage(linked: LinkedSystemBlua32Image, vectors: TestBlua32Vectors):
 function createRawTestBlua32Object(
 	source: TestBlua32Source,
 	domain: 'system',
+	bssByteCount?: number,
 ): RawTestSystemBlua32Object;
 function createRawTestBlua32Object(
 	source: TestBlua32Source,
 	domain: 'cart',
+	bssByteCount?: number,
 ): RawTestCartBlua32Object;
 function createRawTestBlua32Object(
 	source: TestBlua32Source,
 	domain: 'system' | 'cart',
+	bssByteCount = 0,
 ): RawTestSystemBlua32Object | RawTestCartBlua32Object {
 	const functions = new Array<Proto>(source.functions.length);
 	for (let index = 0; index < source.functions.length; index += 1) {
@@ -273,7 +278,7 @@ function createRawTestBlua32Object(
 				symbols: [],
 			},
 			bss: {
-				byteCount: 0,
+				byteCount: bssByteCount,
 				symbols: [],
 			},
 		},
@@ -347,8 +352,8 @@ function applyRawTestClosureRelocations(
 	}
 }
 
-export function linkRawTestSystemBlua32(source: TestBlua32Source): TestBlua32Image {
-	const raw = createRawTestBlua32Object(source, 'system');
+export function linkRawTestSystemBlua32(source: TestBlua32Source, bssByteCount = 0): TestBlua32Image {
+	const raw = createRawTestBlua32Object(source, 'system', bssByteCount);
 	const linked = linkSystemBlua32Image(
 		raw.object,
 		raw.metadata,
@@ -363,8 +368,9 @@ export function linkRawTestSystemBlua32(source: TestBlua32Source): TestBlua32Ima
 export function linkRawTestBlua32Pair(
 	systemSource: TestBlua32Source,
 	cartSource: TestBlua32Source,
+	bssByteCount = 0,
 ): TestBlua32ImagePair {
-	const systemRaw = createRawTestBlua32Object(systemSource, 'system');
+	const systemRaw = createRawTestBlua32Object(systemSource, 'system', bssByteCount);
 	const system = linkSystemBlua32Image(
 		systemRaw.object,
 		systemRaw.metadata,
@@ -373,7 +379,7 @@ export function linkRawTestBlua32Pair(
 		[],
 	);
 	applyRawTestClosureRelocations(system.layout.textBytes, systemSource.closureRelocations);
-	const cartRaw = createRawTestBlua32Object(cartSource, 'cart');
+	const cartRaw = createRawTestBlua32Object(cartSource, 'cart', bssByteCount);
 	const cart = linkCartBlua32Image(
 		system.biosImports,
 		cartRaw.object,

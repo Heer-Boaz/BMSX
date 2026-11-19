@@ -22,16 +22,16 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE, IO_GX_GPU_GP0, IO_IRQ_MASK, IRQ_GPU, IO_CART_SELECT } from '../../machine/ts/spec/bmsx/io';
-import { CART_RAM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_RAM_BASE, DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { blua32TestFunctionAddress, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, blua32TestFunctionAddress, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 
 function returnImage(op = OpCode.RET, a = 0, b = 2, c = 0) {
 	const text = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(text, 0, op, a, b, c);
-	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }], constants: [integerConstant(11), integerConstant(29)] });
+	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }], constants: [integerConstant(11), integerConstant(29)] }, RAM_CODE_FIXTURE_BYTES);
 }
 
 test('string.byte uses signed word positions in a builtin CALL', () => {
@@ -53,7 +53,7 @@ test('string.byte uses signed word positions in a builtin CALL', () => {
 			const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({
 				text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }, { firstWord: 1, wordCount: 1 }],
 				exceptionFunctionIndex: 1,
-			}), backend);
+			}, RAM_CODE_FIXTURE_BYTES), backend);
 			const registers = cpu.rootThread.frameAtDepth(0).registers;
 			registers.setBuiltinFunction(0, BuiltinFunctionId.StringByte);
 			registers.setString(1, cpu.stringPool.intern(textToByteString(source)));
@@ -97,7 +97,7 @@ test('BOR accepts exact signed Integers and never truncates a Float as a word op
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.BOR, 0, 1, 2);
 	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] }, RAM_CODE_FIXTURE_BYTES);
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		for (const [input, expected] of [
 			[valueInteger(0x7fffffff), 0x7fffffff], [valueFloat(-0), 0], [valueFloat(-(2 ** 31)), -(2 ** 31)],
@@ -136,7 +136,7 @@ test('WIDE signed immediates retain their complete range independently of instru
 		writeInstruction(text, 0, OpCode.WIDE, 0, raw >>> BASE_BX_BITS, 0);
 		writeInstruction(text, 1, OpCode.KSMI, 0, (raw >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND, raw & MAX_LOW_OPERAND, (raw >>> MAX_BX_BITS) & 0xff);
 		writeInstruction(text, 2, OpCode.RET, 0, 2, 0);
-		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3 }] }));
+		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3 }] }, RAM_CODE_FIXTURE_BYTES));
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const pc = cpu.readFramePc(0);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
@@ -163,7 +163,7 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 				functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 },
 					{ firstWord: 4, wordCount: 1, maxStack: 5 + Math.max(produced, 1) }],
 				closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }],
-			}));
+			}, RAM_CODE_FIXTURE_BYTES));
 			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 			const table = cpu.createTable(0, 0);
 			cpu.rootThread.frameAtDepth(0).registers.setInteger(0, 91);
@@ -194,7 +194,7 @@ test('builtin-owned result ranges survive destination growth with exact open/fix
 		writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
 		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
 			functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 }],
-		}));
+		}, RAM_CODE_FIXTURE_BYTES));
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const table = cpu.createTable(1, 0);
 		const result = valueString(cpu.stringPool.intern('result'));
@@ -224,7 +224,7 @@ test('an observation edge waits for the instruction; MMIO instruction fetch faul
 		const image = linkRawTestSystemBlua32({ text,
 			functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }, { firstWord: 2, wordCount: 2 }],
 			irqFunctionIndex: 1, exceptionFunctionIndex: 1,
-		});
+		}, RAM_CODE_FIXTURE_BYTES);
 		const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 		const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 		cpu.reset();
@@ -267,7 +267,7 @@ test('cached fetch crosses WIDE pages and observes code writes between guest gra
 		const text = new Uint8Array(INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text,
-			functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }] });
+			functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }] }, RAM_CODE_FIXTURE_BYTES);
 		const { cpu, memory } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const code = new Uint8Array(5 * INSTRUCTION_BYTES);
@@ -304,7 +304,7 @@ test('rewriting a cached instruction replaces its cycle charge in normal, observ
 		const text = new Uint8Array(INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text,
-			functions: [{ firstWord: 0, wordCount: 1, maxStack: 2 }] });
+			functions: [{ firstWord: 0, wordCount: 1, maxStack: 2 }] }, RAM_CODE_FIXTURE_BYTES);
 		const { cpu, memory } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const pc = DYNAMIC_RAM_BASE + 0x4000;
@@ -335,7 +335,7 @@ test('partial code writes retain unrelated decoded starts and the page watch', (
 	for (const instrumented of [false, true]) {
 		const text = new Uint8Array(INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.RET, 0, 2, 0);
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 2 }] });
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 2 }] }, RAM_CODE_FIXTURE_BYTES);
 		const { cpu, memory } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const code = new Uint8Array(10 * INSTRUCTION_BYTES);
@@ -370,7 +370,7 @@ test('the fourth word of a cross-page WIDE fusion invalidates its head', () => {
 	for (const instrumented of [false, true]) {
 		const text = new Uint8Array(INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.RET, 0, 2, 0);
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 5 }] });
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 5 }] }, RAM_CODE_FIXTURE_BYTES);
 		const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const code = new Uint8Array(5 * INSTRUCTION_BYTES);
@@ -405,7 +405,7 @@ test('writable code watches belong to the physical cartridge socket', () => {
 		const text = new Uint8Array(INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.RET, 0, 2, 0);
 		const source = { text, functions: [{ firstWord: 0, wordCount: 1 }] };
-		const system = linkRawTestSystemBlua32(source);
+		const system = linkRawTestSystemBlua32(source, RAM_CODE_FIXTURE_BYTES);
 		const memory = new Memory({ systemRom: system.romBytes, cartridgeSlots: [
 			{ rom: null, ramByteCount: 2 * MAPPED_PAGE_BYTE_SIZE, mailboxPresent: false },
 			{ rom: null, ramByteCount: 2 * MAPPED_PAGE_BYTE_SIZE, mailboxPresent: false },
@@ -461,7 +461,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		const image = linkRawTestSystemBlua32({ text,
 			functions: [{ firstWord: 0, wordCount: 5, maxStack: 4 },
 				{ firstWord: 5, wordCount: 2 }, { firstWord: 7, wordCount: 2 }],
-			closureRelocations: [{ wordIndex: 1, functionAddress: edgeKind === 1 ? mappedRecord : blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }], irqFunctionIndex: 2, exceptionFunctionIndex: 2 });
+			closureRelocations: [{ wordIndex: 1, functionAddress: edgeKind === 1 ? mappedRecord : blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }], irqFunctionIndex: 2, exceptionFunctionIndex: 2 }, RAM_CODE_FIXTURE_BYTES);
 		const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 		const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 		cpu.reset();
@@ -527,8 +527,8 @@ test('numeric lookahead cannot take a successor fetch fault before current effec
 		text,
 		functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }, { firstWord: 1, wordCount: 1 }],
 		exceptionFunctionIndex: 1,
-	});
-	// Also exercise a partial backing page: cacheability does not guarantee a readable successor.
+	}, RAM_CODE_FIXTURE_BYTES);
+	// The configured executable end takes precedence over either installed extent.
 	for (const ramBytes of [PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.ramBytes - 16]) {
 		for (const [op, expected] of [[OpCode.ADD, 4], [OpCode.SHL, 6], [OpCode.SHR, 1]]) {
 			for (const wideSuccessor of [false, true]) {
@@ -538,7 +538,7 @@ test('numeric lookahead cannot take a successor fetch fault before current effec
 						const irq = new IrqController(memory);
 						const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 						cpu.reset();
-						const faultAddress = RAM_BASE + ramBytes;
+						const faultAddress = memory.ramInstructionEnd();
 						const currentPc = faultAddress - (wideSuccessor ? 2 : 1) * INSTRUCTION_BYTES;
 						const successorPc = currentPc + INSTRUCTION_BYTES;
 						const instructions = new Uint8Array((wideSuccessor ? 2 : 1) * INSTRUCTION_BYTES);
@@ -600,7 +600,7 @@ test('all scalar memory instructions decode reserved kinds into an architectural
 				const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 				writeInstruction(text, 0, op, 0, 0, kind);
 				writeInstruction(text, 1, OpCode.RET, 0, 0, 0);
-				const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }, { firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 });
+				const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }, { firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
 				const { cpu, memory } = createTestSystemCpu(image);
 				const pc = cpu.readFramePc(0);
 				let observations = 0;
@@ -634,7 +634,7 @@ test('zero-maxStack calls produce true zero results and only requested padding i
 		text,
 		functions: [{ firstWord: 0, wordCount: 7 }, { firstWord: 7, wordCount: 2 }, { firstWord: 9, wordCount: 1, maxStack: 0 }],
 		closureRelocations: [{ wordIndex: 1, functionAddress: 0x180 }, { wordIndex: 4, functionAddress: 0x1a0 }],
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	const { cpu } = createTestSystemCpu(image);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const results: Value[] = [];
@@ -716,7 +716,7 @@ test('image String records preserve BOM bytes, NUL, and all validated-length byt
 	for (const sequence of [[0xef, 0xbb, 0xbf, 0x41], [0x00], [0xc0, 0x80], [0xed, 0xa0, 0x80],
 		[0xf4, 0x90, 0x80, 0x80], [0xe2, 0x82], [0x80], [0xe2, 0x28, 0xa1]]) {
 		const bytes = String.fromCharCode(...sequence);
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2 }], constants: [bytes] });
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2 }], constants: [bytes] }, RAM_CODE_FIXTURE_BYTES);
 		const { cpu } = createTestSystemCpu(image);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 		const results: Value[] = [];
@@ -730,7 +730,7 @@ test('cartridge image address addition wraps at the boot-address boundary', () =
 	const text = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.RET, 0, 0, 0);
 	const source = { text, functions: [{ firstWord: 0, wordCount: 1 }] };
-	const pair = linkRawTestBlua32Pair(source, source);
+	const pair = linkRawTestBlua32Pair(source, source, RAM_CODE_FIXTURE_BYTES);
 	writeLE32(pair.cartRomBytes, BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, 0xfffffff0);
 	const { executionAddressSpace } = createTestBlua32PairCpu(pair);
 	assert.equal(executionAddressSpace.resolveDomain(0)!.imageAddress, 0x0ffffff0);

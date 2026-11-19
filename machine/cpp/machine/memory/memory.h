@@ -21,6 +21,7 @@ enum class MemoryRegionKind { Ram, SystemRom, Cartridge, Io, Other };
 
 struct MemorySaveState {
 	std::vector<u8> ram;
+	u32 ramInstructionEnd = 0;
 	uint32_t busFaultCode = BUS_FAULT_NONE;
 	uint32_t busFaultAddr = 0;
 	uint32_t busFaultAccess = 0;
@@ -87,6 +88,8 @@ public:
 	void installSystemRom(std::span<const u8> rom);
 	void attachMappedPageInvalidator(MappedPageInvalidator& invalidator);
 	void detachMappedPageInvalidator();
+	u32 ramInstructionEnd() const { return m_ramInstructionEnd; }
+	void setRamInstructionEnd(u32 end);
 	void clearMappedPageWriteWatches();
 	void bindMappedPage(uint32_t addr, MappedBusSignals busSignals, MappedPageBinding& out);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
@@ -170,6 +173,7 @@ private:
 	Span<const u8> m_systemRom;
 	CartridgeController m_cartridgeController;
 	std::vector<u8> m_ram;
+	u32 m_ramInstructionEnd;
 	MappedPageWriteWatches m_ramPageWriteWatches;
 	MappedPageInvalidator* m_mappedPageInvalidator = nullptr;
 	mutable std::vector<u32> m_ioSlots;

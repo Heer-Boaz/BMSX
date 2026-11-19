@@ -15,7 +15,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, IO_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function memoryLoop(op: OpCode, kind: MemoryAccessKind, displacement = 0) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -27,7 +27,7 @@ function memoryLoop(op: OpCode, kind: MemoryAccessKind, displacement = 0) {
 	writeInstruction(text, 5, OpCode.HALT, 0, 0, 0);
 	return linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 5, maxStack: 8 }, { firstWord: 5, wordCount: 1 },
-	], exceptionFunctionIndex: 1 });
+	], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
 }
 
 const widths = [4, 1, 2, 4, 4, 8];
@@ -76,7 +76,7 @@ test('cached values reach field, memory and fault owners without stale tags or n
 	writeInstruction(text, 13, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 13, maxStack: 14 }, { firstWord: 13, wordCount: 1 },
-	], constants: ['stable', 'result'], exceptionFunctionIndex: 1 });
+	], constants: ['stable', 'result'], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	const address = DYNAMIC_RAM_BASE + 0x1000;
 	const loopCycles = [OpCode.MOV, OpCode.GETFIELD, OpCode.K0, OpCode.DIV, OpCode.SETFIELD, OpCode.STORE_MEM,
@@ -152,7 +152,7 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 		writeInstruction(text, 1, OpCode.MOV, 2, 1, 0);
 		writeInstruction(text, 2, OpCode.MOV, 1, 3, 0);
 		writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-		const loads = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }] });
+		const loads = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }] }, RAM_CODE_FIXTURE_BYTES);
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const machine = createTestSystemCpu(loads, backend);
 			machine.cpu.rootThread.frameAtDepth(0).registers.setInteger(1, RAM_BASE + PSX_MACHINE_SPEC.ramBytes - widths[format]);
@@ -305,7 +305,7 @@ test('a continuously rewritten instruction stays outside stable compiled prefixe
 	writeInstruction(text, 3, OpCode.ADD, 7, 6, 2);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	writeInstruction(text, 8, OpCode.K0, 6, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] });
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] }, RAM_CODE_FIXTURE_BYTES);
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
@@ -418,7 +418,7 @@ test('word producers, overwrites and externally entered continuations preserve f
 	}
 	for (const constant of [integerConstant(-1), { kind: 'float', word: 0x40400000 } as const]) {
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: code.length, maxStack: 16 }],
-			constants: [integerConstant(-2147483648), integerConstant(-1), integerConstant(0), integerConstant(7), constant] });
+			constants: [integerConstant(-2147483648), integerConstant(-1), integerConstant(0), integerConstant(7), constant] }, RAM_CODE_FIXTURE_BYTES);
 		const generated = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 		const reference = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 		const machines = [generated, reference];
@@ -505,7 +505,7 @@ test('external call entry and active-PC redirection flush an unaccepted physical
 	const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(0x87654321), integerConstant(port)], functions: [
 		{ firstWord: 0, wordCount: 2, maxStack: 2 }, { firstWord: 2, wordCount: 2, maxStack: 1 },
 		{ firstWord: 4, wordCount: 4, maxStack: 2 },
-	] });
+	] }, RAM_CODE_FIXTURE_BYTES);
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		for (const takeover of ['call-blocked', 'call-ready', 'redirect', 'abort-call']) {
 			const { cpu, memory } = createTestSystemCpu(image, backend);

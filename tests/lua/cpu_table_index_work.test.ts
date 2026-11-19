@@ -76,9 +76,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			}
 			assert.equal(cpu.luaHeap.usedBytes(), heap, 'warm/cold hints and repeated reads allocate no guest storage');
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
-			const saved = cpu.captureRuntimeState();
+			const memory = cpu.memory.captureSaveState(), saved = cpu.captureRuntimeState();
 			cpu.runUntilDepth(0, 3); const debt = cpu.instructionBudgetRemaining, after = cpu.captureRuntimeState();
-			cpu.restoreRuntimeState(saved); cpu.runUntilDepth(0, 3);
+			cpu.memory.restoreSaveState(memory); cpu.restoreRuntimeState(saved); cpu.runUntilDepth(0, 3);
 			frame = cpu.rootThread.currentFrame!;
 			assert.equal(cpu.instructionBudgetRemaining, debt);
 			assert.ok(isDeepStrictEqual(cpu.captureRuntimeState(), after), 'restore reproduces depth/work without derived slot-cache state');

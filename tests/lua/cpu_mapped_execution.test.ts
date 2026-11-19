@@ -28,7 +28,7 @@ import { BASE_CYCLES, OpCode, encodeFixedValueCount } from '../../machine/ts/spe
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
 
 const RAM_FUNCTION_ADDRESS = DYNAMIC_RAM_BASE + 0x1000;
@@ -44,7 +44,7 @@ test('compact and padded ROM calls use admitted record spans with identical cycl
 	writeInstruction(text, 5, OpCode.RET, 0, 2, 0);
 	const image = linkRawTestSystemBlua32({ text,
 		functions: [{ firstWord: 0, wordCount: 4, maxStack: 2 }, { firstWord: 4, wordCount: 2 }],
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	const sourceRecord = image.symbols.functionAddresses[1];
 	// The second image pads this same final record page; the compact one ends
 	// at the record, independently of how earlier image sections were laid out.
@@ -89,7 +89,7 @@ test('WIDE and sequential fetch cross function-record metadata boundaries', () =
 		],
 		irqFunctionIndex: 1,
 		exceptionFunctionIndex: 1,
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	const { cpu } = createTestSystemCpu(image);
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
@@ -141,7 +141,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		irqFunctionIndex: 2,
 		exceptionFunctionIndex: 2,
 		closureRelocations: [{ wordIndex: 1, functionAddress: RAM_FUNCTION_ADDRESS }],
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	const { cpu, memory } = createTestSystemCpu(image, backend);
 	const romFunctionOperand = image.symbols.functionAddresses[1] >>> 4;
 	const ramCode = new Uint8Array(4 * INSTRUCTION_BYTES);
@@ -200,7 +200,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	writeInstruction(systemCode, 3, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text: systemCode, functions: [
 		{ firstWord: 0, wordCount: 3, maxStack: 4 }, { firstWord: 3, wordCount: 1 },
-	], exceptionFunctionIndex: 1 });
+	], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
 	const { cpu, memory } = createTestSystemCpu(image, backend);
 	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.K1, 0, 0, 0);

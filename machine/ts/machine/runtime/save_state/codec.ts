@@ -42,7 +42,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x4d534d42; // BMSM
+const SAVE_STATE_SIGNATURE = 0x4e534d42; // BMSN
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -167,6 +167,7 @@ function readCartridgeControllerState(reader: BinaryReader): CartridgeController
 
 function writeMemorySaveState(writer: BinarySink, state: MemorySaveState): void {
 	writer.bytes(state.ram);
+	writer.u32(state.ramInstructionEnd);
 	writer.u32(state.busFaultCode);
 	writer.u32(state.busFaultAddr);
 	writer.u32(state.busFaultAccess);
@@ -175,6 +176,7 @@ function writeMemorySaveState(writer: BinarySink, state: MemorySaveState): void 
 function readMemorySaveState(reader: BinaryReader, ramByteCount: number): MemorySaveState {
 	return {
 		ram: reader.bytes(ramByteCount),
+		ramInstructionEnd: reader.u32(),
 		busFaultCode: reader.u32(),
 		busFaultAddr: reader.u32(),
 		busFaultAccess: reader.u32(),

@@ -57,7 +57,7 @@ auto encodeManifest(const CartManifest& source) -> std::vector<u8> {
 auto encodeImage(
 	RomImageDomain domain,
 	const Blua32TestImage& source,
-	std::vector<u32>& functionAddresses
+	std::vector<u32>& functionAddresses, u32 bssByteCount
 ) -> std::vector<u8> {
 	const u32 romBase = domain == RomImageDomain::System ? SYSTEM_ROM_BASE : CART_ROM_BASE;
 	const u32 imageAddress = romBase + BLUA32_TEST_IMAGE_OFFSET;
@@ -193,9 +193,9 @@ auto encodeImage(
 	);
 	writeLE32(
 		bytes.data() + BLUA32_IMAGE_BSS_ADDRESS_OFFSET,
-		RAM_BASE + MIN_RAM_SIZE
+		DYNAMIC_RAM_BASE
 	);
-	writeLE32(bytes.data() + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, 0u);
+	writeLE32(bytes.data() + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, bssByteCount);
 	writeLE32(bytes.data() + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET, textAddress);
 	writeLE32(
 		bytes.data() + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
@@ -378,22 +378,22 @@ auto encodeRom(
 
 auto encodeBlua32TestRom(
 	RomImageDomain domain,
-	const Blua32TestImage& image
+	const Blua32TestImage& image, u32 bssByteCount
 ) -> Blua32TestRom {
 	CartManifest manifest;
 	if (domain == RomImageDomain::Cartridge) {
 		manifest.hardware.emplace_back(CartridgeRomDeviceConfig{});
 	}
-	return encodeBlua32TestRom(domain, image, manifest);
+	return encodeBlua32TestRom(domain, image, manifest, bssByteCount);
 }
 
 auto encodeBlua32TestRom(
 	RomImageDomain domain,
 	const Blua32TestImage& image,
-	const CartManifest& manifest
+	const CartManifest& manifest, u32 bssByteCount
 ) -> Blua32TestRom {
 	Blua32TestRom rom;
-	const std::vector<u8> executable = encodeImage(domain, image, rom.functionAddresses);
+	const std::vector<u8> executable = encodeImage(domain, image, rom.functionAddresses, bssByteCount);
 	rom.textAddress = readLE32(executable.data() + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET);
 	rom.boot.imageOffset = BLUA32_TEST_IMAGE_OFFSET;
 	rom.boot.imageByteCount = static_cast<u32>(executable.size());

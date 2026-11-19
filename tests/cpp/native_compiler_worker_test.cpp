@@ -44,7 +44,7 @@ void copiedSourceAndDeferredPublication() {
 			NativeBlockSource{std::span(instructions.data(), 1), nullptr, true},
 			NativeBlockSource{std::span(instructions.data() + 1, 2)},
 		};
-		worker.submit(sources, nullptr, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
+		worker.submit(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
 		decoded.fill({}); // No live decoded-page references may escape capture.
 		instructions.fill({});
 		worker.wait();
@@ -54,9 +54,9 @@ void copiedSourceAndDeferredPublication() {
 		blocks.front()->region->publish(bytes);
 		require(bytes == blocks.front()->region->codeBytes && blocks[1]->region == blocks[0]->region,
 			"one region is accounted once when the owner publishes all its entries");
-		std::array registers{valueNumber(7), valueNil(), valueNil()};
-		NativeBlockRunState state{.registers = registers.data(), .remainingCycles = 100};
-		require(blocks.front()->run(state)->nextPc == 0x1800u && registers[2] == valueNumber(iteration + 7),
+		ValueSlots registers(3); registers.set(0, valueInteger(7));
+		NativeBlockRunState state{.registers = registers.view(), .remainingCycles = 100};
+		require(blocks.front()->run(state)->nextPc == 0x1800u && registers.get(2) == valueInteger(iteration + 7),
 			"the worker compiles captured instructions and the original internal edge");
 		blocks.clear();
 		require(bytes == 0, "published code leaves its owner accounting on retirement");
@@ -76,7 +76,7 @@ void unpublishedCodeCanBeDiscarded() {
 	const std::array sources{NativeBlockSource{instructions}};
 	for (int iteration = 0; iteration < 32; ++iteration) {
 		NativeCompilerWorker worker;
-		worker.submit(sources, nullptr, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
+		worker.submit(sources, {}, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
 		if ((iteration & 1) == 0) {
 			worker.wait();
 			worker.take().clear();
@@ -92,7 +92,7 @@ struct CpuMachine {
 	ExecutionAddressSpace addresses;
 	CPU cpu;
 	CpuMachine(const test::Blua32TestImage& image, bool reference)
-		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image)),
+		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES)),
 		  memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		  irq(memory), addresses(memory), cpu(memory, irq, addresses) {
 		cpu.reset();
@@ -116,7 +116,7 @@ void cpuInvalidationAndLifecycle() {
 			for (size_t i = 0; i < image.text.size(); ++i) machine->memory.writeMappedU8(ramPc + static_cast<u32>(i), image.text[i]);
 			auto* frame = machine->cpu.activeThread()->currentFrame;
 			frame->writeControl(bmsx::FrameField::Pc, ramPc);
-			frame->registers[1] = valueNumber(0);
+			frame->registers.set(1, valueInteger(0));
 		}
 		for (int step = 0; generated.cpu.readNativeCompilationProfile().prepareRequests == 0; ++step) {
 			require(step < NATIVE_BLOCK_COMPILATION_THRESHOLD * 8, "a warmed RAM loop submits a bounded compilation request");
@@ -140,13 +140,13 @@ void cpuInvalidationAndLifecycle() {
 				InstructionObserverBinding observer;
 				observer.points[0].insert(ramPc + INSTRUCTION_BYTES);
 				observer.context = &observations[index++];
-				observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<u32*>(context); };
+				observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) { ++*static_cast<u32*>(context); };
 				machine->cpu.setInstructionObserver(std::move(observer));
 			}
 		} else {
 			for (auto* machine : {&generated, &reference}) {
 				machine->cpu.reset();
-				machine->cpu.activeThread()->currentFrame->registers[1] = valueNumber(0);
+				machine->cpu.activeThread()->currentFrame->registers.set(1, valueInteger(0));
 			}
 		}
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
@@ -163,7 +163,7 @@ void cpuInvalidationAndLifecycle() {
 		}
 		if (mutation == 2) require(observations[0] > 0 && observations[0] == observations[1],
 			"an observer inserted during compilation observes every executed instruction after publication");
-		if (mutation == 0) require(generated.cpu.activeThread()->currentFrame->registers[0] == valueNumber(7),
+		if (mutation == 0) require(generated.cpu.activeThread()->currentFrame->registers.get(0) == valueInteger(7),
 			"an invalidated pending region never reinstalls pre-write instructions");
 	}
 }
@@ -178,13 +178,13 @@ void imageReplacementRetiresBorrowedConstants() {
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::KTRUE), 1, 0, 0);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 2}};
-	image.constants = {0.0};
+	image.constants = {0};
 	auto changed = image;
 	changed.constants = {std::string("replacement")};
-	const auto replacement = test::encodeBlua32TestRom(RomImageDomain::System, changed);
+	const auto replacement = test::encodeBlua32TestRom(RomImageDomain::System, changed, test::RAM_CODE_FIXTURE_BYTES);
 	CpuMachine generated(image, false), reference(image, true);
 	for (auto* machine : {&generated, &reference})
-		machine->cpu.activeThread()->currentFrame->registers[0] = valueString(machine->cpu.stringPool().intern("replacement"));
+		machine->cpu.activeThread()->currentFrame->registers.set(0, valueString(machine->cpu.stringPool().intern("replacement")));
 	for (int step = 0; generated.cpu.readNativeCompilationProfile().prepareRequests == 0; ++step) {
 		require(step < NATIVE_BLOCK_COMPILATION_THRESHOLD * 8, "the old constant pool is captured by a pending compilation");
 		test::runCpuParity(generated.cpu, reference.cpu, 1);
@@ -208,7 +208,7 @@ void imageReplacementRetiresBorrowedConstants() {
 		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && a.lastPc == b.lastPc,
 			"replacement constant type is specialized only against the new image");
 	}
-	require(generated.cpu.activeThread()->currentFrame->registers[1] == valueBool(true),
+	require(generated.cpu.activeThread()->currentFrame->registers.get(1) == valueBool(true),
 		"new string constant is not the retired numeric constant at the same index");
 }
 
@@ -224,7 +224,7 @@ void invalidatedPendingMergeDoesNotRetireDeadOwners() {
 	for (auto* machine : {&generated, &reference}) {
 		machine->memory.writeBytes(ramPc, image.text.data(), image.text.size());
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], ramPc);
-		machine->cpu.activeThread()->currentFrame->registers[1] = valueNumber(0);
+		machine->cpu.activeThread()->currentFrame->registers.set(1, valueInteger(0));
 	}
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
 	for (;;) {
@@ -262,7 +262,7 @@ void invalidatedPendingMergeDoesNotRetireDeadOwners() {
 		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && a.lastPc == b.lastPc,
 			"a pending merge cannot inspect freed region owners or revive their old instructions");
 	}
-	require(generated.cpu.activeThread()->currentFrame->registers[0] == valueNumber(7),
+	require(generated.cpu.activeThread()->currentFrame->registers.get(0) == valueInteger(7),
 		"the replacement merge observes the new physical source words");
 }
 
@@ -280,8 +280,8 @@ void independentInteriorEntryRetiresEveryOverlappingOwner(int mutation) {
 	for (auto* machine : {&generated, &reference}) {
 		machine->memory.writeBytes(pc, image.text.data(), image.text.size());
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
-		machine->cpu.activeThread()->currentFrame->registers[1] = valueNumber(0);
-		machine->cpu.activeThread()->currentFrame->registers[2] = valueNumber(0);
+		machine->cpu.activeThread()->currentFrame->registers.set(1, valueInteger(0));
+		machine->cpu.activeThread()->currentFrame->registers.set(2, valueInteger(0));
 	}
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(4);
 	for (;;) {
@@ -331,7 +331,7 @@ void independentInteriorEntryRetiresEveryOverlappingOwner(int mutation) {
 			InstructionObserverBinding observer;
 			observer.points[0].insert(pc + 2u * INSTRUCTION_BYTES);
 			observer.context = &observations[index];
-			observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<u32*>(context); };
+			observer.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) { ++*static_cast<u32*>(context); };
 			machine->cpu.setInstructionObserver(std::move(observer));
 		}
 		require(!page.nativeBlocks && oldRegion.expired(), "a late observer retires both native owners");

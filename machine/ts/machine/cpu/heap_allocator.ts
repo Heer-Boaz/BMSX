@@ -23,7 +23,6 @@ const MAX_PAGES = (MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE) >>> PAGE_SHIFT;
 
 // Management-area layout, as byte offsets from its base. Every field is a
 // little-endian word in guest RAM; partial-list links store page + 1.
-const FLOOR = 0x000;
 const OCCUPIED = 0x004;
 const SWEEP_PAGE = 0x008;
 const PARTIAL_HEADS = 0x040;
@@ -92,7 +91,7 @@ export class HeapAllocator {
 		this.memory.invalidateRamWrite(this.management, RUNTIME_MANAGEMENT_SIZE);
 		const floorPage = this.pageForFloor(floorAddress);
 		this.setAvailable(floorPage, this.pageLimit, true);
-		this.memory.writeRamRecordWord(this.management + FLOOR, RAM_BASE + (floorPage << PAGE_SHIFT));
+		this.memory.setRamInstructionEnd(RAM_BASE + (floorPage << PAGE_SHIFT));
 	}
 
 	// Raising the floor is refused while an allocated page lies below it.
@@ -109,7 +108,7 @@ export class HeapAllocator {
 		} else if (next < current) {
 			this.setAvailable(next, current, true);
 		}
-		this.memory.writeRamRecordWord(this.management + FLOOR, RAM_BASE + (next << PAGE_SHIFT));
+		this.memory.setRamInstructionEnd(RAM_BASE + (next << PAGE_SHIFT));
 		return true;
 	}
 
@@ -375,8 +374,7 @@ export class HeapAllocator {
 	}
 
 	private floorPage(): number {
-		const page = ((this.memory.readRamRecordWord(this.management + FLOOR) - RAM_BASE) >>> 0) >>> PAGE_SHIFT;
-		return Math.min(Math.max(page, this.minimumFloorPage), this.pageLimit);
+		return (this.memory.ramInstructionEnd() - RAM_BASE) >>> PAGE_SHIFT;
 	}
 
 	private pageForFloor(address: number): number {

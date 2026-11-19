@@ -187,17 +187,20 @@ struct CpuTestMachine {
 	)
 		: systemRom(bmsx::test::encodeBlua32TestRom(
 			bmsx::RomImageDomain::System,
-			systemImage
+			systemImage,
+			bmsx::test::RAM_CODE_FIXTURE_BYTES
 		))
 		, cartRom(bmsx::test::encodeBlua32TestRom(
 			bmsx::RomImageDomain::Cartridge,
-			cartImage
+			cartImage,
+			bmsx::test::RAM_CODE_FIXTURE_BYTES
 		))
 		, auxiliaryCartRom(auxiliaryCartImage.has_value()
 			? std::optional<bmsx::test::Blua32TestRom>{
 				bmsx::test::encodeBlua32TestRom(
 					bmsx::RomImageDomain::Cartridge,
-					*auxiliaryCartImage
+					*auxiliaryCartImage,
+					bmsx::test::RAM_CODE_FIXTURE_BYTES
 				)
 			}
 			: std::nullopt)
@@ -1425,8 +1428,7 @@ void testInstructionFetchExceptionsEnterTheSystemVector() {
 
 	{
 		CpuTestMachine machine(image);
-		const bmsx::u32 instructionPc = bmsx::RAM_BASE + bmsx::PSX_MACHINE_SPEC.ramBytes
-			- 2u * bmsx::INSTRUCTION_BYTES;
+		const bmsx::u32 instructionPc = machine.memory.ramInstructionEnd() - 2u * bmsx::INSTRUCTION_BYTES;
 		const bmsx::u32 prefixPc = instructionPc + bmsx::INSTRUCTION_BYTES;
 		const bmsx::u32 bodyPc = prefixPc + bmsx::INSTRUCTION_BYTES;
 		std::array<bmsx::u8, 2u * bmsx::INSTRUCTION_BYTES> instructions{};

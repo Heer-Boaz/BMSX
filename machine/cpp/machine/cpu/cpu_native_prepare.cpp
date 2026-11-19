@@ -50,7 +50,7 @@ void CPU::prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32Execut
 			: pc < CART_ROM_BASE || pc >= CART_RAM_BASE) return;
 		const u32 pagePc = pc & ~MAPPED_PAGE_BYTE_MASK;
 		MappedPageBinding binding;
-		m_memory.bindMappedPage(pagePc, busSignals, binding);
+		m_memory.bindMappedPage(pagePc, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 		if (!binding.cacheable || !binding.readBytes) return;
 		auto& decoded = decodedPageForAddress(image, binding);
 		const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;

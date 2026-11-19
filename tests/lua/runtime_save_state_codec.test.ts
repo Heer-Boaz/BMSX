@@ -83,6 +83,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			machine: {
 				memory: {
 					ram,
+					ramInstructionEnd: 0x081e0000,
 					busFaultCode: 2,
 					busFaultAddr: 0x12345678,
 					busFaultAccess: 0x400,

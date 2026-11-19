@@ -11,6 +11,9 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
+
+#include <array>
 
 #include <iostream>
 #include <stdexcept>
@@ -89,6 +92,57 @@ void capacityFollowsTheFloorAcrossResetExecAndRestore() {
 	require(machine.cpu.luaHeap().capacity() == limit - systemFloor, "restore uses the floor from restored RAM");
 }
 
+void instructionFetchFollowsTheLiveFloor() {
+	Machine machine = bootPair();
+	auto& cpu = machine.cpu;
+	auto& memory = machine.memory;
+	const u32 pc = cpu.heapAllocator().floorAddress();
+	const auto selectPc = [&](u32 address) {
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.system.functionAddresses[0], address);
+	};
+	std::array<u8, 2 * INSTRUCTION_BYTES> text{};
+	writeInstruction(text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
+	memory.writeBytes(pc, text.data(), text.size());
+	require(cpu.heapAllocator().setFloor(pc + HEAP_PAGE_SIZE), "the test code occupies reserved static storage");
+	selectPc(pc);
+	const int loop = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	cpu.runUntilDepth(0, 300 * loop);
+	require(cpu.readFrameRegister(0, 0) == valueInteger(1), "RAM below the floor supplies instructions");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	auto& page = *cpu.rootThread()->currentFrame->decodedPage;
+	test::waitForNativeEntry(cpu, page, 0u);
+	require(page.nativeBlocks != nullptr, "a warm executable page is translated");
+#endif
+	const auto saved = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	require(cpu.heapAllocator().setFloor(pc), "lowering the floor covers the old code page");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(!page.nativeBlocks, "the floor change retires cached code immediately");
+#endif
+	require(memory.readMappedU32LE(pc) == readLE32(text.data()), "ordinary reads still see the bytes");
+	cpu.runUntilDepth(0, 1);
+	require(cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR && cpu.readEpcWord() == pc, "the next warm entry faults on fetch, not execution");
+
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(saved);
+	writeInstruction(text, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
+	memory.writeBytes(pc, text.data(), text.size());
+	cpu.runUntilDepth(0, loop);
+	require(cpu.readFrameRegister(0, 0) == valueInteger(0), "the restored boundary admits the new contents");
+
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(saved);
+	require(cpu.heapAllocator().setFloor(pc), "prepare the WIDE boundary");
+	writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(text, 1, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	memory.writeBytes(pc - INSTRUCTION_BYTES, text.data(), text.size());
+	selectPc(pc - INSTRUCTION_BYTES);
+	cpu.runUntilDepth(0, 1);
+	require(cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR && cpu.readEpcWord() == pc - INSTRUCTION_BYTES,
+		"a WIDE body faults across the floor without retiring the prefix");
+}
+
 void execRefusesLivePagesBelowTheFloor() {
 	Machine machine = bootPair();
 	HeapAllocator& heap = machine.cpu.heapAllocator();
@@ -141,6 +195,7 @@ void objectSweepResumesFromRam() {
 int main() {
 	try {
 		capacityFollowsTheFloorAcrossResetExecAndRestore();
+		instructionFetchFollowsTheLiveFloor();
 		execRefusesLivePagesBelowTheFloor();
 		objectSweepResumesFromRam();
 	} catch (const std::exception& error) {

@@ -15,7 +15,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import * as io from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 
 // RAM outside the test image's static storage, for GEO operands and results.
@@ -32,7 +32,7 @@ function observe(mode: CpuExecutionBackend, crossing: boolean) {
 		text: code, functions: [{ firstWord: 0, wordCount: 2, maxStack: 2 }],
 		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
 		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0,
-	});
+	}, RAM_CODE_FIXTURE_BYTES);
 	const runtime = new Runtime({
 		systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(),
 		machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: mode,

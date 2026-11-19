@@ -12,6 +12,9 @@
 namespace bmsx::test {
 
 constexpr u32 BLUA32_TEST_IMAGE_OFFSET = 0x100u;
+// Suites that generate instructions in main RAM place their code workspace
+// in the image's BSS, rather than borrowing the runtime's heap.
+constexpr u32 RAM_CODE_FIXTURE_BYTES = 0x10000u;
 
 struct Blua32TestFunction {
 	u32 firstWord = 0;
@@ -58,12 +61,12 @@ constexpr auto blua32TestFunctionAddress(RomImageDomain domain, u32 functionInde
 
 auto encodeBlua32TestRom(
 	RomImageDomain domain,
-	const Blua32TestImage& image
+	const Blua32TestImage& image, u32 bssByteCount = 0
 ) -> Blua32TestRom;
 auto encodeBlua32TestRom(
 	RomImageDomain domain,
 	const Blua32TestImage& image,
-	const CartManifest& manifest
+	const CartManifest& manifest, u32 bssByteCount = 0
 ) -> Blua32TestRom;
 
 void programBlua32TestResetVector(Blua32TestRom& rom, u32 functionIndex);

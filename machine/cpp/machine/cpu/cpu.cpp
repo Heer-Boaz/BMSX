@@ -655,7 +655,7 @@ DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 		return *frame.decodedPage;
 	}
 	MappedPageBinding binding;
-	m_memory.bindMappedPage(pageAddress, busSignals, binding);
+	m_memory.bindMappedPage(pageAddress, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 	DecodedInstructionPage& page = decodedPageForAddress(
 		*frame.executionImage,
 		binding

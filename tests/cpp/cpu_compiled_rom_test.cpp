@@ -156,7 +156,7 @@ void directRomLoadsUseCurrentOwners() {
 void romReplacementAndSelectionKeepRamCode() {
 	constexpr u32 data = 0x800u;
 	auto image = loadLoop(MemoryAccessKind::Word);
-	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 	rom.bytes.resize(0x1000);
 	writeLE32(rom.bytes.data() + data, 11);
 	std::vector<u8> slot0(16), slot1(16);
@@ -202,7 +202,7 @@ void tailsAndShortBudgetsAgree() {
 	for (int format = 0; format <= 5; ++format) for (const bool displaced : {false, true}) {
 		const auto kind = static_cast<MemoryAccessKind>(format);
 		auto image = loadLoop(kind, displaced);
-		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 		rom.bytes.resize(0x803); rom.bytes[0x800] = 0x55; rom.bytes[0x801] = 0x33; rom.bytes[0x802] = 0x11;
 		std::vector<u8> card{0x55, 0x33, 0x11};
 		CpuMachine native(rom, test::cartridgeSlots(card), false), scalar(rom, test::cartridgeSlots(card), true);
@@ -229,7 +229,7 @@ void tailsAndShortBudgetsAgree() {
 void emptySocketsAndCrossRegionDoubles() {
 	for (bool scalar : {false, true}) {
 		auto image = loadLoop(MemoryAccessKind::F64LE);
-		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 		CartridgeSocketMediaPair slots{};
 		slots[0] = CartridgeCardMedia{std::nullopt, 8u, false};
 		CpuMachine machine(rom, slots, scalar);
@@ -267,10 +267,10 @@ void dataSelectionDoesNotSelectInstructionFetch() {
 	launcher.constants = {static_cast<i32>(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET)};
 	launcher.functions = {{.firstWord = 0, .wordCount = 3}, {.firstWord = 3, .wordCount = 1}};
 	launcher.exceptionFunctionIndex = 1;
-	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, launcher);
-	auto cart0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, launcher, test::RAM_CODE_FIXTURE_BYTES);
+	auto cart0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image, test::RAM_CODE_FIXTURE_BYTES);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K0), 0, 0, 0);
-	auto cart1 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
+	auto cart1 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image, test::RAM_CODE_FIXTURE_BYTES);
 	cart0.bytes.resize(0x1000); cart1.bytes.resize(0x1000);
 	writeLE32(cart0.bytes.data() + 0x800, 22); writeLE32(cart1.bytes.data() + 0x800, 33);
 	for (const bool scalar : {false, true}) {
@@ -299,7 +299,7 @@ void warmContinuationsFollowInBlockMuxWrites() {
 	image.text.resize(INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 8}};
-	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 	std::array<std::vector<u8>, 2> cards;
 	constexpr u32 second = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES;
 	for (u32 slot = 0; slot < cards.size(); ++slot) {
@@ -376,13 +376,13 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 	launcher.constants = {static_cast<i32>(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET)};
 	launcher.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}, {.firstWord = 3, .wordCount = 1}};
 	launcher.exceptionFunctionIndex = 1;
-	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, launcher);
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, launcher, test::RAM_CODE_FIXTURE_BYTES);
 	test::Blua32TestImage source; source.text.resize(3 * INSTRUCTION_BYTES);
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::KSMI), 3, 0, 11);
 	writeInstruction(source.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(source.text, 2, static_cast<u8>(OpCode::JMP), 0, 0, 0);
 	source.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}};
-	auto card0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, source), card1 = card0;
+	auto card0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, source, test::RAM_CODE_FIXTURE_BYTES), card1 = card0;
 	card0.bytes.resize(MAPPED_PAGE_BYTE_SIZE); card1.bytes.resize(MAPPED_PAGE_BYTE_SIZE);
 	const u32 cardWord = (card0.textAddress - CART_ROM_BASE) / INSTRUCTION_BYTES;
 	writeInstruction(card1.bytes, cardWord, static_cast<u8>(OpCode::KSMI), 3, 0, 22);
@@ -488,7 +488,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	launcher.constants = {static_cast<i32>(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET), 11};
 	launcher.exceptionFunctionIndex = 2;
 	launcher.closureRelocations = {{4, record}};
-	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, launcher);
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, launcher, test::RAM_CODE_FIXTURE_BYTES);
 	test::Blua32TestImage source; source.text.resize(10 * INSTRUCTION_BYTES);
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(source.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
@@ -504,9 +504,9 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 		{.firstWord = 6, .wordCount = 2, .maxStack = 8}, {.firstWord = 8, .wordCount = 2, .maxStack = 8}};
 	source.constants = {0, 22, 44};
 	source.closureRelocations = {{1, test::blua32TestFunctionAddress(ramRecord ? RomImageDomain::System : RomImageDomain::Cartridge, 1)}};
-	const auto card0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, source);
+	const auto card0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, source, test::RAM_CODE_FIXTURE_BYTES);
 	source.constants = {0, 33, 55};
-	auto card1 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, source);
+	auto card1 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, source, test::RAM_CODE_FIXTURE_BYTES);
 	const u32 otherRecord = card1.functionAddresses[1] - CART_ROM_BASE;
 	writeLE32(card1.bytes.data() + otherRecord + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, card1.textAddress + 8u * INSTRUCTION_BYTES);
 	writeLE32(card1.bytes.data() + otherRecord + BLUA32_FUNCTION_MAX_STACK_OFFSET, 12);

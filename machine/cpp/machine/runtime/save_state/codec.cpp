@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x4d534d42u; // BMSM
+constexpr u32 kSaveStateSignature = 0x4e534d42u; // BMSN
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -140,6 +140,7 @@ CartridgeControllerState readCartridgeControllerState(BinaryReader& reader) {
 
 template<class Writer> void writeMemorySaveState(Writer& writer, const MemorySaveState& state) {
 	writer.bytes(state.ram);
+	writer.u32(state.ramInstructionEnd);
 	writer.u32(state.busFaultCode);
 	writer.u32(state.busFaultAddr);
 	writer.u32(state.busFaultAccess);
@@ -148,6 +149,7 @@ template<class Writer> void writeMemorySaveState(Writer& writer, const MemorySav
 MemorySaveState readMemorySaveState(BinaryReader& reader, size_t ramByteCount) {
 	MemorySaveState state;
 	state.ram = reader.bytes(ramByteCount);
+	state.ramInstructionEnd = reader.u32();
 	state.busFaultCode = reader.u32();
 	state.busFaultAddr = reader.u32();
 	state.busFaultAccess = reader.u32();

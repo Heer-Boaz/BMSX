@@ -8,7 +8,7 @@ import { BASE_CYCLES, OPCODE_COUNT, OPCODE_RK_OPERANDS, OpCode } from '../../mac
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 test('every opcode selects the specified raw or signed RK operands', () => {
 	const expected = new Uint8Array(OPCODE_COUNT);
@@ -34,7 +34,7 @@ test('narrow and WIDE RK sign boundaries select the correct registers and consta
 			const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
 				functions: [{ firstWord: 0, wordCount: wide ? 3 : 2, maxStack: limit }],
 				constants: Array.from({ length: limit }, (_, i) => numberConstantFromHost(i + 0.25)),
-			}));
+			}, RAM_CODE_FIXTURE_BYTES));
 			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 			const registers = cpu.rootThread.frameAtDepth(0).registers;
 			for (let i = 0; i < limit; i++) registers.setFloat(i, -(i + 0.75));
@@ -66,7 +66,7 @@ test('unsigned raw fields and signed RK values remain independent of mutable fie
 		constants[16383] = numberConstantFromHost(101.5);
 		constants[32767] = 'field-key';
 		const image = linkRawTestSystemBlua32({ text,
-			functions: [{ firstWord: 0, wordCount: 13, maxStack: 32768 }], constants });
+			functions: [{ firstWord: 0, wordCount: 13, maxStack: 32768 }], constants }, RAM_CODE_FIXTURE_BYTES);
 		const { cpu } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		// Keep growth work separate from the operand and inline-cache base charges.
@@ -92,7 +92,7 @@ test('rewriting the same cached PC changes its signed, branch and field-cache pa
 		const text = new Uint8Array(INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
 		const image = linkRawTestSystemBlua32({ text,
-			functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }], constants: ['field', numberConstantFromHost(73.5)] });
+			functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }], constants: ['field', numberConstantFromHost(73.5)] }, RAM_CODE_FIXTURE_BYTES);
 		const { cpu, memory } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		cpu.rootThread.frameAtDepth(0).registers.setTable(1, cpu.gc.reference(cpu.createTable()));
@@ -122,7 +122,7 @@ test('WIDE displaced load retains twelve-bit register fields and uses EXT solely
 		writeInstruction(text, 0, OpCode.WIDE, 63, 63, 0);
 		writeInstruction(text, 1, OpCode.LOAD_MEM_D, 63, 63, MemoryAccessKind.U32LE, 255);
 		const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
-			functions: [{ firstWord: 0, wordCount: 2, maxStack: 4096 }] }));
+			functions: [{ firstWord: 0, wordCount: 2, maxStack: 4096 }] }, RAM_CODE_FIXTURE_BYTES));
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const address = DYNAMIC_RAM_BASE + 0x1000;
 		memory.writeMappedU32LE(address, 0x12345678);
@@ -139,7 +139,7 @@ test('WIDE displaced counted store keeps its unsigned twelve-bit count and compl
 		writeInstruction(text, 0, OpCode.WIDE, 0, 63, 63);
 		writeInstruction(text, 1, OpCode.STORE_MEM_WORDS_D, 0, 63, 63, 255);
 		const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
-			functions: [{ firstWord: 0, wordCount: 2, maxStack: 4096 }] }));
+			functions: [{ firstWord: 0, wordCount: 2, maxStack: 4096 }] }, RAM_CODE_FIXTURE_BYTES));
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const address = DYNAMIC_RAM_BASE + 0x4000;
 		const registers = cpu.rootThread.frameAtDepth(0).registers;

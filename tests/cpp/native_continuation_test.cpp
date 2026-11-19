@@ -45,7 +45,7 @@ struct Machine {
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		return image;
 	}
-	Machine() : rom(test::encodeBlua32TestRom(RomImageDomain::System, image())),
+	Machine() : rom(test::encodeBlua32TestRom(RomImageDomain::System, image(), test::RAM_CODE_FIXTURE_BYTES)),
 		memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), addresses(memory), cpu(memory, irq, addresses), scheduler(cpu), dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);
@@ -175,7 +175,7 @@ void cartridgeReturnSelectsLiveBank() {
 	systemImage.functions = {{.firstWord=0, .wordCount=3, .maxStack=8},
 		{.firstWord=3, .wordCount=3, .numParams=1, .maxStack=2}};
 	systemImage.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
-	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, systemImage);
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, systemImage, test::RAM_CODE_FIXTURE_BYTES);
 	test::Blua32TestImage cartridge;
 	cartridge.text.resize(5 * INSTRUCTION_BYTES);
 	writeInstruction(cartridge.text, 0, static_cast<u8>(OpCode::MOV), 4, 0, 0);
@@ -184,9 +184,9 @@ void cartridgeReturnSelectsLiveBank() {
 	writeInstruction(cartridge.text, 3, static_cast<u8>(OpCode::KSMI), 1, 0, 11);
 	writeInstruction(cartridge.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
 	cartridge.functions = {{.firstWord=0, .wordCount=5, .maxStack=8}};
-	const auto first = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridge);
+	const auto first = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridge, test::RAM_CODE_FIXTURE_BYTES);
 	writeInstruction(cartridge.text, 3, static_cast<u8>(OpCode::KSMI), 1, 0, 22);
-	const auto second = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridge);
+	const auto second = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridge, test::RAM_CODE_FIXTURE_BYTES);
 	for (const bool scalar : {true, false}) {
 		Memory memory(MemoryInit{system.bytes, test::cartridgeSlots(first.bytes, second.bytes)}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);

@@ -1035,7 +1035,7 @@ export class CPU implements MappedPageInvalidator {
 			return cached;
 		}
 		const binding = this.mappedPageBinding;
-		this.memory.bindMappedPage(pageAddress, busSignals, binding);
+		this.memory.bindMappedPage(pageAddress, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 		const page = this.decodedPageForAddress(frame.executionImage, binding);
 		frame.decodedPage = page;
 		frame.decodedPageAddress = pageAddress;
@@ -1202,7 +1202,7 @@ export class CPU implements MappedPageInvalidator {
 			const binding = this.mappedPageBinding;
 			this.memory.bindMappedPage(
 				(nextPc & ~MAPPED_PAGE_BYTE_MASK) >>> 0,
-				this.executionBusSignals,
+				this.executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH,
 				binding,
 			);
 			if (binding.readBytes === null) {
@@ -2308,7 +2308,7 @@ export class CPU implements MappedPageInvalidator {
 		const pc = this.currentInstructionPc;
 		const pagePc = (pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
 		const binding = this.mappedPageBinding;
-		this.memory.bindMappedPage(pagePc, this.executionBusSignals, binding);
+		this.memory.bindMappedPage(pagePc, this.executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 		const roots = new Uint8Array(DECODED_PAGE_WORDS), queued = new Uint8Array(DECODED_PAGE_WORDS);
 		const available = new Uint8Array(DECODED_PAGE_WORDS), leaders = new Uint8Array(DECODED_PAGE_WORDS);
 		const pending: number[] = [];

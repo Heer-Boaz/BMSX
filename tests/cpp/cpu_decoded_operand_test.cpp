@@ -28,7 +28,7 @@ struct CpuMachine {
 	CPU cpu;
 
 	CpuMachine(const test::Blua32TestImage& image, bool instrumented)
-		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image))
+		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES))
 		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
 		cpu.reset();

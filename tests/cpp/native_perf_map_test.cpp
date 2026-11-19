@@ -70,7 +70,7 @@ struct Images {
 		bios.constants = {static_cast<i32>(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET)};
 		bios.functions = {{.firstWord=0, .wordCount=3, .maxStack=4}, {.firstWord=3, .wordCount=1}};
 		bios.irqFunctionIndex = bios.exceptionFunctionIndex = 1;
-		system = test::encodeBlua32TestRom(RomImageDomain::System, bios);
+		system = test::encodeBlua32TestRom(RomImageDomain::System, bios, test::RAM_CODE_FIXTURE_BYTES);
 		for (u32 slot = 0; slot != cards.size(); ++slot) {
 			test::Blua32TestImage cart;
 			cart.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -80,7 +80,7 @@ struct Images {
 			writeInstruction(cart.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 			cart.constants = {static_cast<i32>(slot + 1)};
 			cart.functions = {{.firstWord=0, .wordCount=4, .maxStack=4}};
-			cards[slot] = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cart);
+			cards[slot] = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cart, test::RAM_CODE_FIXTURE_BYTES);
 		}
 	}
 };

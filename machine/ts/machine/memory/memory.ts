@@ -170,6 +170,7 @@ type StoredIoWriteReadyHandler = (
 
 export type MemorySaveState = {
 	ram: Uint8Array;
+	ramInstructionEnd: number;
 	busFaultCode: number;
 	busFaultAddr: number;
 	busFaultAccess: number;
@@ -194,6 +195,7 @@ export class Memory {
 	private readonly systemRom: RomStorage;
 	public readonly cartridgeController: CartridgeController;
 	private readonly ram: Uint8Array;
+	private instructionEnd: number;
 	public readonly ramView: DataView;
 	// Little-endian word view of the same storage for runtime-owned RAM records.
 	private readonly ram32: Uint32Array;
@@ -226,6 +228,7 @@ export class Memory {
 		this.dmaRomView = { bytes: init.systemRom, byteOffset: 0, byteLength: 0 };
 		this.cartridgeController = new CartridgeController(init.cartridgeSlots);
 		this.ram = new Uint8Array(ramByteCount);
+		this.instructionEnd = RAM_BASE + ramByteCount;
 		this.ramView = new DataView(this.ram.buffer);
 		this.ram32 = new Uint32Array(this.ram.buffer, 0, ramByteCount >>> 2);
 		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount, true);
@@ -309,6 +312,14 @@ export class Memory {
 		this.cartridgeController.clearMappedPageWriteWatches();
 	}
 
+	public ramInstructionEnd(): number { return this.instructionEnd; }
+
+	public setRamInstructionEnd(end: number): void {
+		const old = this.instructionEnd;
+		this.instructionEnd = end;
+		if (old !== end) this.mappedPageInvalidator?.invalidateMappedRange(Math.min(old, end), Math.max(old, end));
+	}
+
 	public bindMappedPage(addr: number, busSignals: MappedBusSignals, out: MappedPageBinding): void {
 		out.key = addr;
 		out.readBytes = null;
@@ -331,7 +342,8 @@ export class Memory {
 			const offset = addr - RAM_BASE;
 			if (offset < this.ram.byteLength) {
 				out.cacheable = true;
-				if (offset + MAPPED_PAGE_BYTE_SIZE <= this.ram.byteLength) {
+				if (offset + MAPPED_PAGE_BYTE_SIZE <= this.ram.byteLength
+					&& ((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) === 0 || addr < this.instructionEnd)) {
 					out.readBytes = this.ram;
 					out.readByteOffset = offset;
 				}
@@ -422,6 +434,7 @@ export class Memory {
 		ram.set(this.ram);
 		return {
 			ram,
+			ramInstructionEnd: this.instructionEnd,
 			busFaultCode: this.busFaultCode,
 			busFaultAddr: this.busFaultAddr,
 			busFaultAccess: this.busFaultAccess,
@@ -430,6 +443,7 @@ export class Memory {
 
 	public restoreSaveState(state: MemorySaveState): void {
 		this.ram.set(state.ram);
+		this.instructionEnd = state.ramInstructionEnd;
 		if (this.mappedPageInvalidator !== null) {
 			this.mappedPageInvalidator.invalidateMappedRange(
 				RAM_BASE,
@@ -697,7 +711,8 @@ export class Memory {
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const ramOffset = addr - RAM_BASE;
-			if (ramOffset + 4 <= this.ram.byteLength) {
+			if (ramOffset + 4 <= this.ram.byteLength
+				&& ((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) === 0 || addr < this.instructionEnd)) {
 				return readLE32(this.ram, ramOffset);
 			}
 		} else if (addr <= CART_BUS_END - 4) {

@@ -241,7 +241,9 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	for (const cpu of [js, ref]) {
 		const root = cpu.rootThread.frameAtDepth(0); root.registers.setInteger(8, 73); root.registers.setNil(9); root.top = 9;
-		const retained = cpu.createTable(690000);
+		cpu.collectTrackedHeapBytes(); // Discard the tables made while warming the code.
+		cpu.rootThread.resizeStack(32); // The exception frame must not allocate during the failed NEWT.
+		const retained = cpu.createTable(660000);
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, valueTable(cpu.gc.reference(retained)));
 		cpu.collectTrackedHeapBytes();
 	}

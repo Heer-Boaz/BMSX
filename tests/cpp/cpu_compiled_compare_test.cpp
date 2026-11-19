@@ -28,7 +28,7 @@ struct CpuMachine {
 	CPU cpu;
 	CpuMachine(const test::Blua32TestImage& image, bool scalar,
 		const CartridgeSocketMediaPair& slots = test::cartridgeSlots())
-		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image))
+		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES))
 		, memory(MemoryInit{rom.bytes, slots}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
 		cpu.reset();
@@ -48,8 +48,8 @@ void numericRkComparisonsBelongToTheirExecutionImage() {
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 4}};
 	image.constants = {i32{0}};
 	auto stringImage = image; stringImage.constants = {std::string("same-slot")};
-	const auto cart = test::encodeBlua32TestRom(RomImageDomain::Cartridge, stringImage);
-	const auto replacement = test::encodeBlua32TestRom(RomImageDomain::System, stringImage);
+	const auto cart = test::encodeBlua32TestRom(RomImageDomain::Cartridge, stringImage, test::RAM_CODE_FIXTURE_BYTES);
+	const auto replacement = test::encodeBlua32TestRom(RomImageDomain::System, stringImage, test::RAM_CODE_FIXTURE_BYTES);
 	CpuMachine native(image, false, test::cartridgeSlots(cart.bytes)), scalar(image, true, test::cartridgeSlots(cart.bytes));
 	for (auto* machine : {&native, &scalar}) machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
 	std::array<Blua32ExecutionImage*, 2> owners{};
@@ -572,11 +572,9 @@ void pairedJumpFaultsOnlyOnTheNextGrant() {
 	writeInstruction(image.text, 8, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}, {.firstWord = 8, .wordCount = 1}};
 	image.exceptionFunctionIndex = 1;
-	const u32 end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes, start = end - 4u * INSTRUCTION_BYTES;
 	CpuMachine native(image, false), scalar(image, true);
+	const u32 end = native.memory.ramInstructionEnd(), start = end - 4u * INSTRUCTION_BYTES;
 	for (auto* machine : {&native, &scalar}) {
-		// Only touch the four words under test, not the management words
-		// in the rest of this physical page.
 		machine->memory.writeBytes(start, image.text.data(), 4u * INSTRUCTION_BYTES);
 		auto& r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
 		r.set(0, valueInteger(1)); r.set(1, valueInteger(1)); r.set(2, valueInteger(0)); r.set(3, valueInteger(0));
@@ -610,7 +608,7 @@ void skipFetchBoundaries() {
 		image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 4}, {.firstWord = 1, .wordCount = 1}};
 		image.exceptionFunctionIndex = 1;
 		CpuMachine native(image, false), scalar(image, true);
-		const u32 end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes;
+		const u32 end = native.memory.ramInstructionEnd();
 		const u32 nextPc = end - (skippedWide ? INSTRUCTION_BYTES : 0u);
 		const u32 pc = nextPc - (currentWide ? 2u : 1u) * INSTRUCTION_BYTES;
 		std::array<u8, 2 * INSTRUCTION_BYTES> code{};

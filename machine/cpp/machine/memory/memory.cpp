@@ -139,6 +139,7 @@ Memory::Memory(const MemoryInit& init, u32 ramByteCount)
 	: m_systemRom(init.systemRom)
 	, m_cartridgeController(init.cartridgeSlots)
 	, m_ram(ramByteCount)
+	, m_ramInstructionEnd(RAM_BASE + ramByteCount)
 	, m_ramPageWriteWatches(ramByteCount, true)
 	, m_ioSlots(IO_SLOT_COUNT, 0u)
 	, m_ioReadHandlers(IO_SLOT_COUNT)
@@ -173,6 +174,13 @@ void Memory::clearMappedPageWriteWatches() {
 	m_cartridgeController.clearMappedPageWriteWatches();
 }
 
+void Memory::setRamInstructionEnd(u32 end) {
+	const u32 old = m_ramInstructionEnd;
+	m_ramInstructionEnd = end;
+	if (old != end && m_mappedPageInvalidator)
+		m_mappedPageInvalidator->invalidateMappedRange(std::min(old, end), std::max(old, end));
+}
+
 void Memory::bindMappedPage(
 	uint32_t addr,
 	MappedBusSignals busSignals,
@@ -196,7 +204,8 @@ void Memory::bindMappedPage(
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset < m_ram.size()) {
 			out.cacheable = true;
-			if (offset + MAPPED_PAGE_BYTE_SIZE <= m_ram.size()) {
+			if (offset + MAPPED_PAGE_BYTE_SIZE <= m_ram.size()
+				&& ((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) == 0u || addr < m_ramInstructionEnd)) {
 				out.readBytes = m_ram.data() + offset;
 			}
 			m_ramPageWriteWatches.bind(offset, out);
@@ -276,6 +285,7 @@ MemorySaveState Memory::captureSaveState(std::vector<u8> ram) const {
 	MemorySaveState state;
 	ram.assign(m_ram.begin(), m_ram.end());
 	state.ram = std::move(ram);
+	state.ramInstructionEnd = m_ramInstructionEnd;
 	state.busFaultCode = m_busFaultCode;
 	state.busFaultAddr = m_busFaultAddr;
 	state.busFaultAccess = m_busFaultAccess;
@@ -284,6 +294,7 @@ MemorySaveState Memory::captureSaveState(std::vector<u8> ram) const {
 
 void Memory::restoreSaveState(const MemorySaveState& state) {
 	std::memcpy(m_ram.data(), state.ram.data(), state.ram.size());
+	m_ramInstructionEnd = state.ramInstructionEnd;
 	if (m_mappedPageInvalidator) {
 		m_mappedPageInvalidator->invalidateMappedRange(
 			RAM_BASE,
@@ -529,7 +540,8 @@ uint32_t Memory::readMappedBusU32LE(
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + 4u <= m_ram.size()) {
+		if (offset + 4u <= m_ram.size()
+			&& ((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) == 0u || addr < m_ramInstructionEnd)) {
 			return readLE32(m_ram.data() + offset);
 		}
 	} else if (addr <= CART_BUS_END - 4u) {

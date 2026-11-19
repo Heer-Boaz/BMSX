@@ -18,7 +18,6 @@ constexpr u32 MAX_PAGES = (MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE) >> PAGE_SHIF
 
 // Management-area layout, as byte offsets from its base. Every field is a
 // little-endian word in guest RAM; partial-list links store page + 1.
-constexpr u32 FLOOR = 0x000u;
 constexpr u32 OCCUPIED = 0x004u;
 constexpr u32 SWEEP_PAGE = 0x008u;
 constexpr u32 PARTIAL_HEADS = 0x040u;
@@ -74,7 +73,7 @@ void HeapAllocator::reset(u32 floorAddress) {
 	m_memory.invalidateRamWrite(m_management, RUNTIME_MANAGEMENT_SIZE);
 	const u32 page = pageForFloor(floorAddress);
 	setAvailable(page, m_pageLimit, true);
-	m_memory.writeRamRecordWord(m_management + FLOOR, RAM_BASE + (page << PAGE_SHIFT));
+	m_memory.setRamInstructionEnd(RAM_BASE + (page << PAGE_SHIFT));
 }
 
 bool HeapAllocator::setFloor(u32 floorAddress) {
@@ -88,7 +87,7 @@ bool HeapAllocator::setFloor(u32 floorAddress) {
 	} else if (next < current) {
 		setAvailable(next, current, true);
 	}
-	m_memory.writeRamRecordWord(m_management + FLOOR, RAM_BASE + (next << PAGE_SHIFT));
+	m_memory.setRamInstructionEnd(RAM_BASE + (next << PAGE_SHIFT));
 	return true;
 }
 
@@ -333,8 +332,7 @@ bool HeapAllocator::isAvailable(u32 page) const {
 }
 
 u32 HeapAllocator::floorPage() const {
-	const u32 page = (m_memory.readRamRecordWord(m_management + FLOOR) - RAM_BASE) >> PAGE_SHIFT;
-	return std::min(std::max(page, m_minimumFloorPage), m_pageLimit);
+	return (m_memory.ramInstructionEnd() - RAM_BASE) >> PAGE_SHIFT;
 }
 
 u32 HeapAllocator::pageForFloor(u32 address) const {

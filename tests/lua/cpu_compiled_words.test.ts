@@ -16,7 +16,7 @@ import { LUA_FAULT_REASON_INVALID_ARGUMENT, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, 
 import { DYNAMIC_RAM_BASE, IO_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function assertParity(a: CPU, b: CPU): void {
 	assert.ok(isDeepStrictEqual(a.captureRuntimeState(), b.captureRuntimeState()), 'full value graph, roots, frame/control state and heap accounting');
@@ -33,7 +33,7 @@ function wordLoop(count: number, displaced = false) {
 	writeInstruction(text, 5, OpCode.ADD, 7, 6, 9); writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
 	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0); writeInstruction(text, 33, OpCode.HALT, 0, 0, 0);
 	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: Math.max(16, 8 + count) },
-		{ firstWord: 32, wordCount: 2 }], exceptionFunctionIndex: 1 });
+		{ firstWord: 32, wordCount: 2 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
 }
 
 test('generated execution admits every executable BLua32 opcode; WIDE remains a decode prefix', () => {
@@ -44,7 +44,7 @@ test('generated execution admits every executable BLua32 opcode; WIDE remains a 
 for (const layout of ['last-word', 'wide-exact-end', 'wide-straddle'] as const) test(`a standalone ${layout} arithmetic entry compiles without fetching its successor`, () => {
 	const text = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] });
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] }, RAM_CODE_FIXTURE_BYTES);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const width = layout === 'last-word' ? 1 : 2;
 	const pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - (layout === 'wide-exact-end' ? 2 : 1) * INSTRUCTION_BYTES;
@@ -87,13 +87,13 @@ for (const layout of ['last-word', 'wide-exact-end', 'wide-straddle'] as const) 
 	}
 });
 
-for (const wide of [false, true]) test(`a compiled nonterminal at the RAM end faults only when its successor is fetched (WIDE=${wide})`, () => {
+for (const wide of [false, true]) test(`a compiled nonterminal at the executable RAM end faults only when its successor is fetched (WIDE=${wide})`, () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 },
-		{ firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 });
+		{ firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
-	const end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes, width = wide ? 2 : 1, pc = end - width * INSTRUCTION_BYTES;
+	const end = js.memory.ramInstructionEnd(), width = wide ? 2 : 1, pc = end - width * INSTRUCTION_BYTES;
 	const code = new Uint8Array(width * INSTRUCTION_BYTES);
 	if (wide) writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(code, width - 1, OpCode.K1, 3, 0, 0);
@@ -169,7 +169,7 @@ test('a WIDE counted store retains a signed RK address and the full source regis
 	writeInstruction(text, 0, OpCode.WIDE, 2, 63, 1);
 	writeInstruction(text, 1, OpCode.STORE_MEM_WORDS, 0, 63, 1, 56); // R512..1024, K[0], C=513.
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 1025 }], constants: [integerConstant(target)] });
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 1025 }], constants: [integerConstant(target)] }, RAM_CODE_FIXTURE_BYTES);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	for (const { cpu } of [js, ref]) { for (let i = 0; i < 513; ++i) cpu.rootThread.frameAtDepth(0).registers.setInteger(512 + i, i - 1); cpu.runUntilDepth(0, 20 * (3 + 513 + 2)); }
 	assertParity(js.cpu, ref.cpu); assert.deepEqual(js.memory.ramData(), ref.memory.ramData());
@@ -305,7 +305,7 @@ for (const blocked of [false, true]) test(`later counted blocks retain earlier c
 	writeInstruction(text, 0, OpCode.K1, 6, 0, 0); writeInstruction(text, 1, OpCode.STORE_MEM_WORDS, 8, 0, 5);
 	writeInstruction(text, 2, OpCode.STORE_MEM_WORDS, 20, 1, 3); writeInstruction(text, 3, OpCode.MOV, 7, 6, 0);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255); writeInstruction(text, 32, OpCode.HALT, 0, 0, 0); writeInstruction(text, 33, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 32 }, { firstWord: 32, wordCount: 2 }], exceptionFunctionIndex: 1 });
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 32 }, { firstWord: 32, wordCount: 2 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter), pc = image.image.functions[0].codeAddress;
 	for (const { cpu } of [js, ref]) { const r = cpu.rootThread.frameAtDepth(0).registers;
 		for (let i = 8; i < 23; ++i) r.setInteger(i, 0);

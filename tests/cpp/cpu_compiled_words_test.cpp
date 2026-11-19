@@ -33,7 +33,7 @@ struct CpuMachine {
 	ExecutionAddressSpace addresses;
 	CPU cpu;
 	CpuMachine(const test::Blua32TestImage& image, bool scalar = false)
-		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image))
+		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES))
 		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
 		cpu.reset();
@@ -142,7 +142,7 @@ void pageTailBeforeFetchFault(bool wide) {
 	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 4}, {.firstWord = 1, .wordCount = 1}};
 	image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
-	const u32 end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes, width = wide ? 2u : 1u, pc = end - width * INSTRUCTION_BYTES;
+	const u32 end = native.memory.ramInstructionEnd(), width = wide ? 2u : 1u, pc = end - width * INSTRUCTION_BYTES;
 	std::array<u8, 2 * INSTRUCTION_BYTES> code{};
 	if (wide) writeInstruction(code, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(code, width - 1u, static_cast<u8>(OpCode::K1), 3, 0, 0);
