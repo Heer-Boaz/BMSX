@@ -23,3 +23,12 @@ export function scramble32(x: number): number {
 export function signed8FromHash(h: number): number {
 	return ((h >>> 24) & 0xff) - 128;
 }
+
+// FNV-1a over code units. For machine byte strings each unit is one octet.
+export function hashText(text: string): number {
+	let hash = 2166136261;
+	for (let index = 0; index < text.length; ++index) {
+		hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);
+	}
+	return hash >>> 0;
+}

@@ -1,5 +1,5 @@
 import type { TextBuffer } from './text_buffer';
-import { hashText } from '../../../machine/ts/common/byte_hex_string';
+import { hashText } from '../../../machine/ts/common/hash';
 
 /** Non-cryptographic content fingerprint for source-dependent view mementos. */
 export type TextSnapshotFingerprint = { readonly length: number; readonly hash: number };

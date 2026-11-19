@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { HashMapBuilder } from '../../toolchain/ts/collections/hash_map';
-import { hashText } from '../../machine/ts/common/byte_hex_string';
+import { hashText } from '../../machine/ts/common/hash';
 
 test('persistent string lookup preserves published generations through batched mutation', () => {
 	const builder = new HashMapBuilder<string, number>(hashText);

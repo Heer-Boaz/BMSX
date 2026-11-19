@@ -64,7 +64,6 @@ import { BASE_BX_BITS, BASE_OPERAND_A_BITS, BASE_OPERAND_BC_BITS, CLOSURE_ADDRES
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET,
 	BLUA32_CONSTANT_RECORD_SIZE,
-	BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET,
 	BLUA32_CONSTANT_TAG_OFFSET,
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_ALIGNMENT,
@@ -77,13 +76,21 @@ import {
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_VARARG,
 	BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
-	BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET,
 	BLUA32_GLOBAL_NAME_RECORD_SIZE,
 	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_HEADER_SIZE,
+	BLUA32_IMAGE_MAGIC,
+	BLUA32_IMAGE_MAGIC_OFFSET,
+	BLUA32_IMAGE_VERSION,
+	BLUA32_IMAGE_VERSION_OFFSET,
+	BLUA32_STRING_RECORD_ALIGNMENT,
+	BLUA32_STRING_RECORD_HEADER_SIZE,
+	BLUA32_STRING_RECORD_KIND,
+	BLUA32_STRING_RECORD_ROM_FLAG,
+	BLUA32_STRING_LENGTH_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_UPVALUE_INDEX_MASK,
@@ -692,24 +699,20 @@ export class CPU implements MappedPageInvalidator {
 		this.clearGlobalSlots();
 	}
 
-	private internExecutionString(
-		executionDomainId: ExecutionDomainId,
-		address: number,
-		byteLength: number,
-	): StringId {
-		if (byteLength === 0) {
-			return this.stringPool.intern('', false);
+	private internExecutionString(executionDomainId: ExecutionDomainId, address: number): StringId {
+		this.executionAddressSpace.bindReadOnlyView(executionDomainId, address,
+			BLUA32_STRING_RECORD_HEADER_SIZE, this.executionReadView);
+		const { bytes, byteOffset } = this.executionReadView;
+		if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1)) !== 0
+			|| readLE32(bytes, byteOffset) !== (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
+			throw new Error('BLua32 ROM String header is invalid.');
 		}
-		this.executionAddressSpace.bindReadOnlyView(
-			executionDomainId,
-			address,
-			byteLength,
-			this.executionReadView,
-		);
+		const byteLength = readLE32(bytes, byteOffset + BLUA32_STRING_LENGTH_OFFSET);
+		if (byteLength === 0) return this.stringPool.intern('', false);
+		this.executionAddressSpace.bindReadOnlyView(executionDomainId, address + BLUA32_STRING_RECORD_HEADER_SIZE,
+			byteLength, this.executionReadView);
 		return this.stringPool.intern(
-			byteStringFromBytes(this.executionReadView.bytes, this.executionReadView.byteOffset, byteLength),
-			false,
-		);
+			byteStringFromBytes(this.executionReadView.bytes, this.executionReadView.byteOffset, byteLength), false);
 	}
 
 	private decodeConstantPool(
@@ -753,7 +756,6 @@ export class CPU implements MappedPageInvalidator {
 					constWords[index] = this.internExecutionString(
 						executionDomainId,
 						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET),
-						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET),
 					);
 					break;
 				default:
@@ -789,7 +791,6 @@ export class CPU implements MappedPageInvalidator {
 			const key = this.internExecutionString(
 				executionDomainId,
 				readLE32(bytes, recordByteOffset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET),
-				readLE32(bytes, recordByteOffset + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET),
 			);
 			let slot = slotByKey.get(key);
 			if (slot === undefined) {
@@ -813,6 +814,10 @@ export class CPU implements MappedPageInvalidator {
 		);
 		const headerBytes = this.executionReadView.bytes;
 		const headerByteOffset = this.executionReadView.byteOffset;
+		if (readLE32(headerBytes, headerByteOffset + BLUA32_IMAGE_MAGIC_OFFSET) !== BLUA32_IMAGE_MAGIC
+			|| readLE32(headerBytes, headerByteOffset + BLUA32_IMAGE_VERSION_OFFSET) !== BLUA32_IMAGE_VERSION) {
+			throw new Error('BLua32 image format is unsupported.');
+		}
 		const constantTableAddress = readLE32(
 			headerBytes,
 			headerByteOffset + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,

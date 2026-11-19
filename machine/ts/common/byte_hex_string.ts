@@ -1,3 +1,5 @@
+import { hashText } from './hash';
+
 export function lenAndHash(text: string): string {
 	return `len=${text.length} hash=${hashText(text)}`;
 }
@@ -29,13 +31,4 @@ export function formatHexDumpRow(bytes: Uint8Array, byteOffset: number, end = by
 		ascii += byte >= 32 && byte <= 126 ? String.fromCharCode(byte) : '.';
 	}
 	return `${byteOffset.toString(16).padStart(8, '0')}  ${hex.padEnd(columns * 3, ' ')} ${ascii}`;
-}
-
-export function hashText(text: string): number {
-	let hash = 2166136261;
-	for (let index = 0; index < text.length; index += 1) {
-		hash ^= text.charCodeAt(index);
-		hash = Math.imul(hash, 16777619);
-	}
-	return hash >>> 0;
 }

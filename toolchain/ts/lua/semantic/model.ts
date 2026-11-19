@@ -3,7 +3,7 @@ import { composeLuaBindingFacts, finishLuaBindingContribution, type LuaBindingCo
 import { composeLuaBuiltinOperations, type LuaBuiltinOperationSite } from './builtin_operations';
 import { createScopeId, type ScopeID, type ScopeKind, type SemanticScope } from './scope_facts';
 import type { LuaSyntaxPoint, LuaSyntaxSpan } from '../syntax/source_locations';
-import { hashText } from '../../../../machine/ts/common/byte_hex_string';
+import { hashText } from '../../../../machine/ts/common/hash';
 import { HashMapBuilder } from '../../collections/hash_map';
 import { SourceChangeMap } from '../../text/source_changes';
 import {

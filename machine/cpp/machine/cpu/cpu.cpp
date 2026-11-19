@@ -213,18 +213,19 @@ void CPU::installBootPrimitives() {
 
 StringId CPU::internExecutionString(
 	ExecutionDomainId executionDomainId,
-	u32 address,
-	u32 byteCount
+	u32 address
 ) {
-	if (byteCount == 0u) {
-		return m_stringPool.intern({}, false);
+	m_executionAddressSpace.bindReadOnlyView(executionDomainId, address,
+		BLUA32_STRING_RECORD_HEADER_SIZE, m_executionReadView);
+	const u8* record = m_executionReadView.data();
+	if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1u)) != 0u
+		|| readLE32(record) != (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
+		throw BMSX_RUNTIME_ERROR("BLua32 ROM String header is invalid.");
 	}
-	m_executionAddressSpace.bindReadOnlyView(
-		executionDomainId,
-		address,
-		byteCount,
-		m_executionReadView
-	);
+	const u32 byteCount = readLE32(record + BLUA32_STRING_LENGTH_OFFSET);
+	if (byteCount == 0u) return m_stringPool.intern({}, false);
+	m_executionAddressSpace.bindReadOnlyView(executionDomainId, address + BLUA32_STRING_RECORD_HEADER_SIZE,
+		byteCount, m_executionReadView);
 	return m_stringPool.intern(
 		std::string_view(reinterpret_cast<const char*>(m_executionReadView.data()), m_executionReadView.size()),
 		false
@@ -270,8 +271,7 @@ ValueSlots CPU::decodeConstantPool(
 			case Blua32ConstantTag::String:
 				constPool.set(index, valueString(internExecutionString(
 					executionDomainId,
-					readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET),
-					readLE32(record + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET)
+					readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)
 				)));
 				break;
 			default:
@@ -305,8 +305,7 @@ std::vector<u32> CPU::registerGlobalNames(
 			+ static_cast<size_t>(index) * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 		const StringId key = internExecutionString(
 			executionDomainId,
-			readLE32(record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET),
-			readLE32(record + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET)
+			readLE32(record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET)
 		);
 		auto slot = slotByKey.find(key);
 		if (slot == slotByKey.end()) {
@@ -335,6 +334,10 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		m_executionReadView
 	);
 	const u8* header = m_executionReadView.data();
+	if (readLE32(header + BLUA32_IMAGE_MAGIC_OFFSET) != BLUA32_IMAGE_MAGIC
+		|| readLE32(header + BLUA32_IMAGE_VERSION_OFFSET) != BLUA32_IMAGE_VERSION) {
+		throw BMSX_RUNTIME_ERROR("BLua32 image format is unsupported.");
+	}
 	const u32 constantTableAddress = readLE32(
 		header + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET
 	);

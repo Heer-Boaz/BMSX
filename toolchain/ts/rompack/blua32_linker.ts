@@ -1,4 +1,4 @@
-import { byteStringToBytes, textToByteString } from '../../../machine/ts/common/byte_string';
+import { textToByteString, writeByteString } from '../../../machine/ts/common/byte_string';
 import { integerConstant, type NumberConstant } from '../lua/number';
 import type { ProgramConstant } from '../lua/compiler/program';
 import { inlineCallSiteChainsEqual } from '../lua/compiler/inline_debug';
@@ -19,7 +19,6 @@ import {
 	Blua32ConstantTag,
 	BLUA32_CONSTANT_PAYLOAD_OFFSET,
 	BLUA32_CONSTANT_RECORD_SIZE,
-	BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET,
 	BLUA32_CONSTANT_TAG_OFFSET,
 	BLUA32_FUNCTION_ALIGNMENT,
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
@@ -33,7 +32,6 @@ import {
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_VARARG,
 	BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
-	BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET,
 	BLUA32_GLOBAL_NAME_RECORD_SIZE,
 	BLUA32_IMAGE_BSS_ADDRESS_OFFSET,
 	BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
@@ -54,8 +52,15 @@ import {
 	BLUA32_IMAGE_MAGIC_OFFSET,
 	BLUA32_IMAGE_RODATA_ADDRESS_OFFSET,
 	BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET,
-	BLUA32_IMAGE_STRING_ADDRESS_OFFSET,
-	BLUA32_IMAGE_STRING_BYTE_COUNT_OFFSET,
+	BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET,
+	BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
+	BLUA32_STRING_RECORD_ALIGNMENT,
+	BLUA32_STRING_RECORD_HEADER_SIZE,
+	BLUA32_STRING_RECORD_KIND,
+	BLUA32_STRING_RECORD_ROM_FLAG,
+	BLUA32_STRING_HASH_OFFSET,
+	BLUA32_STRING_LENGTH_OFFSET,
+	BLUA32_STRING_NEXT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
@@ -97,9 +102,9 @@ import type {
 } from '../lua/compiler/program';
 import { programModuleExportKey } from '../lua/compiler/program';
 import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
-import { writeLE32 } from '../../../machine/ts/common/endian';
-import { fmix32 } from '../../../machine/ts/common/hash';
-import { hashText } from '../../../machine/ts/common/byte_hex_string';
+import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
+import { fmix32, hashText } from '../../../machine/ts/common/hash';
+import { nextPowerOfTwo } from '../../../machine/ts/machine/common/numeric';
 import { hashAssetId } from '../../../machine/ts/rompack/tokens';
 import type {
 	Blua32BiosFunctionExport,
@@ -173,12 +178,6 @@ type ImageBuildInput = ImageBuildInputBase & (
 		biosImports: ReadonlyArray<Blua32BiosFunctionImport>;
 	}
 );
-
-type StringRecord = {
-	offset: number;
-	bytes: Uint8Array;
-};
-
 
 function hashInlineCallSiteChain(
 	chain: ReadonlyArray<Blua32InlineCallSite>,
@@ -761,19 +760,13 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const systemGlobalNameTableOffset = alignImageOffset(offset, input.loadAddress, 4);
 	offset = systemGlobalNameTableOffset + systemGlobalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 
-	const stringRecordByValue = new Map<string, StringRecord>();
-	const stringRecords: StringRecord[] = [];
-	let stringByteCount = 0;
-	const internString = (value: string): StringRecord => {
-		const existing = stringRecordByValue.get(value);
-		if (existing !== undefined) {
-			return existing;
-		}
-		const record = { offset: stringByteCount, bytes: byteStringToBytes(value) };
-		stringByteCount += record.bytes.byteLength;
-		stringRecordByValue.set(value, record);
-		stringRecords.push(record);
-		return record;
+	const stringOffsetByValue = new Map<string, number>();
+	let stringRecordBytes = 0;
+	const internString = (value: string): void => {
+		if (stringOffsetByValue.has(value)) return;
+		stringOffsetByValue.set(value, stringRecordBytes);
+		stringRecordBytes = alignImageOffset(stringRecordBytes + BLUA32_STRING_RECORD_HEADER_SIZE + value.length,
+			0, BLUA32_STRING_RECORD_ALIGNMENT);
 	};
 	for (let index = 0; index < rodata.constPool.length; index += 1) {
 		const value = rodata.constPool[index];
@@ -788,8 +781,11 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		internString(textToByteString(systemGlobalNameLayout.names[index]));
 	}
 
-	const stringTableOffset = offset;
-	offset += stringByteCount;
+	const stringBucketOffset = alignImageOffset(offset, input.loadAddress, 4);
+	const stringBucketCount = nextPowerOfTwo(Math.max(1, stringOffsetByValue.size));
+	const stringRecordOffset = alignImageOffset(stringBucketOffset + 4 * stringBucketCount,
+		input.loadAddress, BLUA32_STRING_RECORD_ALIGNMENT);
+	offset = stringRecordOffset + stringRecordBytes;
 	const textOffset = alignImageOffset(offset, input.loadAddress, INSTRUCTION_BYTES);
 	const imageByteCount = textOffset + textByteCount;
 
@@ -874,8 +870,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	writeLE32(bytes, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, globalNameLayout.names.length);
 	writeLE32(bytes, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET, input.loadAddress + systemGlobalNameTableOffset);
 	writeLE32(bytes, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET, systemGlobalNameLayout.names.length);
-	writeLE32(bytes, BLUA32_IMAGE_STRING_ADDRESS_OFFSET, input.loadAddress + stringTableOffset);
-	writeLE32(bytes, BLUA32_IMAGE_STRING_BYTE_COUNT_OFFSET, stringByteCount);
+	writeLE32(bytes, BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, input.loadAddress + stringBucketOffset);
+	writeLE32(bytes, BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET, stringBucketCount);
 	writeLE32(bytes, BLUA32_IMAGE_RODATA_ADDRESS_OFFSET, rodataAddress);
 	writeLE32(bytes, BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET, rodataBytes.byteLength);
 	writeLE32(bytes, BLUA32_IMAGE_DATA_LOAD_ADDRESS_OFFSET, dataLoadAddress);
@@ -924,7 +920,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		}
 	}
 
-	const stringAddress = input.loadAddress + stringTableOffset;
+	const stringAddress = input.loadAddress + stringRecordOffset;
 	for (let index = 0; index < constants.length; index += 1) {
 		const value = constants[index];
 		const recordOffset = constantTableOffset + index * BLUA32_CONSTANT_RECORD_SIZE;
@@ -935,10 +931,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		} else if (value === true) {
 			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag.True);
 		} else if (typeof value === 'string') {
-			const stringRecord = stringRecordByValue.get(value) as StringRecord;
+			const stringOffset = stringOffsetByValue.get(value)!;
 			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag.String);
-			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET, stringAddress + stringRecord.offset);
-			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET, stringRecord.bytes.byteLength);
+			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET, stringAddress + stringOffset);
 		} else {
 			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_TAG_OFFSET, value.kind === 'integer' ? Blua32ConstantTag.Integer : Blua32ConstantTag.Float);
 			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET, value.word);
@@ -947,17 +942,23 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 
 	const writeNames = (tableOffset: number, names: ReadonlyArray<string>): void => {
 		for (let index = 0; index < names.length; index += 1) {
-			const stringRecord = stringRecordByValue.get(textToByteString(names[index])) as StringRecord;
+			const stringOffset = stringOffsetByValue.get(textToByteString(names[index]))!;
 			const recordOffset = tableOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-			writeLE32(bytes, recordOffset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, stringAddress + stringRecord.offset);
-			writeLE32(bytes, recordOffset + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET, stringRecord.bytes.byteLength);
+			writeLE32(bytes, recordOffset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, stringAddress + stringOffset);
 		}
 	};
 	writeNames(globalNameTableOffset, globalNameLayout.names);
 	writeNames(systemGlobalNameTableOffset, systemGlobalNameLayout.names);
-	for (let index = 0; index < stringRecords.length; index += 1) {
-		const record = stringRecords[index];
-		bytes.set(record.bytes, stringTableOffset + record.offset);
+	for (const [value, relative] of stringOffsetByValue) {
+		const record = stringRecordOffset + relative;
+		const hash = hashText(value);
+		const bucket = stringBucketOffset + 4 * (hash & (stringBucketCount - 1));
+		writeLE32(bytes, record, BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG);
+		writeLE32(bytes, record + BLUA32_STRING_HASH_OFFSET, hash);
+		writeLE32(bytes, record + BLUA32_STRING_LENGTH_OFFSET, value.length);
+		writeLE32(bytes, record + BLUA32_STRING_NEXT_OFFSET, readLE32(bytes, bucket));
+		writeByteString(bytes, record + BLUA32_STRING_RECORD_HEADER_SIZE, value);
+		writeLE32(bytes, bucket, input.loadAddress + record);
 	}
 	bytes.set(rodataBytes, rodataOffset);
 	bytes.set(data.bytes, dataLoadOffset);

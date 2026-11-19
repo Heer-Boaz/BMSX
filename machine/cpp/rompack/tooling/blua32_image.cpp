@@ -4,6 +4,7 @@
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/rom_header.h"
 
+#include <bit>
 #include <utility>
 
 namespace bmsx {
@@ -24,23 +25,17 @@ auto decodeString(
 	std::span<const u8> bytes,
 	const Blua32ImageHeader& header,
 	u32 imageAddress,
-	u32 address,
-	u32 byteCount
+	u32 address
 ) -> std::string {
-	if (address < header.stringAddress) {
-		throw BMSX_RUNTIME_ERROR("BLua32 string record points outside the string table.");
+	const u32 offset = imageOffset(address, BLUA32_STRING_RECORD_HEADER_SIZE, imageAddress, header.imageByteCount);
+	const u8* record = bytes.data() + offset;
+	if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1u)) != 0u
+		|| readLE32(record) != (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
+		throw BMSX_RUNTIME_ERROR("BLua32 ROM String header is invalid.");
 	}
-	const u32 relativeAddress = address - header.stringAddress;
-	if (relativeAddress > header.stringByteCount
-		|| byteCount > header.stringByteCount - relativeAddress) {
-		throw BMSX_RUNTIME_ERROR("BLua32 string record points outside the string table.");
-	}
-	const u32 stringOffset = header.stringAddress - imageAddress;
-	const u32 offset = stringOffset + relativeAddress;
-	return std::string(
-		reinterpret_cast<const char*>(bytes.data() + offset),
-		static_cast<size_t>(byteCount)
-	);
+	const u32 byteCount = readLE32(record + BLUA32_STRING_LENGTH_OFFSET);
+	imageOffset(address, static_cast<u64>(BLUA32_STRING_RECORD_HEADER_SIZE) + byteCount, imageAddress, header.imageByteCount);
+	return std::string(reinterpret_cast<const char*>(record + BLUA32_STRING_RECORD_HEADER_SIZE), byteCount);
 }
 
 auto decodeNames(
@@ -59,8 +54,7 @@ auto decodeNames(
 			bytes,
 			header,
 			imageAddress,
-			readLE32(record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET),
-			readLE32(record + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET)
+			readLE32(record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET)
 		));
 	}
 	return names;
@@ -142,9 +136,9 @@ auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32Ima
 	header.systemGlobalNameCount = readLE32(
 		bytes.data() + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET
 	);
-	header.stringAddress = readLE32(bytes.data() + BLUA32_IMAGE_STRING_ADDRESS_OFFSET);
-	header.stringByteCount = readLE32(
-		bytes.data() + BLUA32_IMAGE_STRING_BYTE_COUNT_OFFSET
+	header.stringBucketAddress = readLE32(bytes.data() + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET);
+	header.stringBucketCount = readLE32(
+		bytes.data() + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET
 	);
 	header.rodataAddress = readLE32(bytes.data() + BLUA32_IMAGE_RODATA_ADDRESS_OFFSET);
 	header.rodataByteCount = readLE32(
@@ -180,7 +174,10 @@ auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32Ima
 	imageOffset(header.constantTableAddress, static_cast<u64>(header.constantCount) * BLUA32_CONSTANT_RECORD_SIZE, imageAddress, header.imageByteCount);
 	imageOffset(header.globalNameTableAddress, static_cast<u64>(header.globalNameCount) * BLUA32_GLOBAL_NAME_RECORD_SIZE, imageAddress, header.imageByteCount);
 	imageOffset(header.systemGlobalNameTableAddress, static_cast<u64>(header.systemGlobalNameCount) * BLUA32_GLOBAL_NAME_RECORD_SIZE, imageAddress, header.imageByteCount);
-	imageOffset(header.stringAddress, header.stringByteCount, imageAddress, header.imageByteCount);
+	if ((header.stringBucketAddress & 3u) != 0u || !std::has_single_bit(header.stringBucketCount)) {
+		throw BMSX_RUNTIME_ERROR("BLua32 String bucket table is invalid.");
+	}
+	imageOffset(header.stringBucketAddress, 4ull * header.stringBucketCount, imageAddress, header.imageByteCount);
 	const u32 rodataOffset = imageOffset(header.rodataAddress, header.rodataByteCount, imageAddress, header.imageByteCount);
 	const u32 dataLoadOffset = imageOffset(header.dataLoadAddress, header.dataByteCount, imageAddress, header.imageByteCount);
 	const u32 textOffset = imageOffset(header.textAddress, header.textByteCount, imageAddress, header.imageByteCount);
@@ -257,8 +254,7 @@ auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32Ima
 					bytes,
 					header,
 					imageAddress,
-					readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET),
-					readLE32(record + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET)
+					readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)
 				));
 				break;
 			default:

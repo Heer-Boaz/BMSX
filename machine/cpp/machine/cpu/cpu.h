@@ -379,8 +379,7 @@ private:
 	size_t collectionRootWordCount() const;
 	StringId internExecutionString(
 		ExecutionDomainId executionDomainId,
-		u32 address,
-		u32 byteCount
+		u32 address
 	);
 	ValueSlots decodeConstantPool(
 		ExecutionDomainId executionDomainId,

@@ -1705,20 +1705,12 @@ void imageTextImport() {
 	machine.cpu.runUntilDepth(0, 100);
 	require(machine.cpu.stringPool().toString(asStringId(machine.cpu.readCompletionValues().get(0))) == "\xef\xbb\xbf" "A", "initial U+FEFF is preserved");
 	for (const std::vector<u8>& bytes : {std::vector<u8>{0xc0, 0x80}, {0xed, 0xa0, 0x80}, {0xf4, 0x90, 0x80, 0x80}, {0xe2, 0x82}, {0x80}, {0xe2, 0x28, 0xa1}}) {
-		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
-		const u32 table = readLE32(rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET);
-		const u32 address = readLE32(rom.bytes.data() + table + BLUA32_CONSTANT_PAYLOAD_OFFSET);
-		std::copy(bytes.begin(), bytes.end(), rom.bytes.begin() + address);
-		writeLE32(rom.bytes.data() + table + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET, static_cast<u32>(bytes.size()));
-		Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
-		IrqController irq(memory);
-		ExecutionAddressSpace addressSpace(memory);
-		CPU cpu(memory, irq, addressSpace);
-		cpu.reset();
-		cpu.runUntilDepth(0, 100);
-		const auto& value = cpu.stringPool().toString(asStringId(cpu.readCompletionValues().get(0)));
-		require(value == std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()),
-			"the activated image preserves bytes that are not valid UTF-8");
+		const auto expected = std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+		image.constants[0] = std::string(expected);
+		CpuMachine binary(image);
+		binary.cpu.runUntilDepth(0, 100);
+		const auto& value = binary.cpu.stringPool().toString(asStringId(binary.cpu.readCompletionValues().get(0)));
+		require(value == expected, "the activated image preserves bytes that are not valid UTF-8");
 	}
 }
 

@@ -34,8 +34,8 @@ struct Blua32ImageHeader {
 	u32 globalNameCount = 0;
 	u32 systemGlobalNameTableAddress = 0;
 	u32 systemGlobalNameCount = 0;
-	u32 stringAddress = 0;
-	u32 stringByteCount = 0;
+	u32 stringBucketAddress = 0;
+	u32 stringBucketCount = 0;
 	u32 rodataAddress = 0;
 	u32 rodataByteCount = 0;
 	u32 dataLoadAddress = 0;

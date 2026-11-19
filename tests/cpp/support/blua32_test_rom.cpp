@@ -1,6 +1,7 @@
 #include "blua32_test_rom.h"
 
 #include "common/endian.h"
+#include "common/hash_fnv.h"
 #include "common/serializer/binencoder.h"
 #include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
@@ -12,6 +13,7 @@
 #include "rompack/tooling/toc_encode.h"
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <span>
 #include <type_traits>
@@ -52,11 +54,6 @@ auto encodeManifest(const CartManifest& source) -> std::vector<u8> {
 	return encodeBinary(BinValue(std::move(manifest)));
 }
 
-struct StringRecord {
-	u32 offset = 0;
-	u32 byteCount = 0;
-};
-
 auto encodeImage(
 	RomImageDomain domain,
 	const Blua32TestImage& source,
@@ -85,20 +82,14 @@ auto encodeImage(
 	offset = systemGlobalNameTableOffset
 		+ static_cast<u32>(source.systemGlobalNames.size()) * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 
-	std::vector<u8> strings;
-	std::unordered_map<std::string, StringRecord> stringRecords;
-	auto internString = [&](const std::string& value) -> StringRecord {
-		const auto existing = stringRecords.find(value);
-		if (existing != stringRecords.end()) {
-			return existing->second;
-		}
-		const StringRecord record{
-			static_cast<u32>(strings.size()),
-			static_cast<u32>(value.size()),
-		};
-		strings.insert(strings.end(), value.begin(), value.end());
-		stringRecords.emplace(value, record);
-		return record;
+	std::unordered_map<std::string_view, u32> stringOffsetByValue;
+	std::vector<std::string_view> strings;
+	u32 stringRecordBytes = 0;
+	const auto internString = [&](std::string_view value) {
+		if (!stringOffsetByValue.try_emplace(value, stringRecordBytes).second) return;
+		strings.push_back(value);
+		stringRecordBytes = alignOffset(stringRecordBytes + BLUA32_STRING_RECORD_HEADER_SIZE
+			+ static_cast<u32>(value.size()), 0u, BLUA32_STRING_RECORD_ALIGNMENT);
 	};
 	for (const Blua32EncodedConstant& constant : source.constants) {
 		if (const auto* value = std::get_if<std::string>(&constant)) {
@@ -112,12 +103,15 @@ auto encodeImage(
 		internString(name);
 	}
 
-	const u32 stringOffset = offset;
-	offset += static_cast<u32>(strings.size());
+	const u32 stringBucketOffset = alignOffset(offset, imageAddress, 4u);
+	const u32 stringBucketCount = std::bit_ceil(static_cast<u32>(strings.size()));
+	const u32 stringRecordOffset = alignOffset(stringBucketOffset + 4u * stringBucketCount,
+		imageAddress, BLUA32_STRING_RECORD_ALIGNMENT);
+	offset = stringRecordOffset + stringRecordBytes;
 	const u32 textOffset = alignOffset(offset, imageAddress, INSTRUCTION_BYTES);
 	const u32 imageByteCount = textOffset + static_cast<u32>(source.text.size());
 	const u32 functionTableAddress = imageAddress + functionTableOffset;
-	const u32 stringAddress = imageAddress + stringOffset;
+	const u32 stringAddress = imageAddress + stringRecordOffset;
 	const u32 textAddress = imageAddress + textOffset;
 
 	functionAddresses.resize(source.functions.size());
@@ -187,11 +181,8 @@ auto encodeImage(
 		bytes.data() + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 		static_cast<u32>(source.systemGlobalNames.size())
 	);
-	writeLE32(bytes.data() + BLUA32_IMAGE_STRING_ADDRESS_OFFSET, stringAddress);
-	writeLE32(
-		bytes.data() + BLUA32_IMAGE_STRING_BYTE_COUNT_OFFSET,
-		static_cast<u32>(strings.size())
-	);
+	writeLE32(bytes.data() + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, imageAddress + stringBucketOffset);
+	writeLE32(bytes.data() + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET, stringBucketCount);
 	writeLE32(bytes.data() + BLUA32_IMAGE_RODATA_ADDRESS_OFFSET, textAddress);
 	writeLE32(bytes.data() + BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET, 0u);
 	writeLE32(bytes.data() + BLUA32_IMAGE_DATA_LOAD_ADDRESS_OFFSET, textAddress);
@@ -268,39 +259,41 @@ auto encodeImage(
 			writeLE32(record + BLUA32_CONSTANT_TAG_OFFSET, static_cast<u32>(Blua32ConstantTag::Float));
 			writeLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET, number->bits);
 		} else {
-			const StringRecord string = stringRecords.at(std::get<std::string>(constant));
+			const u32 stringOffset = stringOffsetByValue.at(std::get<std::string>(constant));
 			writeLE32(
 				record + BLUA32_CONSTANT_TAG_OFFSET,
 				static_cast<u32>(Blua32ConstantTag::String)
 			);
 			writeLE32(
 				record + BLUA32_CONSTANT_PAYLOAD_OFFSET,
-				stringAddress + string.offset
-			);
-			writeLE32(
-				record + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET,
-				string.byteCount
+				stringAddress + stringOffset
 			);
 		}
 	}
 
 	auto writeNameTable = [&](u32 tableOffset, const std::vector<std::string>& names) {
 		for (u32 index = 0; index < names.size(); ++index) {
-			const StringRecord string = stringRecords.at(names[index]);
+			const u32 stringOffset = stringOffsetByValue.at(names[index]);
 			u8* record = bytes.data() + tableOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 			writeLE32(
 				record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
-				stringAddress + string.offset
-			);
-			writeLE32(
-				record + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET,
-				string.byteCount
+				stringAddress + stringOffset
 			);
 		}
 	};
 	writeNameTable(globalNameTableOffset, source.globalNames);
 	writeNameTable(systemGlobalNameTableOffset, source.systemGlobalNames);
-	std::copy(strings.begin(), strings.end(), bytes.begin() + stringOffset);
+	for (std::string_view value : strings) {
+		const u32 record = stringRecordOffset + stringOffsetByValue.at(value);
+		const u32 hash = fnv1a32(value);
+		u8* bucket = bytes.data() + stringBucketOffset + 4u * (hash & (stringBucketCount - 1u));
+		writeLE32(bytes.data() + record, BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG);
+		writeLE32(bytes.data() + record + BLUA32_STRING_HASH_OFFSET, hash);
+		writeLE32(bytes.data() + record + BLUA32_STRING_LENGTH_OFFSET, static_cast<u32>(value.size()));
+		writeLE32(bytes.data() + record + BLUA32_STRING_NEXT_OFFSET, readLE32(bucket));
+		std::copy(value.begin(), value.end(), bytes.begin() + record + BLUA32_STRING_RECORD_HEADER_SIZE);
+		writeLE32(bucket, imageAddress + record);
+	}
 	std::copy(text.begin(), text.end(), bytes.begin() + textOffset);
 	return bytes;
 }

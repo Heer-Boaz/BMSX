@@ -286,21 +286,20 @@ to the program-header address obtained above. The CPU uses these six unsigned
 | `18H` | Constant-table address | Absolute machine byte address in installed ROM. |
 | `1CH` | Constant count | Number of 12-byte constant records. |
 | `20H` | Global-name-table address | Absolute machine byte address in installed ROM. |
-| `24H` | Global-name count | Number of 8-byte name records. |
+| `24H` | Global-name count | Number of 4-byte name records. |
 | `28H` | System-global-name-table address | Absolute machine byte address in installed ROM. |
-| `2CH` | System-global-name count | Number of 8-byte name records. |
+| `2CH` | System-global-name count | Number of 4-byte name records. |
 
-The other four-byte header slots describe the program's sections and linkage. They retain
-the following format; CPU program selection does not use them to locate the
-constant or name tables.
+The other four-byte header slots describe the program's format, sections
+and linkage:
 
 | Image byte offset | Descriptive field |
 | --- | --- |
 | `00H` | Magic; declared constant `32334C42H`. |
-| `04H` | Version; declared constant 1. |
+| `04H` | Format version; required value 2. |
 | `08H`, `0CH` | Image byte count; flags. |
 | `10H`, `14H` | Function-table address; function count. |
-| `30H`, `34H` | String address; string byte count. |
+| `30H`, `34H` | ROM String bucket-table address; bucket count. |
 | `38H`, `3CH` | RODATA address; RODATA byte count. |
 | `40H`, `44H`, `48H` | DATA load address; DATA byte count; DATA run address. |
 | `4CH`, `50H` | BSS address; BSS byte count. |
@@ -340,7 +339,7 @@ Constant record `i` begins at `constantTableAddress + 12i`, with zero-based `i`.
 | 1 | False | None. |
 | 2 | True | None. |
 | 3 | Integer Number | Four-byte two's-complement integer, little-endian, at `04H`–`07H`. |
-| 4 | String | Absolute ROM text byte address at `04H`; text byte count at `08H`, both u32 little-endian. |
+| 4 | String | Absolute ROM String record address at `04H`; `08H` is reserved. |
 | 5 | Floating Number | Four-byte IEEE-754 binary32, little-endian, at `04H`–`07H`. |
 
 Each constant record occupies 12 bytes. An Integer record preserves its signed
@@ -356,19 +355,33 @@ invalid and prevents program activation. Arithmetic and the comparison of the
 two Number subtypes are defined by the
 [[CPU reference](cpu.md#sec-cpu-values-and-numeric-instructions)]{.content-visible when-format="html"}[CPU reference, Book II, Chapter 1]{.content-visible when-format="pdf"}.
 
-Both name tables use the same layout. Name record `i` begins at `tableAddress + 8i`:
+Both name tables use the same layout. Name record `i` begins at
+`tableAddress + 4i` and contains one absolute ROM String record address.
+A constant and a name can both refer to the same record.
+
+#### ROM String records {#sec-program-images-rom-string-records}
+
+Each record begins at an eight-byte-aligned ROM address. Its bytes follow
+the four little-endian words shown below.
 
 | Record byte offset | Field |
 | --- | --- |
-| `00H` | Absolute ROM text byte address, u32 little-endian. |
-| `04H` | Text byte count, u32 little-endian. |
-
-Text lengths count **bytes**, not codepoints. Reads consume the specified span, not a NUL-terminated sequence. A zero byte within the span is part of the text. A zero byte count produces empty text without reading the address.
+| `00H` | Kind and ROM flag: `00010005H`. |
+| `04H` | 32-bit FNV-1a hash of the payload bytes. |
+| `08H` | Payload byte count, excluding the header and any following padding. |
+| `0CH` | Absolute address of the next record in the same bucket, or zero. |
+| `10H` | First payload byte. No terminator is required. |
 
 String constants carry their bytes unchanged, including NUL and sequences that
-are not valid UTF-8. Source text and spelled names normally use UTF-8. The
-record's explicit byte count determines its contents; no terminator or
-character decoding is used.
+are not valid UTF-8. Source text and spelled names normally use UTF-8. An empty
+String still has a record: its payload byte count is zero.
+
+The bucket table contains a power-of-two number of 32-bit record addresses.
+An empty bucket contains zero. To compute a hash, start at `811C9DC5H`. For
+each unsigned payload byte, XOR it into the hash and multiply by
+`01000193H`, keeping the low 32 bits. The bucket index is the hash AND
+the bucket count minus one. The chain contains each distinct byte sequence
+in that bucket once.
 
 The two name tables establish separate ordinary-global and system-global
 namespaces. Within each namespace an existing name retains its value and a new

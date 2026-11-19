@@ -6,7 +6,6 @@ import {
 	Blua32ConstantTag,
 	BLUA32_CONSTANT_PAYLOAD_OFFSET,
 	BLUA32_CONSTANT_RECORD_SIZE,
-	BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET,
 	BLUA32_CONSTANT_TAG_OFFSET,
 	BLUA32_FUNCTION_ALIGNMENT,
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
@@ -20,7 +19,6 @@ import {
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_VARARG,
 	BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
-	BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET,
 	BLUA32_GLOBAL_NAME_RECORD_SIZE,
 	BLUA32_IMAGE_BSS_ADDRESS_OFFSET,
 	BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
@@ -41,8 +39,13 @@ import {
 	BLUA32_IMAGE_MAGIC_OFFSET,
 	BLUA32_IMAGE_RODATA_ADDRESS_OFFSET,
 	BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET,
-	BLUA32_IMAGE_STRING_ADDRESS_OFFSET,
-	BLUA32_IMAGE_STRING_BYTE_COUNT_OFFSET,
+	BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET,
+	BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
+	BLUA32_STRING_RECORD_ALIGNMENT,
+	BLUA32_STRING_RECORD_HEADER_SIZE,
+	BLUA32_STRING_RECORD_KIND,
+	BLUA32_STRING_RECORD_ROM_FLAG,
+	BLUA32_STRING_LENGTH_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
@@ -115,8 +118,8 @@ export type Blua32ImageHeader = {
 	globalNameCount: number;
 	systemGlobalNameTableAddress: number;
 	systemGlobalNameCount: number;
-	stringAddress: number;
-	stringByteCount: number;
+	stringBucketAddress: number;
+	stringBucketCount: number;
 	rodataAddress: number;
 	rodataByteCount: number;
 	dataLoadAddress: number;
@@ -204,8 +207,8 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 		globalNameCount: readLE32(bytes, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET),
 		systemGlobalNameTableAddress: readLE32(bytes, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
 		systemGlobalNameCount: readLE32(bytes, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET),
-		stringAddress: readLE32(bytes, BLUA32_IMAGE_STRING_ADDRESS_OFFSET),
-		stringByteCount: readLE32(bytes, BLUA32_IMAGE_STRING_BYTE_COUNT_OFFSET),
+		stringBucketAddress: readLE32(bytes, BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
+		stringBucketCount: readLE32(bytes, BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET),
 		rodataAddress: readLE32(bytes, BLUA32_IMAGE_RODATA_ADDRESS_OFFSET),
 		rodataByteCount: readLE32(bytes, BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET),
 		dataLoadAddress: readLE32(bytes, BLUA32_IMAGE_DATA_LOAD_ADDRESS_OFFSET),
@@ -235,7 +238,11 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 	imageOffset(header.constantTableAddress, header.constantCount * BLUA32_CONSTANT_RECORD_SIZE, imageAddress, header.imageByteCount);
 	imageOffset(header.globalNameTableAddress, header.globalNameCount * BLUA32_GLOBAL_NAME_RECORD_SIZE, imageAddress, header.imageByteCount);
 	imageOffset(header.systemGlobalNameTableAddress, header.systemGlobalNameCount * BLUA32_GLOBAL_NAME_RECORD_SIZE, imageAddress, header.imageByteCount);
-	const stringOffset = imageOffset(header.stringAddress, header.stringByteCount, imageAddress, header.imageByteCount);
+	if ((header.stringBucketAddress & 3) !== 0 || header.stringBucketCount === 0
+		|| (header.stringBucketCount & (header.stringBucketCount - 1)) !== 0) {
+		throw new Error('BLua32 String bucket table is invalid.');
+	}
+	imageOffset(header.stringBucketAddress, 4 * header.stringBucketCount, imageAddress, header.imageByteCount);
 	const rodataOffset = imageOffset(header.rodataAddress, header.rodataByteCount, imageAddress, header.imageByteCount);
 	const dataLoadOffset = imageOffset(header.dataLoadAddress, header.dataByteCount, imageAddress, header.imageByteCount);
 	const textOffset = imageOffset(header.textAddress, header.textByteCount, imageAddress, header.imageByteCount);
@@ -283,12 +290,15 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 		};
 	}
 
-	const decodeString = (address: number, byteCount: number): string => {
-		if (address < header.stringAddress || byteCount > header.stringByteCount - (address - header.stringAddress)) {
-			throw new Error('BLua32 string record points outside the string table.');
+	const decodeString = (address: number): string => {
+		const offset = imageOffset(address, BLUA32_STRING_RECORD_HEADER_SIZE, imageAddress, header.imageByteCount);
+		if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1)) !== 0
+			|| readLE32(bytes, offset) !== (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
+			throw new Error('BLua32 ROM String header is invalid.');
 		}
-		const offset = stringOffset + address - header.stringAddress;
-		return byteStringFromBytes(bytes, offset, byteCount);
+		const count = readLE32(bytes, offset + BLUA32_STRING_LENGTH_OFFSET);
+		imageOffset(address, BLUA32_STRING_RECORD_HEADER_SIZE + count, imageAddress, header.imageByteCount);
+		return byteStringFromBytes(bytes, offset + BLUA32_STRING_RECORD_HEADER_SIZE, count);
 	};
 
 	const constantTableOffset = header.constantTableAddress - imageAddress;
@@ -313,10 +323,7 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 				constants[index] = { kind: 'float', word: view.getUint32(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true) };
 				break;
 			case Blua32ConstantTag.String:
-				constants[index] = decodeString(
-					view.getUint32(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true),
-					view.getUint32(offset + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET, true),
-				);
+				constants[index] = decodeString(view.getUint32(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true));
 				break;
 			default:
 				throw new Error('BLua32 constant tag is invalid.');
@@ -328,10 +335,7 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 		const names = new Array<string>(count);
 		for (let index = 0; index < count; index += 1) {
 			const offset = tableOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-			names[index] = byteStringToText(decodeString(
-				view.getUint32(offset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, true),
-				view.getUint32(offset + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET, true),
-			));
+			names[index] = byteStringToText(decodeString(view.getUint32(offset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, true)));
 		}
 		return names;
 	};
