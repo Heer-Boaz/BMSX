@@ -51,7 +51,7 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 		m_cache.spillCall(false, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
 			offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);
-		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_SP, 0, SLJIT_IMM, args);
+		sljit_get_local_base(m_compiler, SLJIT_R0, 0, args);
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.strings));
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, NativeBlockAbi::state, 0, SLJIT_IMM,
 			offsetof(NativeBlockRunState, remainingCycles));

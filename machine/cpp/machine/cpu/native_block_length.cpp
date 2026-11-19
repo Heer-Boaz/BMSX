@@ -32,7 +32,7 @@ void NativeBlockCompiler::emitLength(const DecodedInstruction& instruction, Nati
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.strings));
 	sljit_emit_op1(
 		m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_SP, 0, SLJIT_IMM, value);
+	sljit_get_local_base(m_compiler, SLJIT_R3, 0, value);
 	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4(32, P, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(lengthKernel));
 	m_cache.spillCall(true, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),

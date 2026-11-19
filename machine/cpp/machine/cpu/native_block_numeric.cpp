@@ -96,8 +96,8 @@ void NativeBlockCompiler::emitNumericKernel(
 	}
 	const auto prefix = m_cache.state();
 	m_cache.spillCall(false, 0);
-	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_SP, 0, SLJIT_IMM, args);
-	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_SP, 0, SLJIT_IMM, result);
+	sljit_get_local_base(m_compiler, SLJIT_R0, 0, args);
+	sljit_get_local_base(m_compiler, SLJIT_R1, 0, result);
 	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(kernelFor(op)));
 	m_cache.spillCall(true, 0);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0), invalid, prefix);

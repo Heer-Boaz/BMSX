@@ -21,11 +21,14 @@ void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction, Nat
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), words);
 		sljit_emit_op2(c, SLJIT_SUB, SLJIT_R0, 0, SLJIT_R2, 0,
 			SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, ram));
-		emitRamWordWriteWatch(*watched, SLJIT_R0, wordOffset, SLJIT_R1, SLJIT_R3);
+		// A register operand carries no displacement: form the slot's RAM offset.
+		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, wordOffset);
+		emitRamWordWriteWatch(*watched, SLJIT_R0, 0, SLJIT_R1, SLJIT_R3);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), tags);
 		sljit_emit_op2(c, SLJIT_SUB, SLJIT_R0, 0, SLJIT_R3, 0,
 			SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, ram));
-		emitRamWordWriteWatch(*watched, SLJIT_R0, tagOffset, SLJIT_R1, SLJIT_R3);
+		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, tagOffset);
+		emitRamWordWriteWatch(*watched, SLJIT_R0, 0, SLJIT_R1, SLJIT_R3);
 		emitRawLoad(instruction.a, SLJIT_R0, SLJIT_R1);
 		if constexpr (std::endian::native == std::endian::big)
 			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
