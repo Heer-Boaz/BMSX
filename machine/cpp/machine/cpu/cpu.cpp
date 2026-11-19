@@ -836,6 +836,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 			frameState.functionAddress = frame.functionAddress;
 			frameState.pc = frame.pc;
 			frameState.closureRef = captureObject(frame.closure);
+			frameState.openUpvalueHead = frame.openUpvalueHead;
 			frameState.returnBase = frame.returnBase;
 			frameState.returnCount = frame.returnCount;
 			frameState.top = frame.top;
@@ -868,12 +869,6 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				}
 			}
 			saved.protectedCalls.push_back(continuationState);
-		}
-		const CallFrame* frame = thread->firstFrame;
-		for (size_t depth = 0; depth < thread->frameDepth; ++depth, frame = frame->next) {
-			for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
-				saved.openUpvalues.push_back(captureObject(upvalue));
-			}
 		}
 		saved.stackTop = thread->stackTop;
 		const u32 index = static_cast<u32>(state.threads.size());
@@ -970,18 +965,8 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 			case ObjType::Upvalue: {
 				const auto* upvalue = static_cast<const Upvalue*>(object);
 				offset = snapshot.reserveWords(SNAP_UPVALUE_SIZE);
-				const bool open = upvalue->open && !m_heap.sweepGarbage(upvalue);
 				snapshot.setWord(offset + SNAP_UPVALUE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Upvalue));
 				snapshot.setWord(offset + SNAP_UPVALUE_HASH_ID, upvalue->hashId);
-				snapshot.setWord(offset + SNAP_UPVALUE_OPEN, open);
-				snapshot.setWord(offset + SNAP_UPVALUE_INDEX, static_cast<u32>(upvalue->index));
-				int frameIndex = -1;
-				if (open) {
-					frameIndex = 0;
-					for (auto* frame = upvalue->frame->thread->firstFrame; frame != upvalue->frame; frame = frame->next) ++frameIndex;
-				}
-				snapshot.setWord(offset + SNAP_UPVALUE_THREAD_REF, open ? captureObject(upvalue->frame->thread) : static_cast<u32>(-1));
-				snapshot.setWord(offset + SNAP_UPVALUE_FRAME_INDEX, static_cast<u32>(frameIndex));
 				snapshot.setWord(offset + SNAP_UPVALUE_ADDRESS, upvalue->address);
 				break;
 			}
@@ -1031,7 +1016,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	// host activations; following or changing old coroutine edges here would
 	// access the restored language records before their attachments exist.
 	while (m_rootThread->frameDepth != 0) {
-		m_rootThread->currentFrame->openUpvalueHead = nullptr;
+		m_rootThread->currentFrame->openUpvalueHead = 0;
 		m_rootThread->leaveFrame();
 	}
 	m_rootThread->protectedCallDepth = 0;
@@ -1122,9 +1107,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				m_luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
 				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue, m_memory, snapshot.word(offset + SNAP_UPVALUE_ADDRESS));
 				upvalue->restored = true;
-				upvalue->open = snapshot.word(offset + SNAP_UPVALUE_OPEN) != 0;
-				upvalue->index = snapshot.integer(offset + SNAP_UPVALUE_INDEX);
-				upvalue->frame = nullptr;
 				upvalue->hashId = snapshot.word(offset + SNAP_UPVALUE_HASH_ID);
 				restoredObjects[index] = upvalue;
 				break;
@@ -1191,6 +1173,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			frame->stackCapacity = frameState.stackCapacity;
 			frame->registers = thread->stack.subspan(frame->stackBase, frame->stackCapacity);
 			frame->top = frameState.top;
+			frame->openUpvalueHead = frameState.openUpvalueHead;
 			m_activeThread->enterFrame(frame);
 		}
 		thread->bindStack();
@@ -1208,23 +1191,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			continuation.handlerRegister = continuationState.handlerRegister;
 		}
 		m_activeThread->protectedCallDepth = saved.protectedCalls.size();
-	}
-	for (size_t objectIndex = 0; objectIndex < snapshot.objectCount(); ++objectIndex) {
-		const u32 offset = snapshot.objectWord(static_cast<u32>(objectIndex));
-		if (snapshot.word(offset) != static_cast<u32>(CpuSnapshotObjectKind::Thread)) continue;
-		const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
-		for (int upvalueRef : saved.openUpvalues) {
-			const u32 offset = snapshot.objectWord(static_cast<u32>(upvalueRef));
-			Upvalue* upvalue = static_cast<Upvalue*>(restoredObjects[static_cast<size_t>(upvalueRef)]);
-			Thread* owner = static_cast<Thread*>(restoredObjects[snapshot.word(offset + SNAP_UPVALUE_THREAD_REF)]);
-			CallFrame* frame = owner->frameAtDepth(static_cast<size_t>(snapshot.integer(offset + SNAP_UPVALUE_FRAME_INDEX)));
-			upvalue->open = true;
-			upvalue->index = snapshot.integer(offset + SNAP_UPVALUE_INDEX);
-			upvalue->frame = frame;
-			upvalue->setValue(valueNil());
-			linkOpenUpvalue(*frame, upvalue);
-		}
-
 	}
 	m_activeThread = static_cast<Thread*>(restoredObjects[state.activeThreadRef]);
 	m_completionThread = static_cast<Thread*>(restoredObjects[state.completionThreadRef]);
@@ -2674,23 +2640,30 @@ void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
 }
 
 Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
-	Upvalue* upvalue = frame.openUpvalueHead;
-	while (upvalue && upvalue->index >= index) {
-		if (upvalue->index == index) {
-			return upvalue;
-		}
-		upvalue = upvalue->nextOpen;
+	const u32 slot = static_cast<u32>(frame.stackBase) + static_cast<u32>(index);
+	u32 address = frame.openUpvalueHead;
+	for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
+		auto* upvalue = m_heap.openCellAt(address);
+		if (!upvalue) break;
+		const u32 current = upvalue->stackSlot();
+		if (current <= slot) return current == slot ? upvalue : nullptr;
+		address = upvalue->nextAddress();
 	}
 	return nullptr;
 }
 
-void CPU::linkOpenUpvalue(CallFrame& frame, Upvalue* upvalue) {
-	Upvalue** link = &frame.openUpvalueHead;
-	while (*link && (*link)->index > upvalue->index) {
-		link = &(*link)->nextOpen;
+void CPU::linkOpenUpvalue(CallFrame& frame, Upvalue& upvalue, u32 slot) {
+	Upvalue* previous = nullptr;
+	u32 next = frame.openUpvalueHead;
+	for (u32 remaining = UPVALUE_CHAIN_LIMIT; next != 0 && remaining != 0; --remaining) {
+		auto* current = m_heap.openCellAt(next);
+		if (!current || current->stackSlot() <= slot) break;
+		previous = current;
+		next = current->nextAddress();
 	}
-	upvalue->nextOpen = *link;
-	*link = upvalue;
+	upvalue.bind(frame.thread->address, slot, next);
+	if (previous) previous->setNextAddress(upvalue.address);
+	else frame.openUpvalueHead = upvalue.address;
 }
 
 Closure* CPU::createClosure(CallFrame& frame) {
@@ -2736,12 +2709,8 @@ Closure* CPU::createClosure(CallFrame& frame) {
 		if (address == 0u && (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
 			address = m_captureAddressScratch[nextCell++];
 			auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue, m_memory, address);
-			upvalue->open = true;
-			upvalue->index = static_cast<int>(
-				m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_INDEX_MASK
-			);
-			upvalue->frame = &frame;
-			linkOpenUpvalue(frame, upvalue);
+			linkOpenUpvalue(frame, *upvalue, static_cast<u32>(frame.stackBase)
+				+ (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_INDEX_MASK));
 		}
 		closure->setCaptureAddress(index, address);
 	}
@@ -2753,33 +2722,24 @@ Closure* CPU::createClosure(CallFrame& frame) {
 
 int CPU::closeUpvalues(CallFrame& frame) {
 	int closed = 0;
-	Upvalue* upvalue = frame.openUpvalueHead;
-	frame.openUpvalueHead = nullptr;
-	while (upvalue) {
-		Upvalue* next = upvalue->nextOpen;
-		upvalue->writeBarrier();
-		upvalue->setValue(frame.registers.get(static_cast<size_t>(upvalue->index)));
-		upvalue->open = false;
-		upvalue->frame = nullptr;
-		upvalue->nextOpen = nullptr;
-		upvalue = next;
+	u32 address = std::exchange(frame.openUpvalueHead, 0);
+	while (address != 0 && closed < static_cast<int>(UPVALUE_CHAIN_LIMIT)) {
+		auto* upvalue = m_heap.openCellAt(address);
+		if (!upvalue) break;
+		address = upvalue->nextAddress();
+		upvalue->close();
 		++closed;
 	}
 	return closed;
 }
 
 Value CPU::readUpvalue(u32 address) const {
-	const auto* cell = m_heap.cellAt(address);
-	return cell && cell->open ? cell->frame->registers.get(cell->index) : Upvalue::load(m_memory, address);
+	return Upvalue::load(m_memory, address);
 }
 
 void CPU::writeUpvalue(u32 address, const Value& value) {
-	if (auto* cell = m_heap.cellAt(address)) {
-		if (cell->open) {
-			cell->frame->registers.set(cell->index, value);
-			return;
-		}
-		cell->writeBarrier();
+	if (!Upvalue::isOpen(m_memory, address)) {
+		if (auto* cell = m_heap.cellAt(address)) cell->writeBarrier();
 	}
 	Upvalue::store(m_memory, address, value);
 }

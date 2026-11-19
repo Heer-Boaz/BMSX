@@ -172,11 +172,22 @@ void closedCellLivesInRam() {
 	auto& memory = machine.memory;
 	require(memory.readRamRecordWord(closure->address + CLOSURE_CAPTURE_WORDS) == cell->address,
 		"closure owns the physical capture word");
+	require(memory.readRamRecordByte(address + UPVALUE_FLAGS) == UPVALUE_OPEN
+		&& memory.readRamRecordWord(address + UPVALUE_OWNER) == frame.thread->address
+		&& memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == static_cast<u32>(frame.stackBase),
+		"the open variant records the owning Thread and absolute stack slot in RAM");
 	const auto openSnapshot = cpu.captureRuntimeState();
 	const auto openRam = memory.captureSaveState();
+	const u32 oldStack = frame.thread->stackOffset();
+	const size_t oldCapacity = frame.thread->stackCapacity;
+	frame.thread->resizeStack(80);
+	require(frame.thread->stackOffset() != oldStack, "the fixture relocates the defining Thread's stack");
 	frame.registers.set(0, valueFloatBits(0xffa12345u));
+	require(cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u),
+		"the open record follows the new stack block without being rewritten");
+	frame.thread->resizeStack(oldCapacity);
 	cpu.abortCompletionCall(0);
-	require(!cell->open && memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == 0xffa12345u
+	require(!cell->isOpen() && memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == 0xffa12345u
 		&& memory.readRamRecordByte(address + UPVALUE_VALUE_TAG) == static_cast<u8>(ValueTag::Float),
 		"closing a capture writes the exact value to the allocated cell");
 	const auto saved = cpu.captureRuntimeState();
@@ -220,7 +231,7 @@ void closureAndCellPagesChargeVacantSlots() {
 	require(sweep() == occupied, "reclaiming an issued closure costs one slot visit");
 	require(heap.closureAt(closureAddress) == nullptr &&
 		cpu.memory().readRamRecordByte(closureAddress) == 0, "allocator sweep retires the closure slot");
-	require(heap.cellAt(cellAddress) && heap.cellAt(cellAddress)->open, "an open frame still roots the cell");
+	require(heap.cellAt(cellAddress) && heap.cellAt(cellAddress)->isOpen(), "an open frame still roots the cell");
 	require(sweep() == occupied, "a free closure slot on a surviving object page still costs one visit");
 }
 

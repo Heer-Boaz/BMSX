@@ -37,6 +37,10 @@ public:
 	Table* tableAt(u32 address) const { return attachedRecord<Table, ObjType::Table>(address & ~(Table::HEADER_BYTES - 1)); }
 	Upvalue* cellAt(u32 address) const { return attachedRecord<Upvalue, ObjType::Upvalue>(address & ~(UPVALUE_HEAP_BYTES - 1)); }
 	Closure* closureAt(u32 address) const { return attachedRecord<Closure, ObjType::Closure>(address); }
+	Upvalue* openCellAt(u32 address) const {
+		auto* cell = cellAt(address);
+		return cell && cell->isOpen() ? cell : nullptr;
+	}
 	Thread* threadAt(u32 address) const { return attachedRecord<Thread, ObjType::Thread>(address); }
 	void forgetPhysicalRecords() { std::fill(m_records.begin(), m_records.end(), nullptr); }
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {

@@ -3,6 +3,7 @@
 #include "machine/cpu/native_value_emit.h"
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/closure.h"
+#include "machine/cpu/thread.h"
 
 #include <bit>
 
@@ -51,68 +52,79 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	if constexpr (std::endian::native == std::endian::big)
 		sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
-	// Capture words are physical cell addresses. Only an attached open cell
-	// aliases a host frame; every other address uses the aligned RAM ports.
-	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_IMM, MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-	emitPhysicalRecordPointer(m_compiler, SLJIT_R3, SLJIT_R2, SLJIT_R0);
-	const auto fields = Upvalue::nativeOffsets();
-	auto* unattached = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), offsetof(GCObject, type));
-	auto* otherRecord = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
-		SLJIT_IMM, static_cast<u8>(ObjType::Upvalue));
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), fields.open);
-	auto* open = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
-	if (instruction.op == static_cast<u8>(OpCode::SETUP)) {
-		auto* closed = sljit_emit_jump(m_compiler, SLJIT_JUMP);
-		sljit_set_label(otherRecord, sljit_emit_label(m_compiler));
-		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, 0);
-		auto* rawCell = sljit_emit_label(m_compiler);
-		sljit_set_label(closed, rawCell);
-		sljit_set_label(unattached, rawCell);
-	} else {
-		auto* rawCell = sljit_emit_label(m_compiler);
-		sljit_set_label(otherRecord, rawCell);
-		sljit_set_label(unattached, rawCell);
-	}
+	auto* c = m_compiler;
+	sljit_emit_op2(c, SLJIT_AND, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_IMM, MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R3);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_FLAGS);
+	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, UPVALUE_OPEN);
+	auto* open = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
 	if (instruction.op == static_cast<u8>(OpCode::SETUP)) {
 		fault(open, *openWrite, m_cache.state());
-		// The complete aligned cell is on one page. A watch takes the existing
-		// semantic exit before either byte lane is changed.
-		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R0, 0, SLJIT_R3, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0),
+		// The aligned cell stays on one page. An armed watch uses the normal
+		// record writer before either lane changes.
+		sljit_emit_op2(c, SLJIT_LSHR, SLJIT_R0, 0, SLJIT_R3, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
+		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0),
 			reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
-		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0), *openWrite, m_cache.state());
-		NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R3, SLJIT_R3);
+		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0), *openWrite, m_cache.state());
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+		emitPhysicalRecordPointer(c, SLJIT_R3, SLJIT_R2, SLJIT_R0);
+		NativeBlockAbi::emitRamAddress(c, SLJIT_R3, SLJIT_R3);
 		emitRawLoad(instruction.a, SLJIT_R0, SLJIT_R1);
 		if constexpr (std::endian::native == std::endian::big)
-			sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_WORD, SLJIT_R0, 0);
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_TAG, SLJIT_R1, 0);
-		auto* untracked = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0);
-		emitGcWriteBarrier(m_compiler, SLJIT_R2, SLJIT_R0, SLJIT_R1);
-		sljit_set_label(untracked, sljit_emit_label(m_compiler));
+			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_WORD, SLJIT_R0, 0);
+		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_TAG, SLJIT_R1, 0);
+		auto* untracked = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0);
+		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), offsetof(GCObject, type));
+		auto* otherRecord = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
+			SLJIT_IMM, static_cast<u8>(ObjType::Upvalue));
+		emitGcWriteBarrier(c, SLJIT_R2, SLJIT_R0, SLJIT_R1);
+		auto* done = sljit_emit_label(c);
+		sljit_set_label(untracked, done);
+		sljit_set_label(otherRecord, done);
 		return;
 	}
-	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R3, SLJIT_R3);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_WORD);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_VALUE_WORD);
 	if constexpr (std::endian::native == std::endian::big)
-		sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_TAG);
-	auto* ready = sljit_emit_jump(m_compiler, SLJIT_JUMP);
-	sljit_set_label(open, sljit_emit_label(m_compiler));
-	// Open cells can alias any active register window in the shared stack.
-	// Publish the dirty snapshot only on this branch; the closed path stays local.
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_VALUE_TAG);
+	auto* ready = sljit_emit_jump(c, SLJIT_JUMP);
+	sljit_set_label(open, sljit_emit_label(c));
+	// The owner and slot are guest words, so a read can alias any active bank.
 	m_cache.emitState(m_cache.state());
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), fields.index);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), fields.frame);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2),
-		offsetof(CallFrame, registers) + ValueSpan::wordsOffset());
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R3), 2);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2),
-		offsetof(CallFrame, registers) + ValueSpan::tagsOffset());
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R3), 0);
-	sljit_set_label(ready, sljit_emit_label(m_compiler));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_VALUE_WORD);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_OWNER);
+	if constexpr (std::endian::native == std::endian::big) {
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R3, 0, SLJIT_R3, 0);
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
+	}
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R2, 0, SLJIT_IMM, static_cast<u32>(ThreadField::StackBlock));
+	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), 0);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, static_cast<u32>(ThreadField::StackCapacity));
+	sljit_emit_op2(c, SLJIT_AND, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R1, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R3, 0);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R0, 0);
+	sljit_emit_op2(c, SLJIT_AND, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R1, SLJIT_R1);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), 0);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R3, 0);
+	sljit_emit_op2(c, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), 0);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+	sljit_set_label(ready, sljit_emit_label(c));
 	emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
 }
 

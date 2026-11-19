@@ -22,7 +22,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 	const upvalue = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
-	upvalue.open = true; upvalue.index = 8; upvalue.frame = frame;
+	upvalue.bind(frame.thread.address, frame.stackBase + 8, 0);
 	cpu.gc.track(upvalue);
 	const bound = frame.closure;
 	frame.closure = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(1), bound.prototypeRecord, 1, false);
@@ -32,13 +32,17 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!;
-	const other = { ...frame, registers: new ValueSlots(22) };
+	const other = cpu.createThread(null);
+	other.resizeStack(22);
 	const values = [valueFromTag(ValueTag.False, 37), valueInteger(-1), valueFloatBits(0x80000000), valueFloatBits(0xffc01234),
 		valueString(cpu.stringPool.intern('upvalue')), valueTable(cpu.gc.reference(cpu.createTable()))];
 	for (const source of ['own', 'other', 'closed']) for (const value of values) {
-		upvalue.open = source !== 'closed'; upvalue.frame = source === 'own' ? frame : source === 'other' ? other : null;
+		if (source === 'closed') {
+			if (upvalue.open) upvalue.close();
+		} else {
+			upvalue.bind(source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
+		}
 		upvalue.value = value;
-		other.registers.set(8, value);
 		for (const grant of [1, 64]) {
 			r.set(2, value);
 			r.setInteger(8, 73); r.setInteger(20, 74); r.setInteger(21, 75);

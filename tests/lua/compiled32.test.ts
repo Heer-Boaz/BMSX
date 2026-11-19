@@ -4,7 +4,6 @@ import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/closure';
-import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -25,7 +24,8 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 	firstFrame.closure = closure;
 	const table = cpu.createTable(1, 1), field = cpu.stringPool.find('field')!;
 	const upvalue = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));cpu.gc.track(upvalue);closure.setCaptureAddress(0, upvalue.address);
-	const other = { ...firstFrame, registers: new ValueSlots(24) };
+	const other = cpu.createThread(null);
+	other.resizeStack(24);
 	function setup(scenario: Scenario, value = v.valueInteger(3), source = 'closed') {
 		const frame = cpu.activeThread.currentFrame!, r = frame.registers;
 		for (let i = 0; i < r.capacity(); ++i) r.setInteger(i, 900 + i);
@@ -46,8 +46,12 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 			memory.writeMappedF64LE(DYNAMIC_RAM_BASE + 0x200, 0);
 		}
 		if (scenario === 'upvalue') {
-			upvalue.open = source !== 'closed';upvalue.frame = source === 'own' ? frame : source === 'other' ? other : null;
-			upvalue.index = 8;upvalue.value = value;other.registers.set(8, value);
+			if (source === 'closed') {
+				if (upvalue.open) upvalue.close();
+			} else {
+				upvalue.bind(source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
+			}
+			upvalue.value = value;other.stackRegisters.set(8, value);
 			r.set(0, value);r.set(1, v.valueFloatBits(0xffa54321));
 		}
 	}
@@ -84,7 +88,7 @@ for (const scenario of ['chain', 'table', 'memory', 'upvalue', 'words', 'control
 					return { result, remaining:m.cpu.instructionBudgetRemaining, pc:frame.pc, top:frame.top,
 						registers:Array.from({ length:24 },(_,i)=>frame.registers.get(i)), completion,
 						epc:m.cpu.readEpcWord(),fault:m.cpu.readLuaFaultReasonWord(),upvalue:m.upvalue.value,
-						other:m.other.registers.get(8),saved:m.cpu.getGlobalByKey(m.cpu.stringPool.find('saved')!),
+						other:m.other.stackRegisters.get(8),saved:m.cpu.getGlobalByKey(m.cpu.stringPool.find('saved')!),
 						memory:[m.cpu.memory.readMappedU32LE(DYNAMIC_RAM_BASE+0x200),m.cpu.memory.readMappedU32LE(DYNAMIC_RAM_BASE+0x204)] };
 				});
 				assert.deepEqual(results[1],results[0],`${scenario} ${source}, value ${v.valueTag(value)}:${v.valuePayload(value)}, grant ${grant}`);

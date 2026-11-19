@@ -3,7 +3,7 @@ import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import { heapAllocationBytes, type HeapAllocator } from './heap_allocator';
 import { GcObject, GcKind, GarbageAllocation } from './gc_object';
-import { type Closure, type Upvalue, UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, FunctionPrototypePool, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
+import { type Closure, type Upvalue, UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, FunctionPrototypePool, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
 import { Table, TableRecords } from './table';
 import { Thread, ThreadField, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { ValueTag, valueTag, valuePayload, scalarValueHash, valueInteger, valueNil, type Value } from './value';
@@ -84,6 +84,10 @@ export class GcHeap {
 	public closureAt(address: number): Closure | null {
 		const object = this.records[(address & GC_RECORD_MASK) >>> 3];
 		return object?.gcKind === GcKind.Closure ? object as Closure : null;
+	}
+	public openCellAt(address: number): Upvalue | null {
+		const cell = this.cellAt(address);
+		return cell?.open ? cell : null;
 	}
 	public threadAt(address: number): Thread | null {
 		const object = this.records[(address & GC_RECORD_MASK) >>> 3];
@@ -222,8 +226,8 @@ export class GcHeap {
 			}
 			case GcKind.Upvalue: {
 				const upvalue = object as Upvalue;
-				if (upvalue.open) this.markObject(upvalue.frame!.thread);
-				else this.markValue(upvalue.value);
+				if (upvalue.open) this.markObject(this.threadAt(upvalue.ownerAddress));
+				this.markValue(upvalue.value);
 				break;
 			}
 			case GcKind.Thread: {
@@ -235,8 +239,14 @@ export class GcHeap {
 				for (let depth = 0; depth < thread.frameDepth; ++depth, frame = frame.next!) {
 					this.cpu.markHeapImage(frame.executionImage);
 					this.markObject(frame.closure);
-					for (let upvalue = frame.openUpvalueHead; upvalue !== null; upvalue = upvalue.nextOpen) {
-						this.markObject(upvalue); liveTop = Math.max(liveTop, frame.stackBase + upvalue.index + 1);
+					let address = frame.openUpvalueHead;
+					for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
+						const upvalue = this.openCellAt(address);
+						if (upvalue === null) break;
+						this.markObject(upvalue);
+						const slot = upvalue.stackSlot;
+						if (slot < thread.stackRegisters.capacity()) liveTop = Math.max(liveTop, slot + 1);
+						address = upvalue.nextAddress;
 					}
 				}
 				for (let i = 0; i < liveTop; ++i) this.markSlot(thread.stackRegisters, i);

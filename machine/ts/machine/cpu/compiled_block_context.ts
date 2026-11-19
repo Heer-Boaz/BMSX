@@ -1,4 +1,6 @@
-import { UPVALUE_ADDRESS_MASK, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './closure';
+import { UPVALUE_ADDRESS_MASK, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './closure';
+import { ThreadField } from './thread';
+import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueTag } from './value';
 import { OpCode } from '../../spec/blua32/opcode';
 import type { DecodedInstructionPage } from './execution_image';
@@ -31,16 +33,20 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 		case OpCode.GETUP: {
 			const published = registers.writeBack(true);
 			registers.discard(a);
-			return `{const c=frame.closure.captureAddress(${b})&${UPVALUE_ADDRESS_MASK},u=h.cellAt(c);if(u?.open){
-				${published === '' ? '' : `if(u.frame===frame){${published}}`}
-				r.copySlotFrom(u.frame.registers,${a},u.index);
-			}else{r.setEncoded(${a},h.memory.readRamRecordByte(c+${UPVALUE_VALUE_TAG}),h.memory.readRamRecordWord(c+${UPVALUE_VALUE_WORD}));}}${registers.reloadRange(a, a + 1)}`;
+			return `{const m=h.memory,c=frame.closure.captureAddress(${b})&${UPVALUE_ADDRESS_MASK};
+				if(m.readRamRecordByte(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN}){
+					${published}
+					const owner=m.readRamRecordWord(c+${UPVALUE_OWNER}),slot=m.readRamRecordWord(c+${UPVALUE_VALUE_WORD});
+					const block=m.readRamRecordWord(owner+${ThreadField.StackBlock})&${RAM_RECORD_WORD_MASK};
+					const capacity=m.readRamRecordWord(owner+${ThreadField.StackCapacity});
+					r.setEncoded(${a},m.readRamRecordByte(block+capacity*4+slot),m.readRamRecordWord(block+slot*4));
+				}else r.setEncoded(${a},m.readRamRecordByte(c+${UPVALUE_VALUE_TAG}),m.readRamRecordWord(c+${UPVALUE_VALUE_WORD}));}${registers.reloadRange(a, a + 1)}`;
 		}
 		case OpCode.SETUP: {
 			const tag = registers.tagOperand(a), word = registers.wordOperand(a);
-			return `{const c=frame.closure.captureAddress(${b})&${UPVALUE_ADDRESS_MASK},u=h.cellAt(c);if(u?.open){if(u.frame===frame) ${registers.exit(exit)}
-				u.frame.registers.setEncoded(u.index,${tag},${word});}
-				else{u?.writeBarrier();h.memory.writeRamRecordWord(c+${UPVALUE_VALUE_WORD},${word});h.memory.writeRamRecordByte(c+${UPVALUE_VALUE_TAG},${tag});}}`;
+			return `{const m=h.memory,c=frame.closure.captureAddress(${b})&${UPVALUE_ADDRESS_MASK};
+				if(m.readRamRecordByte(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN}) ${registers.exit(exit)}
+				h.cellAt(c)?.writeBarrier();m.writeRamRecordWord(c+${UPVALUE_VALUE_WORD},${word});m.writeRamRecordByte(c+${UPVALUE_VALUE_TAG},${tag});}`;
 		}
 		case OpCode.VARARG: {
 			if (b === 1) return '';

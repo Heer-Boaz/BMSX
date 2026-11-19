@@ -6,32 +6,37 @@
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
+#include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
 
-struct CallFrame;
 class Memory;
 inline constexpr u32 UPVALUE_HEAP_BYTES = 16;
 inline constexpr u8 UPVALUE_RECORD_KIND = 11;
+inline constexpr u32 UPVALUE_FLAGS = 2;
+inline constexpr u8 UPVALUE_OPEN = 1;
 inline constexpr u32 UPVALUE_VALUE_TAG = 3;
 inline constexpr u32 UPVALUE_VALUE_WORD = 4;
+inline constexpr u32 UPVALUE_OWNER = 8;
+inline constexpr u32 UPVALUE_NEXT = 12;
+inline constexpr u32 UPVALUE_CHAIN_LIMIT = MAIN_RAM_SIZE / UPVALUE_HEAP_BYTES;
 
 struct Upvalue : GCObject {
 	Upvalue(Memory& memory, u32 address) : memory(memory), address(address) {}
 	Memory& memory;
 	const u32 address;
-	bool open = false;
-	int index = 0;
-	CallFrame* frame = nullptr;
+	bool isOpen() const;
+	u32 stackSlot() const;
+	u32 ownerAddress() const;
+	u32 nextAddress() const;
+	void setNextAddress(u32 next);
+	void bind(u32 owner, u32 slot, u32 next);
+	void close();
 	Value value() const { return load(memory, address); }
 	void setValue(Value value) { store(memory, address, value); }
 	static Value load(const Memory& memory, u32 address);
 	static void store(Memory& memory, u32 address, Value value);
-	Upvalue* nextOpen = nullptr;
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	struct NativeOffsets { size_t open, index, frame; };
-	static NativeOffsets nativeOffsets();
-#endif
+	static bool isOpen(const Memory& memory, u32 address);
 };
 
 // Decoded data shared by closures for the same published function record.

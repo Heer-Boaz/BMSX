@@ -217,9 +217,15 @@ size_t GcHeap::trace(bool atomic) {
 			CallFrame* frame = thread->firstFrame;
 			for (size_t depth = 0; depth < thread->frameDepth; ++depth, frame = frame->next) {
 				markObject(frame->closure);
-				for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
+				u32 address = frame->openUpvalueHead;
+				for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
+					auto* upvalue = openCellAt(address);
+					if (!upvalue) break;
 					markObject(upvalue);
-					liveTop = std::max(liveTop, frame->stackBase + upvalue->index + 1);
+					const u32 slot = upvalue->stackSlot();
+					if (slot < thread->stackCapacity)
+						liveTop = std::max(liveTop, static_cast<int>(slot + 1));
+					address = upvalue->nextAddress();
 				}
 			}
 			for (int slot = 0; slot < liveTop; ++slot) markValue(thread->stack.get(slot));
@@ -256,11 +262,8 @@ size_t GcHeap::trace(bool atomic) {
 		case ObjType::Garbage: break;
 		case ObjType::Upvalue: {
 			auto* upvalue = static_cast<Upvalue*>(obj);
-			if (!upvalue->open) {
-				markValue(upvalue->value());
-			} else {
-				markObject(upvalue->frame->thread);
-			}
+			if (upvalue->isOpen()) markObject(threadAt(upvalue->ownerAddress()));
+			markValue(upvalue->value());
 			break;
 		}
 	}

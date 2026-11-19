@@ -12,7 +12,6 @@ namespace bmsx {
 struct Blua32ExecutionImage;
 struct DecodedInstructionPage;
 struct Closure;
-struct Upvalue;
 struct Thread;
 
 enum class ProtectedCallKind : uint8_t {
@@ -52,7 +51,7 @@ struct CallFrame {
 	u32 callSitePc = 0;
 	bool isExceptionFrame = false;
 	bool isNonMaskableExceptionFrame = false;
-	Upvalue* openUpvalueHead = nullptr;
+	u32 openUpvalueHead = 0;
 };
 
 struct ProtectedCallContinuation {

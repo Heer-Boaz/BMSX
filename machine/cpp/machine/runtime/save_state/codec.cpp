@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x56524d42u; // BMRV
+constexpr u32 kSaveStateSignature = 0x57524d42u; // BMRW
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1163,6 +1163,7 @@ template<class Writer> void writeCpuFrameState(Writer& writer, const CpuFrameSta
 	writer.u32(state.callSitePc);
 	writer.boolean(state.isExceptionFrame);
 	writer.boolean(state.isNonMaskableExceptionFrame);
+	writer.u32(state.openUpvalueHead);
 }
 
 CpuFrameState readCpuFrameState(BinaryReader& reader) {
@@ -1181,6 +1182,7 @@ CpuFrameState readCpuFrameState(BinaryReader& reader) {
 	state.callSitePc = reader.u32();
 	state.isExceptionFrame = reader.boolean();
 	state.isNonMaskableExceptionFrame = reader.boolean();
+	state.openUpvalueHead = reader.u32();
 	return state;
 }
 
@@ -1228,8 +1230,6 @@ template<class Writer> void writeCpuThreadState(Writer& writer, const CpuThreadS
 	for (const auto& value : state.protectedCalls) {
 		writeCpuProtectedCallState(writer, value);
 	}
-	writer.u32(static_cast<u32>(state.openUpvalues.size()));
-	writer.i32s(state.openUpvalues);
 }
 
 CpuThreadState readCpuThreadState(BinaryReader& reader) {
@@ -1245,7 +1245,6 @@ CpuThreadState readCpuThreadState(BinaryReader& reader) {
 	for (u32 index = 0; index < protectedCallsCount; ++index) {
 		state.protectedCalls.push_back(readCpuProtectedCallState(reader));
 	}
-	state.openUpvalues = reader.i32s(reader.u32());
 	return state;
 }
 

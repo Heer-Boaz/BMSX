@@ -152,7 +152,7 @@ export class Thread extends GcObject {
 				stackBase: 0, stackCapacity: 0, registers: new ValueSlots(0), closure: null!,
 				returnBase: 0, returnCount: 0, protectedContinuationIndex: -1, top: 0, returnToCompletionLatch: false,
 				callSitePc: 0, isExceptionFrame: false, isNonMaskableExceptionFrame: false,
-				openUpvalueHead: null,
+				openUpvalueHead: 0,
 			};
 			if (this.currentFrame === null) this.firstFrame = frame;
 			else this.currentFrame.next = frame;

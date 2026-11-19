@@ -124,7 +124,7 @@ import {
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table, TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
-import { Closure, Upvalue, UPVALUE_HEAP_BYTES, sameFunctionPrototype } from './closure';
+import { Closure, Upvalue, UPVALUE_CHAIN_LIMIT, UPVALUE_HEAP_BYTES, sameFunctionPrototype } from './closure';
 import { ValueSlots } from './value_slots';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
 import {
@@ -162,7 +162,7 @@ import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKin
 
 
 // Saved values are u32 offsets into the snapshot word arena. Object references
-// (closureRef/openUpvalues) are ordinals in its object index.
+// such as closureRef are ordinals in its object index.
 export type CpuFrameState = {
 	functionAddress: number;
 	pc: number;
@@ -178,6 +178,7 @@ export type CpuFrameState = {
 	callSitePc: number;
 	isExceptionFrame: boolean;
 	isNonMaskableExceptionFrame: boolean;
+	openUpvalueHead: number;
 };
 
 export type CpuProtectedCallState = {
@@ -199,7 +200,6 @@ export type CpuThreadState = {
 	stackTop: number;
 	frames: CpuFrameState[];
 	protectedCalls: CpuProtectedCallState[];
-	openUpvalues: number[];
 };
 
 export type CpuRuntimeState = {
@@ -507,29 +507,30 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private findOpenUpvalue(frame: CallFrame, index: number): Upvalue | null {
-		let upvalue = frame.openUpvalueHead;
-		while (upvalue && upvalue.index >= index) {
-			if (upvalue.index === index) {
-				return upvalue;
-			}
-			upvalue = upvalue.nextOpen;
+		const slot = (frame.stackBase + index) >>> 0;
+		let address = frame.openUpvalueHead;
+		for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
+			const upvalue = this.gc.openCellAt(address);
+			if (upvalue === null) break;
+			const current = upvalue.stackSlot;
+			if (current <= slot) return current === slot ? upvalue : null;
+			address = upvalue.nextAddress;
 		}
 		return null;
 	}
 
-	private linkOpenUpvalue(frame: CallFrame, upvalue: Upvalue): void {
+	private linkOpenUpvalue(frame: CallFrame, upvalue: Upvalue, slot: number): void {
 		let previous: Upvalue | null = null;
-		let current = frame.openUpvalueHead;
-		while (current && current.index > upvalue.index) {
+		let next = frame.openUpvalueHead;
+		for (let remaining = UPVALUE_CHAIN_LIMIT; next !== 0 && remaining !== 0; --remaining) {
+			const current = this.gc.openCellAt(next);
+			if (current === null || current.stackSlot <= slot) break;
 			previous = current;
-			current = current.nextOpen;
+			next = current.nextAddress;
 		}
-		upvalue.nextOpen = current;
-		if (!previous) {
-			frame.openUpvalueHead = upvalue;
-			return;
-		}
-		previous.nextOpen = upvalue;
+		upvalue.bind(frame.thread.address, slot, next);
+		if (previous === null) frame.openUpvalueHead = upvalue.address;
+		else previous.nextAddress = upvalue.address;
 	}
 
 	// TODO: Admit function-valued __index through VM call/return continuations in
@@ -1924,8 +1925,7 @@ export class CPU implements MappedPageInvalidator {
 
 	/** Read a retained closure without calling it or requiring an active frame. */
 	public readClosureUpvalue(closure: Closure, index: number): Value {
-		const address = closure.captureAddress(index), cell = this.gc.cellAt(address);
-		return cell?.open ? cell.frame!.registers.get(cell.index) : Upvalue.load(this.memory, address);
+		return Upvalue.load(this.memory, closure.captureAddress(index));
 	}
 
 	public readEpcWord(): number {
@@ -3074,11 +3074,8 @@ export class CPU implements MappedPageInvalidator {
 			}
 			const upvalue = new Upvalue(this.memory, this.captureAddresses[nextCell++]);
 			upvalue.hashId = this.allocateObjectHashId();
-			upvalue.open = true;
-			upvalue.index = upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK;
-			upvalue.frame = frame;
 			this.gc.track(upvalue);
-			this.linkOpenUpvalue(frame, upvalue);
+			this.linkOpenUpvalue(frame, upvalue, (frame.stackBase + (upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK)) >>> 0);
 			closure.setCaptureAddress(index, upvalue.address);
 		}
 		this.charge(count);
@@ -3087,38 +3084,25 @@ export class CPU implements MappedPageInvalidator {
 
 	private closeUpvalues(frame: CallFrame): number {
 		let closed = 0;
-		let upvalue = frame.openUpvalueHead;
-		frame.openUpvalueHead = null;
-		while (upvalue) {
-			const next = upvalue.nextOpen;
-			upvalue.writeBarrier();
-			upvalue.setEncoded(frame.registers.getTag(upvalue.index), frame.registers.getPayload(upvalue.index));
-			upvalue.open = false;
-			upvalue.frame = null;
-			upvalue.nextOpen = null;
-			upvalue = next;
-			closed += 1;
+		let address = frame.openUpvalueHead;
+		frame.openUpvalueHead = 0;
+		while (address !== 0 && closed < UPVALUE_CHAIN_LIMIT) {
+			const upvalue = this.gc.openCellAt(address);
+			if (upvalue === null) break;
+			address = upvalue.nextAddress;
+			upvalue.close();
+			++closed;
 		}
 		return closed;
 	}
 
 	private copyUpvalueToRegister(frame: CallFrame, registers: ValueSlots, registerIndex: number, address: number): void {
-		const cell = this.gc.cellAt(address);
-		if (cell?.open) {
-			registers.copySlotFrom(cell.frame!.registers, registerIndex, cell.index);
-		} else {
-			registers.set(registerIndex, Upvalue.load(this.memory, address));
-		}
+		registers.set(registerIndex, Upvalue.load(this.memory, address));
 		this.bumpRegisterTop(frame, registerIndex);
 	}
 
 	private copyRegisterToUpvalue(address: number, registers: ValueSlots, registerIndex: number): void {
-		const cell = this.gc.cellAt(address);
-		if (cell?.open) {
-			cell.frame!.registers.copySlotFrom(registers, cell.index, registerIndex);
-			return;
-		}
-		cell?.writeBarrier();
+		if (!Upvalue.isOpen(this.memory, address)) this.gc.cellAt(address)?.writeBarrier();
 		Upvalue.store(this.memory, address, registers.getTag(registerIndex), registers.getPayload(registerIndex));
 	}
 
@@ -3965,7 +3949,7 @@ export class CPU implements MappedPageInvalidator {
 		const threads: CpuThreadState[] = [];
 		const captureThread = (thread: Thread): number => {
 			if (this.gc.sweepGarbage(thread)) {
-				return threads.push({ stackTop: 0, frames: [], protectedCalls: [], openUpvalues: [] }) - 1;
+				return threads.push({ stackTop: 0, frames: [], protectedCalls: [] }) - 1;
 			}
 			const frames = new Array<CpuFrameState>(thread.frameDepth);
 			let frame = thread.firstFrame!;
@@ -3986,6 +3970,7 @@ export class CPU implements MappedPageInvalidator {
 					callSitePc: frame.callSitePc,
 					isExceptionFrame: frame.isExceptionFrame,
 					isNonMaskableExceptionFrame: frame.isNonMaskableExceptionFrame,
+					openUpvalueHead: frame.openUpvalueHead,
 				};
 			}
 			const protectedCalls = new Array<CpuProtectedCallState>(thread.protectedCallDepth);
@@ -4009,18 +3994,9 @@ export class CPU implements MappedPageInvalidator {
 					protectedCalls[protectedFrame.protectedContinuationIndex].targetFrameIndex = frameIndex;
 			}
 
-			const openUpvalues: number[] = [];
-			let upvalueFrame = thread.firstFrame!;
-			for (let frameIndex = 0; frameIndex < thread.frameDepth; ++frameIndex, upvalueFrame = upvalueFrame.next!) {
-				let upvalue = upvalueFrame.openUpvalueHead;
-				while (upvalue) {
-					openUpvalues.push(captureObject(upvalue, CpuSnapshotObjectKind.Upvalue));
-					upvalue = upvalue.nextOpen;
-				}
-			}
 			const index = threads.length;
 			threads.push({
-				stackTop: thread.stackTop, frames, protectedCalls, openUpvalues,
+				stackTop: thread.stackTop, frames, protectedCalls,
 			});
 			return index;
 		};
@@ -4119,13 +4095,8 @@ export class CPU implements MappedPageInvalidator {
 				case CpuSnapshotObjectKind.Upvalue: {
 					const upvalue = object as Upvalue;
 					offset = writer.reserveWords(CpuSnapshotUpvalue.Size);
-					const open = upvalue.open && !this.gc.sweepGarbage(upvalue);
 					writer.setWord(offset + CpuSnapshotUpvalue.Kind, kind);
 					writer.setWord(offset + CpuSnapshotUpvalue.HashId, upvalue.hashId);
-					writer.setWord(offset + CpuSnapshotUpvalue.Open, open ? 1 : 0);
-					writer.setWord(offset + CpuSnapshotUpvalue.Index, upvalue.index);
-					writer.setWord(offset + CpuSnapshotUpvalue.ThreadRef, open ? captureObject(upvalue.frame!.thread, CpuSnapshotObjectKind.Thread) : -1);
-					writer.setWord(offset + CpuSnapshotUpvalue.FrameIndex, open ? upvalue.frame!.thread.frameIndex(upvalue.frame!) : -1);
 					writer.setWord(offset + CpuSnapshotUpvalue.Address, upvalue.address);
 					break;
 				}
@@ -4186,7 +4157,7 @@ export class CPU implements MappedPageInvalidator {
 		// RAM has already been restored. Only detach the host activations
 		// on the reused root; the restored Thread edges are not attached yet.
 		while (this.rootThread.frameDepth !== 0) {
-			this.rootThread.currentFrame!.openUpvalueHead = null;
+			this.rootThread.currentFrame!.openUpvalueHead = 0;
 			this.rootThread.leaveFrame();
 		}
 		this.rootThread.protectedCallDepth = 0;
@@ -4259,9 +4230,7 @@ export class CPU implements MappedPageInvalidator {
 					this.luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
 					const upvalue = new Upvalue(this.memory, snapshot.word(offset + CpuSnapshotUpvalue.Address));
 					this.gc.track(upvalue); upvalue.restored = true;
-					upvalue.open = snapshot.word(offset + CpuSnapshotUpvalue.Open) !== 0;
 					upvalue.hashId = snapshot.word(offset + CpuSnapshotUpvalue.HashId);
-					upvalue.index = snapshot.int(offset + CpuSnapshotUpvalue.Index);
 					restoredObjects[index] = upvalue;
 					break;
 			}
@@ -4327,6 +4296,7 @@ export class CPU implements MappedPageInvalidator {
 				frame.isExceptionFrame = frameState.isExceptionFrame;
 				frame.isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
 				frame.top = frameState.top;
+				frame.openUpvalueHead = frameState.openUpvalueHead;
 				this.activeThread.enterFrame(frame);
 			}
 			thread.bindStack();
@@ -4344,23 +4314,6 @@ export class CPU implements MappedPageInvalidator {
 				continuation.handlerRegister = continuationState.handlerRegister;
 			}
 			this.activeThread.protectedCallDepth = saved.protectedCalls.length;
-
-		}
-		for (let objectIndex = 0; objectIndex < snapshot.objectCount; objectIndex += 1) {
-			const offset = snapshot.objectWord(objectIndex);
-			if (snapshot.word(offset) !== CpuSnapshotObjectKind.Thread) continue;
-			const saved = state.threads[snapshot.word(offset + CpuSnapshotThread.Index)];
-			for (let index = 0; index < saved.openUpvalues.length; index += 1) {
-				const offset = snapshot.objectWord(saved.openUpvalues[index]);
-				const upvalue = restoredObjects[saved.openUpvalues[index]] as Upvalue;
-				const owner = restoredObjects[snapshot.int(offset + CpuSnapshotUpvalue.ThreadRef)] as Thread;
-				const frame = owner.frameAtDepth(snapshot.int(offset + CpuSnapshotUpvalue.FrameIndex));
-				upvalue.open = true;
-				upvalue.index = snapshot.int(offset + CpuSnapshotUpvalue.Index);
-				upvalue.frame = frame;
-				upvalue.value = valueNil();
-				this.linkOpenUpvalue(frame, upvalue);
-			}
 
 		}
 		this.activeThread = restoredObjects[state.activeThreadRef] as Thread;
@@ -4458,10 +4411,10 @@ export class CPU implements MappedPageInvalidator {
 				if (seen.has(upvalue)) continue;
 				seen.add(upvalue);
 				if (upvalue.open) {
-					objects.push(upvalue.frame!.thread);
-					const slots = upvalue.frame!.registers;
-					add(slots.get(upvalue.index));
-				} else add(upvalue.value);
+					const thread = this.gc.threadAt(upvalue.ownerAddress);
+					if (thread !== null) objects.push(thread);
+				}
+				add(upvalue.value);
 				continue;
 			}
 			const object = objects.pop()!;
@@ -4491,7 +4444,13 @@ export class CPU implements MappedPageInvalidator {
 					addSlots(thread.stackRegisters, thread.stackTop);
 					for (let frame = thread.currentFrame; frame !== null; frame = frame.previous) {
 						objects.push(frame.closure);
-						for (let upvalue = frame.openUpvalueHead; upvalue !== null; upvalue = upvalue.nextOpen) upvalues.push(upvalue);
+						let address = frame.openUpvalueHead;
+						for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
+							const upvalue = this.gc.openCellAt(address);
+							if (upvalue === null) break;
+							upvalues.push(upvalue);
+							address = upvalue.nextAddress;
+						}
 					}
 					break;
 				}

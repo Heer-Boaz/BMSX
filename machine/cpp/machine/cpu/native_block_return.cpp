@@ -21,7 +21,7 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, -1), coldDispatch);
 	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, returnToCompletionLatch));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0), coldDispatch);
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL,
+	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32,
 		SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, openUpvalueHead), SLJIT_IMM, 0), coldDispatch);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, previous));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0), coldDispatch);

@@ -239,7 +239,7 @@ void hotUpvalueAlias() {
 			auto* cell = heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
 				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
 			cell->hashId = heap.allocateHashId();
-			cell->open = c == 0; cell->frame = c == 0 ? &frame : nullptr;
+			if (c == 0) cell->bind(frame.thread->address, frame.stackBase, 0);
 			closure->setCaptureAddress(c, cell->address);
 		}
 		frame.closure = closure; m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1100);
@@ -301,33 +301,37 @@ void rawContextValues(CpuMachine& machine) {
 			&& ordinary.get(1) == value && system.get(1) == value && ordinary.get(0) == valueInteger(1) && system.get(0) == valueNil()
 			&& state.registerTop == 3, "raw global banks preserve every kind, cached definitions and namespace without a source-top write");
 	}
-	ValueSlots outerRegisters(1);
-	CallFrame frame, outer; frame.registers = registers.view(); outer.registers = outerRegisters.view();
+	auto* owner = cpu.activeThread();
+	owner->resizeStack(32);
+	auto captureRegisters = owner->stack.subspan(0, 16);
+	auto outerRegisters = owner->stack.subspan(16, 1);
+	CallFrame frame;
+	frame.registers = captureRegisters;
 	auto& heap = cpu.gcHeap();
 	auto& open = *heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
 				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
 	auto& closed = *heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
 				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
-	open.open = true; open.frame = &frame;
+	open.bind(owner->address, 0, 0);
 	frame.closure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), {}, 2, false);
 	frame.closure->setCaptureAddress(0, open.address);
 	frame.closure->setCaptureAddress(1, closed.address);
 	ContextBlock captures(machine, {{OpCode::K1, 0}, {OpCode::GETUP, 1}, {OpCode::KSMI, 2, 0, 0, 9},
 		{OpCode::SETUP, 2}, {OpCode::ADD, 3, 0, 1}, {OpCode::GETUP, 4}, {OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
-	registers.clear(0, registers.capacity());
-	NativeBlockRunState alias{.registers = registers.view(), .frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
+	captureRegisters.clear(0, captureRegisters.size());
+	NativeBlockRunState alias{.registers = captureRegisters, .frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
 	require(captures.block->run(alias) == &captures.block->sideExits[0] && alias.registerTop == 3
-		&& registers.get(0) == valueInteger(1) && registers.get(1) == valueInteger(1) && registers.get(2) == valueInteger(9)
-		&& registers.get(3) == valueNil(), "the self-alias guard publishes the exact prefix before writing a captured register");
-	open.frame = &outer;
+		&& captureRegisters.get(0) == valueInteger(1) && captureRegisters.get(1) == valueInteger(1) && captureRegisters.get(2) == valueInteger(9)
+		&& captureRegisters.get(3) == valueNil(), "the self-alias guard publishes the exact prefix before writing a captured register");
+	open.bind(owner->address, 16, 0);
 	ContextBlock outerRead(machine, {{OpCode::GETUP, 1}, {OpCode::K1, 0}, {OpCode::ADD, 3, 0, 1},
 		{OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	for (const auto value : values) {
-		registers.clear(0, registers.capacity()); registers.set(12, value); outerRegisters.set(0, valueInteger(1));
-		NativeBlockRunState state{.registers = registers.view(), .frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
-		require(outerRead.block->run(state) == &outerRead.block->terminal && registers.get(0) == valueInteger(1)
-			&& registers.get(1) == valueInteger(1) && registers.get(3) == valueInteger(2)
-			&& registers.get(6) == value && closed.value() == value && state.registerTop == 7,
+		captureRegisters.clear(0, captureRegisters.size()); captureRegisters.set(12, value); outerRegisters.set(0, valueInteger(1));
+		NativeBlockRunState state{.registers = captureRegisters, .frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
+		require(outerRead.block->run(state) == &outerRead.block->terminal && captureRegisters.get(0) == valueInteger(1)
+			&& captureRegisters.get(1) == valueInteger(1) && captureRegisters.get(3) == valueInteger(2)
+			&& captureRegisters.get(6) == value && closed.value() == value && state.registerTop == 7,
 			"native outer and closed cells preserve raw values without invalidating unrelated register definitions");
 	}
 	const auto previous = closed.value();
@@ -336,25 +340,36 @@ void rawContextValues(CpuMachine& machine) {
 	machine.memory.bindMappedPage(watched, MAPPED_BUS_MASTER_CPU, binding);
 	const u32 watchedSlot = (watched & MAPPED_PAGE_BYTE_MASK) >> 2;
 	binding.writeWatch.armWord(watchedSlot);
-	registers.set(12, valueFloatBits(0xffa54321u));
-	NativeBlockRunState watchedStore{.registers = registers.view(), .frame = &frame, .heap = &heap,
+	captureRegisters.set(12, valueFloatBits(0xffa54321u));
+	NativeBlockRunState watchedStore{.registers = captureRegisters, .frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
 	const auto* exit = outerRead.block->run(watchedStore);
 	require(exit->exit == NativeBlockExit::WriteUpvalue && closed.value() == previous,
 		"watched SETUP exits before writing either lane");
-	closed.setValue(registers.get(12));
+	closed.setValue(captureRegisters.get(12));
 	require(!binding.writeWatch.consume(watchedSlot, watchedSlot + 1u) && closed.value() == valueFloatBits(0xffa54321u),
 		"the semantic path publishes the closed cell through RAM's write watch");
 	const u32 rawCell = DYNAMIC_RAM_BASE + 0x600u;
 	machine.memory.writeRamRecordWord(frame.closure->address + CLOSURE_CAPTURE_WORDS + sizeof(u32), rawCell | 0x80000000u);
-	registers.set(12, valueFloatBits(0x80000000u));
-	NativeBlockRunState addressed{.registers = registers.view(), .frame = &frame, .heap = &heap,
+	captureRegisters.set(12, valueFloatBits(0x80000000u));
+	NativeBlockRunState addressed{.registers = captureRegisters, .frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
 	require(outerRead.block->run(addressed) == &outerRead.block->terminal
-		&& registers.get(6) == valueFloatBits(0x80000000u)
+		&& captureRegisters.get(6) == valueFloatBits(0x80000000u)
 		&& machine.memory.readRamRecordWord(rawCell + UPVALUE_VALUE_WORD) == 0x80000000u
 		&& closed.value() == valueFloatBits(0xffa54321u),
 		"generated GETUP and SETUP use masked cell bytes rather than an unrelated host slot");
+	machine.memory.writeRamRecordByte(rawCell + UPVALUE_FLAGS, UPVALUE_OPEN);
+	machine.memory.writeRamRecordWord(rawCell + UPVALUE_VALUE_WORD, 16);
+	machine.memory.writeRamRecordWord(rawCell + UPVALUE_OWNER, owner->address | 0x80000000u);
+	outerRegisters.set(0, valueFloatBits(0xffa12345u));
+	frame.closure->setCaptureAddress(0, rawCell | 0x80000000u);
+	ContextBlock rawOpen(machine, {{OpCode::GETUP, 1}, {OpCode::JMP}});
+	NativeBlockRunState rawAlias{.registers = captureRegisters, .frame = &frame, .heap = &heap,
+		.remainingCycles = 100, .ram = machine.memory.ramData()};
+	require(rawOpen.block->run(rawAlias) == &rawOpen.block->terminal
+		&& captureRegisters.get(1) == valueFloatBits(0xffa12345u),
+		"generated GETUP resolves an open RAM capture without a host attachment");
 	const std::array literals{valueNil(), valueBool(false), valueBool(true), values[6], valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(11)};
 	ValueSlots constants(literals.size());
 	for (size_t i = 0; i < literals.size(); ++i) constants.set(i, literals[i]);

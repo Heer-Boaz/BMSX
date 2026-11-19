@@ -103,7 +103,7 @@ struct ExecutionHookBinding {
 };
 
 // Saved values are u32 offsets into the snapshot word arena. Object references
-// (closureRef/openUpvalues) are ordinals in its object index.
+// such as closureRef are ordinals in its object index.
 struct CpuFrameState {
 	u32 functionAddress = 0;
 	u32 pc = 0;
@@ -119,6 +119,7 @@ struct CpuFrameState {
 	u32 callSitePc = 0;
 	bool isExceptionFrame = false;
 	bool isNonMaskableExceptionFrame = false;
+	u32 openUpvalueHead = 0;
 };
 
 struct CpuProtectedCallState {
@@ -140,7 +141,6 @@ struct CpuThreadState {
 	u32 stackTop = 0;
 	std::vector<CpuFrameState> frames;
 	std::vector<CpuProtectedCallState> protectedCalls;
-	std::vector<int> openUpvalues;
 };
 
 struct CpuRuntimeState {
@@ -432,7 +432,7 @@ private:
 	bool executeReturn(CallFrame& frame, int a, int b);
 	void executeVararg(CallFrame& frame, int a, int b);
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
-	void linkOpenUpvalue(CallFrame& frame, Upvalue* upvalue);
+	void linkOpenUpvalue(CallFrame& frame, Upvalue& upvalue, u32 slot);
 	Value readUpvalue(u32 address) const;
 	void writeUpvalue(u32 address, const Value& value);
 	void writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount);

@@ -313,7 +313,7 @@ void closureBindingAndClosingCycles() {
 			"successive closures share both captured cells");
 		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 2 - 2,
 			"RET charges two distinct open cells, not four descriptors, and two received values");
-		require(!static_cast<Upvalue*>(machine.cpu.gcHeap().cellAt(first->captureAddress(0)))->open && !static_cast<Upvalue*>(machine.cpu.gcHeap().cellAt(first->captureAddress(1)))->open, "both charged captures are closed");
+		require(!static_cast<Upvalue*>(machine.cpu.gcHeap().cellAt(first->captureAddress(0)))->isOpen() && !static_cast<Upvalue*>(machine.cpu.gcHeap().cellAt(first->captureAddress(1)))->isOpen(), "both charged captures are closed");
 	}
 }
 

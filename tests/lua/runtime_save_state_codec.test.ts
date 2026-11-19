@@ -556,7 +556,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			completionThreadRef: 0,
 			threads: [{
 				stackTop: 0,
-				openUpvalues: [],
 				frames: [],
 				protectedCalls: [{
 					kind: ProtectedCallKind.XPCallHandler,
@@ -695,6 +694,7 @@ test('runtime save-state codec preserves exception frame metadata', () => {
 		callSitePc: 41,
 		isExceptionFrame: true,
 		isNonMaskableExceptionFrame: true,
+		openUpvalueHead: 0,
 	}];
 
 	const decoded = decodeRuntimeSaveState(

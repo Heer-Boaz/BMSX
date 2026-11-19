@@ -989,7 +989,14 @@ Each upvalue descriptor is a 32-bit word. Descriptor `i` is read at `upvalueTabl
 
 
 
-An open upvalue accesses its captured parent-frame register directly. Captures can share an already-linked open upvalue for that slot, so updates through the captured variable remain shared. Closing an upvalue retains the current language value separately from the frame; subsequent reads and writes access that retained storage. `GETUP` and `SETUP` use the same upvalue operand regardless of whether the upvalue is open or closed.
+An open upvalue names the owning Thread and the slot for its captured
+parent-frame register. Moving the Thread's value slots to a larger block
+does not change the capture. Captures of the same register in one activation
+can share an already-linked open upvalue. A return closes only the captures
+owned by the returning activation, even when the caller and callee have
+overlapping register windows. Closing the cell retains the current language
+value independently of the frame. `GETUP` and `SETUP` use the same upvalue
+operand in either case.
 
 Repeated CLOSURE operations for a STATIC function record with no upvalues may
 return the same function value when they use the same prototype in the same
