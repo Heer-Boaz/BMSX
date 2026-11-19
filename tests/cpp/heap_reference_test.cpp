@@ -52,7 +52,7 @@ void checkReferences(CPU& cpu) {
 				require(heap.cellRecordAddress(address) == address, "an issued cell is decoded by its RAM header");
 				break;
 			case THREAD_RECORD_KIND:
-				require(heap.threadAt(address) && heap.threadAt(address)->address == address, "issued Thread record has its view");
+				require(heap.threadRecordAddress(address) == address, "an issued Thread is decoded by its RAM header");
 				break;
 		}
 		return 1;

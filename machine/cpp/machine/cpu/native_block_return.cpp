@@ -45,7 +45,8 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_emit_op1(compiler, SLJIT_MOV_S32, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeCpuRunState, targetDepth));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_SIG_LESS_EQUAL, SLJIT_R3, 0, SLJIT_R0, 0), coldDispatch);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeCpuRunState, cpu));
-	auto* differentThread = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), cpu.haltedThread);
+	auto* differentThread = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R2), thread.address,
+		SLJIT_MEM1(SLJIT_R0), cpu.haltedThreadAddress);
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), cpu.haltedDepth), coldDispatch);
 	sljit_set_label(differentThread, sljit_emit_label(compiler));
 

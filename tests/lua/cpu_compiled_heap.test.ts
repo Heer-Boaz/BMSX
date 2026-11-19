@@ -55,7 +55,7 @@ for (const destination of [0, 1, 2]) test(`compiled CONCAT converts every value 
 				case 0: r.setString(0, cpu.stringPool.intern(textToByteString('λ\0🍻'))); break;
 				case 1: r.setTable(0, cpu.createTable(0, 0)); break;
 				case 2: r.setClosure(0, root.closure); break;
-				case 3: r.setThread(0, cpu.gc.reference(cpu.rootThread)); break;
+				case 3: r.setThread(0, cpu.rootThread.address); break;
 			}
 			r.setString(1, cpu.stringPool.intern('!'));
 		}

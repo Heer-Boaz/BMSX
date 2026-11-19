@@ -3,16 +3,15 @@ export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIA
 import { GC_COLOR_OFFSET } from './gc_object';
 import { CallFrame, FrameField, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { GcHeap } from './gc_heap';
+import type { CPU } from './cpu';
 import { valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
 import { MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueSlots } from './value_slots';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SHIFT } from '../memory/mapped_page';
 
-/** Retained language execution state. Physical CPU/IRQ/bus state is not thread-local. */
+/** Reusable CPU execution bank bound to one raw Thread record; never a guest identity. */
 export class Thread {
-	public gcNext: Thread | null = null;
-	public gcPrevious: Thread | null = null;
 	public get gcColor(): number { return this.heap.memory.readRamRecordByte(this.address + GC_COLOR_OFFSET); }
 	public set gcColor(color: number) { this.heap.memory.writeRamRecordByte(this.address + GC_COLOR_OFFSET, color); }
 	public firstFrame: CallFrame | null = null;
@@ -25,22 +24,27 @@ export class Thread {
 	private boundBackingBytes = 0;
 	private boundFrameCapacity = 0;
 	private boundProtectedCapacity = 0;
-	private readonly recordWordOffset: number;
-	public constructor(private readonly heap: GcHeap, public readonly address: number) {
+	private watchedFrameCount = 0;
+	private recordWordOffset = 0;
+	public address = 0;
+	public constructor(private readonly heap: GcHeap, private readonly cpu: CPU) {}
+	public bindAddress(address: number): void {
+		this.detachFrameViews();
+		this.stackRegisters.unbind();
+		this.address = address;
 		this.recordWordOffset = (address & RAM_RECORD_WORD_MASK) >>> 2;
 	}
-
 
 	private read(field: ThreadField): number { return this.heap.memory.ramWords[this.recordWordOffset + (field >>> 2)]; }
 	private write(field: ThreadField, word: number): void { this.heap.memory.writeRamRecordWord(this.address + field, word); }
 
 	public get status(): ThreadStatus { return this.read(ThreadField.Status); }
 	public set status(status: ThreadStatus) { this.write(ThreadField.Status, status); }
-	public get resumer(): Thread | null {
-		const owner = this.read(ThreadField.Resumer);
-		return owner === 0 ? null : this.heap.threadAt(owner);
+	public get resumer(): number {
+		const address = this.read(ThreadField.Resumer);
+		return address === 0 ? 0 : this.heap.threadRecordAddress(address);
 	}
-	public set resumer(thread: Thread | null) { this.write(ThreadField.Resumer, thread === null ? 0 : thread.address); }
+	public set resumer(address: number) { this.write(ThreadField.Resumer, address); }
 	public get entry(): number { return this.read(ThreadField.Entry); }
 	public set entry(closure: number) { this.write(ThreadField.Entry, closure); }
 	public get callBase(): number { return this.read(ThreadField.CallBase) | 0; }
@@ -116,6 +120,7 @@ export class Thread {
 	}
 
 	public bindStack(): void {
+		this.disarmWatches();
 		const capacity = this.read(ThreadField.StackCapacity);
 		this.boundFrameCapacity = this.frameCapacity;
 		this.boundProtectedCapacity = this.protectedCapacity;
@@ -128,6 +133,7 @@ export class Thread {
 			extent = Math.max(extent, frame.stackBase + frame.stackCapacity);
 		this.stackRegisters.bindRam(this.heap.memory, block, capacity, false, extent > capacity);
 		this.rebindFrames();
+		this.cpu.armThreadStackWatches();
 	}
 
 	private rebindFrames(): void {
@@ -136,14 +142,16 @@ export class Thread {
 	}
 
 	private bindFrameControls(start: number): void {
+		const count = Math.max(this.frameDepth, this.boundFrameCapacity);
 		let index = 0;
 		for (let frame = this.firstFrame; frame !== null; frame = frame.next, ++index) {
 			frame.bindControl(start + index * FRAME_CONTROL_BYTES);
-			this.armFrameWindowWatch(frame);
+			if (index < count) this.armFrameWindowWatch(frame, index);
 		}
 	}
 
-	private armFrameWindowWatch(frame: CallFrame): void {
+	private armFrameWindowWatch(frame: CallFrame, index: number): void {
+		this.watchedFrameCount = Math.max(this.watchedFrameCount, index + 1);
 		const watches = this.heap.memory.ramWriteWatches();
 		for (let field = FrameField.StackBase; field <= FrameField.StackCapacity; field += 4) {
 			const offset = (frame.controlOffset + field) & RAM_RECORD_WORD_MASK;
@@ -152,17 +160,19 @@ export class Thread {
 	}
 
 	public armFrameWindowWatches(): void {
-		for (let frame = this.firstFrame; frame !== null; frame = frame.next) this.armFrameWindowWatch(frame);
+		let index = 0;
+		for (let frame = this.firstFrame, count = Math.max(this.frameDepth, this.boundFrameCapacity); frame !== null && index < count; frame = frame.next, ++index) this.armFrameWindowWatch(frame, index);
 	}
 
 	public observeFrameWindowWrites(first: number, end: number): void {
+		const depth = this.frameDepth;
 		let active = false, index = 0;
-		for (let frame = this.firstFrame; frame !== null; frame = frame.next, ++index) {
+		for (let frame = this.firstFrame, count = Math.max(depth, this.boundFrameCapacity); frame !== null && index < count; frame = frame.next, ++index) {
 			const base = RAM_BASE + ((frame.controlOffset + FrameField.StackBase) & RAM_RECORD_WORD_MASK);
 			const size = RAM_BASE + ((frame.controlOffset + FrameField.StackCapacity) & RAM_RECORD_WORD_MASK);
 			if ((first <= base && base < end) || (first <= size && size < end)) {
-				this.armFrameWindowWatch(frame);
-				active ||= index < this.frameDepth;
+				this.armFrameWindowWatch(frame, index);
+				active ||= index < depth;
 			}
 		}
 		if (active) {
@@ -183,6 +193,23 @@ export class Thread {
 		watches.armViewWord(page, ((offset & MAPPED_PAGE_BYTE_MASK) + ThreadField.FrameDepth) >>> 2);
 	}
 
+	public disarmWatches(): void {
+		const watches = this.heap.memory.ramWriteWatches();
+		for (let field = ThreadField.StackBlock; field <= ThreadField.ProtectedCapacity; field += 4) {
+			const offset = (this.address + field) & RAM_RECORD_WORD_MASK;
+			watches.clearViewWord(offset >>> MAPPED_PAGE_BYTE_SHIFT, (offset & MAPPED_PAGE_BYTE_MASK) >>> 2);
+		}
+		const depth = (this.address + ThreadField.FrameDepth) & RAM_RECORD_WORD_MASK;
+		watches.clearViewWord(depth >>> MAPPED_PAGE_BYTE_SHIFT, (depth & MAPPED_PAGE_BYTE_MASK) >>> 2);
+		let index = 0;
+		for (let frame = this.firstFrame; frame !== null && index < this.watchedFrameCount; frame = frame.next, ++index) {
+			for (let field = FrameField.StackBase; field <= FrameField.StackCapacity; field += 4) {
+				const offset = (frame.controlOffset + field) & RAM_RECORD_WORD_MASK;
+				watches.clearViewWord(offset >>> MAPPED_PAGE_BYTE_SHIFT, (offset & MAPPED_PAGE_BYTE_MASK) >>> 2);
+			}
+		}
+		this.watchedFrameCount = 0;
+	}
 	public observeStackWrite(): void {
 		this.armStackWatch();
 		if ((this.read(ThreadField.StackBlock) & (MAIN_RAM_SIZE - 4)) !== this.stackOffset()
@@ -208,7 +235,6 @@ export class Thread {
 		this.replaceStack(block, values, frames, continuations);
 	}
 
-
 	private replaceStack(block: number, capacity: number, frames: number, continuations: number): void {
 		this.heap.threads.replaceStack(this.address, block, capacity, frames, continuations);
 		this.bindStack();
@@ -220,7 +246,7 @@ export class Thread {
 		if (existing !== null) return existing;
 		const frame = this.frameNode(this.currentFrame);
 		frame.bindControl(this.frameControlAddress(this.frameDepth));
-		this.armFrameWindowWatch(frame);
+		this.armFrameWindowWatch(frame, this.frameDepth);
 		return frame;
 	}
 
@@ -246,10 +272,10 @@ export class Thread {
 	}
 
 	public detachFrameViews(): void {
-		while (this.currentFrame !== null) {
-			const frame = this.currentFrame;
-			this.currentFrame = frame.previous;
+		this.currentFrame = null;
+		for (let frame = this.firstFrame; frame !== null; frame = frame.next) {
 			frame.registers.unbind();
+			frame.executionImage = null!;
 			frame.decodedPage = null;
 			frame.compilationEntry = true;
 		}
@@ -295,20 +321,5 @@ export class Thread {
 	}
 
 	/** Keep the first spare (possibly prepared), then free alternate spares. */
-	public trimFrames(): void {
-		let frame = this.currentFrame === null ? this.firstFrame : this.currentFrame.next;
-		let index = this.frameDepth;
-		while (frame !== null && frame.next !== null) {
-			const next = frame.next.next;
-			frame.next.previous = null;
-			frame.next.next = null;
-			frame.next = next;
-			if (next !== null) {
-				next.previous = frame;
-				next.bindControl(this.frameControlAddress(index + 1));
-			}
-			frame = next;
-			++index;
-		}
-	}
+
 }

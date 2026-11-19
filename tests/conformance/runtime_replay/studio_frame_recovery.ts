@@ -45,7 +45,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 	check(original.result === undefined && terminal.paused && first.inspection.lifetime.isDisposed,
 		'frame recovery: pause retains the call but expires prior inspection');
 	const borrowed = scopes();
-	check(borrowed.length === 1 && guest.readStringMember(borrowed[0], 'thread') === valueThread(cpu.gc.reference(cpu.activeThread)),
+	check(borrowed.length === 1 && guest.readStringMember(borrowed[0], 'thread') === valueThread(cpu.activeThread.address),
 		'frame recovery: scope borrows the physical suspended thread');
 	const held = cycles(); await frame(); await frame();
 	check(cycles() === held, 'frame recovery: a paused frame evaluation does not run gameplay');
@@ -67,7 +67,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 		'frame recovery: restore cannot revive a selected stop or its handles');
 	const restored = scopes();
 	check(restored.length === 1 && restored[0] !== borrowed[0]
-		&& guest.readStringMember(restored[0], 'thread') === valueThread(cpu.gc.reference(cpu.activeThread)),
+		&& guest.readStringMember(restored[0], 'thread') === valueThread(cpu.activeThread.address),
 		'frame recovery: saved firmware scope follows the restored heap and remains live');
 	const second = await stopAtWait();
 	check(second.stop.id !== first.stop.id && scopes().length === 0 && original.result?.status === 'interrupted',

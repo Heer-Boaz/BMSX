@@ -58,6 +58,15 @@ struct MappedPageWriteWatch {
 	void armWord(u32 word) { arm(words, word, 0u); }
 	void armViewWord(u32 word) { arm(viewWords, word, MAPPED_WATCH_VIEW_SHIFT); }
 
+	void disarmViewWord(u32 word) {
+		const u32 group = word >> 5u;
+		const u32 prior = *groups;
+		viewWords[group] &= ~(1u << (word & 31u));
+		if (viewWords[group] == 0u) *groups &= ~(1u << (group + MAPPED_WATCH_VIEW_SHIFT));
+		if ((prior & MAPPED_WATCH_GROUP_MASK) != 0u && (*groups & MAPPED_WATCH_GROUP_MASK) == 0u)
+			--*watchedPages;
+	}
+
 	u8 consume(u32 firstWord, u32 endWord, bool reportViews = true) {
 		const u32 lastWord = endWord - 1u;
 		u8 affected = 0;

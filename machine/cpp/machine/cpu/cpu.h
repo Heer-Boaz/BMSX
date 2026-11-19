@@ -213,7 +213,7 @@ public:
 	void haltUntilIrq();
 	void clearHaltUntilIrq();
 	bool isHaltedUntilIrq() const {
-		return m_haltedUntilIrqThread == m_activeThread
+		return m_haltedUntilIrqThreadAddress == m_activeThread->address
 			&& m_haltedUntilIrqFrameDepth == static_cast<int>(m_activeThread->frameDepth());
 	}
 	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
@@ -229,7 +229,7 @@ public:
 	void setInstructionObserver(InstructionObserverBinding binding);
 
 	void setExecutionHook(ExecutionHookBinding binding);
-	RunResult runUntilDepth(int targetDepth, int instructionBudget, const Thread* target = nullptr);
+	RunResult runUntilDepth(int targetDepth, int instructionBudget, u32 target = 0u);
 	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	size_t stepHeap(Value root0, Value root1, Value root2, u32 growingThread = 0u);
 	bool collecting() const { return m_heap.active(); }
@@ -252,7 +252,8 @@ public:
 	LocalRootsScope acquireLocalRoots();
 
 	Thread* activeThread() const { return m_activeThread; }
-	Thread* rootThread() const { return m_rootThread; }
+	Thread* rootThread() { return &m_rootView; }
+	const Thread* rootThread() const { return &m_rootView; }
 	int getFrameDepth() const { return static_cast<int>(m_activeThread->frameDepth()); }
 	ExecutionDomainId readFrameExecutionDomain(int frameIndex) const;
 	ExecutionDomainId readLastExecutionDomain() const;
@@ -419,7 +420,7 @@ private:
 	void skipNextInstruction(CallFrame& frame);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	friend class NativeBlockGate;
-	struct NativeFrameOffsets { size_t haltedThread, haltedDepth; };
+	struct NativeFrameOffsets { size_t haltedThreadAddress, haltedDepth; };
 	static NativeFrameOffsets nativeFrameOffsets();
 	friend class NativeBlockCompiler;
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
@@ -478,7 +479,7 @@ private:
 	ExecutionDomainId m_programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	MappedBusSignals m_executionBusSignals = MAPPED_BUS_MASTER_CPU;
 	int m_haltedUntilIrqFrameDepth = -1;
-	Thread* m_haltedUntilIrqThread = nullptr;
+	u32 m_haltedUntilIrqThreadAddress = 0u;
 	bool m_interruptEventPending = false;
 	bool m_memoryWriteBlocked = false;
 	uint32_t m_memoryWriteBlockedAddress = 0;
@@ -498,11 +499,17 @@ private:
 	bool m_yieldRequested = false;
 	bool m_threadSwitchRequested = false;
 	bool m_activeStackRebound = false;
-	Thread* m_rootThread = nullptr;
 	Thread* m_activeThread = nullptr;
-	Thread* m_completionThread = nullptr;
-	Thread* createThread(u32 entry);
-	bool coroutineYieldable(const Thread& thread) const;
+	u32 m_completionThreadAddress = 0u;
+	u32 createThread(u32 entry);
+	Thread& bindThread(u32 address);
+	void retireThreadView(u32 address);
+	void armThreadViewWatches();
+	template<class Visitor> void visitThreadViews(Visitor&& visitor) {
+		if (m_rootView.address != 0u) visitor(m_rootView);
+		for (auto& view : m_transferViews) if (view.address != 0u) visitor(view);
+	}
+	bool coroutineYieldable(u32 address) const;
 	void returnToResumer(int sourceBase, int count, bool succeeded);
 	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc);
 	bool handleThreadError(Value error);
@@ -522,6 +529,8 @@ private:
 	StringPool m_stringPool;
 	Value m_indexKey;
 	GcHeap m_heap;
+	Thread m_rootView;
+	std::array<Thread, 2> m_transferViews;
 	std::array<Value, LUA_FAULT_REASON_INVALID_NEXT_KEY + 1u> m_luaFaultErrorValues;
 	Value m_errorInErrorHandlingValue;
 	std::unordered_map<u32, std::vector<u32>> m_staticClosuresByAddress;

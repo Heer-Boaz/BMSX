@@ -1,4 +1,4 @@
-import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import { Blua32GlobalRegisterFile } from './sources';
@@ -23,7 +23,7 @@ export type InspectedEntry = {
 type GlobalBinding = readonly [name: string, registerFile: Blua32GlobalRegisterFile];
 type Container =
 	| { kind: 'globals'; names: ReadonlyMap<string, Blua32GlobalRegisterFile>; bindings?: readonly GlobalBinding[] }
-	| { kind: RuntimeLuaFrameScope['kind']; frame: CallFrame; bindings: readonly RuntimeLuaFrameBinding[] }
+	| { kind: RuntimeLuaFrameScope['kind']; thread: number; frameIndex: number; bindings: readonly RuntimeLuaFrameBinding[] }
 	| { kind: 'table'; value: SuspendedGuestValue; entries?: readonly (readonly [SuspendedGuestValue, SuspendedGuestValue])[] };
 const VALUE_KINDS: Record<SuspendedGuestValueKind, InspectedValue['kind']> = {
 	[SuspendedGuestValueKind.Nil]: 'nil', [SuspendedGuestValueKind.Boolean]: 'boolean',
@@ -41,8 +41,8 @@ export class InspectionValues {
 	public globals(names: ReadonlyMap<string, Blua32GlobalRegisterFile>): string {
 		return this.add({ kind: 'globals', names });
 	}
-	public frame(kind: RuntimeLuaFrameScope['kind'], frame: CallFrame, bindings: readonly RuntimeLuaFrameBinding[]): string {
-		return this.add({ kind, frame, bindings });
+	public frame(kind: RuntimeLuaFrameScope['kind'], thread: number, frameIndex: number, bindings: readonly RuntimeLuaFrameBinding[]): string {
+		return this.add({ kind, thread, frameIndex, bindings });
 	}
 	private add(container: Container): string {
 		const reference = `${this.id}/${this.containers.size}`;
@@ -94,8 +94,8 @@ export class InspectionValues {
 					value: binding.kind === 'type' ? { kind: 'type', display: `<struct ${binding.name}>` }
 						: binding.kind === 'address' ? { kind: 'address', address: binding.address, display: `0x${binding.address.toString(16).padStart(8, '0')}` }
 						: binding.location !== null
-						? this.describe(binding.location.inStack ? container.frame.registers.get(binding.location.index)
-							: guest.cpu.readClosureUpvalue(container.frame.closure, binding.location.index))
+						? this.describe(binding.location.inStack ? guest.cpu.readThreadRegister(container.thread, container.frameIndex, binding.location.index)
+							: guest.cpu.readClosureUpvalue(guest.cpu.readThreadFrameWord(container.thread, container.frameIndex, FrameField.Closure), binding.location.index))
 						: { kind: 'unavailable', reason: 'no-live-location', display: '<no live location>' } });
 			}
 		}

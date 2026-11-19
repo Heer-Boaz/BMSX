@@ -46,7 +46,7 @@ try {
 					const depth = cpu.getFrameDepth();
 					cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));
 					for (let grant = 0; grant < 10000; grant++) {
-						const status = cpu.runUntilDepth(depth, 17, cpu.rootThread);
+						const status = cpu.runUntilDepth(depth, 17, cpu.rootThread.address);
 						const snapshot = cpu.captureRuntimeState();
 						cpu.restoreRuntimeState(snapshot);
 						assert.deepEqual(cpu.captureRuntimeState(), snapshot, 'HALT owner survives suspended tooling call');
@@ -62,6 +62,9 @@ try {
 				}
 				let result = RunResult.Yielded;
 				let interrupted = false;
+				const uninterrupted = name === 'nested_three_banks';
+				const root = cpu.rootThread.address;
+				const observedThreads = new Set<number>();
 				for (let grant = 0; grant < 10000 && result === RunResult.Yielded; grant += 1) {
 					if (name === 'interrupted' && !interrupted && cpu.activeThread !== cpu.rootThread
 						&& cpu.getGlobalByKey(cpu.stringPool.intern('interrupt_ready')) === valueBool(true)) {
@@ -71,10 +74,15 @@ try {
 						interrupted = true;
 					}
 					result = cpu.runUntilDepth(0, 17);
-					cpu.restoreRuntimeState(cpu.captureRuntimeState());
+					if (uninterrupted) {
+						if (cpu.activeThread.address !== root) observedThreads.add(cpu.activeThread.address);
+					} else {
+						cpu.restoreRuntimeState(cpu.captureRuntimeState());
+					}
 					if (name !== 'interrupted') assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 				}
 				assert.equal(result, RunResult.Halted);
+				if (uninterrupted) assert.equal(observedThreads.size, 3, 'all three nonroot records execute without an intervening restore');
 				assert.deepEqual(runtime.readCompletionValues(), [valueBool(true)]);
 			}
 			const bytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));

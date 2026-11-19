@@ -2,7 +2,6 @@ import { generateUuid } from '../common/uuid';
 import { FsmTransitionObservation } from './observations/fsm_transition';
 import { ActionEffectObservation } from './observations/actioneffect';
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
-import type { Thread } from '../../machine/ts/machine/cpu/thread';
 
 import { asStringId, asThread, valueString, valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit } from '../../machine/ts/spec/blua32/execution_domain';
@@ -184,9 +183,9 @@ export class TestExecution implements FixtureOutput {
 		this.actioneffects = observation;
 	}
 
-	private failure(thread: Thread, message: string, origin: TestFailureContext['origin'] = 'failed-thread'): ScenarioRunFailure {
+	private failure(thread: number, message: string, origin: TestFailureContext['origin'] = 'failed-thread'): ScenarioRunFailure {
 		const runtime = this.target.runtime;
-		const context = new TestFailureContext(thread, origin, runtime.machine.scheduler.nowCycles,
+		const context = new TestFailureContext(runtime.machine.cpu, thread, origin, runtime.machine.scheduler.nowCycles,
 			runtime.frameScheduler.lastTickSequence, this.program,
 			!this.fixture.initialized ? 'initialize' : this.phase, message);
 		this.failures.push(context);
@@ -223,7 +222,7 @@ export class TestExecution implements FixtureOutput {
 
 	private stop(message: string): void {
 		// An uncooperative continuation is quarantined, not unwound to fake cleanup.
-		this.results.recordFailure(this.result, this.failure(this.target.runtime.machine.cpu.activeThread, message, 'quarantined-cpu'));
+		this.results.recordFailure(this.result, this.failure(this.target.runtime.machine.cpu.activeThread.address, message, 'quarantined-cpu'));
 		this.complete();
 	}
 

@@ -84,6 +84,8 @@ CPU::CPU(
 	, m_stringPool(m_luaHeap, memory, m_heapAllocator)
 	, m_indexKey(valueString(m_stringPool.intern("__index")))
 	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool, m_stringPool.intern("__mode"))
+	, m_rootView(m_heap)
+	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
 	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling")))
 	, m_systemGlobalBank(memory, m_heapAllocator, m_luaHeap)
 	, m_globalBank(memory, m_heapAllocator, m_luaHeap) {
@@ -111,10 +113,12 @@ CPU::CPU(
 		builtin.cyclePerArg = cost.perArg;
 		builtin.cyclePerRet = cost.perRet;
 	}
-	m_rootThread = createThread(0u);
-	m_rootThread->setStatus(ThreadStatus::Running);
-	m_activeThread = m_rootThread;
-	m_completionThread = m_rootThread;
+	m_rootView.select(createThread(0u));
+	m_rootView.bindStack();
+	m_rootView.armStackWatch();
+	m_rootView.setStatus(ThreadStatus::Running);
+	m_activeThread = &m_rootView;
+	m_completionThreadAddress = m_rootView.address;
 	m_memory.attachMappedPageInvalidator(*this);
 }
 
@@ -161,7 +165,7 @@ void CPU::reset() {
 	clearCallStack();
 	m_stringIndexTable = valueNil();
 	m_haltedUntilIrqFrameDepth = -1;
-	m_haltedUntilIrqThread = nullptr;
+	m_haltedUntilIrqThreadAddress = 0u;
 	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
@@ -183,7 +187,7 @@ void CPU::reset() {
 	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
-	m_heap.armThreadStackWatches();
+	armThreadViewWatches();
 	if (!setProgramHeapFloor(systemBoot.staticEnd)) { hardHalt(); return; }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
@@ -418,7 +422,7 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 		m_systemExceptionFunctionAddress = executionBoot.exceptionFunctionAddress;
 	}
 	if (previousImage) {
-		m_heap.visitThreads([&](Thread& thread) {
+		visitThreadViews([&](Thread& thread) {
 			for (auto* frame = thread.firstFrame; frame; frame = frame->next) {
 				if (frame->executionImage != previousImage.get()) continue;
 				frame->executionImage = activatedImage;
@@ -577,10 +581,60 @@ void CPU::bindPhysicalFrames(Thread& thread) {
 		frame->executionImage = m_executionImagesByDomain[static_cast<size_t>(frame->savedExecutionBank() + 1)].get();
 }
 
+void CPU::armThreadViewWatches() {
+	visitThreadViews([](Thread& thread) { thread.armBoundViewWatches(); });
+}
+
+Thread& CPU::bindThread(u32 address) {
+	if (address == m_rootView.address) return m_rootView;
+	for (auto& view : m_transferViews) if (view.address == address) return view;
+	// A transfer may still borrow the current bank for arguments/results.
+	auto& view = m_activeThread == &m_transferViews[0] ? m_transferViews[1] : m_transferViews[0];
+	if (view.address != 0u) {
+		view.disarmViewWatches();
+		view.select(0u);
+		armThreadViewWatches();
+	}
+	view.select(address);
+	bindPhysicalFrames(view);
+	view.armBoundViewWatches();
+	return view;
+}
+
+void CPU::retireThreadView(u32 address) {
+	for (auto& view : m_transferViews) {
+		if (view.address != address) continue;
+		view.disarmViewWatches();
+		view.select(0u);
+		armThreadViewWatches();
+		return;
+	}
+}
+
 void CPU::invalidateMappedViews(u64 key, u32 firstWord, u32 endWord) {
-	const auto address = static_cast<u32>(key);
-	m_activeStackRebound |= m_heap.observeStackWrites(address + firstWord * 4u,
-		address + endWord * 4u, m_activeThread);
+	const u32 first = static_cast<u32>(key) + firstWord * 4u;
+	const u32 end = static_cast<u32>(key) + endWord * 4u;
+	bool disarmedGeometry = false;
+	visitThreadViews([&](Thread& thread) {
+		const u32 descriptor = thread.address + static_cast<u32>(ThreadField::StackBlock);
+		const u32 depth = thread.address + static_cast<u32>(ThreadField::FrameDepth);
+		if (first <= depth && depth < end) {
+			thread.disarmViewWatches();
+			disarmedGeometry = true;
+			bindPhysicalFrames(thread);
+			thread.armBoundViewWatches();
+			m_activeStackRebound |= &thread == m_activeThread;
+		} else if (first < descriptor + 16u && end > descriptor) {
+			thread.disarmViewWatches();
+			disarmedGeometry = true;
+			m_activeStackRebound |= thread.observeStackWrite() && &thread == m_activeThread;
+		}
+	});
+	// Rebinding may have removed still-shared words from the old aperture.
+	if (disarmedGeometry) armThreadViewWatches();
+	visitThreadViews([&](Thread& thread) {
+		m_activeStackRebound |= thread.observeFrameWindowWrites(first, end) && &thread == m_activeThread;
+	});
 }
 
 void CPU::invalidateImageDataDependencies(u64 key, u32 firstWord, u32 endWord) {
@@ -812,7 +866,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 		? CPU_STATUS_CART_ENTRY
 		: CPU_STATUS_SYSTEM_ENTRY;
 	m_haltedUntilIrqFrameDepth = -1;
-	m_haltedUntilIrqThread = nullptr;
+	m_haltedUntilIrqThreadAddress = 0u;
 	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
@@ -833,7 +887,7 @@ void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
 	// The input span may borrow the completion latch being cleared below.
 	args = BuiltinArgsView(m_localRoots.data() + m_localRoots.size() - args.size(), args.size());
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
-	m_completionThread = m_activeThread;
+	m_completionThreadAddress = m_activeThread->address;
 	m_yieldRequested = false;
 	pushFrame(closure, args, 0, 0, true);
 }
@@ -851,10 +905,10 @@ void CPU::beginCompletionCallInExecutionDomain(
 
 CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) const {
 	CpuRuntimeState state;
-	state.rootThreadAddress = m_rootThread->address;
+	state.rootThreadAddress = m_rootView.address;
 	state.activeThreadAddress = m_activeThread->address;
-	state.completionThreadAddress = m_completionThread->address;
-	state.haltedUntilIrqThreadAddress = m_haltedUntilIrqThread ? m_haltedUntilIrqThread->address : 0u;
+	state.completionThreadAddress = m_completionThreadAddress;
+	state.haltedUntilIrqThreadAddress = m_haltedUntilIrqThreadAddress;
 	state.systemGlobals = m_systemGlobalBank.captureState();
 	state.globals = m_globalBank.captureState();
 	state.executionCartridgeSlot = m_activeExecutionDomainId;
@@ -904,17 +958,15 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 #endif
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	m_staticClosuresByAddress.clear();
-	Thread* retainedRoot = m_rootThread->address == state.rootThreadAddress ? m_rootThread : nullptr;
-	m_heap.discardAttachments(retainedRoot);
+	m_rootView.select(state.rootThreadAddress);
+	for (auto& view : m_transferViews) view.select(0u);
+	m_activeThread = &m_rootView;
 	m_memory.clearMappedPageWriteWatches();
 	// This scan is independent of the in-flight collector sweep cursor.
 	m_heapAllocator.visitObjectRecords(this, [](void* context, u32 address) -> i32 {
 		auto& cpu = *static_cast<CPU*>(context);
 		auto& heap = cpu.m_heap;
 		switch (cpu.m_memory.readRamRecordByte(address)) {
-			case THREAD_RECORD_KIND:
-				if (!heap.sweepGarbage(address) && !heap.threadAt(address)) heap.attachThread(address);
-				break;
 			case static_cast<u8>(ValueTag::Closure): {
 				const u8 binding = cpu.m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
 				if ((binding & CLOSURE_CANONICAL) != 0u && !heap.sweepGarbage(address)) {
@@ -941,14 +993,11 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	Blua32ExecutionImage* executionImage = m_executionImagesByDomain[static_cast<size_t>(state.executionCartridgeSlot + 1)].get();
 	latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
-	m_heap.visitThreads([&](Thread& thread) {
-		bindPhysicalFrames(thread);
-		thread.armStackWatch();
-	});
-	m_rootThread = m_heap.threadAt(state.rootThreadAddress);
-	m_activeThread = m_heap.threadAt(state.activeThreadAddress);
+	bindPhysicalFrames(m_rootView);
+	m_rootView.armStackWatch();
+	m_activeThread = &bindThread(state.activeThreadAddress);
 	if (auto* current = m_activeThread->currentFrame) current->executionImage = m_activeExecutionImage;
-	m_completionThread = m_heap.threadAt(state.completionThreadAddress);
+	m_completionThreadAddress = state.completionThreadAddress;
 	m_threadSwitchRequested = false;
 
 	m_stringIndexTable = state.stringIndexTable;
@@ -958,7 +1007,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;
 	m_haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
-	m_haltedUntilIrqThread = state.haltedUntilIrqThreadAddress == 0u ? nullptr : m_heap.threadAt(state.haltedUntilIrqThreadAddress);
+	m_haltedUntilIrqThreadAddress = state.haltedUntilIrqThreadAddress;
 	m_interruptEventPending = state.interruptEventPending;
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
@@ -989,14 +1038,14 @@ void CPU::haltUntilIrq() {
 		return;
 	}
 	m_haltedUntilIrqFrameDepth = static_cast<int>(m_activeThread->frameDepth());
-	m_haltedUntilIrqThread = m_activeThread;
+	m_haltedUntilIrqThreadAddress = m_activeThread->address;
 	m_yieldRequested = false;
 }
 
 void CPU::hardHalt() {
 	m_hardHalted = true;
 	m_haltedUntilIrqFrameDepth = -1;
-	m_haltedUntilIrqThread = nullptr;
+	m_haltedUntilIrqThreadAddress = 0u;
 	m_yieldRequested = false;
 }
 
@@ -1041,30 +1090,43 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			runBuiltinSelect(args, out, resultLimit);
 			break;
 		case BuiltinFunctionId::FrameCount:
-			out.push_back(valueInteger(asThread(args[0], m_heap)->frameDepth()));
+			out.push_back(valueInteger(ThreadRecord::count(m_memory, asThread(args[0], m_heap), ThreadField::FrameDepth)));
 			break;
 		case BuiltinFunctionId::FrameHeader: {
-			const auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
-			out.push_back(valueInteger(frame.readControl(FrameField::Function)));
-			out.push_back(valueInteger(frame.readControl(FrameField::Pc)));
-			out.push_back(valueInteger(frame.readControl(FrameField::CallSite)));
-			out.push_back(valueBool(frame.hasControlFlag(FRAME_COMPLETION)));
-			out.push_back(valueInteger(static_cast<u32>(frame.savedExecutionBank())));
-			out.push_back(valueBool(frame.hasControlFlag(FRAME_EXCEPTION)));
+			const u32 thread = asThread(args[0], m_heap);
+			const u32 frame = ThreadRecord::stackLayout(m_memory, thread).frameAddress(integerOperand(args[1]));
+			const u32 flags = m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Flags));
+			out.push_back(valueInteger(m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Function))));
+			out.push_back(valueInteger(m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc))));
+			out.push_back(valueInteger(m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::CallSite))));
+			out.push_back(valueBool((flags & FRAME_COMPLETION) != 0u));
+			out.push_back(valueInteger(static_cast<u32>(frameExecutionBank(flags))));
+			out.push_back(valueBool((flags & FRAME_EXCEPTION) != 0u));
 			break;
 		}
 		case BuiltinFunctionId::GetFrameRegister:
 		case BuiltinFunctionId::SetFrameRegister: {
-			auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
-			const int index = integerOperand(args[2]);
-			if (fn.id == BuiltinFunctionId::GetFrameRegister) out.push_back(frame.registers.get(index));
-			else frame.registers.set(index, args[3]);
+			const auto layout = ThreadRecord::stackLayout(m_memory, asThread(args[0], m_heap));
+			const u32 frame = layout.frameAddress(integerOperand(args[1]));
+			const u32 base = m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackBase)) & FRAME_WINDOW_MASK;
+			const u32 slot = base + static_cast<u32>(integerOperand(args[2]));
+			const u32 word = layout.offset() + slot * sizeof(u32);
+			const u32 tag = layout.offset() + layout.valueCapacity * sizeof(u32) + slot;
+			if (fn.id == BuiltinFunctionId::GetFrameRegister)
+				out.push_back(valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordByte(tag)), m_memory.readRamRecordWord(word)));
+			else {
+				const Value value = args[3];
+				m_memory.writeRamRecordWord(word, valuePayload(value));
+				m_memory.writeRamRecordByte(tag, static_cast<u8>(valueTag(value)));
+			}
 			break;
 		}
 		case BuiltinFunctionId::GetFrameUpvalue:
 		case BuiltinFunctionId::SetFrameUpvalue: {
-			const auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
-			const u32 address = frame.captureAddress(integerOperand(args[2]));
+			const u32 thread = asThread(args[0], m_heap);
+			const u32 frame = ThreadRecord::stackLayout(m_memory, thread).frameAddress(integerOperand(args[1]));
+			const u32 closure = m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Closure));
+			const u32 address = ClosureRecord::captureAddress(m_memory, closure, integerOperand(args[2]));
 			if (fn.id == BuiltinFunctionId::SetFrameUpvalue) Upvalue::store(m_heap, address, args[3]);
 			else out.push_back(Upvalue::load(m_memory, address));
 			break;
@@ -1081,28 +1143,31 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::CoroutineCreate: {
 			u32 closure = !args.empty() && valueIsClosure(args[0]) ? asClosure(args[0], m_heap) : 0u;
 			if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			out.push_back(valueThread(createThread(closure)->address));
+			out.push_back(valueThread(createThread(closure)));
 			break;
 		}
 		case BuiltinFunctionId::CoroutineRunning:
 			out.push_back(valueThread(m_activeThread->address));
-			out.push_back(valueBool(m_activeThread == m_rootThread));
+			out.push_back(valueBool(m_activeThread == &m_rootView));
 			break;
 		case BuiltinFunctionId::CoroutineStatus:
 		case BuiltinFunctionId::CoroutineClose:
 		case BuiltinFunctionId::CoroutineIsYieldable: {
-			Thread* thread = args.empty() && fn.id == BuiltinFunctionId::CoroutineIsYieldable ? m_activeThread
-				: !args.empty() && valueIsThread(args[0]) ? asThread(args[0], m_heap) : nullptr;
-			if (thread == nullptr) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			if (fn.id == BuiltinFunctionId::CoroutineIsYieldable) out.push_back(valueBool(coroutineYieldable(*thread)));
-			else if (fn.id == BuiltinFunctionId::CoroutineStatus) {
-				out.push_back(valueInteger(static_cast<int>(thread->status())));
-			} else {
-				const bool failed = thread->status() == ThreadStatus::Failed;
-				out.push_back(valueBool(!failed));
-				if (failed) out.push_back(thread->error());
-				closeThread(*thread);
-				thread->setError(valueNil());
+			const u32 address = args.empty() && fn.id == BuiltinFunctionId::CoroutineIsYieldable ? m_activeThread->address
+				: !args.empty() && valueIsThread(args[0]) ? asThread(args[0], m_heap) : 0u;
+			if (address == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			if (fn.id == BuiltinFunctionId::CoroutineIsYieldable) out.push_back(valueBool(coroutineYieldable(address)));
+			else {
+				const auto status = static_cast<ThreadStatus>(ThreadRecord::read(m_memory, address, ThreadField::Status));
+				if (fn.id == BuiltinFunctionId::CoroutineStatus) out.push_back(valueInteger(static_cast<int>(status)));
+				else {
+					const bool failed = status == ThreadStatus::Failed;
+					out.push_back(valueBool(!failed));
+					if (failed) out.push_back(ThreadRecord::error(m_memory, address));
+					Thread& view = bindThread(address);
+					closeThread(view);
+					view.setError(valueNil());
+				}
 			}
 			break;
 		}
@@ -1129,32 +1194,34 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 	}
 }
 
-Thread* CPU::createThread(u32 entry) {
+u32 CPU::createThread(u32 entry) {
 	const u32 address = m_luaHeap.allocateRecord(THREAD_HEAP_BYTES, false, THREAD_INITIAL_BACKING_BYTES, static_cast<u32>(ThreadField::StackBlock),
 		entry ? valueClosure(entry) : valueNil());
 	ThreadRecord::initialize(m_heap, address, entry);
-	auto* thread = m_heap.attachThread(address);
-	thread->bindStack();
-	thread->armStackWatch();
-	trackLocalRoot(valueThread(thread->address));
-	return thread;
+	trackLocalRoot(valueThread(address));
+	return address;
 }
 
-bool CPU::coroutineYieldable(const Thread& thread) const {
-	if (&thread == m_rootThread) return false;
-	for (auto* frame = thread.currentFrame; frame; frame = frame->previous)
-		if (frame->hasControlFlag(FRAME_EXCEPTION | FRAME_COMPLETION)) return false;
-	const u32 depth = thread.protectedDepth();
+bool CPU::coroutineYieldable(u32 address) const {
+	if (address == m_rootView.address) return false;
+	const auto layout = ThreadRecord::stackLayout(m_memory, address);
+	for (u32 depth = ThreadRecord::count(m_memory, address, ThreadField::FrameDepth); depth != 0u; --depth) {
+		const u32 flags = m_memory.readRamRecordWord(layout.frameAddress(depth - 1u) + static_cast<u32>(FrameField::Flags));
+		if ((flags & (FRAME_EXCEPTION | FRAME_COMPLETION)) != 0u) return false;
+	}
+	const u32 depth = ThreadRecord::count(m_memory, address, ThreadField::ProtectedDepth);
 	for (u32 i = 0; i < depth; ++i) {
-		if ((thread.protectedWord(i, ProtectedField::Flags) & PROTECTED_CALL_KIND_MASK)
-			== static_cast<u32>(ProtectedCallKind::XPCallHandler)) return false;
+		const u32 flags = m_memory.readRamRecordWord(layout.protectedAddress(i) + static_cast<u32>(ProtectedField::Flags));
+		if ((flags & PROTECTED_CALL_KIND_MASK) == static_cast<u32>(ProtectedCallKind::XPCallHandler)) return false;
 	}
 	return true;
 }
 
 void CPU::returnToResumer(int sourceBase, int sourceCount, bool succeeded) {
 	Thread* thread = m_activeThread;
-	Thread* resumer = thread->resumer();
+	auto roots = acquireLocalRoots();
+	trackLocalRoot(valueThread(thread->address));
+	Thread* resumer = &bindThread(thread->resumer());
 	m_activeThread = resumer;
 	resumeFrameBank();
 	resumer->setStatus(ThreadStatus::Running);
@@ -1170,7 +1237,7 @@ void CPU::returnToResumer(int sourceBase, int sourceCount, bool succeeded) {
 		for (int i = copied + 1; i < count; ++i) caller.registers.set(callBase + i, valueNil());
 	}
 	caller.setTop(callBase + count);
-	thread->setResumer(nullptr);
+	thread->setResumer(0u);
 	m_threadSwitchRequested = true;
 	m_yieldRequested = true;
 	instructionBudgetRemaining -= count;
@@ -1179,15 +1246,16 @@ void CPU::returnToResumer(int sourceBase, int sourceCount, bool succeeded) {
 void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc) {
 	Thread* thread = m_activeThread;
 	if (id == BuiltinFunctionId::CoroutineYield) {
-		if (!coroutineYieldable(*thread)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		if (!coroutineYieldable(thread->address)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		thread->setReturnWindow(base, count);
 		thread->setStatus(ThreadStatus::Suspended);
 		returnToResumer(caller.stackBase() + base + 1, argc, true);
 		return;
 	}
 	if (argc == 0 || !valueIsThread(caller.registers.get(base + 1))) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	Thread* target = asThread(caller.registers.get(base + 1), m_heap);
-	const ThreadStatus status = target->status();
+	const u32 targetAddress = asThread(caller.registers.get(base + 1), m_heap);
+	if (targetAddress == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	const auto status = static_cast<ThreadStatus>(ThreadRecord::read(m_memory, targetAddress, ThreadField::Status));
 	const bool exceptionActive = readExceptionReturnFrameDepth() != -1;
 	if (exceptionActive || (status != ThreadStatus::New && status != ThreadStatus::Suspended)) {
 		auto scratch = acquireBuiltinResultScratch();
@@ -1198,9 +1266,10 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 		return;
 	}
 	const bool fresh = status == ThreadStatus::New;
+	Thread* target = &bindThread(targetAddress);
 	thread->setReturnWindow(base, count);
 	thread->setStatus(ThreadStatus::Normal);
-	target->setResumer(thread);
+	target->setResumer(thread->address);
 	target->setStatus(ThreadStatus::Running);
 	m_activeThread = target;
 	if (fresh) {
@@ -1218,7 +1287,7 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 bool CPU::handleThreadError(Value error) {
 	if (handleProtectedCallError(error)) return true;
 	Thread* thread = m_activeThread;
-	if (thread->resumer() == nullptr) return false;
+	if (thread->resumer() == 0u) return false;
 	for (auto* frame = thread->currentFrame; frame; frame = frame->previous)
 		if (frame->hasControlFlag(FRAME_EXCEPTION | FRAME_COMPLETION)) return false;
 	thread->setStatus(ThreadStatus::Failed);
@@ -1525,7 +1594,7 @@ void CPU::runBuiltinError(BuiltinArgsView args) {
 
 void CPU::clearHaltUntilIrq() {
 	m_haltedUntilIrqFrameDepth = -1;
-	m_haltedUntilIrqThread = nullptr;
+	m_haltedUntilIrqThreadAddress = 0u;
 	m_yieldRequested = false;
 }
 
@@ -1667,7 +1736,7 @@ CallFrame* CPU::enterException(
 
 void CPU::clearHaltAfterAcceptedInterrupt() {
 	m_haltedUntilIrqFrameDepth = -1;
-	m_haltedUntilIrqThread = nullptr;
+	m_haltedUntilIrqThreadAddress = 0u;
 	m_yieldRequested = false;
 }
 
@@ -1722,7 +1791,7 @@ RunResult CPU::runLoop(
 		try {
 			if (static_cast<int>(thread.frameDepth()) > targetDepth && instructionBudgetRemaining > 0
 				&& !m_memoryWriteBlocked && !m_hardHalted && !m_yieldRequested
-				&& !(m_haltedUntilIrqThread == m_activeThread && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))) resumePendingMemoryOperation();
+				&& !(m_haltedUntilIrqThreadAddress == m_activeThread->address && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))) resumePendingMemoryOperation();
 			if constexpr (RootBoundary) {
 				if (thread.frameDepth() == 0) {
 					return RunResult::Halted;
@@ -1733,7 +1802,7 @@ RunResult CPU::runLoop(
 				}
 			}
 			if (m_hardHalted
-				|| (m_haltedUntilIrqThread == m_activeThread && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))
+				|| (m_haltedUntilIrqThreadAddress == m_activeThread->address && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))
 				|| m_memoryWriteBlocked) {
 				return RunResult::Halted;
 			}
@@ -2077,7 +2146,7 @@ dispatch_rebind_frame:
 					if (static_cast<int>(thread.frameDepth()) <= targetDepth) return RunResult::Halted;
 				}
 				// A pure frame transition can activate the depth-sensitive HALT latch.
-				if (m_haltedUntilIrqThread == m_activeThread
+				if (m_haltedUntilIrqThreadAddress == m_activeThread->address
 					&& m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth())) return RunResult::Halted;
 				frame = thread.currentFrame;
 				image = frame->executionImage;
@@ -2149,10 +2218,10 @@ dispatch_continue:
 	}
 }
 
-RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, const Thread* target) {
-	if (!target) target = m_rootThread;
+RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target) {
+	if (target == 0u) target = m_rootView.address;
 	for (;;) {
-		const RunResult result = m_runUntilDepthEntry(*this, m_activeThread == target ? targetDepth : 0, instructionBudget);
+		const RunResult result = m_runUntilDepthEntry(*this, m_activeThread->address == target ? targetDepth : 0, instructionBudget);
 		if (!m_threadSwitchRequested) return result;
 		m_threadSwitchRequested = false;
 		m_yieldRequested = false;
@@ -2258,10 +2327,11 @@ u32 CPU::readFrameCallSitePc(int childFrameIndex) const {
 }
 
 bool CPU::completionCallPending() const {
-	for (auto* frame = m_completionThread->currentFrame; frame; frame = frame->previous) {
-		if (frame->hasControlFlag(FRAME_COMPLETION)) {
-			return true;
-		}
+	const u32 thread = m_completionThreadAddress;
+	const auto layout = ThreadRecord::stackLayout(m_memory, thread);
+	for (u32 depth = ThreadRecord::count(m_memory, thread, ThreadField::FrameDepth); depth != 0u; --depth) {
+		const u32 flags = m_memory.readRamRecordWord(layout.frameAddress(depth - 1u) + static_cast<u32>(FrameField::Flags));
+		if ((flags & FRAME_COMPLETION) != 0u) return true;
 	}
 	return false;
 }
@@ -2749,12 +2819,13 @@ void CPU::clearCallStack() {
 		thread->setStatus(ThreadStatus::Dead);
 		thread->setEntry(0u);
 		thread->setError(valueNil());
-		if (thread == m_rootThread) break;
-		m_activeThread = thread->resumer() == nullptr ? m_rootThread : thread->resumer();
-		thread->setResumer(nullptr);
+		if (thread == &m_rootView) break;
+		const u32 resumer = thread->resumer();
+		thread->setResumer(0u);
+		m_activeThread = resumer == 0u ? &m_rootView : &bindThread(resumer);
 	}
-	m_rootThread->setStatus(ThreadStatus::Running);
-	m_completionThread = m_rootThread;
+	m_rootView.setStatus(ThreadStatus::Running);
+	m_completionThreadAddress = m_rootView.address;
 	m_threadSwitchRequested = false;
 }
 
@@ -2827,10 +2898,10 @@ void CPU::markRoots(GcHeap& heap) {
 			heap.markValue(image->constPool.get(index));
 		}
 	}
-	if (m_rootThread) heap.markThread(m_rootThread->address);
+	heap.markThread(m_rootView.address);
 	if (m_activeThread) heap.markThread(m_activeThread->address);
-	if (m_completionThread) heap.markThread(m_completionThread->address);
-	if (m_haltedUntilIrqThread) heap.markThread(m_haltedUntilIrqThread->address);
+	heap.markThread(m_completionThreadAddress);
+	heap.markThread(m_haltedUntilIrqThreadAddress);
 }
 
 // end repeated-sequence-acceptable

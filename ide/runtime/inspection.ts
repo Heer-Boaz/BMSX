@@ -5,7 +5,6 @@ import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/e
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { GameImageCapture } from '../../hosts/common/image';
-import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ResourceDomain } from '../common/resource';
 import { DisposableStore } from '../common/lifecycle';
@@ -120,7 +119,7 @@ export class RuntimeInspection {
 	/** Domain readers share this lifetime/alias registry and requireSuspended() before borrowing. */
 	public readonly lifetime = new DisposableStore();
 	public readonly values: InspectionValues;
-	private readonly frames = new Map<string, { physical: RuntimeStackFrame; frame: CallFrame; trace: InspectedFrame; scopes?: readonly InspectedFrameScope[] }>();
+	private readonly frames = new Map<string, { physical: RuntimeStackFrame; thread: number; frameIndex: number; trace: InspectedFrame; scopes?: readonly InspectedFrameScope[] }>();
 	private stack: InspectedFrame[] | undefined;
 	private readonly unbind: () => void;
 
@@ -143,7 +142,7 @@ export class RuntimeInspection {
 					const location = physical[frame.physicalFrameIndex];
 					const reference = `${this.id}/frame/${index}`;
 					const trace = { ...frame, reference, domain: location.executionDomainId, pc: location.tracePc, functionAddress: location.functionAddress };
-					this.frames.set(reference, { physical: location, frame: this.runtime.machine.cpu.activeThread.frameAtDepth(frame.physicalFrameIndex), trace });
+					this.frames.set(reference, { physical: location, thread: this.runtime.machine.cpu.activeThread.address, frameIndex: frame.physicalFrameIndex, trace });
 					return trace;
 				});
 		}
@@ -166,7 +165,7 @@ export class RuntimeInspection {
 			frame.scopes = runtimeLuaFrameScopes(frame.physical, frame.trace.inlineDepth).map(scope => {
 				if (scope.status !== 'available') return { kind: scope.kind, status: scope.status };
 				return { kind: scope.kind, status: scope.status, count: scope.bindings.length,
-					reference: this.values.frame(scope.kind, frame.frame, scope.bindings) };
+					reference: this.values.frame(scope.kind, frame.thread, frame.frameIndex, scope.bindings) };
 			});
 		}
 		return { inspection: this.id, frame: reference, scopes: frame.scopes };

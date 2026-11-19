@@ -112,27 +112,16 @@ void reusableFrameChain() {
 	}
 	while (thread.frameDepth() > 1) thread.leaveFrame();
 	auto* prepared = thread.acquireFrame();
-	thread.trimFrames();
-	require(thread.currentFrame == root && thread.frameDepth() == 1 && thread.acquireFrame() == prepared,
-		"collection retains the first prepared spare without activating it");
-	size_t retained = 0;
-	CallFrame* previous = nullptr;
-	for (auto* frame = thread.firstFrame; frame; frame = frame->next) {
-		require(frame->previous == previous, "tail reclamation repairs backward links");
-		require(frame->controlOffset == root->controlOffset + retained * FRAME_CONTROL_BYTES,
-			"surviving inactive views are rebound to their new physical depth");
-		previous = frame;
-		++retained;
-	}
-	require(retained == 5, "collection halves the inactive tail while preserving the active root");
+	require(thread.currentFrame == root && thread.frameDepth() == 1
+		&& prepared->controlOffset == root->controlOffset + FRAME_CONTROL_BYTES,
+		"the next physical frame is not active before entry");
 	thread.enterFrame(prepared);
 	prepared->writeControl(FrameField::Protected, 3);
 	thread.leaveFrame();
 	require(thread.currentFrame == root && thread.frameDepth() == 1, "the retired protected slot is not active");
 	thread.leaveFrame();
 	require(thread.currentFrame == nullptr && thread.frameDepth() == 0, "retirement leaves an empty activation chain");
-	thread.trimFrames();
-	require(thread.acquireFrame() == root, "an empty thread retains its first prepared node through collection");
+	require(thread.acquireFrame() == root, "an empty view can reuse its first frame");
 }
 
 void inactiveFrameMetadata() {
@@ -887,15 +876,15 @@ void coroutineReturnPlacementCycles() {
 		CpuMachine machine(image, scalar);
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("create"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("resume"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
-		auto* root = machine.cpu.activeThread();
-		while (machine.cpu.activeThread() == root) machine.cpu.runUntilDepth(0, 1);
+		const u32 root = machine.cpu.activeThread()->address;
+		while (machine.cpu.activeThread()->address == root) machine.cpu.runUntilDepth(0, 1);
 		machine.cpu.activeThread()->currentFrame->registers.set(0, valueInteger(17)); machine.cpu.activeThread()->currentFrame->registers.set(1, valueInteger(29));
 		require(machine.cpu.runUntilDepth(0, 2) == RunResult::Yielded, "coroutine RET ends the current execution slice");
 		const int placed = wanted == 0 ? 3 : wanted - 1;
-		require(machine.cpu.instructionBudgetRemaining == 2 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - placed && machine.cpu.activeThread() == root,
+		require(machine.cpu.instructionBudgetRemaining == 2 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - placed && machine.cpu.activeThread()->address == root,
 			"coroutine RET charges status, results and nil padding in its resumer");
 		const Value values[]{valueBool(true), valueInteger(17), valueInteger(29), valueNil(), valueNil()};
-		for (int i = 0; i < placed; ++i) require(root->currentFrame->registers.get(4 + i) == values[i], "resumer receives the selected range");
+		for (int i = 0; i < placed; ++i) require(machine.cpu.activeThread()->currentFrame->registers.get(4 + i) == values[i], "resumer receives the selected range");
 	}
 }
 

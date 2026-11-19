@@ -1,4 +1,5 @@
-import type { Thread } from '../../machine/ts/machine/cpu/thread';
+import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { FrameField, FRAME_COMPLETION } from '../../machine/ts/machine/cpu/call_state';
 import type {
 	ExecutionDomainId,
 	ExecutionDomainMask,
@@ -37,7 +38,8 @@ export type RuntimeDebuggerCompletionResult =
 
 class RuntimeDebuggerCompletionBatchRecord implements RuntimeDebuggerCompletionBatch {
 	public constructor(
-		public readonly thread: Thread,
+		public readonly thread: number,
+		private readonly cpu: CPU,
 		public readonly firstFrameIndex: number,
 		public readonly executionDomains: readonly ExecutionDomainId[],
 		private settled: ((result: RuntimeDebuggerCompletionResult) => void) | null,
@@ -45,11 +47,11 @@ class RuntimeDebuggerCompletionBatchRecord implements RuntimeDebuggerCompletionB
 	}
 
 	public isPending(): boolean {
-		return this.thread.frameDepth > this.firstFrameIndex
-			&& this.thread.frameAtDepth(this.firstFrameIndex).returnToCompletionLatch;
+		return this.cpu.readThreadFrameDepth(this.thread) > this.firstFrameIndex
+			&& (this.cpu.readThreadFrameWord(this.thread, this.firstFrameIndex, FrameField.Flags) & FRAME_COMPLETION) !== 0;
 	}
 
-	public containsFrame(thread: Thread, frameIndex: number): boolean {
+	public containsFrame(thread: number, frameIndex: number): boolean {
 		return thread === this.thread && frameIndex >= this.firstFrameIndex
 			&& frameIndex < this.firstFrameIndex + this.executionDomains.length;
 	}
@@ -63,6 +65,7 @@ class RuntimeDebuggerCompletionBatchRecord implements RuntimeDebuggerCompletionB
 }
 
 export class RuntimeDebuggerPlanManager {
+	public constructor(private readonly cpu: CPU) {}
 	private controlPlan: RuntimeDebuggerControlPlan | null = null;
 	private controlContext: RuntimeDebuggerExecutionContext = 'game';
 	private suspended = false;
@@ -142,13 +145,13 @@ export class RuntimeDebuggerPlanManager {
 	}
 
 	public pushCompletionBatch(
-		thread: Thread,
+		thread: number,
 		firstFrameIndex: number,
 		executionDomains: readonly ExecutionDomainId[],
 		settled: (result: RuntimeDebuggerCompletionResult) => void,
 	): void {
 		this.completionBatches.push(new RuntimeDebuggerCompletionBatchRecord(
-			thread,
+			thread, this.cpu,
 			firstFrameIndex,
 			executionDomains,
 			settled,
@@ -171,7 +174,7 @@ export class RuntimeDebuggerPlanManager {
 		for (const batch of this.completionBatches) batch.settle({ status: 'faulted', sequence });
 	}
 
-	public completionBatchAtFrame(thread: Thread, frameIndex: number): RuntimeDebuggerCompletionBatch | null {
+	public completionBatchAtFrame(thread: number, frameIndex: number): RuntimeDebuggerCompletionBatch | null {
 		for (let batchIndex = this.completionBatches.length - 1;
 			batchIndex >= 0;
 			batchIndex -= 1) {
@@ -183,7 +186,7 @@ export class RuntimeDebuggerPlanManager {
 		return null;
 	}
 
-	public discardCompletionBatchesFrom(thread: Thread, frameIndex: number): void {
+	public discardCompletionBatchesFrom(thread: number, frameIndex: number): void {
 		for (let index = this.completionBatches.length - 1; index >= 0; index -= 1) {
 			const batch = this.completionBatches[index];
 			if (batch.thread === thread && batch.firstFrameIndex >= frameIndex) {

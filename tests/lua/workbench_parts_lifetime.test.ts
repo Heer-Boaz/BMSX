@@ -1120,7 +1120,7 @@ for (const interruption of ['none', 'resume', 'another-tab', 'typing', 'symbols-
 		if (interruption === 'none') {
 			f.ide.debugger.source.install(media, [new Map([[pc, 0]]), new Map(), new Map()]);
 			assert.equal(f.ide.debugger.source.shouldStop(-1, pc), true);
-		} else f.ide.debugger.source.stop = { id: 1, thread: f.host.runtime.machine.cpu.activeThread,
+		} else f.ide.debugger.source.stop = { id: 1, thread: f.host.runtime.machine.cpu.activeThread.address,
 			media, domain: -1, pc, inlineDepth: 0, reason: RuntimeDebuggerStopReason.Step };
 		const pending = presentRuntimeDebuggerStop(f.editor, f.ide.debugger, f.sources.catalog);
 		await Promise.resolve(); // The source attaches before the debugger projection's continuation.

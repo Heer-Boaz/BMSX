@@ -34,7 +34,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!;
-	const other = cpu.createThread(0);
+	const other = cpu.bindThread(cpu.createThread(0));
 	other.resizeStack(22);
 	const values = [valueFromTag(ValueTag.False, 37), valueInteger(-1), valueFloatBits(0x80000000), valueFloatBits(0xffc01234),
 		valueString(cpu.stringPool.intern('upvalue')), valueTable(cpu.createTable())];

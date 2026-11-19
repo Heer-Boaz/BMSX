@@ -6,17 +6,67 @@
 
 namespace bmsx {
 Thread::Thread(GcHeap& heap, u32 address) : address(address),
-	nativeRecord(heap.memory.ramData() + (address & RAM_RECORD_WORD_MASK)), heap(heap) {}
+	nativeRecord(address != 0u ? heap.memory.ramData() + (address & RAM_RECORD_WORD_MASK) : nullptr), heap(heap) {}
+
+void Thread::select(u32 selected) {
+	address = selected;
+	nativeRecord = selected != 0u ? heap.memory.ramData() + (selected & RAM_RECORD_WORD_MASK) : nullptr;
+	currentFrame = nullptr;
+	stack = {};
+	stackCapacity = 0;
+	boundFrameOffset = 0;
+	boundBackingBytes = 0;
+	boundFrameCapacity = 0;
+	boundProtectedCapacity = 0;
+	watchedFrameCount = 0;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	recordedWriteEpoch = 0;
+#endif
+	for (auto* frame = firstFrame; frame; frame = frame->next) {
+		frame->controlMemory = nullptr;
+		frame->controlOffset = 0;
+		frame->nativeControl = nullptr;
+		frame->registers = {};
+		frame->executionImage = nullptr;
+		frame->decodedPage = nullptr;
+		frame->decodedPageAddress = 0;
+		frame->decodedPageBusSignals = MAPPED_BUS_MASTER_CPU;
+		frame->compilationEntry = true;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		frame->nativeContinuationCells = {};
+		frame->nativeContinuationPc = 0;
+#endif
+	}
+}
+
+void Thread::disarmViewWatches() {
+	if (address == 0u) return;
+	for (auto field : {ThreadField::StackBlock, ThreadField::StackCapacity, ThreadField::FrameCapacity,
+		ThreadField::ProtectedCapacity, ThreadField::FrameDepth})
+		heap.memory.disarmRamViewWord((address + static_cast<u32>(field)) & RAM_RECORD_WORD_MASK);
+	u32 index = 0;
+	for (auto* frame = firstFrame; frame && index < watchedFrameCount; frame = frame->next, ++index)
+		for (auto field : {FrameField::StackBase, FrameField::StackCapacity})
+			heap.memory.disarmRamViewWord((frame->controlOffset + static_cast<u32>(field)) & RAM_RECORD_WORD_MASK);
+	watchedFrameCount = 0;
+}
+
+void Thread::armBoundViewWatches() {
+	if (address == 0u) return;
+	armStackWatch();
+	armFrameWindowWatches();
+}
 
 void Thread::write(ThreadField field, u32 word) { heap.memory.writeRamRecordWord(address + static_cast<u32>(field), word); }
 
 ThreadStatus Thread::status() const { return static_cast<ThreadStatus>(read(ThreadField::Status)); }
 void Thread::setStatus(ThreadStatus status) { write(ThreadField::Status, static_cast<u32>(status)); }
-Thread* Thread::resumer() const {
+u32 Thread::resumer() const {
 	const u32 owner = read(ThreadField::Resumer);
-	return owner == 0u ? nullptr : heap.threadAt(owner);
+	return owner == 0u ? 0u : heap.threadRecordAddress(owner);
 }
-void Thread::setResumer(Thread* thread) { write(ThreadField::Resumer, thread ? thread->address : 0u); }
+void Thread::setResumer(u32 thread) { write(ThreadField::Resumer, thread); }
+
 i32 Thread::callBase() const { return static_cast<i32>(read(ThreadField::CallBase)); }
 i32 Thread::returnCount() const { return static_cast<i32>(read(ThreadField::ReturnCount)); }
 void Thread::setReturnWindow(i32 base, i32 count) {
@@ -34,7 +84,7 @@ void Thread::setError(Value value) {
 #endif
 Thread::NativeOffsets Thread::nativeOffsets() {
 	constexpr size_t stack = offsetof(Thread, stack);
-	return {offsetof(Thread, currentFrame), offsetof(Thread, nativeRecord),
+	return {offsetof(Thread, currentFrame), offsetof(Thread, nativeRecord), offsetof(Thread, address),
 		stack + ValueSpan::wordsOffset(), stack + ValueSpan::tagsOffset(), offsetof(Thread, stackCapacity), offsetof(Thread, boundFrameCapacity)};
 }
 #if defined(__GNUC__)
@@ -126,9 +176,9 @@ void Thread::bindStack() {
 	boundBackingBytes = layout.byteLength();
 	const u32 controls = layout.frameAddress(0);
 	u32 index = 0;
-	for (auto* frame = firstFrame; frame; frame = frame->next, ++index) {
+	for (auto* frame = firstFrame; frame; frame = frame->next, ++index)
 		bindFrameControl(*frame, controls + index * FRAME_CONTROL_BYTES, index);
-	}
+	armFrameWindowWatches();
 	size_t extent = 0;
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
 		extent = std::max(extent, static_cast<size_t>(frame->stackBase() + frame->stackCapacity()));
@@ -141,27 +191,32 @@ void Thread::bindFrameControl(CallFrame& frame, u32 address, u32 index) {
 	frame.bindControl(heap.memory, address);
 	if (index >= boundFrameCapacity || FRAME_CONTROL_BYTES > MAIN_RAM_SIZE - frame.controlOffset)
 		frame.nativeControl = nullptr;
-	armFrameWindowWatch(frame);
 }
 
-void Thread::armFrameWindowWatch(const CallFrame& frame) {
+void Thread::armFrameWindowWatch(const CallFrame& frame, u32 index) {
+	watchedFrameCount = std::max(watchedFrameCount, index + 1u);
 	for (auto field : {FrameField::StackBase, FrameField::StackCapacity})
 		heap.memory.armRamViewWord((frame.controlOffset + static_cast<u32>(field)) & RAM_RECORD_WORD_MASK);
 }
 
 void Thread::armFrameWindowWatches() {
-	for (auto* frame = firstFrame; frame; frame = frame->next) armFrameWindowWatch(*frame);
+	const auto count = std::max(frameDepth(), static_cast<size_t>(boundFrameCapacity));
+	u32 index = 0;
+	for (auto* frame = firstFrame; frame && index < count; frame = frame->next, ++index)
+		armFrameWindowWatch(*frame, index);
 }
 
 bool Thread::observeFrameWindowWrites(u32 first, u32 end) {
 	bool active = false;
+	const auto depth = frameDepth();
+	const auto count = std::max(depth, static_cast<size_t>(boundFrameCapacity));
 	u32 index = 0;
-	for (auto* frame = firstFrame; frame; frame = frame->next, ++index) {
+	for (auto* frame = firstFrame; frame && index < count; frame = frame->next, ++index) {
 		const u32 base = RAM_BASE + ((frame->controlOffset + static_cast<u32>(FrameField::StackBase)) & RAM_RECORD_WORD_MASK);
 		const u32 size = RAM_BASE + ((frame->controlOffset + static_cast<u32>(FrameField::StackCapacity)) & RAM_RECORD_WORD_MASK);
 		if ((first <= base && base < end) || (first <= size && size < end)) {
-			armFrameWindowWatch(*frame);
-			active |= index < frameDepth();
+			armFrameWindowWatch(*frame, index);
+			active |= index < depth;
 		}
 	}
 	if (active) {
@@ -220,6 +275,7 @@ CallFrame* Thread::acquireFrame() {
 	auto* frame = frameNode(currentFrame);
 	const auto index = static_cast<u32>(frameDepth());
 	bindFrameControl(*frame, frameControlAddress(index), index);
+	armFrameWindowWatch(*frame, index);
 	return frame;
 }
 
@@ -272,26 +328,6 @@ CallFrame* Thread::frameAtDepth(size_t depth) const {
 	auto* frame = firstFrame;
 	for (size_t index = 0; index < depth; ++index) frame = frame->next;
 	return frame;
-}
-
-void Thread::trimFrames() {
-	// Like Lua's CallInfo chain, keep the first spare node and halve the rest
-	// at collection. That first node can be awaiting activation while growth
-	// of the Value stack collects; it must retain its identity.
-	auto* frame = currentFrame ? currentFrame->next : firstFrame;
-	u32 index = static_cast<u32>(frameDepth());
-	while (frame && frame->next) {
-		auto* retired = frame->next;
-		frame->next = retired->next;
-		if (frame->next) {
-			frame->next->previous = frame;
-			frame->next->bindControl(heap.memory, frameControlAddress(index + 1));
-			if (index + 1 >= boundFrameCapacity) frame->next->nativeControl = nullptr;
-		}
-		delete retired;
-		frame = frame->next;
-		++index;
-	}
 }
 
 } // namespace bmsx

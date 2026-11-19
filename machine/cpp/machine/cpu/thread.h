@@ -5,7 +5,10 @@
 namespace bmsx {
 
 struct Thread {
-	Thread(GcHeap& heap, u32 address);
+	Thread(GcHeap& heap, u32 address = 0u);
+	void select(u32 address);
+	void disarmViewWatches();
+	void armBoundViewWatches();
 	Thread(const Thread&) = delete;
 	Thread& operator=(const Thread&) = delete;
 	~Thread();
@@ -26,7 +29,6 @@ struct Thread {
 	i32 stackTop() const { return static_cast<i32>(read(ThreadField::StackTop) & FRAME_WINDOW_MASK); }
 	void setStackTop(i32 top) { write(ThreadField::StackTop, static_cast<u32>(top)); }
 	CallFrame* frameAtDepth(size_t depth) const;
-	void trimFrames();
 	void resizeStack(size_t capacity, Value root = valueNil());
 	void reserveFrame(size_t values, Value root = valueNil(), bool exception = false);
 	void bindStack();
@@ -56,15 +58,15 @@ struct Thread {
 	CallFrame* protectedCaller(u32 index) const;
 	u32 pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int wanted, int handler);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	struct NativeOffsets { size_t currentFrame, record, stackWords, stackTags, stackCapacity, frameCapacity; };
+	struct NativeOffsets { size_t currentFrame, record, address, stackWords, stackTags, stackCapacity, frameCapacity; };
 	static NativeOffsets nativeOffsets();
 #endif
 
-	const u32 address;
+	u32 address;
 	ThreadStatus status() const;
 	void setStatus(ThreadStatus status);
-	Thread* resumer() const;
-	void setResumer(Thread* thread);
+	u32 resumer() const;
+	void setResumer(u32 thread);
 	u32 entry() const { return read(ThreadField::Entry); }
 	void setEntry(u32 closure) { write(ThreadField::Entry, closure); }
 	i32 callBase() const;
@@ -72,25 +74,22 @@ struct Thread {
 	void setReturnWindow(i32 base, i32 count);
 	Value error() const;
 	void setError(Value value);
-	// Stable nodes belong to this thread. The cursor, not the retained tail,
-	// determines which frames and register ranges are active roots.
+	// Retained nodes are this CPU view bank's translation cache. Physical RAM
+	// depth and windows, not these nodes, determine active roots.
 	CallFrame* firstFrame = nullptr;
 	CallFrame* currentFrame = nullptr;
-	// The thread owns the allocation and exposes its actual bounds to generated
+	// The bank exposes the selected record's physical bounds to generated
 	// calls. stackTop is the current physical activation extent; caller
 	// windows overlap it above their call sites.
 	ValueSpan stack;
 	size_t stackCapacity = 0;
-	u8* const nativeRecord;
+	u8* nativeRecord;
 private:
 	friend struct CallFrame;
-	friend class GcHeap;
-	Thread* nextAttached = nullptr;
-	Thread* previousAttached = nullptr;
 	u32 frameCapacity() const;
 	u32 protectedCapacity() const;
 	u32 frameControlAddress(u32 index) const;
-	void armFrameWindowWatch(const CallFrame& frame);
+	void armFrameWindowWatch(const CallFrame& frame, u32 index);
 	CallFrame* frameNode(CallFrame* previous);
 	void bindFrameControl(CallFrame& frame, u32 address, u32 index);
 	void publishDepth(u32 depth);
@@ -101,6 +100,7 @@ private:
 	u32 boundBackingBytes = 0;
 	u32 boundFrameCapacity = 0;
 	u32 boundProtectedCapacity = 0;
+	u32 watchedFrameCount = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	u32 recordedWriteEpoch = 0;
 #endif

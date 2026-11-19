@@ -1,4 +1,3 @@
-import type { Thread } from '../cpu/thread';
 import { RunResult } from '../cpu/cpu';
 import { GX_GPU_SERVICE_RUNTIME_EDGE_MASK, GX_GPU_SERVICE_TIMING_PUBLISHED } from '../devices/gx/gpu';
 import { DEVICE_SERVICE_GPU } from '../scheduler/device';
@@ -139,14 +138,14 @@ export class CpuExecutionState {
 		}
 	}
 
-	public runSuspendedUntilDepth(targetDepth: number, cycleBudget = MAX_CPU_SLICE_CYCLES, targetThread: Thread = this.runtime.machine.cpu.activeThread): CpuSuspendedRunResult {
+	public runSuspendedUntilDepth(targetDepth: number, cycleBudget = MAX_CPU_SLICE_CYCLES, targetThread: number = this.runtime.machine.cpu.activeThread.address): CpuSuspendedRunResult {
 		const runtime = this.runtime;
 		const machine = runtime.machine;
 		const cpu = machine.cpu;
 		const scheduler = machine.scheduler;
 		const endCycle = scheduler.nowCycles + cycleBudget;
 		runDueRuntimeTimers(runtime);
-		while (targetThread.frameDepth > targetDepth) {
+		while (cpu.readThreadFrameDepth(targetThread) > targetDepth) {
 			if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
 			if (machine.gxGpu.backendServiceBlocksMachine()
 				|| machine.systemController.cpuHeld()) {
@@ -188,7 +187,7 @@ export class CpuExecutionState {
 					return CpuSuspendedRunResult.Halted;
 				}
 			}
-			if (targetThread.frameDepth <= targetDepth) {
+			if (cpu.readThreadFrameDepth(targetThread) <= targetDepth) {
 				return CpuSuspendedRunResult.Completed;
 			}
 			if (result === RunResult.ExecutionStopped) {

@@ -1,3 +1,4 @@
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
@@ -35,16 +36,16 @@ return true`, 0);
 	const initialized = materializeCpuCompletionValues(cpu);
 	assert.deepEqual(initialized, [valueBool(true), valueBool(true)], initialized.map(value => guest.formatValue(value)).join('\t'));
 	const keeper = asThread(guest.global('keeper'), cpu.gc);
-	const pcs = Array.from({ length: keeper.frameDepth }, (_, index) => keeper.frameAtDepth(index).pc);
+	const pcs = Array.from({ length: cpu.readThreadFrameDepth(keeper) }, (_, index) => cpu.readThreadFrameWord(keeper, index, FrameField.Pc));
 	const reader = guest.global('reader');
 	assert.deepEqual(guest.callClosure(reader), [valueInteger(17)]);
 	if (mode === 'completion-unwind') {
-		retireRuntimeFrameScopes(runtime, sources, guest, cpu.activeThread, 0);
-		retireRuntimeFrameScopes(runtime, sources, guest, keeper, keeper.frameDepth);
+		retireRuntimeFrameScopes(runtime, sources, guest, cpu.activeThread.address, 0);
+		retireRuntimeFrameScopes(runtime, sources, guest, keeper, cpu.readThreadFrameDepth(keeper));
 		assert.deepEqual(guest.callClosure(reader), [valueInteger(17)], 'other threads and lower scopes retain their borrow');
 	}
 	retireRuntimeFrameScopes(runtime, sources, guest, mode === 'completion-unwind' ? keeper : undefined);
-	assert.deepEqual(Array.from({ length: keeper.frameDepth }, (_, index) => keeper.frameAtDepth(index).pc), pcs, 'retirement neither runs Lua nor unwinds/rewrites the physical stack');
+	assert.deepEqual(Array.from({ length: cpu.readThreadFrameDepth(keeper) }, (_, index) => cpu.readThreadFrameWord(keeper, index, FrameField.Pc)), pcs, 'retirement neither runs Lua nor unwinds/rewrites the physical stack');
 	assert.deepEqual(guest.callClosure(guest.global('verify')).map(value => guest.formatValue(value)),
 		['false', 'Selected frame evaluation has ended.']);
 });

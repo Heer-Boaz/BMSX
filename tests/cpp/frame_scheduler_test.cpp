@@ -441,6 +441,7 @@ void testDeviceSettlementRetainsCpuStop() {
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
 	auto* thread = cpu.activeThread();
+	const bmsx::u32 threadAddress = thread->address;
 	const auto depth = thread->frameDepth();
 	const auto pc = thread->currentFrame->readControl(bmsx::FrameField::Pc);
 	const auto stackTop = thread->stackTop();
@@ -449,7 +450,7 @@ void testDeviceSettlementRetainsCpuStop() {
 	require(scheduler.runDevicesToNextLogicalTick(runtime, runtime.timing.cycleBudgetPerFrame), "device timers reach the real video edge");
 	require(scheduler.lastTickSequence == 1 && fixture.input.sampleCount == 1, "VBlank publishes its ordinary tick and input sample");
 	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0, "VBlank latches its pending IRQ");
-	require(cpu.activeThread() == thread && thread->frameDepth() == depth && thread->currentFrame->readControl(bmsx::FrameField::Pc) == pc && thread->stackTop() == stackTop,
+	require(cpu.activeThread()->address == threadAddress && thread->frameDepth() == depth && thread->currentFrame->readControl(bmsx::FrameField::Pc) == pc && thread->stackTop() == stackTop,
 		"device settlement neither executes the stopped CPU nor enters its pending interrupt");
 	require(scheduler.lastTickCpuUsedCycles == 0, "device cycles are not CPU execution");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)

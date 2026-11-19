@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vector>
 #include "common/compiler.h"
 #include "machine/cpu/heap_allocator.h"
 #include "machine/cpu/table.h"
@@ -35,7 +34,6 @@ public:
 	GcHeap(CPU& cpu, LuaHeap& budget, Memory& memory, HeapAllocator& arena, StringPool& strings, StringId modeKey)
 		: budget(budget), memory(memory), arena(arena), m_cpu(cpu), m_modeKey(modeKey), m_stringPool(strings),
 		  m_controlOffset(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET) {}
-	~GcHeap();
 	LuaHeap& budget;
 	Memory& memory;
 	HeapAllocator& arena;
@@ -44,12 +42,6 @@ public:
 	u32 closureRecordAddress(u32 address) const;
 	u32 threadRecordAddress(u32 address) const;
 	u32 openCellAddress(u32 address) const;
-	Thread* threadAt(u32 address) const {
-		const u32 offset = address & GC_RECORD_MASK;
-		return (offset & (THREAD_HEAP_BYTES - 1u)) == 0u ? m_threadsBySlot[offset / THREAD_HEAP_BYTES] : nullptr;
-	}
-	Thread* attachThread(u32 address);
-	void discardAttachments(Thread* retainedRoot);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static size_t nativeControlOffset();
 #endif
@@ -59,9 +51,6 @@ public:
 				return scalarValueHash(valueInteger(static_cast<i32>(valuePayload(value))));
 			default: return scalarValueHash(value);
 		}
-	}
-	template<class Visitor> void visitThreads(Visitor&& visit) {
-		for (auto* thread = m_attachedThreads; thread; thread = thread->nextAttached) visit(*thread);
 	}
 	GcPhase phase() const {
 		// Two unconnected selector inputs do not clock the collector.
@@ -76,8 +65,6 @@ public:
 	}
 	bool isAlive(u32 address) const { return memory.readRamRecordByte(address + GC_COLOR_OFFSET) != white(); }
 	size_t allocationBytes(u32 threadAddress) const;
-	void armThreadStackWatches();
-	bool observeStackWrites(u32 first, u32 end, const Thread* active);
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u);
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	bool markValue(Value value);
@@ -87,8 +74,6 @@ public:
 	}
 	u32 changedHeadOffset() const { return m_controlOffset + GC_CHANGED_HEAD; }
 private:
-	Thread*& threadSlot(u32 address) { return m_threadsBySlot[(address & GC_RECORD_MASK) / THREAD_HEAP_BYTES]; }
-	void trackThread(Thread* thread);
 	bool markClosure(u32 address);
 	uint8_t tableWeakMode(const TableRecord& table);
 	bool markTable(u32 address);
@@ -106,18 +91,14 @@ private:
 	size_t atomic(Value root0, Value root1, Value root2);
 	struct SweepContext { GcHeap& heap; u32 growingThread; u8 white; };
 	static i32 sweepRecord(void* context, u32 address);
-	void unlinkThread(Thread* thread);
 	CPU& m_cpu;
-	Thread* m_attachedThreads = nullptr;
 	void setPhase(GcPhase phase) { memory.writeRamRecordByte(m_controlOffset, static_cast<u8>(phase)); }
 	StringId m_modeKey;
 	StringPool& m_stringPool;
 	const u32 m_controlOffset;
-	// Only Thread execution views need a host attachment. Other kinds are
-	// resolved from RAM; 64-byte Thread slots index this directory directly.
-	std::vector<Thread*> m_threadsBySlot = std::vector<Thread*>(MAIN_RAM_SIZE / THREAD_HEAP_BYTES);
+
 };
 
 inline u32 asClosure(Value value, const GcHeap& heap) { return heap.closureRecordAddress(valuePayload(value)); }
-inline Thread* asThread(Value value, const GcHeap& heap) { return heap.threadAt(valuePayload(value)); }
+inline u32 asThread(Value value, const GcHeap& heap) { return heap.threadRecordAddress(valuePayload(value)); }
 } // namespace bmsx

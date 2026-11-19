@@ -39,7 +39,7 @@ function checkReferences(cpu: CPU): void {
 			case ValueTag.Table: assert.equal(gc.tableRecordAddress(address), address); break;
 			case ValueTag.Closure: assert.equal(gc.closureRecordAddress(address), address); break;
 			case UPVALUE_RECORD_KIND: assert.equal(gc.cellRecordAddress(address), address); break;
-			case THREAD_RECORD_KIND: assert.equal(gc.threadAt(address)?.address, address); break;
+			case THREAD_RECORD_KIND: assert.equal(gc.threadRecordAddress(address), address); break;
 		}
 	}
 	assert.equal(new Set(records).size, records.length);
@@ -89,14 +89,14 @@ test('restore publishes physical roots and drops discarded future records', () =
 	cpu.createTable();
 	cpu.createTable();
 	cpu.collectTrackedHeapBytes();
-	const saved = cpu.captureRuntimeState(), thread = cpu.gc.reference(cpu.rootThread), canonical = frame.closure;
+	const saved = cpu.captureRuntimeState(), thread = cpu.rootThread.address, canonical = frame.closure;
 	const root = frame.registers.get(0), fourth = cpu.gc.tables.getInteger(roots, 4);
 	const ram = cpu.memory.captureSaveState();
 	for (let iteration = 0; iteration < 64; ++iteration) {
 		const future = Array.from({ length: 12 }, () => cpu.createTable());
 		cpu.memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(saved);
-		assert.equal(cpu.gc.threadAt(thread), cpu.rootThread);
+		assert.equal(cpu.rootThread.address, thread);
 		assert.equal(cpu.rootThread.currentFrame!.closure, canonical);
 		assert.equal(cpu.rootThread.currentFrame!.registers.get(0), root);
 		assert.equal(cpu.gc.tables.getInteger(valuePayload(root), 4), fourth);

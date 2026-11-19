@@ -4,7 +4,6 @@ import { BLUA32_FLOAT_NAN, luaCompareIntegerFloat, luaFloatResultBits, luaFloatT
 import { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import type { StringId, StringPool } from './string_pool';
 import type { GcHeap } from './gc_heap';
-import type { Thread } from './thread';
 
 export const enum ValueTag {
 	Nil, False, True, Integer, Float, String, Table, Closure, BuiltinFunction, Thread,
@@ -46,7 +45,7 @@ export function numberToHost(value: Value): number { return valueIsInteger(value
 export function asStringId(value: Value): StringId { return valuePayload(value); }
 export function asBuiltinFunctionId(value: Value): BuiltinFunctionId { return valuePayload(value); }
 export function asClosure(value: Value, heap: GcHeap): number { return heap.closureRecordAddress(valuePayload(value))!; }
-export function asThread(value: Value, heap: GcHeap): Thread { return heap.threadAt(valuePayload(value))!; }
+export function asThread(value: Value, heap: GcHeap): number { return heap.threadRecordAddress(valuePayload(value)); }
 export function numberAsFloat(value: Value): number { return valueIsInteger(value) ? Math.fround(asInteger(value)) : asFloat(value); }
 export function valueToWord(value: Value): number | null {
 	return valueIsInteger(value) ? valuePayload(value) : valueIsFloat(value) ? luaFloatToWord(valuePayload(value)) : null;

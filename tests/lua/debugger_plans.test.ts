@@ -41,7 +41,7 @@ function controlPlan(
 
 test('workbench evaluation suspension retains its plan and mutation ownership', () => {
 	const events: string[] = [];
-	const plans = new RuntimeDebuggerPlanManager();
+	const plans = new RuntimeDebuggerPlanManager(completionFixture().cpu);
 	plans.pushControlPlan(controlPlan(events, 'call', RuntimeDebuggerPlanResult.Active), 'workbench');
 	assert.equal(plans.workbenchControlActive, true);
 	assert.equal(plans.workbenchExecutionRequested, true);
@@ -69,7 +69,7 @@ test('workbench evaluation suspension retains its plan and mutation ownership', 
 });
 
 test('a faulted retained evaluation requires explicit recovery rather than running behind the editor', () => {
-	const plans = new RuntimeDebuggerPlanManager();
+	const plans = new RuntimeDebuggerPlanManager(completionFixture().cpu);
 	const plan = controlPlan([], 'call', RuntimeDebuggerPlanResult.Active);
 	plan.didFault = () => RuntimeDebuggerPlanResult.Active;
 	plans.pushControlPlan(plan, 'workbench');
@@ -84,7 +84,7 @@ test('a faulted retained evaluation requires explicit recovery rather than runni
 
 test('runtime debugger control plans own replacement, execution, and fault lifecycles', () => {
 	const events: string[] = [];
-	const plans = new RuntimeDebuggerPlanManager();
+	const plans = new RuntimeDebuggerPlanManager(completionFixture().cpu);
 	plans.pushControlPlan(controlPlan(events, 'first', RuntimeDebuggerPlanResult.Active));
 	assert.equal(plans.willExecute(), false);
 	assert.equal(plans.didExecute(), false);
@@ -137,7 +137,7 @@ test('completed control plan publishes a binding change after its hook drops the
 		didFault: () => RuntimeDebuggerPlanResult.Complete,
 		discard: () => {},
 	};
-	const plans = new RuntimeDebuggerPlanManager();
+	const plans = new RuntimeDebuggerPlanManager(completionFixture().cpu);
 	plans.pushControlPlan(plan);
 
 	assert.equal(plans.shouldStop(0, 12), true);
@@ -177,10 +177,10 @@ test('completion batches retain the physical LIFO root order until every root co
 	cpu.beginCompletionCall(closure);
 	cpu.beginCompletionCall(closure);
 
-	const plans = new RuntimeDebuggerPlanManager();
+	const plans = new RuntimeDebuggerPlanManager(cpu);
 	const events: RuntimeDebuggerCompletionResult[] = [];
-	plans.pushCompletionBatch(cpu.activeThread, firstFrameIndex, [0, SYSTEM_EXECUTION_DOMAIN_ID], result => events.push(result));
-	const topRootBatch = plans.completionBatchAtFrame(cpu.activeThread, firstFrameIndex + 1);
+	plans.pushCompletionBatch(cpu.activeThread.address, firstFrameIndex, [0, SYSTEM_EXECUTION_DOMAIN_ID], result => events.push(result));
+	const topRootBatch = plans.completionBatchAtFrame(cpu.activeThread.address, firstFrameIndex + 1);
 	assert.ok(topRootBatch);
 	assert.deepEqual(
 		topRootBatch.executionDomains.slice(0, 2),
@@ -191,7 +191,7 @@ test('completion batches retain the physical LIFO root order until every root co
 	assert.equal(cpu.runUntilDepth(firstFrameIndex + 1, 100), RunResult.Halted);
 	plans.pruneCompletedCompletionBatches();
 	assert.deepEqual(events, [], 'one returning root does not finish the batch');
-	const lowerRootBatch = plans.completionBatchAtFrame(cpu.activeThread, firstFrameIndex);
+	const lowerRootBatch = plans.completionBatchAtFrame(cpu.activeThread.address, firstFrameIndex);
 	assert.ok(lowerRootBatch);
 	assert.deepEqual(
 		lowerRootBatch.executionDomains.slice(0, 1),
@@ -201,37 +201,37 @@ test('completion batches retain the physical LIFO root order until every root co
 
 	assert.equal(cpu.runUntilDepth(firstFrameIndex, 100), RunResult.Halted);
 	plans.pruneCompletedCompletionBatches();
-	assert.equal(plans.completionBatchAtFrame(cpu.activeThread, firstFrameIndex), null);
+	assert.equal(plans.completionBatchAtFrame(cpu.activeThread.address, firstFrameIndex), null);
 	assert.deepEqual(events, [{ status: 'completed' }]);
 });
 
 
 test('nested init batches complete independently; physical fault settles retained roots only once', () => {
 	const { cpu, closure } = completionFixture();
-	const plans = new RuntimeDebuggerPlanManager();
+	const plans = new RuntimeDebuggerPlanManager(cpu);
 	const events: string[] = [];
 	const depth = cpu.getFrameDepth();
 	cpu.beginCompletionCall(closure);
-	plans.pushCompletionBatch(cpu.activeThread, depth, [0], result => events.push(`old:${result.status}`));
+	plans.pushCompletionBatch(cpu.activeThread.address, depth, [0], result => events.push(`old:${result.status}`));
 	cpu.beginCompletionCall(closure);
-	plans.pushCompletionBatch(cpu.activeThread, depth + 1, [0], result => events.push(`new:${result.status}`));
+	plans.pushCompletionBatch(cpu.activeThread.address, depth + 1, [0], result => events.push(`new:${result.status}`));
 	assert.equal(cpu.runUntilDepth(depth + 1, 100), RunResult.Halted);
 	plans.faultCompletionBatches(7);
 	assert.deepEqual(events, ['new:completed', 'old:faulted'], 'completed init cannot inherit a later fault');
-	assert.ok(plans.completionBatchAtFrame(cpu.activeThread, depth), 'faulted roots retain recovery metadata');
+	assert.ok(plans.completionBatchAtFrame(cpu.activeThread.address, depth), 'faulted roots retain recovery metadata');
 	plans.faultCompletionBatches(8);
-	plans.discardCompletionBatchesFrom(cpu.activeThread, depth);
+	plans.discardCompletionBatchesFrom(cpu.activeThread.address, depth);
 	assert.deepEqual(events, ['new:completed', 'old:faulted'], 'recovery cannot change the terminal outcome');
 	assert.equal(plans.mutationActive, false);
 });
 
 test('discard notifies every pending completion observer', () => {
 	const { cpu, closure } = completionFixture();
-	const plans = new RuntimeDebuggerPlanManager();
+	const plans = new RuntimeDebuggerPlanManager(cpu);
 	const events: RuntimeDebuggerCompletionResult[] = [];
 	const depth = cpu.getFrameDepth();
 	cpu.beginCompletionCall(closure);
-	plans.pushCompletionBatch(cpu.activeThread, depth, [0], result => events.push(result));
+	plans.pushCompletionBatch(cpu.activeThread.address, depth, [0], result => events.push(result));
 	plans.discardAll();
 	plans.discardAll();
 	assert.deepEqual(events, [{ status: 'discarded' }]);
@@ -248,23 +248,23 @@ end
 halt_until_irq`, 0));
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	const thread = cpu.activeThread, depth = cpu.getFrameDepth();
+	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth();
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));
-	const plans = new RuntimeDebuggerPlanManager();
+	const plans = new RuntimeDebuggerPlanManager(cpu);
 	const events: RuntimeDebuggerCompletionResult[] = [];
 	plans.pushCompletionBatch(thread, depth, [SYSTEM_EXECUTION_DOMAIN_ID], result => events.push(result));
 	let switched = false;
-	for (let grant = 0; grant < 10000 && thread.frameDepth > depth; grant++) {
+	for (let grant = 0; grant < 10000 && cpu.readThreadFrameDepth(thread) > depth; grant++) {
 		cpu.runUntilDepth(depth, 1, thread);
 		plans.pruneCompletedCompletionBatches();
-		if (cpu.activeThread !== thread) {
+		if (cpu.activeThread.address !== thread) {
 			switched = true;
 			assert.deepEqual(events, [], 'a child coroutine is not the init completion root');
-			assert.equal(plans.completionBatchAtFrame(cpu.activeThread, depth), null);
+			assert.equal(plans.completionBatchAtFrame(cpu.activeThread.address, depth), null);
 			assert.ok(plans.completionBatchAtFrame(thread, depth));
 		}
 	}
 	assert.equal(switched, true, 'test actually executed the retained child thread');
-	assert.equal(thread.frameDepth, depth);
+	assert.equal(cpu.readThreadFrameDepth(thread), depth);
 	assert.deepEqual(events, [{ status: 'completed' }]);
 });

@@ -1,5 +1,4 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { Thread } from '../../machine/ts/machine/cpu/thread';
 
 import { asClosure, valueNil, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { CpuSuspendedRunResult } from '../../machine/ts/machine/runtime/cpu_executor';
@@ -20,7 +19,7 @@ export class GuestFixture {
 	public entryReached = false;
 	public callPending = false;
 	public lastCallCycles = 0;
-	private returnThread!: Thread;
+	private returnThread!: number;
 	private returnDepth = 0;
 	private readonly suiteSlot: string;
 	private readonly stoppedGrant: FrameState = {
@@ -45,7 +44,7 @@ export class GuestFixture {
 			return;
 		}
 		const cpu = this.runtime.machine.cpu;
-		this.runtime.cpuExecution.runSuspendedUntilDepth(0, cycles, cpu.rootThread);
+		this.runtime.cpuExecution.runSuspendedUntilDepth(0, cycles, cpu.rootThread.address);
 	}
 
 	/** Null binds only the module's shared setup/teardown fixture, not a case body. */
@@ -68,7 +67,7 @@ export class GuestFixture {
 		if (!this.callPending) {
 			const exceptionDepth = cpu.readExceptionReturnFrameDepth();
 			if (exceptionDepth !== -1) {
-				runtime.cpuExecution.runSuspendedUntilDepth(exceptionDepth, cycles, cpu.activeThread);
+				runtime.cpuExecution.runSuspendedUntilDepth(exceptionDepth, cycles, cpu.activeThread.address);
 				this.lastCallCycles = runtime.machine.scheduler.nowCycles - before;
 				return false;
 			}
@@ -103,7 +102,7 @@ export class GuestFixture {
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
 		// Resolve the current guest module, not closures borrowed from an older heap.
 		const execution = valuePayload(cpu.getGlobalByKey(pool.intern(EXECUTION_SLOT)));
-		this.returnThread = cpu.activeThread;
+		this.returnThread = cpu.activeThread.address;
 		this.returnDepth = cpu.getFrameDepth();
 		cpu.beginCompletionCall(asClosure(cpu.gc.tables.getStringKey(execution, pool.intern(method)), cpu.gc), args);
 		this.callPending = true;

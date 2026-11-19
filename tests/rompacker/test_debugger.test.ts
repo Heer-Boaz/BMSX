@@ -160,8 +160,8 @@ return { kind = 'unit',
 		assert.equal(debug.sources.setBreakpoints(compiled.source, [6, 11]), points, 'unchanged requests reuse exact bindings');
 		debug.resume(Mode.Continue); const stopped = debug.wait(); f.advance();
 		assert.equal((await stopped).reason, 'breakpoint'); assert.equal(f.line(), 11); assert.equal(debug.phase, 'body');
-		const thread = target.runtime.machine.cpu.activeThread;
-		assert.notEqual(thread, target.runtime.machine.cpu.rootThread, 'the guest testlib owns a real phase coroutine');
+		const thread = target.runtime.machine.cpu.activeThread.address;
+		assert.notEqual(thread, target.runtime.machine.cpu.rootThread.address, 'the guest testlib owns a real phase coroutine');
 		debug.resume(Mode.StepInto); f.advance();
 		assert.equal(f.line(), 3); assert.equal(debug.source.stop!.thread, thread);
 		debug.resume(Mode.StepOver); f.advance(); assert.equal(f.line(), 4);

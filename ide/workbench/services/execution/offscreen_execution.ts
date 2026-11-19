@@ -51,7 +51,7 @@ export class OffscreenExecution {
 	public async call(closure: number, args: readonly Value[]): Promise<readonly Value[]> {
 		const values: Value[] = [];
 		await this.execute(async () => {
-			const runtime = this.runtime, cpu = runtime.machine.cpu, thread = cpu.activeThread, depth = thread.frameDepth;
+			const runtime = this.runtime, cpu = runtime.machine.cpu, thread = cpu.activeThread.address, depth = cpu.readThreadFrameDepth(thread);
 			cpu.beginCompletionCall(closure, args);
 			await this.pump(() => !cpu.completionCallPending(), () => {
 				runtime.cpuExecution.runSuspendedUntilDepth(depth, runtime.timing.cpuCyclesPerMillisecond * 8, thread);

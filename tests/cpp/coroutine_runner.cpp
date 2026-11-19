@@ -3,6 +3,8 @@
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <unordered_set>
+#include "machine/cpu/thread_record.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
@@ -17,15 +19,16 @@ public:
 
 static void exerciseCompletionBoundary(bmsx::CPU& cpu, bool fault) {
 	if (cpu.runUntilDepth(0, 100000) != bmsx::RunResult::Halted || !cpu.isHaltedUntilIrq()) throw std::runtime_error("completion fixture did not HALT");
-	auto* thread = cpu.activeThread();
+	const bmsx::u32 thread = cpu.activeThread()->address;
 	const int depth = cpu.getFrameDepth();
-	const auto protectedDepth = thread->protectedDepth();
+	const auto protectedDepth = bmsx::ThreadRecord::count(cpu.memory(), thread, bmsx::ThreadField::ProtectedDepth);
 	cpu.beginCompletionCall(bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe")), cpu.gcHeap()));
 	for (int grant = 0; grant < 10000 && cpu.completionCallPending() && cpu.readExceptionReturnFrameDepth() == -1; ++grant) {
 		cpu.runUntilDepth(depth, 1, thread);
 	}
-	if (cpu.activeThread() != thread || thread->status() != bmsx::ThreadStatus::Running
-		|| thread->protectedDepth() != protectedDepth) throw std::runtime_error("completion changed interrupted coroutine/protected caller");
+	if (cpu.activeThread()->address != thread
+		|| bmsx::ThreadRecord::read(cpu.memory(), thread, bmsx::ThreadField::Status) != static_cast<bmsx::u32>(bmsx::ThreadStatus::Running)
+		|| bmsx::ThreadRecord::count(cpu.memory(), thread, bmsx::ThreadField::ProtectedDepth) != protectedDepth) throw std::runtime_error("completion changed interrupted coroutine/protected caller");
 	if (fault) {
 		if (cpu.readExceptionReturnFrameDepth() == -1 || !cpu.completionCallPending()) throw std::runtime_error("completion fault did not retain its physical root");
 	} else {
@@ -45,6 +48,7 @@ int main(int argc, char** argv) {
 			bmsx::Runtime runtime({rom, {}, bmsx::PSX_MACHINE_SPEC}, input);
 			runtime.boot();
 			auto& cpu = runtime.machine.cpu;
+			const bmsx::u32 rootThread = cpu.rootThread()->address;
 			if (std::string(argv[index]).find("completion_") != std::string::npos) {
 				exerciseCompletionBoundary(cpu, std::string(argv[index]).find("completion_fault_") != std::string::npos);
 			} else {
@@ -53,13 +57,13 @@ int main(int argc, char** argv) {
 					const int depth = cpu.getFrameDepth();
 					cpu.beginCompletionCall(bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe")), cpu.gcHeap()));
 					for (int grant = 0; grant < 10000; ++grant) {
-						const auto status = cpu.runUntilDepth(depth, 17, cpu.rootThread());
+						const auto status = cpu.runUntilDepth(depth, 17, rootThread);
 						const auto snapshot = cpu.captureRuntimeState();
 						cpu.restoreRuntimeState(snapshot);
 						if (cpu.captureRuntimeState().haltedUntilIrqThreadAddress != snapshot.haltedUntilIrqThreadAddress) throw std::runtime_error("HALT owner not restored");
 						if (status != bmsx::RunResult::Yielded) break;
 					}
-					if (cpu.activeThread() != cpu.rootThread() || cpu.getFrameDepth() != depth
+					if (cpu.activeThread()->address != rootThread || cpu.getFrameDepth() != depth
 						|| cpu.getGlobalByKey(cpu.stringPool().intern("entered")) != bmsx::valueBool(true)
 						|| !cpu.isHaltedUntilIrq()) throw std::runtime_error("HALT affected another thread or did not survive tooling call");
 					bmsx::applyRuntimeSaveState(runtime, bmsx::decodeRuntimeSaveState(bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime)), bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes));
@@ -68,9 +72,14 @@ int main(int argc, char** argv) {
 				}
 				auto result = bmsx::RunResult::Yielded;
 				const bool interruptVector = std::string(argv[index]).find("interrupted-") != std::string::npos;
+				const bool uninterrupted = std::string(argv[index]).find("nested_three_banks-") != std::string::npos;
+				std::unordered_set<bmsx::u32> observedThreads;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				if (uninterrupted) cpu.prepareSystemNativeCode();
+#endif
 				bool interrupted = false;
 				for (int grant = 0; grant < 10000 && result == bmsx::RunResult::Yielded; ++grant) {
-					if (interruptVector && !interrupted && cpu.activeThread() != cpu.rootThread()
+					if (interruptVector && !interrupted && cpu.activeThread()->address != rootThread
 						&& cpu.getGlobalByKey(cpu.stringPool().intern("interrupt_ready")) == bmsx::valueBool(true)) {
 						cpu.requestNonMaskableInterrupt();
 						if (!cpu.enterPendingInterrupt()) throw std::runtime_error("NMI was not admitted");
@@ -78,23 +87,29 @@ int main(int argc, char** argv) {
 						interrupted = true;
 					}
 					result = cpu.runUntilDepth(0, 17);
-					const auto state = cpu.captureRuntimeState();
-					cpu.restoreRuntimeState(state);
-					if (cpu.captureRuntimeState() != state) throw std::runtime_error("thread snapshot round trip");
+					if (uninterrupted) {
+						if (cpu.activeThread()->address != rootThread) observedThreads.insert(cpu.activeThread()->address);
+					} else {
+						const auto state = cpu.captureRuntimeState();
+						cpu.restoreRuntimeState(state);
+						if (cpu.captureRuntimeState() != state) throw std::runtime_error("thread snapshot round trip");
+					}
 					if (!interruptVector && cpu.readExceptionReturnFrameDepth() != -1) throw std::runtime_error("unexpected machine fault");
 				}
 				const auto values = runtime.readCompletionValues();
+				if (uninterrupted && observedThreads.size() != 3) throw std::runtime_error("three nonroot records did not execute without an intervening restore");
 				if (result != bmsx::RunResult::Halted || cpu.getFrameDepth() != 0 || values.size() != 1 || values.get(0) != bmsx::valueBool(true)) throw std::runtime_error("coroutine assertion failed");
 			}
 			if (std::string(argv[index]).find("protected_and_failed-") != std::string::npos) {
 				using namespace bmsx;
 				const auto value = cpu.getGlobalByKey(*cpu.stringPool().find("failed_thread"));
-				const auto& thread = *asThread(value, cpu.gcHeap());
+				const u32 thread = asThread(value, cpu.gcHeap());
 				const auto& memory = cpu.memory();
-				if (valuePayload(value) != thread.address
-					|| memory.readRamRecordByte(thread.address) != THREAD_RECORD_KIND
-					|| memory.readRamRecordWord(thread.address + static_cast<u32>(ThreadField::Status)) != static_cast<u32>(ThreadStatus::Failed)
-					|| memory.readRamRecordWord(thread.address + static_cast<u32>(ThreadField::ErrorWord)) != valuePayload(thread.error())) {
+				if (valuePayload(value) != thread
+					|| cpu.gcHeap().threadRecordAddress(thread) != thread
+					|| memory.readRamRecordByte(thread) != THREAD_RECORD_KIND
+					|| ThreadRecord::read(memory, thread, ThreadField::Status) != static_cast<u32>(ThreadStatus::Failed)
+					|| ThreadRecord::read(memory, thread, ThreadField::ErrorWord) != valuePayload(ThreadRecord::error(memory, thread))) {
 					throw std::runtime_error("a failed Thread value must refer to its physical record");
 				}
 			}

@@ -38,7 +38,7 @@ test('runtime values expose distinct Integer and Float tags with equal payload w
 		[valueTable(table), ValueTag.Table],
 		[valueClosure(42), ValueTag.Closure],
 		[valueBuiltinFunction(BuiltinFunctionId.Next), ValueTag.BuiltinFunction],
-		[valueThread(cpu.gc.reference(cpu.rootThread)), ValueTag.Thread],
+		[valueThread(cpu.rootThread.address), ValueTag.Thread],
 	];
 
 	for (let index = 0; index < values.length; index += 1) {

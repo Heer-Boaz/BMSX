@@ -3,7 +3,6 @@
 #include "machine/cpu/upvalue.h"
 #include "machine/common/numeric.h"
 #include <algorithm>
-#include <new>
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 #include <chrono>
 #endif
@@ -84,23 +83,6 @@ size_t GcHeap::nativeControlOffset() { return offsetof(GcHeap, m_controlOffset);
 #pragma GCC diagnostic pop
 #endif
 #endif
-void GcHeap::trackThread(Thread* thread) {
-	threadSlot(thread->address) = thread;
-	thread->previousAttached = nullptr;
-	thread->nextAttached = m_attachedThreads;
-	if (m_attachedThreads) m_attachedThreads->previousAttached = thread;
-	m_attachedThreads = thread;
-}
-Thread* GcHeap::attachThread(u32 address) {
-	auto* thread = new Thread(*this, address);
-	trackThread(thread);
-	return thread;
-}
-GcHeap::~GcHeap() {
-	while (m_attachedThreads) {
-		auto* thread = m_attachedThreads; m_attachedThreads = thread->nextAttached; delete thread;
-	}
-}
 void GcHeap::enqueue(u32 address, u32 link, u32 queue) {
 	const u32 previous = indexWord(queue);
 	const u32 otherBits = link == GC_RECORD_LINK ? memory.readRamRecordWord(address + link) & ~GC_GRAY_INDEX_MASK : 0u;
@@ -227,34 +209,6 @@ size_t GcHeap::markCell(u32 cell) {
 	if (Upvalue::isOpen(memory, cell)) markThread(memory.readRamRecordWord(cell + UPVALUE_OWNER));
 	markValue(Upvalue::load(memory, cell));
 	return UPVALUE_HEAP_BYTES / sizeof(u32);
-}
-
-void GcHeap::armThreadStackWatches() {
-	for (auto* thread = m_attachedThreads; thread; thread = thread->nextAttached) {
-		thread->armStackWatch();
-		thread->armFrameWindowWatches();
-	}
-}
-
-bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
-	bool rebound = false;
-	for (u32 address = first & ~(static_cast<u32>(THREAD_HEAP_BYTES) - 1u); address < end; address += THREAD_HEAP_BYTES) {
-		const u32 descriptor = address + static_cast<u32>(ThreadField::StackBlock);
-		const u32 depth = address + static_cast<u32>(ThreadField::FrameDepth);
-		const bool cursorWrite = first <= depth && depth < end;
-		if (!cursorWrite && (end <= descriptor || first >= descriptor + 16u)) continue;
-		if (auto* thread = threadAt(address)) {
-			if (cursorWrite) {
-				m_cpu.bindPhysicalFrames(*thread);
-				thread->armStackWatch();
-				rebound |= thread == active;
-			} else rebound |= thread->observeStackWrite() && thread == active;
-		}
-	}
-	for (auto* thread = m_attachedThreads; thread; thread = thread->nextAttached) {
-		rebound |= thread->observeFrameWindowWrites(first, end) && thread == active;
-	}
-	return rebound;
 }
 
 size_t GcHeap::allocationBytes(u32 threadAddress) const {
@@ -461,12 +415,6 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 	setPhase(GcPhase::Sweep);
 	return work + m_stringPool.takeMarkWork();
 }
-void GcHeap::unlinkThread(Thread* thread) {
-	if (thread->previousAttached) thread->previousAttached->nextAttached = thread->nextAttached;
-	else m_attachedThreads = thread->nextAttached;
-	if (thread->nextAttached) thread->nextAttached->previousAttached = thread->previousAttached;
-}
-
 i32 GcHeap::sweepRecord(void* context, u32 address) {
 	const auto& sweep = *static_cast<SweepContext*>(context);
 	auto& heap = sweep.heap;
@@ -486,20 +434,14 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 	if (heap.memory.readRamRecordByte(address + GC_COLOR_OFFSET) != (sweep.white ^ 1u)) {
 		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
 		const u32 relocated = address != sweep.growingThread ? ThreadRecord::shrinkStack(heap, address, layout) : 0u;
-		if (auto* view = heap.threadAt(address)) view->trimFrames();
 		return work + 2 * ceilDiv4(relocated);
 	}
 
-	// Retirement of an execution view follows physical reclamation; its
-	// presence never contributes a root or changes the work.
-	auto* view = heap.threadAt(address);
-	heap.threadSlot(address) = nullptr;
+	// Clear any selected execution view before its old record or backing can
+	// be reused. View residency does not contribute a root or collector work.
+	heap.m_cpu.retireThreadView(address);
 	heap.arena.free(layout.block);
 	heap.arena.free(address);
-	if (view) {
-		heap.unlinkThread(view);
-		delete view;
-	}
 	return -work;
 }
 
@@ -590,20 +532,5 @@ size_t GcHeap::collect(Value root0, Value root1, Value root2, u32 growingThread)
 	while (active()) work += step(root0, root1, root2, growingThread);
 	do { work += step(root0, root1, root2, growingThread); } while (active());
 	return work;
-}
-void GcHeap::discardAttachments(Thread* retainedRoot) {
-	// RAM has already been loaded. Destroy derived objects without freeing
-	// their guest storage or following any edge in the restored heap.
-	auto* thread = std::exchange(m_attachedThreads, nullptr);
-	while (thread) {
-		auto* next = thread->nextAttached;
-		threadSlot(thread->address) = nullptr;
-		if (thread != retainedRoot) delete thread;
-		thread = next;
-	}
-	if (retainedRoot) {
-		retainedRoot->detachFrameViews();
-		trackThread(retainedRoot);
-	}
 }
 } // namespace bmsx

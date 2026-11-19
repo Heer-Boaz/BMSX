@@ -29,7 +29,7 @@ public:
 	bool runStoppedCpu(Runtime& runtime, FrameState& frameState);
 	CpuExecutionResult runWithBudget(Runtime& runtime, FrameState& frameState);
 	InstructionStepResult runInstruction(Runtime& runtime, FrameState& frameState);
-	CpuSuspendedRunResult runSuspendedUntilDepth(Runtime& runtime, int targetDepth, int cycleBudget = MAX_CPU_SLICE_CYCLES, Thread* targetThread = nullptr);
+	CpuSuspendedRunResult runSuspendedUntilDepth(Runtime& runtime, int targetDepth, int cycleBudget = MAX_CPU_SLICE_CYCLES, u32 targetThread = 0u);
 
 private:
 	enum class CpuSliceResult : uint8_t {

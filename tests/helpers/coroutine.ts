@@ -168,6 +168,87 @@ assert(ok and innerok and value == 99)
 local wrap = coroutine.wrap(function() local v = coroutine.yield(12); return v end)
 assert(wrap() == 12 and wrap(34) == 34)
 return true`,
+	nested_three_banks: `
+local main, ismain = coroutine.running()
+assert(ismain)
+local a, b, c
+local transfers, collections = 0, 0
+a = coroutine.create(function(token)
+ local held = { owner = 'A', total = 0 }
+ b = coroutine.create(function(token)
+  local held = { owner = 'B', total = 0 }
+  c = coroutine.create(function(token)
+   local held = { owner = 'C', total = 0 }
+   for round = 1, 3 do
+    local self, root = coroutine.running()
+    assert(self == c and not root and token == round * 100 + 2)
+    assert(coroutine.status(main) == 'normal' and coroutine.status(a) == 'normal' and coroutine.status(b) == 'normal')
+    held.total = held.total + token
+    collectgarbage(); collections = collections + 1
+    assert(held.owner == 'C' and held.total == round * (round + 1) * 50 + round * 2)
+    transfers = transfers + 1
+    token = coroutine.yield(token + 1, nil, 'C-yield')
+    assert(held.owner == 'C' and held.total == round * (round + 1) * 50 + round * 2)
+   end
+   assert(token == 402 and held.total == 606)
+   collectgarbage(); collections = collections + 1
+   transfers = transfers + 1
+   return token + 1, nil, 'C-return'
+  end)
+  for round = 1, 3 do
+   assert(coroutine.running() == b and token == round * 100 + 1)
+   held.total = held.total + token
+   transfers = transfers + 1
+   local ok, value, padding, tag = coroutine.resume(c, token + 1)
+   assert(ok and value == round * 100 + 3 and padding == nil and tag == 'C-yield')
+   collectgarbage(); collections = collections + 1
+   assert(held.owner == 'B' and held.total == round * (round + 1) * 50 + round)
+   transfers = transfers + 1
+   token = coroutine.yield(value + 1, nil, 'B-yield')
+   assert(held.owner == 'B' and held.total == round * (round + 1) * 50 + round)
+  end
+  assert(token == 401 and held.total == 603)
+  transfers = transfers + 1
+  local ok, value, padding, tag = coroutine.resume(c, token + 1)
+  assert(ok and value == 403 and padding == nil and tag == 'C-return' and coroutine.status(c) == 'dead')
+  collectgarbage(); collections = collections + 1
+  transfers = transfers + 1
+  return value + 1, nil, 'B-return'
+ end)
+ for round = 1, 3 do
+  assert(coroutine.running() == a and token == round * 100)
+  held.total = held.total + token
+  transfers = transfers + 1
+  local ok, value, padding, tag = coroutine.resume(b, token + 1)
+  assert(ok and value == round * 100 + 4 and padding == nil and tag == 'B-yield')
+  collectgarbage(); collections = collections + 1
+  assert(held.owner == 'A' and held.total == round * (round + 1) * 50)
+  transfers = transfers + 1
+  token = coroutine.yield(value + 1, nil, 'A-yield')
+  assert(held.owner == 'A' and held.total == round * (round + 1) * 50)
+ end
+ assert(token == 400 and held.total == 600)
+ transfers = transfers + 1
+ local ok, value, padding, tag = coroutine.resume(b, token + 1)
+ assert(ok and value == 404 and padding == nil and tag == 'B-return' and coroutine.status(b) == 'dead')
+ collectgarbage(); collections = collections + 1
+ transfers = transfers + 1
+ return value + 1, nil, 'A-return'
+end)
+for round = 1, 3 do
+ transfers = transfers + 1
+ local ok, value, padding, tag = coroutine.resume(a, round * 100)
+ assert(ok and value == round * 100 + 5 and padding == nil and tag == 'A-yield')
+ assert(coroutine.running() == main and coroutine.status(a) == 'suspended' and coroutine.status(b) == 'suspended' and coroutine.status(c) == 'suspended')
+ collectgarbage(); collections = collections + 1
+end
+transfers = transfers + 1
+local ok, value, padding, tag = coroutine.resume(a, 400)
+assert(ok and value == 405 and padding == nil and tag == 'A-return')
+assert(coroutine.status(a) == 'dead' and coroutine.status(b) == 'dead' and coroutine.status(c) == 'dead')
+collectgarbage(); collections = collections + 1
+assert(transfers == 24 and collections == 16 and coroutine.running() == main)
+return true`,
 	protected_and_failed: `
 local failure = {}
 local co = coroutine.create(function()

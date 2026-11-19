@@ -1,4 +1,3 @@
-import type { Thread } from '../cpu/thread';
 import type { CPU, RunResult } from '../cpu/cpu';
 
 export const DEVICE_SERVICE_GEO = 1;
@@ -73,7 +72,7 @@ export class DeviceScheduler {
 		this.schedulerSliceActive = false;
 	}
 
-	public runCpuSlice(targetDepth: number, sliceBudget: number, targetThread: Thread = this.cpu.rootThread): RunResult {
+	public runCpuSlice(targetDepth: number, sliceBudget: number, targetThread: number = this.cpu.rootThread.address): RunResult {
 		this.beginCpuSlice(sliceBudget);
 		try {
 			return this.cpu.runUntilDepth(targetDepth, sliceBudget, targetThread);

@@ -17,7 +17,7 @@ namespace bmsx {
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
 CPU::NativeFrameOffsets CPU::nativeFrameOffsets() {
-	return {offsetof(CPU, m_haltedUntilIrqThread), offsetof(CPU, m_haltedUntilIrqFrameDepth)};
+	return {offsetof(CPU, m_haltedUntilIrqThreadAddress), offsetof(CPU, m_haltedUntilIrqFrameDepth)};
 }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -230,7 +230,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		auto& thread = *cpu.m_activeThread;
 		if (static_cast<int>(thread.frameDepth()) <= run->targetDepth || cpu.instructionBudgetRemaining <= 0
-			|| (cpu.m_haltedUntilIrqThread == cpu.m_activeThread
+			|| (cpu.m_haltedUntilIrqThreadAddress == cpu.m_activeThread->address
 				&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			++gateProfile.returns;

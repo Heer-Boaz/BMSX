@@ -336,7 +336,7 @@ export function admitHotResume(
 					completionFrameIndex -= 1;
 				}
 				const failedBatch = debuggerState.plans.completionBatchAtFrame(
-					cpu.activeThread,
+					cpu.activeThread.address,
 					completionFrameIndex,
 				);
 				if (failedBatch === null) {
@@ -459,10 +459,10 @@ function applyPreparedHotResume(
 	// A no-source-change resume still mutates the heap through its init calls.
 	if (prepared.built === null) runtime.history.stop();
 	if (prepared.failedCompletionFrameIndex >= 0) {
-		retireRuntimeFrameScopes(runtime, sources, guest, cpu.activeThread, prepared.failedCompletionFrameIndex);
+		retireRuntimeFrameScopes(runtime, sources, guest, cpu.activeThread.address, prepared.failedCompletionFrameIndex);
 		cpu.abortCompletionCall(prepared.failedCompletionFrameIndex);
 		debuggerState.plans.discardCompletionBatchesFrom(
-			cpu.activeThread,
+			cpu.activeThread.address,
 			prepared.failedCompletionFrameIndex,
 		);
 		discardRuntimeDebuggerFramesFrom(
@@ -497,7 +497,7 @@ function applyPreparedHotResume(
 	}
 	if (stagedExecutionDomains.length !== 0) {
 		debuggerState.plans.pushCompletionBatch(
-			cpu.activeThread,
+			cpu.activeThread.address,
 			firstFrameIndex,
 			stagedExecutionDomains,
 			result => report(result.status === 'faulted'

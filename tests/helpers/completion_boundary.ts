@@ -41,14 +41,14 @@ return true`,
 export function exerciseCompletionBoundary(cpu: CPU, name: string): void {
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
-	const thread = cpu.activeThread, depth = cpu.getFrameDepth(), protectedDepth = thread.protectedDepth;
+	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth(), protectedDepth = cpu.activeThread.protectedDepth;
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));
 	for (let grant = 0; grant < 10000 && cpu.completionCallPending() && cpu.readExceptionReturnFrameDepth() === -1; grant++) {
 		cpu.runUntilDepth(depth, 1, thread);
 	}
-	assert.ok(cpu.activeThread === thread, 'completion cannot fail/yield the interrupted coroutine');
-	assert.equal(thread.status, ThreadStatus.Running);
-	assert.equal(thread.protectedDepth, protectedDepth, 'interrupted protected call remains untouched');
+	assert.ok(cpu.activeThread.address === thread, 'completion cannot fail/yield the interrupted coroutine');
+	assert.equal(cpu.readThreadStatus(thread), ThreadStatus.Running);
+	assert.equal(cpu.bindThread(thread).protectedDepth, protectedDepth, 'interrupted protected call remains untouched');
 	if (name.startsWith('completion_fault')) {
 		assert.notEqual(cpu.readExceptionReturnFrameDepth(), -1, 'unhandled completion error enters the physical fault path');
 		assert.equal(cpu.completionCallPending(), true, 'fault retains the actual completion root');

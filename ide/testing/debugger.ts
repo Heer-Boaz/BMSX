@@ -1,5 +1,4 @@
 import { generateUuid } from '../common/uuid';
-import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { ALL_EXECUTION_DOMAINS_MASK, type ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { BuiltFixtureProgram } from './fixture_media';
@@ -19,7 +18,7 @@ export class TestDebugger {
 	public reason: TestDebugStopReason | undefined;
 	public phase: TestPhase = 'initialize';
 	public revision = 0;
-	private stopThread: Thread | undefined;
+	private stopThread: number | undefined;
 	private readonly inspections = new Set<TestStopInspection>();
 	private readonly listeners = new Set<() => void>();
 
@@ -37,7 +36,7 @@ export class TestDebugger {
 		const cpu = this.runtime.machine.cpu;
 		return { target: this.id, role: 'live-test' as const, status: this.status, reason: this.reason, phase: this.phase, revision: this.revision,
 			cycles: this.runtime.machine.scheduler.nowCycles, videoTick: this.runtime.frameScheduler.lastTickSequence,
-			thread: (this.stopThread === undefined ? cpu.activeThread : this.stopThread).address,
+			thread: this.stopThread === undefined ? cpu.activeThread.address : this.stopThread,
 			canContinue: this.canResume(RuntimeDebuggerResumeMode.Continue), canStep: this.canResume(RuntimeDebuggerResumeMode.StepInto), canStepOut: this.canResume(RuntimeDebuggerResumeMode.StepOut),
 			stop: this.source.stop !== undefined ? { domain: this.source.stop!.domain, pc: this.source.stop!.pc, inlineDepth: this.source.stop!.inlineDepth } : undefined };
 	}
@@ -66,7 +65,7 @@ export class TestDebugger {
 		if (this.status !== 'running') return;
 		this.stop('pause');
 	}
-	private stop(reason: TestDebugStopReason, thread = this.runtime.machine.cpu.activeThread): void {
+	private stop(reason: TestDebugStopReason, thread = this.runtime.machine.cpu.activeThread.address): void {
 		this.stopThread = thread;
 		this.status = 'stopped'; this.reason = reason;
 		this.source.interrupt();

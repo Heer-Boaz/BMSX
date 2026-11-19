@@ -108,7 +108,7 @@ mem[${resumed}] = 2`,
 			// must quiesce before the exception handler can publish the fault.
 			for (let grant = 0; execution.active && !machine.systemController.cpuHeld() && grant < 1000; grant++) {
 				target.serviceBackend();
-				runtime.cpuExecution.runSuspendedUntilDepth(0, DEFAULT_TEST_BUDGETS.quantumCycles, cpu.rootThread);
+				runtime.cpuExecution.runSuspendedUntilDepth(0, DEFAULT_TEST_BUDGETS.quantumCycles, cpu.rootThread.address);
 			}
 			assert.equal(machine.systemController.cpuHeld(), true);
 			assert.notEqual(cpu.readExceptionReturnFrameDepth(), -1);

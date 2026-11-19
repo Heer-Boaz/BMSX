@@ -331,7 +331,7 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 void CPU::clearNativeContinuationBindings() {
 	// Include suspended coroutines, exception activations and pooled nodes;
 	// clearing only the running resumer chain would leave borrowed entry cells.
-	m_heap.visitThreads([](Thread& thread) {
+	visitThreadViews([](Thread& thread) {
 		for (auto* frame = thread.firstFrame; frame; frame = frame->next)
 			frame->nativeContinuationCells = {};
 	});

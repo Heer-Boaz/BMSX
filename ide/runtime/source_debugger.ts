@@ -1,7 +1,6 @@
 import type { Blua32InstalledMedia } from './sources';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
-import { ThreadStatus, type Thread } from '../../machine/ts/machine/cpu/thread';
+import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit, type ExecutionDomainId, type ExecutionDomainMask } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
@@ -15,14 +14,14 @@ export const enum RuntimeDebuggerStopReason { Breakpoint, Step }
 /** A source stop retained while a completion call owns execution above it. */
 export type RuntimeDebuggerSourceStop = {
 	readonly id: number;
-	readonly thread: Thread;
+	readonly thread: number;
 	readonly media: Blua32InstalledMedia;
 	readonly domain: ExecutionDomainId;
 	readonly pc: number;
 	readonly inlineDepth: number;
 	readonly reason: RuntimeDebuggerStopReason;
 };
-type Suppression = { thread: Thread; frame: CallFrame; depth: number };
+type Suppression = { thread: number; depth: number };
 
 /** Physical source stops. Composition owns hook installation, scheduling and suspension lifetime. */
 export class SourceDebugger {
@@ -31,7 +30,7 @@ export class SourceDebugger {
 	private stopSerial = 0;
 	private retiredStopId = 0;
 	private mode = RuntimeDebuggerResumeMode.Continue;
-	public stepThread: Thread | undefined;
+	public stepThread: number | undefined;
 	private stepDepth = 0;
 	private stepInlineDepth = 0;
 	private stepMedia: Blua32InstalledMedia | undefined;
@@ -61,10 +60,12 @@ export class SourceDebugger {
 	}
 	public get stepping(): boolean { return this.mode !== RuntimeDebuggerResumeMode.Continue; }
 	public get canStepOut(): boolean {
-		return this.stop !== undefined && (this.stop.inlineDepth > 0 || this.stop.thread.frameDepth > 1 || this.stop.thread.resumer !== null);
+		return this.stop !== undefined && (this.stop.inlineDepth > 0 || this.cpu.readThreadFrameDepth(this.stop.thread) > 1 || this.cpu.readThreadResumer(this.stop.thread) !== 0);
 	}
 	public get stepThreadFinished(): boolean {
-		return this.stepThread !== undefined && (this.stepThread.status === ThreadStatus.Dead || this.stepThread.status === ThreadStatus.Failed);
+		if (this.stepThread === undefined) return false;
+		const status = this.cpu.readThreadStatus(this.stepThread);
+		return status === ThreadStatus.Dead || status === ThreadStatus.Failed;
 	}
 	public get domainMask(): ExecutionDomainMask {
 		// Thread return/failure is a step boundary even when its resumer has no symbols.
@@ -73,7 +74,7 @@ export class SourceDebugger {
 		for (let index = 0; index < 3; index++) if (this.breakpoints[index].size !== 0) {
 			mask |= executionDomainBit((index - 1) as ExecutionDomainId);
 		}
-		for (const entry of this.suppression) mask |= executionDomainBit(entry.frame.executionImage.executionDomainId);
+		for (const entry of this.suppression) mask |= executionDomainBit(this.cpu.readThreadFrameExecutionDomain(entry.thread, entry.depth - 1));
 		return mask;
 	}
 
@@ -83,7 +84,7 @@ export class SourceDebugger {
 		const thread = this.cpu.activeThread, depth = thread.frameDepth;
 		for (let index = this.suppression.length - 1; index >= 0; index--) {
 			const entry = this.suppression[index];
-			if (entry.thread !== thread || entry.depth !== depth || entry.frame !== thread.currentFrame) continue;
+			if (entry.thread !== thread.address || entry.depth !== depth) continue;
 			this.suppression.copyWithin(index, index + 1); this.suppression.length--;
 			this.changed(); return false;
 		}
@@ -91,7 +92,7 @@ export class SourceDebugger {
 		const index = domain + 1;
 		let inlineDepth: number | undefined;
 		let reason = RuntimeDebuggerStopReason.Breakpoint;
-		if (this.stepping && this.stepThread === thread) {
+		if (this.stepping && this.stepThread === thread.address) {
 			const point = this.stepPcs[index].get(pc);
 			if (point !== undefined && (this.mode === RuntimeDebuggerResumeMode.StepInto || depth < this.stepDepth
 				|| depth === this.stepDepth && (this.mode === RuntimeDebuggerResumeMode.StepOver ? point <= this.stepInlineDepth : point < this.stepInlineDepth))) {
@@ -101,7 +102,7 @@ export class SourceDebugger {
 		// A selected-thread step never suppresses a breakpoint in another thread or domain.
 		if (inlineDepth === undefined) inlineDepth = this.breakpoints[index].get(pc);
 		if (inlineDepth === undefined) return false;
-		this.stop = { id: ++this.stopSerial, thread, media: this.media, domain, pc, inlineDepth, reason };
+		this.stop = { id: ++this.stopSerial, thread: thread.address, media: this.media, domain, pc, inlineDepth, reason };
 		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined;
 		this.changed();
 		return true;
@@ -109,7 +110,7 @@ export class SourceDebugger {
 
 	public resume(mode: RuntimeDebuggerResumeMode): void {
 		this.mode = mode;
-		this.stepThread = this.stepping ? this.cpu.activeThread : undefined;
+		this.stepThread = this.stepping ? this.cpu.activeThread.address : undefined;
 		if (this.stepping) {
 			this.stepDepth = this.cpu.getFrameDepth(); this.stepInlineDepth = this.stop === undefined ? 0 : this.stop.inlineDepth;
 			this.prepareSteps();
@@ -137,7 +138,7 @@ export class SourceDebugger {
 	}
 	private suppressCurrentInstruction(): void {
 		const thread = this.cpu.activeThread, depth = thread.frameDepth;
-		this.suppression.push({ thread, depth, frame: thread.currentFrame! });
+		this.suppression.push({ thread: thread.address, depth });
 	}
 	public interrupt(): void {
 		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined; this.changed();
@@ -161,7 +162,7 @@ export class SourceDebugger {
 		}
 		this.changed();
 	}
-	public discardFrames(thread: Thread, firstFrame: number): void {
+	public discardFrames(thread: number, firstFrame: number): void {
 		for (let index = this.suppression.length - 1; index >= 0; index--) {
 			const entry = this.suppression[index];
 			if (entry.thread === thread && entry.depth > firstFrame) {
@@ -175,7 +176,7 @@ export class SourceDebugger {
 		let changed = false;
 		for (let index = this.suppression.length - 1; index >= 0; index--) {
 			const entry = this.suppression[index];
-			if (entry.thread.frameDepth >= entry.depth && entry.thread.frameAtDepth(entry.depth - 1) === entry.frame) continue;
+			if (this.cpu.readThreadFrameDepth(entry.thread) >= entry.depth) continue;
 			this.suppression.copyWithin(index, index + 1); this.suppression.length--; changed = true;
 		}
 		if (changed) this.changed();

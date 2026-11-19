@@ -3,7 +3,6 @@ import type { HostExecutionControl } from '../../hosts/common/execution_control'
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../machine/ts/spec/bmsx/io';
 import { ALL_EXECUTION_DOMAINS_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { showEditorWarningBanner } from '../common/feedback_state';
@@ -21,7 +20,7 @@ export class BiosTerminal implements RuntimeDebuggerControlPlan {
 	public readonly executionDomainMask = ALL_EXECUTION_DOMAINS_MASK;
 	public readonly preMaskableInterruptDomainMask = this.executionDomainMask;
 	private phase = TerminalPhase.Closed;
-	private returnThread: Thread | undefined;
+	private returnThread: number | undefined;
 	private returnDepth = 0;
 	public constructor(private readonly runtime: Runtime, private readonly input: Input,
 		private readonly guest: SuspendedGuestSession, private readonly debuggerState: RuntimeDebuggerState,
@@ -73,7 +72,7 @@ export class BiosTerminal implements RuntimeDebuggerControlPlan {
 		const cpu = this.runtime.machine.cpu;
 		for (let index = 0; index < cpu.getFrameDepth(); index++) {
 			if (!cpu.isNonMaskableExceptionFrame(index)) continue;
-			this.returnThread = cpu.activeThread;
+			this.returnThread = cpu.activeThread.address;
 			this.returnDepth = index;
 			break;
 		}
@@ -88,7 +87,7 @@ export class BiosTerminal implements RuntimeDebuggerControlPlan {
 		}
 		// CONT can return into BIOS/IRQ code, not just a user-mode cart. Hold
 		// the actual NMI caller before another instruction or maskable IRQ.
-		if (this.phase === TerminalPhase.Monitor && this.returnThread !== undefined && this.returnThread.frameDepth <= this.returnDepth) {
+		if (this.phase === TerminalPhase.Monitor && this.returnThread !== undefined && this.runtime.machine.cpu.readThreadFrameDepth(this.returnThread) <= this.returnDepth) {
 			this.phase = TerminalPhase.Returned;
 			return true;
 		}

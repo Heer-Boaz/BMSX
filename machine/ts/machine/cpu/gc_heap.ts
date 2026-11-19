@@ -7,7 +7,7 @@ import * as Closure from './closure';
 import { UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from './upvalue';
 import * as Upvalue from './upvalue';
 import { TableRecords } from './table';
-import { Thread, THREAD_HEAP_BYTES, THREAD_RECORD_KIND } from './thread';
+import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND } from './thread_record';
 import { ThreadField, ThreadLayout, ThreadRecords } from './thread_record';
 import { FRAME_WINDOW_MASK, FrameField } from './call_state';
 import { ValueTag, valueTag, valuePayload, scalarValueHash, valueInteger, valueNil, valueFromTag, type Value } from './value';
@@ -43,7 +43,6 @@ export class GcHeap {
 	// An inspector may end the lifetimes it observed; allocation never
 	// creates host identities. A replacement invalidates the whole view.
 	public onRecordRetirement: ((address: number | null) => void) | null = null;
-	private objects: Thread | null = null;
 	private readonly controlOffset: number;
 	public phase(): GcPhase {
 		return GC_PHASE_SELECTOR[this.memory.readRamRecordByte(this.controlOffset) & 7];
@@ -89,8 +88,6 @@ export class GcHeap {
 	public readonly tables = new TableRecords(this);
 	public readonly threads: ThreadRecords;
 	private readonly threadLayout = new ThreadLayout();
-	// Only Thread execution views have host attachments; Closures are raw RAM records.
-	private readonly records = new Array<Thread | null>(MAIN_RAM_SIZE / THREAD_HEAP_BYTES).fill(null);
 	public tableRecordAddress(address: number): number {
 		const offset = address & (MAIN_RAM_SIZE - TableRecords.HEADER_BYTES);
 		return this.arena.issuedObjectSlotClass(offset) === TABLE_SIZE_CLASS
@@ -114,28 +111,11 @@ export class GcHeap {
 		return (offset & (THREAD_HEAP_BYTES - 1)) === 0 && this.arena.issuedObjectSlotClass(offset) === THREAD_SIZE_CLASS
 			&& this.memory.readRamRecordByte(offset) === THREAD_RECORD_KIND ? RAM_BASE + offset : 0;
 	}
-	public threadAt(address: number): Thread | null {
-		const offset = address & GC_RECORD_MASK;
-		return (offset & (THREAD_HEAP_BYTES - 1)) === 0 ? this.records[offset / THREAD_HEAP_BYTES] : null;
-	}
-	public reference(object: Thread): number { return object.address; }
 	public hash(value: Value): number {
 		switch (valueTag(value)) {
 			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return scalarValueHash(valueInteger(valuePayload(value)));
 			default: return scalarValueHash(value);
 		}
-	}
-	public track(object: Thread): void {
-		this.records[(object.address & GC_RECORD_MASK) / THREAD_HEAP_BYTES] = object;
-		object.gcPrevious = null; object.gcNext = this.objects;
-		if (this.objects !== null) this.objects.gcPrevious = object;
-		this.objects = object;
-	}
-	private unlink(object: Thread): void {
-		if (object.gcPrevious !== null) object.gcPrevious.gcNext = object.gcNext;
-		else this.objects = object.gcNext;
-		if (object.gcNext !== null) object.gcNext.gcPrevious = object.gcPrevious;
-		object.gcNext = null; object.gcPrevious = null;
 	}
 	public active(): boolean { return this.phase() !== GcPhase.Pause; }
 	public isAlive(address: number): boolean { return address !== 0 && this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) !== this.white(); }
@@ -250,28 +230,6 @@ export class GcHeap {
 		return false;
 	}
 	public markSlot(slots: ValueSlots, index: number): void { this.markValue(slots.get(index)); }
-	public visitThreads(visit: (thread: Thread) => void): void {
-		for (let object = this.objects; object !== null; object = object.gcNext)
-			visit(object);
-	}
-	public armThreadStackWatches(): void {
-		this.visitThreads(thread => { thread.armStackWatch(); thread.armFrameWindowWatches(); });
-	}
-	public observeStackWrites(first: number, end: number): void {
-		for (let address = first & -THREAD_HEAP_BYTES; address < end; address += THREAD_HEAP_BYTES) {
-			const descriptor = address + ThreadField.StackBlock, depth = address + ThreadField.FrameDepth;
-			const cursorWrite = first <= depth && depth < end;
-			if (!cursorWrite && (end <= descriptor || first >= descriptor + 16)) continue;
-			const thread = this.threadAt(address);
-			if (thread !== null) {
-				if (cursorWrite) {
-					this.cpu.bindPhysicalFrames(thread);
-					thread.armStackWatch();
-				} else thread.observeStackWrite();
-			}
-		}
-		this.visitThreads(thread => thread.observeFrameWindowWrites(first, end));
-	}
 	public allocationBytes(address: number): number {
 		return this.threads.allocationBytes(address);
 	}
@@ -413,20 +371,13 @@ export class GcHeap {
 			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, white);
 			const copied = address === growingThread ? 0 : this.threads.shrinkStack(address, layout);
 			// Existing execution views follow raw relocation; they are never GC roots here.
-			const view = this.threadAt(address);
-			if (view !== null) {
-				if (copied !== 0) view.bindStack();
-				view.trimFrames();
-			}
+			this.cpu.refreshThreadView(address, copied !== 0);
 			return work + 2 * ceilDiv4(copied);
 		}
 		this.arena.free(this.memory.readRamRecordWord(address + ThreadField.StackBlock));
 		this.arena.free(address);
-		const view = this.threadAt(address);
-		if (view !== null) {
-			this.records[(address & GC_RECORD_MASK) / THREAD_HEAP_BYTES] = null;
-			this.unlink(view);
-		}
+		this.cpu.retireThreadView(address);
+		this.onRecordRetirement?.(address);
 		return -work;
 	};
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0): number {
@@ -488,22 +439,5 @@ export class GcHeap {
 		while (this.active()) work += this.step(t0, t1, t2, growingThread);
 		do { work += this.step(t0, t1, t2, growingThread); } while (this.active());
 		return work;
-	}
-	public discardAttachments(retainedRoot: Thread | null): void {
-		this.onRecordRetirement?.(null);
-		// Host-only disposal: never free or follow references in restored RAM.
-		let object = this.objects;
-		this.objects = null;
-		while (object !== null) {
-			const next = object.gcNext;
-			this.records[(object.address & GC_RECORD_MASK) / THREAD_HEAP_BYTES] = null;
-			object.gcPrevious = null;
-			object.gcNext = null;
-			object = next;
-		}
-		if (retainedRoot !== null) {
-			retainedRoot.detachFrameViews();
-			this.track(retainedRoot);
-		}
 	}
 }

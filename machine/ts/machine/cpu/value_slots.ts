@@ -1,6 +1,5 @@
 import type { StringId } from './string_pool';
 import type { GcHeap } from './gc_heap';
-import type { Thread } from './thread';
 import type { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import { luaFloatResultBits } from '../../spec/blua32/numeric';
 import { ValueTag, valueTag, valuePayload, valueFromTag, type Value } from './value';
@@ -162,7 +161,7 @@ export class ValueSlots implements ValueWriteTarget {
 	public getStringId(index: number): StringId { return this.getPayload(index); }
 	public getBuiltinFunctionId(index: number): BuiltinFunctionId { return this.getPayload(index); }
 	public getClosure(index: number, heap: GcHeap): number { return heap.closureRecordAddress(this.getPayload(index))!; }
-	public getThread(index: number, heap: GcHeap): Thread { return heap.threadAt(this.getPayload(index))!; }
+	public getThread(index: number, heap: GcHeap): number { return heap.threadRecordAddress(this.getPayload(index)); }
 	public isTruthy(index: number): boolean { const tag = this.getTag(index); return tag !== ValueTag.Nil && tag !== ValueTag.False; }
 	public get(index: number): Value { return valueFromTag(this.getTag(index), this.getPayload(index)); }
 	public set(index: number, value: Value): void { this.setEncoded(index, valueTag(value), valuePayload(value)); }

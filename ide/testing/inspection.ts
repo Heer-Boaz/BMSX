@@ -1,5 +1,4 @@
 import { generateUuid } from '../common/uuid';
-import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { BuiltFixtureProgram } from './fixture_media';
 import { readBlua32CompiledSource, type Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
@@ -12,7 +11,7 @@ import type { TestStack } from './stack';
 
 type FrameScope = { readonly kind: RuntimeLuaFrameScope['kind']; readonly status: RuntimeLuaFrameScope['status']; readonly reference?: string; readonly count?: number };
 type InspectedTestFrame = RuntimeStackTraceFrame & { readonly reference: string; readonly domain: ResourceDomain; readonly pc: number; readonly functionAddress: number };
-type FrameEntry = { frame: CallFrame; physical: RuntimeStackFrame; trace: InspectedTestFrame; source?: Blua32CompiledSource; scopes?: readonly FrameScope[] };
+type FrameEntry = { thread: number; frameIndex: number; physical: RuntimeStackFrame; trace: InspectedTestFrame; source?: Blua32CompiledSource; scopes?: readonly FrameScope[] };
 
 /** Owns borrowed test stacks, frames and stored values for one attachment lifetime. */
 export abstract class TestInspection {
@@ -65,7 +64,7 @@ export abstract class TestInspection {
 			const reference = `${this.id}/frame/${this.frames.size}`;
 			const trace: InspectedTestFrame = { ...frame, reference, domain: physical.executionDomainId,
 				pc: physical.tracePc, functionAddress: physical.functionAddress };
-			this.frames.set(reference, { frame: entry.context.thread.frameAtDepth(frame.physicalFrameIndex), physical, trace,
+			this.frames.set(reference, { thread: entry.context.thread, frameIndex: frame.physicalFrameIndex, physical, trace,
 				source: frame.kind === 'source' ? entry.context.sources.get(frame) : undefined });
 			return trace;
 		});
@@ -85,7 +84,7 @@ export abstract class TestInspection {
 		if (entry.scopes === undefined) entry.scopes = runtimeLuaFrameScopes(entry.physical, entry.trace.inlineDepth).map(scope => {
 			if (scope.status !== 'available') return { kind: scope.kind, status: scope.status };
 			return { kind: scope.kind, status: scope.status, count: scope.bindings.length,
-				reference: this.values.frame(scope.kind, entry.frame, scope.bindings) };
+				reference: this.values.frame(scope.kind, entry.thread, entry.frameIndex, scope.bindings) };
 		});
 		return { inspection: this.id, frame: reference, scopes: entry.scopes };
 	}

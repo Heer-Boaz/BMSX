@@ -19,13 +19,16 @@ export const enum ProtectedCallKind {
 export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 }
 export const FRAME_CONTROL_BYTES = 56;
 export const FRAME_WINDOW_MASK = (MAIN_RAM_SIZE >>> 2) - 1;
-const FRAME_COMPLETION = 1;
-const FRAME_EXCEPTION = 2;
-const FRAME_NMI = 4;
+export const FRAME_COMPLETION = 1;
+export const FRAME_EXCEPTION = 2;
+export const FRAME_NMI = 4;
 const FRAME_BANK_CART = 1 << 3;
 const FRAME_BANK_SECOND = 1 << 4;
 const FRAME_BANK_MASK = FRAME_BANK_CART | FRAME_BANK_SECOND;
 
+export function frameExecutionBank(flags: number): ExecutionDomainId {
+	return (flags & FRAME_BANK_CART) === 0 ? SYSTEM_EXECUTION_DOMAIN_ID : ((flags & FRAME_BANK_SECOND) >>> 4) as ExecutionDomainId;
+}
 function frameBankWord(domain: ExecutionDomainId): number {
 	return domain === SYSTEM_EXECUTION_DOMAIN_ID ? 0 : FRAME_BANK_CART | (domain << 4);
 }
@@ -50,7 +53,7 @@ export class CallFrame {
 
 	public get savedExecutionBank(): ExecutionDomainId {
 		const flags = this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Flags);
-		return (flags & FRAME_BANK_CART) === 0 ? SYSTEM_EXECUTION_DOMAIN_ID : ((flags & FRAME_BANK_SECOND) >>> 4) as ExecutionDomainId;
+		return frameExecutionBank(flags);
 	}
 	public set savedExecutionBank(domain: ExecutionDomainId) {
 		const bank = frameBankWord(domain);

@@ -117,6 +117,11 @@ export class MappedPageWriteWatches {
 
 	public armWord(pageIndex: number, word: number): void { this.arm(this.words, pageIndex, word, 0); }
 	public armViewWord(pageIndex: number, word: number): void { this.arm(this.views, pageIndex, word, VIEW_SHIFT); }
+	public clearViewWord(pageIndex: number, word: number): void {
+		const group = word >>> 5, index = pageIndex * MAPPED_PAGE_WATCH_GROUP_COUNT + group;
+		this.views[index] &= ~(1 << (word & 31));
+		if (this.views[index] === 0) this.values[pageIndex] &= ~(1 << (group + VIEW_SHIFT));
+	}
 
 	private arm(bank: Uint32Array, pageIndex: number, word: number, shift: number): void {
 		const group = word >>> 5;

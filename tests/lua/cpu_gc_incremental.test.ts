@@ -259,7 +259,7 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 	while (gc.phase() !== GcPhase.Sweep) deadWork += gc.step();
 	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
 	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
-	assert.equal(gc.threadAt(address), null, 'restore does not attach a pending sweep victim');
+	assert.equal(cpu.rootThread.address, state.rootThreadAddress, 'restore rebinds the root while the pending victim remains a raw record');
 	assert.equal(gc.threadRecordAddress(address), address, 'the allocator still owns it until sweep');
 	while (gc.active()) deadWork += gc.step();
 	assert.equal(deadWork, baselineWork + (allocationBytes >>> 2) + 1,
@@ -286,9 +286,9 @@ test('a coroutine header is swept with the object page and its stack is released
 	cpu.setSystemGlobalByKey(cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
 	cpu.runUntilDepth(0, 1000);
 	const { gc } = cpu, frame = cpu.rootThread.currentFrame!;
-	const address = valuePayload(frame.registers.get(0)), thread = gc.threadAt(address)!;
+	const address = valuePayload(frame.registers.get(0));
 	const bytes = gc.allocationBytes(address);
-	frame.registers.setClosure(1, thread.entry);
+	frame.registers.setClosure(1, cpu.memory.readRamRecordWord(address + ThreadField.Entry));
 	frame.top = 2;
 	const sweep = () => {
 		while (gc.phase() !== GcPhase.Sweep) gc.step();
@@ -297,10 +297,10 @@ test('a coroutine header is swept with the object page and its stack is released
 		return work;
 	};
 	const liveWork = sweep(), occupied = cpu.heapAllocator.occupiedBytes();
-	assert.equal(gc.threadAt(address), thread);
+	assert.equal(gc.threadRecordAddress(address), address);
 	frame.registers.setNil(0);
 	assert.equal(sweep(), liveWork, 'an occupied Thread slot has the same visit charge whether retained or released');
-	assert.equal(gc.threadAt(address), null);
+	assert.equal(gc.threadRecordAddress(address), 0);
 	assert.equal(cpu.memory.readRamRecordByte(address), 0);
 	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - bytes);
 	assert.equal(sweep(), liveWork - ((bytes >>> 2) - 1), 'the root Thread keeps the page, and the vacant slot still costs a visit');

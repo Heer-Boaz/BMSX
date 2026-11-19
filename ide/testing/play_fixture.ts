@@ -1,5 +1,4 @@
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
-import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import { asStringId, asThread, valueString, valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit } from '../../machine/ts/spec/blua32/execution_domain';
 import type { BuiltFixtureProgram } from './fixture_media';
@@ -126,13 +125,13 @@ export class PlayFixture {
 		this.input.reset(); this.operations.cancel();
 		this.state = this.failures.length === 0 ? 'stopped' : 'failed'; this.bindHook();
 	}
-	private recordFailure(thread: Thread, message: string, origin: TestFailureContext['origin']): void {
+	private recordFailure(thread: number, message: string, origin: TestFailureContext['origin']): void {
 		const runtime = this.target.runtime;
-		this.failures.push(new TestFailureContext(thread, origin, runtime.machine.scheduler.nowCycles,
+		this.failures.push(new TestFailureContext(runtime.machine.cpu, thread, origin, runtime.machine.scheduler.nowCycles,
 			runtime.frameScheduler.lastTickSequence, this.program, !this.fixture.initialized ? 'initialize' : this.phase, message));
 	}
 	private quarantine(message: string): void {
-		this.recordFailure(this.target.runtime.machine.cpu.activeThread, message, 'quarantined-cpu'); this.finish();
+		this.recordFailure(this.target.runtime.machine.cpu.activeThread.address, message, 'quarantined-cpu'); this.finish();
 	}
 
 	/** Stop tears down an admitted world; an unsafe continuation is retained, not unwound. */

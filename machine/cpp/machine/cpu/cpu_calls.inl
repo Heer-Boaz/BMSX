@@ -50,7 +50,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 		resumeFrameBank();
 		return false;
 	}
-	if (m_activeThread->frameDepth() == 1 && m_activeThread->resumer() != nullptr) {
+	if (m_activeThread->frameDepth() == 1 && m_activeThread->resumer() != 0u) {
 		Thread* thread = m_activeThread;
 		thread->setStatus(ThreadStatus::Dead);
 		returnToResumer(frame.stackBase() + a, count, true);

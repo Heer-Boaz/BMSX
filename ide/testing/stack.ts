@@ -1,4 +1,5 @@
-import type { Thread } from '../../machine/ts/machine/cpu/thread';
+import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { FrameField, FRAME_COMPLETION } from '../../machine/ts/machine/cpu/call_state';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import type { BuiltFixtureProgram } from './fixture_media';
 import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
@@ -11,16 +12,18 @@ export class TestStack {
 	public readonly frames: readonly RuntimeStackTraceFrame[];
 	public readonly sources: ReadonlyMap<SourceStackTraceFrame, Blua32CompiledSource>;
 
-	public constructor(public readonly thread: Thread, program: BuiltFixtureProgram,
+	public constructor(cpu: CPU, public readonly thread: number, program: BuiltFixtureProgram,
 		public readonly origin: 'failed-thread' | 'quarantined-cpu' | 'stopped-thread') {
 		const physical: RuntimeStackFrame[] = [];
-		for (let frame = thread.firstFrame!, index = 0; index < thread.frameDepth; ++index, frame = frame.next!) {
-			const domain = frame.executionImage.executionDomainId, image = (domain === -1 ? program.sourceMedia.system : program.sourceMedia.cartridgeSlots[domain])!;
-			const child = frame === thread.currentFrame ? null : frame.next;
-			physical.push({ executionDomainId: domain, toolingImage: image, functionAddress: frame.functionAddress,
-				functionIndex: blua32FunctionIndexAtAddress(image.layout, frame.functionAddress),
-				tracePc: child !== null && !child.returnToCompletionLatch ? child.callSitePc
-					: frame.pc - (origin === 'failed-thread' && child === null ? INSTRUCTION_BYTES : 0) });
+		for (let index = 0, depth = cpu.readThreadFrameDepth(thread); index < depth; ++index) {
+			const domain = cpu.readThreadFrameExecutionDomain(thread, index), image = (domain === -1 ? program.sourceMedia.system : program.sourceMedia.cartridgeSlots[domain])!;
+			const functionAddress = cpu.readThreadFrameWord(thread, index, FrameField.Function);
+			const hasChild = index + 1 < depth;
+			physical.push({ executionDomainId: domain, toolingImage: image, functionAddress,
+				functionIndex: blua32FunctionIndexAtAddress(image.layout, functionAddress),
+				tracePc: hasChild && (cpu.readThreadFrameWord(thread, index + 1, FrameField.Flags) & FRAME_COMPLETION) === 0
+					? cpu.readThreadFrameWord(thread, index + 1, FrameField.CallSite)
+					: cpu.readThreadFrameWord(thread, index, FrameField.Pc) - (origin === 'failed-thread' && !hasChild ? INSTRUCTION_BYTES : 0) });
 		}
 		this.physical = physical;
 		const stack = buildLuaStackFrames(this.physical);

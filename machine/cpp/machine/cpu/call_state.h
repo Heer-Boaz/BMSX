@@ -40,6 +40,10 @@ constexpr u32 frameBankWord(ExecutionDomainId domain) {
 	return domain == SYSTEM_EXECUTION_DOMAIN_ID ? 0u : FRAME_BANK_CART | (static_cast<u32>(domain) << 4);
 }
 
+constexpr ExecutionDomainId frameExecutionBank(u32 flags) {
+	return (flags & FRAME_BANK_CART) != 0u ? static_cast<ExecutionDomainId>((flags & FRAME_BANK_SECOND) >> 4u) : SYSTEM_EXECUTION_DOMAIN_ID;
+}
+
 struct CallFrame {
 	Thread* thread = nullptr;
 	CallFrame* previous = nullptr;
@@ -68,8 +72,7 @@ struct CallFrame {
 		return ClosureRecord::captureCount(*controlMemory, readControl(FrameField::Closure));
 	}
 	ExecutionDomainId savedExecutionBank() const {
-		const u32 flags = readControl(FrameField::Flags);
-		return (flags & FRAME_BANK_CART) != 0 ? static_cast<ExecutionDomainId>((flags & FRAME_BANK_SECOND) >> 4) : SYSTEM_EXECUTION_DOMAIN_ID;
+		return frameExecutionBank(readControl(FrameField::Flags));
 	}
 	void saveExecutionBank(ExecutionDomainId domain) {
 		writeControl(FrameField::Flags, (readControl(FrameField::Flags) & ~FRAME_BANK_MASK) | frameBankWord(domain));

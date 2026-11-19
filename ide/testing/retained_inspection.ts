@@ -18,7 +18,7 @@ export class TestTargetInspection extends TestInspection {
 			failures: result.failures.map((failure, index) => {
 				const context = contexts.find(entry => entry.failure === failure);
 				if (context === undefined) return { index, phase: failure.phase, message: failure.message, status: 'no-retained-guest-thread' as const };
-				if (context.thread.status === ThreadStatus.Dead) return { index, phase: failure.phase, message: failure.message, status: 'thread-closed' as const };
+				if (runtime.machine.cpu.readThreadStatus(context.thread) === ThreadStatus.Dead) return { index, phase: failure.phase, message: failure.message, status: 'thread-closed' as const };
 				return { index, phase: failure.phase, message: failure.message, status: 'available' as const,
 					reference: this.addStack(context.stack), origin: context.origin, cycles: context.cycles, videoTick: context.videoTick };
 			}),

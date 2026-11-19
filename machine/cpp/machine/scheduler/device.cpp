@@ -37,7 +37,7 @@ i64 DeviceScheduler::currentNowCycles() const {
 	return m_activeSliceBaseCycle + (m_activeSliceBudgetCycles - m_cpu.instructionBudgetRemaining);
 }
 
-RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, const Thread* targetThread) {
+RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, u32 targetThread) {
 	beginCpuSlice(sliceBudget);
 	ScopeExit activeSlice([this]() { endCpuSlice(); });
 #if defined(BMSX_DIAGNOSTIC_CPU_TIMING)

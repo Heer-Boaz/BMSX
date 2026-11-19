@@ -162,7 +162,7 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 		irqController.raise(IRQ_VBLANK); assert.equal(cpu.enterPendingInterrupt(), true);
 		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 		assert.equal(state.source.stop !== undefined, true);
-		const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1), thread = cpu.activeThread;
+		const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1), thread = cpu.activeThread.address;
 		const exceptionDepth = cpu.readExceptionReturnFrameDepth();
 		assert.ok(exceptionDepth >= 0 && depth > exceptionDepth);
 		const retainedStop = state.source.stop;
@@ -200,7 +200,7 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 		didExecuteRuntimeDebuggerPlan(state);
 		assert.equal(finished, true); assert.deepEqual(values, [valueInteger(42), valueNil(), valueBool(false)]);
 		assert.equal(state.plans.controlActive, false);
-		assert.equal(cpu.activeThread, thread); assert.equal(cpu.getFrameDepth(), depth);
+		assert.equal(cpu.activeThread.address, thread); assert.equal(cpu.getFrameDepth(), depth);
 		assert.equal(cpu.readFramePc(depth - 1), pc); assert.equal(cpu.readExceptionReturnFrameDepth(), exceptionDepth);
 		assert.equal(memory.readMappedU32LE(irqTail), 0); assert.equal(memory.readMappedU32LE(gameCount), gameBefore);
 		assert.equal(state.source.stop !== undefined, true); assert.equal(state.source.stop!.thread, thread);

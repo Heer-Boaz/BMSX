@@ -883,7 +883,7 @@ end
 return world`)); resources.add(f.stop);
 	const cpu = f.runtime.machine.cpu, guest = f.guest;
 	const candidates: Value[] = [valueNil(), valueBool(false), valueBool(true), valueInteger(1), valueFloat(1), valueString(cpu.stringPool.intern('1')),
-		guest.global('probe'), guest.global('rename'), valueThread(cpu.gc.reference(cpu.activeThread)), valueBuiltinFunction(BuiltinFunctionId.Type)];
+		guest.global('probe'), guest.global('rename'), valueThread(cpu.activeThread.address), valueBuiltinFunction(BuiltinFunctionId.Type)];
 	const heap = cpu.luaHeap.usedBytes(), identities = candidates.map(value => guest.identity(value));
 	for (let i = 0; i < candidates.length; i++) for (let j = 0; j < candidates.length; j++) {
 		assert.equal(guest.matchesIdentity(candidates[i], identities[j]), i === j);

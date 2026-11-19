@@ -26,7 +26,7 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 	firstFrame.closureAddress = closure;
 	const table = cpu.createTable(1, 1), field = cpu.stringPool.find('field')!;
 	const upvalue = cells[0]; ClosureRecord.setCaptureAddress(cpu.memory, closure, 0, upvalue);
-	const other = cpu.createThread(0);
+	const other = cpu.bindThread(cpu.createThread(0));
 	other.resizeStack(24);
 	function setup(scenario: Scenario, value = v.valueInteger(3), source = 'closed') {
 		const frame = cpu.activeThread.currentFrame!, r = frame.registers;

@@ -428,8 +428,9 @@ void collectUnattachedThreadRecord() {
 	const auto ram = memory.captureSaveState();
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
-	require(gc.threadAt(address) == nullptr && gc.threadRecordAddress(address) == address,
-		"restore leaves the sweep victim as an issued RAM record without reattaching it");
+	require(gc.threadRecordAddress(address) == address
+		&& ThreadRecord::stackLayout(memory, address).block == reduced.block,
+		"restore preserves the sweep victim's issued RAM record and owned backing");
 	while (gc.active()) deadWork += gc.step(valueNil(), valueNil(), valueNil());
 	require(deadWork == baselineWork + reducedBytes / sizeof(u32) + 1,
 		"removing the raw Thread root leaves only its physical sweep and the table visit");
@@ -455,10 +456,9 @@ void sweepCoroutineRecord() {
 	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "coroutine fixture reaches HALT");
 	auto& frame = *cpu.rootThread()->currentFrame;
 	const u32 address = valuePayload(frame.registers.get(0));
-	auto* thread = gc.threadAt(address);
-	require(thread != nullptr, "coroutine builtin published a physical Thread reference");
+	require(gc.threadRecordAddress(address) == address, "coroutine builtin published a physical Thread reference");
 	const auto bytes = gc.allocationBytes(address);
-	frame.registers.set(1, valueClosure(thread->entry()));
+	frame.registers.set(1, valueClosure(ThreadRecord::read(cpu.memory(), address, ThreadField::Entry)));
 	frame.writeControl(FrameField::Top, 2);
 	const auto sweep = [&] {
 		while (gc.phase() != GcPhase::Sweep) gc.step(valueNil(), valueNil(), valueNil());
@@ -468,10 +468,10 @@ void sweepCoroutineRecord() {
 	};
 	const auto liveWork = sweep();
 	const auto occupied = cpu.heapAllocator().occupiedBytes();
-	require(gc.threadAt(address) == thread, "reachable coroutine survives a page sweep");
+	require(gc.threadRecordAddress(address) == address, "reachable coroutine survives a page sweep");
 	frame.registers.set(0, valueNil());
 	require(sweep() == liveWork, "an occupied Thread slot has the same visit charge whether retained or released");
-	require(gc.threadAt(address) == nullptr && cpu.memory().readRamRecordByte(address) == 0
+	require(gc.threadRecordAddress(address) == 0u && cpu.memory().readRamRecordByte(address) == 0
 		&& cpu.heapAllocator().occupiedBytes() == occupied - bytes, "sweep frees both the coroutine slot and its owned stack");
 	require(sweep() == liveWork - (bytes / sizeof(u32) - 1), "root Thread keeps the page and a vacant Thread slot still costs one visit");
 }

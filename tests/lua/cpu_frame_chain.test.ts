@@ -35,7 +35,7 @@ function callImage(maxStack: number, returns: number, base = 0) {
 	closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });
 }
 
-test('thread-owned nodes reuse stable identities and trim only the spare tail', () => {
+test('reusing a frame view does not publish it before activation', () => {
 	const { cpu } = createTestSystemCpu(callImage(8, 1));
 	const thread = cpu.rootThread, frames: CallFrame[] = [];
 	thread.leaveFrame();
@@ -51,19 +51,11 @@ test('thread-owned nodes reuse stable identities and trim only the spare tail', 
 	const prepared = thread.acquireFrame();
 	assert.equal(prepared, frames[1]);
 	assert.equal(thread.frameIndex(prepared), -1, 'retained but inactive frames are not diagnostic stack entries');
-	thread.trimFrames();
-	assert.equal(thread.currentFrame, frames[0]); assert.equal(thread.acquireFrame(), prepared);
-	let retained = 0, previous: CallFrame | null = null;
-	for (let frame = thread.firstFrame; frame !== null; frame = frame.next) {
-		assert.equal(frame.controlOffset, frames[0].controlOffset + retained * FRAME_CONTROL_BYTES,
-			'surviving inactive views are rebound to their new physical depth');
-		assert.equal(frame.previous, previous); previous = frame; ++retained;
-	}
-	assert.equal(retained, 5);
+	assert.equal(thread.currentFrame, frames[0]);
+	assert.equal(prepared.controlOffset, frames[0].controlOffset + FRAME_CONTROL_BYTES);
 	thread.enterFrame(prepared); prepared.protectedContinuationIndex = 3; thread.leaveFrame();
 	assert.equal(thread.currentFrame, frames[0], 'the retired protected slot is not active');
 	thread.leaveFrame();
-	thread.trimFrames();
 	assert.equal(thread.frameDepth, 0); assert.equal(thread.currentFrame, null);
 	assert.equal(thread.acquireFrame(), frames[0], 'an empty thread keeps its first prepared node');
 });

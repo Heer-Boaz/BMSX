@@ -1,4 +1,4 @@
-import { ThreadStatus, type Thread } from '../../machine/ts/machine/cpu/thread';
+import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { BuiltFixtureProgram } from './fixture_media';
 import type { TestDebugger } from './debugger';
@@ -9,13 +9,13 @@ import { TestStack } from './stack';
 export class TestStopInspection extends TestInspection {
 	public readonly state;
 	public constructor(runtime: Runtime, program: BuiltFixtureProgram,
-		stop: ReturnType<TestDebugger['snapshot']>, thread: Thread, detached: () => void) {
+		stop: ReturnType<TestDebugger['snapshot']>, thread: number, detached: () => void) {
 		super(runtime, program, detached);
 		this.state = { ...stop, inspection: this.id, mode: 'stopped' as const, heap: 'stopped' as const,
 			source: 'compiled-test-images' as const, canEvaluate: false, globals: this.globals,
-			stack: thread.status === ThreadStatus.Dead ? { status: 'thread-closed' as const, thread: thread.address }
-				: { status: 'available' as const, thread: thread.address,
-					reference: this.addStack(new TestStack(thread, program,
-						thread.status === ThreadStatus.Failed ? 'failed-thread' : 'stopped-thread')) } };
+			stack: runtime.machine.cpu.readThreadStatus(thread) === ThreadStatus.Dead ? { status: 'thread-closed' as const, thread }
+				: { status: 'available' as const, thread,
+					reference: this.addStack(new TestStack(runtime.machine.cpu, thread, program,
+						runtime.machine.cpu.readThreadStatus(thread) === ThreadStatus.Failed ? 'failed-thread' : 'stopped-thread')) } };
 	}
 }

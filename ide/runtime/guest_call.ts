@@ -1,4 +1,5 @@
-import type { Thread } from '../../machine/ts/machine/cpu/thread';
+import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { FrameField, FRAME_COMPLETION } from '../../machine/ts/machine/cpu/call_state';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { ALL_EXECUTION_DOMAINS_MASK, type ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
@@ -42,20 +43,21 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 	public readonly executionDomainMask = ALL_EXECUTION_DOMAINS_MASK;
 	public readonly preMaskableInterruptDomainMask = this.executionDomainMask;
 
-	private readonly thread: Thread;
+	private readonly thread: number;
+	private readonly cpu: CPU;
 	public constructor(
 		runtime: Runtime,
 		private readonly returnDepth: number,
 		private readonly boundary: 'completion' | 'exception',
 		public readonly honorUserStops: boolean,
 		private readonly finish: (completed: boolean) => void,
-	) { this.thread = runtime.machine.cpu.activeThread; }
+	) { this.cpu = runtime.machine.cpu; this.thread = this.cpu.activeThread.address; }
 
 	public shouldStop(): boolean {
 		// A parked caller can accept an IRQ before the next hook. That IRQ may
 		// reuse the returned call's depth, but it is not its completion root.
-		return this.thread.frameDepth <= this.returnDepth
-			|| this.boundary === 'completion' && !this.thread.frameAtDepth(this.returnDepth).returnToCompletionLatch;
+		return this.cpu.readThreadFrameDepth(this.thread) <= this.returnDepth
+			|| this.boundary === 'completion' && (this.cpu.readThreadFrameWord(this.thread, this.returnDepth, FrameField.Flags) & FRAME_COMPLETION) === 0;
 	}
 	public willExecute(): void {}
 	public didExecute(): RuntimeDebuggerPlanResult {

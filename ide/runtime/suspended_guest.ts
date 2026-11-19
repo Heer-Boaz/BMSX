@@ -1,7 +1,6 @@
 import { CLOSURE_PROTOTYPE_ADDRESS, executionDomain } from '../../machine/ts/machine/cpu/closure';
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { StringId, StringPool } from '../../machine/ts/machine/cpu/string_pool';
 import {
 	TABLE_INDEX_CHAIN_LIMIT,
@@ -67,11 +66,6 @@ export class SuspendedGuestSession {
 	private readonly entryScratch = new ScratchBuffer<ValueSlots>(() => new ValueSlots(2));
 	private readonly previewParts = new ScratchBuffer<string[]>(() => []);
 	private readonly previewVisited = new Set<number>();
-	// Observations can outlive an allocation. Give a lifetime token only to
-	// attachments that this inspector actually sees; the VM and its saves do
-	// not need an allocation serial for every guest object.
-	private readonly observedLifetimes = new WeakMap<Thread, number>();
-	private nextObservedLifetime = 1;
 	private readonly storedParts: string[] = [];
 	private readonly formatStoredEntry = (key: Value, entry: Value): void => {
 		this.storedParts.push(`${this.formatValue(key)}: ${this.previewValue(entry, 1, STORED_ENTRIES_PREVIEW_LIMIT)}`);
@@ -146,18 +140,10 @@ export class SuspendedGuestSession {
 	public observedIdentityScalar(value: Value, tag: Exclude<ValueTag, ValueTag.String>): number;
 	public observedIdentityScalar(value: Value, tag: ValueTag): number | string;
 	public observedIdentityScalar(value: Value, tag: ValueTag): number | string {
-		let attachment: Thread;
 		switch (tag) {
-			case ValueTag.Table: return observedRecordLifetime(this.cpu.gc, valuePayload(value));
-			case ValueTag.Closure: return observedRecordLifetime(this.cpu.gc, valuePayload(value));
-			case ValueTag.Thread: attachment = this.cpu.gc.threadAt(valuePayload(value))!; break;
+			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return observedRecordLifetime(this.cpu.gc, valuePayload(value));
 			default: return this.identityScalar(value, tag);
 		}
-		const existing = this.observedLifetimes.get(attachment);
-		if (existing !== undefined) return existing;
-		const id = this.nextObservedLifetime++;
-		this.observedLifetimes.set(attachment, id);
-		return id;
 	}
 
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */

@@ -47,7 +47,7 @@ export function createSourceExecutionState(runtime: Runtime, media: Blua32Instal
 	state = {
 		source: new SourceDebugger(runtime.machine.cpu, media, points, () => updateExecutionHookBinding(state)),
 		executionRevision: 0, executionContext: undefined, executionHook,
-		plans: new RuntimeDebuggerPlanManager(), runtime, stopPresentationPending: false,
+		plans: new RuntimeDebuggerPlanManager(runtime.machine.cpu), runtime, stopPresentationPending: false,
 	};
 	updateExecutionHookBinding(state);
 	return state;
@@ -142,7 +142,7 @@ export function didFaultRuntimeDebuggerPlan(state: SourceExecutionState): void {
 }
 
 export function discardRuntimeDebuggerFramesFrom(state: SourceExecutionState, frameIndex: number): void {
-	state.source.discardFrames(state.runtime.machine.cpu.activeThread, frameIndex);
+	state.source.discardFrames(state.runtime.machine.cpu.activeThread.address, frameIndex);
 }
 
 export function applyRuntimeDebuggerHotResume(state: RuntimeDebuggerState, breakpoints: RuntimeBreakpointBindings): void {
