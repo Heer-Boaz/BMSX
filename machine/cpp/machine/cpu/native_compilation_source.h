@@ -22,15 +22,15 @@ struct NativeCompilationSource {
 			|| (instruction.op == static_cast<u8>(OpCode::MOV) && instruction.c > static_cast<int>(ValueMoveKind::FloatFromBits))) return false;
 		const u8 rk = OPCODE_RK_OPERANDS[instruction.op];
 		if (((rk & RK_OPERAND_B) != 0u && instruction.b < 0
-				&& static_cast<size_t>(-instruction.b - 1) >= image.constPool.capacity())
+				&& static_cast<size_t>(-instruction.b - 1) >= image.constPool.size())
 			|| ((rk & RK_OPERAND_C) != 0u && instruction.c < 0
-				&& static_cast<size_t>(-instruction.c - 1) >= image.constPool.capacity())) return false;
+				&& static_cast<size_t>(-instruction.c - 1) >= image.constPool.size())) return false;
 		switch (static_cast<OpCode>(instruction.op)) {
-			case OpCode::LOADK: return instruction.bx < image.constPool.capacity();
+			case OpCode::LOADK: return instruction.bx < image.constPool.size();
 			case OpCode::GETFIELD: case OpCode::SELF:
-				return static_cast<size_t>(instruction.c) < image.constPool.capacity();
+				return static_cast<size_t>(instruction.c) < image.constPool.size();
 			case OpCode::SETFIELD:
-				return static_cast<size_t>(instruction.b) < image.constPool.capacity();
+				return static_cast<size_t>(instruction.b) < image.constPool.size();
 			default: return true;
 		}
 	}

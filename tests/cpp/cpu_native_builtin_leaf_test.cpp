@@ -115,8 +115,8 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	void* marker = cold ? nullptr : markerPage->nativeCode[markerWord];
 	caller->terminal.continuationCells[0] = &marker;
 	const auto& gate = nativeBlockGate();
-	NativeCpuRunState run{.state={.registers=frame->registers, .constants=owner->constPool.view(), .frame=frame, .heap=&machine.cpu.gcHeap(),
-		.constantCount=static_cast<u32>(owner->constPool.capacity()), .remainingCycles=grant, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)), .exitCode=gate.dispatch,
+	NativeCpuRunState run{.state={.registers=frame->registers, .constants=owner->constPool, .frame=frame, .heap=&machine.cpu.gcHeap(),
+		.constantCount=static_cast<u32>(owner->constPool.size()), .remainingCycles=grant, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)), .exitCode=gate.dispatch,
 		.ram=machine.memory.ramData(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 		.diagnosticOpcodes={},

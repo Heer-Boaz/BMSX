@@ -6,7 +6,7 @@ import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { HEAP_COLLECTION_TARGET_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { integerConstant } from '../../toolchain/ts/lua/number';
-import { ValueTag, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueFloatBits, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -35,7 +35,7 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 // Closure, 14 RAM String records and their 16 four-byte intern buckets.
 const bootThreadBytes = 64 + 160;
 const bootThreadWords = bootThreadBytes / 4;
-const bootBytes = bootThreadBytes + 16 + 648 + 64;
+const bootBytes = bootThreadBytes + 16 + 16 + 648 + 64;
 const bootMarkWork = 2 * bootThreadWords + 3 + 2 * 12 + 14;
 const bootCollectionWork = 4 * bootThreadWords + 3 + 1 + 3 * 12 + 2 * 14 + 16;
 
@@ -135,11 +135,41 @@ test('all activated image constants and unique namespace slots remain priced acr
 	cpu.writeFrameExecution(0, 0, first.cartSymbols.functionAddresses[0], first.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, 1, second.cartSymbols.functionAddresses[0], second.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, first.systemSymbols.functionAddresses[0], first.systemImage.functions[0].codeAddress);
-	cpu.collectTrackedHeapBytes(); assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
+	cpu.collectTrackedHeapBytes(); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 24 + 8, 'each activated card charges its RAM const bank once');
 	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime();
 	assert.equal(cpu.instructionBudgetRemaining, 5 - bootCollectionWork - 3 * (2 * 5 + 3 * 2), 'all three root passes include constants and registered names of both activated cards');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
 	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime(); assert.equal(cpu.instructionBudgetRemaining, 5 - bootCollectionWork - 3 * (2 * 5 + 3 * 2));
+});
+
+test('constant loads, compiled operands and checkpoints use the physical bank', () => {
+	const program = source();
+	writeInstruction(program.text, 0, OpCode.LOADK, 0, 0, 1);
+	writeInstruction(program.text, 1, OpCode.ADD, 1, 0, 0);
+	writeInstruction(program.text, 2, OpCode.JMP, 0, 63, 61, 255);
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(program), backend);
+		const base = cpu.captureRuntimeState().constantPoolBases[SYSTEM_EXECUTION_DOMAIN_ID + 1], tag = base + 3 * 4 + 1;
+		assert.equal(memory.readRamRecordWord(base + 4), 12);
+		assert.equal(memory.readRamRecordByte(tag), ValueTag.Integer);
+		cpu.runUntilDepth(0, 4000);
+		assert.equal(cpu.readFrameRegister(0, 1), valueInteger(24));
+		if (backend === CpuExecutionBackend.JavaScript) assert.ok(cpu.rootThread.currentFrame!.decodedPage!.compiledBlocks);
+		memory.writeRamRecordWord(base + 4, 0x3fa00000);
+		memory.writeRamRecordByte(tag, ValueTag.Float);
+		cpu.runUntilDepth(0, 4000);
+		assert.equal(cpu.readFrameRegister(0, 1), valueFloatBits(0x40200000), 'pre-specialized code sees both changed lanes');
+		const ram = memory.captureSaveState(), state = cpu.captureRuntimeState(), occupied = cpu.heapAllocator.occupiedBytes();
+		memory.writeRamRecordWord(base + 4, 0x40000000);
+		cpu.runUntilDepth(0, 4000);
+		assert.equal(cpu.readFrameRegister(0, 1), valueFloatBits(0x40800000));
+		memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+		cpu.runUntilDepth(0, 4000);
+		assert.equal(cpu.readFrameRegister(0, 1), valueFloatBits(0x40200000), 'restore reattaches RAM instead of decoding ROM');
+		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'restore does not allocate another bank');
+		cpu.reset(); cpu.reset();
+		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'reset does not leak the superseded bank');
+	}
 });
 
 test('temporary roots survive charged steps; unreachable allocations pay reclamation but no mark scan', () => {

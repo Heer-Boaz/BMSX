@@ -310,10 +310,10 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		state.globalValues = cpu.m_globalValues.view();
 		state.systemGlobalValues = cpu.m_systemGlobalValues.view();
 		if (transition != NativeBlockTransition::NextInstruction) {
-			state.constants = frame->executionImage->constPool.view();
+			state.constants = frame->executionImage->constPool;
 			state.frame = frame;
 			state.cop0Words = cpu.m_cop0Words.data();
-			state.constantCount = static_cast<u32>(frame->executionImage->constPool.capacity());
+			state.constantCount = static_cast<u32>(frame->executionImage->constPool.size());
 		}
 		state.remainingCycles = cpu.instructionBudgetRemaining;
 		state.registerTop = frame->readWindow(FrameField::Top);

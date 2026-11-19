@@ -130,6 +130,8 @@ public:
 		};
 	}
 
+	void armCodeRange(size_t first, size_t length);
+
 	void clear() {
 		std::fill_n(m_storage.get(), m_wordCount, 0u);
 		m_watchedPages = 0;

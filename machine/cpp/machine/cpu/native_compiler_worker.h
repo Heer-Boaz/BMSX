@@ -41,7 +41,7 @@ private:
 	std::array<DecodedInstruction, DECODED_PAGE_WORDS * 2u> m_decoded;
 	std::array<NativeBlockInstruction, DECODED_PAGE_WORDS> m_instructions;
 	std::vector<NativeBlockSource> m_sources;
-	ConstValueSpan m_constants; // Image lifetime is owned by the CPU.
+	ConstValueSpan m_constants; // CPU owns immutable compilation input until take().
 	NativeCodeBindings m_bindings;
 	NativeBlockExitHandlers m_handlers;
 	std::vector<std::unique_ptr<NativeBlock>> m_blocks;

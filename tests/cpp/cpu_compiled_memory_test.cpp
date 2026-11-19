@@ -181,7 +181,7 @@ void generatedMemoryBoundaries() {
 		const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
 		require(block && block->sourceWords == 5 && block->sideExits.size() == 1,
 			"RAM accesses compile with their dependent instructions and branch");
-		require(block->run(nativeRunState = {.registers = frame.registers, .constants = frame.executionImage->constPool.view(), .remainingCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(op)]
+		require(block->run(nativeRunState = {.registers = frame.registers, .constants = frame.executionImage->constPool, .remainingCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(op)]
 				+ BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)] + 2})->nextPc == native.rom.textAddress,
 			"the complete memory loop reaches its final native exit without a bus-owner side exit");
 		for (int grant = 1; grant <= 32; ++grant) {
@@ -575,7 +575,7 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 		OpCode::STORE_MEM, OpCode::K1, OpCode::ADD, OpCode::MOV, OpCode::MOV, OpCode::GETFIELD, OpCode::MOV, OpCode::JMP})
 		loopCycles += BASE_CYCLES[static_cast<u8>(op)];
 	require(block && block->sourceWords == 13, "cached values occupy one native block");
-	const auto* outcome = block->run(nativeRunState = {.registers = frame.registers, .constants = frame.executionImage->constPool.view(), .frame = &frame, .heap = &native.cpu.gcHeap(), .remainingCycles = loopCycles});
+	const auto* outcome = block->run(nativeRunState = {.registers = frame.registers, .constants = frame.executionImage->constPool, .frame = &frame, .heap = &native.cpu.gcHeap(), .remainingCycles = loopCycles});
 	require(outcome->nextPc == native.rom.textAddress,
 		"cached table references, numbers and memory writes all reach the final native exit");
 	scalar.cpu.runUntilDepth(0, loopCycles);

@@ -160,7 +160,7 @@ void grantsAndTargetRetirement(bool inRam) {
 			remaining -= BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
 			if (remaining <= 0) break;
 		}
-		NativeBlockRunState run{.registers = slots.view(), .constants = native.cpu.activeThread()->frameAtDepth(0)->executionImage->constPool.view(),
+		NativeBlockRunState run{.registers = slots.view(), .constants = native.cpu.activeThread()->frameAtDepth(0)->executionImage->constPool,
 			.remainingCycles = grant};
 		const auto* exit = page.nativeBlocks->entries[base + start]->run(run);
 		require((expectedExit ? exit == expectedExit : exit->exit == NativeBlockExit::ScalarBoundary) && run.remainingCycles == remaining && run.registerTop == top,

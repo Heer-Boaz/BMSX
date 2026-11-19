@@ -1260,9 +1260,15 @@ of its current value. A hash node holds a key slot, a value slot and a four-byte
 chain link; a closure's captured-variable reference occupies four bytes. These
 fixed sizes apply to Integer and Float Numbers as well as reference values.
 They are capacity charges: replacing one kind with another does not allocate
-another slot or change its occupied-byte charge. The processor maintains one
-occupied-byte count for the allocated blocks. The collector compares this
-count plus a new request with its current assist threshold; both the count
+another slot or change its occupied-byte charge.
+
+Each activated image's decoded constant bank occupies the same five bytes
+per reserved Value slot before allocation rounding. The original constants
+and String bytes remain in the image.
+
+The processor maintains one occupied-byte count for the allocated blocks. The
+collector compares this count plus a new request with its current assist
+threshold; both the count
 and the threshold are held in the runtime management area.
 
 The collector marks retained objects, incrementally remarks roots and modified

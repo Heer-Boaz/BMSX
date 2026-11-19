@@ -205,7 +205,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 		asTable(frame.registers.get(0), machine->cpu.gcHeap())->setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
 		frame.registers.set(4, valueInteger(0));
 	}
-	require(loop->run(nativeRunState = {.registers = nativeFrame.registers, .constants = nativeFrame.executionImage->constPool.view(), .heap = &native.cpu.gcHeap(), .remainingCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]
+	require(loop->run(nativeRunState = {.registers = nativeFrame.registers, .constants = nativeFrame.executionImage->constPool, .heap = &native.cpu.gcHeap(), .remainingCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)]})->nextPc == native.rom.textAddress,
 		"ordinary read and write hits reach the final native branch without a host side exit");

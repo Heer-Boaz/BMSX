@@ -4,8 +4,7 @@ import { GcKind } from './gc_object';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { ValueStorage } from './value_storage';
-import { CART_ROM_BASE } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -174,6 +173,7 @@ export type CpuRuntimeState = {
 	systemGlobals: CpuRootValueState[];
 	globalSlots: CpuRootValueState[];
 	executionResidencyMask: ExecutionDomainMask;
+	constantPoolBases: number[];
 	nextObjectHashId: number;
 	hardHalted: boolean;
 	gc: GcState;
@@ -294,8 +294,6 @@ export class CPU implements MappedPageInvalidator {
 	private readonly tableLookupResult: TableLookupResult = {
 		values: this.tableScratch, slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
 	};
-	private heapEpoch = 0;
-	private readonly heapSeenImages = new WeakMap<object, number>();
 
 	private readonly executionImagesByDomain: Array<Blua32ExecutionImage | null> =
 		new Array<Blua32ExecutionImage | null>(EXECUTION_DOMAIN_COUNT).fill(null);
@@ -607,6 +605,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memory.clearMappedPageWriteWatches();
 		this.gc.armThreadStackWatches();
 		if (!this.setProgramHeapFloor(systemBoot.staticEnd)) { this.hardHalt(); return; }
+		for (const image of this.executionImagesByDomain) if (image !== null) this.releaseConstantPool(image);
 		this.executionImagesByDomain.fill(null);
 		this.stringPool.clearRomTables();
 		this.systemImage = this.activateExecutionImage(systemBoot);
@@ -649,7 +648,6 @@ export class CPU implements MappedPageInvalidator {
 		tableAddress: number,
 		constTags: Uint8Array,
 		constWords: Uint32Array,
-		restoring: boolean,
 	): void {
 		if (constTags.length === 0) {
 			return;
@@ -668,12 +666,15 @@ export class CPU implements MappedPageInvalidator {
 			switch (readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_TAG_OFFSET)) {
 				case Blua32ConstantTag.Nil:
 					constTags[index] = ValueTag.Nil;
+					constWords[index] = 0;
 					break;
 				case Blua32ConstantTag.False:
 					constTags[index] = ValueTag.False;
+					constWords[index] = 0;
 					break;
 				case Blua32ConstantTag.True:
 					constTags[index] = ValueTag.True;
+					constWords[index] = 0;
 					break;
 				case Blua32ConstantTag.Integer:
 					constTags[index] = ValueTag.Integer;
@@ -686,13 +687,19 @@ export class CPU implements MappedPageInvalidator {
 					constWords[index] = this.stringPool.resolveImageRecord(
 						executionDomainId,
 						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET),
-						restoring,
+						false,
 					);
 					break;
 				default:
 					throw new Error('BLua32 constant tag is invalid.');
 			}
 		}
+	}
+
+	private releaseConstantPool(image: Blua32ExecutionImage): void {
+		if (image.constantBase === 0) return;
+		this.heapAllocator.free(image.constantBase);
+		this.memory.invalidateRamWrite(image.constantBase & RAM_RECORD_WORD_MASK, image.constTags.length * 5);
 	}
 
 	private registerGlobalNames(
@@ -770,21 +777,22 @@ export class CPU implements MappedPageInvalidator {
 	private materializeExecutionImage(
 		executionBoot: Blua32ExecutionBoot,
 		header: ReturnType<CPU['readExecutionImageHeader']>,
-		restoring = false,
+		restoredPool: number | null = null,
 	): Blua32ExecutionImage {
 		const executionDomainId = executionBoot.executionDomainId;
 		const { constantTableAddress, constantCount, globalNameTableAddress, globalNameCount,
 			systemGlobalNameTableAddress, systemGlobalNameCount } = header;
-		const constStorage = new ValueStorage(constantCount);
-		const constTags = constStorage.tags;
-		const constWords = constStorage.words;
-		this.decodeConstantPool(
-			executionDomainId,
-			constantTableAddress,
-			constTags,
-			constWords,
-			restoring,
-		);
+		const restoring = restoredPool !== null;
+		const constantBase = restoring ? restoredPool : constantCount === 0 ? 0
+			: this.luaHeap.allocateRecord(constantCount * 5, true, 0, 0);
+		const offset = constantBase & RAM_RECORD_WORD_MASK;
+		const buffer = this.memory.ramData().buffer;
+		const constWords = new Uint32Array(buffer, offset, constantCount);
+		const constTags = new Uint8Array(buffer, offset + constantCount * 4, constantCount);
+		if (!restoring) {
+			this.decodeConstantPool(executionDomainId, constantTableAddress, constTags, constWords);
+			this.memory.invalidateRamWrite(offset, constantCount * 5);
+		}
 		const globalSlots = this.registerGlobalNames(
 			executionDomainId,
 			globalNameTableAddress,
@@ -801,6 +809,7 @@ export class CPU implements MappedPageInvalidator {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
 			staticEnd: executionBoot.staticEnd,
+			constantBase, constantsWatched: false,
 			constTags,
 			constWords,
 			globalSlots,
@@ -929,6 +938,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 				});
 			}
+			if (previous !== null) this.releaseConstantPool(previous);
 			if (this.activeExecutionDomainId === domain) {
 				this.latchActiveExecutionImage(domain, image);
 				const frame = this.activeThread.currentFrame;
@@ -993,7 +1003,19 @@ export class CPU implements MappedPageInvalidator {
 		this.gc.observeStackWrites(key + firstWord * 4, key + endWord * 4);
 	}
 
+	private invalidateConstantDependencies(key: number, firstWord: number, endWord: number): void {
+		const first = key + firstWord * 4, end = key + endWord * 4;
+		for (const image of this.executionImagesByDomain) {
+			if (image === null || !image.constantsWatched) continue;
+			const base = image.constantBase;
+			if (end <= base || first >= base + image.constTags.length * 5) continue;
+			image.constantsWatched = false;
+			for (const page of image.decodedPages.values()) this.compiledCodeCache.retirePage(page);
+		}
+	}
+
 	public invalidateMappedWords(key: number, firstWord: number, endWord: number): void {
+		this.invalidateConstantDependencies(key, firstWord, endWord);
 		this.invalidateDecodedWords(key, firstWord, endWord);
 		if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 			this.invalidateDecodedWords(
@@ -2411,14 +2433,18 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		for (const region of merged) this.compiledCodeCache.retireRegion(page, region);
-		const region = compileJavaScriptRegion(page, plans, frame.executionImage, this.memory, this.stringPool,
+		const image = frame.executionImage;
+		if (!image.constantsWatched && image.constTags.length !== 0) {
+			this.memory.ramWriteWatches().armCodeRange(image.constantBase & RAM_RECORD_WORD_MASK, image.constTags.length * 5);
+			image.constantsWatched = true;
+		}
+		const region = compileJavaScriptRegion(page, plans, image, this.memory, this.stringPool,
 			this.globalSlots, this.systemGlobalSlots, this.cop0Words, this.gc);
 		this.compiledCodeCache.install(page, region);
 		for (const block of region.entries) {
 			page.dispatchCycles[block.firstWord] = BASE_CYCLES[page.ops[block.firstWord]];
 			page.refreshState[block.firstWord] &= ~DECODED_REFRESH_FUSION;
 		}
-		const image = frame.executionImage;
 		if (image.compiledCodeLookup === null) image.compiledCodeLookup = new CompiledCodeLookup();
 		image.compiledCodeLookup.install(pagePc, this.memory.cartridgeController.selectedSlot(this.executionBusSignals), page);
 	}
@@ -4027,9 +4053,12 @@ export class CPU implements MappedPageInvalidator {
 			writer.setObjectWord(id, offset);
 		}
 		let executionResidencyMask = 0;
+		const constantPoolBases = new Array<number>(EXECUTION_DOMAIN_COUNT).fill(0);
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
-			if (this.executionImagesByDomain[index] !== null) {
+			const image = this.executionImagesByDomain[index];
+			if (image !== null) {
 				executionResidencyMask |= 1 << index;
+				constantPoolBases[index] = image.constantBase;
 			}
 		}
 		writer.finish();
@@ -4039,6 +4068,7 @@ export class CPU implements MappedPageInvalidator {
 			systemGlobals,
 			globalSlots,
 			executionResidencyMask,
+			constantPoolBases,
 			nextObjectHashId: this.nextObjectHashId,
 			hardHalted: this.hardHalted,
 			gc,
@@ -4167,7 +4197,7 @@ export class CPU implements MappedPageInvalidator {
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			if ((state.executionResidencyMask & (1 << index)) !== 0) {
 				const boot = this.executionAddressSpace.resolveDomain((index - 1) as ExecutionDomainId)!;
-				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, this.readExecutionImageHeader(boot), true);
+				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, this.readExecutionImageHeader(boot), state.constantPoolBases[index]);
 			}
 		}
 		this.systemImage = this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1]!;
@@ -4223,15 +4253,9 @@ export class CPU implements MappedPageInvalidator {
 		this.nextObjectHashId = state.nextObjectHashId;
 	}
 
-	public markHeapImage(image: Blua32ExecutionImage): void {
-		if (this.heapSeenImages.get(image) === this.heapEpoch) {
-			return;
-		}
-		this.heapSeenImages.set(image, this.heapEpoch);
+	private markHeapImage(image: Blua32ExecutionImage): void {
 		for (let index = 0; index < image.constTags.length; index += 1) {
-			if (image.constTags[index] === ValueTag.String) {
-				this.stringPool.markReachable(image.constWords[index] as StringId);
-			}
+			this.gc.markValue(valueFromTag(image.constTags[index], image.constWords[index]));
 		}
 	}
 
@@ -4255,6 +4279,11 @@ export class CPU implements MappedPageInvalidator {
 		addSlots(this.systemGlobalSlots, this.systemGlobalNames.length);
 		addSlots(this.globalSlots, this.globalNames.length);
 		addSlots(this.completionValueSlots, this.completionValueCount);
+		for (const image of this.executionImagesByDomain) {
+			if (image === null) continue;
+			for (let index = 0; index < image.constTags.length; ++index)
+				add(valueFromTag(image.constTags[index], image.constWords[index]));
+		}
 		add(this.stringIndexTable);
 		objects.push(this.rootThread, this.activeThread, this.completionThread);
 		if (this.haltedUntilIrqThread !== null) objects.push(this.haltedUntilIrqThread);
@@ -4331,7 +4360,6 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public markHeapRoots(heap: GcHeap): void {
-		++this.heapEpoch;
 		this.stringPool.markReachable(this.modeKey);
 		this.stringPool.markReachable(this.indexKey);
 		this.stringPool.markReachable(this.errorInErrorHandlingStringId);

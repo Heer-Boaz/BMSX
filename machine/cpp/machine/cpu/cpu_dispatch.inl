@@ -572,7 +572,7 @@ DISPATCH_LABEL(LOADKR) {
 	const int a = decoded->a;
 	const int b = decoded->b;
 	const u32 constantIndex = wordOperand(REG(b));
-	if (constantIndex >= IMAGE.constPool.capacity()) {
+	if (constantIndex >= IMAGE.constPool.size()) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
 	SET_REGISTER_FAST(a, IMAGE.constPool.get(constantIndex));

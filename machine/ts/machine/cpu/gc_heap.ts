@@ -315,7 +315,6 @@ export class GcHeap {
 				let liveTop = thread.currentFrame === null ? 0 : thread.currentFrame.stackBase + Math.min(thread.currentFrame.top, thread.currentFrame.stackCapacity);
 				let frame = thread.firstFrame!;
 				for (let depth = 0; depth < thread.frameDepth; ++depth, frame = frame.next!) {
-					this.cpu.markHeapImage(frame.executionImage);
 					this.markObject(this.closureAt(frame.closureAddress));
 					let address = frame.openUpvalueHead;
 					for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {

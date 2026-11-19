@@ -64,6 +64,19 @@ export class MappedPageWriteWatches {
 		out.writeWatchIndex = offset >>> MAPPED_PAGE_BYTE_SHIFT;
 	}
 
+	public armCodeRange(first: number, length: number): void {
+		const last = first + length - 1;
+		const firstPage = first >>> MAPPED_PAGE_BYTE_SHIFT, lastPage = last >>> MAPPED_PAGE_BYTE_SHIFT;
+		for (let page = firstPage; page <= lastPage; ++page) {
+			const begin = page === firstPage ? (first & MAPPED_PAGE_BYTE_MASK) >>> 2 : 0;
+			const end = page === lastPage ? (last & MAPPED_PAGE_BYTE_MASK) >>> 2 : MAPPED_PAGE_BYTE_MASK >>> 2;
+			for (let group = begin >>> 5; group <= end >>> 5; ++group) {
+				this.values[page] |= 1 << group;
+				this.words[page * MAPPED_PAGE_WATCH_GROUP_COUNT + group] |= mappedWatchWordMask(group, begin, end);
+			}
+		}
+	}
+
 	public clear(): void {
 		this.values.fill(0);
 		this.words.fill(0);

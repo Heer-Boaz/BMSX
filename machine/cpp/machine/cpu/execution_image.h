@@ -178,7 +178,15 @@ struct Blua32ExecutionImage {
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
 	u32 staticEnd = 0;
-	ValueSlots constPool;
+	u32 constantBase = 0;
+	ConstValueSpan constPool;
+	bool constantsWatched = false;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	// Immutable during a job. Refresh only after a write to the guest bank
+	// and when the previous job no longer reads this compilation input.
+	ValueSlots workerConstants;
+	bool workerConstantsCurrent = false;
+#endif
 	std::vector<u32> globalSlots;
 	std::vector<u32> systemGlobalSlots;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

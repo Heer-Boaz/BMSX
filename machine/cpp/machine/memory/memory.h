@@ -51,6 +51,7 @@ public:
 	const CartridgeController& cartridgeController() const { return m_cartridgeController; }
 	u8* ramData() { return m_ram.data(); }
 	size_t ramByteCount() const { return m_ram.size(); }
+	MappedPageWriteWatches& ramWriteWatches() { return m_ramPageWriteWatches; }
 	const MappedPageWriteWatches& ramWriteWatches() const { return m_ramPageWriteWatches; }
 	void armRamViewWord(u32 offset) {
 		MappedPageBinding page{};

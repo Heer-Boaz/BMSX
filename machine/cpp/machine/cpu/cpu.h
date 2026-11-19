@@ -113,6 +113,7 @@ struct CpuRuntimeState {
 	std::vector<CpuRootValueState> systemGlobals;
 	std::vector<CpuRootValueState> globalSlots;
 	ExecutionDomainMask executionResidencyMask = 0;
+	std::array<u32, EXECUTION_DOMAIN_COUNT> constantPoolBases{};
 	u32 nextObjectHashId = 1;
 	bool hardHalted = false;
 	GcState gc;
@@ -335,12 +336,9 @@ private:
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
 	size_t collectionRootWordCount() const;
-	ValueSlots decodeConstantPool(
-		ExecutionDomainId executionDomainId,
-		u32 tableAddress,
-		u32 constantCount,
-		bool restoring
-	);
+	void decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddress, ValueSpan constants);
+	void releaseConstantPool(const Blua32ExecutionImage& image);
+	void invalidateConstantDependencies(u64 key, u32 firstWord, u32 endWord);
 	std::vector<u32> registerGlobalNames(
 		ExecutionDomainId executionDomainId,
 		u32 tableAddress,
@@ -348,7 +346,7 @@ private:
 		bool system,
 		bool restoring
 	);
-	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot executionBoot, bool restoring = false);
+	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot executionBoot, std::optional<u32> restoredPool = std::nullopt);
 	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
 	static MappedBusSignals executionBusSignalsForDomain(ExecutionDomainId executionDomainId);
 	void latchActiveExecutionImage(ExecutionDomainId domain, Blua32ExecutionImage* image);

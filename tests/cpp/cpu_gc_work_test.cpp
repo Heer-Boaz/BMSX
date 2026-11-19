@@ -49,10 +49,10 @@ struct Machine {
 };
 
 // Thread224 (64-byte header and the 160-byte class for 40 Value bytes plus two 48-byte frames)
-// + Closure16 + 14 machine Strings occupying 648 bytes
+// + Closure16, a 16-byte constant bank (three slots), 14 machine Strings occupying 648 bytes
 // and their 16 four-byte intern buckets. Each live String marks once,
 // and every issued object block and intern bucket is visited once.
-constexpr int bootBytes = 224 + 16 + 648 + 64;
+constexpr int bootBytes = 224 + 16 + 16 + 648 + 64;
 constexpr int bootMarkWork = 2 * 56 + 3 + 2 * 12 + 14;
 constexpr int bootCollectionWork = 4 * 56 + 3 + 1 + 3 * 12 + 2 * 14 + 16;
 
@@ -134,6 +134,49 @@ void allocationCollectionAndFailure() {
 	require(cpu.instructionBudgetRemaining == -1, "out-of-run reserve debt is transient and overwritten by the next run grant");
 }
 
+void constantBankUsesGuestRam() {
+	auto source = image();
+	writeInstruction(source.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 1);
+	writeInstruction(source.text, 1, static_cast<u8>(OpCode::ADD), 1, 0, 0);
+	writeInstruction(source.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+	source.functions[0].wordCount = 3;
+	for (bool scalar : {false, true}) {
+		Machine machine(source, scalar);
+		auto& cpu = machine.cpu;
+		const u32 base = cpu.captureRuntimeState().constantPoolBases[SYSTEM_EXECUTION_DOMAIN_ID + 1];
+		const u32 tag = base + 3 * sizeof(u32) + 1;
+		require(base >= RAM_BASE && machine.memory.readRamRecordWord(base + 4) == 12
+			&& machine.memory.readRamRecordByte(tag) == static_cast<u8>(ValueTag::Integer), "ROM loader installed the compact RAM bank");
+		cpu.runUntilDepth(0, 1000);
+		require(cpu.readFrameRegister(0, 1) == valueInteger(24), "LOADK and ADD use the decoded bank");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (!scalar) {
+			const auto* page = cpu.rootThread()->currentFrame->decodedPage;
+			require(page && page->nativeBlocks, "the bank's immediate has been specialized in a native block");
+		}
+#endif
+		// Change both the payload and the kind of the baked operand.
+		machine.memory.writeRamRecordWord(base + 4, 0x3fa00000u);
+		machine.memory.writeRamRecordByte(tag, static_cast<u8>(ValueTag::Float));
+		cpu.runUntilDepth(0, 1000);
+		require(cpu.readFrameRegister(0, 1) == valueFloatBits(0x40200000u), "a RAM write makes native code observe the new constant tag and payload");
+		const auto ram = machine.memory.captureSaveState();
+		const auto state = cpu.captureRuntimeState();
+		const auto occupied = cpu.heapAllocator().occupiedBytes();
+		machine.memory.writeRamRecordWord(base + 4, 0x40000000u);
+		cpu.runUntilDepth(0, 1000);
+		require(cpu.readFrameRegister(0, 1) == valueFloatBits(0x40800000u), "a published bank can change twice");
+		machine.memory.restoreSaveState(ram);
+		cpu.restoreRuntimeState(state);
+		cpu.runUntilDepth(0, 1000);
+		require(cpu.readFrameRegister(0, 1) == valueFloatBits(0x40200000u) && cpu.heapAllocator().occupiedBytes() == occupied,
+			"restore attaches the saved bank, without decoding the ROM or charging another allocation");
+		const auto startup = cpu.heapAllocator().occupiedBytes();
+		cpu.reset(); cpu.reset();
+		require(cpu.heapAllocator().occupiedBytes() == startup, "reset replaces rather than leaking the bank");
+	}
+}
+
 void allActivatedImagesAndUniqueGlobals() {
 	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image());
 	auto cartSource = image();
@@ -150,7 +193,7 @@ void allActivatedImagesAndUniqueGlobals() {
 	cpu.writeFrameExecution(0, 1, card1.functionAddresses[0], card1.textAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], system.textAddress);
 	cpu.collectHeap();
-	require(cpu.luaHeap().usedBytes() == bootBytes, "retired closures and readonly image payloads do not inflate the live pool");
+	require(cpu.luaHeap().usedBytes() == bootBytes + 24 + 8, "each activated card charges its allocated constant bank once");
 	cpu.instructionBudgetRemaining = 5;
 	cpu.luaHeap().collectRuntime();
 	// C=3+4+1, S=1, G=3; all activated images remain roots. The two
@@ -426,7 +469,7 @@ void highRetainedPacing() {
 int main() {
 	try {
 		canonicalPoolAndRootRanges(); explicitCollectionAndNoReplay();
-		allocationCollectionAndFailure(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
+		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";

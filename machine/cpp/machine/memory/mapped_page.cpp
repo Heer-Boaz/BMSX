@@ -2,6 +2,21 @@
 
 namespace bmsx {
 
+void MappedPageWriteWatches::armCodeRange(size_t first, size_t length) {
+	const size_t last = first + length - 1u;
+	const size_t firstPage = first >> MAPPED_PAGE_BYTE_SHIFT, lastPage = last >> MAPPED_PAGE_BYTE_SHIFT;
+	auto* groups = reinterpret_cast<u8*>(m_storage.get());
+	for (size_t page = firstPage; page <= lastPage; ++page) {
+		const u32 begin = page == firstPage ? (first & MAPPED_PAGE_BYTE_MASK) >> 2u : 0u;
+		const u32 end = page == lastPage ? (last & MAPPED_PAGE_BYTE_MASK) >> 2u : MAPPED_PAGE_BYTE_MASK >> 2u;
+		if (groups[page] == 0u) ++m_watchedPages;
+		for (u32 group = begin >> 5u; group <= end >> 5u; ++group) {
+			groups[page] |= static_cast<u8>(1u << group);
+			m_words[page * MAPPED_PAGE_WATCH_GROUP_COUNT + group] |= mappedWatchWordMask(group, begin, end);
+		}
+	}
+}
+
 void MappedPageWriteWatches::invalidateWatchedWrite(
 	size_t offset, size_t byteLength, u64 keyBase, MappedPageInvalidator* invalidator,
 	size_t firstPage, size_t lastPage, bool reportViews

@@ -185,7 +185,8 @@ void CPU::reset() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
 #endif
-	for (std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
+	for (auto& image : m_executionImagesByDomain) {
+		if (image) releaseConstantPool(*image);
 		image.reset();
 	}
 	m_stringPool.clearRomTables();
@@ -214,16 +215,9 @@ void CPU::installBootPrimitives() {
 	}
 }
 
-ValueSlots CPU::decodeConstantPool(
-	ExecutionDomainId executionDomainId,
-	u32 tableAddress,
-	u32 constantCount,
-	bool restoring
-) {
-	ValueSlots constPool(constantCount);
-	if (constantCount == 0u) {
-		return constPool;
-	}
+void CPU::decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddress, ValueSpan constPool) {
+	const u32 constantCount = static_cast<u32>(constPool.size());
+	if (constantCount == 0u) return;
 	m_executionAddressSpace.bindReadOnlyView(
 		executionDomainId,
 		tableAddress,
@@ -255,14 +249,19 @@ ValueSlots CPU::decodeConstantPool(
 				constPool.set(index, valueString(m_stringPool.resolveImageRecord(
 					executionDomainId,
 					readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET),
-					restoring
+					false
 				)));
 				break;
 			default:
 				throw BMSX_RUNTIME_ERROR("BLua32 constant tag is invalid.");
 		}
 	}
-	return constPool;
+}
+
+void CPU::releaseConstantPool(const Blua32ExecutionImage& image) {
+	if (image.constantBase == 0u) return;
+	m_heapAllocator.free(image.constantBase);
+	m_memory.invalidateRamWrite(image.constantBase & RAM_RECORD_WORD_MASK, image.constPool.size() * 5u);
 }
 
 std::vector<u32> CPU::registerGlobalNames(
@@ -306,8 +305,9 @@ std::vector<u32> CPU::registerGlobalNames(
 }
 
 std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
-	Blua32ExecutionBoot executionBoot, bool restoring
+	Blua32ExecutionBoot executionBoot, std::optional<u32> restoredPool
 ) {
+	const bool restoring = restoredPool.has_value();
 	const ExecutionDomainId executionDomainId = executionBoot.executionDomainId;
 	auto image = std::make_unique<Blua32ExecutionImage>();
 	image->executionDomainId = executionDomainId;
@@ -345,11 +345,12 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	if (!restoring) m_stringPool.activateRomTable(executionDomainId,
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
-	image->constPool = decodeConstantPool(
-		executionDomainId,
-		constantTableAddress,
-		constantCount, restoring
-	);
+	if (constantCount != 0u) {
+		image->constantBase = restoring ? *restoredPool : m_luaHeap.allocateRecord(constantCount * 5u, true, 0, 0);
+		const ValueSpan constants(m_memory, image->constantBase, image->constantBase + constantCount * 4u, constantCount);
+		if (!restoring) decodeConstantPool(executionDomainId, constantTableAddress, constants);
+		image->constPool = constants;
+	}
 	image->globalSlots = registerGlobalNames(
 		executionDomainId,
 		globalNameTableAddress,
@@ -447,6 +448,7 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 			}
 		});
 	}
+	if (previousImage) releaseConstantPool(*previousImage);
 	if (m_activeExecutionDomainId == activatedImage->executionDomainId) {
 		latchActiveExecutionImage(m_activeExecutionDomainId, activatedImage);
 		auto* frame = m_activeThread->currentFrame;
@@ -614,7 +616,28 @@ void CPU::invalidateMappedViews(u64 key, u32 firstWord, u32 endWord) {
 		address + endWord * 4u, m_activeThread);
 }
 
+void CPU::invalidateConstantDependencies(u64 key, u32 firstWord, u32 endWord) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const u64 first = key + firstWord * 4u, end = key + endWord * 4u;
+	for (auto& image : m_executionImagesByDomain) {
+		if (!image || !image->constantsWatched) continue;
+		const u32 base = image->constantBase;
+		if (end <= base || first >= base + image->constPool.size() * 5u) continue;
+		image->constantsWatched = false;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		image->workerConstantsCurrent = false;
+		if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle() && m_pendingNativeCompilation.image == image.get())
+			m_pendingNativeCompilation.invalidated = true;
+#endif
+		for (auto& [key, page] : image->decodedPages) page.retireNativeBlocks();
+	}
+#else
+	(void)key; (void)firstWord; (void)endWord;
+#endif
+}
+
 void CPU::invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) {
+	invalidateConstantDependencies(key, firstWord, endWord);
 	invalidateDecodedWords(key, firstWord, endWord);
 	if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 		invalidateDecodedWords(
@@ -954,6 +977,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if (m_executionImagesByDomain[index]) {
 			state.executionResidencyMask |= 1u << index;
+			state.constantPoolBases[index] = m_executionImagesByDomain[index]->constantBase;
 		}
 	}
 	state.nextObjectHashId = m_heap.nextObjectHashId();
@@ -1096,7 +1120,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if ((state.executionResidencyMask & (1u << index)) != 0u) {
 			const auto boot = m_executionAddressSpace.resolveDomain(static_cast<ExecutionDomainId>(index) - 1);
-			m_executionImagesByDomain[index] = activateExecutionImage(*boot, true);
+			m_executionImagesByDomain[index] = activateExecutionImage(*boot, state.constantPoolBases[index]);
 		}
 	}
 	m_systemImage = m_executionImagesByDomain[static_cast<size_t>(SYSTEM_EXECUTION_DOMAIN_ID + 1)].get();
@@ -2196,9 +2220,9 @@ dispatch_native_block: {
 				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
 				nativeState.cartridgeRom = m_memory.cartridgeController().romStorage(nativeState.cartridgeSlot);
 				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(nativeState.cartridgeSlot);
-				nativeState.state = {.registers = registers, .constants = IMAGE.constPool.view(), .frame = frame, .heap = &m_heap,
+				nativeState.state = {.registers = registers, .constants = IMAGE.constPool, .frame = frame, .heap = &m_heap,
 					.globalValues = m_globalValues.view(), .systemGlobalValues = m_systemGlobalValues.view(),
-					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.capacity()),
+					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.readWindow(FrameField::Top),
 					.ram = m_memory.ramData(), .stackOffset = thread.stackOffset(), .stackBytes = thread.backingByteLength(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
@@ -2379,7 +2403,7 @@ void CPU::unwindToDepth(int targetDepth, bool chargeCaptures) {
 size_t CPU::collectionRootWordCount() const {
 	size_t words = 3 * (m_systemGlobalNames.size() + m_globalNames.size());
 	for (const auto& image : m_executionImagesByDomain) {
-		if (image) words += 2 * image->constPool.capacity();
+		if (image) words += 2 * image->constPool.size();
 	}
 	return words;
 }
@@ -2997,7 +3021,7 @@ void CPU::markRoots(GcHeap& heap) {
 			continue;
 		}
 		Blua32ExecutionImage* image = executionImage.get();
-		for (size_t index = 0; index < image->constPool.capacity(); ++index) {
+		for (size_t index = 0; index < image->constPool.size(); ++index) {
 			heap.markValue(image->constPool.get(index));
 		}
 	}
