@@ -1,9 +1,8 @@
 import { valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua } from '../helpers/cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const level of [3] as const) for (const section of ['bss', 'data', 'rodata'] as const) {
 	test(`O${level}: ${section} declarations with equal labels retain their own lexical storage`, () => {
@@ -27,7 +26,7 @@ return *value, mem[inner], value == inner`;
 		}
 		assert.deepEqual([...symbolIndices].sort(), [0, 1]);
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(11), valueInteger(22), valueBool(false)]);
 	});
 }

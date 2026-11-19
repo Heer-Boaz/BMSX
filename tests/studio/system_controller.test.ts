@@ -43,7 +43,6 @@ import {
 	gxGpuPcrtcRegisterAddress,
 } from '../../machine/ts/spec/gx/pcrtc';
 import { decodeBlua32BootHeader } from '../../toolchain/ts/rompack/blua32_image';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { integerConstant } from '../../toolchain/ts/lua/number';
@@ -60,7 +59,7 @@ import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 import {
 	blua32TestFunctionAddress,
 	linkRawTestBlua32Pair,
@@ -463,7 +462,7 @@ return
 	runtime.boot();
 
 	assert.equal(runtime.machine.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 0);
-	assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	runGuestToHalt(runtime.machine.cpu, 1000);
 	assert.equal(runtime.machine.cpu.isCartridgeExecutionActive(), true);
 	assert.equal(runtime.machine.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 42);
 	assert.equal(runtime.machine.memory.readMappedU32LE(CART_RESET_MARKER_ADDRESS), 99);
@@ -476,7 +475,7 @@ return
 	assert.equal(runtime.machine.systemController.captureState().resetRequested, false);
 	assert.equal(runtime.frameScheduler.lastTickSequence, 0);
 
-	assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	runGuestToHalt(runtime.machine.cpu, 1000);
 	assert.equal(runtime.machine.cpu.isCartridgeExecutionActive(), true);
 	assert.equal(runtime.machine.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 42);
 	assert.equal(runtime.machine.memory.readMappedU32LE(CART_RESET_MARKER_ADDRESS), 99);
@@ -537,7 +536,7 @@ test('cartridge instruction fetch remains on the EXEC-latched socket when data s
 	runtime.boot();
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
 
-	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(runtime.machine.cpu, 100);
 	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(1)]);
 	assert.equal(runtime.machine.memory.readMappedU32LE(IO_CART_SELECT), 0);
 	assert.equal(runtime.machine.cpu.activeCartridgeSlot(), 1);
@@ -555,7 +554,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	runtime.boot();
 	const cpu = runtime.machine.cpu;
 
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
 	const selectedClosureResultName = cpu.stringPool.intern(CART_CLOSURE_RESULT_GLOBAL_NAME);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
@@ -576,7 +575,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(guest.linkedFunctionLocation(slot0Closure)!.domain, 0, 'entering a system exception frame does not replace the EXEC latch');
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
 	const slot1Closure = cpu.getGlobalByKey(selectedClosureName);
 	assert.notEqual(slot1Closure, slot0Closure, 'different execution domains own distinct canonical closures');
@@ -609,7 +608,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 		const saveBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(111));
 
@@ -645,13 +644,13 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	runtime.boot();
 	const cpu = runtime.machine.cpu;
 
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
 	const firstClosure = cpu.getGlobalByKey(selectedClosureName);
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	const secondClosure = cpu.getGlobalByKey(selectedClosureName);
 	assert.notEqual(firstClosure, secondClosure);
 	assert.deepEqual(cpu.captureClosureBinding(asClosure(firstClosure, cpu.gc)), cpu.captureClosureBinding(asClosure(secondClosure, cpu.gc)));
@@ -703,13 +702,13 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	runtime.boot();
 	const cpu = runtime.machine.cpu;
 
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
 	const dynamicClosure = cpu.getGlobalByKey(selectedClosureName);
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	const canonicalClosure = cpu.getGlobalByKey(selectedClosureName);
 	assert.notEqual(dynamicClosure, canonicalClosure);
 	assert.equal(cpu.captureClosureBinding(asClosure(dynamicClosure, cpu.gc)).functionAddress, cpu.captureClosureBinding(asClosure(canonicalClosure, cpu.gc)).functionAddress);
@@ -742,7 +741,7 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	applyRuntimeSaveState(
 		runtime,
 		decodeRuntimeSaveState(
@@ -761,7 +760,7 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	assert.equal(cpu.getGlobalByKey(selectedClosureName), restoredCanonical);
 	assert.equal(cpu.gc.tables.get(restoredTable, cpu.getGlobalByKey(selectedClosureName)), valueInteger(22));
 });

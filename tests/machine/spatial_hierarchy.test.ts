@@ -2,8 +2,8 @@ import { valueInteger, asClosure, valuePayload } from '../../machine/ts/machine/
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
+import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES } from '../helpers/world_cpu';
@@ -21,7 +21,7 @@ ${source}
 return first_failed_assertion`;
 	const { cpu, images } = createCartlibProgramHarness(source, { optLevel, modules: WORLD_CPU_MODULES });
 	const initialHeap = cpu.luaHeap.usedBytes();
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)], 'all guest spatial contract assertions must pass');
 	const allocated = cpu.luaHeap.usedBytes() - initialHeap;
 	const retained = cpu.collectTrackedHeapBytes() - initialHeap;

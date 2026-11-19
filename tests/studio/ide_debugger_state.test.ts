@@ -33,7 +33,7 @@ import { RuntimeTaskKind, RuntimeTaskQueue } from '../../hosts/common/runtime_ta
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { compileLuaSource } from '../helpers/cpu_test_harness';
+import { compileLuaSource, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { linkTestSystemBlua32, type TestBlua32Image } from '../helpers/blua32';
 import {
@@ -373,7 +373,7 @@ return actor, advance
 	const { runtime, state } = harness;
 	const cpu = runtime.machine.cpu;
 	cpu.reset();
-	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
+	runGuestToHalt(cpu, DEBUG_RUN_CYCLE_BUDGET);
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
 	const actor = valuePayload(values[0]);
@@ -514,7 +514,7 @@ end
 `, optLevel);
 	const functionAddress = image.image.header.bssAddress, codeAddress = functionAddress + 64 * 4;
 	const { cpu, memory } = runtime.machine;
-	cpu.reset(); assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
+	cpu.reset(); runGuestToHalt(cpu, DEBUG_RUN_CYCLE_BUDGET);
 	const values: Value[] = []; cpu.readCompletionValues(values);
 	const driver = asClosure(values[0], cpu.gc);
 	const guest = new SuspendedGuestSession(runtime);
@@ -756,7 +756,7 @@ for (const optLevel of [3] as const) for (const admission of ['quiescent', 'at-s
 test(`guest call admission roots prepare and recursive arguments across GC (O${optLevel}, ${admission})`, async t => {
 	const { runtime, state } = createDebuggerHarness('return function(...) return ... end', optLevel);
 	const cpu = runtime.machine.cpu;
-	cpu.reset(); assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
+	cpu.reset(); runGuestToHalt(cpu, DEBUG_RUN_CYCLE_BUDGET);
 	const values: Value[] = []; cpu.readCompletionValues(values);
 	const closure = asClosure(values[0], cpu.gc), guest = new SuspendedGuestSession(runtime);
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
@@ -777,7 +777,7 @@ test(`guest call admission roots prepare and recursive arguments across GC (O${o
 				valueString(cpu.stringPool.intern('last-owned-string'))] };
 		},
 	}, () => {}, completed => { finished = completed; }, assert.fail);
-	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
+	runGuestToHalt(cpu, DEBUG_RUN_CYCLE_BUDGET);
 	didExecuteRuntimeDebuggerPlan(state);
 	assert.equal(finished, true);
 	cpu.readCompletionValues(values);
@@ -790,7 +790,7 @@ test(`guest call admission roots prepare and recursive arguments across GC (O${o
 
 test('failed guest-call preparation releases its temporary allocation roots', async () => {
 	const { runtime, state } = createDebuggerHarness('return 0', 0), cpu = runtime.machine.cpu;
-	cpu.reset(); assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
+	cpu.reset(); runGuestToHalt(cpu, DEBUG_RUN_CYCLE_BUDGET);
 	const guest = new SuspendedGuestSession(runtime);
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);

@@ -9,7 +9,6 @@ import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io'
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { ActorRenderObservation } from '../../ide/workbench/contrib/actor_lab/render_observation';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as v from '../../machine/ts/machine/cpu/value';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
@@ -24,7 +23,7 @@ import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projecti
 import { readActorMethods } from '../../ide/workbench/contrib/actor_lab/methods';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { eventHistoryRuntime } from '../helpers/event_history';
-import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { afterTest } from '../helpers/test_cleanup';
 
 const WORLD = `
@@ -69,7 +68,7 @@ for (const optLevel of [3] as const) test(`actor32 O${optLevel}: typed borrows, 
 		update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	sources.currentBlua32Media = { ...sources.currentBlua32Media, cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols,
 		captureInstalledLuaSources(registry, images.cartSymbols!.metadata.compiledModulePaths), TEST_CARTRIDGE_CONTEXT_IDS[0]), null] };
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree();
 	afterTest(t, () => { tree.dispose(); sources.catalog.dispose(); });
 	const world = runtimeWorld(sources, guest, 0)!;

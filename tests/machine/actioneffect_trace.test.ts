@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 
@@ -15,7 +15,7 @@ import {
 	createTestBlua32PairCpu,
 	linkTestBlua32Pair,
 } from '../helpers/blua32';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { ACTIONEFFECT_SOURCE } from '../helpers/actioneffect_source_fixture';
 import { ACTIONEFFECT_PHASE_ENTRY } from '../helpers/actioneffect_phase_fixture';
 
@@ -272,7 +272,7 @@ function createActionEffectCpu(traceStatements: TraceStatementSelection): {
 
 test('ActionEffect fact stream preserves trigger and activity commits in producer order', () => {
 	const { cpu } = createActionEffectCpu('emit');
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const runPlain = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('run_plain')!), cpu.gc);
 	const runActivity = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('run_activity')!), cpu.gc);
 	const [channelValue, resultsValue, tagChecks, stateChecks,
@@ -373,7 +373,7 @@ test('ActionEffect fact stream preserves trigger and activity commits in produce
 	assert.equal(cpu.gc.tables.getInteger(channel, 4), valueInteger(30_075));
 
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(strings.find('dispose')!), cpu.gc), []);
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	const unselectedCycles = runCompletionClosure(cpu, runPlain, [valueInteger(10_000)]);
 	const unselectedActivityCycles = runCompletionClosure(cpu, runActivity, [valueInteger(10_000)]);
 	// Same workload and opcode prices on the pre-migration core (aa1a4f285).
@@ -396,7 +396,7 @@ test('ActionEffect activity facts observe the committed count and periodic lane'
 		committed.cart,
 	)).cpu;
 	commitCpu.installBootPrimitives();
-	assert.equal(commitCpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(commitCpu, 10_000_000);
 	const [observationList] = materializeCpuCompletionValues(commitCpu);
 	const observations = valuePayload(observationList);
 	const strings = commitCpu.stringPool;
@@ -424,13 +424,13 @@ test('source-visible ActionEffect fields obey real cartlib trigger, periodic, co
 	const compiled = compileActionEffectProgram('erase', ACTIONEFFECT_PHASE_ENTRY);
 	const cpu = createTestBlua32PairCpu(linkTestBlua32Pair(compiled.system, compiled.cart)).cpu;
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 });
 
 test('ordinary ActionEffect bytecode contains no trace channel or outcome labels', () => {
 	const { cpu, cart } = createActionEffectCpu('erase');
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 
 	const runPlain = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('run_plain')!), cpu.gc);
 	const runActivity = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('run_activity')!), cpu.gc);

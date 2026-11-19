@@ -2,7 +2,6 @@ import { valueInteger, valueBool, valueNil } from '../../machine/ts/machine/cpu/
 import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
 import { FunctionSummaryStore, TermKind } from '../../toolchain/ts/lua/semantic/function_summary';
@@ -11,7 +10,7 @@ import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/
 import { findImplicitSelfValueAt, findLuaLexicalBindingAt } from '../../toolchain/ts/lua/semantic/scope_query';
 import { declarationValueSource } from '../../toolchain/ts/lua/semantic/value_graph';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompiledLua } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompiledLua, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const PATH = 'receiver.lua';
 
@@ -166,7 +165,7 @@ return original:change(), original:read()`;
 		], { entrySource, optLevel: level, programDomain: 'system' });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [33, 11].map(valueInteger));
 	}
 });

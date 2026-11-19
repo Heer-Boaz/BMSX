@@ -7,7 +7,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { asClosure, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
@@ -32,7 +31,7 @@ import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const RAM_FUNCTION_ADDRESS = DYNAMIC_RAM_BASE + 0x1000;
 const RAM_CODE_ADDRESS = RAM_FUNCTION_ADDRESS + 0x100;
@@ -67,7 +66,7 @@ test('compact and padded ROM calls use admitted record spans with identical cycl
 			return readWord(address, signals, access);
 		};
 		const cycles = BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL] + 2 * (BASE_CYCLES[OpCode.RET] + 1) + BASE_CYCLES[OpCode.K1];
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Halted);
+		runGuestToHalt(cpu, cycles);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 		assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(memory.readBusFaultSequence(), 0);
@@ -95,7 +94,7 @@ test('WIDE and sequential fetch cross function-record metadata boundaries', () =
 	}, RAM_CODE_FIXTURE_BYTES);
 	const { cpu } = createTestSystemCpu(image);
 
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 	assert.equal(cpu.getFrameDepth(), 0);
 });
@@ -162,14 +161,14 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`the CPU addresses
 	writeInstruction(ramCode, 3, OpCode.RET, 0, 2, 0, 0);
 	writeRamFunction(memory, ramCode, 1);
 
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	const closures = materializeCpuCompletionValues(cpu).map(value => asClosure(value, cpu.gc));
 	assert.equal(cpu.captureClosureBinding(closures[0]).functionAddress, RAM_FUNCTION_ADDRESS);
 	assert.equal(cpu.captureClosureBinding(closures[1]).functionAddress, RAM_FUNCTION_ADDRESS);
 	const closure = closures[1];
 
 	cpu.beginCompletionCall(closure);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 
 	const readMappedBusU32LE = memory.readMappedBusU32LE.bind(memory);
@@ -179,7 +178,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`the CPU addresses
 		return readMappedBusU32LE(addr, busSignals, faultAccess);
 	};
 	cpu.beginCompletionCall(closure);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 	assert.equal(instructionReadCount, 0);
 
@@ -189,7 +188,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`the CPU addresses
 	memory.writeBytes(RAM_CODE_ADDRESS, replacement);
 
 	cpu.beginCompletionCall(closure);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 	assert.equal(instructionReadCount, 2);
 });

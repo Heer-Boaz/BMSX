@@ -14,6 +14,7 @@ import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kin
 import { IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('helper continuations are predeclared entries and read their own current Value bank', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -346,7 +347,7 @@ test('linked counted stores need only one cycle, then stop or block before the f
 		}
 		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, IO_BASE + 0x5000); frame.registers.setInteger(7, 99);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		assert.equal(cpu.runUntilDepth(0, prefixCycles + 1), RunResult.Halted);
+		runGuestToHalt(cpu, prefixCycles + 1);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.STORE_MEM_WORDS]);
 		const chargedBeforeWait = prefixCycles + 1 - cpu.instructionBudgetRemaining;
 		assert.equal(frame.pc, pc + 4 * INSTRUCTION_BYTES); assert.equal(cpu.stalledMemoryWriteAddress(), IO_BASE + 0x5000); assert.deepEqual(port.writes, []);

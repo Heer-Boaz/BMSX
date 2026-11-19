@@ -1,7 +1,6 @@
 import { ValueTag, asClosure, numberToHost } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { inputFocus } from '../../ide/input/focus';
@@ -15,7 +14,7 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { eventHistoryRuntime } from '../helpers/event_history';
 import { createLiveStudioFixture } from '../helpers/live_studio';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('World revisions reconcile admitted membership and parentage without rebuilding for motion', () => {
 	const { images } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
@@ -39,7 +38,7 @@ function rename() other.id = 'a renamed actor' end
 function clear_world() world:clear() end
 return true`, { optLevel: 3, modules: WORLD_CPU_MODULES });
 	const { runtime, cpu } = eventHistoryRuntime(images);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const guest = new SuspendedGuestSession(runtime), outliner = new ActorWorldOutliner(), tree = outliner.tree;
 	const world = guest.global('subject_world');
 	const parent = guest.identityScalar(guest.global('parent'), ValueTag.Table), child = guest.identityScalar(guest.global('child'), ValueTag.Table),

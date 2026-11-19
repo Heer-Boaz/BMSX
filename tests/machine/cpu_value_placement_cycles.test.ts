@@ -11,6 +11,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
 	for (const [op, operand, placed] of [[OpCode.LOADNIL, 0, 0], [OpCode.LOADNIL, 128, 128],
@@ -94,7 +95,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const second = cpu.rootThread.currentFrame!.registers.getClosure(3, cpu.gc);
 		assert.notEqual(ClosureRecord.captureAddress(cpu.memory, first, 0), ClosureRecord.captureAddress(cpu.memory, first, 1));
 		assert.equal(ClosureRecord.captureAddress(cpu.memory, first, 0), ClosureRecord.captureAddress(cpu.memory, second, 0));
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
+		runGuestToHalt(cpu, 1);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - 2 - 2, 'two distinct open captures, plus two received closure values');
 		assert.equal(isOpen(cpu.memory, ClosureRecord.captureAddress(cpu.memory, first, 0)), false);
 	});
@@ -224,7 +225,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const frame = cpu.rootThread.currentFrame!;
 		frame.enterException(false);
 		const capture = ClosureRecord.captureAddress(cpu.memory, frame.registers.getClosure(2, cpu.gc), 0);
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
+		runGuestToHalt(cpu, 1);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RFE] - 1);
 		assert.equal(isOpen(cpu.memory, capture), false);
 	});

@@ -2,14 +2,13 @@ import { valueInteger, valueBool, valueIsTable, valuePayload } from '../../machi
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const sources = [
 	{ path: 'common', source: 'return { order = 0, calls = 0 }' },
@@ -53,14 +52,14 @@ for (const optLevel of [3] as const) test(`preloads use the existing dependency/
 	]);
 	const image = linkTestSystemBlua32(compiled);
 	const { cpu } = createTestSystemCpu(image);
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(213), valueInteger(0), valueBool(true)]);
 	const exported = cpu.getSystemGlobalByKey(cpu.stringPool.find(buildModuleExportSlotName('common', []))!);
 	const common = valuePayload(exported);
 	// Read the retained exported object through the compiler-owned module slot.
 	assert.ok(valueIsTable(exported));
 	cpu.beginCompletionCallInExecutionDomain(-1, image.vectors.initFunctionAddress);
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.gc.tables.getStringKey(common, cpu.stringPool.find('calls')!), valueInteger(2134));
 	assert.equal(cpu.gc.tables.getStringKey(common, cpu.stringPool.find('order')!), valueInteger(213), 'init does not repeat module constructors');
 });
@@ -106,6 +105,6 @@ return component.new({}, 'early')` },
 		],
 	});
 	assert.ok(cart.staticModulePaths.indexOf('fixture/observation') < cart.staticModulePaths.indexOf('fixture/game'));
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(2), valueBool(true), valueBool(true)]);
 });

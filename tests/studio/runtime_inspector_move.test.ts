@@ -25,6 +25,7 @@ import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/even
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { afterTest } from '../helpers/test_cleanup';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function inspectorWorkbench(t: TestContext, images: ReturnType<typeof compileEventHistoryFixture>) {
 	const { runtime, sources, cpu } = eventHistoryRuntime(images), host = createHostFrameFixture(runtime);
@@ -40,7 +41,7 @@ function inspectorWorkbench(t: TestContext, images: ReturnType<typeof compileEve
 		await editor.shutdown(); clearBackgroundTasks(); host.audio.dispose(); host.input.dispose();
 	});
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed');
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const firstPart = editor.editorParts.createDocument({ requestedBounds: { left: 0, top: 32, right: 384, bottom: 290 } });
 	const secondPart = editor.editorParts.createDocument({ requestedBounds: { left: 400, top: 32, right: 800, bottom: 290 } });
 	const update = () => editor.update(0);
@@ -138,7 +139,7 @@ return true`;
 test('Events move retains actual selected evidence and reading position in a fresh pane until history clears', t => {
 	const f = inspectorWorkbench(t, compileEventHistoryFixture()), history = f.editor.events;
 	const emit = asClosure(f.cpu.getGlobalByKey(f.cpu.stringPool.find('emit_for_viewer')!), f.cpu.gc);
-	f.cpu.beginCompletionCall(emit, [valueInteger(80)]); assert.equal(f.cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	f.cpu.beginCompletionCall(emit, [valueInteger(80)]); runGuestToHalt(f.cpu, 10_000_000);
 	const source = new EventViewerInput(history), receiver = new EventViewerInput(history);
 	f.firstGroup.openEditor(source); f.secondGroup.openEditor(receiver); f.firstGroup.activate(source.id); f.update();
 	source.filter = 'probe'; f.update(); source.selected = 20;

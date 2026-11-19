@@ -3,8 +3,7 @@ import { test } from 'node:test';
 import { prepareLuaArguments, prepareLuaLiteral } from '../../ide/runtime/lua_literal';
 import { valueString, valueInteger, valueFloat, valueNil, valueBool, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource } from '../helpers/cpu_test_harness';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { compileLuaSource, runGuestToHalt } from '../helpers/cpu_test_harness';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 
 test('literal submission parses without guest execution, then materializes real values', () => {
@@ -27,7 +26,7 @@ test('literal submission parses without guest execution, then materializes real 
 test('literal submission keeps exactly the compiler Integer/Float words, including wrapped and negated literals', () => {
 	const text = 'nil, false, 16777217, 2.0, -0.0, -2147483648, 0xffffffff, -0xffffffff, 0x1p-149, 1e30';
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource(`return ${text}`, 'numeric-literals.lua')));
-	assert.equal(cpu.runUntilDepth(0, 10000), RunResult.Halted);
+	runGuestToHalt(cpu, 10000);
 	const expected: Value[] = []; cpu.readCompletionValues(expected);
 	const state = cpu.captureRuntimeState();
 	const actual = prepareLuaArguments(text).map(literal => literal(cpu));

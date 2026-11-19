@@ -18,6 +18,7 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function source(operation: OpCode = OpCode.HALT, wide = false) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -123,7 +124,7 @@ test('failed allocation retains the collection debit, not pending request bytes'
 	cpu.instructionBudgetRemaining = 1;
 	assert.throws(() => cpu.luaHeap.admit(cpu.luaHeap.capacity() + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
 	assert.equal(cpu.instructionBudgetRemaining, 1 - bootCollectionWork); assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
-	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted); assert.equal(cpu.instructionBudgetRemaining, -1);
+	runGuestToHalt(cpu, 1); assert.equal(cpu.instructionBudgetRemaining, -1);
 });
 
 test('all activated image constants and unique namespace slots remain priced across restore', () => {

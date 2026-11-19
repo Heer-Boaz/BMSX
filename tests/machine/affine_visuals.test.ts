@@ -4,10 +4,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const checks = `local assertion_failed
 local assert<const> = function(condition, message)
@@ -87,7 +86,7 @@ assert(named.animation=='active' and named.imgid=='other',
  'ordinary named-animation selection did not use the admitted animation owner')
 return true
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 
@@ -128,7 +127,7 @@ assert(second.members.inherited.ox==9 and second.members.inherited.oy==12,
  'instance writes mutated the shared prefab placement')
 return true
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 
@@ -172,7 +171,7 @@ part:clear_region()
 assert(part.draw==layered.draw_visual,'clearing a region discarded the concrete producer')
 return true
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 
@@ -218,7 +217,7 @@ kernel=function(count)
 end
 return true
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 256);
@@ -273,7 +272,7 @@ assert(nonspatial._hierarchy==nil and nonspatial:get_component(visual)~=nil,
  'generic custom geometry fabricated a spatial capability')
 return assertion_failed
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const [failure] = materializeCpuCompletionValues(cpu);
 		assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 	});
@@ -344,7 +343,7 @@ assert(draw.word_count==4 and output[1]==0x62302010 and output[2]==0x00080006 an
  'ordinary highlights stopped using the native rectangle packet')
 return assertion_failed
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const [failure] = materializeCpuCompletionValues(cpu);
 		assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 	});
@@ -412,7 +411,7 @@ return {
  texture=function() return texture end,
 }`,
 	}] });
-	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 20_000_000);
 	const [failure] = materializeCpuCompletionValues(cpu);
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 	const sources = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('sources')!));
@@ -455,7 +454,7 @@ probe = {
  end,
 }
 `, { optLevel: 3, modules });
-	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 20_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	for (const lane of ['translation', 'affine']) {
 		const kernel = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(lane)!), cpu.gc);

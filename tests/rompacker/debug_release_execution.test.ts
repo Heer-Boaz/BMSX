@@ -7,13 +7,12 @@ import { test } from 'node:test';
 import { buildRomBlua32Tail } from '../../scripts/rompacker/rombuilder';
 import { compileCart } from '../../scripts/rompacker/compile';
 import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { decodeBlua32RomImage } from '../../toolchain/ts/rompack/blua32_image';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
 import { createTestBlua32PairCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { afterTest } from '../helpers/test_cleanup';
 
 for (const optLevel of [3] as const) test(`packer debug metadata cannot change trace erasure, results or cycles (O${optLevel})`, async t => {
@@ -39,7 +38,7 @@ return count`);
 		const rom = new Uint8Array(await readFile(join(root, 'out', `fixture${debug ? '.debug' : ''}.rom`)));
 		const image = decodeBlua32RomImage(rom, CART_ROM_BASE)!;
 		const { cpu } = createTestBlua32PairCpu({ systemRomBytes: system.romBytes, cartRomBytes: rom });
-		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(5050)]);
 		assert.ok(!image.constants.includes('erased-payload'));
 		builds.push({ codeBytes: image.textBytes.length, constants: image.constants, cycles: 100_000 - cpu.instructionBudgetRemaining, heap: cpu.luaHeap.usedBytes() });

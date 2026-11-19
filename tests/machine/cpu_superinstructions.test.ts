@@ -1,3 +1,4 @@
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
@@ -76,7 +77,7 @@ test('normal decoded dispatch preserves the guest budget boundary inside a fused
 	assert.equal(cpu.lastPc, entryPc + 2 * INSTRUCTION_BYTES);
 	assert.equal(cpu.readFrameRegister(0, 2), valueInteger(2));
 
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	assert.equal(cpu.readFrameRegister(0, 3), valueInteger(3));
 	assert.equal(cpu.readFrameRegister(0, 4), valueInteger(4));
 	assert.equal(cpu.readFrameRegister(0, 5), valueInteger(8));

@@ -1,9 +1,8 @@
-import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 // Real component/World construction; the compiler dependency records its
 // admission inputs. Actual binding evaluation belongs to input/runtime tests.
@@ -51,6 +50,6 @@ assert(a:get_component(input,'controls').owner==a
  'input identity does not belong to the final World object')
 world:clear()
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	});
 }

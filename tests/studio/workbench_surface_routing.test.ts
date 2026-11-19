@@ -30,7 +30,6 @@ import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/edi
 import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { eventClipboardText } from '../../ide/workbench/contrib/events/presentation';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 import { InputChannel } from '../../hosts/common/input/channel';
@@ -62,7 +61,7 @@ import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegi
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { linkTestSystemBlua32, type TestBlua32Image } from '../helpers/blua32';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { LuaTableFieldKind } from '../../toolchain/ts/lua/syntax/ast';
 import { RemoteInput } from '../../hosts/common/input/remote';
 import { HostUiInput } from '../../hosts/common/input/ui';
@@ -138,11 +137,11 @@ function eventFixture(t: TestContext) {
 	eventImages ??= compileEventHistoryFixture();
 	const observed = eventHistoryRuntime(eventImages), f = fixture(t, undefined, observed);
 	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
-	assert.equal(observed.cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(observed.cpu, 10_000_000);
 	const emitFunction = asClosure(observed.cpu.getGlobalByKey(observed.cpu.stringPool.find('emit_for_viewer')!), observed.cpu.gc);
 	const emit = (count: number) => {
 		observed.cpu.beginCompletionCall(emitFunction, [valueInteger(count)]);
-		assert.equal(observed.cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(observed.cpu, 10_000_000);
 	};
 	emit(4);
 	const group = f.editor.editorParts.main.activeGroup, input = new EventViewerInput(f.editor.events);

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, asInteger, isNil, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createBlua32SourceImage } from '../../ide/runtime/sources';
@@ -13,7 +12,7 @@ import { findStateMachineState, inspectStateMachineState, readStateMachineDefini
 import { compileCartlibProgram } from '../helpers/cartlib_cpu';
 import { eventHistoryRuntime } from '../helpers/event_history';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
-import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { afterTest } from '../helpers/test_cleanup';
 
 const ENTRY = `
@@ -65,7 +64,7 @@ for (const optLevel of [3] as const) test(`behavior32 O${optLevel}: real cartlib
 	const guest = new SuspendedGuestSession(runtime);
 	assert.equal(readStateMachineInstances(sources, guest, 0).available, false);
 	assert.equal(readBehaviorDefinitions(sources, guest, 0, 'cartlib/actioneffects/actioneffect_component').available, false);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const before = [cpu.luaHeap.usedBytes(), runtime.machine.scheduler.currentNowCycles(), cpu.instructionBudgetRemaining];
 	assert.equal(readStateMachineInstances(sources, guest, 1).available, false);
 	assert.equal(readBehaviorDefinitions(sources, guest, 1, 'cartlib/actioneffects/actioneffect_component').available, false);

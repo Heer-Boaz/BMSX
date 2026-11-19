@@ -2,9 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { valueBool } from '../../machine/ts/machine/cpu/value';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MAX_OP_BITS, packInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
@@ -81,7 +80,7 @@ local small<const>, small_reason<const> = pcall(collision.collides, a, b)
 assert(not small and string.find(small_reason, 'GEO overlap workspace capacity exceeded', 1, true))
 return true
 `, { modules });
-	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 });
 

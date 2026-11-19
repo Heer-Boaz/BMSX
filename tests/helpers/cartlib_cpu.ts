@@ -1,4 +1,6 @@
+import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
@@ -6,7 +8,10 @@ import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/tr
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from './blua32';
 import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
-import { parseLuaChunk } from './cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from './cpu_execution';
+import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
+import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
 
 /** Real cartlib/compiler/CPU and BIOS math; no host, ICU or world scheduler. */
 type CartlibProgramOptions = {
@@ -205,4 +210,43 @@ export function createCartlibProgramHarness(cartEntrySource: string, options: Ca
 	const { cpu } = createTestBlua32PairCpu(images);
 	cpu.installBootPrimitives();
 	return { cpu, images, cart };
+}
+
+/**
+ * A test ROM, as emulator test suites use: the cases of a test file are guest
+ * functions in one cart, compiled and booted once. Every case starts from the
+ * same post-boot checkpoint, so cases stay as isolated as separate carts.
+ * Cases are added before the first one runs.
+ */
+export function createCartlibCaseRom(prelude: string, options: CartlibProgramOptions = {}) {
+	const bodies: string[] = [];
+	let booted: { cpu: CPU; runner: number; checkpoint: ReturnType<typeof captureCpuCheckpoint> } | undefined;
+	const rom = {
+		add(body: string): number {
+			assert.equal(booted, undefined, 'cases are added before the first case runs');
+			return bodies.push(body);
+		},
+		/** Register a guest case as a node test that halts within the budget. */
+		test(name: string, body: string, budget = 20_000_000): void {
+			const index = rom.add(body);
+			test(name, () => { rom.run(index, budget); });
+		},
+		run(index: number, budget = 20_000_000): CPU {
+			if (booted === undefined) {
+				const cases = bodies.map(body => `function()\n${body}\nend,`).join('\n');
+				const { cpu } = createCartlibProgramHarness(`${prelude}
+local test_cases<const> = {
+${cases}
+}
+return function(index) test_cases[index]() end
+`, options);
+				assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+				assert.equal(cpu.readLuaFaultReasonWord(), 0, 'the case ROM booted without a Lua fault');
+				booted = { cpu, runner: asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc), checkpoint: captureCpuCheckpoint(cpu) };
+			} else restoreCpuCheckpoint(booted.cpu, booted.checkpoint);
+			runCompletionClosure(booted.cpu, booted.runner, [valueInteger(index)], budget);
+			return booted.cpu;
+		},
+	};
+	return rom;
 }

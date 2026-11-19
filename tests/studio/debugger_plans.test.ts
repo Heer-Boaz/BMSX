@@ -14,7 +14,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function controlPlan(
 	events: string[],
@@ -166,7 +166,7 @@ function completionFixture() {
 		exceptionFunctionIndex: 2,
 	});
 	const { cpu } = createTestSystemCpu(image);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(cpu, 100);
 	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
 	return { cpu, closure };
 }
@@ -247,7 +247,7 @@ function probe()
 end
 halt_until_irq`, 0));
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runGuestToHalt(cpu, 100000);
 	const thread = cpu.activeThread, depth = cpu.getFrameDepth();
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));
 	const plans = new RuntimeDebuggerPlanManager();

@@ -2,7 +2,6 @@ import { valueInteger, valueNil, valueBool } from '../../machine/ts/machine/cpu/
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
@@ -18,10 +17,7 @@ import {
 	linkTestBlua32Pair,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
-import {
-	materializeCpuCompletionValues,
-	parseLuaChunk,
-} from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const compileSystem = (
 	entrySource: string,
@@ -91,7 +87,7 @@ test('init annotations have no cold semantics and tooling invokes modules in dep
 	assert.equal(image.image.header.initFunctionAddress, image.vectors.initFunctionAddress);
 	assert.deepEqual(image.symbols.initParticipants, compiled.metadata.initParticipants);
 	const { cpu } = createTestSystemCpu(image);
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('trace')), valueInteger(0));
 
@@ -99,7 +95,7 @@ test('init annotations have no cold semantics and tooling invokes modules in dep
 		SYSTEM_EXECUTION_DOMAIN_ID,
 		image.vectors.initFunctionAddress,
 	);
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('trace')), valueInteger(1234));
 });
 
@@ -131,14 +127,14 @@ test('an explicit source init call runs once cold and the tooling vector invokes
 	const compiled = compileSystem(source);
 	const image = linkTestSystemBlua32(compiled);
 	const { cpu } = createTestSystemCpu(image);
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [1, 99].map(valueInteger));
 
 	cpu.beginCompletionCallInExecutionDomain(
 		SYSTEM_EXECUTION_DOMAIN_ID,
 		image.vectors.initFunctionAddress,
 	);
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('marker')), valueInteger(2));
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueNil()], 'preparation returns exactly one nil, not the participant result');
 });
@@ -180,7 +176,7 @@ return cold and first, *carried == 16 and *runs == 2 and captured == 6`;
 				cartRomBytes: image.cartRomBytes.subarray(0, image.cartImage.address - CART_ROM_BASE + image.cartImage.bytes.byteLength),
 			});
 		}
-		assert.equal(machine.cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		runGuestToHalt(machine.cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(machine.cpu), [true, true].map(valueBool));
 	});
 }
@@ -193,10 +189,10 @@ test('module initialization alone publishes a callable public preparation sequen
 	const image = linkTestSystemBlua32(compiled);
 	assert.notEqual(image.image.header.initFunctionAddress, 0);
 	const { cpu } = createTestSystemCpu(image);
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.image.header.initFunctionAddress);
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueNil()]);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('constructed')), valueInteger(1));
 });
@@ -221,10 +217,10 @@ test('cart init vector invokes retained cart-global closures', () => {
 	);
 	const image = linkTestBlua32Pair(system, cart);
 	const { cpu } = createTestBlua32PairCpu(image);
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('value')), valueInteger(2));
 	cpu.beginCompletionCallInExecutionDomain(0, image.cartVectors.initFunctionAddress);
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('value')), valueInteger(4));
 });
 

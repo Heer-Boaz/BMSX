@@ -1,7 +1,6 @@
-import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('FSM entry constructs timeline targets before autoplay, including compound and concurrent entry', () => {
 	const { cpu } = createCartlibProgramHarness(`
@@ -84,5 +83,5 @@ assert(order[#order - 1] == 'entry' and order[#order] == 'sample', 'reentry samp
 assert(not transport:get('parent').playing and not transport:get('child').playing
 	and not transport:get('parallel').playing, 'compound exit retained child playback')
 `);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 });

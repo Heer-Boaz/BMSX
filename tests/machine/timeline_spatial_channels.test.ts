@@ -3,10 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { IO_APU_SAMPLE_SEQUENCE, IO_SYS_TIME_MS } from '../../machine/ts/spec/bmsx/io';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const modules = [...WORLD_CPU_MODULES, ...['cartlib/apu', 'cartlib/world/base_system', 'cartlib/timeline/timeline_system'].map(path => ({
 	path, source: readFileSync(`${path}.lua`, 'utf8'),
@@ -72,7 +71,7 @@ world:clear()
 return true
 end)
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const result = materializeCpuCompletionValues(cpu);
 		assert.equal(result[0], valueBool(true), result[0] === valueBool(true) ? undefined : cpu.stringPool.toString(asStringId(result[1])));
 		assert.equal(result[1], valueBool(true));
@@ -115,7 +114,7 @@ world:clear()
 return true
 end)
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const result = materializeCpuCompletionValues(cpu);
 		assert.equal(result[0], valueBool(true), result[0] === valueBool(true) ? undefined : cpu.stringPool.toString(asStringId(result[1])));
 		assert.equal(result[1], valueBool(true));
@@ -166,7 +165,7 @@ assert(pose.ox==0 and second.ox==10, 'explicit play binding override was not adm
 owner.timelines:play('bound')
 assert(pose.ox==0 and second.ox==10, 'explicit play override replaced the retained definition receivers')
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	});
 
 	test(`nested mixed-domain groups retain unsampled frame coefficients while time channels advance (O${optLevel})`, () => {
@@ -194,7 +193,7 @@ owner.timelines:tick_gameplay(5)
 observed[5]=pose.ox
 observed[6]=pose.oy
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const observed = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('observed')!));
 		assert.deepEqual(Array.from({ length: 6 }, (_, index) => numberToHost(cpu.gc.tables.getInteger(observed, index + 1))),
 			[7, 1.25, 10, 2.5, 17, 3.75]);
@@ -239,7 +238,7 @@ assert(leaf.ox==10 and pose.ox==3, 'mutable intermediate path redirected an admi
 local rebound<const> = pcall(function() owner.timelines:play('leaf') end)
 assert(not rebound, 'explicit rebind admitted a newly protected receiver')
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	});
 
 	test(`visual groups and scalar property channels invoke their owning invalidation writers (O${optLevel})`, () => {
@@ -267,7 +266,7 @@ local denied<const> = pcall(function()
 end)
 assert(not denied and visual.order==2, 'raw visual order write bypassed its owner')
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	});
 
 	test(`whole-program phase scheduling precedes physics and delays cross-phase reentrant playback (O${optLevel})`, () => {
@@ -309,7 +308,7 @@ local mixed<const> = pcall(function()
 end)
 assert(not mixed, 'nested sequence acquired a second incompatible execution phase')
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	});
 	test(`manual clock transport remains exclusive when attached to an updating World (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
@@ -345,7 +344,7 @@ manual.timelines:tick_gameplay(20)
 observed[10]=manual.physical
 observed[11]=manual.presentation
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const observed = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('observed')!));
 		assert.deepEqual(Array.from({ length: 11 }, (_, index) => numberToHost(cpu.gc.tables.getInteger(observed, index + 1))),
 			[20, 20, 20, 20, 0, 0, 0, 40, 40, 20, 20],
@@ -405,7 +404,7 @@ probe={
 	end,
 }
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const step = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('step')!), cpu.gc);
 		const space = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('space')!), cpu.gc);
@@ -444,7 +443,7 @@ owner.timelines:define('loop',{phase='physical',duration_ms=1000,playback_mode='
 owner.timelines:play('loop')
 probe={run=function(count) for index=1,count do owner.timelines:tick_gameplay(1) end end}
 `, { optLevel: 3, modules });
-	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 20_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc);
 	runCompletionClosure(cpu, run, [valueInteger(64)]);

@@ -2,14 +2,13 @@ import { asClosure, numberToHost, valueBool, valueInteger, valuePayload } from '
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import { packModelAsset } from '../../toolchain/ts/rompack/model_asset';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const model: GLTFModel = { name: 'fixture', meshes: [{ primitives: [{
 	positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
@@ -132,7 +131,7 @@ probe = {
 
 for (const optLevel of [3] as const) test(`static model pass consumes World membership and retained affine/resource generations (O${optLevel})`, t => {
 	const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
 	const method = (name: string) => asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(name)), cpu.gc);
 	runCompletionClosure(cpu, method('check'), []);
@@ -158,7 +157,7 @@ return {model=function(id) return record end,
 	const { cpu } = createCartlibProgramHarness(source, { optLevel,
 		modules: [...modules, { path: 'cartlib/rom_dir', source: ramDirectory }] });
 	cpu.memory.writeBytes(address, bytes);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
 	const packet = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('packet')), cpu.gc);
 	runCompletionClosure(cpu, packet, []);

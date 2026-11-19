@@ -19,7 +19,6 @@ import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { parseLuaFieldValueEdit } from '../../ide/language/lua/field_value_edit';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { ANIMATION_TRACK_TEMPLATES } from '../../ide/workbench/contrib/animation/track_templates';
 import { inputFocus } from '../../ide/input/focus';
@@ -40,6 +39,7 @@ import { pointerHover } from '../../ide/input/pointer/hover';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { afterTest } from '../helpers/test_cleanup';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'parent.lua', location: { kind: 'workspace' as const, path: 'parent.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'parent.lua', source: { resid: 'parent.lua', type: 'lua' as const } };
 const child = "return {duration_ms=100, tracks={{kind='value',interpolation='linear',path={'x'},keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}}";
@@ -189,7 +189,7 @@ test('clip trim edits the written parent once, preserves child time and imported
 			timelines:define('clip',require('parent')); timelines:play('clip')
 			timelines:seek_time('clip',50); assert(owner.x==50)
 		`, { optLevel, modules: [{ path: 'parent', source: model.buffer.getText() }, { path: 'child', source: child }] });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	}
 	model.undo();
 	assert.equal(model.buffer.getText(), source);
@@ -249,7 +249,7 @@ test('a multiline clip trim inserts missing transport fields as one syntax batch
 				timeline:define('clip',require('parent')); timeline:play('clip')
 				timeline:seek_time('clip',50); assert(owner.x==50)
 			`, { optLevel, modules: [{ path: 'parent', source: changed }, { path: 'child', source: child }] });
-			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+			runGuestToHalt(cpu, 20_000_000);
 		}
 		model.undo(); assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
 		model.redo(); assert.equal(model.buffer.getText(), changed);
@@ -287,7 +287,7 @@ test('all authored track templates compile through the actual native program and
 		const { cpu } = createCartlibProgramHarness("local program=require('cartlib/timeline/program'); local result=program.compile(require('parent')); assert(result.has_evaluation_work)", {
 			optLevel, modules: [{ path: 'parent', source }],
 		});
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	}
 });
 

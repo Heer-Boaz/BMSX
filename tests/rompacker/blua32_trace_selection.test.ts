@@ -1,14 +1,13 @@
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { traceSinkFieldName } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { createTestBlua32PairCpu, writeTestBlua32Rom } from '../helpers/blua32';
-import { materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('image builders select channels independently per image and across module boundaries', () => {
 	const systemSource = `module<entry>
@@ -70,7 +69,7 @@ return producer
 		cartRomBytes: writeTestBlua32Rom(cart.linked),
 	});
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('system_observed')!), valueInteger(3));
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
 });

@@ -8,8 +8,8 @@ import { AnimationKeyViewport } from '../../ide/workbench/contrib/animation/key_
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { AnimationAuthoring } from '../../ide/workbench/contrib/animation/authoring';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
 const source = `return { duration_ms=100, tracks={
@@ -35,7 +35,7 @@ test('written cubic geometry agrees with the native Hermite slopes at O0 and O3'
 			timelines:define('curve',require('animation')); timelines:play('curve')
 			timelines:seek_time('curve',25); assert(owner.x==43.75)
 		`, { optLevel, modules: [{ path: 'animation', source }] });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	}
 });
 
@@ -48,7 +48,7 @@ test('a step channel has no authored value before its first key, as in the nativ
 			timeline:seek_time('step',25); assert(owner.x==17)
 			timeline:seek_time('step',75); assert(owner.x==10)
 		`, { optLevel, modules: [{ path: 'animation', source }] });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	}
 	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], -1, document);
@@ -109,7 +109,7 @@ test('cubic display requires the slopes used by native segments, not unused endp
 				local timelines=component.new(owner,{clock_mode='manual'}); timelines:define('curve',require('animation')); timelines:play('curve')
 				timelines:seek_time('curve',25); assert(owner.x==${value})
 			`, { optLevel, modules: [{ path: 'animation', source }] });
-			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+			runGuestToHalt(cpu, 20_000_000);
 		}
 	}
 	const missing = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile("return {tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0},{time_ms=1,value=1}}}}}", resource)], [])))!;

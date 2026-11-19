@@ -1,11 +1,11 @@
 import { asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
 	test(`World and Scene accept omitted construction options without replacing explicit inputs (O${optLevel})`, () => {
@@ -58,7 +58,7 @@ assert(registry:get(pending.id) == pending and pending.active)
 assert(pending._construction_options == nil)
 world:clear()
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	});
 
 	test(`Omitted spawn options have the same guest allocation cost as reused explicit input (O${optLevel})`, () => {
@@ -78,7 +78,7 @@ probe = {
  end,
 }
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const omitted = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('omitted')!), cpu.gc);
 		const state = captureCpuCheckpoint(cpu);
@@ -120,7 +120,7 @@ probe = {
  end,
 }
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const plain = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('plain')!), cpu.gc);
 		const state = captureCpuCheckpoint(cpu);

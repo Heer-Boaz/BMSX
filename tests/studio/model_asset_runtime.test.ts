@@ -3,7 +3,6 @@ import { asClosure, valueBool, valueFloat, valueInteger, valuePayload } from '..
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -15,7 +14,7 @@ import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
 import { createTestBlua32PairCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { createTestRuntimeRomPayload } from '../helpers/runtime_sources';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 // The production packer and actual guest typed loads share this synthetic
 // resource. No gameplay cart or host-side recreation of the Lua reader.
@@ -113,7 +112,7 @@ for (const optLevel of [3] as const) test(`model geometry binds ROM streams once
 	const initial = modelCartridge(1.25, 0x100);
 	const { cpu, memory } = createTestBlua32PairCpu({ systemRomBytes, cartRomBytes: initial.bytes });
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
 	const read = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('read')), cpu.gc);
 	const observe = () => {

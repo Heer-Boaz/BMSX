@@ -11,7 +11,7 @@ import { StaticSourceError } from '../../toolchain/ts/lua/static/errors';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { materializeCpuCompletionValues, runCompiledLua } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompiledLua, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function fixture(source: string) {
 	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reads.lua']));
@@ -377,7 +377,7 @@ test('a cross-file global navigation winner is not a typed storage binding', () 
 		const program = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry').chunk, modules,
 			{ entrySource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, false].map(valueBool));
 	}
 });
@@ -408,7 +408,7 @@ return names[asset.index], names[alias], names[combined], names[asset.other], na
 		const program = compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'entry').chunk, [module],
 			{ entrySource: runtimeSource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true, true, true, true, true].map(valueBool));
 	}
 });
@@ -434,7 +434,7 @@ return names[asset.group.index], names[group.index], names[alias], names[group.o
 		const program = compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'entry').chunk, [module],
 			{ entrySource: runtimeSource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true, true, true].map(valueBool));
 	}
 });
@@ -460,7 +460,7 @@ return *p`;
 		const program = compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'entry').chunk, [module],
 			{ entrySource: runtimeSource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	}
 });

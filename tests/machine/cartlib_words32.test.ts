@@ -3,13 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as v from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestBlua32PairCpu, createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileCartlibProgram } from '../helpers/cartlib_cpu';
 import { CLOCK_WORD_CHECKS, CLOCK_WORD_MODULES, CLOCK_WORD_ROM_SOURCE } from '../helpers/clock_words32';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const modules = CLOCK_WORD_MODULES.map(path => {
 	const source = readFileSync(`${path}.lua`, 'utf8');
@@ -21,7 +20,7 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 			{ entrySource: CLOCK_WORD_ROM_SOURCE, optLevel, programDomain: 'system' }));
 		const { cpu } = createTestSystemCpu(image, backend), budget = 1_000_000;
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+		runGuestToHalt(cpu, budget);
 		const result = materializeCpuCompletionValues(cpu);
 		assert.deepEqual(result, [v.valueBool(true), v.valueInteger(CLOCK_WORD_CHECKS)]);
 		if (backend === CpuExecutionBackend.Interpreter && process.env.BMSX_CPU32_RUNNER) {
@@ -55,7 +54,7 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 	test(`cartlib input words O${optLevel} ${backend}: initial and grouped signed-axis sampling`, () => {
 		const { images } = compileCartlibProgram(inputSource, { optLevel, modules: inputModules });
 		const { cpu, memory } = createTestBlua32PairCpu(images, backend); cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const read = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('word32_read_axis')!), cpu.gc);
 		const sample = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('word32_sample_axis')!), cpu.gc);
 		// Supply the ICU's retained raw word at the CPU/MMIO boundary. This

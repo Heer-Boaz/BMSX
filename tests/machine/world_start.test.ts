@@ -2,11 +2,10 @@ import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { asClosure, valueBool, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { IO_SYS_FRAME_MS_Q16 } from '../../machine/ts/spec/bmsx/io';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
-import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
 	test(`World starts only after separately constructed initial batches are addressable and bound (O${optLevel})`, () => {
@@ -57,7 +56,7 @@ world:start()
 assert(activated == 3 and delivered == 3, 'repeated start duplicated component activation')
 return true
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)],
 			'construction must not activate or schedule objects before the complete initial World is addressable and bound');
 	});
@@ -105,7 +104,7 @@ assert(entered == 1 and sampled == 1, 'repeated World start restarted FSM entry 
 owner.events:emit('wake')
 assert(transitioned == 1, 'a begun FSM failed to handle its live event')
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	});
 
 	test(`World start drains reentrant admissions and disposal, while clear preserves the World lifetime (O${optLevel})`, () => {
@@ -153,7 +152,7 @@ world:start()
 assert(activated==4, 'new_game-style replacement acquired a duplicate start')
 replacement:mark_for_disposal()
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	});
 
 	test(`Object activation follows its components and never runs after component cancellation (O${optLevel})`, () => {
@@ -186,7 +185,7 @@ assert(later.active and later.completed==2 and begun==2, 'runtime admission bypa
 world:start()
 assert(begun==2, 'repeated World start duplicated object gameplay startup')
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	});
 
 	test(`World publishes its paused schedule only after activation, and repeated starts allocate no guest objects (O${optLevel})`, () => {
@@ -236,7 +235,7 @@ function probe.repeat_start()
 end
 `, { optLevel, modules });
 		cpu.memory.writeIoU32(IO_SYS_FRAME_MS_Q16, 20 * 0x10000);
-		assert.equal(cpu.runUntilDepth(0, 25_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 25_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const repeat = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('repeat_start')!), cpu.gc);
 		runCompletionClosure(cpu, repeat, []);

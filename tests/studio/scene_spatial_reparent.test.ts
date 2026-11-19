@@ -11,8 +11,7 @@ import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { formatLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { afterTest } from '../helpers/test_cleanup';
 
 const PREFABS = `local prefab = require('cartlib/world/prefab')
@@ -166,6 +165,6 @@ local c3={${Object.entries(world3).map(([key, value]) => 'w' + key + '=' + forma
 local r2=a2.relative_world(c2,p2) local r3=a3.relative_world(c3,p3)
 return r2,r3,${Object.keys(world2).map(key => 'c2.' + key).join(',')},${Object.keys(world3).map(key => 'c3.' + key).join(',')}`;
 	const { cpu } = createCartlibProgramHarness(source, { optLevel, modules: ['cartlib/math/affine2', 'cartlib/math/affine3'].map(path => ({ path, source: readFileSync(path + '.lua', 'utf8') })) });
-	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 20_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true), ...Object.values(result2).map(valueFloat), ...Object.values(result3).map(valueFloat)]);
 });

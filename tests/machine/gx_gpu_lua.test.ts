@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
-import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import {
 	GX_GPU_PCRTC_CONFIG_WORD_COUNT,
 	GX_GPU_PCRTC_DISPFB1_HIGH,
@@ -72,7 +72,7 @@ import {
 } from '../../toolchain/ts/rompack/generated_modules';
 import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
 import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
-import { materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 import {
 	createTestBlua32PairCpu,
 	createTestSystemCpu,
@@ -219,7 +219,7 @@ function runCartMode(reset: string): { memory: Memory; cpu: CPU; initialWords: U
 		initialWords[wordIndex] = word;
 		memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(wordIndex), word);
 	}
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	return { memory, cpu, initialWords };
 }
 
@@ -283,7 +283,7 @@ test('GX cart SDK holds SMODE1 reset until every timing latch is programmed', ()
 	]) {
 		memory.mapIoWrite(gxGpuPcrtcRegisterAddress(wordIndex), timingWrites, recordTimingWrite);
 	}
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(timingWrites, [
 		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW), GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SMODE1_SETUP_LOW_WORD],
 		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_HIGH), GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SMODE1_HIGH_WORD],
@@ -307,7 +307,7 @@ test('BIOS GX reset programs the same 320x240 raw preset without touching circui
 		initialWords[wordIndex] = word;
 		memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(wordIndex), word);
 	}
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const words = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
 	for (let wordIndex = 0; wordIndex < words.length; wordIndex += 1) {
 		words[wordIndex] = memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(wordIndex));
@@ -335,7 +335,7 @@ test('BIOS GX code aligns the source-alpha supervisor circuit to a retained PS2 
 	const { memory, cpu } = createTestSystemCpu(biosImage);
 	memory.writeMappedU32LE(SYSTEM_TEXTURE_UPLOAD_ADDRESS + 4, gxGpuPair16(768, 960));
 	memory.writeMappedU32LE(SYSTEM_TEXTURE_UPLOAD_ADDRESS + 8, gxGpuPair16(256, 64));
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [
 		320,
 		240,

@@ -4,12 +4,11 @@ import { test } from 'node:test';
 
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const BIN_ADDR = RAM_BASE + 0x21000;
 
@@ -27,7 +26,7 @@ function runStructRead(packedWords: number[], snippet: string): Value[] {
 	for (let index = 0; index < packedWords.length; index += 1) {
 		memory.writeMappedU32LE(BIN_ADDR + index * 4, packedWords[index] >>> 0);
 	}
-	assert.equal(cpu.runUntilDepth(0, 1000000), RunResult.Halted);
+	runGuestToHalt(cpu, 1000000);
 	return materializeCpuCompletionValues(cpu);
 }
 

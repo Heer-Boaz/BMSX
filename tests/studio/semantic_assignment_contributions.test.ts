@@ -2,7 +2,6 @@ import { valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { SemanticDemandIndex } from '../../toolchain/ts/lua/semantic/demand_index';
 import { FunctionSummaryStore } from '../../toolchain/ts/lua/semantic/function_summary';
@@ -12,7 +11,7 @@ import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/
 import { declarationValueSource, NIL_VALUE_SOURCE, semanticValueSourcesEqual } from '../../toolchain/ts/lua/semantic/value_graph';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompiledLua } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompiledLua, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { semanticSymbolsAt } from '../helpers/semantic_test_harness';
 
 test('written contributions retain equal-valued occurrences and self-assignment in their actual body', () => {
@@ -266,7 +265,7 @@ test('scalar alternatives cannot join unrelated prototype owners', () => {
 		], { entrySource, optLevel: optimization, programDomain: 'system' });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	}
 });

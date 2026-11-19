@@ -4,7 +4,6 @@ import { test } from 'node:test';
 
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { asClosure, valueFloat, valueFloatBits, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -18,7 +17,7 @@ import {
 	linkRawTestSystemBlua32,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const TEST_RAM_BASE = RAM_BASE + 0x20000;
 
@@ -40,7 +39,7 @@ return a, b, mem[0x08020000], mem[0x08020004]`;
 		const image = linkTestSystemBlua32(compileLuaSource(source, 'rounded-address.lua', optLevel));
 		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu } = createTestSystemCpu(image, backend);
-			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			runGuestToHalt(cpu, 100000);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), [17, 17, 23, 33].map(valueInteger));
 		}
 	});
@@ -57,7 +56,7 @@ end`;
 		const image = linkTestSystemBlua32(compiled);
 		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu } = createTestSystemCpu(image, backend);
-			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			runGuestToHalt(cpu, 100000);
 			const [pointer, arithmetic] = materializeCpuCompletionValues(cpu);
 			const closure = asClosure(pointer, cpu.gc), reference = asClosure(arithmetic, cpu.gc);
 			for (const index of [valueInteger(1), valueFloat(1), valueInteger(0x40000001), valueInteger(-1),
@@ -93,7 +92,7 @@ return first, second, count`;
 		assert.equal((entry.match(/\bMUL\b/g) ?? []).length, 2, 'one fused Integer stride per selection');
 		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu } = createTestSystemCpu(image, backend);
-			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			runGuestToHalt(cpu, 100000);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), [4, 8, 2].map(valueInteger));
 		}
 	});
@@ -108,7 +107,7 @@ end`;
 		const image = linkTestSystemBlua32(compileLuaSource(source, 'pointer-wrap.lua', optLevel));
 		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu, memory } = createTestSystemCpu(image, backend);
-			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			runGuestToHalt(cpu, 100000);
 			const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
 			for (const index of [0, 2 ** 30, -(2 ** 30)]) {
 				runCompletionClosure(cpu, closure, [valueInteger(index)]);
@@ -161,7 +160,7 @@ test('CPU executes displaced memory load/store opcodes', () => {
 	});
 	const { cpu, memory } = createTestSystemCpu(finalized);
 
-	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	runGuestToHalt(cpu, 1000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [0x22222222].map(valueInteger));
 	assert.equal(memory.readMappedU32LE(TEST_RAM_BASE), 0x11111111);
 	assert.equal(memory.readMappedU32LE(TEST_RAM_BASE + 48), 0x22222222);

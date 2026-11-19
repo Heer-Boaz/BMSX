@@ -6,6 +6,7 @@ import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { compileTableIterationTest, tableIterationVectors } from '../helpers/table_iteration';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
 	for (const [name, body] of Object.entries(tableIterationVectors)) {
@@ -51,7 +52,7 @@ for (const optLevel of [3] as const) {
 test('a physical object address remains a deleted-key continuation', () => {
 	const { cpu } = createTestSystemCpu(compileTableIterationTest('return true', 0));
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runGuestToHalt(cpu, 100000);
 	const key = cpu.createTable();
 	const table = cpu.createTable(0, 64);
 	const keyValue = valueTable(key);

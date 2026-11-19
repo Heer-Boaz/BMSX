@@ -2,9 +2,8 @@ import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator
 import { valueBool, valueInteger, asClosure } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) test(`firmware load binds ordinary globals, not caller-image ordinals, at O${optLevel}`, () => {
 	const { cpu } = createCartlibProgramHarness(`
@@ -73,7 +72,7 @@ assert(ordinary_irq == 25 and ordinary_primitive == nil and get('irq') == 25)
 return score, shared.value, closure(0)
 end)
 `, { optLevel });
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(116), valueInteger(39), valueInteger(122)]);
 });
 
@@ -91,7 +90,7 @@ assert(not ok and string.find(message, 'unknown local or function parameter') ~=
 return true
 end)
 `);
-	assert.equal(cpu.runUntilDepth(0, 2_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 2_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
@@ -100,7 +99,7 @@ test('retained RAM global access survives collection and restore without per-acc
 score = 0
 advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score'))
 `);
-	assert.equal(cpu.runUntilDepth(0, 2_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 2_000_000);
 	const name = cpu.stringPool.find('advance')!, score = cpu.stringPool.find('score')!;
 	const heap = cpu.collectTrackedHeapBytes(), globals = cpu.globalSlotCount;
 	const ram = cpu.memory.captureSaveState(), saved = cpu.captureRuntimeState();
@@ -138,7 +137,7 @@ return a == literal and b == dynamic and c == 'local' and d == 'local'
  and e == dynamic and f == 17 and g == dynamic and h == nil and calls == 2
 end)
 `, { optLevel });
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
@@ -154,6 +153,6 @@ local value, extra = lua_compiler.compile_syntax(chunk, '=string-id-syntax')()
 return value == 'string' and extra == nil
 end)
 `, { optLevel });
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });

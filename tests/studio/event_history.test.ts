@@ -14,6 +14,7 @@ import { RuntimeEventHistory } from '../../ide/runtime/event_history';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import { GuestValueSnapshot, VALUE_SNAPSHOT_ENTRIES, VALUE_SNAPSHOT_CHARACTERS, VALUE_SNAPSHOT_SLOTS } from '../../ide/runtime/value_snapshot';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const BUDGET = 10_000_000;
 
@@ -36,7 +37,7 @@ return data.health`, { optLevel, modules: renamed ? [{
 	}] : [] });
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	const events = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
-	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+	runGuestToHalt(cpu, BUDGET);
 	assert.equal(events.count, 3);
 	assert.deepEqual([0, 1, 2].map(index => events.at(index).event), ['outer', 'inner', 'unhandled'].map(value => ({ kind: 'string', value, omitted: false })));
 	assert.deepEqual(events.at(0).emitter, { kind: 'string', value: 'player', omitted: false });
@@ -102,7 +103,7 @@ test('a source breakpoint stops before trace execution and continuing emits exac
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.ExecutionStopped);
 	assert.equal(events.count, 0);
 	state.source.resume(RuntimeDebuggerResumeMode.Continue);
-	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+	runGuestToHalt(cpu, BUDGET);
 	assert.equal(events.count, 1);
 });
 
@@ -113,7 +114,7 @@ for i=1,100 do payload[i] = string.rep('x', 5000) end
 e:emit('large', nil, payload, 'fixture')`);
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	const history = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
-	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+	runGuestToHalt(cpu, BUDGET);
 	const snapshot = history.at(0).payload;
 	assert.ok(snapshot.kind === 'table');
 	assert.equal(snapshot.entries.length, VALUE_SNAPSHOT_ENTRIES);
@@ -129,10 +130,10 @@ test('observation preserves guest cycles, heap and complete CPU state', () => {
 	const baseline = eventHistoryRuntime(images), observed = eventHistoryRuntime(images);
 	const events = new RuntimeEventHistory(observed.runtime, observed.sources, new RuntimeInstructionObservers(observed.runtime.machine.cpu));
 	for (const { cpu } of [baseline, observed]) {
-		assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+		runGuestToHalt(cpu, BUDGET);
 		const fn = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), cpu.gc);
 		cpu.beginCompletionCall(fn, [v.valueInteger(1000)]);
-		assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+		runGuestToHalt(cpu, BUDGET);
 	}
 	assert.equal(events.count, 1000);
 	assert.equal(observed.cpu.instructionBudgetRemaining, baseline.cpu.instructionBudgetRemaining);

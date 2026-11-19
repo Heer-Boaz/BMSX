@@ -1,3 +1,4 @@
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -731,7 +732,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 	assert.equal(first.cpu.runUntilDepth(0, (burstWords.length + 1) * BASE_CYCLES[OpCode.LOADK]), RunResult.Yielded);
 	first.memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
 	first.scheduler.beginCpuSlice(10);
-	assert.equal(first.cpu.runUntilDepth(0, 10), RunResult.Halted);
+	runGuestToHalt(first.cpu, 10);
 	first.scheduler.endCpuSlice();
 	assert.equal(first.cpu.isMemoryWriteBlocked(), true);
 	const blockedCpuState = first.cpu.captureRuntimeState();
@@ -753,13 +754,13 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 	restored.cpu.restoreRuntimeState(cpuState);
 	assert.equal(restored.scheduler.nextDeadline(), 103);
 	restored.scheduler.advanceTo(102);
-	assert.equal(restored.cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(restored.cpu, 100);
 	assert.equal(restored.cpu.isMemoryWriteBlocked(), true);
 	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE), firstAddXy);
 	serviceScheduledGtePlus(restored.gte, restored.scheduler, 1);
 	assert.equal(restored.cpu.isMemoryWriteBlocked(), false);
 	restored.scheduler.beginCpuSlice(100);
-	assert.equal(restored.cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runGuestToHalt(restored.cpu, 100);
 	const retryCycles = 100 - restored.cpu.instructionBudgetRemaining;
 	restored.scheduler.endCpuSlice();
 	restored.scheduler.advanceTo(restored.scheduler.nowCycles + retryCycles);

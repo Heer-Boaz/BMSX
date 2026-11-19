@@ -2,10 +2,9 @@ import { valueBool, numberToHost } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { affine2FromPose, affine2Rotation, affine2Skew } from '../../ide/common/affine2';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
 	test(`affine editing availability follows the actual guest squared-norm arithmetic (O${optLevel})`, () => {
@@ -15,7 +14,7 @@ local small_x<const> = {xx=1e-200,xy=0,yx=0,yy=1,_semantic_flags=0}
 local small_y<const> = {xx=1,xy=0,yx=0,yy=1e-200,_semantic_flags=0}
 return affine.rotation(small_x)==nil,affine.skew(small_x)==nil,affine.skew(small_y)==nil
 `, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		const first = {xx: 1e-200, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0};
 		const second = {xx: 1, xy: 0, yx: 0, yy: 1e-200, ox: 0, oy: 0};
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [
@@ -28,7 +27,7 @@ return affine.rotation(small_x)==nil,affine.skew(small_x)==nil,affine.skew(small
 local affine<const> = require('cartlib/math/affine2')
 return affine.trs(0,0,-0.0,2,-3,0)
 `, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		const pose = affine2FromPose(0, 0, -0, 2, -3, 0);
 		assert.deepEqual(materializeCpuCompletionValues(cpu).map(numberToHost), [pose.xx, pose.xy, pose.yx, pose.yy, pose.ox, pose.oy]);
 	});
@@ -40,7 +39,7 @@ world:start()
 prefab.define({def_id='default',class=object_2d})
 return world:spawn('default'):get_transform()
 `, { optLevel, modules: WORLD_CPU_MODULES });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const pose = affine2FromPose(0, 0, 0, 1, 1, 0);
 		assert.deepEqual(materializeCpuCompletionValues(cpu).map(numberToHost), [pose.xx, pose.xy, pose.yx, pose.yy, pose.ox, pose.oy]);
 	});
@@ -64,7 +63,7 @@ for _, scale in ipairs({{}, {x=nil,y=nil,z=nil}}) do
 end
 return valid
 `, { optLevel, modules: WORLD_CPU_MODULES });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 

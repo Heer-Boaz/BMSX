@@ -2,7 +2,6 @@ import { RuntimeInstructionObservers } from '../../ide/runtime/instruction_obser
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { asClosure, valueInteger, valueTable } from '../../machine/ts/machine/cpu/value';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { SCROLLBAR_WIDTH } from '../../ide/common/constants';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
@@ -18,6 +17,7 @@ import { drawEventViewer } from '../../ide/workbench/contrib/events/render';
 import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/event_history';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { afterTest } from '../helpers/test_cleanup';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const images = compileEventHistoryFixture();
 const BUDGET = 10_000_000;
@@ -26,10 +26,10 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', count = 200, capacity 
 	configureFontVariant(variant);
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	const history = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu), capacity);
-	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+	runGuestToHalt(cpu, BUDGET);
 	const emit = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), cpu.gc);
 	cpu.beginCompletionCall(emit, [valueInteger(count)]);
-	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+	runGuestToHalt(cpu, BUDGET);
 	const input = new EventViewerInput(history);
 	const projected = input.projection.update(history, '');
 	assert.equal(input.projection.rows.length, count);
@@ -144,7 +144,7 @@ test('an appended event does not transiently clamp a reader near the bottom thro
 	input.viewport.scrollbar.setScroll(input.viewport.scrollbar.getMaximumScroll() - 0.5);
 	const readingPosition = input.viewport.scrollTop;
 	cpu.beginCompletionCall(emit, [valueInteger(1)]);
-	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+	runGuestToHalt(cpu, BUDGET);
 	assert.equal(input.projection.update(history, ''), true);
 	layoutEventViewer(input, bounds, true);
 	assert.equal(input.viewport.scrollTop, readingPosition,
@@ -237,13 +237,13 @@ test('visible event preparation invalidates geometry and membership without reta
 	input.filter = '';
 	view.update(input, layoutEventViewer(input, { ...compact, right: 135 }, input.projection.update(history, input.filter)), true);
 	assert.equal(view.rows[0].label, labels[0], 'same surviving snapshot keeps its already prepared label after filtering');
-	cpu.beginCompletionCall(emit, [valueInteger(4)]); assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+	cpu.beginCompletionCall(emit, [valueInteger(4)]); runGuestToHalt(cpu, BUDGET);
 	assert.equal(input.projection.update(history, ''), true); assert.equal(input.projection.removed, 4);
 	view.update(input, layoutEventViewer(input, { ...compact, right: 135 }, true), true);
 	assert.equal(input.projection.rows[0].sequence, 4);
 	assert.equal(view.rows[0].label, labels[4], 'eviction remaps visible indices to the actual surviving sequence');
 	history.clear();
-	cpu.beginCompletionCall(emit, [valueInteger(1)]); assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+	cpu.beginCompletionCall(emit, [valueInteger(1)]); runGuestToHalt(cpu, BUDGET);
 	assert.equal(input.projection.update(history, ''), true);
 	view.update(input, layoutEventViewer(input, { ...compact, right: 135 }, true), true);
 	assert.notEqual(view.rows[0].label, labels[0]); assert.equal(view.rows.length, 1);

@@ -6,13 +6,13 @@ import { valueToString } from '../../machine/ts/machine/cpu/value';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { compileFrameEvaluationTest, frameEvaluationCases } from '../helpers/frame_evaluation';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) for (const [name, body] of Object.entries(frameEvaluationCases)) {
 	test(`firmware frame evaluation O${optLevel}: ${name}`, () => {
 		const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(body, optLevel));
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 30_000_000);
 		if (name === 'coroutine' || name === 'completion_injection') {
 			assert.equal(cpu.isHaltedUntilIrq(), true, 'a live frame scope is suspended in the coroutine');
 			const saved = cpu.captureRuntimeState();
@@ -27,7 +27,7 @@ for (const optLevel of [3] as const) for (const [name, body] of Object.entries(f
 				assert.equal(cpu.isHaltedUntilIrq(), true, 'named evaluation does not consume the retained caller halt');
 			}
 			cpu.clearHaltUntilIrq();
-			assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+			runGuestToHalt(cpu, 30_000_000);
 		}
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1, 'no unhandled guest fault');
 		const values = materializeCpuCompletionValues(cpu);
@@ -51,7 +51,7 @@ end
 return exercise(0)
 `, optLevel));
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), name = cpu.stringPool.find('advance')!;
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(name), cpu.gc));
@@ -75,7 +75,7 @@ return exercise(0)
 		assert.equal(cpu.isHaltedUntilIrq(), true);
 	}
 	cpu.clearHaltUntilIrq();
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
@@ -96,7 +96,7 @@ return park(42)
 `, optLevel);
 	const { cpu } = createTestSystemCpu(image);
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('named_completion_probe')!), cpu.gc), [valueInteger(depth - 1)]);
@@ -106,7 +106,7 @@ return park(42)
 	assert.equal(cpu.readFramePc(depth - 1), pc, 'lookup/evaluation did not advance the selected activation');
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	cpu.clearHaltUntilIrq();
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
@@ -122,7 +122,7 @@ assert(not ok and message == 'Frame symbols are unavailable.' and getglobal('une
 return true
 `, optLevel, false));
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
@@ -152,7 +152,7 @@ end
 return exercise(42)
 `, optLevel));
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('discover_stopped_scope')!), cpu.gc), [valueInteger(depth - 1)]);
@@ -163,6 +163,6 @@ return exercise(42)
 	assert.equal(cpu.readFramePc(depth - 1), pc);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	cpu.clearHaltUntilIrq();
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(43)]);
 });

@@ -1,8 +1,7 @@
-import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
 	test(`World component lookup returns absence across attachment and dense removal (O${optLevel})`, () => {
@@ -61,6 +60,6 @@ assert(owner:get_component(component_class, 'second') == nil,
 	'component lookup retained the reattached identity after removal')
 owner:mark_for_disposal()
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	});
 }

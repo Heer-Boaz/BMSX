@@ -4,8 +4,7 @@ import test from 'node:test';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua } from '../helpers/cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const cases: { name: string; source: string; expected: number[] }[] = [
 	{
@@ -269,7 +268,7 @@ return { size = size }` },
 		entrySource: source, programDomain: 'system', optLevel,
 	});
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runGuestToHalt(cpu, 100000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [8, 12, 16].map(valueInteger));
 });
 
@@ -305,7 +304,7 @@ return { nested = { count = 3 }, cells = cells }` },
 		entrySource: source, programDomain: 'system', optLevel,
 	});
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runGuestToHalt(cpu, 100000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [28, 28, 9].map(valueInteger));
 });
 
@@ -325,7 +324,7 @@ for (const optLevel of [3] as const) test(`O${optLevel}: written import aliases 
 			entrySource: source, programDomain: 'system', optLevel,
 		});
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [32, 3, 3, 2].map(valueInteger));
 	}
 });

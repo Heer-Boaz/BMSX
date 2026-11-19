@@ -2,7 +2,6 @@ import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { lintCartSources } from '../../scripts/rompacker/cart_lua_linter_runtime';
 import { actionStringScenarioSource } from '../../ide/workbench/contrib/scenario_lab/actionstring';
@@ -21,6 +20,7 @@ import { newLuaSource } from '../../ide/workbench/contrib/resources/create/sourc
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { programEntryTemplate, programFieldTemplates } from '../../ide/workbench/contrib/lua_program/schema';
 import { LuaProgramSourceSelection } from '../../ide/workbench/contrib/lua_program/source_selection';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function project(source: string, imports: readonly { path: string; source: string }[] = []) {
 	const file = buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua' });
@@ -283,7 +283,7 @@ assert(p.matches('context', filters[1]))`);
 		const { cpu } = createCartlibProgramHarness(model.buffer.getText(), { optLevel, modules:
 			['cartlib/progression', 'cartlib/event_matcher', 'cartlib/event_matcher_syntax']
 				.map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })) });
-		assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 1_000_000);
 	}
 });
 

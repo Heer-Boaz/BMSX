@@ -5,10 +5,9 @@ import { valueNil, asClosure, valueInteger, valueBool, valuePayload } from '../.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { BT_COMPILATION_PROBE_SOURCE } from '../helpers/behavior_compilation_fixture';
-import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const recorderModule = {
 	path: 'testlib/behaviour_tree/compile_recorder',
@@ -29,7 +28,7 @@ probe.run(32)
 probe.check()
 probe.drop_definition()
 `, { optLevel, traceStatements: observationChannels, modules: [recorderModule] });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	cpu.collectTrackedHeapBytes();
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak_inputs')!));
@@ -82,7 +81,7 @@ recorder:dispose()
 local unobserved<const> = compiler.compile('unobserved', { root = shared })
 assert(recorder.programs[unobserved] == nil)
 `, { traceStatements: 'emit', modules: [recorderModule] });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 });
 
 test('BT observation retains the effective node kind from the supported table-prototype lookup', () => {
@@ -99,7 +98,7 @@ prototype.type = 'wait'
 assert(calls == 0)
 ${tracing ? "assert(recorder.programs[compiled].nodes.type[1] == 'task')" : ''}
 `, { traceStatements: tracing ? 'emit' : 'erase', modules: [recorderModule] });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 	}
 });
 
@@ -162,7 +161,7 @@ for _, depth in ipairs({ 1, 32, 129 }) do
 	end
 end
 `, { optLevel, traceStatements: observationChannels, modules: [recorderModule] });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 });
 
 for (const optLevel of [3] as const) test(`BT records follow program/actor reachability, including ephemeron cycles (O${optLevel})`, () => {
@@ -211,7 +210,7 @@ local abandoned<const> = compiler.compile('abandoned', definition)
 probe.abandoned = setmetatable({ abandoned, recorder.programs[abandoned] }, weak_values)
 function probe.drop_first() probe.first = nil end
 `, { optLevel, traceStatements: observationChannels, modules: [recorderModule] });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	cpu.collectTrackedHeapBytes();
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	for (const name of ['old', 'unused']) {
@@ -273,7 +272,7 @@ actor:rebind_program(inner)
 assert(actor.evaluate == inner.evaluate and actor.operand == inner.operand)
 assert(recorder.completed_bindings[actor] == outer)
 `, { traceStatements: observationChannels, modules: [recorderModule] });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 });
 
 test('BT capture costs are cold; retained aliases are not a compiled definition snapshot', t => {
@@ -284,7 +283,7 @@ test('BT capture costs are cold; retained aliases are not a compiled definition 
 				: mode === 'erased' || mode === 'retained' ? 'erase' : 'emit',
 			modules: [recorderModule],
 		});
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const ready = cpu.collectTrackedHeapBytes();
 		if (mode === 'captured' || mode === 'cold-only') {

@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const cases: { source: string; values: Value[] }[] = [
 	{ source: 'return', values: [] },
@@ -54,7 +53,7 @@ return true
 		{ entrySource, optLevel, programDomain: 'system' });
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 });
 
@@ -69,7 +68,7 @@ mark = function(value, ...) trace = trace * 10 + value; return value, -value end
 wide = function(...) return ${Array.from({ length: 260 }, (_, index) => index).join(',')} end
 return pcall(assert(load(${JSON.stringify(source)})))
 `, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 30_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), ...values]);
 	});
 }
@@ -85,7 +84,7 @@ local source<const> = f.chunk(f.block({ f.return_statement({
 }) }))
 return pcall(lua_compiler.compile_syntax(source, '=tuple-syntax'))
 `, { optLevel });
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(42), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()]);
 });
 
@@ -95,7 +94,7 @@ tuple = function(...) return 7, nil, false, 9, nil end
 forward = function(...) return ... end
 advance = assert(load('for i = 1, 1000 do forward(tuple()) end; return forward(tuple())'))
 `, { optLevel });
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('advance')!), cpu.gc);
 	runCompletionClosure(cpu, closure, []);
 	let heap = cpu.collectTrackedHeapBytes();

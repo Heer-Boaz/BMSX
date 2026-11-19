@@ -2,10 +2,9 @@ import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator
 import { asClosure, numberToHost, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
-import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
 	test(`clear_map traverses mixed entries once without replacing its map (O${optLevel})`, t => {
@@ -22,7 +21,7 @@ for index = 1, #keys do map[keys[index]] = { index = index } end
 probe = { map = map, count = #keys }
 function probe.clear() clear(map) end
 `, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const map = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('map')!));
 		const clear = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('clear')!), cpu.gc);
@@ -61,7 +60,7 @@ function probe.seed()
 end
 function probe.clear() clear(map) end
 `, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const seed = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('seed')!), cpu.gc);
 		const clear = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('clear')!), cpu.gc);
@@ -94,7 +93,7 @@ kernel = function(count)
  end
 end
 `, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 128);
 		assert.equal(profile.reservations, 0);

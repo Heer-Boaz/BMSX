@@ -1,9 +1,8 @@
 import { valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
 	test(`Timeline definition captures primary and nested named receivers before direct seek (O${optLevel})`, () => {
@@ -47,7 +46,7 @@ assert(shared.program==entry.program and shared.primary_binding==other_owner
  'runtime defaults leaked into the shared immutable program')
 return true
 `, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 15_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 15_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 
@@ -96,7 +95,7 @@ assert(owner.panel.value==41 and owner.panel.other==10,
  'parameterized child construction failed to admit its static descendant')
 return true
 `, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	});
 }

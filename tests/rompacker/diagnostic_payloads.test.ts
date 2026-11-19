@@ -7,13 +7,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { buildRomBlua32Tail, finalizeRompack } from '../../scripts/rompacker/rombuilder';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { parseSystemRomImage } from '../../machine/ts/rompack/image';
 import { CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET } from '../../machine/ts/spec/bmsx/rom_package';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { loadBlua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 import { createTestSystemCpu } from '../helpers/blua32';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { afterTest } from '../helpers/test_cleanup';
 
 // Real installed BIOS consumers; neither reads the host symbol graph.
@@ -67,7 +66,7 @@ test('public BIOS diagnostics and embedded host symbols are independently select
 		executables.push(image.layout.bytes);
 		const { cpu, memory } = createTestSystemCpu({ romBytes: bytes });
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
 		if (!includeDiagnostics || includeSymbols) continue;
 		assert.equal(image.symbols, null, 'the BIOS proof has no embedded host symbol graph');
@@ -76,10 +75,10 @@ test('public BIOS diagnostics and embedded host symbols are independently select
 		assert.ok(target, 'the fixture contains the named diagnostic target');
 		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('inspect_scope')), cpu.gc),
 			[valueInteger(target.address), valueInteger(target.codeAddress)]);
-		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueString(cpu.stringPool.intern('probe_target')), valueBool(true), valueBool(true)]);
 		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('inspect_location')), cpu.gc), [valueInteger(target.codeAddress)]);
-		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		runGuestToHalt(cpu, 100_000);
 		const [complete, locationAddress, sourceAddress] = materializeCpuCompletionValues(cpu);
 		assert.equal(complete, valueBool(true));
 		const rows = [locationAddress, sourceAddress].map(address => String.fromCharCode(...Array.from({ length: 128 },

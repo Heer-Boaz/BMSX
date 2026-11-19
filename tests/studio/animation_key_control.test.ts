@@ -18,9 +18,9 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { afterTest } from '../helpers/test_cleanup';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('a key beneath a coincident tangent endpoint owns the pointer gesture', t => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0,leave_tangent=0},{time_ms=32,value=0,arrive_tangent=0,leave_tangent=0},{time_ms=100,value=0,arrive_tangent=0}}}}}";
@@ -194,7 +194,7 @@ test('tangent direction uses both pointer axes and commits one native slope with
 				local timelines=component.new(owner,{clock_mode='manual'}); timelines:define('curve',require('animation')); timelines:play('curve')
 				timelines:seek_time('curve',25); local delta=owner.x-${expected}; assert(delta>-1e-12 and delta<1e-12)
 			`, { optLevel, modules: [{ path: 'animation', source: changed }] });
-			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+			runGuestToHalt(cpu, 20_000_000);
 		}
 		model.undo(); assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
 		model.redo(); assert.equal(model.buffer.getText(), changed);

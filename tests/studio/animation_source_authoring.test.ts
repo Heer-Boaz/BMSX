@@ -2,7 +2,6 @@ import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { findNamedLuaTableField } from '../../toolchain/ts/lua/syntax/table_fields';
@@ -14,6 +13,7 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldNumberEdits } from '../../ide/language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits } from '../../ide/language/lua/table_field_insertion';
 import { newLuaSource } from '../../ide/workbench/contrib/resources/create/source_templates';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
 function project(source: string, imports: readonly { path: string; source: string }[] = []) {
@@ -130,7 +130,7 @@ test('a key gesture is presentation only until one shared document edit, with na
 			timelines:seek_time('movement',50)
 			assert(owner.x==100)
 		`, { optLevel, modules: [{ path: 'animation', source: model.buffer.getText() }] });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	}
 	model.undo(); assert.equal(model.buffer.getText(), source);
 	model.redo(); assert.equal(project(model.buffer.getText())!.tracks[0].keys[1].coordinate!.value, 50);

@@ -6,7 +6,6 @@ import { readFileSync } from 'node:fs';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { captureRuntimeMachineState, applyRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, valueFloat, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
@@ -18,7 +17,7 @@ import { LuaProgramRuntimeProjection, readProgramInstances } from '../../ide/wor
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
-import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { afterTest } from '../helpers/test_cleanup';
 
 const ENTRY = `local progression<const> = require('cartlib/progression')
@@ -51,7 +50,7 @@ function fixture(t: TestContext, optLevel: 0 | 3, source = ENTRY, extraModules: 
 	runtime.machine.cpu.reset(); runtime.machine.cpu.installBootPrimitives();
 	const guest = new SuspendedGuestSession(runtime);
 	assert.deepEqual(readProgramInstances(sources, guest, 0, 'progression'), [], 'image metadata does not prove its module initializer ran');
-	assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(runtime.machine.cpu, 10_000_000);
 	const model = new EditorTextModel({ contextLabel: 'fixture-source', sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua', source: {type: 'lua', resid: 'entry'} }, 'lua', source);
 	const input = new LuaProgramInput(model, 'progression', {start: 0, end: source.length}, guest);
 	afterTest(t, () => input.dispose());

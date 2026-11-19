@@ -2,9 +2,8 @@ import { valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
 	test(`GX narrows a complete column-major affine only at the GTE operand boundary (O${optLevel})`, () => {
@@ -25,7 +24,7 @@ return a,b,c,d,e&0xffff,tx,ty,tz,preserves_basis,next_x,next_y,next_z,controls[0
 `, { optLevel, modules: [
 			...['cartlib/gx/gte', 'cartlib/gx/gte_transform'].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),
 		] });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [
 			valueInteger(0xf0001000), valueInteger(0x04000800), valueInteger(0xfc002000), valueInteger(0x0200f800), valueInteger(0x3000),
 			valueInteger(11), valueInteger(0xffffffeb), valueInteger(512), valueBool(true), valueInteger(0xfffffffc), valueInteger(4), valueInteger(701), valueInteger(0x8400),

@@ -2,9 +2,8 @@ import { valueNil, asStringId } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 // Real command writer/compiler/guest CPU, with the DMA consumer replaced at
 // its source-lifetime boundary. Read source words only when wait0 releases the
@@ -100,7 +99,7 @@ commands.submit_fenced(draw)
 assert(dma.transfers[#dma.transfers].count==1 and require('cartlib/gx/gpu').acknowledgements==1)
 return failed
 `, { optLevel, modules });
-	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 20_000_000);
 	const [failure] = materializeCpuCompletionValues(cpu);
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 });
@@ -170,7 +169,7 @@ assert(#transfers==transfer_count+1 and tail.count==4 and tail.words[4]==gp0.irq
 assert(require('cartlib/gx/gpu').acknowledgements==1 and draw.word_count==0)
 return failed
 `, { optLevel, modules });
-			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+			runGuestToHalt(cpu, 20_000_000);
 			const [failure] = materializeCpuCompletionValues(cpu);
 			assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 		});
@@ -215,7 +214,7 @@ assert(require('cartlib/gx/gpu').acknowledgements==2
  and guard[0]==0x13579bdf and guard[17]==0x2468ace0)
 return failed
 `, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const [failure] = materializeCpuCompletionValues(cpu);
 		assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 	});

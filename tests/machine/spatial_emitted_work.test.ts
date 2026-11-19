@@ -3,7 +3,7 @@ import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { ValueTag, asClosure, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
 	BLUA32_FUNCTION_MAX_STACK_OFFSET,
@@ -16,7 +16,7 @@ import { describeMappedBlua32InstructionAtPc } from '../../toolchain/ts/rompack/
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 // Bevy's transform_hierarchy stress test separates propagation and inactive
 // consumers; the acceptance here additionally inspects the *installed* AOT and
@@ -142,7 +142,7 @@ function inspectInstalledKernel(cpu: CPU, image: Blua32ImageLayout, closure: num
 
 for (const optLevel of [3] as const) test(`actual spatial AOT and firmware kernels have coarse, allocation-free datapaths (O${optLevel})`, t => {
 	const { cpu, images } = createCartlibProgramHarness(fixture, { optLevel, modules: WORLD_CPU_MODULES });
-	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 20_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	const exports = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('kernels')!));
 	const kernels: ReturnType<typeof inspectInstalledKernel>[] = [];
@@ -156,7 +156,7 @@ for (const optLevel of [3] as const) test(`actual spatial AOT and firmware kerne
 	const compile = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('compile')!), cpu.gc);
 	const compileBefore = cpu.collectTrackedHeapBytes();
 	cpu.beginCompletionCall(compile);
-	assert.equal(cpu.runUntilDepth(0, 100_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000_000);
 	const compileCycles = 100_000_000 - cpu.instructionBudgetRemaining;
 	const compileAllocatedBytes = cpu.luaHeap.usedBytes() - compileBefore;
 	const compileRetainedBytes = cpu.collectTrackedHeapBytes() - compileBefore;

@@ -7,10 +7,11 @@ import { decodeEventToolRequest } from '../../ide/workbench/services/assistant/e
 import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/event_history';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { afterTest } from '../helpers/test_cleanup';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('Studio tools share automatic history with the viewer, page snapshots and reject cleared generations', async t => {
 	const { cpu, runtime, sources } = eventHistoryRuntime(compileEventHistoryFixture());
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
 		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
@@ -66,7 +67,7 @@ test('event tool arguments are admitted once at the model boundary', () => {
 
 test('event navigation is admitted by recording provenance and cancelled by the tool lifetime', async t => {
 	const { runtime, cpu, sources } = eventHistoryRuntime(compileEventHistoryFixture());
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
 		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);

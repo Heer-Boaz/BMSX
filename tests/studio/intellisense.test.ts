@@ -47,7 +47,7 @@ import {
 	createBlua32SystemSourceImage,
 	type RuntimeSourceState,
 } from '../../ide/runtime/sources';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { afterTest } from '../helpers/test_cleanup';
 
 const semanticFrontendModulePromise = import('../../toolchain/ts/lua/semantic/frontend');
@@ -244,7 +244,7 @@ function runtimeWithPausedCpuLocal(source: string) {
 	const harness = createIntellisenseRuntime(source);
 	const cpu = harness.runtime.machine.cpu;
 	cpu.reset();
-	assert.equal(cpu.runUntilDepth(0, 10_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000);
 	return {
 		...harness,
 		fault: createRuntimeFaultState(),
@@ -547,7 +547,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	const { bridge, runtime, analysis } = createIntellisenseRuntime(source, 0, { [SUPERVISOR_FAULT_MODULE.path]: SUPERVISOR_FAULT_MODULE.source });
 	const cpu = runtime.machine.cpu;
 	cpu.reset(); cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	runGuestToHalt(cpu, 1000);
 	assert.equal(cpu.getFrameDepth(), 0);
 	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
 	cpu.beginCompletionCall(closure);
@@ -559,7 +559,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	assert.equal(fault.lastCpuFaultSnapshot[0].upvalues.length, 1);
 
 	cpu.reset(); cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	runGuestToHalt(cpu, 1000);
 	assert.equal(cpu.getFrameDepth(), 0);
 
 	const replacement = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
@@ -612,7 +612,7 @@ return {}`;
 		const { runtime, bridge } = createIntellisenseRuntime("require('captured')\nhalt_until_irq", optLevel, { captured: source });
 		const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
 		cpu.reset();
-		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		runGuestToHalt(cpu, 1000);
 		const before = cpu.captureRuntimeState();
 		const result = readRuntimeLuaModuleCapture(bridge.sources, guest, SYSTEM_RESOURCE_DOMAIN, 'captured', guest.global('read_module'), 'registry');
 		assert.equal(result.kind, 'value');
@@ -638,7 +638,7 @@ halt_until_irq`;
 		const { runtime, bridge } = createIntellisenseRuntime(source, optLevel);
 		const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
 		cpu.reset();
-		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		runGuestToHalt(cpu, 1000);
 		const bytes = cpu.luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 		const callback = guest.global('callback');
 		const location = runtimeLuaFunctionSource(bridge.sources, guest, callback)!;
@@ -724,7 +724,7 @@ halt_until_irq`;
 		const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
 		cpu.reset();
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runGuestToHalt(cpu, 100000);
 		const subject = guest.global('subject');
 		const bytes = cpu.luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 		const methods = readActorMethods(bridge.sources, guest, subject);
@@ -743,7 +743,7 @@ halt_until_irq`;
 		const source = 'input_value = {}\nlocal target = input_value\nhalt_until_irq\nreturn target.missing.value';
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
 		runtime.machine.cpu.reset();
-		assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000), RunResult.Halted);
+		runGuestToHalt(runtime.machine.cpu, 10_000);
 		const fault = createRuntimeFaultState();
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target', 'missing'], 4, 8), { kind: 'value', value: valueNil() });
@@ -764,7 +764,7 @@ end
 return buffer`;
 		const { runtime, bridge, analysis, image } = createIntellisenseRuntime(source, optLevel);
 		runtime.machine.cpu.reset();
-		assert.equal(runtime.machine.cpu.runUntilDepth(0, 10000), RunResult.Halted);
+		runGuestToHalt(runtime.machine.cpu, 10000);
 		const reads = t.mock.method(bridge.suspendedGuest, 'global');
 		const fault = createRuntimeFaultState();
 		for (const [line, column, address] of [[1, 5, image.image.header.bssAddress], [6, 7, image.image.header.dataAddress], [8, 9, image.image.header.dataAddress]]) {
@@ -783,7 +783,7 @@ return buffer`;
 		const { runtime, bridge, analysis, image } = createIntellisenseRuntime(source, optLevel,
 			{ storage: 'bss exported: word\nstruct shape\n field: word\nend' });
 		runtime.machine.cpu.reset();
-		assert.equal(runtime.machine.cpu.runUntilDepth(0, 10000), RunResult.Halted);
+		runGuestToHalt(runtime.machine.cpu, 10000);
 		const reads = t.mock.method(bridge.suspendedGuest, 'global');
 		const fault = createRuntimeFaultState();
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
@@ -799,7 +799,7 @@ return buffer`;
 		const { runtime, bridge, analysis, image } = createIntellisenseRuntime(source, optLevel);
 		const cpu = runtime.machine.cpu;
 		cpu.reset();
-		assert.equal(cpu.runUntilDepth(0, 10000), RunResult.Halted);
+		runGuestToHalt(cpu, 10000);
 		const frameIndex = cpu.getFrameDepth() - 1;
 		const pc = cpu.readFramePc(frameIndex);
 		const layout = image.image;
@@ -823,7 +823,7 @@ return buffer`;
 		const source = 'local value = 11\nhalt_until_irq\nreturn value';
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
 		runtime.machine.cpu.reset();
-		assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000), RunResult.Halted);
+		runGuestToHalt(runtime.machine.cpu, 10_000);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['value'], 3, 8);
 		assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
@@ -887,7 +887,7 @@ return descend(1)`,
 			const { runtime, bridge, analysis } = createIntellisenseRuntime(scenario.source, optLevel);
 			const cpu = runtime.machine.cpu;
 			cpu.reset();
-			assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+			runGuestToHalt(cpu, 1000);
 			const fault = createRuntimeFaultState();
 			const column = scenario.source.split('\n')[scenario.line - 1].indexOf('value') + 1;
 			assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
@@ -917,7 +917,7 @@ return dormant
 `;
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
 		runtime.machine.cpu.reset();
-		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		runGuestToHalt(runtime.machine.cpu, 1000);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target', 'value'], 4, 9);
 		assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
@@ -932,7 +932,7 @@ return table
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
 
 		runtime.machine.cpu.reset();
-		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		runGuestToHalt(runtime.machine.cpu, 1000);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['table'], 4, 8);
 		assert.equal(result.kind, 'value');
@@ -950,7 +950,7 @@ return value
 `;
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
 		runtime.machine.cpu.reset();
-		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		runGuestToHalt(runtime.machine.cpu, 1000);
 		const fault = createRuntimeFaultState();
 		for (const [line, column, expected] of [[7, 8, 11], [5, 11, 22]]) {
 			const result = readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
@@ -971,7 +971,7 @@ return actor:run()
 `;
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
 		runtime.machine.cpu.reset();
-		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		runGuestToHalt(runtime.machine.cpu, 1000);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['self', 'value'], 5, 9);
 		assert.equal(result.kind, 'value');
@@ -988,7 +988,7 @@ return pending
 `;
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
 		runtime.machine.cpu.reset();
-		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		runGuestToHalt(runtime.machine.cpu, 1000);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['pending'], 6, 8);
 		assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
@@ -998,7 +998,7 @@ return pending
 test('suspended inspection borrowers release on invalidation and before an explicit guest call', () => {
 	const { runtime, bridge } = createIntellisenseRuntime('callback = function() return 7 end\nhalt_until_irq');
 	runtime.machine.cpu.reset();
-	assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000), RunResult.Halted);
+	runGuestToHalt(runtime.machine.cpu, 10_000);
 	const guest = bridge.suspendedGuest, events: string[] = [];
 	const releaseFirst = guest.onDidInvalidate(() => { events.push('first'); releaseFirst(); });
 	const releaseSecond = guest.onDidInvalidate(() => { events.push('second'); releaseSecond(); });
@@ -1013,7 +1013,7 @@ test('suspended inspection requires installed source correspondence, and regains
 	const source = 'local target = 42\nhalt_until_irq\nreturn target';
 	const { runtime, bridge, analysis } = createIntellisenseRuntime(source);
 	runtime.machine.cpu.reset();
-	assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000), RunResult.Halted);
+	runGuestToHalt(runtime.machine.cpu, 10_000);
 	const fault = createRuntimeFaultState();
 	const changed = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source.replace('target', 'edited'), runtimeResource)], [])).getFileData(resourceIdentityKey(runtimeResource))!;
 	assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,

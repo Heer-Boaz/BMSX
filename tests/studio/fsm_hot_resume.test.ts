@@ -3,9 +3,8 @@ import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, asStringId, valueBool, valueInteger, valueNil, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
-import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
 import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
@@ -399,7 +398,7 @@ for _, kind in ipairs({ 'sequence', 'selector' }) do
 end
 return aborts
 `, { optLevel });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(2)]);
 });
 
@@ -413,7 +412,7 @@ assert(sequence_children[3] == nested and #nested.children == 1, 'nested builder
 local status<const> = program.evaluate(target, execution, program.operand)
 return status == result.success, target.order
 `);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(1212)]);
 });
 
@@ -433,7 +432,7 @@ local execution<const> = { _execution_state = program.create_execution_state() }
 local status<const> = program.evaluate(target, execution, program.operand)
 return status == result.success, target.order, #children, children.note == 'metadata is not a child'
 `);
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(expected), valueInteger(3), valueBool(true)]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
@@ -451,7 +450,7 @@ for index = 1, #weighted.choices do
 end
 return target.order, weighted.choices[${destination === 0 ? 1 : 3}].weight, weighted.choices.note == 'metadata is not a choice'
 `);
-		assert.equal(choiceCpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(choiceCpu, 10_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(choiceCpu), [valueInteger(expected), valueInteger(9), valueBool(true)]);
 	}
 });
@@ -483,7 +482,7 @@ local target<const> = { order = 0 }
 ${execution}
 return target.order, #nested.children, nested.children[1] == leaf
 `);
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(expected), valueInteger(2), valueBool(true)]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
@@ -520,7 +519,7 @@ local target<const> = { order = 0 }
 ${execution}
 return target.order, #nested.children, same_value
 `);
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(expected), valueInteger(2), valueBool(sameValue)]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
@@ -550,7 +549,7 @@ assert(program.evaluate(target, { _execution_state = program.create_execution_st
 assert(children.note == 'metadata is not a child')
 return target.order, #children, #nested.children
 `);
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), inward ? [valueInteger(1312), valueInteger(2), valueInteger(3)] : [valueInteger(1132), valueInteger(4), valueInteger(1)]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
@@ -585,7 +584,7 @@ local program<const> = require('cartlib/behaviour_tree/program').compile('oracle
 assert(program.evaluate(target, {_execution_state=program.create_execution_state()}, program.operand) == result.success)
 return target.order, #children, #nested.children, children.note == 'metadata is not a child'
 `);
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), inward ? [valueInteger(1213), valueInteger(2), valueInteger(3), valueBool(true)] : [valueInteger(1231), valueInteger(4), valueInteger(1), valueBool(true)]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
@@ -595,7 +594,7 @@ return target.order, #children, #nested.children, children.note == 'metadata is 
 
 test('cartlib FSM and behaviour-tree instances retain semantic state across program replacement', () => {
 	const { cpu } = createCartlibProgramHarness(CART_ENTRY_SOURCE);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [
 		valueInteger(1021),
 		valueInteger(73),
@@ -642,7 +641,7 @@ machine:reset()
 machine:start()
 return machine.current_id=='left', left.current_id=='active', machine.states.right.current_id=='active', left.current_state==left.states.active
 `);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true), valueBool(true), valueBool(true)]);
 	model.undo(); assert.equal(model.buffer.getText(), FSM_INITIAL_SOURCE);
 	model.dispose();
@@ -655,7 +654,7 @@ test('cold BT channel selection leaves actual FSM transition work identical to e
 			traceStatements: mode === 'compile-only'
 				? ['bt.compile.begin', 'bt.compile.node', 'bt.compile.end'] : mode,
 		});
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 10_000_000);
 		const [runValue, , recorderValue] = materializeCpuCompletionValues(cpu);
 		const run = asClosure(runValue, cpu.gc);
 		const recorder = valuePayload(recorderValue);
@@ -673,7 +672,7 @@ test('cold BT channel selection leaves actual FSM transition work identical to e
 
 test('FSM transition recorder publishes ordered fixed-capacity facts without steady-state allocation', () => {
 	const { cpu } = createCartlibProgramHarness(TRANSITION_RECORDER_ENTRY_SOURCE, { traceStatements: 'emit' });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const [runValue, detachValue, channelValue] = materializeCpuCompletionValues(cpu);
 	const run = asClosure(runValue, cpu.gc);
 	const detach = asClosure(detachValue, cpu.gc);
@@ -743,7 +742,7 @@ local definition<const> = fsm.state_definition.new('fixture.paths', blueprint)
 ${checks}
 return ${FSM_PATH_CASES.length}
 `);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(FSM_PATH_CASES.length)]);
 });
 
@@ -777,7 +776,7 @@ local definition<const> = fsm.state_definition.new('retarget.oracle', blueprint)
 ${checks}
 return ${FSM_RETARGET_PATH_CASES.length}
 `);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(FSM_RETARGET_PATH_CASES.length)]);
 });
 
@@ -825,7 +824,7 @@ fsm.transition_state_path(other, fsm.bind_state_path(other.definition, '../'))
 assert(machine.current_state==other and target.exits==1 and target.entries==1, 'upward traversal is not state re-entry')
 return true
 `);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	model.undo(); assert.equal(model.buffer.getText(), FSM_RETARGET_EXECUTION_SOURCE);
 	model.dispose();

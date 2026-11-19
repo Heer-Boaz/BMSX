@@ -12,7 +12,7 @@ import { ActionEffectObservation } from '../../ide/testing/observations/actionef
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { RECORDER32_BOOT_SOURCE, RECORDER32_INITIALIZE, RECORDER32_MODULES, RECORDER32_ROM_SOURCE } from '../helpers/recorder32';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const sources = RECORDER32_MODULES.map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') }));
 sources.push({ path: 'test/boot', source: RECORDER32_BOOT_SOURCE });
@@ -87,7 +87,7 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 				assert.equal(rolling.droppedCount, 1);
 				assert.deepEqual(accepted, [published - 2, published - 1, published].map(word => word >>> 0));
 				cpu.setExecutionHook(null, 0, 0);
-				assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+				runGuestToHalt(cpu, 100_000);
 				rolling.drain(24);
 				assert.deepEqual(accepted, [published - 2, published - 1, published, next].map(word => word >>> 0));
 			}

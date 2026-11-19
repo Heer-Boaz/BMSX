@@ -3,14 +3,13 @@ import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { asThread, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { retireRuntimeFrameScopes } from '../../ide/runtime/frame_scopes';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { compileFrameEvaluationTest } from '../helpers/frame_evaluation';
 import { createTestRuntime } from '../helpers/runtime_sources';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const mode of ['source-install', 'completion-unwind'] as const) test(`IDE retires real firmware borrows before ${mode}`, () => {
 	const image = compileFrameEvaluationTest(`
@@ -31,7 +30,7 @@ return true`, 0);
 	cpu.reset(); cpu.installBootPrimitives();
 	// A pre-initialization source installation has no scope registry yet.
 	retireRuntimeFrameScopes(runtime, sources, guest);
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 30_000_000);
 	const initialized = materializeCpuCompletionValues(cpu);
 	assert.deepEqual(initialized, [valueBool(true), valueBool(true)], initialized.map(value => guest.formatValue(value)).join('\t'));
 	const keeper = asThread(guest.global('keeper'), cpu.gc);

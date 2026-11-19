@@ -5,13 +5,12 @@ import { test } from 'node:test';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { createEditorSemanticFrontend } from '../../ide/editor/contrib/intellisense/frontend';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
 	test(`compiler accepts ambient boot globals only in the system domain at O${optLevel}`, () => {
@@ -36,7 +35,7 @@ for (const optLevel of [3] as const) {
 		});
 		const { cpu } = createTestBlua32PairCpu(linkTestBlua32Pair(bios, cart));
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 10000), RunResult.Halted);
+		runGuestToHalt(cpu, 10000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
 		for (const primitive of LUA_BOOT_PRIMITIVES) {
 			assert.equal(cpu.getSystemGlobalByKey(cpu.stringPool.find(primitive.name)!), valueNil());

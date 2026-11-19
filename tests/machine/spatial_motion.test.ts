@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 // Synthetic real-component owners exercise the actual motion and boundary
 // kernels, not ordinary carts or a second host-side physics implementation.
@@ -236,7 +236,7 @@ end}
 for (const optLevel of [3] as const) {
 	test(`spatial motion O${optLevel}: owned integration, tile sweeps and synchronous footprint boundaries`, t => {
 		const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		if (optLevel === 3) {
 			const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 			for (const lane of ['run_candidates', 'run', 'run_callbacks']) {

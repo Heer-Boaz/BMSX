@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { SceneRegistrationProvenance } from '../../ide/workbench/contrib/scene_editor/registration_provenance';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) for (const traceStatements of ['emit', 'erase'] as const)
 test(`Scene plan provenance observes real publication, not function entry (O${optLevel}, ${traceStatements})`, () => {
@@ -40,7 +40,7 @@ last = scenes.instantiate('same')
 		modules: [...WORLD_CPU_MODULES, { path: 'cartlib/world/scene_library', source: library }] });
 	const provenance = new SceneRegistrationProvenance(cpu, { layout: images.cartImage, symbols: images.cartSymbols }, 0);
 	cpu.setInstructionObserver(provenance);
-	try { assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted); }
+	try { runGuestToHalt(cpu, 10_000_000); }
 	finally { cpu.setInstructionObserver(null); }
 	assert.equal(asInteger(cpu.getGlobalByKey(cpu.stringPool.find('registration_visits')!)), 15);
 	assert.equal(provenance.plans.size, 4, 'failed compilation has no plan publication');

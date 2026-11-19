@@ -3,13 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, valueFloat, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { IO_SYS_TIME_MS } from '../../machine/ts/spec/bmsx/io';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const sources = ['os', 'math', 'math/trig', 'math/trig/reduce', 'string', 'string/base', 'string/mapped',
 	'string/pattern', 'string/format', 'number/format', 'string/pack', 'string/float/decode',
@@ -34,7 +33,7 @@ for (const optLevel of [3] as const) test(`BIOS samples the unsigned millisecond
 	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const { cpu, memory } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 1_000_000);
 		const sample = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('sample')!), cpu.gc);
 		let reads = 0, word = 0;
 		memory.mapIoRead(IO_SYS_TIME_MS, memory, () => { ++reads; return word; });
@@ -104,7 +103,7 @@ for (const optLevel of [3] as const) test(`BIOS civil seconds: exact signed endp
 	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+		runGuestToHalt(cpu, budget);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(epochs.length)]);
 		if (backend === CpuExecutionBackend.Interpreter && process.env.BMSX_CPU32_RUNNER) {
 			assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER, ['--execute-rom', '--boot-primitives', String(budget)],

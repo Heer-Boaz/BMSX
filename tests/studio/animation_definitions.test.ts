@@ -22,8 +22,8 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { afterTest } from '../helpers/test_cleanup';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'definitions.lua', location: { kind: 'workspace' as const, path: 'definitions.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua', source: { resid: 'definitions', type: 'lua' as const } };
 
@@ -151,7 +151,7 @@ test('a source-authored track extends a native frame builder without replacing i
 			assert(owner.x == 11 and owner.y == 20)
 			assert(definitions.second.duration_frames == 8)
 		`, { optLevel, modules: [{ path: 'definitions', source: model.buffer.getText() }] });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 	}
 	model.undo(); assert.equal(model.buffer.getText(), source); model.dispose();
 });

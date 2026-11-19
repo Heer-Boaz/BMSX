@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { bindFunctionProbe } from '../../ide/runtime/function_probe';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
-import { compileLuaSource } from '../helpers/cpu_test_harness';
+import { compileLuaSource, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 
 for (const optLevel of [3] as const) test(`function-entry observation binds original argument slots and inlined instruction sites (O${optLevel})`, {
@@ -33,7 +32,7 @@ return value`, 'observer.lua', optLevel);
 		assert.equal(domain, -1);
 		seen.push(locations.get(pc)!.map(slot => registers.getInteger(slot)));
 	} });
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	let value = 11;
 	const expected = [];
 	for (let i = 0; i < 4; i++) for (const increment of [3, 5]) {
@@ -64,7 +63,7 @@ return true`, 'loop_entry.lua', optLevel));
 	cpu.setInstructionObserver({ points: [new Set(locations.keys()), new Set(), new Set()], observe(_domain, pc, registers) {
 		seen.push(registers.getInteger(locations.get(pc)![0]));
 	} });
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(seen, [3]);
 });
 
@@ -88,7 +87,7 @@ return outer(input)`, 'nested_entry.lua', optLevel));
 	cpu.setInstructionObserver({ points: [new Set(locations.keys()), new Set(), new Set()], observe(_domain, pc) {
 		seen.push(locations.get(pc)!);
 	} });
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(seen, ['outer', 'inner']);
 });
 
@@ -117,7 +116,7 @@ return definitions`;
 		observed.push({ id: cpu.stringPool.toString(registers.getStringId(locations.get(pc)![0])),
 			call: lines[range.start.line - 1].slice(range.start.column - 1, range.end.column) });
 	} });
-	try { assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted); }
+	try { runGuestToHalt(cpu, 100_000); }
 	finally { cpu.setInstructionObserver(null); }
 	assert.deepEqual(observed, [
 		{ id: 'same', call: "scenes.register('same', { value = 1 })" },

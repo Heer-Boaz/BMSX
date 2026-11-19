@@ -17,6 +17,7 @@ import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { valueBool, valueBuiltinFunction, valueInteger, valueNil, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('all nominal opcode prices include instruction issue, while WIDE remains free', () => {
 	const expected = [
@@ -169,7 +170,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17), integerConstant(29)], functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
 			cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.LOADK]);
-			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
+			runGuestToHalt(cpu, 1);
 			const count = producedOperand === 0 ? 2 : producedOperand - 1;
 			assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - count);
 			const values: Value[] = []; cpu.readCompletionValues(values);

@@ -6,6 +6,7 @@ import { compileCoroutineTest, coroutineVectors } from '../helpers/coroutine';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { THREAD_RECORD_KIND, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
 	for (const [name, body] of Object.entries(coroutineVectors)) {
@@ -13,7 +14,7 @@ for (const optLevel of [3] as const) {
 			const { cpu } = createTestSystemCpu(compileCoroutineTest(body, optLevel));
 			cpu.installBootPrimitives();
 			if (name === 'halted_tooling_call') {
-				assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+				runGuestToHalt(cpu, 100000);
 				assert.equal(cpu.isHaltedUntilIrq(), true);
 				const depth = cpu.getFrameDepth();
 				cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));

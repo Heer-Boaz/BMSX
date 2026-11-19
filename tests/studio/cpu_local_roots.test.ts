@@ -2,9 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { asClosure, asStringId, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { prepareLuaLiteral } from '../../ide/runtime/lua_literal';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource } from '../helpers/cpu_test_harness';
+import { compileLuaSource, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
 	test(`local roots own nested host literal materialization and release nested scopes (O${optLevel})`, t => {
@@ -45,7 +44,7 @@ for (const optLevel of [3] as const) {
 			const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource(
 				'local holder = {1}; return function(...) if holder[1] == 1 then return ... end end', 'call_roots.lua', optLevel,
 			)));
-			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			runGuestToHalt(cpu, 100000);
 			const completion: Value[] = [];
 			cpu.readCompletionValues(completion);
 			const closure = asClosure(completion[0], cpu.gc);
@@ -61,7 +60,7 @@ for (const optLevel of [3] as const) {
 			cpu.luaHeap.setCollectionTarget(0);
 			cpu.beginCompletionCall(closure, args);
 			assert.ok(gc.mock.callCount() > 0, 'actual call entry must grow the stack and collect before copying host arguments');
-			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			runGuestToHalt(cpu, 100000);
 			cpu.readCompletionValues(completion);
 			assert.deepEqual(completion.map(value => cpu.stringPool.toString(asStringId(value))), strings);
 		});

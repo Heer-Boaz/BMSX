@@ -3,12 +3,11 @@ import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator
 import { valueNil, asClosure, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function entryCount(tables: TableRecords, table: number): number {
 	let count = 0;
@@ -46,7 +45,7 @@ assert(#registry:entries(key) == 0 and #registry:entries(other) == 1)
 registry:deregister(first)
 probe.remaining = registry._entries_by_key
 `, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		assert.equal(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('after_deregister')!), valueNil(), 'last deregistered member must retire its key');
 		assert.equal(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('after_reconcile')!), valueNil(), 'last reconciled member must retire its key');
@@ -71,7 +70,7 @@ function probe.churn(count)
  probe.weak = weak
 end
 `, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const churn = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('churn')!), cpu.gc);
 		const registry = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('registry')!));
@@ -116,7 +115,7 @@ function probe.churn(count)
  assert(#world._objects == 0 and next(registry._entries_by_key) == nil)
 end
 `, { optLevel, modules: WORLD_CPU_MODULES });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const churn = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('churn')!), cpu.gc);
 		let warmed = 0;
@@ -147,7 +146,7 @@ kernel = function(count)
  end
 end
 `, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 128);
 		assert.equal(profile.reservations, 0);

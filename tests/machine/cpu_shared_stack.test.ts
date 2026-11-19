@@ -13,6 +13,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { compileCoroutineTest } from '../helpers/coroutine';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`fixed CALL reuses supplied slots and preserves only its lower caller prefix (${backend})`, () => {
@@ -86,10 +87,10 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			{ wordIndex: 10, functionAddress: blua32TestFunctionAddress(0, 3) },
 		] });
 		const { cpu } = createTestSystemCpu(image, backend);
-		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		runGuestToHalt(cpu, 1000);
 		for (const [name, expected] of [['outer_read', 51], ['inner_read', 42]] as const) {
 			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern(name)), cpu.gc));
-			assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+			runGuestToHalt(cpu, 100);
 			const values: Value[] = [];
 			cpu.readCompletionValues(values);
 			assert.deepEqual(values, [valueInteger(expected)], name);
@@ -142,7 +143,7 @@ return count('#', empty()), count('#', implicit()), count('#', nilvalue())
 `, optLevel);
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 10000), RunResult.Halted);
+		runGuestToHalt(cpu, 10000);
 		const values: Value[] = [];
 		cpu.readCompletionValues(values);
 		assert.deepEqual(values, [valueInteger(0), valueInteger(0), valueInteger(1)]);

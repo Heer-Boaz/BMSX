@@ -1,7 +1,4 @@
-import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
 
 const definitions = `
@@ -16,9 +13,11 @@ prefab.define({def_id='spatial.body',
  class=object_2d})
 `;
 
+// One cart holds every case; each case starts from the same booted state.
+const rom = createCartlibCaseRom(setup, { modules });
+
 for (const optLevel of [3] as const) {
-	test(`Spatial declarations default to identity without sharing mutable instance state (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+	rom.test(`Spatial declarations default to identity without sharing mutable instance state (O${optLevel})`, `
 world:start()
 
 for _, family in ipairs({'2d','3d'}) do
@@ -48,12 +47,9 @@ authored.ox=99
 local supplied<const> = hierarchy.resolve(world:spawn('spatial.explicit-default',{}))
 assert(supplied.wxx==2 and supplied.wyx==1 and supplied.wyy==3 and supplied.wox==4 and supplied.woy==5,
  'default identity displaced or failed to snapshot an authored nonidentity affine')
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 
-	test(`Construction hooks share the final owner and raw options before Scene and procedural admission (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+	rom.test(`Construction hooks share the final owner and raw options before Scene and procedural admission (O${optLevel})`, `
 world:start()
 
 local component<const> = setmetatable({}, {__index=base_component})
@@ -99,12 +95,9 @@ assert(actor.part.owner==actor and procedural.part.owner==procedural and actor.p
 assert(prefab.definition('inputs.actor').defaults.value==10 and prefab.definition('inputs.actor').defaults.flag==true)
 scene:dispose()
 procedural:mark_for_disposal()
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 
-	test(`World installs exact spatial identities and forward authored poses before every user hook (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + definitions + `
+	rom.test(`World installs exact spatial identities and forward authored poses before every user hook (O${optLevel})`, definitions + `
 local constructed<const> = {}
 local check<const> = function(self)
  local child<const> = self.scene.members.child
@@ -145,12 +138,9 @@ other:dispose()
 empty:mark_for_disposal()
 assert(world._spatial_hierarchy._count == 0 and registry:get(child.id)==nil,
  'World teardown retained spatial components')
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 
-	test(`Spatial admission binds actual 2D/3D objects and rejects invalid authored relationships (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + definitions + `
+	rom.test(`Spatial admission binds actual 2D/3D objects and rejects invalid authored relationships (O${optLevel})`, definitions + `
 local bad_parent<const> = pcall(function() scenes.register('bad.parent', { objects = {
  { member_id='a', definition_id='spatial.2d', parent='absent', options={} },
 } }) end)
@@ -182,12 +172,9 @@ assert(body:set_transform(2,0,1,3,7,8) and body:set_global_position(9,10)
  'Object2D writers or intrinsic identity were replaced by a restricted Transform component')
 world:clear()
 assert(world._spatial_hierarchy._count == 0, 'clear retained 2D/3D component storage')
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 
-	test(`Staged Scene construction requires selected/live parents and cancels unadmitted descendants (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + definitions + `
+	rom.test(`Staged Scene construction requires selected/live parents and cancels unadmitted descendants (O${optLevel})`, definitions + `
 scenes.register('staged', { objects = {
  {member_id='child',definition_id='spatial.2d',parent='parent',position={x=3,y=4},options={}},
  {member_id='parent',definition_id='spatial.2d',position={x=10,y=20},options={}},
@@ -237,12 +224,9 @@ local canceled<const> = scenes.instantiate('cancel')
 assert(child_constructed == 0 and parent_despawned == 1 and next(canceled.members) == nil
  and #canceled.objects.items == 0 and world._spatial_hierarchy._count == 0,
  'terminal unadmitted parent published or detached an unadmitted descendant')
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 
-	test(`World serializes reparent commits and settles rejected/callback-requested operations exactly once (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + definitions + `
+	rom.test(`World serializes reparent commits and settles rejected/callback-requested operations exactly once (O${optLevel})`, definitions + `
 local a<const> = world:spawn('spatial.2d', {})
 local b<const> = world:spawn('spatial.2d',{transform={xx=1,xy=0,yx=0,yy=1,ox=10,oy=20}})
 local results<const> = {}
@@ -282,12 +266,9 @@ world:clear()
 world:_commit_mutation_barrier()
 assert(#results == 5 and results[5] == hierarchy.retired_target and a.world == nil and b.world == nil
  and world._spatial_hierarchy._count == 0, 'clear dropped a request or committed it against retiring targets')
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 
-	test(`Scene/Space lifetimes preserve independent surviving spatial children before all teardown hooks (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + definitions + `
+	rom.test(`Scene/Space lifetimes preserve independent surviving spatial children before all teardown hooks (O${optLevel})`, definitions + `
 scenes.register('ownership.a',{objects={}})
 scenes.register('ownership.b',{objects={}})
 local outgoing<const> = scenes.create('ownership.a')
@@ -336,12 +317,9 @@ assert(s.world == nil and leaf.world == world, 'explicit subtree removal crossed
 surviving:dispose()
 replacement:mark_for_disposal()
 assert(world._spatial_hierarchy._count == 0, 'cross-Scene lifetime retained a spatial binding')
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 
-	test(`Transform TRS uses real firmware trigonometry without a second stored pose (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + definitions + `
+	rom.test(`Transform TRS uses real firmware trigonometry without a second stored pose (O${optLevel})`, definitions + `
 local parent<const> = world:spawn('spatial.2d',{transform={xx=2,xy=0,yx=1,yy=2,ox=10,oy=20}})
 local child<const> = world:spawn('spatial.2d',{parent=parent})
 child:set_pose(3,4,math.pi*0.5,2,3)
@@ -357,12 +335,9 @@ assert(math.abs(node.wxx-2) < 0.000001 and math.abs(node.wxy) < 0.000001
  and math.abs(node.wyx) < 0.000001 and math.abs(node.wyy-3) < 0.000001
  and node.wox == 7 and node.woy == 8, 'world TRS did not solve the complete parent inverse')
 world:clear()
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 
-	test(`World clear cancels births from its closing generation without restarting their lifecycle (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + definitions + `
+	rom.test(`World clear cancels births from its closing generation without restarting their lifecycle (O${optLevel})`, definitions + `
 local constructed = 0
 local spawned = 0
 local child
@@ -394,12 +369,9 @@ assert(constructed==0 and spawned==0 and child.world==nil and #world._objects==0
  and resets==1 and reset_child.world==nil and world._spatial_hierarchy._count==0
  and not world._mutation_barrier_open and not world._clearing,
  'clear retained a teardown-requested birth or entered its ready/active lifecycle')
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 
-	test(`Generated World schedules publish update admission and retire group context on every exit (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+	rom.test(`Generated World schedules publish update admission and retire group context on every exit (O${optLevel})`, `
 world:start()
 
 local clock<const> = require('cartlib/clock')
@@ -447,14 +419,11 @@ local empty<const> = world._system_manager:configure({},20,20)
 empty()
 assert(world._update_revision==4 and world._executing_tick_group==nil,
  'empty update did not publish a distinct completed admission')
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 }
 
 for (const optLevel of [3] as const) {
-	test(`Intrinsic World admits constructor children under their actual pending parent (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+	rom.test(`Intrinsic World admits constructor children under their actual pending parent (O${optLevel})`, `
 world:start()
 
 local spawned=0
@@ -483,12 +452,9 @@ local canceled<const> = world:spawn('pending.actor',{make_child=true,cancel=true
 assert(canceled.world==nil and canceled.child.world==nil and spawned==2
  and registry:get(canceled.id)==nil and registry:get(canceled.child.id)==nil)
 world:clear()
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 
-	test(`Unrepresentable partial semantic admission publishes no object or Scene batch and leaves no open barrier (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+	rom.test(`Unrepresentable partial semantic admission publishes no object or Scene batch and leaves no open barrier (O${optLevel})`, `
 world:start()
 
 local constructed=0
@@ -512,12 +478,9 @@ assert(not batch and not world._mutation_barrier_open and world._pending_admissi
 scene:spawn_member('good')
 assert(registry:get(scene.members.good.id)==scene.members.good and constructed==2)
 world:clear()
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 
-	test(`Retiring ancestors and descendants publish clean final world poses before any ondespawn getter (O${optLevel})`, () => {
-		const { cpu } = createCartlibProgramHarness(setup + `
+	rom.test(`Retiring ancestors and descendants publish clean final world poses before any ondespawn getter (O${optLevel})`, `
 world:start()
 
 local reads<const> = {}
@@ -538,13 +501,10 @@ local x,y=survivor:get_global_position()
 assert(x==12 and y==0 and survivor.parent==nil and survivor.world==world and survivor.ox==12)
 assert(a:get_global_position()==10 and b:get_global_position()==15)
 world:clear()
-`, { optLevel, modules });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	});
+`);
 }
 
-for (const optLevel of [3] as const) test(`Keep World to the already committed parent preserves known singular semantic channels and completes once (O${optLevel})`, () => {
-	const { cpu } = createCartlibProgramHarness(setup + `
+for (const optLevel of [3] as const) rom.test(`Keep World to the already committed parent preserves known singular semantic channels and completes once (O${optLevel})`, `
 world:start()
 
 local completed=0
@@ -576,6 +536,4 @@ for dimension=2,3 do
 end
 assert(completed==4)
 world:clear()
-`, { optLevel, modules });
-	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-});
+`);

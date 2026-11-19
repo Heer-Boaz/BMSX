@@ -4,9 +4,8 @@ import { test } from 'node:test';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as v from '../../machine/ts/machine/cpu/value';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const entrySource = `require('base')
 local fields<const> = require('string/pack')
@@ -34,7 +33,7 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
    { entrySource, optLevel, programDomain: 'system' });
   const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled), backend);
   cpu.installBootPrimitives();
-  assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+  runGuestToHalt(cpu, 1_000_000);
   const closure = v.asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
   const call = (...args: v.Value[]) => {
    runCompletionClosure(cpu, closure, args);

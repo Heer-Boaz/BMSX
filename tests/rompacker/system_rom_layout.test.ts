@@ -4,7 +4,6 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { BLUA32_FUNCTION_RECORD_SIZE } from '../../machine/ts/spec/blua32/image_format';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { buildRomBlua32Tail, finalizeRompack } from '../../scripts/rompacker/rombuilder';
@@ -19,7 +18,7 @@ import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { buildScenarioMediaFixture } from '../helpers/scenario_media';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { afterTest } from '../helpers/test_cleanup';
 
 const RAM_BYTES = 0x00400000;
@@ -52,7 +51,7 @@ for (const optLevel of [3] as const) for (const debug of [false, true])
 		assert.deepEqual(bytes.subarray(payload.start, payload.end), new Uint8Array(probe.buffer));
 		assert.ok(bytes.byteLength < SYSTEM_BLUA32_IMAGE_LIMIT, 'growth capacity is not serialized as zero padding');
 		const { cpu } = createTestSystemCpu({ romBytes: bytes });
-		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0x12345678), valueInteger(payload.start)]);
 	});
 
@@ -78,7 +77,7 @@ test('system source rebuild relocates asset references after code growth without
 	assert.ok(payload.start! > oldPayload.start!);
 	assert.deepEqual(readBlua32BiosImports(bytes).functions, readBlua32BiosImports(fixture.systemRom).functions);
 	const { cpu } = createTestSystemCpu({ romBytes: bytes });
-	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0x12345678 + 128), valueInteger(payload.start)]);
 });
 
@@ -114,6 +113,6 @@ return *p`;
 	const bytes = layoutBlua32MediaInstallation(sources, boot).systemLayer!.bytes;
 	assert.deepEqual(readBlua32BiosImports(bytes).functions, readBlua32BiosImports(fixture.systemRom).functions);
 	const { cpu } = createTestSystemCpu({ romBytes: bytes });
-	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0x12345678)]);
 });

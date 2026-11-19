@@ -1,9 +1,9 @@
 import { valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 // These are real cartlib registrations, not a host-side model of a registry.
 // An entry into register is not evidence that its definition wins: a nested
@@ -48,6 +48,6 @@ assert(scenes.definition('fixture').objects[1].member_id == 'outer')
 assert(current.members.nested ~= nil)
 fixture_passed = true
 `, { optLevel, modules: WORLD_CPU_MODULES });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('fixture_passed')!), valueBool(true));
 });

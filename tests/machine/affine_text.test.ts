@@ -2,11 +2,10 @@ import { valueNil, asClosure, asStringId, valuePayload } from '../../machine/ts/
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const modules = [
 	...WORLD_CPU_MODULES,
@@ -158,7 +157,7 @@ for (const optLevel of [3] as const) {
 	for (const [name, fixture] of [['plain', plain], ['rich', rich]] as const) {
 		test(`Text ${name} retains local layout and transforms its complete geometry (O${optLevel})`, t => {
 			const { cpu } = createCartlibProgramHarness(setup + fixture, { optLevel, modules });
-			assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+			runGuestToHalt(cpu, 30_000_000);
 			const [failure] = materializeCpuCompletionValues(cpu);
 			assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 			if (optLevel === 3) {

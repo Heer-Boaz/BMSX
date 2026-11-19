@@ -3,7 +3,7 @@ import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -12,7 +12,7 @@ import {
 	linkRawTestSystemBlua32,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const emptyCode = new Uint8Array(INSTRUCTION_BYTES);
 writeInstruction(emptyCode, 0, OpCode.RET, 0, 0, 0);
@@ -29,7 +29,7 @@ function createCpuWithProgram(source: string): CPU {
 
 function collectHeapDeltaAfterRun(source: string): { before: number; after: number } {
 	const cpu = createCpuWithProgram(source);
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runGuestToHalt(cpu, 100000);
 	const after = cpu.collectTrackedHeapBytes();
 	cpu.setGlobalByKey(cpu.stringPool.find('saved')!, valueNil());
 	return { before: cpu.collectTrackedHeapBytes(), after };
@@ -131,7 +131,7 @@ test('non-capturing const functions materialize as static proto references', () 
 	const before = cpu.collectTrackedHeapBytes();
 	const backingBefore = heapAllocationBytes(cpu.rootThread.backingByteLength());
 
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runGuestToHalt(cpu, 100000);
 
 	assert.equal(cpu.collectTrackedHeapBytes() - before,
 		heapAllocationBytes(cpu.rootThread.backingByteLength()) - backingBefore);
@@ -144,7 +144,7 @@ test('restored static closures reuse the static proto cache', () => {
 		'end',
 		'return f',
 	].join('\n'));
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runGuestToHalt(cpu, 100000);
 	const closure = materializeCpuCompletionValues(cpu)[0];
 	const before = cpu.collectTrackedHeapBytes();
 

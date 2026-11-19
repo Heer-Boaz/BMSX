@@ -2,10 +2,9 @@ import { asClosure, valueBool, valueInteger, valuePayload } from '../../machine/
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const modules = ['cartlib/gx/gp0', 'cartlib/gx/model_batch'].map(path => ({
 	path, source: readFileSync(`${path}.lua`, 'utf8'),
@@ -48,7 +47,7 @@ end
 
 function run(source: string, optLevel: 0 | 3) {
 	const { cpu } = createCartlibProgramHarness(setup + source, { optLevel, modules });
-	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 20_000_000);
 	return { cpu, values: materializeCpuCompletionValues(cpu) };
 }
 

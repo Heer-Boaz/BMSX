@@ -2,9 +2,8 @@ import { asClosure, valueNil, valueInteger, valuePayload } from '../../machine/t
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const trackEvaluator = readFileSync('cartlib/timeline/track_evaluator.lua', 'utf8').replace(
 	'local compile_syntax<const> = lua_compiler.compile_syntax',
@@ -44,7 +43,7 @@ function probe.exercise()
  refs[1]=first; refs[2]=writer
 end
 `, { optLevel });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('exercise')!), cpu.gc), []);
 	const refs = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
@@ -73,7 +72,7 @@ assert(probe.compile_count==after_first,'equivalent capabilities recompiled the 
 timelines:seek_time('x',50); timelines:seek_time('y',50)
 assert(target.x==5 and target.y==15,'shared code retained another program')
 `, { optLevel, modules: instrumentedModules });
-	assert.equal(cpu.runUntilDepth(0, 25_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 25_000_000);
 });
 
 for (const optLevel of [3] as const) test(`sample callbacks remain local to their compiled timeline (O${optLevel})`, () => {
@@ -94,7 +93,7 @@ calls=0
 timelines:seek_time('sample1',50); timelines:seek_time('sample2',50)
 assert(calls==11,'sample callbacks retained the wrong program')
 `, { optLevel, modules: instrumentedModules });
-	assert.equal(cpu.runUntilDepth(0, 25_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 25_000_000);
 });
 
 for (const optLevel of [3] as const) test(`value-factory cache releases programs and separates step domains (O${optLevel})`, () => {
@@ -121,7 +120,7 @@ function probe.recreate()
  probe.refs[1]=a
 end
 `, { optLevel, modules: instrumentedModules });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	const refs = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
 	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('seed')!), cpu.gc), []);

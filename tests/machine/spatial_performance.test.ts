@@ -3,7 +3,7 @@ import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { asClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -14,7 +14,7 @@ import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
-import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 // Reference workload design: Bevy's stress_tests/transform_hierarchy.rs separates
 // update_leaves, update_shallow, wide trees and inactive rigs. Here the measured
@@ -159,7 +159,7 @@ for (const optLevel of [3] as const) {
 	test(`spatial CPU: unrelated World size does not tax a changed leaf or dirty branch (O${optLevel})`, t => {
 		const { cpu, images } = createCartlibProgramHarness(worldFixture, { optLevel, modules: WORLD_CPU_MODULES });
 		const initialHeap = cpu.luaHeap.usedBytes();
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const bootCycles = 20_000_000 - cpu.instructionBudgetRemaining;
 		const bootAllocatedBytes = cpu.luaHeap.usedBytes() - initialHeap;
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
@@ -214,7 +214,7 @@ for (const optLevel of [3] as const) {
 
 	test(`spatial CPU: World churn retires identities and reuses bounded retained storage (O${optLevel})`, t => {
 		const { cpu, images } = createCartlibProgramHarness(worldFixture, { optLevel, modules: WORLD_CPU_MODULES });
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('admit')!), cpu.gc), []);
 		const churn = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('churn')!), cpu.gc);
@@ -326,7 +326,7 @@ for (const optLevel of [3] as const) for (const dimension of [2, 3] as const) {
 			const linked = linkTestSystemBlua32(compiled);
 			const { cpu } = createTestSystemCpu(linked);
 			const initialHeap = cpu.luaHeap.usedBytes();
-			assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+			runGuestToHalt(cpu, 10_000_000);
 			const admissionCycles = 10_000_000 - cpu.instructionBudgetRemaining;
 			const allocatedBytes = cpu.luaHeap.usedBytes() - initialHeap;
 			const retainedBytes = cpu.collectTrackedHeapBytes() - initialHeap;

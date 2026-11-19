@@ -28,6 +28,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { RAM_CODE_FIXTURE_BYTES, blua32TestFunctionAddress, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function loadSource(kind: MemoryAccessKind, displaced = false) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -159,7 +160,7 @@ test('an empty ROM bus does not hide F64 cross-region reads or high-half faults'
 		assert.equal(frame.registers.get(0), valueFloat(1), 'the high word comes from cartridge RAM, not ROM padding');
 		frame.registers.setInteger(0, 73); frame.registers.setInteger(1, SYSTEM_ROM_SIZE - 4); frame.top = 0;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
-		assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
+		runGuestToHalt(cpu, 20);
 		assert.equal(frame.registers.get(0), valueInteger(73)); assert.equal(frame.top, 0);
 		assert.equal(cpu.captureRuntimeState().epcWord, image.image.functions[0].codeAddress);
 	}

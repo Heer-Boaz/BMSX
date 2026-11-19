@@ -1,9 +1,8 @@
 import { asClosure, valueInteger, valueBool, valueNil, asStringId, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) test(`FSM reset releases every previous data field and restores declared defaults (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(`
@@ -43,7 +42,7 @@ function probe.reset_tree()
  machine:reset()
 end
 `, { optLevel });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	const seed = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('seed')!), cpu.gc);
 	const resetLocal = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('reset_local')!), cpu.gc);

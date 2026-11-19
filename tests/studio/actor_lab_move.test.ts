@@ -4,7 +4,6 @@ import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output'
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { willExecuteRuntimeDebuggerPlan, didExecuteRuntimeDebuggerPlan } from '../../ide/runtime/debugger_state';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { RemoteInput } from '../../hosts/common/input/remote';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
@@ -26,6 +25,7 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { eventHistoryRuntime } from '../helpers/event_history';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { afterTest } from '../helpers/test_cleanup';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const WORLD = `local actor<const> = { id = 'actor', definition_id = 'fixture', active = true, _components = {}, _components_by_class = {} }
 function actor:mark_for_disposal() self.active = false end
@@ -53,7 +53,7 @@ function fixture(t: TestContext) {
 		new IdeMicrotaskQueue(), { log() {} }, { width: 800, height: 360 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor, parts = editor.editorParts, controller = editor.actorLab;
 	ide.boots.didReplaceMachine(); editor.interaction.setActive(true);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	afterTest(t, async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false);
 		await editor.shutdown(); clearBackgroundTasks(); host.audio.dispose(); host.input.dispose();

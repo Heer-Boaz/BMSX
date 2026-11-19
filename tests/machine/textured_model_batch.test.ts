@@ -2,13 +2,12 @@ import { valueNil, asClosure, valueInteger, asStringId, valuePayload } from '../
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { packModelAsset } from '../../toolchain/ts/rompack/model_asset';
 import { prepareModelTextures } from '../../scripts/rompacker/model_textures';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { createTexturedModelFixture } from '../helpers/textured_model';
-import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) test(`textured model binding, affine clipping and mixed depth runs retain storage (O${optLevel})`, async t => {
 	const { imported } = await createTexturedModelFixture();
@@ -88,7 +87,7 @@ probe.steady(1)
 return failed
 `;
 	const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
-	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 20_000_000);
 	const [failure] = materializeCpuCompletionValues(cpu);
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
