@@ -1,7 +1,7 @@
 import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { runCpuParity } from '../helpers/cpu_execution';
+import { observeRegisterPayloadReads, observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
@@ -226,10 +226,9 @@ for (const op of [OpCode.SHR, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW]) test(`mu
 	const block = page.compiledBlocks!.entries[(image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.sourceWords, 12);
 	const r = frame.registers;
-	const getPayload = r.getPayload.bind(r), setEncoded = r.setEncoded.bind(r);
 	let reads = 0, writes = 0;
-	r.getPayload = index => { ++reads; return getPayload(index); };
-	r.setEncoded = (index, tag, word) => { ++writes; setEncoded(index, tag, word); };
+	observeRegisterPayloadReads(r, () => { ++reads; });
+	observeRegisterStores(r, () => { ++writes; });
 	assert.equal(block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, { remainingCycles: 1, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } })].nextPc, image.image.functions[0].codeAddress);
 	assert.equal(reads, 0, 'the generated block consumes local numeric definitions, not their stale slot values');
 	assert.equal(writes, 5, 'each final numeric slot is published once instead of after every instruction');

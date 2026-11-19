@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { runCpuParity } from '../helpers/cpu_execution';
+import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CompiledBlockExit, CpuExecutionBackend, compiledBlockSupports } from '../../machine/ts/machine/cpu/compiled_block';
-import { JavaScriptRegisterCache } from '../../machine/ts/machine/cpu/compiled_block_registers';
+import { CompiledExitWriteBacks, JavaScriptRegisterCache } from '../../machine/ts/machine/cpu/compiled_block_registers';
 import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32 } from '../../machine/ts/common/endian';
@@ -329,14 +329,15 @@ for (const blocked of [false, true]) test(`later counted blocks retain earlier c
 test('bulk source publication neither discards clean SSA values nor repeats their writeback', () => {
 	const { cpu } = createTestSystemCpu(wordLoop(0), CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-	const cache = new JavaScriptRegisterCache(frame.executionImage, new Map(), new Set()), writes = new Uint32Array(8), set = r.setEncoded.bind(r);
+	const cache = new JavaScriptRegisterCache(frame.executionImage, new Map(), new Set(), new CompiledExitWriteBacks()), writes = new Uint32Array(8);
 	const source = [cache.writeInteger(0, '1'), cache.writeInteger(7, '1'), cache.publishRange(0, 1),
 		'observed.push(r.getInteger(0));', cache.copy(0, 0),
 		cache.writeInteger(2, `${cache.wordOperand(0)}+${cache.wordOperand(7)}`), cache.publishRange(0, 1),
 		'observed.push(r.getInteger(0));', cache.writeBack()];
 	const observed: number[] = [];
-	r.setEncoded = (index, tag, word) => { ++writes[index]; set(index, tag, word); };
-	new Function('r', 'observed', cache.declarations() + source.join('\n'))(r, observed);
+	observeRegisterStores(r, index => { ++writes[index]; });
+	const locals = Array.from({ length: cache.localCount }, (_, index) => `let t${index},w${index};`).join('');
+	new Function('r', 'observed', locals + source.join('\n'))(r, observed);
 	assert.equal(writes[0], 1); assert.equal(writes[7], 1); assert.equal(writes[2], 1);
 	assert.equal(r.getInteger(2), 2); assert.deepEqual(observed, [1, 1]);
 });

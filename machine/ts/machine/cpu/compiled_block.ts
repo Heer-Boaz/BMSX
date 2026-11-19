@@ -281,12 +281,12 @@ export function emitJavaScriptBlock(
 		} else if (compiledTableSupports(op)) {
 			source.push(emitTableOperation(op, page, word, registers, exitIndex));
 		} else if (load || store || words) {
-			if (!words && page.c[word] === MemoryAccessKind.F64LE) source.push('budget-=2;');
+			if (!words && page.c[word] === MemoryAccessKind.F64LE) source.push('B-=2;');
 			const selector = page.b[word], tag = registers.tagOperand(selector), payload = registers.wordOperand(selector);
 			const base = `ma${word}`;
 			source.push(`const ${base}=${tag}===${ValueTag.Integer}?${payload}:(${tag}===${ValueTag.Float}?fw(${payload}):null);if(${base}===null) ${numericFault}`);
 			const address = displaced ? `(${base}+${page.disp[word] * 4})>>>0` : base;
-			const memoryExit = `{state.memoryAddress=a;${registers.exit(exitIndex)}}`;
+			const memoryExit = `{S.memoryAddress=a;${registers.exit(exitIndex)}}`;
 			if (words) source.push(emitWordStores(page, word, address, memoryExit, numericFault, memory, registers));
 			else source.push(emitMemoryAccess(page, word, address, memoryExit, numericFault, memory, registers));
 		} else if (arithmetic) {
@@ -365,7 +365,7 @@ export function finishJavaScriptBlock(page: DecodedInstructionPage, block: Emitt
 	if (compiledBlockComparison(finalOp)) {
 		const expected = page.a[block.finalWord] !== 0;
 		const continuation = block.deferredJumpIndex < 0 ? transfer(block.terminalIndex)
-			: `if(budget>${block.terminal.cycles - BASE_CYCLES[OpCode.JMP]}){${transfer(block.terminalIndex)}}else{${transfer(block.deferredJumpIndex)}}`;
+			: `if(B>${block.terminal.cycles - BASE_CYCLES[OpCode.JMP]}){${transfer(block.terminalIndex)}}else{${transfer(block.deferredJumpIndex)}}`;
 		return emitComparison(page, block.finalWord, block.registers,
 			expected ? continuation : transfer(block.takenIndex), expected ? transfer(block.takenIndex) : continuation);
 	}

@@ -19,9 +19,9 @@ export class CompiledExitWriteBacks {
 		else if (shared !== stores) {
 			let alias = this.aliases.findIndex(entry => entry.index === index && entry.stores === stores);
 			if (alias < 0) alias = this.aliases.push({ index, stores }) - 1;
-			return `exit=${-1 - alias};break region;`;
+			return `X=${-1 - alias};break R;`;
 		}
-		return `exit=${index};break region;`;
+		return `X=${index};break R;`;
 	}
 	public epilogue(): string {
 		const labels = new Map<string, string>();
@@ -29,8 +29,8 @@ export class CompiledExitWriteBacks {
 		let source = '';
 		for (const [stores, cases] of labels) source += `${cases}${stores}break;`;
 		for (let alias = 0; alias < this.aliases.length; ++alias)
-			source += `case ${-1 - alias}:${this.aliases[alias].stores}exit=${this.aliases[alias].index};break;`;
-		return source === '' ? '' : `switch(exit){${source}}`;
+			source += `case ${-1 - alias}:${this.aliases[alias].stores}X=${this.aliases[alias].index};break;`;
+		return source === '' ? '' : `switch(X){${source}}`;
 	}
 }
 
@@ -47,11 +47,11 @@ export class JavaScriptRegisterCache {
 	}
 	public tagOperand(selector: number): string {
 		if (selector < 0) return `${this.image.constTags[-selector - 1]}`;
-		return this.locals.get(selector)?.tag ?? (this.residents.has(selector) ? `rt${selector}` : `r.getTag(${selector})`);
+		return this.locals.get(selector)?.tag ?? (this.residents.has(selector) ? `y${selector}` : `r.t(${selector})`);
 	}
 	public wordOperand(selector: number): string {
 		if (selector < 0) return `k[${-selector - 1}]`;
-		return this.locals.get(selector)?.word ?? (this.residents.has(selector) ? `rw${selector}` : `r.getPayload(${selector})`);
+		return this.locals.get(selector)?.word ?? (this.residents.has(selector) ? `z${selector}` : `r.p(${selector})`);
 	}
 	/** Exact int/f32 value for comparisons; arithmetic rounds Integer inputs separately. */
 	public numberOperand(selector: number): string {
@@ -75,19 +75,19 @@ export class JavaScriptRegisterCache {
 		this.discard(register);
 		this.locals.set(register, { tag: t, word: w });
 		if (this.residents.has(register) || this.outputs.has(register)) this.residents.set(register, true);
-		return `${t}=${tag};${w}=${word};${this.residents.has(register) ? `rt${register}=${t};rw${register}=${w};` : ''}`;
+		return `${t}=${tag};${w}=${word};${this.residents.has(register) ? `y${register}=${t};z${register}=${w};` : ''}`;
 	}
 	public copy(register: number, source: number): string {
 		return register === source ? '' : this.writeEncoded(register, this.tagOperand(source), this.wordOperand(source));
 	}
 	public copyFrom(register: number, bank: string, source: string): string {
-		return this.writeEncoded(register, `${bank}.getTag(${source})`, `${bank}.getPayload(${source})`);
+		return this.writeEncoded(register, `${bank}.t(${source})`, `${bank}.p(${source})`);
 	}
 	public reloadRange(first: number, end: number): string {
 		let source = '';
 		for (const register of this.residents.keys()) if (register >= first && register < end) {
 			this.locals.delete(register);
-			source += `rt${register}=r.getTag(${register});rw${register}=r.getPayload(${register});`;
+			source += `y${register}=r.t(${register});z${register}=r.p(${register});`;
 			this.published.add(register);
 		}
 		return source;
@@ -95,16 +95,16 @@ export class JavaScriptRegisterCache {
 	public writeResidents(): string {
 		let source = '';
 		for (const [register, written] of this.residents) if (written && !this.published.has(register))
-			source += `r.setEncoded(${register},rt${register},rw${register});`;
+			source += `r.s(${register},y${register},z${register});`;
 		return source;
 	}
 	/** Retain common locals; only departing dirty bindings return to the bank. */
 	public transferResidents(target: ReadonlyMap<number, boolean>): string {
 		let source = '';
 		for (const [register, written] of this.residents) if (written && target.get(register) !== true && !this.published.has(register))
-			source += `r.setEncoded(${register},rt${register},rw${register});`;
+			source += `r.s(${register},y${register},z${register});`;
 		for (const register of target.keys()) if (!this.residents.has(register))
-			source += `rt${register}=r.getTag(${register});rw${register}=r.getPayload(${register});`;
+			source += `y${register}=r.t(${register});z${register}=r.p(${register});`;
 		return source;
 	}
 	public discard(register: number): void { this.locals.delete(register); this.published.delete(register); }
@@ -114,10 +114,10 @@ export class JavaScriptRegisterCache {
 	public prepareDynamicOverwrite(first: number, count: string): string {
 		let source = '';
 		for (const [register, written] of this.residents) if (written && register >= first && !this.published.has(register))
-			source += `if(${count}<=${register - first}) r.setEncoded(${register},rt${register},rw${register});`;
+			source += `if(${count}<=${register - first}) r.s(${register},y${register},z${register});`;
 		for (const [register, local] of this.locals) {
 			if (register < first) continue;
-			if (!this.residents.has(register) && !this.published.has(register)) source += `if(${count}<=${register - first}) r.setEncoded(${register},${local.tag},${local.word});`;
+			if (!this.residents.has(register) && !this.published.has(register)) source += `if(${count}<=${register - first}) r.s(${register},${local.tag},${local.word});`;
 			this.discard(register);
 		}
 		return source;
@@ -125,19 +125,19 @@ export class JavaScriptRegisterCache {
 	public writeBack(includeResidents = false): string {
 		let source = '';
 		for (const [register, local] of this.locals) if (!this.residents.has(register) && !this.published.has(register))
-			source += `r.setEncoded(${register},${local.tag},${local.word});`;
+			source += `r.s(${register},${local.tag},${local.word});`;
 		return source + (includeResidents ? this.writeResidents() : '');
 	}
 	public publishRange(first: number, end: number): string {
 		let source = '';
 		for (const [register, local] of this.locals) {
 			if (register < first || register >= end || this.residents.has(register) || this.published.has(register)) continue;
-			source += `r.setEncoded(${register},${local.tag},${local.word});`;
+			source += `r.s(${register},${local.tag},${local.word});`;
 			this.published.add(register);
 		}
 		for (const [register, written] of this.residents) {
 			if (!written || register < first || register >= end || this.published.has(register)) continue;
-			source += `r.setEncoded(${register},rt${register},rw${register});`;
+			source += `r.s(${register},y${register},z${register});`;
 			this.published.add(register);
 		}
 		return source;

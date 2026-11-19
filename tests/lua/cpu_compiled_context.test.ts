@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { runCpuParity } from '../helpers/cpu_execution';
+import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { Closure } from '../../machine/ts/machine/cpu/closure';
@@ -193,8 +193,8 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	}
 	const upvalue = frame.closure.captureAddress(0);
 	Upvalue.close(js.gc, upvalue); Upvalue.store(js.gc, upvalue, ValueTag.Integer, 1);
-	const r = frame.registers, setEncoded = r.setEncoded.bind(r), writes = new Uint32Array(16);
-	r.setEncoded = (index, tag, word) => { ++writes[index]; setEncoded(index, tag, word); };
+	const r = frame.registers, writes = new Uint32Array(16);
+	observeRegisterStores(r, index => { ++writes[index]; });
 	const block = page.compiledBlocks!.entries[entry]!, run = {
 		remainingCycles: block.region.entries.reduce((cycles, entry) => cycles + entry.terminal.cycles, 0), registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 },
 	};

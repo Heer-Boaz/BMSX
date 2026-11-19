@@ -1,11 +1,11 @@
 import { OpCode } from '../../spec/blua32/opcode';
-import type { TableLengthWork } from './table';
+import { TableRecords, type TableLengthWork } from './table';
 import { f32BitsToNumber, numberToF32Bits } from '../../common/float32';
 import { luaFloatResultBits, luaFloatToInteger, luaFloatToWord, luaIntegerModulo, luaIntegerFloorDivide, luaFloatModuloBits, luaFloatFloorDivideBits, luaShiftLeft, luaShiftRight } from '../../spec/blua32/numeric';
 import type { GcHeap } from './gc_heap';
-import type { ValueSlots } from './value_slots';
+import { ValueSlots } from './value_slots';
 import type { CallFrame } from './call_state';
-import type { Memory } from '../memory/memory';
+import { Memory } from '../memory/memory';
 import type { StringPool } from './string_pool';
 import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_image';
 import { planRegionRegisters } from './compiled_register_plan';
@@ -17,6 +17,22 @@ import { CompiledBlockExit, emitJavaScriptBlock, finishJavaScriptBlock,
 export type CompiledRegionRunState = { remainingCycles: number; registerTop: number; memoryAddress: number; stackOffset: number; stackBytes: number; lengthWork: TableLengthWork };
 type RegionBody = (registers: ValueSlots, constants: Uint32Array, page: DecodedInstructionPage,
 	frame: CallFrame, entry: number, state: CompiledRegionRunState) => number;
+
+// Generated regions call host methods through one- and two-letter aliases of
+// the same function objects. The shorter source parses faster and lets more
+// regions fit the source budget; each call is the same call as before.
+function aliasGeneratedMethods(prototype: object, aliases: Readonly<Record<string, string>>): void {
+	for (const alias in aliases) Object.defineProperty(prototype, alias, { value: Reflect.get(prototype, aliases[alias]), writable: true, configurable: true });
+}
+aliasGeneratedMethods(ValueSlots.prototype, { t: 'getTag', p: 'getPayload', s: 'setEncoded' });
+aliasGeneratedMethods(TableRecords.prototype, { li: 'loadIntegerArrayKey', si: 'storeIntegerArrayKey',
+	lp: 'loadPredictedStringKey', sp: 'storePredictedStringKey', sg: 'storeStringKeyWithoutGrowth' });
+aliasGeneratedMethods(Memory.prototype, { rb: 'readRamRecordByte', rd: 'readRamRecordWord',
+	wb: 'writeRamRecordByte', wd: 'writeRamRecordWord' });
+
+// Generated names: B budget, T register top, X exit, N entry, F frame, S run
+// state, R the region loop, yN/zN the tag/payload of resident register N and
+// tN/wN block locals.
 
 /** One function and one source charge, with multiple externally addressable segments. */
 export class CompiledRegion {
@@ -55,33 +71,33 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 	// Block locals live at function scope so the shared exit epilogue can
 	// store them. Each block assigns a local before any read of it.
 	const locals = Math.max(0, ...blocks.map(block => block.registers.localCount));
-	const source = ['"use strict"; return function(r,k,p,frame,entry,state){',
-		'let budget=state.remainingCycles,top=state.registerTop,exit;',
-		...[...bindings].map(register => `let rt${register},rw${register};`),
+	const source = ['"use strict";return function(r,k,p,F,N,S){',
+		'let B=S.remainingCycles,T=S.registerTop,X;',
+		...[...bindings].map(register => `let y${register},z${register};`),
 		...Array.from({ length: locals }, (_, index) => `let t${index},w${index};`),
-		'switch(entry){'];
+		'switch(N){'];
 	// Entries with the same live-in registers share one load sequence.
 	const prologues = new Map<string, number[]>();
 	for (let index = 0; index < residents.length; ++index) {
 		let load = '';
 		for (const register of [...residents[index].keys()].sort((left, right) => left - right))
-			load += `rt${register}=r.getTag(${register});rw${register}=r.getPayload(${register});`;
+			load += `y${register}=r.t(${register});z${register}=r.p(${register});`;
 		const group = prologues.get(load);
 		if (group === undefined) prologues.set(load, [index]);
 		else group.push(index);
 	}
 	for (const [load, group] of prologues) if (load !== '') source.push(`${group.map(index => `case ${index}:`).join('')}${load}break;`);
-	source.push('}region:for(;;){switch(entry){');
+	source.push('}R:for(;;){switch(N){');
 	const transfer = (block: typeof blocks[number], index: number): string => {
 		const exit = exits[index];
 		if (exit.exit === CompiledBlockExit.Continue) {
 			const target = entries.get(exit.nextPc);
 			if (target !== undefined) {
-				const top = exit.resetsRegisterTop ? `top=Math.max(frame.top,${exit.registerTop});`
-					: exit.registerTop === 0 ? '' : `if(top<${exit.registerTop})top=${exit.registerTop};`;
+				const top = exit.resetsRegisterTop ? `T=Math.max(F.top,${exit.registerTop});`
+					: exit.registerTop === 0 ? '' : `if(T<${exit.registerTop})T=${exit.registerTop};`;
 				const required = admissionVarargs[target] === 0 ? `${admissionCycles[target]}`
-					: `${admissionCycles[target]}+${admissionVarargs[target]}*frame.varargCount`;
-				return `if(budget-${exit.cycles}>${required}){budget-=${exit.cycles};${top}${block.registers.transferResidents(residents[target])}entry=${target};continue region;}${block.registers.leaveResidents(index)}`;
+					: `${admissionCycles[target]}+${admissionVarargs[target]}*F.varargCount`;
+				return `if(B-${exit.cycles}>${required}){B-=${exit.cycles};${top}${block.registers.transferResidents(residents[target])}N=${target};continue R;}${block.registers.leaveResidents(index)}`;
 			}
 		}
 		return block.registers.leaveResidents(index);
@@ -90,28 +106,30 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 		const block = blocks[index];
 		if (plans[index].fallthrough) {
 			const exit = block.terminal;
-			const top = exit.resetsRegisterTop ? `top=Math.max(frame.top,${exit.registerTop});`
-				: exit.registerTop === 0 ? '' : `if(top<${exit.registerTop})top=${exit.registerTop};`;
+			const top = exit.resetsRegisterTop ? `T=Math.max(F.top,${exit.registerTop});`
+				: exit.registerTop === 0 ? '' : `if(T<${exit.registerTop})T=${exit.registerTop};`;
 			// Variable table work and readiness-dependent memory charges are
 			// settled before admitting the next fixed prefix.
 			const required = admissionVarargs[index + 1] === 0 ? `${admissionCycles[index + 1]}`
-				: `${admissionCycles[index + 1]}+${admissionVarargs[index + 1]}*frame.varargCount`;
+				: `${admissionCycles[index + 1]}+${admissionVarargs[index + 1]}*F.varargCount`;
 			const frontier = (page.ops[block.finalWord] === OpCode.LEN || block.formatCycles !== 0)
-				? `if(budget-${exit.cycles}<=${required}){${block.registers.leaveResidents(block.terminalIndex)}}` : '';
-			source.push(`case ${index}:{${block.body}\n${frontier}budget-=${exit.cycles};${top}}`);
+				? `if(B-${exit.cycles}<=${required}){${block.registers.leaveResidents(block.terminalIndex)}}` : '';
+			source.push(`case ${index}:{${block.body}\n${frontier}B-=${exit.cycles};${top}}`);
 		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(page, block, index => transfer(block, index))}}`);
 	}
-	source.push('}}', writeBacks.epilogue(), 'const e=x[exit];state.remainingCycles=budget-e.cycles;',
-		'state.registerTop=Math.max(e.resetsRegisterTop?frame.top:top,e.registerTop);return exit;}');
-	const functionSource = source.join('\n');
+	source.push('}}', writeBacks.epilogue(), 'const e=x[X];S.remainingCycles=B-e.cycles;',
+		'S.registerTop=Math.max(e.resetsRegisterTop?F.top:T,e.registerTop);return X;}');
+	// The only string literal in generated code is the directive, so template
+	// indentation carries no meaning.
+	const functionSource = source.join('\n').replace(/\n\s+/g, '\n');
 	const cartridges = memory.cartridgeController;
 	const execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'q', 'kt', 'gl', 'sy',
-		'bf', 'fb', 'fr', 'fi', 'fw', 'imod', 'idiv', 'fmod', 'fdiv', 'shl', 'shr', 'pow', 'cp', 'h', 'x', functionSource)(
+		'bf', 'fb', 'fr', 'fi', 'fw', 'imod', 'idiv', 'fmod', 'fdiv', 'shl', 'shr', 'pow', 'cp', 'h', 'x', 'tb', 'ts', functionSource)(
 		memory.ramView, memory.ramWriteWatches().groupData(), memory.systemRomStorage(), cartridges,
 		cartridges.romStorage(0), cartridges.romStorage(1), strings, image.constTags, globalSlots, systemGlobalSlots,
 		f32BitsToNumber, numberToF32Bits, luaFloatResultBits, luaFloatToInteger, luaFloatToWord,
 		luaIntegerModulo, luaIntegerFloorDivide, luaFloatModuloBits, luaFloatFloorDivideBits,
-		luaShiftLeft, luaShiftRight, luaPow, cop0Words, heap, exits) as RegionBody;
+		luaShiftLeft, luaShiftRight, luaPow, cop0Words, heap, exits, heap.tables, page.tableCacheSlots) as RegionBody;
 	const region = new CompiledRegion(execute, exits, functionSource.length);
 	for (let entry = 0; entry < blocks.length; ++entry) {
 		const block = blocks[entry];

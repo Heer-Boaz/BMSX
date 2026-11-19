@@ -18,12 +18,12 @@ export function emitWordStores(page: DecodedInstructionPage, word: number, addre
 	if (count === 0) return `{const a=${address}; if((a&3)!==0) ${exit}}`;
 	return `{const a=${address},o=(a-${RAM_BASE})>>>0;
 if((a&3)!==0||o<${IO_SLOT_COUNT * IO_WORD_SIZE}||o>${memory.ramByteCount() - count * 4}
-||((o+${count * 4 - 1}-state.stackOffset)>>>0)<state.stackBytes+${count * 4 - 1}) ${exit}
+||((o+${count * 4 - 1}-S.stackOffset)>>>0)<S.stackBytes+${count * 4 - 1}) ${exit}
 const end=(o+${count * 4 - 4})>>>${MAPPED_PAGE_BYTE_SHIFT};
 for(let p=o>>>${MAPPED_PAGE_BYTE_SHIFT};p<=end;++p) if(g[p]!==0) ${exit}
 ${registers.publishRange(source, source + count)}
-budget-=${count};
-for(let i=0;i<${count};++i){const tag=r.getTag(${source}+i),word=r.getPayload(${source}+i);
+B-=${count};
+for(let i=0;i<${count};++i){const tag=r.t(${source}+i),word=r.p(${source}+i);
 const v=tag===${ValueTag.Integer}?word:(tag===${ValueTag.Float}?fw(word):null);if(v===null) ${numericFault} m.setUint32(o+i*4,v,true);}}`;
 }
 
@@ -48,7 +48,7 @@ export function emitMemoryAccess(page: DecodedInstructionPage, word: number, add
 		return `{const a=${address}; let o=(a-${RAM_BASE})>>>0,v;
 ${alignment === 0 ? '' : `if((a&${alignment})!==0) ${exit}`}
 if(o>=${IO_SLOT_COUNT * IO_WORD_SIZE}&&o<=m.byteLength-${width}){
-if(((o+${width - 1}-state.stackOffset)>>>0)<state.stackBytes+${width - 1}) ${exit}
+if(((o+${width - 1}-S.stackOffset)>>>0)<S.stackBytes+${width - 1}) ${exit}
 const d=m; ${read}}
 else if(a<=${SYSTEM_ROM_SIZE - width}){o=a; ${emitRomStorageRead('s', read, width, exit)}}
 else {o=(a-${CART_ROM_BASE})>>>0; if(o>${CART_ROM_SIZE - width}) ${exit}
@@ -58,7 +58,7 @@ if(c.selectedSlot()===0){${slot0}}else{${slot1}}}${result}}`;
 		+ (width === 8 ? `||g[(o+4)>>>${MAPPED_PAGE_BYTE_SHIFT}]!==0` : '');
 	const guard = `{const a=${address}; const o=(a-${RAM_BASE})>>>0;
 if(${alignment === 0 ? '' : `(a&${alignment})!==0||`}o<${IO_SLOT_COUNT * IO_WORD_SIZE}||o>m.byteLength-${width}${watches}
-||((o+${width - 1}-state.stackOffset)>>>0)<state.stackBytes+${width - 1}) ${exit}`;
+||((o+${width - 1}-S.stackOffset)>>>0)<S.stackBytes+${width - 1}) ${exit}`;
 	const tag = registers.tagOperand(a), value = registers.wordOperand(a);
 	let conversion: string;
 	if (kind === MemoryAccessKind.F32LE) conversion = `const mt=${tag},mw=${value};if(mt!==${ValueTag.Integer}&&mt!==${ValueTag.Float}) ${numericFault}const v=mt===${ValueTag.Integer}?fb(mw|0):mw;`;

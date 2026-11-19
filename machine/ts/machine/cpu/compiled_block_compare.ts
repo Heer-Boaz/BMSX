@@ -7,15 +7,15 @@ import { ValueTag } from './value';
 export function emitComparison(page: DecodedInstructionPage, word: number, registers: JavaScriptRegisterCache,
 	yes: string, no: string): string {
 	const left = page.b[word], right = page.c[word];
-	let source = `{const l=${registers.tagOperand(left)},r0=${registers.tagOperand(right)};let matched=false;`;
+	let source = `{const l=${registers.tagOperand(left)},r0=${registers.tagOperand(right)};let M=false;`;
 	const numeric = `(l===${ValueTag.Integer}||l===${ValueTag.Float})&&(r0===${ValueTag.Integer}||r0===${ValueTag.Float})`;
 	if (page.ops[word] === OpCode.EQ) {
-		source += `if(${numeric})matched=${registers.numberOperand(left)}===${registers.numberOperand(right)};
-else if(l===r0)matched=l<=${ValueTag.True}||${registers.wordOperand(left)}===${registers.wordOperand(right)};`;
+		source += `if(${numeric})M=${registers.numberOperand(left)}===${registers.numberOperand(right)};
+else if(l===r0)M=l<=${ValueTag.True}||${registers.wordOperand(left)}===${registers.wordOperand(right)};`;
 	} else {
 		const operator = page.ops[word] === OpCode.LT ? '<' : '<=';
-		source += `if(${numeric}) matched=${registers.numberOperand(left)}${operator}${registers.numberOperand(right)};
-else if(l===${ValueTag.String}&&r0===${ValueTag.String}) {const leftId=${registers.wordOperand(left)},rightId=${registers.wordOperand(right)};budget-=Math.min(q.byteLength(leftId),q.byteLength(rightId));matched=q.compare(leftId,rightId)${operator}0;}`;
+		source += `if(${numeric}) M=${registers.numberOperand(left)}${operator}${registers.numberOperand(right)};
+else if(l===${ValueTag.String}&&r0===${ValueTag.String}) {const leftId=${registers.wordOperand(left)},rightId=${registers.wordOperand(right)};B-=Math.min(q.byteLength(leftId),q.byteLength(rightId));M=q.compare(leftId,rightId)${operator}0;}`;
 	}
-	return `${source}if(matched){${yes}}else{${no}}}`;
+	return `${source}if(M){${yes}}else{${no}}}`;
 }

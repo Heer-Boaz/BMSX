@@ -3,6 +3,7 @@ import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { CPU, type RunResult } from '../../machine/ts/machine/cpu/cpu';
+import type { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 
 /** Both routes receive the same grant, including when the final atomic
  * instruction's complete charge crosses that deadline. */
@@ -12,6 +13,21 @@ export function runCpuParity(generated: CPU, reference: CPU, grant: number, dept
 	assert.equal(reference.runUntilDepth(depth, grant), result, 'execution outcome with the same guest-cycle grant');
 	assert.equal(grant - reference.instructionBudgetRemaining, consumed, 'every executed guest cycle is charged');
 	return result;
+}
+
+/** Generated regions store and read registers through the `s` and `p` aliases. */
+type GeneratedRegisterBank = ValueSlots & { s: ValueSlots['setEncoded']; p: ValueSlots['getPayload'] };
+
+/** Observe every register store, whether host code or a generated region makes it. */
+export function observeRegisterStores(registers: ValueSlots, observe: (index: number) => void): void {
+	const bank = registers as GeneratedRegisterBank, store = bank.setEncoded.bind(bank);
+	bank.setEncoded = bank.s = (index, tag, word) => { observe(index); store(index, tag, word); };
+}
+
+/** Observe every register payload read, whether host code or a generated region makes it. */
+export function observeRegisterPayloadReads(registers: ValueSlots, observe: (index: number) => void): void {
+	const bank = registers as GeneratedRegisterBank, read = bank.getPayload.bind(bank);
+	bank.getPayload = bank.p = index => { observe(index); return read(index); };
 }
 
 // A restored CPU can dereference records and interned strings immediately.

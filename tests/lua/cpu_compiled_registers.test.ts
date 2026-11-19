@@ -11,6 +11,7 @@ import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kin
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { observeRegisterStores } from '../helpers/cpu_execution';
 
 test('both open and closed upvalue paths define output-only region bindings', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -80,8 +81,8 @@ test('output locals become observable only after their definition, including hel
 		r.setTable(2, source); r.setTable(20, old);
 		r.set(21, valueFloatBits(0x80000000));
 		memory.writeMappedWord(DYNAMIC_RAM_BASE, 71);
-		const writes = new Uint32Array(22), store = r.setEncoded.bind(r);
-		r.setEncoded = (register, tag, word) => { ++writes[register]; store(register, tag, word); };
+		const writes = new Uint32Array(22);
+		observeRegisterStores(r, register => { ++writes[register]; });
 		const state = { remainingCycles: grant, registerTop: 3, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
 		const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state)];
 		if (!mapped) {

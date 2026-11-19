@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { runCpuParity } from '../helpers/cpu_execution';
+import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { integerConstant } from '../../toolchain/ts/lua/number';
@@ -110,11 +110,11 @@ test('resident Values cross internal string branches and publish only when leavi
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!, table = cpu.createTable();
 	for (const less of [false, true]) for (const kind of [ValueTag.False, ValueTag.Table, ValueTag.Float]) for (const grant of [32, 63, 128, 257]) {
-		const r = new ValueSlots(11), writes = new Uint32Array(11), store = r.setEncoded.bind(r);
+		const r = new ValueSlots(11), writes = new Uint32Array(11);
 		r.setString(0, less ? alpha : omega); r.setString(1, less ? omega : alpha);
 		r.setInteger(3, 73); r.setInteger(4, 0);
 		r.setEncoded(8, kind, kind === ValueTag.False ? 37 : kind === ValueTag.Float ? 0x80000000 : table);
-		r.setEncoded = (register, tag, word) => { ++writes[register]; store(register, tag, word); };
+		observeRegisterStores(r, register => { ++writes[register]; });
 		const run = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
 		block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, run);
 		assert.ok(r.getInteger(4) > 0); assert.equal(r.getInteger(5), r.getInteger(4)); assert.equal(run.registerTop, 11);
@@ -462,8 +462,8 @@ test('more than six live-through raw Values remain local across every internal e
 				[expected[first], expected[first + 1]] = [expected[first + 1], expected[first]];
 			remaining -= 15 * BASE_CYCLES[OpCode.MOV]; segment ^= 1;
 		} while (remaining > page.compiledBlocks!.entries[firstWord + starts[segment]]!.admissionCycles);
-		const writes = new Uint32Array(8), store = r.setEncoded.bind(r);
-		r.setEncoded = (register, tag, word) => { if (register < 8) ++writes[register]; store(register, tag, word); };
+		const writes = new Uint32Array(8);
+		observeRegisterStores(r, register => { if (register < 8) ++writes[register]; });
 		const state = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
 		block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state);
 		assert.equal(state.remainingCycles, remaining); assert.equal(state.registerTop, 25);
