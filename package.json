@@ -98,6 +98,7 @@
 		"test:cartridge-conformance": "bash scripts/test.sh node tests/conformance/cartridge/run.mjs",
 		"test:coroutines": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/coroutine/run.ts",
 		"test:gc-stress": "bash scripts/test.sh node --import tsx --import ./tests/lua/test_setup.ts tests/conformance/gc_stress/run.ts",
+		"test:gc-young": "bash scripts/test.sh node --import tsx --import ./tests/lua/test_setup.ts tests/conformance/gc_stress/young.ts",
 		"test:table-iteration": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/table_iteration/run.ts",
 		"test:runtime-replay": "bash scripts/test.sh node tests/conformance/runtime_replay/run.mjs",
 		"test:studio-workflows": "npm run build:toolchain:bios -- --debug --force && npm run build:toolchain:cart -- nemesis_s --debug --force && bash scripts/test.sh node tests/conformance/runtime_replay/browser.mjs --studio dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom",

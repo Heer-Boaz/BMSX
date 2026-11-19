@@ -466,6 +466,7 @@ private:
 	void resumePendingMemoryOperation();
 	void markRoots(GcHeap& heap);
 	void pruneStaticClosures();
+	void retireStaticClosure(u32 address);
 
 	std::array<
 		std::unique_ptr<Blua32ExecutionImage>,

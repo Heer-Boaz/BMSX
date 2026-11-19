@@ -70,6 +70,9 @@ void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool ar
 	// only enqueues work, so it may publish before the value reaches its lane.
 	auto* c = m_compiler;
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), GC_COLOR_OFFSET);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_IMM, GC_OLD | GC_REMEMBERED);
+	fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, GC_OLD), exit, m_cache.state());
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, GC_COLOR_MASK);
 	auto* notBlack = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 3);
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver,
 		SLJIT_IMM, MAIN_RAM_SIZE - TableRecord::HEADER_BYTES);

@@ -13,6 +13,9 @@ import { HEAP_STRING_METADATA_OFFSET, type HeapAllocator } from './heap_allocato
 import type { LuaHeap } from './lua_heap';
 
 export type StringId = number;
+export const STRING_GC_OLD = 0x80;
+export const STRING_GC_MINOR_MARK = 0x40;
+export const STRING_GC_EPOCH_MASK = 1;
 
 const BUCKETS = 0x00, CAPACITY = 0x04, USED = 0x08, EPOCH = 0x0c, SWEEP = 0x10;
 const FIRST_CART = 0x14, ROM_TABLES = 0x18;
@@ -229,7 +232,7 @@ export class StringPool {
 		const id = this.heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + Math.min(value.length, MAIN_RAM_SIZE), false, 0, 0);
 		const bucket = this.metadata(BUCKETS) + 4 * (hash & (this.ramBucketCount() - 1));
 		const memory = this.memory;
-		memory.writeRamRecordWord(id, BLUA32_STRING_RECORD_KIND | (this.metadata(EPOCH) << 8));
+		memory.writeRamRecordWord(id, BLUA32_STRING_RECORD_KIND | ((this.metadata(EPOCH) & STRING_GC_EPOCH_MASK) << 8));
 		memory.writeRamRecordWord(id + BLUA32_STRING_HASH_OFFSET, hash);
 		memory.writeRamRecordWord(id + BLUA32_STRING_LENGTH_OFFSET, value.length);
 		memory.writeRamRecordWord(id + BLUA32_STRING_NEXT_OFFSET, memory.readRamRecordWord(bucket));
@@ -243,23 +246,29 @@ export class StringPool {
 		return this.retain(id);
 	}
 
-	private mark(id: StringId): number {
+	private mark(id: StringId, youngOnly: boolean): number {
 		if (!ramAddress(id)) return 0;
-		const markByte = id + 1, epoch = this.metadata(EPOCH);
-		if (this.memory.readRamRecordByte(markByte) === epoch) return 0;
-		this.memory.writeRamRecordByte(markByte, epoch);
+		const markByte = id + 1, flags = this.memory.readRamRecordByte(markByte);
+		if (youngOnly) {
+			if ((flags & (STRING_GC_OLD | STRING_GC_MINOR_MARK)) !== 0) return 0;
+			this.memory.writeRamRecordByte(markByte, flags | STRING_GC_MINOR_MARK);
+		} else {
+			const epoch = this.metadata(EPOCH) & STRING_GC_EPOCH_MASK;
+			if ((flags & STRING_GC_EPOCH_MASK) === epoch) return 0;
+			this.memory.writeRamRecordByte(markByte, (flags & ~STRING_GC_EPOCH_MASK) | epoch);
+		}
 		return 1;
 	}
 	private retain(id: StringId): StringId {
-		this.mark(id);
+		this.mark(id, false);
 		if (this.localRootBases.length !== 0) this.localRoots.push(id);
 		return id;
 	}
 	public beginLocalRoots(): void { this.localRootBases.push(this.localRoots.length); }
 	public endLocalRoots(): void { this.localRoots.length = this.localRootBases.pop()!; }
 	public beginReachabilityEpoch(): void { this.writeMetadata(EPOCH, this.metadata(EPOCH) ^ 1); }
-	public markReachable(id: StringId): void { this.markWork += this.mark(id); }
-	public markLocalRoots(): void { for (const id of this.localRoots) this.markReachable(id); }
+	public markReachable(id: StringId, youngOnly = false): void { this.markWork += this.mark(id, youngOnly); }
+	public markLocalRoots(youngOnly = false): void { for (const id of this.localRoots) this.markReachable(id, youngOnly); }
 	public takeMarkWork(): number {
 		const work = this.markWork;
 		this.markWork = 0;
@@ -269,7 +278,7 @@ export class StringPool {
 	public beginSweep(): void { this.writeMetadata(SWEEP, 1); }
 	public sweeping(): boolean { return this.metadata(SWEEP) !== 0; }
 	public sweepStep(allowance: number): number {
-		const base = this.metadata(BUCKETS), count = this.ramBucketCount(), epoch = this.metadata(EPOCH);
+		const base = this.metadata(BUCKETS), count = this.ramBucketCount(), epoch = this.metadata(EPOCH) & STRING_GC_EPOCH_MASK;
 		let index = this.metadata(SWEEP) - 1, used = this.metadata(USED), work = 0;
 		const memory = this.memory;
 		while (index < count && work < allowance) {
@@ -279,7 +288,7 @@ export class StringPool {
 			for (let remaining = Math.min(used, MAX_RAM_RECORDS); remaining !== 0 && record !== 0
 				&& memory.readRamRecordByte(record) === BLUA32_STRING_RECORD_KIND; --remaining) {
 				const next = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
-				if (memory.readRamRecordByte(record + 1) !== epoch) {
+				if ((memory.readRamRecordByte(record + 1) & STRING_GC_EPOCH_MASK) !== epoch) {
 					memory.writeRamRecordWord(link, next);
 					memory.writeRamRecordByte(record, 0);
 					this.arena.free(record);
@@ -294,4 +303,34 @@ export class StringPool {
 
 		return work;
 	}
+	public sweepYoungBucket(id: StringId): number {
+		const memory = this.memory;
+		if (!ramAddress(id) || memory.readRamRecordByte(id) !== BLUA32_STRING_RECORD_KIND
+			|| (memory.readRamRecordByte(id + 1) & STRING_GC_OLD) !== 0) return 0;
+		const hash = memory.readRamRecordWord(id + BLUA32_STRING_HASH_OFFSET);
+		let link = this.metadata(BUCKETS) + 4 * (hash & (this.ramBucketCount() - 1));
+		let record = memory.readRamRecordWord(link), used = this.metadata(USED), work = 1;
+		for (let remaining = Math.min(used, MAX_RAM_RECORDS); remaining !== 0 && record !== 0; --remaining) {
+			++work;
+			if (memory.readRamRecordByte(record) !== BLUA32_STRING_RECORD_KIND) break;
+			const next = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
+			const flags = memory.readRamRecordByte(record + 1);
+			if ((flags & STRING_GC_OLD) !== 0) {
+				link = record + BLUA32_STRING_NEXT_OFFSET;
+			} else if ((flags & STRING_GC_MINOR_MARK) !== 0) {
+				memory.writeRamRecordByte(record + 1, (flags & ~STRING_GC_MINOR_MARK) | STRING_GC_OLD);
+				link = record + BLUA32_STRING_NEXT_OFFSET;
+			} else {
+				memory.writeRamRecordWord(link, next);
+				memory.writeRamRecordByte(record, 0);
+				this.arena.free(record);
+				--used;
+			}
+			record = next;
+		}
+		if (record !== 0) memory.writeRamRecordWord(link, 0);
+		this.writeMetadata(USED, used);
+		return work;
+	}
+
 }

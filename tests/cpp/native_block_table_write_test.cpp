@@ -274,8 +274,15 @@ void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
 }
 
 void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
-	auto table = cpu.createTable(4096, 0);
-	const u32 words = table.storageAddress();
+	// Instruction watches belong to public RAM. Keep the forensic raw Table
+	// alias and its backing in reserved static workspace, not in the private heap.
+	require(cpu.heapAllocator().setFloor(DYNAMIC_RAM_BASE + 0x10000u), "reserve the public static alias workspace before watching it");
+	const auto sourceHeader = cpu.createTable(4096, 0);
+	const u32 record = DYNAMIC_RAM_BASE + 0x6000u, words = DYNAMIC_RAM_BASE;
+	for (u32 offset = 0; offset < TableRecord::HEADER_BYTES; offset += sizeof(u32))
+		memory.writeRamRecordWord(record + offset, memory.readRamRecordWord(sourceHeader.address() + offset));
+	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Storage), words);
+	TableRecord table(cpu.gcHeap(), record);
 	const u32 tags = words + 4096u * 4u;
 	DecodedInstruction store{};
 	store.op = static_cast<u8>(OpCode::SETI);
@@ -294,6 +301,7 @@ void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
 		memory.writeRamRecordWord(hint, 0);
 		MappedPageBinding binding;
 		memory.bindMappedPage(address, MAPPED_BUS_MASTER_CPU, binding);
+		require(binding.readBytes != nullptr && address < memory.ramBusEnd(), "every watched alias is on the public RAM bus");
 		const u32 slot = (address & MAPPED_PAGE_BYTE_MASK) >> 2;
 		binding.writeWatch.armWord(slot);
 		state.remainingCycles = 100;

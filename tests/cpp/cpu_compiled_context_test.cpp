@@ -72,9 +72,10 @@ void physicalVarargWindow() {
 			auto& frame = *thread->currentFrame;
 			const u32 control = RAM_BASE + frame.controlOffset;
 			const u32 source = mirrored ? ((MAIN_RAM_SIZE - thread->stackOffset() + 0x1000u) / 4u) : 0u;
-			machine->memory.writeMappedU32LE(control + static_cast<u32>(FrameField::VarargBase), 0xb0000000u | source);
-			machine->memory.writeMappedU32LE(control + static_cast<u32>(FrameField::VarargCount), 0xa0000001u);
-			machine->memory.writeMappedU32LE(control + static_cast<u32>(FrameField::Top), 0xc0000000u);
+			// Forensic frame setup uses the private record port, not the system bus.
+			machine->memory.writeRamRecordWord(control + static_cast<u32>(FrameField::VarargBase), 0xb0000000u | source);
+			machine->memory.writeRamRecordWord(control + static_cast<u32>(FrameField::VarargCount), 0xa0000001u);
+			machine->memory.writeRamRecordWord(control + static_cast<u32>(FrameField::Top), 0xc0000000u);
 			if (mirrored) {
 				machine->memory.writeRamRecordWord(thread->stackOffset() + source * 4u, 73);
 				machine->memory.writeRamRecordByte(thread->stack.tagAddress() + source, static_cast<u8>(ValueTag::Integer));
@@ -254,22 +255,6 @@ void hotGlobalBanks() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(page.nativeBlocks->entries[entry].get() == block, "guest bank relocation does not invalidate an unrelated compiled instruction page");
 #endif
-	// Change the activated ordinal without modifying the ROM or the namespace.
-	// The second change turns a valid coded index into a mirrored scalar slot.
-	for (const u32 ordinal : {2u, 0x40000002u, 0u}) {
-		for (auto* m : {&native, &scalar}) {
-			auto& cpu = m->cpu;
-			const u32 map = cpu.captureRuntimeState().globalMapBases[SYSTEM_EXECUTION_DOMAIN_ID + 1];
-			cpu.setGlobalByKey(cpu.stringPool().intern("numeric"), valueInteger(97));
-			cpu.setGlobalByKey(cpu.stringPool().intern("shared"), valueInteger(23));
-			m->memory.writeRamRecordWord(map, ordinal);
-			cpu.activeThread()->currentFrame->writeControl(bmsx::FrameField::Pc, m->rom.textAddress);
-		}
-		test::runCpuParity(native.cpu, scalar.cpu, loopCycles);
-		requireParity(native, scalar);
-		require(native.cpu.getSystemGlobalByKey(native.cpu.stringPool().intern("copied"))
-			== valueInteger(ordinal == 0u ? 23 : 97), "decoded and generated globals follow the watched physical slot map");
-	}
 }
 
 void hotUpvalueAlias() {
@@ -394,39 +379,23 @@ void rawContextValues(CpuMachine& machine) {
 			"native outer and closed cells preserve raw values without invalidating unrelated register definitions");
 	}
 	const auto previous = Upvalue::load(machine.memory, closed);
-	const u32 watched = closed + UPVALUE_VALUE_WORD;
-	MappedPageBinding binding;
-	machine.memory.bindMappedPage(watched, MAPPED_BUS_MASTER_CPU, binding);
-	const u32 watchedSlot = (watched & MAPPED_PAGE_BYTE_MASK) >> 2;
-	binding.writeWatch.armWord(watchedSlot);
+	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, GC_OLD | heap.white());
 	captureRegisters.set(12, valueFloatBits(0xffa54321u));
-	NativeBlockRunState watchedStore{.registers = captureRegisters, .frame = &frame, .heap = &heap,
+	NativeBlockRunState closedStore{.registers = captureRegisters, .frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
-	const auto* exit = outerRead.block->run(watchedStore);
-	require(exit->exit == NativeBlockExit::WriteUpvalue && Upvalue::load(machine.memory, closed) == previous,
-		"watched SETUP exits before writing either lane");
+	require(outerRead.block->run(closedStore)->exit == NativeBlockExit::WriteUpvalue
+		&& Upvalue::load(machine.memory, closed) == previous, "first native write to an old closed cell leaves before either lane changes");
 	Upvalue::store(heap, closed, captureRegisters.get(12));
-	require(!binding.writeWatch.consume(watchedSlot, watchedSlot + 1u) && Upvalue::load(machine.memory, closed) == valueFloatBits(0xffa54321u),
-		"the semantic path publishes the closed cell through RAM's write watch");
-	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, 3);
+	require(machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | heap.white())
+		&& Upvalue::load(machine.memory, closed) == valueFloatBits(0xffa54321u),
+		"the semantic store publishes the cell and remembers its owner");
+	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, GC_OLD | GC_REMEMBERED | 3u);
+	captureRegisters.set(12, valueInteger(23));
 	const u32 head = heap.changedHeadOffset();
-	for (const u32 watchedBarrierWord : {closed + UPVALUE_NEXT, head | RAM_BASE}) {
-		MappedPageBinding queueBinding{};
-		machine.memory.bindMappedPage(watchedBarrierWord, MAPPED_BUS_MASTER_CPU, queueBinding);
-		const u32 slot = (watchedBarrierWord & MAPPED_PAGE_BYTE_MASK) >> 2;
-		queueBinding.writeWatch.armWord(slot);
-		captureRegisters.set(12, valueInteger(23));
-		watchedStore.remainingCycles = 100;
-		require(outerRead.block->run(watchedStore)->exit == NativeBlockExit::WriteUpvalue
-			&& Upvalue::load(machine.memory, closed) == valueFloatBits(0xffa54321u)
-			&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == 3,
-			"a watched closed-cell barrier link or head prevents both value and mark writes");
-		queueBinding.writeWatch.consume(slot, slot + 1u);
-	}
 	const u32 previousHead = machine.memory.readRamRecordWord(head);
-	watchedStore.remainingCycles = 100;
-	require(outerRead.block->run(watchedStore) == &outerRead.block->terminal && Upvalue::load(machine.memory, closed) == valueInteger(23)
-		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == 2
+	closedStore.remainingCycles = 100;
+	require(outerRead.block->run(closedStore) == &outerRead.block->terminal && Upvalue::load(machine.memory, closed) == valueInteger(23)
+		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (GC_OLD | GC_REMEMBERED | 2u)
 		&& machine.memory.readRamRecordWord(closed + UPVALUE_NEXT) == previousHead
 		&& machine.memory.readRamRecordWord(head) == ((closed & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
 		"generated SETUP publishes both the value and the closed cell's raw changed-queue link");

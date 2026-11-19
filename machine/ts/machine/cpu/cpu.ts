@@ -1,6 +1,5 @@
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
-import { GcHeap, GcPhase } from './gc_heap';
-import { GC_COLOR_OFFSET } from './gc_object';
+import { GcHeap } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
@@ -862,7 +861,7 @@ export class CPU implements MappedPageInvalidator {
 		this.heapAllocator.visitObjectRecords(this, (cpu, address) => {
 			if (cpu.memory.readRamRecordByte(address) === ValueTag.Closure
 				&& (cpu.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0
-				&& !(cpu.gc.phase() === GcPhase.Sweep && cpu.memory.readRamRecordByte(address + GC_COLOR_OFFSET) === (cpu.gc.white() ^ 1))) {
+				&& !cpu.gc.sweepGarbage(address)) {
 				const functionAddress = cpu.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
 				const versions = cpu.staticClosuresByAddress.get(functionAddress);
 				if (versions === undefined) cpu.staticClosuresByAddress.set(functionAddress, [address]); else versions.push(address);
@@ -972,10 +971,8 @@ export class CPU implements MappedPageInvalidator {
 		this.bindPhysicalFrames(bank);
 		return bank;
 	}
-	public refreshThreadView(address: number, relocated: boolean): void {
-		for (const bank of this.threadBanks) if (bank.address === address) {
-			if (relocated) bank.bindStack();
-		}
+	public rebindRelocatedThread(address: number): void {
+		for (const bank of this.threadBanks) if (bank.address === address) bank.bindStack();
 	}
 	public retireThreadView(address: number): void {
 		for (const bank of this.threadBanks) if (bank.address === address) bank.bindAddress(0);
@@ -3958,7 +3955,7 @@ export class CPU implements MappedPageInvalidator {
 			switch (header & 0xff) {
 				case ValueTag.Closure:
 					if ((header & (CLOSURE_CANONICAL << (8 * CLOSURE_BINDING_FLAGS))) !== 0
-						&& !(cpu.gc.phase() === GcPhase.Sweep && ((header >>> 8) & 0xff) === (cpu.gc.white() ^ 1))) {
+						&& !cpu.gc.sweepGarbage(address)) {
 						const functionAddress = cpu.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
 						const versions = cpu.staticClosuresByAddress.get(functionAddress);
 						if (versions === undefined) cpu.staticClosuresByAddress.set(functionAddress, [address]); else versions.push(address);
@@ -4130,11 +4127,11 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public markHeapRoots(heap: GcHeap): void {
-		this.stringPool.markReachable(this.modeKey);
-		this.stringPool.markReachable(this.indexKey);
-		this.stringPool.markReachable(this.errorInErrorHandlingStringId);
+		heap.markString(this.modeKey);
+		heap.markString(this.indexKey);
+		heap.markString(this.errorInErrorHandlingStringId);
 		for (let i = 0; i < this.luaFaultErrorStringIds.length; ++i)
-			if (i !== LUA_FAULT_REASON_EXPLICIT_ERROR) this.stringPool.markReachable(this.luaFaultErrorStringIds[i]);
+			if (i !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.luaFaultErrorStringIds[i]);
 		heap.markValue(this.stringIndexTable);
 		for (let i = 0; i < this.completionValueCount; ++i) heap.markSlot(this.completionValueSlots, i);
 		for (let i = 0; i < this.builtinResultsScratchIndex; ++i) {
@@ -4143,19 +4140,30 @@ export class CPU implements MappedPageInvalidator {
 		}
 		for (const value of this.localRoots) heap.markValue(value);
 		for (let i = 0; i < this.systemGlobalBank.count; ++i) {
-			this.stringPool.markReachable(this.systemGlobalBank.name(i)); heap.markSlot(this.systemGlobalBank.slots, i);
+			heap.markString(this.systemGlobalBank.name(i)); heap.markSlot(this.systemGlobalBank.slots, i);
 		}
 		for (let i = 0; i < this.globalBank.count; ++i) {
-			this.stringPool.markReachable(this.globalBank.name(i)); heap.markSlot(this.globalBank.slots, i);
+			heap.markString(this.globalBank.name(i)); heap.markSlot(this.globalBank.slots, i);
 		}
 		for (const image of this.executionImagesByDomain) if (image !== null) this.markHeapImage(image);
 		heap.markThread(this.rootThread.address); heap.markThread(this.activeThread.address); heap.markThread(this.completionThread);
 		heap.markThread(this.haltedUntilIrqThread);
 	}
+	public retireStaticClosure(address: number): void {
+		if ((this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) === 0) return;
+		const prototype = this.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
+		const entries = this.staticClosuresByAddress.get(prototype);
+		if (entries === undefined) return;
+		const index = entries.indexOf(address);
+		if (index < 0) return;
+		entries.splice(index, 1);
+		if (entries.length === 0) this.staticClosuresByAddress.delete(prototype);
+	}
+
 	public pruneStaticClosures(): void {
 		for (const [address, closures] of this.staticClosuresByAddress) {
 			let write = 0;
-			for (const closure of closures) if (this.memory.readRamRecordByte(closure + GC_COLOR_OFFSET) !== this.gc.white()) closures[write++] = closure;
+			for (const closure of closures) if (this.gc.isAlive(closure)) closures[write++] = closure;
 			closures.length = write;
 			if (write === 0) this.staticClosuresByAddress.delete(address);
 		}

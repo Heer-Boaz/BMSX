@@ -61,19 +61,33 @@ public:
 	u8 white() const { return memory.readRamRecordByte(m_controlOffset + 1u) & 1u; }
 	bool active() const { return phase() != GcPhase::Pause; }
 	bool sweepGarbage(u32 address) const {
-		return phase() == GcPhase::Sweep && memory.readRamRecordByte(address + GC_COLOR_OFFSET) == (white() ^ 1u);
+		return phase() == GcPhase::Sweep && markColor(address) == (white() ^ 1u);
 	}
-	bool isAlive(u32 address) const { return memory.readRamRecordByte(address + GC_COLOR_OFFSET) != white(); }
+	bool isAlive(u32 address) const { return !unmarked(memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }
 	size_t allocationBytes(u32 threadAddress) const;
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u);
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
+	size_t collectYoung(Value root0, Value root1, Value root2);
+	void markString(StringId id) { m_stringPool.markReachable(id, m_minor); }
 	bool markValue(Value value);
 	bool markThread(u32 address);
 	void writeBarrier(u32 address, u32 link) {
-		if (memory.readRamRecordByte(address + GC_COLOR_OFFSET) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
+		u8 flags = memory.readRamRecordByte(address + GC_COLOR_OFFSET);
+		if ((flags & (GC_OLD | GC_REMEMBERED)) == GC_OLD) {
+			arena.trackGcPage(HeapGcPages::Remembered, address);
+			flags |= GC_REMEMBERED;
+			memory.writeRamRecordByte(address + GC_COLOR_OFFSET, flags);
+		}
+		if ((flags & GC_COLOR_MASK) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
 	}
 	u32 changedHeadOffset() const { return m_controlOffset + GC_CHANGED_HEAD; }
 private:
+	u8 markColor(u32 address) const { return memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK; }
+	bool unmarked(u8 flags) const { return (flags & (GC_COLOR_MASK | (m_minor ? GC_OLD : 0))) == white(); }
+	void color(u32 address, u8 mark) {
+		const u32 lane = address + GC_COLOR_OFFSET;
+		memory.writeRamRecordByte(lane, (memory.readRamRecordByte(lane) & ~GC_COLOR_MASK) | mark);
+	}
 	bool markClosure(u32 address);
 	uint8_t tableWeakMode(const TableRecord& table);
 	bool markTable(u32 address);
@@ -89,6 +103,9 @@ private:
 	size_t trace(bool atomic);
 	size_t remark(Value root0, Value root1, Value root2);
 	size_t atomic(Value root0, Value root1, Value root2);
+	size_t resolveWeak();
+	static i32 seedRemembered(void*, u32 address);
+	static i32 seedThread(void*, u32 address);
 	struct SweepContext { GcHeap& heap; u32 growingThread; u8 white; };
 	static i32 sweepRecord(void* context, u32 address);
 	CPU& m_cpu;
@@ -96,6 +113,7 @@ private:
 	StringId m_modeKey;
 	StringPool& m_stringPool;
 	const u32 m_controlOffset;
+	bool m_minor = false; // A small collection is synchronous; only RAM state crosses a grant.
 
 };
 

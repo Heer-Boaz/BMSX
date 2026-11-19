@@ -470,6 +470,15 @@ u32 CPU::staticClosureForRecord(const FunctionPrototype& record) {
 	return closure;
 }
 
+void CPU::retireStaticClosure(u32 address) {
+	if (!(m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL)) return;
+	const u32 prototype = m_memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
+	const auto entry = m_staticClosuresByAddress.find(prototype);
+	if (entry == m_staticClosuresByAddress.end()) return;
+	std::erase(entry->second, address);
+	if (entry->second.empty()) m_staticClosuresByAddress.erase(entry);
+}
+
 void CPU::pruneStaticClosures() {
 	for (auto entry = m_staticClosuresByAddress.begin(); entry != m_staticClosuresByAddress.end();) {
 		std::erase_if(entry->second, [this](u32 closure) { return !m_heap.isAlive(closure); });
@@ -2770,11 +2779,11 @@ void CPU::markRoots(GcHeap& heap) {
 		heap.markValue(value);
 	}
 	for (size_t slot = 0; slot < m_systemGlobalBank.count(); ++slot) {
-		m_stringPool.markReachable(m_systemGlobalBank.name(slot));
+		heap.markString(m_systemGlobalBank.name(slot));
 		heap.markValue(m_systemGlobalBank.values().get(slot));
 	}
 	for (size_t slot = 0; slot < m_globalBank.count(); ++slot) {
-		m_stringPool.markReachable(m_globalBank.name(slot));
+		heap.markString(m_globalBank.name(slot));
 		heap.markValue(m_globalBank.values().get(slot));
 	}
 	for (const std::unique_ptr<Blua32ExecutionImage>& executionImage : m_executionImagesByDomain) {

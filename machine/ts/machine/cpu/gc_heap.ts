@@ -1,8 +1,8 @@
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
-import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes, heapClassIndex, type HeapAllocator } from './heap_allocator';
-import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from './gc_object';
+import { HEAP_GC_CONTROL_OFFSET, HeapGcPages, heapAllocationBytes, heapClassIndex, type HeapAllocator } from './heap_allocator';
+import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_COLOR_MASK, GC_OLD, GC_REMEMBERED, GC_RECORD_LINK, GC_RECORD_SHIFT } from './gc_object';
 import * as Closure from './closure';
 import { UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from './upvalue';
 import * as Upvalue from './upvalue';
@@ -15,6 +15,7 @@ import { ValueSlots } from './value_slots';
 import type { LuaHeap } from './lua_heap';
 import { ceilDiv4 } from '../common/numeric';
 import type { GcDiagnostics } from './gc_diagnostics';
+import { BLUA32_STRING_RECORD_KIND } from '../../spec/blua32/image_format';
 
 const GC_RECORD_ALIGNMENT = 1 << GC_RECORD_SHIFT;
 const GC_RECORD_MASK = MAIN_RAM_SIZE - GC_RECORD_ALIGNMENT;
@@ -51,6 +52,7 @@ export class GcHeap {
 	private setPhase(phase: GcPhase): void { this.memory.writeRamRecordByte(this.controlOffset, phase); }
 	private readonly scratch = new ValueSlots(1);
 	private mode = 0;
+	private minor = false; // Only physical state crosses a grant.
 	private changed = false;
 	private readonly traceEntry = (key: Value, value: Value): void => {
 		this.markValue(key);
@@ -61,15 +63,15 @@ export class GcHeap {
 		switch (tag) {
 			case ValueTag.Table: {
 				const address = this.tableRecordAddress(valuePayload(value));
-				return address !== 0 && this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) !== this.white();
+				return this.isAlive(address);
 			}
 			case ValueTag.Closure: {
 				const address = this.closureRecordAddress(valuePayload(value));
-				return address !== 0 && this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) !== this.white();
+				return this.isAlive(address);
 			}
 			case ValueTag.Thread: {
 				const address = this.threadRecordAddress(valuePayload(value));
-				return address !== 0 && this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) !== this.white();
+				return this.isAlive(address);
 			}
 			default: return true;
 		}
@@ -78,8 +80,8 @@ export class GcHeap {
 		if (this.alive(key) && this.markValue(value)) this.changed = true;
 	};
 	private readonly weakStrings = (key: Value, value: Value): void => {
-		if (valueTag(key) === ValueTag.String) this.cpu.stringPool.markReachable(valuePayload(key));
-		if (valueTag(value) === ValueTag.String) this.cpu.stringPool.markReachable(valuePayload(value));
+		if (valueTag(key) === ValueTag.String) this.markString(valuePayload(key));
+		if (valueTag(value) === ValueTag.String) this.markString(valuePayload(value));
 	};
 	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory, public readonly arena: HeapAllocator, private readonly modeKey: number) {
 		this.controlOffset = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
@@ -118,9 +120,16 @@ export class GcHeap {
 		}
 	}
 	public active(): boolean { return this.phase() !== GcPhase.Pause; }
-	public isAlive(address: number): boolean { return address !== 0 && this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) !== this.white(); }
+	public isAlive(address: number): boolean { return address !== 0 && !this.unmarked(this.memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }
+	private markColor(address: number): number { return this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK; }
+	private unmarked(flags: number): boolean { return (flags & (GC_COLOR_MASK | (this.minor ? GC_OLD : 0))) === this.white(); }
+	private setColor(address: number, color: number): void {
+		const lane = address + GC_COLOR_OFFSET;
+		this.memory.writeRamRecordByte(lane, (this.memory.readRamRecordByte(lane) & ~GC_COLOR_MASK) | color);
+	}
+	public markString(id: number): void { this.cpu.stringPool.markReachable(id, this.minor); }
 	public sweepGarbage(address: number): boolean {
-		return this.phase() === GcPhase.Sweep && this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) === (this.white() ^ 1);
+		return this.phase() === GcPhase.Sweep && this.markColor(address) === (this.white() ^ 1);
 	}
 	public changedHeadOffset(): number { return this.controlOffset + GC_CHANGED_HEAD; }
 	private indexWord(queue: number): number { return this.memory.readRamRecordWord(this.controlOffset + queue) & GC_GRAY_INDEX_MASK; }
@@ -128,11 +137,17 @@ export class GcHeap {
 		const previous = this.indexWord(queue);
 		const otherBits = link === GC_RECORD_LINK ? this.memory.readRamRecordWord(address + link) & ~GC_GRAY_INDEX_MASK : 0;
 		this.memory.writeRamRecordWord(address + link, otherBits | previous);
-		this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, 2);
+		this.setColor(address, 2);
 		this.memory.writeRamRecordWord(this.controlOffset + queue, (address & GC_RECORD_MASK) >>> GC_RECORD_SHIFT);
 	}
 	public writeBarrier(address: number, link: number): void {
-		if (this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) === 3) this.enqueue(address, link, GC_CHANGED_HEAD);
+		let flags = this.memory.readRamRecordByte(address + GC_COLOR_OFFSET);
+		if ((flags & (GC_OLD | GC_REMEMBERED)) === GC_OLD) {
+			this.arena.trackGcPage(HeapGcPages.Remembered, address);
+			flags |= GC_REMEMBERED;
+			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, flags);
+		}
+		if ((flags & GC_COLOR_MASK) === 3) this.enqueue(address, link, GC_CHANGED_HEAD);
 	}
 	private setVisitLink(address: number, meta: number, index: number): void {
 		const gray = this.memory.readRamRecordWord(address + GC_RECORD_LINK) & GC_GRAY_INDEX_MASK;
@@ -178,7 +193,7 @@ export class GcHeap {
 		return work;
 	}
 	private readonly remarkRecord = (address: number): number => {
-		this.writeBarrier(address, GC_RECORD_LINK);
+		if (this.markColor(address) === 3) this.enqueue(address, GC_RECORD_LINK, GC_CHANGED_HEAD);
 		return 0;
 	};
 	private readonly visitEphemeron = (table: number): number => {
@@ -195,28 +210,31 @@ export class GcHeap {
 	};
 	public markThread(address: number): boolean {
 		const offset = address & GC_RECORD_MASK;
-		if (offset >= this.arena.managementOffset() || (offset & (THREAD_HEAP_BYTES - 1)) !== 0
-			|| (this.memory.readRamRecordWord(offset) & 0xffff) !== (THREAD_RECORD_KIND | (this.white() << 8))
+		if (offset >= this.arena.managementOffset() || (offset & (THREAD_HEAP_BYTES - 1)) !== 0) return false;
+		const header = this.memory.readRamRecordWord(offset);
+		if ((header & 0xff) !== THREAD_RECORD_KIND || !this.unmarked(header >>> 8)
 			|| this.arena.issuedObjectSlotClass(offset) !== THREAD_SIZE_CLASS) return false;
 		this.enqueue(RAM_BASE + offset, GC_RECORD_LINK, GC_TRACE_HEAD);
 		return true;
 	}
 	private markTable(address: number): boolean {
 		const record = this.tableRecordAddress(address);
-		if (record === 0 || this.memory.readRamRecordByte(record + GC_COLOR_OFFSET) !== this.white()) return false;
+		if (record === 0 || !this.unmarked(this.memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
 		this.enqueue(record, GC_RECORD_LINK, GC_TRACE_HEAD);
 		return true;
 	}
 	private markCell(cell: number): number {
-		if (cell === 0 || this.memory.readRamRecordByte(cell + GC_COLOR_OFFSET) !== this.white()) return 0;
-		this.memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3);
+		if (cell === 0 || !this.unmarked(this.memory.readRamRecordByte(cell + GC_COLOR_OFFSET))) return 0;
+		this.setColor(cell, 3);
 		if (Upvalue.isOpen(this.memory, cell)) this.markThread(this.memory.readRamRecordWord(cell + UPVALUE_OWNER));
 		this.markValue(Upvalue.load(this.memory, cell));
 		return UPVALUE_HEAP_BYTES >>> 2;
 	}
 	public markClosure(address: number): boolean {
 		const offset = address & GC_RECORD_MASK;
-		if (offset >= this.arena.managementOffset() || (this.memory.readRamRecordWord(offset) & 0xffff) !== (ValueTag.Closure | (this.white() << 8)) || !this.arena.issuedObjectStart(offset)) return false;
+		if (offset >= this.arena.managementOffset()) return false;
+		const header = this.memory.readRamRecordWord(offset);
+		if ((header & 0xff) !== ValueTag.Closure || !this.unmarked(header >>> 8) || !this.arena.issuedObjectStart(offset)) return false;
 		this.enqueue(RAM_BASE + offset, GC_RECORD_LINK, GC_TRACE_HEAD);
 		return true;
 	}
@@ -225,7 +243,7 @@ export class GcHeap {
 			case ValueTag.Table: return this.markTable(valuePayload(value));
 			case ValueTag.Closure: return this.markClosure(valuePayload(value));
 			case ValueTag.Thread: return this.markThread(valuePayload(value));
-			case ValueTag.String: this.cpu.stringPool.markReachable(valuePayload(value)); break;
+			case ValueTag.String: this.markString(valuePayload(value)); break;
 		}
 		return false;
 	}
@@ -262,7 +280,7 @@ export class GcHeap {
 		const closure = kind === ValueTag.Closure && this.arena.issuedObjectStart(offset);
 		const thread = kind === THREAD_RECORD_KIND && slotClass === THREAD_SIZE_CLASS && (offset & (THREAD_HEAP_BYTES - 1)) === 0;
 		// Only a queued color clocks the link, even for malformed cycles.
-		if ((!table && !cell && !closure && !thread) || this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) !== 2) {
+		if ((!table && !cell && !closure && !thread) || this.markColor(address) !== 2) {
 			this.memory.writeRamRecordWord(this.controlOffset + GC_TRACE_HEAD, 0);
 			return 0;
 		}
@@ -270,7 +288,9 @@ export class GcHeap {
 		const packed = this.memory.readRamRecordWord(link);
 		this.memory.writeRamRecordWord(this.controlOffset + GC_TRACE_HEAD, packed & GC_GRAY_INDEX_MASK);
 		this.memory.writeRamRecordWord(link, cell ? 0 : packed & ~GC_GRAY_INDEX_MASK);
-		this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, 3);
+		const flags = this.memory.readRamRecordByte(address + GC_COLOR_OFFSET);
+		if (this.minor && (flags & GC_OLD) !== 0) this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, GC_OLD | this.white());
+		else this.setColor(address, 3);
 		if (table) {
 			const meta = this.tables.metatableAddress(address);
 			if (meta !== 0) this.markTable(meta);
@@ -336,6 +356,15 @@ export class GcHeap {
 		this.diagnostics?.beginAtomic();
 		let work = this.remark(t0, t1, t2);
 		this.diagnostics?.phase('traceNanoseconds');
+		work += this.resolveWeak();
+		this.cpu.pruneStaticClosures();
+		this.memory.writeRamRecordByte(this.controlOffset + 1, this.white() ^ 1);
+		this.arena.beginObjectSweep(); this.setPhase(GcPhase.Sweep);
+		return work;
+	}
+
+	private resolveWeak(): number {
+		let work = 0;
 		while (this.indexWord(GC_TRACE_HEAD) !== 0) work += this.trace(true) + this.cpu.stringPool.takeMarkWork();
 		do {
 			this.changed = false;
@@ -344,39 +373,84 @@ export class GcHeap {
 		} while (this.changed);
 		this.diagnostics?.phase('weakNanoseconds');
 		work += this.visitList(GC_WEAK_VISITS, ValueTag.Table, true, this.visitWeakEntries);
-		this.cpu.pruneStaticClosures();
-		this.memory.writeRamRecordByte(this.controlOffset + 1, this.white() ^ 1);
-		this.arena.beginObjectSweep(); this.setPhase(GcPhase.Sweep);
 		return work + this.cpu.stringPool.takeMarkWork();
+	}
+
+	private readonly seedRemembered = (address: number): number => {
+		const header = this.memory.readRamRecordWord(address), kind = header & 0xff;
+		if ((header & (GC_REMEMBERED << 8)) !== 0) {
+			if (kind === ValueTag.Table) this.enqueue(address, GC_RECORD_LINK, GC_TRACE_HEAD);
+			else if (kind === UPVALUE_RECORD_KIND && !Upvalue.isOpen(this.memory, address))
+				this.enqueue(address, UPVALUE_NEXT, GC_TRACE_HEAD);
+		}
+		return 1;
+	};
+	private readonly seedThread = (address: number): number => {
+		const header = this.memory.readRamRecordWord(address);
+		if ((header & (0xff | (GC_OLD << 8))) === (THREAD_RECORD_KIND | (GC_OLD << 8)))
+			this.enqueue(address, GC_RECORD_LINK, GC_TRACE_HEAD);
+		return 1;
+	};
+	private readonly sweepYoung = (address: number): number => this.sweepRecord(0, address);
+
+	public collectYoung(t0: Value, t1: Value, t2: Value): number {
+		this.diagnostics?.beginStep(true);
+		if (this.diagnostics !== null) ++this.diagnostics.collections;
+		this.diagnostics?.phase('rootsNanoseconds');
+		this.minor = true;
+		this.markString(this.modeKey);
+		this.cpu.markHeapRoots(this);
+		this.markValue(t0); this.markValue(t1); this.markValue(t2);
+		this.cpu.stringPool.markLocalRoots(true);
+		let work = this.cpu.collectionRootWordCount() + this.cpu.stringPool.takeMarkWork();
+		work += this.arena.visitGcPages(HeapGcPages.Remembered, this.seedRemembered);
+		work += this.arena.visitGcPages(HeapGcPages.Threads, this.seedThread);
+		this.diagnostics?.phase('traceNanoseconds');
+		work += this.resolveWeak();
+		this.diagnostics?.phase('sweepNanoseconds');
+		work += this.arena.visitGcPages(HeapGcPages.Young, this.sweepYoung);
+		this.arena.clearGcPages(HeapGcPages.Young);
+		this.arena.clearGcPages(HeapGcPages.Remembered);
+		this.minor = false;
+		this.diagnostics?.endStep();
+		return work;
 	}
 	private readonly sweepRecord = (growingThread: number, address: number): number => {
 		const white = this.white();
-		const kind = this.memory.readRamRecordByte(address);
+		const header = this.memory.readRamRecordWord(address), kind = header & 0xff, flags = (header >>> 8) & 0xff;
+		if (this.minor && kind === BLUA32_STRING_RECORD_KIND) return 1 + this.cpu.stringPool.sweepYoungBucket(address);
+		if (this.minor && (flags & GC_OLD) !== 0) return 1;
+		const garbage = (flags & GC_COLOR_MASK) === (white ^ (this.minor ? 0 : 1));
+		const survivor = white | (this.minor ? GC_OLD : flags & ~GC_COLOR_MASK);
 		if (kind === ValueTag.Table || kind === UPVALUE_RECORD_KIND || kind === ValueTag.Closure) {
-			if (this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) === (white ^ 1)) {
+			if (garbage) {
 				if (kind === ValueTag.Table) {
 					this.tables.freeRecord(address);
 					this.onRecordRetirement?.(address);
-				} else { this.arena.free(address); if (kind === ValueTag.Closure) this.onRecordRetirement?.(address); }
+				} else {
+					if (this.minor && kind === ValueTag.Closure) this.cpu.retireStaticClosure(address);
+					this.arena.free(address);
+					if (kind === ValueTag.Closure) this.onRecordRetirement?.(address);
+				}
 				return -1;
 			}
-			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, white);
+			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
 			return 1;
 		}
 		if (kind !== THREAD_RECORD_KIND || this.threadRecordAddress(address) !== address) return 1;
 		const layout = this.threadLayout;
 		this.threads.readLayout(address, layout);
 		const work = ceilDiv4(THREAD_HEAP_BYTES + heapAllocationBytes(layout.bytes));
-		if (this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) !== (white ^ 1)) {
-			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, white);
-			const copied = address === growingThread ? 0 : this.threads.shrinkStack(address, layout);
+		if (!garbage) {
+			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
+			const copied = this.minor || address === growingThread ? 0 : this.threads.shrinkStack(address, layout);
 			// Existing execution views follow raw relocation; they are never GC roots here.
-			this.cpu.refreshThreadView(address, copied !== 0);
+			if (copied !== 0) this.cpu.rebindRelocatedThread(address);
 			return work + 2 * ceilDiv4(copied);
 		}
+		this.cpu.retireThreadView(address);
 		this.arena.free(this.memory.readRamRecordWord(address + ThreadField.StackBlock));
 		this.arena.free(address);
-		this.cpu.retireThreadView(address);
 		this.onRecordRetirement?.(address);
 		return -work;
 	};

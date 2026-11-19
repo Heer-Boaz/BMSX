@@ -1,6 +1,5 @@
 import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_CONTROL_COUNT_MASK, controlOffset, backingBytes } from './thread_record';
 export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_BACKING_BYTES, THREAD_RECORD_KIND } from './thread_record';
-import { GC_COLOR_OFFSET } from './gc_object';
 import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { GcHeap } from './gc_heap';
 import { valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
@@ -10,8 +9,6 @@ import { ValueSlots } from './value_slots';
 
 /** Reusable CPU execution bank bound to one raw Thread record; never a guest identity. */
 export class Thread {
-	public get gcColor(): number { return this.heap.memory.readRamRecordByte(this.address + GC_COLOR_OFFSET); }
-	public set gcColor(color: number) { this.heap.memory.writeRamRecordByte(this.address + GC_COLOR_OFFSET, color); }
 	public firstFrame: CallFrame | null = null;
 	public currentFrame: CallFrame | null = null;
 	public get frameDepth(): number { return this.read(ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK; }

@@ -482,7 +482,7 @@ int TableRecord::storeStringKeyInNative(GcHeap* heap, u32 address, StringId key,
 		const u64 bytes = 5ull * table.arrayCapacity() + 14ull * table.hashSlots();
 		if (header > MAIN_RAM_SIZE - HEADER_BYTES || watches.anyWatched(header, HEADER_BYTES)
 			|| bytes > MAIN_RAM_SIZE - storage || (bytes && watches.anyWatched(storage, static_cast<size_t>(bytes)))
-			|| (heap->memory.readRamRecordByte(address + GC_COLOR_OFFSET) == 3u && watches.anyWatched(heap->changedHeadOffset(), sizeof(u32))))
+			|| ((heap->memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3u && watches.anyWatched(heap->changedHeadOffset(), sizeof(u32))))
 			return TABLE_STORE_REQUIRES_GROWTH;
 	}
 	return storeStringKeyWithoutGrowth(&table, key, value);

@@ -1,6 +1,6 @@
 import { closureRecordBytes } from './closure';
 import { UPVALUE_HEAP_BYTES, initialize as initializeCell } from './upvalue';
-import { HEAP_COLLECTION_TARGET_OFFSET, heapAllocationBytes } from './heap_allocator';
+import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_YOUNG_DEBT_OFFSET, heapAllocationBytes } from './heap_allocator';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
 import { GC_ASSIST_BYTES } from './gc_heap';
@@ -9,12 +9,16 @@ import { valueNil, type Value } from './value';
 
 const NO_NEW_CELLS = new Uint32Array(0);
 const MIN_COLLECTION_BYTES = 1024 * 1024;
+const YOUNG_INTERVAL_BYTES = 128 * 1024;
 
 export class LuaHeap {
 	private readonly targetAddress: number;
+	private readonly youngDebtAddress: number;
 
 	public constructor(private readonly cpu: CPU) {
-		this.targetAddress = cpu.heapAllocator.managementOffset() + HEAP_COLLECTION_TARGET_OFFSET;
+		const management = cpu.heapAllocator.managementOffset();
+		this.targetAddress = management + HEAP_COLLECTION_TARGET_OFFSET;
+		this.youngDebtAddress = management + HEAP_YOUNG_DEBT_OFFSET;
 		this.setCollectionTarget(MIN_COLLECTION_BYTES);
 	}
 
@@ -31,7 +35,14 @@ export class LuaHeap {
 		const capacity = this.capacity();
 		const nextBytes = this.usedBytes() + byteCount;
 		const exhausted = nextBytes > capacity;
-		if (!exhausted && nextBytes <= this.collectionTarget()) return false;
+		if (!exhausted && nextBytes <= this.collectionTarget()) {
+			const memory = this.cpu.memory, debt = memory.readRamRecordWord(this.youngDebtAddress);
+			if (debt !== 0 && debt + byteCount > YOUNG_INTERVAL_BYTES && !this.cpu.gc.active()) {
+				this.cpu.instructionBudgetRemaining -= this.cpu.gc.collectYoung(root0, root1, root2);
+				memory.writeRamRecordWord(this.youngDebtAddress, 0);
+			}
+			return false;
+		}
 		if (exhausted) {
 			this.collectRuntime(root0, root1, root2, growingThread);
 		} else {
@@ -55,6 +66,7 @@ export class LuaHeap {
 				const backing = backingBytes === 0 ? 0 : arena.allocate(backingBytes, true);
 				if (backingBytes === 0 || backing !== 0) {
 					if (backingField !== 0) this.cpu.memory.writeRamRecordWord(address + backingField, backing);
+					this.accountAllocation(charged);
 					return address;
 				}
 				arena.free(address);
@@ -70,6 +82,7 @@ export class LuaHeap {
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
 			const block = this.cpu.heapAllocator.allocate(bytes, true);
 			if (block !== 0) {
+				this.accountAllocation(charge);
 				return block;
 			}
 			if (attempt === 0) this.collectRuntime(root, valueNil(), valueNil(), thread);
@@ -96,6 +109,7 @@ export class LuaHeap {
 					const memory = this.cpu.memory;
 					const white = this.cpu.gc.white();
 					for (let index = 0; index < newCount; ++index) initializeCell(memory, cells[index], white);
+					this.accountAllocation(charged);
 					return closure;
 				}
 				while (count !== 0) arena.free(cells[--count]);
@@ -123,6 +137,11 @@ export class LuaHeap {
 		return !this.cpu.gc.active();
 	}
 
+	private accountAllocation(bytes: number): void {
+		const memory = this.cpu.memory;
+		memory.writeRamRecordWord(this.youngDebtAddress, memory.readRamRecordWord(this.youngDebtAddress) + bytes);
+	}
+
 	private creditStep(work: number): void {
 		if (this.cpu.gc.active()) this.setCollectionTarget(this.usedBytes() + Math.max(GC_ASSIST_BYTES, shiftRightSigned(work, 4)));
 	}
@@ -135,6 +154,7 @@ export class LuaHeap {
 
 
 	public finishCollection(): void {
+		this.cpu.memory.writeRamRecordWord(this.youngDebtAddress, 0);
 		const liveBytes = this.usedBytes();
 		const capacity = this.capacity();
 		this.setCollectionTarget(Math.max(liveBytes + GC_ASSIST_BYTES,

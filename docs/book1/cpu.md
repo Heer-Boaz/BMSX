@@ -1210,12 +1210,21 @@ Use addressed byte storage for exact device records and payloads.
 
 #### Collection work charge {#sec-cpu-collection-work-charge}
 
-Automatic collection is incremental. An allocation request contributes a step
-before its new storage is admitted; ordinary instructions can execute between
-steps. This allows a cartridge to build and discard small objects without
-paying for a complete pool traversal in a single instruction. An explicit
-collection and an emergency collection before an otherwise over-capacity
-request remain synchronous.
+New allocations are young. A small collection promotes its surviving
+records in place and reclaims only unreachable young records. A full
+collection traces and reclaims both generations, without changing the age
+of survivors.
+
+An automatic full collection advances incrementally while allocations cross
+the full-collection assist threshold. When no full collection is in progress
+and the next request fits at or below that threshold, a nonempty
+admission interval whose count plus the request exceeds 128 KiB ends with a small
+collection before that request. The interval counts completed reservations,
+including rounded backing storage. Finishing either kind of collection starts
+a new interval. This is not a fixed-size nursery or a reservation against the
+heap budget. A single request may exceed the interval. An explicit collection
+and an emergency collection before an otherwise over-capacity request remain
+synchronous. An explicit step advances the full collector.
 
 The occupied-byte counts used for admission are:
 
@@ -1287,15 +1296,25 @@ collector compares this count plus a new request with its current assist
 threshold; both the count
 and the threshold are held in the runtime management area.
 
-The collector marks retained objects, incrementally remarks roots and modified
-objects in a second pass, resolves weak references in a final atomic remark,
-and then reclaims unmarked objects and Strings.
+For a full collection, the collector marks retained objects, incrementally
+remarks roots and modified objects in a second pass, resolves weak references
+in a final atomic remark, and then reclaims unmarked objects and Strings.
 Changing a previously scanned Table, its metatable or a closed captured-variable
-cell makes that allocation eligible for another scan. Register and global writes
-do not add a per-write collection charge: roots and retained Thread stacks are
-examined again before reclamation. Allocations created during reclamation
-survive that collection. An object found reachable earlier in the cycle may
-therefore survive until a later collection even if its last reference has gone.
+cell makes that allocation eligible for another scan. Register and global
+writes do not add a per-write collection charge: roots and retained Thread
+stacks are examined again before reclamation. Allocations created during
+reclamation survive that collection. An object found reachable earlier in the
+cycle may therefore survive until a later collection even if its last
+reference has gone.
+
+A small collection examines roots, old Threads and old Tables or closed
+captured-variable cells modified since the last small collection. It follows
+edges through young records; unchanged old objects do not need tracing.
+An old weak key or value counts as retained until a full collection determines
+its reachability. The first modification of an old owner records it for the
+next small collection and adds no charge to the write. Small collections
+complete before the allocating instruction resumes; their work depends on
+the affected records and weak references, not just on the 128 KiB interval.
 
 Collection work consumes cycles as follows:
 
@@ -1312,6 +1331,8 @@ Collection work consumes cycles as follows:
 | Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |
 | Mark a previously unmarked RAM String | `1` |
 | Examine one RAM intern bucket, including an empty bucket | `1` |
+| Examine a slot in a page selected for old Thread or remembered-owner discovery | `1` |
+| Examine a String candidate's RAM intern bucket in a small collection | `1` plus `1` per chain header examined |
 | Copy retained Thread storage when shrinking | `2 × ceil((round4(5V') + 56F' + 20P') / 4)` for the new reservations |
 
 For charges based on bytes, round each allocation independently.
@@ -1323,7 +1344,10 @@ registered-name root slots still count. The sweep examines slots that the
 allocator has issued on an object page, not its unused tail, and leaves a page
 as soon as it is released. Table and Thread backing blocks are released with their owning records
 and are not separate sweep visits. A bucket chain is examined as a unit; its
-unmarked String records are unlinked and released. The intern index walks at
+unmarked String records are unlinked and released. A small collection only
+selects buckets containing a young String, examining each selected bucket
+once; it leaves old Strings in place and releases unmarked young Strings.
+The intern index walks at
 most the indexed String count, bounded by the number of headers that fit in
 main RAM. It stops probing at that limit; sweep unlinks any tail past the
 limit. Reclaiming a String does not shrink the bucket table.
@@ -1331,12 +1355,13 @@ limit. Reclaiming a String does not shrink the bucket table.
 `C` counts constant Value slots in all activated program images. `S` and `G`
 count registered system-global and cartridge-global slots; repeated registration
 of one name shares its existing slot. Nil slots count too. These root ranges are
-read at the beginning of marking, at the start of the second pass and at the
-final remark, using the ranges present at each pass. Thread storage is scanned
-in all three passes. Function-activation control and fixed collector bookkeeping are included
+read once in a small collection. In a full collection they are read at the
+beginning of marking, at the start of the second pass and at the final
+remark, using the ranges present at each pass. Thread storage is scanned
+in all three full-collection passes. Function-activation control and fixed collector bookkeeping are included
 in these allowances, not charged by a separate frame-record size.
 
-A step normally stops after **4,096 work cycles**. A single allocation scan is
+A full-collection step normally stops after **4,096 work cycles**. A single allocation scan is
 indivisible. When a closure or a Thread first reaches a captured-variable cell,
 its four-cycle scan is included in the same step. The final root remark,
 remaining changed-object scans, weak-key convergence and weak-entry clearing are also indivisible. These operations can

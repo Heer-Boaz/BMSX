@@ -60,7 +60,9 @@ void NativeBlockCompiler::emitGrayChange(NativeBlockExitSite& exit, sljit_s32 of
 	if constexpr (std::endian::native == std::endian::big)
 		sljit_emit_op1(c, SLJIT_REV32, link, 0, link, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(record), linkOffset, link, 0);
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(record), GC_COLOR_OFFSET, SLJIT_IMM, 2);
+	sljit_emit_op1(c, SLJIT_MOV_U8, link, 0, SLJIT_MEM1(record), GC_COLOR_OFFSET);
+	sljit_emit_op2(c, SLJIT_AND32, link, 0, link, 0, SLJIT_IMM, ~1u); // Black to gray; retain generation bits.
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(record), GC_COLOR_OFFSET, link, 0);
 	sljit_emit_op2(c, SLJIT_LSHR32, link, 0, offset, offsetArg, SLJIT_IMM, GC_RECORD_SHIFT);
 	if constexpr (std::endian::native == std::endian::big)
 		sljit_emit_op1(c, SLJIT_REV32, link, 0, link, 0);

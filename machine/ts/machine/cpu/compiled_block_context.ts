@@ -1,4 +1,4 @@
-import { GC_COLOR_OFFSET } from './gc_object';
+import { GC_COLOR_OFFSET, GC_COLOR_MASK, GC_OLD, GC_REMEMBERED } from './gc_object';
 import { UPVALUE_ADDRESS_MASK, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './upvalue';
 import { ThreadField } from './thread_record';
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
@@ -50,10 +50,11 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 			return `{const m=h.memory,c=F.captureAddress(${b})&${UPVALUE_ADDRESS_MASK};
 				const watches=m.ramWriteWatches();
 				if((m.rb(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN})||watches.anyWatched(c,8)) ${registers.exit(exit)}
-				if(m.rb(c+${GC_COLOR_OFFSET})===3){
+				const flags=m.rb(c+${GC_COLOR_OFFSET});
+				if((flags&${GC_COLOR_MASK})===3){
 					if(watches.anyWatched(c+${UPVALUE_NEXT},4)||watches.anyWatched(h.changedHeadOffset(),4)) ${registers.exit(exit)}
 					h.writeBarrier(c,${UPVALUE_NEXT});
-				}
+				}else if((flags&${GC_OLD | GC_REMEMBERED})===${GC_OLD}) h.writeBarrier(c,${UPVALUE_NEXT});
 				m.wd(c+${UPVALUE_VALUE_WORD},${word});m.wb(c+${UPVALUE_VALUE_TAG},${tag});}`;
 		}
 		case OpCode.VARARG: {

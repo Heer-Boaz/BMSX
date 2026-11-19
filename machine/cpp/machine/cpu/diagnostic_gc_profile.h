@@ -10,13 +10,15 @@ struct DiagnosticGcProfile {
 	// Cycles started, not assist calls. A continuation can report time with zero starts.
 	u64 collections = 0;
 	u64 fullCollections = 0;
+	u64 minorCollections = 0;
+	u64 minorNanoseconds = 0;
 	u64 steps = 0;
 	// Lifetime gauge, never subtracted as a counter. The two tail counters can
 	// be differenced to identify long individual steps in a measured interval.
 	u64 maxStepNanoseconds = 0;
 	u64 stepsOver2ms = 0;
 	u64 stepsOver8ms = 0;
-	// All incremental steps, including final heap accounting and unwinding
+	// Small collections and full-collection steps, including heap accounting and unwinding
 	// on an allocation failure. The phase sum excludes this enclosing overhead.
 	u64 totalNanoseconds = 0;
 	// Reachability epoch/setup, CPU roots and the three allocation-time roots.

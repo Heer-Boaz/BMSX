@@ -2,6 +2,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/common/numeric.h"
+#include "spec/blua32/image_format.h"
 #include <algorithm>
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 #include <chrono>
@@ -35,10 +36,15 @@ private:
 
 class GcStepMeasurement {
 public:
-	explicit GcStepMeasurement(DiagnosticGcProfile& profile) : m_profile(profile), m_start(GcProfileClock::now()) { ++profile.steps; }
+	explicit GcStepMeasurement(DiagnosticGcProfile& profile, bool young = false)
+		: m_profile(profile), m_start(GcProfileClock::now()), m_young(young) {
+		++profile.steps;
+		if (young) ++profile.minorCollections;
+	}
 	~GcStepMeasurement() {
 		const u64 elapsed = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(GcProfileClock::now() - m_start).count());
 		m_profile.totalNanoseconds += elapsed;
+		if (m_young) m_profile.minorNanoseconds += elapsed;
 		m_profile.maxStepNanoseconds = std::max(m_profile.maxStepNanoseconds, elapsed);
 		if (elapsed > 2000000) ++m_profile.stepsOver2ms;
 		if (elapsed > 8000000) ++m_profile.stepsOver8ms;
@@ -46,6 +52,7 @@ public:
 private:
 	DiagnosticGcProfile& m_profile;
 	GcProfileClock::time_point m_start;
+	bool m_young;
 };
 #endif
 
@@ -66,7 +73,7 @@ bool GcHeap::markValue(Value v) {
 		case ValueTag::BuiltinFunction:
 			return false;
 		case ValueTag::String:
-			m_stringPool.markReachable(asStringId(v));
+			markString(asStringId(v));
 			return false;
 		default:
 			return false;
@@ -87,7 +94,7 @@ void GcHeap::enqueue(u32 address, u32 link, u32 queue) {
 	const u32 previous = indexWord(queue);
 	const u32 otherBits = link == GC_RECORD_LINK ? memory.readRamRecordWord(address + link) & ~GC_GRAY_INDEX_MASK : 0u;
 	memory.writeRamRecordWord(address + link, otherBits | previous);
-	memory.writeRamRecordByte(address + GC_COLOR_OFFSET, 2);
+	color(address, 2);
 	memory.writeRamRecordWord(m_controlOffset + queue, (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT);
 }
 
@@ -157,9 +164,10 @@ u32 GcHeap::threadRecordAddress(u32 address) const {
 
 bool GcHeap::markThread(u32 address) {
 	const u32 offset = address & GC_RECORD_MASK;
-	const u32 whiteThread = THREAD_RECORD_KIND | (static_cast<u32>(white()) << (GC_COLOR_OFFSET * 8u));
-	if ((offset & (THREAD_HEAP_BYTES - 1u)) != 0u || offset >= arena.managementOffset()
-		|| (memory.readRamRecordWord(offset) & 0xffffu) != whiteThread || arena.issuedObjectSlotClass(offset) != threadSlotClass) return false;
+	if ((offset & (THREAD_HEAP_BYTES - 1u)) != 0u || offset >= arena.managementOffset()) return false;
+	const u32 header = memory.readRamRecordWord(offset);
+	if ((header & 0xffu) != THREAD_RECORD_KIND || !unmarked(static_cast<u8>(header >> 8u))
+		|| arena.issuedObjectSlotClass(offset) != threadSlotClass) return false;
 	enqueue(RAM_BASE + offset, GC_RECORD_LINK, GC_TRACE_HEAD);
 	return true;
 }
@@ -172,8 +180,9 @@ u32 GcHeap::closureRecordAddress(u32 address) const {
 
 bool GcHeap::markClosure(u32 address) {
 	const u32 offset = address & GC_RECORD_MASK;
-	const u32 whiteClosure = static_cast<u8>(ValueTag::Closure) | (static_cast<u32>(white()) << (GC_COLOR_OFFSET * 8u));
-	if (offset >= arena.managementOffset() || (memory.readRamRecordWord(offset) & 0xffffu) != whiteClosure
+	if (offset >= arena.managementOffset()) return false;
+	const u32 header = memory.readRamRecordWord(offset);
+	if ((header & 0xffu) != static_cast<u8>(ValueTag::Closure) || !unmarked(static_cast<u8>(header >> 8u))
 		|| !arena.issuedObjectStart(offset)) return false;
 	enqueue(RAM_BASE + offset, GC_RECORD_LINK, GC_TRACE_HEAD);
 	return true;
@@ -198,14 +207,14 @@ u32 GcHeap::openCellAddress(u32 address) const {
 
 bool GcHeap::markTable(u32 address) {
 	const u32 record = tableRecordAddress(address);
-	if (record == 0u || memory.readRamRecordByte(record + GC_COLOR_OFFSET) != white()) return false;
+	if (record == 0u || !unmarked(memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
 	enqueue(record, GC_RECORD_LINK, GC_TRACE_HEAD);
 	return true;
 }
 
 size_t GcHeap::markCell(u32 cell) {
-	if (cell == 0u || memory.readRamRecordByte(cell + GC_COLOR_OFFSET) != white()) return 0;
-	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3u);
+	if (cell == 0u || !unmarked(memory.readRamRecordByte(cell + GC_COLOR_OFFSET))) return 0;
+	color(cell, 3);
 	if (Upvalue::isOpen(memory, cell)) markThread(memory.readRamRecordWord(cell + UPVALUE_OWNER));
 	markValue(Upvalue::load(memory, cell));
 	return UPVALUE_HEAP_BYTES / sizeof(u32);
@@ -250,7 +259,7 @@ bool GcHeap::valueIsAlive(Value value) const {
 		}
 		case ValueTag::Table: {
 			const u32 address = tableRecordAddress(valuePayload(value));
-			return address != 0u && memory.readRamRecordByte(address + GC_COLOR_OFFSET) != white();
+			return address != 0u && isAlive(address);
 		}
 		case ValueTag::Closure: {
 			const u32 closure = asClosure(value, *this);
@@ -274,7 +283,7 @@ size_t GcHeap::trace(bool atomic) {
 		&& arena.issuedObjectSlotClass(offset) == threadSlotClass;
 	// A link is clocked only by a queued record. Consuming its color bounds
 	// malformed cycles as well as preventing a duplicate scan.
-	if ((!table && !cell && !closure && !thread) || memory.readRamRecordByte(address + GC_COLOR_OFFSET) != 2u) {
+	if ((!table && !cell && !closure && !thread) || markColor(address) != 2u) {
 		memory.writeRamRecordWord(m_controlOffset + GC_TRACE_HEAD, 0u);
 		return 0;
 	}
@@ -282,7 +291,9 @@ size_t GcHeap::trace(bool atomic) {
 	const u32 packed = memory.readRamRecordWord(link);
 	memory.writeRamRecordWord(m_controlOffset + GC_TRACE_HEAD, packed & GC_GRAY_INDEX_MASK);
 	memory.writeRamRecordWord(link, cell ? 0u : packed & ~GC_GRAY_INDEX_MASK);
-	memory.writeRamRecordByte(address + GC_COLOR_OFFSET, 3u);
+	const u8 flags = memory.readRamRecordByte(address + GC_COLOR_OFFSET);
+	if (m_minor && (flags & GC_OLD)) memory.writeRamRecordByte(address + GC_COLOR_OFFSET, GC_OLD | white());
+	else color(address, 3);
 	if (table) return traceTable(address);
 	if (cell) {
 		markValue(Upvalue::load(memory, address));
@@ -350,7 +361,7 @@ size_t GcHeap::remark(Value root0, Value root1, Value root2) {
 	GcPhaseMeasurement measurement(profile.rootsNanoseconds);
 #endif
 	const auto requeue = [&](u32 address) {
-		writeBarrier(address, GC_RECORD_LINK);
+		if (markColor(address) == 3u) enqueue(address, GC_RECORD_LINK, GC_CHANGED_HEAD);
 		return 0u;
 	};
 	visitList<THREAD_RECORD_KIND, true>(GC_THREAD_VISITS, requeue);
@@ -370,10 +381,21 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 	GcPhaseMeasurement totalAtomic(m_cpu.m_diagnosticGcProfile.atomicNanoseconds);
 #endif
 	size_t work = remark(root0, root1, root2);
+	work += resolveWeak();
+	m_cpu.pruneStaticClosures();
+	memory.writeRamRecordByte(m_controlOffset + 1u, white() ^ 1u);
+	arena.beginObjectSweep();
+	setPhase(GcPhase::Sweep);
+	return work;
+}
+
+size_t GcHeap::resolveWeak() {
+	size_t work = 0;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
-	GcPhaseMeasurement measurement(profile.traceNanoseconds);
+	GcPhaseMeasurement timing(profile.traceNanoseconds);
 #endif
+
 	while (indexWord(GC_TRACE_HEAD) != 0u) {
 		work += trace(true);
 		work += m_stringPool.takeMarkWork();
@@ -395,7 +417,7 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 		}
 	} while (changed);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	measurement.phase(profile.weakNanoseconds);
+	timing.phase(profile.weakNanoseconds);
 #endif
 	work += visitList<tableRecordKind, true>(GC_WEAK_VISITS, [&](u32 address) {
 		TableRecord table(*this, address);
@@ -404,36 +426,95 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 		table.clearWeakEntries((mode & 1) != 0, (mode & 2) != 0,
 			[this](Value value) { return valueIsAlive(value); });
 		table.forEachEntry([this](Value key, Value value) {
-			if (valueIsString(key)) m_stringPool.markReachable(asStringId(key));
-			if (valueIsString(value)) m_stringPool.markReachable(asStringId(value));
+			if (valueIsString(key)) markString(asStringId(key));
+			if (valueIsString(value)) markString(asStringId(value));
 		});
 		return slots;
 	});
-	m_cpu.pruneStaticClosures();
-	memory.writeRamRecordByte(m_controlOffset + 1u, white() ^ 1u);
-	arena.beginObjectSweep();
-	setPhase(GcPhase::Sweep);
 	return work + m_stringPool.takeMarkWork();
 }
+
+i32 GcHeap::seedRemembered(void* context, u32 address) {
+	auto& heap = *static_cast<GcHeap*>(context);
+	const u32 header = heap.memory.readRamRecordWord(address);
+	const u8 kind = static_cast<u8>(header);
+	if ((header & (u32{GC_REMEMBERED} << 8u)) != 0u) {
+		if (kind == tableRecordKind) heap.enqueue(address, GC_RECORD_LINK, GC_TRACE_HEAD);
+		else if (kind == UPVALUE_RECORD_KIND && !Upvalue::isOpen(heap.memory, address))
+			heap.enqueue(address, UPVALUE_NEXT, GC_TRACE_HEAD);
+	}
+	return 1;
+}
+
+i32 GcHeap::seedThread(void* context, u32 address) {
+	auto& heap = *static_cast<GcHeap*>(context);
+	const u32 header = heap.memory.readRamRecordWord(address);
+	if ((header & (0xffu | (u32{GC_OLD} << 8u))) == (THREAD_RECORD_KIND | (u32{GC_OLD} << 8u)))
+		heap.enqueue(address, GC_RECORD_LINK, GC_TRACE_HEAD);
+	return 1;
+}
+
+size_t GcHeap::collectYoung(Value root0, Value root1, Value root2) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	auto& profile = m_cpu.m_diagnosticGcProfile;
+	GcStepMeasurement total(profile, true);
+	++profile.collections;
+#endif
+	m_minor = true;
+	size_t work;
+	{
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+		GcPhaseMeasurement roots(profile.rootsNanoseconds);
+#endif
+		markString(m_modeKey);
+		m_cpu.markRoots(*this);
+		markValue(root0); markValue(root1); markValue(root2);
+		m_stringPool.markLocalRoots(true);
+		work = m_cpu.collectionRootWordCount() + m_stringPool.takeMarkWork();
+		work += arena.visitGcPages(HeapGcPages::Remembered, this, &GcHeap::seedRemembered);
+		work += arena.visitGcPages(HeapGcPages::Threads, this, &GcHeap::seedThread);
+	}
+	work += resolveWeak();
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);
+#endif
+	SweepContext sweep{*this, 0u, white()};
+	work += arena.visitGcPages(HeapGcPages::Young, &sweep, &GcHeap::sweepRecord);
+	arena.clearGcPages(HeapGcPages::Young);
+	arena.clearGcPages(HeapGcPages::Remembered);
+	m_minor = false;
+	return work;
+}
+
 i32 GcHeap::sweepRecord(void* context, u32 address) {
 	const auto& sweep = *static_cast<SweepContext*>(context);
 	auto& heap = sweep.heap;
-	const u8 kind = heap.memory.readRamRecordByte(address);
+	const u32 header = heap.memory.readRamRecordWord(address);
+	const u8 kind = static_cast<u8>(header);
+	const u8 flags = static_cast<u8>(header >> 8u);
+	if (heap.m_minor && kind == BLUA32_STRING_RECORD_KIND)
+		return 1 + static_cast<i32>(heap.m_stringPool.sweepYoungBucket(address));
+	if (heap.m_minor && (flags & GC_OLD)) return 1;
+	const bool garbage = (flags & GC_COLOR_MASK) == (sweep.white ^ (heap.m_minor ? 0u : 1u));
+	const u8 survivor = sweep.white | (heap.m_minor ? GC_OLD : flags & ~GC_COLOR_MASK);
 	if (kind == tableRecordKind || kind == UPVALUE_RECORD_KIND || kind == static_cast<u8>(ValueTag::Closure)) {
-		if (heap.memory.readRamRecordByte(address + GC_COLOR_OFFSET) == (sweep.white ^ 1u)) {
+		if (garbage) {
 			if (kind == tableRecordKind) TableRecord(heap, address).freeRecord();
-			else heap.arena.free(address);
+			else {
+				if (heap.m_minor && kind == static_cast<u8>(ValueTag::Closure)) heap.m_cpu.retireStaticClosure(address);
+				heap.arena.free(address);
+			}
 			return -1;
 		}
-		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
+		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
 		return 1;
 	}
 	if (kind != THREAD_RECORD_KIND || heap.threadRecordAddress(address) == 0u) return 1;
 	const auto layout = ThreadRecord::stackLayout(heap.memory, address);
 	const i32 work = ceilDiv4(static_cast<int>(THREAD_HEAP_BYTES + heapAllocationBytes(layout.byteLength())));
-	if (heap.memory.readRamRecordByte(address + GC_COLOR_OFFSET) != (sweep.white ^ 1u)) {
-		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
-		const u32 relocated = address != sweep.growingThread ? ThreadRecord::shrinkStack(heap, address, layout) : 0u;
+	if (!garbage) {
+		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, survivor);
+		const u32 relocated = !heap.m_minor && address != sweep.growingThread ? ThreadRecord::shrinkStack(heap, address, layout) : 0u;
 		if (relocated != 0u) heap.m_cpu.rebindRelocatedThread(address);
 		return work + 2 * ceilDiv4(relocated);
 	}

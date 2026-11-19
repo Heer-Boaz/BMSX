@@ -186,8 +186,8 @@ Options:
   CPU-lifetime counters around `CPU::runUntilDepth`. Consumption is emulated
   budget cycles, not retired instructions or host nanoseconds.
   `gc_collections` counts collection cycles started in the interval;
-  `gc_steps` counts incremental steps and `gc_full_collections` counts explicit
-  or emergency full-collection requests. Continuing an incremental cycle can
+  `gc_steps` counts full-collection increments and synchronous small collections;
+  `gc_full_collections` counts explicit or emergency full-collection requests. Continuing an incremental cycle can
   therefore add GC time with zero new collections. Phase `gc_*_ns` values are
   interval deltas of host monotonic timings. Total time encloses roots,
   graph/ephemeron tracing, the second marking pass, weak cleanup, object sweep,

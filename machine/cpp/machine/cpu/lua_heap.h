@@ -41,11 +41,14 @@ public:
 	size_t capacity() const;
 
 private:
+	void accountAllocation(size_t bytes);
 	void creditStep(size_t work);
 	static constexpr size_t MIN_COLLECTION_BYTES = 1024 * 1024;
+	static constexpr size_t YOUNG_INTERVAL_BYTES = 128 * 1024;
 
 	CPU& m_cpu;
 	const u32 m_targetAddress;
+	const u32 m_youngDebtAddress;
 };
 
 } // namespace bmsx
