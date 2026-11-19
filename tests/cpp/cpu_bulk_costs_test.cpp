@@ -77,7 +77,7 @@ void writeRoutes(bool scalar) {
   const int base = BASE_CYCLES[static_cast<u8>(op)] + (op == OpCode::CALL ? 1 : 0);
   const int initialization = integer ? 1 : 2;
   if (cpu.runUntilDepth(0, base + 1) != RunResult::Yielded || cpu.instructionBudgetRemaining != 1 - initialization
-   || frame->pc != machine.rom.textAddress + INSTRUCTION_BYTES || table->get(key) != valueInteger(73))
+   || frame->readControl(bmsx::FrameField::Pc) != machine.rom.textAddress + INSTRUCTION_BYTES || table->get(key) != valueInteger(73))
    throw std::runtime_error("every table-write route charges growth and stops at its successor");
  }
 }
@@ -154,7 +154,7 @@ void rebuildWork(bool scalar) {
   const Value key = r.get(1); machine.restart();
   if (cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + 1) != RunResult::Yielded
    || cpu.instructionBudgetRemaining != 1 - surcharge - gcCycles || table->storedSlotCount() != capacity
-   || frame->pc != machine.rom.textAddress + (scenario == "failed-growth" ? 0u : INSTRUCTION_BYTES))
+   || frame->readControl(bmsx::FrameField::Pc) != machine.rom.textAddress + (scenario == "failed-growth" ? 0u : INSTRUCTION_BYTES))
    throw std::runtime_error("table rebuild must charge exactly its completed storage work: " + scenario);
   if (scenario == "failed-growth") {
    if (cpu.readLuaFaultReasonWord() != LUA_FAULT_REASON_OUT_OF_MEMORY || !isNil(table->get(key)) || table->get(valueFloat(0.5f)) != valueInteger(0))
@@ -230,7 +230,7 @@ int main() {
     for (const auto value : expected) {
      if (frame->registers.get(index++) != value) throw std::runtime_error("NEXT result tuple changed at an exhausted grant");
     }
-    if (frame->pc != rom.textAddress + INSTRUCTION_BYTES || frame->registers.get(7) != valueInteger(91))
+    if (frame->readControl(bmsx::FrameField::Pc) != rom.textAddress + INSTRUCTION_BYTES || frame->registers.get(7) != valueInteger(91))
      throw std::runtime_error("NEXT finishes the admitted primitive but stops before the next guest instruction");
    };
    auto* warm = cpu.createTable();
@@ -303,7 +303,7 @@ int main() {
    const int grant = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
    if (cpu.runUntilDepth(0, grant) != RunResult::Yielded || cpu.instructionBudgetRemaining != -surcharge)
     throw std::runtime_error("NEWT must finish its admitted logical initialization charge");
-   if (cpu.activeThread()->frameAtDepth(0)->pc != rom.textAddress + INSTRUCTION_BYTES || !valueIsTable(cpu.readFrameRegister(0, 0)))
+   if (cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Pc) != rom.textAddress + INSTRUCTION_BYTES || !valueIsTable(cpu.readFrameRegister(0, 0)))
     throw std::runtime_error("exhausting initialization must stop before the next instruction");
    if (asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap())->storedSlotCount() != static_cast<size_t>(array + capacity))
     throw std::runtime_error("NEWT retains the requested array and rounded hash capacity");
@@ -349,7 +349,7 @@ int main() {
      if (cpu.runUntilDepth(0, grant) != RunResult::Yielded
       || cpu.instructionBudgetRemaining != (surcharge ? 1 - surcharge : 1 - BASE_CYCLES[static_cast<u8>(OpCode::JMP)]))
       throw std::runtime_error("table store charges scans, initialization and relocation only when rebuilding");
-     if (frame->pc != rom.textAddress + (surcharge ? INSTRUCTION_BYTES : 0u))
+     if (frame->readControl(bmsx::FrameField::Pc) != rom.textAddress + (surcharge ? INSTRUCTION_BYTES : 0u))
       throw std::runtime_error("growth finishes atomically before the following instruction");
      if (table->getStringKey(keys[i]) != valueInteger(73)) throw std::runtime_error("table store lost a field");
      const size_t capacity = table->storedSlotCount();

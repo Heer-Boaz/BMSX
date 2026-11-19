@@ -55,7 +55,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
 	for (size_t i = 0; i < first.frameDepth; ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& x = *firstFrame; const auto& y = *secondFrame;
-		require(x.pc == y.pc && x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity,
+		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity,
 			"all live frame boundaries agree");
 	}
 }
@@ -157,9 +157,9 @@ void genericArraysAndHashKeys() {
 		test::runCpuParity(native.cpu, scalar.cpu, 16);
 		// Rebuilding can consume the grant before the loop's readback.
 		for (u32 remaining = image.functions[0].wordCount;
-			remaining > 0 && native.cpu.activeThread()->frameAtDepth(0)->pc != native.rom.textAddress; --remaining)
+			remaining > 0 && native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Pc) != native.rom.textAddress; --remaining)
 			test::runCpuParity(native.cpu, scalar.cpu, 1);
-		require(native.cpu.activeThread()->frameAtDepth(0)->pc == native.rom.textAddress,
+		require(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Pc) == native.rom.textAddress,
 			"readback completes within one seven-word loop");
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 3) == value && native.cpu.readFrameRegister(0, 5) == valueInteger(1),

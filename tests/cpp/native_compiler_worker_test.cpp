@@ -115,7 +115,7 @@ void cpuInvalidationAndLifecycle() {
 		for (auto* machine : {&generated, &reference}) {
 			for (size_t i = 0; i < image.text.size(); ++i) machine->memory.writeMappedU8(ramPc + static_cast<u32>(i), image.text[i]);
 			auto* frame = machine->cpu.activeThread()->currentFrame;
-			frame->pc = ramPc;
+			frame->writeControl(bmsx::FrameField::Pc, ramPc);
 			frame->registers[1] = valueNumber(0);
 		}
 		for (int step = 0; generated.cpu.readNativeCompilationProfile().prepareRequests == 0; ++step) {

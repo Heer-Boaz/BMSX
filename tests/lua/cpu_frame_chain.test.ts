@@ -38,7 +38,7 @@ test('thread-owned nodes reuse stable identities and trim only the spare tail', 
 	for (let index = 0; index < 8; ++index) {
 		const frame = thread.acquireFrame();
 		thread.reserveFrame(thread.stackRegisters.capacity());
-		frame.initializeControl(0, 0, false);
+		frame.initializeControl(0, 0, 0, false);
 		assert.equal(thread.frameDepth, index, 'preparation does not activate a frame');
 		thread.enterFrame(frame); frames.push(frame);
 		assert.equal(frame.previous, index === 0 ? null : frames[index - 1]);
@@ -65,6 +65,28 @@ test('thread-owned nodes reuse stable identities and trim only the spare tail', 
 });
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	test(`frame fetch and checkpoint resume use the physical successor PC (${backend})`, () => {
+		const text = new Uint8Array(4 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.RET, 0, 2, 0);
+		writeInstruction(text, 2, OpCode.KSMI, 0, 0, 9);
+		writeInstruction(text, 3, OpCode.RET, 0, 2, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 1 }] });
+		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const state = cpu.captureRuntimeState(), initialRam = memory.captureSaveState();
+		const frame = cpu.rootThread.currentFrame!;
+		memory.writeRamRecordWord(frame.controlOffset + FrameField.Pc, frame.pc + 2 * INSTRUCTION_BYTES);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		const values: Value[] = []; cpu.readCompletionValues(values);
+		assert.deepEqual(values, [valueInteger(9)]);
+
+		memory.restoreSaveState(initialRam);
+		cpu.restoreRuntimeState(state);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		cpu.readCompletionValues(values);
+		assert.deepEqual(values, [valueInteger(1)]);
+	});
+
 	test(`only the protected target owns completion, including after snapshot restore (${backend})`, () => {
 		const text = new Uint8Array(11 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);

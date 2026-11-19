@@ -457,7 +457,7 @@ DISPATCH_LABEL(MTC0) {
 
 DISPATCH_LABEL(JMP) {
 	const uint32_t bx = decoded->bx;
-	FRAME.pc = bx;
+	FRAME.writeControl(FrameField::Pc, bx);
 	DISPATCH_NEXT();
 }
 
@@ -465,7 +465,7 @@ DISPATCH_LABEL(JMPIF) {
 	const int a = decoded->a;
 	const uint32_t bx = decoded->bx;
 	if (isTruthy(REG(a))) {
-		FRAME.pc = bx;
+		FRAME.writeControl(FrameField::Pc, bx);
 	}
 	DISPATCH_NEXT();
 }
@@ -474,7 +474,7 @@ DISPATCH_LABEL(JMPIFNOT) {
 	const int a = decoded->a;
 	const uint32_t bx = decoded->bx;
 	if (!isTruthy(REG(a))) {
-		FRAME.pc = bx;
+		FRAME.writeControl(FrameField::Pc, bx);
 	}
 	DISPATCH_NEXT();
 }

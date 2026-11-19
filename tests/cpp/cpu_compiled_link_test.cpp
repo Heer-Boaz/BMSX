@@ -40,7 +40,7 @@ struct CpuMachine {
 void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto& first = *native.cpu.activeThread()->frameAtDepth(0);
 	const auto& second = *scalar.cpu.activeThread()->frameAtDepth(0);
-	require(first.pc == second.pc && first.top == second.top
+	require(first.readControl(bmsx::FrameField::Pc) == second.readControl(bmsx::FrameField::Pc) && first.top == second.top
 		&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
 		&& native.cpu.lastPc == scalar.cpu.lastPc,
 		"linked blocks publish the same PC, WIDE body, register extent and cycle boundary as scalar instructions");

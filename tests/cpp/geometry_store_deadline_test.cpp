@@ -96,7 +96,7 @@ Result runCase(bool native, bool crossing) {
 	require(runtime.cpuExecution.runInstruction(runtime, budget) == InstructionStepResult::Executed, "runtime executes STORE");
 	const auto state = machine.geometryController.captureState();
 	require(state.pendingCycles == (crossing ? 17 : 16), "GEO second record started at its actual deadline");
-	return {state.xform.vertices[0], memory.readU32(vertex), frame.pc, memory.readIoU32(IO_GEO_PROCESSED), state.xform.phase,
+	return {state.xform.vertices[0], memory.readU32(vertex), frame.readControl(bmsx::FrameField::Pc), memory.readIoU32(IO_GEO_PROCESSED), state.xform.phase,
 		machine.scheduler.nowCycles(), budget.activeCpuUsedCycles, budget.cycleBudgetRemaining};
 }
 }

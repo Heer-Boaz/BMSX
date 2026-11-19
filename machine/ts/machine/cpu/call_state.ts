@@ -14,8 +14,8 @@ export const enum ProtectedCallKind {
 	XPCallHandler,
 }
 
-export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16 }
-export const FRAME_CONTROL_BYTES = 20;
+export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20 }
+export const FRAME_CONTROL_BYTES = 24;
 const FRAME_COMPLETION = 1;
 const FRAME_EXCEPTION = 2;
 const FRAME_NMI = 4;
@@ -29,7 +29,6 @@ export class CallFrame {
 	public decodedPageBusSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU;
 	/** Host translation admission for the next PC, not checkpoint state. */
 	public compilationEntry = true;
-	public pc = 0;
 	public varargBase = 0;
 	public varargCount = 0;
 	public stackBase = 0;
@@ -43,17 +42,20 @@ export class CallFrame {
 	public constructor(public readonly thread: Thread, public previous: CallFrame | null, public readonly controlMemory: Memory) {}
 
 	public bindControl(offset: number): void { this.controlOffset = offset & RAM_RECORD_WORD_MASK; }
-	public initializeControl(fn: number, callSite: number, completion: boolean): void {
+	public initializeControl(fn: number, pc: number, callSite: number, completion: boolean): void {
 		const memory = this.controlMemory, ram = memory.ramData(), offset = this.controlOffset;
 		writeLE32(ram, (offset + FrameField.Function) & RAM_RECORD_WORD_MASK, fn);
 		writeLE32(ram, (offset + FrameField.CallSite) & RAM_RECORD_WORD_MASK, callSite);
 		writeLE32(ram, (offset + FrameField.OpenHead) & RAM_RECORD_WORD_MASK, 0);
 		writeLE32(ram, (offset + FrameField.Protected) & RAM_RECORD_WORD_MASK, -1);
 		writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, completion ? FRAME_COMPLETION : 0);
+		writeLE32(ram, (offset + FrameField.Pc) & RAM_RECORD_WORD_MASK, pc);
 		const first = Math.min(FRAME_CONTROL_BYTES, MAIN_RAM_SIZE - offset);
 		memory.invalidateRamWrite(offset, first);
 		if (first !== FRAME_CONTROL_BYTES) memory.invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
 	}
+	public get pc(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Pc); }
+	public set pc(word: number) { this.controlMemory.writeRamRecordWord(this.controlOffset + FrameField.Pc, word); }
 	public get functionAddress(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Function); }
 	public set functionAddress(word: number) { this.controlMemory.writeRamRecordWord(this.controlOffset + FrameField.Function, word); }
 	public get callSitePc(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.CallSite); }

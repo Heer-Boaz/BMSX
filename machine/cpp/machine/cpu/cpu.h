@@ -105,7 +105,6 @@ struct ExecutionHookBinding {
 // Saved values are u32 offsets into the snapshot word arena. Object references
 // such as closureRef are ordinals in its object index.
 struct CpuFrameState {
-	u32 pc = 0;
 	int closureRef = -1;
 	int stackBase = 0;
 	int stackCapacity = 0;

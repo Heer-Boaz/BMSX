@@ -633,14 +633,15 @@ DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 
 
 void CPU::skipNextInstruction(CallFrame& frame) {
-	DecodedInstructionPage& page = decodedPageForFrame(frame, frame.pc);
-	const u32 offset = (frame.pc & MAPPED_PAGE_BYTE_MASK) >> 2;
+	const u32 pc = frame.readControl(FrameField::Pc);
+	DecodedInstructionPage& page = decodedPageForFrame(frame, pc);
+	const u32 offset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
 	if ((page.refreshState[offset] & DECODED_REFRESH_DECODE) != 0u
-		&& !decodeInstruction(frame, page, offset, frame.pc, false)) {
+		&& !decodeInstruction(frame, page, offset, pc, false)) {
 		return;
 	}
-	const u32 nextPc = frame.pc + static_cast<u32>(page.words[offset].width) * INSTRUCTION_BYTES;
-	frame.pc = nextPc;
+	const u32 nextPc = pc + static_cast<u32>(page.words[offset].width) * INSTRUCTION_BYTES;
+	frame.writeControl(FrameField::Pc, nextPc);
 }
 
 bool CPU::readFunctionRecord(
@@ -833,7 +834,6 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		for (size_t depth = 0; depth < thread->frameDepth; ++depth, framePtr = framePtr->next) {
 			const CallFrame& frame = *framePtr;
 			CpuFrameState frameState;
-			frameState.pc = frame.pc;
 			frameState.closureRef = captureObject(frame.closure);
 			frameState.returnBase = frame.returnBase;
 			frameState.returnCount = frame.returnCount;
@@ -1131,7 +1131,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			auto* frame = m_activeThread->acquireFrame();
 			frame->closure = static_cast<Closure*>(restoredObjects[static_cast<size_t>(frameState.closureRef)]);
 			frame->executionImage = executionImageForDomain(frame->closure->prototype->executionDomainId);
-			frame->pc = frameState.pc;
 			frame->returnBase = frameState.returnBase;
 			frame->returnCount = frameState.returnCount;
 			frame->varargBase = frameState.varargBase;
@@ -1248,7 +1247,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::FrameHeader: {
 			const auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
 			out.push_back(valueInteger(frame.readControl(FrameField::Function)));
-			out.push_back(valueInteger(frame.pc));
+			out.push_back(valueInteger(frame.readControl(FrameField::Pc)));
 			out.push_back(valueInteger(frame.readControl(FrameField::CallSite)));
 			out.push_back(valueBool(frame.hasControlFlag(FRAME_COMPLETION)));
 			out.push_back(valueInteger(static_cast<u32>(frame.executionImage->executionDomainId)));
@@ -1486,7 +1485,7 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, int argumen
 	if (valueIsClosure(target)) {
 		Closure* closure = asClosure(target, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-		auto* frame = pushFrame(caller, closure, argumentBase, argumentCount, 0, 0, false, caller.pc - INSTRUCTION_BYTES);
+		auto* frame = pushFrame(caller, closure, argumentBase, argumentCount, 0, 0, false, caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES);
 		if (frame) frame->writeControl(FrameField::Protected, continuationIndex);
 		return;
 	}
@@ -1762,7 +1761,7 @@ bool CPU::enterPendingInterrupt() {
 			*m_systemImage,
 			m_systemExceptionFunctionAddress,
 			CPU_CAUSE_NMI,
-			m_activeThread->currentFrame->pc
+			m_activeThread->currentFrame->readControl(FrameField::Pc)
 		);
 		m_nmiReturnCauseWord = returnCauseWord;
 		m_nmiReturnEpcWord = returnEpcWord;
@@ -1775,7 +1774,7 @@ bool CPU::enterPendingInterrupt() {
 	if (canAcceptMaskableInterruptLine()) {
 		Blua32ExecutionImage& image = isUserMode() ? *executionImageForDomain(m_programExecutionDomainId) : *m_systemImage;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
-		enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, m_activeThread->currentFrame->pc);
+		enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, m_activeThread->currentFrame->readControl(FrameField::Pc));
 		if (!hadHaltLatch) m_interruptEventPending = true;
 		return true;
 	}
@@ -1783,7 +1782,7 @@ bool CPU::enterPendingInterrupt() {
 }
 
 CallFrame* CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) {
-	interruptedFrame.pc = m_currentInstructionPc;
+	interruptedFrame.writeControl(FrameField::Pc, m_currentInstructionPc);
 	return enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, m_currentInstructionPc);
 }
 
@@ -1794,7 +1793,7 @@ void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 caus
 
 void CPU::enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc) {
 	instructionBudgetRemaining -= 1;
-	interruptedFrame.pc = pc;
+	interruptedFrame.writeControl(FrameField::Pc, pc);
 	enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, pc);
 }
 
@@ -1821,7 +1820,7 @@ void CPU::returnFromException(CallFrame& frame) {
 		| ((m_cop0Words[COP0_STATUS] >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
 	if (m_activeThread->frameDepth != 0) {
 		auto& caller = *m_activeThread->currentFrame;
-		caller.pc = returnPc;
+		caller.writeControl(FrameField::Pc, returnPc);
 		caller.compilationEntry = true;
 	}
 	if (returnFromNmi) {
@@ -1869,7 +1868,7 @@ void CPU::clearHaltAfterAcceptedInterrupt() {
 }
 
 void CPU::blockMappedWrite(CallFrame& frame, uint32_t address) {
-	frame.pc = m_currentInstructionPc;
+	frame.writeControl(FrameField::Pc, m_currentInstructionPc);
 	m_memoryWriteBlocked = true;
 	m_memoryWriteBlockedAddress = address;
 	m_yieldRequested = false;
@@ -1957,7 +1956,7 @@ RunResult CPU::runLoop(
 						&& hookBinding.hook(
 							hookBinding.context,
 							interruptedImage->executionDomainId,
-							interruptedFrame->pc
+							interruptedFrame->readControl(FrameField::Pc)
 						)) {
 						return RunResult::ExecutionStopped;
 					}
@@ -1980,7 +1979,7 @@ RunResult CPU::runLoop(
 			goto dispatch_fetch;
 
 dispatch_fetch:
-			pc = frame->pc;
+			pc = frame->readControl(FrameField::Pc);
 			if constexpr (Instrumented) {
 				if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
 					&& hookBinding.hook(hookBinding.context, image->executionDomainId, pc)) {
@@ -2017,7 +2016,7 @@ dispatch_decode:
 			}
 			decoded = &decodedPage->words[pageOffset];
 			m_currentInstructionPc = pc;
-			frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
+			frame->writeControl(FrameField::Pc, pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES));
 			m_lastExecutionDomainId = image->executionDomainId;
 			lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 			uint8_t dispatchOp;
@@ -2053,7 +2052,7 @@ dispatch_decode:
 #define DISPATCH_NEXT() do { \
 	if constexpr (!Instrumented) { \
 		if (canReuseFrame && instructionBudgetRemaining > 0) { \
-			pc = frame->pc; \
+			pc = frame->readControl(FrameField::Pc); \
 			if ((pc & ~MAPPED_PAGE_BYTE_MASK) == pageAddress) goto dispatch_decode; \
 			goto dispatch_fetch; \
 		} \
@@ -2132,7 +2131,7 @@ dispatch_instruction:
 					if (instructionBudgetRemaining <= 0) {
 						DISPATCH_CONTINUE();
 					}
-					const u32 successorPc = FRAME.pc;
+					const u32 successorPc = FRAME.readControl(FrameField::Pc);
 					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, successorPc);
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if ((successorPage.refreshState[successorOffset]
@@ -2149,8 +2148,8 @@ dispatch_instruction:
 					}
 					decoded = &successorPage.words[successorOffset];
 					m_currentInstructionPc = successorPc;
-					FRAME.pc = successorPc
-						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
+					FRAME.writeControl(FrameField::Pc, successorPc
+						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES));
 					m_lastExecutionDomainId = IMAGE.executionDomainId;
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
@@ -2183,7 +2182,7 @@ dispatch_instruction:
 					if (instructionBudgetRemaining <= 0) {
 						DISPATCH_CONTINUE();
 					}
-					const u32 successorPc = FRAME.pc;
+					const u32 successorPc = FRAME.readControl(FrameField::Pc);
 					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, successorPc);
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if ((successorPage.refreshState[successorOffset]
@@ -2200,8 +2199,8 @@ dispatch_instruction:
 					}
 					decoded = &successorPage.words[successorOffset];
 					m_currentInstructionPc = successorPc;
-					FRAME.pc = successorPc
-						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
+					FRAME.writeControl(FrameField::Pc, successorPc
+						+ (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES));
 					m_lastExecutionDomainId = IMAGE.executionDomainId;
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
@@ -2272,7 +2271,7 @@ dispatch_rebind_frame:
 				if (image != m_activeExecutionImage) latchActiveExecutionImage(*image);
 				registers = frame->registers;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-				pc = frame->pc;
+				pc = frame->readControl(FrameField::Pc);
 				// A function record can supply a raw unaligned code address. Leave
 				// its address exception to the ordinary instruction-fetch boundary.
 				if ((pc & (INSTRUCTION_BYTES - 1u)) == 0u) {
@@ -2435,7 +2434,7 @@ u32 CPU::readFrameFunctionAddress(int frameIndex) const {
 }
 
 u32 CPU::readFramePc(int frameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->pc;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->readControl(FrameField::Pc);
 }
 
 u32 CPU::readFrameCallSitePc(int childFrameIndex) const {
@@ -2573,7 +2572,7 @@ void CPU::writeFrameExecution(
 	frame.nativeContinuationCells = {};
 #endif
 	frame.compilationEntry = true;
-	frame.pc = pc;
+	frame.writeControl(FrameField::Pc, pc);
 }
 
 void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
@@ -2700,11 +2699,10 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	auto* frame = m_activeThread->acquireFrame();
 	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
-	frame->pc = functionRecord.codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
-	frame->initializeControl(functionRecord.functionAddress, callSitePc, returnToCompletionLatch);
+	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch);
 	frame->varargBase = argumentBase + static_cast<int>(functionRecord.numParams);
 	frame->varargCount = varargCount;
 	frame->stackBase = stackBase;
@@ -2745,11 +2743,10 @@ CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
 	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true, exception);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
-	frame->pc = functionRecord.codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
-	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, returnToCompletionLatch);
+	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress, returnToCompletionLatch);
 	frame->varargBase = argumentBase + static_cast<int>(functionRecord.numParams);
 	frame->varargCount = varargCount;
 	frame->stackBase = stackBase;

@@ -388,7 +388,7 @@ void testWarmedGeneratedDmaSharedBus() {
 			+ BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
 		runtime->frameScheduler.runCyclesToNextLogicalTick(*runtime, warmBursts * loopCycles);
-		require(frame.pc == entry && frame.registers.get(6) == valueInteger(warmBursts), "the real DMA loop warms through its admitted bursts");
+		require(frame.readControl(bmsx::FrameField::Pc) == entry && frame.registers.get(6) == valueInteger(warmBursts), "the real DMA loop warms through its admitted bursts");
 	}
 	auto& generatedFrame = *generated.machine.cpu.activeThread()->frameAtDepth(0);
 	const auto& page = *generatedFrame.decodedPage;
@@ -415,19 +415,19 @@ void testWarmedGeneratedDmaSharedBus() {
 		run(5 * BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_D)] + 1); // TRIGGER yields before the following load.
 		auto& memory = generated.machine.memory;
 		auto& dma = generated.machine.dmaController;
-		require(generatedFrame.pc == entry + 20 && generatedFrame.registers.get(6) == valueInteger(warmBursts + iteration),
+		require(generatedFrame.readControl(bmsx::FrameField::Pc) == entry + 20 && generatedFrame.registers.get(6) == valueInteger(warmBursts + iteration),
 			"the generated DMA-trigger store yields before its following load or counter update");
 		require(dma.cpuBusHeld() && dma.captureState().scheduledBlockCycles == 513, "the real DMA owns the remaining bus interval");
 		run(512);
-		require(generatedFrame.pc == entry + 20 && dma.cpuBusHeld(), "native execution stays excluded until burst completion");
+		require(generatedFrame.readControl(bmsx::FrameField::Pc) == entry + 20 && dma.cpuBusHeld(), "native execution stays excluded until burst completion");
 		for (u32 word = 0; word < 256; ++word) require(memory.readMappedU32LE(target + word * 4) == 0, "no DMA word is published early");
 		run(1);
-		require(generatedFrame.pc == entry + 20 && !dma.cpuBusHeld(), "the final DMA cycle cannot also execute the continuation");
+		require(generatedFrame.readControl(bmsx::FrameField::Pc) == entry + 20 && !dma.cpuBusHeld(), "the final DMA cycle cannot also execute the continuation");
 		for (u32 word = 0; word < 256; ++word) require(memory.readMappedU32LE(target + word * 4) == 0x43210000 + iteration * 256 + word,
 			"the completed burst publishes every raw source word");
 		run(BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)]);
-		require(generatedFrame.pc == entry && generatedFrame.registers.get(6) == valueInteger(warmBursts + 1 + iteration), "generated execution resumes exactly once after bus release");
+		require(generatedFrame.readControl(bmsx::FrameField::Pc) == entry && generatedFrame.registers.get(6) == valueInteger(warmBursts + 1 + iteration), "generated execution resumes exactly once after bus release");
 		require(generatedFrame.registers.get(7) == valueInteger(0x43210000 + iteration * 256), "the resumed load observes DMA output");
 	}
 }
@@ -442,14 +442,14 @@ void testDeviceSettlementRetainsCpuStop() {
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
 	auto* thread = cpu.activeThread();
 	const auto depth = thread->frameDepth;
-	const auto pc = thread->currentFrame->pc;
+	const auto pc = thread->currentFrame->readControl(bmsx::FrameField::Pc);
 	const auto stackTop = thread->stackTop;
 	require(!scheduler.runDevicesToNextLogicalTick(runtime, 19), "partial device grant stops before VBlank");
 	require(runtime.machine.scheduler.nowCycles() == 19, "devices consume the exact partial grant");
 	require(scheduler.runDevicesToNextLogicalTick(runtime, runtime.timing.cycleBudgetPerFrame), "device timers reach the real video edge");
 	require(scheduler.lastTickSequence == 1 && fixture.input.sampleCount == 1, "VBlank publishes its ordinary tick and input sample");
 	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0, "VBlank latches its pending IRQ");
-	require(cpu.activeThread() == thread && thread->frameDepth == depth && thread->currentFrame->pc == pc && thread->stackTop == stackTop,
+	require(cpu.activeThread() == thread && thread->frameDepth == depth && thread->currentFrame->readControl(bmsx::FrameField::Pc) == pc && thread->stackTop == stackTop,
 		"device settlement neither executes the stopped CPU nor enters its pending interrupt");
 	require(scheduler.lastTickCpuUsedCycles == 0, "device cycles are not CPU execution");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)

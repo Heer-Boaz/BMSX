@@ -133,7 +133,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto& left = *native.cpu.activeThread(); const auto& right = *scalar.cpu.activeThread();
 	const CallFrame* x = left.firstFrame; const CallFrame* y = right.firstFrame;
 	require(left.frameDepth == right.frameDepth, "frame depths agree");
-	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) require(x->pc == y->pc && x->top == y->top
+	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && x->top == y->top
 		&& x->stackBase == y->stackBase && x->stackCapacity == y->stackCapacity, "live frame extents agree");
 }
 

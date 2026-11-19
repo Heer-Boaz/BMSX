@@ -90,8 +90,8 @@ struct Machine {
 		callee->nativeCode[word] = original;
 		require(cpu.getFrameDepth() == 2, "generated CALL enters a live child");
 		auto* parent = cpu.rootThread()->firstFrame;
-		require(parent->nativeContinuationCells[0] == lookup.entrySlot(parent->pc, 0)
-			&& parent->nativeContinuationCells[1] == lookup.entrySlot(parent->pc, 1),
+		require(parent->nativeContinuationCells[0] == lookup.entrySlot(parent->readControl(bmsx::FrameField::Pc), 0)
+			&& parent->nativeContinuationCells[1] == lookup.entrySlot(parent->readControl(bmsx::FrameField::Pc), 1),
 			"CALL copies the published callsite bindings to its activation");
 		cpu.writeFrameExecution(1, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[1], calleePc());
 		parent->registers.set(1, callerMarker);
@@ -124,15 +124,15 @@ void boundReturn(bool replaceTargetStorage, bool changeBank) {
 	machine.enterWarmChild();
 	auto* parent = machine.cpu.rootThread()->firstFrame;
 	auto& lookup = *parent->executionImage->nativeCodeLookup;
-	auto* page = lookup.find(parent->pc, 0);
+	auto* page = lookup.find(parent->readControl(bmsx::FrameField::Pc), 0);
 	const auto slot = parent->nativeContinuationCells[0];
-	const auto word = (parent->pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const auto word = (parent->readControl(bmsx::FrameField::Pc) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	auto* marker = lookup.find(machine.markerPc(), 0);
 	const auto markerWord = (machine.markerPc() & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	if (replaceTargetStorage) {
 		// A real source write retires the source CALL and its continuation while
 		// the callee is active. Dispatch-cell storage must not retire with it.
-		machine.memory.writeMappedU32LE(parent->pc, packInstructionWord(static_cast<u8>(OpCode::K1), 1, 0, 0));
+		machine.memory.writeMappedU32LE(parent->readControl(bmsx::FrameField::Pc), packInstructionWord(static_cast<u8>(OpCode::K1), 1, 0, 0));
 		require(page->nativeCode && !page->nativeBlocks && !*slot && slot == &page->nativeCode[word],
 			"source invalidation zeros stable dispatch cells before freeing code descriptors");
 	}
@@ -151,7 +151,7 @@ void boundReturn(bool replaceTargetStorage, bool changeBank) {
 	// still owns the slots; restore it before teardown. A cached RET must not
 	// repeat this lookup even when the source region has been destroyed.
 	auto& root = const_cast<NativeCodeLookup::Root&>(lookup.root(changeBank ? 1u : 0u));
-	const auto rootIndex = parent->pc >> NativeCodeLookup::ROOT_SHIFT;
+	const auto rootIndex = parent->readControl(bmsx::FrameField::Pc) >> NativeCodeLookup::ROOT_SHIFT;
 	auto* group = root[rootIndex];
 	root[rootIndex] = nullptr;
 	machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)]
@@ -258,7 +258,7 @@ void observationAndLifecycle(int action) {
 	if (action == 0) {
 		unsigned observed = 0;
 		InstructionObserverBinding binding;
-		binding.points[0].insert(parent->pc);
+		binding.points[0].insert(parent->readControl(bmsx::FrameField::Pc));
 		binding.context = &observed;
 		binding.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan registers) {
 			require(registers.get(1) == callerMarker, "observer receives the resumed caller's unmodified Float payload and tag");
@@ -296,6 +296,19 @@ void observationAndLifecycle(int action) {
 		machine.cpu.runUntilDepth(0, 100);
 	}
 }
+
+void physicalCallerPcRedirectsNativeReturn() {
+	Machine machine;
+	machine.enterWarmChild();
+	auto* parent = machine.cpu.rootThread()->firstFrame;
+	const auto oldCell = parent->nativeContinuationCells[0];
+	require(oldCell && *oldCell, "the returning child has a linked caller continuation");
+	machine.memory.writeMappedU32LE(RAM_BASE + parent->controlOffset + static_cast<u32>(bmsx::FrameField::Pc), machine.markerPc());
+	require(parent->nativeContinuationCells[0] == oldCell, "a raw frame write does not withdraw its old code cell");
+	machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
+	require(machine.cpu.getGlobalByKey(machine.cpu.stringPool().intern("continuationResult")) == callerMarker,
+		"the native return consumes the physical successor instead of its stale continuation key");
+}
 } // namespace
 
 int main() {
@@ -306,6 +319,7 @@ int main() {
 		boundReturn(false, true);
 		cartridgeReturnSelectsLiveBank();
 		wideContinuationAcrossPage();
+		physicalCallerPcRedirectsNativeReturn();
 		for (int action = 0; action < 5; ++action) observationAndLifecycle(action);
 		std::cout << "Native continuation tests passed; exit_bytes=" << sizeof(NativeBlockExitSite)
 			<< " frame_bytes=" << sizeof(CallFrame) << '\n';

@@ -59,7 +59,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* x = left.firstFrame; const CallFrame* y = right.firstFrame;
 	require(left.frameDepth == right.frameDepth, "control transitions preserve frame depth");
 	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) {
-		require(x->pc == y->pc && x->top == y->top && x->stackBase == y->stackBase
+		require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && x->top == y->top && x->stackBase == y->stackBase
 			&& x->stackCapacity == y->stackCapacity && x->hasControlFlag(FRAME_EXCEPTION) == y->hasControlFlag(FRAME_EXCEPTION)
 			&& x->hasControlFlag(FRAME_NMI) == y->hasControlFlag(FRAME_NMI), "all live frame boundaries agree");
 	}
@@ -137,7 +137,7 @@ void writesConvertWithoutChangingSources() {
 		{valueFloat(0x1.000002p32f), valueFloat(0x1.000002p32f), 512}}}) {
 		for (auto* m : {&native, &scalar}) {
 			auto& f = *m->cpu.activeThread()->currentFrame;
-			f.registers.set(0, source); f.pc = m->rom.textAddress;
+			f.registers.set(0, source); f.writeControl(bmsx::FrameField::Pc, m->rom.textAddress);
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
 			+ 2 * BASE_CYCLES[static_cast<u8>(OpCode::MTC0)] + BASE_CYCLES[static_cast<u8>(OpCode::MFC0)]

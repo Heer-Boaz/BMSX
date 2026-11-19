@@ -134,7 +134,7 @@ void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float positi
 		"dirty cached values not consumed by the leaf survive its host-call ABI");
 	require(frame->registers.get(8) == (receiving ? machine.expected : frame->registers.get(12)),
 		"the successor consumes the new result, or the retained callee when results are discarded");
-	require(machine.cpu.instructionBudgetRemaining == 12345 && frame->pc == rom.textAddress && frame->top == 3,
+	require(machine.cpu.instructionBudgetRemaining == 12345 && frame->readControl(bmsx::FrameField::Pc) == rom.textAddress && frame->top == 3,
 		"the base native ABI updates its own state, never hidden CPU/frame copies behind live native registers");
 	if (id == BuiltinFunctionId::SetMetatable) require(machine.target->metatable() == (mode == 1 ? nullptr : machine.meta),
 		"the inline route performs the real table mutation");
@@ -217,7 +217,7 @@ void inlineInterruptStop(bool nmi, bool wide) {
 	reinterpret_cast<Entry>(gate.entry)(&run,page->nativeCode[(rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES]);
 	if(run.error) std::rethrow_exception(run.error);
 	require(frame->registers.get(0)==machine.expected && frame->registers.get(8)==valueInteger(-8)
-		&& frame->pc==caller->terminal.nextPc && frame->top==1,
+		&& frame->readControl(bmsx::FrameField::Pc)==caller->terminal.nextPc && frame->top==1,
 		"positive-grant IRQ/NMI stops AFTER completed leaf, before its actual internal successor");
 	require(run.state.remainingCycles==64-4*BASE_CYCLES[static_cast<u8>(OpCode::MOV)]-BASE_CYCLES[static_cast<u8>(OpCode::CALL)]-3
 		&& machine.cpu.instructionBudgetRemaining==run.state.remainingCycles,

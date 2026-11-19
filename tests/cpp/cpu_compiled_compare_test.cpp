@@ -61,7 +61,7 @@ void numericRkComparisonsBelongToTheirExecutionImage() {
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 1024);
 		const auto& frame = *native.cpu.activeThread()->currentFrame;
-		require(frame.registers.get(1) == valueBool(domain == 0) && frame.pc == DYNAMIC_RAM_BASE,
+		require(frame.registers.get(1) == valueBool(domain == 0) && frame.readControl(bmsx::FrameField::Pc) == DYNAMIC_RAM_BASE,
 			"the same RAM instruction and RK index use the activation's Number or String pool, not another resident image");
 		const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
 		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "both image-local comparisons match complete scalar state");
@@ -147,7 +147,7 @@ void changingSkippedBytesRetireResolvedEdges() {
 			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.top = 0; frame.registers.set(2, valueInteger(73));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 			machine->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::EQ)]);
-			require(frame.pc == DYNAMIC_RAM_BASE + (wide ? 4u : 3u) * INSTRUCTION_BYTES
+			require(frame.readControl(bmsx::FrameField::Pc) == DYNAMIC_RAM_BASE + (wide ? 4u : 3u) * INSTRUCTION_BYTES
 				&& frame.registers.get(2) == valueInteger(73) && frame.registers.get(3) == valueInteger(2) && frame.top == 4,
 				"only a taken comparison skip decodes the current complete successor without executing it");
 		}
@@ -624,7 +624,7 @@ void skipFetchBoundaries() {
 			frame.registers.set(0, valueInteger(0)); frame.registers.set(1, valueInteger(0));
 			for (u32 visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8u; ++visit) {
 				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
-				require(machine->cpu.runUntilDepth(0, 1) == RunResult::Yielded && frame.pc == nextPc
+				require(machine->cpu.runUntilDepth(0, 1) == RunResult::Yielded && frame.readControl(bmsx::FrameField::Pc) == nextPc
 					&& machine->memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_NONE,
 					"an untaken skip performs no future fetch even after native warmup at a physical boundary");
 			}

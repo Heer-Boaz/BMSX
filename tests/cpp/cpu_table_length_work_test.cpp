@@ -104,7 +104,7 @@ void everyGrant() {
 			require(test::runCpuParity(generated.cpu,scalar.cpu,grant)==RunResult::Yielded,"LEN loop remains runnable");
 			int remaining=grant,completed=0;while (remaining>0)remaining-=charges[completed++];
 			auto* frame=generated.cpu.activeThread()->currentFrame;auto r=frame->registers;
-			require(generated.cpu.instructionBudgetRemaining==remaining&&frame->pc==generated.rom.textAddress+program.starts[completed==6?0:completed]*INSTRUCTION_BYTES,"literal full-P debt and instruction frontier");
+			require(generated.cpu.instructionBudgetRemaining==remaining&&frame->readControl(bmsx::FrameField::Pc)==generated.rom.textAddress+program.starts[completed==6?0:completed]*INSTRUCTION_BYTES,"literal full-P debt and instruction frontier");
 			require(r.get(6)==(completed>=3?valueInteger(test.boundary):completed>=2?r.get(0):valueInteger(91))
 				&&asTable(r.get(10), generated.cpu.gcHeap())->getInteger(1)==(completed>=4?valueInteger(test.boundary):valueInteger(-1))&&r.get(8)==(completed>=5?valueInteger(37):valueNil()),
 				"aliased Integer result and side-effecting suffix commit only at admitted instruction frontiers");
@@ -113,7 +113,9 @@ void everyGrant() {
 		require(generated.cpu.luaHeap().usedBytes()==heap,"length performs no guest allocation");
 		for (auto* m:{&generated,&scalar}) {
 			m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);
+			const auto ram = m->memory.captureSaveState();
 			const auto before=m->cpu.captureRuntimeState();m->cpu.runUntilDepth(0,5);const auto after=m->cpu.captureRuntimeState();const int debt=m->cpu.instructionBudgetRemaining;
+			m->memory.restoreSaveState(ram);
 			m->cpu.restoreRuntimeState(before);m->cpu.runUntilDepth(0,5);require(m->cpu.instructionBudgetRemaining==debt,"restored seed repeats exact logical work");sameSnapshot(m->cpu.captureRuntimeState(),after);
 			auto r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueString(m->cpu.stringPool().intern("é😀\0"sv)));
 			m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);m->cpu.runUntilDepth(0,5);

@@ -45,7 +45,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
 	for (size_t index = 0; index < first.frameDepth; ++index, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& a = *firstFrame; const auto& b = *secondFrame;
-		require(a.pc == b.pc && a.top == b.top && a.readControl(FrameField::Function) == b.readControl(FrameField::Function) && a.stackCapacity == b.stackCapacity
+		require(a.readControl(bmsx::FrameField::Pc) == b.readControl(bmsx::FrameField::Pc) && a.top == b.top && a.readControl(FrameField::Function) == b.readControl(FrameField::Function) && a.stackCapacity == b.stackCapacity
 			&& a.stackBase == b.stackBase && a.varargBase == b.varargBase && a.varargCount == b.varargCount
 			&& a.returnBase == b.returnBase && a.returnCount == b.returnCount && a.readControl(FrameField::CallSite) == b.readControl(FrameField::CallSite),
 			"both executions retain the same caller, callee and result ranges after stack growth");
@@ -102,7 +102,7 @@ void reusableFrameChain() {
 		auto* previous = thread.currentFrame;
 		auto* frame = thread.acquireFrame();
 		thread.reserveFrame(thread.stackCapacity);
-		frame->initializeControl(0, 0, false);
+		frame->initializeControl(0, 0, 0, false);
 		require(frame->previous == previous && previous->next == frame && frame->thread == &thread,
 			"reusable nodes have stable identity and belong to their thread");
 		thread.enterFrame(frame);
@@ -479,7 +479,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	require(machine.cpu.runUntilDepth(0, grant) == RunResult::Yielded, "CALL placements and its first callee instruction retain grant accounting");
 	if (grant <= BASE_CYCLES[static_cast<u8>(OpCode::MOV)]) {
 		require(machine.cpu.instructionBudgetRemaining == grant - BASE_CYCLES[static_cast<u8>(OpCode::MOV)]
-			&& thread->currentFrame == caller && caller->pc == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
+			&& thread->currentFrame == caller && caller->readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
 			&& caller->registers.get(base) == caller->registers.get(6)
 			&& machine.cpu.getGlobalByKey(marker) == valueBool(false),
 			"a grant exhausted by MOV stops before CALL and frame placement");
@@ -488,7 +488,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	if (grant <= callPrefix + placed) {
 		require(machine.cpu.instructionBudgetRemaining == grant - callPrefix - placed
 			&& machine.cpu.getGlobalByKey(marker) == valueBool(false)
-			&& thread->currentFrame == spare && spare->pc == calleePc,
+			&& thread->currentFrame == spare && spare->readControl(bmsx::FrameField::Pc) == calleePc,
 			"an exhausting CALL completes placement once without entering its raw callee body");
 		return;
 	}
@@ -500,7 +500,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	const Value first = params > 0 ? (args > 0 ? payloads[0] : valueNil()) : valueInteger(63);
 	require(machine.cpu.getGlobalByKey(marker) == first && thread->currentFrame == spare && thread->frameDepth == 2,
 		"warm CALL tail-jumps through the raw native entry without the C++ CALL handler");
-	require(caller->pc == machine.rom.textAddress + 4 * INSTRUCTION_BYTES && caller->top == callerTop
+	require(caller->readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 4 * INSTRUCTION_BYTES && caller->top == callerTop
 		&& spare->readControl(FrameField::CallSite) == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
 		&& spare->returnBase == base && spare->returnCount == 2 && !spare->hasControlFlag(FRAME_COMPLETION),
 		"native CALL publishes exact caller continuation and callee result obligations");
@@ -584,9 +584,9 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	const auto marker = machine.cpu.stringPool().intern("nativeReturnMarker");
 	machine.cpu.setGlobalByKey(marker, valueNil());
 	const auto& lookup = *caller->executionImage->nativeCodeLookup;
-	auto* continuation = lookup.find(caller->pc, 0);
+	auto* continuation = lookup.find(caller->readControl(bmsx::FrameField::Pc), 0);
 	auto* alternate = lookup.find(markerPc, 0);
-	const u32 word = (caller->pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const u32 word = (caller->readControl(bmsx::FrameField::Pc) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	const u32 markerWord = (markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	require(continuation->nativeCode && continuation->nativeCode[word] && alternate->nativeCode && alternate->nativeCode[markerWord],
 		"both ordinary continuation and independent marker have live native dispatch entries");
@@ -603,9 +603,9 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		&& alternate->nativeBlocks->entries[markerWord]->terminal.cycles == markerAdmission + BASE_CYCLES[static_cast<u8>(OpCode::JMP)],
 		"the independent marker admits its SETGL prefix before its terminal JMP");
 	if (grant < 0) grant = count + returnBase;
-	const auto* calleePublished = lookup.find(callee->pc, 0);
+	const auto* calleePublished = lookup.find(callee->readControl(bmsx::FrameField::Pc), 0);
 	require(calleePublished && calleePublished->nativeCode
-		&& calleePublished->nativeCode[(callee->pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
+		&& calleePublished->nativeCode[(callee->readControl(bmsx::FrameField::Pc) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
 		"the RET under test has a real published native entry before redirecting its caller");
 
 	const auto routeResult = machine.cpu.runUntilDepth(0, grant);
@@ -678,7 +678,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 		auto* callee = thread->currentFrame;
 		const int count = vararg ? std::max(args - params, 0) : 0;
 		const int capacity = std::max({maxStack, params, 1});
-		require(thread->frameDepth == 2 && callee->pc == machine->rom.textAddress + 5 * INSTRUCTION_BYTES
+		require(thread->frameDepth == 2 && callee->readControl(bmsx::FrameField::Pc) == machine->rom.textAddress + 5 * INSTRUCTION_BYTES
 			&& callee->stackCapacity == capacity && callee->top == params && callee->varargCount == count,
 			"CALL exposes exact fixed-parameter and reserved-capacity counts at its exhausted grant");
 		const std::array<Value, 5> payloads{valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueBool(true),
@@ -809,7 +809,7 @@ void returnPlacementCycles() {
 			require(machine.cpu.runUntilDepth(1, grant) == RunResult::Halted, "RET finishes at the caller depth");
 			require(machine.cpu.instructionBudgetRemaining == grant - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - placed, "RET charges base plus selected range, even beyond the grant");
 			const auto* caller = machine.cpu.activeThread()->currentFrame;
-			require(caller->pc == machine.rom.textAddress + 6 * INSTRUCTION_BYTES && caller->top == 4 + placed,
+			require(caller->readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 6 * INSTRUCTION_BYTES && caller->top == 4 + placed,
 				"RET consumes no receiving instruction and selects the exact top");
 			for (int i = 0; i < placed; ++i) require(caller->registers.get(4 + i) == (i < produced ? valueInteger(i == 0 ? 17 : 29) : valueNil()),
 				"copied and nil-filled receiving slots are both charged");
@@ -1065,7 +1065,7 @@ void rewriteActiveReturnAddress() {
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	for (auto* m : {&native, &scalar}) {
-		require(m->cpu.activeThread()->frameDepth == 2 && m->cpu.activeThread()->firstFrame->pc == returnPc,
+		require(m->cpu.activeThread()->frameDepth == 2 && m->cpu.activeThread()->firstFrame->readControl(bmsx::FrameField::Pc) == returnPc,
 			"the original caller is suspended at its generated return address");
 		m->memory.writeMappedWord(returnPc, readLE32(replacement.data()));
 	}
@@ -1189,12 +1189,12 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
 		machine->cpu.runUntilDepth(0, callPrefix);
 		auto* active = machine->cpu.activeThread()->currentFrame;
-		require(active->pc == machine->rom.textAddress + (DECODED_PAGE_WORDS + 32u) * INSTRUCTION_BYTES,
+		require(active->readControl(bmsx::FrameField::Pc) == machine->rom.textAddress + (DECODED_PAGE_WORDS + 32u) * INSTRUCTION_BYTES,
 			"the rebound closure reached its new callee");
 		const auto activeSnapshot = machine->cpu.captureRuntimeState();
 		machine->cpu.restoreRuntimeState(activeSnapshot);
 		active = machine->cpu.activeThread()->currentFrame;
-		require(active->pc == machine->rom.textAddress + (DECODED_PAGE_WORDS + 32u) * INSTRUCTION_BYTES
+		require(active->readControl(bmsx::FrameField::Pc) == machine->rom.textAddress + (DECODED_PAGE_WORDS + 32u) * INSTRUCTION_BYTES
 			&& active->executionImage->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID,
 			"snapshot restores an active frame and its published prototype");
 		machine->cpu.runUntilDepth(1, 100);

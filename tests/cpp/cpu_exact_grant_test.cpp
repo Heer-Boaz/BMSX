@@ -167,7 +167,7 @@ void divisionBudget(bool skip) {
 					const std::array<u32, 4> skippedBoundaries{0, second, jumpWord, 0};
 					require(machine->cpu.instructionBudgetRemaining == grant - 2 * completed,
 						"a skipped division has no execution charge, including WIDE");
-					require(frame->pc == machine->rom.textAddress + skippedBoundaries[completed] * INSTRUCTION_BYTES,
+					require(frame->readControl(bmsx::FrameField::Pc) == machine->rom.textAddress + skippedBoundaries[completed] * INSTRUCTION_BYTES,
 						"a comparison skips the complete division instruction");
 					require(frame->registers.get(quotient) == valueNil() && frame->registers.get(floor) == valueNil(),
 						"skipped divisions do not write destinations");
@@ -175,7 +175,7 @@ void divisionBudget(bool skip) {
 					int remaining = grant, completed = 0;
 					while (remaining > 0) remaining -= charges[completed++];
 					require(machine->cpu.instructionBudgetRemaining == remaining, "each admitted division keeps its complete fixed charge and debt");
-					require(frame->pc == machine->rom.textAddress + boundaries[completed] * INSTRUCTION_BYTES,
+					require(frame->readControl(bmsx::FrameField::Pc) == machine->rom.textAddress + boundaries[completed] * INSTRUCTION_BYTES,
 						"division debt prevents the next opcode from executing");
 					require(frame->registers.get(quotient) == (completed >= 2 ? valueFloat(-7.0f / 3.0f) : valueNil()), "DIV writes only after admission");
 					require(frame->registers.get(floor) == (completed >= 3 ? valueInteger(-3) : valueNil()), "FLOORDIV writes only after admission");
@@ -194,7 +194,7 @@ void divisionBudget(bool skip) {
 			frame->registers.set(4, valueFloat(values[0])); frame->registers.set(5, valueFloat(values[1]));
 			require(machine->cpu.runUntilDepth(0, 71) == RunResult::Yielded && machine->cpu.instructionBudgetRemaining == 0,
 				"nonfinite and signed-zero operands keep the same fixed division budget");
-			require(frame->pc == machine->rom.textAddress, "nonfinite results finish the complete generated loop");
+			require(frame->readControl(bmsx::FrameField::Pc) == machine->rom.textAddress, "nonfinite results finish the complete generated loop");
 			require(frame->registers.get(quotient) == valueFloat(values[2]) && frame->registers.get(floor) == valueFloat(values[3]),
 				"division retains NaN, infinity and signed-zero semantics");
 		}
@@ -472,7 +472,7 @@ void exactCallVarargSweep() {
 		if (nativeThread->frameDepth == scalarThread->frameDepth) {
 			for (u32 depth = 0; depth < nativeThread->frameDepth; ++depth) {
 				const auto* a = nativeThread->frameAtDepth(depth); const auto* b = scalarThread->frameAtDepth(depth);
-				equal &= a->pc == b->pc && a->top == b->top && a->varargCount == b->varargCount;
+				equal &= a->readControl(bmsx::FrameField::Pc) == b->readControl(bmsx::FrameField::Pc) && a->top == b->top && a->varargCount == b->varargCount;
 				for (int reg = 0; reg < 3; ++reg) {
 					const Value av = a->registers.get(reg), bv = b->registers.get(reg);
 					equal &= av == bv || (valueIsClosure(av) && valueIsClosure(bv));

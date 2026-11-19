@@ -72,7 +72,7 @@ void testOverrun(bool scalar, bool restore) {
 	if (scalar) runtime.machine.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 512);
 	auto& frame = *runtime.machine.cpu.activeThread()->frameAtDepth(0);
-	require(frame.pc == system.textAddress, "the MOV/JMP warmup ends at the actual MOV");
+	require(frame.readControl(bmsx::FrameField::Pc) == system.textAddress, "the MOV/JMP warmup ends at the actual MOV");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	if (!scalar) {
 		const auto& page = *frame.decodedPage;

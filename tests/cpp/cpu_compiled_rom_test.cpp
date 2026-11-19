@@ -278,7 +278,7 @@ void dataSelectionDoesNotSelectInstructionFetch() {
 		// Enter through CP0.EXEC, establishing socket 0 before any cartridge fetch.
 		machine.cpu.runUntilDepth(0, 7);
 		auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
-		require(frame.executionImage->executionDomainId == 0 && frame.pc == cart0.textAddress,
+		require(frame.executionImage->executionDomainId == 0 && frame.readControl(bmsx::FrameField::Pc) == cart0.textAddress,
 			"CP0.EXEC latches the selected instruction socket before cartridge execution");
 		frame.registers.set(1, valueInteger(CART_ROM_BASE + 0x800)); frame.registers.set(2, valueInteger(1));
 		machine.memory.writeMappedWord(IO_CART_SELECT, 1);
@@ -345,12 +345,12 @@ void warmContinuationsFollowInBlockMuxWrites() {
 			frame.registers.set(0, valueInteger(1u - slot)); frame.registers.set(4, valueInteger(slot ^ 1u));
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
 			require(cpu.runUntilDepth(0, 11) == RunResult::Yielded && frame.registers.get(3) == valueInteger(1u - slot)
-				&& frame.registers.get(6) == valueInteger(slot) && frame.pc == CART_ROM_BASE && cpu.instructionBudgetRemaining == 0,
+				&& frame.registers.get(6) == valueInteger(slot) && frame.readControl(bmsx::FrameField::Pc) == CART_ROM_BASE && cpu.instructionBudgetRemaining == 0,
 				"a mux write selects the newly selected physical ROM for the very next instruction at the exact grant boundary");
 		}
 		const auto& a = *native.cpu.activeThread()->frameAtDepth(0); const auto& b = *scalar.cpu.activeThread()->frameAtDepth(0);
 		require(native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
-			&& a.top == b.top && a.pc == b.pc, "native socket changes retain scalar PC and register-top publication");
+			&& a.top == b.top && a.readControl(bmsx::FrameField::Pc) == b.readControl(bmsx::FrameField::Pc), "native socket changes retain scalar PC and register-top publication");
 		for (int reg = 0; reg < a.stackCapacity; ++reg) require(a.registers.get(reg) == b.registers.get(reg), "all socket-switch registers agree");
 	}
 	const auto* page = lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, 1);
@@ -454,7 +454,7 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 			const auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 			require(frame.registers.get(0) == valueInteger(select) && frame.registers.get(2) == valueInteger(select)
 				&& frame.registers.get(3) == valueInteger(!cartridgeBound && (select & 1u) != 0u ? 22 : 11)
-				&& frame.pc == DYNAMIC_RAM_BASE && machine->cpu.instructionBudgetRemaining == 0,
+				&& frame.readControl(bmsx::FrameField::Pc) == DYNAMIC_RAM_BASE && machine->cpu.instructionBudgetRemaining == 0,
 				"ordinary MMIO data selection and the instruction socket remain distinct across warm cross-page links");
 		}
 	}
@@ -568,7 +568,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 			"native and scalar CALL preserve frame, PC, domain and fault state at every short grant");
 		for (size_t depth = 0; depth < first.frameDepth; ++depth) {
 			const auto& a = *first.frameAtDepth(depth); const auto& b = *second.frameAtDepth(depth);
-			require(a.executionImage->executionDomainId == b.executionImage->executionDomainId && a.pc == b.pc
+			require(a.executionImage->executionDomainId == b.executionImage->executionDomainId && a.readControl(bmsx::FrameField::Pc) == b.readControl(bmsx::FrameField::Pc)
 				&& a.readControl(FrameField::Function) == b.readControl(FrameField::Function) && a.stackCapacity == b.stackCapacity && a.stackBase == b.stackBase
 				&& a.top == b.top && a.returnBase == b.returnBase && a.returnCount == b.returnCount && a.readControl(FrameField::CallSite) == b.readControl(FrameField::CallSite),
 				"record selection and activation windows agree at each call boundary");
@@ -595,9 +595,9 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	require(native.cpu.getFrameDepth() == (ramRecord ? 3 : 2), "the grant reaches the selected callee activation");
 	const auto* callee = native.cpu.rootThread()->currentFrame;
 	require(callee->executionImage->executionDomainId == (ramRecord ? SYSTEM_EXECUTION_DOMAIN_ID : 0) && callee->stackCapacity == 8
-		&& callee->pc == (ramRecord ? code : card0.textAddress + 6u * INSTRUCTION_BYTES),
+		&& callee->readControl(bmsx::FrameField::Pc) == (ramRecord ? code : card0.textAddress + 6u * INSTRUCTION_BYTES),
 		"CALL uses the closure-bound domain and record, not SELECT metadata");
-	require(callee->executionImage->nativeCodeLookup->find(callee->pc, 0)->nativeBlocks->entries[(callee->pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] != nullptr,
+	require(callee->executionImage->nativeCodeLookup->find(callee->readControl(bmsx::FrameField::Pc), 0)->nativeBlocks->entries[(callee->readControl(bmsx::FrameField::Pc) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] != nullptr,
 		"the callee body is generated as well as its caller");
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
 	for (auto* machine : {&native, &scalar}) require(machine->cpu.rootThread()->frameAtDepth(0)->registers.get(0) == valueInteger(ramRecord ? 11 : 22),

@@ -48,13 +48,13 @@ struct Machine {
 	}
 };
 
-// Thread144 (64-byte header, 40 Value bytes and two 20-byte frame records)
+// Thread160 (64-byte header and the 96-byte class for 40 Value bytes plus two 24-byte frames)
 // + Closure16 + 14 machine Strings occupying 648 bytes
 // and their 16 four-byte intern buckets. Each live String marks once,
 // and every issued object block and intern bucket is visited once.
-constexpr int bootBytes = 144 + 16 + 648 + 64;
-constexpr int bootMarkWork = 2 * 36 + 3 + 2 * 12 + 14;
-constexpr int bootCollectionWork = 4 * 36 + 3 + 1 + 3 * 12 + 2 * 14 + 16;
+constexpr int bootBytes = 160 + 16 + 648 + 64;
+constexpr int bootMarkWork = 2 * 40 + 3 + 2 * 12 + 14;
+constexpr int bootCollectionWork = 4 * 40 + 3 + 1 + 3 * 12 + 2 * 14 + 16;
 
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;

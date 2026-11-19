@@ -67,7 +67,7 @@ NativeBuiltinCallOutcome CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, co
 	}
 	CallFrame& frame = *state.frame;
 	frame.top = state.registerTop;
-	frame.pc = exit->nextPc;
+	frame.writeControl(FrameField::Pc, exit->nextPc);
 	frame.compilationEntry = true;
 	cpu.m_currentInstructionPc = exit->currentPc;
 	cpu.m_lastExecutionDomainId = frame.executionImage->executionDomainId;
@@ -95,7 +95,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	CallFrame* frame = state.frame;
 	if (exit->exit == NativeBlockExit::ScalarBoundary) {
 		cpu.instructionBudgetRemaining = state.remainingCycles;
-		frame->pc = state.scalarPc;
+		frame->writeControl(FrameField::Pc, state.scalarPc);
 		frame->top = state.registerTop;
 		run->forceScalar = true;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -106,7 +106,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	// Publish the complete native prefix before allocating, touching a device,
 	// changing frames or retiring generated code. The descriptor can die there.
 	cpu.instructionBudgetRemaining = state.remainingCycles;
-	frame->pc = exit->nextPc;
+	frame->writeControl(FrameField::Pc, exit->nextPc);
 	frame->compilationEntry = true;
 	frame->top = state.registerTop;
 	cpu.m_currentInstructionPc = exit->currentPc;
@@ -255,7 +255,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		// CALL/RET have already committed the real activation. Rebind its image
 		// and instruction chip-select before looking up a warm receiving body.
 		if (frame->executionImage != cpu.m_activeExecutionImage) cpu.latchActiveExecutionImage(*frame->executionImage);
-		const u32 pc = frame->pc;
+		const u32 pc = frame->readControl(FrameField::Pc);
 		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			++gateProfile.returns;

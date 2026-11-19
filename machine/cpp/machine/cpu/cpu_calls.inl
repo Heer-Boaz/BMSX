@@ -21,7 +21,7 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
 		Closure* closure = asClosure(callee, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		CallFrame* pushed = pushFrame(frame, closure, a + 1, argCount, a, c, false,
-			frame.pc - INSTRUCTION_BYTES);
+			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES);
 		return pushed != nullptr;
 	}
 	if (valueIsBuiltinFunction(callee)) {

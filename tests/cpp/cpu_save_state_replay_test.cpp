@@ -297,15 +297,20 @@ void restoreHardHalt() {
 	SnapshotMachine machine(image);
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto start = cpu.captureRuntimeState();
+	const auto startRam = cpu.memory().captureSaveState();
 	cpu.runUntilDepth(0, 1000);
 	const auto halted = cpu.captureRuntimeState();
+	const auto haltedRam = cpu.memory().captureSaveState();
+	const auto haltedPc = cpu.readFramePc(0);
 	require(halted.hardHalted, "invalid WIDE body latches hard halt");
+	cpu.memory().restoreSaveState(startRam);
 	cpu.restoreRuntimeState(start);
 	require(!cpu.captureRuntimeState().hardHalted, "restoring before halt clears the latch");
+	cpu.memory().restoreSaveState(haltedRam);
 	cpu.restoreRuntimeState(halted);
 	cpu.runUntilDepth(0, 1000);
 	const auto after = cpu.captureRuntimeState();
-	require(after.hardHalted && after.threads[0].frames[0].pc == halted.threads[0].frames[0].pc, "restored hard halt does not execute further instructions");
+	require(after.hardHalted && cpu.readFramePc(0) == haltedPc, "restored hard halt does not execute further instructions");
 }
 
 void reuseSnapshotStorage() {

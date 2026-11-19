@@ -577,7 +577,7 @@ void typedLoopBoundaries() {
 				for (int i = 0; i < 24; ++i)
 					frame->registers.set(i, valueInteger(900 + i));
 				if (variant != 0) {
-					frame->pc += 6 * INSTRUCTION_BYTES;
+					frame->writeControl(bmsx::FrameField::Pc, frame->readControl(bmsx::FrameField::Pc) + 6 * INSTRUCTION_BYTES);
 					frame->registers.set(0, variant == 1 ? valueInteger(3) : valueFloat(3));
 					frame->registers.set(1, variant == 1 ? valueInteger(1) : valueFloat(1));
 					frame->registers.set(2, variant == 1 ? valueInteger(0) : valueFloat(0));
@@ -595,7 +595,7 @@ void typedLoopBoundaries() {
 				const auto completed = m.cpu.readCompletionValues();
 				for (size_t i = 0; i < completed.size(); ++i)
 					values.push_back(completed.get(i));
-				return std::tuple{result, m.cpu.instructionBudgetRemaining, active ? frame->pc : 0,
+				return std::tuple{result, m.cpu.instructionBudgetRemaining, active ? frame->readControl(bmsx::FrameField::Pc) : 0,
 					active ? frame->top : 0, registers, values, m.cpu.readCauseWord(), m.cpu.readLuaFaultReasonWord(),
 					m.cpu.lastPc};
 			};

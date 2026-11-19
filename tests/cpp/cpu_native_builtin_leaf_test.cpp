@@ -104,9 +104,9 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	Machine machine(rom, false, true); machine.seed(id, mode);
 	auto* frame = machine.cpu.rootThread()->currentFrame;
 	require(frame->next == nullptr, "the first builtin has no spare activation node");
-	auto* owner = frame->executionImage; auto* page = owner->nativeCodeLookup->find(frame->pc, 0);
+	auto* owner = frame->executionImage; auto* page = owner->nativeCodeLookup->find(frame->readControl(bmsx::FrameField::Pc), 0);
 	require(page && page->nativeBlocks, "preparation publishes the real caller");
-	const u32 word = (frame->pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const u32 word = (frame->readControl(bmsx::FrameField::Pc) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	auto* caller = page->nativeBlocks->entries[word].get();
 	require(caller && caller->terminal.exit == NativeBlockExit::Call, "the real compiled caller ends at CALL");
 	auto* markerPage = owner->nativeCodeLookup->find(rom.textAddress + MAPPED_PAGE_BYTE_SIZE, 0);
@@ -141,7 +141,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 		require(machine.marker() == 0, "Type remains on its allocating ordinary CALL path");
 		return;
 	} else {
-		require(machine.marker() == 0 && frame->pc == rom.textAddress + 2 * INSTRUCTION_BYTES,
+		require(machine.marker() == 0 && frame->readControl(bmsx::FrameField::Pc) == rom.textAddress + 2 * INSTRUCTION_BYTES,
 			"cold or exhausted completion commits the successor without executing it");
 		require(run.state.remainingCycles == grant - 2 - 32 - 2 - receiving
 			&& machine.cpu.instructionBudgetRemaining == run.state.remainingCycles, "both budget owners retain the complete exhausted CALL debit");

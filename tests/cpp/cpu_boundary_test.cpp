@@ -1124,7 +1124,7 @@ void instructionFetchRejectsCartridgeMmio() {
 			frame->registers.set(0, valueInteger(0)); frame->registers.set(1, valueInteger(0));
 			for (unsigned visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 2u; ++visit) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], pc);
-				require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && frame->pc == CART_MMIO_BASE,
+				require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && frame->readControl(bmsx::FrameField::Pc) == CART_MMIO_BASE,
 					"a non-skipping comparison stops before fetching its successor");
 			}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -1225,7 +1225,7 @@ void rewrittenInstructionRetainsItsOwnCycleCharge() {
 		for (const OpCode op : {OpCode::K1, OpCode::STORE_MEM_D, OpCode::K1}) {
 			writeInstruction(code, 0, static_cast<u8>(op), 0, 1, static_cast<u8>(MemoryAccessKind::U32LE));
 			machine.memory.writeBytes(pc, code.data(), code.size());
-			cpu.activeThread()->frameAtDepth(0)->pc = pc;
+			cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Pc, pc);
 			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "rewritten instruction completes its grant");
 			require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(op)], "rewritten opcode replaces the old cached cycle charge");
 			require(cpu.readFramePc(0) == pc + INSTRUCTION_BYTES && cpu.lastPc == pc, "cycle charge preserves physical PC boundaries");
@@ -1660,7 +1660,7 @@ void cachedPcWrapping() {
 				auto& frame = *cpu.activeThread()->frameAtDepth(0);
 				DecodedInstructionPage page(true, {});
 				page.refreshState.fill(0);
-				frame.pc = skip ? 0xfffffff8u : 0xfffffffcu;
+				frame.writeControl(bmsx::FrameField::Pc, skip ? 0xfffffff8u : 0xfffffffcu);
 				frame.decodedPage = &page;
 				frame.decodedPageAddress = 0xfffffc00u;
 				frame.decodedPageBusSignals = mappedBusSignalsForCartridgeSlot(0);
@@ -1671,7 +1671,7 @@ void cachedPcWrapping() {
 				page.words[254].op = page.words[254].dispatchOp = static_cast<u8>(OpCode::EQ);
 				page.words[254].baseCycles = page.words[254].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::EQ)];
 				cpu.runUntilDepth(0, 1);
-				require(frame.pc == (width - 1u) * INSTRUCTION_BYTES, "sequential/wide/skip PC wraps to a word");
+				require(frame.readControl(bmsx::FrameField::Pc) == (width - 1u) * INSTRUCTION_BYTES, "sequential/wide/skip PC wraps to a word");
 			}
 		}
 	}
@@ -1680,7 +1680,7 @@ void cachedPcWrapping() {
 	auto& frame = *cpu.activeThread()->frameAtDepth(0);
 	DecodedInstructionPage page(true, {});
 	page.refreshState.fill(0);
-	frame.pc = 0xfffffff8u;
+	frame.writeControl(bmsx::FrameField::Pc, 0xfffffff8u);
 	frame.registers.set(0, valueInteger(1));
 	frame.decodedPage = &page;
 	frame.decodedPageAddress = 0xfffffc00u;
@@ -1692,7 +1692,7 @@ void cachedPcWrapping() {
 	page.words[255].op = page.words[255].dispatchOp = static_cast<u8>(OpCode::BXOR);
 	page.words[255].baseCycles = page.words[255].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::BXOR)];
 	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SHL)] + BASE_CYCLES[static_cast<u8>(OpCode::BXOR)]);
-	require(frame.pc == 0u, "fused successor PC wraps to a word");
+	require(frame.readControl(bmsx::FrameField::Pc) == 0u, "fused successor PC wraps to a word");
 }
 
 void imageTextImport() {

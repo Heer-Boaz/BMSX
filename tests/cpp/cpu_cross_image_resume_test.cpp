@@ -113,7 +113,7 @@ struct Machine {
 		for (int step = 0; step != 16; ++step) {
 			cpu.runUntilDepth(0, 1);
 			if (cpu.readFrameExecutionDomain(0) == static_cast<ExecutionDomainId>(slot)
-				&& cpu.rootThread()->firstFrame->pc == cartPc(2)) return;
+				&& cpu.rootThread()->firstFrame->readControl(bmsx::FrameField::Pc) == cartPc(2)) return;
 		}
 		throw std::runtime_error("ordinary EXEC and CLOSURE reach the real cartridge activation");
 	}
@@ -121,7 +121,7 @@ struct Machine {
 		stopBeforeCall();
 		for (int step = 0; step != 16; ++step) {
 			cpu.runUntilDepth(0, 1);
-			if (cpu.getFrameDepth() == 2 && cpu.activeThread()->currentFrame->pc == returnPc()) return;
+			if (cpu.getFrameDepth() == 2 && cpu.activeThread()->currentFrame->readControl(bmsx::FrameField::Pc) == returnPc()) return;
 		}
 		throw std::runtime_error("the real system callee reaches its RET boundary");
 	}
@@ -153,7 +153,7 @@ void parity(Machine& generated, Machine& scalar) {
 	for (int depth = 0; depth != generated.cpu.getFrameDepth(); ++depth) {
 		const auto& x = *generated.cpu.activeThread()->frameAtDepth(depth);
 		const auto& y = *scalar.cpu.activeThread()->frameAtDepth(depth);
-		require(x.executionImage->executionDomainId == y.executionImage->executionDomainId && x.pc == y.pc
+		require(x.executionImage->executionDomainId == y.executionImage->executionDomainId && x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc)
 			&& x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity
 			&& x.returnBase == y.returnBase && x.returnCount == y.returnCount && x.readControl(FrameField::CallSite) == y.readControl(FrameField::CallSite),
 			"each live frame retains its own image and exact argument/result window");
@@ -199,13 +199,13 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 	auto* frame = m.cpu.activeThread()->currentFrame;
 	auto* sourceImage = frame->executionImage;
 	const u32 sourceSlot = m.memory.cartridgeController().selectedSlot(m.cpu.readExecutionBusSignals());
-	auto* sourcePage = sourceImage->nativeCodeLookup->find(frame->pc, sourceSlot);
+	auto* sourcePage = sourceImage->nativeCodeLookup->find(frame->readControl(bmsx::FrameField::Pc), sourceSlot);
 	require(sourcePage && sourcePage->nativeCode, "the gate starts at an actual published caller/RET entry");
-	void* body = sourcePage->nativeCode[(frame->pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	void* body = sourcePage->nativeCode[(frame->readControl(bmsx::FrameField::Pc) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(body != nullptr, "the source entry is warm before the stable gate is entered");
 	if (cold) {
 		auto* targetImage = returning ? frame->previous->executionImage : systemImage;
-		const u32 targetPc = returning ? frame->previous->pc : images.system.textAddress + MAPPED_PAGE_BYTE_SIZE;
+		const u32 targetPc = returning ? frame->previous->readControl(bmsx::FrameField::Pc) : images.system.textAddress + MAPPED_PAGE_BYTE_SIZE;
 		auto* targetPage = targetImage->nativeCodeLookup->find(targetPc, slot);
 		targetPage->retireNativeBlocks();
 	}

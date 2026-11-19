@@ -1214,7 +1214,7 @@ The occupied-byte counts used for admission are:
 | Table with array capacity `A` and hash capacity `H` | `32 + S(5A + 14H)` |
 | Closure with `U` captured-variable references | `S(12 + 4U)` |
 | Captured-variable cell | `16` |
-| Thread with `V` reserved Value slots, `F` reserved frame-control records and `P` reserved protected continuations | `64 + S(round4(5V) + 20F + 20P)` |
+| Thread with `V` reserved Value slots, `F` reserved frame-control records and `P` reserved protected continuations | `64 + S(round4(5V) + 24F + 20P)` |
 | RAM String containing `n` bytes | `S(16 + n)` |
 | RAM String index with `B` buckets | `S(4B)` |
 
@@ -1272,7 +1272,7 @@ Collection work consumes cycles as follows:
 | Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |
 | Mark a previously unmarked RAM String | `1` |
 | Examine one RAM intern bucket, including an empty bucket | `1` |
-| Copy retained Thread storage when shrinking | `2 × ceil((round4(5V') + 20F' + 20P') / 4)` for the new reservations |
+| Copy retained Thread storage when shrinking | `2 × ceil((round4(5V') + 24F' + 20P') / 4)` for the new reservations |
 
 For charges based on bytes, round each allocation independently.
 A repeated scan costs again; unreachable objects that are not scanned still

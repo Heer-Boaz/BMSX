@@ -35,7 +35,7 @@ inline bool CPU::executeMemoryStore(CallFrame& frame, int source, MemoryAccessKi
 
 inline bool CPU::continueMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address) {
 	if (!m_memory.mappedWriteReady(address)) {
-		m_pendingMemory = {PendingMemoryKind::Store, m_currentInstructionPc, frame.pc, address, kind, source, 0};
+		m_pendingMemory = {PendingMemoryKind::Store, m_currentInstructionPc, frame.readControl(FrameField::Pc), address, kind, source, 0};
 		blockMappedWrite(frame, address);
 		return false;
 	}
@@ -70,7 +70,7 @@ inline bool CPU::executeWordStores(CallFrame& frame, u32 address, int source, in
 inline bool CPU::continueWordStores(CallFrame& frame, u32 address, int source, int count) {
 	const u32 blockedAddress = m_memory.firstBlockedMappedWordWrite(address, count);
 	if (blockedAddress != NO_BLOCKED_MAPPED_WRITE) {
-		m_pendingMemory = {PendingMemoryKind::WordStores, m_currentInstructionPc, frame.pc, address, MemoryAccessKind::Word, source, count};
+		m_pendingMemory = {PendingMemoryKind::WordStores, m_currentInstructionPc, frame.readControl(FrameField::Pc), address, MemoryAccessKind::Word, source, count};
 		blockMappedWrite(frame, blockedAddress);
 		return false;
 	}
@@ -93,7 +93,7 @@ inline void CPU::resumePendingMemoryOperation() {
 	m_pendingMemory.kind = PendingMemoryKind::None;
 	CallFrame& frame = *m_activeThread->currentFrame;
 	m_currentInstructionPc = operation.instructionPc;
-	frame.pc = operation.nextPc;
+	frame.writeControl(FrameField::Pc, operation.nextPc);
 	if (operation.kind == PendingMemoryKind::Store) {
 		continueMemoryStore(frame, operation.registerIndex, operation.accessKind, operation.address);
 	} else {

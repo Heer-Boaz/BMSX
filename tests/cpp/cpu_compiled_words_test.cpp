@@ -61,7 +61,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto& left = *native.cpu.activeThread(); const auto& right = *scalar.cpu.activeThread();
 	const CallFrame* x = left.firstFrame; const CallFrame* y = right.firstFrame;
 	require(left.frameDepth == right.frameDepth, "frame depths agree");
-	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) require(x->pc == y->pc && x->top == y->top
+	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && x->top == y->top
 		&& x->stackBase == y->stackBase && x->stackCapacity == y->stackCapacity, "live frame extents agree");
 }
 
@@ -352,7 +352,7 @@ void ownCodeInMiddleWatchPage() {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); for (int i = 0; i < count; ++i) frame.registers.set(8 + i, valueInteger(0));
 		frame.registers.set(8 + MAPPED_PAGE_BYTE_SIZE / 4 + 5, valueInteger(readLE32(halt.data()))); frame.registers.set(7, valueInteger(99)); frame.registers.set(0, valueInteger(DYNAMIC_RAM_BASE));
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], pc);
-		require(m->cpu.runUntilDepth(0, cycles) == RunResult::Halted && frame.registers.get(7) == valueInteger(99) && frame.pc == pc + 6u * INSTRUCTION_BYTES,
+		require(m->cpu.runUntilDepth(0, cycles) == RunResult::Halted && frame.registers.get(7) == valueInteger(99) && frame.readControl(bmsx::FrameField::Pc) == pc + 6u * INSTRUCTION_BYTES,
 			"a middle-page watch leaves before storing and the replacement HALT, not stale ADD/JMP, runs afterwards");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -402,7 +402,7 @@ void terminalSpanStartsWithOneCycle(int count, bool displaced) {
 		for (int i = 0; i < count; ++i) frame.registers.set(8 + i, valueInteger(0x20000000u | i));
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], start);
 		require(m->cpu.runUntilDepth(0, 1) == RunResult::Yielded && m->cpu.instructionBudgetRemaining == 1 - charge
-			&& frame.pc == start + 2u * INSTRUCTION_BYTES && m->cpu.lastPc == start + INSTRUCTION_BYTES
+			&& frame.readControl(bmsx::FrameField::Pc) == start + 2u * INSTRUCTION_BYTES && m->cpu.lastPc == start + INSTRUCTION_BYTES
 			&& frame.registers.get(7) == valueInteger(99), "one cycle starts the complete WIDE store, but never the following ADD");
 	}
 	requireParity(native, scalar);
@@ -423,7 +423,7 @@ void terminalSpanStartsWithOneCycle(int count, bool displaced) {
 			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(IO_BASE + 0x5000u - (displaced ? 1020u : 0u)));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], start);
 			require(m->cpu.runUntilDepth(0, 1) == RunResult::Halted && m->cpu.instructionBudgetRemaining == -2
-				&& frame.pc == start && frame.registers.get(7) == valueInteger(99) && m->cpu.stalledMemoryWriteAddress() == IO_BASE + 0x5000u,
+				&& frame.readControl(bmsx::FrameField::Pc) == start && frame.registers.get(7) == valueInteger(99) && m->cpu.stalledMemoryWriteAddress() == IO_BASE + 0x5000u,
 				"a one-cycle checked exit pays only the base charge and retains the WIDE retry address");
 		}
 		requireParity(native, scalar);

@@ -55,7 +55,7 @@ void logicalStringWork(bool scalar, OpCode op) {
 		} else {
 			const bool matched = op == OpCode::LT ? left < right : op == OpCode::LE ? left <= right : left == right;
 			const int words = matched ? 2 : 1;
-			require(frame.pc == machine.rom.textAddress + words * INSTRUCTION_BYTES, "a charged comparison keeps its exact skip boundary");
+			require(frame.readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + words * INSTRUCTION_BYTES, "a charged comparison keeps its exact skip boundary");
 		}
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

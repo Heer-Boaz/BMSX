@@ -42,14 +42,16 @@ void parity(Number32Machine& native, Number32Machine& scalar) {
 				std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()),
 		"native context retains the complete serialized compact value graph");
 	require(a.threads.size() == b.threads.size(), "context thread counts agree");
+	for (int frame = 0; frame < native.cpu.getFrameDepth(); ++frame)
+		require(native.cpu.readFramePc(frame) == scalar.cpu.readFramePc(frame), "every active physical PC matches the scalar owner");
 	for (size_t i = 0; i < a.threads.size(); ++i) {
 		const auto& x = a.threads[i];
 		const auto& y = b.threads[i];
 		require(x.stackTop == y.stackTop && x.frames.size() == y.frames.size(),
 			"context stack and frame extents agree");
 		for (size_t j = 0; j < x.frames.size(); ++j)
-			require(x.frames[j].pc == y.frames[j].pc && x.frames[j].top == y.frames[j].top,
-				"every live context frame has the scalar PC and top");
+			require(x.frames[j].top == y.frames[j].top,
+				"all retained context tops match the scalar owner");
 	}
 }
 void requireNative(CPU& cpu,u64 expectedReturns=1) {

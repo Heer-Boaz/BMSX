@@ -116,7 +116,7 @@ void grantsAndRestore() {
 			while (remaining > 0) remaining -= charges[completed++];
 			auto* frame = generated.cpu.activeThread()->currentFrame; auto r = frame->registers;
 			require(generated.cpu.instructionBudgetRemaining == remaining, "each additionally visited Table costs exactly8, including debt");
-			require(frame->pc == generated.rom.textAddress + program.starts[completed == 4 ? 0 : completed] * INSTRUCTION_BYTES,
+			require(frame->readControl(bmsx::FrameField::Pc) == generated.rom.textAddress + program.starts[completed == 4 ? 0 : completed] * INSTRUCTION_BYTES,
 				"the completed read frontier precedes every unadmitted marker");
 			require(r.get(6) == (completed >= 2 ? valueBool(false) : completed == 1 ? r.get(0) : valueInteger(91))
 				&& r.get(8) == (completed >= 3 ? valueBool(false) : valueInteger(57))
@@ -128,8 +128,10 @@ void grantsAndRestore() {
 		require(generated.cpu.luaHeap().usedBytes() == heap, "lookups do not allocate guest storage");
 		for (auto* m : {&generated, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+			const auto ram = m->memory.captureSaveState();
 			const auto before = m->cpu.captureRuntimeState();
 			m->cpu.runUntilDepth(0, 3); const auto after = m->cpu.captureRuntimeState(); const int debt = m->cpu.instructionBudgetRemaining;
+			m->memory.restoreSaveState(ram);
 			m->cpu.restoreRuntimeState(before); m->cpu.runUntilDepth(0, 3);
 			require(m->cpu.instructionBudgetRemaining == debt, "restore reproduces semantic work independently of native/cache hints");
 			sameSnapshot(m->cpu.captureRuntimeState(), after);

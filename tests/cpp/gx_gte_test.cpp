@@ -1650,7 +1650,7 @@ void testNormalCpuInstructionTiming() {
   for(int repeat=0;repeat<24;++repeat) {
    require(h.scheduler.runCpuSlice(0,grant)==bmsx::RunResult::Yielded, "one timed loop completes");
    require(h.cpu.instructionBudgetRemaining==0, "base instruction costs and outstanding GTE interval are charged");
-   require(h.cpu.activeThread()->currentFrame->pc==h.systemRom.textAddress, "loop returns to its entry");
+   require(h.cpu.activeThread()->currentFrame->readControl(bmsx::FrameField::Pc)==h.systemRom.textAddress, "loop returns to its entry");
    h.scheduler.advanceTo(h.scheduler.nowCycles()+grant);
    require(h.gte.captureState().normalPendingCycles==0, "CPU read discharged normal completion");
   }

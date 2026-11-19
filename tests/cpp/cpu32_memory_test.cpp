@@ -43,8 +43,7 @@ void parity(Number32Machine& native, Number32Machine& scalar) {
 	require(a.threads.size()==b.threads.size(), "memory exits retain the same thread roots");
 	for (size_t i=0; i<a.threads.size(); ++i)
 		for (size_t j=0; j<a.threads[i].frames.size(); ++j)
-			require(a.threads[i].frames[j].pc == b.threads[i].frames[j].pc &&
-				a.threads[i].frames[j].top == b.threads[i].frames[j].top, "memory PC and live top match at every grant");
+			require(a.threads[i].frames[j].top == b.threads[i].frames[j].top, "live tops match at every grant");
 	require(std::equal(native.memory.ramData(), native.memory.ramData()+native.memory.ramByteCount(), scalar.memory.ramData()),
 		"memory effects, including a partial word span, match exactly");
 }

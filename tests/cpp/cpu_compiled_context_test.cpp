@@ -51,7 +51,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
 	for (size_t i = 0; i < first.frameDepth; ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& x = *firstFrame; const auto& y = *secondFrame;
-		require(x.pc == y.pc && x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity
+		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity
 			&& x.varargBase == y.varargBase && x.varargCount == y.varargCount, "all live frame ranges agree after relocation");
 	}
 }
@@ -207,7 +207,7 @@ void hotGlobalBanks() {
 	for (const Value value : {valueNil(), valueBool(false), valueBool(true), valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(73)}) {
 		for (auto* m : {&native, &scalar}) {
 			auto& cpu = m->cpu; cpu.activeThread()->frameAtDepth(0)->registers.set(12, value);
-			cpu.activeThread()->frameAtDepth(0)->pc = m->rom.textAddress;
+			cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Pc, m->rom.textAddress);
 			cpu.setGlobalByKey(cpu.stringPool().intern("shared"), value);
 			cpu.setSystemGlobalByKey(cpu.stringPool().intern("shared"), valueInteger(73));
 		}
@@ -256,7 +256,7 @@ void hotUpvalueAlias() {
 	for (const auto value : {valueNil(), valueBool(false), valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(73)}) {
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.activeThread()->frameAtDepth(0)->registers.set(12, value);
-			m->cpu.activeThread()->frameAtDepth(0)->pc = m->rom.textAddress;
+			m->cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Pc, m->rom.textAddress);
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, loopCycles); requireParity(native, scalar);
 		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);

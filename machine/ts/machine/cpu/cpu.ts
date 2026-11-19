@@ -164,7 +164,6 @@ import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKin
 // Saved values are u32 offsets into the snapshot word arena. Object references
 // such as closureRef are ordinals in its object index.
 export type CpuFrameState = {
-	pc: number;
 	closureRef: number;
 	stackBase: number;
 	stackCapacity: number;
@@ -2930,12 +2929,11 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
-		frame.pc = functionRecord.codeAddress;
 		frame.closure = closure;
 		frame.returnBase = returnBase;
 		frame.returnCount = returnCount;
 		frame.top = functionRecord.numParams;
-		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, returnToCompletionLatch);
+		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress, returnToCompletionLatch);
 
 		const copiedCount = Math.min(functionRecord.numParams, args.length);
 		for (let index = 0; index < copiedCount; index += 1) {
@@ -2967,12 +2965,11 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
-		frame.pc = functionRecord.codeAddress;
 		frame.closure = closure;
 		frame.returnBase = returnBase;
 		frame.returnCount = returnCount;
 		frame.top = functionRecord.numParams;
-		frame.initializeControl(functionRecord.functionAddress, callSitePc, returnToCompletionLatch);
+		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch);
 		const copiedCount = Math.min(functionRecord.numParams, argCount);
 		if (vararg || !sharedStack) {
 			registers.copyRangeFrom(callerRegisters, 0, argBase, copiedCount);
@@ -3916,7 +3913,6 @@ export class CPU implements MappedPageInvalidator {
 			for (let frameIndex = 0; frameIndex < thread.frameDepth; frameIndex += 1, frame = frame.next!) {
 				const closureRef = captureObject(frame.closure, CpuSnapshotObjectKind.Closure);
 				frames[frameIndex] = {
-					pc: frame.pc,
 					closureRef,
 					stackBase: frame.stackBase,
 					stackCapacity: frame.stackCapacity,
@@ -4217,7 +4213,6 @@ export class CPU implements MappedPageInvalidator {
 				frame.varargCount = frameState.varargCount;
 				frame.registers.rebind(thread.stackRegisters, frame.stackBase, frame.stackCapacity);
 				frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
-				frame.pc = frameState.pc;
 				frame.closure = closure;
 				frame.returnBase = frameState.returnBase;
 				frame.returnCount = frameState.returnCount;

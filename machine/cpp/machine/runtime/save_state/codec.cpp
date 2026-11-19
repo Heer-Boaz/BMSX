@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x59524d42u; // BMRY
+constexpr u32 kSaveStateSignature = 0x5a524d42u; // BMRZ
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1149,7 +1149,6 @@ RuntimeSaveMachineState readRuntimeSaveMachineState(BinaryReader& reader, size_t
 }
 
 template<class Writer> void writeCpuFrameState(Writer& writer, const CpuFrameState& state) {
-	writer.u32(state.pc);
 	writer.i32(state.closureRef);
 	writer.i32(state.stackBase);
 	writer.i32(state.stackCapacity);
@@ -1162,7 +1161,6 @@ template<class Writer> void writeCpuFrameState(Writer& writer, const CpuFrameSta
 
 CpuFrameState readCpuFrameState(BinaryReader& reader) {
 	CpuFrameState state;
-	state.pc = reader.u32();
 	state.closureRef = reader.i32();
 	state.stackBase = reader.i32();
 	state.stackCapacity = reader.i32();

@@ -429,7 +429,7 @@ void generatedMemoryMayRetireExecutingSource() {
 		frame.registers.set(1, valueInteger(load ? port : DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		require(cpu.runUntilDepth(0, grant) == RunResult::Yielded
-			&& frame.pc == DYNAMIC_RAM_BASE + (grant == 5 ? 3u * INSTRUCTION_BYTES : 0u)
+			&& frame.readControl(bmsx::FrameField::Pc) == DYNAMIC_RAM_BASE + (grant == 5 ? 3u * INSTRUCTION_BYTES : 0u)
 			&& frame.top == (grant == 5 ? 5 : 7)
 			&& frame.registers.get(6) == valueInteger(grant == 5 ? 7 : load ? 11 : readLE32(source.replacement.data())),
 			"a retiring transfer can resume its hot continuation without returning through retired source code");
@@ -491,7 +491,7 @@ void fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding() {
 		bool caught = false;
 		try { cpu.runUntilDepth(0, 9); }
 		catch (const ReadFailure& error) { caught = error.code == 73; }
-		require(caught && port.reads == 1 && frame.pc == machine.rom.textAddress + 3u * INSTRUCTION_BYTES
+		require(caught && port.reads == 1 && frame.readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 3u * INSTRUCTION_BYTES
 			&& frame.top == 5 && frame.registers.get(0) == valueInteger(7) && frame.registers.get(6) == valueInteger(7)
 			&& cpu.instructionBudgetRemaining == 4,
 			"the actual host exception reaches a registered caller with the completed prefix, without retrying the IO read");
