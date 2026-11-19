@@ -103,7 +103,7 @@ void rejectedGrowthRetainsExhaustedCursor(CPU& cpu) {
 		"deleted main-bucket reuse does not rebuild storage");
 }
 
-void inheritedAndFullWordKeys(CPU& cpu) {
+void inheritedAndFullWordKeys(CPU& cpu, Memory& memory) {
 	const auto key = cpu.stringPool().intern("field");
 	const auto indexKey = cpu.stringPool().intern("__index");
 	auto parent = cpu.createTable(0, 2);
@@ -130,6 +130,11 @@ void inheritedAndFullWordKeys(CPU& cpu) {
 	require(isNil(raw.getStringKey(key)), "a known StringId does not match a different high payload bit during chain search");
 	raw.setStringKey(key, valueInteger(42));
 	require(raw.get(highBitKey) == valueInteger(21) && raw.getStringKey(key) == valueInteger(42), "known string updates preserve distinct raw payloads");
+	memory.writeRamRecordWord(raw.address() + static_cast<u32>(TableHeader::Storage), raw.storageAddress() + MAIN_RAM_SIZE);
+	int predicted = -1;
+	require(raw.get(highBitKey) == valueInteger(21) && raw.getStringKeyCached(key, predicted) == valueInteger(42)
+		&& predicted >= 0 && raw.getStringKeyCached(key, predicted) == valueInteger(42),
+		"generic, cold string and predicted string probes consume a mirrored hash body");
 }
 }
 
@@ -140,7 +145,7 @@ int main() {
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
 		collisionAndMutationParity(cpu);
-		inheritedAndFullWordKeys(cpu);
+		inheritedAndFullWordKeys(cpu, memory);
 	rejectedGrowthRetainsExhaustedCursor(cpu);
 		std::cout << "String-key table tests passed\n";
 		return 0;

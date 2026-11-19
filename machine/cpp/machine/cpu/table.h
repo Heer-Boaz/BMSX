@@ -189,7 +189,6 @@ private:
 	bool getArrayIndex(const Value& key, int& outIndex) const;
 	bool hasIntegerKey(u32 key) const;
 	size_t hashValue(const Value& key) const;
-	bool keyEquals(const Value& a, const Value& b) const;
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
 	int findStringNodeIndex(StringId key) const;
 	int findNextLiveHashIndex(size_t start) const;

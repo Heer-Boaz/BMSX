@@ -74,29 +74,25 @@ size_t TableRecord::hashValue(const Value& key) const {
 	return m_heap->hash(key);
 }
 
-bool TableRecord::keyEquals(const Value& a, const Value& b) const {
-	return ValueEq{}(a, b);
-}
-
 int TableRecord::findNodeIndex(const Value& key, bool matchDead) const {
-	if (hashSlots() == 0) {
-		return -1;
-	}
+	const u32 hash = hashSlots();
+	if (hash == 0u) return -1;
+	const u32 array = arrayCapacity(), words = storageAddress();
+	const u32 links = words + (array + 2u * hash) * 4u;
+	const TableValues slots{m_memory, words, links + hash * 4u};
 	const bool collectableKey = matchDead && (valueIsTable(key) || valueIsClosure(key) || valueIsThread(key));
-	const uint32_t deadKeyHashId = collectableKey ? valuePayload(key) : 0;
-	const size_t mask = hashSlots() - 1;
-	int index = static_cast<int>(hashValue(key) & mask);
-	for (size_t remaining = hashSlots(); index >= 0 && remaining != 0; --remaining) {
-		const size_t slot = static_cast<size_t>(index);
-		const Value nodeKey = values().get(hashKeySlot(slot));
-		if ((!isNil(nodeKey) && keyEquals(nodeKey, key))
-			|| (isNil(nodeKey)
-				&& collectableKey && valuePayload(nodeKey) == valueHeader(key)
-				&& valueTag(values().get(hashValueSlot(slot))) == ValueTag::DeadKey
-				&& valuePayload(values().get(hashValueSlot(slot))) == deadKeyHashId)) {
-			return index;
+	const u32 deadKeyHashId = collectableKey ? valuePayload(key) : 0u;
+	int index = static_cast<int>(hashValue(key) & (hash - 1u));
+	for (u32 remaining = hash; index >= 0 && remaining != 0u; --remaining) {
+		const u32 slot = static_cast<u32>(index);
+		const Value nodeKey = slots.get(array + slot);
+		if (!isNil(nodeKey)) {
+			if (ValueEq{}(nodeKey, key)) return index;
+		} else if (collectableKey && valuePayload(nodeKey) == valueHeader(key)) {
+			const Value dead = slots.get(array + hash + slot);
+			if (valueTag(dead) == ValueTag::DeadKey && valuePayload(dead) == deadKeyHashId) return index;
 		}
-		index = hashNext(slot);
+		index = static_cast<i32>(m_memory->readRamRecordWord(links + slot * 4u));
 	}
 	return -1;
 }
@@ -111,17 +107,16 @@ int TableRecord::findNextLiveHashIndex(size_t start) const {
 }
 
 int TableRecord::findStringNodeIndex(StringId key) const {
-	if (hashSlots() == 0) {
-		return -1;
-	}
-	const Value keyValue = valueString(key);
-	int index = static_cast<int>(hashValue(keyValue) & (hashSlots() - 1u));
-	for (size_t remaining = hashSlots(); index >= 0 && remaining != 0; --remaining) {
-		const size_t slot = static_cast<size_t>(index);
-		if (values().get(hashKeySlot(slot)) == keyValue) {
-			return index;
-		}
-		index = hashNext(slot);
+	const u32 hash = hashSlots();
+	if (hash == 0u) return -1;
+	const u32 array = arrayCapacity(), words = storageAddress();
+	const u32 links = words + (array + 2u * hash) * 4u, tags = links + hash * 4u;
+	int index = static_cast<int>(hashValue(valueString(key)) & (hash - 1u));
+	for (u32 remaining = hash; index >= 0 && remaining != 0u; --remaining) {
+		const u32 slot = static_cast<u32>(index);
+		if (m_memory->readRamRecordByte(tags + array + slot) == static_cast<u8>(ValueTag::String)
+			&& m_memory->readRamRecordWord(words + (array + slot) * 4u) == key) return index;
+		index = static_cast<i32>(m_memory->readRamRecordWord(links + slot * 4u));
 	}
 	return -1;
 }
@@ -437,18 +432,23 @@ Value TableRecord::getStringKey(StringId key) const {
 }
 
 Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
-	if (predictedSlot >= 0 && static_cast<size_t>(predictedSlot) < hashSlots()) {
-		const size_t slot = static_cast<size_t>(predictedSlot);
-		if (valueIsString(values().get(hashKeySlot(slot)))
-			&& asStringId(values().get(hashKeySlot(slot))) == key
-			&& !isNil(values().get(hashValueSlot(slot)))) {
-			return values().get(hashValueSlot(slot));
+	const u32 hash = hashSlots();
+	if (predictedSlot >= 0 && static_cast<u32>(predictedSlot) < hash) {
+		const u32 array = arrayCapacity(), words = storageAddress();
+		const TableValues slots{m_memory, words, words + (array + 3u * hash) * 4u};
+		const u32 keySlot = array + static_cast<u32>(predictedSlot);
+		if (slots.get(keySlot) == valueString(key)) {
+			const Value value = slots.get(keySlot + hash);
+			if (!isNil(value)) return value;
 		}
 	}
 	const int nodeIndex = findStringNodeIndex(key);
-	if (nodeIndex >= 0 && !isNil(values().get(hashValueSlot(static_cast<size_t>(nodeIndex))))) {
-		predictedSlot = nodeIndex;
-		return values().get(hashValueSlot(static_cast<size_t>(nodeIndex)));
+	if (nodeIndex >= 0) {
+		const Value value = values().get(hashValueSlot(static_cast<size_t>(nodeIndex)));
+		if (!isNil(value)) {
+			predictedSlot = nodeIndex;
+			return value;
+		}
 	}
 	predictedSlot = -1;
 	return valueNil();

@@ -8,6 +8,7 @@ import { TABLE_STORE_REQUIRES_GROWTH, TableLookupStatus, type TableLookupResult 
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
 
@@ -113,6 +114,19 @@ test('known string lookup follows changing inherited fields and preserves false 
 	cpu.gc.tables.resolveStringIndex(child, indexKey, key, result);
 	assert.equal(result.status, TableLookupStatus.Resolved);
 	assert.equal(slots.get(0), valueFloatBits(0x80000000));
+
+	const raw = cpu.createTable(0, 8);
+	const highBitKey = valueString((key ^ 0x80000000) >>> 0);
+	cpu.gc.tables.set(raw, highBitKey, valueInteger(21));
+	assert.equal(cpu.gc.tables.getStringKey(raw, key), valueNil(), 'String keys use the entire payload');
+	cpu.gc.tables.setStringKey(raw, key, valueInteger(42));
+	memory.writeRamRecordWord(raw + TableHeader.Storage, cpu.gc.tables.storageAddress(raw) + MAIN_RAM_SIZE);
+	assert.equal(cpu.gc.tables.get(raw, highBitKey), valueInteger(21));
+	prediction = cpu.gc.tables.loadStringKeyCached(raw, key, -1, slots, 0);
+	assert.equal(slots.get(0), valueInteger(42));
+	assert.ok(prediction >= 0);
+	assert.equal(cpu.gc.tables.loadPredictedStringKey(raw, key, prediction, slots, 0), true);
+	assert.equal(slots.get(0), valueInteger(42));
 });
 
 
