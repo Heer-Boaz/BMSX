@@ -5,7 +5,7 @@ import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operati
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
 import { ValueStorage } from './value_storage';
-import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -995,9 +995,11 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
+	public invalidateMappedViews(key: number, firstWord: number, endWord: number): void {
+		this.gc.observeStackWrites(key + firstWord * 4, key + endWord * 4);
+	}
+
 	public invalidateMappedWords(key: number, firstWord: number, endWord: number): void {
-		if (key >= RAM_BASE && key < RAM_BASE + MAIN_RAM_SIZE)
-			this.gc.observeStackWrites(key + firstWord * 4, key + endWord * 4);
 		this.invalidateDecodedWords(key, firstWord, endWord);
 		if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 			this.invalidateDecodedWords(

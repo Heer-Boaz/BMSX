@@ -178,10 +178,10 @@ void Thread::armStackWatch() {
 	MappedPageBinding binding{};
 	heap.memory.bindMappedPage(page, MAPPED_BUS_MASTER_CPU, binding);
 	const u32 word = ((address & MAPPED_PAGE_BYTE_MASK) + static_cast<u32>(ThreadField::StackBlock)) >> 2u;
-	binding.writeWatch.armWord(word);
-	binding.writeWatch.armWord(word + 1u);
-	binding.writeWatch.armWord(word + 2u);
-	binding.writeWatch.armWord(word + 3u);
+	binding.writeWatch.armViewWord(word);
+	binding.writeWatch.armViewWord(word + 1u);
+	binding.writeWatch.armViewWord(word + 2u);
+	binding.writeWatch.armViewWord(word + 3u);
 }
 
 bool Thread::observeStackWrite() {

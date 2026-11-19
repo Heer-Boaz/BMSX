@@ -602,12 +602,13 @@ void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 	}
 }
 
+void CPU::invalidateMappedViews(u64 key, u32 firstWord, u32 endWord) {
+	const auto address = static_cast<u32>(key);
+	m_activeStackRebound |= m_heap.observeStackWrites(address + firstWord * 4u,
+		address + endWord * 4u, m_activeThread);
+}
+
 void CPU::invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) {
-	if (key >= RAM_BASE && key < RAM_BASE + MAIN_RAM_SIZE) {
-		const auto address = static_cast<u32>(key);
-		m_activeStackRebound |= m_heap.observeStackWrites(address + firstWord * 4u,
-			address + endWord * 4u, m_activeThread);
-	}
 	invalidateDecodedWords(key, firstWord, endWord);
 	if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 		invalidateDecodedWords(

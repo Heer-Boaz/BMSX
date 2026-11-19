@@ -227,7 +227,14 @@ void memoryAliasesActiveStack() {
 	// A cartridge write changes the physical register aperture even if it
 	// straddles RAM's end. The two lanes wrap independently at the record port.
 	const u32 descriptor = thread->address + static_cast<u32>(ThreadField::StackBlock);
+	const u32 descriptorOffset = descriptor - RAM_BASE;
+	MappedPageBinding descriptorPage{};
+	memory.bindMappedPage(descriptor & ~MAPPED_PAGE_BYTE_MASK, MAPPED_BUS_MASTER_CPU, descriptorPage);
+	descriptorPage.writeWatch.armWord((descriptor & MAPPED_PAGE_BYTE_MASK) / sizeof(u32));
 	memory.writeMappedU32LE(descriptor, RAM_BASE + MAIN_RAM_SIZE - 4u);
+	const auto& watches = memory.ramWriteWatches();
+	require(!watches.anyWatched(descriptorOffset, 4, false) && watches.anyWatched(descriptorOffset, 4),
+		"a shared write consumes the code watch and rearms only the stack view");
 	require(thread->stack.mirrored(), "the relocated bank needs the physical record port");
 	regs.set(0, valueInteger(123));
 	regs.set(1, valueFloatBits(0xffc00042));

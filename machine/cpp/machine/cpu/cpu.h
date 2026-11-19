@@ -180,6 +180,7 @@ public:
 	void prepareSystemNativeCode();
 #endif
 	void invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) override;
+	void invalidateMappedViews(u64 key, u32 firstWord, u32 endWord) override;
 	void invalidateMappedRange(u64 firstKey, u64 endKey) override;
 
 	void reset();

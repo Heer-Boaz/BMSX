@@ -74,8 +74,8 @@ public:
 		invalidateRamWrite(offset, 1u);
 	}
 	// Runtime-owned RAM writes bypass the bus but still reach decoded-code watches.
-	void invalidateRamWrite(size_t offset, size_t byteLength) {
-		m_ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, m_mappedPageInvalidator);
+	void invalidateRamWrite(size_t offset, size_t byteLength, bool reportViews = true) {
+		m_ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, m_mappedPageInvalidator, reportViews);
 	}
 	const Span<const u8>& systemRomStorage() const { return m_systemRom; }
 	void installSystemRom(std::span<const u8> rom);

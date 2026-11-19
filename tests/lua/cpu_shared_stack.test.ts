@@ -214,7 +214,11 @@ test(`an active physical stack aliases bus loads and stores without losing code 
 	assert.equal(watches.anyWatched(offset + 7 * 4, 4), true, 'the unused slot remains watched');
 	watches.invalidateWrite(offset + 7 * 4, 4, RAM_BASE, cpu);
 	assert.equal(watches.anyWatched(offset + 7 * 4, 4), false, 'unrelated descriptor watches need not be consumed');
-	cpu.memory.writeMappedU32LE(thread.address + ThreadField.StackBlock, RAM_BASE + MAIN_RAM_SIZE - 4);
+	const descriptor = thread.address + ThreadField.StackBlock, descriptorOffset = descriptor - RAM_BASE;
+	watches.armWord(descriptorOffset >>> MAPPED_PAGE_BYTE_SHIFT, (descriptorOffset & MAPPED_PAGE_BYTE_MASK) >>> 2);
+	cpu.memory.writeMappedU32LE(descriptor, RAM_BASE + MAIN_RAM_SIZE - 4);
+	assert.equal(watches.anyWatched(descriptorOffset, 4, false), false, 'the overlapping code watch is consumed');
+	assert.equal(watches.anyWatched(descriptorOffset, 4), true, 'the stack view rearms independently');
 	assert.ok(thread.stackRegisters.ramMirrored(), 'the relocated bank needs the physical record port');
 	regs.setInteger(0, 123);
 	regs.setFloatBits(1, 0xffc00042);

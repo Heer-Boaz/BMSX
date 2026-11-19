@@ -171,10 +171,10 @@ export class Thread extends GcObject {
 		const page = offset >>> MAPPED_PAGE_BYTE_SHIFT;
 		const word = ((offset & MAPPED_PAGE_BYTE_MASK) + ThreadField.StackBlock) >>> 2;
 		const watches = this.heap.memory.ramWriteWatches();
-		watches.armWord(page, word);
-		watches.armWord(page, word + 1);
-		watches.armWord(page, word + 2);
-		watches.armWord(page, word + 3);
+		watches.armViewWord(page, word);
+		watches.armViewWord(page, word + 1);
+		watches.armViewWord(page, word + 2);
+		watches.armViewWord(page, word + 3);
 	}
 
 	public observeStackWrite(): void {
@@ -230,7 +230,7 @@ export class Thread extends GcObject {
 		writeLE32(ram, descriptor + 8, frames);
 		writeLE32(ram, descriptor + 12, continuations);
 		this.rebindFrames();
-		memory.invalidateRamWrite(descriptor, 16);
+		memory.invalidateRamWrite(descriptor, 16, false);
 		this.heap.arena.free(oldBlock);
 		this.heap.budget.release(heapAllocationBytes(oldBytes));
 	}

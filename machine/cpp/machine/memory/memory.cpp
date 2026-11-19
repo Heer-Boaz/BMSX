@@ -139,7 +139,7 @@ Memory::Memory(const MemoryInit& init, u32 ramByteCount)
 	: m_systemRom(init.systemRom)
 	, m_cartridgeController(init.cartridgeSlots)
 	, m_ram(ramByteCount)
-	, m_ramPageWriteWatches(ramByteCount)
+	, m_ramPageWriteWatches(ramByteCount, true)
 	, m_ioSlots(IO_SLOT_COUNT, 0u)
 	, m_ioReadHandlers(IO_SLOT_COUNT)
 	, m_ioWriteHandlers(IO_SLOT_COUNT) {

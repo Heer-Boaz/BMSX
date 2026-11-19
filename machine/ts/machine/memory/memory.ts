@@ -228,7 +228,7 @@ export class Memory {
 		this.ram = new Uint8Array(ramByteCount);
 		this.ramView = new DataView(this.ram.buffer);
 		this.ram32 = new Uint32Array(this.ram.buffer, 0, ramByteCount >>> 2);
-		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount);
+		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount, true);
 		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
 		this.ioWriteContexts = new Array<unknown>(IO_SLOT_COUNT);
@@ -286,8 +286,8 @@ export class Memory {
 	}
 
 	// Runtime-owned RAM writes bypass the bus but still reach decoded-code watches.
-	public invalidateRamWrite(offset: number, byteLength: number): void {
-		this.ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, this.mappedPageInvalidator!);
+	public invalidateRamWrite(offset: number, byteLength: number, reportViews = true): void {
+		this.ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, this.mappedPageInvalidator!, reportViews);
 	}
 
 	public systemRomStorage(): RomStorage { return this.systemRom; }
