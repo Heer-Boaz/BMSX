@@ -73,7 +73,7 @@ inline void CPU::executeVararg(CallFrame& frame, int a, int b) {
 	if (count != 0) {
 		ValueSpan registers = ensureRegisterCapacity(frame, a + count - 1);
 		const int copied = std::min(count, frame.varargCount);
-		registers.copyFrom(m_activeThread->stack.view(), a, frame.varargBase, copied);
+		registers.copyFrom(m_activeThread->stack, a, frame.varargBase, copied);
 		registers.clear(a + copied, count - copied);
 	}
 	instructionBudgetRemaining -= count;

@@ -1,3 +1,4 @@
+import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
@@ -171,13 +172,12 @@ test('an oversized scan earns actual-work credit, not another assist after 256 b
 
 test('sweep shrinks cold stacks with hysteresis, preserves caller windows and rebinds views', () => {
 	const cpu = machine(), thread = cpu.rootThread, frame = thread.currentFrame!;
-	cpu.luaHeap.reserve((1024 - thread.stackRegisters.capacity()) * 5);
 	thread.resizeStack(1024);
 	frame.registers.setInteger(0, 123); frame.top = 1;
 	const before = cpu.luaHeap.usedBytes();
 	cpu.collectTrackedHeapBytes();
 	assert.equal(thread.stackRegisters.capacity(), 512);
-	assert.equal(cpu.luaHeap.usedBytes(), before - 512 * 5);
+	assert.equal(cpu.luaHeap.usedBytes(), before - HEAP_PAGE_SIZE);
 	frame.registers.setInteger(0, 456);
 	assert.equal(thread.stackRegisters.getInteger(frame.stackBase), 456);
 	const parentCapacity = frame.stackCapacity;
@@ -196,7 +196,6 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 	cpu.luaHeap.restoreState({ trackedBytes: cpu.luaHeap.usedBytes(), nextCollectionBytes: 0 });
 	cpu.luaHeap.collectRuntime(valueNil(), valueNil(), valueNil(), thread);
 	assert.equal(thread.stackRegisters.capacity(), 512, 'growth admission keeps its old allocation size stable');
-	cpu.luaHeap.reserve((grown - 512) * 5, valueNil(), valueNil(), valueNil(), thread);
 	thread.resizeStack(grown);
 	assert.equal(frame.registers.getInteger(0), 456);
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);

@@ -1306,12 +1306,14 @@ void testBlockedCpuGp0StoreResumesAcrossDeviceRestore() {
 	original.scheduler.advanceTo(20 - original.cpu.instructionBudgetRemaining);
 	const auto gpuState = original.gpu.captureState();
 	const auto cpuState = original.cpu.captureRuntimeState();
+	const auto ramState = original.memory.captureSaveState();
 	GpuHarness restored;
 	restored.memory.installSystemRom(rom.bytes);
 	restored.cpu.reset();
 	stopPcrtc(restored);
 	restored.scheduler.advanceTo(original.scheduler.nowCycles());
 	restored.gpu.restoreState(gpuState);
+	restored.memory.restoreSaveState(ramState);
 	restored.cpu.restoreRuntimeState(cpuState);
 	for (GpuHarness* target : {&original, &restored}) {
 		target->scheduler.advanceTo(28);

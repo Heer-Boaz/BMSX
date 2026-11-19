@@ -137,8 +137,7 @@ struct CpuRootValueState {
 };
 
 struct CpuThreadState {
-	size_t stackCapacity = 0;
-	std::vector<u32> stack;
+	u32 stackTop = 0;
 	std::vector<CpuFrameState> frames;
 	std::vector<CpuProtectedCallState> protectedCalls;
 	std::vector<int> openUpvalues;
@@ -548,6 +547,7 @@ private:
 	u32 m_systemExceptionFunctionAddress = 0;
 	bool m_yieldRequested = false;
 	bool m_threadSwitchRequested = false;
+	bool m_activeStackRebound = false;
 	Thread* m_rootThread = nullptr;
 	Thread* m_activeThread = nullptr;
 	Thread* m_completionThread = nullptr;

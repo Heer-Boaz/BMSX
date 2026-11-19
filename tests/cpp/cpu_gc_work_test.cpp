@@ -299,19 +299,19 @@ void secondMarkPassAndCredit() {
 void stackShrinkAndAdmission() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto* thread = cpu.rootThread(); auto& frame = *thread->currentFrame;
-	cpu.luaHeap().reserve((1024 - thread->stackCapacity) * 5); thread->resizeStack(1024);
+	thread->resizeStack(1024);
 	frame.registers.set(0, valueInteger(123)); frame.top = 1;
 	const size_t before = cpu.luaHeap().usedBytes();
 	cpu.collectHeap();
-	require(thread->stackCapacity == 512 && cpu.luaHeap().usedBytes() == before - 512 * 5,
-		"sweep halves the cold stack and releases exactly its canonical slot bytes");
+	require(thread->stackCapacity == 512 && cpu.luaHeap().usedBytes() == before - HEAP_PAGE_SIZE,
+		"sweep halves the cold stack and releases exactly one physical page");
 	frame.registers.set(0, valueInteger(456));
 	require(thread->stack.get(frame.stackBase) == valueInteger(456), "frame register view is rebound by the Thread owner");
 	frame.stackCapacity = 200;
 	auto* child = thread->acquireFrame();
 	child->stackBase = 2; child->stackCapacity = 8; child->top = 0;
 	child->closure = frame.closure; child->executionImage = frame.executionImage;
-	child->registers = thread->stack.view().subspan(2, 8);
+	child->registers = thread->stack.subspan(2, 8);
 	thread->enterFrame(child); thread->stackTop = 10;
 	cpu.collectHeap();
 	require(thread->stackCapacity == 512, "all caller windows participate in the shrink hysteresis");
@@ -319,7 +319,6 @@ void stackShrinkAndAdmission() {
 	cpu.luaHeap().collectRuntime(valueNil(), valueNil(), valueNil(), thread);
 	require(thread->stackCapacity == 512, "growth admission keeps the allocation being grown stable");
 	cpu.luaHeap().restoreState({cpu.luaHeap().usedBytes(), 0});
-	cpu.luaHeap().reserve((2048 - 512) * 5, valueNil(), valueNil(), valueNil(), thread);
 	thread->resizeStack(2048);
 	require(frame.registers.get(0) == valueInteger(456), "growth preserves values after prior shrink");
 	const auto state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);

@@ -36,8 +36,11 @@ NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState
 	const BuiltinArgsView args(state->registers.subspan(base + 1, static_cast<size_t>(count)));
 	const auto& function = cpu->m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(state->registers.get(base)))];
 	Value result;
-	if ((function.id == BuiltinFunctionId::SetMetatable && cpu->m_memory.ramWriteWatches().anyWatched())
-		|| !cpu->executeBuiltinLeaf(function.id, args, result)) return NativeBuiltinCallOutcome::Declined;
+	if (function.id == BuiltinFunctionId::SetMetatable && count != 0 && valueIsTable(args[0])) {
+		const u32 word = (valuePayload(args[0]) + static_cast<u32>(TableHeader::Metatable)) & RAM_RECORD_WORD_MASK;
+		if (cpu->m_memory.ramWriteWatches().anyWatched(word, 4u)) return NativeBuiltinCallOutcome::Declined;
+	}
+	if (!cpu->executeBuiltinLeaf(function.id, args, result)) return NativeBuiltinCallOutcome::Declined;
 	if (receiving) state->registers.set(base, result);
 	state->registerTop = base + receiving;
 	state->remainingCycles -= static_cast<int>(function.cycleBase) + receiving;
@@ -226,6 +229,14 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 #endif
 			return nullptr;
 		}
+		if (thread.stackRequiresScalar()) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++gateProfile.returns;
+#endif
+			return nullptr;
+		}
+		state.stackOffset = thread.stackOffset();
+		state.stackBytes = thread.stackByteLength();
 		frame = thread.currentFrame;
 		if (transition == NativeBlockTransition::NextInstruction && continuation) {
 			// These helpers neither change frames nor operate a device. Keep the

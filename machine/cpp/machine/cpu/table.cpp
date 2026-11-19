@@ -480,8 +480,16 @@ int TableRecord::setStringKey(StringId key, const Value& value) {
 int TableRecord::storeStringKeyInNative(GcHeap* heap, u32 address, StringId key, const Value& value) noexcept {
 	// Hash maintenance can write any linked record word. Never invalidate code
 	// from a returning native leaf: the dispatcher owns that instruction then.
-	if (heap->memory.ramWriteWatches().anyWatched()) return TABLE_STORE_REQUIRES_GROWTH;
 	TableRecord table(*heap, address);
+	const auto& watches = heap->memory.ramWriteWatches();
+	if (watches.anyWatched()) {
+		const u32 header = address & RAM_RECORD_WORD_MASK;
+		const u32 storage = table.storageAddress() & RAM_RECORD_WORD_MASK;
+		const u64 bytes = 5ull * table.arrayCapacity() + 14ull * table.hashSlots();
+		if (header > MAIN_RAM_SIZE - HEADER_BYTES || watches.anyWatched(header, HEADER_BYTES)
+			|| bytes > MAIN_RAM_SIZE - storage || (bytes && watches.anyWatched(storage, static_cast<size_t>(bytes))))
+			return TABLE_STORE_REQUIRES_GROWTH;
+	}
 	return storeStringKeyWithoutGrowth(&table, key, value);
 }
 

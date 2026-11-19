@@ -36,13 +36,13 @@ void storageAndFrames() {
 	CPU cpu(memory, irq, addresses);
 	auto& thread = *cpu.rootThread();
 	auto* first = thread.acquireFrame(); first->stackBase = 0; first->stackCapacity = 8;
-	thread.enterFrame(first); first->registers = thread.stack.view().subspan(0, 8);
+	thread.enterFrame(first); first->registers = thread.stack.subspan(0, 8);
 	first->registers.set(3, valueFloatBits(0xffc00000));
 	thread.resizeStack(64);
-	require(thread.stack.byteLength() == 320 && first->registers.get(3) == valueFloatBits(0xffc00000), "thread growth rebinds compact frame windows");
-	require(thread.stackWords == thread.stack.words() && thread.stackTags == thread.stack.tags(), "native planes are producer-bound");
+	require(thread.stackByteLength() == 320 && first->registers.get(3) == valueFloatBits(0xffc00000), "thread growth rebinds compact frame windows");
+	require(thread.stack.ram() == &memory && reinterpret_cast<const u8*>(thread.stack.words()) == memory.ramData() + thread.stackOffset(), "the native payload plane borrows physical RAM");
 	auto* second = thread.acquireFrame(); second->stackBase = 4; second->stackCapacity = 4;
-	thread.enterFrame(second); second->registers = thread.stack.view().subspan(4, 4);
+	thread.enterFrame(second); second->registers = thread.stack.subspan(4, 4);
 	second->registers.set(0, valueInteger(123)); thread.resizeStack(96);
 	require(second->registers.get(0) == valueInteger(123) && first->registers.get(3) == valueFloatBits(0xffc00000), "nested frame windows survive relocation");
 	thread.leaveFrame(); require(thread.currentFrame == first, "ordinary return retains caller");

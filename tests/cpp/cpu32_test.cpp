@@ -642,10 +642,12 @@ void constantsGlobalsAndRestore() {
 	m.cpu.runUntilDepth(0, 1); // Stop after LOADK; retain the real active register graph.
 	require(m.cpu.readFrameRegister(0, 2) == valueFloatBits(0xffa12345), "Float constant preserves signaling NaN bits");
 	const auto state = m.cpu.captureRuntimeState();
+	const auto ram = m.memory.captureSaveState();
 	m.cpu.activeThread()->currentFrame->registers.set(2, valueInteger(8));
 	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("saved"), valueInteger(7));
 	for (int i = 0; i < 10; ++i)
 		m.cpu.createTable();
+	m.memory.restoreSaveState(ram);
 	m.cpu.restoreRuntimeState(state);
 	require(m.cpu.readFrameRegister(0, 2) == valueFloatBits(0xffa12345), "frame restore preserves raw Float word");
 	require(m.cpu.getGlobalByKey(*m.cpu.stringPool().find("saved")) == valueFloatBits(0xffa54321),

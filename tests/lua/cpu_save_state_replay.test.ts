@@ -182,7 +182,7 @@ test('a materialized but unrooted canonical closure remains part of the checkpoi
 	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.KNIL]), RunResult.Yielded);
 	const warm = cpu.captureRuntimeState();
 	const warmRam = cpu.memory.captureSaveState();
-	assert.equal(warm.snapshot.word(warm.threads[0].stack[warm.threads[0].frames[0].stackBase]), ValueTag.Nil);
+	assert.equal(cpu.readFrameRegister(0, 0), valueNil());
 	assert.ok(warm.snapshot.objectWords.some(offset => warm.snapshot.word(offset) === CpuSnapshotObjectKind.Closure
 		&& warm.snapshot.word(offset + CpuSnapshotClosure.Canonical) === 1
 		&& warm.snapshot.word(offset + CpuSnapshotClosure.FunctionAddress) === address));

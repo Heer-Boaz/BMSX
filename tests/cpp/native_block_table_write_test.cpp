@@ -267,12 +267,13 @@ void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
 		memory.writeRamRecordWord(hint, 0);
 		MappedPageBinding binding;
 		memory.bindMappedPage(address, MAPPED_BUS_MASTER_CPU, binding);
-		binding.writeWatch.armWord((address & MAPPED_PAGE_BYTE_MASK) >> 2);
+		const u32 slot = (address & MAPPED_PAGE_BYTE_MASK) >> 2;
+		binding.writeWatch.armWord(slot);
 		state.remainingCycles = 100;
 		require(block->run(state) == &block->sideExits.front() && table->getInteger(1) == valueInteger(101),
 			"watching a destination plane or the length hint leaves before either part of the store");
 		table->setInteger(1, registers.get(2));
-		require(!memory.ramWriteWatches().anyWatched() && table->getInteger(1) == registers.get(2),
+		require(!binding.writeWatch.consume(slot, slot + 1u) && table->getInteger(1) == registers.get(2),
 			"the record write invalidates the physical code watch");
 	}
 	state.remainingCycles = 100;

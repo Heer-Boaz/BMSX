@@ -56,7 +56,7 @@ void slidingFixedCall(bool interpreted) {
 	require(parent->registers.get(5) == valueInteger(41), "both register views name the same storage");
 	cpu.collectHeap();
 	const auto snapshot = cpu.captureRuntimeState();
-	require(snapshot.threads[0].stack.size() == 13, "snapshot records shared storage once");
+	require(snapshot.threads[0].stackTop == 13, "snapshot records shared storage once");
 	cpu.restoreRuntimeState(snapshot);
 	thread = cpu.activeThread();
 	require(thread->currentFrame->registers.words() == thread->firstFrame->registers.words() + 5
@@ -136,7 +136,7 @@ void formalReservationRoots(bool interpreted) {
 		"the formal count owns every argument even when maxStack is smaller");
 	cpu.collectHeap();
 	const auto snapshot = cpu.captureRuntimeState();
-	require(snapshot.threads[0].stack.size() == 12, "snapshot includes the complete formal reservation once");
+	require(snapshot.threads[0].stackTop == 12, "snapshot includes the complete formal reservation once");
 	cpu.restoreRuntimeState(snapshot);
 	child = cpu.activeThread()->currentFrame;
 	require(asTable(child->registers.get(6), cpu.gcHeap())->getInteger(1) == valueInteger(73),
@@ -178,6 +178,75 @@ void capturedSlotSurvivesOpenTop(int top) {
 	require(values.size() == 1 && valueIsTable(values.get(0)), "closing the capture retains its value after the source frame returns");
 }
 
+void memoryAliasesActiveStack() {
+	test::Blua32TestImage image;
+	image.text.resize(5 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::KSMI), 0, 0, 37);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::LOAD_MEM), 1, 4, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::STORE_MEM), 5, 4, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::MOV), 2, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}};
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); cpu.reset();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	cpu.setNativeCompilationProfiling(true);
+	cpu.prepareSystemNativeCode();
+#endif
+	const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	auto* thread = cpu.activeThread();
+	auto& regs = thread->currentFrame->registers;
+	regs.set(4, valueInteger(DYNAMIC_RAM_BASE));
+	regs.set(5, valueInteger(73));
+	cpu.runUntilDepth(0, 512 * cycles);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(cpu.readNativeCompilationProfile().entriesPublished != 0u, "the alias regression exercises a warmed native entry");
+#endif
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
+	const u32 slot = RAM_BASE + thread->stackOffset();
+	regs.set(4, valueInteger(slot));
+	cpu.runUntilDepth(0, 512 * cycles);
+	require(regs.get(1) == valueInteger(37), "a bus read observes the preceding dirty register");
+	require(regs.get(2) == valueInteger(73), "a bus write invalidates the resident register value");
+	require(memory.readRamRecordWord(slot) == 73u && regs.get(0) == valueInteger(73),
+		"both CPU registers and bus accesses refer to the actual guest RAM bytes");
+
+	MappedPageBinding binding{};
+	const u32 slotOffset = slot & MAPPED_PAGE_BYTE_MASK;
+	memory.bindMappedPage(slot & ~MAPPED_PAGE_BYTE_MASK, MAPPED_BUS_MASTER_CPU, binding);
+	binding.writeWatch.armWord(slotOffset / INSTRUCTION_BYTES);
+	binding.writeWatch.armWord(slotOffset / INSTRUCTION_BYTES + 7);
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
+	cpu.runUntilDepth(0, cycles);
+	require(!binding.writeWatch.consume(slotOffset / INSTRUCTION_BYTES, slotOffset / INSTRUCTION_BYTES + 1),
+		"the stack write consumed the watch on that exact word");
+	require(binding.writeWatch.consume(slotOffset / INSTRUCTION_BYTES + 7, slotOffset / INSTRUCTION_BYTES + 8),
+		"the unused slot's watch survived");
+	// A cartridge write changes the physical register aperture even if it
+	// straddles RAM's end. The two lanes wrap independently at the record port.
+	const u32 descriptor = thread->address + static_cast<u32>(ThreadField::StackBlock);
+	memory.writeMappedU32LE(descriptor, RAM_BASE + MAIN_RAM_SIZE - 4u);
+	require(thread->stack.mirrored(), "the relocated bank needs the physical record port");
+	regs.set(0, valueInteger(123));
+	regs.set(1, valueFloatBits(0xffc00042));
+	require(memory.readRamRecordWord(MAIN_RAM_SIZE - 4u) == 123u && memory.readRamRecordWord(0u) == 0xffc00042u,
+		"only the record port wraps payload addresses");
+	require(memory.readRamRecordByte(28u) == static_cast<u8>(ValueTag::Integer)
+		&& memory.readRamRecordByte(29u) == static_cast<u8>(ValueTag::Float)
+		&& regs.get(1) == valueFloatBits(0xffc00042), "the independently wrapped tags preserve the raw Value");
+	regs.copyFrom(regs, 1, 0, 2);
+	require(regs.get(1) == valueInteger(123) && regs.get(2) == valueFloatBits(0xffc00042), "wrapped overlap copies have memmove order");
+	const auto checkpoint = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	regs.set(1, valueInteger(7));
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(checkpoint);
+	require(cpu.readFrameRegister(0, 1) == valueInteger(123), "restoring RAM restores a wrapped register bank");
+
+}
+
 }
 
 int main() {
@@ -185,6 +254,7 @@ int main() {
 		slidingFixedCall(true);
 		slidingFixedCall(false);
 		formalReservationRoots(true); formalReservationRoots(false);
+		memoryAliasesActiveStack();
 		capturedSlotSurvivesOpenTop(0); capturedSlotSurvivesOpenTop(31);
 		for (bool interpreted : {true, false}) for (bool open : {false, true}) slidingVarargCall(interpreted, open);
 		std::cout << "shared stack tests passed\n";

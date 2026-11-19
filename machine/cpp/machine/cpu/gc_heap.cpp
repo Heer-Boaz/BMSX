@@ -133,12 +133,28 @@ bool GcHeap::markObject(GCObject* object) {
 	object->grayNext = m_gray; m_gray = object;
 	return true;
 }
+void GcHeap::armThreadStackWatches() {
+	for (auto* object = m_objects; object; object = object->next)
+		if (object->type == ObjType::Thread) static_cast<Thread*>(object)->armStackWatch();
+}
+
+bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
+	bool rebound = false;
+	for (u32 address = first & ~(static_cast<u32>(THREAD_HEAP_BYTES) - 1u); address < end; address += THREAD_HEAP_BYTES) {
+		const u32 descriptor = address + static_cast<u32>(ThreadField::StackBlock);
+		if (end <= descriptor || first >= descriptor + 8u) continue;
+		if (auto* thread = threadAt(address))
+			rebound |= thread->observeStackWrite() && thread == active;
+	}
+	return rebound;
+}
+
 size_t GcHeap::allocationBytes(const GCObject* object) const {
 	switch (object->type) {
 		case ObjType::Table: return static_cast<const Table*>(object)->trackedHeapBytes();
 		case ObjType::Closure: return heapAllocationBytes(closureRecordBytes(static_cast<const Closure*>(object)->upvalueCount));
 		case ObjType::Upvalue: return UPVALUE_HEAP_BYTES;
-		case ObjType::Thread: return THREAD_HEAP_BYTES + static_cast<const Thread*>(object)->stackCapacity * THREAD_STACK_SLOT_BYTES;
+		case ObjType::Thread: return THREAD_HEAP_BYTES + heapAllocationBytes(static_cast<const Thread*>(object)->stackByteLength());
 		case ObjType::Garbage: return static_cast<const GarbageAllocation*>(object)->bytes;
 	}
 	BMSX_UNREACHABLE();
@@ -207,7 +223,8 @@ size_t GcHeap::trace(bool atomic) {
 				}
 			}
 			for (int slot = 0; slot < liveTop; ++slot) markValue(thread->stack.get(slot));
-			thread->stack.clear(liveTop, thread->stackCapacity - liveTop);
+			if (static_cast<size_t>(liveTop) < thread->stackCapacity)
+				thread->stack.clear(liveTop, thread->stackCapacity - liveTop);
 			thread->trimFrames();
 			break;
 		}
@@ -332,7 +349,7 @@ void GcHeap::destroyObject(GCObject* object) {
 			delete static_cast<GarbageAllocation*>(object);
 			break;
 		case ObjType::Thread:
-			budget.release(THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stackCapacity * THREAD_STACK_SLOT_BYTES);
+			budget.release(allocationBytes(object));
 			delete static_cast<Thread*>(object);
 			break;
 		case ObjType::Table:
@@ -436,7 +453,9 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 					work += ceilDiv4(static_cast<int>(allocationBytes(object)));
 					if (sweepGarbage(object)) {
 						if (object->type == ObjType::Thread) {
-							const u32 address = static_cast<Thread*>(object)->address;
+							auto* thread = static_cast<Thread*>(object);
+							const u32 address = thread->address;
+							thread->freeStack();
 							physicalSlot(address) = nullptr;
 							arena.free(address);
 						}
@@ -447,7 +466,6 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 						if (object->type == ObjType::Thread && object != growingStack) {
 							auto* thread = static_cast<Thread*>(object);
 							const size_t released = thread->shrinkStack();
-							budget.release(released * THREAD_STACK_SLOT_BYTES);
 							if (released != 0) work += 2 * ceilDiv4(thread->stackCapacity * THREAD_STACK_SLOT_BYTES);
 						}
 					}

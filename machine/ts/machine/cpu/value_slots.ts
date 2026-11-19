@@ -7,6 +7,9 @@ import type { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import { luaFloatResultBits } from '../../spec/blua32/numeric';
 import { ValueTag, valueTag, valuePayload, valueFromTag, type Value } from './value';
 import { ValueStorage } from './value_storage';
+import type { Memory } from '../memory/memory';
+import { MAIN_RAM_SIZE } from '../../spec/bmsx/memory_map';
+import { f32BitsToNumber } from '../../common/float32';
 
 export type ValueWriteTarget = {
 	setEncoded(index: number, tag: ValueTag, word: number): void;
@@ -22,6 +25,10 @@ export class ValueSlots implements ValueWriteTarget {
 	private floats: Float32Array;
 	private tags: Uint8Array;
 	private base = 0;
+	private ram: Memory | null = null;
+	private mirrored = false;
+	private wordAddress = 0;
+	private tagAddress = 0;
 	private size: number;
 	constructor(size: number) {
 		this.storage = new ValueStorage(size);
@@ -29,18 +36,57 @@ export class ValueSlots implements ValueWriteTarget {
 	}
 	public capacity(): number { return this.size; }
 	public byteLength(): number { return this.size * 5; }
+	public ramOffset(): number { return this.wordAddress; }
+	public ramMirrored(): boolean { return this.mirrored; }
+	public bindRam(memory: Memory, offset: number, size: number, relocate = false, requirePort = false): void {
+		const buffer = memory.ramData().buffer;
+		const tagOffset = (offset + size * 4) & (MAIN_RAM_SIZE - 1);
+		const mirrored = requirePort || size > (MAIN_RAM_SIZE - offset) / 5;
+		if (!relocate && this.ram === memory && this.wordAddress === offset && this.size === size && this.mirrored === mirrored) return;
+		if (mirrored) {
+			this.words = empty.words; this.tags = empty.tags; this.floats = empty.floats;
+		} else {
+			const words = new Uint32Array(buffer, offset, size);
+			const tags = new Uint8Array(buffer, tagOffset, size);
+			if (relocate) {
+				const kept = Math.min(this.size, size);
+				for (let i = 0; i < kept; ++i) { words[i] = this.getPayload(i); tags[i] = this.getTag(i); }
+				words.fill(0, kept); tags.fill(0, kept);
+				memory.invalidateRamWrite(offset, size * 5);
+			}
+			this.words = words; this.floats = new Float32Array(buffer, offset, size); this.tags = tags;
+		}
+		this.storage = null; this.ram = memory; this.base = 0; this.size = size;
+		this.wordAddress = offset; this.tagAddress = tagOffset; this.mirrored = mirrored;
+	}
+	private reportWrite(first: number, count: number): void {
+		if (this.ram === null) return;
+		const byte = this.tagAddress + first;
+		this.ram.invalidateRamWrite(this.wordAddress + first * 4, count * 4);
+		this.ram.invalidateRamWrite(byte, count);
+	}
 	public rebind(source: ValueSlots, base: number, size: number): void {
-		this.storage = null;
+		this.storage = null; this.ram = source.ram;
+		this.wordAddress = source.wordAddress; this.tagAddress = source.tagAddress; this.mirrored = source.mirrored || (source.ram !== null && base + size > source.size);
 		this.words = source.words; this.floats = source.floats; this.tags = source.tags;
 		this.base = source.base + base; this.size = size;
 	}
 	public unbind(): void {
-		this.storage = null;
+		this.storage = null; this.ram = null; this.mirrored = false;
 		this.words = empty.words; this.floats = empty.floats; this.tags = empty.tags; this.base = 0; this.size = 0;
 	}
 	public clear(count: number, offset = 0): void {
 		const start = this.base + offset, end = start + count;
+		if (this.mirrored) {
+			const ram = this.ram!;
+			const word = this.wordAddress + start * 4, byte = this.tagAddress + start;
+			const words = Math.min(count, MAIN_RAM_SIZE >>> 2), tags = Math.min(count, MAIN_RAM_SIZE);
+			for (let i = 0; i < words; ++i) ram.writeRamRecordWord(word + i * 4, 0);
+			for (let i = 0; i < tags; ++i) ram.writeRamRecordByte(byte + i, 0);
+			return;
+		}
 		this.words.fill(0, start, end); this.tags.fill(ValueTag.Nil, start, end);
+		this.reportWrite(start, count);
 	}
 	public reserveCapacity(capacity: number): void {
 		if (capacity > this.size) this.resizeCapacity(Math.max(capacity, this.size * 2, 8));
@@ -55,37 +101,74 @@ export class ValueSlots implements ValueWriteTarget {
 		for (let i = 0; i < count; ++i) target[i] = this.get(i);
 	}
 	public copySlot(destination: number, source: number): void {
+		if (this.mirrored) { this.setEncoded(destination, this.getTag(source), this.getPayload(source)); return; }
 		const dst = this.base + destination, src = this.base + source;
 		this.words[dst] = this.words[src]; this.tags[dst] = this.tags[src];
+		this.reportWrite(dst, 1);
 	}
 	public copySlotFrom(source: ValueSlots, destination: number, first: number): void {
+		if (this.mirrored || source.mirrored) {
+			this.setEncoded(destination, source.getTag(first), source.getPayload(first));
+			return;
+		}
 		const dst = this.base + destination, src = source.base + first;
 		this.words[dst] = source.words[src]; this.tags[dst] = source.tags[src];
+		this.reportWrite(dst, 1);
 	}
 	public copyRangeFrom(source: ValueSlots, destination: number, first: number, count: number): void {
+		if (this.mirrored || source.mirrored) {
+			const delta = this.ram !== null && this.ram === source.ram
+				? (this.wordAddress + (this.base + destination) * 4 - source.wordAddress - (source.base + first) * 4) & (MAIN_RAM_SIZE - 4)
+				: 0;
+			if (delta > 0 && (delta >>> 2) < count)
+				for (let i = count; i-- > 0;) this.setEncoded(destination + i, source.getTag(first + i), source.getPayload(first + i));
+			else
+				for (let i = 0; i < count; ++i) this.setEncoded(destination + i, source.getTag(first + i), source.getPayload(first + i));
+			return;
+		}
 		if (this.words === source.words) {
 			const dst = this.base + destination, src = source.base + first;
 			this.words.copyWithin(dst, src, src + count); this.tags.copyWithin(dst, src, src + count);
-		} else for (let i = 0; i < count; ++i) this.copySlotFrom(source, destination + i, first + i);
+			this.reportWrite(dst, count);
+		} else {
+			const dst = this.base + destination, src = source.base + first;
+			for (let i = 0; i < count; ++i) {
+				this.words[dst + i] = source.words[src + i]; this.tags[dst + i] = source.tags[src + i];
+			}
+			this.reportWrite(dst, count);
+		}
 	}
 	public copyWithin(destination: number, source: number, count: number): void {
-		const dst = this.base + destination, src = this.base + source;
-		this.words.copyWithin(dst, src, src + count); this.tags.copyWithin(dst, src, src + count);
+		this.copyRangeFrom(this, destination, source, count);
 	}
-	public getTag(index: number): ValueTag { return this.tags[this.base + index]; }
-	public getPayload(index: number): number { return this.words[this.base + index]; }
-	public getInteger(index: number): number { return this.words[this.base + index] | 0; }
-	public getFloat(index: number): number { return this.floats[this.base + index]; }
-	public getStringId(index: number): StringId { return this.words[this.base + index]; }
-	public getBuiltinFunctionId(index: number): BuiltinFunctionId { return this.words[this.base + index]; }
-	public getTable(index: number, heap: GcHeap): Table { return heap.tableAt(this.words[this.base + index])!; }
-	public getClosure(index: number, heap: GcHeap): Closure { return heap.closureAt(this.words[this.base + index])!; }
-	public getThread(index: number, heap: GcHeap): Thread { return heap.threadAt(this.words[this.base + index])!; }
+	public getTag(index: number): ValueTag {
+		const slot = this.base + index;
+		return this.mirrored ? this.ram!.readRamRecordByte(this.tagAddress + slot) : this.tags[slot];
+	}
+	public getPayload(index: number): number {
+		const slot = this.base + index;
+		return this.mirrored ? this.ram!.readRamRecordWord(this.wordAddress + slot * 4) : this.words[slot];
+	}
+	public getInteger(index: number): number { return this.getPayload(index) | 0; }
+	public getFloat(index: number): number { return this.mirrored ? f32BitsToNumber(this.getPayload(index)) : this.floats[this.base + index]; }
+	public getStringId(index: number): StringId { return this.getPayload(index); }
+	public getBuiltinFunctionId(index: number): BuiltinFunctionId { return this.getPayload(index); }
+	public getTable(index: number, heap: GcHeap): Table { return heap.tableAt(this.getPayload(index))!; }
+	public getClosure(index: number, heap: GcHeap): Closure { return heap.closureAt(this.getPayload(index))!; }
+	public getThread(index: number, heap: GcHeap): Thread { return heap.threadAt(this.getPayload(index))!; }
 	public isTruthy(index: number): boolean { const tag = this.getTag(index); return tag !== ValueTag.Nil && tag !== ValueTag.False; }
-	public get(index: number): Value { const slot = this.base + index; return valueFromTag(this.tags[slot], this.words[slot]); }
+	public get(index: number): Value { return valueFromTag(this.getTag(index), this.getPayload(index)); }
 	public set(index: number, value: Value): void { this.setEncoded(index, valueTag(value), valuePayload(value)); }
 	public setEncoded(index: number, tag: ValueTag, word: number): void {
-		const slot = this.base + index; this.words[slot] = word; this.tags[slot] = tag;
+		const slot = this.base + index;
+		if (this.mirrored) {
+			const ram = this.ram!, wordAddress = this.wordAddress + slot * 4, tagAddress = this.tagAddress + slot;
+			ram.writeRamRecordWord(wordAddress, word);
+			ram.writeRamRecordByte(tagAddress, tag);
+			return;
+		}
+		this.words[slot] = word; this.tags[slot] = tag;
+		this.reportWrite(slot, 1);
 	}
 	public setNil(index: number): void { this.setEncoded(index, ValueTag.Nil, 0); }
 	public setBoolean(index: number, value: boolean): void { this.setEncoded(index, value ? ValueTag.True : ValueTag.False, 0); }

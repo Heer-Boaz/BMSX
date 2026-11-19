@@ -1207,11 +1207,14 @@ The occupied-byte counts used for admission are:
 | Table with array capacity `A` and hash capacity `H` | `32 + S(5A + 14H)` |
 | Closure with `U` captured-variable references | `S(12 + 4U)` |
 | Captured-variable cell | `16` |
-| Thread with `V` reserved Value slots | `64 + 5V` |
+| Thread with `V` reserved Value slots | `64 + S(5V)` |
 | RAM String containing `n` bytes | `S(16 + n)` |
 | RAM String index with `B` buckets | `S(4B)` |
 
-A Table's slots and links occupy one block in the language heap. A closure's header and capture references occupy one block. A RAM String occupies one block containing its 16-byte header and its bytes. `S(0) = 0`;
+A Table's slots and links occupy one block in the language heap. Each Thread
+keeps its value slots in one separately allocated block. A closure's header and
+capture references occupy one block. A RAM String occupies one block containing
+its 16-byte header and its bytes. `S(0) = 0`;
 there is no block for an empty layout. Up to 64 bytes, round up to a multiple
 of 8. From 65 through 2048 bytes, use four size classes per doubling
 (80, 96, 112, 128, 160, and so on). Larger blocks round up to a multiple of
@@ -1260,7 +1263,7 @@ marking and reclaiming it do not scan its bytes. Strings in a program image
 occupy no language heap and are not marked or swept; their constant and
 registered-name root slots still count. The sweep examines slots that the
 allocator has issued on an object page, not its unused tail, and leaves a page
-as soon as it is released. Table backing blocks are released with their records
+as soon as it is released. Table and Thread backing blocks are released with their owning records
 and are not separate sweep visits. A bucket chain is examined as a unit; its
 unmarked String records are unlinked and released. Reclaiming a String does not
 shrink the bucket table.

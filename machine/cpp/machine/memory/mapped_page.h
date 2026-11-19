@@ -79,6 +79,14 @@ struct MappedPageBinding {
 class MappedPageWriteWatches {
 public:
 	bool anyWatched() const { return m_watchedPages != 0u; }
+	bool anyWatched(size_t first, size_t length) const {
+		if (length == 0u) return false;
+		const u8* groups = groupData();
+		const size_t end = (first + length - 1u) >> MAPPED_PAGE_BYTE_SHIFT;
+		for (size_t page = first >> MAPPED_PAGE_BYTE_SHIFT; page <= end; ++page)
+			if (groups[page] != 0u) return true;
+		return false;
+	}
 	const u8* groupData() const { return reinterpret_cast<const u8*>(m_storage.get()); }
 
 	explicit MappedPageWriteWatches(size_t byteLength) {

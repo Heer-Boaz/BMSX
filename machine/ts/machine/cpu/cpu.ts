@@ -5,7 +5,7 @@ import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operati
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
 import { ValueStorage } from './value_storage';
-import { CART_ROM_BASE } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -143,7 +143,7 @@ import {
 } from './execution_image';
 import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
-import { Thread, ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
+import { Thread, ThreadStatus, ThreadField, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { LuaHeap, type LuaHeapState } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import {
@@ -196,8 +196,7 @@ export type CpuRootValueState = {
 };
 
 export type CpuThreadState = {
-	stackCapacity: number;
-	stack: number[];
+	stackTop: number;
 	frames: CpuFrameState[];
 	protectedCalls: CpuProtectedCallState[];
 	openUpvalues: number[];
@@ -310,7 +309,7 @@ export class CPU implements MappedPageInvalidator {
 	private readonly compiledCodeCache = new CompiledCodeCache();
 	private readonly tableLengthWork: TableLengthWork = { probes: 0 };
 	private readonly compiledRunState: CompiledRegionRunState = {
-		remainingCycles: 0, registerTop: 0, memoryAddress: 0, lengthWork: this.tableLengthWork,
+		remainingCycles: 0, registerTop: 0, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: this.tableLengthWork,
 	};
 	private readonly registerBuiltinArgsScratch = new ScratchBuffer<BuiltinArgsView>(
 		() => new BuiltinArgsView(),
@@ -459,9 +458,7 @@ export class CPU implements MappedPageInvalidator {
 			nextCapacity = 8;
 		}
 		// Admission must not shrink the allocation whose growth it is admitting.
-		this.luaHeap.reserve((nextCapacity - stack.capacity()) * THREAD_STACK_SLOT_BYTES, valueClosure(this.gc.reference(closure)),
-			valueNil(), valueNil(), this.activeThread);
-		this.activeThread.resizeStack(nextCapacity);
+		this.activeThread.resizeStack(nextCapacity, valueClosure(this.gc.reference(closure)));
 	}
 
 	private clearCompletionValues(): void {
@@ -652,6 +649,7 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = false;
 		this.staticClosuresByAddress.clear();
 		this.memory.clearMappedPageWriteWatches();
+		this.gc.armThreadStackWatches();
 		if (!this.setProgramHeapFloor(systemBoot.staticEnd)) { this.hardHalt(); return; }
 		this.executionImagesByDomain.fill(null);
 		this.stringPool.clearRomTables();
@@ -999,6 +997,8 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public invalidateMappedWords(key: number, firstWord: number, endWord: number): void {
+		if (key >= RAM_BASE && key < RAM_BASE + MAIN_RAM_SIZE)
+			this.gc.observeStackWrites(key + firstWord * 4, key + endWord * 4);
 		this.invalidateDecodedWords(key, firstWord, endWord);
 		if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 			this.invalidateDecodedWords(
@@ -2421,15 +2421,15 @@ export class CPU implements MappedPageInvalidator {
 				this.prepareCompiledRegion(frame, page, word);
 			}
 		}
+		const thread = this.activeThread;
 		let block = cache.entries[word];
-		if (block === null) {
+		if (block === null || thread.stackRequiresScalar()) {
 			frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[word], page.b[word]);
 			this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
 			return;
 		}
 		// The first instruction was admitted with positive budget and charged by
 		// dispatch. Execute its bounded segment and return the complete charge.
-		const thread = this.activeThread;
 		let remaining = this.instructionBudgetRemaining + page.dispatchCycles[word];
 		if (remaining <= block.admissionCycles + block.admissionVarargs * frame.varargCount) {
 			frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[word], page.b[word]);
@@ -2442,8 +2442,10 @@ export class CPU implements MappedPageInvalidator {
 			let current = block;
 			let registerTop = frame.top;
 			let exit: CompiledBlockExitSite;
+			const run = this.compiledRunState;
+			run.stackOffset = thread.stackOffset();
+			run.stackBytes = thread.stackRegisters.byteLength();
 			for (;;) {
-				const run = this.compiledRunState;
 				run.remainingCycles = remaining; run.registerTop = registerTop;
 				exit = current.region.exits[current.region.execute(registers, image.constWords, page, frame, current.entry, run)];
 				remaining = run.remainingCycles; registerTop = run.registerTop;
@@ -2543,7 +2545,7 @@ export class CPU implements MappedPageInvalidator {
 			// Warm continuations, including cross-page calls and builtins, keep the
 			// same generated execution loop. No recursive block or opcode dispatch.
 			remaining = this.instructionBudgetRemaining;
-			if (thread.frameDepth <= targetDepth || remaining <= 0
+			if (thread.frameDepth <= targetDepth || remaining <= 0 || thread.stackRequiresScalar()
 				|| (this.haltedUntilIrqThread === this.activeThread && this.haltedUntilIrqFrameDepth === thread.frameDepth)) return;
 			frame = thread.currentFrame!;
 			if (exit.resumesFrame && exit.linkedBlock !== null) {
@@ -2602,6 +2604,10 @@ export class CPU implements MappedPageInvalidator {
 				case DecodedDispatchOp.FusedShlBxor:
 				case DecodedDispatchOp.FusedShrBxor:
 				case DecodedDispatchOp.FusedAddShl:
+					if (frame.thread.stackRequiresScalar()) {
+						this.executeInstruction(frame, page, pageOffset, page.ops[pageOffset], targetDepth);
+						return;
+					}
 					this.executeFusedNumericPair(frame, page, pageOffset, op);
 					return;
 				case OpCode.WIDE:
@@ -3390,8 +3396,8 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public createThread(entry: Closure | null): Thread {
-		const address = this.luaHeap.allocateRecord(THREAD_HEAP_BYTES, true, 0, 0, entry === null ? valueNil() : valueClosure(entry.address),
-			valueNil(), valueNil(), 8 * THREAD_STACK_SLOT_BYTES);
+		const address = this.luaHeap.allocateRecord(THREAD_HEAP_BYTES, true, 8 * THREAD_STACK_SLOT_BYTES, ThreadField.StackBlock,
+			entry === null ? valueNil() : valueClosure(entry.address));
 		const thread = new Thread(this.gc, address);
 		thread.initializeRecord(entry);
 		thread.hashId = this.allocateObjectHashId();
@@ -3958,9 +3964,8 @@ export class CPU implements MappedPageInvalidator {
 
 		const threads: CpuThreadState[] = [];
 		const captureThread = (thread: Thread): number => {
-			const stackCapacity = thread.stackRegisters.capacity();
 			if (this.gc.sweepGarbage(thread)) {
-				return threads.push({ stackCapacity, stack: [], frames: [], protectedCalls: [], openUpvalues: [] }) - 1;
+				return threads.push({ stackTop: 0, frames: [], protectedCalls: [], openUpvalues: [] }) - 1;
 			}
 			const frames = new Array<CpuFrameState>(thread.frameDepth);
 			let frame = thread.firstFrame!;
@@ -4013,14 +4018,9 @@ export class CPU implements MappedPageInvalidator {
 					upvalue = upvalue.nextOpen;
 				}
 			}
-			const stack = new Array<number>(thread.stackTop);
-			for (let slot = 0; slot < thread.stackTop; ++slot) {
-				stack[slot] = captureStoredValueState(thread.stackRegisters.get(slot));
-			}
 			const index = threads.length;
 			threads.push({
-				stackCapacity, stack,
-				frames, protectedCalls, openUpvalues,
+				stackTop: thread.stackTop, frames, protectedCalls, openUpvalues,
 			});
 			return index;
 		};
@@ -4208,9 +4208,9 @@ export class CPU implements MappedPageInvalidator {
 					const thread = index === state.rootThreadRef ? this.rootThread : new Thread(this.gc, snapshot.word(offset + CpuSnapshotThread.Record));
 					if (index !== state.rootThreadRef) this.gc.track(thread);
 					thread.restored = true;
-					const saved = state.threads[snapshot.word(offset + CpuSnapshotThread.Index)];
 					thread.hashId = snapshot.word(offset + CpuSnapshotThread.HashId);
-					thread.stackRegisters = new ValueSlots(saved.stackCapacity);
+					thread.bindStack();
+					if (index !== state.rootThreadRef) this.luaHeap.restoreAllocate(this.gc.allocationBytes(thread));
 					thread.stackTop = 0;
 					restoredObjects[index] = thread;
 					break;
@@ -4271,6 +4271,7 @@ export class CPU implements MappedPageInvalidator {
 		// Constant/string and global-slot caches must not retain entries first
 		// encountered in the discarded future. Rebuild from the same media.
 		this.memory.clearMappedPageWriteWatches();
+		this.gc.armThreadStackWatches();
 		this.executionImagesByDomain.fill(null);
 		this.clearGlobalSlots();
 		this.systemGlobalSlots.reserveCapacity(state.systemGlobals.length);
@@ -4305,12 +4306,7 @@ export class CPU implements MappedPageInvalidator {
 			const saved = state.threads[snapshot.word(offset + CpuSnapshotThread.Index)];
 			const thread = restoredObjects[objectIndex] as Thread;
 			this.activeThread = thread;
-			thread.stackTop = saved.stack.length;
-			for (let slot = 0; slot < saved.stack.length; ++slot) {
-				reader.readValue(saved.stack[slot]);
-				thread.stackRegisters.setEncoded(slot, reader.tag, reader.payload);
-			}
-			thread.stackRegisters.clear(thread.stackRegisters.capacity() - thread.stackTop, thread.stackTop);
+			thread.stackTop = saved.stackTop;
 			for (let frameIndex = 0; frameIndex < saved.frames.length; frameIndex += 1) {
 				const frameState = saved.frames[frameIndex];
 				const closure = restoredObjects[frameState.closureRef] as Closure;
@@ -4333,6 +4329,7 @@ export class CPU implements MappedPageInvalidator {
 				frame.top = frameState.top;
 				this.activeThread.enterFrame(frame);
 			}
+			thread.bindStack();
 			for (let index = 0; index < saved.protectedCalls.length; index += 1) {
 				const continuationState = saved.protectedCalls[index];
 				const continuation = this.activeThread.protectedCallContinuations.get(index);

@@ -735,7 +735,8 @@ if(BMSX_BUILD_TESTS)
 	add_test(NAME bmsx_geometry_sat_intervals_tests COMMAND bmsx_geometry_sat_intervals_tests)
 	add_executable(bmsx_native_register_cache_tests
 		../../tests/cpp/native_register_cache_test.cpp
-		machine/cpu/native_block_registers.cpp)
+		machine/cpu/native_block_registers.cpp
+		machine/memory/mapped_page.cpp)
 	target_include_directories(bmsx_native_register_cache_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 	target_link_libraries(bmsx_native_register_cache_tests PRIVATE bmsx_sljit)
 	add_test(NAME bmsx_native_register_cache_tests COMMAND bmsx_native_register_cache_tests)

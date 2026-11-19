@@ -6,15 +6,21 @@
 
 namespace bmsx {
 
-Thread::Thread(GcHeap& heap, u32 address) : address(address), heap(heap) { resizeStack(8); }
+Thread::Thread(GcHeap& heap, u32 address) : address(address), heap(heap) {}
 
 void Thread::initializeRecord(Closure* entry) {
 	const u32 offset = address & (MAIN_RAM_SIZE - 1u);
 	auto* record = heap.memory.ramData() + offset;
+	const u32 block = read(ThreadField::StackBlock);
 	std::fill_n(record, THREAD_HEAP_BYTES, u8{0});
 	writeLE32(record, THREAD_RECORD_KIND);
 	writeLE32(record + static_cast<u32>(ThreadField::Entry), entry ? entry->address : 0u);
+		writeLE32(record + static_cast<u32>(ThreadField::StackBlock), block);
+	writeLE32(record + static_cast<u32>(ThreadField::StackCapacity), 8u);
+	bindStack();
 	heap.memory.invalidateRamWrite(offset, THREAD_HEAP_BYTES);
+	stack.clear(0, stackCapacity);
+	armStackWatch();
 }
 
 u32 Thread::read(ThreadField field) const { return heap.memory.readRamRecordWord(address + static_cast<u32>(field)); }
@@ -48,7 +54,9 @@ void Thread::setError(Value value) {
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
 Thread::NativeOffsets Thread::nativeOffsets() {
-	return {offsetof(Thread, currentFrame), offsetof(Thread, frameDepth), offsetof(Thread, stackTop), offsetof(Thread, stackWords), offsetof(Thread, stackTags), offsetof(Thread, stackCapacity)};
+	constexpr size_t stack = offsetof(Thread, stack);
+	return {offsetof(Thread, currentFrame), offsetof(Thread, frameDepth), offsetof(Thread, stackTop),
+		stack + ValueSpan::wordsOffset(), stack + ValueSpan::tagsOffset(), offsetof(Thread, stackCapacity)};
 }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -63,12 +71,71 @@ Thread::~Thread() {
 	}
 }
 
-void Thread::resizeStack(size_t capacity) {
-	if (capacity == stackCapacity) return;
-	stack.resize(capacity);
-	stackWords = stack.words(); stackTags = stack.tags(); stackCapacity = capacity;
+u32 Thread::stackOffset() const { return stack.wordAddress(); }
+
+bool Thread::stackRequiresScalar() const {
+	const auto& watches = heap.memory.ramWriteWatches();
+	return stack.mirrored() || static_cast<size_t>(stackTop) > stack.size() || (watches.anyWatched() && watches.anyWatched(stackOffset(), stackByteLength()));
+}
+
+void Thread::bindStack() {
+	stackCapacity = read(ThreadField::StackCapacity);
+	const u32 block = read(ThreadField::StackBlock) & RAM_RECORD_WORD_MASK;
+	size_t extent = 0;
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
-		frame->registers = stack.view().subspan(frame->stackBase, frame->stackCapacity);
+		extent = std::max(extent, static_cast<size_t>(frame->stackBase + frame->stackCapacity));
+	stack = {heap.memory, block, block + static_cast<u32>(stackCapacity) * 4u, stackCapacity,
+		stackCapacity > (MAIN_RAM_SIZE - block) / THREAD_STACK_SLOT_BYTES || extent > stackCapacity};
+	for (auto* frame = currentFrame; frame; frame = frame->previous)
+		frame->registers = stack.subspan(frame->stackBase, frame->stackCapacity);
+}
+
+void Thread::armStackWatch() {
+	const u32 page = address & ~MAPPED_PAGE_BYTE_MASK;
+	MappedPageBinding binding{};
+	heap.memory.bindMappedPage(page, MAPPED_BUS_MASTER_CPU, binding);
+	const u32 word = ((address & MAPPED_PAGE_BYTE_MASK) + static_cast<u32>(ThreadField::StackBlock)) >> 2u;
+	binding.writeWatch.armWord(word);
+	binding.writeWatch.armWord(word + 1u);
+}
+
+bool Thread::observeStackWrite() {
+	armStackWatch();
+	if ((read(ThreadField::StackBlock) & RAM_RECORD_WORD_MASK) == stackOffset()
+		&& read(ThreadField::StackCapacity) == stackCapacity)
+		return false;
+	bindStack();
+	return true;
+}
+
+void Thread::resizeStack(size_t capacity, Value root) {
+	if (capacity == stackCapacity) return;
+	const auto bytes = static_cast<u32>(capacity * THREAD_STACK_SLOT_BYTES);
+	replaceStack(heap.budget.allocateStack(bytes, this, root), capacity);
+}
+
+void Thread::freeStack() { heap.arena.free(read(ThreadField::StackBlock)); }
+
+void Thread::replaceStack(u32 block, size_t capacity) {
+	const size_t previousSize = stack.size();
+	const u32 oldBlock = read(ThreadField::StackBlock);
+	auto* words = heap.memory.ramData() + (block & RAM_RECORD_WORD_MASK);
+	auto* tags = words + capacity * sizeof(u32);
+	const auto retained = std::min(previousSize, capacity);
+	if (stack.mirrored()) {
+		auto next = ValueSpan(heap.memory, block, block + static_cast<u32>(capacity) * sizeof(u32), capacity);
+		next.copyFrom(stack, 0, 0, retained);
+	} else {
+		std::memmove(words, stack.words(), retained * sizeof(u32));
+		std::memmove(tags, stack.tags(), retained);
+	}
+	std::memset(words + retained * sizeof(u32), 0, (capacity - retained) * sizeof(u32));
+	std::memset(tags + retained, 0, capacity - retained);
+	heap.memory.invalidateRamWrite(block & RAM_RECORD_WORD_MASK, capacity * THREAD_STACK_SLOT_BYTES);
+	// The mapped watch installs the published window and rebinds its frames.
+	heap.memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::StackBlock), block, static_cast<u32>(capacity));
+	heap.arena.free(oldBlock);
+	heap.budget.release(heapAllocationBytes(static_cast<u32>(previousSize * THREAD_STACK_SLOT_BYTES)));
 }
 
 size_t Thread::shrinkStack() {
@@ -77,7 +144,11 @@ size_t Thread::shrinkStack() {
 		used = std::max(used, static_cast<size_t>(frame->stackBase + frame->stackCapacity));
 	if (stackCapacity <= 16 || used * 3 >= stackCapacity) return 0;
 	const size_t released = stackCapacity / 2;
-	resizeStack(released);
+	const auto bytes = static_cast<u32>(released * THREAD_STACK_SLOT_BYTES);
+	const u32 block = heap.arena.allocate(bytes, true);
+	if (block == 0u) return 0; // Collection cannot recursively collect for a shrink.
+	heap.budget.restoreAllocate(heapAllocationBytes(bytes));
+	replaceStack(block, released);
 	return released;
 }
 

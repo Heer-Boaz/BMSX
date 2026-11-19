@@ -53,6 +53,7 @@ u32 heapClassIndex(u32 byteCount) {
 }
 
 u32 heapAllocationBytes(u32 byteCount) {
+	if (byteCount == 0u) return 0u;
 	return byteCount <= HEAP_SMALL_LIMIT
 		? HEAP_CLASS_BYTES[heapClassIndex(byteCount)]
 		: (byteCount + PAGE_MASK) & ~PAGE_MASK;

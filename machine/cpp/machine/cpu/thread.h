@@ -16,7 +16,7 @@ constexpr size_t THREAD_STACK_SLOT_BYTES = 5;
 constexpr u32 THREAD_RECORD_KIND = 4u;
 
 enum class ThreadField : u32 {
-	Header = 0, Status = 8, Resumer = 12, Entry = 16,
+	Header = 0, Status = 8, Resumer = 12, Entry = 16, StackBlock = 24, StackCapacity = 28,
 	ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52
 };
 
@@ -37,7 +37,14 @@ struct Thread : GCObject {
 	void leaveFrame();
 	CallFrame* frameAtDepth(size_t depth) const;
 	void trimFrames();
-	void resizeStack(size_t capacity);
+	void resizeStack(size_t capacity, Value root = valueNil());
+	void bindStack();
+	void armStackWatch();
+	bool observeStackWrite();
+	void freeStack();
+	u32 stackOffset() const;
+	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
+	bool stackRequiresScalar() const;
 	size_t shrinkStack();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	struct NativeOffsets { size_t currentFrame, frameDepth, stackTop, stackWords, stackTags, stackCapacity; };
@@ -65,14 +72,13 @@ struct Thread : GCObject {
 	// The thread owns the allocation and exposes its actual bounds to generated
 	// calls. stackTop is the current physical activation extent; caller
 	// windows overlap it above their call sites.
-	ValueSlots stack;
-	uint32_t* stackWords = nullptr;
-	uint8_t* stackTags = nullptr;
+	ValueSpan stack;
 	size_t stackCapacity = 0;
 	int stackTop = 0;
 	ScratchBuffer<ProtectedCallContinuation> protectedCallContinuations{1};
 	size_t protectedCallDepth = 0;
 private:
+	void replaceStack(u32 block, size_t capacity);
 	u32 read(ThreadField field) const;
 	void write(ThreadField field, u32 word);
 	GcHeap& heap;

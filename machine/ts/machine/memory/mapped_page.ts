@@ -22,6 +22,13 @@ export class MappedPageWriteWatches {
 	private readonly words: Uint32Array;
 
 	public groupData(): Uint8Array { return this.values; }
+	public anyWatched(first: number, length: number): boolean {
+		if (length === 0) return false;
+		const end = (first + length - 1) >>> MAPPED_PAGE_BYTE_SHIFT;
+		for (let page = first >>> MAPPED_PAGE_BYTE_SHIFT; page <= end; ++page)
+			if (this.values[page] !== 0) return true;
+		return false;
+	}
 
 	public constructor(byteLength: number) {
 		this.values = new Uint8Array(

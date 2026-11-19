@@ -43,7 +43,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x55524d42; // BMRU
+const SAVE_STATE_SIGNATURE = 0x56524d42; // BMRV
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1188,9 +1188,7 @@ function readCpuRootValueState(reader: BinaryReader): CpuRootValueState {
 }
 
 function writeCpuThreadState(writer: BinarySink, state: CpuThreadState): void {
-	writer.u64(state.stackCapacity);
-	writer.u32(state.stack.length);
-	writer.u32s(state.stack);
+	writer.u32(state.stackTop);
 	writer.u32(state.frames.length);
 	for (const value of state.frames) {
 		writeCpuFrameState(writer, value);
@@ -1205,8 +1203,7 @@ function writeCpuThreadState(writer: BinarySink, state: CpuThreadState): void {
 
 function readCpuThreadState(reader: BinaryReader): CpuThreadState {
 	return {
-		stackCapacity: reader.u64(),
-		stack: reader.u32s(reader.u32()),
+		stackTop: reader.u32(),
 		frames: reader.array(readCpuFrameState),
 		protectedCalls: reader.array(readCpuProtectedCallState),
 		openUpvalues: reader.i32s(reader.u32()),

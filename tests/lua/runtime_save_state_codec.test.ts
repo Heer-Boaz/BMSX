@@ -555,8 +555,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			activeThreadRef: 0,
 			completionThreadRef: 0,
 			threads: [{
-				stackCapacity: 8,
-				stack: [],
+				stackTop: 0,
 				openUpvalues: [],
 				frames: [],
 				protectedCalls: [{

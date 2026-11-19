@@ -35,7 +35,7 @@ test('helper continuations are predeclared entries and read their own current Va
 		const registers = new ValueSlots(9), block = entries[start];
 		registers.setEncoded(0, ValueTag.False, 37); registers.setInteger(1, DYNAMIC_RAM_BASE); registers.set(8, start === 1 ? valueInteger(31) : valueTable(cpu.gc.reference(table)));
 		memory.writeMappedWord(DYNAMIC_RAM_BASE, 17);
-		const run = { remainingCycles: 1, registerTop: 0, memoryAddress: 0, lengthWork: { probes: 0 } };
+		const run = { remainingCycles: 1, registerTop: 0, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
 		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constWords, page, frame, block.entry, run)];
 		assert.ok(exit === entries[2].terminal, 'one generated invocation executes the complete suffix');
 		const suffixes = [
@@ -44,7 +44,7 @@ test('helper continuations are predeclared entries and read their own current Va
 			BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.STORE_MEM] + BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP],
 			BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP],
 		];
-		assert.deepEqual(run, { remainingCycles: 1 - suffixes[start], registerTop: start === 0 ? 9 : 6, memoryAddress: 0, lengthWork: { probes: 0 } });
+		assert.deepEqual(run, { remainingCycles: 1 - suffixes[start], registerTop: start === 0 ? 9 : 6, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } });
 		if (start === 0) {
 			assert.equal(registers.getInteger(0), 17); assert.equal(registers.getInteger(4), 1);
 			assert.equal(registers.getInteger(5), 17); assert.equal(registers.getInteger(8), 1);
@@ -115,7 +115,7 @@ test('resident Values cross internal string branches and publish only when leavi
 		r.setInteger(3, 73); r.setInteger(4, 0);
 		r.setEncoded(8, kind, kind === ValueTag.False ? 37 : kind === ValueTag.Float ? 0x80000000 : cpu.gc.reference(table));
 		r.setEncoded = (register, tag, word) => { ++writes[register]; store(register, tag, word); };
-		const run = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, lengthWork: { probes: 0 } };
+		const run = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
 		block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, run);
 		assert.ok(r.getInteger(4) > 0); assert.equal(r.getInteger(5), r.getInteger(4)); assert.equal(run.registerTop, 11);
 		if (!less) { assert.equal(r.getInteger(3), 73); assert.equal(r.getTag(9), ValueTag.Nil); }
@@ -186,10 +186,10 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 			const next = cache.entries[segment]!;
 			if (remaining <= next.admissionCycles + next.admissionVarargs * frame.varargCount) break;
 		}
-		const run = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, lengthWork: { probes: 0 } }, block = cache.entries[start]!;
+		const run = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } }, block = cache.entries[start]!;
 		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constWords, page, frame, block.entry, run)];
 		assert.ok(exit === expectedExit, 'one function call executes all admitted internal edges');
-		assert.deepEqual(run, { remainingCycles: remaining, registerTop: top, memoryAddress: 0, lengthWork: { probes: 0 } });
+		assert.deepEqual(run, { remainingCycles: remaining, registerTop: top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } });
 		assert.deepEqual(Array.from({ length: 12 }, (_, index) => registers.get(index)), expected.map((v, i) => i === 2 ? valueBool(flag) : valueInteger(v as number)));
 	}
 
@@ -464,7 +464,7 @@ test('more than six live-through raw Values remain local across every internal e
 		} while (remaining > page.compiledBlocks!.entries[firstWord + starts[segment]]!.admissionCycles);
 		const writes = new Uint32Array(8), store = r.setEncoded.bind(r);
 		r.setEncoded = (register, tag, word) => { if (register < 8) ++writes[register]; store(register, tag, word); };
-		const state = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, lengthWork: { probes: 0 } };
+		const state = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
 		block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state);
 		assert.equal(state.remainingCycles, remaining); assert.equal(state.registerTop, 25);
 		for (let register = 0; register < 8; ++register) {

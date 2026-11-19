@@ -78,7 +78,7 @@ void ownedValueStack() {
 	require(thread.stack.get(7) == valueInteger(63), "relocation preserves allocated argument storage beyond the active prefix");
 	for (size_t index = 8; index < thread.stackCapacity; ++index)
 		require(thread.stack.get(index) == valueNil(), "growth initializes only the added allocation");
-	auto storage = thread.stack.view();
+	auto storage = thread.stack;
 	thread.resizeStack(32);
 	require(thread.stack.words() == storage.words() && thread.stack.tags() == storage.tags(), "unchanged capacity retains the existing allocation");
 	thread.stackTop = 0;
@@ -1020,6 +1020,11 @@ void rewriteActiveReturnAddress() {
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}, {.firstWord = 6, .wordCount = 2}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	CpuMachine native(image, false), scalar(image, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// Precompile the immutable callee. The single warm-up job under test is
+	// the writable caller and its continuation; do not race two submissions.
+	native.cpu.prepareSystemNativeCode();
+#endif
 	for (auto* m : {&native, &scalar}) {
 		m->memory.writeBytes(callerPc, m->rom.bytes.data() + m->rom.textAddress, 6 * INSTRUCTION_BYTES);
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], callerPc);

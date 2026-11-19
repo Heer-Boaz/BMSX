@@ -1,11 +1,11 @@
 import { MAIN_RAM_SIZE } from '../../spec/bmsx/memory_map';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
-import type { HeapAllocator } from './heap_allocator';
+import { heapAllocationBytes, type HeapAllocator } from './heap_allocator';
 import { GcObject, GcKind, GarbageAllocation } from './gc_object';
 import { type Closure, type Upvalue, UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, FunctionPrototypePool, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
 import { Table, TableRecords } from './table';
-import { Thread, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
+import { Thread, ThreadField, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { ValueTag, valueTag, valuePayload, scalarValueHash, valueInteger, valueNil, type Value } from './value';
 import { ValueSlots } from './value_slots';
 import type { LuaHeap } from './lua_heap';
@@ -164,12 +164,23 @@ export class GcHeap {
 		return false;
 	}
 	public markSlot(slots: ValueSlots, index: number): void { this.markValue(slots.get(index)); }
+	public armThreadStackWatches(): void {
+		for (let object = this.objects; object !== null; object = object.gcNext)
+			if (object.gcKind === GcKind.Thread) (object as Thread).armStackWatch();
+	}
+	public observeStackWrites(first: number, end: number): void {
+		for (let address = first & -THREAD_HEAP_BYTES; address < end; address += THREAD_HEAP_BYTES) {
+			const descriptor = address + ThreadField.StackBlock;
+			if (end <= descriptor || first >= descriptor + 8) continue;
+			this.threadAt(address)?.observeStackWrite();
+		}
+	}
 	public allocationBytes(object: GcObject): number {
 		switch (object.gcKind) {
 			case GcKind.Table: return this.tables.getTrackedHeapBytes((object as Table).address);
 			case GcKind.Closure: return (object as Closure).heapBytes;
 			case GcKind.Upvalue: return UPVALUE_HEAP_BYTES;
-			case GcKind.Thread: return THREAD_HEAP_BYTES + (object as Thread).stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
+			case GcKind.Thread: return THREAD_HEAP_BYTES + heapAllocationBytes((object as Thread).stackRegisters.byteLength());
 			case GcKind.Garbage: return (object as GarbageAllocation).bytes;
 		}
 	}
@@ -229,7 +240,8 @@ export class GcHeap {
 					}
 				}
 				for (let i = 0; i < liveTop; ++i) this.markSlot(thread.stackRegisters, i);
-				thread.stackRegisters.clear(thread.stackRegisters.capacity() - liveTop, liveTop);
+				if (liveTop < thread.stackRegisters.capacity())
+					thread.stackRegisters.clear(thread.stackRegisters.capacity() - liveTop, liveTop);
 				thread.trimFrames();
 				break;
 			}
@@ -339,7 +351,9 @@ export class GcHeap {
 						work += ceilDiv4(bytes);
 						if (this.sweepGarbage(object)) {
 							if (object.gcKind === GcKind.Thread) {
-								const address = (object as Thread).address;
+								const thread = object as Thread;
+								const address = thread.address;
+								thread.freeStack();
 								this.records[(address & GC_RECORD_MASK) >>> 3] = null;
 								this.arena.free(address);
 							}
@@ -351,7 +365,6 @@ export class GcHeap {
 							if (object.gcKind === GcKind.Thread && object !== growingStack) {
 								const thread = object as Thread;
 								const released = thread.shrinkStack();
-								this.budget.release(released * THREAD_STACK_SLOT_BYTES);
 								if (released !== 0) work += 2 * ceilDiv4(thread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES);
 							}
 						}

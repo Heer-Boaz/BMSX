@@ -1,4 +1,6 @@
 #include "machine/cpu/cpu.h"
+
+#include <bit>
 #include "machine/cpu/value_arithmetic.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 #include "machine/cpu/native_compiler_worker.h"
@@ -178,6 +180,7 @@ void CPU::reset() {
 	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
+	m_heap.armThreadStackWatches();
 	if (!setProgramHeapFloor(systemBoot.staticEnd)) { hardHalt(); return; }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
@@ -568,6 +571,11 @@ void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 }
 
 void CPU::invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) {
+	if (key >= RAM_BASE && key < RAM_BASE + MAIN_RAM_SIZE) {
+		const auto address = static_cast<u32>(key);
+		m_activeStackRebound |= m_heap.observeStackWrites(address + firstWord * 4u,
+			address + endWord * 4u, m_activeThread);
+	}
 	invalidateDecodedWords(key, firstWord, endWord);
 	if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 		invalidateDecodedWords(
@@ -815,7 +823,6 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	CpuRuntimeState state;
 	const auto captureThread = [&](const Thread* thread) -> u32 {
 		CpuThreadState saved;
-		saved.stackCapacity = thread->stackCapacity;
 		if (m_heap.sweepGarbage(thread)) {
 			const u32 index = static_cast<u32>(state.threads.size());
 			state.threads.push_back(std::move(saved));
@@ -868,8 +875,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				saved.openUpvalues.push_back(captureObject(upvalue));
 			}
 		}
-		saved.stack.reserve(static_cast<size_t>(thread->stackTop));
-		for (int slot = 0; slot < thread->stackTop; ++slot) saved.stack.push_back(captureValueState(thread->stack.get(slot)));
+		saved.stackTop = thread->stackTop;
 		const u32 index = static_cast<u32>(state.threads.size());
 		state.threads.push_back(std::move(saved));
 		return index;
@@ -1058,14 +1064,11 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				break;
 			}
 			case CpuSnapshotObjectKind::Thread: {
-				if (index != static_cast<size_t>(state.rootThreadRef)) {
-					m_luaHeap.restoreAllocate(THREAD_HEAP_BYTES + state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)].stackCapacity * THREAD_STACK_SLOT_BYTES);
-				}
 				Thread* thread = index == static_cast<size_t>(state.rootThreadRef) ? m_rootThread : m_heap.allocate<Thread>(ObjType::Thread, m_heap, snapshot.word(offset + SNAP_THREAD_RECORD));
-				const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
+				thread->bindStack();
+				if (index != static_cast<size_t>(state.rootThreadRef)) m_luaHeap.restoreAllocate(m_heap.allocationBytes(thread));
 				thread->restored = true;
 				thread->hashId = snapshot.word(offset + SNAP_THREAD_HASH_ID);
-				thread->resizeStack(saved.stackCapacity);
 				thread->stackTop = 0;
 				while (thread->currentFrame) thread->leaveFrame();
 				restoredObjects[index] = thread;
@@ -1131,6 +1134,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_heap.bindRestoredReferences(state.gc, restoredObjects, state.nextObjectHashId);
 	const CpuSnapshotReader reader(snapshot);
 	m_memory.clearMappedPageWriteWatches();
+	m_heap.armThreadStackWatches();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
 #endif
@@ -1168,9 +1172,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
 		Thread* thread = static_cast<Thread*>(restoredObjects[objectIndex]);
 		m_activeThread = thread;
-		thread->stackTop = static_cast<int>(saved.stack.size());
-		for (size_t slot = 0; slot < saved.stack.size(); ++slot) thread->stack.set(slot, reader.readValue(saved.stack[slot]));
-		thread->stack.clear(thread->stackTop, thread->stackCapacity - thread->stackTop);
+		thread->stackTop = saved.stackTop;
 		for (const CpuFrameState& frameState : saved.frames) {
 			auto* frame = m_activeThread->acquireFrame();
 			frame->functionAddress = frameState.functionAddress;
@@ -1187,10 +1189,11 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			frame->varargCount = frameState.varargCount;
 			frame->stackBase = frameState.stackBase;
 			frame->stackCapacity = frameState.stackCapacity;
-			frame->registers = thread->stack.view().subspan(frame->stackBase, frame->stackCapacity);
+			frame->registers = thread->stack.subspan(frame->stackBase, frame->stackCapacity);
 			frame->top = frameState.top;
 			m_activeThread->enterFrame(frame);
 		}
+		thread->bindStack();
 		for (size_t index = 0; index < saved.protectedCalls.size(); ++index) {
 			const CpuProtectedCallState& continuationState = saved.protectedCalls[index];
 			ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(index);
@@ -1411,8 +1414,8 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 }
 
 Thread* CPU::createThread(Closure* entry) {
-	const u32 address = m_luaHeap.allocateRecord(THREAD_HEAP_BYTES, true, 0, 0,
-		entry ? valueClosure(entry->address) : valueNil(), valueNil(), valueNil(), 8 * THREAD_STACK_SLOT_BYTES);
+	const u32 address = m_luaHeap.allocateRecord(THREAD_HEAP_BYTES, true, 8 * THREAD_STACK_SLOT_BYTES, static_cast<u32>(ThreadField::StackBlock),
+		entry ? valueClosure(entry->address) : valueNil());
 	auto* thread = m_heap.allocate<Thread>(ObjType::Thread, m_heap, address);
 	thread->initializeRecord(entry);
 	trackLocalRoot(valueThread(m_heap.reference(thread)));
@@ -2075,6 +2078,10 @@ dispatch_fetch:
 			goto dispatch_decode;
 
 dispatch_decode:
+			if (m_activeStackRebound) {
+				registers = frame->registers;
+				m_activeStackRebound = false;
+			}
 			const u32 pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
 			u8 refreshState = decodedPage->refreshState[pageOffset];
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -2167,7 +2174,7 @@ dispatch_instruction:
 					// The CPU thread owns code publication and source writes. With no
 					// intervening guest instruction, this is the same published entry;
 					// interrupt entry above cancels the retry before any handler runs.
-					if (forceScalarOnce) {
+					if (forceScalarOnce || std::endian::native == std::endian::big || thread.stackRequiresScalar()) {
 						forceScalarOnce = false;
 						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
 						dispatchOp = decoded->op;
@@ -2187,6 +2194,10 @@ dispatch_instruction:
 					goto dispatch_observe;
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor):
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShrBxor): {
+					if (thread.stackRequiresScalar()) {
+						dispatchOp = decoded->op;
+						goto dispatch_instruction;
+					}
 					const int a = decoded->a;
 					const int rkB = decoded->b;
 					const int rkC = decoded->c;
@@ -2237,6 +2248,10 @@ dispatch_instruction:
 					DISPATCH_CONTINUE();
 				}
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedAddShl): {
+					if (thread.stackRequiresScalar()) {
+						dispatchOp = decoded->op;
+						goto dispatch_instruction;
+					}
 					const int a = decoded->a;
 					const int rkB = decoded->b;
 					const int rkC = decoded->c;
@@ -2295,7 +2310,7 @@ dispatch_native_block: {
 					.globalValues = m_globalValues.view(), .systemGlobalValues = m_systemGlobalValues.view(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.capacity()),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top,
-					.ram = m_memory.ramData(),
+					.ram = m_memory.ramData(), .stackOffset = thread.stackOffset(), .stackBytes = thread.stackByteLength(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 					.diagnosticOpcodes = {},
 #endif
@@ -2346,7 +2361,7 @@ dispatch_rebind_frame:
 					decodedPage = &decodedPageForFrame(FRAME, pc);
 					if (decodedPage->nativeBlocks) {
 						nativeBlock = decodedPage->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
-						if (nativeBlock && instructionBudgetRemaining > 0) {
+						if (nativeBlock && std::endian::native == std::endian::little && !thread.stackRequiresScalar()) {
 							nativeFirstDispatchCycles = 0;
 							goto dispatch_native_block;
 						}
@@ -2794,11 +2809,11 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	frame->varargCount = varargCount;
 	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
-	frame->registers = m_activeThread->stack.view().subspan(stackBase, frame->stackCapacity);
+	frame->registers = m_activeThread->stack.subspan(stackBase, frame->stackCapacity);
 	frame->top = static_cast<int>(functionRecord.numParams);
 	const int copiedCount = std::min(frame->top, argCount);
 	if (vararg || !sharedStack) {
-		frame->registers.copyFrom(caller.thread->stack.view(), 0, callerArgBase, copiedCount);
+		frame->registers.copyFrom(caller.thread->stack, 0, callerArgBase, copiedCount);
 	}
 	frame->registers.clear(copiedCount, frame->top - copiedCount);
 	if (vararg) {
@@ -2807,7 +2822,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 			// the original extra arguments below it, as in a Lua vararg frame.
 			m_activeThread->stack.clear(argumentBase, copiedCount);
 		} else {
-			m_activeThread->stack.view().copyFrom(caller.thread->stack.view(), frame->varargBase, callerArgBase + frame->top, varargCount);
+			m_activeThread->stack.copyFrom(caller.thread->stack, frame->varargBase, callerArgBase + frame->top, varargCount);
 		}
 	}
 	instructionBudgetRemaining -= (vararg || !sharedStack ? frame->top : frame->top - copiedCount)
@@ -2841,7 +2856,7 @@ CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 	frame->varargCount = varargCount;
 	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
-	frame->registers = m_activeThread->stack.view().subspan(stackBase, frame->stackCapacity);
+	frame->registers = m_activeThread->stack.subspan(stackBase, frame->stackCapacity);
 	frame->top = static_cast<int>(functionRecord.numParams);
 	const int copiedCount = std::min(frame->top, static_cast<int>(argCount));
 	for (int i = 0; i < copiedCount; ++i) frame->registers.set(i, args[i]);
@@ -2904,7 +2919,7 @@ ValueSpan CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	}
 	ensureStackSize(static_cast<size_t>(frame.stackBase) + bucket);
 	frame.stackCapacity = static_cast<int>(bucket);
-	frame.registers = frame.thread->stack.view().subspan(frame.stackBase, frame.stackCapacity);
+	frame.registers = frame.thread->stack.subspan(frame.stackBase, frame.stackCapacity);
 	if (&frame == frame.thread->currentFrame) {
 		frame.thread->stackTop = frame.stackBase + frame.stackCapacity;
 	}
@@ -3066,10 +3081,7 @@ void CPU::ensureStackSize(size_t size, Value root) {
 	if (size <= m_activeThread->stackCapacity) return;
 	size_t capacity = 8;
 	while (capacity < size) capacity *= 2;
-	// Admission must not shrink the allocation whose growth it is admitting.
-	m_luaHeap.reserve((capacity - m_activeThread->stackCapacity) * THREAD_STACK_SLOT_BYTES,
-		root, valueNil(), valueNil(), m_activeThread);
-	m_activeThread->resizeStack(capacity);
+	m_activeThread->resizeStack(capacity, root);
 }
 
 BuiltinResultsScratchScope CPU::acquireBuiltinResultScratch() {

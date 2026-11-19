@@ -48,8 +48,8 @@ export class LuaHeap {
 	}
 
 	public allocateRecord(bytes: number, owned: boolean, backingBytes: number, backingField: number,
-		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(), retainedStackBytes = 0): number {
-		const charged = retainedStackBytes + heapAllocationBytes(bytes) + (backingBytes === 0 ? 0 : heapAllocationBytes(backingBytes));
+		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {
+		const charged = heapAllocationBytes(bytes) + (backingBytes === 0 ? 0 : heapAllocationBytes(backingBytes));
 		const collected = this.admit(charged, root0, root1, root2, null);
 		const arena = this.cpu.heapAllocator;
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
@@ -66,6 +66,22 @@ export class LuaHeap {
 				}
 			}
 			if (attempt === 0) this.collectRuntime(root0, root1, root2);
+		}
+		throw LUA_OUT_OF_MEMORY_SIGNAL;
+	}
+
+	public allocateStack(bytes: number, thread: Thread, root: Value): number {
+		const charge = heapAllocationBytes(bytes);
+		const collected = this.admit(charge, root, valueNil(), valueNil(), thread);
+		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
+			if (this.trackedBytes + charge <= this.capacity()) {
+				const block = this.cpu.heapAllocator.allocate(bytes, true);
+				if (block !== 0) {
+					this.trackedBytes += charge;
+					return block;
+				}
+			}
+			if (attempt === 0) this.collectRuntime(root, valueNil(), valueNil(), thread);
 		}
 		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}

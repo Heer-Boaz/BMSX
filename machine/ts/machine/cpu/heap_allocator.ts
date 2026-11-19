@@ -54,6 +54,7 @@ export function heapClassIndex(byteCount: number): number {
 }
 
 export function heapAllocationBytes(byteCount: number): number {
+	if (byteCount === 0) return 0;
 	return byteCount <= HEAP_SMALL_LIMIT
 		? HEAP_CLASS_BYTES[heapClassIndex(byteCount)]
 		: (byteCount + PAGE_MASK) & ~PAGE_MASK;

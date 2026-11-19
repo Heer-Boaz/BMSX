@@ -58,6 +58,8 @@ struct NativeBlockRunState {
 	void* exitCode = nullptr;
 	// Host base of guest main RAM; the gate pins it for the whole native frame.
 	u8* ram = nullptr;
+	u32 stackOffset = 0;
+	u32 stackBytes = 0;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticNativeOpcodeCounts diagnosticOpcodes;
 #endif

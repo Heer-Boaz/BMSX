@@ -123,6 +123,15 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 		IO_SLOT_COUNT * IO_WORD_SIZE), slow, m_cache.state());
 	auto* ramMiss = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, m_bindings.ramBytes - width);
 	if (!load) fault(ramMiss, slow, m_cache.state());
+	// The bank aliases ordinary RAM. Publish dirty register lanes before a
+	// read or store that overlaps it, and do not reuse cache facts after
+	// that store. End-of-access minus bank-base covers partial overlaps too.
+	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, width - 1u);
+	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R2, 0,
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackOffset));
+	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R3, 0,
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, stackBytes), SLJIT_IMM, width - 1u);
+	fault(sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_R3, 0), slow, m_cache.state());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R1, 0);
 	if (words) {
 		// A watch anywhere in the sequence hands the untouched instruction to the bus.

@@ -13,7 +13,7 @@ import { luaPow } from '../../spec/blua32/pow';
 import { CompiledBlockExit, emitJavaScriptBlock, finishJavaScriptBlock,
 	type CompiledBlock, type CompiledBlockExitSite, type CompiledBlockSource } from './compiled_block';
 
-export type CompiledRegionRunState = { remainingCycles: number; registerTop: number; memoryAddress: number; lengthWork: TableLengthWork };
+export type CompiledRegionRunState = { remainingCycles: number; registerTop: number; memoryAddress: number; stackOffset: number; stackBytes: number; lengthWork: TableLengthWork };
 type RegionBody = (registers: ValueSlots, constants: Uint32Array, page: DecodedInstructionPage,
 	frame: CallFrame, entry: number, state: CompiledRegionRunState) => number;
 

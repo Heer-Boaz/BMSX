@@ -334,7 +334,8 @@ void rawContextValues(CpuMachine& machine) {
 	const u32 watched = closed.address + UPVALUE_VALUE_WORD;
 	MappedPageBinding binding;
 	machine.memory.bindMappedPage(watched, MAPPED_BUS_MASTER_CPU, binding);
-	binding.writeWatch.armWord((watched & MAPPED_PAGE_BYTE_MASK) >> 2);
+	const u32 watchedSlot = (watched & MAPPED_PAGE_BYTE_MASK) >> 2;
+	binding.writeWatch.armWord(watchedSlot);
 	registers.set(12, valueFloatBits(0xffa54321u));
 	NativeBlockRunState watchedStore{.registers = registers.view(), .frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
@@ -342,7 +343,7 @@ void rawContextValues(CpuMachine& machine) {
 	require(exit->exit == NativeBlockExit::WriteUpvalue && closed.value() == previous,
 		"watched SETUP exits before writing either lane");
 	closed.setValue(registers.get(12));
-	require(!machine.memory.ramWriteWatches().anyWatched() && closed.value() == valueFloatBits(0xffa54321u),
+	require(!binding.writeWatch.consume(watchedSlot, watchedSlot + 1u) && closed.value() == valueFloatBits(0xffa54321u),
 		"the semantic path publishes the closed cell through RAM's write watch");
 	const u32 rawCell = DYNAMIC_RAM_BASE + 0x600u;
 	machine.memory.writeRamRecordWord(frame.closure->address + CLOSURE_CAPTURE_WORDS + sizeof(u32), rawCell | 0x80000000u);

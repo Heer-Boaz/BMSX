@@ -97,6 +97,8 @@ public:
 	}
 	bool isAlive(const GCObject* object) const { return object && object->gcColor != m_white; }
 	size_t allocationBytes(const GCObject* object) const;
+	void armThreadStackWatches();
+	bool observeStackWrites(u32 first, u32 end, const Thread* active);
 	size_t step(Value root0, Value root1, Value root2, Thread* growingStack = nullptr);
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);
 	bool markValue(Value value);
