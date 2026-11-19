@@ -1,0 +1,677 @@
+import { valueBool, valueInteger, valueFloat, valueNil } from '../../machine/ts/machine/cpu/value';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+
+import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
+import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
+import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
+import type { ProgramImageConstReloc } from '../../toolchain/ts/lua/compiler/program_object';
+import { compileLuaChunkToProgram, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
+import { buildRomAssetAddressLinkValuesFromSymbols } from '../../toolchain/ts/rompack/asset_symbols';
+import {
+	GX_DISPLAY_PRESET_MODULE_PATH,
+	GX_REGISTER_MODULE_PATH,
+} from '../../toolchain/ts/rompack/generated_modules';
+import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
+import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
+import {
+	disassembleTestBlua32Functions,
+	linkTestSystemBlua32,
+	runCompiledTestSystem,
+} from '../helpers/blua32';
+import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+
+function parseSource(source: string, path: string) {
+	const lexer = new LuaLexer(source, path);
+	const parser = new LuaParser(lexer.scanTokens(), path, source);
+	return parser.parseChunk();
+}
+
+
+function disassembleCompiledFunctions(compiled: CompiledSystemProgram): string {
+	const image = linkTestSystemBlua32(compiled);
+	const functionAddresses: number[] = [];
+	for (let functionIndex = 0; functionIndex < image.symbols.functionAddresses.length; functionIndex += 1) {
+		const protoIndex = compiled.metadata.protoIds.indexOf(image.symbols.metadata.functionIds[functionIndex]);
+		if (protoIndex !== compiled.startupProtoIndex
+			&& protoIndex !== compiled.sectionInitProtoIndex
+			&& protoIndex !== compiled.initProtoIndex
+			&& protoIndex !== compiled.irqProtoIndex
+			&& protoIndex !== compiled.exceptionProtoIndex) {
+			functionAddresses.push(image.symbols.functionAddresses[functionIndex]);
+		}
+	}
+	return disassembleTestBlua32Functions(image, functionAddresses);
+}
+
+function compileWithModule(
+	entrySource: string,
+	modulePath: string,
+	moduleSource: string,
+	extraModules: ReadonlyArray<{ path: string; source: string }> = [],
+	optLevel: OptimizationLevel = 0,
+): { compiled: CompiledSystemProgram; disasm: string; constRelocs: ProgramImageConstReloc[] } {
+	const entryChunk = parseSource(entrySource, 'entry.lua');
+	const moduleChunk = parseSource(moduleSource, `${modulePath}.lua`);
+	const compiled = compileLuaChunkToProgram(
+		entryChunk,
+		[
+			{ path: modulePath, chunk: moduleChunk, source: moduleSource },
+			...extraModules.map(module => ({
+				path: module.path,
+				chunk: parseSource(module.source, `${module.path}.lua`),
+				source: module.source,
+			})),
+		],
+		{ entrySource, optLevel, programDomain: 'system' },
+	);
+	return {
+		compiled,
+		disasm: disassembleCompiledFunctions(compiled),
+		constRelocs: compiled.constRelocs,
+	};
+}
+
+function compileWithConstModule(
+	entrySource: string,
+	modulePath: string,
+	moduleSource: string,
+	linkValues?: ReadonlyMap<string, number>,
+	optLevel: OptimizationLevel = 0,
+): { compiled: CompiledSystemProgram; disasm: string } {
+	const entryChunk = parseSource(entrySource, 'entry.lua');
+	const declaredModuleSource = `module<const>\n${moduleSource}`;
+	const moduleChunk = parseSource(declaredModuleSource, `${modulePath}.lua`);
+	const compiled = compileLuaChunkToProgram(
+		entryChunk,
+		[{ path: modulePath, chunk: moduleChunk, source: declaredModuleSource, linkValues }],
+		{ entrySource, optLevel, programDomain: 'system' },
+	);
+	return {
+		compiled,
+		disasm: disassembleCompiledFunctions(compiled),
+	};
+}
+
+test('module export publication adjusts a factory tail call to its first result', () => {
+	for (const tail of ['return { value = 73 }', 'return { value = 73 }, { ignored = true }', 'return'] as const) {
+		const moduleSource = `factory_calls = 0
+local function make()
+ factory_calls += 1
+ ${tail}
+end
+return make()`;
+		const entrySource = `local first = require('factory')
+local second = require('factory')
+return first == nil, first == second, factory_calls`;
+		for (const optLevel of [0, 3] as const) {
+			const { compiled } = compileWithModule(entrySource, 'factory', moduleSource, [], optLevel);
+			assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)),
+				[valueBool(tail === 'return'), valueBool(true), valueInteger(1)], `${tail}, O${optLevel}`);
+		}
+	}
+});
+
+test('a module factory imported through a runtime API publishes its produced data', () => {
+	const moduleSource = `factory_calls = 0
+local create<const> = require('create')
+return create.make(73)`;
+	const factorySource = `local api = {}
+function api.make(value)
+ factory_calls += 1
+ return { value = value }, 99
+end
+return api`;
+	const entrySource = `local definition = require('definition')
+return definition.value, factory_calls`;
+	for (const optLevel of [0, 3] as const) {
+		const { compiled } = compileWithModule(entrySource, 'definition', moduleSource,
+			[{ path: 'create', source: factorySource }], optLevel);
+		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [73, 1].map(valueInteger));
+	}
+});
+
+test('only the final single-expression module return publishes a dynamic export', () => {
+	for (const [source, expected] of [
+		['do return { early = true } end', [true, false]],
+		['return { early = true }; local later = 1', [true, false]],
+		['return {}, {}', [true, false]],
+		['if true then return { early = true } end; return { canonical = true }', [false, true]],
+		['local function unrelated() return {} end; return nil', [false, true]],
+	] as const) {
+		for (const optLevel of [0, 3] as const) {
+			const { compiled } = compileWithModule('local value = require("library"); return value == true, value == nil',
+				'library', source, [], optLevel);
+			assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), expected.map(valueBool), `${source}, O${optLevel}`);
+		}
+	}
+});
+
+test('dynamic module calls observe replaced direct and method fields at every optimization level', () => {
+	const moduleSource = [
+		'local api = { value = 10 }',
+		'function api.read() return 7 end',
+		'function api:method() return self.value end',
+		'return api',
+	].join('\n');
+	const entrySource = [
+		'local api<const> = require("foo")',
+		'api.read = function() return 9 end',
+		'api.method = function(self) return self.value + 1 end',
+		'return api.read(), api:method()',
+	].join('\n');
+	for (const optLevel of [0, 3] as const) {
+		const { compiled, constRelocs, disasm } = compileWithModule(entrySource, 'foo', moduleSource, [], optLevel);
+		assert.equal(constRelocs.some(
+			reloc => reloc.kind === 'export_proto'
+				&& reloc.path === 'foo'
+				&& (reloc.exportPathKey === 'read' || reloc.exportPathKey === 'method'),
+		), false);
+		assert.match(disasm, /\bGETFIELD\b/);
+		assert.match(disasm, /\bSELF\b/);
+		assert.deepEqual(compiled.program.moduleExports, [{ path: 'foo', exportPathKey: '', slotName: 'foo' }]);
+		assert.equal(compiled.metadata.exportProtoIdBySlot.foo__read, undefined);
+		assert.equal(compiled.metadata.exportProtoIdBySlot.foo__method, undefined);
+		const cpu = runCompiledTestSystem(compiled, 100000);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [9, 11].map(valueInteger));
+	}
+});
+
+test('explicit const-module functions call sibling exports through link symbols', () => {
+	const moduleSource = [
+		'module<const>',
+		'local linear<const> = function(value) return value end',
+		'local twice<const> = function(value) return linear(value) * 2 end',
+		'return { linear = linear, twice = twice }',
+	].join('\n');
+	const compiled = compileWithModule('return require("foo").twice(3)', 'foo', moduleSource);
+	assert.equal(compiled.compiled.metadata.exportProtoIdBySlot.foo__linear?.includes('/static:'), true);
+	assert.equal(compiled.compiled.metadata.exportProtoIdBySlot.foo__twice?.includes('/static:'), true);
+	assert.equal(compiled.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'foo'
+			&& reloc.exportPathKey === 'linear',
+	), true);
+	assert.equal(compiled.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'foo'
+			&& reloc.exportPathKey === 'twice',
+	), true);
+	assert.doesNotMatch(compiled.disasm, /\bNEWT\b/, 'const-module exports do not materialize a runtime table');
+	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(6)]);
+});
+
+test('O3 inlines a known single-result static call target without retaining its closure relocation', () => {
+	const moduleSource = `module<const>
+return function(value)
+	return value + 1
+end`;
+	const result = compileWithModule('return require("increment")(6)', 'increment', moduleSource, [], 3);
+
+	assert.equal(result.constRelocs.some(reloc => reloc.kind === 'export_proto'), false);
+	assert.doesNotMatch(result.disasm, /\bCALL\b|\bCLOSURE\b/);
+	const cpu = runCompiledTestSystem(result.compiled, 100000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
+});
+
+for (const level of [0, 3] as const) test(`O${level}: static-module predeclaration does not leak later locals into a function's source scope`, () => {
+	const moduleSource = `module<const>
+local unused<const> = 17
+local read<const> = function(value) return value + 1 end
+local later<const> = 99
+return { read = read }`;
+	const { compiled } = compileWithModule('return require("probe").read(41)', 'probe', moduleSource, [], level);
+	const { metadata, program } = compiled;
+	const index = metadata.protoDisplayNames.indexOf('read');
+	assert.notEqual(index, -1);
+	const bindings = metadata.outerBindingsByProto[index];
+	assert.deepEqual(bindings.map(slot => metadata.lexicalDeclarations[slot.declarationIndex].name).sort(), ['read', 'unused']);
+	assert.ok(bindings.every(slot => slot.location === null && slot.liveWordRanges.length === 0));
+	assert.deepEqual(program.protos[index].upvalueDescs, []);
+	const cpu = runCompiledTestSystem(compiled, 100000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
+});
+
+test('bare function modules publish ordinary runtime callbacks with captures, table operations and multiple results', () => {
+	for (const optLevel of [0, 3] as const) {
+		const moduleSource = `module_loads = (module_loads or 0) + 1
+local count = 0
+return function(owner, delta, ...)
+ count = count + 1
+ owner.value = owner.value + delta
+ return owner.value, count, ...
+end`;
+		const result = compileWithModule(`local callback<const> = require('callback')
+local handlers = { update = callback }
+local owner = { value = 10 }
+local value, count, marker = handlers.update(owner, 3, 'first')
+local next_value, next_count, next_marker = require('callback')(owner, 4, 'next')
+return value, count, marker == 'first', next_value, next_count, next_marker == 'next', callback == require('callback'), module_loads`,
+		'callback', moduleSource, [], optLevel);
+		assert.equal(result.compiled.moduleProtoMap.has('callback'), true, 'a statically required runtime module still has an initializer');
+		assert.equal(result.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.path === 'callback'), false);
+		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(result.compiled, 100000)),
+			[valueInteger(13), valueInteger(1), valueBool(true), valueInteger(17), valueInteger(2), valueBool(true), valueBool(true), valueInteger(1)], `O${optLevel}`);
+	}
+});
+
+test('cartlib easing calls through its live runtime table', () => {
+	const moduleSource = readFileSync('cartlib/easing.lua', 'utf8');
+	const compiled = compileWithModule(
+		'return require("cartlib/easing").arc01(0.25)',
+		'cartlib/easing',
+		moduleSource,
+		[{ path: 'cartlib/util/clamp', source: readFileSync('cartlib/util/clamp.lua', 'utf8') }],
+	);
+	assert.equal(compiled.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'cartlib/easing'
+			&& reloc.exportPathKey === 'arc01',
+	), false);
+	assert.match(compiled.disasm, /\bGETFIELD\b/, 'runtime module calls load the current table field');
+	assert.match(compiled.disasm, /\bNEWT\b/, 'public easing table remains available for Lua API consumers');
+	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueFloat(0.5)]);
+});
+
+for (const optLevel of [0, 3] as const) test(`immutable imports do not turn local snapshots into live bindings (O${optLevel})`, () => {
+	const moduleSource = `local api = { value = 10 }
+function api.before_publication()
+	local snapshot<const> = api
+	return function() return snapshot end
+end
+api.early = api.before_publication()()
+return api`;
+	const { compiled } = compileWithModule(`local api<const> = require('api')
+local snapshot<const> = api.value
+local mutable = api
+local function read() return snapshot, mutable.value, api.value, api == api.early end
+api.value = 20
+mutable = { value = 30 }
+return read()`, 'api', moduleSource, [], optLevel);
+	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [valueInteger(10), valueInteger(30), valueInteger(20), valueBool(true)]);
+});
+
+test('dynamic module data reads observe table mutations at every optimization level', () => {
+	const moduleSource = [
+		'local api<const> = { value = 0 }',
+		'function api.bump()',
+		'\tapi.value = api.value + 1',
+		'\tlocal alias<const> = api',
+		'\treturn api.value, alias.value',
+		'end',
+		'return api',
+	].join('\n');
+	for (const optLevel of [0, 3] as const) {
+		const { compiled, disasm } = compileWithModule('local api<const> = require("foo")\nreturn api.bump()', 'foo', moduleSource, [], optLevel);
+		assert.match(disasm, /\bGETFIELD\b/, 'mutable fields must be read from the live module table');
+		const cpu = runCompiledTestSystem(compiled, 100000);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [1, 1].map(valueInteger));
+	}
+});
+
+test('dynamic module function value reads use the live table, not export-proto relocations', () => {
+	const moduleSource = [
+		'local api = {}',
+		'function api.read() return 7 end',
+		'return api',
+	].join('\n');
+	const compiled = compileWithModule('local api<const> = require("foo")\nlocal read = api.read\nreturn read()', 'foo', moduleSource);
+	assert.equal(compiled.constRelocs.some(
+		reloc => reloc.kind === 'export_proto'
+			&& reloc.path === 'foo'
+			&& reloc.exportPathKey === 'read',
+	), false, 'function value read must not emit an export-proto relocation');
+	assert.match(compiled.disasm, /\bGETFIELD\b/, 'function value read must use the live module table');
+	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
+});
+
+test('optimizer preserves a sibling closure upvalue environment', () => {
+	const moduleSource = [
+		'local value',
+		'local clear<const> = function() value = nil end',
+		'local api = {}',
+		'function api.apply(input)',
+		'\tvalue = input',
+		'\tclear()',
+		'\treturn input, value',
+		'end',
+		'return api',
+	].join('\n');
+	const { compiled } = compileWithModule('local api<const> = require("foo")\nreturn api.apply(41)', 'foo', moduleSource, [], 3);
+	const cpu = runCompiledTestSystem(compiled, 100000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(41), valueNil()]);
+});
+
+// Nested namespaces in dynamic modules remain ordinary runtime-table paths.
+test('nested module export namespace uses the table path', () => {
+	const moduleSource = [
+		'local function a() end',
+		'return { sub = { a = a } }',
+	].join('\n');
+	const { disasm } = compileWithModule('local m<const> = require("bar")\nm.sub.a()', 'bar', moduleSource);
+	assert.match(disasm, /\bNEWT\b/, 'nested export namespace still builds a table');
+});
+
+// A computed key `[k] = v` must not be misread as the literal key "k"; computed
+// field ownership stays with the table value.
+test('computed (non-literal) export key uses the table path', () => {
+	const moduleSource = [
+		'local function update() end',
+		'local k<const> = "update"',
+		'return { [k] = update }',
+	].join('\n');
+	const { disasm } = compileWithModule('local m<const> = require("baz")\nm.update()', 'baz', moduleSource);
+	assert.match(disasm, /\bNEWT\b/, 'computed export key stays on the table path');
+});
+
+test('dynamic root-function modules remain runtime values', () => {
+	const moduleSource = [
+		'local inc<const> = function(value) return value + 1 end',
+		'return inc',
+	].join('\n');
+	const { compiled, disasm } = compileWithModule('local inc<const> = require("foo")\nreturn inc(4)', 'foo', moduleSource);
+	assert.equal(compiled.moduleProtoMap.has('foo'), true, 'dynamic root-function module must keep its initializer proto');
+	assert.match(disasm, /\bSET(GL|SYS)\b.*foo\b/, 'module initializer must publish the root function value');
+	assert.match(disasm, /\bGET(GL|SYS)\b.*foo\b/, 'const local require must read the root function value from the export slot');
+	const cpu = runCompiledTestSystem(compiled, 100000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(5)]);
+});
+
+test('const modules inline export constants without runtime module state', () => {
+	const moduleSource = [
+		'local addr<const> = 4096',
+		'local len<const> = 32',
+		'local neg<const> = -addr',
+		'return { addr = addr, len = len, neg = neg, name = "asset", enabled = true, none = nil }',
+	].join('\n');
+	const { compiled, disasm } = compileWithConstModule(
+		'local assets<const> = require("assets")\nreturn assets.addr, assets.len, assets.neg, assets.name, assets.enabled, assets.none',
+		'assets',
+		moduleSource,
+	);
+	assert.equal(compiled.moduleProtoMap.has('assets'), false, 'const module must not produce a runtime module proto');
+	assert.equal(compiled.staticModulePaths.includes('assets'), false, 'const module must not be scheduled for static initialization');
+	assert.doesNotMatch(disasm, /\bCALL\b/, 'const module import must not emit a runtime import call');
+	assert.doesNotMatch(disasm, /\bNEWT\b/, 'const module must not build a runtime export table');
+	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*assets/, 'const module reads must not use module export slots');
+});
+
+test('generated GX register contracts remain compile-time words without runtime module tables', () => {
+	const entrySource = [
+		`local presets<const> = require('${GX_DISPLAY_PRESET_MODULE_PATH}')`,
+		`local registers<const> = require('${GX_REGISTER_MODULE_PATH}')`,
+		'return presets.mode_640x512i_size_word,',
+		'\tpresets.mode_640x512i_gp1_display_mode_command,',
+		'\tpresets.pal_synch1_low_word,',
+		'\tpresets.pcrtc_pmode_circuit1_opaque_word,',
+		'\tregisters.gp1_reset_command,',
+		'\tregisters.gp1_ack_interrupt_command,',
+		'\tregisters.gp1_vertical_display_range_start_mask,',
+		'\tregisters.gp1_vertical_display_range_end_shift,',
+		'\tregisters.pcrtc_pmode_circuit1_enable_word,',
+		'\tregisters.pcrtc_pmode_circuit2_enable_word',
+	].join('\n');
+	for (const optLevel of [0, 3] as const) {
+		const { compiled, disasm } = compileWithModule(
+			entrySource,
+			GX_DISPLAY_PRESET_MODULE_PATH,
+			GX_DISPLAY_PRESET_MODULE_SOURCE,
+			[{ path: GX_REGISTER_MODULE_PATH, source: GX_REGISTER_MODULE_SOURCE }],
+			optLevel,
+		);
+		assert.equal(compiled.moduleProtoMap.has(GX_DISPLAY_PRESET_MODULE_PATH), false);
+		assert.equal(compiled.moduleProtoMap.has(GX_REGISTER_MODULE_PATH), false);
+		assert.equal(compiled.staticModulePaths.includes(GX_DISPLAY_PRESET_MODULE_PATH), false);
+		assert.equal(compiled.staticModulePaths.includes(GX_REGISTER_MODULE_PATH), false);
+		assert.equal(compiled.program.moduleExports.some(entry => entry.path === GX_DISPLAY_PRESET_MODULE_PATH), false);
+		assert.equal(compiled.program.moduleExports.some(entry => entry.path === GX_REGISTER_MODULE_PATH), false);
+		assert.doesNotMatch(disasm, /\bCALL\b/, 'generated preset imports do not execute a module initializer');
+		assert.doesNotMatch(disasm, /\bNEWT\b/, 'generated preset exports do not materialize a table');
+		assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*gx_(?:display_presets|registers)/, 'generated GX contract reads do not use module export slots');
+		const cpu = runCompiledTestSystem(compiled, 100000);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [
+			0x02000280,
+			0x0800002f,
+			0x1fc83030,
+			0x0000ff21,
+			0x00000000,
+			0x02000000,
+			0x000003ff,
+			0x0000000a,
+			0x00000001,
+			0x00000002,
+		].map(valueInteger));
+	}
+});
+
+test('const modules inline direct require member reads', () => {
+	const moduleSource = [
+		'local addr<const> = 4096',
+		'return { addr = addr }',
+	].join('\n');
+	const { compiled, disasm } = compileWithConstModule(
+		'return require("assets").addr',
+		'assets',
+		moduleSource,
+	);
+	assert.equal(compiled.moduleProtoMap.has('assets'), false, 'const module must not produce a runtime module proto');
+	assert.doesNotMatch(disasm, /\bCALL\b/, 'direct const module member read must not emit a runtime import call');
+	assert.doesNotMatch(disasm, /\bNEWT\b/, 'direct const module member read must not build a runtime export table');
+});
+
+test('const module namespace aliases retain their compile-time export path', () => {
+	const moduleSource = 'return { flags = { sample = 4, initial = 16 } }';
+	const { compiled, disasm } = compileWithConstModule(
+		[
+			'local playback<const> = require("assets")',
+			'local flags<const> = playback.flags',
+			'return flags.sample | flags.initial',
+		].join('\n'),
+		'assets',
+		moduleSource,
+	);
+	assert.equal(compiled.moduleProtoMap.has('assets'), false);
+	assert.doesNotMatch(disasm, /\bCALL\b/);
+	assert.doesNotMatch(disasm, /\bNEWT\b/);
+	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*assets/);
+	const cpu = runCompiledTestSystem(compiled, 100000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(20)]);
+});
+
+test('relocatable const-module values remain operands until the linker supplies them', () => {
+	const moduleSource = [
+		'local len<const> = 6156',
+		'return { len = len }',
+	].join('\n');
+	for (const optLevel of [0, 3] as const) {
+		const { compiled, disasm } = compileWithConstModule(
+			'local assets<const> = require("assets")\nreturn assets.len >> 2',
+			'assets',
+			moduleSource,
+			new Map([['len', 6156]]),
+			optLevel,
+		);
+		assert.equal(compiled.constValueRelocs.some(
+			reloc => reloc.kind === 'link_value'
+				&& reloc.modulePath === 'assets'
+				&& reloc.expression.kind === 'binary',
+		), true);
+		assert.doesNotMatch(disasm, /\bSHR\b/);
+		assert.match(disasm, /\bLOADK\b/);
+		const cpu = runCompiledTestSystem(compiled, 100000);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1539)]);
+	}
+	const cold = compileWithConstModule(
+		'local assets<const> = require("assets")\nreturn assets.len >> 2',
+		'assets',
+		moduleSource,
+		undefined,
+		3,
+	);
+	assert.doesNotMatch(cold.disasm, /\bSHR\b/);
+	assert.match(cold.disasm, /\bKSMI\b[^\n]*1539/);
+	assert.equal(BASE_CYCLES[OpCode.LOADK], BASE_CYCLES[OpCode.KSMI]);
+});
+
+test('asset-address relocation leaves the final payload length foldable', () => {
+	const moduleSource = [
+		'local aem_events_addr<const> = 17',
+		'local aem_events_len<const> = 6156',
+		'return { aem_events_addr = aem_events_addr, aem_events_len = aem_events_len }',
+	].join('\n');
+	const linkValues = buildRomAssetAddressLinkValuesFromSymbols([{
+		name: 'aem_events',
+		assetId: 'events',
+		assetType: 'aem',
+		payloadId: 'cart',
+		offset: 0x1234,
+		address: 0x00801234,
+		byteLength: 6156,
+	}]);
+	for (const optLevel of [0, 3] as const) {
+		const { compiled, disasm } = compileWithConstModule(
+			'local assets<const> = require("assets")\nreturn assets.aem_events_addr, assets.aem_events_len >> 2',
+			'assets',
+			moduleSource,
+			linkValues,
+			optLevel,
+		);
+		assert.equal(compiled.constValueRelocs.some(
+			reloc => reloc.kind === 'link_value'
+				&& reloc.expression.kind === 'export'
+				&& reloc.expression.exportPath === 'aem_events_addr',
+		), true);
+		assert.equal(compiled.constValueRelocs.some(
+			reloc => reloc.kind === 'link_value'
+				&& reloc.expression.kind === 'export'
+				&& reloc.expression.exportPath === 'aem_events_len',
+		), false);
+		assert.doesNotMatch(disasm, /\bLOADK\b[^\n]*6156/);
+		if (optLevel === 0) {
+			assert.match(disasm, /\bSHR\b[^\n]*k\d+\(6156\)[^\n]*k\d+\(2\)/);
+		} else {
+			assert.doesNotMatch(disasm, /\bSHR\b/);
+			assert.match(disasm, /\bKSMI\b[^\n]*1539/);
+		}
+		const cpu = runCompiledTestSystem(compiled, 100000);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [0x00801234, 1539].map(valueInteger));
+	}
+});
+
+test('compile-time require rejects dynamic module names', () => {
+	const moduleSource = 'return { value = 1 }';
+	assert.throws(
+		() => compileWithModule('local path<const> = "foo"\nreturn require(path).value', 'foo', moduleSource),
+		/Compile-time require expects exactly one literal module path/,
+	);
+});
+
+test('compile-time require rejects missing modules', () => {
+	const source = 'return require("missing")';
+	assert.throws(
+		() => compileLuaChunkToProgram(parseSource(source, 'entry.lua'), [], { entrySource: source }),
+		/Compile-time require module 'missing' was not provided to the program compiler/,
+	);
+});
+
+test('const modules reject non-constant exports', () => {
+	const moduleSource = [
+		'local function read() return 1 end',
+		'return { value = read() }',
+	].join('\n');
+	assert.throws(
+		() => compileWithConstModule('local m<const> = require("assets")\nreturn m.value', 'assets', moduleSource),
+		/Const module 'assets' export 'value' is not a compile-time constant or static symbol/,
+	);
+});
+
+test('missing const module exports report the field and its source location before runtime lowering', () => {
+	const moduleSource = 'return { known_addr = 17, nested = { known_addr = 23 } }';
+	const cases = [
+		{ source: 'return {\n address = assets.missing_addr,\n}', line: 3, column: 19, path: 'missing_addr' },
+		{ source: 'return assets["missing_addr"]', line: 2, column: 15, path: 'missing_addr' },
+		{ source: 'return assets.nested.missing_addr', line: 2, column: 22, path: 'nested.missing_addr' },
+		{ source: 'local group<const> = assets.nested\nreturn group.missing_addr', line: 3, column: 14, path: 'nested.missing_addr' },
+		{ source: 'return require("bmsx/assets").missing_addr', line: 2, column: 31, path: 'missing_addr' },
+		{ source: 'return assets.missing_addr.child', line: 2, column: 15, path: 'missing_addr' },
+		{ source: 'return assets.missing_addr()', line: 2, column: 15, path: 'missing_addr' },
+		{ source: 'local value<const> = assets.missing_addr\nreturn 1', line: 2, column: 29, path: 'missing_addr' },
+		{ source: 'local function read()\n return assets.missing_addr\nend\nreturn read()', line: 3, column: 16, path: 'missing_addr' },
+	];
+	for (const optLevel of [0, 3] as const) {
+		for (const sample of cases) {
+			const entrySource = `local assets<const> = require("bmsx/assets")\n${sample.source}`;
+			assert.throws(
+				() => compileWithConstModule(entrySource, 'bmsx/assets', moduleSource, undefined, optLevel),
+				{ message: `Compilation failed with 1 error(s):\n[1/1] entry entry.lua: ${sample.line}:${sample.column}: Module 'bmsx/assets' has no export '${sample.path}'.` },
+				`${sample.source}, O${optLevel}`,
+			);
+		}
+	}
+});
+
+test('missing installed module exports report the full path at the missing field', () => {
+	for (const optLevel of [0, 3] as const) {
+		for (const path of ['missing', 'nested.missing']) {
+			const entrySource = `local api<const> = require("bios_api")\nreturn api.${path}()`;
+			const column = path === 'missing' ? 12 : 19;
+			assert.throws(
+				() => compileLuaChunkToProgram(parseSource(entrySource, 'entry.lua'), [], {
+					entrySource,
+					optLevel,
+					biosFunctions: [{ path: 'bios_api', exportPathKey: 'nested.read' }],
+				}),
+				{ message: `Compilation failed with 1 error(s):\n[1/1] entry entry.lua: 2:${column}: Module 'bios_api' has no export '${path}'.` },
+			);
+		}
+	}
+});
+
+test('ordinary runtime modules still read absent fields as nil and allow adding fields', () => {
+	const entrySource = `local api<const> = require("api")
+local absent = api.missing
+api.added = 23
+return absent, api["missing"], api.added`;
+	for (const optLevel of [0, 3] as const) {
+		const { compiled } = compileWithModule(entrySource, 'api', 'return { known = 17 }', [], optLevel);
+		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [valueNil(), valueNil(), valueInteger(23)]);
+	}
+});
+
+test('const modules reject runtime root values', () => {
+	const moduleSource = 'return { value = 7 }';
+	assert.throws(
+		() => compileWithConstModule('return require("assets")', 'assets', moduleSource),
+		/Module 'assets' root is compile-time only/,
+	);
+	assert.throws(
+		() => compileWithConstModule('local assets = require("assets")\nreturn assets', 'assets', moduleSource),
+		/Module 'assets' root is compile-time only/,
+	);
+	for (const optLevel of [0, 3] as const) {
+		for (const source of ['return { assets }', 'local function use(value) return value end\nreturn use(assets)']) {
+			assert.throws(
+				() => compileWithConstModule(`local assets<const> = require("assets")\n${source}`, 'assets', moduleSource, undefined, optLevel),
+				/Module 'assets' root is compile-time only/,
+			);
+		}
+	}
+});
+
+test('a global require assignment does not replace compiler module syntax', () => {
+	const source = [
+		'local called = false',
+		'require = function(name) called = true; return { value = 99 } end',
+		'local imported = require("fixture")',
+		'return imported.value, called',
+	].join('\n');
+	for (const level of [0, 3] as const) {
+		const { compiled } = compileWithModule(source, 'fixture', 'return { value = 17 }', [], level);
+		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [valueInteger(17), valueBool(false)]);
+	}
+});

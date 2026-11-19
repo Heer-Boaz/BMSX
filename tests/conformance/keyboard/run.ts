@@ -29,7 +29,7 @@ const vectors = keyboardVectors();
 const path = join(directory, 'vectors.txt');
 writeFileSync(path, vectors.map(vector => vector.command).join('\n') + '\n');
 writeFileSync(join(directory, 'vectors.json'), JSON.stringify(vectors, null, 2));
-const ts = run(process.execPath, ['node_modules/tsx/dist/cli.mjs', '--tsconfig', 'tsconfig.base.json', '--import', './tests/lua/test_setup.ts', 'tests/conformance/keyboard/ts_runner.ts', path]);
+const ts = run(process.execPath, ['node_modules/tsx/dist/cli.mjs', '--tsconfig', 'tsconfig.base.json', '--import', './tests/helpers/test_setup.ts', 'tests/conformance/keyboard/ts_runner.ts', path]);
 writeFileSync(join(directory, 'typescript.jsonl'), ts);
 const cpp = run(command[0], [...command.slice(1), path]);
 writeFileSync(join(directory, 'cpp.jsonl'), cpp);

@@ -78,9 +78,9 @@ raster oracles, not claims of pixel-identical line rasterization across APIs.
 Room/lane captures use the actual tiny font without zoom-to-fit shrinking.
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/workbench_compound_layout.test.ts tests/lua/workbench_graph.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/workbench_compound_layout.test.ts tests/studio/workbench_graph.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/graph_viewport/profile_compound.ts
 ```
 
@@ -103,7 +103,7 @@ Clone/send failure, ELK error replies, close with pending work, actual worker
 execution failure and HTTP-404 worker loading all settle requests without an
 automatic restart or fallback. The native-Worker failures are not mocked promises.
 
-`tests/lua/graph_layout_lifetime.test.ts` controls completion order independently
+`tests/studio/graph_layout_lifetime.test.ts` controls completion order independently
 of ELK speed and checks lazy construction, cancellation, current/stale failures,
 fresh input identity after reopening, resource-model/Undo retention and group
 reset. `editor_panes.test.ts` also exercises the real last-tab-close route and
@@ -148,9 +148,9 @@ test admission. The concrete FSM pane now consumes these controls; its separate
 source-review/Save/Hot Resume proof is in the behavior-graph suite.
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/workbench_graph*.test.ts tests/lua/behavior_tree_drag.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/workbench_graph*.test.ts tests/studio/behavior_tree_drag.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/graph_viewport/profile_connection.ts
 ```
 
@@ -192,7 +192,7 @@ requirement for the product or a fallback context path.
 ## Cost boundary
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/graph_viewport/profile.ts
 ```
 
@@ -204,7 +204,7 @@ projection, GPU uploads/rasterization and end-to-end Studio frame time. It is
 not an allocation profiler or a performance guarantee for other machines.
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/graph_viewport/profile_navigation.ts
 ```
 

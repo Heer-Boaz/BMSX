@@ -21,7 +21,7 @@ import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../ma
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createTestBlua32PairCpu, writeTestBlua32Rom } from '../helpers/blua32';
-import { materializeCpuCompletionValues, parseLuaChunk } from '../lua/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [0, 3] as const) {
 	test(`public BIOS exports root their module dependencies without an entry require (O${optLevel})`, () => {

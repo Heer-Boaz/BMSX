@@ -77,7 +77,7 @@ optimization level, infer a value from source or consult a similarly named local
 
 ## Evidence
 
-`tests/lua/event_history.test.ts` executes real cartlib dispatch at O0/O3,
+`tests/studio/event_history.test.ts` executes real cartlib dispatch at O0/O3,
 including a parameter-renamed source variant and a complete CPU-state/cycle/heap
 comparison with observation disabled. `function_probe.test.ts` covers native
 and inlined entry locations; TS and C++ symbol tests retain formal identities.

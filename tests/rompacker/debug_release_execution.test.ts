@@ -13,7 +13,7 @@ import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../ma
 import { decodeBlua32RomImage } from '../../toolchain/ts/rompack/blua32_image';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
 import { createTestBlua32PairCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues } from '../lua/cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [0, 3] as const) test(`packer debug metadata cannot change trace erasure, results or cycles (O${optLevel})`, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-debug-release-'));

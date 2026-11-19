@@ -12,7 +12,7 @@ import {
 	BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET,
 	BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET,
 } from '../../machine/ts/spec/bmsx/rom_header';
-import { parseLuaChunk } from '../lua/cpu_test_harness';
+import { parseLuaChunk } from './cpu_test_harness';
 
 export const PUBLIC_BIOS_PROBE_SOURCE = `module<entry>
 data firmware_value: word = 11

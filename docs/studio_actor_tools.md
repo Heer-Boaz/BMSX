@@ -689,10 +689,10 @@ provide different kinds of evidence.
 
 | Owner | Contract exercised |
 | --- | --- |
-| [`actor_details.test.ts`](../tests/lua/actor_details.test.ts) | Compiled-guest property identity, value comparison, pins, independent Details subjects and history retirement. |
-| [`actor_runtime_tools.test.ts`](../tests/lua/actor_runtime_tools.test.ts) | Typed runtime handles, ordinary Actor Lab composition/navigation, scoped commands and hidden-window lifetime work. |
-| [`actor_state_graph_navigation.test.ts`](../tests/lua/actor_state_graph_navigation.test.ts) | Graph membership, selection, focus/reveal and history identity. |
-| [`actor_execution.test.ts`](../tests/lua/actor_execution.test.ts) | Instance admission, cancellation, physical call control and replacement races. |
+| [`actor_details.test.ts`](../tests/studio/actor_details.test.ts) | Compiled-guest property identity, value comparison, pins, independent Details subjects and history retirement. |
+| [`actor_runtime_tools.test.ts`](../tests/studio/actor_runtime_tools.test.ts) | Typed runtime handles, ordinary Actor Lab composition/navigation, scoped commands and hidden-window lifetime work. |
+| [`actor_state_graph_navigation.test.ts`](../tests/studio/actor_state_graph_navigation.test.ts) | Graph membership, selection, focus/reveal and history identity. |
+| [`actor_execution.test.ts`](../tests/studio/actor_execution.test.ts) | Instance admission, cancellation, physical call control and replacement races. |
 | [`studio_game_input.ts`](../tests/conformance/runtime_replay/studio_game_input.ts) | Ordinary gameplay input beside floating Details and scoped Studio focus. |
 | [`studio_actor_find.ts`](../tests/conformance/runtime_replay/studio_actor_find.ts), [`studio_actor_pins.ts`](../tests/conformance/runtime_replay/studio_actor_pins.ts), [`studio_actor_changes.ts`](../tests/conformance/runtime_replay/studio_actor_changes.ts) | Browser interaction for finding members, pin/source navigation and completed-observation value changes. |
 | [`studio_actor_tools.test.ts`](../tests/platform/studio_actor_tools.test.ts), [`studio_actor_execution_tools.test.ts`](../tests/platform/studio_actor_execution_tools.test.ts) | Conversation inspection/execution through real browser machines, the HTTP bridge and a deterministic provider fixture. |

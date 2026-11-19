@@ -123,9 +123,9 @@ subscription disposal, foreign state types and non-aliased cursor anchors.
 Reproduce the independent gates and profiling with:
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/editor_edit_state.test.ts tests/lua/behavior_source_bookmark.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/editor_edit_state.test.ts tests/studio/behavior_source_bookmark.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/profile_bookmarks.ts
 ```
 

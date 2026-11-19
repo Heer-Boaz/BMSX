@@ -119,7 +119,7 @@ Geen host-RSS-, piekgeheugen-, volledige worldframe- of native-profielclaim.
 Reproduceren van de onafhankelijke guestproeven:
 
 ```sh
-npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/behavior_compilation.test.ts
+npx tsx --test --import ./tests/helpers/test_setup.ts tests/machine/behavior_compilation.test.ts
 ```
 
 [llvm]: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/llvm/include/llvm/ExecutionEngine/JITEventListener.h#L33-L63

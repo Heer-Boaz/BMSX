@@ -118,7 +118,7 @@ one resolved callee or one known source contribution is not a completeness proof
 Reproduction:
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/profile_access_paths.ts
 ```
 

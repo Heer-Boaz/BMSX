@@ -10,7 +10,7 @@ import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_im
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { createTestBlua32PairCpu, createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { buildPublicBiosFixture, PUBLIC_BIOS_PROBE_SOURCE } from '../helpers/bios_linkage';
-import { materializeCpuCompletionValues, parseLuaChunk } from '../lua/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
 
 test('published BIOS slots derive addresses and RAM occupancy from the ROM header', () => {
 	const rom = new Uint8Array(0x200);

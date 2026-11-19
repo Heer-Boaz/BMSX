@@ -1,0 +1,226 @@
+import '../helpers/test_setup';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { RemoteInput } from '../../hosts/common/input/remote';
+import type { InputEvt, InputEventSink } from '../../hosts/common/input/contracts';
+import { Input } from '../../hosts/common/input/manager';
+import { HeadlessInputHub } from '../../hosts/node/headless/input';
+import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { DiskWorkspaceRecordProvider } from '../../ide/node/workspace_records';
+import { parseNodeToolingOptions } from '../../scripts/bootrom/platforms/node_tooling_options';
+import { performHostControlAction } from '../../scripts/host_control/actions.mjs';
+import type { HostControlRequest } from '../../hosts/common/control/protocol';
+import { KeyModifier, type TextInputHost, type TextInputTarget } from '../../hosts/common/input/text';
+
+test('client chord waits for the press frame before releasing its keys', async () => {
+	const requests: HostControlRequest[] = [];
+	let acknowledgePress: () => void;
+	const pending = performHostControlAction({ execute: 'press', keys: 'ControlLeft+ShiftLeft+KeyP' }, async request => {
+		requests.push(request);
+		if (requests.length === 1) await new Promise<void>(resolve => { acknowledgePress = resolve; });
+		return { hostFrame: requests.length };
+	});
+	assert.equal(requests.length, 1);
+	acknowledgePress!();
+	assert.deepEqual(await pending, { hostFrame: 2 });
+	assert.deepEqual(requests, [
+		{ execute: 'input', events: ['ControlLeft', 'ShiftLeft', 'KeyP'].map(code => ({ type: 'key', code, down: true })) },
+		{ execute: 'input', events: ['KeyP', 'ShiftLeft', 'ControlLeft'].map(code => ({ type: 'key', code, down: false })) },
+	]);
+});
+
+test('client drag retains its button across path frames and click releases on the following frame', async () => {
+	const requests: HostControlRequest[] = [];
+	const send = async request => { requests.push(request); };
+	await performHostControlAction({ execute: 'drag', path: [[10, 20], [40, 20], [40, 50]], button: 'aux' }, send);
+	await performHostControlAction({ execute: 'click', x: 12, y: 18 }, send);
+	assert.deepEqual(requests, [
+		{ execute: 'input', events: [{ type: 'pointer', x: 10, y: 20 }, { type: 'button', button: 'aux', down: true }] },
+		{ execute: 'input', events: [{ type: 'pointer', x: 40, y: 20 }] },
+		{ execute: 'input', events: [{ type: 'pointer', x: 40, y: 50 }] },
+		{ execute: 'input', events: [{ type: 'button', button: 'aux', down: false }] },
+		{ execute: 'input', events: [{ type: 'pointer', x: 12, y: 18 }, { type: 'button', button: 'primary', down: true }] },
+		{ execute: 'input', events: [{ type: 'button', button: 'primary', down: false }] },
+	]);
+});
+
+test('client paste uses the clipboard and ordinary keyboard; unsupported clipboard does not send keys', async () => {
+	const requests: HostControlRequest[] = [];
+	await performHostControlAction({ execute: 'paste', text: 'local x = 1\n' }, async request => { requests.push(request); });
+	assert.deepEqual(requests[0], { execute: 'clipboard-set', text: 'local x = 1\n' });
+	assert.equal(requests.length, 3);
+	requests.length = 0;
+	await assert.rejects(performHostControlAction({ execute: 'paste', text: 'x' }, async request => {
+		requests.push(request);
+		throw new Error('This host has no clipboard.');
+	}), /no clipboard/);
+	assert.equal(requests.length, 1);
+});
+
+test('remote input owns press IDs across requests and releases only held input', () => {
+	const events: InputEvt[] = [];
+	const clock = new VirtualHeadlessClock();
+	const sink: InputEventSink = {
+		resetInput() {}, cancelPointerButtons() {}, connectInputDevice() {}, disconnectInputDevice() {},
+		capturePhysicalKeyHold() { assert.fail('RemoteInput does not manufacture native editing ownership'); },
+		setSupervisorRequestLine: down => events.push({ type: 'supervisor-request', down, timestamp: clock.now() }),
+		inputButton: (deviceId, code, down, value, timestamp, pressId) => events.push({ type: 'button', deviceId, code, down, value, timestamp, pressId }),
+		inputAxis1: (deviceId, code, x, timestamp) => events.push({ type: 'axis1', deviceId, code, x, timestamp }),
+		inputAxis2: (deviceId, code, x, y, timestamp) => events.push({ type: 'axis2', deviceId, code, x, y, timestamp }),
+	};
+	const remote = new RemoteInput(sink, clock);
+	remote.apply([{ type: 'key', code: 'ControlLeft', down: true }, { type: 'key', code: 'KeyP', down: true }]);
+	clock.advance(20);
+	remote.apply([{ type: 'key', code: 'KeyP', down: false }]);
+	remote.apply([{ type: 'pointer', x: 120, y: 80 }, { type: 'button', button: 'primary', down: true }]);
+	remote.release();
+	const buttons = events.filter(event => event.type === 'button');
+	assert.deepEqual(buttons.map(event => [event.code, event.down, event.pressId]), [
+		['ControlLeft', true, 1], ['KeyP', true, 2], ['KeyP', false, 2],
+		['pointer_primary', true, 3], ['ControlLeft', false, 1], ['pointer_primary', false, 3],
+	]);
+	assert.equal(buttons[2].timestamp, 20);
+	assert.deepEqual(events[3], { type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: 120, y: 80, timestamp: 20 });
+});
+
+test('reentrant release cancels the rest of an admitted input batch', t => {
+	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
+	t.after(() => input.dispose());
+	const keys: string[] = [];
+	const remote = new RemoteInput(input, clock, code => {
+		keys.push(code);
+		remote.release();
+	});
+	remote.apply([{ type: 'key', code: 'Enter', down: true }, { type: 'key', code: 'KeyA', down: true },
+		{ type: 'button', button: 'primary', down: true }]);
+	assert.deepEqual(keys, ['Enter']);
+	assert.equal(input.pointerButtonsDown, false);
+	remote.apply([{ type: 'key', code: 'KeyB', down: true }]);
+	assert.deepEqual(keys, ['Enter', 'KeyB'], 'a new admitted batch remains usable');
+});
+
+test('remote key producer edits in request order with live modifiers independently of guest sampling', t => {
+	const clock = new VirtualHeadlessClock();
+	const input = new Input(clock, new HeadlessInputHub(), -1);
+	t.after(() => input.dispose());
+	const state = { text: '', selectionStart: 0, selectionEnd: 0, offset: 0 };
+	const target: TextInputTarget = {
+		readOnly: false, revision: 0,
+		readText: () => state,
+		replaceText(from, to, text) {
+			state.text = state.text.slice(0, from) + text + state.text.slice(to);
+			state.selectionStart = state.selectionEnd = from + text.length;
+			return true;
+		},
+		setSelection(from, to) { state.selectionStart = from; state.selectionEnd = to; },
+		caretRect: () => ({ x: 0, y: 0, width: 1, height: 1 }),
+	};
+	let saves = 0;
+	const host: TextInputHost = {
+		textTarget: target,
+		dispatchKey(event) {
+			if (!event.down) return false;
+			if (event.code === 'ArrowLeft') {
+				state.selectionStart = state.selectionEnd = state.selectionStart - 1;
+				return true;
+			}
+			if (event.code === 'KeyS' && event.modifiers === KeyModifier.ctrl) { saves += 1; return true; }
+			return false;
+		},
+		cancelPointerInput() {},
+		cancelInput() {}, onDidChangeTarget: () => () => {},
+	};
+	input.setEditingInput(host);
+	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input));
+	for (const code of ['KeyB', 'KeyA', 'KeyB', 'KeyB', 'ArrowLeft', 'KeyX']) {
+		remote.apply([{ type: 'key', code, down: true }, { type: 'key', code, down: false }]);
+	}
+	remote.apply([
+		{ type: 'key', code: 'ShiftRight', down: true },
+		{ type: 'key', code: 'Digit1', down: true },
+		{ type: 'key', code: 'Digit1', down: false },
+		{ type: 'key', code: 'ShiftRight', down: false },
+		{ type: 'key', code: 'ControlRight', down: true },
+		{ type: 'key', code: 'KeyS', down: true },
+		{ type: 'key', code: 'KeyS', down: true },
+	]);
+	assert.equal(state.text, 'babx!b');
+	assert.equal(saves, 1, 'a held key is not a second physical activation');
+	assert.equal(input.getPlayerInput(1).pollFrame, 0);
+	remote.release();
+	input.pollInput();
+	assert.equal(input.getPlayerInput(1).inputHandlers.keyboard!.getKeyState('KeyS').pressed, false);
+	assert.equal(input.getPlayerInput(1).inputHandlers.keyboard!.getKeyState('ControlRight').pressed, false);
+	assert.equal(state.text, 'babx!b');
+});
+
+test('remote pointer reaches the machine in raster pixels and signed logical wheel steps', t => {
+	const clock = new VirtualHeadlessClock();
+	const input = new Input(clock, new HeadlessInputHub(), -1);
+	t.after(() => input.dispose());
+	const remote = new RemoteInput(input, clock);
+	const snapshot = createInputControllerSnapshot();
+	remote.apply([{ type: 'pointer', x: 120, y: 80 }]);
+	for (const steps of [1, -3, 0]) {
+		remote.apply([{ type: 'wheel', deltaY: steps }]);
+		input.pollInput();
+		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+		assert.equal(snapshot.pointerXQ16, 120 * 65536);
+		assert.equal(snapshot.pointerYQ16, 80 * 65536);
+		assert.equal(snapshot.pointerWheelQ16, (steps * 65536) >>> 0);
+	}
+});
+
+test('disk workspace transport persists contents and record timestamps without replacing fetch', async t => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-workspace-provider-'));
+	t.after(() => fs.rm(root, { recursive: true }));
+	const fetch = globalThis.fetch;
+	const provider = new DiskWorkspaceRecordProvider(root);
+	const record = { contents: 'return { name = "actor" }\n', updatedAt: 1712345678901 };
+	await provider.write('source/actor.lua', record, true);
+	assert.equal(globalThis.fetch, fetch);
+	assert.deepEqual(await new DiskWorkspaceRecordProvider(root).read('source/actor.lua'), record);
+	await provider.delete('source/actor.lua');
+	assert.equal(await provider.read('source/actor.lua'), null);
+});
+
+test('live control has no test TTL and Studio uses an explicit workspace', () => {
+	const command = parseNodeToolingOptions(['--control', '0', '--studio-workspace', '.', 'game'], true, 20);
+	assert.equal(command.kind, 'run');
+	if (command.kind !== 'run') return;
+	assert.equal(command.options.ttlMs, 0);
+	assert.deepEqual(command.options.mode, { kind: 'control', port: 0, workspaceRoot: process.cwd() });
+	assert.throws(() => parseNodeToolingOptions(['--studio-workspace', '.', 'game'], true, 20), /requires --control/);
+});
+
+test('filesystem-exclusive creation admits one concurrent writer and never overwrites the winner', async t => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-create-'));
+	t.after(() => fs.rm(root, { recursive: true }));
+	const provider = new DiskWorkspaceRecordProvider(root);
+	const records = [{ contents: 'first', updatedAt: 1000 }, { contents: 'second', updatedAt: 2000 }];
+	const attempts = await Promise.allSettled(records.map(record => provider.write('src/actor.lua', record, false)));
+	assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1);
+	const winner = attempts.findIndex(result => result.status === 'fulfilled');
+	assert.deepEqual(await provider.read('src/actor.lua'), records[winner]);
+	await assert.rejects(provider.write('src/actor.lua', records[1 - winner], false), /File already exists/);
+	assert.deepEqual(await provider.read('src/actor.lua'), records[winner]);
+});
+
+test('remote disconnect releases raw keys without fabricating editor key-up activation', t => {
+	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
+	t.after(() => input.dispose());
+	let armed = false, invoked = 0;
+	input.setEditingInput({ textTarget: undefined, onDidChangeTarget: () => () => {},
+		dispatchKey(event) { if (event.code === 'Enter') { if (event.down) armed = true; else if (armed) invoked++; } return false; },
+		cancelPointerInput() {},
+		cancelInput() { armed = false; },
+	});
+	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input));
+	remote.apply([{ type: 'key', code: 'Enter', down: true }]);
+	assert.equal(armed, true); remote.release();
+	assert.equal(armed, false); assert.equal(invoked, 0);
+});

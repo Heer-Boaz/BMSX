@@ -1,5 +1,5 @@
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
+import { semanticSnapshot } from '../../helpers/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';

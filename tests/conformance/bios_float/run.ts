@@ -12,7 +12,7 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { buildPublicBiosFixture, PUBLIC_BIOS_PROBE_SOURCE } from '../../helpers/bios_linkage';
-import { parseLuaChunk } from '../../lua/cpu_test_harness';
+import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 
 for (const [command, args] of [
 	['cmake', ['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON']],

@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { createCanvas } from 'canvas';
-import { materializeCpuCompletionValues } from '../lua/cpu_test_harness';
+import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';

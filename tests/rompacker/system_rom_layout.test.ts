@@ -19,7 +19,7 @@ import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { buildScenarioMediaFixture } from '../helpers/scenario_media';
-import { materializeCpuCompletionValues } from '../lua/cpu_test_harness';
+import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
 const RAM_BYTES = 0x00400000;
 const source = `module<entry>

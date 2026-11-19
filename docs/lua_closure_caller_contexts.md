@@ -116,7 +116,7 @@ context evaluations**; only eager summary/static-call construction grows
 incomplete answer is not presented as a faster baseline for this workload.
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/profile_closure_sources.ts
 ```
 

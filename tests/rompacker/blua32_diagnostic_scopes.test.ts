@@ -6,7 +6,7 @@ import { readLE32 } from '../../machine/ts/common/endian';
 import * as D from '../../machine/ts/spec/blua32/diagnostics';
 import { CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET } from '../../machine/ts/spec/bmsx/rom_package';
 import { runtimeLuaFrameScopes } from '../../ide/runtime/lua_inspection';
-import { compileLuaSource } from '../lua/cpu_test_harness';
+import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 
 const source = `local published = 999

@@ -51,7 +51,7 @@ Expression-value keys are not editor bookmarks or Hot Resume prototype IDs.
 
 ## Independent evidence
 
-`tests/lua/semantic_function_sources.test.ts` has eleven fixtures independent of
+`tests/studio/semantic_function_sources.test.ts` has eleven fixtures independent of
 game files, identifiers and line numbers. They cover separate body/return/self
 ownership, equal written returns, unmodeled returns, nested closures and caller
 attribution, lexical reassignment, surplus right-hand functions, and public
@@ -65,9 +65,9 @@ members from both bodies survive; this is not a claim about exact reaching
 definitions or exclusive call targets.
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/semantic_function_sources.test.ts tests/lua/semantic_function_summary.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/semantic_function_sources.test.ts tests/studio/semantic_function_summary.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/profile_function_sources.ts
 ```
 

@@ -6,7 +6,7 @@ import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/tr
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from './blua32';
 import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
-import { parseLuaChunk } from '../lua/cpu_test_harness';
+import { parseLuaChunk } from './cpu_test_harness';
 
 /** Real cartlib/compiler/CPU and BIOS math; no host, ICU or world scheduler. */
 type CartlibProgramOptions = {

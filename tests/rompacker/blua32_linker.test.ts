@@ -45,7 +45,7 @@ import {
 	buildBlua32ExecutionRevision,
 	relocatedContinuationPc,
 } from '../../toolchain/ts/rompack/blua32_revision';
-import { parseLuaChunk } from '../lua/cpu_test_harness';
+import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { LuaBinaryOperator } from '../../toolchain/ts/lua/syntax/ast';
 
 type EncodedWord = {

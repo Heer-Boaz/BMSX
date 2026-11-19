@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { IO_SYS_CONTROL, IO_SYS_SUPERVISOR_FAULT_SEQUENCE, SYS_CONTROL_SUPERVISOR_FAULT, SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH } from '../../machine/ts/spec/bmsx/io';
-import { parseLuaChunk } from '../lua/cpu_test_harness';
+import { parseLuaChunk } from './cpu_test_harness';
 
 // Minimal test firmware: the CPU raises the exception; the real system device
 // publishes its CP0 latches. No host Error or fabricated guest diagnostic.

@@ -152,7 +152,7 @@ en graphcoherentie blijven de hierboven benoemde open owners.
 Reproduceren:
 
 ```sh
-npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/behavior_compilation.test.ts tests/lua/preload_module.test.ts
+npx tsx --test --import ./tests/helpers/test_setup.ts tests/machine/behavior_compilation.test.ts tests/machine/preload_module.test.ts
 npm run test:runtime-replay
 node tests/conformance/runtime_replay/browser.mjs --studio-preload dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom
 ```

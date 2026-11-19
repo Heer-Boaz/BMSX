@@ -8,7 +8,7 @@ import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../ma
 import { traceSinkFieldName } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { createTestBlua32PairCpu, writeTestBlua32Rom } from '../helpers/blua32';
-import { materializeCpuCompletionValues, parseLuaChunk } from '../lua/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
 
 test('image builders select channels independently per image and across module boundaries', () => {
 	const systemSource = `module<entry>

@@ -48,7 +48,7 @@ def collect(destination, *, delivery=None):
     runtime_inputs = (
         "LICENSE",
         "docs/proposed-specification-changes.md",
-        "tests/lua/runtime_timing.test.ts",
+        "tests/machine/runtime_timing.test.ts",
         "third_party/fdlibm/LICENSE",
         "docs/book1/console.md",
         "docs/book1/pcrtc.md",

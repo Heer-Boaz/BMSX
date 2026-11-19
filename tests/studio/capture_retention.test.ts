@@ -1,0 +1,536 @@
+import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
+import { blua32RomStrings } from '../../toolchain/ts/rompack/blua32_rom_strings';
+import { applyHotResumeClosureRevision, applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
+import { executionDomainBit, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { LexicalDeclarationKind } from '../../toolchain/ts/lua/compiler/declaration_kind';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { LuaCaptureLayout } from '../../toolchain/ts/lua/compiler/capture_layout';
+import { LuaSourceCorrespondence } from '../../toolchain/ts/lua/semantic/source_correspondence';
+import { linkSystemBlua32Image, type LinkedSystemBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
+import { buildBlua32ExecutionRevision } from '../../toolchain/ts/rompack/blua32_revision';
+import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { asClosure, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { createTestSystemCpu, linkTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
+import { compileLuaSource, materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
+
+const PATH = 'retention.lua';
+const ADDRESS = SYSTEM_ROM_BASE + 0x100;
+
+function compile(source: string, baseline?: { sources: ReadonlyMap<string, string>; linked: LinkedSystemBlua32Image }, optLevel: 0 | 3 = 3,
+	modules: readonly { path: string; source: string }[] = []) {
+	const sources = new Map([[PATH, source], ...modules.map(module => [module.path, module.source] as const)]);
+	const correspondence = new LuaSourceCorrespondence(baseline ? baseline.sources : new Map(), sources);
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, PATH), modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) })), {
+		entrySource: source, programDomain: 'system', optLevel,
+		captureLayout: baseline ? new LuaCaptureLayout(baseline.linked.symbols.metadata, correspondence) : undefined,
+	});
+	const linked = linkSystemBlua32Image(
+		encodeCompiledProgramObject(compiled), compiled.metadata, ADDRESS, PSX_MACHINE_SPEC.ramBytes, [],
+		baseline ? { image: baseline.linked.layout, symbols: baseline.linked.symbols, captureSources: correspondence } : undefined,
+	);
+	return { source, sources, compiled, linked, correspondence };
+}
+
+function prove(previous: ReturnType<typeof compile>, fresh: ReturnType<typeof compile>) {
+	return buildBlua32ExecutionRevision(previous.linked.layout, previous.linked.symbols,
+		previous.sources, fresh.linked, fresh.sources, fresh.correspondence);
+}
+
+for (const optLevel of [0, 3] as const) test(`a completed debugger call does not turn its retired instruction into a live continuation (O${optLevel})`, () => {
+	const before = `function evaluate(value) return value + 7 end
+halt_until_irq
+return 42`;
+	const initial = compile(before, undefined, optLevel);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const depth = cpu.getFrameDepth();
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('evaluate')), cpu.gc), [valueInteger(1)]);
+	assert.equal(cpu.runUntilDepth(depth, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(8)]);
+	const fresh = compile(before.replace('value + 7', 'value * 2 + 9'), initial, optLevel);
+	const revision = prove(initial, fresh);
+	const lastPc = cpu.lastPc;
+	const revisions = [{ previousImage: initial.linked.layout, nextImage: fresh.linked.layout, revision }, null, null] as const;
+	const relocation = buildHotResumeRelocation(cpu, revisions, depth);
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+	applyHotResumeClosureRevision(cpu, revisions);
+	applyHotResumeRelocation(cpu, relocation);
+	assert.equal(cpu.lastPc, lastPc, 'ROM replacement is not an instruction fetch');
+	assert.equal(cpu.getFrameDepth(), depth);
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('evaluate')), cpu.gc), [valueInteger(1)]);
+	assert.equal(cpu.runUntilDepth(depth, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(11)]);
+});
+
+for (const optLevel of [0, 3] as const) test(`Hot Resume initializes new module dependencies once without replacing existing exports (O${optLevel})`, () => {
+	const before = `local world<const> = require('world')
+local function read() return world end
+local function init<init>() hook_trace = load_trace end
+return read, world`;
+	const worldModule = { path: 'world', source: 'load_trace = 1\nreturn { actor = {} }' };
+	const initial = compile(before, undefined, optLevel, [worldModule]);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const [read, world] = materializeCpuCompletionValues(cpu);
+	const fresh = compile(before.replace('local function read() return world',
+		"local added<const> = require('added')\nlocal function read() return added.world"), initial, optLevel, [
+		worldModule,
+		{ path: 'added', source: `local world<const> = require('world')
+require('nil_export')
+require('false_export')
+load_trace = load_trace * 10 + 4
+return { world = world }` },
+		{ path: 'nil_export', source: 'load_trace = load_trace * 10 + 2\nreturn nil' },
+		{ path: 'false_export', source: 'load_trace = load_trace * 10 + 3\nreturn false' },
+	]);
+	const revisions = [{ previousImage: initial.linked.layout, nextImage: fresh.linked.layout, revision: prove(initial, fresh) }, null, null] as const;
+	buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+	applyHotResumeClosureRevision(cpu, revisions);
+	for (let run = 0; run < 2; run += 1) {
+		cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, fresh.linked.layout.header.initFunctionAddress);
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('load_trace')), valueInteger(1234));
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('hook_trace')), valueInteger(1234));
+		cpu.beginCompletionCall(asClosure(read, cpu.gc));
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.equal(materializeCpuCompletionValues(cpu)[0], world);
+	}
+});
+
+for (const optLevel of [0, 3] as const) test(`live callback can acquire an immutable import without acquiring a cell (O${optLevel})`, () => {
+	const modules = [{ path: 'library', source: 'return { value = 41 }' }];
+	const before = `local library<const> = require('library')
+local alias<const> = library
+local function read() return 7 end
+return read, library`;
+	const initial = compile(before, undefined, optLevel, modules);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const [read, library] = materializeCpuCompletionValues(cpu);
+	cpu.setGlobalByKey(cpu.stringPool.intern('__test_read'), read);
+	let previous = initial;
+	for (const body of ['alias', 'library', '7', 'alias']) {
+		const fresh = compile(before.replace('return 7 end', `return ${body} end`), previous, optLevel, modules);
+		prove(previous, fresh);
+		assert.deepEqual(names(fresh, '/local:read'), []);
+		const revisions = [{ previousImage: previous.linked.layout, nextImage: fresh.linked.layout, revision: prove(previous, fresh) }, null, null] as const;
+		buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
+		memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+		cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+		applyHotResumeClosureRevision(cpu, revisions);
+		cpu.beginCompletionCall(asClosure(read, cpu.gc));
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.equal(materializeCpuCompletionValues(cpu)[0], body === '7' ? valueInteger(7) : library);
+		previous = fresh;
+	}
+});
+
+function names(revision: ReturnType<typeof compile>, suffix: string) {
+	const metadata = revision.linked.symbols.metadata;
+	const index = metadata.functionIds.findIndex(id => id.endsWith(suffix));
+	assert.notEqual(index, -1, suffix);
+	return metadata.upvalueBindingsByFunction[index].map(slot => metadata.lexicalDeclarations[slot].name);
+}
+
+test('live capture prefixes survive removal, permutation, complete disuse and repeated undo', () => {
+	const before = 'local first = 11\nlocal second = 22\nfunction read() return first, second end';
+	let previous = compile(before);
+	for (const body of ['second', 'second, first', '9', 'first, second', 'second']) {
+		const fresh = compile(before.replace('return first, second', `return ${body}`), previous);
+		assert.deepEqual(names(fresh, '/decl:read'), ['first', 'second']);
+		assert.doesNotThrow(() => prove(previous, fresh));
+		previous = fresh;
+	}
+	assert.deepEqual(names(compile(before.replace('return first, second', 'return second')), '/decl:read'), ['second']);
+});
+
+test('closed live cells and new closures both read correct values after creation registers shift', () => {
+	const before = `local first = 11
+local second = 22
+local function read() return first, second end
+local function make(value)
+	local a = value
+	local b = value + 1
+	return function() return a, b end
+end
+return read, make, make(40)`;
+	const after = before.replace('local first = 11', 'local extra = {}\nlocal first = 11')
+		.replace('return first, second', 'return second, first').replace('return a, b', 'return b');
+	const initial = compile(before);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const [read, make, held] = materializeCpuCompletionValues(cpu);
+	const fresh = compile(after, initial);
+	prove(initial, fresh);
+	const index = initial.linked.symbols.metadata.functionIds.findIndex(id => id.endsWith('/local:read'));
+	assert.notDeepEqual(initial.linked.layout.functions[index].upvalues, fresh.linked.layout.functions[index].upvalues);
+	const revisions = [{ previousImage: initial.linked.layout, nextImage: fresh.linked.layout, revision: prove(initial, fresh) }, null, null] as const;
+	buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+	applyHotResumeClosureRevision(cpu, revisions);
+	for (const [closure, expected] of [[read, [22, 11]], [held, [41]]] as const) {
+		cpu.beginCompletionCall(asClosure(closure, cpu.gc));
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), expected.map(valueInteger));
+	}
+	cpu.beginCompletionCall(asClosure(make, cpu.gc), [valueInteger(60)]);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const [created] = materializeCpuCompletionValues(cpu);
+	cpu.beginCompletionCall(asClosure(created, cpu.gc));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(61)]);
+});
+
+test('nested retained readers and writers keep aliasing the same cell', () => {
+	const before = `local state = 3
+local extra = 9
+local function outer()
+	local function read() return extra, state end
+	local function write(value) state = value end
+	return read, write
+end
+return outer()`;
+	const initial = compile(before);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const [read, write] = materializeCpuCompletionValues(cpu);
+	const fresh = compile(before.replace('return extra, state', 'return state'), initial);
+	prove(initial, fresh);
+	assert.deepEqual(names(fresh, '/local:outer'), ['extra', 'state']);
+	assert.deepEqual(names(fresh, '/local:read'), ['extra', 'state']);
+	assert.deepEqual(names(fresh, '/local:write'), ['state']);
+	const revisions = [{ previousImage: initial.linked.layout, nextImage: fresh.linked.layout, revision: prove(initial, fresh) }, null, null] as const;
+	buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+	applyHotResumeClosureRevision(cpu, revisions);
+	cpu.beginCompletionCall(asClosure(write, cpu.gc), [valueInteger(42)]);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	cpu.beginCompletionCall(asClosure(read, cpu.gc));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
+});
+
+test('receiver and parameter roles retain real bound locals after body edits', () => {
+	const before = `local object = { value = 2 }
+function object:make(value)
+	return function() return self.value, value end
+end
+return object:make(7)`;
+	const initial = compile(before);
+	const fresh = compile('\n' + before.replace('return self.value, value', 'return value'), initial);
+	assert.doesNotThrow(() => prove(initial, fresh));
+	const { metadata } = fresh.compiled;
+	const capturedRoles = metadata.upvalueBindingsByProto.flat().map(index => metadata.lexicalDeclarations[index].kind);
+	assert.deepEqual(capturedRoles, [LexicalDeclarationKind.Receiver, LexicalDeclarationKind.Parameter]);
+	assert.equal(metadata.lexicalDeclarations.find(local => local.name === 'object')!.kind, LexicalDeclarationKind.Local);
+	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(fresh.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	cpu.beginCompletionCall(asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
+});
+
+for (const level of [0, 3] as const) test(`O${level}: an old retained cell cannot substitute for a newly shadowing declaration`, () => {
+	const before = `local value = 10
+local read = function() return value end
+return read`;
+	const initial = compile(before, undefined, level);
+	const fresh = compile(before.replace('local read', 'local value = 20\nlocal read').replace('return value end', 'return 42 end'), initial, level);
+	assert.doesNotThrow(() => prove(initial, fresh));
+	const { metadata, program } = fresh.compiled;
+	const index = metadata.protoDisplayNames.indexOf('read');
+	const retained = metadata.upvalueBindingsByProto[index];
+	assert.equal(retained.length, 1);
+	assert.equal(metadata.lexicalDeclarations[retained[0]].definition.start.line, 1);
+	const outer = metadata.outerBindingsByProto[index];
+	assert.equal(outer.length, 1);
+	assert.equal(metadata.lexicalDeclarations[outer[0].declarationIndex].definition.start.line, 2);
+	assert.equal(outer[0].location, null);
+	assert.deepEqual(outer[0].liveWordRanges, []);
+	assert.equal(program.protos[index].upvalueDescs.length, 1);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const read = materializeCpuCompletionValues(cpu)[0];
+	const revisions = [{ previousImage: initial.linked.layout, nextImage: fresh.linked.layout, revision: prove(initial, fresh) }, null, null] as const;
+	buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+	applyHotResumeClosureRevision(cpu, revisions);
+	cpu.beginCompletionCall(asClosure(read, cpu.gc));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
+});
+
+test('Hot Resume retains the shared implicit receiver cell used by a reader and a rebinding writer', () => {
+	const before = `local object = { value = 2 }
+function object:make()
+	local function read() return self.value end
+	local function write(value) self = { value = value } end
+	return read, write
+end
+return object:make()`;
+	const initial = compile(before);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const [read, write] = materializeCpuCompletionValues(cpu);
+	cpu.setGlobalByKey(cpu.stringPool.intern('__test_read'), read);
+	cpu.setGlobalByKey(cpu.stringPool.intern('__test_write'), write);
+	assert.deepEqual(names(initial, '/local:read'), ['self']);
+	assert.deepEqual(names(initial, '/local:write'), ['self']);
+	const receiver = initial.compiled.metadata.lexicalDeclarations.find(local => local.name === 'self')!;
+	assert.equal(receiver.kind, LexicalDeclarationKind.Receiver);
+	cpu.beginCompletionCall(asClosure(write, cpu.gc), [valueInteger(40)]);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const fresh = compile(before.replace('value = value }', 'value = value + 1 }'), initial);
+	prove(initial, fresh);
+	const revisions = [{ previousImage: initial.linked.layout, nextImage: fresh.linked.layout, revision: prove(initial, fresh) }, null, null] as const;
+	buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+	applyHotResumeClosureRevision(cpu, revisions);
+	cpu.beginCompletionCall(asClosure(read, cpu.gc));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(40)], 'the existing cell survives installation');
+	cpu.beginCompletionCall(asClosure(write, cpu.gc), [valueInteger(50)]);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	cpu.beginCompletionCall(asClosure(read, cpu.gc));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(51)], 'the existing writer runs the new body on that same cell');
+});
+
+test('new live captures still reject instead of inventing missing cells', () => {
+	const before = 'local first = 1\nlocal second = 2\nfunction read() return first end';
+	const initial = compile(before);
+	const fresh = compile(before.replace('return first', 'return first, second'), initial);
+	assert.throws(() => prove(initial, fresh), /cannot change closure identity/);
+});
+
+test('removed or reparented defining locals reject before lowering', () => {
+	const before = 'local state = 1\nfunction read() return state end';
+	const initial = compile(before);
+	assert.throws(() => compile('function read() return 4 end', initial), /cannot map captured declaration/);
+	assert.throws(() => compile('do\n' + before + '\nend', initial), /cannot map captured declaration/);
+});
+
+test('unused retained capture initializers survive O3 for newly created closures', () => {
+	const before = 'local first = 11\nlocal second = 22\nreturn function() return first, second end';
+	const initial = compile(before);
+	const fresh = compile(before.replace('return first, second', 'return second'), initial);
+	prove(initial, fresh);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(fresh.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const closure = materializeCpuCompletionValues(cpu)[0];
+	cpu.setGlobalByKey(cpu.stringPool.intern('__test_closure'), closure);
+	assert.equal(ClosureRecord.captureCount(cpu.memory, asClosure(closure, cpu.gc)), 2);
+	cpu.beginCompletionCall(asClosure(closure, cpu.gc));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(22)]);
+	const restored = compile(before, fresh);
+	prove(fresh, restored);
+	const revisions = [{ previousImage: fresh.linked.layout, nextImage: restored.linked.layout, revision: prove(fresh, restored) }, null, null] as const;
+	buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
+	memory.installSystemRom(writeTestBlua32Rom(restored.linked));
+	cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+	applyHotResumeClosureRevision(cpu, revisions);
+	cpu.beginCompletionCall(asClosure(closure, cpu.gc));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(11), valueInteger(22)]);
+});
+
+test('cold compiler does not reserve captures or alter anonymous ids', () => {
+	const source = 'local value = 3\nreturn function() return value end';
+	assert.deepEqual(compileLuaSource(source, PATH, 3).metadata.protoIds, compile(source).compiled.metadata.protoIds);
+});
+
+test('tombstone declarations follow source shifts and can revive without reinterpreting cells', () => {
+	const before = 'local state = 3\nfunction read() return state end';
+	const initial = compile(before);
+	const removed = compile('local extra = {}\nlocal state = 3', initial);
+	prove(initial, removed);
+	assert.equal(removed.linked.symbols.metadata.lexicalDeclarations[0].definition!.start.line, 2);
+	const shifted = compile('\n' + removed.source, removed);
+	prove(removed, shifted);
+	assert.equal(shifted.linked.symbols.metadata.lexicalDeclarations[0].definition!.start.line, 3);
+	const revived = compile(shifted.source + '\nfunction read() return state + 1 end', shifted);
+	assert.doesNotThrow(() => prove(shifted, revived));
+});
+
+test('a removed origin never aliases a later same-name local at its old source coordinates', () => {
+	const initial = compile('local state = 3\nfunction read() return state end');
+	const removed = compile('local other = 4', initial);
+	prove(initial, removed);
+	assert.equal(removed.linked.symbols.metadata.lexicalDeclarations[0].definition, null);
+	const replacement = compile('local state = 90', removed);
+	prove(removed, replacement);
+	assert.equal(replacement.linked.symbols.metadata.lexicalDeclarations[0].definition, null);
+	assert.throws(() => compile(replacement.source + '\nfunction read() return state end', replacement), /defining declaration was removed/);
+});
+
+test('anonymous identities use installed definitions through repeated shifts, not their original id coordinates', () => {
+	const before = 'local state = 3\nreturn function() return state end';
+	let previous = compile(before);
+	const initialIds = previous.compiled.metadata.protoIds;
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(previous.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const [held] = materializeCpuCompletionValues(cpu);
+	cpu.setGlobalByKey(cpu.stringPool.intern('__test_held'), held);
+	for (let index = 1; index <= 4; index += 1) {
+		const source = '\n'.repeat(index) + before.replace('return state', `return state + ${index}`);
+		const fresh = compile(source, previous);
+		assert.deepEqual(fresh.compiled.metadata.protoIds, initialIds);
+		prove(previous, fresh);
+		const revisions = [{ previousImage: previous.linked.layout, nextImage: fresh.linked.layout, revision: prove(previous, fresh) }, null, null] as const;
+		buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
+		memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+		cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+		applyHotResumeClosureRevision(cpu, revisions);
+		cpu.beginCompletionCall(asClosure(held, cpu.gc));
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(3 + index)]);
+		previous = fresh;
+	}
+});
+
+test('relocated paused frames retain open shared cells until their owner returns', () => {
+	const before = `local state = 3
+local extra = 9
+local function read() return extra, state end
+local function write(value) state = value end
+local function checkpoint() return 0 end
+checkpoint()
+write(42)
+return read()`;
+	const initial = compile(before, undefined, 0);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	const checkpointIndex = initial.linked.symbols.metadata.functionIds.findIndex(id => id.endsWith('/local:checkpoint'));
+	const checkpointPc = initial.linked.layout.functions[checkpointIndex].codeAddress;
+	cpu.setExecutionHook((_domain, pc) => pc === checkpointPc, executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID), 0);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.ExecutionStopped);
+	const fresh = compile(before.replace('return extra, state', 'return state'), initial, 0);
+	const revision = prove(initial, fresh);
+	const revisions = [{ previousImage: initial.linked.layout, nextImage: fresh.linked.layout, revision }, null, null] as const;
+	const relocation = buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+	applyHotResumeClosureRevision(cpu, revisions);
+	applyHotResumeRelocation(cpu, relocation);
+	cpu.setExecutionHook(null, 0, 0);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
+});
+
+for (const optLevel of [0, 3] as const) test(`paused calls survive adding imports used only by callbacks (O${optLevel})`, () => {
+	const modules = [{ path: 'first', source: 'return { value = 7 }' }, { path: 'second', source: 'return { value = 42 }' }];
+	const before = `local first<const> = require('first')
+local function checkpoint() return 0 end
+function update() return first.value end
+checkpoint()
+return update()`;
+	const initial = compile(before, undefined, optLevel, modules);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	const checkpointIndex = initial.linked.symbols.metadata.functionIds.findIndex(id => id.endsWith('/local:checkpoint'));
+	const startupIndex = initial.linked.symbols.metadata.functionIds.findIndex(id => id.endsWith('/startup'));
+	assert.ok(initial.linked.symbols.metadata.resumePointsByFunction[startupIndex].some(point => point.resumeId === 'startup.entry.return'));
+	cpu.setExecutionHook((_domain, pc) => pc === initial.linked.layout.functions[checkpointIndex].codeAddress,
+		executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID), 0);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.ExecutionStopped);
+	const after = before.replace('local function checkpoint', "local second<const> = require('second')\nlocal function checkpoint")
+		.replace('return first.value', 'return second.value');
+	const fresh = compile(after, initial, optLevel, modules);
+	const revision = prove(initial, fresh);
+	const revisions = [{ previousImage: initial.linked.layout, nextImage: fresh.linked.layout, revision }, null, null] as const;
+	const relocation = buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+	applyHotResumeClosureRevision(cpu, revisions);
+	applyHotResumeRelocation(cpu, relocation);
+	cpu.setExecutionHook(null, 0, 0);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
+});
+
+test('an unchanged suspended call maps between separate edits, but not after a live register moves', () => {
+	const before = `local state = 3
+local function checkpoint() return 0 end
+print(1)
+checkpoint()
+print(2)
+return state`;
+	const initial = compile(before, undefined, 0);
+	const point = initial.linked.symbols.metadata.resumePointsByFunction[
+		initial.linked.symbols.metadata.functionIds.findIndex(id => id.endsWith('/entry'))
+	].find(point => point.range.start.line === 5)!;
+	const index = initial.linked.layout.functions[
+		initial.linked.symbols.metadata.functionIds.findIndex(id => id.endsWith('/entry'))
+	].codeAddress + point.wordOffset * INSTRUCTION_BYTES - initial.linked.layout.header.textAddress;
+	const edited = compile(before.replace('print(1)', 'print(10)').replace('print(2)', 'print(20)'), initial, 0);
+	// The active statement itself changed here, so it has no exact source identity.
+	assert.equal(prove(initial, edited).pcAddresses[index / INSTRUCTION_BYTES], -1);
+	const around = compile(before.replace('print(1)', 'print(10)').replace('return state', 'print(30)\nreturn state'), initial, 0);
+	assert.notEqual(prove(initial, around).pcAddresses[index / INSTRUCTION_BYTES], -1);
+	const moved = compile(before.replace('local state', 'local added = 8\nlocal state'), initial, 0);
+	assert.equal(prove(initial, moved).pcAddresses[index / INSTRUCTION_BYTES], -1);
+});
+
+test('new anonymous closures do not steal the reserved identity at an earlier source position', () => {
+	const before = 'local state = 3\nlocal functions = {}\nfunctions[1] = function() return state end\nreturn functions';
+	const initial = compile(before);
+	const after = before.replace('functions[1]', 'functions[2] = function() return 90 end\nfunctions[1]');
+	const fresh = compile(after, initial);
+	prove(initial, fresh);
+	const oldIndex = initial.compiled.metadata.protoIds.findIndex(id => id.includes('/anon:'));
+	const id = initial.compiled.metadata.protoIds[oldIndex];
+	const newIndex = fresh.compiled.metadata.protoIds.indexOf(id);
+	assert.notEqual(newIndex, -1);
+	assert.equal(fresh.compiled.metadata.functionDefinitionsByProto[newIndex]!.start.line, 4);
+	assert.equal(new Set(fresh.compiled.metadata.protoIds).size, fresh.compiled.metadata.protoIds.length);
+});
+
+test('same anonymous source coordinates in different modules keep separate function owners', () => {
+	const entrySource = "local first = require('first')\nlocal second = require('second')\nreturn first.make(7)(), second.make(8)()";
+	const firstSource = 'local owner = {}\nfunction owner.make(state) return function() return state end end\nreturn owner';
+	const secondSource = firstSource;
+	const modules = [
+		{ path: 'first', source: firstSource, chunk: parseLuaChunk(firstSource, 'first') },
+		{ path: 'second', source: secondSource, chunk: parseLuaChunk(secondSource, 'second') },
+	];
+	const entry = parseLuaChunk(entrySource, 'entry');
+	const initial = compileLuaChunkToProgram(entry, modules, { entrySource, programDomain: 'system', optLevel: 3 });
+	const linked = linkTestSystemBlua32(initial);
+	const sources = new Map([['entry', entrySource], ['first', firstSource], ['second', secondSource]]);
+	const fresh = compileLuaChunkToProgram(entry, modules, {
+		entrySource, programDomain: 'system', optLevel: 3,
+		captureLayout: new LuaCaptureLayout(linked.symbols.metadata, new LuaSourceCorrespondence(sources, sources)),
+	});
+	assert.deepEqual(fresh.metadata.protoIds, initial.metadata.protoIds);
+	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(fresh));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueInteger(8)]);
+});
+
+test('Hot Resume keeps a live ROM String key even after removing its last literal use', () => {
+	const first = compile("local t = {}; t['prior-key'] = 42; return t");
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(first.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const [table] = materializeCpuCompletionValues(cpu);
+	const oldKey = cpu.stringPool.find('prior-key')!;
+	const second = compile("return 'new-literal', 'other-literal'", first);
+	assert.equal([...blua32RomStrings(second.linked.layout)].find(record => record.value === 'prior-key')!.address, oldKey);
+	memory.installSystemRom(writeTestBlua32Rom(second.linked));
+	cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
+	assert.equal(cpu.stringPool.intern('prior-key'), oldKey);
+	assert.equal(cpu.stringPool.toString(oldKey), 'prior-key');
+	const retained = valuePayload(table);
+	assert.equal(cpu.gc.tables.getStringKey(retained, oldKey), valueInteger(42));
+	assert.equal(cpu.stringPool.toString(cpu.stringPool.find('new-literal')!), 'new-literal');
+});

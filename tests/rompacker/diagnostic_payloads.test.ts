@@ -13,7 +13,7 @@ import { CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET } from '../../machin
 import { readLE32 } from '../../machine/ts/common/endian';
 import { loadBlua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 import { createTestSystemCpu } from '../helpers/blua32';
-import { materializeCpuCompletionValues } from '../lua/cpu_test_harness';
+import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
 // Real installed BIOS consumers; neither reads the host symbol graph.
 const source = `module<entry>

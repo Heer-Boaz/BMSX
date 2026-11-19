@@ -110,9 +110,9 @@ command, picker, keybinding, graph database or cartlib hook in this slice.
   checks pass. No machine, cartlib, C++ or guest frame path was changed.
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/behavior_tree_transfer.test.ts tests/lua/fsm_hot_resume.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/behavior_tree_transfer.test.ts tests/studio/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/behavior_graph/profile_transfer_admission.ts
 ```
 

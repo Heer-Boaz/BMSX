@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
-import { semanticAnswers, semanticSnapshot } from '../../tests/lua/semantic_test_harness';
+import { semanticAnswers, semanticSnapshot } from '../../tests/helpers/semantic_test_harness';
 
 const [dump] = process.argv.slice(2);
 assert(dump, 'Provide a dumped workspace');

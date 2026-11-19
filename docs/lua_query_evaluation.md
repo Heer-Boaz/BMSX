@@ -167,7 +167,7 @@ Reproduction uses the existing profiler entrypoints in
 [the dependency slice](lua_query_dependencies.md#measurements-and-gates), plus:
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/profile_query_selection.ts
 ```
 

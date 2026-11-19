@@ -13,7 +13,7 @@ import { walkLuaAst } from '../../../toolchain/ts/lua/syntax/ast/traversal';
 
 // Every adjacent direction, plus both end-to-end moves, in the tracked source
 // corpus. Whole-AST oracle, actual PieceTree history and retained source spans.
-// node --import tsx --import ./tests/lua/test_setup.ts tests/conformance/lua_source/moves.ts
+// node --import tsx --import ./tests/helpers/test_setup.ts tests/conformance/lua_source/moves.ts
 const paths = execFileSync('git', ['ls-files', 'cartlib', 'machine/bios', 'carts'], { encoding: 'utf8' })
 	.trim().split('\n').filter(path => path.endsWith('.lua'));
 let moves = 0;

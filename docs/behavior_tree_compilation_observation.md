@@ -156,8 +156,8 @@ debugdatabase. Er is geen productkeuze verhuld als een gratis debugflag.
 Reproduceren:
 
 ```sh
-npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/behavior_compilation.test.ts
-npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/trace_statement.test.ts tests/lua/fsm_hot_resume.test.ts
+npx tsx --test --import ./tests/helpers/test_setup.ts tests/machine/behavior_compilation.test.ts
+npx tsx --test --import ./tests/helpers/test_setup.ts tests/machine/trace_statement.test.ts tests/studio/fsm_hot_resume.test.ts
 ```
 
 D3 blijft open voor de concrete compacte productopslag, opname vóór de eerste

@@ -11,7 +11,7 @@ import {
 	IO_INP_OUTPUT_PORT,
 } from '../../machine/ts/spec/bmsx/io';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { runCompiledLua } from '../lua/cpu_test_harness';
+import { runCompiledLua } from '../helpers/cpu_test_harness';
 import {
 	disassembleTestBlua32Functions,
 	linkTestSystemBlua32,

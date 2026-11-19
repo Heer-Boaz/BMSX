@@ -7,10 +7,10 @@ under `cartlib`, `machine/bios` and `carts` without editing those files.
 ## Function-source production
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/semantic_function_sources.test.ts tests/lua/semantic_function_summary.test.ts \
-  tests/lua/semantic_write_owners.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/semantic_function_sources.test.ts tests/studio/semantic_function_summary.test.ts \
+  tests/studio/semantic_write_owners.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/profile_function_sources.ts
 ```
 
@@ -61,11 +61,11 @@ cell before and after Hot Resume. See `docs/lua_receiver_binding.md`.
 ## Structural transfer
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/lua_table_transfer.test.ts tests/lua/fsm_hot_resume.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/lua_table_transfer.test.ts tests/studio/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/transfers.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/profile_transfer.ts
 ```
 
@@ -100,11 +100,11 @@ transfer does not change their punctuation, layout or marker contracts.
 ## Lexical relocation
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/lua_relocation.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/lua_relocation.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/relocation.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/profile_relocation.ts
 ```
 

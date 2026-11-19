@@ -1018,7 +1018,7 @@ implemented change and matching visual/interaction acceptance. This is a
 Studio-wide review scope, not a claim that every contribution is already
 covered by the Actor Lab design.
 
-Existing evidence owners include `tests/lua/{pointer_capture,pointer_hover,
+Existing evidence owners include `tests/studio/{pointer_capture,pointer_hover,
 editor_focus,editor_panes,workbench_property_inspector,workbench_context_menu,
 editor_pointer_edges}.test.ts`, `tests/platform/{browser_pointer_contact,
 browser_pointer_input,pointer_cancel}.test.ts` and the real-runtime Studio

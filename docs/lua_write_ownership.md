@@ -70,7 +70,7 @@ an execution context.
 
 ## Evidence and scope
 
-`tests/lua/semantic_write_owners.test.ts` contains seven independent fixtures:
+`tests/studio/semantic_write_owners.test.ts` contains seven independent fixtures:
 different and equal writes to one captured binding, replacement member writes,
 nested closures, a later module write, public workspace member resolution, and
 actual summary instantiation with compiled BLua execution as a separate oracle.
@@ -83,9 +83,9 @@ the variable's latest runtime state. No game names or mutable cart line numbers
 are fixtures, and no mock cartlib or host evaluator is used.
 
 ```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/semantic_write_owners.test.ts tests/lua/semantic_function_sources.test.ts
-npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/helpers/test_setup.ts \
+  tests/studio/semantic_write_owners.test.ts tests/studio/semantic_function_sources.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/helpers/test_setup.ts \
   tests/conformance/lua_source/profile_function_sources.ts
 ```
 
