@@ -216,7 +216,7 @@ size_t GcHeap::trace(bool atomic) {
 				+ std::min(thread->currentFrame->readWindow(FrameField::Top), thread->currentFrame->stackCapacity) : 0;
 			CallFrame* frame = thread->firstFrame;
 			for (size_t depth = 0; depth < thread->frameDepth; ++depth, frame = frame->next) {
-				markObject(frame->closure);
+				markObject(frame->attachedClosure());
 				u32 address = frame->readControl(FrameField::OpenHead);
 				for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
 					auto* upvalue = openCellAt(address);

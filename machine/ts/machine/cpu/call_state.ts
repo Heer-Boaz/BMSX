@@ -1,5 +1,5 @@
 import type { Thread } from './thread';
-import type { Closure } from './closure';
+import { CLOSURE_CAPTURE_COUNT, CLOSURE_CAPTURE_WORDS, type Closure } from './closure';
 import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_image';
 import { ValueSlots } from './value_slots';
 import { MAPPED_BUS_MASTER_CPU, type MappedBusSignals } from '../memory/bus_signals';
@@ -7,6 +7,7 @@ import { MAPPED_BUS_MASTER_CPU, type MappedBusSignals } from '../memory/bus_sign
 import { writeLE32 } from '../../common/endian';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
+import type { GcHeap } from './gc_heap';
 
 export const enum ProtectedCallKind {
 	PCall,
@@ -14,8 +15,8 @@ export const enum ProtectedCallKind {
 	XPCallHandler,
 }
 
-export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40 }
-export const FRAME_CONTROL_BYTES = 44;
+export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44 }
+export const FRAME_CONTROL_BYTES = 48;
 const FRAME_WINDOW_MASK = (MAIN_RAM_SIZE >>> 2) - 1;
 const FRAME_COMPLETION = 1;
 const FRAME_EXCEPTION = 2;
@@ -32,14 +33,16 @@ export class CallFrame {
 	public compilationEntry = true;
 	public stackBase = 0;
 	public stackCapacity = 0;
-	public closure: Closure = null!;
 	public controlOffset = 0;
 
-	public constructor(public readonly thread: Thread, public previous: CallFrame | null, public readonly controlMemory: Memory) {}
+	public readonly controlMemory: Memory;
+	public constructor(public readonly thread: Thread, public previous: CallFrame | null, private readonly heap: GcHeap) {
+		this.controlMemory = heap.memory;
+	}
 
 	public bindControl(offset: number): void { this.controlOffset = offset & RAM_RECORD_WORD_MASK; }
 	public initializeControl(fn: number, pc: number, callSite: number, completion: boolean,
-		varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number): void {
+		varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number): void {
 		const memory = this.controlMemory, ram = memory.ramData(), offset = this.controlOffset;
 		writeLE32(ram, (offset + FrameField.Function) & RAM_RECORD_WORD_MASK, fn);
 		writeLE32(ram, (offset + FrameField.CallSite) & RAM_RECORD_WORD_MASK, callSite);
@@ -52,9 +55,17 @@ export class CallFrame {
 		writeLE32(ram, (offset + FrameField.ReturnBase) & RAM_RECORD_WORD_MASK, returnBase);
 		writeLE32(ram, (offset + FrameField.ReturnCount) & RAM_RECORD_WORD_MASK, returnCount);
 		writeLE32(ram, (offset + FrameField.Top) & RAM_RECORD_WORD_MASK, top);
+		writeLE32(ram, (offset + FrameField.Closure) & RAM_RECORD_WORD_MASK, closureAddress);
 		const first = Math.min(FRAME_CONTROL_BYTES, MAIN_RAM_SIZE - offset);
 		memory.invalidateRamWrite(offset, first);
 		if (first !== FRAME_CONTROL_BYTES) memory.invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
+	}
+	public get closureAddress(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Closure); }
+	public set closureAddress(address: number) { this.controlMemory.writeRamRecordWord(this.controlOffset + FrameField.Closure, address); }
+	public get closure(): Closure { return this.heap.closureAt(this.closureAddress)!; }
+	public get captureCount(): number { return this.controlMemory.readRamRecordWord(this.closureAddress + CLOSURE_CAPTURE_COUNT) & FRAME_WINDOW_MASK; }
+	public captureAddress(index: number): number {
+		return this.controlMemory.readRamRecordWord(this.closureAddress + CLOSURE_CAPTURE_WORDS + index * 4);
 	}
 	public get varargBase(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.VarargBase) & FRAME_WINDOW_MASK; }
 	public get varargCount(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.VarargCount) & FRAME_WINDOW_MASK; }

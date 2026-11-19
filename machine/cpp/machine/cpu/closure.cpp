@@ -69,16 +69,16 @@ void Upvalue::store(Memory& memory, u32 address, Value value) {
 void Closure::initializeRecord() {
 	const u32 flags = static_cast<u32>(prototype->executionDomainId + 1) | (canonical ? 4u : 0u);
 	memory.writeRamRecordWord(address, static_cast<u32>(ValueTag::Closure) | (flags << 16));
-	memory.writeRamRecordWord(address + 4u, 0u);
+	memory.writeRamRecordWord(address + CLOSURE_CAPTURE_COUNT, upvalueCount);
 	memory.writeRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS, prototype->functionAddress);
 }
 
 u32 Closure::captureAddress(u32 index) const {
-	return memory.readRamRecordWord(address + CLOSURE_CAPTURE_WORDS + index * sizeof(u32));
+	return memory.readRamRecordWord(captureWordAddress(address, index));
 }
 
 void Closure::setCaptureAddress(u32 index, u32 reference) {
-	memory.writeRamRecordWord(address + CLOSURE_CAPTURE_WORDS + index * sizeof(u32), reference);
+	memory.writeRamRecordWord(captureWordAddress(address, index), reference);
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -89,7 +89,6 @@ void Closure::setCaptureAddress(u32 index, u32 reference) {
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
 size_t Closure::nativePrototypeOffset() { return offsetof(Closure, prototype); }
-size_t Closure::nativeAddressOffset() { return offsetof(Closure, address); }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif

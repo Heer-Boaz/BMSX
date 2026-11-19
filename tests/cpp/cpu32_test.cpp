@@ -85,7 +85,7 @@ void scalarNumbers() {
 	for (OpCode op : {OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW,
 			 OpCode::BAND, OpCode::BOR, OpCode::BXOR, OpCode::SHL, OpCode::SHR}) {
 		Number32Machine m(operation(op));
-		Closure* closure = m.cpu.activeThread()->currentFrame->closure;
+		Closure* closure = m.cpu.activeThread()->currentFrame->attachedClosure();
 		bool first = true;
 		for (Value a : values)
 			for (Value b : values) {
@@ -142,7 +142,7 @@ void unaryAndCompare() {
 		valueFromTag(ValueTag::True, 1), valueFromTag(ValueTag::True, 2), valueNil()};
 	for (auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) {
 		Number32Machine m(operation(op));
-		auto* closure = m.cpu.activeThread()->currentFrame->closure;
+		auto* closure = m.cpu.activeThread()->currentFrame->attachedClosure();
 		bool first = true;
 		for (Value a : values)
 			for (Value b : values) {

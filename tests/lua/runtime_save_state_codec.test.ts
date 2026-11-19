@@ -670,7 +670,7 @@ test('runtime save-state codec preserves GPUREAD bytes and raw phase bits', () =
 test('runtime save-state codec preserves frame datapath metadata', () => {
 	const state = createRuntimeSaveState();
 	state.cpuState.threads[0].frames = [{
-		closureRef: 7,
+		executionDomainId: 1,
 		stackCapacity: 8,
 		stackBase: 0,
 	}];

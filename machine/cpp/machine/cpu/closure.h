@@ -58,6 +58,7 @@ struct FunctionPrototypeHash {
 	}
 };
 
+inline constexpr u32 CLOSURE_CAPTURE_COUNT = 4;
 inline constexpr u32 CLOSURE_PROTOTYPE_ADDRESS = 8;
 inline constexpr u32 CLOSURE_CAPTURE_WORDS = 12;
 inline constexpr u32 closureRecordBytes(u32 captures) { return CLOSURE_CAPTURE_WORDS + 4u * captures; }
@@ -71,10 +72,12 @@ struct Closure : GCObject {
 	const u32 upvalueCount;
 	const bool canonical;
 	void initializeRecord();
+	static constexpr u32 captureWordAddress(u32 address, u32 index) {
+		return address + CLOSURE_CAPTURE_WORDS + index * sizeof(u32);
+	}
 	u32 captureAddress(u32 index) const;
 	void setCaptureAddress(u32 index, u32 reference);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	static size_t nativeAddressOffset();
 	static size_t nativePrototypeOffset();
 #endif
 };

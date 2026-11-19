@@ -882,10 +882,10 @@ void testBoundClosureRetainsCartridgeSocket() {
 	auto& cpu = machine.cpu;
 	const bmsx::u32 address = machine.cartRom.functionAddresses[0];
 	cpu.beginCompletionCallInExecutionDomain(0, address);
-	auto* first = cpu.activeThread()->currentFrame->closure;
+	auto* first = cpu.activeThread()->currentFrame->attachedClosure();
 	require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted, "slot 0 closure returns");
 	cpu.beginCompletionCallInExecutionDomain(1, address);
-	auto* second = cpu.activeThread()->currentFrame->closure;
+	auto* second = cpu.activeThread()->currentFrame->attachedClosure();
 	require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted, "slot 1 closure returns");
 	require(first != second && first->prototype->functionAddress == second->prototype->functionAddress
 		&& first->prototype->executionDomainId == 0 && second->prototype->executionDomainId == 1,

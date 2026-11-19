@@ -123,7 +123,7 @@ void hotVarargFrames(int fixed) {
 	for (const int count : {0, 2, 63}) {
 		for (auto* m : {&native, &scalar}) {
 			auto& cpu = m->cpu; auto* thread = cpu.activeThread();
-			Closure* closure = thread->frameAtDepth(1)->closure;
+			Closure* closure = thread->frameAtDepth(1)->attachedClosure();
 			cpu.writeFrameExecution(1, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[1], m->rom.textAddress + 24u * INSTRUCTION_BYTES);
 			require(cpu.runUntilDepth(1, 2) == RunResult::Halted, "the saved varargs frame returns at its actual depth boundary");
 			auto& root = *thread->frameAtDepth(0);
@@ -267,7 +267,7 @@ void hotUpvalueAlias() {
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
 		auto& heap = m->cpu.gcHeap();
-		auto* closure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), *frame.closure->prototype, 2, false);
+		auto* closure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), *frame.attachedClosure()->prototype, 2, false);
 		closure->hashId = heap.allocateHashId();
 		for (int c = 0; c < 2; ++c) {
 			auto* cell = heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
@@ -276,7 +276,7 @@ void hotUpvalueAlias() {
 			if (c == 0) cell->bind(frame.thread->address, frame.stackBase, 0);
 			closure->setCaptureAddress(c, cell->address);
 		}
-		frame.closure = closure; m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1100);
+		frame.writeControl(bmsx::FrameField::Closure, closure->address); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1100);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& first = *native.cpu.activeThread()->frameAtDepth(0);
@@ -322,7 +322,7 @@ void rawContextValues(CpuMachine& machine) {
 	auto& cpu = machine.cpu;
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueFloat(std::numeric_limits<float>::infinity()),
-		valueString(cpu.stringPool().intern("context")), valueTable(cpu.gcHeap().reference(cpu.createTable())), valueClosure(cpu.gcHeap().reference(cpu.activeThread()->frameAtDepth(0)->closure)),
+		valueString(cpu.stringPool().intern("context")), valueTable(cpu.gcHeap().reference(cpu.createTable())), valueClosure(cpu.gcHeap().reference(cpu.activeThread()->frameAtDepth(0)->attachedClosure())),
 		valueThread(cpu.gcHeap().reference(cpu.activeThread()))};
 	ContextBlock globals(machine, {{OpCode::SETGL, 12, 0, 0, 1}, {OpCode::GETGL, 0, 0, 0, 1},
 		{OpCode::SETSYS, 0, 0, 0, 1}, {OpCode::GETSYS, 1, 0, 0, 1}, {OpCode::K1, 2},
@@ -340,6 +340,7 @@ void rawContextValues(CpuMachine& machine) {
 	auto captureRegisters = owner->stack.subspan(0, 16);
 	auto outerRegisters = owner->stack.subspan(16, 1);
 	CallFrame frame;
+	frame.bindControl(machine.memory, DYNAMIC_RAM_BASE - RAM_BASE + 0x800);
 	frame.registers = captureRegisters;
 	auto& heap = cpu.gcHeap();
 	auto& open = *heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
@@ -347,9 +348,10 @@ void rawContextValues(CpuMachine& machine) {
 	auto& closed = *heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
 				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
 	open.bind(owner->address, 0, 0);
-	frame.closure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), {}, 2, false);
-	frame.closure->setCaptureAddress(0, open.address);
-	frame.closure->setCaptureAddress(1, closed.address);
+	auto* boundClosure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), {}, 2, false);
+	frame.writeControl(bmsx::FrameField::Closure, boundClosure->address);
+	boundClosure->setCaptureAddress(0, open.address);
+	boundClosure->setCaptureAddress(1, closed.address);
 	ContextBlock captures(machine, {{OpCode::K1, 0}, {OpCode::GETUP, 1}, {OpCode::KSMI, 2, 0, 0, 9},
 		{OpCode::SETUP, 2}, {OpCode::ADD, 3, 0, 1}, {OpCode::GETUP, 4}, {OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	captureRegisters.clear(0, captureRegisters.size());
@@ -384,7 +386,7 @@ void rawContextValues(CpuMachine& machine) {
 	require(!binding.writeWatch.consume(watchedSlot, watchedSlot + 1u) && closed.value() == valueFloatBits(0xffa54321u),
 		"the semantic path publishes the closed cell through RAM's write watch");
 	const u32 rawCell = DYNAMIC_RAM_BASE + 0x600u;
-	machine.memory.writeRamRecordWord(frame.closure->address + CLOSURE_CAPTURE_WORDS + sizeof(u32), rawCell | 0x80000000u);
+	machine.memory.writeRamRecordWord(boundClosure->address + CLOSURE_CAPTURE_WORDS + sizeof(u32), rawCell | 0x80000000u);
 	captureRegisters.set(12, valueFloatBits(0x80000000u));
 	NativeBlockRunState addressed{.registers = captureRegisters, .frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
@@ -397,13 +399,15 @@ void rawContextValues(CpuMachine& machine) {
 	machine.memory.writeRamRecordWord(rawCell + UPVALUE_VALUE_WORD, 16);
 	machine.memory.writeRamRecordWord(rawCell + UPVALUE_OWNER, owner->address | 0x80000000u);
 	outerRegisters.set(0, valueFloatBits(0xffa12345u));
-	frame.closure->setCaptureAddress(0, rawCell | 0x80000000u);
+	const u32 rawClosure = DYNAMIC_RAM_BASE + 0x700u;
+	machine.memory.writeRamRecordWord(rawClosure + CLOSURE_CAPTURE_WORDS, rawCell | 0x80000000u);
+	machine.memory.writeRamRecordWord(frame.controlOffset + static_cast<u32>(FrameField::Closure), rawClosure | 0x80000000u);
 	ContextBlock rawOpen(machine, {{OpCode::GETUP, 1}, {OpCode::JMP}});
 	NativeBlockRunState rawAlias{.registers = captureRegisters, .frame = &frame, .heap = &heap,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
 	require(rawOpen.block->run(rawAlias) == &rawOpen.block->terminal
 		&& captureRegisters.get(1) == valueFloatBits(0xffa12345u),
-		"generated GETUP resolves an open RAM capture without a host attachment");
+		"generated GETUP resolves a raw frame closure and an open capture without host attachments");
 	const std::array literals{valueNil(), valueBool(false), valueBool(true), values[6], valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(11)};
 	ValueSlots constants(literals.size());
 	for (size_t i = 0; i < literals.size(); ++i) constants.set(i, literals[i]);

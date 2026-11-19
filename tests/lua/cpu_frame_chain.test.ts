@@ -6,12 +6,13 @@ import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { FRAME_CONTROL_BYTES, FrameField, ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
+import { CLOSURE_CAPTURE_COUNT, CLOSURE_CAPTURE_WORDS, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/closure';
 import { ThreadField, THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -38,7 +39,7 @@ test('thread-owned nodes reuse stable identities and trim only the spare tail', 
 	for (let index = 0; index < 8; ++index) {
 		const frame = thread.acquireFrame();
 		thread.reserveFrame(thread.stackRegisters.capacity());
-		frame.initializeControl(0, 0, 0, false, 0, 0, 0, 0, 0);
+		frame.initializeControl(0, 0, 0, false, 0, 0, 0, 0, 0, 0);
 		assert.equal(thread.frameDepth, index, 'preparation does not activate a frame');
 		thread.enterFrame(frame); frames.push(frame);
 		assert.equal(frame.previous, index === 0 ? null : frames[index - 1]);
@@ -85,6 +86,42 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 		cpu.readCompletionValues(values);
 		assert.deepEqual(values, [valueInteger(1)]);
+	});
+
+	test(`GETUP and checkpoint restore read the active closure address from RAM (${backend})`, () => {
+		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.GETUP, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 1 }] });
+		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const frame = cpu.rootThread.currentFrame!;
+		const start = frame.pc, domain = frame.executionImage.executionDomainId;
+		const address = frame.controlOffset + FrameField.Closure;
+		const first = DYNAMIC_RAM_BASE + 0x1000, second = first + 32;
+		for (const [record, word] of [[first, 73], [second, 17]]) {
+			const cell = record + 16;
+			memory.writeRamRecordWord(record + CLOSURE_CAPTURE_COUNT, 1);
+			memory.writeRamRecordWord(record + CLOSURE_CAPTURE_WORDS, cell | 0x80000000);
+			memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, word);
+			memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, ValueTag.Integer);
+		}
+		memory.writeRamRecordWord(address, first | 0x80000000);
+		cpu.runUntilDepth(0, 1200);
+		assert.equal(cpu.readFrameRegister(0, 0), valueInteger(73));
+		const saved = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+		memory.writeRamRecordWord(address, second);
+		frame.pc = start;
+		cpu.runUntilDepth(0, 40);
+		assert.equal(cpu.readFrameRegister(0, 0), valueInteger(17));
+		assert.equal(cpu.getFrameUpvalueCount(0), 1);
+		assert.equal(frame.executionImage.executionDomainId, domain);
+
+		memory.restoreSaveState(ram);
+		cpu.restoreRuntimeState(saved);
+		cpu.rootThread.currentFrame!.pc = start;
+		cpu.runUntilDepth(0, 40);
+		assert.equal(cpu.readFrameRegister(0, 0), valueInteger(73));
+		assert.equal(memory.readRamRecordWord(address), (first | 0x80000000) >>> 0);
 	});
 
 	test(`VARARG reads the physical source after a frame-word write (${backend})`, () => {
@@ -210,7 +247,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		prepared.registers.set(7, valueString(cpu.stringPool.intern('retired-frame-only')));
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		assert.equal(thread.currentFrame, caller); assert.equal(caller.next, prepared);
-		assert.equal(prepared.closure, null); assert.equal(prepared.executionImage, null); assert.equal(prepared.registers.capacity(), 0);
+		assert.equal(prepared.executionImage, null); assert.equal(prepared.registers.capacity(), 0);
 		cpu.collectTrackedHeapBytes();
 		assert.equal(cpu.stringPool.find('retired-frame-only'), undefined, 'unused retained frames and their old windows are not roots');
 		assert.equal(cpu.stringPool.find('caller-only-across-admission'), live);
@@ -238,7 +275,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		if (completion) {
 			assert.throws(() => cpu.beginCompletionCall(caller.registers.getClosure(0, cpu.gc)), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			assert.equal(thread.frameDepth, 1); assert.equal(thread.stackTop, 8);
-			assert.equal(caller.next!.closure, null); assert.equal(caller.next!.executionImage, null);
+			assert.equal(caller.next!.executionImage, null);
 		} else {
 			cpu.runUntilDepth(0, 2);
 			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);

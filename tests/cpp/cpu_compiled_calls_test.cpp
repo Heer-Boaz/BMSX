@@ -102,7 +102,7 @@ void reusableFrameChain() {
 		auto* previous = thread.currentFrame;
 		auto* frame = thread.acquireFrame();
 		thread.reserveFrame(thread.stackCapacity);
-		frame->initializeControl(0, 0, 0, false, 0, 0, 0, 0, 0);
+		frame->initializeControl(0, 0, 0, false, 0, 0, 0, 0, 0, 0);
 		require(frame->previous == previous && previous->next == frame && frame->thread == &thread,
 			"reusable nodes have stable identity and belong to their thread");
 		thread.enterFrame(frame);
@@ -163,7 +163,7 @@ void inactiveFrameMetadata() {
 	test::runCpuParity(generated.cpu, scalar.cpu, 1, 1);
 	auto* spare = generated.cpu.activeThread()->currentFrame;
 	auto oldRegisters = spare->registers;
-	auto* oldClosure = spare->closure;
+	const u32 oldClosure = spare->readControl(bmsx::FrameField::Closure);
 	auto* oldImage = spare->executionImage;
 	const u32 oldPageAddress = spare->decodedPageAddress;
 	require(oldPageAddress != 0, "the reused node carries a real nonzero prior decode-page address");
@@ -173,7 +173,7 @@ void inactiveFrameMetadata() {
 	// when the retirement implementation clears them. Neither collection nor
 	// capture may follow these non-roots; the next activation overwrites them.
 	spare->executionImage = oldImage;
-	spare->closure = oldClosure;
+	spare->writeControl(bmsx::FrameField::Closure, oldClosure);
 	spare->registers = oldRegisters;
 	spare->decodedPageAddress = oldPageAddress;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -197,7 +197,7 @@ void inactiveFrameMetadata() {
 		const auto capacity = thread->stackCapacity;
 		cpu.beginCompletionCall(*closure);
 		require(thread->currentFrame == reused && thread->stackCapacity > capacity
-			&& reused->closure == closure && reused->registers.words() == thread->stack.words() + reused->stackBase
+			&& reused->attachedClosure() == closure && reused->registers.words() == thread->stack.words() + reused->stackBase
 			&& reused->registers.tags() == thread->stack.tags() + reused->stackBase
 			&& reused->executionImage == reused->previous->executionImage,
 			"a real activation reuses the node and rebinds all pointers after Value-stack growth");
@@ -570,7 +570,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	auto* thread = machine.cpu.activeThread();
 	auto* callee = thread->currentFrame;
 	auto* caller = callee->previous;
-	auto* closure = callee->closure;
+	auto* closure = callee->attachedClosure();
 	require(thread->protectedDepth() == 1 && caller->readControl(FrameField::Protected) == 0
 		&& callee->readControl(FrameField::Protected) == static_cast<u32>(-1), "native return admission concerns the target activation, not its protected subtree");
 	const std::array<Value, 6> payloads{valueNil(), valueBool(false), valueFloatBits(0x80000000),
@@ -626,7 +626,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	require(callee->decodedPage == nullptr && callee->compilationEntry && thread->currentFrame == caller,
 		"native retirement keeps the inactive record out of the live window");
 	machine.cpu.beginCompletionCall(*closure);
-	require(thread->currentFrame == callee && callee->closure == closure && callee->executionImage == caller->executionImage
+	require(thread->currentFrame == callee && callee->attachedClosure() == closure && callee->executionImage == caller->executionImage
 		&& callee->registers.words() == thread->stack.words() + callee->stackBase
 			&& callee->registers.tags() == thread->stack.tags() + callee->stackBase && callee->hasControlFlag(FRAME_COMPLETION)
 		&& callee->readControl(FrameField::Protected) == static_cast<u32>(-1) && !callee->hasControlFlag(FRAME_EXCEPTION) && !callee->hasControlFlag(FRAME_NMI),
@@ -772,7 +772,7 @@ void failedCallAdmission() {
 			catch (const LuaOutOfMemorySignal&) { rejected = true; }
 			require(rejected && thread->frameDepth == 1 && thread->stackTop == 8,
 				"failed completion admission never publishes an unallocated stack extent");
-			require(caller->next->closure == nullptr && caller->next->executionImage == nullptr,
+			require(caller->next->executionImage == nullptr,
 				"the unadmitted reusable node retains no callee references");
 		} else {
 			machine.cpu.runUntilDepth(0, 2);
@@ -1011,12 +1011,12 @@ void weakCanonicalClosuresAndStaticEntry() {
 		machine.cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, record);
 		require(machine.cpu.luaHeap().captureState().nextCollectionBytes > pressure.trackedBytes + 32,
 			"callee stack growth collected while admitting a freshly created canonical closure");
-		const auto direct = machine.cpu.activeThread()->currentFrame->closure;
+		const auto direct = machine.cpu.activeThread()->currentFrame->attachedClosure();
 		require(direct->prototype->recordUpvalueCount == 3 && direct->upvalueCount == 0,
 			"direct STATIC entry binds raw descriptor count but has no captured slots");
 		const auto directState = machine.cpu.captureRuntimeState();
 		machine.cpu.restoreRuntimeState(directState);
-		const auto restored = machine.cpu.activeThread()->currentFrame->closure;
+		const auto restored = machine.cpu.activeThread()->currentFrame->attachedClosure();
 		require(restored->prototype->recordUpvalueCount == 3 && restored->upvalueCount == 0,
 			"snapshot preserves the distinction without reading nonexistent upvalues");
 	}

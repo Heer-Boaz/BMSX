@@ -102,10 +102,9 @@ struct ExecutionHookBinding {
 	ExecutionDomainMask preMaskableInterruptDomainMask;
 };
 
-// Saved values are u32 offsets into the snapshot word arena. Object references
-// such as closureRef are ordinals in its object index.
+// These activation fields have not yet moved to the guest stack record.
 struct CpuFrameState {
-	int closureRef = -1;
+	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	int stackBase = 0;
 	int stackCapacity = 0;
 };

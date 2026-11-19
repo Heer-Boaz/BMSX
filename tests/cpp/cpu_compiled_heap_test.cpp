@@ -171,7 +171,7 @@ void concatKindsAndAliases(int destination) {
 			else switch (kind - values.size()) {
 				case 0: frame.registers.set(0, valueString(m->cpu.stringPool().intern(extra[0]))); break;
 				case 1: frame.registers.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable(0, 0)))); break;
-				case 2: frame.registers.set(0, valueClosure(m->cpu.gcHeap().reference(frame.closure))); break;
+				case 2: frame.registers.set(0, valueClosure(m->cpu.gcHeap().reference(frame.attachedClosure()))); break;
 				case 3: frame.registers.set(0, valueThread(m->cpu.gcHeap().reference(m->cpu.activeThread()))); break;
 			}
 			frame.registers.set(1, valueString(m->cpu.stringPool().intern("!")));

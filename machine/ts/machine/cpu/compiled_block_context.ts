@@ -33,7 +33,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 		case OpCode.GETUP: {
 			const published = registers.writeBack(true);
 			registers.discard(a);
-			return `{const m=h.memory,c=frame.closure.captureAddress(${b})&${UPVALUE_ADDRESS_MASK};
+			return `{const m=h.memory,c=frame.captureAddress(${b})&${UPVALUE_ADDRESS_MASK};
 				if(m.readRamRecordByte(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN}){
 					${published}
 					const owner=m.readRamRecordWord(c+${UPVALUE_OWNER}),slot=m.readRamRecordWord(c+${UPVALUE_VALUE_WORD});
@@ -44,7 +44,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 		}
 		case OpCode.SETUP: {
 			const tag = registers.tagOperand(a), word = registers.wordOperand(a);
-			return `{const m=h.memory,c=frame.closure.captureAddress(${b})&${UPVALUE_ADDRESS_MASK};
+			return `{const m=h.memory,c=frame.captureAddress(${b})&${UPVALUE_ADDRESS_MASK};
 				if(m.readRamRecordByte(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN}) ${registers.exit(exit)}
 				h.cellAt(c)?.writeBarrier();m.writeRamRecordWord(c+${UPVALUE_VALUE_WORD},${word});m.writeRamRecordByte(c+${UPVALUE_VALUE_TAG},${tag});}`;
 		}

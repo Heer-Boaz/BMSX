@@ -147,11 +147,12 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		closed.hashId = 101;
 		cpu.gc.track(open); cpu.gc.track(closed);
 		const bound = frame.closure;
-		frame.closure = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(2), bound.prototypeRecord, 2, false);
-		frame.closure.initializeRecord();
-		frame.closure.setCaptureAddress(0, open.address);
-		frame.closure.setCaptureAddress(1, closed.address);
-		cpu.gc.track(frame.closure);
+		const replacement = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(2), bound.prototypeRecord, 2, false);
+		replacement.initializeRecord();
+		replacement.setCaptureAddress(0, open.address);
+		replacement.setCaptureAddress(1, closed.address);
+		cpu.gc.track(replacement);
+		frame.closureAddress = replacement.address;
 		cpu.runUntilDepth(0, 50 * loopCycles);
 	}
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;

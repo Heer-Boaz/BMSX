@@ -12,10 +12,9 @@ struct NativeCallScratch {
 	const NativeBlockExitSite* exit;
 	CallFrame* caller;
 	CallFrame* callee;
-	Closure* closure;
 	void* target;
 	int argumentBase;
-	u32 functionAddress, codeAddress, numParams, maxStack, flags;
+	u32 closureAddress, functionAddress, codeAddress, numParams, maxStack, flags;
 	int argCount, varargBase, varargCount, stackBase, stackTop;
 };
 

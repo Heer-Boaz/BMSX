@@ -186,7 +186,7 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 	thread.reserveFrame(thread.stackRegisters.capacity());
 	const child = thread.acquireFrame();
 	child.stackBase = 2; child.stackCapacity = 8; child.top = 0;
-	child.closure = frame.closure; child.executionImage = frame.executionImage;
+	child.closureAddress = frame.closureAddress; child.executionImage = frame.executionImage;
 	child.registers.rebind(thread.stackRegisters, 2, 8);
 	thread.enterFrame(child); thread.stackTop = 10;
 	cpu.collectTrackedHeapBytes();

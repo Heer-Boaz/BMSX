@@ -4,6 +4,7 @@
 #include <array>
 
 #include "common/primitives.h"
+#include "machine/cpu/closure.h"
 #include "machine/cpu/value_slots.h"
 #include "machine/memory/memory.h"
 
@@ -11,7 +12,6 @@ namespace bmsx {
 
 struct Blua32ExecutionImage;
 struct DecodedInstructionPage;
-struct Closure;
 struct Thread;
 
 enum class ProtectedCallKind : uint8_t {
@@ -25,8 +25,8 @@ constexpr u32 PROTECTED_CALL_BYTES = 20;
 constexpr u32 PROTECTED_CALL_KIND_MASK = 0xffu;
 constexpr u32 PROTECTED_CALL_PARENT = 1u << 8;
 
-enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40 };
-constexpr u32 FRAME_CONTROL_BYTES = 44;
+enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44 };
+constexpr u32 FRAME_CONTROL_BYTES = 48;
 // The stack datapath uses a RAM-word slot index, not a host signed integer.
 constexpr u32 FRAME_WINDOW_MASK = (MAIN_RAM_SIZE / sizeof(u32)) - 1;
 constexpr u32 FRAME_COMPLETION = 1u;
@@ -53,8 +53,15 @@ struct CallFrame {
 	void setTop(i32 top) {
 		writeControl(FrameField::Top, (readControl(FrameField::Top) & ~FRAME_WINDOW_MASK) | static_cast<u32>(top));
 	}
+	Closure* attachedClosure() const;
+	u32 captureAddress(u32 index) const {
+		return controlMemory->readRamRecordWord(Closure::captureWordAddress(readControl(FrameField::Closure), index));
+	}
+	u32 captureCount() const {
+		return controlMemory->readRamRecordWord(readControl(FrameField::Closure) + CLOSURE_CAPTURE_COUNT) & FRAME_WINDOW_MASK;
+	}
 	void initializeControl(u32 function, u32 pc, u32 callSite, bool completion,
-		i32 varargBase, i32 varargCount, i32 returnBase, i32 returnCount, i32 top);
+		i32 varargBase, i32 varargCount, i32 returnBase, i32 returnCount, i32 top, u32 closure);
 	bool hasControlFlag(u32 mask) const;
 	void addControlFlags(u32 flags);
 	Blua32ExecutionImage* executionImage = nullptr;
@@ -71,7 +78,6 @@ struct CallFrame {
 	ValueSpan registers;
 	int stackBase = 0;
 	int stackCapacity = 0;
-	Closure* closure = nullptr;
 };
 
 } // namespace bmsx

@@ -261,7 +261,7 @@ export class Thread extends GcObject {
 	public acquireFrame(): CallFrame {
 		let frame = this.currentFrame === null ? this.firstFrame : this.currentFrame.next;
 		if (frame === null) {
-			frame = new CallFrame(this, this.currentFrame, this.heap.memory);
+			frame = new CallFrame(this, this.currentFrame, this.heap);
 			frame.bindControl(this.frameControlAddress(this.frameDepth));
 			if (this.currentFrame === null) this.firstFrame = frame;
 			else this.currentFrame.next = frame;
@@ -281,7 +281,6 @@ export class Thread extends GcObject {
 		this.stackTop = this.currentFrame === null ? 0 : this.currentFrame.stackBase + this.currentFrame.stackCapacity;
 		--this.frameDepth;
 		frame.executionImage = null!;
-		frame.closure = null!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
 		frame.compilationEntry = true;

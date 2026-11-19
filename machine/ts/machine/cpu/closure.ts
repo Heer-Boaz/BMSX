@@ -133,6 +133,7 @@ export class FunctionPrototypePool {
 	}
 }
 
+export const CLOSURE_CAPTURE_COUNT = 4;
 export const CLOSURE_PROTOTYPE_ADDRESS = 8;
 export const CLOSURE_CAPTURE_WORDS = 12;
 export function closureRecordBytes(captures: number): number { return CLOSURE_CAPTURE_WORDS + 4 * captures; }
@@ -151,7 +152,7 @@ export class Closure extends GcObject {
 	public initializeRecord(): void {
 		const flags = (this.prototypeRecord.executionDomainId + 1) | (this.canonical ? 4 : 0);
 		this.memory.writeRamRecordWord(this.address, ValueTag.Closure | (flags << 16));
-		this.memory.writeRamRecordWord(this.address + 4, 0);
+		this.memory.writeRamRecordWord(this.address + CLOSURE_CAPTURE_COUNT, this.upvalueCount);
 		this.memory.writeRamRecordWord(this.address + CLOSURE_PROTOTYPE_ADDRESS, this.prototypeRecord.functionAddress);
 	}
 	public captureAddress(index: number): number {

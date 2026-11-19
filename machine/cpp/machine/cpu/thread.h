@@ -87,6 +87,7 @@ struct Thread : GCObject {
 	size_t stackCapacity = 0;
 	int stackTop = 0;
 private:
+	friend struct CallFrame;
 	void replaceStack(u32 block, size_t capacity, u32 frames, u32 continuations);
 	u32 frameCapacity() const;
 	u32 protectedCapacity() const;

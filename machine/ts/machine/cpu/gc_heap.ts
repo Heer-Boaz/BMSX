@@ -168,9 +168,12 @@ export class GcHeap {
 		return false;
 	}
 	public markSlot(slots: ValueSlots, index: number): void { this.markValue(slots.get(index)); }
-	public armThreadStackWatches(): void {
+	public visitThreads(visit: (thread: Thread) => void): void {
 		for (let object = this.objects; object !== null; object = object.gcNext)
-			if (object.gcKind === GcKind.Thread) (object as Thread).armStackWatch();
+			if (object.gcKind === GcKind.Thread) visit(object as Thread);
+	}
+	public armThreadStackWatches(): void {
+		this.visitThreads(thread => thread.armStackWatch());
 	}
 	public observeStackWrites(first: number, end: number): void {
 		for (let address = first & -THREAD_HEAP_BYTES; address < end; address += THREAD_HEAP_BYTES) {
@@ -238,7 +241,7 @@ export class GcHeap {
 				let frame = thread.firstFrame!;
 				for (let depth = 0; depth < thread.frameDepth; ++depth, frame = frame.next!) {
 					this.cpu.markHeapImage(frame.executionImage);
-					this.markObject(frame.closure);
+					this.markObject(this.closureAt(frame.closureAddress));
 					let address = frame.openUpvalueHead;
 					for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
 						const upvalue = this.openCellAt(address);

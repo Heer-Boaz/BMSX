@@ -161,10 +161,9 @@ import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKin
 
 
 
-// Saved values are u32 offsets into the snapshot word arena. Object references
-// such as closureRef are ordinals in its object index.
+// These activation fields have not yet moved to the guest stack record.
 export type CpuFrameState = {
-	closureRef: number;
+	executionDomainId: ExecutionDomainId;
 	stackBase: number;
 	stackCapacity: number;
 };
@@ -425,11 +424,11 @@ export class CPU implements MappedPageInvalidator {
 		this.stringPool.endLocalRoots();
 	}
 
-	private ensureStackCapacity(size: number, closure: Closure, frameEntry = false, exception = false): void {
+	private ensureStackCapacity(size: number, root: Value, frameEntry = false, exception = false): void {
 		const thread = this.activeThread, current = thread.stackRegisters.capacity();
 		const next = size <= current ? current : Math.max(8, 1 << (32 - Math.clz32(size - 1)));
-		if (frameEntry) thread.reserveFrame(next, valueClosure(this.gc.reference(closure)), exception);
-		else if (next !== current) thread.resizeStack(next, valueClosure(this.gc.reference(closure)));
+		if (frameEntry) thread.reserveFrame(next, root, exception);
+		else if (next !== current) thread.resizeStack(next, root);
 	}
 
 	private clearCompletionValues(): void {
@@ -913,6 +912,17 @@ export class CPU implements MappedPageInvalidator {
 			if (domain === SYSTEM_EXECUTION_DOMAIN_ID) {
 				this.systemImage = image;
 				this.systemExceptionFunctionAddress = boot.exceptionFunctionAddress;
+			}
+			if (previous !== null) {
+				this.gc.visitThreads(thread => {
+					for (let frame = thread.firstFrame; frame !== null; frame = frame.next) {
+						if (frame.executionImage !== previous) continue;
+						frame.executionImage = image;
+						frame.decodedPage = null;
+						frame.decodedPageAddress = 0;
+						frame.compilationEntry = true;
+					}
+				});
 			}
 			if (this.activeExecutionImage === previous) this.latchActiveExecutionImage(image);
 		}
@@ -1884,11 +1894,11 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public getFrameUpvalueCount(frameIndex: number): number {
-		return this.activeThread.frameAtDepth(frameIndex).closure.upvalueCount;
+		return this.activeThread.frameAtDepth(frameIndex).captureCount;
 	}
 
 	public readFrameUpvalue(frameIndex: number, upvalueIndex: number): Value {
-		return this.readClosureUpvalue(this.activeThread.frameAtDepth(frameIndex).closure, upvalueIndex);
+		return Upvalue.load(this.memory, this.activeThread.frameAtDepth(frameIndex).captureAddress(upvalueIndex));
 	}
 
 	/** Read a retained closure without calling it or requiring an active frame. */
@@ -1937,7 +1947,8 @@ export class CPU implements MappedPageInvalidator {
 		const image = this.executionImageForDomain(executionDomainId)!;
 		const frame = this.activeThread.frameAtDepth(frameIndex);
 		if (frame === this.activeThread.currentFrame) this.abortStalledMemoryWrite();
-		const registerCount = Math.max(frame.closure.prototypeRecord.maxStack, frame.closure.prototypeRecord.numParams);
+		this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId));
+		const registerCount = Math.max(this.functionRecordLatch.maxStack, this.functionRecordLatch.numParams);
 		if (registerCount > frame.stackCapacity) {
 			this.ensureRegisterCapacity(frame, registerCount - 1);
 		}
@@ -2458,7 +2469,7 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.SkipInstruction: this.skipNextInstruction(frame); redispatch = true; break;
 				case CompiledBlockExit.Vararg: this.executeVararg(frame, exit.exitA, exit.exitB); break;
 				case CompiledBlockExit.WriteUpvalue:
-					this.copyRegisterToUpvalue(frame.closure.captureAddress(exit.exitB), registers, exit.exitA); break;
+					this.copyRegisterToUpvalue(frame.captureAddress(exit.exitB), registers, exit.exitA); break;
 				case CompiledBlockExit.InvalidOperand:
 				case CompiledBlockExit.InvalidConstant: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				case CompiledBlockExit.InvalidLength: throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
@@ -2846,12 +2857,12 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.CLOSURE:
 					this.executeClosure(frame, a, page.bx[pageOffset], page.c[pageOffset]); return;
 				case OpCode.GETUP: {
-					const address = frame.closure.captureAddress(page.b[pageOffset]);
+					const address = frame.captureAddress(page.b[pageOffset]);
 					this.copyUpvalueToRegister(frame, registers, a, address);
 					return;
 				}
 				case OpCode.SETUP: {
-					const address = frame.closure.captureAddress(page.b[pageOffset]);
+					const address = frame.captureAddress(page.b[pageOffset]);
 					this.copyRegisterToUpvalue(address, registers, a);
 					return;
 				}
@@ -2894,7 +2905,7 @@ export class CPU implements MappedPageInvalidator {
 	private prepareFrameRegisters(frame: CallFrame, registerCount: number, stackBase: number, closure: Closure, exception = false): ValueSlots {
 		const capacity = Math.max(registerCount, 1);
 		const stackTop = stackBase + capacity;
-		this.ensureStackCapacity(stackTop, closure, true, exception);
+		this.ensureStackCapacity(stackTop, valueClosure(closure.address), true, exception);
 		frame.stackBase = stackBase;
 		frame.stackCapacity = capacity;
 		this.activeThread.stackTop = stackTop;
@@ -2922,9 +2933,8 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
-		frame.closure = closure;
 		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress, returnToCompletionLatch,
-			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams);
+			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure.address);
 
 		const copiedCount = Math.min(functionRecord.numParams, args.length);
 		for (let index = 0; index < copiedCount; index += 1) {
@@ -2956,9 +2966,8 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
-		frame.closure = closure;
 		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch,
-			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams);
+			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure.address);
 		const copiedCount = Math.min(functionRecord.numParams, argCount);
 		if (vararg || !sharedStack) {
 			registers.copyRangeFrom(callerRegisters, 0, argBase, copiedCount);
@@ -3015,7 +3024,7 @@ export class CPU implements MappedPageInvalidator {
 				}
 				continue;
 			}
-			upvalues[index] = frame.closure.captureAddress(upvalueIndex);
+			upvalues[index] = frame.captureAddress(upvalueIndex);
 		}
 		if (this.captureAddresses.length < newUpvalueCount) this.captureAddresses = new Uint32Array(newUpvalueCount);
 		const address = this.luaHeap.allocateClosureRecord(count, this.captureAddresses, newUpvalueCount);
@@ -3106,7 +3115,7 @@ export class CPU implements MappedPageInvalidator {
 			const needed = index + 1;
 			let capacity = 1 << (32 - Math.clz32(needed - 1));
 			if (capacity < 8) capacity = 8;
-			this.ensureStackCapacity(frame.stackBase + capacity, frame.closure);
+			this.ensureStackCapacity(frame.stackBase + capacity, valueClosure(frame.closureAddress));
 			frame.stackCapacity = capacity;
 			registers.rebind(frame.thread.stackRegisters, frame.stackBase, capacity);
 			if (frame === frame.thread.currentFrame) frame.thread.stackTop = frame.stackBase + capacity;
@@ -3264,10 +3273,10 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.GetFrameUpvalue:
 			case BuiltinFunctionId.SetFrameUpvalue: {
 				const thread = args.registers.getThread(args.base, this.gc);
-				const closure = thread.frameAtDepth(integerOperand(args.registers.get(args.base + 1))).closure;
+				const frame = thread.frameAtDepth(integerOperand(args.registers.get(args.base + 1)));
 				const index = integerOperand(args.registers.get(args.base + 2));
-				if (id === BuiltinFunctionId.SetFrameUpvalue) this.copyRegisterToUpvalue(closure.captureAddress(index), args.registers, args.base + 3);
-				else out.push(this.readClosureUpvalue(closure, index));
+				if (id === BuiltinFunctionId.SetFrameUpvalue) this.copyRegisterToUpvalue(frame.captureAddress(index), args.registers, args.base + 3);
+				else out.push(Upvalue.load(this.memory, frame.captureAddress(index)));
 				break;
 			}
 			case BuiltinFunctionId.StringByte:
@@ -3900,9 +3909,8 @@ export class CPU implements MappedPageInvalidator {
 			const frames = new Array<CpuFrameState>(thread.frameDepth);
 			let frame = thread.firstFrame!;
 			for (let frameIndex = 0; frameIndex < thread.frameDepth; frameIndex += 1, frame = frame.next!) {
-				const closureRef = captureObject(frame.closure, CpuSnapshotObjectKind.Closure);
 				frames[frameIndex] = {
-					closureRef,
+					executionDomainId: frame.executionImage.executionDomainId,
 					stackBase: frame.stackBase,
 					stackCapacity: frame.stackCapacity,
 
@@ -4190,14 +4198,12 @@ export class CPU implements MappedPageInvalidator {
 			thread.stackTop = saved.stackTop;
 			for (let frameIndex = 0; frameIndex < saved.frames.length; frameIndex += 1) {
 				const frameState = saved.frames[frameIndex];
-				const closure = restoredObjects[frameState.closureRef] as Closure;
 				const frame = this.activeThread.acquireFrame();
 				frame.stackBase = frameState.stackBase;
 				frame.stackCapacity = frameState.stackCapacity;
 
 				frame.registers.rebind(thread.stackRegisters, frame.stackBase, frame.stackCapacity);
-				frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
-				frame.closure = closure;
+				frame.executionImage = this.executionImageForDomain(frameState.executionDomainId)!;
 
 				this.activeThread.enterFrame(frame);
 			}
@@ -4330,7 +4336,7 @@ export class CPU implements MappedPageInvalidator {
 					add(thread.error);
 					addSlots(thread.stackRegisters, thread.stackTop);
 					for (let frame = thread.currentFrame; frame !== null; frame = frame.previous) {
-						objects.push(frame.closure);
+						add(valueClosure(frame.closureAddress));
 						let address = frame.openUpvalueHead;
 						for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
 							const upvalue = this.gc.openCellAt(address);

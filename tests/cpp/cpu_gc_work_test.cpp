@@ -48,13 +48,13 @@ struct Machine {
 	}
 };
 
-// Thread192 (64-byte header and the 128-byte class for 40 Value bytes plus two 44-byte frames)
+// Thread224 (64-byte header and the 160-byte class for 40 Value bytes plus two 48-byte frames)
 // + Closure16 + 14 machine Strings occupying 648 bytes
 // and their 16 four-byte intern buckets. Each live String marks once,
 // and every issued object block and intern bucket is visited once.
-constexpr int bootBytes = 192 + 16 + 648 + 64;
-constexpr int bootMarkWork = 2 * 48 + 3 + 2 * 12 + 14;
-constexpr int bootCollectionWork = 4 * 48 + 3 + 1 + 3 * 12 + 2 * 14 + 16;
+constexpr int bootBytes = 224 + 16 + 648 + 64;
+constexpr int bootMarkWork = 2 * 56 + 3 + 2 * 12 + 14;
+constexpr int bootCollectionWork = 4 * 56 + 3 + 1 + 3 * 12 + 2 * 14 + 16;
 
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -312,7 +312,7 @@ void stackShrinkAndAdmission() {
 	thread->reserveFrame(thread->stackCapacity);
 	auto* child = thread->acquireFrame();
 	child->stackBase = 2; child->stackCapacity = 8; child->writeControl(bmsx::FrameField::Top, 0);
-	child->closure = frame.closure; child->executionImage = frame.executionImage;
+	child->writeControl(bmsx::FrameField::Closure, frame.readControl(bmsx::FrameField::Closure)); child->executionImage = frame.executionImage;
 	child->registers = thread->stack.subspan(2, 8);
 	thread->enterFrame(child); thread->stackTop = 10;
 	cpu.collectHeap();

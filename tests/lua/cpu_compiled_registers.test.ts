@@ -25,10 +25,11 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	upvalue.bind(frame.thread.address, frame.stackBase + 8, 0);
 	cpu.gc.track(upvalue);
 	const bound = frame.closure;
-	frame.closure = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(1), bound.prototypeRecord, 1, false);
-	frame.closure.initializeRecord();
-	frame.closure.setCaptureAddress(0, upvalue.address);
-	cpu.gc.track(frame.closure);
+	const replacement = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(1), bound.prototypeRecord, 1, false);
+	replacement.initializeRecord();
+	replacement.setCaptureAddress(0, upvalue.address);
+	cpu.gc.track(replacement);
+	frame.closureAddress = replacement.address;
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!;

@@ -408,16 +408,27 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
 		static_cast<size_t>(executionBoot.executionDomainId + 1)
 	];
-	Blua32ExecutionImage* previousImage = imageEntry.get();
 	std::unique_ptr<Blua32ExecutionImage> image =
 		activateExecutionImage(executionBoot);
+	auto previousImage = std::move(imageEntry);
 	Blua32ExecutionImage* activatedImage = image.get();
 	imageEntry = std::move(image);
 	if (activatedImage->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
 		m_systemImage = activatedImage;
 		m_systemExceptionFunctionAddress = executionBoot.exceptionFunctionAddress;
 	}
-	if (m_activeExecutionImage == previousImage) {
+	if (previousImage) {
+		m_heap.visitThreads([&](Thread& thread) {
+			for (auto* frame = thread.firstFrame; frame; frame = frame->next) {
+				if (frame->executionImage != previousImage.get()) continue;
+				frame->executionImage = activatedImage;
+				frame->decodedPage = nullptr;
+				frame->decodedPageAddress = 0;
+				frame->compilationEntry = true;
+			}
+		});
+	}
+	if (m_activeExecutionImage == previousImage.get()) {
 		latchActiveExecutionImage(*activatedImage);
 	}
 }
@@ -834,7 +845,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		for (size_t depth = 0; depth < thread->frameDepth; ++depth, framePtr = framePtr->next) {
 			const CallFrame& frame = *framePtr;
 			CpuFrameState frameState;
-			frameState.closureRef = captureObject(frame.closure);
+			frameState.executionDomainId = frame.executionImage->executionDomainId;
 
 			frameState.stackCapacity = frame.stackCapacity;
 			frameState.stackBase = frame.stackBase;
@@ -1126,8 +1137,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		thread->stackTop = saved.stackTop;
 		for (const CpuFrameState& frameState : saved.frames) {
 			auto* frame = m_activeThread->acquireFrame();
-			frame->closure = static_cast<Closure*>(restoredObjects[static_cast<size_t>(frameState.closureRef)]);
-			frame->executionImage = executionImageForDomain(frame->closure->prototype->executionDomainId);
+			frame->executionImage = executionImageForDomain(frameState.executionDomainId);
 			frame->stackBase = frameState.stackBase;
 			frame->stackCapacity = frameState.stackCapacity;
 			frame->registers = thread->stack.subspan(frame->stackBase, frame->stackCapacity);
@@ -1258,7 +1268,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::GetFrameUpvalue:
 		case BuiltinFunctionId::SetFrameUpvalue: {
 			const auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
-			const u32 address = frame.closure->captureAddress(integerOperand(args[2]));
+			const u32 address = frame.captureAddress(integerOperand(args[2]));
 			if (fn.id == BuiltinFunctionId::SetFrameUpvalue) writeUpvalue(address, args[3]);
 			else out.push_back(readUpvalue(address));
 			break;
@@ -2484,12 +2494,12 @@ Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
 
 int CPU::getFrameUpvalueCount(int frameIndex) const {
 	const CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
-	return static_cast<int>(frame.closure->upvalueCount);
+	return static_cast<int>(frame.captureCount());
 }
 
 Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
 	const CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
-	return readClosureUpvalue(frame.closure, upvalueIndex);
+	return readUpvalue(frame.captureAddress(static_cast<u32>(upvalueIndex)));
 }
 
 Value CPU::readClosureUpvalue(const Closure* closure, int upvalueIndex) const {
@@ -2549,13 +2559,13 @@ void CPU::writeFrameExecution(
 	}
 	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
 		&& functionRecord.upvalueCount == 0u) {
-		frame.closure = staticClosureForRecord(decodePrototype(functionRecord));
+		frame.writeControl(FrameField::Closure, staticClosureForRecord(decodePrototype(functionRecord))->address);
 	} else {
-		Closure* oldClosure = frame.closure;
-		Closure* replacement = allocateClosure(decodePrototype(functionRecord), oldClosure->upvalueCount, false);
-		for (u32 index = 0; index < oldClosure->upvalueCount; ++index)
-			replacement->setCaptureAddress(index, oldClosure->captureAddress(index));
-		frame.closure = replacement;
+		const u32 count = frame.captureCount();
+		Closure* replacement = allocateClosure(decodePrototype(functionRecord), count, false);
+		for (u32 index = 0; index < count; ++index)
+			replacement->setCaptureAddress(index, frame.captureAddress(index));
+		frame.writeControl(FrameField::Closure, replacement->address);
 	}
 	frame.writeControl(FrameField::Function, functionRecord.address);
 	frame.executionImage = functionRecord.image;
@@ -2631,7 +2641,7 @@ Closure* CPU::createClosure(CallFrame& frame) {
 				newUpvalueCount += 1;
 			}
 		} else {
-			m_closureCellScratch[index] = frame.closure->captureAddress(upvalueIndex);
+			m_closureCellScratch[index] = frame.captureAddress(upvalueIndex);
 		}
 	}
 	m_captureAddressScratch.resize(newUpvalueCount);
@@ -2694,9 +2704,8 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	auto* frame = m_activeThread->acquireFrame();
 	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
-	frame->closure = closure;
 	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch,
-		varargBase, varargCount, returnBase, returnCount, top);
+		varargBase, varargCount, returnBase, returnCount, top, closure->address);
 	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
 	frame->registers = m_activeThread->stack.subspan(stackBase, frame->stackCapacity);
@@ -2736,9 +2745,8 @@ CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
 	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true, exception);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
-	frame->closure = closure;
 	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress, returnToCompletionLatch,
-		varargBase, varargCount, returnBase, returnCount, top);
+		varargBase, varargCount, returnBase, returnCount, top, closure->address);
 	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
 	frame->registers = m_activeThread->stack.subspan(stackBase, frame->stackCapacity);
