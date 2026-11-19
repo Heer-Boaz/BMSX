@@ -274,18 +274,20 @@ export class GcHeap {
 		return work;
 	}
 	private readonly sweepRecord = (address: number): boolean => {
-		// Until all metadata migrates, only a registered Table has a physical record.
-		const table = this.tableAt(address);
-		if (table === null) return false;
-		if (!this.sweepGarbage(table)) {
-			table.gcColor = this.white;
+		const index = (address & GC_RECORD_MASK) >>> 3;
+		const object = this.records[index];
+		if (object === null) return false;
+		if (!this.sweepGarbage(object)) {
+			object.gcColor = this.white;
 			return false;
 		}
-		if (this.sweep === table) this.sweep = table.gcNext;
-		const bytes = this.tables.getTrackedHeapBytes(table.address);
-		this.records[(address & GC_RECORD_MASK) >>> 3] = null;
-		this.tables.freeRecord(table.address);
-		this.unlink(table);
+		if (this.sweep === object) this.sweep = object.gcNext;
+		const bytes = this.allocationBytes(object);
+		this.records[index] = null;
+		if (object.gcKind === GcKind.Table) this.tables.freeRecord(address);
+		else this.arena.free(address);
+		this.unlink(object);
+		this.releaseHostMetadata(object);
 		this.budget.release(bytes);
 		return true;
 	};
@@ -330,20 +332,10 @@ export class GcHeap {
 					work += this.arena.sweepObjects(GC_STEP_WORDS - work, this.sweepRecord);
 					while (this.sweep !== null && work < GC_STEP_WORDS) {
 						const object = this.sweep; this.sweep = object.gcNext;
-						if (object.gcKind === GcKind.Table) continue;
+						if (object.referenceId === 0) continue;
 						const bytes = this.allocationBytes(object);
-						work += object.gcKind === GcKind.Upvalue || object.gcKind === GcKind.Closure ? 1 : ceilDiv4(bytes);
+						work += ceilDiv4(bytes);
 						if (this.sweepGarbage(object)) {
-							if (object.gcKind === GcKind.Upvalue) {
-								const address = (object as Upvalue).address;
-								this.records[(address & GC_RECORD_MASK) >>> 3] = null;
-								this.arena.free(address);
-							}
-							if (object.gcKind === GcKind.Closure) {
-								const address = (object as Closure).address;
-								this.records[(address & GC_RECORD_MASK) >>> 3] = null;
-								this.arena.free(address);
-							}
 							this.unlink(object);
 							this.releaseHostMetadata(object);
 							this.budget.release(bytes);

@@ -174,3 +174,22 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - heapAllocationBytes(closureRecordBytes(1)) - UPVALUE_HEAP_BYTES);
 });
+
+test('a vacant closure slot costs a visit while its object page remains in use', () => {
+	const cpu = machine(), { gc } = cpu, frame = cpu.rootThread.currentFrame!;
+	const closure = frame.registers.getClosure(1, gc);
+	const cellAddress = closure.captureAddress(0);
+	const sweep = () => {
+		while (gc.captureState(() => 0).phase !== GcPhase.Sweep) gc.step();
+		const work = gc.step();
+		while (gc.active()) gc.step();
+		return work;
+	};
+	const occupied = sweep();
+	frame.registers.setNil(1);
+	assert.equal(sweep(), occupied, 'reclaiming an issued closure costs one visit');
+	assert.equal(cpu.memory.readRamRecordByte(closure.address), 0);
+	assert.equal(gc.closureAt(closure.address), null);
+	assert.equal(gc.cellAt(cellAddress)!.open, true, 'an open frame still roots the cell');
+	assert.equal(sweep(), occupied, 'a free slot still costs one visit');
+});

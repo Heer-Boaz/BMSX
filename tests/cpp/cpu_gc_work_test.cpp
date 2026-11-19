@@ -148,14 +148,15 @@ void allActivatedImagesAndUniqueGlobals() {
 	require(cpu.luaHeap().usedBytes() == 133, "retired closures and readonly image payloads do not inflate the live pool");
 	cpu.instructionBudgetRemaining = 5;
 	cpu.luaHeap().collectRuntime();
-	// C=3+4+1, S=1, G=3; all activated images remain roots, not only the current system image.
-	require(cpu.instructionBudgetRemaining == -210,
-		"literal215 bills three root passes over all resident images and unique namespaces");
+	// C=3+4+1, S=1, G=3; all activated images remain roots. The two
+	// retired cartridge closure slots still cost one visit each on the system closure's page.
+	require(cpu.instructionBudgetRemaining == -212,
+		"work includes three root passes over all resident images and two vacant closure slots");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	cpu.instructionBudgetRemaining = 5;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == -210, "restored residency and registered ranges reproduce the same collection bill");
+	require(cpu.instructionBudgetRemaining == -212, "restored residency and registered ranges reproduce the same collection bill");
 }
 
 void temporaryRootsAndUnreachablePool() {

@@ -78,12 +78,11 @@ export class LuaHeap {
 		const arena = this.cpu.heapAllocator;
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
 			if (this.trackedBytes + charged <= this.capacity()) {
-				// The legacy descriptors own these records until the object sweep migrates.
-				const closure = arena.allocate(bytes, true);
+				const closure = arena.allocate(bytes, false);
 				if (closure !== 0) {
 					let count = 0;
 					for (; count < newCount; ++count) {
-						const cell = arena.allocate(UPVALUE_HEAP_BYTES, true);
+						const cell = arena.allocate(UPVALUE_HEAP_BYTES, false);
 						if (cell === 0) break;
 						cells[count] = cell;
 					}

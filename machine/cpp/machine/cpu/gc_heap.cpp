@@ -348,18 +348,21 @@ void GcHeap::destroyObject(GCObject* object) {
 
 bool GcHeap::sweepRecord(void* context, u32 address) {
 	auto& heap = *static_cast<GcHeap*>(context);
-	// Until all metadata migrates, only a registered Table has a physical record.
-	auto* table = heap.tableAt(address);
-	if (!table) return false;
-	if (!heap.sweepGarbage(table)) {
-		table->gcColor = heap.m_white;
+	auto& slot = heap.physicalSlot(address);
+	auto* object = slot;
+	if (!object) return false;
+	if (!heap.sweepGarbage(object)) {
+		object->gcColor = heap.m_white;
 		return false;
 	}
-	if (heap.m_sweep == table) heap.m_sweep = table->next;
-	heap.physicalSlot(address) = nullptr;
-	table->freeRecord();
-	heap.unlink(table);
-	heap.destroyObject(table);
+	if (heap.m_sweep == object) heap.m_sweep = object->next;
+	slot = nullptr;
+	if (object->type == ObjType::Table)
+		static_cast<Table*>(object)->freeRecord();
+	else
+		heap.arena.free(address);
+	heap.unlink(object);
+	heap.destroyObject(object);
 	return true;
 }
 
@@ -416,19 +419,10 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 				while (m_sweep && work < GC_STEP_WORDS) {
 					auto* object = m_sweep;
 					m_sweep = object->next;
-					if (object->type == ObjType::Table) continue;
-					work += object->type == ObjType::Upvalue || object->type == ObjType::Closure ? 1 : ceilDiv4(static_cast<int>(allocationBytes(object)));
+					// The allocator has already visited (or will visit) every physical record.
+					if (object->referenceId == 0) continue;
+					work += ceilDiv4(static_cast<int>(allocationBytes(object)));
 					if (sweepGarbage(object)) {
-						if (object->type == ObjType::Upvalue) {
-							const u32 address = static_cast<Upvalue*>(object)->address;
-							physicalSlot(address) = nullptr;
-							arena.free(address);
-						}
-						if (object->type == ObjType::Closure) {
-							const u32 address = static_cast<Closure*>(object)->address;
-							physicalSlot(address) = nullptr;
-							arena.free(address);
-						}
 						unlink(object); destroyObject(object);
 					}
 					else {

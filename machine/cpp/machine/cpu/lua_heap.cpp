@@ -77,11 +77,10 @@ u32 LuaHeap::allocateClosureRecord(u32 captures, std::span<u32> cells) {
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
 		if (m_trackedBytes + charged <= capacity()) {
-			// The legacy descriptors own these records until the object sweep migrates.
-			if (const u32 closure = arena.allocate(bytes, true)) {
+			if (const u32 closure = arena.allocate(bytes, false)) {
 				size_t count = 0;
 				for (; count < cells.size(); ++count) {
-					const u32 cell = arena.allocate(UPVALUE_HEAP_BYTES, true);
+					const u32 cell = arena.allocate(UPVALUE_HEAP_BYTES, false);
 					if (!cell) break;
 					cells[count] = cell;
 				}

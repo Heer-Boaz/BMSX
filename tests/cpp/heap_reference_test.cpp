@@ -199,6 +199,30 @@ void closedCellLivesInRam() {
 		"collection releases both raw records");
 }
 
+void closureAndCellPagesChargeVacantSlots() {
+	Machine machine;
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& frame = *cpu.rootThread()->currentFrame;
+	auto* closure = asClosure(frame.registers.get(1), heap);
+	const u32 closureAddress = closure->address;
+	const u32 cellAddress = closure->captureAddress(0);
+	const auto sweep = [&]() {
+		while (heap.captureState([](const GCObject*) { return 0u; }).phase != GcPhase::Sweep)
+			heap.step(valueNil(), valueNil(), valueNil());
+		const auto work = heap.step(valueNil(), valueNil(), valueNil());
+		while (heap.active()) heap.step(valueNil(), valueNil(), valueNil());
+		return work;
+	};
+	const auto occupied = sweep();
+	frame.registers.set(1, valueNil());
+	require(sweep() == occupied, "reclaiming an issued closure costs one slot visit");
+	require(heap.closureAt(closureAddress) == nullptr &&
+		cpu.memory().readRamRecordByte(closureAddress) == 0, "allocator sweep retires the closure slot");
+	require(heap.cellAt(cellAddress) && heap.cellAt(cellAddress)->open, "an open frame still roots the cell");
+	require(sweep() == occupied, "a free closure slot on a surviving object page still costs one visit");
+}
+
 void isolatedHeaps() {
 	Machine first, second;
 	auto* a = first.cpu.createTable(); auto* b = second.cpu.createTable();
@@ -212,7 +236,7 @@ void isolatedHeaps() {
 int main() {
 	try {
 		liveReferencesAndReuse(); restoreRebindsWithoutRetainingDiscardedFutures(); incrementalRestore();
-		builtinIdentitiesStayOutsideTheGcHeap(); closedCellLivesInRam(); isolatedHeaps();
+		builtinIdentitiesStayOutsideTheGcHeap(); closedCellLivesInRam(); closureAndCellPagesChargeVacantSlots(); isolatedHeaps();
 		std::cout << "heap reference tests passed\n";
 		return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
