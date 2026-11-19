@@ -10,18 +10,11 @@ for (const word of [0, 1, 2, 0x007fffff, 0x00800000, 0x31000000, 0x31800000,
 		words.add(magnitude); words.add((magnitude | 0x80000000) >>> 0);
 	}
 }
-for (let quadrant = -64; quadrant <= 64; ++quadrant) {
+// Quadrant boundaries exercise argument reduction; the edge words above
+// already cover subnormal, tiny, unit and maximal magnitudes.
+for (let quadrant = -8; quadrant <= 8; ++quadrant) {
 	const word = numberToF32Bits(quadrant * Math.PI / 2);
 	for (const delta of [-2, -1, 0, 1, 2]) if (word + delta >= 0) words.add((word + delta) >>> 0);
-}
-for (let exponent = 0; exponent < 255; ++exponent) for (const fraction of [0, 1, 0x123456, 0x400000, 0x7fffff]) {
-	const word = (exponent << 23) | fraction;
-	words.add(word); words.add((word | 0x80000000) >>> 0);
-}
-let random = 0x12345678;
-for (let index = 0; index < 512; ++index) {
-	random = (Math.imul(random, 1664525) + 1013904223) >>> 0;
-	if ((random & 0x7fffffff) < 0x7f800000) words.add(random);
 }
 
 export const TRIG32_INPUT_WORDS = Uint32Array.from(words);

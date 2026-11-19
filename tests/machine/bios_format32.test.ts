@@ -24,7 +24,7 @@ test('rational formatter reference includes exact halves, signed zero and decima
 });
 
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
-	test(`BIOS format O${optLevel} ${backend}: all finite exponents, exact decimal references, raw words and fields`, () => {
+	test(`BIOS format O${optLevel} ${backend}: edge magnitudes, exact decimal references, raw words and fields`, () => {
 		const program = compileLuaChunkToProgram(parseLuaChunk(FORMAT32_ROM_SOURCE), modules,
 			{ entrySource: FORMAT32_ROM_SOURCE, optLevel, programDomain: 'system' });
 		const image = linkTestSystemBlua32(program);

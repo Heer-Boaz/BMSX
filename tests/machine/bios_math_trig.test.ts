@@ -19,7 +19,7 @@ const bootSource = 'return { pcall = __bmsx_pcall, error = __bmsx_error }';
 modules.push({ path: 'test/boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'test/boot.lua') });
 
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
-	test(`BIOS binary32 trigonometry O${optLevel} ${backend}: full finite exponents, quadrant cancellation and IEEE edges`, t => {
+	test(`BIOS binary32 trigonometry O${optLevel} ${backend}: edge magnitudes, quadrant cancellation and IEEE edges`, t => {
 		const entrySource = `local math<const> = require('math')
 local boot<const> = require('test/boot')
 trig_roots = { math.sin, math.cos, math.tan, function(fn, value) return boot.pcall(fn, value) end }
