@@ -52,7 +52,8 @@ private:
 	u32 allocateRun(u32 byteCount, bool owned);
 	i32 takeTopPage();
 	i32 takeTopRun(u32 pages);
-	void unlinkPartial(u32 head, u32 page);
+	void unlinkPartial(u32 head, u32 links);
+	void setPreviousPartial(u32 pageLink, u32 previous);
 	void releasePages(u32 first, u32 end);
 	void setAvailable(u32 first, u32 end, bool available);
 	bool isAvailable(u32 page) const;

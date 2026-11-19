@@ -109,3 +109,32 @@ test('object sweep resumes from RAM, visits vacant issued slots and skips owned 
 		assert.ok(!heap.objectSweepActive());
 	}
 });
+
+test('releasing a middle partial page preserves allocation order, including after RAM restore', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const heap = new HeapAllocator(memory);
+	const slotBytes = HEAP_PAGE_SIZE >>> 1;
+	const high = heap.allocate(slotBytes, true), highSpare = heap.allocate(slotBytes, true);
+	const middle = heap.allocate(slotBytes, true), middleSpare = heap.allocate(slotBytes, true);
+	const low = heap.allocate(slotBytes, true), lowSpare = heap.allocate(slotBytes, true);
+	heap.free(highSpare);
+	heap.free(middleSpare);
+	heap.free(lowSpare);
+	const checkpoint = memory.captureSaveState();
+
+	for (let replay = 0; replay < 2; ++replay) {
+		memory.restoreSaveState(checkpoint);
+		heap.free(middle);
+		assert.equal(heap.allocate(slotBytes, true), lowSpare, 'the partial-list head keeps priority');
+		assert.equal(heap.allocate(slotBytes, true), highSpare, 'the next surviving partial page keeps priority');
+		assert.equal(heap.allocate(slotBytes, true), middle, 'the released page is available to the page allocator');
+		assert.equal(heap.allocate(slotBytes, true), middleSpare);
+		heap.free(high);
+		heap.free(low);
+		heap.free(middle);
+		heap.free(highSpare);
+		assert.equal(heap.allocate(slotBytes, true), middle, 'removing the tail preserves the new head');
+		assert.equal(heap.allocate(slotBytes, true), low, 'promoting the next page clears its former predecessor');
+		assert.equal(heap.allocate(slotBytes, true), high, 'no empty page remains linked');
+	}
+});

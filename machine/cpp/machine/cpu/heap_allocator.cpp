@@ -13,7 +13,7 @@ namespace {
 constexpr u32 CLASS_COUNT = static_cast<u32>(HEAP_CLASS_BYTES.size());
 constexpr u32 PAGE_SHIFT = 12u;
 constexpr u32 PAGE_MASK = HEAP_PAGE_SIZE - 1u;
-constexpr u32 MAX_PAGES = 1024u;
+constexpr u32 MAX_PAGES = (MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE) >> PAGE_SHIFT;
 
 // Management-area layout, as byte offsets from its base. Every field is a
 // little-endian word in guest RAM; partial-list links store page + 1.
@@ -26,7 +26,12 @@ constexpr u32 PAGE_ENTRIES = 0x1000u;
 constexpr u32 PAGE_ENTRY_BYTES = 12u;
 
 // Page entry: word 0 = kind | class << 8 | live << 16; word 1 = free-slot head
-// (guest address), run length or run head; word 2 = bump | next partial << 16.
+// (guest address), run length or run head. Word 2 packs the bump in units
+// of 8 bytes, then the previous and next partial-page links, 10 bits each.
+constexpr u32 BUMP_SHIFT = 3u;
+constexpr u32 LINK_MASK = 0x3ffu;
+constexpr u32 PREVIOUS_SHIFT = 10u;
+constexpr u32 NEXT_SHIFT = 20u;
 enum PageKind : u32 {
 	Unused = 0,
 	ObjectSlots = 1,
@@ -126,7 +131,7 @@ size_t HeapAllocator::sweepObjects(size_t allowance, void* context, SweepVisitor
 				// The class and bump come from cartridge-writable management RAM.
 				if (classIndex >= CLASS_COUNT) break;
 				const u32 stride = HEAP_CLASS_BYTES[classIndex];
-				const u32 end = std::min(m_memory.readRamRecordWord(pageEntry + 8u) & 0xffffu, HEAP_PAGE_SIZE);
+				const u32 end = std::min((m_memory.readRamRecordWord(pageEntry + 8u) & LINK_MASK) << BUMP_SHIFT, HEAP_PAGE_SIZE);
 				u32 live = info >> 16;
 				for (u32 slot = 0; slot + stride <= end; slot += stride) {
 					++work;
@@ -170,7 +175,7 @@ u32 HeapAllocator::allocate(u32 byteCount, bool owned) {
 	const u32 pageOffset = page << PAGE_SHIFT;
 	const u32 freeHead = m_memory.readRamRecordWord(pageEntry + 4u);
 	const u32 word2 = m_memory.readRamRecordWord(pageEntry + 8u);
-	u32 bump = word2 & 0xffffu;
+	u32 bump = (word2 & LINK_MASK) << BUMP_SHIFT;
 	u32 slot;
 	u32 nextFree;
 	if (freeHead != 0u) {
@@ -185,11 +190,10 @@ u32 HeapAllocator::allocate(u32 byteCount, bool owned) {
 		nextFree = 0u;
 	}
 	const bool full = nextFree == 0u && bump + size > HEAP_PAGE_SIZE;
-	const u32 nextPartial = word2 >> 16;
 	m_memory.writeRamRecordWord(pageEntry, kindAndClass | (((word0 >> 16) + 1u) << 16));
 	m_memory.writeRamRecordWord(pageEntry + 4u, nextFree);
-	m_memory.writeRamRecordWord(pageEntry + 8u, bump | ((full ? 0u : nextPartial) << 16));
-	if (full) m_memory.writeRamRecordWord(head, nextPartial);
+	m_memory.writeRamRecordWord(pageEntry + 8u, (bump >> BUMP_SHIFT) | (full ? 0u : word2 & ~LINK_MASK));
+	if (full) unlinkPartial(head, word2);
 	m_memory.writeRamRecordWord(m_management + OCCUPIED, occupiedBytes() + size);
 	return RAM_BASE + slot;
 }
@@ -213,7 +217,7 @@ void HeapAllocator::free(u32 address) {
 	if ((kind != ObjectSlots && kind != OwnedSlots) || classIndex >= CLASS_COUNT || live == 0u) return;
 	const u32 size = HEAP_CLASS_BYTES[classIndex];
 	const u32 word2 = m_memory.readRamRecordWord(pageEntry + 8u);
-	const u32 bump = word2 & 0xffffu;
+	const u32 bump = (word2 & LINK_MASK) << BUMP_SHIFT;
 	const u32 within = offset & PAGE_MASK;
 	if (within >= bump || within % size != 0u) return;
 	const u32 freeHead = m_memory.readRamRecordWord(pageEntry + 4u);
@@ -223,14 +227,16 @@ void HeapAllocator::free(u32 address) {
 	m_memory.writeRamRecordWord(offset + 4u, freeHead);
 	m_memory.writeRamRecordWord(m_management + OCCUPIED, occupiedBytes() - size);
 	if (live == 1u) {
-		if (!wasFull) unlinkPartial(head, page);
+		if (!wasFull) unlinkPartial(head, word2);
 		releasePages(page, page + 1u);
 		return;
 	}
 	m_memory.writeRamRecordWord(pageEntry, (word0 & 0xffffu) | ((live - 1u) << 16));
 	m_memory.writeRamRecordWord(pageEntry + 4u, address);
 	if (wasFull) {
-		m_memory.writeRamRecordWord(pageEntry + 8u, bump | (m_memory.readRamRecordWord(head) << 16));
+		const u32 next = m_memory.readRamRecordWord(head) & LINK_MASK;
+		m_memory.writeRamRecordWord(pageEntry + 8u, (bump >> BUMP_SHIFT) | (next << NEXT_SHIFT));
+		if (next != 0u) setPreviousPartial(next, page + 1u);
 		m_memory.writeRamRecordWord(head, page + 1u);
 	}
 }
@@ -285,25 +291,21 @@ i32 HeapAllocator::takeTopRun(u32 pages) {
 	return -1;
 }
 
-void HeapAllocator::unlinkPartial(u32 head, u32 page) {
-	u32 previous = 0u;
-	u32 current = m_memory.readRamRecordWord(head);
-	for (u32 steps = 0u; current != 0u && steps < m_pageLimit; ++steps) {
-		const u32 currentPage = current - 1u;
-		if (currentPage >= m_pageLimit) return;
-		const u32 next = m_memory.readRamRecordWord(entry(currentPage) + 8u) >> 16;
-		if (currentPage == page) {
-			if (previous == 0u) {
-				m_memory.writeRamRecordWord(head, next);
-			} else {
-				const u32 previousLink = entry(previous - 1u) + 8u;
-				m_memory.writeRamRecordWord(previousLink, (m_memory.readRamRecordWord(previousLink) & 0xffffu) | (next << 16));
-			}
-			return;
-		}
-		previous = current;
-		current = next;
+void HeapAllocator::unlinkPartial(u32 head, u32 links) {
+	const u32 previous = (links >> PREVIOUS_SHIFT) & LINK_MASK;
+	const u32 next = (links >> NEXT_SHIFT) & LINK_MASK;
+	if (previous == 0u) {
+		m_memory.writeRamRecordWord(head, next);
+	} else {
+		const u32 field = entry(previous - 1u) + 8u;
+		m_memory.writeRamRecordWord(field, (m_memory.readRamRecordWord(field) & ~(LINK_MASK << NEXT_SHIFT)) | (next << NEXT_SHIFT));
 	}
+	if (next != 0u) setPreviousPartial(next, previous);
+}
+
+void HeapAllocator::setPreviousPartial(u32 pageLink, u32 previous) {
+	const u32 field = entry(pageLink - 1u) + 8u;
+	m_memory.writeRamRecordWord(field, (m_memory.readRamRecordWord(field) & ~(LINK_MASK << PREVIOUS_SHIFT)) | (previous << PREVIOUS_SHIFT));
 }
 
 void HeapAllocator::releasePages(u32 first, u32 end) {

@@ -469,13 +469,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					apuFaultCode: 0x0102,
 					apuFaultDetail: 0x1234,
 				},
-				stringPool: {
-					freeIds: [3, 2], slots: 4, sweep: 1, sweepEnd: 4,
-					entries: [
-						{ id: 0, value: 'rom literal', tracked: false, reachable: true },
-						{ id: 1, value: 'runtime literal', tracked: true, reachable: false },
-					],
-				},
 				input: {
 					sampleArmed: false,
 					sampleSequence: 3,
@@ -561,18 +554,20 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			rootThreadRef: 0,
 			activeThreadRef: 0,
 			completionThreadRef: 0,
-			threads: [{ status: 1, entryRef: -1, resumerRef: -1, callBase: 0, returnCount: 0, stackCapacity: 8, stack: [], error: 0, openUpvalues: [],
-
+			threads: [{
+				stackCapacity: 8,
+				stack: [],
+				openUpvalues: [],
 				frames: [],
-			protectedCalls: [{
-				kind: ProtectedCallKind.XPCallHandler,
-				callerFrameIndex: 2,
-				targetFrameIndex: -1,
-				returnsToProtectedParent: true,
-				callBase: 4,
-				returnCount: 3,
-				handlerRegister: 7,
-			}],
+				protectedCalls: [{
+					kind: ProtectedCallKind.XPCallHandler,
+					callerFrameIndex: 2,
+					targetFrameIndex: -1,
+					returnsToProtectedParent: true,
+					callBase: 4,
+					returnCount: 3,
+					handlerRegister: 7,
+				}],
 			}],
 			completionValues: [],
 			snapshot: snapshot.finish(),
@@ -611,7 +606,7 @@ for (const domain of [-1, 0, 1] as const) test(`runtime save-state codec preserv
 	assert.equal(restored.cpuState.executionCartridgeSlot, state.cpuState.executionCartridgeSlot);
 });
 
-test('runtime save-state codec preserves string pool ROM/runtime ownership', () => {
+test('runtime save-state codec preserves RAM, device, scheduler and CPU state', () => {
 	const state = createRuntimeSaveState();
 
 	const decoded = decodeRuntimeSaveState(
@@ -620,7 +615,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
 	);
 
-	assert.deepEqual(decoded.machineState.machine.stringPool, state.machineState.machine.stringPool);
+	assert.deepEqual(decoded.machineState.machine.memory, state.machineState.machine.memory);
 	assert.deepEqual(decoded.cpuState.gc, state.cpuState.gc);
 	assert.deepEqual(decoded.machineState.machine.cartridge, state.machineState.machine.cartridge);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
