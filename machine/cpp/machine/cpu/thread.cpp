@@ -42,7 +42,6 @@ void Thread::initializeRecord(Closure* entry) {
 	armStackWatch();
 }
 
-u32 Thread::read(ThreadField field) const { return heap.memory.readRamRecordWord(address + static_cast<u32>(field)); }
 void Thread::write(ThreadField field, u32 word) { heap.memory.writeRamRecordWord(address + static_cast<u32>(field), word); }
 
 ThreadStatus Thread::status() const { return static_cast<ThreadStatus>(read(ThreadField::Status)); }
@@ -91,15 +90,12 @@ Thread::~Thread() {
 }
 
 u32 Thread::stackOffset() const { return stack.wordAddress(); }
-u32 Thread::backingByteLength() const {
-	return backingBytes(static_cast<u32>(stack.size()), boundFrameCapacity, boundProtectedCapacity);
-}
 u32 Thread::frameCapacity() const { return read(ThreadField::FrameCapacity) & THREAD_CONTROL_COUNT_MASK; }
 u32 Thread::protectedCapacity() const { return read(ThreadField::ProtectedCapacity) & THREAD_CONTROL_COUNT_MASK; }
 u32 Thread::protectedDepth() const { return read(ThreadField::ProtectedDepth) & THREAD_CONTROL_COUNT_MASK; }
 void Thread::setProtectedDepth(u32 depth) { write(ThreadField::ProtectedDepth, depth); }
 u32 Thread::frameControlAddress(u32 index) const {
-	return stackOffset() + controlOffset(static_cast<u32>(stack.size())) + index * FRAME_CONTROL_BYTES;
+	return stackOffset() + boundFrameOffset + index * FRAME_CONTROL_BYTES;
 }
 u32 Thread::protectedAddress(u32 index) const {
 	return frameControlAddress(boundFrameCapacity) + index * PROTECTED_CALL_BYTES;
@@ -148,7 +144,7 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int
 bool Thread::stackRequiresScalar() const {
 	const auto& watches = heap.memory.ramWriteWatches();
 	const u32 bytes = backingByteLength();
-	const u32 offset = stackOffset(), controls = controlOffset(static_cast<u32>(stack.size()));
+	const u32 offset = stackOffset(), controls = boundFrameOffset;
 	return stack.mirrored() || static_cast<size_t>(stackTop()) > stack.size() || frameDepth() > boundFrameCapacity
 		|| bytes > MAIN_RAM_SIZE - offset
 		|| (watches.anyWatched() && (watches.anyWatched((address & RAM_RECORD_WORD_MASK) + static_cast<u32>(ThreadField::StackTop), 4)
@@ -165,7 +161,9 @@ void Thread::bindStack() {
 	boundFrameCapacity = frameCapacity();
 	boundProtectedCapacity = protectedCapacity();
 	const u32 block = read(ThreadField::StackBlock) & RAM_RECORD_WORD_MASK;
-	const u32 controls = block + controlOffset(static_cast<u32>(stackCapacity));
+	boundFrameOffset = controlOffset(static_cast<u32>(stackCapacity));
+	boundBackingBytes = backingBytes(static_cast<u32>(stackCapacity), boundFrameCapacity, boundProtectedCapacity);
+	const u32 controls = block + boundFrameOffset;
 	u32 index = 0;
 	for (auto* frame = firstFrame; frame; frame = frame->next, ++index) {
 		bindFrameControl(*frame, controls + index * FRAME_CONTROL_BYTES, index);

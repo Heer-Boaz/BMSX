@@ -40,12 +40,18 @@ export class Thread extends GcObject {
 	public readonly stackRegisters = new ValueSlots(0);
 	public get stackTop(): number { return this.read(ThreadField.StackTop) & FRAME_WINDOW_MASK; }
 	public set stackTop(top: number) { this.write(ThreadField.StackTop, top); }
+	private boundFrameOffset = 0;
+	private boundBackingBytes = 0;
 	private boundFrameCapacity = 0;
 	private boundProtectedCapacity = 0;
-	public constructor(private readonly heap: GcHeap, public readonly address: number) { super(GcKind.Thread); }
+	private readonly recordOffset: number;
+	public constructor(private readonly heap: GcHeap, public readonly address: number) {
+		super(GcKind.Thread);
+		this.recordOffset = address & RAM_RECORD_WORD_MASK;
+	}
 
 	public initializeRecord(entry: Closure | null): void {
-		const memory = this.heap.memory, offset = this.address & (MAIN_RAM_SIZE - 1);
+		const memory = this.heap.memory, offset = this.recordOffset;
 		const ram = memory.ramData();
 		const block = this.read(ThreadField.StackBlock);
 		ram.fill(0, offset, offset + THREAD_HEAP_BYTES);
@@ -63,7 +69,7 @@ export class Thread extends GcObject {
 		this.armStackWatch();
 	}
 
-	private read(field: ThreadField): number { return this.heap.memory.readRamRecordWord(this.address + field); }
+	private read(field: ThreadField): number { return this.heap.memory.ramView.getUint32(this.recordOffset + field, true); }
 	private write(field: ThreadField, word: number): void { this.heap.memory.writeRamRecordWord(this.address + field, word); }
 
 	public get status(): ThreadStatus { return this.read(ThreadField.Status); }
@@ -90,14 +96,14 @@ export class Thread extends GcObject {
 
 	public stackOffset(): number { return this.stackRegisters.ramOffset(); }
 	public backingByteLength(): number {
-		return backingBytes(this.stackRegisters.capacity(), this.boundFrameCapacity, this.boundProtectedCapacity);
+		return this.boundBackingBytes;
 	}
 	private get frameCapacity(): number { return this.read(ThreadField.FrameCapacity) & CONTROL_COUNT_MASK; }
 	private get protectedCapacity(): number { return this.read(ThreadField.ProtectedCapacity) & CONTROL_COUNT_MASK; }
 	public get protectedDepth(): number { return this.read(ThreadField.ProtectedDepth) & CONTROL_COUNT_MASK; }
 	public set protectedDepth(depth: number) { this.write(ThreadField.ProtectedDepth, depth); }
 	private frameControlAddress(index: number): number {
-		return this.stackOffset() + controlOffset(this.stackRegisters.capacity()) + index * FRAME_CONTROL_BYTES;
+		return this.stackOffset() + this.boundFrameOffset + index * FRAME_CONTROL_BYTES;
 	}
 	private protectedAddress(index: number): number {
 		return this.frameControlAddress(this.boundFrameCapacity) + index * PROTECTED_CALL_BYTES;
@@ -141,7 +147,7 @@ export class Thread extends GcObject {
 	}
 
 	public stackRequiresScalar(): boolean {
-		const bytes = this.backingByteLength(), offset = this.stackOffset(), controls = controlOffset(this.stackRegisters.capacity());
+		const bytes = this.backingByteLength(), offset = this.stackOffset(), controls = this.boundFrameOffset;
 		const watches = this.heap.memory.ramWriteWatches();
 		return this.stackRegisters.ramMirrored() || this.stackTop > this.stackRegisters.capacity()
 			|| this.frameDepth > this.boundFrameCapacity || bytes > MAIN_RAM_SIZE - offset
@@ -155,7 +161,9 @@ export class Thread extends GcObject {
 		this.boundFrameCapacity = this.frameCapacity;
 		this.boundProtectedCapacity = this.protectedCapacity;
 		const block = this.read(ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
-		this.bindFrameControls(block + controlOffset(capacity));
+		this.boundFrameOffset = controlOffset(capacity);
+		this.boundBackingBytes = backingBytes(capacity, this.boundFrameCapacity, this.boundProtectedCapacity);
+		this.bindFrameControls(block + this.boundFrameOffset);
 		let extent = 0;
 		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
 			extent = Math.max(extent, frame.stackBase + frame.stackCapacity);
@@ -205,7 +213,7 @@ export class Thread extends GcObject {
 	}
 
 	public armStackWatch(): void {
-		const offset = this.address & (MAIN_RAM_SIZE - 1);
+		const offset = this.recordOffset;
 		const page = offset >>> MAPPED_PAGE_BYTE_SHIFT;
 		const word = ((offset & MAPPED_PAGE_BYTE_MASK) + ThreadField.StackBlock) >>> 2;
 		const watches = this.heap.memory.ramWriteWatches();
@@ -248,7 +256,8 @@ export class Thread extends GcObject {
 		const oldBlock = this.read(ThreadField.StackBlock);
 		const start = block & (MAIN_RAM_SIZE - 4);
 		const oldFrames = this.frameControlAddress(0), oldProtected = this.protectedAddress(0);
-		const records = start + controlOffset(capacity), protectedRecords = records + frames * FRAME_CONTROL_BYTES;
+		const frameOffset = controlOffset(capacity);
+		const records = start + frameOffset, protectedRecords = records + frames * FRAME_CONTROL_BYTES;
 		const frameBytes = Math.min(this.frameDepth, this.boundFrameCapacity, frames) * FRAME_CONTROL_BYTES;
 		const occupied = Math.min(this.protectedDepth, this.boundProtectedCapacity, continuations) * PROTECTED_CALL_BYTES;
 		const bytes = backingBytes(capacity, frames, continuations);
@@ -260,6 +269,8 @@ export class Thread extends GcObject {
 		ram.fill(0, records + frameBytes, protectedRecords);
 		ram.fill(0, protectedRecords + occupied, start + bytes);
 		memory.invalidateRamWrite(endOfValues, start + bytes - endOfValues);
+		this.boundFrameOffset = frameOffset;
+		this.boundBackingBytes = bytes;
 		this.boundFrameCapacity = frames;
 		this.boundProtectedCapacity = continuations;
 		const descriptor = (this.address + ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;

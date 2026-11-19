@@ -2,6 +2,7 @@
 
 #include "machine/cpu/gc_object.h"
 
+#include "common/endian.h"
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/value.h"
 
@@ -59,7 +60,7 @@ struct Thread : GCObject {
 	void freeStack();
 	u32 stackOffset() const;
 	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
-	u32 backingByteLength() const;
+	u32 backingByteLength() const { return boundBackingBytes; }
 	bool stackRequiresScalar() const;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	void recordNativeWrites(MappedPageWriteWatches& watches) {
@@ -118,8 +119,10 @@ private:
 	void bindFrameControl(CallFrame& frame, u32 address, u32 index);
 	void publishDepth(u32 depth);
 	u32 protectedAddress(u32 index) const;
-	u32 read(ThreadField field) const;
+	u32 read(ThreadField field) const { return readLE32(nativeRecord + static_cast<u32>(field)); }
 	void write(ThreadField field, u32 word);
+	u32 boundFrameOffset = 0;
+	u32 boundBackingBytes = 0;
 	u32 boundFrameCapacity = 0;
 	u32 boundProtectedCapacity = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
