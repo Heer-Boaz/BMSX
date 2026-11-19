@@ -1254,7 +1254,10 @@ doubles before being extended. If the processor cannot admit an exception
 activation, it halts rather than recursively raising another exception.
 A closure's header and
 capture references occupy one block. A RAM String occupies one block containing
-its 16-byte header and its bytes. `S(0) = 0`;
+its 16-byte header and its bytes. Its byte count is 22 bits. The String
+port selects main RAM for the record and uses the 22-bit physical byte
+address for its header and bytes; reaching the end of RAM wraps to its start.
+`S(0) = 0`;
 there is no block for an empty layout. Up to 64 bytes, round up to a multiple
 of 8. From 65 through 2048 bytes, use four size classes per doubling
 (80, 96, 112, 128, 160, and so on). Larger blocks round up to a multiple of
@@ -1314,8 +1317,10 @@ registered-name root slots still count. The sweep examines slots that the
 allocator has issued on an object page, not its unused tail, and leaves a page
 as soon as it is released. Table and Thread backing blocks are released with their owning records
 and are not separate sweep visits. A bucket chain is examined as a unit; its
-unmarked String records are unlinked and released. Reclaiming a String does not
-shrink the bucket table.
+unmarked String records are unlinked and released. The intern index walks at
+most the indexed String count, bounded by the number of headers that fit in
+main RAM. It stops probing at that limit; sweep unlinks any tail past the
+limit. Reclaiming a String does not shrink the bucket table.
 
 `C` counts constant Value slots in all activated program images. `S` and `G`
 count registered system-global and cartridge-global slots; repeated registration

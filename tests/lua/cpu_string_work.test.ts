@@ -1,13 +1,20 @@
 import { textToByteString } from '../../machine/ts/common/byte_string';
+import { hashText } from '../../machine/ts/common/hash';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { BuiltinResults } from '../../machine/ts/machine/cpu/builtin_values';
-import { valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { valueNil, valueInteger, valueString } from '../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import {
+	BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET,
+	BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND,
+} from '../../machine/ts/spec/blua32/image_format';
+import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -106,3 +113,62 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 3, 'CALL base + builtin 2 + three supplied byte arguments');
 	});
 }
+
+const portCode = new Uint8Array(INSTRUCTION_BYTES);
+writeInstruction(portCode, 0, OpCode.HALT, 0, 0, 0);
+const portImage = linkRawTestSystemBlua32({ text: portCode, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] });
+
+test('RAM String reads and intern probes wrap at the physical seam', () => {
+	const { cpu } = createTestSystemCpu(portImage, CpuExecutionBackend.Interpreter);
+	const memory = cpu.memory, pool = cpu.stringPool;
+	const bytes = 'wrapRAM!\x00\xf7xyz';
+	const straight = pool.intern(bytes), after = pool.intern('wrapRAM!\x00\xf8xyz');
+	const mirror = RAM_BASE + 2 * MAIN_RAM_SIZE - 24;
+	memory.writeRamRecordWord(mirror, BLUA32_STRING_RECORD_KIND);
+	memory.writeRamRecordWord(mirror + BLUA32_STRING_LENGTH_OFFSET, 0xffc0000d);
+	memory.writeRamRecordWord(mirror + BLUA32_STRING_HASH_OFFSET, hashText(bytes));
+	for (let i = 0; i < bytes.length; ++i) memory.writeRamRecordByte(mirror + BLUA32_STRING_RECORD_HEADER_SIZE + i, bytes.charCodeAt(i));
+	assert.equal(pool.byteLength(mirror), 13);
+	assert.equal(pool.bytes(mirror), bytes);
+	assert.equal(pool.byteAt(mirror, 8), 0);
+	assert.equal(pool.byteAt(mirror, 9), 0xf7);
+	assert.equal(pool.compare(mirror, straight), 0);
+	assert.ok(pool.compare(mirror, after) < 0);
+	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const count = memory.readRamRecordWord(metadata + 4);
+	const bucket = memory.readRamRecordWord(metadata) + 4 * (hashText(bytes) & (count - 1));
+	memory.writeRamRecordWord(mirror + BLUA32_STRING_NEXT_OFFSET, memory.readRamRecordWord(bucket));
+	memory.writeRamRecordWord(bucket, mirror);
+	assert.equal(pool.find(bytes), mirror);
+});
+
+for (const grow of [false, true]) test(`cyclic String links terminate lookup and ${grow ? 'growth' : 'sweep'}`, () => {
+	const { cpu } = createTestSystemCpu(portImage, CpuExecutionBackend.Interpreter);
+	const memory = cpu.memory, pool = cpu.stringPool, original = 'cycle at an intern bucket head';
+	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	pool.intern('index seed');
+	const count = memory.readRamRecordWord(metadata + 4);
+	if (grow) {
+		for (let i = memory.readRamRecordWord(metadata + 8); i + 1 < count; ++i) pool.intern('bucket filler ' + i);
+	}
+	const self = pool.intern(original);
+	let missing: string;
+	for (let i = 0; ; ++i) {
+		missing = 'lookup collision ' + i;
+		if (((hashText(missing) ^ hashText(original)) & (count - 1)) === 0) break;
+	}
+	memory.writeRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET, self);
+	assert.equal(pool.find(missing), undefined);
+	if (grow) {
+		const inserted = pool.intern(missing);
+		assert.equal(pool.find(missing), inserted);
+		assert.equal(memory.readRamRecordWord(metadata + 4), count * 2);
+	} else {
+		cpu.gc.collect(valueString(self));
+		assert.equal(pool.find(original), self);
+		assert.equal(memory.readRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET), 0);
+		memory.writeRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET, self);
+		cpu.gc.collect();
+		assert.equal(pool.find(original), undefined);
+	}
+});

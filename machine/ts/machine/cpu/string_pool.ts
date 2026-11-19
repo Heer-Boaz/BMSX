@@ -17,6 +17,9 @@ export type StringId = number;
 const BUCKETS = 0x00, CAPACITY = 0x04, USED = 0x08, EPOCH = 0x0c, SWEEP = 0x10;
 const FIRST_CART = 0x14, ROM_TABLES = 0x18;
 const INITIAL_BUCKETS = 16;
+const RAM_BYTE_MASK = MAIN_RAM_SIZE - 1;
+const MAX_RAM_RECORDS = MAIN_RAM_SIZE / BLUA32_STRING_RECORD_HEADER_SIZE;
+const RAM_BUCKET_EXTENT_MASK = 2 * MAX_RAM_RECORDS - 1;
 const SLOT_BIT = 0x80000000;
 
 function ramAddress(address: number): boolean { return address >= RAM_BASE && address < CART_ROM_BASE; }
@@ -39,6 +42,7 @@ export class StringPool {
 	}
 
 	private metadata(field: number): number { return this.memory.readRamRecordWord(this.metadataOffset + field); }
+	private ramBucketCount(): number { return this.metadata(CAPACITY) & RAM_BUCKET_EXTENT_MASK; }
 	private writeMetadata(field: number, word: number): void { this.memory.writeRamRecordWord(this.metadataOffset + field, word); }
 	private storage(address: number): Uint8Array | null {
 		if (address < RAM_BASE) return this.memory.systemRomStorage().bytes;
@@ -46,22 +50,30 @@ export class StringPool {
 		const rom = this.memory.cartridgeController.romStorage(address >>> 31);
 		return rom === null ? null : rom.bytes;
 	}
-	private readWord(address: number): number {
-		if (ramAddress(address)) return this.memory.readRamRecordWord(address);
-		const bytes = this.storage(address);
-		if (bytes === null) return 0;
-		const offset = storageOffset(address);
-		return readLE32(bytes, offset); // Missing ROM lanes are pulled to zero.
+	private readWord(base: number, displacement = 0): number {
+		if (ramAddress(base)) return this.memory.readRamRecordWord(base + displacement);
+		const bytes = this.storage(base);
+		return bytes === null ? 0 : readLE32(bytes, (storageOffset(base) + displacement) >>> 0);
 	}
 
-	public byteLength(id: StringId): number { return this.readWord(id + BLUA32_STRING_LENGTH_OFFSET) | 0; }
+	public byteLength(id: StringId): number {
+		const count = this.readWord(id, BLUA32_STRING_LENGTH_OFFSET);
+		return ramAddress(id) ? count & RAM_BYTE_MASK : count | 0;
+	}
 	public byteAt(id: StringId, index: number): number {
+		if (ramAddress(id)) return this.memory.readRamRecordByte(id + BLUA32_STRING_RECORD_HEADER_SIZE + index);
 		return this.storage(id)?.[storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE + index] | 0;
 	}
 
 	public bytes(id: StringId): string {
-		const length = this.readWord(id + BLUA32_STRING_LENGTH_OFFSET);
+		const length = this.byteLength(id) >>> 0;
 		if (length === 0) return '';
+		if (ramAddress(id)) {
+			const source = this.memory.ramData(), offset = (id + BLUA32_STRING_RECORD_HEADER_SIZE) & RAM_BYTE_MASK;
+			const first = Math.min(length, MAIN_RAM_SIZE - offset);
+			const prefix = byteStringFromBytes(source, offset, first);
+			return first === length ? prefix : prefix + byteStringFromBytes(source, 0, length - first);
+		}
 		const source = this.storage(id);
 		const offset = storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE;
 		const backed = source === null ? 0 : Math.min(length, Math.max(0, source.length - offset));
@@ -73,13 +85,18 @@ export class StringPool {
 	public compare(left: StringId, right: StringId): number {
 		if (left === right) return 0;
 		const a = this.storage(left), b = this.storage(right);
-		const aOffset = storageOffset(left) + BLUA32_STRING_RECORD_HEADER_SIZE;
-		const bOffset = storageOffset(right) + BLUA32_STRING_RECORD_HEADER_SIZE;
-		const aLength = this.readWord(left + BLUA32_STRING_LENGTH_OFFSET);
-		const bLength = this.readWord(right + BLUA32_STRING_LENGTH_OFFSET);
+		const aMask = ramAddress(left) ? RAM_BYTE_MASK : -1, bMask = ramAddress(right) ? RAM_BYTE_MASK : -1;
+		const aOffset = (storageOffset(left) + BLUA32_STRING_RECORD_HEADER_SIZE) & aMask;
+		const bOffset = (storageOffset(right) + BLUA32_STRING_RECORD_HEADER_SIZE) & bMask;
+		const aLength = this.byteLength(left) >>> 0, bLength = this.byteLength(right) >>> 0;
 		const limit = Math.min(aLength, bLength);
-		for (let i = 0; i < limit; ++i) {
+		const straight = Math.min(limit, (aMask >>> 0) + 1 - aOffset, (bMask >>> 0) + 1 - bOffset);
+		for (let i = 0; i < straight; ++i) {
 			const delta = (a?.[aOffset + i] | 0) - (b?.[bOffset + i] | 0);
+			if (delta !== 0) return delta;
+		}
+		for (let i = straight; i < limit; ++i) {
+			const delta = (a?.[(aOffset + i) & aMask] | 0) - (b?.[(bOffset + i) & bMask] | 0);
 			if (delta !== 0) return delta;
 		}
 		return aLength - bLength;
@@ -105,30 +122,35 @@ export class StringPool {
 	private bucketLookup(buckets: number, count: number, hash: number, source: string | Uint8Array, offset: number, length: number): number {
 		if (count === 0) return 0;
 		const slot = buckets & SLOT_BIT;
-		let record = this.readWord(buckets + 4 * (hash & (count - 1)));
-		while (record !== 0) {
+		let record = this.readWord(buckets, (hash & (count - 1)) * 4);
+		if (record === 0) return 0;
+		let remaining = ramAddress(buckets) ? Math.min(this.metadata(USED), MAX_RAM_RECORDS)
+			: ((this.storage(buckets)?.length | 0) / BLUA32_STRING_RECORD_HEADER_SIZE) >>> 0;
+		while (record !== 0 && remaining-- !== 0) {
 			record = (record | slot) >>> 0;
-			if (this.readWord(record + BLUA32_STRING_HASH_OFFSET) === hash
-				&& this.readWord(record + BLUA32_STRING_LENGTH_OFFSET) === length) {
+			if (this.readWord(record, BLUA32_STRING_HASH_OFFSET) === hash
+				&& (this.byteLength(record) >>> 0) === length) {
 				const candidate = this.storage(record);
-				const start = storageOffset(record) + BLUA32_STRING_RECORD_HEADER_SIZE;
-				if (candidate !== null && start + length <= candidate.length) {
+				const inRam = ramAddress(record);
+				const start = (storageOffset(record) + BLUA32_STRING_RECORD_HEADER_SIZE) & (inRam ? RAM_BYTE_MASK : -1);
+				if (candidate !== null && (inRam || start + length <= candidate.length)) {
+					const mask = inRam && length > MAIN_RAM_SIZE - start ? RAM_BYTE_MASK : -1;
 					let n = 0;
 					if (typeof source === 'string') {
-						while (n < length && candidate[start + n] === source.charCodeAt(n)) ++n;
+						while (n < length && candidate[(start + n) & mask] === source.charCodeAt(n)) ++n;
 					} else {
-						while (n < length && candidate[start + n] === source[offset + n]) ++n;
+						while (n < length && candidate[(start + n) & mask] === source[offset + n]) ++n;
 					}
 					if (n === length) return record;
 				}
 			}
-			record = this.readWord(record + BLUA32_STRING_NEXT_OFFSET);
+			record = this.readWord(record, BLUA32_STRING_NEXT_OFFSET);
 		}
 		return 0;
 	}
 
 	private lookup(hash: number, source: string | Uint8Array, offset: number, length: number): number {
-		let match = this.bucketLookup(this.metadata(BUCKETS), this.metadata(CAPACITY), hash, source, offset, length);
+		let match = this.bucketLookup(this.metadata(BUCKETS), this.ramBucketCount(), hash, source, offset, length);
 		if (match !== 0) return match;
 		match = this.bucketLookup(this.metadata(ROM_TABLES), this.metadata(ROM_TABLES + 4), hash, source, offset, length);
 		if (match !== 0) return match;
@@ -148,9 +170,9 @@ export class StringPool {
 			throw new Error('BLua32 ROM String header is invalid.');
 		}
 		const offset = storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE;
-		const rom = this.storage(id)!, length = this.readWord(id + BLUA32_STRING_LENGTH_OFFSET);
+		const rom = this.storage(id)!, length = this.readWord(id, BLUA32_STRING_LENGTH_OFFSET);
 		if (offset + length > rom.length) throw new Error('BLua32 ROM String is truncated.');
-		const match = this.lookup(this.readWord(id + BLUA32_STRING_HASH_OFFSET), rom, offset, length);
+		const match = this.lookup(this.readWord(id, BLUA32_STRING_HASH_OFFSET), rom, offset, length);
 		if (match === 0) throw new Error('BLua32 ROM String is missing from its bucket.');
 		return this.retain(match);
 	}
@@ -172,14 +194,16 @@ export class StringPool {
 		// Admission can enter the string sweep. Finish it while the cursor
 		// still addresses the old buffer; neither bucket buffer is an object.
 		while (this.sweeping()) this.heap.stepRuntime();
-		const oldBase = this.metadata(BUCKETS), oldCount = this.metadata(CAPACITY);
+		const oldBase = this.metadata(BUCKETS), oldCount = this.ramBucketCount();
 		const offset = storageOffset(newBase);
 		const memory = this.memory;
 		memory.ramData().fill(0, offset, offset + 4 * count);
 		memory.invalidateRamWrite(offset, 4 * count);
-		for (let i = 0; i < oldCount; ++i) {
+		let remaining = Math.min(this.metadata(USED), MAX_RAM_RECORDS);
+		for (let i = 0; i < oldCount && remaining !== 0; ++i) {
 			let record = memory.readRamRecordWord(oldBase + 4 * i);
-			while (record !== 0) {
+			while (record !== 0 && remaining !== 0 && memory.readRamRecordByte(record) === BLUA32_STRING_RECORD_KIND) {
+				--remaining;
 				const link = record + BLUA32_STRING_NEXT_OFFSET;
 				const next = memory.readRamRecordWord(link);
 				const hash = memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET);
@@ -191,20 +215,19 @@ export class StringPool {
 		}
 		this.writeMetadata(BUCKETS, newBase);
 		this.writeMetadata(CAPACITY, count);
-		if (oldCount !== 0) {
-			this.arena.free(oldBase);
-
-		}
+		if (oldCount !== 0) this.arena.free(oldBase);
 	}
 	public intern(value: string): StringId {
 		const hash = hashText(value);
 		const existing = this.lookup(hash, value, 0, value.length);
 		if (existing !== 0) return this.retain(existing);
-		const count = this.metadata(CAPACITY);
+		const count = this.ramBucketCount();
 		if (count === 0) this.grow(INITIAL_BUCKETS);
 		else if (this.metadata(USED) >= count && !this.sweeping()) this.grow(count * 2);
-		const id = this.heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + value.length, false, 0, 0);
-		const bucket = this.metadata(BUCKETS) + 4 * (hash & (this.metadata(CAPACITY) - 1));
+		// An unrepresentable length requests the full bank and still clocks
+		// the final collection before the admission fault.
+		const id = this.heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + Math.min(value.length, MAIN_RAM_SIZE), false, 0, 0);
+		const bucket = this.metadata(BUCKETS) + 4 * (hash & (this.ramBucketCount() - 1));
 		const memory = this.memory;
 		memory.writeRamRecordWord(id, BLUA32_STRING_RECORD_KIND | (this.metadata(EPOCH) << 8));
 		memory.writeRamRecordWord(id + BLUA32_STRING_HASH_OFFSET, hash);
@@ -246,24 +269,27 @@ export class StringPool {
 	public beginSweep(): void { this.writeMetadata(SWEEP, 1); }
 	public sweeping(): boolean { return this.metadata(SWEEP) !== 0; }
 	public sweepStep(allowance: number): number {
-		const base = this.metadata(BUCKETS), count = this.metadata(CAPACITY), epoch = this.metadata(EPOCH);
+		const base = this.metadata(BUCKETS), count = this.ramBucketCount(), epoch = this.metadata(EPOCH);
 		let index = this.metadata(SWEEP) - 1, used = this.metadata(USED), work = 0;
 		const memory = this.memory;
 		while (index < count && work < allowance) {
 			let link = base + 4 * index++;
 			let record = memory.readRamRecordWord(link);
 			++work;
-			while (record !== 0) {
+			for (let remaining = Math.min(used, MAX_RAM_RECORDS); remaining !== 0 && record !== 0
+				&& memory.readRamRecordByte(record) === BLUA32_STRING_RECORD_KIND; --remaining) {
 				const next = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
 				if (memory.readRamRecordByte(record + 1) !== epoch) {
 					memory.writeRamRecordWord(link, next);
+					memory.writeRamRecordByte(record, 0);
 					this.arena.free(record);
 					--used;
 				} else link = record + BLUA32_STRING_NEXT_OFFSET;
 				record = next;
 			}
+			if (record !== 0) memory.writeRamRecordWord(link, 0);
 		}
-		this.writeMetadata(SWEEP, index === count ? 0 : index + 1);
+		this.writeMetadata(SWEEP, index < count ? index + 1 : 0);
 		this.writeMetadata(USED, used);
 
 		return work;

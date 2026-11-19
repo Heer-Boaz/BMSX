@@ -45,13 +45,21 @@ public:
 
 private:
 	struct ByteSpan {
-		std::string_view backed;
+		std::string_view first;
+		std::string_view wrapped;
 		size_t length;
+		size_t backedLength() const { return first.size() + wrapped.size(); }
+		u8 byteAt(size_t index) const {
+			if (index < first.size()) return static_cast<u8>(first[index]);
+			index -= first.size();
+			return index < wrapped.size() ? static_cast<u8>(wrapped[index]) : 0u;
+		}
 	};
 	Span<const u8> romStorage(u32 address) const;
-	u32 readWord(u32 address) const;
+	u32 readWord(u32 base, u32 displacement = 0) const;
 	ByteSpan readBytes(StringId id) const;
 	u32 metadata(u32 field) const;
+	u32 ramBucketCount() const;
 	void writeMetadata(u32 field, u32 word);
 	u32 lookup(u32 buckets, u32 count, u32 hash, std::string_view bytes) const;
 	u32 lookup(u32 hash, std::string_view bytes) const;

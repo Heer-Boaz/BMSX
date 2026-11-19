@@ -1,7 +1,9 @@
+#include "common/hash_fnv.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/native_block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
+#include "spec/blua32/image_format.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
@@ -67,6 +69,71 @@ void logicalStringWork(bool scalar, OpCode op) {
 #endif
 }
 
+// String records and their index use the physical RAM port, even when
+// software writes untrusted words to the language heap via the main bus.
+void ramStringPorts() {
+	test::Blua32TestImage image;
+	image.text.resize(INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 4}};
+	{
+		CpuMachine machine(image, true);
+		auto& pool = machine.cpu.stringPool();
+		auto& memory = machine.memory;
+		const std::string bytes("wrapRAM!\0\xf7xyz", 13);
+		const u32 straight = pool.intern(bytes);
+		const u32 after = pool.intern(std::string("wrapRAM!\0\xf8xyz", 13));
+		const u32 mirror = RAM_BASE + 2u * MAIN_RAM_SIZE - 24u;
+		memory.writeRamRecordWord(mirror, BLUA32_STRING_RECORD_KIND);
+		memory.writeRamRecordWord(mirror + BLUA32_STRING_LENGTH_OFFSET, 0xffc0000du);
+		memory.writeRamRecordWord(mirror + BLUA32_STRING_HASH_OFFSET, fnv1a32(bytes));
+		for (u32 i = 0; i < bytes.size(); ++i) memory.writeRamRecordByte(mirror + BLUA32_STRING_RECORD_HEADER_SIZE + i, static_cast<u8>(bytes[i]));
+		require(pool.byteLength(mirror) == 13 && pool.toString(mirror) == bytes, "String length and data use the mirrored RAM port");
+		require(pool.byteAt(mirror, 8) == 0 && pool.byteAt(mirror, 9) == 0xf7, "byte reads cross the physical seam");
+		require(pool.compare(mirror, straight) == 0 && pool.compare(mirror, after) < 0, "String comparison visits mirrored bytes in order");
+		const u32 metadata = machine.cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
+		const u32 count = memory.readRamRecordWord(metadata + 4u);
+		const u32 bucket = memory.readRamRecordWord(metadata) + 4u * (fnv1a32(bytes) & (count - 1u));
+		memory.writeRamRecordWord(mirror + BLUA32_STRING_NEXT_OFFSET, memory.readRamRecordWord(bucket));
+		memory.writeRamRecordWord(bucket, mirror);
+		require(pool.find(bytes) == mirror, "intern probing compares the wrapped bytes");
+	}
+	for (const bool grow : {false, true}) {
+		CpuMachine machine(image, true);
+		auto& pool = machine.cpu.stringPool();
+		auto& memory = machine.memory;
+		const char* original = "cycle at an intern bucket head";
+		const u32 metadata = machine.cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
+		(void)pool.intern("index seed");
+		const u32 count = memory.readRamRecordWord(metadata + 4u);
+		if (grow) {
+			for (u32 i = memory.readRamRecordWord(metadata + 8u); i + 1u < count; ++i) {
+				(void)pool.intern("bucket filler " + std::to_string(i));
+			}
+		}
+		const u32 self = pool.intern(original);
+		std::string missing;
+		for (unsigned i = 0; ; ++i) {
+			missing = "lookup collision " + std::to_string(i);
+			if (((fnv1a32(missing) ^ fnv1a32(original)) & (count - 1u)) == 0u) break;
+		}
+		memory.writeRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET, self);
+		require(!pool.find(missing), "a missing String terminates a cyclic probe");
+		if (grow) {
+			const u32 inserted = pool.intern(missing);
+			require(pool.find(missing) == inserted, "a cyclic chain terminates rehash and permits insertion");
+			require(memory.readRamRecordWord(metadata + 4u) == count * 2u, "insertion exercised the growing index");
+		} else {
+			machine.cpu.collectHeap(valueString(self));
+			require(pool.find(original) == self, "sweep keeps the reachable String");
+			require(memory.readRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET) == 0u, "sweep terminates the live prefix");
+			memory.writeRamRecordWord(self + BLUA32_STRING_NEXT_OFFSET, self);
+			machine.cpu.collectHeap();
+			require(!pool.find(original), "sweep can unlink the dead String without revisiting its freed record");
+		}
+	}
+}
+
 void selectAndChar(bool scalar) {
 	for (const auto [builtin, argc, wanted] : {std::tuple{BuiltinFunctionId::Select, 33, 0}, std::tuple{BuiltinFunctionId::Select, 33, 1}, std::tuple{BuiltinFunctionId::Select, 33, 2}, std::tuple{BuiltinFunctionId::Select, 33, 35}, std::tuple{BuiltinFunctionId::StringChar, 3, 1}}) {
 		test::Blua32TestImage image;
@@ -105,6 +172,7 @@ void selectAndChar(bool scalar) {
 } // namespace
 int main() {
 	try {
+		ramStringPorts();
 		for (const bool scalar : {true, false}) {
 			for (const auto op : {OpCode::CONCAT, OpCode::CONCATN, OpCode::LT, OpCode::LE, OpCode::EQ}) logicalStringWork(scalar, op);
 			selectAndChar(scalar);
