@@ -398,7 +398,7 @@ void concatAllocationFault(bool range) {
 	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
 #endif
 	const auto strings = native.cpu.stringPool().captureState();
-	int gcCycles = 4 * ceilDiv4(static_cast<int>(64 + native.cpu.rootThread()->stackCapacity * 5)) + 2 * 4 + strings.slots;
+	int gcCycles = 4 * ceilDiv4(static_cast<int>(64 + native.cpu.rootThread()->stackCapacity * 5)) + 3 + 1 + strings.slots;
 	for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
 	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY

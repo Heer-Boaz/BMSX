@@ -432,7 +432,7 @@ private:
 		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
 	CallFrame* pushFrame(Closure* closure, BuiltinArgsView args,
 		int returnBase, int returnCount, bool returnToCompletionLatch);
-	Closure* allocateTrackedClosure(const FunctionPrototype&, size_t upvalueCount);
+	Closure* allocateClosure(const FunctionPrototype&, u32 count, bool canonical, std::span<u32> cells = {});
 	Closure* createClosure(CallFrame& frame);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void executeConcat(CallFrame& frame, int destination, int left, int right);
@@ -443,8 +443,8 @@ private:
 	void executeVararg(CallFrame& frame, int a, int b);
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
 	void linkOpenUpvalue(CallFrame& frame, Upvalue* upvalue);
-	Value readUpvalue(Upvalue* upvalue) const;
-	void writeUpvalue(Upvalue* upvalue, const Value& value);
+	Value readUpvalue(u32 address) const;
+	void writeUpvalue(u32 address, const Value& value);
 	void writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount);
 	void writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values);
 	void setRegister(CallFrame& frame, int index, Value value);
@@ -471,7 +471,7 @@ private:
 	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
 	void storeTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key, const Value& value);
 
-	void clearCallStack();
+	void clearCallStack(bool closeCaptures = true);
 	void ensureStackSize(size_t size, Value root = valueNil());
 	BuiltinResultsScratchScope acquireBuiltinResultScratch();
 	void releaseLocalRoots(size_t base);
@@ -593,7 +593,7 @@ private:
 	std::vector<Value> m_localRoots;
 	int m_localRootScopeDepth = 0;
 
-	std::vector<Upvalue*> m_closureUpvalueScratch;
+	std::vector<u32> m_closureCellScratch;
 	std::vector<u32> m_closureUpvalueWordScratch;
 	std::vector<u32> m_captureAddressScratch;
 	std::vector<StringId> m_systemGlobalNames;

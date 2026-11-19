@@ -248,11 +248,11 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	assert.equal(countVersions(), 2, 'a new direct-entry closure remains indexed when stack growth collects');
 	const active = cpu.rootThread.currentFrame!;
 	assert.equal(active.closure.prototypeRecord.recordUpvalueCount, 3);
-	assert.equal(active.closure.upvalues.length, 0, 'direct entry has no captured slots');
+	assert.equal(active.closure.upvalueCount, 0, 'direct entry has no captured slots');
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	assert.equal(cpu.rootThread.currentFrame!.closure.prototypeRecord.recordUpvalueCount, 3);
-	assert.equal(cpu.rootThread.currentFrame!.closure.upvalues.length, 0);
+	assert.equal(cpu.rootThread.currentFrame!.closure.upvalueCount, 0);
 	cpu.runUntilDepth(1, 100);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 });

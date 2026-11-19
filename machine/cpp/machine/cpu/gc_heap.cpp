@@ -89,6 +89,7 @@ size_t GcHeap::nativeReferencesOffset() {
 	return offsetof(GcHeap, m_referenceBase);
 }
 size_t GcHeap::nativeTableRecordsOffset() { return offsetof(GcHeap, m_tableRecordBase); }
+size_t GcHeap::nativeCellRecordsOffset() { return offsetof(GcHeap, m_cellRecordBase); }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -100,6 +101,10 @@ void GcHeap::releaseReference(GCObject* object) {
 	object->referenceId = 0;
 }
 void GcHeap::track(GCObject* object) {
+	if (object->type == ObjType::Upvalue) {
+		auto* cell = static_cast<Upvalue*>(object);
+		m_cellRecords[(cell->address & (MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES)) / UPVALUE_HEAP_BYTES] = cell;
+	}
 	if (object->type == ObjType::Table) {
 		auto* table = static_cast<Table*>(object);
 		m_tableRecords[(table->address() & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES] = table;
@@ -121,17 +126,12 @@ void GcHeap::track(GCObject* object) {
 	if (m_objects) m_objects->previous = object;
 	m_objects = object;
 }
-Closure* GcHeap::allocateClosure(const FunctionPrototype& prototype, size_t count) {
+Closure* GcHeap::bindClosureRecord(u32 address, const FunctionPrototype& prototype, u32 count, bool canonical) {
 	reserveReference();
-	void* storage = ::operator new(sizeof(Closure) + count * sizeof(u32));
-	auto* closure = new (storage) Closure();
-	closure->type = ObjType::Closure;
 	const auto entry = m_prototypes.try_emplace(prototype, 0u).first;
+	auto* closure = new Closure(memory, address, count, entry->first, canonical);
 	++entry->second;
-	closure->prototype = &entry->first;
-	closure->upvalueCount = count;
-	closure->upvalues = reinterpret_cast<u32*>(static_cast<uint8_t*>(storage) + sizeof(Closure));
-	std::fill_n(closure->upvalues, count, 0u);
+	closure->type = ObjType::Closure;
 	track(closure);
 	return closure;
 }
@@ -149,7 +149,7 @@ bool GcHeap::markObject(GCObject* object) {
 size_t GcHeap::allocationBytes(const GCObject* object) const {
 	switch (object->type) {
 		case ObjType::Table: return static_cast<const Table*>(object)->trackedHeapBytes();
-		case ObjType::Closure: return static_cast<const Closure*>(object)->trackedHeapBytes;
+		case ObjType::Closure: return heapAllocationBytes(closureRecordBytes(static_cast<const Closure*>(object)->upvalueCount));
 		case ObjType::Upvalue: return UPVALUE_HEAP_BYTES;
 		case ObjType::Thread: return THREAD_HEAP_BYTES + static_cast<const Thread*>(object)->stackCapacity * THREAD_STACK_SLOT_BYTES;
 		case ObjType::Garbage: return static_cast<const GarbageAllocation*>(object)->bytes;
@@ -243,9 +243,9 @@ size_t GcHeap::trace(bool atomic) {
 		case ObjType::Closure: {
 			auto* closure = static_cast<Closure*>(obj);
 			for (size_t index = 0; index < closure->upvalueCount; ++index) {
-				markObject(object(closure->upvalues[index]));
+				markObject(cellAt(closure->captureAddress(static_cast<u32>(index))));
 			}
-			break;
+			return 3u + closure->upvalueCount;
 		}
 		case ObjType::Garbage: break;
 		case ObjType::Upvalue: {
@@ -348,9 +348,8 @@ void GcHeap::destroyObject(GCObject* object) {
 			auto* closure = static_cast<Closure*>(object);
 			auto prototype = m_prototypes.find(*closure->prototype);
 			if (--prototype->second == 0) m_prototypes.erase(prototype);
-			budget.release(closure->trackedHeapBytes);
-			closure->~Closure();
-			::operator delete(object);
+			budget.release(heapAllocationBytes(closureRecordBytes(closure->upvalueCount)));
+			delete closure;
 			break;
 		}
 		case ObjType::Upvalue:
@@ -431,9 +430,14 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 					auto* object = m_sweep;
 					m_sweep = object->next;
 					if (object->type == ObjType::Table) continue;
-					work += object->type == ObjType::Upvalue ? 1 : ceilDiv4(static_cast<int>(allocationBytes(object)));
+					work += object->type == ObjType::Upvalue || object->type == ObjType::Closure ? 1 : ceilDiv4(static_cast<int>(allocationBytes(object)));
 					if (sweepGarbage(object)) {
-						if (object->type == ObjType::Upvalue) arena.free(static_cast<Upvalue*>(object)->address);
+						if (object->type == ObjType::Upvalue) {
+							const u32 address = static_cast<Upvalue*>(object)->address;
+							m_cellRecords[(address & (MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES)) / UPVALUE_HEAP_BYTES] = nullptr;
+							arena.free(address);
+						}
+						if (object->type == ObjType::Closure) arena.free(static_cast<Closure*>(object)->address);
 						unlink(object); destroyObject(object);
 					}
 					else {

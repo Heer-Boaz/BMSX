@@ -172,7 +172,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			cpu.executeVararg(*frame, exit->exitA, exit->exitB);
 			break;
 		case NativeBlockExit::WriteUpvalue:
-			cpu.writeUpvalue(static_cast<Upvalue*>(cpu.m_heap.object(frame->closure->upvalues[exit->exitB])), frame->registers.get(exit->exitA));
+			cpu.writeUpvalue(frame->closure->captureAddress(exit->exitB), frame->registers.get(exit->exitA));
 			break;
 		case NativeBlockExit::InvalidOperand:
 		case NativeBlockExit::InvalidConstant:

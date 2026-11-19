@@ -251,7 +251,7 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 	const strings = js.stringPool.captureState();
 	// Only the root Thread and closure are objects. The Thread is remarked;
 	// all directory slots and allocated text are examined once at sweep.
-	const gcCycles = 4 * ceilDiv4(64 + js.rootThread.stackRegisters.capacity() * 5) + 2 * 4
+	const gcCycles = 4 * ceilDiv4(64 + js.rootThread.stackRegisters.capacity() * 5) + 3 + 1
 		+ strings.slots + strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
 	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);

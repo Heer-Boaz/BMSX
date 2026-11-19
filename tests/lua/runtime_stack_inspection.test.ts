@@ -416,7 +416,7 @@ return outer()`, 3);
 	assert.deepEqual(identity.value, { kind: 'unavailable', reason: 'no-live-location', display: '<no live location>' });
 	assert.equal(captures.find(entry => entry.key.display === 'retained')!.value.display, '42');
 	assert.equal(reads.mock.callCount(), 0, 'eliminated captures do not read the selected frame registers');
-	assert.equal(physical.closure.upvalues.length, 1, 'debugging does not keep the eliminated closure cell alive');
+	assert.equal(physical.closure.upvalueCount, 1, 'debugging does not keep the eliminated closure cell alive');
 });
 
 test('conversation frame scopes expose an inlined capture through the same stopped inspection owner', async t => {

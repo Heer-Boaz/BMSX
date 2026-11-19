@@ -563,19 +563,21 @@ void pairedJumpLinksAcrossPages() {
 }
 
 void pairedJumpFaultsOnlyOnTheNextGrant() {
-	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	test::Blua32TestImage image; image.text.resize(9 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::EQ), 1, 0, 2);
-	constexpr u32 jumpWords = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES - 2;
+	constexpr u32 jumpWords = 2;
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, jumpWords >> 6u, jumpWords & 63u);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::ADD), 3, 3, 1);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
 	writeInstruction(image.text, 8, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}, {.firstWord = 8, .wordCount = 1}};
 	image.exceptionFunctionIndex = 1;
-	const u32 end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes, start = end - MAPPED_PAGE_BYTE_SIZE;
+	const u32 end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes, start = end - 4u * INSTRUCTION_BYTES;
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
-		machine->memory.writeBytes(start, image.text.data(), image.text.size());
+		// Only touch the four words under test, not the management words
+		// in the rest of this physical page.
+		machine->memory.writeBytes(start, image.text.data(), 4u * INSTRUCTION_BYTES);
 		auto& r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
 		r.set(0, valueInteger(1)); r.set(1, valueInteger(1)); r.set(2, valueInteger(0)); r.set(3, valueInteger(0));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);

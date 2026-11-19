@@ -56,11 +56,11 @@ test('Hot Resume preserves a direct-entry record count independently of captured
 	const { cpu } = createTestSystemCpu(image);
 	const closure = cpu.activeThread.currentFrame!.closure;
 	assert.equal(closure.prototypeRecord.recordUpvalueCount, 1);
-	assert.equal(closure.upvalues.length, 0);
+	assert.equal(closure.upvalueCount, 0);
 	const revisions = [identityHotResumeRevision(image.image), null, null] as const;
 	assert.doesNotThrow(() => buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth()));
 	applyHotResumeClosureRevision(cpu, revisions);
 	assert.equal(cpu.activeThread.currentFrame!.closure, closure);
 	assert.equal(closure.prototypeRecord.recordUpvalueCount, 1);
-	assert.equal(closure.upvalues.length, 0);
+	assert.equal(closure.upvalueCount, 0);
 });

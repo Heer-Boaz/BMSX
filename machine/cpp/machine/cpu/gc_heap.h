@@ -31,7 +31,11 @@ public:
 	Memory& memory;
 	HeapAllocator& arena;
 	Table* tableAt(u32 address) const { return m_tableRecords[(address & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES]; }
-	void forgetTableRecords() { std::fill(m_tableRecords.begin(), m_tableRecords.end(), nullptr); }
+	Upvalue* cellAt(u32 address) const { return m_cellRecords[(address & (MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES)) / UPVALUE_HEAP_BYTES]; }
+	void forgetPhysicalRecords() {
+		std::fill(m_tableRecords.begin(), m_tableRecords.end(), nullptr);
+		std::fill(m_cellRecords.begin(), m_cellRecords.end(), nullptr);
+	}
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
 		if constexpr (!std::is_same_v<T, Table>) reserveReference();
 		T* object;
@@ -41,7 +45,7 @@ public:
 		track(object);
 		return object;
 	}
-	Closure* allocateClosure(const FunctionPrototype&, size_t count);
+	Closure* bindClosureRecord(u32 address, const FunctionPrototype&, u32 count, bool canonical);
 	u32 allocateHashId() { return m_nextObjectHashId++; }
 	u32 nextObjectHashId() const { return m_nextObjectHashId; }
 	// Only the host-backed allocations still use directory slots.
@@ -53,6 +57,7 @@ public:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static size_t nativeReferencesOffset();
 	static size_t nativeTableRecordsOffset();
+	static size_t nativeCellRecordsOffset();
 #endif
 	uint32_t hash(Value value) const {
 		switch (valueTag(value)) {
@@ -126,12 +131,14 @@ private:
 	// Map nodes are stable across rehash; erasure is tied to the last closure.
 	std::unordered_map<FunctionPrototype, size_t, FunctionPrototypeHash> m_prototypes;
 	std::vector<Table*> m_tableRecords = std::vector<Table*>(MAIN_RAM_SIZE / Table::HEADER_BYTES);
+	std::vector<Upvalue*> m_cellRecords = std::vector<Upvalue*>(MAIN_RAM_SIZE / UPVALUE_HEAP_BYTES);
 	std::vector<ReferenceSlot> m_references{{.object = nullptr}};
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Published address of this owner's current directory allocation. Native
 	// code reloads it; reserve/restore never leave cached directory pointers.
 	ReferenceSlot* m_referenceBase = m_references.data();
 	Table* const* const m_tableRecordBase = m_tableRecords.data();
+	Upvalue* const* const m_cellRecordBase = m_cellRecords.data();
 #endif
 	u32 m_freeReference = 0;
 };

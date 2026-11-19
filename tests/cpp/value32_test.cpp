@@ -40,7 +40,7 @@ void storageAndFrames() {
 	second->registers.set(0, valueInteger(123)); thread.resizeStack(96);
 	require(second->registers.get(0) == valueInteger(123) && first->registers.get(3) == valueFloatBits(0xffc00000), "nested frame windows survive relocation");
 	thread.leaveFrame(); require(thread.currentFrame == first, "ordinary return retains caller");
-	static_assert(sizeof(*Closure{}.upvalues) == sizeof(uint32_t));
+	static_assert(closureRecordBytes(2) - closureRecordBytes(1) == sizeof(uint32_t));
 }
 void valuesAndText() {
 	require(valueNil() == 0 && !isTruthy(valueBool(false)) && isTruthy(valueInteger(0)), "truth is by tag");

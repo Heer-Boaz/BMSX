@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { Upvalue, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/closure';
+import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/closure';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -19,9 +19,12 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 	const memory = new Memory({ systemRom: rom, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory), backend);
 	cpu.reset();
-	const firstFrame = cpu.activeThread.currentFrame!, closure = firstFrame.closure, owner = firstFrame.executionImage;
+	const firstFrame = cpu.activeThread.currentFrame!, owner = firstFrame.executionImage;
+	const closure = new Closure(memory, cpu.luaHeap.allocateClosureRecord(1), firstFrame.closure.prototypeRecord, 1, false);
+	closure.initializeRecord(); cpu.gc.track(closure);
+	firstFrame.closure = closure;
 	const table = cpu.createTable(1, 1), field = cpu.stringPool.find('field')!;
-	const upvalue = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));cpu.gc.track(upvalue);closure.upvalues = new Uint32Array([cpu.gc.reference(upvalue)]);
+	const upvalue = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));cpu.gc.track(upvalue);closure.setCaptureAddress(0, upvalue.address);
 	const other = { ...firstFrame, registers: new ValueSlots(24) };
 	function setup(scenario: Scenario, value = v.valueInteger(3), source = 'closed') {
 		const frame = cpu.activeThread.currentFrame!, r = frame.registers;

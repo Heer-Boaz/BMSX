@@ -47,7 +47,7 @@ test('reset, EXEC and restore use the heap capacity of the active image', () => 
 test('EXEC refuses a cartridge whose statics overlap a live heap page before writing them', () => {
 	const { cpu, memory, systemEnd, cartEnd } = bootPair();
 	const heap = cpu.heapAllocator;
-	const live = heap.allocate(heap.capacityBytes() - HEAP_PAGE_SIZE, false);
+	const live = heap.allocate(heap.capacityBytes() - 2 * HEAP_PAGE_SIZE, false);
 	assert.equal(live, pageRound(systemEnd) + HEAP_PAGE_SIZE, 'the run occupies every page but the lowest');
 	const marker = cartEnd - 4 - RAM_BASE;
 	memory.ramView.setUint32(marker & ~3, 0x5eed5eed, true);

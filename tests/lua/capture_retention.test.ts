@@ -329,7 +329,7 @@ test('unused retained capture initializers survive O3 for newly created closures
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const closure = materializeCpuCompletionValues(cpu)[0];
 	cpu.setGlobalByKey(cpu.stringPool.intern('__test_closure'), closure);
-	assert.equal(asClosure(closure, cpu.gc).upvalues.length, 2);
+	assert.equal(asClosure(closure, cpu.gc).upvalueCount, 2);
 	cpu.beginCompletionCall(asClosure(closure, cpu.gc));
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(22)]);

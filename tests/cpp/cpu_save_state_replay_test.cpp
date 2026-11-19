@@ -149,7 +149,7 @@ void mirroredAllocationOrder() {
 	require(cpu.stringPool().intern("Attempted to get length of an unsupported value.", false) == 3u, "mirrored fault error string id");
 	cpu.runUntilDepth(0, 1000);
 	const auto* closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
-	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().object(closure->upvalues[0]))->hashId == closure->hashId + 1u, "closure allocation precedes its new upvalue");
+	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().cellAt(closure->captureAddress(0)))->hashId == closure->hashId + 1u, "closure allocation precedes its new upvalue");
 }
 
 void inspectOpenAndClosedClosure() {
@@ -168,7 +168,7 @@ void inspectOpenAndClosedClosure() {
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::ExecutionStopped, "stop after capture, before the defining frame returns");
 	const auto open = cpu.captureRuntimeState();
 	const auto* closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
-	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().object(closure->upvalues[0]))->open, "fixture capture is open");
+	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().cellAt(closure->captureAddress(0)))->open, "fixture capture is open");
 	const auto table = cpu.readFrameRegister(0, 0);
 	require(cpu.readClosureUpvalue(closure, 0) == table, "read the live defining register without calling the closure");
 	const auto afterRead = cpu.captureRuntimeState();
@@ -176,11 +176,11 @@ void inspectOpenAndClosedClosure() {
 	cpu.setExecutionHook({});
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "defining frame returns normally");
 	closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
-	require(!static_cast<bmsx::Upvalue*>(cpu.gcHeap().object(closure->upvalues[0]))->open, "fixture capture is closed");
+	require(!static_cast<bmsx::Upvalue*>(cpu.gcHeap().cellAt(closure->captureAddress(0)))->open, "fixture capture is closed");
 	require(cpu.readClosureUpvalue(closure, 0) == table, "closed cell keeps the same value");
 	cpu.restoreRuntimeState(open);
 	closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
-	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().object(closure->upvalues[0]))->open, "restore replaces the closure with its open capture");
+	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().cellAt(closure->captureAddress(0)))->open, "restore replaces the closure with its open capture");
 	require(cpu.readClosureUpvalue(closure, 0) == cpu.readFrameRegister(0, 0), "restored read follows the restored frame");
 }
 

@@ -70,32 +70,36 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backing
 	throw LuaOutOfMemorySignal{};
 }
 
-void LuaHeap::allocateCaptureCells(size_t closureBytes, std::span<u32> addresses) {
-	const size_t charged = closureBytes + addresses.size() * UPVALUE_HEAP_BYTES;
+u32 LuaHeap::allocateClosureRecord(u32 captures, std::span<u32> cells) {
+	const u32 bytes = closureRecordBytes(captures);
+	const size_t charged = heapAllocationBytes(bytes) + cells.size() * UPVALUE_HEAP_BYTES;
 	const bool collected = admit(charged, valueNil(), valueNil(), valueNil(), nullptr);
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
-		size_t count = 0;
 		if (m_trackedBytes + charged <= capacity()) {
-			for (; count < addresses.size(); ++count) {
-				// The open-list descriptor owns the cell until frames are physical.
-				const u32 address = arena.allocate(UPVALUE_HEAP_BYTES, true);
-				if (!address) break;
-				addresses[count] = address;
-			}
-			if (count == addresses.size()) {
-				auto& memory = m_cpu.memory();
-				for (u32 address : addresses) {
-					memory.writeRamRecordWord(address, UPVALUE_RECORD_KIND);
-					memory.writeRamRecordWord(address + 4, 0);
-					memory.writeRamRecordWord(address + 8, 0);
-					memory.writeRamRecordWord(address + 12, 0);
+			// The legacy descriptors own these records until the object sweep migrates.
+			if (const u32 closure = arena.allocate(bytes, true)) {
+				size_t count = 0;
+				for (; count < cells.size(); ++count) {
+					const u32 cell = arena.allocate(UPVALUE_HEAP_BYTES, true);
+					if (!cell) break;
+					cells[count] = cell;
 				}
-				m_trackedBytes += charged;
-				return;
+				if (count == cells.size()) {
+					auto& memory = m_cpu.memory();
+					for (u32 cell : cells) {
+						memory.writeRamRecordWord(cell, UPVALUE_RECORD_KIND);
+						memory.writeRamRecordWord(cell + 4u, 0u);
+						memory.writeRamRecordWord(cell + 8u, 0u);
+						memory.writeRamRecordWord(cell + 12u, 0u);
+					}
+					m_trackedBytes += charged;
+					return closure;
+				}
+				while (count != 0) arena.free(cells[--count]);
+				arena.free(closure);
 			}
 		}
-		while (count != 0) arena.free(addresses[--count]);
 		if (attempt == 0) collectRuntime();
 	}
 	throw LuaOutOfMemorySignal{};

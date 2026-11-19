@@ -1,4 +1,4 @@
-import { UPVALUE_HEAP_BYTES, UPVALUE_RECORD_KIND } from './closure';
+import { UPVALUE_HEAP_BYTES, UPVALUE_RECORD_KIND, closureRecordBytes } from './closure';
 import { heapAllocationBytes } from './heap_allocator';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
@@ -7,6 +7,7 @@ import { GC_ASSIST_BYTES } from './gc_heap';
 import { shiftRightSigned } from '../common/numeric';
 import { valueNil, type Value } from './value';
 
+const NO_NEW_CELLS = new Uint32Array(0);
 const MIN_COLLECTION_BYTES = 1024 * 1024;
 export type LuaHeapState = {
 	trackedBytes: number;
@@ -69,34 +70,39 @@ export class LuaHeap {
 		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
 
-	/** Admit the closure and its new cells before publishing frame links. */
-	public allocateCaptureCells(closureBytes: number, addresses: Uint32Array, newCount: number): void {
-		const charged = closureBytes + newCount * UPVALUE_HEAP_BYTES;
+	/** Admit the closure and its new cells before publishing any frame link. */
+	public allocateClosureRecord(captures: number, cells: Uint32Array = NO_NEW_CELLS, newCount = 0): number {
+		const bytes = closureRecordBytes(captures);
+		const charged = heapAllocationBytes(bytes) + newCount * UPVALUE_HEAP_BYTES;
 		const collected = this.admit(charged, valueNil(), valueNil(), valueNil(), null);
 		const arena = this.cpu.heapAllocator;
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
-			let count = 0;
 			if (this.trackedBytes + charged <= this.capacity()) {
-				for (; count < newCount; ++count) {
-					// The open-list descriptor owns the cell until frames are physical.
-					const address = arena.allocate(UPVALUE_HEAP_BYTES, true);
-					if (address === 0) break;
-					addresses[count] = address;
-				}
-				if (count === newCount) {
-					const memory = this.cpu.memory;
-					for (let index = 0; index < newCount; ++index) {
-						const address = addresses[index];
-						memory.writeRamRecordWord(address, UPVALUE_RECORD_KIND);
-						memory.writeRamRecordWord(address + 4, 0);
-						memory.writeRamRecordWord(address + 8, 0);
-						memory.writeRamRecordWord(address + 12, 0);
+				// The legacy descriptors own these records until the object sweep migrates.
+				const closure = arena.allocate(bytes, true);
+				if (closure !== 0) {
+					let count = 0;
+					for (; count < newCount; ++count) {
+						const cell = arena.allocate(UPVALUE_HEAP_BYTES, true);
+						if (cell === 0) break;
+						cells[count] = cell;
 					}
-					this.trackedBytes += charged;
-					return;
+					if (count === newCount) {
+						const memory = this.cpu.memory;
+						for (let index = 0; index < newCount; ++index) {
+							const cell = cells[index];
+							memory.writeRamRecordWord(cell, UPVALUE_RECORD_KIND);
+							memory.writeRamRecordWord(cell + 4, 0);
+							memory.writeRamRecordWord(cell + 8, 0);
+							memory.writeRamRecordWord(cell + 12, 0);
+						}
+						this.trackedBytes += charged;
+						return closure;
+					}
+					while (count !== 0) arena.free(cells[--count]);
+					arena.free(closure);
 				}
 			}
-			while (count !== 0) arena.free(addresses[--count]);
 			if (attempt === 0) this.collectRuntime();
 		}
 		throw LUA_OUT_OF_MEMORY_SIGNAL;

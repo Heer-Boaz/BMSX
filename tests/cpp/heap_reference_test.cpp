@@ -51,7 +51,7 @@ void liveReferencesAndReuse() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
 	static_assert(sizeof(decltype(cpu.gcHeap().reference(cpu.rootThread()))) == sizeof(u32));
 	for (auto* object : {static_cast<GCObject*>(cpu.rootThread()), static_cast<GCObject*>(frame.closure),
-		static_cast<GCObject*>(asClosure(frame.registers.get(1),cpu.gcHeap())), static_cast<GCObject*>(cpu.gcHeap().object(asClosure(frame.registers.get(1),cpu.gcHeap())->upvalues[0]))})
+		static_cast<GCObject*>(asClosure(frame.registers.get(1),cpu.gcHeap())), static_cast<GCObject*>(cpu.gcHeap().cellAt(asClosure(frame.registers.get(1),cpu.gcHeap())->captureAddress(0)))})
 		require(cpu.gcHeap().object(cpu.gcHeap().reference(object)) == object, "threads, closures and upvalues have references at construction");
 	auto* roots = cpu.createTable(512);
 	frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.top = 2;
@@ -157,11 +157,15 @@ void closedCellLivesInRam() {
 	auto* closure = asClosure(frame.registers.get(1), heap);
 	const u32 key = cpu.stringPool().intern("saved_capture");
 	cpu.setGlobalByKey(key, frame.registers.get(1));
-	auto* cell = static_cast<Upvalue*>(heap.object(closure->upvalues[0]));
+	auto* cell = static_cast<Upvalue*>(heap.cellAt(closure->captureAddress(0)));
 	const u32 address = cell->address;
+	auto& memory = machine.memory;
+	require(memory.readRamRecordWord(closure->address + CLOSURE_CAPTURE_WORDS) == cell->address,
+		"closure owns the physical capture word");
+	const auto openSnapshot = cpu.captureRuntimeState();
+	const auto openRam = memory.captureSaveState();
 	frame.registers.set(0, valueFloatBits(0xffa12345u));
 	cpu.abortCompletionCall(0);
-	auto& memory = machine.memory;
 	require(!cell->open && memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == 0xffa12345u
 		&& memory.readRamRecordByte(address + UPVALUE_VALUE_TAG) == static_cast<u8>(ValueTag::Float),
 		"closing a capture writes the exact value to the allocated cell");
@@ -169,14 +173,21 @@ void closedCellLivesInRam() {
 	const auto ram = memory.captureSaveState();
 	memory.writeRamRecordWord(address + UPVALUE_VALUE_WORD, 0x80000000u);
 	require(cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0x80000000u), "closed capture reads the physical word");
+	// Restoring the closed checkpoint must not close the discarded frame
+	// into the same cell of the already-installed RAM image.
+	memory.restoreSaveState(openRam);
+	cpu.restoreRuntimeState(openSnapshot);
+	cpu.rootThread()->currentFrame->registers.set(0, valueInteger(44));
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(saved);
 	closure = asClosure(cpu.getGlobalByKey(key), heap);
 	require(cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u), "restore rebinds the saved cell");
+	cpu.collectHeap();
 	const auto occupied = cpu.heapAllocator().occupiedBytes();
 	cpu.setGlobalByKey(key, valueNil());
 	cpu.collectHeap();
-	require(cpu.heapAllocator().occupiedBytes() == occupied - UPVALUE_HEAP_BYTES, "collection releases the raw cell");
+	require(cpu.heapAllocator().occupiedBytes() == occupied - heapAllocationBytes(closureRecordBytes(1)) - UPVALUE_HEAP_BYTES,
+		"collection releases both raw records");
 }
 
 void isolatedHeaps() {

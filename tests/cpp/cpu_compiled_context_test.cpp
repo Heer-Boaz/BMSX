@@ -233,14 +233,14 @@ void hotUpvalueAlias() {
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
 		auto& heap = m->cpu.gcHeap();
-		auto* closure = heap.allocateClosure(*frame.closure->prototype, 2);
+		auto* closure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), *frame.closure->prototype, 2, false);
 		closure->hashId = heap.allocateHashId();
 		for (int c = 0; c < 2; ++c) {
 			auto* cell = heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
 				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
 			cell->hashId = heap.allocateHashId();
 			cell->open = c == 0; cell->frame = c == 0 ? &frame : nullptr;
-			closure->upvalues[c] = heap.reference(cell);
+			closure->setCaptureAddress(c, cell->address);
 		}
 		frame.closure = closure; m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1100);
 	}
@@ -309,9 +309,9 @@ void rawContextValues(CpuMachine& machine) {
 	auto& closed = *heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
 				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
 	open.open = true; open.frame = &frame;
-	frame.closure = heap.allocateClosure({}, 2);
-	frame.closure->upvalues[0] = heap.reference(&open);
-	frame.closure->upvalues[1] = heap.reference(&closed);
+	frame.closure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), {}, 2, false);
+	frame.closure->setCaptureAddress(0, open.address);
+	frame.closure->setCaptureAddress(1, closed.address);
 	ContextBlock captures(machine, {{OpCode::K1, 0}, {OpCode::GETUP, 1}, {OpCode::KSMI, 2, 0, 0, 9},
 		{OpCode::SETUP, 2}, {OpCode::ADD, 3, 0, 1}, {OpCode::GETUP, 4}, {OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	registers.clear(0, registers.capacity());
@@ -344,6 +344,16 @@ void rawContextValues(CpuMachine& machine) {
 	closed.setValue(registers.get(12));
 	require(!machine.memory.ramWriteWatches().anyWatched() && closed.value() == valueFloatBits(0xffa54321u),
 		"the semantic path publishes the closed cell through RAM's write watch");
+	const u32 rawCell = DYNAMIC_RAM_BASE + 0x600u;
+	machine.memory.writeRamRecordWord(frame.closure->address + CLOSURE_CAPTURE_WORDS + sizeof(u32), rawCell | 0x80000000u);
+	registers.set(12, valueFloatBits(0x80000000u));
+	NativeBlockRunState addressed{.registers = registers.view(), .frame = &frame, .heap = &heap,
+		.remainingCycles = 100, .ram = machine.memory.ramData()};
+	require(outerRead.block->run(addressed) == &outerRead.block->terminal
+		&& registers.get(6) == valueFloatBits(0x80000000u)
+		&& machine.memory.readRamRecordWord(rawCell + UPVALUE_VALUE_WORD) == 0x80000000u
+		&& closed.value() == valueFloatBits(0xffa54321u),
+		"generated GETUP and SETUP use masked cell bytes rather than an unrelated host slot");
 	const std::array literals{valueNil(), valueBool(false), valueBool(true), values[6], valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(11)};
 	ValueSlots constants(literals.size());
 	for (size_t i = 0; i < literals.size(); ++i) constants.set(i, literals[i]);

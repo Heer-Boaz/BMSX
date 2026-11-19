@@ -1205,12 +1205,12 @@ The occupied-byte counts used for admission are:
 | Allocation | Occupied budget bytes |
 | --- | --- |
 | Table with array capacity `A` and hash capacity `H` | `32 + S(5A + 14H)` |
-| Closure with `U` captured-variable references | `16 + 4U` |
+| Closure with `U` captured-variable references | `S(12 + 4U)` |
 | Captured-variable cell | `16` |
 | Thread with `V` reserved Value slots | `64 + 5V` |
 | Allocated String text | UTF-8 byte length |
 
-A Table's slots and links occupy one block in the language heap. `S(0) = 0`;
+A Table's slots and links occupy one block in the language heap. A closure's header and capture references occupy one block. `S(0) = 0`;
 there is no block for an empty layout. Up to 64 bytes, round up to a multiple
 of 8. From 65 through 2048 bytes, use four size classes per doubling
 (80, 96, 112, 128, 160, and so on). Larger blocks round up to a multiple of
@@ -1240,11 +1240,12 @@ Collection work consumes cycles as follows:
 | Work | Cycles |
 | --- | --- |
 | Scan a Table | `8 + A + 2H`; eight header words and one cycle for each reserved Value slot |
-| Scan a closure or Thread | `ceil(occupied allocation bytes / 4)` |
+| Scan a closure | `3 + U` |
+| Scan a Thread | `ceil(occupied allocation bytes / 4)` |
 | Scan a captured-variable cell | `4` |
 | Examine a Table record for reclamation | `1` per visited block in an object page, including a free slot; a page run is one block |
-| Examine a closure or Thread for reclamation | `ceil(occupied allocation bytes / 4)` |
-| Examine a captured-variable cell for reclamation | `1` |
+| Examine a closure or captured-variable cell for reclamation | `1` |
+| Examine a Thread for reclamation | `ceil(occupied allocation bytes / 4)` |
 | Read the constant and global root ranges | `2C + 3(S + G)` per pass |
 | Examine a weak-key Table in one dependency-convergence pass | `A + 2H` |
 | Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |

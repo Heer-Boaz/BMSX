@@ -147,7 +147,10 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		closed.hashId = 101;
 		cpu.gc.track(open); cpu.gc.track(closed);
 		const bound = frame.closure;
-		frame.closure = new Closure(bound.prototypeRecord, Uint32Array.of(cpu.gc.reference(open), cpu.gc.reference(closed)), 0, false);
+		frame.closure = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(2), bound.prototypeRecord, 2, false);
+		frame.closure.initializeRecord();
+		frame.closure.setCaptureAddress(0, open.address);
+		frame.closure.setCaptureAddress(1, closed.address);
 		cpu.gc.track(frame.closure);
 		cpu.runUntilDepth(0, 50 * loopCycles);
 	}
@@ -165,7 +168,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		assert.equal(frame.registers.get(6), frame.registers.get(12));
 		assert.equal(frame.top, 7, 'SETUP does not extend top to its source register');
 	}
-	const upvalue = js.gc.object(frame.closure.upvalues[0]) as Upvalue;
+	const upvalue = js.gc.cellAt(frame.closure.captureAddress(0)) as Upvalue;
 	upvalue.open = false; upvalue.frame = null; upvalue.value = valueInteger(1);
 	const r = frame.registers, setEncoded = r.setEncoded.bind(r), writes = new Uint32Array(16);
 	r.setEncoded = (index, tag, word) => { ++writes[index]; setEncoded(index, tag, word); };

@@ -487,16 +487,16 @@ DISPATCH_LABEL(CLOSURE) {
 DISPATCH_LABEL(GETUP) {
 	const int a = decoded->a;
 	const int b = decoded->b;
-	Upvalue* upvalue = static_cast<Upvalue*>(m_heap.object(FRAME.closure->upvalues[static_cast<size_t>(b)]));
-	SET_REGISTER_FAST(a, readUpvalue(upvalue));
+	const u32 address = FRAME.closure->captureAddress(static_cast<u32>(b));
+	SET_REGISTER_FAST(a, readUpvalue(address));
 	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SETUP) {
 	const int a = decoded->a;
 	const int b = decoded->b;
-	Upvalue* upvalue = static_cast<Upvalue*>(m_heap.object(FRAME.closure->upvalues[static_cast<size_t>(b)]));
-	writeUpvalue(upvalue, REG(a));
+	const u32 address = FRAME.closure->captureAddress(static_cast<u32>(b));
+	writeUpvalue(address, REG(a));
 	DISPATCH_NEXT();
 }
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuSnapshotClosure, CpuSnapshotObjectKind } from '../../machine/ts/machine/cpu/snapshot';
-import { asTable, valueTable, valueIsTable, valueFloat, valueFloatBits, valueInteger, valueBool, valueNil, valueBuiltinFunction, type Value, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
+import { asTable, asClosure, valueTable, valueIsTable, valueFloat, valueFloatBits, valueInteger, valueBool, valueNil, valueBuiltinFunction, type Value, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -67,8 +67,11 @@ return function() return root end
 	assert.equal(graph.word(result), ValueTag.Closure);
 	const closure = graph.objectWord(graph.word(result + 1));
 	assert.equal(graph.word(closure), CpuSnapshotObjectKind.Closure);
-	const upvalue = graph.objectWord(graph.word(closure + CpuSnapshotClosure.Data));
-	assert.equal(graph.word(upvalue + 1), graph.word(closure + CpuSnapshotClosure.HashId) + 1);
+	const values: Value[] = [];
+	cpu.readCompletionValues(values);
+	const descriptor = asClosure(values[0], cpu.gc);
+	assert.equal(graph.word(closure + CpuSnapshotClosure.Record), descriptor.address);
+	assert.equal(cpu.gc.cellAt(descriptor.captureAddress(0)).hashId, descriptor.hashId + 1);
 });
 
 test('repeated restore replays the full CPU state independently of fresh execution grants', () => {

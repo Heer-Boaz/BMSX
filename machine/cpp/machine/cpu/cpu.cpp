@@ -27,8 +27,6 @@ namespace bmsx {
 // start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
 
 namespace {
-constexpr size_t kClosureHeapBytes = 16;
-constexpr size_t kClosureUpvalueSlotHeapBytes = 4;
 
 } // namespace
 
@@ -141,12 +139,10 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 	return table;
 }
 
-Closure* CPU::allocateTrackedClosure(
-	const FunctionPrototype& prototype,
-	size_t upvalueCount
-) {
-	auto* closure = m_heap.allocateClosure(prototype, upvalueCount);
-	closure->trackedHeapBytes = kClosureHeapBytes + (upvalueCount * kClosureUpvalueSlotHeapBytes);
+Closure* CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool canonical, std::span<u32> cells) {
+	const u32 address = m_luaHeap.allocateClosureRecord(count, cells);
+	Closure* closure = m_heap.bindClosureRecord(address, prototype, count, canonical);
+	closure->initializeRecord();
 	return closure;
 }
 
@@ -463,9 +459,7 @@ Closure* CPU::staticClosureForRecord(const FunctionPrototype& record) {
 		}
 	}
 	if (first) return first;
-	m_luaHeap.reserve(kClosureHeapBytes);
-	Closure* closure = allocateTrackedClosure(record, 0);
-	closure->canonical = true;
+	Closure* closure = allocateClosure(record, 0, true);
 	m_staticClosuresByAddress[record.functionAddress].push_back(closure);
 	return closure;
 }
@@ -948,7 +942,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	for (u32 id = 0; id < pendingObjects.size(); ++id) {
 		const auto* object = pendingObjects[id];
 		u32 offset;
-		if (object->type != ObjType::Table && object->type != ObjType::Upvalue && m_heap.sweepGarbage(object)) {
+		if (object->type != ObjType::Table && object->type != ObjType::Upvalue && object->type != ObjType::Closure && m_heap.sweepGarbage(object)) {
 			offset = snapshot.reserveWords(3);
 			snapshot.setWord(offset, static_cast<u32>(CpuSnapshotObjectKind::Garbage));
 			snapshot.setWord(offset + 1, object->hashId);
@@ -970,7 +964,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				break;
 			case ObjType::Closure: {
 				const auto* closure = static_cast<const Closure*>(object);
-				offset = snapshot.reserveWords(SNAP_CLOSURE_DATA + static_cast<u32>(closure->upvalueCount));
+				offset = snapshot.reserveWords(SNAP_CLOSURE_SIZE);
 				snapshot.setWord(offset + SNAP_CLOSURE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Closure));
 				snapshot.setWord(offset + SNAP_CLOSURE_HASH_ID, closure->hashId);
 				snapshot.setWord(offset + SNAP_CLOSURE_FUNCTION_ADDRESS, closure->prototype->functionAddress);
@@ -983,9 +977,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				snapshot.setWord(offset + SNAP_CLOSURE_UPVALUE_TABLE_ADDRESS, closure->prototype->upvalueTableAddress);
 				snapshot.setWord(offset + SNAP_CLOSURE_RECORD_UPVALUE_COUNT, closure->prototype->recordUpvalueCount);
 				snapshot.setWord(offset + SNAP_CLOSURE_EXECUTION_DOMAIN_ID, static_cast<u32>(closure->prototype->executionDomainId));
-				for (u32 index = 0; index < closure->upvalueCount; ++index) {
-					snapshot.setWord(offset + SNAP_CLOSURE_DATA + index, captureObject(m_heap.object(closure->upvalues[index])));
-				}
+				snapshot.setWord(offset + SNAP_CLOSURE_RECORD, closure->address);
 				break;
 			}
 			case ObjType::Upvalue: {
@@ -1048,7 +1040,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 #endif
 	const auto& snapshot = state.snapshot;
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
-	clearCallStack();
+	clearCallStack(false);
 	auto previousCanonical = std::move(m_staticClosuresByAddress);
 	m_staticClosuresByAddress.clear();
 	auto savedClosure = [&](u32 offset) {
@@ -1063,7 +1055,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		record.executionDomainId = snapshot.integer(offset + SNAP_CLOSURE_EXECUTION_DOMAIN_ID);
 		return record;
 	};
-	m_heap.forgetTableRecords();
+	m_heap.forgetPhysicalRecords();
 	std::vector<GCObject*> restoredObjects(snapshot.objectCount());
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
@@ -1104,7 +1096,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			}
 			case CpuSnapshotObjectKind::Closure: {
 				const FunctionPrototype record = savedClosure(offset);
-				const size_t upvalueCount = snapshot.word(offset + SNAP_CLOSURE_UPVALUE_COUNT);
+				const u32 upvalueCount = snapshot.word(offset + SNAP_CLOSURE_UPVALUE_COUNT);
+				const u32 address = snapshot.word(offset + SNAP_CLOSURE_RECORD);
 				const u32 functionAddress = record.functionAddress;
 				const bool canonical = snapshot.word(offset + SNAP_CLOSURE_CANONICAL) != 0;
 				Closure* closure;
@@ -1116,7 +1109,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 					if (previous != previousCanonical.end()) {
 						auto& candidates = previous->second;
 						auto existing = std::find_if(candidates.begin(), candidates.end(), [&](const Closure* item) {
-							return item->hashId == hashId && *item->prototype == record && item->upvalueCount == upvalueCount;
+							return item->hashId == hashId && item->address == address && *item->prototype == record && item->upvalueCount == upvalueCount;
 						});
 						if (existing != candidates.end()) {
 							closure = *existing;
@@ -1124,15 +1117,14 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 						}
 					}
 					if (!closure) {
-						m_luaHeap.restoreAllocate(kClosureHeapBytes + upvalueCount * kClosureUpvalueSlotHeapBytes);
-						closure = allocateTrackedClosure(record, upvalueCount);
+						m_luaHeap.restoreAllocate(heapAllocationBytes(closureRecordBytes(upvalueCount)));
+						closure = m_heap.bindClosureRecord(address, record, upvalueCount, canonical);
 					}
 					versions.push_back(closure);
 				} else {
-					m_luaHeap.restoreAllocate(kClosureHeapBytes + upvalueCount * kClosureUpvalueSlotHeapBytes);
-					closure = allocateTrackedClosure(record, upvalueCount);
+					m_luaHeap.restoreAllocate(heapAllocationBytes(closureRecordBytes(upvalueCount)));
+					closure = m_heap.bindClosureRecord(address, record, upvalueCount, canonical);
 				}
-				closure->canonical = canonical;
 				closure->restored = true;
 				closure->hashId = snapshot.word(offset + SNAP_CLOSURE_HASH_ID);
 				restoredObjects[index] = closure;
@@ -1153,24 +1145,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	}
 	m_heap.bindRestoredReferences(state.gc, restoredObjects, state.nextObjectHashId);
 	const CpuSnapshotReader reader(snapshot, restoredObjects, m_heap);
-	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
-		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
-		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {
-			case CpuSnapshotObjectKind::Garbage: break;
-			case CpuSnapshotObjectKind::Thread:
-				break;
-			case CpuSnapshotObjectKind::Table: break;
-			case CpuSnapshotObjectKind::Closure: {
-				auto* closure = static_cast<Closure*>(restoredObjects[index]);
-				for (u32 slot = 0; slot < closure->upvalueCount; ++slot) {
-					closure->upvalues[slot] = m_heap.reference(restoredObjects[snapshot.word(offset + SNAP_CLOSURE_DATA + slot)]);
-				}
-				break;
-			}
-			case CpuSnapshotObjectKind::Upvalue: break;
-		}
-	}
-
 	m_memory.clearMappedPageWriteWatches();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
@@ -1388,9 +1362,9 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::GetFrameUpvalue:
 		case BuiltinFunctionId::SetFrameUpvalue: {
 			const auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
-			Upvalue* upvalue = static_cast<Upvalue*>(m_heap.object(frame.closure->upvalues[integerOperand(args[2])]));
-			if (fn.id == BuiltinFunctionId::SetFrameUpvalue) writeUpvalue(upvalue, args[3]);
-			else out.push_back(upvalue->open ? upvalue->frame->registers.get(upvalue->index) : upvalue->value());
+			const u32 address = frame.closure->captureAddress(integerOperand(args[2]));
+			if (fn.id == BuiltinFunctionId::SetFrameUpvalue) writeUpvalue(address, args[3]);
+			else out.push_back(readUpvalue(address));
 			break;
 		}
 		case BuiltinFunctionId::StringChar:
@@ -2618,7 +2592,7 @@ Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
 }
 
 Value CPU::readClosureUpvalue(const Closure* closure, int upvalueIndex) const {
-	return readUpvalue(static_cast<Upvalue*>(m_heap.object(closure->upvalues[static_cast<size_t>(upvalueIndex)])));
+	return readUpvalue(closure->captureAddress(static_cast<u32>(upvalueIndex)));
 }
 
 u32 CPU::readEpcWord() const {
@@ -2677,9 +2651,9 @@ void CPU::writeFrameExecution(
 		frame.closure = staticClosureForRecord(decodePrototype(functionRecord));
 	} else {
 		Closure* oldClosure = frame.closure;
-		m_luaHeap.reserve(kClosureHeapBytes + oldClosure->upvalueCount * kClosureUpvalueSlotHeapBytes);
-		Closure* replacement = allocateTrackedClosure(decodePrototype(functionRecord), oldClosure->upvalueCount);
-		std::copy_n(oldClosure->upvalues, oldClosure->upvalueCount, replacement->upvalues);
+		Closure* replacement = allocateClosure(decodePrototype(functionRecord), oldClosure->upvalueCount, false);
+		for (u32 index = 0; index < oldClosure->upvalueCount; ++index)
+			replacement->setCaptureAddress(index, oldClosure->captureAddress(index));
 		frame.closure = replacement;
 	}
 	frame.functionAddress = functionRecord.address;
@@ -2723,8 +2697,8 @@ Closure* CPU::createClosure(CallFrame& frame) {
 		&& functionRecord.upvalueCount == 0u) {
 		return staticClosureForRecord(decodePrototype(functionRecord));
 	}
-	m_closureUpvalueScratch.resize(functionRecord.upvalueCount);
-	std::fill(m_closureUpvalueScratch.begin(), m_closureUpvalueScratch.end(), nullptr);
+	m_closureCellScratch.resize(functionRecord.upvalueCount);
+	std::fill(m_closureCellScratch.begin(), m_closureCellScratch.end(), 0u);
 	m_closureUpvalueWordScratch.resize(functionRecord.upvalueCount);
 	const u32 faultSequence = m_memory.readBusFaultSequence();
 	size_t newUpvalueCount = 0;
@@ -2734,7 +2708,7 @@ Closure* CPU::createClosure(CallFrame& frame) {
 			functionRecord.busSignals
 		);
 		if (m_memory.readBusFaultSequence() != faultSequence) {
-			m_closureUpvalueScratch.clear();
+			m_closureCellScratch.clear();
 			m_closureUpvalueWordScratch.clear();
 			hardHalt();
 			return nullptr;
@@ -2744,28 +2718,22 @@ Closure* CPU::createClosure(CallFrame& frame) {
 		if ((upvalueWord & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
 			Upvalue* upvalue = findOpenUpvalue(frame, static_cast<int>(upvalueIndex));
 			if (upvalue) {
-				m_closureUpvalueScratch[index] = upvalue;
+				m_closureCellScratch[index] = upvalue->address;
 			} else {
 				newUpvalueCount += 1;
 			}
 		} else {
-			m_closureUpvalueScratch[index] = static_cast<Upvalue*>(m_heap.object(frame.closure->upvalues[upvalueIndex]));
+			m_closureCellScratch[index] = frame.closure->captureAddress(upvalueIndex);
 		}
 	}
-	const size_t closureHeapBytes = kClosureHeapBytes
-		+ (static_cast<size_t>(functionRecord.upvalueCount) * kClosureUpvalueSlotHeapBytes);
-	if (newUpvalueCount != 0) {
-		m_captureAddressScratch.resize(newUpvalueCount);
-		m_luaHeap.allocateCaptureCells(closureHeapBytes, m_captureAddressScratch);
-	} else {
-		m_luaHeap.reserve(closureHeapBytes);
-	}
-	auto* closure = allocateTrackedClosure(decodePrototype(functionRecord), functionRecord.upvalueCount);
+	m_captureAddressScratch.resize(newUpvalueCount);
+	auto* closure = allocateClosure(decodePrototype(functionRecord), functionRecord.upvalueCount, false, m_captureAddressScratch);
 	size_t nextCell = 0;
 	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
-		Upvalue* upvalue = m_closureUpvalueScratch[index];
-		if (!upvalue) {
-			upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue, m_memory, m_captureAddressScratch[nextCell++]);
+		u32 address = m_closureCellScratch[index];
+		if (address == 0u && (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
+			address = m_captureAddressScratch[nextCell++];
+			auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue, m_memory, address);
 			upvalue->open = true;
 			upvalue->index = static_cast<int>(
 				m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_INDEX_MASK
@@ -2773,9 +2741,9 @@ Closure* CPU::createClosure(CallFrame& frame) {
 			upvalue->frame = &frame;
 			linkOpenUpvalue(frame, upvalue);
 		}
-		closure->upvalues[index] = m_heap.reference(upvalue);
+		closure->setCaptureAddress(index, address);
 	}
-	m_closureUpvalueScratch.clear();
+	m_closureCellScratch.clear();
 	m_closureUpvalueWordScratch.clear();
 	instructionBudgetRemaining -= static_cast<int>(functionRecord.upvalueCount);
 	return closure;
@@ -2798,20 +2766,20 @@ int CPU::closeUpvalues(CallFrame& frame) {
 	return closed;
 }
 
-Value CPU::readUpvalue(Upvalue* upvalue) const {
-	if (upvalue->open) {
-		return upvalue->frame->registers.get(upvalue->index);
-	}
-	return upvalue->value();
+Value CPU::readUpvalue(u32 address) const {
+	const auto* cell = m_heap.cellAt(address);
+	return cell && cell->open ? cell->frame->registers.get(cell->index) : Upvalue::load(m_memory, address);
 }
 
-void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
-	if (upvalue->open) {
-		upvalue->frame->registers.set(upvalue->index, value);
-		return;
+void CPU::writeUpvalue(u32 address, const Value& value) {
+	if (auto* cell = m_heap.cellAt(address)) {
+		if (cell->open) {
+			cell->frame->registers.set(cell->index, value);
+			return;
+		}
+		cell->writeBarrier();
 	}
-	upvalue->writeBarrier();
-	upvalue->setValue(value);
+	Upvalue::store(m_memory, address, value);
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
@@ -3078,7 +3046,7 @@ void CPU::storeTableFieldIndexCached(
 	throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 }
 
-void CPU::clearCallStack() {
+void CPU::clearCallStack(bool closeCaptures) {
 	abortStalledMemoryWrite();
 	for (;;) {
 		for (size_t index = 0; index < m_activeThread->protectedCallDepth; ++index) {
@@ -3088,7 +3056,8 @@ void CPU::clearCallStack() {
 		m_activeThread->protectedCallDepth = 0;
 		while (m_activeThread->frameDepth != 0) {
 			CallFrame* frame = m_activeThread->currentFrame;
-			closeUpvalues(*frame);
+			if (closeCaptures) closeUpvalues(*frame);
+			else frame->openUpvalueHead = nullptr;
 			m_activeThread->leaveFrame();
 		}
 		m_activeThread->stack.clear(0, m_activeThread->stackCapacity);

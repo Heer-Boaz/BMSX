@@ -23,11 +23,13 @@ struct Upvalue : GCObject {
 	bool open = false;
 	int index = 0;
 	CallFrame* frame = nullptr;
-	Value value() const;
-	void setValue(Value value);
+	Value value() const { return load(memory, address); }
+	void setValue(Value value) { store(memory, address, value); }
+	static Value load(const Memory& memory, u32 address);
+	static void store(Memory& memory, u32 address, Value value);
 	Upvalue* nextOpen = nullptr;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	struct NativeOffsets { size_t open, index, frame, address; };
+	struct NativeOffsets { size_t open, index, frame; };
 	static NativeOffsets nativeOffsets();
 #endif
 };
@@ -51,14 +53,23 @@ struct FunctionPrototypeHash {
 	}
 };
 
+inline constexpr u32 CLOSURE_PROTOTYPE_ADDRESS = 8;
+inline constexpr u32 CLOSURE_CAPTURE_WORDS = 12;
+inline constexpr u32 closureRecordBytes(u32 captures) { return CLOSURE_CAPTURE_WORDS + 4u * captures; }
+
 struct Closure : GCObject {
-	const FunctionPrototype* prototype = nullptr;
-	size_t upvalueCount = 0;
-	uint32_t* upvalues = nullptr;
-	size_t trackedHeapBytes = 0;
-	bool canonical = false;
+	Closure(Memory& memory, u32 address, u32 count, const FunctionPrototype& prototype, bool canonical)
+		: memory(memory), address(address), prototype(&prototype), upvalueCount(count), canonical(canonical) {}
+	Memory& memory;
+	const u32 address;
+	const FunctionPrototype* prototype;
+	const u32 upvalueCount;
+	const bool canonical;
+	void initializeRecord();
+	u32 captureAddress(u32 index) const;
+	void setCaptureAddress(u32 index, u32 reference);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	static size_t nativeUpvaluesOffset();
+	static size_t nativeAddressOffset();
 	static size_t nativePrototypeOffset();
 #endif
 };

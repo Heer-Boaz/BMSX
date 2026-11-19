@@ -3,7 +3,7 @@ import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
 import { GcObject, GcKind, GarbageAllocation } from './gc_object';
-import { Closure, Upvalue, UPVALUE_HEAP_BYTES, FunctionPrototypePool, type FunctionPrototype } from './closure';
+import { Closure, Upvalue, UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, FunctionPrototypePool, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
 import { Table, TableRecords } from './table';
 import { Thread, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { ValueTag, valueTag, valuePayload, scalarValueHash, valueInteger, valueIsTable, valueNil, type Value } from './value';
@@ -63,7 +63,9 @@ export class GcHeap {
 	public tableAt(address: number): Table | null {
 		return this.tableRecords[(address & RAM_RECORD_WORD_MASK) >>> 5];
 	}
-	public forgetTableRecords(): void { this.tableRecords.fill(null); }
+	private readonly cellRecords = new Array<Upvalue | null>(MAIN_RAM_SIZE / UPVALUE_HEAP_BYTES).fill(null);
+	public cellAt(address: number): Upvalue | null { return this.cellRecords[(address & UPVALUE_ADDRESS_MASK) >>> 4]; }
+	public forgetPhysicalRecords(): void { this.tableRecords.fill(null); this.cellRecords.fill(null); }
 	public reference(object: GcObject): number { return object.gcKind === GcKind.Table ? (object as Table).address : object.referenceId; }
 	/** Consumes a live id produced by this heap; the Value tag supplies its kind. */
 	public object(reference: number): GcObject { return this.references[reference] as GcObject; }
@@ -77,6 +79,10 @@ export class GcHeap {
 	}
 	public keyIdentity(value: Value): number { return valueIsTable(value) ? valuePayload(value) : this.object(valuePayload(value)).hashId; }
 	public track(object: GcObject): void {
+		if (object.gcKind === GcKind.Upvalue) {
+			const cell = object as Upvalue;
+			this.cellRecords[(cell.address & UPVALUE_ADDRESS_MASK) >>> 4] = cell;
+		}
 		if (object.gcKind === GcKind.Closure) {
 			const closure = object as Closure;
 			closure.prototypeRecord = this.prototypes.retain(closure.prototypeRecord);
@@ -99,6 +105,7 @@ export class GcHeap {
 	public rebindClosurePrototype(closure: Closure, record: Readonly<FunctionPrototype>): void {
 		const previous = closure.prototypeRecord;
 		closure.prototypeRecord = this.prototypes.retain(record);
+		this.memory.writeRamRecordWord(closure.address + CLOSURE_PROTOTYPE_ADDRESS, record.functionAddress);
 		this.prototypes.release(previous);
 	}
 	private releaseReference(object: GcObject): void {
@@ -169,9 +176,13 @@ export class GcHeap {
 				if ((this.mode & 1) === 0) this.tables.forEachStoredEntry(table.address, this.traceEntry);
 				return (TableRecords.HEADER_BYTES >>> 2) + this.tables.scanSlots(table.address);
 			}
-			case GcKind.Closure:
-				for (const upvalue of (object as Closure).upvalues) this.markObject(this.object(upvalue));
-				break;
+			case GcKind.Closure: {
+				const closure = object as Closure;
+				for (let index = 0; index < closure.upvalueCount; ++index) {
+					this.markObject(this.cellAt(closure.captureAddress(index)));
+				}
+				return 3 + closure.upvalueCount;
+			}
 			case GcKind.Upvalue: {
 				const upvalue = object as Upvalue;
 				if (upvalue.open) this.markObject(upvalue.frame!.thread);
@@ -296,9 +307,14 @@ export class GcHeap {
 						const object = this.sweep; this.sweep = object.gcNext;
 						if (object.gcKind === GcKind.Table) continue;
 						const bytes = this.allocationBytes(object);
-						work += object.gcKind === GcKind.Upvalue ? 1 : ceilDiv4(bytes);
+						work += object.gcKind === GcKind.Upvalue || object.gcKind === GcKind.Closure ? 1 : ceilDiv4(bytes);
 						if (this.sweepGarbage(object)) {
-							if (object.gcKind === GcKind.Upvalue) this.arena.free((object as Upvalue).address);
+							if (object.gcKind === GcKind.Upvalue) {
+								const address = (object as Upvalue).address;
+								this.cellRecords[(address & UPVALUE_ADDRESS_MASK) >>> 4] = null;
+								this.arena.free(address);
+							}
+							if (object.gcKind === GcKind.Closure) this.arena.free((object as Closure).address);
 							this.unlink(object);
 							this.releaseReference(object);
 							this.budget.release(bytes);

@@ -301,11 +301,11 @@ void closureBindingAndClosingCycles() {
 			&& machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] - 2, "every descriptor costs one even when an earlier closure already opened its cell");
 		auto* first = asClosure(machine.cpu.readFrameRegister(0, 2), machine.cpu.gcHeap());
 		auto* second = asClosure(machine.cpu.readFrameRegister(0, 3), machine.cpu.gcHeap());
-		require(first->upvalues[0] == second->upvalues[0] && first->upvalues[1] == second->upvalues[1],
+		require(first->captureAddress(0) == second->captureAddress(0) && first->captureAddress(1) == second->captureAddress(1),
 			"successive closures share both captured cells");
 		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 2 - 2,
 			"RET charges two distinct open cells, not four descriptors, and two received values");
-		require(!static_cast<Upvalue*>(machine.cpu.gcHeap().object(first->upvalues[0]))->open && !static_cast<Upvalue*>(machine.cpu.gcHeap().object(first->upvalues[1]))->open, "both charged captures are closed");
+		require(!static_cast<Upvalue*>(machine.cpu.gcHeap().cellAt(first->captureAddress(0)))->open && !static_cast<Upvalue*>(machine.cpu.gcHeap().cellAt(first->captureAddress(1)))->open, "both charged captures are closed");
 	}
 }
 
@@ -826,8 +826,8 @@ void protectedReturnPlacementCycles() {
 		const bool fault = wanted >= static_cast<int>(PSX_MACHINE_SPEC.ramBytes);
 		// The failed success-range admission is followed by protected error-range admission, which also fails.
 		// Both emergency collections scan/reclaim the compact five-byte stack slots.
-		// Completing the inner return drops its closure before the first scan: four fewer mark words.
-		const int gcCycles = fault ? (failFirst ? 300 : 296) : 0;
+		// Completing the inner return drops its closure before the first scan: three fewer mark words.
+		const int gcCycles = fault ? (failFirst ? 284 : 281) : 0;
 		bool rejected = false;
 		try { require(machine.cpu.runUntilDepth(1, 2) == RunResult::Halted, "protected return completes at caller"); }
 		catch (const LuaOutOfMemorySignal&) { rejected = true; }

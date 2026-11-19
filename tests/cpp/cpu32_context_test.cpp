@@ -255,7 +255,7 @@ void captures() {
 					auto& m = i == 0 ? native : scalar;
 					auto* closure = beginCaptured(m, source != 0);
 					auto* frame = m.cpu.activeThread()->currentFrame;
-					auto* upvalue = static_cast<Upvalue*>(m.cpu.gcHeap().object(closure->upvalues[0]));
+					auto* upvalue = static_cast<Upvalue*>(m.cpu.gcHeap().cellAt(closure->captureAddress(0)));
 					if (source != 0) {
 						parents[i] = frame->previous;
 						parents[i]->registers.set(8, value);
@@ -302,7 +302,7 @@ void closedBarrierAndDirectoryGrowth() {
 		auto* child = m.cpu.createTable(1);
 		child->setInteger(1, valueInteger(123));
 		children[i] = child;
-		auto* upvalue = static_cast<Upvalue*>(m.cpu.gcHeap().object(closure->upvalues[0]));
+		auto* upvalue = static_cast<Upvalue*>(m.cpu.gcHeap().cellAt(closure->captureAddress(0)));
 		upvalues[i] = upvalue;
 		m.cpu.gcHeap().step(valueNil(), valueNil(), valueNil());
 		require(upvalue->gcColor == 3, "collector has scanned the closed cell before mutation");

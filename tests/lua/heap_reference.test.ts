@@ -1,10 +1,11 @@
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
-import { UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, Upvalue } from '../../machine/ts/machine/cpu/closure';
-import { asClosure, valueFloatBits, valueNil } from '../../machine/ts/machine/cpu/value';
+import { CLOSURE_CAPTURE_WORDS, closureRecordBytes, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, Upvalue } from '../../machine/ts/machine/cpu/closure';
+import { asClosure, valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { test } from 'node:test';
+import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
 import { asTable, valueTable, valueBuiltinFunction, ValueTag } from '../../machine/ts/machine/cpu/value';
@@ -38,7 +39,7 @@ function checkDirectory(cpu: CPU): number {
 test('32-bit object payloads survive directory growth and collection', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	const captured = frame.registers.getClosure(1, cpu.gc);
-	for (const object of [cpu.rootThread, frame.closure, captured, cpu.gc.object(captured.upvalues[0])])
+	for (const object of [cpu.rootThread, frame.closure, captured, cpu.gc.cellAt(captured.captureAddress(0))])
 		assert.equal(cpu.gc.object(cpu.gc.reference(object)), object);
 	const roots = cpu.createTable(512), slots = new ValueStorage(400);
 	frame.registers.setTable(0, cpu.gc.reference(roots)); frame.top = 2;
@@ -132,8 +133,10 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	const key = cpu.stringPool.intern('saved_capture');
 	cpu.setGlobalByKey(key, frame.registers.get(1));
 	const closure = frame.registers.getClosure(1, cpu.gc);
-	const cell = cpu.gc.object(closure.upvalues[0]) as Upvalue;
+	const cell = cpu.gc.cellAt(closure.captureAddress(0)) as Upvalue;
 	const address = cell.address;
+	assert.equal(memory.readRamRecordWord(closure.address + CLOSURE_CAPTURE_WORDS), cell.address);
+	const open = captureCpuCheckpoint(cpu);
 	frame.registers.setFloatBits(0, 0xffa12345);
 	cpu.abortCompletionCall(0);
 	assert.equal(cell.open, false);
@@ -142,10 +145,18 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	const checkpoint = captureCpuCheckpoint(cpu);
 	memory.writeRamRecordWord(address + UPVALUE_VALUE_WORD, 0x80000000);
 	assert.equal(cpu.readClosureUpvalue(closure, 0), valueFloatBits(0x80000000));
+	const rawCell = DYNAMIC_RAM_BASE + 0x600;
+	memory.writeRamRecordWord(rawCell + UPVALUE_VALUE_WORD, 55);
+	memory.writeRamRecordByte(rawCell + UPVALUE_VALUE_TAG, ValueTag.Integer);
+	memory.writeRamRecordWord(closure.address + CLOSURE_CAPTURE_WORDS, rawCell | 0x80000000);
+	assert.equal(cpu.readClosureUpvalue(closure, 0), valueInteger(55));
+	restoreCpuCheckpoint(cpu, open);
+	cpu.rootThread.currentFrame!.registers.setInteger(0, 44);
 	restoreCpuCheckpoint(cpu, checkpoint);
 	assert.equal(cpu.readClosureUpvalue(asClosure(cpu.getGlobalByKey(key), cpu.gc), 0), valueFloatBits(0xffa12345));
+	cpu.collectTrackedHeapBytes();
 	const occupied = cpu.heapAllocator.occupiedBytes();
 	cpu.setGlobalByKey(key, valueNil());
 	cpu.collectTrackedHeapBytes();
-	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - UPVALUE_HEAP_BYTES);
+	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - heapAllocationBytes(closureRecordBytes(1)) - UPVALUE_HEAP_BYTES);
 });
