@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
 				const auto& thread = *asThread(value, cpu.gcHeap());
 				const auto& memory = cpu.memory();
 				if (valuePayload(value) != thread.address
-					|| memory.readRamRecordWord(thread.address) != THREAD_RECORD_KIND
+					|| memory.readRamRecordByte(thread.address) != THREAD_RECORD_KIND
 					|| memory.readRamRecordWord(thread.address + static_cast<u32>(ThreadField::Status)) != static_cast<u32>(ThreadStatus::Failed)
 					|| memory.readRamRecordWord(thread.address + static_cast<u32>(ThreadField::ErrorWord)) != valuePayload(thread.error())) {
 					throw std::runtime_error("a failed Thread value must refer to its physical record");

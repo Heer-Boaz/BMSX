@@ -111,14 +111,15 @@ try {
 	writeFileSync(join(directory, 'typescript.txt'), ts); writeFileSync(join(directory, 'cpp.txt'), cpp);
 	assert.equal(cpp, ts, 'same physical HID input must produce byte-identical firmware Terminal output');
 	const result = ts.slice(ts.indexOf('TERMINAL-BEGIN\n'));
-	assert.match(result, /^TERMINAL-BEGIN\nnil\n3\n40\tnil\tfalse\n42\nnil\n12\n/);
+	// A chunk that falls through without return has no results and prints nothing.
+	assert.match(result, /^TERMINAL-BEGIN\nnil\n3\n40\tnil\tfalse\n42\n12\n/);
 	assert.match(result, /upper-case identifiers are not allowed/, 'Shift reaches the case-sensitive firmware compiler');
 	assert.match(result, /\nMiXeD\t42\n9\nnil\nbefore error\nterminal error\n43\n44\n/);
 	assert.match(result, /\[load:/, 'syntax errors are protected by the shared firmware loader');
 	// setglobal has no results; expression evaluation must not manufacture nil.
-	assert.match(result, /GLOBALS-BEGIN\nnil\n1\n41\nnil\nnil\n23\nfalse\nnil\nglobal error\n42\nInvalid argument\.\nInvalid argument\.\n/);
-	assert.match(result, /CART-BEGIN\nnil\nnil\n41\n50\n51\n80\n43\n81\n7\n80\nnil\n85\n95\ncart error\n91\n/);
-	assert.match(result, /TUPLES-BEGIN\nnil\nnil\n7\tnil\tfalse\t9\tnil\n1\t7\tnil\tfalse\t9\tnil\n7\n5\n6\ntrue\t7\tnil\tfalse\t9\tnil\n0\n2\t3\n/);
+	assert.match(result, /GLOBALS-BEGIN\nnil\n1\n41\nnil\n23\nfalse\nnil\nglobal error\n42\nInvalid argument\.\nInvalid argument\.\n/);
+	assert.match(result, /CART-BEGIN\nnil\nnil\n41\n50\n51\n80\n43\n81\n7\n80\n85\n95\ncart error\n91\n/);
+	assert.match(result, /TUPLES-BEGIN\nnil\n7\tnil\tfalse\t9\tnil\n1\t7\tnil\tfalse\t9\tnil\n7\n5\n6\ntrue\t7\tnil\tfalse\t9\tnil\n0\n2\t3\n/);
 	assert.match(result, /INDEX    FUNCTION PC \(HEX\)/);
 	assert.match(result, /  DEPTH [0-9A-F]{8} .+/, 'FRAMES exposes selectable active source scopes');
 	assert.match(result, /\nframe\n37\tnil\tfalse/, 'computed String-ID evaluates through the physical BIOS compiler');
