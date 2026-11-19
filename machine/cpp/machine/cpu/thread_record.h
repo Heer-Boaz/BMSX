@@ -6,6 +6,8 @@
 namespace bmsx {
 
 class GcHeap;
+class BuiltinArgsView;
+class BuiltinResults;
 
 enum class ThreadStatus : u32 { New, Running, Normal, Suspended, Dead, Failed };
 constexpr size_t THREAD_HEAP_BYTES = 64;
@@ -63,6 +65,7 @@ inline Value error(const Memory& memory, u32 address) {
 	return valueFromTag(static_cast<ValueTag>(memory.readRamRecordByte(address + static_cast<u32>(ThreadField::ErrorKind))),
 		read(memory, address, ThreadField::ErrorWord));
 }
+void invokeDiagnostic(GcHeap&, BuiltinFunctionId, BuiltinArgsView, BuiltinResults&);
 void initialize(GcHeap&, u32 address, u32 entry);
 void relocateStack(GcHeap&, u32 address, const ThreadStackLayout& from, const ThreadStackLayout& to);
 u32 shrinkStack(GcHeap&, u32 address, const ThreadStackLayout& layout);

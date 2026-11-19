@@ -991,7 +991,10 @@ Each upvalue descriptor is a 32-bit word. Descriptor `i` is read at `upvalueTabl
 | High bit set | A register slot in the parent frame; the low 31 bits select the slot. |
 | High bit clear | An upvalue of the parent closure; the low 31 bits select that upvalue. |
 
-
+A register source must be inside the parent frame's reserved window, and an
+upvalue source must be inside the parent closure's capture list. The processor
+checks the descriptors before allocating or linking any captures. A descriptor
+that selects no source raises `INVALID_ARGUMENT` without writing `R(A)`.
 
 An open upvalue names the owning Thread and the slot for its captured
 parent-frame register. Moving the Thread's value slots to a larger block

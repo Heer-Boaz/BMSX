@@ -54,6 +54,44 @@ struct CpuMachine {
 	}
 };
 
+void closureDescriptorAdmissionPrecedesAllocation() {
+	for (const bool scalar : {true, false}) for (const bool inStack : {true, false}) {
+		test::Blua32TestImage image;
+		image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 4},
+			{.firstWord = 3, .wordCount = 1, .staticClosure = false, .upvalues = {{true, 0}, {inStack, inStack ? 4u : 0u}}}};
+		// Reuse the root's already-cached closure for exception admission. The
+		// short grant cannot execute another instruction in the handler.
+		image.exceptionFunctionIndex = 0;
+		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		cpu.rootThread()->resizeStack(64);
+		auto& parent = *cpu.rootThread()->frameAtDepth(0);
+		require(parent.stackCapacity() == 4 && parent.captureCount() == 0,
+			"capture admission uses the parent frame's reservation and capture count, not its larger Thread backing");
+		parent.registers.set(0, valueInteger(73));
+		parent.registers.set(2, valueInteger(91));
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (!scalar) cpu.prepareSystemNativeCode();
+#endif
+		const auto occupied = cpu.heapAllocator().occupiedBytes();
+		const u32 open = parent.readControl(FrameField::OpenHead), pc = parent.readControl(FrameField::Pc);
+		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "the rejected CLOSURE consumes the short grant without running its handler");
+		require(cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP && cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+			&& cpu.readEpcWord() == pc, "descriptor admission traps at the WIDE head with INVALID_ARGUMENT");
+		require(parent.registers.get(2) == valueInteger(91), "the rejected CLOSURE does not write its destination");
+		require(parent.readControl(FrameField::OpenHead) == open,
+			"the valid first descriptor cannot open a capture before a later descriptor is rejected");
+		require(cpu.heapAllocator().occupiedBytes() == occupied, "capture rejection allocates neither a closure nor captured cells");
+	}
+}
+
 void equalityUsesValueKindsInsteadOfUnusedPayloads() {
 	test::Blua32TestImage image;
 	image.text.resize(3 * INSTRUCTION_BYTES);
@@ -1743,7 +1781,7 @@ int main() {
 		nativeCallsAndReturnsPublishFaultBoundaries();
 		nativeCallUsesItsClosureBoundFunctionRecord();
 #endif
-		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
+		stringBytePositions(); loadKrIndices(); closureDescriptorAdmissionPrecedesAllocation(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
 		wideSignedImmediatesKeepTheirRange();
 		instructionBoundaryResynchronizesAfterFetchOrObservation();

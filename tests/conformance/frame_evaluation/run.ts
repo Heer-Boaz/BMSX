@@ -11,6 +11,11 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileFrameEvaluationTest, frameEvaluationCases } from '../../helpers/frame_evaluation';
 
+const args = process.argv.slice(2);
+assert.ok(args.length === 0 || (args.length === 2 && args[0] === '--case'), 'Expected no arguments or --case <name>');
+const cases = Object.entries(frameEvaluationCases).filter(([name]) => args.length === 0 || name === args[1]);
+assert.ok(cases.length !== 0, 'The selected frame-evaluation case exists');
+
 for (const [command, args] of [
 	['cmake', ['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON']],
 	['cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_frame_evaluation_runner', '--parallel', '2']],
@@ -18,7 +23,7 @@ for (const [command, args] of [
 
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-frame-evaluation-'));
 try {
-	for (const optLevel of [0, 3] as const) for (const [name, body] of Object.entries(frameEvaluationCases)) {
+	for (const optLevel of [0, 3] as const) for (const [name, body] of cases) {
 		const image = compileFrameEvaluationTest(body, optLevel), path = join(directory, `${name}-O${optLevel}.rom`);
 		writeFileSync(path, image.romBytes);
 		const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
@@ -66,5 +71,5 @@ try {
 		assert.deepEqual(native, captureRuntimeSaveState(runtime), `${name} O${optLevel}: complete TS/C++ state parity`);
 	}
 	rmSync(directory, { recursive: true });
-	console.log('FRAME-EVALUATION-PARITY:PASS (firmware, physical slots, scope lifetime and full snapshots)');
+	console.log(`FRAME-EVALUATION-PARITY:PASS (${cases.length} cases at O0/O3; firmware, physical slots, scope lifetime and full snapshots)`);
 } catch (error) { console.error(`Evidence retained: ${directory}`); throw error; }

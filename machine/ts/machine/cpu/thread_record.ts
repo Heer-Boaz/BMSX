@@ -1,10 +1,19 @@
 import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
 import { heapAllocationBytes } from './heap_allocator';
-import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, FrameField } from './call_state';
+import { FRAME_COMPLETION, FRAME_CONTROL_BYTES, FRAME_EXCEPTION, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, FrameField, frameExecutionBank } from './call_state';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { writeLE32 } from '../../common/endian';
 import { ValueSlots } from './value_slots';
+import { BuiltinFunctionId } from '../../spec/blua32/builtin';
+import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../spec/blua32/cop0';
+import type { BuiltinArgsView, BuiltinResults } from './builtin_values';
+import type { GcHeap } from './gc_heap';
+import * as Closure from './closure';
+import * as Upvalue from './upvalue';
+import { LuaExecutionError } from './errors';
+import { ValueTag, valueBool, valueInteger } from './value';
+import { integerOperand } from './value_arithmetic';
 
 import { GC_RECORD_LINK } from './gc_object';
 
@@ -51,6 +60,52 @@ export class ThreadRecords {
 	private readonly layout = new ThreadLayout();
 	private readonly values = new ValueSlots(0);
 	public constructor(private readonly memory: Memory, private readonly arena: HeapAllocator) {}
+	public invokeDiagnostic(heap: GcHeap, id: BuiltinFunctionId, args: BuiltinArgsView, out: BuiltinResults): void {
+		const { registers, base, length } = args, memory = this.memory;
+		if (length === 0 || registers.getTag(base) !== ValueTag.Thread)
+			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const thread = registers.getThread(base, heap);
+		const depth = memory.readRamRecordWord(thread + ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK;
+		if (id === BuiltinFunctionId.FrameCount) {
+			out.push(valueInteger(depth));
+			return;
+		}
+
+		if (length < 2) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const index = integerOperand(registers.get(base + 1)) >>> 0;
+		if (index >= depth) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const layout = this.layout;
+		this.readLayout(thread, layout);
+		const frame = this.frameAddress(layout, index);
+		if (id === BuiltinFunctionId.FrameHeader) {
+			const flags = memory.readRamRecordWord(frame + FrameField.Flags);
+			out.push(valueInteger(memory.readRamRecordWord(frame + FrameField.Function)));
+			out.push(valueInteger(memory.readRamRecordWord(frame + FrameField.Pc)));
+			out.push(valueInteger(memory.readRamRecordWord(frame + FrameField.CallSite)));
+			out.push(valueBool((flags & FRAME_COMPLETION) !== 0));
+			out.push(valueInteger(frameExecutionBank(flags) >>> 0));
+			out.push(valueBool((flags & FRAME_EXCEPTION) !== 0));
+			return;
+		}
+
+		const writing = id === BuiltinFunctionId.SetFrameRegister || id === BuiltinFunctionId.SetFrameUpvalue;
+		if (length < (writing ? 4 : 3)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const operand = integerOperand(registers.get(base + 2)) >>> 0;
+		if (id === BuiltinFunctionId.GetFrameRegister || id === BuiltinFunctionId.SetFrameRegister) {
+			const capacity = memory.readRamRecordWord(frame + FrameField.StackCapacity) & FRAME_WINDOW_MASK;
+			if (operand >= capacity) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			const slot = (memory.readRamRecordWord(frame + FrameField.StackBase) & FRAME_WINDOW_MASK) + operand;
+			this.values.bindRam(memory, layout.offset, layout.capacity);
+			if (writing) this.values.set(slot, registers.get(base + 3));
+			else out.push(this.values.get(slot));
+		} else {
+			const closure = memory.readRamRecordWord(frame + FrameField.Closure);
+			if (operand >= Closure.captureCount(memory, closure)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			const cell = Closure.captureAddress(memory, closure, operand);
+			if (writing) Upvalue.store(heap, cell, registers.getTag(base + 3), registers.getPayload(base + 3));
+			else out.push(Upvalue.load(memory, cell));
+		}
+	}
 	public initializeRecord(address: number, entry: number, white: number): void {
 		const memory = this.memory, ram = memory.ramData(), offset = address & RAM_RECORD_WORD_MASK;
 		const block = memory.readRamRecordWord(address + ThreadField.StackBlock), start = block & RAM_RECORD_WORD_MASK;

@@ -4,6 +4,9 @@
 #include <cstring>
 
 #include "machine/cpu/gc_heap.h"
+#include "machine/cpu/builtin_values.h"
+#include "machine/cpu/upvalue.h"
+#include "machine/cpu/value_arithmetic.h"
 
 namespace bmsx::ThreadRecord {
 namespace {
@@ -16,6 +19,64 @@ void copyStackControl(Memory& memory, u8* destination, u32 source, u32 bytes) {
 	if (first != bytes) std::memmove(destination + first, memory.ramData(), bytes - first);
 }
 
+}
+
+void invokeDiagnostic(GcHeap& heap, BuiltinFunctionId id, BuiltinArgsView args, BuiltinResults& out) {
+	auto& memory = heap.memory;
+	if (!valueIsThread(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	const u32 thread = asThread(args[0], heap);
+	const u32 depth = count(memory, thread, ThreadField::FrameDepth);
+	if (id == BuiltinFunctionId::FrameCount) {
+		out.push_back(valueInteger(depth));
+		return;
+	}
+
+	const u32 index = static_cast<u32>(integerOperand(args[1]));
+	if (index >= depth) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	const auto layout = stackLayout(memory, thread);
+	const u32 frame = layout.frameAddress(index);
+	const auto field = [&](FrameField lane) { return memory.readRamRecordWord(frame + static_cast<u32>(lane)); };
+	switch (id) {
+		case BuiltinFunctionId::FrameHeader: {
+			const u32 flags = field(FrameField::Flags);
+			out.push_back(valueInteger(field(FrameField::Function)));
+			out.push_back(valueInteger(field(FrameField::Pc)));
+			out.push_back(valueInteger(field(FrameField::CallSite)));
+			out.push_back(valueBool((flags & FRAME_COMPLETION) != 0u));
+			out.push_back(valueInteger(static_cast<u32>(frameExecutionBank(flags))));
+			out.push_back(valueBool((flags & FRAME_EXCEPTION) != 0u));
+			return;
+		}
+		case BuiltinFunctionId::GetFrameRegister:
+		case BuiltinFunctionId::SetFrameRegister: {
+			const u32 reg = static_cast<u32>(integerOperand(args[2]));
+			if (reg >= (field(FrameField::StackCapacity) & FRAME_WINDOW_MASK))
+				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			const u32 slot = (field(FrameField::StackBase) & FRAME_WINDOW_MASK) + reg;
+			auto registers = layout.slots(memory);
+			if (id == BuiltinFunctionId::GetFrameRegister) out.push_back(registers.get(slot));
+			else {
+				if (args.size() < 4) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				registers.set(slot, args[3]);
+			}
+			return;
+		}
+		case BuiltinFunctionId::GetFrameUpvalue:
+		case BuiltinFunctionId::SetFrameUpvalue: {
+			const u32 capture = static_cast<u32>(integerOperand(args[2]));
+			const u32 closure = field(FrameField::Closure);
+			if (capture >= ClosureRecord::captureCount(memory, closure))
+				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			const u32 cell = ClosureRecord::captureAddress(memory, closure, capture);
+			if (id == BuiltinFunctionId::GetFrameUpvalue) out.push_back(Upvalue::load(memory, cell));
+			else {
+				if (args.size() < 4) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				Upvalue::store(heap, cell, args[3]);
+			}
+			return;
+		}
+		default: BMSX_UNREACHABLE();
+	}
 }
 
 void initialize(GcHeap& heap, u32 address, u32 entry) {

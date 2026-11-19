@@ -93,6 +93,43 @@ test('LOADKR converts its Number index to U32 and faults outside the constant po
 	}
 });
 
+test('CLOSURE rejects out-of-window descriptors before allocating or opening any capture', () => {
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const inStack of [true, false]) {
+		const text = new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.CLOSURE, 2, 0, 0);
+		writeInstruction(text, 2, OpCode.HALT, 0, 0, 0);
+		writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
+		const image = linkRawTestSystemBlua32({
+			text, functions: [
+				{ firstWord: 0, wordCount: 3, maxStack: 4 },
+				{ firstWord: 3, wordCount: 1, staticClosure: false, upvalueDescs: [
+					{ inStack: true, index: 0 }, { inStack, index: inStack ? 4 : 0 },
+				] },
+			],
+			// The exception route reuses the existing root closure. Its first
+			// instruction cannot execute after the deliberately short grant.
+			exceptionFunctionIndex: 0,
+			closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }],
+		}, RAM_CODE_FIXTURE_BYTES);
+		const { cpu } = createTestSystemCpu(image, backend);
+		cpu.rootThread.resizeStack(64);
+		const parent = cpu.rootThread.frameAtDepth(0);
+		assert.equal(parent.stackCapacity, 4, 'the parent window, not the larger Thread backing, bounds a register capture');
+		assert.equal(parent.captureCount, 0);
+		parent.registers.setInteger(0, 73);
+		parent.registers.setInteger(2, 91);
+		const occupied = cpu.heapAllocator.occupiedBytes(), open = parent.openUpvalueHead, pc = parent.pc;
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_TRAP);
+		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+		assert.equal(cpu.readEpcWord(), pc, 'the WIDE head is the faulting instruction');
+		assert.equal(parent.registers.get(2), valueInteger(91), 'the failed CLOSURE leaves its destination untouched');
+		assert.equal(parent.openUpvalueHead, open, 'the valid first descriptor did not open a capture before later rejection');
+		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'failed capture admission allocates neither a closure nor cells');
+	}
+});
+
 test('BOR accepts exact signed Integers and never truncates a Float as a word operand', () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.BOR, 0, 1, 2);

@@ -1002,13 +1002,6 @@ export class CPU implements MappedPageInvalidator {
 		const capacity = this.memory.readRamRecordWord(address + ThreadField.StackCapacity);
 		return valueFromTag(this.memory.readRamRecordByte(block + capacity * 4 + slot), this.memory.readRamRecordWord(block + slot * 4));
 	}
-	public writeThreadRegister(address: number, frameIndex: number, registerIndex: number, value: Value): void {
-		const slot = (this.readThreadFrameWord(address, frameIndex, FrameField.StackBase) & FRAME_WINDOW_MASK) + registerIndex;
-		const block = this.memory.readRamRecordWord(address + ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
-		const capacity = this.memory.readRamRecordWord(address + ThreadField.StackCapacity);
-		this.memory.writeRamRecordWord(block + slot * 4, valuePayload(value));
-		this.memory.writeRamRecordByte(block + capacity * 4 + slot, valueTag(value));
-	}
 	public readThreadFrameExecutionDomain(address: number, index: number): ExecutionDomainId {
 		return frameExecutionBank(this.readThreadFrameWord(address, index, FrameField.Flags));
 	}
@@ -3066,11 +3059,13 @@ export class CPU implements MappedPageInvalidator {
 			upvalueWords[index] = word;
 			const upvalueIndex = word & BLUA32_UPVALUE_INDEX_MASK;
 			if ((word & BLUA32_UPVALUE_IN_STACK_MASK) !== 0) {
+				if (upvalueIndex >= frame.registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				const cell = this.findOpenUpvalue(frame, upvalueIndex);
 				upvalues[index] = cell;
 				if (cell === 0) newUpvalueCount += 1;
 				continue;
 			}
+			if (upvalueIndex >= frame.captureCount) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			upvalues[index] = frame.captureAddress(upvalueIndex);
 		}
 		if (this.captureAddresses.length < newUpvalueCount) this.captureAddresses = new Uint32Array(newUpvalueCount);
@@ -3284,36 +3279,13 @@ export class CPU implements MappedPageInvalidator {
 				this.runBuiltinSelect(args, out, resultLimit);
 				break;
 			case BuiltinFunctionId.FrameCount:
-				out.push(valueInteger(this.readThreadFrameDepth(args.registers.getThread(args.base, this.gc))));
-				break;
-			case BuiltinFunctionId.FrameHeader: {
-				const thread = args.registers.getThread(args.base, this.gc), index = integerOperand(args.registers.get(args.base + 1));
-				const flags = this.readThreadFrameWord(thread, index, FrameField.Flags);
-				out.push(valueInteger(this.readThreadFrameWord(thread, index, FrameField.Function)));
-				out.push(valueInteger(this.readThreadFrameWord(thread, index, FrameField.Pc)));
-				out.push(valueInteger(this.readThreadFrameWord(thread, index, FrameField.CallSite)));
-				out.push(valueBool((flags & FRAME_COMPLETION) !== 0));
-				out.push(valueInteger(frameExecutionBank(flags) >>> 0));
-				out.push(valueBool((flags & FRAME_EXCEPTION) !== 0));
-				break;
-			}
+			case BuiltinFunctionId.FrameHeader:
 			case BuiltinFunctionId.GetFrameRegister:
-			case BuiltinFunctionId.SetFrameRegister: {
-				const thread = args.registers.getThread(args.base, this.gc), frame = integerOperand(args.registers.get(args.base + 1));
-				const index = integerOperand(args.registers.get(args.base + 2));
-				if (id === BuiltinFunctionId.GetFrameRegister) out.push(this.readThreadRegister(thread, frame, index));
-				else this.writeThreadRegister(thread, frame, index, args.registers.get(args.base + 3));
-				break;
-			}
+			case BuiltinFunctionId.SetFrameRegister:
 			case BuiltinFunctionId.GetFrameUpvalue:
-			case BuiltinFunctionId.SetFrameUpvalue: {
-				const thread = args.registers.getThread(args.base, this.gc), frame = integerOperand(args.registers.get(args.base + 1));
-				const closure = this.readThreadFrameWord(thread, frame, FrameField.Closure);
-				const cell = Closure.captureAddress(this.memory, closure, integerOperand(args.registers.get(args.base + 2)));
-				if (id === BuiltinFunctionId.SetFrameUpvalue) this.copyRegisterToUpvalue(cell, args.registers, args.base + 3);
-				else out.push(Upvalue.load(this.memory, cell));
+			case BuiltinFunctionId.SetFrameUpvalue:
+				this.gc.threads.invokeDiagnostic(this.gc, id, args, out);
 				break;
-			}
 			case BuiltinFunctionId.StringByte:
 				this.runBuiltinStringByte(args, out);
 				break;

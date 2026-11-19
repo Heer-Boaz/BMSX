@@ -15,6 +15,12 @@ export function compileFrameEvaluationTest(body: string, optLevel: 0 | 3, includ
 		{ path: 'frame_test/primitives', source: `frame_count = __bmsx_frame_count
 running_thread = __bmsx_coroutine_running
 frame_header = __bmsx_frame_header
+get_frame_register = __bmsx_get_frame_register
+set_frame_register = __bmsx_set_frame_register
+get_frame_upvalue = __bmsx_get_frame_upvalue
+set_frame_upvalue = __bmsx_set_frame_upvalue
+create_thread = __bmsx_coroutine_create
+yield_thread = __bmsx_coroutine_yield
 collectgarbage = __bmsx_collect_garbage` });
 	const source = `require('base')
 table = require('table')
@@ -38,6 +44,80 @@ end)`;
 }
 
 export const frameEvaluationCases = {
+	diagnostic_primitive_windows: `
+local format<const> = require('bmsx/blua32')
+local make<const> = function(seed)
+ local captured = seed
+ return create_thread(function(value, ...)
+  yield_thread(value)
+  select('#', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+  captured = captured + value
+  return captured, value
+ end)
+end
+local a<const>, b<const> = make(41), make(51)
+local ok, value = coroutine.resume(a, 17)
+assert(ok and value == 17)
+ok, value = coroutine.resume(b, 27)
+assert(ok and value == 27)
+assert(frame_count(a) == 1 and frame_count(b) == 1)
+local address<const> = frame_header(a, 0.0)
+local descriptor<const>: *word = address
+local reserved<const> = descriptor[format.function_max_stack_word_index]
+local captures<const> = descriptor[format.function_upvalue_count_word_index]
+assert(reserved > 1 and captures == 1)
+assert(get_frame_register(a, 0, 0.0) == 17 and get_frame_register(b, 0, 0) == 27)
+-- The later select reserves more argument scratch than the already executed
+-- yield. Its last reserved slot is above current top, but still inspectable.
+set_frame_register(a, 0.0, reserved - 1, 73)
+assert(get_frame_register(a, 0, reserved - 1) == 73)
+set_frame_register(a, 0, reserved - 1, nil)
+assert(get_frame_register(a, 0, reserved - 1) == nil)
+assert(get_frame_upvalue(a, 0.0, 0.0) == 41 and get_frame_upvalue(b, 0, 0) == 51)
+set_frame_upvalue(a, 0, 0, nil)
+assert(get_frame_upvalue(a, 0, 0) == nil)
+set_frame_upvalue(a, 0, 0, 43)
+set_frame_upvalue(b, 0, 0, 53)
+local reject<const> = function(operation, ...)
+ local accepted, message = pcall(operation, ...)
+ assert(not accepted and message == 'Invalid argument.', message)
+ assert(frame_count(a) == 1 and frame_count(b) == 1)
+ assert(get_frame_register(a, 0, 0) == 17 and get_frame_register(b, 0, 0) == 27)
+ assert(get_frame_upvalue(a, 0, 0) == 43 and get_frame_upvalue(b, 0, 0) == 53)
+end
+local empty<const> = make(61)
+assert(frame_count(empty) == 0)
+for _, operation in ipairs({ frame_count, frame_header, get_frame_register, set_frame_register, get_frame_upvalue, set_frame_upvalue }) do
+ reject(operation)
+ reject(operation, nil, 0, 0, 99)
+ for _, wrong in ipairs({ false, 17, 'thread', {} }) do reject(operation, wrong, 0, 0, 99) end
+end
+for _, operation in ipairs({ frame_header, get_frame_register, set_frame_register, get_frame_upvalue, set_frame_upvalue }) do
+ reject(operation, a)
+ reject(operation, empty, 0, 0, 99)
+ for _, index in ipairs({ -1, 1, 0x80000, 0.5, '0' }) do reject(operation, a, index, 0, 99) end
+end
+for _, operation in ipairs({ get_frame_register, set_frame_register }) do
+ reject(operation, a, 0)
+ -- 400000H formerly wrapped both RAM planes back onto the valid R0.
+ for _, index in ipairs({ -1, reserved, 0x400000, 0.5, '0' }) do reject(operation, a, 0, index, 99) end
+end
+for _, operation in ipairs({ get_frame_upvalue, set_frame_upvalue }) do
+ reject(operation, a, 0)
+ -- 100000H formerly wrapped the capture-word read back onto capture zero.
+ for _, index in ipairs({ -1, captures, 0x100000, 0.5, '0' }) do reject(operation, a, 0, index, 99) end
+end
+reject(set_frame_register, a, 0, 0)
+reject(set_frame_upvalue, a, 0, 0)
+ok, value = coroutine.resume(a)
+assert(ok and value == 60 and frame_count(a) == 0)
+for _, operation in ipairs({ frame_header, get_frame_register, set_frame_register, get_frame_upvalue, set_frame_upvalue }) do
+ local accepted, message = pcall(operation, a, 0, 0, 99)
+ assert(not accepted and message == 'Invalid argument.', message)
+end
+ok, value = coroutine.resume(b)
+assert(ok and value == 80 and frame_count(b) == 0)
+return true`,
 	grouped_results: `
 local function pair() return 17, 23, nil end
 local function empty() return select(2, 7) end

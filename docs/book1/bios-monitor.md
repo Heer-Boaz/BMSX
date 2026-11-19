@@ -283,5 +283,12 @@ without a live interval. TYPE describes a type rather than a readable value.
 `FFFFFFFFH` is the no-location word. CONST marks a binding that evaluation must
 not reassign; it does not freeze a Table's fields.
 
+A frame access selects an active frame of the supplied Thread. A register
+location is a zero-based index into that frame's reserved register window;
+an upvalue location is a zero-based index into the frame closure's captures.
+Neither can select storage belonging to another allocation. A diagnostic
+access with no such frame or slot raises `INVALID_ARGUMENT` without changing
+the selected Thread. A write must supply a value; nil is a value.
+
 The BIOS locates this directory directly through the ROM-header word described
 above.

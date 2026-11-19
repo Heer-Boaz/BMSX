@@ -1010,47 +1010,13 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			runBuiltinSelect(args, out, resultLimit);
 			break;
 		case BuiltinFunctionId::FrameCount:
-			out.push_back(valueInteger(ThreadRecord::count(m_memory, asThread(args[0], m_heap), ThreadField::FrameDepth)));
-			break;
-		case BuiltinFunctionId::FrameHeader: {
-			const u32 thread = asThread(args[0], m_heap);
-			const u32 frame = ThreadRecord::stackLayout(m_memory, thread).frameAddress(integerOperand(args[1]));
-			const u32 flags = m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Flags));
-			out.push_back(valueInteger(m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Function))));
-			out.push_back(valueInteger(m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc))));
-			out.push_back(valueInteger(m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::CallSite))));
-			out.push_back(valueBool((flags & FRAME_COMPLETION) != 0u));
-			out.push_back(valueInteger(static_cast<u32>(frameExecutionBank(flags))));
-			out.push_back(valueBool((flags & FRAME_EXCEPTION) != 0u));
-			break;
-		}
+		case BuiltinFunctionId::FrameHeader:
 		case BuiltinFunctionId::GetFrameRegister:
-		case BuiltinFunctionId::SetFrameRegister: {
-			const auto layout = ThreadRecord::stackLayout(m_memory, asThread(args[0], m_heap));
-			const u32 frame = layout.frameAddress(integerOperand(args[1]));
-			const u32 base = m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackBase)) & FRAME_WINDOW_MASK;
-			const u32 slot = base + static_cast<u32>(integerOperand(args[2]));
-			const u32 word = layout.offset() + slot * sizeof(u32);
-			const u32 tag = layout.offset() + layout.valueCapacity * sizeof(u32) + slot;
-			if (fn.id == BuiltinFunctionId::GetFrameRegister)
-				out.push_back(valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordByte(tag)), m_memory.readRamRecordWord(word)));
-			else {
-				const Value value = args[3];
-				m_memory.writeRamRecordWord(word, valuePayload(value));
-				m_memory.writeRamRecordByte(tag, static_cast<u8>(valueTag(value)));
-			}
-			break;
-		}
+		case BuiltinFunctionId::SetFrameRegister:
 		case BuiltinFunctionId::GetFrameUpvalue:
-		case BuiltinFunctionId::SetFrameUpvalue: {
-			const u32 thread = asThread(args[0], m_heap);
-			const u32 frame = ThreadRecord::stackLayout(m_memory, thread).frameAddress(integerOperand(args[1]));
-			const u32 closure = m_memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Closure));
-			const u32 address = ClosureRecord::captureAddress(m_memory, closure, integerOperand(args[2]));
-			if (fn.id == BuiltinFunctionId::SetFrameUpvalue) Upvalue::store(m_heap, address, args[3]);
-			else out.push_back(Upvalue::load(m_memory, address));
+		case BuiltinFunctionId::SetFrameUpvalue:
+			ThreadRecord::invokeDiagnostic(m_heap, fn.id, args, out);
 			break;
-		}
 		case BuiltinFunctionId::StringChar:
 			runBuiltinStringChar(args, out);
 			break;
@@ -2439,10 +2405,12 @@ u32 CPU::createClosure(CallFrame& frame) {
 		m_closureUpvalueWordScratch[index] = upvalueWord;
 		const u32 upvalueIndex = upvalueWord & BLUA32_UPVALUE_INDEX_MASK;
 		if ((upvalueWord & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
+			if (upvalueIndex >= frame.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			const u32 cell = findOpenUpvalue(frame, static_cast<int>(upvalueIndex));
 			m_closureCellScratch[index] = cell;
 			newUpvalueCount += cell == 0u;
 		} else {
+			if (upvalueIndex >= frame.captureCount()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			m_closureCellScratch[index] = frame.captureAddress(upvalueIndex);
 		}
 	}
