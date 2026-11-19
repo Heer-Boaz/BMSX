@@ -341,7 +341,7 @@ return true`, { optLevel });
 		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_CALL_NON_FUNCTION,
 			'event dispatch must not catch and rethrow a native fault as an explicit error');
 		const handler = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('faulty_handler')!), cpu.gc);
-		assert.ok(Array.from({ length: cpu.getFrameDepth() }, (_, index) => cpu.readFrameFunctionAddress(index)).includes(handler.functionAddress),
+		assert.ok(Array.from({ length: cpu.getFrameDepth() }, (_, index) => cpu.readFrameFunctionAddress(index)).includes(handler.prototypeRecord.functionAddress),
 			'original listener frame remains available to the fault debugger');
 	});
 

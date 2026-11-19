@@ -12,7 +12,6 @@ namespace bmsx {
 
 sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label* coldDispatch, sljit_label* returnToCpp) {
 	const auto thread = Thread::nativeOffsets();
-	const auto function = Closure::nativeFunctionOffsets();
 	constexpr sljit_sw pointerShift = std::countr_zero(sizeof(void*));
 	auto* entry = sljit_emit_label(compiler);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, exit), SLJIT_R0, 0);
@@ -42,18 +41,19 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	sljit_set_label(positiveArgs, sljit_emit_label(compiler));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argCount), SLJIT_R1, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), function.address);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), Closure::nativePrototypeOffset());
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), offsetof(FunctionPrototype, functionAddress));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, functionAddress), SLJIT_R0, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, caller));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, executionImage));
-	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), function.executionDomainId);
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), offsetof(FunctionPrototype, executionDomainId));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
 		SLJIT_MEM1(SLJIT_R1), Blua32ExecutionImage::nativeExecutionDomainOffset()), coldDispatch);
 	for (const auto [fieldOffset, scratchOffset] : {
-		std::pair{function.codeAddress, offsetof(NativeCallScratch, codeAddress)},
-		std::pair{function.numParams, offsetof(NativeCallScratch, numParams)},
-		std::pair{function.maxStack, offsetof(NativeCallScratch, maxStack)},
-		std::pair{function.flags, offsetof(NativeCallScratch, flags)}}) {
+		std::pair{offsetof(FunctionPrototype, codeAddress), offsetof(NativeCallScratch, codeAddress)},
+		std::pair{offsetof(FunctionPrototype, numParams), offsetof(NativeCallScratch, numParams)},
+		std::pair{offsetof(FunctionPrototype, maxStack), offsetof(NativeCallScratch, maxStack)},
+		std::pair{offsetof(FunctionPrototype, flags), offsetof(NativeCallScratch, flags)}}) {
 		sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), fieldOffset);
 		sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), scratchOffset, SLJIT_R0, 0);
 	}

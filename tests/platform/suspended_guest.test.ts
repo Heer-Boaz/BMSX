@@ -59,7 +59,7 @@ test('suspended classification and inspection distinguish machine numeric subtyp
 	assert.equal(guest.isTruthy(v.valueBool(false)), false);
 	const frame = cpu.activeThread.currentFrame!;
 	assert.deepEqual(guest.functionLocation(v.valueClosure(cpu.gc.reference(frame.closure))),
-		{ domain: frame.closure.executionDomainId, address: frame.closure.functionAddress });
+		{ domain: frame.closure.prototypeRecord.executionDomainId, address: frame.closure.prototypeRecord.functionAddress });
 	assert.deepEqual(cpu.captureRuntimeState(), before);
 	inspection.dispose();
 });

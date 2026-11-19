@@ -3,7 +3,7 @@ import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
 import { GcObject, GcKind, GarbageAllocation } from './gc_object';
-import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from './closure';
+import { Closure, Upvalue, UPVALUE_HEAP_BYTES, FunctionPrototypePool, type FunctionPrototype } from './closure';
 import { Table, TableRecords } from './table';
 import { Thread, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { ValueTag, valueTag, valuePayload, scalarValueHash, valueInteger, valueIsTable, valueNil, type Value } from './value';
@@ -34,6 +34,7 @@ export class GcHeap {
 	// The single directory belongs to the heap, never to an individual Value.
 	private readonly references: (GcObject | number)[] = [0];
 	private freeReference = 0;
+	private readonly prototypes = new FunctionPrototypePool();
 	private readonly scratch = new ValueSlots(1);
 	private mode = 0;
 	private changed = false;
@@ -76,6 +77,10 @@ export class GcHeap {
 	}
 	public keyIdentity(value: Value): number { return valueIsTable(value) ? valuePayload(value) : this.object(valuePayload(value)).hashId; }
 	public track(object: GcObject): void {
+		if (object.gcKind === GcKind.Closure) {
+			const closure = object as Closure;
+			closure.prototypeRecord = this.prototypes.retain(closure.prototypeRecord);
+		}
 		if (object.gcKind === GcKind.Table) this.tableRecords[((object as Table).address & RAM_RECORD_WORD_MASK) >>> 5] = object as Table;
 		else if (this.freeReference !== 0) {
 			object.referenceId = this.freeReference;
@@ -91,7 +96,13 @@ export class GcHeap {
 		if (this.objects !== null) this.objects.gcPrevious = object;
 		this.objects = object;
 	}
+	public rebindClosurePrototype(closure: Closure, record: Readonly<FunctionPrototype>): void {
+		const previous = closure.prototypeRecord;
+		closure.prototypeRecord = this.prototypes.retain(record);
+		this.prototypes.release(previous);
+	}
 	private releaseReference(object: GcObject): void {
+		if (object.gcKind === GcKind.Closure) this.prototypes.release((object as Closure).prototypeRecord);
 		const reference = object.referenceId;
 		this.references[reference] = this.freeReference;
 		this.freeReference = reference;

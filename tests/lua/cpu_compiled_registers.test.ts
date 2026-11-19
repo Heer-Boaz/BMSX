@@ -25,8 +25,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	upvalue.open = true; upvalue.index = 8; upvalue.frame = frame;
 	cpu.gc.track(upvalue);
 	const bound = frame.closure;
-	frame.closure = new Closure(bound.functionAddress, Uint32Array.of(cpu.gc.reference(upvalue)), 0, bound.codeAddress,
-		bound.numParams, bound.maxStack, bound.flags, bound.upvalueTableAddress, bound.executionDomainId, 1, false);
+	frame.closure = new Closure(bound.prototypeRecord, Uint32Array.of(cpu.gc.reference(upvalue)), 0, false);
 	cpu.gc.track(frame.closure);
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;

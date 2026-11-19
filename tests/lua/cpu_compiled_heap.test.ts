@@ -227,7 +227,7 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 			cpu.setGlobalByKey(cpu.stringPool.find('target')!, valueInteger(image.symbols.functionAddresses[index]));
 		}
 		assert.equal(js.runUntilDepth(0, 4), ref.runUntilDepth(0, 4)); assertParity(js, ref);
-		assert.equal(frame.registers.getClosure(source, js.gc).functionAddress, image.symbols.functionAddresses[index]);
+		assert.equal(frame.registers.getClosure(source, js.gc).prototypeRecord.functionAddress, image.symbols.functionAddresses[index]);
 	}
 });
 

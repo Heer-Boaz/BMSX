@@ -120,7 +120,7 @@ import {
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table, TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
-import { Closure, EMPTY_CLOSURE_UPVALUES, Upvalue, UPVALUE_HEAP_BYTES } from './closure';
+import { Closure, EMPTY_CLOSURE_UPVALUES, Upvalue, UPVALUE_HEAP_BYTES, sameFunctionPrototype } from './closure';
 import { ValueSlots } from './value_slots';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
 import {
@@ -356,13 +356,14 @@ export class CPU implements MappedPageInvalidator {
 		image: null!,
 		busSignals: MAPPED_BUS_MASTER_CPU,
 		cacheableRead: false,
-		address: 0,
+		functionAddress: 0,
 		codeAddress: 0,
 		numParams: 0,
 		maxStack: 0,
 		flags: 0,
 		upvalueTableAddress: 0,
-		upvalueCount: 0,
+		recordUpvalueCount: 0,
+		executionDomainId: SYSTEM_EXECUTION_DOMAIN_ID,
 	};
 	private readonly executionReadView: MemoryByteView = {
 		bytes: new Uint8Array(0),
@@ -904,29 +905,23 @@ export class CPU implements MappedPageInvalidator {
 
 	private staticClosureFromLatch(): Closure {
 		const record = this.functionRecordLatch;
-		let closures = this.staticClosuresByAddress.get(record.address);
+		let closures = this.staticClosuresByAddress.get(record.functionAddress);
 		if (closures !== undefined) {
 			let match: Closure | null = null;
 			for (const closure of closures) {
-				if (closure.codeAddress === record.codeAddress && closure.numParams === record.numParams
-					&& closure.maxStack === record.maxStack && closure.flags === record.flags
-					&& closure.upvalueTableAddress === record.upvalueTableAddress
-					&& closure.recordUpvalueCount === record.upvalueCount
-					&& closure.executionDomainId === record.image.executionDomainId
+				if (sameFunctionPrototype(closure.prototypeRecord, record)
 					&& (match === null || closure.hashId < match.hashId)) match = closure;
 			}
 			if (match !== null) return match;
 		}
 		this.luaHeap.reserve(CLOSURE_HEAP_BYTES);
-		const closure = new Closure(record.address, EMPTY_CLOSURE_UPVALUES, CLOSURE_HEAP_BYTES,
-			record.codeAddress, record.numParams, record.maxStack, record.flags, record.upvalueTableAddress,
-			record.image.executionDomainId, record.upvalueCount, true);
+		const closure = new Closure(record, EMPTY_CLOSURE_UPVALUES, CLOSURE_HEAP_BYTES, true);
 		closure.hashId = this.allocateObjectHashId();
 		this.gc.track(closure);
-		closures = this.staticClosuresByAddress.get(record.address);
+		closures = this.staticClosuresByAddress.get(record.functionAddress);
 		if (closures === undefined) {
 			closures = [];
-			this.staticClosuresByAddress.set(record.address, closures);
+			this.staticClosuresByAddress.set(record.functionAddress, closures);
 		}
 		closures.push(closure);
 		return closure;
@@ -936,10 +931,10 @@ export class CPU implements MappedPageInvalidator {
 		const closures = Array.from(this.staticClosuresByAddress.values()).flat();
 		this.staticClosuresByAddress.clear();
 		for (const closure of closures) {
-			let versions = this.staticClosuresByAddress.get(closure.functionAddress);
+			let versions = this.staticClosuresByAddress.get(closure.prototypeRecord.functionAddress);
 			if (versions === undefined) {
 				versions = [];
-				this.staticClosuresByAddress.set(closure.functionAddress, versions);
+				this.staticClosuresByAddress.set(closure.prototypeRecord.functionAddress, versions);
 			}
 			versions.push(closure);
 		}
@@ -1254,7 +1249,8 @@ export class CPU implements MappedPageInvalidator {
 		const latch = this.functionRecordLatch;
 		latch.image = image;
 		latch.busSignals = busSignals;
-		latch.address = address;
+		latch.functionAddress = address;
+		latch.executionDomainId = image.executionDomainId;
 		latch.cacheableRead = false;
 		const view = this.executionReadView;
 		if (this.memory.bindMappedReadView(address, BLUA32_FUNCTION_RECORD_SIZE, busSignals, view)) {
@@ -1281,7 +1277,7 @@ export class CPU implements MappedPageInvalidator {
 				bytes,
 				recordByteOffset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 			);
-			latch.upvalueCount = readLE32(
+			latch.recordUpvalueCount = readLE32(
 				bytes,
 				recordByteOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 			);
@@ -1308,7 +1304,7 @@ export class CPU implements MappedPageInvalidator {
 			(address + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET) >>> 0,
 			busSignals,
 		);
-		latch.upvalueCount = this.memory.readMappedBusU32LE(
+		latch.recordUpvalueCount = this.memory.readMappedBusU32LE(
 			(address + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET) >>> 0,
 			busSignals,
 		);
@@ -1984,7 +1980,7 @@ export class CPU implements MappedPageInvalidator {
 		const image = this.executionImageForDomain(executionDomainId)!;
 		const frame = this.activeThread.frameAtDepth(frameIndex);
 		if (frame === this.activeThread.currentFrame) this.abortStalledMemoryWrite();
-		const registerCount = Math.max(frame.closure.maxStack, frame.closure.numParams);
+		const registerCount = Math.max(frame.closure.prototypeRecord.maxStack, frame.closure.prototypeRecord.numParams);
 		if (registerCount > frame.stackCapacity) {
 			this.ensureRegisterCapacity(frame, registerCount - 1);
 		}
@@ -2953,7 +2949,7 @@ export class CPU implements MappedPageInvalidator {
 		returnCount: number,
 		returnToCompletionLatch: boolean,
 	): CallFrame {
-		const functionRecord = closure;
+		const functionRecord = closure.prototypeRecord;
 		const frame = this.activeThread.acquireFrame();
 		const argumentBase = this.activeThread.stackTop;
 		const vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0;
@@ -2961,8 +2957,8 @@ export class CPU implements MappedPageInvalidator {
 		const stackBase = vararg ? argumentBase + args.length : argumentBase;
 		const registers = this.prepareFrameRegisters(frame, Math.max(functionRecord.maxStack, functionRecord.numParams),
 			stackBase, argumentBase + functionRecord.numParams, varargCount, closure);
-		frame.functionAddress = closure.functionAddress;
-		frame.executionImage = this.executionImageForDomain(closure.executionDomainId)!;
+		frame.functionAddress = closure.prototypeRecord.functionAddress;
+		frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
 		frame.pc = functionRecord.codeAddress;
@@ -2990,7 +2986,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private pushFrameFromCaller(caller: CallFrame, closure: Closure, argBase: number, argCount: number, returnBase: number, returnCount: number, returnToCompletionLatch: boolean, callSitePc: number): CallFrame | null {
-		const functionRecord = closure;
+		const functionRecord = closure.prototypeRecord;
 		const frame = this.activeThread.acquireFrame();
 		const sharedStack = caller.thread === this.activeThread;
 		const argumentBase = sharedStack ? caller.stackBase + argBase : this.activeThread.stackTop;
@@ -3000,8 +2996,8 @@ export class CPU implements MappedPageInvalidator {
 		const callerRegisters = caller.registers;
 		const registers = this.prepareFrameRegisters(frame, Math.max(functionRecord.maxStack, functionRecord.numParams),
 			stackBase, argumentBase + functionRecord.numParams, varargCount, closure);
-		frame.functionAddress = closure.functionAddress;
-		frame.executionImage = this.executionImageForDomain(closure.executionDomainId)!;
+		frame.functionAddress = closure.prototypeRecord.functionAddress;
+		frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
 		frame.pc = functionRecord.codeAddress;
@@ -3033,17 +3029,17 @@ export class CPU implements MappedPageInvalidator {
 	private createClosure(frame: CallFrame): Closure | null {
 		const functionRecord = this.functionRecordLatch;
 		if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) !== 0
-			&& functionRecord.upvalueCount === 0) {
+			&& functionRecord.recordUpvalueCount === 0) {
 			return this.staticClosureFromLatch();
 		}
-		if (this.closureUpvalueWords.length < functionRecord.upvalueCount) {
-			this.closureUpvalueWords = new Uint32Array(functionRecord.upvalueCount);
+		if (this.closureUpvalueWords.length < functionRecord.recordUpvalueCount) {
+			this.closureUpvalueWords = new Uint32Array(functionRecord.recordUpvalueCount);
 		}
 		const upvalueWords = this.closureUpvalueWords;
-		const upvalues = new Uint32Array(functionRecord.upvalueCount);
+		const upvalues = new Uint32Array(functionRecord.recordUpvalueCount);
 		const faultSequence = this.memory.readBusFaultSequence();
 		let newUpvalueCount = 0;
-		for (let index = 0; index < functionRecord.upvalueCount; index += 1) {
+		for (let index = 0; index < functionRecord.recordUpvalueCount; index += 1) {
 			const word = this.memory.readMappedBusU32LE(
 				(functionRecord.upvalueTableAddress
 					+ index * BLUA32_UPVALUE_RECORD_SIZE) >>> 0,
@@ -3073,11 +3069,11 @@ export class CPU implements MappedPageInvalidator {
 		} else {
 			this.luaHeap.reserve(heapBytes);
 		}
-		const closure = new Closure(functionRecord.address, upvalues, heapBytes, functionRecord.codeAddress, functionRecord.numParams, functionRecord.maxStack, functionRecord.flags, functionRecord.upvalueTableAddress, functionRecord.image.executionDomainId, functionRecord.upvalueCount, false);
+		const closure = new Closure(functionRecord, upvalues, heapBytes, false);
 		closure.hashId = this.allocateObjectHashId();
 		this.gc.track(closure);
 		let nextCell = 0;
-		for (let index = 0; index < functionRecord.upvalueCount; index += 1) {
+		for (let index = 0; index < functionRecord.recordUpvalueCount; index += 1) {
 			if (upvalues[index]) {
 				continue;
 			}
@@ -3090,7 +3086,7 @@ export class CPU implements MappedPageInvalidator {
 			this.linkOpenUpvalue(frame, upvalue);
 			upvalues[index] = this.gc.reference(upvalue);
 		}
-		this.charge(functionRecord.upvalueCount);
+		this.charge(functionRecord.recordUpvalueCount);
 		return closure;
 	}
 
@@ -4088,10 +4084,10 @@ export class CPU implements MappedPageInvalidator {
 		// Materialization order affects later object hashes even for an unrooted
 		// static closure. Preserve the entire cache, in physical-address order.
 		const canonicalClosures = Array.from(this.staticClosuresByAddress.values()).flat();
-		canonicalClosures.sort((a, b) => a.functionAddress - b.functionAddress
-			|| a.executionDomainId - b.executionDomainId || a.codeAddress - b.codeAddress
-			|| a.numParams - b.numParams || a.maxStack - b.maxStack || a.flags - b.flags
-			|| a.upvalueTableAddress - b.upvalueTableAddress || a.recordUpvalueCount - b.recordUpvalueCount
+		canonicalClosures.sort((a, b) => a.prototypeRecord.functionAddress - b.prototypeRecord.functionAddress
+			|| a.prototypeRecord.executionDomainId - b.prototypeRecord.executionDomainId || a.prototypeRecord.codeAddress - b.prototypeRecord.codeAddress
+			|| a.prototypeRecord.numParams - b.prototypeRecord.numParams || a.prototypeRecord.maxStack - b.prototypeRecord.maxStack || a.prototypeRecord.flags - b.prototypeRecord.flags
+			|| a.prototypeRecord.upvalueTableAddress - b.prototypeRecord.upvalueTableAddress || a.prototypeRecord.recordUpvalueCount - b.prototypeRecord.recordUpvalueCount
 			|| a.upvalues.length - b.upvalues.length
 			|| a.hashId - b.hashId);
 		for (const closure of canonicalClosures) {
@@ -4126,16 +4122,16 @@ export class CPU implements MappedPageInvalidator {
 					offset = writer.reserveWords(CpuSnapshotClosure.Data + closure.upvalues.length);
 					writer.setWord(offset + CpuSnapshotClosure.Kind, kind);
 					writer.setWord(offset + CpuSnapshotClosure.HashId, closure.hashId);
-					writer.setWord(offset + CpuSnapshotClosure.FunctionAddress, closure.functionAddress);
+					writer.setWord(offset + CpuSnapshotClosure.FunctionAddress, closure.prototypeRecord.functionAddress);
 					writer.setWord(offset + CpuSnapshotClosure.Canonical, closure.canonical ? 1 : 0);
 					writer.setWord(offset + CpuSnapshotClosure.UpvalueCount, closure.upvalues.length);
-					writer.setWord(offset + CpuSnapshotClosure.CodeAddress, closure.codeAddress);
-					writer.setWord(offset + CpuSnapshotClosure.NumParams, closure.numParams);
-					writer.setWord(offset + CpuSnapshotClosure.MaxStack, closure.maxStack);
-					writer.setWord(offset + CpuSnapshotClosure.Flags, closure.flags);
-					writer.setWord(offset + CpuSnapshotClosure.UpvalueTableAddress, closure.upvalueTableAddress);
-					writer.setWord(offset + CpuSnapshotClosure.RecordUpvalueCount, closure.recordUpvalueCount);
-					writer.setWord(offset + CpuSnapshotClosure.ExecutionDomainId, closure.executionDomainId);
+					writer.setWord(offset + CpuSnapshotClosure.CodeAddress, closure.prototypeRecord.codeAddress);
+					writer.setWord(offset + CpuSnapshotClosure.NumParams, closure.prototypeRecord.numParams);
+					writer.setWord(offset + CpuSnapshotClosure.MaxStack, closure.prototypeRecord.maxStack);
+					writer.setWord(offset + CpuSnapshotClosure.Flags, closure.prototypeRecord.flags);
+					writer.setWord(offset + CpuSnapshotClosure.UpvalueTableAddress, closure.prototypeRecord.upvalueTableAddress);
+					writer.setWord(offset + CpuSnapshotClosure.RecordUpvalueCount, closure.prototypeRecord.recordUpvalueCount);
+					writer.setWord(offset + CpuSnapshotClosure.ExecutionDomainId, closure.prototypeRecord.executionDomainId);
 					for (let index = 0; index < closure.upvalues.length; index += 1) {
 						writer.setWord(offset + CpuSnapshotClosure.Data + index, captureObject(this.gc.object(closure.upvalues[index]) as Upvalue, CpuSnapshotObjectKind.Upvalue));
 					}
@@ -4259,12 +4255,11 @@ export class CPU implements MappedPageInvalidator {
 					const upvalues = canonical ? EMPTY_CLOSURE_UPVALUES : new Uint32Array(count);
 					const heapBytes = CLOSURE_HEAP_BYTES + count * CLOSURE_UPVALUE_SLOT_HEAP_BYTES;
 					this.luaHeap.restoreAllocate(heapBytes);
+					const record = { functionAddress, codeAddress, numParams, maxStack, flags, upvalueTableAddress, executionDomainId, recordUpvalueCount };
 					const previous = canonical ? previousCanonical.get(functionAddress) : undefined;
-					const existingIndex = previous === undefined ? -1 : previous.findIndex(item => item.codeAddress === codeAddress
-						&& item.numParams === numParams && item.maxStack === maxStack && item.flags === flags
-						&& item.upvalueTableAddress === upvalueTableAddress && item.recordUpvalueCount === recordUpvalueCount
-						&& item.executionDomainId === executionDomainId && item.hashId === snapshot.word(offset + CpuSnapshotClosure.HashId));
-					const closure = existingIndex < 0 ? new Closure(functionAddress, upvalues, heapBytes, codeAddress, numParams, maxStack, flags, upvalueTableAddress, executionDomainId, recordUpvalueCount, canonical) : previous!.splice(existingIndex, 1)[0];
+					const existingIndex = previous === undefined ? -1 : previous.findIndex(item =>
+						item.hashId === snapshot.word(offset + CpuSnapshotClosure.HashId) && sameFunctionPrototype(item.prototypeRecord, record));
+					const closure = existingIndex < 0 ? new Closure(record, upvalues, heapBytes, canonical) : previous!.splice(existingIndex, 1)[0];
 					if (existingIndex < 0) this.gc.track(closure);
 					closure.restored = true;
 					closure.hashId = snapshot.word(offset + CpuSnapshotClosure.HashId);
@@ -4364,7 +4359,7 @@ export class CPU implements MappedPageInvalidator {
 				frame.varargCount = frameState.varargCount;
 				frame.registers.rebind(thread.stackRegisters, frame.stackBase, frame.stackCapacity);
 				frame.functionAddress = frameState.functionAddress;
-				frame.executionImage = this.executionImageForDomain(closure.executionDomainId)!;
+				frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
 				frame.pc = frameState.pc;
 				frame.closure = closure;
 				frame.returnBase = frameState.returnBase;

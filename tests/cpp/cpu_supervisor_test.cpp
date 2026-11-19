@@ -813,8 +813,8 @@ void testMappedRamFunctionExecution() {
 	bmsx::Closure* directClosure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
 	bmsx::Closure* closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
 	require(
-		directClosure->functionAddress == RAM_FUNCTION_ADDRESS
-			&& closure->functionAddress == RAM_FUNCTION_ADDRESS,
+		directClosure->prototype->functionAddress == RAM_FUNCTION_ADDRESS
+			&& closure->prototype->functionAddress == RAM_FUNCTION_ADDRESS,
 		"direct and register-addressed closures retain the mapped RAM function address"
 	);
 
@@ -887,8 +887,8 @@ void testBoundClosureRetainsCartridgeSocket() {
 	cpu.beginCompletionCallInExecutionDomain(1, address);
 	auto* second = cpu.activeThread()->currentFrame->closure;
 	require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted, "slot 1 closure returns");
-	require(first != second && first->functionAddress == second->functionAddress
-		&& first->executionDomainId == 0 && second->executionDomainId == 1,
+	require(first != second && first->prototype->functionAddress == second->prototype->functionAddress
+		&& first->prototype->executionDomainId == 0 && second->prototype->executionDomainId == 1,
 		"same cartridge address in different sockets has distinct closures");
 	for (int i = 0; i < 12; ++i) {
 		machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, i & 1);

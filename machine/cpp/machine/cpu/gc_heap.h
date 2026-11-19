@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 #include "common/object_storage_pool.h"
 #include "machine/cpu/heap_allocator.h"
@@ -40,7 +41,7 @@ public:
 		track(object);
 		return object;
 	}
-	Closure* allocateClosure(size_t count);
+	Closure* allocateClosure(const FunctionPrototype&, size_t count);
 	u32 allocateHashId() { return m_nextObjectHashId++; }
 	u32 nextObjectHashId() const { return m_nextObjectHashId; }
 	// Only the host-backed allocations still use directory slots.
@@ -122,6 +123,8 @@ private:
 	StringId m_modeKey;
 	StringPool& m_stringPool;
 	ObjectStoragePool<Table> m_tables;
+	// Map nodes are stable across rehash; erasure is tied to the last closure.
+	std::unordered_map<FunctionPrototype, size_t, FunctionPrototypeHash> m_prototypes;
 	std::vector<Table*> m_tableRecords = std::vector<Table*>(MAIN_RAM_SIZE / Table::HEADER_BYTES);
 	std::vector<ReferenceSlot> m_references{{.object = nullptr}};
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

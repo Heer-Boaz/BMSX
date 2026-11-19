@@ -61,7 +61,7 @@ for (const scenario of ['chain', 'table', 'memory', 'upvalue', 'words', 'control
 				m.setup(scenario,scenario==='control'?v.valueInteger(0):v.valueInteger(3));m.cpu.runUntilDepth(0, 1000);
 			}
 		}
-		const js = machines[1], page = js.owner.compiledCodeLookup!.find(js.closure.codeAddress, 0)!;
+		const js = machines[1], page = js.owner.compiledCodeLookup!.find(js.closure.prototypeRecord.codeAddress, 0)!;
 		assert.ok(page.compiledBlocks, 'real CPU execution must install a generated region');
 		const regions = new Set(page.compiledBlocks.entries.filter(block => block !== null).map(block => block.region));
 		let generatedRuns = 0;

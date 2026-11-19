@@ -46,18 +46,18 @@ export function buildHotResumeRelocation(
 	const relocation = new Uint32Array(latchBase + LATCH_WORDS);
 	const unmappedWords: string[] = [];
 	cpu.visitReachableClosures(closure => {
-		const target = revisions[closure.executionDomainId + 1];
+		const target = revisions[closure.prototypeRecord.executionDomainId + 1];
 		if (target === null) return;
-		const index = blua32FunctionIndexAtAddress(target.previousImage, closure.functionAddress);
+		const index = blua32FunctionIndexAtAddress(target.previousImage, closure.prototypeRecord.functionAddress);
 		if (index === -1) return;
 		const address = target.revision.functionAddresses[index];
 		if (address === 0) {
-			unmappedWords.push(`closure 0x${closure.functionAddress.toString(16)}`);
+			unmappedWords.push(`closure 0x${closure.prototypeRecord.functionAddress.toString(16)}`);
 			return;
 		}
 		const newIndex = blua32FunctionIndexAtAddress(target.nextImage, address);
-		if (target.nextImage.functions[newIndex].upvalues.length !== closure.recordUpvalueCount) {
-			unmappedWords.push(`closure 0x${closure.functionAddress.toString(16)} captures`);
+		if (target.nextImage.functions[newIndex].upvalues.length !== closure.prototypeRecord.recordUpvalueCount) {
+			unmappedWords.push(`closure 0x${closure.prototypeRecord.functionAddress.toString(16)} captures`);
 		}
 	});
 
@@ -166,20 +166,18 @@ export function buildHotResumeRelocation(
 /** Apply source correspondence to live ROM closures, retaining their object identity and captures. */
 export function applyHotResumeClosureRevision(cpu: CPU, revisions: HotResumeRevisions): void {
 	cpu.visitReachableClosures(closure => {
-		const target = revisions[closure.executionDomainId + 1];
+		const target = revisions[closure.prototypeRecord.executionDomainId + 1];
 		if (target === null) return;
-		const index = blua32FunctionIndexAtAddress(target.previousImage, closure.functionAddress);
+		const index = blua32FunctionIndexAtAddress(target.previousImage, closure.prototypeRecord.functionAddress);
 		if (index === -1) return;
 		const functionAddress = target.revision.functionAddresses[index];
 		const image = target.nextImage;
 		const nextFunction = image.functions[blua32FunctionIndexAtAddress(image, functionAddress)];
-		closure.functionAddress = functionAddress;
-		closure.codeAddress = nextFunction.codeAddress;
-		closure.numParams = nextFunction.numParams;
-		closure.maxStack = nextFunction.maxStack;
-		closure.flags = nextFunction.flags;
-		closure.upvalueTableAddress = nextFunction.upvalueTableAddress;
-		closure.recordUpvalueCount = nextFunction.upvalues.length;
+		cpu.gc.rebindClosurePrototype(closure, {
+			functionAddress, codeAddress: nextFunction.codeAddress, numParams: nextFunction.numParams,
+			maxStack: nextFunction.maxStack, flags: nextFunction.flags, upvalueTableAddress: nextFunction.upvalueTableAddress,
+			recordUpvalueCount: nextFunction.upvalues.length, executionDomainId: closure.prototypeRecord.executionDomainId,
+		});
 	});
 	cpu.reindexCanonicalClosures();
 }

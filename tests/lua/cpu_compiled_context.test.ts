@@ -147,8 +147,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		closed.hashId = 101;
 		cpu.gc.track(open); cpu.gc.track(closed);
 		const bound = frame.closure;
-		frame.closure = new Closure(bound.functionAddress, Uint32Array.of(cpu.gc.reference(open), cpu.gc.reference(closed)), 0, bound.codeAddress,
-			bound.numParams, bound.maxStack, bound.flags, bound.upvalueTableAddress, bound.executionDomainId, bound.recordUpvalueCount, false);
+		frame.closure = new Closure(bound.prototypeRecord, Uint32Array.of(cpu.gc.reference(open), cpu.gc.reference(closed)), 0, false);
 		cpu.gc.track(frame.closure);
 		cpu.runUntilDepth(0, 50 * loopCycles);
 	}

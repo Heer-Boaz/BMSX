@@ -32,7 +32,8 @@ struct Upvalue : GCObject {
 #endif
 };
 
-struct Closure : GCObject {
+// Decoded data shared by closures for the same published function record.
+struct FunctionPrototype {
 	u32 functionAddress = 0;
 	u32 codeAddress = 0;
 	u32 numParams = 0;
@@ -41,20 +42,24 @@ struct Closure : GCObject {
 	u32 upvalueTableAddress = 0;
 	u32 recordUpvalueCount = 0;
 	i32 executionDomainId = 0;
+	bool operator==(const FunctionPrototype&) const = default;
+};
+
+struct FunctionPrototypeHash {
+	size_t operator()(const FunctionPrototype& prototype) const {
+		return prototype.functionAddress ^ (static_cast<u32>(prototype.executionDomainId) << 16);
+	}
+};
+
+struct Closure : GCObject {
+	const FunctionPrototype* prototype = nullptr;
 	size_t upvalueCount = 0;
 	uint32_t* upvalues = nullptr;
 	size_t trackedHeapBytes = 0;
 	bool canonical = false;
-	bool sameFunction(const Closure& other) const {
-		return functionAddress == other.functionAddress && executionDomainId == other.executionDomainId
-			&& codeAddress == other.codeAddress && numParams == other.numParams && maxStack == other.maxStack
-			&& flags == other.flags && upvalueTableAddress == other.upvalueTableAddress
-			&& recordUpvalueCount == other.recordUpvalueCount && upvalueCount == other.upvalueCount;
-	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static size_t nativeUpvaluesOffset();
-	struct NativeFunctionOffsets { size_t address, codeAddress, numParams, maxStack, flags, executionDomainId; };
-	static NativeFunctionOffsets nativeFunctionOffsets();
+	static size_t nativePrototypeOffset();
 #endif
 };
 } // namespace bmsx

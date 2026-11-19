@@ -562,7 +562,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const slot0Closure = cpu.getGlobalByKey(selectedClosureName);
 	const slot0Object = asClosure(slot0Closure, cpu.gc);
 	const guest = new SuspendedGuestSession(runtime);
-	assert.deepEqual(guest.linkedFunctionLocation(slot0Closure), { domain: 0, address: slot0Object.functionAddress });
+	assert.deepEqual(guest.linkedFunctionLocation(slot0Closure), { domain: 0, address: slot0Object.prototypeRecord.functionAddress });
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(111));
 	const savedClosureName = cpu.stringPool.intern('saved_closure');
 	const closureTableName = cpu.stringPool.intern('closure_table');
@@ -580,10 +580,10 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	assert.equal(cpu.activeCartridgeSlot(), 1);
 	const slot1Closure = cpu.getGlobalByKey(selectedClosureName);
 	assert.notEqual(slot1Closure, slot0Closure, 'different execution domains own distinct canonical closures');
-	assert.equal(asClosure(slot1Closure, cpu.gc).functionAddress, slot0Object.functionAddress, 'both slots use the same mapped address');
+	assert.equal(asClosure(slot1Closure, cpu.gc).prototypeRecord.functionAddress, slot0Object.prototypeRecord.functionAddress, 'both slots use the same mapped address');
 	assert.equal(closureTable.records.get(closureTable.address, slot0Closure), valueInteger(77));
 	assert.equal(closureTable.records.get(closureTable.address, slot1Closure), valueNil());
-	assert.deepEqual(guest.linkedFunctionLocation(slot1Closure), { domain: 1, address: asClosure(slot1Closure, cpu.gc).functionAddress });
+	assert.deepEqual(guest.linkedFunctionLocation(slot1Closure), { domain: 1, address: asClosure(slot1Closure, cpu.gc).prototypeRecord.functionAddress });
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(222));
 	assert.deepEqual(runtime.callClosure(slot0Object), [valueInteger(111)], 'a slot 0 closure still executes slot 0 while slot 1 is active');
 	assert.deepEqual(runtime.callClosure(asClosure(slot1Closure, cpu.gc)), [valueInteger(222)], 'the slot 1 closure executes slot 1');
@@ -654,7 +654,7 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	const secondClosure = cpu.getGlobalByKey(selectedClosureName);
 	assert.notEqual(firstClosure, secondClosure);
-	assert.equal(asClosure(firstClosure, cpu.gc).functionAddress, asClosure(secondClosure, cpu.gc).functionAddress);
+	assert.equal(asClosure(firstClosure, cpu.gc).prototypeRecord, asClosure(secondClosure, cpu.gc).prototypeRecord);
 
 	const firstName = cpu.stringPool.intern('first_closure');
 	const secondName = cpu.stringPool.intern('second_closure');
@@ -680,7 +680,7 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	const restoredSecond = cpu.getGlobalByKey(secondName);
 	const restoredTable = asTable(cpu.getGlobalByKey(tableName), cpu.gc);
 	assert.notEqual(restoredFirst, restoredSecond);
-	assert.equal(asClosure(restoredFirst, cpu.gc).functionAddress, asClosure(restoredSecond, cpu.gc).functionAddress);
+	assert.equal(asClosure(restoredFirst, cpu.gc).prototypeRecord, asClosure(restoredSecond, cpu.gc).prototypeRecord);
 	assert.equal(restoredTable.records.get(restoredTable.address, restoredFirst), valueInteger(11));
 	assert.equal(restoredTable.records.get(restoredTable.address, restoredSecond), valueInteger(22));
 });
@@ -712,7 +712,7 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	const canonicalClosure = cpu.getGlobalByKey(selectedClosureName);
 	assert.notEqual(dynamicClosure, canonicalClosure);
-	assert.equal(asClosure(dynamicClosure, cpu.gc).functionAddress, asClosure(canonicalClosure, cpu.gc).functionAddress);
+	assert.equal(asClosure(dynamicClosure, cpu.gc).prototypeRecord.functionAddress, asClosure(canonicalClosure, cpu.gc).prototypeRecord.functionAddress);
 
 	const dynamicName = cpu.stringPool.intern('dynamic_closure');
 	const canonicalName = cpu.stringPool.intern('canonical_closure');

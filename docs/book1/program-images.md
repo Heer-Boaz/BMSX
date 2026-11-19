@@ -400,10 +400,11 @@ Instruction fetch does not access system I/O or cartridge MMIO; the CPU
 the fault and its timing. This restriction does not apply to the mapped-bus
 reads used to construct a closure from its function record.
 
-Closure construction binds the record's entry and frame data. Rewriting a
-record changes the data bound by a later construction, not the data of an
-existing closure. Instructions remain in addressed memory and are fetched
-there when the closure executes.
+The record is a prototype shared by closures of that function in the same
+execution context. Each closure binds its own captures. A record must remain
+stable while a closure uses it; give a coexisting definition a separate
+record. Instructions remain in addressed memory and are fetched there when
+the closure executes.
 
 Upvalue descriptor `i` is a four-byte unsigned little-endian word at
 `upvalueTableAddress + 4i`. Bit 31 set captures a parent-frame register; bit 31

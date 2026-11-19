@@ -28,15 +28,12 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		writeInstruction(text, 5, OpCode.CALL, 4, open ? 0 : 3, open ? 0 : 3);
 		writeInstruction(text, 6, OpCode.ADD, 3, 4, 5);
 		writeInstruction(text, 7, OpCode.JMP, 0, 63, 58, 255);
-		for (const start of [DECODED_PAGE_WORDS, DECODED_PAGE_WORDS + 32]) {
-			writeInstruction(text, start, start === DECODED_PAGE_WORDS ? OpCode.ADD : OpCode.SUB, 2, 0, 1);
-			writeInstruction(text, start + 1, OpCode.MOV, 3, start === DECODED_PAGE_WORDS ? 0 : 1, 0);
-			writeInstruction(text, start + 2, OpCode.RET, 2, open ? 0 : 3, 0);
-		}
+		writeInstruction(text, DECODED_PAGE_WORDS, OpCode.ADD, 2, 0, 1);
+		writeInstruction(text, DECODED_PAGE_WORDS + 1, OpCode.MOV, 3, 0, 0);
+		writeInstruction(text, DECODED_PAGE_WORDS + 2, OpCode.RET, 2, open ? 0 : 3, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [
 			{ firstWord: 0, wordCount: 8, maxStack: 8 },
 			{ firstWord: DECODED_PAGE_WORDS, wordCount: 3, numParams: 2, maxStack: 8 },
-			{ firstWord: DECODED_PAGE_WORDS + 32, wordCount: 3, numParams: 2, maxStack: 1024 },
 		], constants: [integerConstant(3), integerConstant(4)], closureRelocations: [{ wordIndex: 1, functionAddress: record }] });
 		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 		// Supplied fixed arguments already occupy the callee window: no placement surcharge.
@@ -69,43 +66,29 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		for (const { cpu, memory } of machines) {
+			const registers = cpu.rootThread.frameAtDepth(0).registers;
+			registers.setNil(0); registers.setNil(4);
+			cpu.collectTrackedHeapBytes();
 			const capacity = cpu.rootThread.stackRegisters.capacity();
-			const previous = cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc);
+			// Reuse a reclaimed RAM record, like the BIOS loader arena does.
 			memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-			cpu.runUntilDepth(0, callEntryCycles);
-			assert.equal(cpu.rootThread.stackRegisters.capacity(), capacity, 'existing closure retains its bound stack extent');
-			assert.equal(cpu.runUntilDepth(1, 50), RunResult.Halted);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
-			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + callEntryCycles);
-			assert.ok(cpu.rootThread.stackRegisters.capacity() > capacity, 'new closure observes the rewritten record');
-			assert.notEqual(cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc), previous);
-			assert.equal(cpu.runUntilDepth(1, 50), RunResult.Halted);
-		}
-		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
-		for (const { cpu, memory } of machines) {
-			const old = cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc);
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-			cpu.runUntilDepth(0, callEntryCycles);
-			assert.equal(cpu.getFrameDepth(), 2);
+			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + callEntryCycles), RunResult.Yielded);
+			assert.ok(cpu.rootThread.stackRegisters.capacity() > capacity, 'a recycled prototype supplies its new stack extent');
+			const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc);
 			const state = cpu.captureRuntimeState();
-			memory.writeBytes(record, image.romBytes.subarray(image.symbols.functionAddresses[2], image.symbols.functionAddresses[2] + BLUA32_FUNCTION_RECORD_SIZE));
 			cpu.restoreRuntimeState(state);
-			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc), old, 'restore retains the bound closure even after its record changes');
-			assert.equal(cpu.rootThread.currentFrame!.closure, old, 'active frame restores its original bound closure');
-			assert.equal(cpu.rootThread.currentFrame!.executionImage.executionDomainId, old.executionDomainId);
-			cpu.runUntilDepth(1, 50);
-			assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(4), valueInteger(7), 'existing closure retains the old entry');
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
-			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + callEntryCycles);
+			assert.equal(cpu.rootThread.currentFrame!.closure, closure, 'an active frame restores its shared prototype binding');
 			assert.equal(cpu.runUntilDepth(1, 50), RunResult.Halted);
-			assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(4), valueInteger(-1), 'new closure binds the changed entry');
-			assert.notEqual(cpu.rootThread.frameAtDepth(0).registers.getClosure(0, cpu.gc), old);
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(4), valueInteger(7));
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		const word = new Uint8Array(4);
 		writeLE32(word, 0, image.image.functions[1].codeAddress + 1);
 		for (const { cpu, memory } of machines) {
+			const registers = cpu.rootThread.frameAtDepth(0).registers;
+			registers.setNil(0); registers.setNil(4);
+			cpu.collectTrackedHeapBytes();
 			memory.writeBytes(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, word);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
 			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + callEntryCycles), RunResult.Yielded);
@@ -390,7 +373,7 @@ for (const editReturn of [false, true]) test(`CALL keeps its bound record when t
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES);
 		source.armed = true;
 		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
-		assert.equal(source.writes, 0, 'the record was bound at CLOSURE, not reread at CALL');
+		assert.equal(source.writes, 0, 'this call consumes a published prototype without repeating the construction bus read');
 		assert.equal(cpu.getFrameDepth(), 2);
 		const caller = cpu.rootThread.frameAtDepth(0), returnPc = DYNAMIC_RAM_BASE + 4 * INSTRUCTION_BYTES;
 		assert.equal(caller.pc, returnPc);

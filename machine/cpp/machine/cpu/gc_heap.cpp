@@ -121,11 +121,14 @@ void GcHeap::track(GCObject* object) {
 	if (m_objects) m_objects->previous = object;
 	m_objects = object;
 }
-Closure* GcHeap::allocateClosure(size_t count) {
+Closure* GcHeap::allocateClosure(const FunctionPrototype& prototype, size_t count) {
 	reserveReference();
 	void* storage = ::operator new(sizeof(Closure) + count * sizeof(u32));
 	auto* closure = new (storage) Closure();
 	closure->type = ObjType::Closure;
+	const auto entry = m_prototypes.try_emplace(prototype, 0u).first;
+	++entry->second;
+	closure->prototype = &entry->first;
 	closure->upvalueCount = count;
 	closure->upvalues = reinterpret_cast<u32*>(static_cast<uint8_t*>(storage) + sizeof(Closure));
 	std::fill_n(closure->upvalues, count, 0u);
@@ -341,11 +344,15 @@ void GcHeap::destroyObject(GCObject* object) {
 			budget.release(static_cast<Table*>(object)->trackedHeapBytes());
 			m_tables.destroy(static_cast<Table*>(object));
 			break;
-		case ObjType::Closure:
-			budget.release(static_cast<Closure*>(object)->trackedHeapBytes);
-			static_cast<Closure*>(object)->~Closure();
+		case ObjType::Closure: {
+			auto* closure = static_cast<Closure*>(object);
+			auto prototype = m_prototypes.find(*closure->prototype);
+			if (--prototype->second == 0) m_prototypes.erase(prototype);
+			budget.release(closure->trackedHeapBytes);
+			closure->~Closure();
 			::operator delete(object);
 			break;
+		}
 		case ObjType::Upvalue:
 			budget.release(UPVALUE_HEAP_BYTES);
 			delete static_cast<Upvalue*>(object);

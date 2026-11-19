@@ -233,11 +233,7 @@ void hotUpvalueAlias() {
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
 		auto& heap = m->cpu.gcHeap();
-		auto* closure = heap.allocateClosure(2);
-		closure->functionAddress = frame.functionAddress;
-		closure->codeAddress = frame.closure->codeAddress;
-		closure->maxStack = frame.closure->maxStack;
-		closure->executionDomainId = frame.closure->executionDomainId;
+		auto* closure = heap.allocateClosure(*frame.closure->prototype, 2);
 		closure->hashId = heap.allocateHashId();
 		for (int c = 0; c < 2; ++c) {
 			auto* cell = heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
@@ -313,7 +309,7 @@ void rawContextValues(CpuMachine& machine) {
 	auto& closed = *heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
 				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
 	open.open = true; open.frame = &frame;
-	frame.closure = heap.allocateClosure(2);
+	frame.closure = heap.allocateClosure({}, 2);
 	frame.closure->upvalues[0] = heap.reference(&open);
 	frame.closure->upvalues[1] = heap.reference(&closed);
 	ContextBlock captures(machine, {{OpCode::K1, 0}, {OpCode::GETUP, 1}, {OpCode::KSMI, 2, 0, 0, 9},

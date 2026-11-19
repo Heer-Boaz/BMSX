@@ -333,7 +333,7 @@ for (const optLevel of [0, 3] as const) for (const dimension of [2, 3] as const)
 			const kernels = [];
 			for (const name of ['clean', 'motion', 'compose', 'traverse']) {
 				const kernel = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(name)!), cpu.gc);
-				const emitted = linked.image.functions.find(fn => fn.address === kernel.functionAddress)!;
+				const emitted = linked.image.functions.find(fn => fn.address === kernel.prototypeRecord.functionAddress)!;
 				let f64Accesses = 0;
 				for (let pc = emitted.codeAddress; pc < emitted.codeAddress + emitted.codeByteCount; pc += INSTRUCTION_BYTES) {
 					const instruction = describeBlua32InstructionAtPc(linked.image, null, pc);

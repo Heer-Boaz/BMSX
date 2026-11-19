@@ -973,7 +973,11 @@ The `CLOSURE` register-address flag chooses how to obtain the function-record ad
 - Flag clear: the address is `Bx × 16`.
 - Flag set: `Bx` selects the register supplying the unsigned address.
 
-The function record is read before the destination is written. It identifies the function's code and frame metadata, including the fixed-parameter count, maximum stack allocation, vararg and static flags, and upvalue information. The closure binds that function data at construction: later writes to the record do not change an existing closure, and calling it does not read the record again. Instruction bytes are not copied into the closure; instruction fetch continues to use the bound code address. A failed record read hard-halts without writing `R(A)`. A bus-read fault while reading the upvalue descriptors likewise hard-halts without writing `R(A)`.
+The function record is a shared prototype in its execution context. It identifies the code address, fixed parameters, stack requirement, flags and upvalue descriptors. `CLOSURE` reads the record before writing the destination, and binds the captures for this particular closure. `CALL` uses the prototype for entry and frame placement. Instruction bytes remain at their addressed locations.
+
+Finish publishing a prototype before constructing any closures from it. Do not replace the record while any closure still uses it; existing calls and new closures have no guaranteed behavior after such a write. To publish a new definition while an older one remains in use, give the new prototype its own record.
+
+A failed record or upvalue-descriptor read hard-halts without writing `R(A)`.
 
 
 Each upvalue descriptor is a 32-bit word. Descriptor `i` is read at `upvalueTableAddress + 4i`:
@@ -988,8 +992,8 @@ Each upvalue descriptor is a 32-bit word. Descriptor `i` is read at `upvalueTabl
 An open upvalue accesses its captured parent-frame register directly. Captures can share an already-linked open upvalue for that slot, so updates through the captured variable remain shared. Closing an upvalue retains the current language value separately from the frame; subsequent reads and writes access that retained storage. `GETUP` and `SETUP` use the same upvalue operand regardless of whether the upvalue is open or closed.
 
 Repeated CLOSURE operations for a STATIC function record with no upvalues may
-return the same function value when their bound function data and execution
-context are identical. An ordinary call uses that value; a numeric
+return the same function value when they use the same prototype in the same
+execution context. An ordinary call uses that value; a numeric
 function-record address is supplied to CLOSURE or EXEC under their separate
 operand rules.
 

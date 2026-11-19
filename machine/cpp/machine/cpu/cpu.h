@@ -413,8 +413,8 @@ private:
 	bool decodeBackedInstruction(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
 		u32 pc, MappedBusSignals busSignals);
 #endif
-	Closure* staticClosureForRecord(const Closure& record);
-	Closure boundFunctionRecord(const Blua32FunctionRecordLatch& record) const;
+	Closure* staticClosureForRecord(const FunctionPrototype& record);
+	FunctionPrototype decodePrototype(const Blua32FunctionRecordLatch& record) const;
 	bool readFunctionRecord(
 		Blua32ExecutionImage& image,
 		u32 address,
@@ -432,7 +432,7 @@ private:
 		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
 	CallFrame* pushFrame(Closure* closure, BuiltinArgsView args,
 		int returnBase, int returnCount, bool returnToCompletionLatch);
-	Closure* allocateTrackedClosure(u32 functionAddress, size_t upvalueCount);
+	Closure* allocateTrackedClosure(const FunctionPrototype&, size_t upvalueCount);
 	Closure* createClosure(CallFrame& frame);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void executeConcat(CallFrame& frame, int destination, int left, int right);

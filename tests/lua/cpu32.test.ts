@@ -50,7 +50,7 @@ test(`${backend}: real scalar CPU opcodes transport Integer/Float words through 
 			const result: v.Value[]=[]; cpu.readCompletionValues(result);
 			assert.deepEqual(result,[expected],`${OPCODE_NAMES[op]} ${v.valueTag(a)}:${v.valuePayload(a)} ${v.valueTag(b)}:${v.valuePayload(b)}`);
 		}
-		if(backend===CpuExecutionBackend.JavaScript) assert.ok(owner.compiledCodeLookup?.find(closure.codeAddress,0), 'numeric cases must exercise installed generated regions');
+		if(backend===CpuExecutionBackend.JavaScript) assert.ok(owner.compiledCodeLookup?.find(closure.prototypeRecord.codeAddress,0), 'numeric cases must exercise installed generated regions');
 	}
 });
 test(`${backend}: operand faults retain their charge and do not publish a destination`, { skip: !runner }, () => {
@@ -129,7 +129,7 @@ test(`${backend}: started F64 transfers retain the format charge when address co
 			}
 			let generated = 0;
 			if (backend === CpuExecutionBackend.JavaScript) {
-				const page = owner.compiledCodeLookup!.find(closure.codeAddress, 0)!;
+				const page = owner.compiledCodeLookup!.find(closure.prototypeRecord.codeAddress, 0)!;
 				assert.ok(page.compiledBlocks);
 				for (const region of new Set(page.compiledBlocks.entries.filter(block => block !== null).map(block => block.region))) {
 					const execute = region.execute;

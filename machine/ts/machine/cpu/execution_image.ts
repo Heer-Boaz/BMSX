@@ -1,3 +1,4 @@
+import type { FunctionPrototype } from './closure';
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import type { MappedBusSignals } from '../memory/bus_signals';
@@ -82,17 +83,10 @@ export type Blua32ExecutionImage = {
 	compiledCodeLookup: CompiledCodeLookup | null;
 };
 
-export type Blua32FunctionRecordLatch = {
+export type Blua32FunctionRecordLatch = FunctionPrototype & {
 	image: Blua32ExecutionImage;
 	busSignals: MappedBusSignals;
 	cacheableRead: boolean;
-	address: number;
-	codeAddress: number;
-	numParams: number;
-	maxStack: number;
-	flags: number;
-	upvalueTableAddress: number;
-	upvalueCount: number;
 };
 
 export function createDecodedInstructionPage(

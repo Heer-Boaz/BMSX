@@ -205,8 +205,8 @@ export class SuspendedGuestSession {
 	public functionLocation(value: SuspendedGuestValue, target?: RuntimeFunctionLocationBuffer): RuntimeFunctionLocation | undefined {
 		if (valueTag(value) !== ValueTag.Closure) return undefined;
 		const closure = asClosure(value, this.cpu.gc);
-		const address = closure.functionAddress;
-		const domain = closure.executionDomainId;
+		const address = closure.prototypeRecord.functionAddress;
+		const domain = closure.prototypeRecord.executionDomainId;
 		if (target === undefined) return { domain, address };
 		target.domain = domain; target.address = address;
 		return target;

@@ -55,12 +55,12 @@ test('Hot Resume preserves a direct-entry record count independently of captured
 		staticClosure: true, upvalueDescs: [{ inStack: true, index: 0 }] }] });
 	const { cpu } = createTestSystemCpu(image);
 	const closure = cpu.activeThread.currentFrame!.closure;
-	assert.equal(closure.recordUpvalueCount, 1);
+	assert.equal(closure.prototypeRecord.recordUpvalueCount, 1);
 	assert.equal(closure.upvalues.length, 0);
 	const revisions = [identityHotResumeRevision(image.image), null, null] as const;
 	assert.doesNotThrow(() => buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth()));
 	applyHotResumeClosureRevision(cpu, revisions);
 	assert.equal(cpu.activeThread.currentFrame!.closure, closure);
-	assert.equal(closure.recordUpvalueCount, 1);
+	assert.equal(closure.prototypeRecord.recordUpvalueCount, 1);
 	assert.equal(closure.upvalues.length, 0);
 });

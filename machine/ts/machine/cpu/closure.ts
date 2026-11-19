@@ -27,19 +27,66 @@ export class Upvalue extends GcObject {
 
 export const EMPTY_CLOSURE_UPVALUES = new Uint32Array();
 
-export class Closure extends GcObject {
+export type FunctionPrototype = {
+	functionAddress: number;
+	codeAddress: number;
+	numParams: number;
+	maxStack: number;
+	flags: number;
+	upvalueTableAddress: number;
+	recordUpvalueCount: number;
+	executionDomainId: ExecutionDomainId;
+};
 
+export function sameFunctionPrototype(a: Readonly<FunctionPrototype>, b: Readonly<FunctionPrototype>): boolean {
+	return a.functionAddress === b.functionAddress && a.executionDomainId === b.executionDomainId
+		&& a.codeAddress === b.codeAddress && a.numParams === b.numParams && a.maxStack === b.maxStack
+		&& a.flags === b.flags && a.upvalueTableAddress === b.upvalueTableAddress
+		&& a.recordUpvalueCount === b.recordUpvalueCount;
+}
+
+type RetainedPrototype = Readonly<FunctionPrototype> & { retainedClosures: number };
+
+export class FunctionPrototypePool {
+	private readonly byAddress = new Map<number, RetainedPrototype[]>();
+
+	public retain(record: Readonly<FunctionPrototype>): Readonly<FunctionPrototype> {
+		let versions = this.byAddress.get(record.functionAddress);
+		if (versions === undefined) {
+			versions = [];
+			this.byAddress.set(record.functionAddress, versions);
+		} else {
+			for (let i = 0; i < versions.length; ++i) {
+				const existing = versions[i];
+				if (sameFunctionPrototype(existing, record)) {
+					++existing.retainedClosures;
+					return existing;
+				}
+			}
+		}
+		const prototype: RetainedPrototype = {
+			functionAddress: record.functionAddress, codeAddress: record.codeAddress, numParams: record.numParams,
+			maxStack: record.maxStack, flags: record.flags, upvalueTableAddress: record.upvalueTableAddress,
+			recordUpvalueCount: record.recordUpvalueCount, executionDomainId: record.executionDomainId, retainedClosures: 1,
+		};
+		versions.push(prototype);
+		return prototype;
+	}
+
+	public release(prototype: Readonly<FunctionPrototype>): void {
+		const retained = prototype as RetainedPrototype;
+		if (--retained.retainedClosures !== 0) return;
+		const versions = this.byAddress.get(retained.functionAddress)!;
+		versions.splice(versions.indexOf(retained), 1);
+		if (versions.length === 0) this.byAddress.delete(retained.functionAddress);
+	}
+}
+
+export class Closure extends GcObject {
 	public constructor(
-		public functionAddress: number,
+		public prototypeRecord: Readonly<FunctionPrototype>,
 		public upvalues: Uint32Array,
 		public heapBytes: number,
-		public codeAddress: number,
-		public numParams: number,
-		public maxStack: number,
-		public flags: number,
-		public upvalueTableAddress: number,
-		public executionDomainId: ExecutionDomainId,
-		public recordUpvalueCount: number,
 		public canonical: boolean,
 	) {
 		super(GcKind.Closure);

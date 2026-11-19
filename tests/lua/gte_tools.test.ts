@@ -152,7 +152,7 @@ test('GTE commands issued by an actual loaded RAM closure retain instruction ide
 	const chunk = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('ram_issue')!), cpu.gc);
 	// Firmware load accepts Lua syntax. Its genuine writable RAM closure can also
 	// execute raw memory instructions supplied through the central instruction ABI.
-	const codeAddress = cpu.memory.readMappedU32LE(chunk.functionAddress + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
+	const codeAddress = cpu.memory.readMappedU32LE(chunk.prototypeRecord.functionAddress + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
 	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE);
 	writeInstruction(code, 1, OpCode.RET, 0, 0, 0);
@@ -161,8 +161,8 @@ test('GTE commands issued by an actual loaded RAM closure retain instruction ide
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	assert.equal(gteHistory.count, 1);
 	const record = gteHistory.at(gteHistory.firstSequence);
-	assert.equal(chunk.executionDomainId, -1, 'the BIOS constructs this RAM closure');
-	assert.equal(record.domain, chunk.executionDomainId);
+	assert.equal(chunk.prototypeRecord.executionDomainId, -1, 'the BIOS constructs this RAM closure');
+	assert.equal(record.domain, chunk.prototypeRecord.executionDomainId);
 	assert.equal(record.pc, codeAddress);
 	assert.ok(record.pc! >= DYNAMIC_RAM_BASE && record.pc! < CART_ROM_BASE);
 	assert.equal(record.image, null, 'RAM execution does not borrow the installed cartridge image');

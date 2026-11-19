@@ -673,15 +673,15 @@ halt_until_irq`;
 		assert.strictEqual(correspondence.update(callback), cached);
 		assert.deepEqual(runtimeLuaFunctionSource(bridge.sources, guest, callback), location);
 		// Hot Resume changes physical call targets without replacing the allocation identity.
-		const closure = asClosure(callback, cpu.gc), oldAddress = closure.functionAddress;
-		closure.functionAddress = asClosure(guest.global('other_callback'), guest.cpu.gc).functionAddress;
+		const closure = asClosure(callback, cpu.gc), oldAddress = closure.prototypeRecord.functionAddress;
+		guest.cpu.gc.rebindClosurePrototype(closure, { ...closure.prototypeRecord, functionAddress: asClosure(guest.global('other_callback'), guest.cpu.gc).prototypeRecord.functionAddress });
 		assert.notStrictEqual(correspondence.update(callback), cached);
 		assert.deepEqual(correspondence.update(callback), runtimeLuaFunctionSource(bridge.sources, guest, callback));
 		// A mapped cartridge address does not imply a cartridge is installed on that bus.
-		closure.functionAddress = CART_ROM_BASE;
+		guest.cpu.gc.rebindClosurePrototype(closure, { ...closure.prototypeRecord, functionAddress: CART_ROM_BASE });
 		assert.equal(correspondence.update(callback), undefined);
 		assert.equal(runtimeLuaFunctionSource(bridge.sources, guest, callback), undefined);
-		closure.functionAddress = oldAddress;
+		guest.cpu.gc.rebindClosurePrototype(closure, { ...closure.prototypeRecord, functionAddress: oldAddress });
 		const restored = correspondence.update(callback);
 		bridge.sources.currentBlua32Media = { ...bridge.sources.currentBlua32Media };
 		assert.notStrictEqual(correspondence.update(callback), restored);
