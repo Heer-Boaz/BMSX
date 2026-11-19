@@ -53,13 +53,11 @@ for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as co
 	else assert.ok(values[0] === cpu.gc.tables.getInteger(tableAddressPayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!)), 1));
 });
 
-test('the mirrored CPU allocates a closure before its new upvalues and interns the same error prefix', () => {
+test('the mirrored CPU allocates a closure before its new upvalues', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource(`
 local root = {}
 return function() return root end
 `, 'snapshot-allocation-order.lua')));
-	assert.equal(cpu.stringPool.find('error in error handling'), 2);
-	assert.equal(cpu.stringPool.find('Attempted to get length of an unsupported value.'), 3);
 	cpu.runUntilDepth(0, 1000);
 	const state = cpu.captureRuntimeState();
 	const result = state.completionValues[0];
@@ -83,11 +81,11 @@ return {}, cached, dynamic
 	const { cpu } = createTestSystemCpu(image);
 	const anchor = cpu.captureRuntimeState();
 	const anchorRam = cpu.memory.captureSaveState();
-	const strings = cpu.stringPool.captureState();
+
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const expected = cpu.captureRuntimeState();
 	for (const budget of [1001, 2001, 4001, 8001]) {
-		cpu.stringPool.restoreState(strings);
+
 		cpu.memory.restoreSaveState(anchorRam);
 		cpu.restoreRuntimeState(anchor);
 		assert.deepEqual(cpu.captureRuntimeState(), anchor);
@@ -143,7 +141,7 @@ test('restore retains weak referents until the original allocation-triggered col
 	for (let index = 0; index < 17; index += 1) cpu.createTable(256, 0);
 	const ram = cpu.memory.captureSaveState();
 	const anchor = cpu.captureRuntimeState();
-	const strings = cpu.stringPool.captureState();
+
 	const allocateUntilCollected = (): number => {
 		const current = asTable(cpu.getGlobalByKey(weakKey), cpu.gc);
 		assert.ok(valueIsTable(current.records.getInteger(current.address, 1)));
@@ -156,7 +154,7 @@ test('restore retains weak referents until the original allocation-triggered col
 	const expectedCount = allocateUntilCollected();
 	const expected = cpu.captureRuntimeState();
 	for (let pass = 0; pass < 3; pass += 1) {
-		cpu.stringPool.restoreState(strings);
+
 		cpu.memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(anchor);
 		assert.deepEqual(cpu.captureRuntimeState(), anchor);

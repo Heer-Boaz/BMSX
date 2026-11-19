@@ -1,12 +1,19 @@
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND } from '../../machine/ts/spec/blua32/image_format';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { linkRawTestBlua32Pair } from '../helpers/blua32';
+import { cartridgeSlots } from '../helpers/cartridge';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 
 function createCpu(): CPU {
@@ -15,68 +22,44 @@ function createCpu(): CPU {
 }
 
 test('all byte values survive intern, indexing and snapshot restore', () => {
-	const pool = createCpu().stringPool;
+	const cpu = createCpu(), pool = cpu.stringPool;
 	for (const text of [Array.from({ length: 256 }, (_, code) => String.fromCharCode(code)).join(''),
 		...['Aé雪\0Z', 'β😀A🚀\0é', '😀', 'a'.repeat(4096), '雪'.repeat(65), 'β😀A🚀\0é'.repeat(23)].map(textToByteString)]) {
 		const id = pool.intern(text);
 		const expected = Array.from(text, char => char.charCodeAt(0));
-		const state = pool.captureState();
+		const state = cpu.memory.captureSaveState();
 		for (let index = expected.length - 1; index >= 0; index -= 1) {
 			assert.equal(pool.byteAt(id, index), expected[index]);
 		}
-		assert.deepEqual(pool.captureState(), state);
-		pool.restoreState(state);
+		assert.equal(cpu.memory.readRamRecordWord(id) & 0xff, BLUA32_STRING_RECORD_KIND);
+		assert.equal(cpu.memory.readRamRecordWord(id + 8), text.length);
+		cpu.memory.restoreSaveState(state);
 		for (let index = 0; index < expected.length; index += 1) {
 			assert.equal(pool.byteAt(id, index), expected[index]);
 		}
 	}
 });
 
-test('collection removes unreachable text from the intern index and snapshots without accumulating IDs', () => {
+test('collection removes unreachable records from all intern buckets and reuses the same capacity', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
-	const baselineBytes = cpu.collectTrackedHeapBytes(), baseline = pool.captureState();
 	const suffix = 'x'.repeat(512);
+	let steadyBytes = 0;
 	for (let round = 0; round < 8; round += 1) {
 		for (let index = 0; index < 128; index += 1) pool.intern(`garbage-${round}-${index}-${suffix}`);
-		assert.equal(cpu.collectTrackedHeapBytes(), baselineBytes);
-		assert.equal(pool.find(`garbage-${round}-0-${suffix}`), undefined);
-		assert.deepEqual(pool.captureState().entries, baseline.entries,
-			'actual text returns to the permanent CPU roots, not just the RAM counter');
-		assert.equal(pool.captureState().slots, baseline.slots + 128, 'vacant ID storage is reused, not accumulated each cycle');
-		assert.equal(pool.captureState().freeIds.length, 128);
+		const bytes = cpu.collectTrackedHeapBytes();
+		if (round === 0) steadyBytes = bytes;
+		assert.equal(bytes, steadyBytes);
+		for (let index = 0; index < 128; index += 1) assert.equal(pool.find(`garbage-${round}-${index}-${suffix}`), undefined);
 	}
 });
 
-test('untracked literals and empty strings are collectible; recycled slots publish new byte sequences', () => {
+test('empty strings are interned and then collected like non-empty records', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
-	const baselineTracked = pool.trackedLuaHeapBytes();
-	const old = pool.intern('retired literal', false);
 	const empty = pool.intern('');
+	assert.equal(pool.intern(''), empty);
+	assert.equal(pool.byteLength(empty), 0);
 	cpu.collectTrackedHeapBytes();
-	assert.equal(pool.find('retired literal'), undefined);
 	assert.equal(pool.find(''), undefined);
-	const replacement = pool.intern(textToByteString('β😀'));
-	assert.equal(replacement, empty, 'sweep returns freed IDs in directory order; the last returned slot is reused first');
-	assert.equal(pool.toString(replacement), 'β😀');
-	assert.equal(pool.byteLength(replacement), 6);
-	assert.equal(pool.byteAt(replacement, 0), 0xce);
-	assert.equal(pool.byteAt(replacement, 5), 0x80);
-	assert.equal(pool.trackedLuaHeapBytes(), baselineTracked + 6);
-	assert.equal(pool.intern('second replacement'), old);
-});
-
-test('promoting an existing untracked entry roots it across reservation-triggered collection', () => {
-	const cpu = createCpu(), pool = cpu.stringPool;
-	const text = 'an existing untracked entry';
-	const id = pool.intern(text, false);
-	const heap = cpu.luaHeap.captureState();
-	cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: 0 });
-	assert.equal(pool.intern(text), id);
-	assert.equal(pool.find(text), id);
-	assert.equal(pool.toString(id), text);
-	assert.equal(pool.captureState().entries.find(entry => entry.id === id)!.tracked, true);
-	cpu.collectTrackedHeapBytes();
-	assert.equal(pool.find(text), undefined, 'the reservation root ends with intern, not with the whole runtime');
 });
 
 test('nested materialization scopes retain newly returned IDs only through their owning phase', () => {
@@ -84,7 +67,7 @@ test('nested materialization scopes retain newly returned IDs only through their
 	pool.beginLocalRoots();
 	const outer = pool.intern('outer string');
 	pool.beginLocalRoots();
-	const inner = pool.intern('inner string', false);
+	const inner = pool.intern('inner string');
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.toString(outer), 'outer string');
 	assert.equal(pool.toString(inner), 'inner string');
@@ -97,29 +80,30 @@ test('nested materialization scopes retain newly returned IDs only through their
 	assert.equal(pool.find('outer string'), undefined);
 });
 
-test('sparse snapshots reproduce the canonical free-ID order after partial reuse', () => {
+test('RAM restore replays string allocation after partial reuse', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	pool.beginLocalRoots();
 	pool.intern('left anchor');
 	pool.beginLocalRoots();
-	const holes = [pool.intern('hole one'), pool.intern('hole two'), pool.intern('hole three')];
+	for (const text of ['hole one', 'hole two', 'hole three']) pool.intern(text);
 	pool.endLocalRoots();
-	const right = pool.intern('right anchor');
+	pool.intern('right anchor');
 	cpu.collectTrackedHeapBytes();
-	assert.equal(pool.intern('partially reused'), holes[2]);
+	pool.intern('partially reused');
 	pool.endLocalRoots();
-	const snapshot = pool.captureState();
-	const future = [pool.intern('future one'), pool.intern('future two'), pool.intern('future three')];
-	assert.deepEqual(future, [holes[1], holes[0], right + 1]);
-	const expected = pool.captureState();
-	pool.restoreState(snapshot);
-	assert.deepEqual([pool.intern('future one'), pool.intern('future two'), pool.intern('future three')], future);
-	assert.deepEqual(pool.captureState(), expected);
+	const state = cpu.luaHeap.captureState(), ram = cpu.memory.captureSaveState();
+	const names = ['future one', 'future two', 'future three'];
+	const expected = names.map(text => pool.intern(text));
+	const expectedRam = cpu.memory.captureSaveState();
+	cpu.memory.restoreSaveState(ram);
+	cpu.luaHeap.restoreState(state);
+	assert.deepEqual(names.map(text => pool.intern(text)), expected);
+	assert.deepEqual(cpu.memory.captureSaveState(), expectedRam);
 });
 
 test('reusing an unreachable deleted string-key ID cannot resurrect its old mapping', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
-	const root = pool.intern('table root', false), table = cpu.createTable(0, 8);
+	const root = pool.intern('table root'), table = cpu.createTable(0, 8);
 	cpu.setGlobalByKey(root, valueTable(cpu.gc.reference(table)));
 	const removed = pool.intern('removed key');
 	table.records.setStringKey(table.address, removed, valueInteger(19));
@@ -129,7 +113,6 @@ test('reusing an unreachable deleted string-key ID cannot resurrect its old mapp
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.find('removed key'), undefined);
 	const replacement = pool.intern('replacement key');
-	assert.equal(replacement, removed);
 	assert.equal(table.records.getStringKey(table.address, replacement), valueNil());
 	table.records.setStringKey(table.address, replacement, valueInteger(29));
 	assert.equal(table.records.get(table.address, valueString(replacement)), valueInteger(29));
@@ -147,17 +130,49 @@ test('reusing an unreachable deleted string-key ID cannot resurrect its old mapp
 test('long byte strings are reclaimed before an ID is reused', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	cpu.collectTrackedHeapBytes();
-	const baseline = pool.trackedLuaHeapBytes();
+	const baseline = cpu.luaHeap.usedBytes();
 	const text = textToByteString('β😀A🚀\0é'.repeat(23));
 	const old = pool.intern(text);
-	assert.equal(pool.trackedLuaHeapBytes(), baseline + 14 * 23, 'only payload bytes are charged');
+	assert.equal(cpu.luaHeap.usedBytes(), baseline + heapAllocationBytes(BLUA32_STRING_RECORD_HEADER_SIZE + text.length));
 	assert.equal(pool.byteAt(old, 128), text.charCodeAt(128));
 	cpu.collectTrackedHeapBytes();
-	assert.equal(pool.trackedLuaHeapBytes(), baseline);
+	assert.equal(cpu.luaHeap.usedBytes(), baseline);
+	assert.equal(pool.find(text), undefined);
 	const id = pool.intern(textToByteString('😀'.repeat(65)));
-	assert.equal(id, old);
 	assert.equal(pool.byteAt(id, 64), 0xf0);
 	cpu.collectTrackedHeapBytes();
-	assert.equal(pool.intern('ascii'), old);
-	assert.equal(pool.byteAt(old, 4), 105);
+	assert.equal(pool.byteAt(pool.intern('ascii'), 4), 105);
+});
+
+test('activation interns matching bytes across RAM and ROM sockets in activation order', () => {
+	const text = new Uint8Array(4), functions = [{ firstWord: 0, wordCount: 1 }];
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const system = { text, functions, constants: ['system key'] };
+	const first = linkRawTestBlua32Pair(system, { text, functions, constants: ['two sockets', 'system key', 'first only'] });
+	const second = linkRawTestBlua32Pair(system, { text, functions, constants: ['two sockets', 'existing RAM', 'second only'] });
+	const memory = new Memory({ systemRom: first.systemRomBytes, cartridgeSlots: cartridgeSlots(first.cartRomBytes, second.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory)), pool = cpu.stringPool;
+	cpu.reset();
+	const bios = pool.find('system key'), ram = pool.intern('existing RAM');
+	cpu.writeFrameExecution(0, 1, second.cartImage.functions[0].address, second.cartImage.header.textAddress);
+	const socket1 = pool.find('two sockets')!;
+	assert.equal(socket1 >>> 31, 1, 'the first activated cartridge is socket 1');
+	assert.equal(pool.find('existing RAM'), ram);
+	cpu.writeFrameExecution(0, 0, first.cartImage.functions[0].address, first.cartImage.header.textAddress);
+	assert.equal(pool.intern('two sockets'), socket1);
+	assert.equal(pool.intern('system key'), bios);
+	assert.equal(pool.find('first only')! >>> 31, 0);
+	assert.equal(pool.find('second only')! >>> 31, 1);
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, first.systemImage.functions[0].address, first.systemImage.header.textAddress);
+
+	// Restoring a checkpoint during collection must not publish a new table
+	// or mark a RAM record merely by rebuilding the decoded image.
+	cpu.gc.step();
+	const checkpoint = cpu.captureRuntimeState(), state = memory.captureSaveState();
+	cpu.gc.collect();
+	memory.restoreSaveState(state);
+	cpu.restoreRuntimeState(checkpoint);
+	assert.deepEqual(memory.captureSaveState(), state);
+	assert.equal(pool.intern('two sockets'), socket1);
+	assert.equal(pool.intern('existing RAM'), ram);
 });

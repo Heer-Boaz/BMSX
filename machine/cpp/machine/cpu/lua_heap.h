@@ -45,7 +45,6 @@ public:
 	// Completed table-storage work consumes the current run's transient grant.
 	void accountTableStorageWork(size_t valueSlots);
 	void release(size_t byteCount) { m_trackedBytes -= byteCount; }
-	void adjustForRestore(size_t previousBytes, size_t restoredBytes);
 	void finishCollection();
 	size_t usedBytes() const { return m_trackedBytes; }
 	size_t capacity() const;

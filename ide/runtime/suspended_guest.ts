@@ -26,7 +26,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 
 export type SuspendedGuestValue = Value;
-/** Owned semantic identity within one physical heap; StringIds are collectible intern slots. */
+/** Owned semantic identity within one physical heap; RAM String addresses can be reused. */
 export type SuspendedValueIdentity =
 	| { readonly tag: ValueTag.String; readonly scalar: string }
 	| { readonly tag: Exclude<ValueTag, ValueTag.String>; readonly scalar: number };
@@ -128,13 +128,13 @@ export class SuspendedGuestSession {
 	public identity(value: Value): SuspendedValueIdentity {
 		const tag = valueTag(value);
 		return tag === ValueTag.String
-			? { tag, scalar: this.stringText(value) }
+			? { tag, scalar: this.stringPool.bytes(asStringId(value)) }
 			: { tag, scalar: this.identityScalar(value, tag) };
 	}
 	public matchesIdentity(value: Value, identity: SuspendedValueIdentity): boolean {
 		return valueTag(value) === identity.tag && this.identityScalar(value, identity.tag) === identity.scalar;
 	}
-	/** Strings retain text; reference selection uses a lifetime ordinal, not a guest hash or address. */
+	/** Strings retain their bytes; reference selection uses a lifetime ordinal, not a guest hash or address. */
 	public identityScalar(value: Value, tag: Exclude<ValueTag, ValueTag.String>): number;
 	public identityScalar(value: Value, tag: ValueTag): number | string;
 	public identityScalar(value: Value, tag: ValueTag): number | string {
@@ -142,9 +142,10 @@ export class SuspendedGuestSession {
 			case ValueTag.Nil: case ValueTag.False: case ValueTag.True: return 0;
 			case ValueTag.Integer: return asInteger(value);
 			case ValueTag.Float: case ValueTag.BuiltinFunction: return valuePayload(value);
-			case ValueTag.String: return this.stringPool.toString(asStringId(value));
+			case ValueTag.String: return this.stringPool.bytes(asStringId(value));
 			case ValueTag.Table: return asTable(value, this.cpu.gc).hashId;
-			case ValueTag.Closure: case ValueTag.Thread: return this.cpu.gc.object(valuePayload(value)).hashId;
+			case ValueTag.Closure: return asClosure(value, this.cpu.gc).hashId;
+			case ValueTag.Thread: return this.cpu.gc.object(valuePayload(value)).hashId;
 			default: throw new Error('Internal table metadata is not a language value.');
 		}
 	}

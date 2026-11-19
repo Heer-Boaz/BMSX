@@ -72,7 +72,6 @@ MachineSaveState captureMachineSaveState(Machine& machine, MachineSaveState stor
 	storage.geometry = machine.geometryController.captureState();
 	storage.gxGte = machine.gxGte.captureState();
 	storage.irq = machine.irqController.captureState();
-	storage.stringPool = machine.cpu.stringPool().captureState();
 	storage.input = machine.inputController.captureState();
 	storage.imgDec = machine.imgDecController.captureState();
 	storage.systemDebugTransmit = machine.systemDebugTransmit.captureState();
@@ -82,7 +81,6 @@ MachineSaveState captureMachineSaveState(Machine& machine, MachineSaveState stor
 
 void restoreMachineSaveState(Machine& machine, const MachineSaveState& state) {
 	machine.memory.restoreSaveState(state.memory);
-	machine.cpu.stringPool().restoreState(state.stringPool);
 	restoreSharedDeviceState(machine, state.cartridge, state.dma, state.geometry, state.irq, state.audio, state.input);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
 	machine.imgDecController.restoreState(state.imgDec);

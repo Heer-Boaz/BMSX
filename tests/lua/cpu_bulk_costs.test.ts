@@ -1,5 +1,6 @@
-import { utf8ByteLength } from '../../machine/ts/common/utf8';
-import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
+import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
@@ -219,7 +220,7 @@ return true`, 3);
    const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 },
     { firstWord: 32, wordCount: 1 }], exceptionFunctionIndex: 1 });
    const { cpu } = createTestSystemCpu(image, backend);
-   const frame = cpu.rootThread.currentFrame!, r = frame.registers;
+   let frame = cpu.rootThread.currentFrame!, r = frame.registers;
    const entry = image.image.functions[0].codeAddress;
    r.setTable(0, cpu.gc.reference(cpu.createTable(0, 1))); r.set(1, valueString(cpu.stringPool.intern('warm'))); r.setInteger(2, 73);
    cpu.runUntilDepth(0, 10000);
@@ -230,9 +231,9 @@ return true`, 3);
    const other = valueString(cpu.stringPool.intern('other'));
    const array = scenario === 'array-growth' ? 2 : scenario === 'array-to-hash' ? 8 : scenario === 'mixed' ? 4 : 0;
    const hash = scenario === 'hash-to-array' || scenario === 'mixed' || scenario === 'same-capacity' || scenario === 'weak-collection' ? 2 : scenario === 'failed-growth' ? 1024 : 0;
-   const table = cpu.createTable(array, hash);
+   let table = cpu.createTable(array, hash);
    r.setTable(0, cpu.gc.reference(table)); r.setInteger(2, 73); frame.top = 5;
-   let surcharge: number, capacity: number, retainedSlots = 0;
+   let surcharge: number, capacity: number;
    if (scenario === 'array-growth') {
     table.records.setInteger(table.address, 1, valueInteger(11)); table.records.setInteger(table.address, 2, valueInteger(22)); r.setInteger(1, 3);
     surcharge = 10; capacity = 4;
@@ -255,28 +256,28 @@ return true`, 3);
     mode.records.setStringKey(mode.address, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v'))); table.metatable = mode;
     table.records.set(table.address, field, valueTable(cpu.gc.reference(cpu.createTable()))); table.records.set(table.address, other, valueTable(cpu.gc.reference(cpu.createTable())));
     r.set(1, valueString(cpu.stringPool.intern('third')));
-    const heap = cpu.luaHeap.captureState();
-    cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
-    cpu.stringPool.intern('g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 16));
+    while (cpu.captureRuntimeState().gc.phase !== GcPhase.Atomic) cpu.gc.step();
+    const trackedBytes = cpu.luaHeap.usedBytes();
+    cpu.luaHeap.restoreState({ trackedBytes, nextCollectionBytes: trackedBytes });
     surcharge = 16; capacity = 4;
    } else {
     for (let i = 0; i < 1024; ++i) table.records.set(table.address, valueFloat(i + 0.5), valueInteger(i));
     r.setFloat(1, 1024.5);
-    retainedSlots = ((cpu.luaHeap.capacity() - cpu.luaHeap.usedBytes() - 4 * 4096) / 5) | 0;
+    const retainedSlots = ((cpu.luaHeap.capacity() - cpu.luaHeap.usedBytes() - 20 * HEAP_PAGE_SIZE) / 5) | 0;
     r.setTable(4, cpu.gc.reference(cpu.createTable(retainedSlots)));
-    cpu.collectTrackedHeapBytes(); // Isolate failed admission from any preceding assist cycle.
+    cpu.collectTrackedHeapBytes();
+    cpu.luaHeap.restoreState({ trackedBytes: cpu.luaHeap.usedBytes(), nextCollectionBytes: cpu.luaHeap.capacity() });
+    // Claim all remaining page runs so the live table has no contiguous
+    // replacement backing even after the emergency collection.
+    while (cpu.heapAllocator.allocate(HEAP_PAGE_SIZE, true) !== 0) { /* fixture-owned RAM */ }
     surcharge = 2048; capacity = 1024;
    }
    let gcCycles = 0;
    if (scenario === 'weak-collection' || scenario === 'failed-growth') {
-    const strings = cpu.stringPool.captureState();
-    const stringWork = strings.slots + strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
-    // Weak case: Thread104 + Closure(3+1) + 41 weak Table + 11 metatable + 3 dead Table visits.
-    // Strong case: all objects scan and sweep, with two extra Thread remarks.
-    gcCycles = stringWork + (scenario === 'weak-collection' ? 163
-      : 4 * ceilDiv4(64 + 5 * cpu.rootThread.stackRegisters.capacity()) + 3 + 1
-       + (8 + 2 * 1024)
-       + (8 + retainedSlots) + 3);
+    const before = captureCpuCheckpoint(cpu);
+    gcCycles = scenario === 'weak-collection' ? cpu.gc.step() : cpu.gc.collect();
+    restoreCpuCheckpoint(cpu, before);
+    frame = cpu.rootThread.currentFrame!; r = frame.registers; table = r.getTable(0, cpu.gc);
    }
    const key = r.get(1);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);

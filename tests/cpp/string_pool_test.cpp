@@ -1,5 +1,6 @@
 #include "machine/cpu/cpu.h"
-#include "common/utf8.h"
+#include "machine/cpu/heap_allocator.h"
+#include "spec/blua32/image_format.h"
 #include "machine/cpu/lua_heap.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
@@ -24,15 +25,6 @@ void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
 
-void requireSameSnapshot(const StringPoolState& actual, const StringPoolState& expected) {
-	require(actual.entries.size() == expected.entries.size(), "snapshot contains only allocated string entries");
-	for (size_t index = 0; index < actual.entries.size(); ++index) {
-		const auto& a = actual.entries[index];
-		const auto& b = expected.entries[index];
-		require(a.id == b.id && a.value == b.value && a.tracked == b.tracked, "snapshot preserves IDs, text and RAM ownership");
-	}
-}
-
 struct PoolMachine {
 	Memory memory{MemoryInit{}, PSX_MACHINE_SPEC.ramBytes};
 	IrqController irq{memory};
@@ -51,83 +43,60 @@ void indexBytesAcrossRestore() {
 		std::string("β😀A🚀\0é", 14), std::string("😀"), std::string(4096, 'a'), unicode}) {
 		const auto id = pool.intern(text);
 		require(pool.byteLength(id) == static_cast<int>(text.size()), "the byte count includes zero and invalid UTF-8");
-		const auto state = pool.captureState();
+		const auto state = machine.memory.captureSaveState();
 		for (size_t index = text.size(); index > 0; --index) {
 			require(pool.byteAt(id, index - 1u) == static_cast<u8>(text[index - 1u]), "indexing preserves exact bytes");
 		}
-		requireSameSnapshot(pool.captureState(), state);
-		pool.restoreState(state);
+		require((machine.memory.readRamRecordWord(id) & 0xffu) == BLUA32_STRING_RECORD_KIND, "payload addresses a physical String");
+		require(machine.memory.readRamRecordWord(id + 8u) == text.size(), "record length is exact");
+		machine.memory.restoreSaveState(state);
 		for (size_t index = 0; index < text.size(); ++index) {
 			require(pool.byteAt(id, index) == static_cast<u8>(text[index]), "indexing survives snapshot restore");
 		}
 	}
 }
 
-void reclaimTextAndSnapshotStorage() {
+void reclaimUnreachableRecords() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
 	auto& pool = cpu.stringPool();
-	cpu.collectHeap();
-	const auto baselineBytes = cpu.luaHeap().usedBytes();
-	const auto baseline = pool.captureState();
 	const std::string suffix(512, 'x');
+	size_t steadyBytes = 0;
 	for (int round = 0; round < 8; ++round) {
 		for (int index = 0; index < 128; ++index) pool.intern("garbage-" + std::to_string(round) + "-" + std::to_string(index) + "-" + suffix);
 		cpu.collectHeap();
-		require(cpu.luaHeap().usedBytes() == baselineBytes, "collection releases the actual RAM debit");
-		require(!pool.find("garbage-" + std::to_string(round) + "-0-" + suffix), "unreachable text leaves the intern index");
-		requireSameSnapshot(pool.captureState(), baseline);
+		if (round == 0) steadyBytes = cpu.luaHeap().usedBytes();
+		require(cpu.luaHeap().usedBytes() == steadyBytes, "the heap returns to its steady bucket capacity");
+		for (int index = 0; index < 128; ++index) require(!pool.find("garbage-" + std::to_string(round) + "-" + std::to_string(index) + "-" + suffix), "unreachable String leaves its bucket");
 	}
 }
 
-void recycleBytesAndUntrackedStrings() {
+void collectEmptyString() {
 	PoolMachine machine;
-	auto& cpu = machine.cpu;
-	auto& pool = cpu.stringPool();
-	const auto baselineTracked = pool.trackedLuaHeapBytes();
-	const auto old = pool.intern("retired literal", false);
+	auto& pool = machine.cpu.stringPool();
 	const auto empty = pool.intern("");
-	cpu.collectHeap();
-	require(!pool.find("retired literal") && !pool.find(""), "ROM accounting and empty payloads do not imply immortality");
-	const auto replacement = pool.intern("β😀");
-	require(replacement == empty, "sweep returns directory IDs in order, reused in LIFO order");
-	require(pool.toString(replacement) == "β😀" && pool.byteLength(replacement) == 6, "recycled slots publish the new byte sequence");
-	require(pool.byteAt(replacement, 0) == 0xceu && pool.byteAt(replacement, 5) == 0x80u, "recycled IDs index the new content");
-	require(pool.trackedLuaHeapBytes() == baselineTracked + 6, "new runtime text owns its actual UTF-8 payload bytes");
-	require(pool.intern("second replacement") == old, "other vacant IDs are reused before extending the directory");
+	require(pool.intern("") == empty && pool.byteLength(empty) == 0u, "empty bytes have a canonical live String record");
+	machine.cpu.collectHeap();
+	require(!pool.find(""), "a RAM record with no suffix is still collectible");
 }
 
 void reclaimLongByteStrings() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu; auto& pool = cpu.stringPool();
 	cpu.collectHeap();
-	const auto baseline = pool.trackedLuaHeapBytes();
+	const auto baseline = cpu.luaHeap().usedBytes();
 	std::string text;
 	for (int i = 0; i < 23; ++i) text += std::string("β😀A🚀\0é", 14);
 	const auto old = pool.intern(text);
-	require(pool.trackedLuaHeapBytes() == baseline + 14 * 23, "only payload bytes are charged");
+	require(cpu.luaHeap().usedBytes() == baseline + heapAllocationBytes(BLUA32_STRING_RECORD_HEADER_SIZE + text.size()), "the complete record allocation is charged");
 	require(pool.byteAt(old, 128) == static_cast<u8>(text[128]), "long indexes address the exact byte");
 	cpu.collectHeap();
-	require(pool.trackedLuaHeapBytes() == baseline, "GC releases the long Unicode payload");
+	require(cpu.luaHeap().usedBytes() == baseline, "GC releases the long Unicode payload");
 	text.clear(); for (int i = 0; i < 65; ++i) text += "😀";
 	const auto id = pool.intern(text);
-	require(id == old && pool.byteAt(id, 64) == 0xf0, "reused IDs publish replacement bytes");
+	require(pool.byteAt(id, 64) == 0xf0, "subsequent allocation publishes replacement bytes");
 	cpu.collectHeap();
-	require(pool.intern("ascii") == old && pool.byteAt(old, 4) == 'i', "short replacement publishes its own bytes");
-}
-
-void promoteAcrossReservationCollection() {
-	PoolMachine machine;
-	auto& cpu = machine.cpu;
-	auto& pool = cpu.stringPool();
-	const std::string text = "an existing untracked entry";
-	const auto id = pool.intern(text, false);
-	const auto heap = cpu.luaHeap().captureState();
-	cpu.luaHeap().restoreState({heap.trackedBytes, 0});
-	require(pool.intern(text) == id && pool.find(text) == id, "intern roots an existing entry before collection can free it");
-	require(pool.toString(id) == text, "the existing native entry survives the reserve call");
-	cpu.collectHeap();
-	require(!pool.find(text), "the reservation root expires when intern returns");
+	require(pool.byteAt(pool.intern("ascii"), 4) == 'i', "short replacement publishes its own bytes");
 }
 
 void retainNestedMaterializationRoots() {
@@ -140,7 +109,7 @@ void retainNestedMaterializationRoots() {
 		outerId = pool.intern("outer string");
 		{
 			auto inner = cpu.acquireLocalRoots();
-			const auto innerId = pool.intern("inner string", false);
+			const auto innerId = pool.intern("inner string");
 			cpu.collectHeap();
 			require(pool.toString(outerId) == "outer string" && pool.toString(innerId) == "inner string", "nested scopes retain their own returned IDs");
 		}
@@ -163,26 +132,27 @@ void replaySparseAllocationOrder() {
 	pool.beginLocalRoots();
 	pool.intern("left anchor");
 	pool.beginLocalRoots();
-	const std::array holes{pool.intern("hole one"), pool.intern("hole two"), pool.intern("hole three")};
+	for (const auto text : {"hole one", "hole two", "hole three"}) pool.intern(text);
 	pool.endLocalRoots();
-	const auto right = pool.intern("right anchor");
+	pool.intern("right anchor");
 	cpu.collectHeap();
-	require(pool.intern("partially reused") == holes[2], "the canonical allocator consumes the highest vacant ID first");
+	pool.intern("partially reused");
 	pool.endLocalRoots();
-	const auto snapshot = pool.captureState();
+	const auto checkpoint = cpu.luaHeap().captureState();
+	const auto ram = machine.memory.captureSaveState();
 	const std::array future{pool.intern("future one"), pool.intern("future two"), pool.intern("future three")};
-	require(future == std::array{holes[1], holes[0], right + 1}, "partial reuse leaves canonical holes followed by append storage");
-	const auto expected = pool.captureState();
-	pool.restoreState(snapshot);
-	require(std::array{pool.intern("future one"), pool.intern("future two"), pool.intern("future three")} == future, "sparse restore reproduces the next allocation IDs");
-	requireSameSnapshot(pool.captureState(), expected);
+	const auto expected = machine.memory.captureSaveState();
+	machine.memory.restoreSaveState(ram);
+	cpu.luaHeap().restoreState(checkpoint);
+	require(std::array{pool.intern("future one"), pool.intern("future two"), pool.intern("future three")} == future, "restore reproduces the next physical addresses");
+	require(machine.memory.captureSaveState().ram == expected.ram, "restore reproduces the same String data and allocator state");
 }
 
 void reuseDeletedStringKeyId() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
 	auto& pool = cpu.stringPool();
-	const auto root = pool.intern("table root", false);
+	const auto root = pool.intern("table root");
 	auto* table = cpu.createTable(0, 8);
 	cpu.setGlobalByKey(root, valueTable(cpu.gcHeap().reference(table)));
 	const auto removed = pool.intern("removed key");
@@ -193,7 +163,7 @@ void reuseDeletedStringKeyId() {
 	cpu.collectHeap();
 	require(!pool.find("removed key"), "dead hash nodes do not own their former string text");
 	const auto replacement = pool.intern("replacement key");
-	require(replacement == removed && isNil(table->getStringKey(replacement)), "recycled IDs do not resurrect removed mappings");
+	require(isNil(table->getStringKey(replacement)), "recycled IDs do not resurrect removed mappings");
 	table->setStringKey(replacement, valueInteger(29));
 	require(table->getStringKey(replacement) == valueInteger(29) && table->getStringKey(retained) == valueInteger(23), "a new mapping coexists with retained keys");
 	Value key = valueNil(), value = valueNil();
@@ -251,10 +221,9 @@ void admitExternalArgumentsAcrossStackGrowth() {
 int main() {
 	try {
 		indexBytesAcrossRestore();
-		reclaimTextAndSnapshotStorage();
-		recycleBytesAndUntrackedStrings();
+		reclaimUnreachableRecords();
+		collectEmptyString();
 		reclaimLongByteStrings();
-		promoteAcrossReservationCollection();
 		retainNestedMaterializationRoots();
 		replaySparseAllocationOrder();
 		reuseDeletedStringKeyId();

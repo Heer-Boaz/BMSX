@@ -58,9 +58,9 @@ return exercise(0)
 	assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(10000)]);
 	const heap = cpu.collectTrackedHeapBytes(), globals = cpu.globalSlotCount;
-	const strings = cpu.stringPool.captureState(), saved = cpu.captureRuntimeState();
+	const ram = cpu.memory.captureSaveState(), saved = cpu.captureRuntimeState();
 	for (let iteration = 0; iteration < 2; iteration++) {
-		cpu.stringPool.restoreState(strings); cpu.restoreRuntimeState(saved);
+		cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(saved);
 		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(name), cpu.gc));
 		assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(20000)]);

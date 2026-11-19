@@ -1,3 +1,4 @@
+import { textToByteString } from '../../machine/ts/common/byte_string';
 import { RuntimeInstructionObservers } from '../../ide/runtime/instruction_observers';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
@@ -155,21 +156,20 @@ test('numeric snapshots preserve Integer/Float tags and every IEEE bit across JS
 	assert.deepEqual(JSON.parse(JSON.stringify(captured)), captured);
 });
 
-test('string snapshots retain exact UTF-16 units across pool restore and scratch reuse', () => {
+test('string snapshots retain decoded bytes across RAM restore and scratch reuse', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
-	const pool = cpu.stringPool, saved = pool.captureState();
+	const pool = cpu.stringPool, saved = cpu.memory.captureSaveState();
 	const reader = new GuestValueSnapshot(pool, cpu.gc), values = new ValueSlots(1);
-	// Neither UTF-8 nor TextDecoder roundtrips preserve all of these code units.
-	const text = '\uFEFF\0\uD800z\uDC00\uD83D\uDE80é\r\n';
+	const text = '\uFEFF\0z\uD83D\uDE80é\r\n';
 	reader.begin();
-	values.setString(0, pool.intern(text));
+	values.setString(0, pool.intern(textToByteString(text)));
 	const complete = reader.read(values, 0);
 	const remaining = VALUE_SNAPSHOT_CHARACTERS - text.length;
-	values.setString(0, pool.intern('x'.repeat(remaining - 1) + '\uD83D\uDE80'));
+	values.setString(0, pool.intern(textToByteString('x'.repeat(remaining - 1) + '\uD83D\uDE80')));
 	const truncated = reader.read(values, 0);
 	const exhausted = reader.read(values, 0);
 	values.clear(1);
-	pool.restoreState(saved);
+	cpu.memory.restoreSaveState(saved);
 	reader.begin();
 	values.setString(0, pool.intern('new value'));
 	reader.read(values, 0);

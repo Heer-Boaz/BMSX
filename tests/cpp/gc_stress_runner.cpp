@@ -57,9 +57,9 @@ int main(int argc, char** argv) {
 			result = cpu.runUntilDepth(0, call % 3 == 0 ? 1 : call % 3 == 1 ? 17 : 2048);
 			if (cpu.readExceptionReturnFrameDepth() != -1) throw std::runtime_error("unexpected guest fault during GC stress");
 			if (restore && call % 23 == 0) {
-				const auto strings = cpu.stringPool().captureState();
+				const auto ram = cpu.memory().captureSaveState();
 				const auto state = cpu.captureRuntimeState();
-				cpu.stringPool().restoreState(strings);
+				cpu.memory().restoreSaveState(ram);
 				cpu.restoreRuntimeState(state);
 				if (!std::ranges::equal(cpu.captureRuntimeState().snapshot.words(), state.snapshot.words()))
 					throw std::runtime_error("GC stress snapshot round trip changed values");

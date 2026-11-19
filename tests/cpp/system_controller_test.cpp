@@ -710,8 +710,8 @@ void testUnexecutedSecondCartridgeDoesNotAlterGuestIdentity() {
 	bmsx::CPU& singleCpu = single.runtime.machine.cpu;
 	bmsx::CPU& dualCpu = dual.runtime.machine.cpu;
 	require(
-		singleCpu.stringPool().intern("post-boot-probe", false)
-			== dualCpu.stringPool().intern("post-boot-probe", false),
+		singleCpu.stringPool().intern("post-boot-probe")
+			== dualCpu.stringPool().intern("post-boot-probe"),
 		"an unexecuted second cartridge does not allocate guest string ids"
 	);
 	require(

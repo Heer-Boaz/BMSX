@@ -715,11 +715,9 @@ void returnGrowthCollection() {
 		callee->registers.set(0, result);
 		callee->top = 1;
 		const auto heap = machine.cpu.luaHeap().captureState();
-		machine.cpu.luaHeap().restoreState({heap.trackedBytes, machine.cpu.luaHeap().capacity()});
-		const std::string garbage(machine.cpu.luaHeap().capacity() - heap.trackedBytes - 1, 'g');
-		machine.cpu.stringPool().intern(garbage);
+		machine.cpu.luaHeap().restoreState({heap.trackedBytes, heap.trackedBytes});
 		require(machine.cpu.runUntilDepth(1, 100) == RunResult::Halted, "return stops at the caller depth after growing its window");
-		require(!machine.cpu.stringPool().find(garbage), "return window growth actually triggers collection");
+		require(machine.cpu.collecting(), "return window growth triggers an allocation assist");
 		require(machine.cpu.stringPool().find("retained-only-by-returning-frame") == asStringId(result)
 			&& caller->registers.get(0) == result && caller->stackCapacity == 64 && caller->top == 62,
 			"return values remain rooted across collection and caller/callee window relocation");
@@ -827,7 +825,8 @@ void protectedReturnPlacementCycles() {
 		// The failed success-range admission is followed by protected error-range admission, which also fails.
 		// Both emergency collections scan/reclaim the compact five-byte stack slots.
 		// Completing the inner return drops its closure before the first scan: three fewer mark words.
-		const int gcCycles = fault ? (failFirst ? 284 : 281) : 0;
+		// Each collection also visits 16 intern buckets and marks/visits the 14 RAM roots.
+		const int gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14) : 0;
 		bool rejected = false;
 		try { require(machine.cpu.runUntilDepth(1, 2) == RunResult::Halted, "protected return completes at caller"); }
 		catch (const LuaOutOfMemorySignal&) { rejected = true; }
@@ -1137,15 +1136,13 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.runUntilDepth(0, 1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
 		const auto heap = machine->cpu.luaHeap().captureState();
-		machine->cpu.luaHeap().restoreState({heap.trackedBytes, machine->cpu.luaHeap().capacity()});
-		const std::string garbage(machine->cpu.luaHeap().capacity() - heap.trackedBytes - 1, 'g');
-		machine->cpu.stringPool().intern(garbage);
+		machine->cpu.luaHeap().restoreState({heap.trackedBytes, heap.trackedBytes});
 		require(machine->cpu.runUntilDepth(0, callPrefix) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 2,
 			"the allocation assist completes CALL but not a callee instruction in its exhausted grant");
 		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.activeThread()->frameDepth == 1
 			&& machine->cpu.activeThread()->stackCapacity > capacity && machine->cpu.readFrameRegister(0, 4) == valueInteger(7),
 			"a hot call relocates the stack before a hot callee and return use the new register bases");
-		require(!machine->cpu.stringPool().find(garbage), "callee stack growth actually collects unrooted pressure data");
+		require(machine->cpu.collecting(), "callee stack growth triggers an allocation assist");
 		require(machine->cpu.activeThread()->currentFrame == caller && caller->next == spare,
 			"collection during call preparation preserves the inactive callee and active caller identities");
 	}

@@ -1,4 +1,3 @@
-import { byteStringFromBytes } from '../../common/byte_string';
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
 import { GcHeap, type GcState } from './gc_heap';
 import { GarbageAllocation, GcKind } from './gc_object';
@@ -86,11 +85,8 @@ import {
 	BLUA32_IMAGE_MAGIC_OFFSET,
 	BLUA32_IMAGE_VERSION,
 	BLUA32_IMAGE_VERSION_OFFSET,
-	BLUA32_STRING_RECORD_ALIGNMENT,
-	BLUA32_STRING_RECORD_HEADER_SIZE,
-	BLUA32_STRING_RECORD_KIND,
-	BLUA32_STRING_RECORD_ROM_FLAG,
-	BLUA32_STRING_LENGTH_OFFSET,
+	BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET,
+	BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_UPVALUE_INDEX_MASK,
@@ -405,7 +401,7 @@ export class CPU implements MappedPageInvalidator {
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
 		this.luaHeap = new LuaHeap(this);
-		this.stringPool = new StringPool(this.luaHeap);
+		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES);
 		this.rootThread.hashId = this.allocateObjectHashId();
 		this.rootThread.status = ThreadStatus.Running;
@@ -413,18 +409,18 @@ export class CPU implements MappedPageInvalidator {
 		this.modeKey = this.stringPool.intern('__mode');
 		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator, this.modeKey);
 		this.gc.track(this.rootThread);
-		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling', false);
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_UNKNOWN] = this.stringPool.intern('Attempted to get length of an unsupported value.', false);
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_CALL_NON_FUNCTION] = this.stringPool.intern('Attempted to call a non-function value.', false);
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NON_TABLE] = this.stringPool.intern('Attempted to index field on a non-table value.', false);
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = this.stringPool.intern('Attempted to assign to a non-table value.', false);
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NIL] = this.stringPool.intern('Table index is nil.', false);
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_METATABLE_LOOP] = this.stringPool.intern('Metatable __index loop detected.', false);
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_ITERATE_NON_TABLE] = this.stringPool.intern('Attempted to iterate a non-table value.', false);
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = this.stringPool.intern('xpcall error handler must be a function.', false);
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = this.stringPool.intern('Out of memory.', false);
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = this.stringPool.intern('Invalid argument.', false);
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = this.stringPool.intern("invalid key to 'next'", false);
+		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_UNKNOWN] = this.stringPool.intern('Attempted to get length of an unsupported value.');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_CALL_NON_FUNCTION] = this.stringPool.intern('Attempted to call a non-function value.');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NON_TABLE] = this.stringPool.intern('Attempted to index field on a non-table value.');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = this.stringPool.intern('Attempted to assign to a non-table value.');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NIL] = this.stringPool.intern('Table index is nil.');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_METATABLE_LOOP] = this.stringPool.intern('Metatable __index loop detected.');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_ITERATE_NON_TABLE] = this.stringPool.intern('Attempted to iterate a non-table value.');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = this.stringPool.intern('xpcall error handler must be a function.');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = this.stringPool.intern('Out of memory.');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = this.stringPool.intern('Invalid argument.');
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = this.stringPool.intern("invalid key to 'next'");
 		this.memory.attachMappedPageInvalidator(this);
 	}
 
@@ -665,6 +661,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memory.clearMappedPageWriteWatches();
 		if (!this.setProgramHeapFloor(systemBoot.staticEnd)) { this.hardHalt(); return; }
 		this.executionImagesByDomain.fill(null);
+		this.stringPool.clearRomTables();
 		this.systemImage = this.activateExecutionImage(systemBoot);
 		this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1] = this.systemImage;
 		this.systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
@@ -699,27 +696,13 @@ export class CPU implements MappedPageInvalidator {
 		this.clearGlobalSlots();
 	}
 
-	private internExecutionString(executionDomainId: ExecutionDomainId, address: number): StringId {
-		this.executionAddressSpace.bindReadOnlyView(executionDomainId, address,
-			BLUA32_STRING_RECORD_HEADER_SIZE, this.executionReadView);
-		const { bytes, byteOffset } = this.executionReadView;
-		if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1)) !== 0
-			|| readLE32(bytes, byteOffset) !== (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
-			throw new Error('BLua32 ROM String header is invalid.');
-		}
-		const byteLength = readLE32(bytes, byteOffset + BLUA32_STRING_LENGTH_OFFSET);
-		if (byteLength === 0) return this.stringPool.intern('', false);
-		this.executionAddressSpace.bindReadOnlyView(executionDomainId, address + BLUA32_STRING_RECORD_HEADER_SIZE,
-			byteLength, this.executionReadView);
-		return this.stringPool.intern(
-			byteStringFromBytes(this.executionReadView.bytes, this.executionReadView.byteOffset, byteLength), false);
-	}
 
 	private decodeConstantPool(
 		executionDomainId: ExecutionDomainId,
 		tableAddress: number,
 		constTags: Uint8Array,
 		constWords: Uint32Array,
+		restoring: boolean,
 	): void {
 		if (constTags.length === 0) {
 			return;
@@ -753,9 +736,10 @@ export class CPU implements MappedPageInvalidator {
 					constWords[index] = readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET); break;
 				case Blua32ConstantTag.String:
 					constTags[index] = ValueTag.String;
-					constWords[index] = this.internExecutionString(
+					constWords[index] = this.stringPool.resolveImageRecord(
 						executionDomainId,
 						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET),
+						restoring,
 					);
 					break;
 				default:
@@ -769,6 +753,7 @@ export class CPU implements MappedPageInvalidator {
 		tableAddress: number,
 		nameCount: number,
 		system: boolean,
+		restoring: boolean,
 	): Uint32Array {
 		const slotByKey = system ? this.systemGlobalSlotByKey : this.globalSlotByKey;
 		const registeredNames = system ? this.systemGlobalNames : this.globalNames;
@@ -788,9 +773,10 @@ export class CPU implements MappedPageInvalidator {
 		const byteOffset = this.executionTableView.byteOffset;
 		for (let index = 0; index < nameCount; index += 1) {
 			const recordByteOffset = byteOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-			const key = this.internExecutionString(
+			const key = this.stringPool.resolveImageRecord(
 				executionDomainId,
 				readLE32(bytes, recordByteOffset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET),
+				restoring,
 			);
 			let slot = slotByKey.get(key);
 			if (slot === undefined) {
@@ -804,44 +790,44 @@ export class CPU implements MappedPageInvalidator {
 		return slots;
 	}
 
-	private activateExecutionImage(executionBoot: Blua32ExecutionBoot): Blua32ExecutionImage {
-		const executionDomainId = executionBoot.executionDomainId;
+	private readExecutionImageHeader(executionBoot: Blua32ExecutionBoot) {
 		this.executionAddressSpace.bindReadOnlyView(
-			executionDomainId,
+			executionBoot.executionDomainId,
 			executionBoot.imageAddress,
 			BLUA32_IMAGE_HEADER_SIZE,
 			this.executionReadView,
 		);
-		const headerBytes = this.executionReadView.bytes;
-		const headerByteOffset = this.executionReadView.byteOffset;
-		if (readLE32(headerBytes, headerByteOffset + BLUA32_IMAGE_MAGIC_OFFSET) !== BLUA32_IMAGE_MAGIC
-			|| readLE32(headerBytes, headerByteOffset + BLUA32_IMAGE_VERSION_OFFSET) !== BLUA32_IMAGE_VERSION) {
+		const { bytes, byteOffset } = this.executionReadView;
+		if (readLE32(bytes, byteOffset + BLUA32_IMAGE_MAGIC_OFFSET) !== BLUA32_IMAGE_MAGIC
+			|| readLE32(bytes, byteOffset + BLUA32_IMAGE_VERSION_OFFSET) !== BLUA32_IMAGE_VERSION) {
 			throw new Error('BLua32 image format is unsupported.');
 		}
-		const constantTableAddress = readLE32(
-			headerBytes,
-			headerByteOffset + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
-		);
-		const constantCount = readLE32(
-			headerBytes,
-			headerByteOffset + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
-		);
-		const globalNameTableAddress = readLE32(
-			headerBytes,
-			headerByteOffset + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
-		);
-		const globalNameCount = readLE32(
-			headerBytes,
-			headerByteOffset + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
-		);
-		const systemGlobalNameTableAddress = readLE32(
-			headerBytes,
-			headerByteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
-		);
-		const systemGlobalNameCount = readLE32(
-			headerBytes,
-			headerByteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
-		);
+		return {
+			constantTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET),
+			constantCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET),
+			globalNameTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
+			globalNameCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET),
+			systemGlobalNameTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
+			systemGlobalNameCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET),
+			stringBucketAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
+			stringBucketCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET),
+		};
+	}
+
+	private activateExecutionImage(executionBoot: Blua32ExecutionBoot): Blua32ExecutionImage {
+		const header = this.readExecutionImageHeader(executionBoot);
+		this.stringPool.activateRomTable(executionBoot.executionDomainId, header.stringBucketAddress, header.stringBucketCount);
+		return this.materializeExecutionImage(executionBoot, header);
+	}
+
+	private materializeExecutionImage(
+		executionBoot: Blua32ExecutionBoot,
+		header: ReturnType<CPU['readExecutionImageHeader']>,
+		restoring = false,
+	): Blua32ExecutionImage {
+		const executionDomainId = executionBoot.executionDomainId;
+		const { constantTableAddress, constantCount, globalNameTableAddress, globalNameCount,
+			systemGlobalNameTableAddress, systemGlobalNameCount } = header;
 		const constStorage = new ValueStorage(constantCount);
 		const constTags = constStorage.tags;
 		const constWords = constStorage.words;
@@ -850,18 +836,19 @@ export class CPU implements MappedPageInvalidator {
 			constantTableAddress,
 			constTags,
 			constWords,
+			restoring,
 		);
 		const globalSlots = this.registerGlobalNames(
 			executionDomainId,
 			globalNameTableAddress,
 			globalNameCount,
-			false,
+			false, restoring,
 		);
 		const systemGlobalSlots = this.registerGlobalNames(
 			executionDomainId,
 			systemGlobalNameTableAddress,
 			systemGlobalNameCount,
-			true,
+			true, restoring,
 		);
 		const image: Blua32ExecutionImage = {
 			executionDomainId,
@@ -942,26 +929,33 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	public replaceExecutionImage(executionBoot: Blua32ExecutionBoot): void {
-		if (executionBoot.executionDomainId === this.programExecutionDomainId
-			&& !this.heapAllocator.setFloor(executionBoot.staticEnd)) {
-			throw new Error('Replacement program static storage overlaps live language-heap pages.');
-		}
-		const imageIndex = executionBoot.executionDomainId + 1;
-		const previousImage = this.executionImagesByDomain[imageIndex];
-		if (previousImage !== null) {
-			for (const page of previousImage.decodedPages.values()) {
-				this.compiledCodeCache.retirePage(page);
+	public replaceExecutionImages(...executionBoots: Blua32ExecutionBoot[]): void {
+		const headers = executionBoots.map(boot => this.readExecutionImageHeader(boot));
+		// All media is already mounted. Rebind every index before looking up
+		// any constants: a lookup can touch the table of another changed image.
+		for (let i = 0; i < executionBoots.length; ++i) {
+			const { executionDomainId, staticEnd } = executionBoots[i];
+			if (executionDomainId === this.programExecutionDomainId && !this.heapAllocator.setFloor(staticEnd)) {
+				throw new Error('Replacement program static storage overlaps live language-heap pages.');
 			}
+			const { stringBucketAddress, stringBucketCount } = headers[i];
+			this.stringPool.activateRomTable(executionDomainId, stringBucketAddress, stringBucketCount);
 		}
-		const image = this.activateExecutionImage(executionBoot);
-		this.executionImagesByDomain[imageIndex] = image;
-		if (executionBoot.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
-			this.systemImage = image;
-			this.systemExceptionFunctionAddress = executionBoot.exceptionFunctionAddress;
-		}
-		if (this.activeExecutionImage === previousImage) {
-			this.latchActiveExecutionImage(image);
+		for (let i = 0; i < executionBoots.length; ++i) {
+			const boot = executionBoots[i], domain = boot.executionDomainId, imageIndex = domain + 1;
+			const previous = this.executionImagesByDomain[imageIndex];
+			if (previous !== null) {
+				for (const page of previous.decodedPages.values()) {
+					this.compiledCodeCache.retirePage(page);
+				}
+			}
+			const image = this.materializeExecutionImage(boot, headers[i]);
+			this.executionImagesByDomain[imageIndex] = image;
+			if (domain === SYSTEM_EXECUTION_DOMAIN_ID) {
+				this.systemImage = image;
+				this.systemExceptionFunctionAddress = boot.exceptionFunctionAddress;
+			}
+			if (this.activeExecutionImage === previous) this.latchActiveExecutionImage(image);
 		}
 	}
 
@@ -3883,7 +3877,8 @@ export class CPU implements MappedPageInvalidator {
 		const base = args.base;
 		const count = args.length - 1;
 		const selector = args.length > 0 ? registers.get(base) : valueNil();
-		if (valueTag(selector) === ValueTag.String && this.stringPool.bytes(valuePayload(selector)) === '#') {
+		if (valueTag(selector) === ValueTag.String && this.stringPool.byteLength(valuePayload(selector)) === 1
+			&& this.stringPool.byteAt(valuePayload(selector), 0) === 35) {
 			out.push(valueInteger(count)); return;
 		}
 		const startSelector = integerOperand(selector);
@@ -4301,7 +4296,8 @@ export class CPU implements MappedPageInvalidator {
 		}
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			if ((state.executionResidencyMask & (1 << index)) !== 0) {
-				this.executionImageForDomain((index - 1) as ExecutionDomainId);
+				const boot = this.executionAddressSpace.resolveDomain((index - 1) as ExecutionDomainId)!;
+				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, this.readExecutionImageHeader(boot), true);
 			}
 		}
 		this.systemImage = this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1]!;

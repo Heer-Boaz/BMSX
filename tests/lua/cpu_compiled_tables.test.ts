@@ -1,10 +1,9 @@
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { runCpuParity } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { ValueTag, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
@@ -246,11 +245,9 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, valueTable(cpu.gc.reference(retained)));
 		cpu.collectTrackedHeapBytes();
 	}
-	const strings = js.stringPool.captureState();
-	// All allocated objects are live: mark+sweep, two Thread remarks and three global-root passes.
-	const gcCycles = (8 + 690000) + 1 + 4
-		+ 4 * ceilDiv4(64 + js.rootThread.stackRegisters.capacity() * 5) + 9 + strings.slots
-		+ strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(entry.value.length) : 0), 0);
+	const beforeGc = captureCpuCheckpoint(ref);
+	const gcCycles = ref.gc.collect();
+	restoreCpuCheckpoint(ref, beforeGc);
 	runCpuParity(js, ref, BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.NEWT]);
 	assert.equal(js.instructionBudgetRemaining, -gcCycles, 'failed NEWT pays prefix/base and collection, but no initialization');
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));

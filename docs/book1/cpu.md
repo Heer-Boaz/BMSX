@@ -1164,7 +1164,7 @@ Larger DATA or BSS leaves less capacity. Installed library values and active
 execution state already consume some of it at cartridge entry.
 
 The budget covers Table storage, closures and captured-variable cells,
-Threads and their reserved value-slot capacity, and String storage charges.
+Threads and their reserved value-slot capacity, and RAM Strings and their intern index.
 Capacity matters as well as visible contents: a Table can reserve more entries
 than it currently contains, and a Thread's reserved slot storage can exceed its
 active argument/local range. Setting one field to nil or returning from one
@@ -1208,9 +1208,10 @@ The occupied-byte counts used for admission are:
 | Closure with `U` captured-variable references | `S(12 + 4U)` |
 | Captured-variable cell | `16` |
 | Thread with `V` reserved Value slots | `64 + 5V` |
-| Allocated String bytes | Byte length |
+| RAM String containing `n` bytes | `S(16 + n)` |
+| RAM String index with `B` buckets | `S(4B)` |
 
-A Table's slots and links occupy one block in the language heap. A closure's header and capture references occupy one block. `S(0) = 0`;
+A Table's slots and links occupy one block in the language heap. A closure's header and capture references occupy one block. A RAM String occupies one block containing its 16-byte header and its bytes. `S(0) = 0`;
 there is no block for an empty layout. Up to 64 bytes, round up to a multiple
 of 8. From 65 through 2048 bytes, use four size classes per doubling
 (80, 96, 112, 128, 160, and so on). Larger blocks round up to a multiple of
@@ -1243,24 +1244,26 @@ Collection work consumes cycles as follows:
 | Scan a closure | `3 + U` |
 | Scan a Thread | `ceil(occupied allocation bytes / 4)` |
 | Scan a captured-variable cell | `4` |
-| Examine Table, closure and captured-variable storage for reclamation | `1` per visited block in an object page, including a free slot; a page run is one block |
+| Examine Table, closure, captured-variable and String storage for reclamation | `1` per visited block in an object page, including a free slot; a page run is one block |
 | Examine a Thread for reclamation | `ceil(occupied allocation bytes / 4)` |
 | Read the constant and global root ranges | `2C + 3(S + G)` per pass |
 | Examine a weak-key Table in one dependency-convergence pass | `A + 2H` |
 | Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |
-| Examine one String-directory slot, including a vacant slot | `1` |
-| Examine occupied String text for reclamation | `ceil(allocated text bytes / 4)` |
+| Mark a previously unmarked RAM String | `1` |
+| Examine one RAM intern bucket, including an empty bucket | `1` |
 | Copy retained Thread storage when shrinking from `V` to `V/2` slots | `2 × ceil(5 × (V/2) / 4)` |
 
-For charges based on bytes, round each allocation or String independently.
+For charges based on bytes, round each allocation independently.
 A repeated scan costs again; unreachable objects that are not scanned still
-incur their reclamation work. Read-only String text supplied by a program image has no allocated-text
-charge, but its directory slot and constant or registered-name roots still
-participate. The sweep examines slots that the allocator has issued on an
-object page, not its unused tail, and leaves the page as soon as it is released.
-Table backing blocks are released with their records and are not separate sweep
-visits. String-directory slots are reused after reclamation, not removed; their
-high-water extent and reuse order carry across collection cycles.
+incur their reclamation work. A String has no outgoing Value references, so
+marking and reclaiming it do not scan its bytes. Strings in a program image
+occupy no language heap and are not marked or swept; their constant and
+registered-name root slots still count. The sweep examines slots that the
+allocator has issued on an object page, not its unused tail, and leaves a page
+as soon as it is released. Table backing blocks are released with their records
+and are not separate sweep visits. A bucket chain is examined as a unit; its
+unmarked String records are unlinked and released. Reclaiming a String does not
+shrink the bucket table.
 
 `C` counts constant Value slots in all activated program images. `S` and `G`
 count registered system-global and cartridge-global slots; repeated registration

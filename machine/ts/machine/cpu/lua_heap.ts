@@ -141,10 +141,6 @@ export class LuaHeap {
 		this.trackedBytes -= byteCount;
 	}
 
-	public adjustForRestore(previousBytes: number, restoredBytes: number): void {
-		this.trackedBytes += restoredBytes - previousBytes;
-	}
-
 	public finishCollection(): void {
 		const liveBytes = this.trackedBytes;
 		const capacity = this.capacity();

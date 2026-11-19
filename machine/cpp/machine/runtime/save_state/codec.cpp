@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x53534d42u; // BMSS
+constexpr u32 kSaveStateSignature = 0x53524d42u; // BMRS
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -169,46 +169,6 @@ IrqControllerState readIrqControllerState(BinaryReader& reader) {
 	state.userMask = reader.u32();
 	state.userPendingFlags = reader.u32();
 	state.supervisorContextActive = reader.boolean();
-	return state;
-}
-
-template<class Writer> void writeStringPoolStateEntry(Writer& writer, const StringPoolStateEntry& state) {
-	writer.u32(state.id);
-	writer.string(state.value);
-	writer.boolean(state.tracked);
-	writer.boolean(state.reachable);
-}
-
-StringPoolStateEntry readStringPoolStateEntry(BinaryReader& reader) {
-	StringPoolStateEntry state;
-	state.id = reader.u32();
-	state.value = reader.string();
-	state.tracked = reader.boolean();
-	state.reachable = reader.boolean();
-	return state;
-}
-
-template<class Writer> void writeStringPoolState(Writer& writer, const StringPoolState& state) {
-	writer.u32(static_cast<u32>(state.entries.size()));
-	for (const auto& value : state.entries) {
-		writeStringPoolStateEntry(writer, value);
-	}
-	writer.u32(static_cast<u32>(state.slots));
-	writer.i32(state.sweep);
-	writer.u32(static_cast<u32>(state.sweepEnd));
-	writer.u32(static_cast<u32>(state.freeIds.size()));
-	writer.u32s(state.freeIds);
-}
-
-StringPoolState readStringPoolState(BinaryReader& reader) {
-	StringPoolState state;
-	const u32 entriesCount = reader.u32();
-	state.entries.reserve(entriesCount);
-	for (u32 index = 0; index < entriesCount; ++index) {
-		state.entries.push_back(readStringPoolStateEntry(reader));
-	}
-	state.slots = reader.u32(); state.sweep = reader.i32(); state.sweepEnd = reader.u32();
-	state.freeIds.resize(reader.u32()); reader.u32s(state.freeIds);
 	return state;
 }
 
@@ -1149,7 +1109,6 @@ template<class Writer> void writeMachineSaveState(Writer& writer, const MachineS
 	writeGxGteState(writer, state.gxGte);
 	writeIrqControllerState(writer, state.irq);
 	writeAudioControllerState(writer, state.audio);
-	writeStringPoolState(writer, state.stringPool);
 	writeInputControllerState(writer, state.input);
 	writeImgDecControllerState(writer, state.imgDec);
 	writeSystemDebugTransmitState(writer, state.systemDebugTransmit);
@@ -1166,7 +1125,6 @@ MachineSaveState readMachineSaveState(BinaryReader& reader, size_t ramByteCount,
 	state.gxGte = readGxGteState(reader);
 	state.irq = readIrqControllerState(reader);
 	state.audio = readAudioControllerState(reader);
-	state.stringPool = readStringPoolState(reader);
 	state.input = readInputControllerState(reader);
 	state.imgDec = readImgDecControllerState(reader);
 	state.systemDebugTransmit = readSystemDebugTransmitState(reader);

@@ -12,13 +12,12 @@ export function runCpuParity(generated: CPU, reference: CPU, grant: number, dept
 }
 
 // A restored CPU can dereference records and interned strings immediately.
-// Rewind fixtures must restore those owners before restoring the register graph.
+// Rewind fixtures must restore RAM before restoring the register graph.
 export function captureCpuCheckpoint(cpu: CPU) {
-	return { cpu: cpu.captureRuntimeState(), memory: cpu.memory.captureSaveState(), strings: cpu.stringPool.captureState() };
+	return { cpu: cpu.captureRuntimeState(), memory: cpu.memory.captureSaveState() };
 }
 
 export function restoreCpuCheckpoint(cpu: CPU, checkpoint: ReturnType<typeof captureCpuCheckpoint>): void {
 	cpu.memory.restoreSaveState(checkpoint.memory);
-	cpu.stringPool.restoreState(checkpoint.strings);
 	cpu.restoreRuntimeState(checkpoint.cpu);
 }

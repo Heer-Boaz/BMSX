@@ -58,7 +58,7 @@ test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing
 		const deadParent = cpu.createTable(1, 0);
 		deadParent.records.setInteger(deadParent.address, 1, valueTable(cpu.gc.reference(cpu.createTable())));
 	}
-	for (let i = 0; i < 320; ++i) cpu.stringPool.intern(`dead-${i}-${'x'.repeat(256)}`);
+	for (let i = 0; i < 4200; ++i) cpu.stringPool.intern(`dead-${i}-${'x'.repeat(16)}`);
 	const phases = new Set<GcPhase>();
 	let bornDuringSweep = 0;
 	for (let step = 0; step < 1000; ++step) {
@@ -71,15 +71,15 @@ test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing
 			frame.registers.setTable(1, cpu.gc.reference(born)); frame.top = 2;
 			state = cpu.captureRuntimeState();
 		}
-		const strings = cpu.stringPool.captureState();
-		cpu.stringPool.restoreState(strings); cpu.restoreRuntimeState(state);
+		const ram = cpu.memory.captureSaveState();
+		cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 		assert.deepEqual(cpu.captureRuntimeState(), state, 'save/load cannot finish or restart collection');
-		assert.deepEqual(cpu.stringPool.captureState(), strings);
+		assert.deepEqual(cpu.memory.captureSaveState(), ram);
 		if (!cpu.gc.active()) break;
 	}
 	assert.deepEqual(phases, new Set([GcPhase.Mark, GcPhase.Atomic, GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause]));
 	assert.equal(cpu.rootThread.currentFrame!.registers.getTable(1, cpu.gc).hashId, bornDuringSweep);
-	assert.equal(cpu.stringPool.find(`dead-0-${'x'.repeat(256)}`), undefined);
+	assert.equal(cpu.stringPool.find(`dead-0-${'x'.repeat(16)}`), undefined);
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.gc.captureState(object => object.hashId).allocations.length, 1004,
 		'root thread, root closure, root table, 1000 children and one sweep-born table remain');
@@ -142,8 +142,8 @@ test('changed objects wait for a finite second pass and retain later writes acro
 		target.records.setInteger(target.address, 1, valueInteger(i));
 		cpu.gc.step();
 		const state = cpu.captureRuntimeState(); phases.add(state.gc.phase);
-		const strings = cpu.stringPool.captureState();
-		cpu.stringPool.restoreState(strings); cpu.restoreRuntimeState(state);
+		const ram = cpu.memory.captureSaveState();
+		cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 		assert.deepEqual(cpu.captureRuntimeState(), state);
 		if (state.gc.phase === GcPhase.Atomic) break;
 	}

@@ -45,11 +45,11 @@ probe.drop_definition()
 		assert.equal(cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES, retained, 're-registration must not grow retained observation history');
 	}
 	const anchor = captureCpuCheckpoint(cpu);
-	const strings = cpu.stringPool.captureState();
+
 	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('run')!), cpu.gc), [valueInteger(32)]);
 	const expected = cpu.captureRuntimeState();
 	for (let replay = 0; replay < 2; replay += 1) {
-		cpu.stringPool.restoreState(strings);
+
 		restoreCpuCheckpoint(cpu, anchor);
 		const restored = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 		assert.notEqual(restored, probe);

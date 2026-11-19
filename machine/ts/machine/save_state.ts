@@ -10,7 +10,6 @@ import type { ImgDecControllerState } from './devices/imgdec/controller';
 import type { SystemControllerState } from './devices/system/controller';
 import type { SystemDebugTransmitState } from './devices/system/debug_transmit';
 import type { MemorySaveState } from './memory/memory';
-import type { StringPoolState } from './cpu/string_pool';
 import type { Machine } from './machine';
 
 export type MachineState = {
@@ -36,7 +35,6 @@ export type MachineSaveState = {
 	gxGte: GxGteState;
 	irq: IrqControllerState;
 	audio: AudioControllerState;
-	stringPool: StringPoolState;
 	input: InputControllerState;
 	imgDec: ImgDecControllerState;
 	systemDebugTransmit: SystemDebugTransmitState;
@@ -89,7 +87,6 @@ export function captureMachineSaveState(machine: Machine, storage?: MachineSaveS
 		gxGte: machine.gxGte.captureState(),
 		irq: machine.irqController.captureState(),
 		audio,
-		stringPool: machine.cpu.stringPool.captureState(),
 		input: machine.inputController.captureState(),
 		imgDec: machine.imgDecController.captureState(),
 		systemDebugTransmit: machine.systemDebugTransmit.captureState(),
@@ -99,7 +96,6 @@ export function captureMachineSaveState(machine: Machine, storage?: MachineSaveS
 
 export function restoreMachineSaveState(machine: Machine, state: MachineSaveState): void {
 	machine.memory.restoreSaveState(state.memory);
-	machine.cpu.stringPool.restoreState(state.stringPool);
 	restoreSharedDeviceState(machine, state);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
 	machine.imgDecController.restoreState(state.imgDec);

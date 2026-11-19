@@ -104,7 +104,6 @@ void rebuildWork(bool scalar) {
   r.set(0, valueTable(cpu.gcHeap().reference(table))); r.set(2, valueInteger(73)); frame->top = 5;
   int surcharge = 0;
   size_t capacity = 0;
-  int retainedSlots = 0;
   if (scenario == "array-growth") {
    table->setInteger(1, valueInteger(11)); table->setInteger(2, valueInteger(22)); r.set(1, valueInteger(3));
    surcharge = 10; capacity = 4;
@@ -125,28 +124,32 @@ void rebuildWork(bool scalar) {
    mode->setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v"))); table->setMetatable(mode);
    table->set(field, valueTable(cpu.gcHeap().reference(cpu.createTable()))); table->set(other, valueTable(cpu.gcHeap().reference(cpu.createTable())));
    r.set(1, valueString(cpu.stringPool().intern("third")));
-   const auto heap = cpu.luaHeap().captureState();
-   cpu.luaHeap().restoreState({heap.trackedBytes, cpu.luaHeap().capacity()});
-   cpu.stringPool().intern(std::string(cpu.luaHeap().capacity() - heap.trackedBytes - 16, 'g'));
+   while (cpu.captureRuntimeState().gc.phase != GcPhase::Atomic) cpu.stepHeap(valueNil(), valueNil(), valueNil());
+   const auto bytes = cpu.luaHeap().usedBytes();
+   cpu.luaHeap().restoreState({bytes, bytes});
    surcharge = 16; capacity = 4;
   } else {
    for (int i = 0; i < 1024; ++i) table->set(valueFloat(i + 0.5f), valueInteger(i));
    r.set(1, valueFloat(1024.5f));
-   retainedSlots = static_cast<int>((cpu.luaHeap().capacity() - cpu.luaHeap().usedBytes() - 4 * 4096) / 5);
+   const int retainedSlots = static_cast<int>((cpu.luaHeap().capacity() - cpu.luaHeap().usedBytes() - 20 * HEAP_PAGE_SIZE) / 5);
    r.set(4, valueTable(cpu.gcHeap().reference(cpu.createTable(retainedSlots))));
-   cpu.collectHeap(); // Isolate failed admission from the preceding assist cycle.
+   cpu.collectHeap();
+   cpu.luaHeap().restoreState({cpu.luaHeap().usedBytes(), cpu.luaHeap().capacity()});
+   // No contiguous replacement backing even after collection.
+   while (cpu.heapAllocator().allocate(HEAP_PAGE_SIZE, true) != 0) { /* fixture-owned RAM */ }
    surcharge = 2048; capacity = 1024;
   }
   int gcCycles = 0;
   if (scenario == "weak-collection" || scenario == "failed-growth") {
-   const auto strings = cpu.stringPool().captureState();
-   gcCycles = strings.slots;
-   for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
-   // Weak graph: Thread104 + Closure(3+1) + 41 weak Table + 11 metatable + 3 dead Table visits.
-   gcCycles += scenario == "weak-collection" ? 163
-    : 4 * ceilDiv4(64 + 5 * cpu.rootThread()->stackCapacity) + 3 + 1
-      + (8 + 2 * 1024)
-      + (8 + retainedSlots) + 3;
+   const auto before = cpu.captureRuntimeState();
+   const auto ram = cpu.memory().captureSaveState();
+   gcCycles = static_cast<int>(scenario == "weak-collection"
+    ? cpu.stepHeap(valueNil(), valueNil(), valueNil()) : cpu.collectHeap());
+   cpu.memory().restoreSaveState(ram);
+   cpu.restoreRuntimeState(before);
+   frame = cpu.rootThread()->currentFrame;
+   r = frame->registers;
+   table = asTable(r.get(0), cpu.gcHeap());
   }
   const Value key = r.get(1); machine.restart();
   if (cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + 1) != RunResult::Yielded

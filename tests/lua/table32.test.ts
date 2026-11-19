@@ -157,7 +157,6 @@ test('machine snapshots restore table records and their references to a differen
 	source.setGlobalByKey(name, v.valueTable(source.gc.reference(table)));
 	const { cpu: target } = createTestSystemCpu(image);
 	for (let i = 0; i < 5; ++i) target.createTable();
-	target.stringPool.restoreState(source.stringPool.captureState());
 	target.memory.restoreSaveState(source.memory.captureSaveState());
 	target.restoreRuntimeState(source.captureRuntimeState());
 	const restored = v.asTable(target.getGlobalByKey(name), target.gc);

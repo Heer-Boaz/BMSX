@@ -1,6 +1,7 @@
 import { retireRuntimeFrameScopes } from './frame_scopes';
 import type { SuspendedGuestSession } from './suspended_guest';
 import type { Input } from '../../hosts/common/input/manager';
+import type { Blua32ExecutionBoot } from '../../machine/ts/machine/execution_address_space';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	buildBlua32ExecutionRevision,
@@ -50,6 +51,7 @@ import {
 	type HotResumeRevisions,
 } from './hot_resume_relocation';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
+import { blua32RomStrings } from '../../toolchain/ts/rompack/blua32_rom_strings';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 
 export type BuiltBlua32Revision = {
@@ -236,6 +238,21 @@ export function buildBlua32Revision(
 	};
 }
 
+function verifyHotResumeStringIdentities(runtime: Runtime, revisions: HotResumeRevisions): void {
+	const cpu = runtime.machine.cpu;
+	for (let i = 0; i < revisions.length; ++i) {
+		const revision = revisions[i], domain = (i - 1) as ExecutionDomainId;
+		if (revision === null || !cpu.isExecutionDomainResident(domain)) continue;
+		let previousEnd = revision.previousImage.address;
+		for (const record of blua32RomStrings(revision.previousImage)) previousEnd = Math.max(previousEnd, record.address + 1);
+		for (const { address, value } of blua32RomStrings(revision.nextImage)) {
+			if (address >= previousEnd && cpu.stringPool.shadowsResidentRomString(domain, value)) {
+				throw new Error('The edited image would replace a live String identity in another ROM. Rebuild and boot the ROM.');
+			}
+		}
+	}
+}
+
 export function installBlua32Revision(
 	sources: RuntimeSourceState,
 	runtime: Runtime,
@@ -248,9 +265,8 @@ export function installBlua32Revision(
 	const executionAddressSpace = runtime.machine.executionAddressSpace;
 	retireRuntimeFrameScopes(runtime, sources, guest);
 	installBlua32Media(sources, runtime, built.mediaInstallation);
-	if (rebuilt.system !== null) {
-		cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
-	}
+	const replacements: Blua32ExecutionBoot[] = [];
+	if (rebuilt.system !== null) replacements.push(executionAddressSpace.resolveSystemDomain());
 	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
 		if (rebuilt.cartridgeSlots[slot] !== null
 			&& cpu.isExecutionDomainResident(slot)) {
@@ -258,9 +274,10 @@ export function installBlua32Revision(
 			if (!image) {
 				throw new Error('Active execution domain has no BLua32 executable image.');
 			}
-			cpu.replaceExecutionImage(image);
+			replacements.push(image);
 		}
 	}
+	cpu.replaceExecutionImages(...replacements);
 	applyHotResumeClosureRevision(cpu, built.revisions);
 	applyHotResumeRelocation(cpu, relocation);
 }
@@ -376,6 +393,7 @@ export function admitHotResume(
 			: cpu.getFrameDepth();
 		let relocation: Uint32Array | null;
 		try {
+			if (prepared.built !== null) verifyHotResumeStringIdentities(runtime, prepared.built.revisions);
 			relocation = prepared.built === null
 				? null
 				: buildHotResumeRelocation(cpu, prepared.built.revisions, retainedFrameCount);

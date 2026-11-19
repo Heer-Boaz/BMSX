@@ -56,11 +56,11 @@ int main(int argc, char** argv) {
 		cpu.setNativeCompilationProfiling(true);
 #endif
 		runtime.boot();
-		const auto readyKey = cpu.stringPool().intern("rebuild_ready", false);
-		const auto modeKey = cpu.stringPool().intern("rebuild_mode", false);
-		const auto requestedKey = cpu.stringPool().intern("rebuild_requested", false);
-		const auto completedKey = cpu.stringPool().intern("rebuild_completed", false);
-		const auto checksumKey = cpu.stringPool().intern("rebuild_checksum", false);
+		const auto readyKey = cpu.stringPool().intern("rebuild_ready");
+		const auto modeKey = cpu.stringPool().intern("rebuild_mode");
+		const auto requestedKey = cpu.stringPool().intern("rebuild_requested");
+		const auto completedKey = cpu.stringPool().intern("rebuild_completed");
+		const auto checksumKey = cpu.stringPool().intern("rebuild_checksum");
 
 		// Actual BIOS/cart scheduling and device advancement. This workload never
 		// reads rendered pixels: retire command-only output, rejecting readback.

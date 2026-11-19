@@ -20,9 +20,9 @@ for (const optLevel of [0, 3] as const) {
 					result = cpu.runUntilDepth(0, call % 3 === 0 ? 1 : call % 3 === 1 ? 17 : 2048);
 					assert.equal(cpu.readExceptionReturnFrameDepth(), -1, `${name}: unexpected guest fault`);
 					if (restore && call % 23 === 0) {
-						const strings = cpu.stringPool.captureState();
+						const ram = cpu.memory.captureSaveState();
 						const state = cpu.captureRuntimeState();
-						cpu.stringPool.restoreState(strings);
+						cpu.memory.restoreSaveState(ram);
 						cpu.restoreRuntimeState(state);
 						assert.deepEqual(cpu.captureRuntimeState(), state);
 					}

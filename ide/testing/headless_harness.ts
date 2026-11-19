@@ -75,8 +75,6 @@ export type HeadlessIdeHarness = {
 
 export type HeadlessIdeHeapStats = {
 	tracked: number;
-	stringBytes: number;
-	objectBytes: number;
 	moduleFunctions: number;
 	functions: number;
 	constants: number;
@@ -163,12 +161,8 @@ export function createHeadlessIdeHarness(
 			const sourceState = ide.sources;
 			const executable = blua32ToolingImageForDomain(sourceState.currentBlua32Media, slot)!;
 			cpu.collectTrackedHeapBytes();
-			const tracked = cpu.luaHeap.usedBytes();
-			const stringBytes = cpu.stringPool.trackedLuaHeapBytes();
 			return {
-				tracked,
-				stringBytes,
-				objectBytes: tracked - stringBytes,
+				tracked: cpu.luaHeap.usedBytes(),
 				moduleFunctions: executable.symbols!.moduleFunctions.length,
 				functions: executable.layout.functions.length,
 				constants: executable.layout.constants.length,

@@ -1,104 +1,71 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
+
+#include "common/primitives.h"
+#include "spec/blua32/execution_domain.h"
 
 namespace bmsx {
 
-using StringId = uint32_t;
-class CPU;
+using StringId = u32;
+class HeapAllocator;
 class LuaHeap;
+class Memory;
 
-struct StringPoolStateEntry {
-	StringId id = 0;
-	std::string value;
-	bool tracked = false;
-	bool reachable = false;
-};
-
-struct StringPoolState {
-	// Occupied slots in ascending ID order.
-	std::vector<StringPoolStateEntry> entries;
-	std::vector<StringId> freeIds;
-	size_t slots = 0;
-	int sweep = -1;
-	size_t sweepEnd = 0;
-};
-
+// A String payload is the record's machine address. Cartridge ROM payloads
+// carry their socket in bit 31, independently of the current bus selection.
 class StringPool {
 public:
-	explicit StringPool(LuaHeap& luaHeap);
-
+	StringPool(LuaHeap& heap, Memory& memory, HeapAllocator& arena);
 	StringId intern(std::string_view value);
-	StringId intern(std::string_view value, bool tracked);
 	std::optional<StringId> find(std::string_view value) const;
-	const std::string& toString(StringId id) const;
 	int byteLength(StringId id) const;
-	// index is a zero-based byte index below byteLength(id).
-	uint32_t byteAt(StringId id, size_t index) const;
-	size_t trackedLuaHeapBytes() const { return m_trackedBytes; }
-	StringPoolState captureState() const;
-	void restoreState(const StringPoolState& state);
+	u32 byteAt(StringId id, size_t index) const;
+	void appendBytes(std::string& target, StringId id) const;
+	std::string toString(StringId id) const;
+	int compare(StringId left, StringId right) const;
+
+	void clearRomTables();
+	void activateRomTable(ExecutionDomainId domain, u32 address, u32 count);
+	StringId resolveImageRecord(ExecutionDomainId domain, u32 address, bool restoring);
+
 	void beginLocalRoots();
 	void endLocalRoots();
-
-	// The intern index is weak. Live VM/image roots retain their StringIds;
-	// sweep removes unreachable text and reuses vacant IDs. RAM accounting is
-	// independent of reachability: resident image literals remain ROM-backed.
 	void beginReachabilityEpoch();
 	void markReachable(StringId id);
 	void markLocalRoots();
+	size_t takeMarkWork();
 	void beginSweep();
-	size_t sweepStep(size_t words);
-	bool sweeping() const { return m_sweep >= 0; }
+	size_t sweepStep(size_t allowance);
+	bool sweeping() const;
 
 private:
-	friend class CPU;
-	StringId internOwned(std::string&& value);
-
-	struct InternedString {
-		StringId id = 0;
-		std::string value;
-		size_t trackedByteLength = 0;
+	struct ByteSpan {
+		std::string_view backed;
+		size_t length;
 	};
+	Span<const u8> romStorage(u32 address) const;
+	u32 readWord(u32 address) const;
+	ByteSpan readBytes(StringId id) const;
+	u32 metadata(u32 field) const;
+	void writeMetadata(u32 field, u32 word);
+	u32 lookup(u32 buckets, u32 count, u32 hash, std::string_view bytes) const;
+	u32 lookup(u32 hash, std::string_view bytes) const;
+	void grow(u32 count);
+	bool mark(StringId id);
+	StringId retain(StringId id);
 
-	struct StringKeyHash {
-		using is_transparent = void;
-		size_t operator()(std::string_view key) const noexcept;
-		size_t operator()(const std::string& key) const noexcept;
-	};
-
-	struct StringKeyEq {
-		using is_transparent = void;
-		bool operator()(std::string_view lhs, std::string_view rhs) const noexcept;
-		bool operator()(const std::string& lhs, const std::string& rhs) const noexcept;
-		bool operator()(const std::string& lhs, std::string_view rhs) const noexcept;
-		bool operator()(std::string_view lhs, const std::string& rhs) const noexcept;
-	};
-
-	const InternedString& entry(StringId id) const;
-	template <typename Text>
-	StringId internText(Text&& value, bool tracked);
-	template <typename Text>
-	InternedString& insert(StringId id, Text&& value);
-	void insertEntry(std::unique_ptr<InternedString> entry);
-	void trackStringEntry(InternedString& entry, size_t byteLength);
-	LuaHeap& m_luaHeap;
-	std::vector<StringId> m_freeIds;
+	LuaHeap& m_heap;
+	Memory& m_memory;
+	HeapAllocator& m_arena;
+	const u32 m_metadata;
 	std::vector<StringId> m_localRoots;
 	std::vector<size_t> m_localRootBases;
-	size_t m_trackedBytes = 0;
-	std::unordered_map<std::string_view, StringId, StringKeyHash, StringKeyEq> m_stringMap;
-	std::vector<std::unique_ptr<InternedString>> m_entries;
-	std::vector<bool> m_reachable;
-	int m_sweep = -1;
-	size_t m_sweepEnd = 0;
+	size_t m_markWork = 0; // Collected before a GC step yields.
 };
 
 int compareStringIds(const StringPool* pool, StringId left, StringId right, int* remainingCycles);

@@ -377,22 +377,20 @@ private:
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
 	size_t collectionRootWordCount() const;
-	StringId internExecutionString(
-		ExecutionDomainId executionDomainId,
-		u32 address
-	);
 	ValueSlots decodeConstantPool(
 		ExecutionDomainId executionDomainId,
 		u32 tableAddress,
-		u32 constantCount
+		u32 constantCount,
+		bool restoring
 	);
 	std::vector<u32> registerGlobalNames(
 		ExecutionDomainId executionDomainId,
 		u32 tableAddress,
 		u32 nameCount,
-		bool system
+		bool system,
+		bool restoring
 	);
-	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot executionBoot);
+	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot executionBoot, bool restoring = false);
 	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
 	static MappedBusSignals executionBusSignalsForDomain(ExecutionDomainId executionDomainId);
 	void latchActiveExecutionImage(Blua32ExecutionImage& image);

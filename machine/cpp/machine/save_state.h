@@ -41,7 +41,6 @@ struct MachineSaveState {
 	GxGteState gxGte;
 	IrqControllerState irq;
 	AudioControllerState audio;
-	StringPoolState stringPool;
 	InputControllerState input;
 	ImgDecControllerState imgDec;
 	SystemDebugTransmitState systemDebugTransmit;

@@ -257,7 +257,6 @@ void allocationRoots(bool closure) {
 	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == (closure ? NativeBlockExit::CreateClosure : NativeBlockExit::Concat), "collection is reached from actual native code");
 #endif
-	std::array<std::string, 2> garbage; size_t index = 0;
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto r = frame.registers;
@@ -265,14 +264,14 @@ void allocationRoots(bool closure) {
 		table->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
 		r.set(9, valueTable(m->cpu.gcHeap().reference(table))); r.set(1, valueString(strings.intern("fresh-"))); r.set(2, valueString(strings.intern("result"))); frame.top = 0;
 		const auto heap = m->cpu.captureRuntimeState().luaHeap;
-		m->cpu.luaHeap().restoreState({heap.trackedBytes, m->cpu.luaHeap().capacity()});
-		garbage[index] = std::string(m->cpu.luaHeap().capacity() - heap.trackedBytes - 1, 'g'); strings.intern(garbage[index++]);
+		m->cpu.luaHeap().restoreState({heap.trackedBytes, heap.trackedBytes});
 	}
 	require(native.cpu.runUntilDepth(0, 6) == scalar.cpu.runUntilDepth(0, 6), "the allocating instruction consumes the same grant"); requireParity(native, scalar);
-	index = 0;
 	for (auto* m : {&native, &scalar}) {
-		auto& strings = m->cpu.stringPool(); require(!strings.find(garbage[index++]), "the operation really collected the unrooted pressure string");
+		auto& strings = m->cpu.stringPool();
 		auto r = m->cpu.activeThread()->frameAtDepth(0)->registers; Table* retained = asTable(r.get(7), m->cpu.gcHeap());
+		require(m->cpu.collecting() && retained->gcColor == 3, "the allocation assist traced the moved reference before returning");
+		m->cpu.collectHeap();
 		require(retained->getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")), "a moved reference remains rooted across allocation");
 		if (closure) require(m->cpu.readClosureUpvalue(asClosure(r.get(0), m->cpu.gcHeap()), 0) == r.get(7), "capture observes the published reference value");
 		else require(strings.toString(asStringId(r.get(0))) == "fresh-result", "allocation commits the entire concatenation result");
@@ -381,6 +380,7 @@ void concatAllocationFault(bool range) {
 	writeInstruction(image.text, 1, static_cast<u8>(range ? OpCode::CONCATN : OpCode::CONCAT), 0, 1, 2);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255); writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 16}, {.firstWord = 32, .wordCount = 1}}; image.exceptionFunctionIndex = 1;
+	image.constants = {std::string("12")}; // Loop warmup does not grow the RAM intern index.
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(1, valueInteger(1)); frame.registers.set(2, valueInteger(2));
@@ -397,9 +397,12 @@ void concatAllocationFault(bool range) {
 	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
 #endif
-	const auto strings = native.cpu.stringPool().captureState();
-	int gcCycles = 4 * ceilDiv4(static_cast<int>(64 + native.cpu.rootThread()->stackCapacity * 5)) + 3 + 1 + strings.slots;
-	for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
+	const auto beforeGc = scalar.cpu.captureRuntimeState();
+	const auto beforeGcRam = scalar.cpu.memory().captureSaveState();
+	scalar.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K1)]);
+	const int gcCycles = static_cast<int>(scalar.cpu.collectHeap());
+	scalar.cpu.memory().restoreSaveState(beforeGcRam);
+	scalar.cpu.restoreRuntimeState(beforeGc);
 	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");

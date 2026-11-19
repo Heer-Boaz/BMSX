@@ -152,9 +152,11 @@ uint8_t GcHeap::tableWeakMode(const Table& table) const {
 	if (!valueIsString(modeValue)) {
 		return 0;
 	}
-	const std::string& mode = m_stringPool.toString(asStringId(modeValue));
+	const StringId mode = asStringId(modeValue);
+	const int length = m_stringPool.byteLength(mode);
 	uint8_t weakMode = 0;
-	for (char ch : mode) {
+	for (int i = 0; i < length; ++i) {
+		const auto ch = m_stringPool.byteAt(mode, i);
 		switch (ch) {
 			case 'k':
 				weakMode |= kTableWeakKeys;
@@ -263,7 +265,7 @@ size_t GcHeap::remark(Value root0, Value root1, Value root2) {
 	m_cpu.markRoots(*this);
 	m_stringPool.markLocalRoots();
 	markValue(root0); markValue(root1); markValue(root2);
-	return m_cpu.collectionRootWordCount();
+	return m_cpu.collectionRootWordCount() + m_stringPool.takeMarkWork();
 }
 
 size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
@@ -275,7 +277,10 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcPhaseMeasurement measurement(profile.traceNanoseconds);
 #endif
-	while (m_gray) work += trace(true);
+	while (m_gray) {
+		work += trace(true);
+		work += m_stringPool.takeMarkWork();
+	}
 	bool changed;
 	do {
 		changed = false;
@@ -287,7 +292,10 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 				if (valueIsAlive(key) && markValue(value)) changed = true;
 			});
 		}
-		while (m_gray) work += trace(true);
+		while (m_gray) {
+			work += trace(true);
+			work += m_stringPool.takeMarkWork();
+		}
 	} while (changed);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	measurement.phase(profile.weakNanoseconds);
@@ -309,7 +317,7 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 	m_sweep = m_objects;
 	arena.beginObjectSweep();
 	m_phase = GcPhase::Sweep;
-	return work;
+	return work + m_stringPool.takeMarkWork();
 }
 void GcHeap::unlink(GCObject* object) {
 	if (object->previous) object->previous->next = object->next;
@@ -388,6 +396,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 		}
 		markValue(root0); markValue(root1); markValue(root2);
 		m_stringPool.markLocalRoots();
+		work += m_stringPool.takeMarkWork();
 	}
 	while (work < GC_STEP_WORDS && active()) {
 		switch (m_phase) {
@@ -397,7 +406,10 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 					GcPhaseMeasurement traceTime(m_phase == GcPhase::Mark ? profile.traceNanoseconds : profile.markAgainNanoseconds);
 #endif
-					while (m_gray && work < GC_STEP_WORDS) work += trace(false);
+					while (m_gray && work < GC_STEP_WORDS) {
+						work += trace(false);
+						work += m_stringPool.takeMarkWork();
+					}
 				}
 				if (work < GC_STEP_WORDS) {
 					if (m_phase == GcPhase::Mark) {

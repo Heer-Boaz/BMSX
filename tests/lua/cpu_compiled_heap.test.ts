@@ -1,7 +1,6 @@
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { numberConstantFromHost } from '../../toolchain/ts/lua/number';
-import { utf8ByteLength } from '../../machine/ts/common/utf8';
-import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
@@ -70,7 +69,7 @@ test('compiled CONCAT preserves signed RK constants and Unicode without numeric-
 	writeInstruction(text, 0, OpCode.K1, 7, 0, 0);
 	writeInstruction(text, 1, OpCode.CONCAT, 0, 63, 62, 63); // K[0], K[1].
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8 }], constants: [numberConstantFromHost(-0), '🍻'] });
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8 }], constants: [numberConstantFromHost(-0), textToByteString('🍻')] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	js.runUntilDepth(0, 320); ref.runUntilDepth(0, 320); assertParity(js, ref);
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -130,21 +129,21 @@ for (const closure of [false, true]) test(`compiled allocation publishes moved r
 	const entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.terminal.exit,
 		closure ? CompiledBlockExit.CreateClosure : CompiledBlockExit.Concat);
-	const garbage: string[] = [];
 	for (const cpu of [js, ref]) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		const root = cpu.rootThread.frameAtDepth(0), r = root.registers, table = cpu.createTable(0, 1);
 		table.records.setStringKey(table.address, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
 		r.setTable(9, cpu.gc.reference(table)); r.setString(1, cpu.stringPool.intern('fresh-')); r.setString(2, cpu.stringPool.intern('result'));
 		root.top = 0;
-		const heap = cpu.captureRuntimeState().luaHeap, text = 'g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 1);
-		cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
-		cpu.stringPool.intern(text); garbage.push(text);
+		const trackedBytes = cpu.luaHeap.usedBytes();
+		cpu.luaHeap.restoreState({ trackedBytes, nextCollectionBytes: trackedBytes });
 	}
 	assert.equal(js.runUntilDepth(0, 6), ref.runUntilDepth(0, 6)); assertParity(js, ref);
-	for (const [index, cpu] of [js, ref].entries()) {
-		assert.equal(cpu.stringPool.find(garbage[index]), undefined, 'the allocating operation really collected unreachable pressure');
+	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getTable(7, cpu.gc);
+		assert.ok(cpu.gc.active(), 'allocation started the configured collection assist');
+		assert.equal(retained.gcColor, 3, 'the allocating operation traced the published reference before returning');
+		cpu.gc.collect();
 		assert.equal(retained.records.getStringKey(retained.address, cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
 		if (closure) assert.equal(cpu.readClosureUpvalue(r.getClosure(0, cpu.gc), 0), r.get(7));
 		else assert.equal(cpu.stringPool.toString(r.getStringId(0)), 'fresh-result');
@@ -237,7 +236,7 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 	writeInstruction(text, 0, OpCode.K1, 8, 0, 0);
 	writeInstruction(text, 1, range ? OpCode.CONCATN : OpCode.CONCAT, 0, 1, 2);
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255); writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 16 }, { firstWord: 32, wordCount: 1 }], exceptionFunctionIndex: 1 });
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 16 }, { firstWord: 32, wordCount: 1 }], exceptionFunctionIndex: 1, constants: ['12'] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1); cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 2);
@@ -249,11 +248,10 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 	const frame = js.rootThread.frameAtDepth(0), pc = image.image.functions[0].codeAddress;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal.exit,
 		range ? CompiledBlockExit.ConcatRange : CompiledBlockExit.Concat);
-	const strings = js.stringPool.captureState();
-	// Only the root Thread and closure are objects. The Thread is remarked;
-	// all directory slots and allocated text are examined once at sweep.
-	const gcCycles = 4 * ceilDiv4(64 + js.rootThread.stackRegisters.capacity() * 5) + 3 + 1
-		+ strings.slots + strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
+	const beforeGc = captureCpuCheckpoint(ref);
+	ref.runUntilDepth(0, BASE_CYCLES[OpCode.K1]);
+	const gcCycles = ref.gc.collect();
+	restoreCpuCheckpoint(ref, beforeGc);
 	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
 	assert.equal(js.instructionBudgetRemaining, -4 * 1024 * 1024 - (range ? 2 : 0) - gcCycles, 'allocation faults retain complete logical text-work and pre-request collection charges');

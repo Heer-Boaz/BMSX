@@ -767,7 +767,7 @@ test('table pins observe every direct field even when compact text and history a
 test('table pin comparison follows restored string text even when the pool reuses an out-of-preview raw string id', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	f.execute('fill_data');
-	const beforeAllocation = captureCpuCheckpoint(f.cpu), beforeStrings = f.cpu.stringPool.captureState();
+	const beforeAllocation = captureCpuCheckpoint(f.cpu);
 	f.execute('set_data_tail_text');
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'Data')!);
@@ -775,7 +775,7 @@ test('table pin comparison follows restored string text even when the pool reuse
 	const data = asTable(f.guest.readStringMember(f.tree.roots[0].value!, 'data'), f.cpu.gc);
 	const id = asStringId(data.records.getInteger(data.address, 12)), identity = f.guest.identity(data.records.getInteger(data.address, 12));
 	const text = f.guest.formatValue(data.records.getInteger(data.address, 12)), preview = pin.item.value;
-	f.invalidate('history-restored'); f.cpu.stringPool.restoreState(beforeStrings); restoreCpuCheckpoint(f.cpu, beforeAllocation); f.update();
+	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, beforeAllocation); f.update();
 	f.execute('advance_gameplay_state'); f.execute('set_data_tail_text');
 	const restoredData = asTable(f.guest.readStringMember(f.tree.roots[0].value!, 'data'), f.cpu.gc);
 	assert.equal(asStringId(restoredData.records.getInteger(restoredData.address, 12)), id, 'the restored pool really reused the same raw string id');

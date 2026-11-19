@@ -93,7 +93,10 @@ void execRefusesLivePagesBelowTheFloor() {
 	Machine machine = bootPair();
 	HeapAllocator& heap = machine.cpu.heapAllocator();
 	const u32 floor = heap.floorAddress();
-	require(heap.allocate(heap.capacityBytes() - 2u * HEAP_PAGE_SIZE, false) == floor + HEAP_PAGE_SIZE, "the run leaves the lowest page free and the top page holds the reset closure");
+	const u32 cartFloor = pageRound(CART_BSS + CART_BSS_BYTES);
+	u32 claimed;
+	do { claimed = heap.allocate(HEAP_PAGE_SIZE, true); } while (claimed >= cartFloor);
+	require(claimed >= floor, "the new static region overlaps a live allocation");
 	const u32 marker = CART_BSS - RAM_BASE;
 	writeLE32(machine.memory.ramData() + marker, 0x5eed5eedu);
 	machine.cpu.runUntilDepth(0, 100);

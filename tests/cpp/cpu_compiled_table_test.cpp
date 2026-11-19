@@ -406,11 +406,11 @@ void wideAllocationFailure() {
 		const auto key = cpu.stringPool().find("retained"); auto* retained = cpu.createTable(690000); cpu.setGlobalByKey(*key, valueTable(cpu.gcHeap().reference(retained)));
 		cpu.collectHeap();
 	}
-	const auto strings = native.cpu.stringPool().captureState();
-	// Mark and sweep the retained table and closure, scan the thread four times and visit the global roots.
-	int gcCycles = (8 + 690000) + 1 + 3 + 1
-		+ 4 * ceilDiv4(64 + native.cpu.rootThread()->stackCapacity * 5) + 9 + strings.slots;
-	for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
+	const auto beforeGc = scalar.cpu.captureRuntimeState();
+	const auto beforeGcRam = scalar.cpu.memory().captureSaveState();
+	const int gcCycles = static_cast<int>(scalar.cpu.collectHeap());
+	scalar.cpu.memory().restoreSaveState(beforeGcRam);
+	scalar.cpu.restoreRuntimeState(beforeGc);
 	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::NEWT)]); requireParity(native, scalar);
 	require(native.cpu.instructionBudgetRemaining == -gcCycles, "failed NEWT pays prefix/base and pre-admission GC, but no initialization");
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
@@ -440,7 +440,6 @@ void stringStoreGrowthRoots(bool generic) {
 	const auto& block = page.nativeBlocks->entries[word];
 	require(block != nullptr, "growing string store starts from adopted native code");
 #endif
-	std::array<std::string, 2> garbage; size_t index = 0;
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto& r = frame.registers;
@@ -448,21 +447,21 @@ void stringStoreGrowthRoots(bool generic) {
 		retained->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
 		r.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable()))); r.set(9, valueTable(m->cpu.gcHeap().reference(retained))); frame.top = 0;
 		const auto heap = m->cpu.captureRuntimeState().luaHeap;
-		m->cpu.luaHeap().restoreState({heap.trackedBytes, m->cpu.luaHeap().capacity()});
-		garbage[index] = std::string(m->cpu.luaHeap().capacity() - heap.trackedBytes - 1, 'g'); strings.intern(garbage[index++]);
+		m->cpu.luaHeap().restoreState({heap.trackedBytes, heap.trackedBytes});
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
 	for (size_t i = 0; i < 2; ++i) {
 		auto& machine = i == 0 ? native : scalar;
 		require(machine.cpu.readFramePc(0) == machine.rom.textAddress + 2u * INSTRUCTION_BYTES
-			&& machine.cpu.stringPool().find(garbage[i]).has_value(),
+			&& !machine.cpu.collecting(),
 			"an exhausted grant stops before the store and its possible collection");
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 1); requireParity(native, scalar);
-	index = 0;
 	for (auto* m : {&native, &scalar}) {
-		auto& strings = m->cpu.stringPool(); require(!strings.find(garbage[index++]), "hash growth really collects unreachable pressure");
+		auto& strings = m->cpu.stringPool();
 		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers; auto* retained = asTable(r.get(7), m->cpu.gcHeap());
+		require(m->cpu.collecting() && retained->gcColor == 3, "the hash growth assist traced the moved reference");
+		m->cpu.collectHeap();
 		require(retained->getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")),
 			"growth sees all reference roots published by the completed native prefix");
 		require(asTable(r.get(0), m->cpu.gcHeap())->getStringKey(*strings.find("field")) == r.get(7), "growth commits the requested reference store once");

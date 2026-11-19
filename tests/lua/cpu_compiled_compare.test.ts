@@ -12,7 +12,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
-import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestBlua32PairCpu, createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, type TestBlua32Source } from '../helpers/blua32';
 
@@ -132,7 +132,7 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 	assert.equal(systemPage.compiledBlocks!.entries[0], systemBlock);
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	for (const { cpu, executionAddressSpace } of machines) {
-		cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
+		cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
 		// The revision producer relocates suspended activations after replacing
 		// their image, before any further instruction is allowed to execute.
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, replacement.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
@@ -473,10 +473,12 @@ test('a paired JMP defers the target fetch until positive budget remains', () =>
 	writeInstruction(text, 8, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 },
 		{ firstWord: 8, wordCount: 1 }], exceptionFunctionIndex: 1 });
-	const end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes, start = end - MAPPED_PAGE_BYTE_SIZE;
+	const end = SYSTEM_ROM_SIZE, start = end - MAPPED_PAGE_BYTE_SIZE;
+	const rom = new Uint8Array(end);
+	rom.set(image.romBytes); rom.set(text, start);
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
-		memory.writeBytes(start, text);
+		memory.installSystemRom(rom);
 		const r = cpu.rootThread.frameAtDepth(0).registers;
 		r.setInteger(0, 1); r.setInteger(1, 1); r.setInteger(2, 0); r.setInteger(3, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);

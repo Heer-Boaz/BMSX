@@ -77,7 +77,7 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	assert.equal(snapshot.word(value + 1), BuiltinFunctionId.Next);
 
 	const restoredCpu = createTestSystemCpu(EMPTY_TEST_IMAGE).cpu;
-	restoredCpu.stringPool.restoreState(cpu.stringPool.captureState());
+	restoredCpu.memory.restoreSaveState(cpu.memory.captureSaveState());
 	restoredCpu.restoreRuntimeState(state);
 	assert.equal(
 		restoredCpu.getGlobalByKey(restoredCpu.stringPool.intern('foo')),
@@ -98,34 +98,26 @@ test('BLua32 image literals and debug names stay in ROM accounting', () => {
 	assert.equal(cpu.collectTrackedHeapBytes(), baseline);
 });
 
-test('runtime string materialization tracks RAM even when the same text exists in ROM', () => {
+test('runtime interning reuses a matching ROM record without allocating RAM', () => {
 	const cpu = createCpuWithProgram('return "rom literal"');
+	const before = cpu.luaHeap.usedBytes();
 	const literal = cpu.stringPool.find('rom literal');
-	const before = cpu.collectTrackedHeapBytes();
-
-	// A materialized runtime string is always held somewhere live (here: a global).
-	// It must count as RAM even though the identical text already exists in ROM as
-	// an untracked literal.
-	const runtimeString = cpu.stringPool.intern('rom literal');
-	assert.equal(runtimeString, literal);
-	cpu.setGlobalByKey(cpu.stringPool.intern('held', false), valueString(runtimeString));
-
-	assert.ok(cpu.collectTrackedHeapBytes() > before);
+	assert.notEqual(literal, undefined);
+	assert.equal(cpu.stringPool.intern('rom literal'), literal);
+	assert.equal(cpu.luaHeap.usedBytes(), before);
 });
 
 test('unreachable runtime strings are reclaimed by the heap collector', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
 	const before = cpu.collectTrackedHeapBytes();
-	const strings = cpu.stringPool.captureState();
 
 	// No VM value owns this text. Collection must free the intern entry as
 	// well as its RAM debit; stale text must not accumulate in save states.
-	const reclaimed = cpu.stringPool.intern('transient garbage string');
+	cpu.stringPool.intern('transient garbage string');
 
 	assert.equal(cpu.collectTrackedHeapBytes(), before);
 	assert.equal(cpu.stringPool.find('transient garbage string'), undefined);
-	assert.deepEqual(cpu.stringPool.captureState().entries, strings.entries);
-	assert.equal(cpu.stringPool.intern('new runtime string'), reclaimed);
+	assert.notEqual(cpu.stringPool.intern('new runtime string'), 0);
 });
 
 test('non-capturing const functions materialize as static proto references', () => {

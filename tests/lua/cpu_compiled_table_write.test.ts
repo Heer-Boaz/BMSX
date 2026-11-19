@@ -70,21 +70,19 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 	}
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'growth is reached from adopted generated code');
-	const garbage: string[] = [];
 	for (const cpu of [js, ref]) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 		const retained = cpu.createTable(0, 1); retained.records.setStringKey(retained.address, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
 		r.setTable(0, cpu.gc.reference(cpu.createTable())); r.setTable(9, cpu.gc.reference(retained)); frame.top = 0;
-		const heap = cpu.captureRuntimeState().luaHeap, pressure = 'g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 1);
-		cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
-		cpu.stringPool.intern(pressure); garbage.push(pressure);
+		const trackedBytes = cpu.luaHeap.usedBytes();
+		cpu.luaHeap.restoreState({ trackedBytes, nextCollectionBytes: trackedBytes });
 	}
 	runCpuParity(js, ref, 6);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
-	for (const [i, cpu] of [js, ref].entries()) {
-		assert.equal(cpu.stringPool.find(garbage[i]), undefined, 'hash growth really collected unreachable pressure');
+	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getTable(7, cpu.gc);
+		assert.ok(cpu.gc.active() && retained.gcColor === 3, 'the hash growth assist traced the moved reference');
 		assert.equal(retained.records.getStringKey(retained.address, cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
 		assert.equal(cpu.gc.tables.getStringKey(r.getPayload(0), cpu.stringPool.find('field')!), valueTable(cpu.gc.reference(retained)));
 	}

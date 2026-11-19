@@ -103,7 +103,7 @@ advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score')
 	assert.equal(cpu.runUntilDepth(0, 2_000_000), RunResult.Halted);
 	const name = cpu.stringPool.find('advance')!, score = cpu.stringPool.find('score')!;
 	const heap = cpu.collectTrackedHeapBytes(), globals = cpu.globalSlotCount;
-	const strings = cpu.stringPool.captureState(), saved = cpu.captureRuntimeState();
+	const ram = cpu.memory.captureSaveState(), saved = cpu.captureRuntimeState();
 	for (let index = 0; index < 2; index++) {
 		runCompletionClosure(cpu, asClosure(cpu.getGlobalByKey(name), cpu.gc), []);
 		assert.equal(cpu.getGlobalByKey(score), valueInteger(10000));
@@ -112,7 +112,7 @@ advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score')
 		const capacity = cpu.rootThread.stackRegisters.capacity();
 		const collected = cpu.collectTrackedHeapBytes();
 		assert.equal(heap - collected, (capacity - cpu.rootThread.stackRegisters.capacity()) * THREAD_STACK_SLOT_BYTES);
-		cpu.stringPool.restoreState(strings); cpu.restoreRuntimeState(saved);
+		cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(saved);
 		assert.equal(cpu.getGlobalByKey(score), valueInteger(0));
 	}
 });

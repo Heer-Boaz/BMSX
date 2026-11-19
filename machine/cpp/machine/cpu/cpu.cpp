@@ -78,23 +78,23 @@ CPU::CPU(
 	, m_executionAddressSpace(executionAddressSpace)
 	, m_heapAllocator(memory)
 	, m_luaHeap(*this)
-	, m_stringPool(m_luaHeap)
+	, m_stringPool(m_luaHeap, memory, m_heapAllocator)
 	, m_indexKey(valueString(m_stringPool.intern("__index")))
 	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool, m_stringPool.intern("__mode"))
-	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling", false))) {
+	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling"))) {
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	m_luaFaultErrorValues.fill(valueNil());
-	m_luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = valueString(m_stringPool.intern("Attempted to get length of an unsupported value.", false));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_CALL_NON_FUNCTION] = valueString(m_stringPool.intern("Attempted to call a non-function value.", false));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NON_TABLE] = valueString(m_stringPool.intern("Attempted to index field on a non-table value.", false));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = valueString(m_stringPool.intern("Attempted to assign to a non-table value.", false));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NIL] = valueString(m_stringPool.intern("Table index is nil.", false));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_METATABLE_LOOP] = valueString(m_stringPool.intern("Metatable __index loop detected.", false));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_ITERATE_NON_TABLE] = valueString(m_stringPool.intern("Attempted to iterate a non-table value.", false));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = valueString(m_stringPool.intern("xpcall error handler must be a function.", false));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY] = valueString(m_stringPool.intern("Out of memory.", false));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_ARGUMENT] = valueString(m_stringPool.intern("Invalid argument.", false));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_NEXT_KEY] = valueString(m_stringPool.intern("invalid key to 'next'", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = valueString(m_stringPool.intern("Attempted to get length of an unsupported value."));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_CALL_NON_FUNCTION] = valueString(m_stringPool.intern("Attempted to call a non-function value."));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NON_TABLE] = valueString(m_stringPool.intern("Attempted to index field on a non-table value."));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = valueString(m_stringPool.intern("Attempted to assign to a non-table value."));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NIL] = valueString(m_stringPool.intern("Table index is nil."));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_METATABLE_LOOP] = valueString(m_stringPool.intern("Metatable __index loop detected."));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_ITERATE_NON_TABLE] = valueString(m_stringPool.intern("Attempted to iterate a non-table value."));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = valueString(m_stringPool.intern("xpcall error handler must be a function."));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY] = valueString(m_stringPool.intern("Out of memory."));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_ARGUMENT] = valueString(m_stringPool.intern("Invalid argument."));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_NEXT_KEY] = valueString(m_stringPool.intern("invalid key to 'next'"));
 	m_builtinResultScratch.reserve(1);
 	m_builtinResultScratch.get(0).ensureCapacity(8);
 	m_builtinResultScratch.clear();
@@ -186,6 +186,7 @@ void CPU::reset() {
 	for (std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
 		image.reset();
 	}
+	m_stringPool.clearRomTables();
 	std::unique_ptr<Blua32ExecutionImage> activatedSystemImage =
 		activateExecutionImage(systemBoot);
 	m_systemImage = activatedSystemImage.get();
@@ -211,31 +212,11 @@ void CPU::installBootPrimitives() {
 	}
 }
 
-StringId CPU::internExecutionString(
-	ExecutionDomainId executionDomainId,
-	u32 address
-) {
-	m_executionAddressSpace.bindReadOnlyView(executionDomainId, address,
-		BLUA32_STRING_RECORD_HEADER_SIZE, m_executionReadView);
-	const u8* record = m_executionReadView.data();
-	if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1u)) != 0u
-		|| readLE32(record) != (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
-		throw BMSX_RUNTIME_ERROR("BLua32 ROM String header is invalid.");
-	}
-	const u32 byteCount = readLE32(record + BLUA32_STRING_LENGTH_OFFSET);
-	if (byteCount == 0u) return m_stringPool.intern({}, false);
-	m_executionAddressSpace.bindReadOnlyView(executionDomainId, address + BLUA32_STRING_RECORD_HEADER_SIZE,
-		byteCount, m_executionReadView);
-	return m_stringPool.intern(
-		std::string_view(reinterpret_cast<const char*>(m_executionReadView.data()), m_executionReadView.size()),
-		false
-	);
-}
-
 ValueSlots CPU::decodeConstantPool(
 	ExecutionDomainId executionDomainId,
 	u32 tableAddress,
-	u32 constantCount
+	u32 constantCount,
+	bool restoring
 ) {
 	ValueSlots constPool(constantCount);
 	if (constantCount == 0u) {
@@ -269,9 +250,10 @@ ValueSlots CPU::decodeConstantPool(
 				constPool.set(index, valueFloatBits(readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)));
 				break;
 			case Blua32ConstantTag::String:
-				constPool.set(index, valueString(internExecutionString(
+				constPool.set(index, valueString(m_stringPool.resolveImageRecord(
 					executionDomainId,
-					readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)
+					readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET),
+					restoring
 				)));
 				break;
 			default:
@@ -285,7 +267,8 @@ std::vector<u32> CPU::registerGlobalNames(
 	ExecutionDomainId executionDomainId,
 	u32 tableAddress,
 	u32 nameCount,
-	bool system
+	bool system,
+	bool restoring
 ) {
 	auto& slotByKey = system ? m_systemGlobalSlotByKey : m_globalSlotByKey;
 	auto& registeredNames = system ? m_systemGlobalNames : m_globalNames;
@@ -303,9 +286,10 @@ std::vector<u32> CPU::registerGlobalNames(
 	for (u32 index = 0; index < nameCount; ++index) {
 		const u8* record = m_executionTableView.data()
 			+ static_cast<size_t>(index) * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-		const StringId key = internExecutionString(
+		const StringId key = m_stringPool.resolveImageRecord(
 			executionDomainId,
-			readLE32(record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET)
+			readLE32(record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET),
+			restoring
 		);
 		auto slot = slotByKey.find(key);
 		if (slot == slotByKey.end()) {
@@ -320,7 +304,7 @@ std::vector<u32> CPU::registerGlobalNames(
 }
 
 std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
-	Blua32ExecutionBoot executionBoot
+	Blua32ExecutionBoot executionBoot, bool restoring
 ) {
 	const ExecutionDomainId executionDomainId = executionBoot.executionDomainId;
 	auto image = std::make_unique<Blua32ExecutionImage>();
@@ -356,22 +340,25 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	const u32 systemGlobalNameCount = readLE32(
 		header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET
 	);
+	if (!restoring) m_stringPool.activateRomTable(executionDomainId,
+		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
+		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
 	image->constPool = decodeConstantPool(
 		executionDomainId,
 		constantTableAddress,
-		constantCount
+		constantCount, restoring
 	);
 	image->globalSlots = registerGlobalNames(
 		executionDomainId,
 		globalNameTableAddress,
 		globalNameCount,
-		false
+		false, restoring
 	);
 	image->systemGlobalSlots = registerGlobalNames(
 		executionDomainId,
 		systemGlobalNameTableAddress,
 		systemGlobalNameCount,
-		true
+		true, restoring
 	);
 	return image;
 }
@@ -1171,7 +1158,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	}
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if ((state.executionResidencyMask & (1u << index)) != 0u) {
-			executionImageForDomain(static_cast<ExecutionDomainId>(index) - 1);
+			const auto boot = m_executionAddressSpace.resolveDomain(static_cast<ExecutionDomainId>(index) - 1);
+			m_executionImagesByDomain[index] = activateExecutionImage(*boot, true);
 		}
 	}
 	m_systemImage = m_executionImagesByDomain[static_cast<size_t>(SYSTEM_EXECUTION_DOMAIN_ID + 1)].get();
@@ -1774,7 +1762,7 @@ void CPU::runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out) {
 void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit) {
 	const Value selector = args[0];
 	if (valueIsString(selector)) {
-		if (m_stringPool.toString(asStringId(selector)) == "#") {
+		if (m_stringPool.byteLength(asStringId(selector)) == 1 && m_stringPool.byteAt(asStringId(selector), 0) == '#') {
 			out.push_back(valueInteger(static_cast<i32>(args.size() - 1)));
 			return;
 		}
@@ -1808,7 +1796,7 @@ void CPU::runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out) {
 		if (byte > 0xffu) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		result.push_back(static_cast<char>(static_cast<u8>(byte)));
 	}
-	out.push_back(valueString(m_stringPool.internOwned(std::move(result))));
+	out.push_back(valueString(m_stringPool.intern(result)));
 }
 
 void CPU::runBuiltinError(BuiltinArgsView args) {

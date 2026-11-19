@@ -78,14 +78,14 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 	cpu.setGlobalByKey(nilKey, valueNil());
 	assert.equal(cpu.globalSlotCount, count + 259);
 	cpu.collectTrackedHeapBytes();
-	const names = cpu.stringPool.captureState();
+
 	const memory = cpu.memory.captureSaveState();
 	const anchor = cpu.captureRuntimeState();
 	for (let index = 0; index < 257; index++) assert.equal(cpu.getGlobalByKey(cpu.stringPool.find(`dynamic${index}`)!), valueInteger(index));
 	cpu.setGlobalByKey(objectKey, valueNil());
 	cpu.setGlobalByKey(cpu.stringPool.intern('future'), valueInteger(100));
 	cpu.collectTrackedHeapBytes();
-	cpu.stringPool.restoreState(names);
+
 	cpu.memory.restoreSaveState(memory);
 	cpu.restoreRuntimeState(anchor);
 	assert.deepEqual(cpu.captureRuntimeState(), anchor);

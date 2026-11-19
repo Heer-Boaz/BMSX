@@ -123,14 +123,6 @@ void LuaHeap::accountTableStorageWork(size_t valueSlots) {
 	m_cpu.instructionBudgetRemaining -= static_cast<int>(valueSlots);
 }
 
-void LuaHeap::adjustForRestore(size_t previousBytes, size_t restoredBytes) {
-	if (restoredBytes > previousBytes) {
-		m_trackedBytes += restoredBytes - previousBytes;
-	} else {
-		m_trackedBytes -= previousBytes - restoredBytes;
-	}
-}
-
 size_t LuaHeap::capacity() const {
 	return m_cpu.heapAllocator().capacityBytes();
 }

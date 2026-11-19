@@ -5,7 +5,6 @@ import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../.
 import type { MachineSaveState } from '../../save_state';
 import type { CpuFrameState, CpuThreadState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
 import { CpuSnapshot } from '../../cpu/snapshot';
-import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { LuaHeapState } from '../../cpu/lua_heap';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { CartridgeCardState, CartridgeControllerState, CartridgeMailboxState } from '../../devices/cartridge/contracts';
@@ -44,7 +43,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x53534d42; // BMSS
+const SAVE_STATE_SIGNATURE = 0x53524d42; // BMRS
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -198,42 +197,6 @@ function readIrqControllerState(reader: BinaryReader): IrqControllerState {
 		userMask: reader.u32(),
 		userPendingFlags: reader.u32(),
 		supervisorContextActive: reader.bool(),
-	};
-}
-
-function writeStringPoolStateEntry(writer: BinarySink, state: StringPoolStateEntry): void {
-	writer.u32(state.id);
-	writer.byteString(state.value);
-	writer.bool(state.tracked);
-	writer.bool(state.reachable);
-}
-
-function readStringPoolStateEntry(reader: BinaryReader): StringPoolStateEntry {
-	return {
-		id: reader.u32(),
-		value: reader.byteString(),
-		tracked: reader.bool(),
-		reachable: reader.bool(),
-	};
-}
-
-function writeStringPoolState(writer: BinarySink, state: StringPoolState): void {
-	writer.u32(state.entries.length);
-	for (const value of state.entries) {
-		writeStringPoolStateEntry(writer, value);
-	}
-	writer.u32(state.slots);
-	writer.i32(state.sweep);
-	writer.u32(state.sweepEnd);
-	writer.u32(state.freeIds.length);
-	writer.u32s(state.freeIds);
-}
-
-function readStringPoolState(reader: BinaryReader): StringPoolState {
-	return {
-		entries: reader.array(readStringPoolStateEntry),
-		slots: reader.u32(), sweep: reader.i32(), sweepEnd: reader.u32(),
-		freeIds: Array.from(reader.u32s(reader.u32())),
 	};
 }
 
@@ -1115,7 +1078,6 @@ function writeMachineSaveState(writer: BinarySink, state: MachineSaveState): voi
 	writeGxGteState(writer, state.gxGte);
 	writeIrqControllerState(writer, state.irq);
 	writeAudioControllerState(writer, state.audio);
-	writeStringPoolState(writer, state.stringPool);
 	writeInputControllerState(writer, state.input);
 	writeImgDecControllerState(writer, state.imgDec);
 	writeSystemDebugTransmitState(writer, state.systemDebugTransmit);
@@ -1132,7 +1094,6 @@ function readMachineSaveState(reader: BinaryReader, ramByteCount: number, gxGpuV
 		gxGte: readGxGteState(reader),
 		irq: readIrqControllerState(reader),
 		audio: readAudioControllerState(reader),
-		stringPool: readStringPoolState(reader),
 		input: readInputControllerState(reader),
 		imgDec: readImgDecControllerState(reader),
 		systemDebugTransmit: readSystemDebugTransmitState(reader),

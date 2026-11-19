@@ -180,10 +180,12 @@ export class GcHeap {
 		this.tables.loadStringKey(meta, this.modeKey, this.scratch, 0);
 		let mode = 0;
 		if (this.scratch.getTag(0) === ValueTag.String) {
-			const text = this.cpu.stringPool.bytes(this.scratch.getStringId(0));
-			for (let i = 0; i < text.length; ++i) {
-				if (text.charCodeAt(i) === 107) mode |= 1;
-				if (text.charCodeAt(i) === 118) mode |= 2;
+			const id = this.scratch.getStringId(0), pool = this.cpu.stringPool;
+			const length = pool.byteLength(id);
+			for (let i = 0; i < length; ++i) {
+				const byte = pool.byteAt(id, i);
+				if (byte === 107) mode |= 1;
+				if (byte === 118) mode |= 2;
 			}
 		}
 		this.scratch.setNil(0);
@@ -244,13 +246,13 @@ export class GcHeap {
 		this.gray = this.grayAgain; this.grayAgain = null;
 		this.cpu.markHeapRoots(this); this.cpu.stringPool.markLocalRoots();
 		this.markValue(t0); this.markValue(t1); this.markValue(t2);
-		return this.cpu.collectionRootWordCount();
+		return this.cpu.collectionRootWordCount() + this.cpu.stringPool.takeMarkWork();
 	}
 	private atomic(t0: Value, t1: Value, t2: Value): number {
 		this.diagnostics?.beginAtomic();
 		let work = this.remark(t0, t1, t2);
 		this.diagnostics?.phase('traceNanoseconds');
-		while (this.gray !== null) work += this.trace(true);
+		while (this.gray !== null) work += this.trace(true) + this.cpu.stringPool.takeMarkWork();
 		do {
 			this.changed = false;
 			for (let i = 0; i < this.weak.length; ++i) {
@@ -259,7 +261,7 @@ export class GcHeap {
 				work += this.tables.scanSlots(table.address);
 				this.tables.forEachStoredEntry(table.address, this.ephemeronEntry);
 			}
-			while (this.gray !== null) work += this.trace(true);
+			while (this.gray !== null) work += this.trace(true) + this.cpu.stringPool.takeMarkWork();
 		} while (this.changed);
 		this.diagnostics?.phase('weakNanoseconds');
 		for (const table of this.weak) {
@@ -271,7 +273,7 @@ export class GcHeap {
 		this.cpu.pruneStaticClosures(); this.threads.length = 0; this.weak.length = 0;
 		this.white ^= 1; this.sweep = this.objects;
 		this.arena.beginObjectSweep(); this.phase = GcPhase.Sweep;
-		return work;
+		return work + this.cpu.stringPool.takeMarkWork();
 	}
 	private readonly sweepRecord = (address: number): boolean => {
 		const index = (address & GC_RECORD_MASK) >>> 3;
@@ -308,13 +310,14 @@ export class GcHeap {
 			this.diagnostics?.phase('rootsNanoseconds');
 			this.markValue(t0); this.markValue(t1); this.markValue(t2);
 			this.cpu.stringPool.markLocalRoots();
+			work += this.cpu.stringPool.takeMarkWork();
 		}
 		while (work < GC_STEP_WORDS && this.active()) {
 			switch (this.phase) {
 				case GcPhase.Mark:
 				case GcPhase.MarkAgain:
 					this.diagnostics?.phase(this.phase === GcPhase.Mark ? 'traceNanoseconds' : 'markAgainNanoseconds');
-					while (this.gray !== null && work < GC_STEP_WORDS) work += this.trace(false);
+					while (this.gray !== null && work < GC_STEP_WORDS) work += this.trace(false) + this.cpu.stringPool.takeMarkWork();
 					if (work < GC_STEP_WORDS) {
 						if (this.phase === GcPhase.Mark) {
 							work += this.remark(t0, t1, t2);

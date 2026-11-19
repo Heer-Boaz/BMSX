@@ -383,6 +383,20 @@ each unsigned payload byte, XOR it into the hash and multiply by
 the bucket count minus one. The chain contains each distinct byte sequence
 in that bucket once.
 
+A String value refers to one canonical record for its bytes. When constructing
+a String or resolving a String constant or name during activation, the CPU
+first looks for the same bytes in RAM, then in the system ROM index, then in
+the indices of activated cartridge images in activation order. It allocates a
+RAM record only if none matches. Consequently a cartridge can use one of its
+own String constants to read a Table field originally stored under a String
+with the same bytes in the system program.
+
+The record reference retains the source socket. A record in cartridge
+socket 1 uses bit 31 of the reference to identify that socket; the addresses
+written in a cartridge image itself do not set this bit. String record reads
+select the ROM or language RAM region directly. Missing ROM bytes read as zero;
+these reads do not select I/O or cartridge RAM.
+
 The two name tables establish separate ordinary-global and system-global
 namespaces. Within each namespace an existing name retains its value and a new
 name begins nil. A name-table index selects that name's slot; initial values

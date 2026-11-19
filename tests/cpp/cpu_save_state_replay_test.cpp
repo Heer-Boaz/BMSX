@@ -66,7 +66,7 @@ void replayAllocationIdentities() {
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto anchor = cpu.captureRuntimeState();
 	const auto anchorRam = cpu.memory().captureSaveState();
-	const auto strings = cpu.stringPool().captureState();
+
 	const auto anchorBytes = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime));
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "program completes");
 	const auto values = cpu.readCompletionValues();
@@ -77,7 +77,7 @@ void replayAllocationIdentities() {
 	};
 	const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime));
 	for (const int budget : {1001, 2001, 4001, 8001}) {
-		cpu.stringPool().restoreState(strings);
+
 		cpu.memory().restoreSaveState(anchorRam);
 		cpu.restoreRuntimeState(anchor);
 		require(bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime)) == anchorBytes, "full CPU state is restored independently of the previous grant");
@@ -145,8 +145,6 @@ void mirroredAllocationOrder() {
 	image.functions[1].upvalues = {{true, 0u}};
 	SnapshotMachine machine(image);
 	auto& cpu = machine.runtime.machine.cpu;
-	require(cpu.stringPool().intern("error in error handling", false) == 2u, "mirrored protected-call error string id");
-	require(cpu.stringPool().intern("Attempted to get length of an unsupported value.", false) == 3u, "mirrored fault error string id");
 	cpu.runUntilDepth(0, 1000);
 	const auto* closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
 	require(static_cast<bmsx::Upvalue*>(cpu.gcHeap().cellAt(closure->captureAddress(0)))->hashId == closure->hashId + 1u, "closure allocation precedes its new upvalue");
@@ -208,7 +206,7 @@ void replayWeakCollectionSchedule() {
 	for (int index = 0; index < 17; ++index) cpu.createTable(256, 0);
 	const auto savedRam = cpu.memory().captureSaveState();
 	const auto anchor = cpu.captureRuntimeState();
-	const auto strings = cpu.stringPool().captureState();
+
 	const auto allocateUntilCollected = [&]() {
 		auto* current = bmsx::asTable(cpu.getGlobalByKey(weakKey), cpu.gcHeap());
 		require(bmsx::valueIsTable(current->getInteger(1)), "restore must not collect a weak referent");
@@ -221,7 +219,7 @@ void replayWeakCollectionSchedule() {
 	const int expectedCount = allocateUntilCollected();
 	const auto expected = cpu.captureRuntimeState();
 	for (int pass = 0; pass < 3; ++pass) {
-		cpu.stringPool().restoreState(strings);
+
 		cpu.memory().restoreSaveState(savedRam);
 		cpu.restoreRuntimeState(anchor);
 		require(cpu.captureRuntimeState().luaHeap.trackedBytes == anchor.luaHeap.trackedBytes, "unreachable allocation debt survives restore");
@@ -419,13 +417,13 @@ void preserveDynamicGlobalRegisters() {
 	const auto nilKey = cpu.stringPool().intern("nil-name");
 	cpu.setGlobalByKey(nilKey, bmsx::valueNil());
 	cpu.collectHeap();
-	const auto strings = cpu.stringPool().captureState();
+
 	const auto ram = cpu.memory().captureSaveState();
 	const auto state = cpu.captureRuntimeState();
 	cpu.setGlobalByKey(key, bmsx::valueNil());
 	cpu.setGlobalByKey(cpu.stringPool().intern("future"), bmsx::valueInteger(100));
 	cpu.collectHeap();
-	cpu.stringPool().restoreState(strings);
+
 	cpu.memory().restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
 	require(cpu.globalSlotCount() == count + 259, "dynamic register membership restores exactly");

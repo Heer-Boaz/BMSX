@@ -2,7 +2,7 @@
 // Run: npm run ide:test -- <gameromname> tests/ide/hot_resume_heap.idetest.js
 //
 function fmt(s) {
-	return `tracked=${s.tracked} obj=${s.objectBytes} str=${s.stringBytes} code=${s.codeBytes} functions=${s.functions} consts=${s.constants} modules=${s.moduleFunctions} globals=${s.globals}`;
+	return `tracked=${s.tracked} code=${s.codeBytes} functions=${s.functions} consts=${s.constants} modules=${s.moduleFunctions} globals=${s.globals}`;
 }
 
 await t.waitForCart();
