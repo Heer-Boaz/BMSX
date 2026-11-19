@@ -179,6 +179,10 @@ export function blua32FunctionIndexAtAddress(image: Blua32ImageLayout, functionA
 }
 
 
+export function alignBlua32ImageOffset(offset: number, baseAddress: number, alignment: number): number {
+	return ((baseAddress + offset + alignment - 1) & ~(alignment - 1)) - baseAddress;
+}
+
 function imageOffset(address: number, byteCount: number, imageAddress: number, imageByteCount: number): number {
 	if (address < imageAddress || byteCount > imageByteCount - (address - imageAddress)) {
 		throw new Error('BLua32 image record points outside the executable image.');
