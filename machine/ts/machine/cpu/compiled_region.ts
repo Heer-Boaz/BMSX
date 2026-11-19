@@ -54,13 +54,17 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 		'let budget=state.remainingCycles,top=state.registerTop,exit;',
 		...[...bindings].map(register => `let rt${register},rw${register};`),
 		'switch(entry){'];
+	// Entries with the same live-in registers share one load sequence.
+	const prologues = new Map<string, number[]>();
 	for (let index = 0; index < residents.length; ++index) {
-		source.push(`case ${index}:`);
-		if (residents[index] === residents[index + 1]) continue;
-		for (const register of residents[index].keys())
-			source.push(`rt${register}=r.getTag(${register});rw${register}=r.getPayload(${register});`);
-		source.push('break;');
+		let load = '';
+		for (const register of [...residents[index].keys()].sort((left, right) => left - right))
+			load += `rt${register}=r.getTag(${register});rw${register}=r.getPayload(${register});`;
+		const group = prologues.get(load);
+		if (group === undefined) prologues.set(load, [index]);
+		else group.push(index);
 	}
+	for (const [load, group] of prologues) if (load !== '') source.push(`${group.map(index => `case ${index}:`).join('')}${load}break;`);
 	source.push('}region:for(;;){switch(entry){');
 	const transfer = (block: typeof blocks[number], index: number): string => {
 		const exit = exits[index];
