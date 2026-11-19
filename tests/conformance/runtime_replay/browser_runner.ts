@@ -230,7 +230,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	for (const page of image.decodedPages.values()) if (page.compiledBlocks !== null) {
 		for (const block of page.compiledBlocks.entries) if (block !== null) ++generatedBlocks;
 	}
-	require(generatedBlocks > 0, 'the unconfigured browser Runtime must generate JavaScript for the running game');
+	require(generatedBlocks === 0, 'the unconfigured browser Runtime interprets the running game');
 	await openRewind(); await press('ArrowLeft'); await settle();
 	await testWebGpuReadbackLifetime(runtime, backend);
 	await backend.device.queue.onSubmittedWorkDone();

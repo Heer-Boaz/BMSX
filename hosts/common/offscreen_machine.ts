@@ -1,6 +1,7 @@
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import type { MachineModelSpec } from '../../machine/ts/spec/bmsx/model';
+import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { cartridgeMediaFromImages } from './cartridge_media';
@@ -22,8 +23,9 @@ export class OffscreenMachine<TInput extends InputControllerInputSource> {
 		cartridgeSlots: readonly [Uint8Array | null, Uint8Array | null],
 		machineModel: MachineModelSpec,
 		public readonly input: TInput,
+		cpuExecutionBackend?: CpuExecutionBackend,
 	) {
-		this.runtime = new Runtime({ systemRomBytes: systemRom, cartridgeSlots: cartridgeMediaFromImages(cartridgeSlots), machineModel }, input);
+		this.runtime = new Runtime({ systemRomBytes: systemRom, cartridgeSlots: cartridgeMediaFromImages(cartridgeSlots), machineModel, cpuExecutionBackend }, input);
 		this.runtime.boot();
 	}
 

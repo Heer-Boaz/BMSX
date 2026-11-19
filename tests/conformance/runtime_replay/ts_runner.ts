@@ -190,7 +190,8 @@ async function main(): Promise<void> {
 			for (const block of page.compiledBlocks.entries) if (block !== null) ++compiledBlocks;
 		}
 	}
-	if (cpuBackend !== 'interpreter') assert.ok(compiledBlocks > 0, 'the replay must exercise actual generated JavaScript');
+	if (cpuBackend === 'javascript') assert.ok(compiledBlocks > 0, 'the JavaScript replay must exercise actual generated code');
+	else assert.equal(compiledBlocks, 0, 'the default and interpreter replays interpret');
 	console.log(JSON.stringify({ cpuBackend, compiledBlocks }));
 	console.log(JSON.stringify({ host: 'ts-history', seekSteps, seekWorkMs, maxSeekStepMs, seekRestoreMs, historyCaptures, historyCaptureMs, checkpoints: history.checkpointCount, inputBytes: history.inputJournal.storageBytes }));
 	applyRuntimeSaveState(runtime, capture());

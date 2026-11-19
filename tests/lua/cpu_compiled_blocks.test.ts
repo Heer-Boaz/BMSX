@@ -47,7 +47,7 @@ function loopImage() {
 	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 257 }] }, RAM_CODE_FIXTURE_BYTES);
 }
 
-test('an unconfigured Runtime generates JavaScript while the explicit interpreter remains a distinct reference', () => {
+test('an unconfigured Runtime interprets while the selected JavaScript backend generates code at the same guest cost', () => {
 	const address = DYNAMIC_RAM_BASE + 0x1000;
 	const image = linkTestSystemBlua32(compileLuaSource(`
 local n = 0
@@ -57,7 +57,7 @@ return n`, 'cpu-default.lua'));
 	rom.set(image.romBytes);
 	const options = { systemRomBytes: rom, cartridgeSlots: [null, null] as [null, null], machineModel: PSX_MACHINE_SPEC };
 	const input = { sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect: () => {} };
-	const fast = new Runtime(options, input), scalar = new Runtime({ ...options, cpuExecutionBackend: CpuExecutionBackend.Interpreter }, input);
+	const fast = new Runtime({ ...options, cpuExecutionBackend: CpuExecutionBackend.JavaScript }, input), scalar = new Runtime(options, input);
 	const images: Blua32ExecutionImage[] = [], charges: number[] = [];
 	for (const runtime of [fast, scalar]) {
 		runtime.boot(); const cpu = runtime.machine.cpu;
@@ -74,8 +74,8 @@ return n`, 'cpu-default.lua'));
 	for (const page of images[0].decodedPages.values()) if (page.compiledBlocks !== null) {
 		for (const block of page.compiledBlocks.entries) if (block !== null) ++generated;
 	}
-	assert.ok(generated > 0, 'the default Runtime must actually execute the codegen route');
-	for (const page of images[1].decodedPages.values()) assert.equal(page.compiledBlocks, null);
+	assert.ok(generated > 0, 'the JavaScript Runtime must actually execute the codegen route');
+	for (const page of images[1].decodedPages.values()) assert.equal(page.compiledBlocks, null, 'the default Runtime interprets');
 });
 
 test('generated JavaScript warms within one slice and preserves every admitted segment and WIDE extent', () => {

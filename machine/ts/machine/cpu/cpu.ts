@@ -340,7 +340,9 @@ export class CPU implements MappedPageInvalidator {
 		memory: Memory,
 		private readonly irqController: IrqController,
 		private readonly executionAddressSpace: ExecutionAddressSpace,
-		private readonly executionBackend = CpuExecutionBackend.JavaScript,
+		// The interpreter is the default: on BMSX's high-level opcodes the
+		// generated JavaScript costs more time, memory and warm-up than it saves.
+		private readonly executionBackend = CpuExecutionBackend.Interpreter,
 	) {
 		this.memory = memory;
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;

@@ -12,6 +12,7 @@ import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 
 const BOOT_SOURCE = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 const CART_SOURCE = 'bss level: u8[0x20000]\nlevel[0] = 7\nreturn level[0]';
@@ -20,12 +21,12 @@ function pageRound(address: number): number {
 	return (address + HEAP_PAGE_SIZE - 1) & -HEAP_PAGE_SIZE;
 }
 
-function bootPair() {
+function bootPair(executionBackend?: CpuExecutionBackend) {
 	const bios = compileLuaChunkToProgram(parseLuaChunk(BOOT_SOURCE, 'boot.lua').chunk, [], {
 		entrySource: BOOT_SOURCE, optLevel: 0, programDomain: 'system',
 	});
 	const cart = compileLuaChunkToProgram(parseLuaChunk(CART_SOURCE, 'cart.lua').chunk, [], { entrySource: CART_SOURCE, optLevel: 0 });
-	const system = createTestBlua32PairCpu(linkTestBlua32Pair(bios, cart));
+	const system = createTestBlua32PairCpu(linkTestBlua32Pair(bios, cart), executionBackend);
 	const systemEnd = system.executionAddressSpace.resolveSystemDomain().staticEnd;
 	const cartEnd = system.executionAddressSpace.resolveDomain(0)!.staticEnd;
 	assert.ok(cartEnd > systemEnd + HEAP_PAGE_SIZE, 'the cartridge statics extend past the system floor');
@@ -63,7 +64,7 @@ test('EXEC refuses a cartridge whose statics overlap a live heap page before wri
 });
 
 test('warm RAM code is retired when the floor shrinks and WIDE obeys both fetches', () => {
-	const { cpu, memory, executionAddressSpace } = bootPair();
+	const { cpu, memory, executionAddressSpace } = bootPair(CpuExecutionBackend.JavaScript);
 	const pc = cpu.heapAllocator.floorAddress();
 	const system = executionAddressSpace.resolveSystemDomain();
 	const select = (address: number) => cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.startupFunctionAddress, address);

@@ -21,15 +21,18 @@ const media = ['dist/system/bmsx-bios.debug.rom', `dist/${cart}.debug.rom`];
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-runtime-replay-'));
 try {
 	run('npx', ['tsx', 'tests/conformance/runtime_replay/preload_cartridge.ts', directory, media[0]]);
-	for (const [name, cartridge, assertions] of [
-		[cart, media[1], ['--require-badp-playback']],
-		['preload', join(directory, 'cart.rom'), ['--require-raw-byte-string']],
+	// The real cart also replays through the selectable JavaScript backend.
+	for (const [name, cartridge, assertions, backends] of [
+		[cart, media[1], ['--require-badp-playback'], ['default', 'javascript']],
+		['preload', join(directory, 'cart.rom'), ['--require-raw-byte-string'], ['default']],
 	]) {
-		const tsPrefix = join(directory, `${name}-ts`);
 		const cppPrefix = join(directory, `${name}-cpp`);
-		run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/ts_runner.ts', media[0], cartridge, tsPrefix]);
 		run('build-cpp-tests/bmsx_runtime_replay_conformance_runner', [media[0], cartridge, cppPrefix]);
-		run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/compare.ts', tsPrefix, cppPrefix, ...assertions]);
+		for (const backend of backends) {
+			const tsPrefix = join(directory, `${name}-ts-${backend}`);
+			run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/ts_runner.ts', media[0], cartridge, tsPrefix, backend]);
+			run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/compare.ts', tsPrefix, cppPrefix, ...assertions]);
+		}
 	}
 	run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/host_ts_runner.ts', ...media]);
 	copyFileSync(media[0], join(directory, 'bmsx-bios.rom'));

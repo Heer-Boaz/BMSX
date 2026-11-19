@@ -34,6 +34,7 @@ import { asClosure, valueInteger, valueNil, valueTag, ValueTag, valuePayload } f
 import { buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 
 async function fixture(t: TestContext, init = '') {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-hot-resume-'));
@@ -44,7 +45,8 @@ async function fixture(t: TestContext, init = '') {
 	const decoded = await loadRomToolingMedia(media.systemRom, [media.cartRom, null]);
 	const sources = createLoadedTestRuntimeSourceState(decoded.system, decoded.cartridgeSlots);
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
-	const target = new OffscreenMachine(media.systemRom, [media.cartRom, null], PSX_MACHINE_SPEC, input);
+	// Hot Resume must also replace generated bodies, so this fixture runs the JavaScript backend.
+	const target = new OffscreenMachine(media.systemRom, [media.cartRom, null], PSX_MACHINE_SPEC, input, CpuExecutionBackend.JavaScript);
 	const runtime = target.runtime, cpu = runtime.machine.cpu;
 	for (let tick = 0; tick < 100 && !cpu.isCartridgeExecutionActive(); tick++) target.advanceGame(10000);
 	assert.equal(cpu.isCartridgeExecutionActive(), true);
