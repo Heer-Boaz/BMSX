@@ -262,7 +262,7 @@ void NativeBlockCompiler::emit(
 	case OpCode::SETGL:
 	case OpCode::GETSYS:
 	case OpCode::SETSYS:
-		emitContext(instruction);
+		emitContext(instruction, slow);
 		break;
 	case OpCode::JMP:
 		emitExit(m_blocks[m_current]->terminal);

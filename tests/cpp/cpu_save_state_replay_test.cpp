@@ -285,8 +285,10 @@ void capturePreservesGlobalRegisters() {
 	cpu.runUntilDepth(0, 1000);
 	const auto key = cpu.stringPool().intern("answer");
 	require(cpu.getGlobalByKey(key) == bmsx::valueInteger(1), "SETGL writes the named owner");
+	const auto ram = cpu.memory().captureSaveState();
 	const auto snapshot = cpu.captureRuntimeState();
 	cpu.setGlobalByKey(key, bmsx::valueInteger(99));
+	cpu.memory().restoreSaveState(ram);
 	cpu.restoreRuntimeState(snapshot);
 	require(cpu.getGlobalByKey(key) == bmsx::valueInteger(1), "restore retains the authoritative register value");
 }

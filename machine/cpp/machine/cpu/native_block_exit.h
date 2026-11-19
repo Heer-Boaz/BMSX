@@ -35,6 +35,8 @@ enum class NativeBlockExit : u8 {
 	CreateClosure,
 	WriteWords,
 	WriteControl,
+	WriteGlobal,
+	WriteSystemGlobal,
 	Count,
 };
 

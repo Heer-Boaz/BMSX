@@ -8,24 +8,39 @@
 #include <bit>
 
 namespace bmsx {
-void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction) {
+void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction, NativeBlockExitSite* watched) {
+	auto* c = m_compiler;
 	const auto op = static_cast<OpCode>(instruction.op);
-	const bool store = op == OpCode::SETGL || op == OpCode::SETSYS;
-	const auto offset = op == OpCode::GETSYS || op == OpCode::SETSYS ? offsetof(NativeBlockRunState, systemGlobalValues)
-																	 : offsetof(NativeBlockRunState, globalValues);
-	if (store)
+	const auto bank = op == OpCode::GETSYS || op == OpCode::SETSYS ? offsetof(NativeBlockRunState, systemGlobalValues)
+		: offsetof(NativeBlockRunState, globalValues);
+	const sljit_sw words = bank + ValueSpan::wordsOffset(), tags = bank + ValueSpan::tagsOffset();
+	const sljit_sw wordOffset = instruction.bx * sizeof(u32), tagOffset = instruction.bx;
+	if (watched) {
+		// Neither lane can be written until both have passed admission:
+		// either one can invalidate the executing region.
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), words);
+		sljit_emit_op2(c, SLJIT_SUB, SLJIT_R0, 0, SLJIT_R2, 0,
+			SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, ram));
+		emitRamWordWriteWatch(*watched, SLJIT_R0, wordOffset, SLJIT_R1, SLJIT_R3);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), tags);
+		sljit_emit_op2(c, SLJIT_SUB, SLJIT_R0, 0, SLJIT_R3, 0,
+			SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, ram));
+		emitRamWordWriteWatch(*watched, SLJIT_R0, tagOffset, SLJIT_R1, SLJIT_R3);
 		emitRawLoad(instruction.a, SLJIT_R0, SLJIT_R1);
-	sljit_emit_op1(
-		m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offset + ValueSpan::wordsOffset());
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, store ? SLJIT_MEM1(SLJIT_R2) : SLJIT_R0,
-		store ? instruction.bx * sizeof(u32) : 0, store ? SLJIT_R0 : SLJIT_MEM1(SLJIT_R2),
-		store ? 0 : instruction.bx * sizeof(u32));
-	sljit_emit_op1(
-		m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offset + ValueSpan::tagsOffset());
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, store ? SLJIT_MEM1(SLJIT_R2) : SLJIT_R1, store ? instruction.bx : 0,
-		store ? SLJIT_R1 : SLJIT_MEM1(SLJIT_R2), store ? 0 : instruction.bx);
-	if (!store)
-		emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
+		if constexpr (std::endian::native == std::endian::big)
+			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), wordOffset, SLJIT_R0, 0);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), tags);
+		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R3), tagOffset, SLJIT_R1, 0);
+		return;
+	}
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), words);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), wordOffset);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), tags);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), tagOffset);
+	emitRawStore(instruction.a, SLJIT_R0, SLJIT_R1);
 }
 void NativeBlockCompiler::emitConstantIndex(const DecodedInstruction& instruction, NativeBlockExitSite& invalid) {
 	emitWordOperand(instruction.b, invalid);

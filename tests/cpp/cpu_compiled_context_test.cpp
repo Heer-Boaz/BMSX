@@ -252,7 +252,7 @@ void hotGlobalBanks() {
 			&& static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 3, "grown global banks remain live, distinct and do not extend top on stores");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	require(page.nativeBlocks->entries[entry].get() == block, "host bank relocation does not invalidate an unrelated compiled instruction page");
+	require(page.nativeBlocks->entries[entry].get() == block, "guest bank relocation does not invalidate an unrelated compiled instruction page");
 #endif
 }
 
@@ -328,14 +328,24 @@ void rawContextValues(CpuMachine& machine) {
 	ContextBlock globals(machine, {{OpCode::SETGL, 12, 0, 0, 1}, {OpCode::GETGL, 0, 0, 0, 1},
 		{OpCode::SETSYS, 0, 0, 0, 1}, {OpCode::GETSYS, 1, 0, 0, 1}, {OpCode::K1, 2},
 		{OpCode::SETGL, 2}, {OpCode::LOADNIL, 15, 0}, {OpCode::JMP}});
-	ValueSlots registers(16), ordinary(2), system(2);
+	ValueSlots registers(16);
+	ValueSpan ordinary(machine.memory, 0x1000u, 0x1008u, 2), system(machine.memory, 0x1040u, 0x1048u, 2);
 	for (const auto value : values) {
-		registers.clear(0, registers.capacity()); ordinary.clear(0, ordinary.capacity()); system.clear(0, system.capacity()); registers.set(12, value);
-		NativeBlockRunState state{.registers = registers.view(), .globalValues = ordinary.view(), .systemGlobalValues = system.view(), .remainingCycles = 100};
+		registers.clear(0, registers.capacity()); ordinary.clear(0, ordinary.size()); system.clear(0, system.size()); registers.set(12, value);
+		NativeBlockRunState state{.registers = registers.view(), .globalValues = ordinary, .systemGlobalValues = system, .remainingCycles = 100};
 		require(globals.block->run(state) == &globals.block->terminal && registers.get(0) == value && registers.get(1) == value
 			&& ordinary.get(1) == value && system.get(1) == value && ordinary.get(0) == valueInteger(1) && system.get(0) == valueNil()
 			&& state.registerTop == 3, "raw global banks preserve every kind, cached definitions and namespace without a source-top write");
 	}
+	// Arm only the destination tag word. The payload must not change
+	// until the checked store, even though the payload has no watch.
+	registers.set(12, valueFloatBits(0xffa12345));
+	ordinary.set(1, valueInteger(99));
+	machine.memory.ramWriteWatches().armCodeRange(0x1008u, 4u);
+	NativeBlockRunState watchedGlobal{.registers = registers.view(), .globalValues = ordinary, .systemGlobalValues = system, .remainingCycles = 100};
+	const auto* globalExit = globals.block->run(watchedGlobal);
+	require(globalExit->exit == NativeBlockExit::WriteGlobal && watchedGlobal.remainingCycles == 100 - BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]
+		&& ordinary.get(1) == valueInteger(99), "native watched global store leaves before changing either lane");
 	auto* owner = cpu.activeThread();
 	owner->resizeStack(32);
 	auto captureRegisters = owner->stack.subspan(0, 16);

@@ -1,0 +1,48 @@
+#pragma once
+
+#include <optional>
+
+#include "machine/cpu/value_slots.h"
+
+namespace bmsx {
+
+class HeapAllocator;
+class LuaHeap;
+
+struct GlobalBankState {
+	u32 base = 0;
+	u32 capacity = 0;
+	u32 count = 0;
+};
+
+// A CPU-owned namespace. Ordinals are stable even when the bank moves.
+// Guest bytes are name words, two hash buckets per slot, payloads, then tags.
+class GlobalBank {
+public:
+	GlobalBank(Memory& memory, HeapAllocator& allocator, LuaHeap& heap)
+		: m_memory(memory), m_allocator(allocator), m_heap(heap) {}
+
+	u32 count() const { return m_state.count; }
+	StringId name(u32 slot) const { return m_memory.readRamRecordWord(m_state.base + 4u * slot); }
+	ConstValueSpan values() const { return m_values; }
+	ValueSpan values() { return m_values; }
+	std::optional<u32> find(StringId key) const;
+	u32 registerName(StringId key, Value pending = valueNil());
+	GlobalBankState captureState() const { return m_state; }
+	void bind(GlobalBankState state);
+	void clear();
+
+private:
+	u32 bucketFor(StringId key) const;
+	u32 readBucket(u32 bucket) const;
+	void writeBucket(u32 bucket, u32 slot);
+	void grow(StringId key, Value pending);
+
+	Memory& m_memory;
+	HeapAllocator& m_allocator;
+	LuaHeap& m_heap;
+	GlobalBankState m_state;
+	ValueSpan m_values;
+};
+
+} // namespace bmsx

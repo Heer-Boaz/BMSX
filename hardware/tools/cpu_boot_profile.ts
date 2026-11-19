@@ -98,7 +98,7 @@ function main(): void {
 			}
 			snapshots.push({ frame, systemCycles: runtime.machine.scheduler.nowCycles,
 				trackedHeapBytes: state.luaHeap.trackedBytes,
-				ordinaryGlobals: state.globalSlots.length, systemGlobals: state.systemGlobals.length,
+				ordinaryGlobals: state.globals.count, systemGlobals: state.systemGlobals.count,
 				lastExecutionDomainId: state.lastExecutionDomainId, activeExecutionDomainId: state.executionCartridgeSlot,
 				executionResidencyMask: state.executionResidencyMask, hardHalted: state.hardHalted,
 				threads: state.threads.length, totalFrames: state.threads.reduce((n, t) => n + t.frames.length, 0),

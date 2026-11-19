@@ -83,7 +83,9 @@ CPU::CPU(
 	, m_stringPool(m_luaHeap, memory, m_heapAllocator)
 	, m_indexKey(valueString(m_stringPool.intern("__index")))
 	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool, m_stringPool.intern("__mode"))
-	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling"))) {
+	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling")))
+	, m_systemGlobalBank(memory, m_heapAllocator, m_luaHeap)
+	, m_globalBank(memory, m_heapAllocator, m_luaHeap) {
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	m_luaFaultErrorValues.fill(valueNil());
 	m_luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = valueString(m_stringPool.intern("Attempted to get length of an unsupported value."));
@@ -271,9 +273,7 @@ std::vector<u32> CPU::registerGlobalNames(
 	bool system,
 	bool restoring
 ) {
-	auto& slotByKey = system ? m_systemGlobalSlotByKey : m_globalSlotByKey;
-	auto& registeredNames = system ? m_systemGlobalNames : m_globalNames;
-	auto& values = system ? m_systemGlobalValues : m_globalValues;
+	auto& bank = system ? m_systemGlobalBank : m_globalBank;
 	std::vector<u32> slots(nameCount);
 	if (nameCount == 0u) {
 		return slots;
@@ -292,14 +292,7 @@ std::vector<u32> CPU::registerGlobalNames(
 			readLE32(record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET),
 			restoring
 		);
-		auto slot = slotByKey.find(key);
-		if (slot == slotByKey.end()) {
-			const size_t slotIndex = registeredNames.size();
-			slot = slotByKey.emplace(key, slotIndex).first;
-			registeredNames.push_back(key);
-			values.reserveCapacity(registeredNames.size());
-		}
-		slots[index] = static_cast<u32>(slot->second);
+		slots[index] = restoring ? *bank.find(key) : bank.registerName(key);
 	}
 	return slots;
 }
@@ -345,12 +338,6 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	if (!restoring) m_stringPool.activateRomTable(executionDomainId,
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
-	if (constantCount != 0u) {
-		image->constantBase = restoring ? *restoredPool : m_luaHeap.allocateRecord(constantCount * 5u, true, 0, 0);
-		const ValueSpan constants(m_memory, image->constantBase, image->constantBase + constantCount * 4u, constantCount);
-		if (!restoring) decodeConstantPool(executionDomainId, constantTableAddress, constants);
-		image->constPool = constants;
-	}
 	image->globalSlots = registerGlobalNames(
 		executionDomainId,
 		globalNameTableAddress,
@@ -363,6 +350,12 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		systemGlobalNameCount,
 		true, restoring
 	);
+	if (constantCount != 0u) {
+		image->constantBase = restoring ? *restoredPool : m_luaHeap.allocateRecord(constantCount * 5u, true, 0, 0);
+		const ValueSpan constants(m_memory, image->constantBase, image->constantBase + constantCount * 4u, constantCount);
+		if (!restoring) decodeConstantPool(executionDomainId, constantTableAddress, constants);
+		image->constPool = constants;
+	}
 	return image;
 }
 
@@ -500,47 +493,30 @@ void CPU::pruneStaticClosures() {
 void CPU::clearExecutionEnvironment() {
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	clearCallStack();
-	clearGlobalSlots();
-}
-
-void CPU::clearGlobalSlots() {
-	m_systemGlobalNames.clear();
-	m_systemGlobalValues.resize(0);
-	m_systemGlobalSlotByKey.clear();
-	m_globalNames.clear();
-	m_globalValues.resize(0);
-	m_globalSlotByKey.clear();
+	m_systemGlobalBank.clear();
+	m_globalBank.clear();
 }
 
 void CPU::setGlobalByKey(StringId key, const Value& value) {
-	const auto [slot, inserted] = m_globalSlotByKey.try_emplace(key, m_globalNames.size());
-	if (inserted) {
-		m_globalNames.push_back(key);
-		m_globalValues.reserveCapacity(m_globalNames.size());
-		m_globalValues.set(slot->second, value);
-	} else {
-		m_globalValues.set(slot->second, value);
-	}
+	const u32 slot = m_globalBank.registerName(key, value);
+	m_globalBank.values().set(slot, value);
 }
 
 void CPU::setSystemGlobalByKey(StringId key, const Value& value) {
-	const auto slot = m_systemGlobalSlotByKey.find(key);
-	if (slot == m_systemGlobalSlotByKey.end()) {
+	const auto slot = m_systemGlobalBank.find(key);
+	if (!slot) {
 		throw BMSX_RUNTIME_ERROR("System global '" + m_stringPool.toString(key) + "' has no register slot.");
 	}
-	m_systemGlobalValues.set(slot->second, value);
+	m_systemGlobalBank.values().set(*slot, value);
 }
 
 Value CPU::getSystemGlobalByKey(StringId key) const {
-	return m_systemGlobalValues.get(m_systemGlobalSlotByKey.find(key)->second);
+	return m_systemGlobalBank.values().get(*m_systemGlobalBank.find(key));
 }
 
 Value CPU::getGlobalByKey(StringId key) const {
-	const auto globalIt = m_globalSlotByKey.find(key);
-	if (globalIt != m_globalSlotByKey.end()) {
-		return m_globalValues.get(globalIt->second);
-	}
-	return valueNil();
+	const auto slot = m_globalBank.find(key);
+	return slot ? m_globalBank.values().get(*slot) : valueNil();
 }
 
 
@@ -888,21 +864,8 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	state.activeThreadRef = static_cast<int>(captureObject(m_activeThread));
 	state.completionThreadRef = static_cast<int>(captureObject(m_completionThread));
 	state.haltedUntilIrqThreadRef = m_haltedUntilIrqThread == nullptr ? -1 : static_cast<int>(captureObject(m_haltedUntilIrqThread));
-	state.systemGlobals.reserve(m_systemGlobalNames.size());
-	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
-		const Value value = m_systemGlobalValues.get(index);
-		state.systemGlobals.push_back(CpuRootValueState{
-			m_systemGlobalNames[index],
-			captureValueState(value),
-		});
-	}
-	state.globalSlots.reserve(m_globalNames.size());
-	for (size_t index = 0; index < m_globalNames.size(); ++index) {
-		state.globalSlots.push_back(CpuRootValueState{
-			m_globalNames[index],
-			captureValueState(m_globalValues.get(index)),
-		});
-	}
+	state.systemGlobals = m_systemGlobalBank.captureState();
+	state.globals = m_globalBank.captureState();
 	state.executionCartridgeSlot = m_activeExecutionDomainId;
 	state.programExecutionDomainId = m_programExecutionDomainId;
 	state.completionValues.reserve(m_completionValueCount);
@@ -1102,21 +1065,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (auto& image : m_executionImagesByDomain) {
 		image.reset();
 	}
-	clearGlobalSlots();
-	m_systemGlobalNames.reserve(state.systemGlobals.size());
-	m_systemGlobalValues.resize(state.systemGlobals.size());
-	for (const CpuRootValueState& entry : state.systemGlobals) {
-		m_systemGlobalSlotByKey.emplace(entry.key, m_systemGlobalNames.size());
-		m_systemGlobalNames.push_back(entry.key);
-		m_systemGlobalValues.set(m_systemGlobalNames.size() - 1, reader.readValue(entry.value));
-	}
-	m_globalNames.reserve(state.globalSlots.size());
-	m_globalValues.resize(state.globalSlots.size());
-	for (const CpuRootValueState& entry : state.globalSlots) {
-		m_globalSlotByKey.emplace(entry.key, m_globalNames.size());
-		m_globalNames.push_back(entry.key);
-		m_globalValues.set(m_globalNames.size() - 1, reader.readValue(entry.value));
-	}
+	m_systemGlobalBank.bind(state.systemGlobals);
+	m_globalBank.bind(state.globals);
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if ((state.executionResidencyMask & (1u << index)) != 0u) {
 			const auto boot = m_executionAddressSpace.resolveDomain(static_cast<ExecutionDomainId>(index) - 1);
@@ -2221,7 +2171,7 @@ dispatch_native_block: {
 				nativeState.cartridgeRom = m_memory.cartridgeController().romStorage(nativeState.cartridgeSlot);
 				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(nativeState.cartridgeSlot);
 				nativeState.state = {.registers = registers, .constants = IMAGE.constPool, .frame = frame, .heap = &m_heap,
-					.globalValues = m_globalValues.view(), .systemGlobalValues = m_systemGlobalValues.view(),
+					.globalValues = m_globalBank.values(), .systemGlobalValues = m_systemGlobalBank.values(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.readWindow(FrameField::Top),
 					.ram = m_memory.ramData(), .stackOffset = thread.stackOffset(), .stackBytes = thread.backingByteLength(),
@@ -2401,7 +2351,7 @@ void CPU::unwindToDepth(int targetDepth, bool chargeCaptures) {
 }
 
 size_t CPU::collectionRootWordCount() const {
-	size_t words = 3 * (m_systemGlobalNames.size() + m_globalNames.size());
+	size_t words = 3 * (m_systemGlobalBank.count() + m_globalBank.count());
 	for (const auto& image : m_executionImagesByDomain) {
 		if (image) words += 2 * image->constPool.size();
 	}
@@ -3008,13 +2958,13 @@ void CPU::markRoots(GcHeap& heap) {
 	for (const Value value : m_localRoots) {
 		heap.markValue(value);
 	}
-	for (size_t slot = 0; slot < m_systemGlobalNames.size(); ++slot) {
-		m_stringPool.markReachable(m_systemGlobalNames[slot]);
-		heap.markValue(m_systemGlobalValues.get(slot));
+	for (size_t slot = 0; slot < m_systemGlobalBank.count(); ++slot) {
+		m_stringPool.markReachable(m_systemGlobalBank.name(slot));
+		heap.markValue(m_systemGlobalBank.values().get(slot));
 	}
-	for (size_t slot = 0; slot < m_globalNames.size(); ++slot) {
-		m_stringPool.markReachable(m_globalNames[slot]);
-		heap.markValue(m_globalValues.get(slot));
+	for (size_t slot = 0; slot < m_globalBank.count(); ++slot) {
+		m_stringPool.markReachable(m_globalBank.name(slot));
+		heap.markValue(m_globalBank.values().get(slot));
 	}
 	for (const std::unique_ptr<Blua32ExecutionImage>& executionImage : m_executionImagesByDomain) {
 		if (!executionImage) {

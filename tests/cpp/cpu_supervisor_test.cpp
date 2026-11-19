@@ -310,28 +310,18 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	machine.cpu.replaceExecutionImage(
 		machine.executionAddressSpace.resolveSystemDomain()
 	);
-	const bmsx::CpuRuntimeState saved = machine.cpu.captureRuntimeState();
-	require(saved.systemGlobals.size() == 1u
-		&& saved.systemGlobals[0].key == irqKey
-		&& saved.snapshot.word(saved.systemGlobals[0].value) == static_cast<bmsx::u32>(bmsx::ValueTag::Integer)
-		&& saved.snapshot.word(saved.systemGlobals[0].value + 1) == 11u,
-		"media remount preserves the system registerfile");
-	require(saved.globalSlots.size() == 1u
-		&& saved.globalSlots[0].key == irqKey
-		&& saved.snapshot.word(saved.globalSlots[0].value) == static_cast<bmsx::u32>(bmsx::ValueTag::Integer)
-		&& saved.snapshot.word(saved.globalSlots[0].value + 1) == 22u,
-		"media remount preserves the ordinary global registerfile");
+	const auto savedRam = machine.memory.captureSaveState();
+	const auto saved = machine.cpu.captureRuntimeState();
+	require(saved.systemGlobals.count == 1u && saved.globals.count == 1u
+		&& saved.systemGlobals.base != saved.globals.base, "the namespaces have distinct physical banks");
+	require(machine.cpu.getSystemGlobalByKey(irqKey) == bmsx::valueInteger(11), "media remount preserves the system registerfile");
 	require(machine.cpu.getGlobalByKey(irqKey) == bmsx::valueInteger(22), "ordinary global lookup does not expose the system slot");
 
 	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueInteger(33));
 	machine.cpu.setGlobalByKey(irqKey, bmsx::valueInteger(44));
+	machine.memory.restoreSaveState(savedRam);
 	machine.cpu.restoreRuntimeState(saved);
-	const bmsx::CpuRuntimeState restored = machine.cpu.captureRuntimeState();
-	require(restored.systemGlobals.size() == 1u
-		&& restored.systemGlobals[0].key == irqKey
-		&& restored.snapshot.word(restored.systemGlobals[0].value) == static_cast<bmsx::u32>(bmsx::ValueTag::Integer)
-		&& restored.snapshot.word(restored.systemGlobals[0].value + 1) == 11u,
-		"save-state restores the system registerfile independently");
+	require(machine.cpu.getSystemGlobalByKey(irqKey) == bmsx::valueInteger(11), "save-state restores the system registerfile independently");
 	require(machine.cpu.getGlobalByKey(irqKey) == bmsx::valueInteger(22), "save-state restores the ordinary global independently");
 }
 

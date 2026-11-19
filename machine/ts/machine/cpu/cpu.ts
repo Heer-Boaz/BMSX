@@ -125,6 +125,7 @@ import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from
 import { Table, TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
 import { Closure, Upvalue, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, sameFunctionPrototype } from './closure';
 import { ValueSlots } from './value_slots';
+import { GlobalBank, type GlobalBankState } from './global_bank';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
 import {
 	DECODED_DISPATCH_BASE_CYCLES,
@@ -162,16 +163,11 @@ import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKin
 
 
 // These activation fields have not yet moved to the guest stack record.
-export type CpuRootValueState = {
-	key: StringId;
-	value: number;
-};
-
 export type CpuRuntimeState = {
 	executionCartridgeSlot: ExecutionDomainId;
 	programExecutionDomainId: ExecutionDomainId;
-	systemGlobals: CpuRootValueState[];
-	globalSlots: CpuRootValueState[];
+	systemGlobals: GlobalBankState;
+	globals: GlobalBankState;
 	executionResidencyMask: ExecutionDomainMask;
 	constantPoolBases: number[];
 	nextObjectHashId: number;
@@ -335,12 +331,8 @@ export class CPU implements MappedPageInvalidator {
 	};
 	private readonly staticClosuresByAddress = new Map<number, Closure[]>();
 	private stringIndexTable: Value = valueNil();
-	private systemGlobalNames: StringId[] = [];
-	private readonly systemGlobalSlots = new ValueSlots(0);
-	private systemGlobalSlotByKey: Map<StringId, number> = new Map();
-	private globalNames: StringId[] = [];
-	private readonly globalSlots = new ValueSlots(0);
-	private globalSlotByKey: Map<StringId, number> = new Map();
+	private readonly systemGlobalBank: GlobalBank;
+	private readonly globalBank: GlobalBank;
 	private completionValueSlots = new ValueSlots(8);
 	private completionValueCount = 0;
 	private nextObjectHashId = 1;
@@ -357,6 +349,8 @@ export class CPU implements MappedPageInvalidator {
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
 		this.luaHeap = new LuaHeap(this);
+		this.systemGlobalBank = new GlobalBank(memory, this.heapAllocator, this.luaHeap);
+		this.globalBank = new GlobalBank(memory, this.heapAllocator, this.luaHeap);
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.indexKey = this.stringPool.intern('__index');
 		this.modeKey = this.stringPool.intern('__mode');
@@ -639,7 +633,8 @@ export class CPU implements MappedPageInvalidator {
 	public clearExecutionEnvironment(): void {
 		this.clearCompletionValues();
 		this.clearCallStack();
-		this.clearGlobalSlots();
+		this.systemGlobalBank.clear();
+		this.globalBank.clear();
 	}
 
 
@@ -709,14 +704,11 @@ export class CPU implements MappedPageInvalidator {
 		system: boolean,
 		restoring: boolean,
 	): Uint32Array {
-		const slotByKey = system ? this.systemGlobalSlotByKey : this.globalSlotByKey;
-		const registeredNames = system ? this.systemGlobalNames : this.globalNames;
+		const bank = system ? this.systemGlobalBank : this.globalBank;
 		const slots = new Uint32Array(nameCount);
 		if (nameCount === 0) {
 			return slots;
 		}
-		const values = system ? this.systemGlobalSlots : this.globalSlots;
-		values.reserveCapacity(registeredNames.length + nameCount);
 		this.executionAddressSpace.bindReadOnlyView(
 			executionDomainId,
 			tableAddress,
@@ -732,14 +724,7 @@ export class CPU implements MappedPageInvalidator {
 				readLE32(bytes, recordByteOffset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET),
 				restoring,
 			);
-			let slot = slotByKey.get(key);
-			if (slot === undefined) {
-				slot = registeredNames.length;
-				slotByKey.set(key, slot);
-				registeredNames.push(key);
-				values.setNil(slot);
-			}
-			slots[index] = slot;
+			slots[index] = restoring ? bank.find(key)! : bank.registerName(key);
 		}
 		return slots;
 	}
@@ -783,16 +768,6 @@ export class CPU implements MappedPageInvalidator {
 		const { constantTableAddress, constantCount, globalNameTableAddress, globalNameCount,
 			systemGlobalNameTableAddress, systemGlobalNameCount } = header;
 		const restoring = restoredPool !== null;
-		const constantBase = restoring ? restoredPool : constantCount === 0 ? 0
-			: this.luaHeap.allocateRecord(constantCount * 5, true, 0, 0);
-		const offset = constantBase & RAM_RECORD_WORD_MASK;
-		const buffer = this.memory.ramData().buffer;
-		const constWords = new Uint32Array(buffer, offset, constantCount);
-		const constTags = new Uint8Array(buffer, offset + constantCount * 4, constantCount);
-		if (!restoring) {
-			this.decodeConstantPool(executionDomainId, constantTableAddress, constTags, constWords);
-			this.memory.invalidateRamWrite(offset, constantCount * 5);
-		}
 		const globalSlots = this.registerGlobalNames(
 			executionDomainId,
 			globalNameTableAddress,
@@ -805,6 +780,16 @@ export class CPU implements MappedPageInvalidator {
 			systemGlobalNameCount,
 			true, restoring,
 		);
+		const constantBase = restoring ? restoredPool : constantCount === 0 ? 0
+			: this.luaHeap.allocateRecord(constantCount * 5, true, 0, 0);
+		const offset = constantBase & RAM_RECORD_WORD_MASK;
+		const buffer = this.memory.ramData().buffer;
+		const constWords = new Uint32Array(buffer, offset, constantCount);
+		const constTags = new Uint8Array(buffer, offset + constantCount * 4, constantCount);
+		if (!restoring) {
+			this.decodeConstantPool(executionDomainId, constantTableAddress, constTags, constWords);
+			this.memory.invalidateRamWrite(offset, constantCount * 5);
+		}
 		const image: Blua32ExecutionImage = {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
@@ -2020,46 +2005,31 @@ export class CPU implements MappedPageInvalidator {
 	public setGlobalByKey(
 		key: StringId, value: Value,
 	): void {
-		let slot = this.globalSlotByKey.get(key);
-		if (slot === undefined) {
-			slot = this.globalNames.length;
-			this.globalSlots.reserveCapacity(slot + 1);
-			this.globalSlotByKey.set(key, slot);
-			this.globalNames.push(key);
-		}
-		this.globalSlots.set(slot, value);
+		const slot = this.globalBank.registerName(key, value);
+		this.globalBank.slots.set(slot, value);
 	}
 
 	public setSystemGlobalByKey(
 		key: StringId, value: Value,
 	): void {
-		const slot = this.systemGlobalSlotByKey.get(key);
+		const slot = this.systemGlobalBank.find(key);
 		if (slot === undefined) {
 			throw new Error(`System global '${this.stringPool.toString(key)}' has no register slot.`);
 		}
-		this.systemGlobalSlots.set(slot, value);
+		this.systemGlobalBank.slots.set(slot, value);
 	}
 
 	public getSystemGlobalByKey(key: StringId): Value {
-		return this.systemGlobalSlots.get(this.systemGlobalSlotByKey.get(key)!);
-	}
-
-	public clearGlobalSlots(): void {
-		this.systemGlobalNames = [];
-		this.systemGlobalSlots.clear(this.systemGlobalSlots.capacity());
-		this.systemGlobalSlotByKey = new Map();
-		this.globalNames = [];
-		this.globalSlots.clear(this.globalSlots.capacity());
-		this.globalSlotByKey = new Map();
+		return this.systemGlobalBank.slots.get(this.systemGlobalBank.find(key)!);
 	}
 
 	public get globalSlotCount(): number {
-		return this.globalNames.length;
+		return this.globalBank.count;
 	}
 
 	public getGlobalByKey(key: StringId): Value {
-		const globalSlot = this.globalSlotByKey.get(key);
-		return globalSlot === undefined ? valueNil() : this.globalSlots.get(globalSlot);
+		const slot = this.globalBank.find(key);
+		return slot === undefined ? valueNil() : this.globalBank.slots.get(slot);
 	}
 
 	private executeFusedNumericPair(
@@ -2439,7 +2409,7 @@ export class CPU implements MappedPageInvalidator {
 			image.constantsWatched = true;
 		}
 		const region = compileJavaScriptRegion(page, plans, image, this.memory, this.stringPool,
-			this.globalSlots, this.systemGlobalSlots, this.cop0Words, this.gc);
+			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.gc);
 		this.compiledCodeCache.install(page, region);
 		for (const block of region.entries) {
 			page.dispatchCycles[block.firstWord] = BASE_CYCLES[page.ops[block.firstWord]];
@@ -2529,6 +2499,13 @@ export class CPU implements MappedPageInvalidator {
 					break;
 				case CompiledBlockExit.SkipInstruction: this.skipNextInstruction(frame); redispatch = true; break;
 				case CompiledBlockExit.Vararg: this.executeVararg(frame, exit.exitA, exit.exitB); break;
+				case CompiledBlockExit.WriteGlobal:
+				case CompiledBlockExit.WriteSystemGlobal: {
+					const bank = exit.exit === CompiledBlockExit.WriteGlobal ? this.globalBank : this.systemGlobalBank;
+					bank.slots.copySlotFrom(registers, exit.exitBx, exit.exitA);
+					redispatch = true;
+					break;
+				}
 				case CompiledBlockExit.WriteUpvalue:
 					this.copyRegisterToUpvalue(frame.captureAddress(exit.exitB), registers, exit.exitA); break;
 				case CompiledBlockExit.InvalidOperand:
@@ -2699,18 +2676,18 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.GETSYS:
-					registers.copySlotFrom(this.systemGlobalSlots, a, page.bx[pageOffset]);
+					registers.copySlotFrom(this.systemGlobalBank.slots, a, page.bx[pageOffset]);
 					this.bumpRegisterTop(frame, a);
 					return;
 				case OpCode.SETSYS:
-					this.systemGlobalSlots.copySlotFrom(registers, page.bx[pageOffset], a);
+					this.systemGlobalBank.slots.copySlotFrom(registers, page.bx[pageOffset], a);
 					return;
 				case OpCode.GETGL:
-					registers.copySlotFrom(this.globalSlots, a, page.bx[pageOffset]);
+					registers.copySlotFrom(this.globalBank.slots, a, page.bx[pageOffset]);
 					this.bumpRegisterTop(frame, a);
 					return;
 				case OpCode.SETGL:
-					this.globalSlots.copySlotFrom(registers, page.bx[pageOffset], a);
+					this.globalBank.slots.copySlotFrom(registers, page.bx[pageOffset], a);
 					return;
 				case OpCode.GETI: {
 					const base = registers.get(page.b[pageOffset]), index = page.c[pageOffset];
@@ -3283,9 +3260,9 @@ export class CPU implements MappedPageInvalidator {
 				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.String) {
 					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				}
-				const slot = this.globalSlotByKey.get(args.registers.getPayload(args.base));
+				const slot = this.globalBank.find(args.registers.getPayload(args.base));
 				if (slot === undefined) out.push(valueNil());
-				else out.push(this.globalSlots.get(slot));
+				else out.push(this.globalBank.slots.get(slot));
 				break;
 			}
 			case BuiltinFunctionId.SetGlobal: {
@@ -3961,27 +3938,6 @@ export class CPU implements MappedPageInvalidator {
 		const completionThreadRef = captureObject(this.completionThread, CpuSnapshotObjectKind.Thread);
 		const haltedUntilIrqThreadRef = this.haltedUntilIrqThread === null ? -1 : captureObject(this.haltedUntilIrqThread, CpuSnapshotObjectKind.Thread);
 
-		const systemGlobals: CpuRootValueState[] = [];
-		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
-			systemGlobals.push({
-				key: this.systemGlobalNames[slot],
-				value: captureStoredValueState(
-					this.systemGlobalSlots.get(slot)
-				),
-			});
-		}
-
-		const globalSlots: CpuRootValueState[] = [];
-		for (let slot = 0; slot < this.globalNames.length; slot += 1) {
-			globalSlots.push({
-				key: this.globalNames[slot],
-				value: captureStoredValueState(
-					this.globalSlots.get(slot)
-				),
-			});
-		}
-
-
 		const completionValues = new Array<number>(this.completionValueCount);
 		for (let index = 0; index < this.completionValueCount; index += 1) {
 			completionValues[index] = captureStoredValueState(
@@ -4065,8 +4021,8 @@ export class CPU implements MappedPageInvalidator {
 		return {
 			executionCartridgeSlot: this.activeExecutionDomainId,
 			programExecutionDomainId: this.programExecutionDomainId,
-			systemGlobals,
-			globalSlots,
+			systemGlobals: this.systemGlobalBank.captureState(),
+			globals: this.globalBank.captureState(),
 			executionResidencyMask,
 			constantPoolBases,
 			nextObjectHashId: this.nextObjectHashId,
@@ -4177,23 +4133,8 @@ export class CPU implements MappedPageInvalidator {
 		this.memory.clearMappedPageWriteWatches();
 		this.gc.armThreadStackWatches();
 		this.executionImagesByDomain.fill(null);
-		this.clearGlobalSlots();
-		this.systemGlobalSlots.reserveCapacity(state.systemGlobals.length);
-		for (let slot = 0; slot < state.systemGlobals.length; slot += 1) {
-			const entry = state.systemGlobals[slot];
-			this.systemGlobalNames.push(entry.key);
-			this.systemGlobalSlotByKey.set(entry.key, slot);
-			reader.readValue(entry.value);
-			this.systemGlobalSlots.setEncoded(slot, reader.tag, reader.payload);
-		}
-		this.globalSlots.reserveCapacity(state.globalSlots.length);
-		for (let slot = 0; slot < state.globalSlots.length; slot += 1) {
-			const entry = state.globalSlots[slot];
-			this.globalNames.push(entry.key);
-			this.globalSlotByKey.set(entry.key, slot);
-			reader.readValue(entry.value);
-			this.globalSlots.setEncoded(slot, reader.tag, reader.payload);
-		}
+		this.systemGlobalBank.bind(state.systemGlobals);
+		this.globalBank.bind(state.globals);
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			if ((state.executionResidencyMask & (1 << index)) !== 0) {
 				const boot = this.executionAddressSpace.resolveDomain((index - 1) as ExecutionDomainId)!;
@@ -4276,8 +4217,8 @@ export class CPU implements MappedPageInvalidator {
 		const addSlots = (slots: ValueSlots, count: number): void => {
 			for (let index = 0; index < count; index += 1) add(slots.get(index));
 		};
-		addSlots(this.systemGlobalSlots, this.systemGlobalNames.length);
-		addSlots(this.globalSlots, this.globalNames.length);
+		addSlots(this.systemGlobalBank.slots, this.systemGlobalBank.count);
+		addSlots(this.globalBank.slots, this.globalBank.count);
 		addSlots(this.completionValueSlots, this.completionValueCount);
 		for (const image of this.executionImagesByDomain) {
 			if (image === null) continue;
@@ -4347,7 +4288,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public collectionRootWordCount(): number {
-		let words = 3 * (this.systemGlobalNames.length + this.globalNames.length);
+		let words = 3 * (this.systemGlobalBank.count + this.globalBank.count);
 		for (const image of this.executionImagesByDomain) {
 			if (image !== null) words += 2 * image.constTags.length;
 		}
@@ -4372,11 +4313,11 @@ export class CPU implements MappedPageInvalidator {
 			for (let j = 0; j < slots.length; ++j) heap.markValue(slots.get(j));
 		}
 		for (const value of this.localRoots) heap.markValue(value);
-		for (let i = 0; i < this.systemGlobalNames.length; ++i) {
-			this.stringPool.markReachable(this.systemGlobalNames[i]); heap.markSlot(this.systemGlobalSlots, i);
+		for (let i = 0; i < this.systemGlobalBank.count; ++i) {
+			this.stringPool.markReachable(this.systemGlobalBank.name(i)); heap.markSlot(this.systemGlobalBank.slots, i);
 		}
-		for (let i = 0; i < this.globalNames.length; ++i) {
-			this.stringPool.markReachable(this.globalNames[i]); heap.markSlot(this.globalSlots, i);
+		for (let i = 0; i < this.globalBank.count; ++i) {
+			this.stringPool.markReachable(this.globalBank.name(i)); heap.markSlot(this.globalBank.slots, i);
 		}
 		for (const image of this.executionImagesByDomain) if (image !== null) this.markHeapImage(image);
 		heap.markObject(this.rootThread); heap.markObject(this.activeThread); heap.markObject(this.completionThread);

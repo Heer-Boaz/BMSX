@@ -40,7 +40,7 @@ private:
 	void emitFloatInput(int selector, sljit_s32 destination);
 	void emitFloatCanonicalization(sljit_s32 reg);
 	void emitVararg(const DecodedInstruction&, NativeBlockExitSite& growth);
-	void emitContext(const DecodedInstruction& instruction);
+	void emitContext(const DecodedInstruction& instruction, NativeBlockExitSite* watched);
 	void emitNilRange(int first, int count);
 	void emitWordOperand(int selector, NativeBlockExitSite& invalid);
 	void emitConstantIndex(const DecodedInstruction&, NativeBlockExitSite&);

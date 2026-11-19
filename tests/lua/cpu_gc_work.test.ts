@@ -32,10 +32,10 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 
 // The root Thread owns a 64-byte header and a 160-byte allocation for
 // eight Value slots and two reserved activations. The remainder is a
-// Closure, 14 RAM String records and their 16 four-byte intern buckets.
+// Closure, 14 RAM String records, their 16 intern buckets and two global banks.
 const bootThreadBytes = 64 + 160;
 const bootThreadWords = bootThreadBytes / 4;
-const bootBytes = bootThreadBytes + 16 + 16 + 648 + 64;
+const bootBytes = bootThreadBytes + 16 + 16 + 648 + 64 + 2 * 160;
 const bootMarkWork = 2 * bootThreadWords + 3 + 2 * 12 + 14;
 const bootCollectionWork = 4 * bootThreadWords + 3 + 1 + 3 * 12 + 2 * 14 + 16;
 

@@ -543,17 +543,13 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				gc: { allocations: [0] },
 				executionCartridgeSlot: 0,
 				programExecutionDomainId: 0,
-				systemGlobals: [
-				{ key: 1, value: integer },
-			],
-				globalSlots: [
-					{ key: 3, value: float },
-				],
+				systemGlobals: { base: 0x08340000, capacity: 16, count: 11 },
+				globals: { base: 0x08340400, capacity: 32, count: 19 },
 				stringIndexTable: nil,
 			rootThreadRef: 0,
 			activeThreadRef: 0,
 			completionThreadRef: 0,
-			completionValues: [],
+			completionValues: [integer, float],
 			snapshot: snapshot.finish(),
 			lastExecutionDomainId: 0,
 			lastPc: 0,
@@ -674,8 +670,7 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 	snapshot.setWord(char, ValueTag.BuiltinFunction);
 	snapshot.setWord(char + 1, BuiltinFunctionId.StringChar);
 	snapshot.finish();
-	state.cpuState.globalSlots = [{ key: 2, value: next }];
-	state.cpuState.completionValues = [char];
+	state.cpuState.completionValues = [next, char];
 
 	const decoded = decodeRuntimeSaveState(
 		encodeRuntimeSaveState(state),
@@ -683,7 +678,7 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
 	);
 
-	assert.deepEqual(decoded.cpuState.globalSlots, state.cpuState.globalSlots);
+	assert.deepEqual(decoded.cpuState.globals, state.cpuState.globals);
 	assert.deepEqual(decoded.cpuState.completionValues, state.cpuState.completionValues);
 	assert.deepEqual(decoded.cpuState.snapshot, state.cpuState.snapshot);
 });

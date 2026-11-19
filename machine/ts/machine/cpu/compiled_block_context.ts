@@ -29,8 +29,10 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 		case OpCode.GETSYS:
 			return registers.copyFrom(a, op === OpCode.GETGL ? 'gl' : 'sy', `${page.bx[word]}`);
 		case OpCode.SETGL:
-		case OpCode.SETSYS:
-			return `${op === OpCode.SETGL ? 'gl' : 'sy'}.setEncoded(${page.bx[word]},${registers.tagOperand(a)},${registers.wordOperand(a)});`;
+		case OpCode.SETSYS: {
+			const bank = op === OpCode.SETGL ? 'gl' : 'sy', slot = page.bx[word];
+			return `if(${bank}.writeWatched(${slot})) ${registers.exit(exit)} ${bank}.setEncoded(${slot},${registers.tagOperand(a)},${registers.wordOperand(a)});`;
+		}
 		case OpCode.GETUP: {
 			const published = registers.writeBack(true);
 			registers.discard(a);

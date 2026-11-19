@@ -7,7 +7,7 @@ import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/c
 import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
@@ -59,6 +59,18 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.get(12));
 	assert.ok(page.compiledBlocks!.entries[entry] === block, 'growing the bank does not retire or strand the compiled consumer');
 	const saved = js.captureRuntimeState();
+	const system = saved.systemGlobals;
+	const tag = ((system.base + 16 * system.capacity) & RAM_RECORD_WORD_MASK) + 1; // the second SETSYS slot
+	js.setSystemGlobalByKey(js.stringPool.find('copied')!, valueInteger(23));
+	js.memory.ramWriteWatches().armCodeRange(tag, 1);
+	const run = { remainingCycles: loopCycles, registerTop: frame.top, memoryAddress: 0,
+		stackOffset: js.rootThread.stackOffset(), stackBytes: js.rootThread.backingByteLength(), lengthWork: { probes: 0 } };
+	const exit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, run)];
+	assert.equal(exit.exit, CompiledBlockExit.WriteSystemGlobal);
+	assert.equal(run.remainingCycles, loopCycles - BASE_CYCLES[OpCode.GETGL] - BASE_CYCLES[OpCode.SETSYS]);
+	assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), valueInteger(23), 'watch admission precedes both lane writes');
+	js.runUntilDepth(0, loopCycles);
+	assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.get(12), 'the checked store commits and resumes');
 	js.restoreRuntimeState(saved);
 	assert.deepEqual(js.captureRuntimeState(), saved, 'retained bank capacity is not serialized as extra globals');
 });

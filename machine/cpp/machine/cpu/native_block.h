@@ -297,6 +297,8 @@ inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op, int field, bool cont
 		case OpCode::SETI: return NativeBlockExit::WriteInteger;
 		case OpCode::LEN: return NativeBlockExit::InvalidLength;
 		case OpCode::SETUP: return NativeBlockExit::WriteUpvalue;
+		case OpCode::SETGL: return NativeBlockExit::WriteGlobal;
+		case OpCode::SETSYS: return NativeBlockExit::WriteSystemGlobal;
 		case OpCode::VARARG: return NativeBlockExit::Vararg;
 		case OpCode::LOADKR: return NativeBlockExit::InvalidConstant;
 		case OpCode::LOAD_MEM:

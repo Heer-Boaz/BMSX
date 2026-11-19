@@ -1,5 +1,5 @@
 import { ValueTag, valueBuiltinFunction, valueInteger, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
-import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
+import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -71,10 +71,11 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	cpu.setGlobalByKey(cpu.stringPool.intern('foo'), valueBuiltinFunction(BuiltinFunctionId.Next));
 
 	const state = cpu.captureRuntimeState();
-	const snapshot = state.snapshot;
-	const value = state.globalSlots.find(entry => entry.key === cpu.stringPool.find('foo'))!.value;
-	assert.equal(snapshot.word(value), ValueTag.BuiltinFunction);
-	assert.equal(snapshot.word(value + 1), BuiltinFunctionId.Next);
+	const bank = state.globals;
+	const words = bank.base + 12 * bank.capacity;
+	assert.equal(bank.count, 1);
+	assert.equal(cpu.memory.readRamRecordWord(words), BuiltinFunctionId.Next);
+	assert.equal(cpu.memory.readRamRecordByte(words + 4 * bank.capacity), ValueTag.BuiltinFunction);
 
 	const restoredCpu = createTestSystemCpu(EMPTY_TEST_IMAGE).cpu;
 	restoredCpu.memory.restoreSaveState(cpu.memory.captureSaveState());
@@ -85,17 +86,17 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	);
 });
 
-test('BLua32 image literals and debug names stay in ROM accounting', () => {
-	const baseline = createTestSystemCpu(EMPTY_TEST_IMAGE).cpu.collectTrackedHeapBytes();
-	const compiled = compileLuaSource([
-		'local alpha_beta_gamma = "literal text"',
-		'local field_name = "field literal"',
-		'program_literal = "global literal"',
-		'return alpha_beta_gamma, field_name',
-	].join('\n'), 'ram_accounting.lua');
-	const cpu = createTestSystemCpu(linkTestSystemBlua32(compiled)).cpu;
-
-	assert.equal(cpu.collectTrackedHeapBytes(), baseline);
+test('ROM text length does not change decoded constants or global bank allocation', () => {
+	const bootBytes = (part: string) => {
+		const source = [
+			`local local_${part} = "literal ${part}"`,
+			`global_${part} = "second ${part}"`,
+			`return local_${part}`,
+		].join('\n');
+		const compiled = compileLuaSource(source, `debug_${part}.lua`);
+		return createTestSystemCpu(linkTestSystemBlua32(compiled)).cpu.collectTrackedHeapBytes();
+	};
+	assert.equal(bootBytes('a'), bootBytes('long_text_'.repeat(48)));
 });
 
 test('runtime interning reuses a matching ROM record without allocating RAM', () => {
@@ -128,12 +129,12 @@ test('non-capturing const functions materialize as static proto references', () 
 		'return f',
 	].join('\n'));
 	const before = cpu.collectTrackedHeapBytes();
-	const stackBefore = cpu.rootThread.stackRegisters.capacity();
+	const backingBefore = heapAllocationBytes(cpu.rootThread.backingByteLength());
 
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 
 	assert.equal(cpu.collectTrackedHeapBytes() - before,
-		(cpu.rootThread.stackRegisters.capacity() - stackBefore) * THREAD_STACK_SLOT_BYTES);
+		heapAllocationBytes(cpu.rootThread.backingByteLength()) - backingBefore);
 });
 
 test('restored static closures reuse the static proto cache', () => {

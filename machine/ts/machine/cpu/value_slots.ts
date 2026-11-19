@@ -37,6 +37,10 @@ export class ValueSlots implements ValueWriteTarget {
 	public capacity(): number { return this.size; }
 	public byteLength(): number { return this.size * 5; }
 	public ramOffset(): number { return this.wordAddress; }
+	public writeWatched(index: number): boolean {
+		const watches = this.ram!.ramWriteWatches(), slot = this.base + index;
+		return watches.anyWatched(this.wordAddress + slot * 4, 4) || watches.anyWatched(this.tagAddress + slot, 1);
+	}
 	public ramMirrored(): boolean { return this.mirrored; }
 	public bindRam(memory: Memory, offset: number, size: number, relocate = false, requirePort = false): void {
 		const buffer = memory.ramData().buffer;

@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x4b534d42u; // BMSK
+constexpr u32 kSaveStateSignature = 0x4c534d42u; // BMSL
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1148,18 +1148,6 @@ RuntimeSaveMachineState readRuntimeSaveMachineState(BinaryReader& reader, size_t
 	return state;
 }
 
-template<class Writer> void writeCpuRootValueState(Writer& writer, const CpuRootValueState& state) {
-	writer.u32(state.key);
-	writer.u32(state.value);
-}
-
-CpuRootValueState readCpuRootValueState(BinaryReader& reader) {
-	CpuRootValueState state;
-	state.key = reader.u32();
-	state.value = reader.u32();
-	return state;
-}
-
 template<class Writer> void writeCpuSnapshot(Writer& writer, const CpuSnapshot& state) {
 	writer.u32(static_cast<u32>(state.words().size()));
 	writer.u32s(state.words());
@@ -1187,14 +1175,12 @@ GcState readGcState(BinaryReader& reader) {
 template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntimeState& state) {
 	writer.i32(state.executionCartridgeSlot);
 	writer.i32(state.programExecutionDomainId);
-	writer.u32(static_cast<u32>(state.systemGlobals.size()));
-	for (const auto& value : state.systemGlobals) {
-		writeCpuRootValueState(writer, value);
-	}
-	writer.u32(static_cast<u32>(state.globalSlots.size()));
-	for (const auto& value : state.globalSlots) {
-		writeCpuRootValueState(writer, value);
-	}
+	writer.u32(state.systemGlobals.base);
+	writer.u32(state.systemGlobals.capacity);
+	writer.u32(state.systemGlobals.count);
+	writer.u32(state.globals.base);
+	writer.u32(state.globals.capacity);
+	writer.u32(state.globals.count);
 	writer.u32(state.stringIndexTable);
 	writer.i32(state.rootThreadRef);
 	writer.i32(state.activeThreadRef);
@@ -1240,16 +1226,8 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	CpuRuntimeState state;
 	state.executionCartridgeSlot = reader.i32();
 	state.programExecutionDomainId = reader.i32();
-	const u32 systemGlobalsCount = reader.u32();
-	state.systemGlobals.reserve(systemGlobalsCount);
-	for (u32 index = 0; index < systemGlobalsCount; ++index) {
-		state.systemGlobals.push_back(readCpuRootValueState(reader));
-	}
-	const u32 globalSlotsCount = reader.u32();
-	state.globalSlots.reserve(globalSlotsCount);
-	for (u32 index = 0; index < globalSlotsCount; ++index) {
-		state.globalSlots.push_back(readCpuRootValueState(reader));
-	}
+	state.systemGlobals = {reader.u32(), reader.u32(), reader.u32()};
+	state.globals = {reader.u32(), reader.u32(), reader.u32()};
 	state.stringIndexTable = reader.u32();
 	state.rootThreadRef = reader.i32();
 	state.activeThreadRef = reader.i32();

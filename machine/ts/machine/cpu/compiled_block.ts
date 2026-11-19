@@ -50,6 +50,8 @@ export const enum CompiledBlockExit {
 	CreateClosure,
 	WriteWords,
 	InvalidOperand,
+	WriteGlobal,
+	WriteSystemGlobal,
 }
 
 const sideExitKinds: (CompiledBlockExit | undefined)[] = [];
@@ -64,6 +66,7 @@ for (const [op, exit] of [
 	[OpCode.STORE_MEM_WORDS, CompiledBlockExit.WriteWords], [OpCode.STORE_MEM_WORDS_D, CompiledBlockExit.WriteWords],
 	[OpCode.VARARG, CompiledBlockExit.Vararg], [OpCode.SETUP, CompiledBlockExit.WriteUpvalue],
 	[OpCode.LOADKR, CompiledBlockExit.InvalidConstant],
+	[OpCode.SETGL, CompiledBlockExit.WriteGlobal], [OpCode.SETSYS, CompiledBlockExit.WriteSystemGlobal],
 ] as const) sideExitKinds[op] = exit;
 
 function compiledBlockExitResumesFrame(exit: CompiledBlockExit): boolean {

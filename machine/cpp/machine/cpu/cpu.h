@@ -26,6 +26,7 @@
 #include "machine/cpu/closure.h"
 #include "machine/execution_address_space.h"
 #include "machine/cpu/errors.h"
+#include "machine/cpu/global_bank.h"
 #include "machine/cpu/heap_allocator.h"
 #include "machine/cpu/lua_heap.h"
 #include "spec/blua32/instruction_format.h"
@@ -102,16 +103,11 @@ struct ExecutionHookBinding {
 	ExecutionDomainMask preMaskableInterruptDomainMask;
 };
 
-struct CpuRootValueState {
-	StringId key = 0;
-	u32 value = 0;
-};
-
 struct CpuRuntimeState {
 	ExecutionDomainId executionCartridgeSlot = SYSTEM_EXECUTION_DOMAIN_ID;
 	ExecutionDomainId programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
-	std::vector<CpuRootValueState> systemGlobals;
-	std::vector<CpuRootValueState> globalSlots;
+	GlobalBankState systemGlobals;
+	GlobalBankState globals;
 	ExecutionDomainMask executionResidencyMask = 0;
 	std::array<u32, EXECUTION_DOMAIN_COUNT> constantPoolBases{};
 	u32 nextObjectHashId = 1;
@@ -203,8 +199,7 @@ public:
 	void setSystemGlobalByKey(StringId key, const Value& value);
 	Value getSystemGlobalByKey(StringId key) const;
 	Value getGlobalByKey(StringId key) const;
-	void clearGlobalSlots();
-	size_t globalSlotCount() const { return m_globalNames.size(); }
+	size_t globalSlotCount() const { return m_globalBank.count(); }
 
 	Value createBuiltinFunction(BuiltinFunctionId id);
 	Table* createTable(int arraySize = 0, int hashSize = 0);
@@ -552,12 +547,8 @@ private:
 	std::vector<u32> m_closureCellScratch;
 	std::vector<u32> m_closureUpvalueWordScratch;
 	std::vector<u32> m_captureAddressScratch;
-	std::vector<StringId> m_systemGlobalNames;
-	ValueSlots m_systemGlobalValues;
-	std::unordered_map<StringId, size_t> m_systemGlobalSlotByKey;
-	std::vector<StringId> m_globalNames;
-	ValueSlots m_globalValues;
-	std::unordered_map<StringId, size_t> m_globalSlotByKey;
+	GlobalBank m_systemGlobalBank;
+	GlobalBank m_globalBank;
 	Value m_stringIndexTable = valueNil();
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	DiagnosticGcProfile m_diagnosticGcProfile;

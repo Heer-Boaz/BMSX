@@ -174,6 +174,13 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::Vararg:
 			cpu.executeVararg(*frame, exit->exitA, exit->exitB);
 			break;
+		case NativeBlockExit::WriteGlobal:
+		case NativeBlockExit::WriteSystemGlobal: {
+			auto& bank = exit->exit == NativeBlockExit::WriteGlobal ? cpu.m_globalBank : cpu.m_systemGlobalBank;
+			bank.values().set(exit->exitBx, frame->registers.get(exit->exitA));
+			transition = NativeBlockTransition::Redispatch;
+			break;
+		}
 		case NativeBlockExit::WriteUpvalue:
 			cpu.writeUpvalue(frame->captureAddress(exit->exitB), frame->registers.get(exit->exitA));
 			break;
@@ -242,8 +249,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			// These helpers neither change frames nor operate a device. Keep the
 			// latched image/bank and avoid resolving their fixed successor again.
 			state.registers = frame->registers;
-			state.globalValues = cpu.m_globalValues.view();
-			state.systemGlobalValues = cpu.m_systemGlobalValues.view();
+			state.globalValues = cpu.m_globalBank.values();
+			state.systemGlobalValues = cpu.m_systemGlobalBank.values();
 			state.remainingCycles = cpu.instructionBudgetRemaining;
 			state.registerTop = frame->readWindow(FrameField::Top);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -307,8 +314,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			&& (frame->executionImage->executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
 				|| pc < CART_ROM_BASE || exit->currentPc >= CART_ROM_BASE)) target->linkFrom(*exit);
 		state.registers = frame->registers;
-		state.globalValues = cpu.m_globalValues.view();
-		state.systemGlobalValues = cpu.m_systemGlobalValues.view();
+		state.globalValues = cpu.m_globalBank.values();
+		state.systemGlobalValues = cpu.m_systemGlobalBank.values();
 		if (transition != NativeBlockTransition::NextInstruction) {
 			state.constants = frame->executionImage->constPool;
 			state.frame = frame;

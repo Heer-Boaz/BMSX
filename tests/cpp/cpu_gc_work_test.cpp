@@ -50,9 +50,9 @@ struct Machine {
 
 // Thread224 (64-byte header and the 160-byte class for 40 Value bytes plus two 48-byte frames)
 // + Closure16, a 16-byte constant bank (three slots), 14 machine Strings occupying 648 bytes
-// and their 16 four-byte intern buckets. Each live String marks once,
+// and their 16 four-byte intern buckets, plus two 160-byte global banks. Each live String marks once,
 // and every issued object block and intern bucket is visited once.
-constexpr int bootBytes = 224 + 16 + 16 + 648 + 64;
+constexpr int bootBytes = 224 + 16 + 16 + 648 + 64 + 2 * 160;
 constexpr int bootMarkWork = 2 * 56 + 3 + 2 * 12 + 14;
 constexpr int bootCollectionWork = 4 * 56 + 3 + 1 + 3 * 12 + 2 * 14 + 16;
 

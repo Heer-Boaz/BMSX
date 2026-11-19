@@ -87,28 +87,28 @@ DISPATCH_LABEL(KSMI) {
 DISPATCH_LABEL(GETSYS) {
 	const int a = decoded->a;
 	const uint32_t bx = decoded->bx;
-	SET_REGISTER_FAST(a, m_systemGlobalValues.get(static_cast<size_t>(bx)));
+	SET_REGISTER_FAST(a, m_systemGlobalBank.values().get(static_cast<size_t>(bx)));
 	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SETSYS) {
 	const int a = decoded->a;
 	const uint32_t bx = decoded->bx;
-	m_systemGlobalValues.set(static_cast<size_t>(bx), REG(a));
+	m_systemGlobalBank.values().set(static_cast<size_t>(bx), REG(a));
 	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(GETGL) {
 	const int a = decoded->a;
 	const uint32_t bx = decoded->bx;
-	SET_REGISTER_FAST(a, m_globalValues.get(static_cast<size_t>(bx)));
+	SET_REGISTER_FAST(a, m_globalBank.values().get(static_cast<size_t>(bx)));
 	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SETGL) {
 	const int a = decoded->a;
 	const uint32_t bx = decoded->bx;
-	m_globalValues.set(static_cast<size_t>(bx), REG(a));
+	m_globalBank.values().set(static_cast<size_t>(bx), REG(a));
 	DISPATCH_NEXT();
 }
 

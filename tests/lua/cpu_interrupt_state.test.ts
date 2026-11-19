@@ -1134,8 +1134,7 @@ halt_until_irq
 	assert.equal(memory.readMappedU32LE(systemSeenAddress), IRQ_VBLANK);
 	assert.equal(memory.readMappedU32LE(cartSeenAddress), 0);
 	const saved = cpu.captureRuntimeState();
-	assert.equal(saved.systemGlobals.some(entry => entry.key === cpu.stringPool.find('irq')), true);
-	assert.equal(saved.globalSlots.some(entry => entry.key === cpu.stringPool.find('irq')), true);
+	assert.notEqual(saved.systemGlobals.base, saved.globals.base, 'same-name ordinary and system IRQ slots are in different banks');
 	cpu.restoreRuntimeState(saved);
 
 	irqController.raise(IRQ_VBLANK);

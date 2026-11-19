@@ -284,6 +284,7 @@ add_library(bmsx_core STATIC
 	machine/cpu/snapshot.cpp
 	machine/cpu/execution_image.cpp
 	machine/cpu/gc_heap.cpp
+	machine/cpu/global_bank.cpp
 	machine/cpu/heap_allocator.cpp
 	machine/cpu/lua_heap.cpp
 	machine/cpu/table.cpp
