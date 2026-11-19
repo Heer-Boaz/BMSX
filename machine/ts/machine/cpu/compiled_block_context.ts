@@ -1,4 +1,5 @@
-import { UPVALUE_ADDRESS_MASK, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './closure';
+import { GC_COLOR_OFFSET } from './gc_object';
+import { UPVALUE_ADDRESS_MASK, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './closure';
 import { ThreadField } from './thread_record';
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueTag } from './value';
@@ -45,8 +46,13 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 		case OpCode.SETUP: {
 			const tag = registers.tagOperand(a), word = registers.wordOperand(a);
 			return `{const m=h.memory,c=frame.captureAddress(${b})&${UPVALUE_ADDRESS_MASK};
-				if((m.readRamRecordByte(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN})||(m.ramWriteWatches().anyWatched(c,8))) ${registers.exit(exit)}
-				h.cellAt(c)?.writeBarrier();m.writeRamRecordWord(c+${UPVALUE_VALUE_WORD},${word});m.writeRamRecordByte(c+${UPVALUE_VALUE_TAG},${tag});}`;
+				const watches=m.ramWriteWatches();
+				if((m.readRamRecordByte(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN})||watches.anyWatched(c,8)) ${registers.exit(exit)}
+				if(m.readRamRecordByte(c+${GC_COLOR_OFFSET})===3){
+					if(watches.anyWatched(c+${UPVALUE_NEXT},4)||watches.anyWatched(h.changedHeadOffset(),4)) ${registers.exit(exit)}
+					h.writeBarrier(c,${UPVALUE_NEXT});
+				}
+				m.writeRamRecordWord(c+${UPVALUE_VALUE_WORD},${word});m.writeRamRecordByte(c+${UPVALUE_VALUE_TAG},${tag});}`;
 		}
 		case OpCode.VARARG: {
 			if (b === 1) return '';

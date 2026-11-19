@@ -28,18 +28,4 @@ inline void emitPhysicalRecordPointer(sljit_compiler* compiler, sljit_s32 offset
 		sljit_emit_op1(compiler, SLJIT_MOV_P, object, 0, SLJIT_MEM2(heap, offset), 0);
 	}
 }
-
-// The collector's backward barrier is nonallocating. Mirror the header's
-// exact gray-again transition; no GC step can run between this store and it.
-inline void emitGcWriteBarrier(sljit_compiler* compiler, sljit_s32 object, sljit_s32 scratch, sljit_s32 link) {
-	sljit_emit_op1(compiler, SLJIT_MOV_P, scratch, 0, SLJIT_MEM1(object), offsetof(GCObject, gcRecord));
-	sljit_emit_op1(compiler, SLJIT_MOV_U8, link, 0, SLJIT_MEM1(scratch), GC_COLOR_OFFSET);
-	auto* scanned = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, link, 0, SLJIT_IMM, 3);
-	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM1(scratch), GC_COLOR_OFFSET, SLJIT_IMM, 2);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, scratch, 0, SLJIT_MEM1(object), offsetof(GCObject, grayHead));
-	sljit_emit_op1(compiler, SLJIT_MOV_P, link, 0, SLJIT_MEM1(scratch), 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(object), offsetof(GCObject, grayNext), link, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(scratch), 0, object, 0);
-	sljit_set_label(scanned, sljit_emit_label(compiler));
-}
 } // namespace bmsx

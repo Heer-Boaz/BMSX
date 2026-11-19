@@ -73,22 +73,7 @@ void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool ar
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver,
 		SLJIT_IMM, MAIN_RAM_SIZE - Table::HEADER_BYTES);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, 0);
-	emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, SLJIT_R3);
-
-	// Only the scanned-record path needs a host attachment until gray-again
-	// links also live in RAM. R1 is still the destination slot.
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), slot);
-	emitPhysicalRecordPointer(c, SLJIT_R0, SLJIT_R0, SLJIT_R2);
-	auto* unattached = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), offsetof(GCObject, type));
-	auto* otherRecord = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, static_cast<u8>(ObjType::Table));
-	emitGcWriteBarrier(c, SLJIT_R0, SLJIT_R2, SLJIT_R3);
-	auto* restore = sljit_emit_label(c);
-	sljit_set_label(unattached, restore);
-	sljit_set_label(otherRecord, restore);
-	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), slot);
-	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
+	emitGrayChange(exit, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R0, SLJIT_R2, SLJIT_R3, GC_RECORD_LINK, 3u);
 	sljit_set_label(notBlack, sljit_emit_label(c));
 }
 

@@ -1,4 +1,4 @@
-import { GcObject, GcKind } from './gc_object';
+import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK, GcObject, GcKind } from './gc_object';
 import { heapAllocationBytes } from './heap_allocator';
 import { ValueTag, valueFromTag, valueTag, valuePayload, type Value } from './value';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
@@ -41,7 +41,6 @@ export class Upvalue extends GcObject {
 	}
 	public close(): void {
 		const captured = this.value;
-		this.writeBarrier();
 		const offset = this.address & UPVALUE_ADDRESS_MASK;
 		const ram = this.memory.ramData();
 		ram[offset + UPVALUE_FLAGS] &= ~UPVALUE_OPEN;
@@ -50,6 +49,7 @@ export class Upvalue extends GcObject {
 		writeLE32(ram, offset + UPVALUE_OWNER, 0);
 		writeLE32(ram, offset + UPVALUE_NEXT, 0);
 		this.memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
+		this.gcOwner.writeBarrier(this.address, UPVALUE_NEXT);
 	}
 	public static load(memory: Memory, address: number): Value {
 		const cell = address & UPVALUE_ADDRESS_MASK;
@@ -133,7 +133,8 @@ export class FunctionPrototypePool {
 	}
 }
 
-export const CLOSURE_CAPTURE_COUNT = 4;
+const CLOSURE_COUNT_HIGH_BYTE = 3;
+const CLOSURE_COUNT_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
 export const CLOSURE_PROTOTYPE_ADDRESS = 8;
 export const CLOSURE_CAPTURE_WORDS = 12;
 export function closureRecordBytes(captures: number): number { return CLOSURE_CAPTURE_WORDS + 4 * captures; }
@@ -143,16 +144,22 @@ export class Closure extends GcObject {
 		private readonly memory: Memory,
 		public readonly address: number,
 		public prototypeRecord: Readonly<FunctionPrototype>,
-		public readonly upvalueCount: number,
 		public readonly canonical: boolean,
 	) {
 		super(GcKind.Closure);
 	}
 	public get heapBytes(): number { return heapAllocationBytes(closureRecordBytes(this.upvalueCount)); }
-	public initializeRecord(white: number): void {
+	public get upvalueCount(): number { return Closure.captureCount(this.memory, this.address); }
+	public static captureCount(memory: Memory, address: number): number {
+		const low = memory.readRamRecordWord(address + GC_RECORD_LINK) >>> GC_GRAY_INDEX_BITS;
+		const high = memory.readRamRecordByte(address + CLOSURE_COUNT_HIGH_BYTE) & 0x7f;
+		return low | (high << CLOSURE_COUNT_LOW_BITS);
+	}
+	public initializeRecord(white: number, count: number): void {
 		const flags = (this.prototypeRecord.executionDomainId + 1) | (this.canonical ? 4 : 0);
-		this.memory.writeRamRecordWord(this.address, ValueTag.Closure | (white << 8) | (flags << 16));
-		this.memory.writeRamRecordWord(this.address + CLOSURE_CAPTURE_COUNT, this.upvalueCount);
+		this.memory.writeRamRecordWord(this.address, ValueTag.Closure | (white << 8)
+			| (flags << 16) | ((count >>> CLOSURE_COUNT_LOW_BITS) << 24));
+		this.memory.writeRamRecordWord(this.address + GC_RECORD_LINK, count << GC_GRAY_INDEX_BITS);
 		this.memory.writeRamRecordWord(this.address + CLOSURE_PROTOTYPE_ADDRESS, this.prototypeRecord.functionAddress);
 	}
 	public captureAddress(index: number): number {

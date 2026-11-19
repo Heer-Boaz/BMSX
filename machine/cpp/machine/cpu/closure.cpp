@@ -1,4 +1,5 @@
 #include "machine/cpu/closure.h"
+#include "machine/cpu/gc_heap.h"
 
 #include "machine/cpu/thread.h"
 #include "machine/memory/memory.h"
@@ -42,9 +43,8 @@ void Upvalue::bind(u32 owner, u32 slot, u32 next) {
 	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
 }
 
-void Upvalue::close() {
+void Upvalue::close(GcHeap& heap) {
 	const Value captured = value();
-	writeBarrier();
 	const u32 offset = address & CELL_MASK;
 	auto* record = memory.ramData() + offset;
 	record[UPVALUE_FLAGS] &= ~UPVALUE_OPEN;
@@ -53,6 +53,7 @@ void Upvalue::close() {
 	writeLE32(record + UPVALUE_OWNER, 0);
 	writeLE32(record + UPVALUE_NEXT, 0);
 	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
+	heap.writeBarrier(address, UPVALUE_NEXT);
 }
 
 Value Upvalue::load(const Memory& memory, u32 address) {
@@ -66,11 +67,18 @@ void Upvalue::store(Memory& memory, u32 address, Value value) {
 	memory.writeRamRecordByte(ports.tag, static_cast<u8>(valueTag(value)));
 }
 
-void Closure::initializeRecord(u8 white) {
+void Closure::initializeRecord(u8 white, u32 count) {
 	const u32 flags = static_cast<u32>(prototype->executionDomainId + 1) | (canonical ? 4u : 0u);
-	memory.writeRamRecordWord(address, static_cast<u32>(ValueTag::Closure) | (static_cast<u32>(white) << 8) | (flags << 16));
-	memory.writeRamRecordWord(address + CLOSURE_CAPTURE_COUNT, upvalueCount);
+	memory.writeRamRecordWord(address, static_cast<u32>(ValueTag::Closure) | (static_cast<u32>(white) << 8)
+		| (flags << 16) | ((count >> CLOSURE_COUNT_LOW_BITS) << 24));
+	memory.writeRamRecordWord(address + GC_RECORD_LINK, count << GC_GRAY_INDEX_BITS);
 	memory.writeRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS, prototype->functionAddress);
+}
+
+u32 Closure::captureCount(const Memory& memory, u32 address) {
+	const u32 low = memory.readRamRecordWord(address + GC_RECORD_LINK) >> GC_GRAY_INDEX_BITS;
+	const u32 high = memory.readRamRecordByte(address + CLOSURE_COUNT_HIGH_BYTE) & 0x7fu;
+	return low | (high << CLOSURE_COUNT_LOW_BITS);
 }
 
 u32 Closure::captureAddress(u32 index) const {

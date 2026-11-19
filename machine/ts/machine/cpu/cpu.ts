@@ -124,7 +124,7 @@ import {
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table, TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
-import { Closure, Upvalue, UPVALUE_CHAIN_LIMIT, sameFunctionPrototype } from './closure';
+import { Closure, Upvalue, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, sameFunctionPrototype } from './closure';
 import { ValueSlots } from './value_slots';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
 import {
@@ -866,8 +866,8 @@ export class CPU implements MappedPageInvalidator {
 			}
 			if (match !== null) return match;
 		}
-		const closure = new Closure(this.memory, this.luaHeap.allocateClosureRecord(0), record, 0, true);
-		closure.initializeRecord(this.gc.white());
+		const closure = new Closure(this.memory, this.luaHeap.allocateClosureRecord(0), record, true);
+		closure.initializeRecord(this.gc.white(), 0);
 		closure.hashId = this.allocateObjectHashId();
 		this.gc.track(closure);
 		closures = this.staticClosuresByAddress.get(record.functionAddress);
@@ -3057,8 +3057,8 @@ export class CPU implements MappedPageInvalidator {
 		}
 		if (this.captureAddresses.length < newUpvalueCount) this.captureAddresses = new Uint32Array(newUpvalueCount);
 		const address = this.luaHeap.allocateClosureRecord(count, this.captureAddresses, newUpvalueCount);
-		const closure = new Closure(this.memory, address, functionRecord, count, false);
-		closure.initializeRecord(this.gc.white());
+		const closure = new Closure(this.memory, address, functionRecord, false);
+		closure.initializeRecord(this.gc.white(), count);
 		closure.hashId = this.allocateObjectHashId();
 		this.gc.track(closure);
 		let nextCell = 0;
@@ -3097,7 +3097,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private copyRegisterToUpvalue(address: number, registers: ValueSlots, registerIndex: number): void {
-		if (!Upvalue.isOpen(this.memory, address)) this.gc.cellAt(address)?.writeBarrier();
+		if (!Upvalue.isOpen(this.memory, address)) this.gc.writeBarrier(address & UPVALUE_ADDRESS_MASK, UPVALUE_NEXT);
 		Upvalue.store(this.memory, address, registers.getTag(registerIndex), registers.getPayload(registerIndex));
 	}
 
@@ -3974,7 +3974,6 @@ export class CPU implements MappedPageInvalidator {
 			|| a.prototypeRecord.executionDomainId - b.prototypeRecord.executionDomainId || a.prototypeRecord.codeAddress - b.prototypeRecord.codeAddress
 			|| a.prototypeRecord.numParams - b.prototypeRecord.numParams || a.prototypeRecord.maxStack - b.prototypeRecord.maxStack || a.prototypeRecord.flags - b.prototypeRecord.flags
 			|| a.prototypeRecord.upvalueTableAddress - b.prototypeRecord.upvalueTableAddress || a.prototypeRecord.recordUpvalueCount - b.prototypeRecord.recordUpvalueCount
-			|| a.upvalueCount - b.upvalueCount
 			|| a.hashId - b.hashId);
 		for (const closure of canonicalClosures) {
 			captureObject(closure, CpuSnapshotObjectKind.Closure);
@@ -4006,7 +4005,6 @@ export class CPU implements MappedPageInvalidator {
 					writer.setWord(offset + CpuSnapshotClosure.HashId, closure.hashId);
 					writer.setWord(offset + CpuSnapshotClosure.FunctionAddress, closure.prototypeRecord.functionAddress);
 					writer.setWord(offset + CpuSnapshotClosure.Canonical, closure.canonical ? 1 : 0);
-					writer.setWord(offset + CpuSnapshotClosure.UpvalueCount, closure.upvalueCount);
 					writer.setWord(offset + CpuSnapshotClosure.CodeAddress, closure.prototypeRecord.codeAddress);
 					writer.setWord(offset + CpuSnapshotClosure.NumParams, closure.prototypeRecord.numParams);
 					writer.setWord(offset + CpuSnapshotClosure.MaxStack, closure.prototypeRecord.maxStack);
@@ -4112,7 +4110,6 @@ export class CPU implements MappedPageInvalidator {
 					const upvalueTableAddress = snapshot.word(offset + CpuSnapshotClosure.UpvalueTableAddress);
 					const executionDomainId = snapshot.int(offset + CpuSnapshotClosure.ExecutionDomainId) as ExecutionDomainId;
 					const recordUpvalueCount = snapshot.word(offset + CpuSnapshotClosure.RecordUpvalueCount);
-					const count = snapshot.word(offset + CpuSnapshotClosure.UpvalueCount);
 					const canonical = snapshot.word(offset + CpuSnapshotClosure.Canonical) !== 0;
 					const address = snapshot.word(offset + CpuSnapshotClosure.Record);
 					const record = { functionAddress, codeAddress, numParams, maxStack, flags, upvalueTableAddress, executionDomainId, recordUpvalueCount };
@@ -4120,7 +4117,7 @@ export class CPU implements MappedPageInvalidator {
 					const existingIndex = previous === undefined ? -1 : previous.findIndex(item =>
 						item.hashId === snapshot.word(offset + CpuSnapshotClosure.HashId) && item.address === address
 						&& sameFunctionPrototype(item.prototypeRecord, record));
-					const closure = existingIndex < 0 ? new Closure(this.memory, address, record, count, canonical) : previous!.splice(existingIndex, 1)[0];
+					const closure = existingIndex < 0 ? new Closure(this.memory, address, record, canonical) : previous!.splice(existingIndex, 1)[0];
 					if (existingIndex < 0) { this.gc.track(closure); }
 					closure.restored = true;
 					closure.hashId = snapshot.word(offset + CpuSnapshotClosure.HashId);
@@ -4286,7 +4283,7 @@ export class CPU implements MappedPageInvalidator {
 				case GcKind.Closure: {
 					const closure = object as Closure;
 					visitor(closure);
-					for (let index = 0; index < closure.upvalueCount; ++index) {
+					for (let index = 0, count = closure.upvalueCount; index < count; ++index) {
 						const cell = this.gc.cellAt(closure.captureAddress(index));
 						if (cell !== null) upvalues.push(cell);
 					}

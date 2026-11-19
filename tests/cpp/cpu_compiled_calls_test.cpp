@@ -1012,12 +1012,12 @@ void weakCanonicalClosuresAndStaticEntry() {
 		require(machine.cpu.luaHeap().collectionTarget() > pressure.first + 32,
 			"callee stack growth collected while admitting a freshly created canonical closure");
 		const auto direct = machine.cpu.activeThread()->currentFrame->attachedClosure();
-		require(direct->prototype->recordUpvalueCount == 3 && direct->upvalueCount == 0,
+		require(direct->prototype->recordUpvalueCount == 3 && direct->upvalueCount() == 0,
 			"direct STATIC entry binds raw descriptor count but has no captured slots");
 		const auto directState = machine.cpu.captureRuntimeState();
 		machine.cpu.restoreRuntimeState(directState);
 		const auto restored = machine.cpu.activeThread()->currentFrame->attachedClosure();
-		require(restored->prototype->recordUpvalueCount == 3 && restored->upvalueCount == 0,
+		require(restored->prototype->recordUpvalueCount == 3 && restored->upvalueCount() == 0,
 			"snapshot preserves the distinction without reading nonexistent upvalues");
 	}
 }

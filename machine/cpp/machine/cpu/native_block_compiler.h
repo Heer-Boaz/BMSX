@@ -53,6 +53,8 @@ private:
 	void emitTableSlotOffset(sljit_s32 destination, bool word);
 	void emitTableSlotLoad(sljit_s32 destination, bool word);
 	void emitTableWriteWatch(NativeBlockExitSite&, bool arraySlot);
+	void emitGrayChange(NativeBlockExitSite&, sljit_s32 offset, sljit_sw offsetArg, sljit_s32 record,
+		sljit_s32 scratch, sljit_s32 link, u32 linkOffset, u32 watchedWords);
 	void emitRamWordWriteWatch(NativeBlockExitSite&, sljit_s32 address, sljit_sw addressArg, sljit_s32 bits, sljit_s32 group, u32 wordMask = 1u);
 	void emitLength(const DecodedInstruction&, NativeBlockExitSite&);
 	// R2 is the host address; result is a word in R0 or external binary64 in FR0.

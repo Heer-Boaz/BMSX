@@ -2,8 +2,8 @@ import { MAIN_RAM_SIZE } from '../../spec/bmsx/memory_map';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes, type HeapAllocator } from './heap_allocator';
-import { GcObject, GcKind } from './gc_object';
-import { type Closure, type Upvalue, UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, FunctionPrototypePool, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
+import { GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT, GcObject, GcKind } from './gc_object';
+import { type Closure, type Upvalue, UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, UPVALUE_NEXT, FunctionPrototypePool, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
 import { Table, TableRecords } from './table';
 import { Thread, THREAD_HEAP_BYTES } from './thread';
 import { ThreadField } from './thread_record';
@@ -13,8 +13,10 @@ import type { LuaHeap } from './lua_heap';
 import { ceilDiv4 } from '../common/numeric';
 import type { GcDiagnostics } from './gc_diagnostics';
 
-const GC_RECORD_ALIGNMENT = 8;
+const GC_RECORD_ALIGNMENT = 1 << GC_RECORD_SHIFT;
 const GC_RECORD_MASK = MAIN_RAM_SIZE - GC_RECORD_ALIGNMENT;
+export const GC_TRACE_HEAD = 4;
+export const GC_CHANGED_HEAD = 8;
 export const GC_STEP_WORDS = 4096;
 export const GC_ASSIST_BYTES = 256;
 export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
@@ -22,12 +24,10 @@ export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
 const GC_PHASE_SELECTOR = [GcPhase.Pause, GcPhase.Mark, GcPhase.MarkAgain, GcPhase.Atomic,
 	GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause, GcPhase.Pause];
 export type GcState = {
-	allocations: number[]; gray: number[]; grayAgain: number[]; threads: number[]; weak: number[];
+	allocations: number[]; threads: number[]; weak: number[];
 };
 export class GcHeap {
 	public diagnostics: GcDiagnostics | null = null;
-	public gray: GcObject | null = null;
-	public grayAgain: GcObject | null = null;
 	private objects: GcObject | null = null;
 	private readonly controlOffset: number;
 	public phase(): GcPhase {
@@ -102,7 +102,7 @@ export class GcHeap {
 		}
 		this.records[(object.address & GC_RECORD_MASK) >>> 3] = object;
 		object.restored = false;
-		object.gcOwner = this; object.gcGrayNext = null;
+		object.gcOwner = this;
 		object.gcPrevious = null; object.gcNext = this.objects;
 		if (this.objects !== null) this.objects.gcPrevious = object;
 		this.objects = object;
@@ -120,17 +120,36 @@ export class GcHeap {
 		if (object.gcPrevious !== null) object.gcPrevious.gcNext = object.gcNext;
 		else this.objects = object.gcNext;
 		if (object.gcNext !== null) object.gcNext.gcPrevious = object.gcPrevious;
-		object.gcNext = null; object.gcPrevious = null; object.gcGrayNext = null;
+		object.gcNext = null; object.gcPrevious = null;
 	}
 	public active(): boolean { return this.phase() !== GcPhase.Pause; }
 	public isAlive(object: GcObject | null): boolean { return object !== null && object.gcColor !== this.white(); }
 	public sweepGarbage(object: GcObject): boolean {
 		return this.phase() === GcPhase.Sweep && object.gcColor === (this.white() ^ 1);
 	}
+	public changedHeadOffset(): number { return this.controlOffset + GC_CHANGED_HEAD; }
+	private head(queue: number): number { return this.memory.readRamRecordWord(this.controlOffset + queue) & GC_GRAY_INDEX_MASK; }
+	private enqueue(address: number, link: number, queue: number, closure = false): void {
+		const previous = this.head(queue);
+		const captureCountBits = closure ? this.memory.readRamRecordWord(address + link) & ~GC_GRAY_INDEX_MASK : 0;
+		this.memory.writeRamRecordWord(address + link, captureCountBits | previous);
+		this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, 2);
+		this.memory.writeRamRecordWord(this.controlOffset + queue, (address & GC_RECORD_MASK) >>> GC_RECORD_SHIFT);
+	}
+	public writeBarrier(address: number, link: number): void {
+		if (this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) === 3) this.enqueue(address, link, GC_CHANGED_HEAD);
+	}
 	public markObject(object: GcObject | null): boolean {
 		if (object === null || object.gcColor !== this.white()) return false;
-		object.gcColor = 2; object.gcGrayNext = this.gray; this.gray = object;
+		this.enqueue(object.address, GC_RECORD_LINK, GC_TRACE_HEAD, object.gcKind === GcKind.Closure);
 		return true;
+	}
+	private markCell(cell: Upvalue | null): number {
+		if (cell === null || cell.gcColor !== this.white()) return 0;
+		cell.gcColor = 3;
+		if (cell.open) this.markObject(this.threadAt(cell.ownerAddress));
+		this.markValue(cell.value);
+		return UPVALUE_HEAP_BYTES >>> 2;
 	}
 	public markValue(value: Value): boolean {
 		switch (valueTag(value)) {
@@ -191,8 +210,17 @@ export class GcHeap {
 		return mode;
 	}
 	private trace(atomic: boolean): number {
-		const object = this.gray!;
-		this.gray = object.gcGrayNext; object.gcGrayNext = null; object.gcColor = 3;
+		const index = this.head(GC_TRACE_HEAD), object = this.records[index];
+		// Only a queued color clocks the link, even for malformed cycles.
+		if (object === null || object.gcColor !== 2) {
+			this.memory.writeRamRecordWord(this.controlOffset + GC_TRACE_HEAD, 0);
+			return 0;
+		}
+		const link = (index << GC_RECORD_SHIFT) + (object.gcKind === GcKind.Upvalue ? UPVALUE_NEXT : GC_RECORD_LINK);
+		const packed = this.memory.readRamRecordWord(link);
+		this.memory.writeRamRecordWord(this.controlOffset + GC_TRACE_HEAD, packed & GC_GRAY_INDEX_MASK);
+		this.memory.writeRamRecordWord(link, object.gcKind === GcKind.Closure ? packed & ~GC_GRAY_INDEX_MASK : 0);
+		object.gcColor = 3;
 		switch (object.gcKind) {
 			case GcKind.Table: {
 				const table = object as Table;
@@ -203,20 +231,18 @@ export class GcHeap {
 				return (TableRecords.HEADER_BYTES >>> 2) + this.tables.scanSlots(table.address);
 			}
 			case GcKind.Closure: {
-				const closure = object as Closure;
-				for (let index = 0; index < closure.upvalueCount; ++index) {
-					this.markObject(this.cellAt(closure.captureAddress(index)));
-				}
-				return 3 + closure.upvalueCount;
+				const closure = object as Closure, count = closure.upvalueCount;
+				let work = 3 + count;
+				for (let index = 0; index < count; ++index) work += this.markCell(this.cellAt(closure.captureAddress(index)));
+				return work;
 			}
-			case GcKind.Upvalue: {
-				const upvalue = object as Upvalue;
-				if (upvalue.open) this.markObject(this.threadAt(upvalue.ownerAddress));
-				this.markValue(upvalue.value);
-				break;
-			}
+			case GcKind.Upvalue:
+				// Only closed, changed cells enter the queue.
+				this.markValue((object as Upvalue).value);
+				return UPVALUE_HEAP_BYTES >>> 2;
 			case GcKind.Thread: {
 				const thread = object as Thread;
+				let cellWork = 0;
 				if (!atomic) this.threads.push(thread);
 				this.markObject(thread.resumer); this.markObject(thread.entry); this.markValue(thread.error);
 				let liveTop = thread.currentFrame === null ? 0 : thread.currentFrame.stackBase + Math.min(thread.currentFrame.top, thread.currentFrame.stackCapacity);
@@ -228,7 +254,7 @@ export class GcHeap {
 					for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
 						const upvalue = this.openCellAt(address);
 						if (upvalue === null) break;
-						this.markObject(upvalue);
+						cellWork += this.markCell(upvalue);
 						const slot = upvalue.stackSlot;
 						if (slot < thread.stackRegisters.capacity()) liveTop = Math.max(liveTop, slot + 1);
 						address = upvalue.nextAddress;
@@ -238,18 +264,17 @@ export class GcHeap {
 				if (liveTop < thread.stackRegisters.capacity())
 					thread.stackRegisters.clear(thread.stackRegisters.capacity() - liveTop, liveTop);
 				thread.trimFrames();
-				break;
+				return cellWork + ceilDiv4(this.allocationBytes(thread));
 			}
 		}
-		return ceilDiv4(this.allocationBytes(object));
 	}
 	/** Called with the current trace queue empty; mutations stay separate until this pass. */
 	private remark(t0: Value, t1: Value, t2: Value): number {
 		this.diagnostics?.phase('rootsNanoseconds');
-		for (const thread of this.threads) thread.writeBarrier();
-		for (const table of this.weak) table.writeBarrier();
+		for (const thread of this.threads) this.writeBarrier(thread.address, GC_RECORD_LINK);
+		for (const table of this.weak) this.writeBarrier(table.address, GC_RECORD_LINK);
 		this.threads.length = 0;
-		this.gray = this.grayAgain; this.grayAgain = null;
+		this.memory.writeRamRecordPair(this.controlOffset + GC_TRACE_HEAD, this.head(GC_CHANGED_HEAD), 0);
 		this.cpu.markHeapRoots(this); this.cpu.stringPool.markLocalRoots();
 		this.markValue(t0); this.markValue(t1); this.markValue(t2);
 		return this.cpu.collectionRootWordCount() + this.cpu.stringPool.takeMarkWork();
@@ -258,7 +283,7 @@ export class GcHeap {
 		this.diagnostics?.beginAtomic();
 		let work = this.remark(t0, t1, t2);
 		this.diagnostics?.phase('traceNanoseconds');
-		while (this.gray !== null) work += this.trace(true) + this.cpu.stringPool.takeMarkWork();
+		while (this.head(GC_TRACE_HEAD) !== 0) work += this.trace(true) + this.cpu.stringPool.takeMarkWork();
 		do {
 			this.changed = false;
 			for (let i = 0; i < this.weak.length; ++i) {
@@ -267,7 +292,7 @@ export class GcHeap {
 				work += this.tables.scanSlots(table.address);
 				this.tables.forEachStoredEntry(table.address, this.ephemeronEntry);
 			}
-			while (this.gray !== null) work += this.trace(true) + this.cpu.stringPool.takeMarkWork();
+			while (this.head(GC_TRACE_HEAD) !== 0) work += this.trace(true) + this.cpu.stringPool.takeMarkWork();
 		} while (this.changed);
 		this.diagnostics?.phase('weakNanoseconds');
 		for (const table of this.weak) {
@@ -328,7 +353,7 @@ export class GcHeap {
 				case GcPhase.Mark:
 				case GcPhase.MarkAgain:
 					this.diagnostics?.phase(this.phase() === GcPhase.Mark ? 'traceNanoseconds' : 'markAgainNanoseconds');
-					while (this.gray !== null && work < GC_STEP_WORDS) work += this.trace(false) + this.cpu.stringPool.takeMarkWork();
+					while (this.head(GC_TRACE_HEAD) !== 0 && work < GC_STEP_WORDS) work += this.trace(false) + this.cpu.stringPool.takeMarkWork();
 					if (work < GC_STEP_WORDS) {
 						if (this.phase() === GcPhase.Mark) {
 							work += this.remark(t0, t1, t2);
@@ -344,7 +369,7 @@ export class GcHeap {
 				case GcPhase.Sweep:
 					this.diagnostics?.phase('sweepNanoseconds');
 					work += this.arena.sweepObjects(GC_STEP_WORDS - work, growingStack, this.sweepRecord);
-					if (work < GC_STEP_WORDS && !this.arena.objectSweepActive()) { this.grayAgain = null; this.setPhase(GcPhase.Strings); this.cpu.stringPool.beginSweep(); }
+					if (work < GC_STEP_WORDS && !this.arena.objectSweepActive()) { this.memory.writeRamRecordWord(this.changedHeadOffset(), 0); this.setPhase(GcPhase.Strings); this.cpu.stringPool.beginSweep(); }
 					break;
 				case GcPhase.Strings:
 					this.diagnostics?.phase('stringReclaimNanoseconds');
@@ -365,10 +390,8 @@ export class GcHeap {
 		return work;
 	}
 	public captureState(ref: (object: GcObject) => number): GcState {
-		const state: GcState = { allocations: [], gray: [], grayAgain: [], threads: [], weak: [] };
+		const state: GcState = { allocations: [], threads: [], weak: [] };
 		for (let object = this.objects; object !== null; object = object.gcNext) state.allocations.push(ref(object));
-		for (let object = this.gray; object !== null; object = object.gcGrayNext) state.gray.push(ref(object));
-		for (let object = this.grayAgain; object !== null; object = object.gcGrayNext) state.grayAgain.push(ref(object));
 		for (const object of this.threads) state.threads.push(ref(object));
 		for (const object of this.weak) state.weak.push(ref(object));
 		return state;
@@ -394,17 +417,9 @@ export class GcHeap {
 		for (let i = 0; i < state.allocations.length; ++i) {
 			const object = objects[state.allocations[i]];
 			object.gcPrevious = previous; object.gcNext = null;
-			object.gcGrayNext = null; object.gcOwner = this;
+			object.gcOwner = this;
 			if (previous !== null) previous.gcNext = object; else this.objects = object;
 			previous = object;
-		}
-		this.gray = null;
-		for (let i = state.gray.length - 1; i >= 0; --i) {
-			const object = objects[state.gray[i]]; object.gcGrayNext = this.gray; this.gray = object;
-		}
-		this.grayAgain = null;
-		for (let i = state.grayAgain.length - 1; i >= 0; --i) {
-			const object = objects[state.grayAgain[i]]; object.gcGrayNext = this.grayAgain; this.grayAgain = object;
 		}
 		this.threads.length = 0; this.weak.length = 0;
 		for (const ref of state.threads) this.threads.push(objects[ref] as Thread);

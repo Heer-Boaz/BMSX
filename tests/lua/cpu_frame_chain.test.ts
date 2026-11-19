@@ -1,3 +1,4 @@
+import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from '../../machine/ts/machine/cpu/gc_object';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -6,7 +7,7 @@ import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { FRAME_CONTROL_BYTES, FrameField, ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
-import { CLOSURE_CAPTURE_COUNT, CLOSURE_CAPTURE_WORDS, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/closure';
+import { CLOSURE_CAPTURE_WORDS, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/closure';
 import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -122,7 +123,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const first = DYNAMIC_RAM_BASE + 0x1000, second = first + 32;
 		for (const [record, word] of [[first, 73], [second, 17]]) {
 			const cell = record + 16;
-			memory.writeRamRecordWord(record + CLOSURE_CAPTURE_COUNT, 1);
+			memory.writeRamRecordByte(record + 3, 1);
+			memory.writeRamRecordWord(record + GC_RECORD_LINK, (1 << GC_GRAY_INDEX_BITS) | 0x2345);
 			memory.writeRamRecordWord(record + CLOSURE_CAPTURE_WORDS, cell | 0x80000000);
 			memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, word);
 			memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, ValueTag.Integer);
@@ -135,7 +137,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		frame.pc = start;
 		cpu.runUntilDepth(0, 40);
 		assert.equal(cpu.readFrameRegister(0, 0), valueInteger(17));
-		assert.equal(cpu.getFrameUpvalueCount(0), 1);
+		assert.equal(cpu.getFrameUpvalueCount(0), 8193, 'the wide capture count does not include the gray link');
 		assert.equal(frame.executionImage.executionDomainId, domain);
 
 		memory.restoreSaveState(ram);

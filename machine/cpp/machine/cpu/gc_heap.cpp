@@ -55,13 +55,6 @@ void GCObject::setGcColor(uint8_t color) {
 	gcMemory->writeRamRecordByte(static_cast<u32>(gcRecord - gcMemory->ramData()) + GC_COLOR_OFFSET, color);
 }
 
-void GCObject::writeBarrier() {
-	if (gcColor() != 3) return;
-	setGcColor(2);
-	grayNext = *grayHead;
-	*grayHead = this;
-}
-
 bool GcHeap::markValue(Value v) {
 	switch (valueTag(v)) {
 		case ValueTag::Thread:
@@ -86,6 +79,7 @@ bool GcHeap::markValue(Value v) {
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
 size_t GcHeap::nativePhysicalRecordsOffset() { return offsetof(GcHeap, m_recordBase); }
+size_t GcHeap::nativeControlOffset() { return offsetof(GcHeap, m_controlOffset); }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -96,17 +90,15 @@ void GcHeap::track(GCObject* object) {
 	object->gcRecord = memory.ramData() + (address & GC_RECORD_MASK);
 	object->gcMemory = &memory;
 	object->restored = false;
-	object->grayHead = &m_grayAgain;
-	object->grayNext = nullptr;
 	object->hashId = allocateHashId();
 	object->previous = nullptr;
 	object->next = m_objects;
 	if (m_objects) m_objects->previous = object;
 	m_objects = object;
 }
-Closure* GcHeap::bindClosureRecord(u32 address, const FunctionPrototype& prototype, u32 count, bool canonical) {
+Closure* GcHeap::bindClosureRecord(u32 address, const FunctionPrototype& prototype, bool canonical) {
 	const auto entry = m_prototypes.try_emplace(prototype, 0u).first;
-	auto* closure = new Closure(memory, address, count, entry->first, canonical);
+	auto* closure = new Closure(memory, address, entry->first, canonical);
 	++entry->second;
 	closure->type = ObjType::Closure;
 	track(closure);
@@ -117,12 +109,28 @@ GcHeap::~GcHeap() {
 		auto* object = m_objects; m_objects = object->next; destroyObject(object);
 	}
 }
+void GcHeap::enqueue(u32 address, u32 link, u32 queue, bool closure) {
+	const u32 previous = head(queue);
+	const u32 captureCountBits = closure ? memory.readRamRecordWord(address + link) & ~GC_GRAY_INDEX_MASK : 0u;
+	memory.writeRamRecordWord(address + link, captureCountBits | previous);
+	memory.writeRamRecordByte(address + GC_COLOR_OFFSET, 2);
+	memory.writeRamRecordWord(m_controlOffset + queue, (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT);
+}
+
 bool GcHeap::markObject(GCObject* object) {
 	if (!object || object->gcColor() != white()) return false;
-	object->setGcColor(2);
-	object->grayNext = m_gray; m_gray = object;
+	enqueue(physicalAddress(object), GC_RECORD_LINK, GC_TRACE_HEAD, object->type == ObjType::Closure);
 	return true;
 }
+
+size_t GcHeap::markCell(Upvalue* cell) {
+	if (!cell || cell->gcColor() != white()) return 0;
+	cell->setGcColor(3);
+	if (cell->isOpen()) markObject(threadAt(cell->ownerAddress()));
+	markValue(cell->value());
+	return UPVALUE_HEAP_BYTES / sizeof(u32);
+}
+
 void GcHeap::armThreadStackWatches() {
 	for (auto* object = m_objects; object; object = object->next)
 		if (object->type == ObjType::Thread) {
@@ -158,7 +166,7 @@ bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
 size_t GcHeap::allocationBytes(const GCObject* object) const {
 	switch (object->type) {
 		case ObjType::Table: return static_cast<const Table*>(object)->trackedHeapBytes();
-		case ObjType::Closure: return heapAllocationBytes(closureRecordBytes(static_cast<const Closure*>(object)->upvalueCount));
+		case ObjType::Closure: return heapAllocationBytes(closureRecordBytes(static_cast<const Closure*>(object)->upvalueCount()));
 		case ObjType::Upvalue: return UPVALUE_HEAP_BYTES;
 		case ObjType::Thread: return THREAD_HEAP_BYTES + heapAllocationBytes(static_cast<const Thread*>(object)->backingByteLength());
 
@@ -207,13 +215,24 @@ bool GcHeap::valueIsAlive(Value value) const {
 }
 
 size_t GcHeap::trace(bool atomic) {
-	GCObject* obj = m_gray;
-	m_gray = obj->grayNext;
-	obj->grayNext = nullptr;
+	const u32 index = head(GC_TRACE_HEAD);
+	auto* obj = m_records[index];
+	// A link is clocked only by a queued record. Consuming its color bounds
+	// malformed cycles as well as preventing a duplicate scan.
+	if (!obj || obj->gcColor() != 2u) {
+		memory.writeRamRecordWord(m_controlOffset + GC_TRACE_HEAD, 0u);
+		return 0;
+	}
+	const u32 address = index << GC_RECORD_SHIFT;
+	const u32 link = address + (obj->type == ObjType::Upvalue ? UPVALUE_NEXT : GC_RECORD_LINK);
+	const u32 packed = memory.readRamRecordWord(link);
+	memory.writeRamRecordWord(m_controlOffset + GC_TRACE_HEAD, packed & GC_GRAY_INDEX_MASK);
+	memory.writeRamRecordWord(link, obj->type == ObjType::Closure ? packed & ~GC_GRAY_INDEX_MASK : 0u);
 	obj->setGcColor(3);
 	switch (obj->type) {
 		case ObjType::Thread: {
 			auto* thread = static_cast<Thread*>(obj);
+			size_t cellWork = 0;
 			if (!atomic) m_threads.push_back(thread);
 			markObject(thread->resumer());
 			markObject(thread->entry());
@@ -227,7 +246,7 @@ size_t GcHeap::trace(bool atomic) {
 				for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
 					auto* upvalue = openCellAt(address);
 					if (!upvalue) break;
-					markObject(upvalue);
+					cellWork += markCell(upvalue);
 					const u32 slot = upvalue->stackSlot();
 					if (slot < thread->stackCapacity)
 						liveTop = std::max(liveTop, static_cast<int>(slot + 1));
@@ -238,7 +257,7 @@ size_t GcHeap::trace(bool atomic) {
 			if (static_cast<size_t>(liveTop) < thread->stackCapacity)
 				thread->stack.clear(liveTop, thread->stackCapacity - liveTop);
 			thread->trimFrames();
-			break;
+			return cellWork + ceilDiv4(static_cast<int>(allocationBytes(thread)));
 		}
 		case ObjType::Table: {
 			auto* table = static_cast<Table*>(obj);
@@ -260,20 +279,17 @@ size_t GcHeap::trace(bool atomic) {
 		}
 		case ObjType::Closure: {
 			auto* closure = static_cast<Closure*>(obj);
-			for (size_t index = 0; index < closure->upvalueCount; ++index) {
-				markObject(cellAt(closure->captureAddress(static_cast<u32>(index))));
-			}
-			return 3u + closure->upvalueCount;
+			const u32 count = closure->upvalueCount();
+			size_t work = 3u + count;
+			for (u32 index = 0; index < count; ++index) work += markCell(cellAt(closure->captureAddress(index)));
+			return work;
 		}
-
-		case ObjType::Upvalue: {
-			auto* upvalue = static_cast<Upvalue*>(obj);
-			if (upvalue->isOpen()) markObject(threadAt(upvalue->ownerAddress()));
-			markValue(upvalue->value());
-			break;
-		}
+		case ObjType::Upvalue:
+			// Only closed, changed cells enter the queue.
+			markValue(static_cast<Upvalue*>(obj)->value());
+			return UPVALUE_HEAP_BYTES / sizeof(u32);
 	}
-	return ceilDiv4(static_cast<int>(allocationBytes(obj)));
+	BMSX_UNREACHABLE();
 }
 
 size_t GcHeap::remark(Value root0, Value root1, Value root2) {
@@ -281,13 +297,13 @@ size_t GcHeap::remark(Value root0, Value root1, Value root2) {
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcPhaseMeasurement measurement(profile.rootsNanoseconds);
 #endif
-	for (auto* thread : m_threads) thread->writeBarrier();
+	for (auto* thread : m_threads) writeBarrier(thread->address, GC_RECORD_LINK);
 	// Also observe mode changes made through a shared metatable.
-	for (auto* table : m_weakTables) table->writeBarrier();
+	for (auto* table : m_weakTables) writeBarrier(table->address(), GC_RECORD_LINK);
 	m_threads.clear();
 	// The current trace queue is empty. Further writes go to grayAgain, so
 	// mutation cannot continually put the same object in this pass's queue.
-	m_gray = m_grayAgain; m_grayAgain = nullptr;
+	memory.writeRamRecordPair(m_controlOffset + GC_TRACE_HEAD, head(GC_CHANGED_HEAD), 0u);
 	m_cpu.markRoots(*this);
 	m_stringPool.markLocalRoots();
 	markValue(root0); markValue(root1); markValue(root2);
@@ -303,7 +319,7 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcPhaseMeasurement measurement(profile.traceNanoseconds);
 #endif
-	while (m_gray) {
+	while (head(GC_TRACE_HEAD) != 0u) {
 		work += trace(true);
 		work += m_stringPool.takeMarkWork();
 	}
@@ -318,7 +334,7 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 				if (valueIsAlive(key) && markValue(value)) changed = true;
 			});
 		}
-		while (m_gray) {
+		while (head(GC_TRACE_HEAD) != 0u) {
 			work += trace(true);
 			work += m_stringPool.takeMarkWork();
 		}
@@ -431,7 +447,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 					GcPhaseMeasurement traceTime(phase() == GcPhase::Mark ? profile.traceNanoseconds : profile.markAgainNanoseconds);
 #endif
-					while (m_gray && work < GC_STEP_WORDS) {
+					while (head(GC_TRACE_HEAD) != 0u && work < GC_STEP_WORDS) {
 						work += trace(false);
 						work += m_stringPool.takeMarkWork();
 					}
@@ -455,7 +471,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 				SweepContext sweep{*this, growingStack, white()};
 				work += arena.sweepObjects(GC_STEP_WORDS - work, &sweep, &GcHeap::sweepRecord);
 				if (work < GC_STEP_WORDS && !arena.objectSweepActive()) {
-					m_grayAgain = nullptr;
+					memory.writeRamRecordWord(m_controlOffset + GC_CHANGED_HEAD, 0u);
 					setPhase(GcPhase::Strings);
 					m_stringPool.beginSweep();
 				}
@@ -505,18 +521,9 @@ void GcHeap::restoreState(const GcState& state, const std::vector<GCObject*>& ob
 	GCObject* previous = nullptr;
 	for (size_t i = 0; i < state.allocations.size(); ++i) {
 		auto* object = objects[state.allocations[i]];
-		object->previous = previous; object->next = nullptr; object->grayNext = nullptr;
-		object->grayHead = &m_grayAgain;
+		object->previous = previous; object->next = nullptr;
 		if (previous) previous->next = object; else m_objects = object;
 		previous = object;
-	}
-	m_gray = nullptr;
-	for (auto it = state.gray.rbegin(); it != state.gray.rend(); ++it) {
-		auto* object = objects[*it]; object->grayNext = m_gray; m_gray = object;
-	}
-	m_grayAgain = nullptr;
-	for (auto it = state.grayAgain.rbegin(); it != state.grayAgain.rend(); ++it) {
-		auto* object = objects[*it]; object->grayNext = m_grayAgain; m_grayAgain = object;
 	}
 	m_threads.clear(); m_weakTables.clear();
 	for (auto ref : state.threads) m_threads.push_back(static_cast<Thread*>(objects[ref]));

@@ -1,10 +1,10 @@
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { HEAP_PAGE_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { HEAP_PAGE_SIZE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
-import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GcPhase, GC_STEP_WORDS } from '../../machine/ts/machine/cpu/gc_heap';
 import { ValueTag, asTable, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
@@ -37,8 +37,9 @@ test('incremental marking preserves changed table edges, metatables and final re
 	target.records.setInteger(target.address, 1, valueTable(cpu.gc.reference(arrayChild)));
 	target.records.setStringKey(target.address, field, valueTable(cpu.gc.reference(fieldChild)));
 	target.metatable = metatable;
-	assert.equal(cpu.gc.captureState(object => object.hashId).grayAgain.filter(id => id === target.hashId).length, 1,
-		'repeated stores requeue a traced table once, without growing a barrier worklist');
+	assert.equal(cpu.memory.readRamRecordWord(cpu.gc.changedHeadOffset()), (target.address & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT);
+	assert.equal(cpu.memory.readRamRecordWord(target.address + GC_RECORD_LINK), 0,
+		'repeated stores do not link the same table to itself');
 	const rootChild = cpu.createTable();
 	frame.registers.setTable(1, cpu.gc.reference(rootChild)); frame.top = 2;
 	const expectedIds = [arrayChild.hashId, fieldChild.hashId, metatable.hashId, rootChild.hashId];
@@ -51,6 +52,24 @@ test('incremental marking preserves changed table edges, metatables and final re
 	frame.registers.clear(frame.stackCapacity); frame.top = 0;
 	cpu.collectTrackedHeapBytes();
 	for (const id of expectedIds) assert.ok(!cpu.gc.captureState(object => object.hashId).allocations.includes(id));
+});
+
+test('consuming a gray record also consumes a self-linked mark edge', () => {
+	const cpu = machine(), { gc, memory } = cpu;
+	const rooted = cpu.createTable();
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, rooted.address);
+	frame.top = 1;
+	const index = (rooted.address & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT;
+	memory.writeRamRecordByte(rooted.address + GC_COLOR_OFFSET, 2);
+	memory.writeRamRecordWord(rooted.address + GC_RECORD_LINK, index);
+	memory.writeRamRecordWord(gc.changedHeadOffset(), index);
+	gc.step();
+	assert.equal(gc.phase(), GcPhase.Atomic);
+	assert.equal(memory.readRamRecordWord(rooted.address + GC_RECORD_LINK), 0);
+	assert.equal(rooted.gcColor, 3);
+	while (gc.active()) gc.step();
+	assert.equal(gc.tableAt(rooted.address), rooted);
 });
 
 test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing dead graph edges', () => {

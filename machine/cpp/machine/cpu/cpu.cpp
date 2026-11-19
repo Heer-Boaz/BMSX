@@ -141,8 +141,8 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 
 Closure* CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool canonical, std::span<u32> cells) {
 	const u32 address = m_luaHeap.allocateClosureRecord(count, cells);
-	Closure* closure = m_heap.bindClosureRecord(address, prototype, count, canonical);
-	closure->initializeRecord(m_heap.white());
+	Closure* closure = m_heap.bindClosureRecord(address, prototype, canonical);
+	closure->initializeRecord(m_heap.white(), count);
 	return closure;
 }
 
@@ -897,8 +897,8 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		for (const Closure* closure : versions) canonicalClosures.push_back(closure);
 	}
 	std::stable_sort(canonicalClosures.begin(), canonicalClosures.end(), [](const Closure* left, const Closure* right) {
-		return std::tie(left->prototype->functionAddress, left->prototype->executionDomainId, left->prototype->codeAddress, left->prototype->numParams, left->prototype->maxStack, left->prototype->flags, left->prototype->upvalueTableAddress, left->prototype->recordUpvalueCount, left->upvalueCount, left->hashId)
-			< std::tie(right->prototype->functionAddress, right->prototype->executionDomainId, right->prototype->codeAddress, right->prototype->numParams, right->prototype->maxStack, right->prototype->flags, right->prototype->upvalueTableAddress, right->prototype->recordUpvalueCount, right->upvalueCount, right->hashId);
+		return std::tie(left->prototype->functionAddress, left->prototype->executionDomainId, left->prototype->codeAddress, left->prototype->numParams, left->prototype->maxStack, left->prototype->flags, left->prototype->upvalueTableAddress, left->prototype->recordUpvalueCount, left->hashId)
+			< std::tie(right->prototype->functionAddress, right->prototype->executionDomainId, right->prototype->codeAddress, right->prototype->numParams, right->prototype->maxStack, right->prototype->flags, right->prototype->upvalueTableAddress, right->prototype->recordUpvalueCount, right->hashId);
 	});
 	for (const Closure* closure : canonicalClosures) {
 		captureObject(closure);
@@ -929,7 +929,6 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				snapshot.setWord(offset + SNAP_CLOSURE_HASH_ID, closure->hashId);
 				snapshot.setWord(offset + SNAP_CLOSURE_FUNCTION_ADDRESS, closure->prototype->functionAddress);
 				snapshot.setWord(offset + SNAP_CLOSURE_CANONICAL, closure->canonical);
-				snapshot.setWord(offset + SNAP_CLOSURE_UPVALUE_COUNT, static_cast<u32>(closure->upvalueCount));
 				snapshot.setWord(offset + SNAP_CLOSURE_CODE_ADDRESS, closure->prototype->codeAddress);
 				snapshot.setWord(offset + SNAP_CLOSURE_NUM_PARAMS, closure->prototype->numParams);
 				snapshot.setWord(offset + SNAP_CLOSURE_MAX_STACK, closure->prototype->maxStack);
@@ -1029,7 +1028,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			}
 			case CpuSnapshotObjectKind::Closure: {
 				const FunctionPrototype record = savedClosure(offset);
-				const u32 upvalueCount = snapshot.word(offset + SNAP_CLOSURE_UPVALUE_COUNT);
 				const u32 address = snapshot.word(offset + SNAP_CLOSURE_RECORD);
 				const u32 functionAddress = record.functionAddress;
 				const bool canonical = snapshot.word(offset + SNAP_CLOSURE_CANONICAL) != 0;
@@ -1042,7 +1040,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 					if (previous != previousCanonical.end()) {
 						auto& candidates = previous->second;
 						auto existing = std::find_if(candidates.begin(), candidates.end(), [&](const Closure* item) {
-							return item->hashId == hashId && item->address == address && *item->prototype == record && item->upvalueCount == upvalueCount;
+							return item->hashId == hashId && item->address == address && *item->prototype == record;
 						});
 						if (existing != candidates.end()) {
 							closure = *existing;
@@ -1050,11 +1048,11 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 						}
 					}
 					if (!closure) {
-						closure = m_heap.bindClosureRecord(address, record, upvalueCount, canonical);
+						closure = m_heap.bindClosureRecord(address, record, canonical);
 					}
 					versions.push_back(closure);
 				} else {
-					closure = m_heap.bindClosureRecord(address, record, upvalueCount, canonical);
+					closure = m_heap.bindClosureRecord(address, record, canonical);
 				}
 				closure->restored = true;
 				closure->hashId = snapshot.word(offset + SNAP_CLOSURE_HASH_ID);
@@ -2647,7 +2645,7 @@ int CPU::closeUpvalues(CallFrame& frame) {
 		auto* upvalue = m_heap.openCellAt(address);
 		if (!upvalue) break;
 		address = upvalue->nextAddress();
-		upvalue->close();
+		upvalue->close(m_heap);
 		++closed;
 	}
 	return closed;
@@ -2659,7 +2657,7 @@ Value CPU::readUpvalue(u32 address) const {
 
 void CPU::writeUpvalue(u32 address, const Value& value) {
 	if (!Upvalue::isOpen(m_memory, address)) {
-		if (auto* cell = m_heap.cellAt(address)) cell->writeBarrier();
+		m_heap.writeBarrier(address & (MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES), UPVALUE_NEXT);
 	}
 	Upvalue::store(m_memory, address, value);
 }

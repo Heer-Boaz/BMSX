@@ -60,24 +60,17 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 	auto* open = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
 	if (instruction.op == static_cast<u8>(OpCode::SETUP)) {
 		fault(open, *openWrite, m_cache.state());
-		// Both lanes are in the aligned cell's write-watch group.
+		// Both value lanes are in the aligned cell's write-watch group.
 		emitRamWordWriteWatch(*openWrite, SLJIT_R3, 0, SLJIT_R0, SLJIT_R1, 3u);
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-		emitPhysicalRecordPointer(c, SLJIT_R3, SLJIT_R2, SLJIT_R0);
-		NativeBlockAbi::emitRamAddress(c, SLJIT_R3, SLJIT_R3);
+		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), GC_COLOR_OFFSET);
+		auto* notBlack = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 3);
+		emitGrayChange(*openWrite, SLJIT_R3, 0, SLJIT_R2, SLJIT_R0, SLJIT_R1, UPVALUE_NEXT, 8u);
+		sljit_set_label(notBlack, sljit_emit_label(c));
 		emitRawLoad(instruction.a, SLJIT_R0, SLJIT_R1);
 		if constexpr (std::endian::native == std::endian::big)
 			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_WORD, SLJIT_R0, 0);
-		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R3), UPVALUE_VALUE_TAG, SLJIT_R1, 0);
-		auto* untracked = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0);
-		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), offsetof(GCObject, type));
-		auto* otherRecord = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
-			SLJIT_IMM, static_cast<u8>(ObjType::Upvalue));
-		emitGcWriteBarrier(c, SLJIT_R2, SLJIT_R0, SLJIT_R1);
-		auto* done = sljit_emit_label(c);
-		sljit_set_label(untracked, done);
-		sljit_set_label(otherRecord, done);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), UPVALUE_VALUE_WORD, SLJIT_R0, 0);
+		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R2), UPVALUE_VALUE_TAG, SLJIT_R1, 0);
 		return;
 	}
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), UPVALUE_VALUE_WORD);

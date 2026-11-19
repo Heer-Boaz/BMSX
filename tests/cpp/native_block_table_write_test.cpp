@@ -208,18 +208,27 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 			registers.set(2, valueTable(cpu.gcHeap().reference(child)));
 			const Value previous = table->getInteger(1);
 			const u32 header = table->address();
-			const u32 markWord = (header & MAPPED_PAGE_BYTE_MASK) / sizeof(u32);
-			MappedPageBinding binding{};
-			memory.bindMappedPage(header & ~MAPPED_PAGE_BYTE_MASK, MAPPED_BUS_MASTER_CPU, binding);
-			binding.writeWatch.armWord(markWord);
+			const u32 head = cpu.gcHeap().changedHeadOffset();
+			model->setInteger(1, valueInteger(303));
+			const u32 previousHead = memory.readRamRecordWord(head);
+			require(previousHead == ((model->address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT), "scalar Table write publishes the prior link");
+			for (const u32 watched : {header, header + GC_RECORD_LINK, head}) {
+				const u32 word = (watched & MAPPED_PAGE_BYTE_MASK) / sizeof(u32);
+				MappedPageBinding binding{};
+				memory.bindMappedPage(watched | RAM_BASE, MAPPED_BUS_MASTER_CPU, binding);
+				binding.writeWatch.armWord(word);
+				state.remainingCycles = 100;
+				require(block->run(state) == &block->sideExits.front()
+					&& table->getInteger(1) == previous && memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 3
+					&& memory.readRamRecordWord(head) == previousHead,
+					"a watched barrier word stops the store before either the value or the queue changes");
+				require(binding.writeWatch.consume(word, word + 1), "the declined operation left the watch armed");
+			}
 			state.remainingCycles = 100;
-			require(block->run(state) == &block->sideExits.front()
-				&& table->getInteger(1) == previous && memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 3,
-				"a watched color word stops the inline store before either the value or the barrier changes");
-			require(binding.writeWatch.consume(markWord, markWord + 1), "the declined operation left the watch armed");
-			state.remainingCycles = 100;
-			require(block->run(state) == &block->terminal && memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 2,
-				"a native array hit requeues a scanned table by changing its raw mark lane");
+			require(block->run(state) == &block->terminal && memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 2
+				&& memory.readRamRecordWord(header + GC_RECORD_LINK) == previousHead
+				&& memory.readRamRecordWord(head) == ((header & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
+				"a native array hit links the scanned Table onto the physical changed queue");
 		}
 		if (generic) for (Value k : {valueInteger(0), valueInteger(-1), valueInteger(5), valueFloat(1), valueBool(true)}) {
 			registers.set(1, k);

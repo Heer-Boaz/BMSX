@@ -37,7 +37,7 @@ void TableRecord::setMetatableAddress(u32 address) {
 }
 
 void TableRecord::writeBarrier() {
-	if (auto* object = m_heap.tableAt(m_address)) object->writeBarrier();
+	m_heap.writeBarrier(m_address, GC_RECORD_LINK);
 }
 
 u32 TableRecord::storageBytes(size_t arraySize, size_t hashSize) {
@@ -486,7 +486,8 @@ int TableRecord::storeStringKeyInNative(GcHeap* heap, u32 address, StringId key,
 		const u32 storage = table.storageAddress() & RAM_RECORD_WORD_MASK;
 		const u64 bytes = 5ull * table.arrayCapacity() + 14ull * table.hashSlots();
 		if (header > MAIN_RAM_SIZE - HEADER_BYTES || watches.anyWatched(header, HEADER_BYTES)
-			|| bytes > MAIN_RAM_SIZE - storage || (bytes && watches.anyWatched(storage, static_cast<size_t>(bytes))))
+			|| bytes > MAIN_RAM_SIZE - storage || (bytes && watches.anyWatched(storage, static_cast<size_t>(bytes)))
+			|| (heap->memory.readRamRecordByte(address + GC_COLOR_OFFSET) == 3u && watches.anyWatched(heap->changedHeadOffset(), sizeof(u32))))
 			return TABLE_STORE_REQUIRES_GROWTH;
 	}
 	return storeStringKeyWithoutGrowth(&table, key, value);

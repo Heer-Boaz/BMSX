@@ -614,8 +614,10 @@ void comparisonDatapathsRespectEveryValueKind() {
 	NativeBlockRunState nativeRunState;
 	auto& strings = cpu.stringPool();
 	auto& heap = cpu.gcHeap();
-	auto* firstClosure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(0), {}, 0, false);
-	auto* secondClosure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(0), {}, 0, false);
+	auto* firstClosure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(0), {}, false);
+	firstClosure->initializeRecord(heap.white(), 0);
+	auto* secondClosure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(0), {}, false);
+	secondClosure->initializeRecord(heap.white(), 0);
 	const std::array values{valueNil(), valueFromTag(ValueTag::Nil, 37), valueBool(false),
 		valueFromTag(ValueTag::False, 37), valueBool(true), valueFromTag(ValueTag::True, 37),
 		valueInteger(0), valueFloat(-0.0), valueInteger(1), valueInteger(-1), valueFloat(0.25),

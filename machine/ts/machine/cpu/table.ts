@@ -1,6 +1,6 @@
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { heapAllocationBytes } from './heap_allocator';
-import { GcObject, GcKind } from './gc_object';
+import { GC_RECORD_LINK, GcObject, GcKind } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
@@ -51,7 +51,7 @@ export class TableRecords {
 		this.writeBarrier(record);
 		this.writeHeader(record, TableHeader.Metatable, address);
 	}
-	private writeBarrier(record: number): void { this.heap.tableAt(record)?.writeBarrier(); }
+	private writeBarrier(record: number): void { this.heap.writeBarrier(record, GC_RECORD_LINK); }
 	public arrayCapacity(record: number): number { return this.readHeader(record, TableHeader.Array); }
 	public hashSize(record: number): number { return this.readHeader(record, TableHeader.Hash); }
 	private lengthHint(record: number): number { return this.readHeader(record, TableHeader.Length); }

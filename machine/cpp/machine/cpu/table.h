@@ -268,7 +268,6 @@ public:
 	Table(GcHeap& heap, u32 address) : TableRecord(heap, address) {}
 	Table(const Table&) = delete;
 	Table& operator=(const Table&) = delete;
-	using GCObject::writeBarrier;
 	Table* metatable() const;
 	void setMetatable(Table* table) { setMetatableAddress(table ? table->address() : 0u); }
 	u32 captureSnapshot(CpuSnapshot& snapshot) const;

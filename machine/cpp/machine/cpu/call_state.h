@@ -65,7 +65,7 @@ struct CallFrame {
 		return controlMemory->readRamRecordWord(Closure::captureWordAddress(readControl(FrameField::Closure), index));
 	}
 	u32 captureCount() const {
-		return controlMemory->readRamRecordWord(readControl(FrameField::Closure) + CLOSURE_CAPTURE_COUNT) & FRAME_WINDOW_MASK;
+		return Closure::captureCount(*controlMemory, readControl(FrameField::Closure));
 	}
 	ExecutionDomainId savedExecutionBank() const {
 		const u32 flags = readControl(FrameField::Flags);

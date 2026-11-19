@@ -18,7 +18,7 @@ constexpr u32 THREAD_INITIAL_BACKING_BYTES = THREAD_INITIAL_VALUES * THREAD_STAC
 constexpr u32 THREAD_RECORD_KIND = 4u;
 
 enum class ThreadField : u32 {
-	Header = 0, Status = 8, Resumer = 12, Entry = 16, StackTop = 20, StackBlock = 24, StackCapacity = 28,
+	Header = 0, Gray = GC_RECORD_LINK, Status = 8, Resumer = 12, Entry = 16, StackTop = 20, StackBlock = 24, StackCapacity = 28,
 	FrameCapacity = 32, ProtectedCapacity = 36, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
 	FrameDepth = 56, ProtectedDepth = 60
 };

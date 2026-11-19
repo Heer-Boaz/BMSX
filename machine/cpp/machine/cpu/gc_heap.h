@@ -17,12 +17,15 @@ inline constexpr size_t GC_STEP_WORDS = 4096;
 inline constexpr size_t GC_ASSIST_BYTES = 256;
 enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
 struct GcState {
-	std::vector<u32> allocations, gray, grayAgain, threads, weak;
+	std::vector<u32> allocations, threads, weak;
 };
 
 // Physical records start on an eight-byte boundary, including size-class slots.
-inline constexpr u32 GC_RECORD_ALIGNMENT = 8;
+inline constexpr u32 GC_RECORD_ALIGNMENT = 1u << GC_RECORD_SHIFT;
 inline constexpr u32 GC_RECORD_MASK = MAIN_RAM_SIZE - GC_RECORD_ALIGNMENT;
+static_assert(GC_GRAY_INDEX_MASK == GC_RECORD_MASK >> GC_RECORD_SHIFT);
+inline constexpr u32 GC_TRACE_HEAD = 4u;
+inline constexpr u32 GC_CHANGED_HEAD = 8u;
 
 class GcHeap {
 public:
@@ -50,7 +53,7 @@ public:
 		track(object);
 		return object;
 	}
-	Closure* bindClosureRecord(u32 address, const FunctionPrototype&, u32 count, bool canonical);
+	Closure* bindClosureRecord(u32 address, const FunctionPrototype&, bool canonical);
 	u32 allocateHashId() { return m_nextObjectHashId++; }
 	u32 nextObjectHashId() const { return m_nextObjectHashId; }
 	u32 reference(const GCObject* object) const { return physicalAddress(object); }
@@ -58,6 +61,7 @@ public:
 	u32 reference(const Closure* closure) const { return closure->address; }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static size_t nativePhysicalRecordsOffset();
+	static size_t nativeControlOffset();
 #endif
 	uint32_t hash(Value value) const {
 		switch (valueTag(value)) {
@@ -73,8 +77,6 @@ public:
 	template<class Ref> GcState captureState(Ref&& ref) const {
 		GcState state;
 		for (auto* object = m_objects; object; object = object->next) state.allocations.push_back(ref(object));
-		for (auto* object = m_gray; object; object = object->grayNext) state.gray.push_back(ref(object));
-		for (auto* object = m_grayAgain; object; object = object->grayNext) state.grayAgain.push_back(ref(object));
 		for (auto* object : m_threads) state.threads.push_back(ref(object));
 		for (auto* object : m_weakTables) state.weak.push_back(ref(object));
 		return state;
@@ -100,6 +102,10 @@ public:
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);
 	bool markValue(Value value);
 	bool markObject(GCObject* object);
+	void writeBarrier(u32 address, u32 link) {
+		if (memory.readRamRecordByte(address + GC_COLOR_OFFSET) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
+	}
+	u32 changedHeadOffset() const { return m_controlOffset + GC_CHANGED_HEAD; }
 private:
 	static u32 physicalAddress(const GCObject* object) {
 		switch (object->type) {
@@ -118,6 +124,9 @@ private:
 	void track(GCObject* object);
 	uint8_t tableWeakMode(const Table& table) const;
 	bool valueIsAlive(Value value) const;
+	u32 head(u32 queue) const { return memory.readRamRecordWord(m_controlOffset + queue) & GC_GRAY_INDEX_MASK; }
+	void enqueue(u32 address, u32 link, u32 queue, bool closure = false);
+	size_t markCell(Upvalue* cell);
 	size_t trace(bool atomic);
 	size_t remark(Value root0, Value root1, Value root2);
 	size_t atomic(Value root0, Value root1, Value root2);
@@ -127,8 +136,6 @@ private:
 	void unlink(GCObject* object);
 	CPU& m_cpu;
 	GCObject* m_objects = nullptr;
-	GCObject* m_gray = nullptr;
-	GCObject* m_grayAgain = nullptr;
 	std::vector<Thread*> m_threads;
 	std::vector<Table*> m_weakTables;
 	u32 m_nextObjectHashId = 1;

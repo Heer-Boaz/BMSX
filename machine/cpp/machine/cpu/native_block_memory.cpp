@@ -2,6 +2,7 @@
 
 #include <bit>
 #include "machine/cpu/execution_image.h"
+#include "machine/cpu/gc_heap.h"
 #include "machine/memory/mapped_page.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/bmsx/io.h"
@@ -24,6 +25,33 @@ void NativeBlockCompiler::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit
 	sljit_emit_op2(c, SLJIT_AND32, bits, 0, bits, 0, SLJIT_IMM, wordMask);
 	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, bits, 0, SLJIT_IMM, 0), slow, m_cache.state());
 	sljit_set_label(clear, sljit_emit_label(c));
+}
+
+// The caller proved the raw mark is black. The trace link and the head are
+// little-endian RAM words; all watch exits precede both queue and Value writes.
+void NativeBlockCompiler::emitGrayChange(NativeBlockExitSite& exit, sljit_s32 offset, sljit_sw offsetArg,
+	sljit_s32 record, sljit_s32 scratch, sljit_s32 link, u32 linkOffset, u32 watchedWords) {
+	auto* c = m_compiler;
+	emitRamWordWriteWatch(exit, offset, offsetArg, scratch, link, watchedWords);
+	sljit_emit_op1(c, SLJIT_MOV_P, scratch, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+	sljit_emit_op2(c, SLJIT_ADD32, record, 0, SLJIT_MEM1(scratch), GcHeap::nativeControlOffset(), SLJIT_IMM, GC_CHANGED_HEAD);
+	emitRamWordWriteWatch(exit, record, 0, scratch, link);
+	NativeBlockAbi::emitRamAddress(c, scratch, record);
+	sljit_emit_op1(c, SLJIT_MOV_U32, record, 0, offset, offsetArg);
+	NativeBlockAbi::emitRamAddress(c, record, record);
+
+	sljit_emit_op1(c, SLJIT_MOV32, link, 0, SLJIT_MEM1(scratch), 0);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, link, 0, link, 0);
+	sljit_emit_op2(c, SLJIT_AND32, link, 0, link, 0, SLJIT_IMM, GC_GRAY_INDEX_MASK);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, link, 0, link, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(record), linkOffset, link, 0);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(record), GC_COLOR_OFFSET, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_LSHR32, link, 0, offset, offsetArg, SLJIT_IMM, GC_RECORD_SHIFT);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, link, 0, link, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(scratch), 0, link, 0);
 }
 
 void NativeBlockCompiler::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {

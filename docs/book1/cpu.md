@@ -1313,8 +1313,9 @@ in all three passes. Function-activation control and fixed collector bookkeeping
 in these allowances, not charged by a separate frame-record size.
 
 A step normally stops after **4,096 work cycles**. A single allocation scan is
-indivisible. The final root remark, remaining changed-object scans, weak-key
-convergence and weak-entry clearing are also indivisible. These operations can
+indivisible. When a closure or a Thread first reaches a captured-variable cell,
+its four-cycle scan is included in the same step. The final root remark,
+remaining changed-object scans, weak-key convergence and weak-entry clearing are also indivisible. These operations can
 exceed the step target: it is not a maximum instruction latency. The final
 atomic remark starts in a separate step, rather than extending the last
 incremental marking step. Reclamation of

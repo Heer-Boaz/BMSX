@@ -11,6 +11,7 @@
 namespace bmsx {
 
 class Memory;
+class GcHeap;
 inline constexpr u32 UPVALUE_HEAP_BYTES = 16;
 inline constexpr u8 UPVALUE_RECORD_KIND = 11;
 inline constexpr u32 UPVALUE_FLAGS = 2;
@@ -31,7 +32,7 @@ struct Upvalue : GCObject {
 	u32 nextAddress() const;
 	void setNextAddress(u32 next);
 	void bind(u32 owner, u32 slot, u32 next);
-	void close();
+	void close(GcHeap& heap);
 	Value value() const { return load(memory, address); }
 	void setValue(Value value) { store(memory, address, value); }
 	static Value load(const Memory& memory, u32 address);
@@ -58,20 +59,22 @@ struct FunctionPrototypeHash {
 	}
 };
 
-inline constexpr u32 CLOSURE_CAPTURE_COUNT = 4;
+inline constexpr u32 CLOSURE_COUNT_HIGH_BYTE = 3;
+inline constexpr u32 CLOSURE_COUNT_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
 inline constexpr u32 CLOSURE_PROTOTYPE_ADDRESS = 8;
 inline constexpr u32 CLOSURE_CAPTURE_WORDS = 12;
 inline constexpr u32 closureRecordBytes(u32 captures) { return CLOSURE_CAPTURE_WORDS + 4u * captures; }
 
 struct Closure : GCObject {
-	Closure(Memory& memory, u32 address, u32 count, const FunctionPrototype& prototype, bool canonical)
-		: memory(memory), address(address), prototype(&prototype), upvalueCount(count), canonical(canonical) {}
+	Closure(Memory& memory, u32 address, const FunctionPrototype& prototype, bool canonical)
+		: memory(memory), address(address), prototype(&prototype), canonical(canonical) {}
 	Memory& memory;
 	const u32 address;
 	const FunctionPrototype* prototype;
-	const u32 upvalueCount;
 	const bool canonical;
-	void initializeRecord(u8 white);
+		void initializeRecord(u8 white, u32 count);
+	static u32 captureCount(const Memory&, u32 address);
+	u32 upvalueCount() const { return captureCount(memory, address); }
 	static constexpr u32 captureWordAddress(u32 address, u32 index) {
 		return address + CLOSURE_CAPTURE_WORDS + index * sizeof(u32);
 	}

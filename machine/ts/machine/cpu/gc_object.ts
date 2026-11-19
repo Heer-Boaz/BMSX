@@ -1,10 +1,14 @@
-import type { Memory } from '../memory/memory';
+import type { GcHeap } from './gc_heap';
 
 export const GC_COLOR_OFFSET = 1;
+export const GC_RECORD_SHIFT = 3;
+export const GC_RECORD_LINK = 4;
+// A four-MiB RAM bank has 19 index bits at eight-byte record alignment.
+export const GC_GRAY_INDEX_BITS = 19;
+export const GC_GRAY_INDEX_MASK = (1 << GC_GRAY_INDEX_BITS) - 1;
 
 /** Collector-owned allocation header; separate from a guest Value's tag. */
 export const enum GcKind { Table, Closure, Upvalue, Thread }
-export type GrayQueue = { grayAgain: GcObject | null; readonly memory: Memory };
 export abstract class GcObject {
 	public hashId = 0;
 	public restored = false;
@@ -14,13 +18,6 @@ export abstract class GcObject {
 	public set gcColor(color: number) { this.gcOwner.memory.writeRamRecordByte(this.address + GC_COLOR_OFFSET, color); }
 	public gcNext: GcObject | null = null;
 	public gcPrevious: GcObject | null = null;
-	public gcGrayNext: GcObject | null = null;
-	public gcOwner!: GrayQueue;
+	public gcOwner!: GcHeap;
 	public constructor(public readonly gcKind: GcKind) {}
-	public writeBarrier(): void {
-		if (this.gcColor !== 3) return;
-		this.gcColor = 2;
-		this.gcGrayNext = this.gcOwner.grayAgain;
-		this.gcOwner.grayAgain = this;
-	}
 }

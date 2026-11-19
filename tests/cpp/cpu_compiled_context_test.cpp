@@ -267,7 +267,8 @@ void hotUpvalueAlias() {
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
 		auto& heap = m->cpu.gcHeap();
-		auto* closure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), *frame.attachedClosure()->prototype, 2, false);
+		auto* closure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), *frame.attachedClosure()->prototype, false);
+		closure->initializeRecord(heap.white(), 2);
 		closure->hashId = heap.allocateHashId();
 		for (int c = 0; c < 2; ++c) {
 			auto* cell = heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
@@ -348,7 +349,8 @@ void rawContextValues(CpuMachine& machine) {
 	auto& closed = *heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
 				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
 	open.bind(owner->address, 0, 0);
-	auto* boundClosure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), {}, 2, false);
+	auto* boundClosure = heap.bindClosureRecord(heap.budget.allocateClosureRecord(2), {}, false);
+	boundClosure->initializeRecord(heap.white(), 2);
 	frame.writeControl(bmsx::FrameField::Closure, boundClosure->address);
 	boundClosure->setCaptureAddress(0, open.address);
 	boundClosure->setCaptureAddress(1, closed.address);
@@ -385,6 +387,26 @@ void rawContextValues(CpuMachine& machine) {
 	closed.setValue(captureRegisters.get(12));
 	require(!binding.writeWatch.consume(watchedSlot, watchedSlot + 1u) && closed.value() == valueFloatBits(0xffa54321u),
 		"the semantic path publishes the closed cell through RAM's write watch");
+	closed.setGcColor(3);
+	const u32 head = heap.changedHeadOffset();
+	for (const u32 watchedBarrierWord : {closed.address + UPVALUE_NEXT, head | RAM_BASE}) {
+		MappedPageBinding queueBinding{};
+		machine.memory.bindMappedPage(watchedBarrierWord, MAPPED_BUS_MASTER_CPU, queueBinding);
+		const u32 slot = (watchedBarrierWord & MAPPED_PAGE_BYTE_MASK) >> 2;
+		queueBinding.writeWatch.armWord(slot);
+		captureRegisters.set(12, valueInteger(23));
+		watchedStore.remainingCycles = 100;
+		require(outerRead.block->run(watchedStore)->exit == NativeBlockExit::WriteUpvalue
+			&& closed.value() == valueFloatBits(0xffa54321u) && closed.gcColor() == 3,
+			"a watched closed-cell barrier link or head prevents both value and mark writes");
+		queueBinding.writeWatch.consume(slot, slot + 1u);
+	}
+	const u32 previousHead = machine.memory.readRamRecordWord(head);
+	watchedStore.remainingCycles = 100;
+	require(outerRead.block->run(watchedStore) == &outerRead.block->terminal && closed.value() == valueInteger(23)
+		&& closed.gcColor() == 2 && machine.memory.readRamRecordWord(closed.address + UPVALUE_NEXT) == previousHead
+		&& machine.memory.readRamRecordWord(head) == ((closed.address & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
+		"generated SETUP publishes both the value and the closed cell's raw changed-queue link");
 	const u32 rawCell = DYNAMIC_RAM_BASE + 0x600u;
 	machine.memory.writeRamRecordWord(boundClosure->address + CLOSURE_CAPTURE_WORDS + sizeof(u32), rawCell | 0x80000000u);
 	captureRegisters.set(12, valueFloatBits(0x80000000u));
@@ -393,7 +415,7 @@ void rawContextValues(CpuMachine& machine) {
 	require(outerRead.block->run(addressed) == &outerRead.block->terminal
 		&& captureRegisters.get(6) == valueFloatBits(0x80000000u)
 		&& machine.memory.readRamRecordWord(rawCell + UPVALUE_VALUE_WORD) == 0x80000000u
-		&& closed.value() == valueFloatBits(0xffa54321u),
+		&& closed.value() == valueInteger(23),
 		"generated GETUP and SETUP use masked cell bytes rather than an unrelated host slot");
 	machine.memory.writeRamRecordByte(rawCell + UPVALUE_FLAGS, UPVALUE_OPEN);
 	machine.memory.writeRamRecordWord(rawCell + UPVALUE_VALUE_WORD, 16);

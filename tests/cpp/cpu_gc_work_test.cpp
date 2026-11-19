@@ -202,7 +202,7 @@ void incrementalStateAndBarriers() {
 	auto* child = cpu.createTable();
 	target->setInteger(1, valueTable(cpu.gcHeap().reference(child)));
 	target->setStringKey(field, valueTable(cpu.gcHeap().reference(child)));
-	target->writeBarrier(); target->setMetatable(cpu.createTable());
+	target->setMetatable(cpu.createTable());
 	const auto childId = child->hashId;
 	u32 phases = 0, bornId = 0;
 	for (int step = 0; step < 1000; ++step) {
@@ -219,8 +219,6 @@ void incrementalStateAndBarriers() {
 		const auto after = cpu.captureRuntimeState();
 		require(std::ranges::equal(state.snapshot.words(), after.snapshot.words())
 			&& state.gc.allocations == after.gc.allocations
-			&& state.gc.gray == after.gc.gray
-			&& state.gc.grayAgain == after.gc.grayAgain
 			&& state.gc.threads == after.gc.threads && state.gc.weak == after.gc.weak,
 			"restore preserves collector cursors, queues and dead allocation work, not dead graph pointers");
 		require(cpu.memory().captureSaveState().ram == ram.ram, "restoration never rewrites raw mark colors or phase");
@@ -266,6 +264,24 @@ void incrementalSharedWeakMode() {
 	require(weak->getInteger(1) == valueTable(cpu.gcHeap().reference(child)), "the newly strong entry retains its child in the next cycle");
 }
 
+void consumesSelfLinkedGrayEdge() {
+	Machine machine(image()); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap();
+	auto* rooted = cpu.createTable();
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(rooted->address()));
+	frame.writeControl(FrameField::Top, 1);
+	const u32 index = (rooted->address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT;
+	rooted->setGcColor(2);
+	machine.memory.writeRamRecordWord(rooted->address() + GC_RECORD_LINK, index);
+	machine.memory.writeRamRecordWord(gc.changedHeadOffset(), index);
+	gc.step(valueNil(), valueNil(), valueNil());
+	require(gc.phase() == GcPhase::Atomic && rooted->gcColor() == 3
+		&& machine.memory.readRamRecordWord(rooted->address() + GC_RECORD_LINK) == 0,
+		"consuming the mark and link terminates a circular physical queue");
+	while (gc.active()) gc.step(valueNil(), valueNil(), valueNil());
+	require(gc.tableAt(rooted->address()) == rooted, "the already visited Table remains reachable");
+}
+
 void secondMarkPassAndCredit() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& frame = *cpu.rootThread()->currentFrame;
@@ -284,9 +300,8 @@ void secondMarkPassAndCredit() {
 		const auto state = cpu.captureRuntimeState(); phases |= 1u << static_cast<u32>(cpu.gcHeap().phase());
 		const auto ram = cpu.memory().captureSaveState();
 		cpu.memory().restoreSaveState(ram); cpu.restoreRuntimeState(state);
-		const auto after = cpu.captureRuntimeState();
-		require(state.gc.gray == after.gc.gray && state.gc.grayAgain == after.gc.grayAgain,
-			"both distinct gray queues survive restore");
+		require(cpu.memory().captureSaveState().ram == ram.ram,
+			"restore leaves both physical gray queues in RAM unchanged");
 		if (cpu.gcHeap().phase() == GcPhase::Atomic) break;
 	}
 	require((phases & 12u) == 12u, "continuous stores do not restart either incremental mark pass indefinitely");
@@ -390,7 +405,7 @@ int main() {
 	try {
 		canonicalPoolAndRootRanges(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
-		incrementalStateAndBarriers(); incrementalSharedWeakMode();
+		incrementalStateAndBarriers(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;
