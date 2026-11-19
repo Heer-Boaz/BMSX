@@ -39,8 +39,8 @@ class Runtime {
 public:
 	friend class FrameLoopState;
 	friend class FrameSchedulerState;
-	friend auto captureRuntimeSaveState(Runtime& runtime, RuntimeSaveState storage) -> RuntimeSaveState;
-	friend void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state, RuntimeRestoreOrigin origin);
+	friend void captureRuntimeCheckpointState(Runtime& runtime, RuntimeCheckpointState& state);
+	friend void applyRuntimeCheckpointState(Runtime& runtime, const RuntimeCheckpointState& state, RuntimeRestoreOrigin origin);
 
 	Runtime(
 		const RuntimeOptions& options,

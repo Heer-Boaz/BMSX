@@ -3,6 +3,7 @@
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/history/input_journal.h"
 #include "machine/runtime/history/input_source.h"
+#include "machine/runtime/history/ram_history.h"
 #include <functional>
 #include <optional>
 #include <vector>
@@ -60,10 +61,13 @@ private:
 		// Exclusive end of the original continuation after a live branch.
 		i64 seekUntilCycles;
 		i64 inputSequence;
-		RuntimeSaveState state;
+		RuntimeCheckpointState state;
+		RamHistory::PageMap ram;
 	};
 	Runtime& runtime;
 	std::vector<std::optional<Checkpoint>> checkpoints;
+	RamHistory ramHistory;
+	std::optional<size_t> ramBaseSlot;
 	size_t firstCheckpoint = 0;
 	size_t count = 0;
 	i64 nextCheckpointId = 0;

@@ -632,7 +632,7 @@ void testLibretroEntry(const test::Blua32TestRom& rom, bool threaded) {
 	require(retro_serialize(envelope.data(), envelope.size()), "serialization follows the completed worker barrier");
 	const auto state = decodeRuntimeSaveState(std::span<const u8>(envelope.data() + 8u, readLE32(envelope.data() + 4u)),
 		PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-	require(readLE32(state.machineState.machine.memory.ram.data() + (Finished - RAM_BASE)) == 1u,
+	require(readLE32(state.ram.data() + (Finished - RAM_BASE)) == 1u,
 		"real threaded libretro executes the guest through readback completion");
 	// serialize repopulates bindings even after endFrame invalidated them.
 	// Restore changes the source epoch without touching GL, so the next job

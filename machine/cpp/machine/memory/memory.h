@@ -19,12 +19,15 @@ namespace bmsx {
 
 enum class MemoryRegionKind { Ram, SystemRom, Cartridge, Io, Other };
 
-struct MemorySaveState {
-	std::vector<u8> ram;
+struct MemoryBusState {
 	u32 ramInstructionEnd = 0;
 	uint32_t busFaultCode = BUS_FAULT_NONE;
 	uint32_t busFaultAddr = 0;
 	uint32_t busFaultAccess = 0;
+};
+
+struct MemorySaveState : MemoryBusState {
+	std::vector<u8> ram;
 };
 
 struct MemoryInit {
@@ -151,6 +154,8 @@ public:
 
 	MemorySaveState captureSaveState(std::vector<u8> ram = {}) const;
 	void restoreSaveState(const MemorySaveState& state);
+	MemoryBusState captureBusState() const;
+	void restoreBusState(const MemoryBusState& state);
 	void clearIoSlots();
 	void clearBusFault();
 private:

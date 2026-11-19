@@ -13,7 +13,6 @@ import { PlayFixture, DEFAULT_PLAY_FIXTURE_BUDGETS } from '../../ide/testing/pla
 import type { FixtureOutput } from '../../ide/testing/fixture_operations';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
-import { applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
 import { asInteger, asTable, valueBool, valueInteger, valueToString } from '../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { Input } from '../../hosts/common/input/manager';
@@ -222,9 +221,11 @@ return {kind='integration',
 		const slot = pool.intern(buildModuleExportSlotName('game', []));
 		const priorGame = asTable(cpu.getGlobalByKey(slot), cpu.gc);
 		const marker = pool.intern('marker'), closed = pool.intern('closed');
-		const saved = captureRuntimeSaveState(f.target.runtime);
+		const history = f.target.runtime.history;
+		history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
+		history.captureCheckpoint();
 		priorGame.records.setStringKey(priorGame.address, marker, valueInteger(25));
-		applyRuntimeSaveState(f.target.runtime, saved, RuntimeRestoreOrigin.HistorySeek);
+		history.beginSeek(history.latestCycles);
 		const restoredGame = asTable(cpu.getGlobalByKey(slot), cpu.gc);
 		assert.notEqual(restoredGame, priorGame, 'rewind installs the physical saved heap');
 		assert.equal(restoredGame.records.getStringKey(restoredGame.address, marker), valueInteger(12));

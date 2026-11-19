@@ -33,7 +33,7 @@ struct MachineState {
 };
 
 struct MachineSaveState {
-	MemorySaveState memory;
+	MemoryBusState memory;
 	CartridgeControllerState cartridge;
 	DmaControllerState dma;
 	GeometryControllerState geometry;

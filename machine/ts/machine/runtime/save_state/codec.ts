@@ -25,7 +25,7 @@ import type { GxGpuIngressContextState, GxGpuRegisterContextState, GxGpuSaveStat
 import type { GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
 import type { GxGpuPcrtcState } from '../../devices/gx/gpu_pcrtc';
 import type { GxGteState } from '../../devices/gx/gte';
-import type { MemorySaveState } from '../../memory/memory';
+import type { MemoryBusState } from '../../memory/memory';
 import type { FrameSchedulerStateSnapshot } from '../../scheduler/frame';
 import type { FrameLoopStateSnapshot } from '../frame/loop';
 import type { FrameState } from '../frame/state';
@@ -164,17 +164,15 @@ function readCartridgeControllerState(reader: BinaryReader): CartridgeController
 	};
 }
 
-function writeMemorySaveState(writer: BinarySink, state: MemorySaveState): void {
-	writer.bytes(state.ram);
+function writeMemoryBusState(writer: BinarySink, state: MemoryBusState): void {
 	writer.u32(state.ramInstructionEnd);
 	writer.u32(state.busFaultCode);
 	writer.u32(state.busFaultAddr);
 	writer.u32(state.busFaultAccess);
 }
 
-function readMemorySaveState(reader: BinaryReader, ramByteCount: number): MemorySaveState {
+function readMemoryBusState(reader: BinaryReader): MemoryBusState {
 	return {
-		ram: reader.bytes(ramByteCount),
 		ramInstructionEnd: reader.u32(),
 		busFaultCode: reader.u32(),
 		busFaultAddr: reader.u32(),
@@ -1070,7 +1068,7 @@ function readSystemDebugTransmitState(reader: BinaryReader): SystemDebugTransmit
 }
 
 function writeMachineSaveState(writer: BinarySink, state: MachineSaveState): void {
-	writeMemorySaveState(writer, state.memory);
+	writeMemoryBusState(writer, state.memory);
 	writeCartridgeControllerState(writer, state.cartridge);
 	writeDmaControllerState(writer, state.dma);
 	writeGeometryControllerState(writer, state.geometry);
@@ -1084,9 +1082,9 @@ function writeMachineSaveState(writer: BinarySink, state: MachineSaveState): voi
 	writeSystemControllerState(writer, state.systemControl);
 }
 
-function readMachineSaveState(reader: BinaryReader, ramByteCount: number, gxGpuVramByteCount: number): MachineSaveState {
+function readMachineSaveState(reader: BinaryReader, gxGpuVramByteCount: number): MachineSaveState {
 	return {
-		memory: readMemorySaveState(reader, ramByteCount),
+		memory: readMemoryBusState(reader),
 		cartridge: readCartridgeControllerState(reader),
 		dma: readDmaControllerState(reader),
 		geometry: readGeometryControllerState(reader),
@@ -1108,9 +1106,9 @@ function writeRuntimeSaveMachineState(writer: BinarySink, state: RuntimeSaveMach
 	writer.i64(state.schedulerNowCycles);
 }
 
-function readRuntimeSaveMachineState(reader: BinaryReader, ramByteCount: number, gxGpuVramByteCount: number): RuntimeSaveMachineState {
+function readRuntimeSaveMachineState(reader: BinaryReader, gxGpuVramByteCount: number): RuntimeSaveMachineState {
 	return {
-		machine: readMachineSaveState(reader, ramByteCount, gxGpuVramByteCount),
+		machine: readMachineSaveState(reader, gxGpuVramByteCount),
 		frameScheduler: readFrameSchedulerStateSnapshot(reader),
 		frameLoop: readFrameLoopStateSnapshot(reader),
 		schedulerNowCycles: reader.i64(),
@@ -1210,6 +1208,7 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 }
 
 function writeRuntimeSaveState(writer: BinarySink, state: RuntimeSaveState): void {
+	writer.bytes(state.ram);
 	writeRuntimeSaveMachineState(writer, state.machineState);
 	writeCpuRuntimeState(writer, state.cpuState);
 	writer.bool(state.pendingEntryCall);
@@ -1217,7 +1216,8 @@ function writeRuntimeSaveState(writer: BinarySink, state: RuntimeSaveState): voi
 
 function readRuntimeSaveState(reader: BinaryReader, ramByteCount: number, gxGpuVramByteCount: number): RuntimeSaveState {
 	return {
-		machineState: readRuntimeSaveMachineState(reader, ramByteCount, gxGpuVramByteCount),
+		ram: reader.bytes(ramByteCount),
+		machineState: readRuntimeSaveMachineState(reader, gxGpuVramByteCount),
 		cpuState: readCpuRuntimeState(reader),
 		pendingEntryCall: reader.bool(),
 	};

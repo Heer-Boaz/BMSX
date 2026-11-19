@@ -87,14 +87,14 @@ async function main(): Promise<void> {
 		const captureMs = performance.now() - captureStart;
 		const bytes = encodeRuntimeSaveState(anchor);
 		let recycled = captureRuntimeSaveState(runtime);
-		const recycledRam = recycled.machineState.machine.memory.ram;
+		const recycledRam = recycled.ram;
 		const recycledVram = recycled.machineState.machine.gxGpu.vramBytes;
 		const recycledSampleRam = recycled.machineState.machine.audio.sampleRam;
 		for (let count = 0; count < 120; count += 1) tick();
 		const expected = capture();
 		for (let pass = 0; pass < 3; pass += 1) {
 			recycled = captureRuntimeSaveState(runtime, recycled);
-			assert.equal(recycled.machineState.machine.memory.ram, recycledRam);
+			assert.equal(recycled.ram, recycledRam);
 			assert.equal(recycled.machineState.machine.gxGpu.vramBytes, recycledVram);
 			assert.equal(recycled.machineState.machine.audio.sampleRam, recycledSampleRam);
 			assert.deepEqual(recycled, expected, 'reused capture must contain the new live state');

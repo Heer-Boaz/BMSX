@@ -33,9 +33,12 @@ constexpr u32 mappedWatchWordMask(u32 group, u32 firstWord, u32 lastWord) {
 
 constexpr u8 MAPPED_WATCH_CODE = 1;
 constexpr u8 MAPPED_WATCH_VIEW = 2;
+constexpr u16 MAPPED_WATCH_GROUP_MASK = 0xff;
+// The first physical write consumes this bit without retiring code or views.
+constexpr u16 MAPPED_WATCH_HISTORY_CLEAN = 0x100;
 
 struct MappedPageWriteWatch {
-	u8* groups = nullptr;
+	u16* groups = nullptr;
 	u32* words = nullptr;
 	u32* watchedPages = nullptr;
 	u32* viewWords = nullptr;
@@ -59,9 +62,9 @@ struct MappedPageWriteWatch {
 				views &= ~mask;
 				viewWords[group] = views;
 			}
-			if ((words[group] | views) == 0u) *groups &= static_cast<u8>(~bit);
+			if ((words[group] | views) == 0u) *groups &= static_cast<u16>(~bit);
 		}
-		if (affected && *groups == 0u) --*watchedPages;
+		if (affected && (*groups & MAPPED_WATCH_GROUP_MASK) == 0u) --*watchedPages;
 		return affected;
 	}
 
@@ -69,8 +72,8 @@ private:
 	void arm(u32* bank, u32 word) {
 		const u32 group = word >> 5u;
 		bank[group] |= 1u << (word & 31u);
-		if (*groups == 0u) ++*watchedPages;
-		*groups |= static_cast<u8>(1u << group);
+		if ((*groups & MAPPED_WATCH_GROUP_MASK) == 0u) ++*watchedPages;
+		*groups |= static_cast<u16>(1u << group);
 	}
 };
 
@@ -86,11 +89,11 @@ public:
 	bool anyWatched() const { return m_watchedPages != 0u; }
 	bool anyWatched(size_t first, size_t length, bool includeViews = true) const {
 		if (length == 0u) return false;
-		const u8* groups = groupData();
+		const u16* groups = groupData();
 		const size_t last = first + length - 1u;
 		const size_t firstPage = first >> MAPPED_PAGE_BYTE_SHIFT, lastPage = last >> MAPPED_PAGE_BYTE_SHIFT;
 		for (size_t page = firstPage; page <= lastPage; ++page) {
-			const u32 watchedGroups = groups[page];
+			const u32 watchedGroups = groups[page] & MAPPED_WATCH_GROUP_MASK;
 			if (watchedGroups == 0u) continue;
 			if (includeViews && page > firstPage && page < lastPage) return true;
 			const u32 firstWord = page == firstPage ? (first & MAPPED_PAGE_BYTE_MASK) >> 2u : 0u;
@@ -105,25 +108,24 @@ public:
 		}
 		return false;
 	}
-	const u8* groupData() const { return reinterpret_cast<const u8*>(m_storage.get()); }
+	const u16* groupData() const { return m_groups.get(); }
 	const u32* codeWordMasks() const { return m_words; }
 	const u32* viewWordMasks() const { return m_viewWords; }
 
 	explicit MappedPageWriteWatches(size_t byteLength, bool watchViews = false) {
-		// The byte group bank precedes aligned word masks in one allocation.
-		const size_t pageCount = (byteLength + MAPPED_PAGE_BYTE_SIZE - 1u) >> MAPPED_PAGE_BYTE_SHIFT;
-		const size_t groupWords = (pageCount + sizeof(u32) - 1u) / sizeof(u32);
-		const size_t watchWords = pageCount * MAPPED_PAGE_WATCH_GROUP_COUNT;
-		m_wordCount = groupWords + watchWords * (watchViews ? 2u : 1u);
+		m_pageCount = (byteLength + MAPPED_PAGE_BYTE_SIZE - 1u) >> MAPPED_PAGE_BYTE_SHIFT;
+		const size_t watchWords = m_pageCount * MAPPED_PAGE_WATCH_GROUP_COUNT;
+		m_wordCount = watchWords * (watchViews ? 2u : 1u);
+		m_groups = std::make_unique<u16[]>(m_pageCount);
 		m_storage = std::make_unique<u32[]>(m_wordCount);
-		m_words = m_storage.get() + groupWords;
+		m_words = m_storage.get();
 		m_viewWords = watchViews ? m_words + watchWords : nullptr;
 	}
 
 	void bind(size_t offset, MappedPageBinding& out) {
 		const size_t page = offset >> MAPPED_PAGE_BYTE_SHIFT;
 		out.writeWatch = {
-			reinterpret_cast<u8*>(m_storage.get()) + page,
+			m_groups.get() + page,
 			m_words + page * MAPPED_PAGE_WATCH_GROUP_COUNT,
 			&m_watchedPages,
 			m_viewWords ? m_viewWords + page * MAPPED_PAGE_WATCH_GROUP_COUNT : nullptr
@@ -133,9 +135,18 @@ public:
 	void armCodeRange(size_t first, size_t length);
 
 	void clear() {
+		for (size_t page = 0; page < m_pageCount; ++page)
+			m_groups[page] &= MAPPED_WATCH_HISTORY_CLEAN;
 		std::fill_n(m_storage.get(), m_wordCount, 0u);
 		m_watchedPages = 0;
 	}
+
+	bool historyPageDirty(size_t firstPage, size_t endPage) const;
+	void armHistoryWrites();
+	void disarmHistoryWrites();
+	void consumeHistoryWrites(size_t offset, size_t byteLength);
+	// The low bit enables tracking. A new epoch re-arms native register windows.
+	u32 historyEpoch() const { return m_historyEpoch; }
 
 	void invalidateWrite(
 		size_t offset,
@@ -149,7 +160,7 @@ public:
 		}
 		const size_t firstPage = offset >> MAPPED_PAGE_BYTE_SHIFT;
 		const size_t lastPage = (offset + byteLength - 1u) >> MAPPED_PAGE_BYTE_SHIFT;
-		if (firstPage == lastPage && reinterpret_cast<const u8*>(m_storage.get())[firstPage] == 0u) return;
+		if (firstPage == lastPage && m_groups[firstPage] == 0u) return;
 		invalidateWatchedWrite(offset, byteLength, keyBase, invalidator, firstPage, lastPage, reportViews);
 	}
 
@@ -161,11 +172,14 @@ private:
 		size_t offset, size_t byteLength, u64 keyBase, MappedPageInvalidator* invalidator,
 		size_t firstPage, size_t lastPage, bool reportViews
 	);
+	std::unique_ptr<u16[]> m_groups;
 	std::unique_ptr<u32[]> m_storage;
 	u32* m_words;
 	u32* m_viewWords;
 	size_t m_wordCount;
+	size_t m_pageCount;
 	u32 m_watchedPages = 0;
+	u32 m_historyEpoch = 0;
 };
 
 } // namespace bmsx

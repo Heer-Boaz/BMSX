@@ -4,7 +4,7 @@ import test, { type TestContext } from 'node:test';
 import { HostFrameSession } from '../../hosts/common/frame_session';
 import { executeHostUpdate } from '../../hosts/common/machine_step';
 import { HostPauseReason } from '../../hosts/common/execution_control';
-import { applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
+import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import type { FrameNavigationOperation } from '../../ide/runtime/frame_navigation';
 import { resetRuntimeDebuggerExecution } from '../../ide/runtime/debugger_state';
 import { RuntimeDebuggerPlanResult } from '../../ide/runtime/debugger_plans';
@@ -159,7 +159,7 @@ test('restore origin distinguishes owned rewind from external replacement; reset
 	const f = await fixture(t); await f.settle(f.navigation.step(1, 5));
 	const saved = captureRuntimeSaveState(f.runtime);
 	const operation = f.navigation.step(-1);
-	applyRuntimeSaveState(f.runtime, saved, RuntimeRestoreOrigin.ExternalLoad);
+	applyRuntimeSaveState(f.runtime, saved);
 	assert.equal((await operation.completion).status, 'replaced');
 	await f.frame();
 	assert.equal(f.rewind.seeking, false);

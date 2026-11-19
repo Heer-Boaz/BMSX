@@ -1,9 +1,10 @@
 import { clamp } from '../../../common/clamp';
 import type { InputControllerInputSource } from '../../devices/input/contracts';
 import type { Runtime } from '../runtime';
-import { applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin, type RuntimeSaveState } from '../save_state';
+import { applyRuntimeCheckpointState, captureRuntimeCheckpointState, RuntimeRestoreOrigin, type RuntimeCheckpointState } from '../save_state';
 import { InputJournal } from './input_journal';
 import { HistoryInputSource } from './input_source';
+import { RamHistory } from './ram_history';
 
 export const enum HistoryMode { Disabled, Recording, Replaying, Reviewing }
 export const enum HistorySeekResult { Progressed, BackendPending, Complete, Stopped }
@@ -20,7 +21,8 @@ type Checkpoint = {
 	/** Exclusive end of the original continuation after a live branch. */
 	seekUntilCycles: number;
 	inputSequence: number;
-	state: RuntimeSaveState;
+	state: RuntimeCheckpointState;
+	ram: Uint32Array;
 };
 
 /** Runtime timeline; deliberately excluded from machine/save-state capture. */
@@ -34,6 +36,8 @@ export class RuntimeHistory {
 	public readonly inputJournal = new InputJournal();
 	public readonly input: HistoryInputSource;
 	private checkpoints: (Checkpoint | null)[] = [];
+	private readonly ramHistory = new RamHistory();
+	private ramBaseSlot = -1;
 	private firstCheckpoint = 0;
 	private count = 0;
 	private nextCheckpointId = 0;
@@ -75,6 +79,7 @@ export class RuntimeHistory {
 	/** Requests the initial checkpoint. Execution waits for host GPU synchronization. */
 	public start(options: HistoryOptions): void {
 		this.checkpoints = new Array<Checkpoint | null>(options.checkpointCapacity).fill(null);
+		this.ramHistory.start(this.runtime.machine.memory);
 		this.firstCheckpoint = 0;
 		this.count = 0;
 		this.intervalCycles = options.checkpointIntervalCycles;
@@ -96,6 +101,9 @@ export class RuntimeHistory {
 		this.mode = HistoryMode.Disabled;
 		this.checkpointPending = false;
 		this.checkpoints.length = 0;
+		this.ramHistory.clear();
+		this.ramBaseSlot = -1;
+		this.runtime.machine.memory.ramWriteWatches().disarmHistoryWrites();
 		this.count = 0;
 		this.firstCheckpoint = 0;
 		this.endCycles = 0;
@@ -109,10 +117,13 @@ export class RuntimeHistory {
 		const index = (this.firstCheckpoint + this.count) % this.checkpoints.length;
 		const previous = this.checkpoints[index];
 		// Only the evicted/inactive slot owns storage that may be overwritten.
-		const state = captureRuntimeSaveState(this.runtime, previous === null ? undefined : previous.state);
+		const state = captureRuntimeCheckpointState(this.runtime, previous?.state);
+		const baseline = this.ramBaseSlot === -1 ? null : this.checkpoints[this.ramBaseSlot]!.ram;
+		const ram = this.ramHistory.capture(this.runtime.machine.memory, baseline, previous?.ram);
 		const checkpoint = { id: this.nextCheckpointId++, cycles, seekUntilCycles: Infinity,
-			inputSequence: this.inputJournal.endSequence, state };
+			inputSequence: this.inputJournal.endSequence, state, ram };
 		this.checkpoints[index] = checkpoint;
+		this.ramBaseSlot = index;
 		if (this.count === this.checkpoints.length) {
 			this.firstCheckpoint = (this.firstCheckpoint + 1) % this.checkpoints.length;
 		} else {
@@ -143,16 +154,19 @@ export class RuntimeHistory {
 	/** Seek endpoints are retained PCRTC boundaries, selected by machine cycles. */
 	public beginSeek(cycles: number): void {
 		cycles = clamp(cycles, this.earliestCycles, this.endCycles);
-		let checkpoint = this.checkpoints[this.firstCheckpoint]!;
+		let slot = this.firstCheckpoint;
 		for (let index = 1; index < this.count; index += 1) {
-			const candidate = this.checkpoints[(this.firstCheckpoint + index) % this.checkpoints.length]!;
-			if (candidate.cycles > cycles) break;
-			checkpoint = candidate;
+			const candidate = (this.firstCheckpoint + index) % this.checkpoints.length;
+			if (this.checkpoints[candidate]!.cycles > cycles) break;
+			slot = candidate;
 		}
+		const checkpoint = this.checkpoints[slot]!;
 		const endSequence = this.inputJournal.endAt(cycles);
 		this.targetCycles = endSequence === checkpoint.inputSequence ? checkpoint.cycles : this.inputJournal.cycleAt(endSequence - 1);
 		this.targetTick = checkpoint.state.machineState.frameScheduler.lastTickSequence + endSequence - checkpoint.inputSequence;
-		applyRuntimeSaveState(this.runtime, checkpoint.state, RuntimeRestoreOrigin.HistorySeek);
+		this.ramHistory.restore(this.runtime.machine.memory, this.checkpoints[this.ramBaseSlot]!.ram, checkpoint.ram);
+		this.ramBaseSlot = slot;
+		applyRuntimeCheckpointState(this.runtime, checkpoint.state, RuntimeRestoreOrigin.HistorySeek);
 		this.runtime.frameScheduler.reset();
 		this.runtime.frameLoop.abandonFrameState();
 		this.inputJournal.replaySequence = checkpoint.inputSequence;

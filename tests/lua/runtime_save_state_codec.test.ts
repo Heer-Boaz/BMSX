@@ -69,10 +69,10 @@ function createRuntimeSaveState(): RuntimeSaveState {
 	const audioSampleRam = new Uint8Array(APU_SAMPLE_RAM_BYTES);
 	audioSampleRam.set([9, 8, 7, 6], 0x20);
 	return {
+		ram,
 		machineState: {
 			machine: {
 				memory: {
-					ram,
 					ramInstructionEnd: 0x081e0000,
 					busFaultCode: 2,
 					busFaultAddr: 0x12345678,

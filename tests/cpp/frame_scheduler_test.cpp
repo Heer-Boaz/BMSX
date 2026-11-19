@@ -962,7 +962,7 @@ void testRuntimeCheckpointStorage() {
 	auto storage = bmsx::captureRuntimeSaveState(runtime);
 	const auto& machine = storage.machineState.machine;
 	const std::array<const bmsx::u8*, 5> regions{
-		machine.memory.ram.data(), machine.gxGpu.vramBytes.data(), machine.audio.sampleRam.data(),
+		storage.ram.data(), machine.gxGpu.vramBytes.data(), machine.audio.sampleRam.data(),
 		machine.cartridge.slots[0]->ram->data(), machine.cartridge.slots[1]->ram->data(),
 	};
 	std::vector<bmsx::u8> vram(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
@@ -981,7 +981,7 @@ void testRuntimeCheckpointStorage() {
 		gpu.replaceVramSnapshotBytes(vram);
 		const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
 		storage = bmsx::captureRuntimeSaveState(runtime, std::move(storage));
-		require(machine.memory.ram.data() == regions[0], "main RAM buffer is reused");
+		require(storage.ram.data() == regions[0], "main RAM buffer is reused");
 		require(machine.gxGpu.vramBytes.data() == regions[1], "VRAM buffer is reused");
 		require(machine.audio.sampleRam.data() == regions[2], "sample RAM buffer is reused");
 		require(bmsx::readLE32(machine.audio.sampleRam.data() + bmsx::APU_SAMPLE_RAM_BYTES - 4) == word, "APU transfer captured");
@@ -1003,7 +1003,7 @@ void testRuntimeCheckpointStorage() {
 	const auto restored = bmsx::captureRuntimeSaveState(runtime);
 	const auto& restoredMachine = restored.machineState.machine;
 	const auto& anchorMachine = anchor.machineState.machine;
-	require(restoredMachine.memory.ram == anchorMachine.memory.ram, "original main RAM restores intact");
+	require(restored.ram == anchor.ram, "original main RAM restores intact");
 	require(restoredMachine.audio.sampleRam == anchorMachine.audio.sampleRam, "original sample RAM restores intact");
 	require(restoredMachine.gxGpu.vramBytes == anchorMachine.gxGpu.vramBytes, "original VRAM restores intact");
 	for (size_t slot = 0; slot < 2; ++slot) {

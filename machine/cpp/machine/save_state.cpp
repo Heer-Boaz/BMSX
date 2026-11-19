@@ -67,7 +67,7 @@ MachineSaveState captureMachineSaveState(Machine& machine, MachineSaveState stor
 	storage.gxGpu = machine.gxGpu.captureSaveState(std::move(storage.gxGpu.vramBytes));
 	storage.audio = machine.audioController.captureState(std::move(storage.audio.sampleRam));
 	storage.cartridge = machine.cartridgeController.captureState(std::move(storage.cartridge));
-	storage.memory = machine.memory.captureSaveState(std::move(storage.memory.ram));
+	storage.memory = machine.memory.captureBusState();
 	storage.dma = machine.dmaController.captureState();
 	storage.geometry = machine.geometryController.captureState();
 	storage.gxGte = machine.gxGte.captureState();
@@ -80,7 +80,7 @@ MachineSaveState captureMachineSaveState(Machine& machine, MachineSaveState stor
 }
 
 void restoreMachineSaveState(Machine& machine, const MachineSaveState& state) {
-	machine.memory.restoreSaveState(state.memory);
+	machine.memory.restoreBusState(state.memory);
 	restoreSharedDeviceState(machine, state.cartridge, state.dma, state.geometry, state.irq, state.audio, state.input);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
 	machine.imgDecController.restoreState(state.imgDec);

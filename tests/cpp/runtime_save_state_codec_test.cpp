@@ -26,7 +26,7 @@ int main() {
 	using namespace bmsx;
 	RuntimeSaveState state;
 	auto& machine = state.machineState.machine;
-	machine.memory.ram.assign(PSX_MACHINE_SPEC.ramBytes, 0x5a);
+	state.ram.assign(PSX_MACHINE_SPEC.ramBytes, 0x5a);
 	machine.gxGpu.vramBytes.assign(PSX_MACHINE_SPEC.gxGpuVramBytes, 0x7b);
 	machine.audio.sampleRam.assign(APU_SAMPLE_RAM_BYTES, 0x8c);
 	machine.gxGpu.commandBuffer.readbackPixelBytes.assign(2 * 1024 * 1024, 0x9d);
@@ -81,7 +81,7 @@ int main() {
 	std::fill(output.begin(), output.end(), 0xa5);
 	require(encodeRuntimeSaveState(state, std::span<u8>(output).subspan(1, expected.size() - 1)) == 0, "undersized output is not admitted");
 	require(std::ranges::all_of(output, [](u8 value) { return value == 0xa5; }), "capacity admission happens before any output writes");
-	const auto decoded = decodeRuntimeSaveState(expected, machine.memory.ram.size(), machine.gxGpu.vramBytes.size());
+	const auto decoded = decodeRuntimeSaveState(expected, state.ram.size(), machine.gxGpu.vramBytes.size());
 	require(encodeRuntimeSaveState(decoded) == expected, "every stored bit round-trips through typed state");
 	require(decoded.machineState.machine.cartridge.slots[0]->ram.has_value()
 		&& !decoded.machineState.machine.cartridge.slots[1].has_value(), "empty RAM and an absent card remain distinct");

@@ -168,13 +168,14 @@ type StoredIoWriteReadyHandler = (
 	busSignals: MappedBusSignals,
 ) => boolean;
 
-export type MemorySaveState = {
-	ram: Uint8Array;
+export type MemoryBusState = {
 	ramInstructionEnd: number;
 	busFaultCode: number;
 	busFaultAddr: number;
 	busFaultAccess: number;
 };
+
+export type MemorySaveState = MemoryBusState & { ram: Uint8Array };
 
 export type MemoryByteView = {
 	bytes: Uint8Array;
@@ -432,8 +433,16 @@ export class Memory {
 
 	public captureSaveState(ram: Uint8Array = new Uint8Array(this.ram.byteLength)): MemorySaveState {
 		ram.set(this.ram);
+		return { ...this.captureBusState(), ram };
+	}
+
+	public restoreSaveState(state: MemorySaveState): void {
+		this.ram.set(state.ram);
+		this.restoreBusState(state);
+	}
+
+	public captureBusState(): MemoryBusState {
 		return {
-			ram,
 			ramInstructionEnd: this.instructionEnd,
 			busFaultCode: this.busFaultCode,
 			busFaultAddr: this.busFaultAddr,
@@ -441,8 +450,7 @@ export class Memory {
 		};
 	}
 
-	public restoreSaveState(state: MemorySaveState): void {
-		this.ram.set(state.ram);
+	public restoreBusState(state: MemoryBusState): void {
 		this.instructionEnd = state.ramInstructionEnd;
 		if (this.mappedPageInvalidator !== null) {
 			this.mappedPageInvalidator.invalidateMappedRange(

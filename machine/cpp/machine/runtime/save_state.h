@@ -7,15 +7,22 @@ namespace bmsx {
 
 class Runtime;
 
-struct RuntimeSaveState {
+struct RuntimeCheckpointState {
 	RuntimeSaveMachineState machineState;
 	CpuRuntimeState cpuState;
 	bool pendingEntryCall = false;
 };
 
+struct RuntimeSaveState : RuntimeCheckpointState {
+	std::vector<u8> ram;
+};
+
 // Storage is consumed; callers reusing a capture transfer its ownership with a move.
 RuntimeSaveState captureRuntimeSaveState(Runtime& runtime, RuntimeSaveState storage = {});
 enum class RuntimeRestoreOrigin { ExternalLoad, HistorySeek };
-void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state, RuntimeRestoreOrigin origin = RuntimeRestoreOrigin::ExternalLoad);
+void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state);
+void captureRuntimeCheckpointState(Runtime& runtime, RuntimeCheckpointState& state);
+// The caller has installed main RAM, and owns any retained history.
+void applyRuntimeCheckpointState(Runtime& runtime, const RuntimeCheckpointState& state, RuntimeRestoreOrigin origin);
 
 } // namespace bmsx

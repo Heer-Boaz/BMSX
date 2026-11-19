@@ -2025,6 +2025,7 @@ dispatch_instruction:
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_native_block: {
+				thread.recordNativeWrites(m_memory.ramWriteWatches());
 				nativeState.frameBank = frameBankWord(IMAGE.executionDomainId);
 				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
 				nativeState.cartridgeRom = m_memory.cartridgeController().romStorage(nativeState.cartridgeSlot);

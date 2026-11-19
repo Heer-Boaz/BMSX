@@ -61,6 +61,17 @@ struct Thread : GCObject {
 	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
 	u32 backingByteLength() const;
 	bool stackRequiresScalar() const;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	void recordNativeWrites(MappedPageWriteWatches& watches) {
+		const u32 epoch = watches.historyEpoch();
+		if (recordedWriteEpoch == epoch) return;
+		recordedWriteEpoch = epoch;
+		if ((epoch & 1u) == 0u) return;
+		// Native calls stay in the admitted backing, including frame writes.
+		watches.consumeHistoryWrites(stackOffset(), backingByteLength());
+		watches.consumeHistoryWrites(address & RAM_RECORD_WORD_MASK, THREAD_HEAP_BYTES);
+	}
+#endif
 	size_t shrinkStack();
 	u32 protectedDepth() const;
 	void setProtectedDepth(u32 depth);
@@ -111,6 +122,9 @@ private:
 	void write(ThreadField field, u32 word);
 	u32 boundFrameCapacity = 0;
 	u32 boundProtectedCapacity = 0;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	u32 recordedWriteEpoch = 0;
+#endif
 	GcHeap& heap;
 };
 

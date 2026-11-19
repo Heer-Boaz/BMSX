@@ -60,8 +60,8 @@ try {
 			assert.equal(native.status, 0, `${label}: native signal ${native.signal}`);
 			const actual = decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.state`)),
 				PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-			const actualRam = actual.machineState.machine.memory.ram;
-			const expectedRam = expected.machineState.machine.memory.ram;
+			const actualRam = actual.ram;
+			const expectedRam = expected.ram;
 			assert.equal(actualRam.length, expectedRam.length, `${label}: RAM length`);
 			const differingByte = actualRam.findIndex((byte, offset) => byte !== expectedRam[offset]);
 			assert.equal(differingByte, -1, `${label}: RAM differs at 0x${differingByte.toString(16)} (${actualRam[differingByte]} vs ${expectedRam[differingByte]})`);

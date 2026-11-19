@@ -113,14 +113,11 @@ This remains a bounded **slot/record policy**, not a hard byte arena or an
 unconditional duration guarantee for arbitrary register configurations. Startup,
 reset and a newly established timeline cannot provide unrecorded past; branch
 checkpoints and unusually high programmable PCRTC rates can shorten retention.
-Snapshot memory varies with CPU object/string storage and cartridge RAM. Six
-slots need at least 39 MiB for main RAM, VRAM and APU sample RAM alone; three
-slots need 19.5 MiB. CPU and other device metadata add to that. Physical
-iPhone/iPad and SNES Mini memory and frame-time headroom have not been measured
-by this policy change. Paired x86-64 native Linux measurements after 100 emulated
-seconds of Nemesis recorded approximately 55.3 MiB of history-owned allocations
-for the default policy and 27.7 MiB for the Mini policy. These are example
-retention costs, not whole-process RSS, ARM measurements or hard memory limits.
+Main RAM pages are shared where possible. If every page is written in
+every interval, six slots retain up to 24 MiB of main RAM, and three slots
+up to 12 MiB, before device state and the input journal. VRAM and APU
+sample RAM still occupy 2.5 MiB per slot together. This is a retained
+storage bound, not a whole-process RSS or performance estimate.
 The ordinary native replay suite also builds and runs the Mini host-policy
 branch without requiring ARM hardware, checking both
 retention policies and complete guest-state reconstruction with the same owner.
@@ -287,48 +284,34 @@ envelope encode the same CPU latches explicitly in little-endian order.
 History does not invoke the file codec. Neither format adds a second
 serialization of guest RAM contents.
 
-## Bulk checkpoint storage: REWIND-MEMORY-STORAGE-01
+## Saved memory and history
 
-This storage boundary follows DuckStation's `AllocateMemoryStates` /
-`SaveMemoryState` and MAME's `write_buffer` (sources above): devices copy their
-raw memory into exclusively owned checkpoint storage, not a fresh intermediate
-buffer subsequently copied into history. No second state format or buffer-pool
-facade is introduced.
+External saves use contiguous main RAM and capture the device and CPU state
+through the same owner as history. The external byte order and libretro
+envelope do not depend on whether recording is on.
 
-Representation and callsite inventory established before the mirrored edits:
-
-| Saved region | TypeScript | C++ | Capture owner |
+| Saved region | External save | History slot | Owner |
 | --- | --- | --- | --- |
-| Main RAM | `Uint8Array` of machine-model RAM size | `vector<u8>` of the same size | `Memory.captureSaveState` |
-| VRAM | `Uint8Array` of synchronized device snapshot bytes | `vector<u8>` of the same bytes | `GxGpu.captureSaveState` |
-| APU sample RAM | Fixed-size `Uint8Array` | `vector<u8>` copied from the device array | `ApuSampleMemory.captureState`, through `AudioController` |
-| Socket 0/1 RAM | Present card's `Uint8Array`, or hardware absence | `optional<vector<u8>>` | `CartridgeCard.captureState`, through the controller |
-| CPU heap | Existing word arena and object index | Existing retained word arena and index | `CPU.captureRuntimeState`; representation unchanged |
+| Main RAM (including the language heap) | One byte buffer | Complete map of immutable 4 KiB versions | Runtime history and physical RAM write port |
+| VRAM | Synchronized snapshot bytes | Same, slot-owned | GPU |
+| APU sample RAM | Raw sample memory | Same, slot-owned | APU |
+| Cartridge RAM | Raw bytes for each present card | Same, slot-owned | Cartridge sockets |
 
-`captureRuntimeSaveState` accepts exclusive storage from a previous capture of
-the same runtime/media configuration. Runtime/machine capture passes the saved
-regions back to their existing owners. A fresh capture allocates them there;
-reuse overwrites them there. Native callers transfer ownership with moves, not
-vector copies. The former snapshot is consumed as storage, not retained as an
-immutable checkpoint. Independent captures and every other retained slot stay
-unchanged. There is no corrupt-state recovery or media-shape compatibility path.
+Dirty tracking is attached to physical RAM. Bus writes, DMA and record
+stores participate at the existing write boundary. The mapped-page summary has
+a separate first-write bit for history; clearing it never retires
+instructions or rebinds a view. Native stores with decoded-watch checks
+use the same admission. Native frame and register spills can write directly
+inside an admitted thread backing range, which the CPU marks once per
+capture epoch or stack rebind. There is no byte comparison or extra per-slot
+copy around those stores.
 
-Changed cold callsites: `RuntimeHistory.captureCheckpoint`, runtime/machine
-save-state capture, and the four memory-region producers above. GPU/APU timing
-synchronization and dependent DMA/IRQ capture order stay intact. The backend
-must still finish pending work and synchronize VRAM before capture; storage
-reuse cannot substitute for that fence. Restore and external/libretro encoding
-continue to consume the same saved bytes. CPU instructions, RAM/MMIO writes,
-DMA transfers, rendering, audio mixing and ICU polls gain no additional work.
-
-This step targets bulk allocation churn, not retained byte count or all metadata
-allocations. Strings, CPU traversal scratch and device queue snapshots remain
-separate measured costs. Compression must be assessed on the completed owner
-blocks, including workspace and decode cost, before choosing retention policy.
-The current tree has an IMGDEC word-stream codec, not a general rewind byte
-codec; the historical `BinaryCompressor` (last tree before removal `154458d8a^`) is
-not a live dependency and has no mirrored native owner. Neither is silently
-made part of the machine or resurrected as a compatibility path.
+History copies written pages and retains the preceding versions of clean
+pages. Slots reference their pages directly, so eviction and branching do
+not require replaying a chain of deltas. Recycled versions use retained slab
+storage. A seek copies pages that differ from the installed base or that
+were written after it; a branch uses that installed base, not the last point
+of the discarded future. Capture and seek run with the machine suspended.
 
 ## Runtime history owner: REWIND-HISTORY-01
 
@@ -347,15 +330,14 @@ Representation and hot-path inventory established before the mirrored diff:
 | Full machine-cycle time and journal sequence | Integer-valued `number`; retained times in `Float64Array` | `i64` | Device scheduler time; history coordinates |
 | ICU payload | 41 raw words in `Uint32Array` | 41 `u32` words | Existing `devices/input/contracts` snapshot layout |
 | Poll header | Raw word: sample present, Normal/Supervisor context, supervisor line | Same bit layout | `InputJournal` |
-| Checkpoint | Machine time, event sequence, trusted `RuntimeSaveState` | Same | `RuntimeHistory` |
+| Checkpoint | Machine time, event sequence, trusted device/CPU latches and a main RAM page map | Same | `RuntimeHistory` |
 | Replay grant | Explicit integer machine-cycle count | `i64` | Existing frame scheduler |
 | Restore origin | `RuntimeRestoreOrigin` enum | Same enum | Runtime restore boundary; not serialized |
 
 Hot callsites are the ICU's existing `sampleInputControllerSnapshot` and
 `supervisorRequestLineHigh` calls at VBlank, its vibration output call, and
-the existing frame scheduler's execution entry/continuation checks. No history
-branch is added to CPU instructions, guest GC, BIOS, cartridge devices or
-cartlib. The input contract owns raw word storage/loading; history does not
+the existing frame scheduler's execution entry/continuation checks.
+RAM write tracking is independent of the input journal and guest cycle accounting. The input contract owns raw word storage/loading; history does not
 invent pointer, pad-axis or fixed-point conversions.
 
 ### Recording and retention
@@ -376,8 +358,7 @@ Checkpoint age is measured in machine cycles; requests are published at ICU
 poll boundaries. Input-arena pressure also requests a checkpoint, stopping
 before the next poll could overwrite an event needed by the newest checkpoint.
 Older checkpoints whose event range has expired leave the retained range.
-Their CPU snapshot buffers are reused on cold capture, not destructed inside
-an ICU callback. Branching also discards future checkpoints logically while
+Their retained storage is reused on cold capture, not released inside an ICU callback. Branching also discards future checkpoints logically while
 retaining physical slot storage for reuse. Both physical rings wrap; checkpoint storage never
 contains more than the configured number of snapshot slots.
 
@@ -439,8 +420,8 @@ suppression. APU clocks, DSP, DMA and GPU work still execute normally. No
 silence insertion, prebuffering, guest-time compensation or guest GC is added.
 
 The common host policy is bounded by snapshot count and input-record count,
-not by a hard byte arena. CPU graph/string size, cartridge RAM and capture
-scratch still affect memory and latency. Compression and a fixed-byte arena
+not by a fixed-size byte arena. Dirty main RAM, cartridge RAM and
+device capture still affect memory and latency. Compression and a fixed-byte arena
 are separate storage work, not prerequisites hidden behind a compatibility
 reader or dropped emulated work. ARM/QEMU proof below is functional evidence;
 it is not a measurement of total RSS or real-time headroom on physical hardware.

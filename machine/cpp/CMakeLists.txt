@@ -322,6 +322,7 @@ add_library(bmsx_core STATIC
 	machine/runtime/history/history.cpp
 	machine/runtime/history/input_journal.cpp
 	machine/runtime/history/input_source.cpp
+	machine/runtime/history/ram_history.cpp
 	machine/runtime/machine_state.cpp
 	machine/runtime/save_machine_state.cpp
 	machine/runtime/save_state.cpp
@@ -1433,6 +1434,14 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_frame_scheduler_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	add_test(NAME bmsx_frame_scheduler_tests COMMAND bmsx_frame_scheduler_tests)
+
+	add_executable(bmsx_ram_history_tests ../../tests/cpp/ram_history_test.cpp)
+	target_link_libraries(bmsx_ram_history_tests PRIVATE bmsx_core)
+	if(BMSX_SNESMINI_TARGET)
+		# The SDK links libstdc++ statically, after the explicit libraries.
+		target_link_options(bmsx_ram_history_tests PRIVATE -pthread)
+	endif()
+	add_test(NAME bmsx_ram_history_tests COMMAND bmsx_ram_history_tests)
 
 	add_executable(bmsx_geometry_runtime_timing_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_runtime_timing_test.cpp

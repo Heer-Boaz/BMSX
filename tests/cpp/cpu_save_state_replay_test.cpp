@@ -358,7 +358,7 @@ void saveLayoutDoesNotScaleWithHeapObjects() {
 	require(bmsx::asTable(restored->getInteger(1024), restoredCpu.gcHeap())->getInteger(1) == rootValue,
 		"cycle survives via the restored guest bytes alone");
 	require(restoredCpu.captureRuntimeState() == saved.cpuState
-		&& restoredCpu.memory().captureSaveState().ram == saved.machineState.machine.memory.ram,
+		&& restoredCpu.memory().captureSaveState().ram == saved.ram,
 		"rebuilding attachments does not mutate any saved CPU latch or RAM byte");
 }
 

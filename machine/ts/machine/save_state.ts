@@ -9,7 +9,7 @@ import type { IrqControllerState } from './devices/irq/save_state';
 import type { ImgDecControllerState } from './devices/imgdec/controller';
 import type { SystemControllerState } from './devices/system/controller';
 import type { SystemDebugTransmitState } from './devices/system/debug_transmit';
-import type { MemorySaveState } from './memory/memory';
+import type { MemoryBusState } from './memory/memory';
 import type { Machine } from './machine';
 
 export type MachineState = {
@@ -27,7 +27,7 @@ export type MachineState = {
 };
 
 export type MachineSaveState = {
-	memory: MemorySaveState;
+	memory: MemoryBusState;
 	cartridge: CartridgeControllerState;
 	dma: DmaControllerState;
 	geometry: GeometryControllerState;
@@ -79,7 +79,7 @@ export function captureMachineSaveState(machine: Machine, storage?: MachineSaveS
 	const audio = machine.audioController.captureState(storage?.audio.sampleRam);
 	const cartridge = machine.cartridgeController.captureState(storage?.cartridge);
 	return {
-		memory: machine.memory.captureSaveState(storage?.memory.ram),
+		memory: machine.memory.captureBusState(),
 		cartridge,
 		dma: machine.dmaController.captureState(),
 		geometry: machine.geometryController.captureState(),
@@ -95,7 +95,7 @@ export function captureMachineSaveState(machine: Machine, storage?: MachineSaveS
 }
 
 export function restoreMachineSaveState(machine: Machine, state: MachineSaveState): void {
-	machine.memory.restoreSaveState(state.memory);
+	machine.memory.restoreBusState(state.memory);
 	restoreSharedDeviceState(machine, state);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
 	machine.imgDecController.restoreState(state.imgDec);

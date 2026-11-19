@@ -282,18 +282,20 @@ u32 Memory::firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount) {
 }
 
 MemorySaveState Memory::captureSaveState(std::vector<u8> ram) const {
-	MemorySaveState state;
 	ram.assign(m_ram.begin(), m_ram.end());
-	state.ram = std::move(ram);
-	state.ramInstructionEnd = m_ramInstructionEnd;
-	state.busFaultCode = m_busFaultCode;
-	state.busFaultAddr = m_busFaultAddr;
-	state.busFaultAccess = m_busFaultAccess;
-	return state;
+	return {captureBusState(), std::move(ram)};
 }
 
 void Memory::restoreSaveState(const MemorySaveState& state) {
 	std::memcpy(m_ram.data(), state.ram.data(), state.ram.size());
+	restoreBusState(state);
+}
+
+MemoryBusState Memory::captureBusState() const {
+	return {m_ramInstructionEnd, m_busFaultCode, m_busFaultAddr, m_busFaultAccess};
+}
+
+void Memory::restoreBusState(const MemoryBusState& state) {
 	m_ramInstructionEnd = state.ramInstructionEnd;
 	if (m_mappedPageInvalidator) {
 		m_mappedPageInvalidator->invalidateMappedRange(

@@ -41,6 +41,9 @@ void RuntimeHistory::stop() {
 	mode = HistoryMode::Disabled;
 	checkpointPending = false;
 	checkpoints.clear();
+	ramHistory.clear();
+	ramBaseSlot.reset();
+	runtime.machine.memory.ramWriteWatches().disarmHistoryWrites();
 	count = 0;
 	firstCheckpoint = 0;
 	endCycles = 0;
@@ -52,10 +55,14 @@ void RuntimeHistory::captureCheckpoint() {
 	const i64 cycles = runtime.machine.scheduler.currentNowCycles();
 	const size_t index = (firstCheckpoint + count) % checkpoints.size();
 	auto& slot = checkpoints[index];
-	// Only the evicted/inactive slot owns storage that may be overwritten.
-	RuntimeSaveState storage = slot ? std::move(slot->state) : RuntimeSaveState{};
-	slot = Checkpoint{nextCheckpointId++, cycles, std::numeric_limits<i64>::max(), inputJournal.endSequence,
-		captureRuntimeSaveState(runtime, std::move(storage))};
+	auto& checkpoint = slot ? *slot : slot.emplace();
+	checkpoint.id = nextCheckpointId++;
+	checkpoint.cycles = cycles;
+	checkpoint.seekUntilCycles = std::numeric_limits<i64>::max();
+	checkpoint.inputSequence = inputJournal.endSequence;
+	captureRuntimeCheckpointState(runtime, checkpoint.state);
+	ramHistory.capture(runtime.machine.memory, ramBaseSlot ? &checkpoints[*ramBaseSlot]->ram : nullptr, checkpoint.ram);
+	ramBaseSlot = index;
 	if (count == checkpoints.size()) {
 		firstCheckpoint = (firstCheckpoint + 1) % checkpoints.size();
 	} else {
@@ -82,19 +89,22 @@ void RuntimeHistory::recordInputBoundary(bool high) {
 
 void RuntimeHistory::beginSeek(i64 cycles) {
 	cycles = std::clamp(cycles, earliestCycles(), endCycles);
-	const Checkpoint* checkpoint = &*checkpoints[firstCheckpoint];
+	size_t slot = firstCheckpoint;
 	for (size_t index = 1; index < count; ++index) {
-		const auto& candidate = *checkpoints[(firstCheckpoint + index) % checkpoints.size()];
-		if (candidate.cycles > cycles) break;
-		checkpoint = &candidate;
+		const size_t candidate = (firstCheckpoint + index) % checkpoints.size();
+		if (checkpoints[candidate]->cycles > cycles) break;
+		slot = candidate;
 	}
+	const auto& checkpoint = *checkpoints[slot];
 	const i64 endSequence = inputJournal.endAt(cycles);
-	targetCycles = endSequence == checkpoint->inputSequence ? checkpoint->cycles : inputJournal.cycleAt(endSequence - 1);
-	targetTick = checkpoint->state.machineState.frameScheduler.lastTickSequence + endSequence - checkpoint->inputSequence;
-	applyRuntimeSaveState(runtime, checkpoint->state, RuntimeRestoreOrigin::HistorySeek);
+	targetCycles = endSequence == checkpoint.inputSequence ? checkpoint.cycles : inputJournal.cycleAt(endSequence - 1);
+	targetTick = checkpoint.state.machineState.frameScheduler.lastTickSequence + endSequence - checkpoint.inputSequence;
+	ramHistory.restore(runtime.machine.memory, checkpoints[*ramBaseSlot]->ram, checkpoint.ram);
+	ramBaseSlot = slot;
+	applyRuntimeCheckpointState(runtime, checkpoint.state, RuntimeRestoreOrigin::HistorySeek);
 	runtime.frameScheduler.reset();
 	runtime.frameLoop.abandonFrameState(runtime);
-	inputJournal.replaySequence = checkpoint->inputSequence;
+	inputJournal.replaySequence = checkpoint.inputSequence;
 	checkpointPending = false;
 	mode = runtime.frameScheduler.lastTickSequence == targetTick ? HistoryMode::Reviewing : HistoryMode::Replaying;
 }

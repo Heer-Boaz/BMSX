@@ -158,6 +158,9 @@ bool Thread::stackRequiresScalar() const {
 }
 
 void Thread::bindStack() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	recordedWriteEpoch = 0;
+#endif
 	stackCapacity = read(ThreadField::StackCapacity);
 	boundFrameCapacity = frameCapacity();
 	boundProtectedCapacity = protectedCapacity();

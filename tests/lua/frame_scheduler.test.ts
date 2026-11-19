@@ -433,7 +433,7 @@ test('runtime checkpoint storage reuses owner buffers without consuming independ
 	const anchor = captureRuntimeSaveState(runtime);
 	const anchorBytes = encodeRuntimeSaveState(anchor);
 	let storage = captureRuntimeSaveState(runtime);
-	const regions = [storage.machineState.machine.memory.ram, storage.machineState.machine.gxGpu.vramBytes,
+	const regions = [storage.ram, storage.machineState.machine.gxGpu.vramBytes,
 		storage.machineState.machine.audio.sampleRam, storage.machineState.machine.cartridge.slots[0]!.ram!,
 		storage.machineState.machine.cartridge.slots[1]!.ram!];
 	const vram = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
@@ -453,7 +453,7 @@ test('runtime checkpoint storage reuses owner buffers without consuming independ
 		const expected = captureRuntimeSaveState(runtime);
 		storage = captureRuntimeSaveState(runtime, storage);
 		const machine = storage.machineState.machine;
-		assert.equal(machine.memory.ram, regions[0]);
+		assert.equal(storage.ram, regions[0]);
 		assert.equal(machine.gxGpu.vramBytes, regions[1]);
 		assert.equal(machine.audio.sampleRam, regions[2]);
 		assert.equal(readLE32(machine.audio.sampleRam, APU_SAMPLE_RAM_BYTES - 4), word);
@@ -466,7 +466,9 @@ test('runtime checkpoint storage reuses owner buffers without consuming independ
 		assert.deepEqual(encodeRuntimeSaveState(anchor), anchorBytes);
 	}
 	applyRuntimeSaveState(runtime, anchor);
-	const restored = captureRuntimeSaveState(runtime).machineState.machine;
+	const saved = captureRuntimeSaveState(runtime);
+	const restored = saved.machineState.machine;
+	assert.deepEqual(saved.ram, anchor.ram);
 	assert.deepEqual(restored.memory, anchor.machineState.machine.memory);
 	assert.deepEqual(restored.cartridge, anchor.machineState.machine.cartridge);
 	assert.deepEqual(restored.audio, anchor.machineState.machine.audio);

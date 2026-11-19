@@ -100,14 +100,14 @@ int main(int argc, char** argv) {
 			require(bmsx::serializeLibretroState(runtime, envelope), "libretro serialize must succeed");
 			const auto anchorBytes = bmsx::encodeRuntimeSaveState(anchor);
 			auto recycled = bmsx::captureRuntimeSaveState(runtime);
-			const auto* recycledRam = recycled.machineState.machine.memory.ram.data();
+			const auto* recycledRam = recycled.ram.data();
 			const auto* recycledVram = recycled.machineState.machine.gxGpu.vramBytes.data();
 			const auto* recycledSampleRam = recycled.machineState.machine.audio.sampleRam.data();
 			for (int count = 0; count < 120; ++count) tick();
 			const auto expected = bmsx::encodeRuntimeSaveState(capture());
 			for (int pass = 0; pass < 3; ++pass) {
 				recycled = bmsx::captureRuntimeSaveState(runtime, std::move(recycled));
-				require(recycled.machineState.machine.memory.ram.data() == recycledRam, "main RAM storage is reused");
+				require(recycled.ram.data() == recycledRam, "main RAM storage is reused");
 				require(recycled.machineState.machine.gxGpu.vramBytes.data() == recycledVram, "VRAM storage is reused");
 				require(recycled.machineState.machine.audio.sampleRam.data() == recycledSampleRam, "sample RAM storage is reused");
 				require(bmsx::encodeRuntimeSaveState(recycled) == expected, "reused capture contains the new live state");

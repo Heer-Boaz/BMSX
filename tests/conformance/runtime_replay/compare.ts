@@ -36,7 +36,7 @@ for (const checkpointTick of [2, 400, 1200]) {
 	if (checkpointTick === 1200) {
 		assert.equal(ts.cpuState.executionCartridgeSlot, 0, 'the real game must be executing');
 		assert.ok(ts.machineState.machine.gxGpu.vramBytes.some(byte => byte !== 0), 'game VRAM must contain pixels');
-		if (requireRawByteString) assert.ok(containsPacketRecord(ts.machineState.machine.memory.ram),
+		if (requireRawByteString) assert.ok(containsPacketRecord(ts.ram),
 			'the live packet still contains each original byte after serialization and replay');
 		if (requireBadpPlayback) {
 			assert.ok(ts.machineState.machine.audio.output.voices.some(voice => voice.badp.nextFrame > 0), 'BADP playback must be active');

@@ -227,7 +227,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 #endif
 			return nullptr;
 		}
-		const auto& thread = *cpu.m_activeThread;
+		auto& thread = *cpu.m_activeThread;
 		if (static_cast<int>(thread.frameDepth()) <= run->targetDepth || cpu.instructionBudgetRemaining <= 0
 			|| (cpu.m_haltedUntilIrqThread == cpu.m_activeThread
 				&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))) {
@@ -242,6 +242,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 #endif
 			return nullptr;
 		}
+		thread.recordNativeWrites(cpu.m_memory.ramWriteWatches());
 		state.stackOffset = thread.stackOffset();
 		state.stackBytes = thread.backingByteLength();
 		frame = thread.currentFrame;

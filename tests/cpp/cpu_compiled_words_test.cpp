@@ -3,6 +3,7 @@
 #include "common/endian.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
+#include "machine/runtime/history/ram_history.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/io.h"
 #include "spec/blua32/memory_access_kind.h"
@@ -191,6 +192,41 @@ void plainSpansAndCycles(int count, bool displaced) {
 	}
 	require(static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 10 && native.cpu.readFrameRegister(0, 7) == valueInteger(2), "source ranges never inflate top and clean cached values remain live after the native call");
 }
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void nativeRegisterSpillIsDirty() {
+	test::Blua32TestImage image;
+	image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::ADD), 3, 0, 1);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 1025}};
+	CpuMachine machine(image);
+	const u32 pc = machine.rom.textAddress;
+	auto& frame = *machine.cpu.activeThread()->currentFrame;
+	frame.registers.set(0, valueInteger(40));
+	frame.registers.set(1, valueInteger(2));
+	for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
+		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+		machine.cpu.runUntilDepth(0, 1);
+	}
+	const auto& decoded = *frame.decodedPage;
+	const u32 index = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(machine.cpu, decoded, index);
+	require(decoded.nativeBlocks && decoded.nativeBlocks->entries[index], "the spill fixture runs generated code");
+	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+	frame.registers.set(3, valueInteger(87));
+	RamHistory archive;
+	RamHistory::PageMap saved;
+	archive.capture(machine.memory, nullptr, saved);
+	const u32 page = frame.registers.wordAddress() >> MAPPED_PAGE_BYTE_SHIFT;
+	require(page != frame.controlOffset >> MAPPED_PAGE_BYTE_SHIFT, "a PC write cannot dirty the register word page");
+	machine.cpu.runUntilDepth(0, 1);
+	require(frame.registers.get(3) == valueInteger(42), "the native spill publishes the new integer");
+	require(machine.memory.ramWriteWatches().historyPageDirty(page, page + 1), "native spills dirty their backing page");
+	archive.restore(machine.memory, saved, saved);
+	require(frame.registers.get(3) == valueInteger(87), "a seek to the same base still restores its dirty register page");
+}
+#endif
 
 void invalidWordAfterCommittedPrefix() {
 	const auto image = wordLoop(3);
@@ -520,6 +556,7 @@ int main() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		require(!nativeBlockSupports(static_cast<u8>(OpCode::WIDE)), "WIDE is a decode prefix");
 		for (size_t op = 1; op < OPCODE_COUNT; ++op) require(nativeBlockSupports(op), "every executable BLua32 opcode is admitted by native codegen");
+		nativeRegisterSpillIsDirty();
 #endif
 		for (bool displaced : {false, true}) for (int count : {0, 5, 1025}) plainSpansAndCycles(count, displaced);
 		pageTailEntry(1, false); pageTailEntry(2, false); pageTailEntry(2, true);

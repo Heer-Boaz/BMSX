@@ -138,17 +138,15 @@ CartridgeControllerState readCartridgeControllerState(BinaryReader& reader) {
 	return state;
 }
 
-template<class Writer> void writeMemorySaveState(Writer& writer, const MemorySaveState& state) {
-	writer.bytes(state.ram);
+template<class Writer> void writeMemoryBusState(Writer& writer, const MemoryBusState& state) {
 	writer.u32(state.ramInstructionEnd);
 	writer.u32(state.busFaultCode);
 	writer.u32(state.busFaultAddr);
 	writer.u32(state.busFaultAccess);
 }
 
-MemorySaveState readMemorySaveState(BinaryReader& reader, size_t ramByteCount) {
-	MemorySaveState state;
-	state.ram = reader.bytes(ramByteCount);
+MemoryBusState readMemoryBusState(BinaryReader& reader) {
+	MemoryBusState state;
 	state.ramInstructionEnd = reader.u32();
 	state.busFaultCode = reader.u32();
 	state.busFaultAddr = reader.u32();
@@ -1103,7 +1101,7 @@ SystemDebugTransmitState readSystemDebugTransmitState(BinaryReader& reader) {
 }
 
 template<class Writer> void writeMachineSaveState(Writer& writer, const MachineSaveState& state) {
-	writeMemorySaveState(writer, state.memory);
+	writeMemoryBusState(writer, state.memory);
 	writeCartridgeControllerState(writer, state.cartridge);
 	writeDmaControllerState(writer, state.dma);
 	writeGeometryControllerState(writer, state.geometry);
@@ -1117,9 +1115,9 @@ template<class Writer> void writeMachineSaveState(Writer& writer, const MachineS
 	writeSystemControllerState(writer, state.systemControl);
 }
 
-MachineSaveState readMachineSaveState(BinaryReader& reader, size_t ramByteCount, size_t gxGpuVramByteCount) {
+MachineSaveState readMachineSaveState(BinaryReader& reader, size_t gxGpuVramByteCount) {
 	MachineSaveState state;
-	state.memory = readMemorySaveState(reader, ramByteCount);
+	state.memory = readMemoryBusState(reader);
 	state.cartridge = readCartridgeControllerState(reader);
 	state.dma = readDmaControllerState(reader);
 	state.geometry = readGeometryControllerState(reader);
@@ -1141,9 +1139,9 @@ template<class Writer> void writeRuntimeSaveMachineState(Writer& writer, const R
 	writer.i64(state.schedulerNowCycles);
 }
 
-RuntimeSaveMachineState readRuntimeSaveMachineState(BinaryReader& reader, size_t ramByteCount, size_t gxGpuVramByteCount) {
+RuntimeSaveMachineState readRuntimeSaveMachineState(BinaryReader& reader, size_t gxGpuVramByteCount) {
 	RuntimeSaveMachineState state;
-	state.machine = readMachineSaveState(reader, ramByteCount, gxGpuVramByteCount);
+	state.machine = readMachineSaveState(reader, gxGpuVramByteCount);
 	state.frameScheduler = readFrameSchedulerStateSnapshot(reader);
 	state.frameLoop = readFrameLoopStateSnapshot(reader);
 	state.schedulerNowCycles = reader.i64();
@@ -1244,6 +1242,7 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 }
 
 template<class Writer> void writeRuntimeSaveState(Writer& writer, const RuntimeSaveState& state) {
+	writer.bytes(state.ram);
 	writeRuntimeSaveMachineState(writer, state.machineState);
 	writeCpuRuntimeState(writer, state.cpuState);
 	writer.boolean(state.pendingEntryCall);
@@ -1251,7 +1250,8 @@ template<class Writer> void writeRuntimeSaveState(Writer& writer, const RuntimeS
 
 RuntimeSaveState readRuntimeSaveState(BinaryReader& reader, size_t ramByteCount, size_t gxGpuVramByteCount) {
 	RuntimeSaveState state;
-	state.machineState = readRuntimeSaveMachineState(reader, ramByteCount, gxGpuVramByteCount);
+	state.ram = reader.bytes(ramByteCount);
+	state.machineState = readRuntimeSaveMachineState(reader, gxGpuVramByteCount);
 	state.cpuState = readCpuRuntimeState(reader);
 	state.pendingEntryCall = reader.boolean();
 	return state;
