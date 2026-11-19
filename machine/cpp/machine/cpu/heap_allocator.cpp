@@ -58,6 +58,7 @@ HeapAllocator::HeapAllocator(Memory& memory)
 	, m_pageLimit(std::min(m_management >> PAGE_SHIFT, MAX_PAGES))
 	, m_minimumFloorPage(std::min((DYNAMIC_RAM_BASE - RAM_BASE) >> PAGE_SHIFT, m_pageLimit))
 	, m_lastAvailableMask((m_pageLimit & 31u) == 0u ? ~0u : ~(~0u << (m_pageLimit & 31u))) {
+	reset(DYNAMIC_RAM_BASE);
 }
 
 void HeapAllocator::reset(u32 floorAddress) {

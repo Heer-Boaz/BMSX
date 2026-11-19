@@ -2322,14 +2322,14 @@ hebben per beeld dezelfde statische indeling.
 
 Ter vergelijking:
 
-- het huidige losse budget is 3,5 MiB;
+- het vroegere losse budget was 3,5 MiB;
 - de hoogste gemeten opstartcharge is 1.478.842 bytes voor Nemesis en
   1.048.400 bytes voor Starcatch (zie de bijlage);
 - de Pietious-heap telde bij de rewindmeting 22,8k objecten.
 
-**Tot fase 4** houdt `LuaHeap` zijn afzonderlijke capaciteit van 3,5 MiB.
-De fase-3-getallen zijn fysieke ruimte, nog geen meting van het beschikbare
-taalbudget.
+**Vanaf fase 4** gebruikt `LuaHeap` bovenstaande fysieke ruimte als limiet
+voor toelating en de collectiedrempel. De omzetting van de opslag zelf is
+een afzonderlijke stap; deze cijfers zijn capaciteit, geen meting van bezetting.
 
 **Meting.** De gameplaypiek wordt gemeten met de nieuwe boekhouding zodra die
 beschikbaar is, vanaf de tabelfase. De keuze voor 4 MiB wacht daar niet op.
@@ -2404,8 +2404,8 @@ al "outside reserved storage". Het heapgebied valt onder die regel zodra
 3. **GEO-reservering weg — uitgevoerd.** Geheugenkaart, linker, `cartlib`,
    de bare-metal-demo en de handleidingen gebruiken programma-eigen buffers.
    `K` is opnieuw bepaald uit de gebouwde ROM’s (12.11).
-4. **Tabellen.** `K` wordt de capaciteit; de gameplaypiek wordt gemeten met de
-   nieuwe boekhouding.
+4. **Tabellen.** `K` is de capaciteit. Nog te doen: tabelrecords naar gast-RAM,
+   daarna de gameplaypiek opnieuw meten met de nieuwe boekhouding.
 5. **Closures en captured-variable-cellen**, met de prototypes (O5).
 6. **Strings**, samen met de byte-strings.
 7. **Threads en frames.**

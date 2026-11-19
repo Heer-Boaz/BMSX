@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
-import { CART_ROM_BASE, HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -13,7 +13,7 @@ const BOOT_SOURCE = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_ST
 const CART_SOURCE = 'bss level: u8[0x20000]\nlevel[0] = 7\nreturn level[0]';
 
 function pageRound(address: number): number {
-	return RAM_BASE + Math.ceil((address - RAM_BASE) / HEAP_PAGE_SIZE) * HEAP_PAGE_SIZE;
+	return (address + HEAP_PAGE_SIZE - 1) & -HEAP_PAGE_SIZE;
 }
 
 function bootPair() {
@@ -28,12 +28,20 @@ function bootPair() {
 	return { ...system, systemEnd, cartEnd };
 }
 
-test('reset and EXEC set the heap floor to the active image static end', () => {
-	const { cpu, systemEnd, cartEnd } = bootPair();
+test('reset, EXEC and restore use the heap capacity of the active image', () => {
+	const { cpu, memory, systemEnd, cartEnd } = bootPair();
+	const limit = RAM_BASE + MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE;
 	assert.equal(cpu.heapAllocator.floorAddress(), pageRound(systemEnd));
+	assert.equal(cpu.luaHeap.capacity(), limit - pageRound(systemEnd));
+	const savedMemory = memory.captureSaveState();
+	const savedCpu = cpu.captureRuntimeState();
 	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted, 'the cartridge clears its BSS and returns');
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
 	assert.equal(cpu.heapAllocator.floorAddress(), pageRound(cartEnd));
+	assert.equal(cpu.luaHeap.capacity(), limit - pageRound(cartEnd));
+	memory.restoreSaveState(savedMemory);
+	cpu.restoreRuntimeState(savedCpu);
+	assert.equal(cpu.luaHeap.capacity(), limit - pageRound(systemEnd));
 });
 
 test('EXEC refuses a cartridge whose statics overlap a live heap page before writing them', () => {

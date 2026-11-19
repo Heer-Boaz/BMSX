@@ -27,8 +27,9 @@ void LuaHeap::reserve(
 #if defined(BMSX_GC_STRESS)
 	stressHeapAllocation(*this);
 #endif
+	const size_t limit = capacity();
 	size_t nextBytes = m_trackedBytes + byteCount;
-	if (nextBytes > m_capacityBytes) {
+	if (nextBytes > limit) {
 		collectRuntime(root0, root1, root2, growingStack);
 	} else if (nextBytes > m_nextCollectionBytes) {
 		const size_t work = m_cpu.stepHeap(root0, root1, root2, growingStack);
@@ -36,7 +37,7 @@ void LuaHeap::reserve(
 		creditStep(work);
 	}
 	nextBytes = m_trackedBytes + byteCount;
-	if (nextBytes > m_capacityBytes) throw LuaOutOfMemorySignal{};
+	if (nextBytes > limit) throw LuaOutOfMemorySignal{};
 	m_trackedBytes = nextBytes;
 }
 
@@ -67,10 +68,15 @@ void LuaHeap::adjustForRestore(size_t previousBytes, size_t restoredBytes) {
 	}
 }
 
+size_t LuaHeap::capacity() const {
+	return m_cpu.heapAllocator().capacityBytes();
+}
+
 void LuaHeap::finishCollection() {
 	const size_t liveBytes = m_trackedBytes;
+	const size_t limit = capacity();
 	m_nextCollectionBytes = std::max(liveBytes + GC_ASSIST_BYTES,
-		std::min(m_capacityBytes - m_capacityBytes / 8, std::max(MIN_COLLECTION_BYTES, liveBytes * 2)));
+		std::min(limit - limit / 8, std::max(MIN_COLLECTION_BYTES, liveBytes * 2)));
 }
 
 } // namespace bmsx

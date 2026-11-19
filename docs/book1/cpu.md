@@ -184,7 +184,7 @@ substitute for its binary32 value.
 |---|---|
 | System-cycle timebase | 33,868,800 cycles/s |
 | Installed main RAM | 4 MiB; mapped windows, reservations and ownership are in the Memory chapter |
-| Language-allocation budget | 3.5 MiB of shared accounting capacity, not an additional raw RAM region or wholly free register storage |
+| Language-allocation budget | Shared capacity between the active image’s heap floor and the runtime management area |
 | Opcode field | 6 bits, 64 opcode identities including the WIDE prefix |
 | Instruction word | 32 bits, four bytes, little-endian |
 | Instruction length | One word; two words with one WIDE prefix |
@@ -1151,10 +1151,13 @@ the inherited lookup above; raw writes use the same Table-length rules.
 
 ### Language allocation and lifetime {#sec-cpu-language-allocation-and-lifetime}
 
-The CPU provides a **3.5 MiB language-allocation budget** for system and
-cartridge execution together. Installed library values and active execution
-state already consume part of it at cartridge entry. Further retained values
-and storage growth use the remaining capacity.
+System and cartridge execution share a language-allocation budget. Its
+capacity is the byte count from the active image's page-aligned heap floor to
+the start of the runtime management area. Reset uses the system image's floor;
+EXEC uses the target image's floor. See
+[Reserved and cartridge storage in main RAM](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram).
+Larger DATA or BSS leaves less capacity. Installed library values and active
+execution state already consume some of it at cartridge entry.
 
 The budget covers Table storage, closures and captured-variable cells,
 Threads and their reserved value-slot capacity, and String storage charges.

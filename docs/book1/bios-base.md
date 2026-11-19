@@ -85,7 +85,7 @@ collection continues without these calls.
 | --- | --- |
 | Omitted, nil or `'collect'` | Finish an active cycle, then complete one fresh cycle; return `0`. |
 | `'count'` | Return occupied budget in KiB, including unreachable allocations not yet reclaimed. |
-| `'capacity'` | Return total language-allocation capacity in KiB. This does not include addressable RAM or VRAM. |
+| `'capacity'` | Return the active image’s language-allocation capacity in KiB, not its remaining capacity. VRAM is separate. |
 | `'step'` | Perform one incremental step, starting a cycle if idle. Return true if that step finishes the cycle, false otherwise. |
 
 One KiB is 1,024 bytes; fractional KiB are retained. Counts use the canonical

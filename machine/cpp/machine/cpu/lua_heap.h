@@ -41,17 +41,13 @@ public:
 	void adjustForRestore(size_t previousBytes, size_t restoredBytes);
 	void finishCollection();
 	size_t usedBytes() const { return m_trackedBytes; }
-	size_t capacity() const { return m_capacityBytes; }
+	size_t capacity() const;
 
 private:
 	void creditStep(size_t work);
 	static constexpr size_t MIN_COLLECTION_BYTES = 1024 * 1024;
-	// The CPU reference's language-allocation budget. It stays a fixed accounting
-	// capacity until language records occupy the main-RAM heap extent.
-	static constexpr size_t LANGUAGE_ALLOCATION_CAPACITY_BYTES = 0x00380000;
 
 	CPU& m_cpu;
-	const size_t m_capacityBytes = LANGUAGE_ALLOCATION_CAPACITY_BYTES;
 	size_t m_trackedBytes = 0;
 	size_t m_nextCollectionBytes = MIN_COLLECTION_BYTES;
 };

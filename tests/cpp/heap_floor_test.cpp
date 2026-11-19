@@ -70,12 +70,22 @@ Machine bootPair() {
 	return Machine(std::move(systemRom), std::move(cartRom));
 }
 
-void resetAndExecSetTheFloor() {
+void capacityFollowsTheFloorAcrossResetExecAndRestore() {
 	Machine machine = bootPair();
-	require(machine.cpu.heapAllocator().floorAddress() == pageRound(SYSTEM_BSS + 0x100u), "reset takes the system static end");
+	constexpr u32 limit = RAM_BASE + MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE;
+	const u32 systemFloor = pageRound(SYSTEM_BSS + 0x100u);
+	const u32 cartFloor = pageRound(CART_BSS + CART_BSS_BYTES);
+	require(machine.cpu.heapAllocator().floorAddress() == systemFloor, "reset takes the system static end");
+	require(machine.cpu.luaHeap().capacity() == limit - systemFloor, "the BIOS has the system heap extent");
+	const auto savedMemory = machine.memory.captureSaveState();
+	const auto savedCpu = machine.cpu.captureRuntimeState();
 	machine.cpu.runUntilDepth(0, 100);
 	require(machine.cpu.isCartridgeExecutionActive(), "EXEC entered the cartridge");
-	require(machine.cpu.heapAllocator().floorAddress() == pageRound(CART_BSS + CART_BSS_BYTES), "EXEC takes the cartridge static end");
+	require(machine.cpu.heapAllocator().floorAddress() == cartFloor, "EXEC takes the cartridge static end");
+	require(machine.cpu.luaHeap().capacity() == limit - cartFloor, "the cartridge has its own heap extent");
+	machine.memory.restoreSaveState(savedMemory);
+	machine.cpu.restoreRuntimeState(savedCpu);
+	require(machine.cpu.luaHeap().capacity() == limit - systemFloor, "restore uses the floor from restored RAM");
 }
 
 void execRefusesLivePagesBelowTheFloor() {
@@ -95,7 +105,7 @@ void execRefusesLivePagesBelowTheFloor() {
 
 int main() {
 	try {
-		resetAndExecSetTheFloor();
+		capacityFollowsTheFloorAcrossResetExecAndRestore();
 		execRefusesLivePagesBelowTheFloor();
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';

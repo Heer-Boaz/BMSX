@@ -229,6 +229,30 @@ test('counted preflight blocks on a later IO word before an earlier bus fault or
 	assertParity(js.cpu, ref.cpu); assert.deepEqual(devices[0], devices[1]);
 });
 
+test('counted stores commit their RAM prefix before faulting beyond installed RAM', () => {
+	const image = wordLoop(5);
+	const end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes;
+	const target = end - 3 * 4;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	for (const { cpu, memory } of [js, scalar]) {
+		const frame = cpu.rootThread.frameAtDepth(0);
+		frame.registers.setInteger(0, DYNAMIC_RAM_BASE);
+		for (let i = 8; i <= 12; ++i) frame.registers.setInteger(i, 0);
+		cpu.runUntilDepth(0, 180);
+		for (let i = 0; i < 3; ++i) memory.writeMappedU32LE(target + i * 4, 0xfeedface);
+		frame.registers.setInteger(0, target);
+		frame.registers.setInteger(12, 42);
+		frame.registers.setInteger(10, 73);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
+		cpu.runUntilDepth(0, 20);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), end);
+		assert.deepEqual([0, 1, 2].map(i => memory.readMappedU32LE(target + i * 4)), [42, 1, 73]);
+	}
+	assertParity(js.cpu, scalar.cpu);
+});
+
 test('counted IO writes preflight once, preserve the completed fault prefix, and charge the whole sequence', () => {
 	const image = wordLoop(5), pc = image.image.functions[0].codeAddress, target = IO_BASE + 0x5000;
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter), devices = [];

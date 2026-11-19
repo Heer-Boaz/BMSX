@@ -576,8 +576,8 @@ private:
 	Span<const u8> m_executionReadView;
 	Span<const u8> m_executionTableView;
 	Blua32FunctionRecordLatch m_functionRecordLatch;
-	LuaHeap m_luaHeap;
 	HeapAllocator m_heapAllocator;
+	LuaHeap m_luaHeap;
 	StringPool m_stringPool;
 	Value m_indexKey;
 	GcHeap m_heap;

@@ -68,6 +68,7 @@ export class HeapAllocator {
 		this.minimumFloorPage = Math.min((DYNAMIC_RAM_BASE - RAM_BASE) >>> PAGE_SHIFT, this.pageLimit);
 		const tailBits = this.pageLimit & 31;
 		this.lastAvailableMask = tailBits === 0 ? -1 : ~(-1 << tailBits);
+		this.reset(DYNAMIC_RAM_BASE);
 	}
 
 	public managementOffset(): number {

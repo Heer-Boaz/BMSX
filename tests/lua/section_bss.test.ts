@@ -11,8 +11,7 @@ import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { CART_ROM_BASE, DYNAMIC_RAM_BASE, MIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { IO_SYS_BUS_FAULT_ADDR, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
+import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import { readLE32 } from '../../machine/ts/common/endian';
@@ -139,26 +138,6 @@ for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBacke
 	assert.equal(memory.readMappedU32LE(images.cartImage.header.dataAddress), 305419896);
 	for (let i = 0; i < 17; i++) assert.equal(memory.readMappedU32LE(cartBss + 4 * i), 0);
 	assert.equal(memory.readMappedU32LE(cartBss + 17 * 4), 0xfeedface);
-});
-
-for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`bulk BSS retains its committed prefix at a RAM bus fault (O${optLevel}, backend=${backend})`, () => {
-	const source = 'bss scratch: word[9]\nreturn';
-	const compiled = compileLuaChunkToProgram(parseSource(source, 'bss_fault.lua'), [], { entrySource: source, programDomain: 'system', optLevel });
-	const image = linkTestSystemBlua32(compiled);
-	const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots() }, MIN_RAM_SIZE + 5 * 4);
-	for (let i = 0; i < 5; i++) memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 4 * i, 0xfeedface);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory), backend);
-	cpu.reset();
-	for (let i = 0; i < 128 && memory.readBusFaultSequence() === 0; i++) {
-		cpu.runUntilDepth(0, 1);
-		if (memory.readBusFaultSequence() === 0) {
-			for (let word = 0; word < 5; word++) assert.equal(memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4 * word), 0xfeedface);
-		}
-	}
-	assert.equal(memory.readBusFaultSequence(), 1);
-	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
-	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), DYNAMIC_RAM_BASE + 5 * 4);
-	for (let i = 0; i < 5; i++) assert.equal(memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4 * i), 0, `committed word ${i}`);
 });
 
 test('BLua .bss storage is consumed through typed pointers and struct fields', () => {

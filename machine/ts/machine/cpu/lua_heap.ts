@@ -6,10 +6,6 @@ import { shiftRightSigned } from '../common/numeric';
 import { valueNil, type Value } from './value';
 
 const MIN_COLLECTION_BYTES = 1024 * 1024;
-// The CPU reference's language-allocation budget. It stays a fixed accounting
-// capacity until language records occupy the main-RAM heap extent.
-const LANGUAGE_ALLOCATION_CAPACITY_BYTES = 0x00380000;
-
 export type LuaHeapState = {
 	trackedBytes: number;
 	nextCollectionBytes: number;
@@ -18,7 +14,6 @@ export type LuaHeapState = {
 export class LuaHeap {
 	private trackedBytes = 0;
 	private nextCollectionBytes = MIN_COLLECTION_BYTES;
-	private readonly capacityBytes = LANGUAGE_ALLOCATION_CAPACITY_BYTES;
 
 	public constructor(private readonly cpu: CPU) {
 	}
@@ -28,8 +23,9 @@ export class LuaHeap {
 		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(),
 		growingStack: Thread | null = null,
 	): void {
+		const capacity = this.capacity();
 		let nextBytes = this.trackedBytes + byteCount;
-		if (nextBytes > this.capacityBytes) {
+		if (nextBytes > capacity) {
 			this.collectRuntime(root0, root1, root2, growingStack);
 		} else if (nextBytes > this.nextCollectionBytes) {
 			const work = this.cpu.gc.step(
@@ -38,7 +34,7 @@ export class LuaHeap {
 			this.creditStep(work);
 		}
 		nextBytes = this.trackedBytes + byteCount;
-		if (nextBytes > this.capacityBytes) throw LUA_OUT_OF_MEMORY_SIGNAL;
+		if (nextBytes > capacity) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		this.trackedBytes = nextBytes;
 	}
 
@@ -82,14 +78,15 @@ export class LuaHeap {
 
 	public finishCollection(): void {
 		const liveBytes = this.trackedBytes;
+		const capacity = this.capacity();
 		this.nextCollectionBytes = Math.max(liveBytes + GC_ASSIST_BYTES,
-			Math.min(this.capacityBytes - (this.capacityBytes >>> 3), Math.max(MIN_COLLECTION_BYTES, liveBytes * 2)));
+			Math.min(capacity - (capacity >>> 3), Math.max(MIN_COLLECTION_BYTES, liveBytes * 2)));
 	}
 
 	public usedBytes(): number {
 		return this.trackedBytes;
 	}
-	public capacity(): number { return this.capacityBytes; }
+	public capacity(): number { return this.cpu.heapAllocator.capacityBytes(); }
 
 	public captureState(): LuaHeapState {
 		return {
