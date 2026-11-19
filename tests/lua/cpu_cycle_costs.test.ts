@@ -4,14 +4,16 @@ import { test } from 'node:test';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
-import { PROTECTED_CALL_BYTES, ProtectedField } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, ProtectedField } from '../../machine/ts/machine/cpu/call_state';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
+import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
+import { ThreadField } from '../../machine/ts/machine/cpu/thread';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { valueBool, valueBuiltinFunction, valueInteger, valueNil, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
@@ -194,14 +196,17 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			assert.equal(thread.protectedDepth, 2);
 			thread.currentFrame!.registers.setInteger(0, 17); thread.currentFrame!.registers.setInteger(1, 29);
 			const failFirst = wanted === PSX_MACHINE_SPEC.ramBytes + 1;
-			const controls = thread.stackOffset() + ((thread.stackRegisters.byteLength() + 3) & ~3);
+			const frames = cpu.memory.readRamRecordWord(thread.address + ThreadField.FrameCapacity);
+			const controls = thread.stackOffset() + ((thread.stackRegisters.byteLength() + 3) & ~3) + frames * FRAME_CONTROL_BYTES;
 			cpu.memory.writeRamRecordWord(controls + (failFirst ? PROTECTED_CALL_BYTES : 0) + ProtectedField.Wanted,
 				failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted);
 			const fault = wanted >= PSX_MACHINE_SPEC.ramBytes;
 			// Both success- and error-placement collect. If the inner return completed,
 			// its closure is already dead at the first scan. Both passes visit the RAM String index.
-			// Two reserved 20-byte continuations add ten words at each of three scans and at sweep.
-			const gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14 + 4 * (2 * PROTECTED_CALL_BYTES / 4)) : 0;
+			// Four reserved frame slots (including the exception reserve) and two
+			// continuation records are present during all three scans and sweep.
+			const extraWords = (heapAllocationBytes(8 * 5 + 4 * FRAME_CONTROL_BYTES + 2 * PROTECTED_CALL_BYTES) - heapAllocationBytes(8 * 5)) / 4;
+			const gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14 + 4 * extraWords) : 0;
 			if (fault) assert.throws(() => cpu.runUntilDepth(1, 2), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			else assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const outer = wanted === 0 ? 4 : wanted - 1;

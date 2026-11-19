@@ -569,8 +569,8 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 		for (size_t depth = 0; depth < first.frameDepth; ++depth) {
 			const auto& a = *first.frameAtDepth(depth); const auto& b = *second.frameAtDepth(depth);
 			require(a.executionImage->executionDomainId == b.executionImage->executionDomainId && a.pc == b.pc
-				&& a.functionAddress == b.functionAddress && a.stackCapacity == b.stackCapacity && a.stackBase == b.stackBase
-				&& a.top == b.top && a.returnBase == b.returnBase && a.returnCount == b.returnCount && a.callSitePc == b.callSitePc,
+				&& a.readControl(FrameField::Function) == b.readControl(FrameField::Function) && a.stackCapacity == b.stackCapacity && a.stackBase == b.stackBase
+				&& a.top == b.top && a.returnBase == b.returnBase && a.returnCount == b.returnCount && a.readControl(FrameField::CallSite) == b.readControl(FrameField::CallSite),
 				"record selection and activation windows agree at each call boundary");
 			for (int reg = 0; reg < a.stackCapacity; ++reg) {
 				const Value left = a.registers.get(reg), right = b.registers.get(reg);

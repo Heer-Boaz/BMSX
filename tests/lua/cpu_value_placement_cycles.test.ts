@@ -221,7 +221,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.runUntilDepth(0, 1);
 		const frame = cpu.rootThread.currentFrame!;
-		frame.isExceptionFrame = true;
+		frame.enterException(false);
 		const capture = cpu.gc.cellAt(frame.registers.getClosure(2, cpu.gc).captureAddress(0)) as Upvalue;
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RFE] - 1);

@@ -142,7 +142,7 @@ bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
 	bool rebound = false;
 	for (u32 address = first & ~(static_cast<u32>(THREAD_HEAP_BYTES) - 1u); address < end; address += THREAD_HEAP_BYTES) {
 		const u32 descriptor = address + static_cast<u32>(ThreadField::StackBlock);
-		if (end <= descriptor || first >= descriptor + 8u) continue;
+		if (end <= descriptor || first >= descriptor + 16u) continue;
 		if (auto* thread = threadAt(address))
 			rebound |= thread->observeStackWrite() && thread == active;
 	}
@@ -217,7 +217,7 @@ size_t GcHeap::trace(bool atomic) {
 			CallFrame* frame = thread->firstFrame;
 			for (size_t depth = 0; depth < thread->frameDepth; ++depth, frame = frame->next) {
 				markObject(frame->closure);
-				u32 address = frame->openUpvalueHead;
+				u32 address = frame->readControl(FrameField::OpenHead);
 				for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
 					auto* upvalue = openCellAt(address);
 					if (!upvalue) break;

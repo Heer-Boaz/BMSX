@@ -3,6 +3,11 @@ export const MAPPED_PAGE_BYTE_SIZE = 1 << MAPPED_PAGE_BYTE_SHIFT;
 export const MAPPED_PAGE_BYTE_MASK = MAPPED_PAGE_BYTE_SIZE - 1;
 const MAPPED_PAGE_WATCH_GROUP_COUNT = MAPPED_PAGE_BYTE_SIZE / (4 * 32);
 
+function mappedWatchWordMask(group: number, firstWord: number, lastWord: number): number {
+	return (group === (firstWord >>> 5) ? 0xffffffff << (firstWord & 31) : 0xffffffff)
+		& (group === (lastWord >>> 5) ? 0xffffffff >>> (31 - (lastWord & 31)) : 0xffffffff);
+}
+
 export interface MappedPageInvalidator {
 	invalidateMappedWords(key: number, firstWord: number, endWord: number): void;
 	invalidateMappedRange(firstKey: number, endKey: number): void;
@@ -24,9 +29,20 @@ export class MappedPageWriteWatches {
 	public groupData(): Uint8Array { return this.values; }
 	public anyWatched(first: number, length: number): boolean {
 		if (length === 0) return false;
-		const end = (first + length - 1) >>> MAPPED_PAGE_BYTE_SHIFT;
-		for (let page = first >>> MAPPED_PAGE_BYTE_SHIFT; page <= end; ++page)
-			if (this.values[page] !== 0) return true;
+		const last = first + length - 1;
+		const firstPage = first >>> MAPPED_PAGE_BYTE_SHIFT, lastPage = last >>> MAPPED_PAGE_BYTE_SHIFT;
+		for (let page = firstPage; page <= lastPage; ++page) {
+			const watchedGroups = this.values[page];
+			if (watchedGroups === 0) continue;
+			if (page > firstPage && page < lastPage) return true;
+			const firstWord = page === firstPage ? (first & MAPPED_PAGE_BYTE_MASK) >>> 2 : 0;
+			const lastWord = page === lastPage ? (last & MAPPED_PAGE_BYTE_MASK) >>> 2 : MAPPED_PAGE_BYTE_MASK >>> 2;
+			const wordBase = page * MAPPED_PAGE_WATCH_GROUP_COUNT;
+			for (let group = firstWord >>> 5; group <= lastWord >>> 5; ++group) {
+				if ((watchedGroups & (1 << group)) && (this.words[wordBase + group] & mappedWatchWordMask(group, firstWord, lastWord)))
+					return true;
+			}
+		}
 		return false;
 	}
 
@@ -71,8 +87,7 @@ export class MappedPageWriteWatches {
 		for (let group = firstGroup; group <= lastGroup; group++) {
 			const groupBit = 1 << group;
 			if ((this.values[pageIndex] & groupBit) === 0) continue;
-			const mask = (group === firstGroup ? 0xffffffff << (firstWord & 31) : 0xffffffff)
-				& (group === lastGroup ? 0xffffffff >>> (31 - ((endWord - 1) & 31)) : 0xffffffff);
+			const mask = mappedWatchWordMask(group, firstWord, endWord - 1);
 			const index = pageIndex * MAPPED_PAGE_WATCH_GROUP_COUNT + group;
 			const watched = this.words[index];
 			affected = affected || (watched & mask) !== 0;

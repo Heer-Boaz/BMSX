@@ -667,10 +667,9 @@ test('runtime save-state codec preserves GPUREAD bytes and raw phase bits', () =
 	assert.deepEqual(decodedSubmitted.machineState.machine.gxGpu.commandBuffer, submittedReadback);
 });
 
-test('runtime save-state codec preserves exception frame metadata', () => {
+test('runtime save-state codec preserves frame datapath metadata', () => {
 	const state = createRuntimeSaveState();
 	state.cpuState.threads[0].frames = [{
-		functionAddress: 0x10000120,
 		pc: 44,
 		closureRef: 7,
 		stackCapacity: 8,
@@ -680,12 +679,6 @@ test('runtime save-state codec preserves exception frame metadata', () => {
 		returnBase: 1,
 		returnCount: 0,
 		top: 1,
-		returnToCompletionLatch: false,
-		callSitePc: 41,
-		isExceptionFrame: true,
-		isNonMaskableExceptionFrame: true,
-		openUpvalueHead: 0,
-		protectedContinuationIndex: 2,
 	}];
 
 	const decoded = decodeRuntimeSaveState(

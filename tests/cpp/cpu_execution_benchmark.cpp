@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
 		runtime.boot();
 		auto& cpu = runtime.machine.cpu;
 		const auto* image = cpu.rootThread()->frameAtDepth(0)->executionImage;
-		const auto functionAddress = cpu.rootThread()->frameAtDepth(0)->functionAddress;
+		const auto functionAddress = cpu.readFrameFunctionAddress(0);
 		auto result = bmsx::RunResult::Yielded;
 		bmsx::i64 cycles = 0, slices = 0;
 		int maxDeadlineOverrun = 0;

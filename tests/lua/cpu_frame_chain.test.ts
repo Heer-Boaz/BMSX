@@ -5,7 +5,7 @@ import { ValueTag, valueBool, valueBuiltinFunction, valueInteger, valueString, t
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES, FrameField, ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import { ThreadField, THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
@@ -37,6 +37,8 @@ test('thread-owned nodes reuse stable identities and trim only the spare tail', 
 	thread.leaveFrame();
 	for (let index = 0; index < 8; ++index) {
 		const frame = thread.acquireFrame();
+		thread.reserveFrame(thread.stackRegisters.capacity());
+		frame.initializeControl(0, 0, false);
 		assert.equal(thread.frameDepth, index, 'preparation does not activate a frame');
 		thread.enterFrame(frame); frames.push(frame);
 		assert.equal(frame.previous, index === 0 ? null : frames[index - 1]);
@@ -49,11 +51,13 @@ test('thread-owned nodes reuse stable identities and trim only the spare tail', 
 	assert.equal(thread.currentFrame, frames[0]); assert.equal(thread.acquireFrame(), prepared);
 	let retained = 0, previous: CallFrame | null = null;
 	for (let frame = thread.firstFrame; frame !== null; frame = frame.next) {
+		assert.equal(frame.controlOffset, frames[0].controlOffset + retained * FRAME_CONTROL_BYTES,
+			'surviving inactive views are rebound to their new physical depth');
 		assert.equal(frame.previous, previous); previous = frame; ++retained;
 	}
 	assert.equal(retained, 5);
 	thread.enterFrame(prepared); prepared.protectedContinuationIndex = 3; thread.leaveFrame();
-	assert.equal(prepared.protectedContinuationIndex, -1, 'a new activation does not inherit a protected return');
+	assert.equal(thread.currentFrame, frames[0], 'the retired protected slot is not active');
 	thread.leaveFrame();
 	thread.trimFrames();
 	assert.equal(thread.frameDepth, 0); assert.equal(thread.currentFrame, null);
@@ -90,7 +94,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.rootThread.currentFrame!.protectedContinuationIndex, -1);
 		assert.equal(cpu.rootThread.currentFrame!.previous!.protectedContinuationIndex, 0);
 		const snapshot = cpu.captureRuntimeState();
-		assert.equal(snapshot.threads[0].frames[1].protectedContinuationIndex, 0);
+		assert.equal(cpu.rootThread.currentFrame!.previous!.protectedContinuationIndex, 0);
 		const ram = cpu.memory.captureSaveState();
 		const oldStack = cpu.rootThread.stackOffset();
 		cpu.rootThread.resizeStack(80);
@@ -109,14 +113,18 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const values: Value[] = []; cpu.readCompletionValues(values);
 		assert.deepEqual(values, [valueBool(true), valueInteger(7)]);
 		assert.equal(cpu.rootThread.protectedDepth, 0);
-		assert.equal(cpu.rootThread.firstFrame!.next!.protectedContinuationIndex, -1);
+		assert.equal(cpu.rootThread.protectedDepth, 0);
 
 		cpu.memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(snapshot);
 		const block = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.StackBlock);
 		const slots = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.StackCapacity);
 		const control = block + ((slots * THREAD_STACK_SLOT_BYTES + 3) & ~3);
-		cpu.memory.writeRamRecordWord(control + ProtectedField.Wanted, 4);
+		const frames = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.FrameCapacity);
+		const target = cpu.rootThread.currentFrame!.previous!;
+		cpu.memory.writeRamRecordWord(control + FRAME_CONTROL_BYTES + FrameField.CallSite, 0x1234);
+		assert.equal(target.callSitePc, 0x1234, 'a raw write updates the suspended frame diagnostic');
+		cpu.memory.writeRamRecordWord(control + frames * FRAME_CONTROL_BYTES + ProtectedField.Wanted, 4);
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		const caller = cpu.rootThread.currentFrame!;
 		assert.equal(caller.top, 3, 'return placement consumes the RAM record, not a cached host continuation');

@@ -1214,17 +1214,22 @@ The occupied-byte counts used for admission are:
 | Table with array capacity `A` and hash capacity `H` | `32 + S(5A + 14H)` |
 | Closure with `U` captured-variable references | `S(12 + 4U)` |
 | Captured-variable cell | `16` |
-| Thread with `V` reserved Value slots and `P` reserved protected continuations | `64 + S(round4(5V) + 20P)` |
+| Thread with `V` reserved Value slots, `F` reserved frame-control records and `P` reserved protected continuations | `64 + S(round4(5V) + 20F + 20P)` |
 | RAM String containing `n` bytes | `S(16 + n)` |
 | RAM String index with `B` buckets | `S(4B)` |
 
 A Table's slots and links occupy one block in the language heap. Each Thread
-keeps its value slots and protected continuations in one separately allocated
-block. A suspended protected call records its caller and result window there,
-so it can finish when that Thread resumes. The continuation area begins at the
-next four-byte boundary after the Value slots, denoted by `round4(5V)`.
-The first protected call reserves one continuation, and a full reservation
-doubles before the next continuation is written.
+keeps its value slots, frame controls and protected continuations in one
+separately allocated block. The frame-control area begins at the next
+four-byte boundary after the Value slots, denoted by `round4(5V)`.
+Protected continuations follow the reserved frame controls. A suspended protected
+call records its caller and result window there so it can finish when that Thread
+resumes. A new Thread reserves two frame controls. An ordinary entry leaves
+one slot available for exception entry even when no further heap storage can
+be admitted. Frame capacity doubles as needed before an entry. The first
+protected call reserves one continuation, and a full continuation reservation
+doubles before being extended. If the processor cannot admit an exception
+activation, it halts rather than recursively raising another exception.
 A closure's header and
 capture references occupy one block. A RAM String occupies one block containing
 its 16-byte header and its bytes. `S(0) = 0`;
@@ -1267,7 +1272,7 @@ Collection work consumes cycles as follows:
 | Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |
 | Mark a previously unmarked RAM String | `1` |
 | Examine one RAM intern bucket, including an empty bucket | `1` |
-| Copy retained Thread storage when shrinking | `2 × ceil((round4(5V') + 20P') / 4)` for the new reservations |
+| Copy retained Thread storage when shrinking | `2 × ceil((round4(5V') + 20F' + 20P') / 4)` for the new reservations |
 
 For charges based on bytes, round each allocation independently.
 A repeated scan costs again; unreachable objects that are not scanned still
@@ -1307,9 +1312,9 @@ When reclamation examines a surviving Thread, it can halve its reserved Value
 storage. This happens when `V > 16` and three times the required extent is less
 than `V`. The required extent includes the Thread's current stack top and every
 active frame's complete reserved register window, not only its live values.
-The protected-continuation reservation likewise halves when `P > 4` and three
-times the number of pending continuations is less than `P`. If either
-reservation shrinks, the released space leaves the occupied budget. A Thread
+The frame-control and protected-continuation reservations likewise halve when
+their reserve exceeds four and three times the active count is less than the
+reserve. When a reservation shrinks, the released space leaves the occupied budget. A Thread
 whose own stack-growth request caused the step is not shrunk during that
 request. Moving storage incurs the charge above in addition to examining the
 old allocation. Existing frame and captured-variable references retain their

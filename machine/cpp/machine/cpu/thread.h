@@ -12,11 +12,14 @@ class GcHeap;
 enum class ThreadStatus : u32 { New, Running, Normal, Suspended, Dead, Failed };
 constexpr size_t THREAD_HEAP_BYTES = 64;
 constexpr size_t THREAD_STACK_SLOT_BYTES = 5;
+constexpr u32 THREAD_INITIAL_VALUES = 8;
+constexpr u32 THREAD_INITIAL_FRAMES = 2;
+constexpr u32 THREAD_INITIAL_BACKING_BYTES = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES + THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
 constexpr u32 THREAD_RECORD_KIND = 4u;
 
 enum class ThreadField : u32 {
 	Header = 0, Status = 8, Resumer = 12, Entry = 16, StackBlock = 24, StackCapacity = 28,
-	ProtectedCapacity = 36, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
+	FrameCapacity = 32, ProtectedCapacity = 36, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
 	ProtectedDepth = 60
 };
 
@@ -38,6 +41,7 @@ struct Thread : GCObject {
 	CallFrame* frameAtDepth(size_t depth) const;
 	void trimFrames();
 	void resizeStack(size_t capacity, Value root = valueNil());
+	void reserveFrame(size_t values, Value root = valueNil(), bool exception = false);
 	void bindStack();
 	void armStackWatch();
 	bool observeStackWrite();
@@ -54,7 +58,7 @@ struct Thread : GCObject {
 	CallFrame* protectedCaller(u32 index) const;
 	u32 pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int wanted, int handler);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	struct NativeOffsets { size_t currentFrame, frameDepth, stackTop, stackWords, stackTags, stackCapacity; };
+	struct NativeOffsets { size_t currentFrame, frameDepth, stackTop, stackWords, stackTags, stackCapacity, frameCapacity; };
 	static NativeOffsets nativeOffsets();
 #endif
 
@@ -83,11 +87,15 @@ struct Thread : GCObject {
 	size_t stackCapacity = 0;
 	int stackTop = 0;
 private:
-	void replaceStack(u32 block, size_t capacity, u32 protectedCapacity);
+	void replaceStack(u32 block, size_t capacity, u32 frames, u32 continuations);
+	u32 frameCapacity() const;
 	u32 protectedCapacity() const;
+	u32 frameControlAddress(u32 index) const;
 	u32 protectedAddress(u32 index) const;
 	u32 read(ThreadField field) const;
 	void write(ThreadField field, u32 word);
+	u32 boundFrameCapacity = 0;
+	u32 boundProtectedCapacity = 0;
 	GcHeap& heap;
 };
 

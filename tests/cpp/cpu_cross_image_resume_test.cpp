@@ -155,7 +155,7 @@ void parity(Machine& generated, Machine& scalar) {
 		const auto& y = *scalar.cpu.activeThread()->frameAtDepth(depth);
 		require(x.executionImage->executionDomainId == y.executionImage->executionDomainId && x.pc == y.pc
 			&& x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity
-			&& x.returnBase == y.returnBase && x.returnCount == y.returnCount && x.callSitePc == y.callSitePc,
+			&& x.returnBase == y.returnBase && x.returnCount == y.returnCount && x.readControl(FrameField::CallSite) == y.readControl(FrameField::CallSite),
 			"each live frame retains its own image and exact argument/result window");
 	}
 }

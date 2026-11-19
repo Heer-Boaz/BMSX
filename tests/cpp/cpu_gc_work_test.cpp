@@ -48,12 +48,13 @@ struct Machine {
 	}
 };
 
-// Thread104 + Closure16 + 14 machine Strings occupying 648 bytes
+// Thread144 (64-byte header, 40 Value bytes and two 20-byte frame records)
+// + Closure16 + 14 machine Strings occupying 648 bytes
 // and their 16 four-byte intern buckets. Each live String marks once,
 // and every issued object block and intern bucket is visited once.
-constexpr int bootBytes = 104 + 16 + 648 + 64;
-constexpr int bootMarkWork = 2 * 26 + 3 + 2 * 12 + 14;
-constexpr int bootCollectionWork = 4 * 26 + 3 + 1 + 3 * 12 + 2 * 14 + 16;
+constexpr int bootBytes = 144 + 16 + 648 + 64;
+constexpr int bootMarkWork = 2 * 36 + 3 + 2 * 12 + 14;
+constexpr int bootCollectionWork = 4 * 36 + 3 + 1 + 3 * 12 + 2 * 14 + 16;
 
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -308,6 +309,7 @@ void stackShrinkAndAdmission() {
 	frame.registers.set(0, valueInteger(456));
 	require(thread->stack.get(frame.stackBase) == valueInteger(456), "frame register view is rebound by the Thread owner");
 	frame.stackCapacity = 200;
+	thread->reserveFrame(thread->stackCapacity);
 	auto* child = thread->acquireFrame();
 	child->stackBase = 2; child->stackCapacity = 8; child->top = 0;
 	child->closure = frame.closure; child->executionImage = frame.executionImage;

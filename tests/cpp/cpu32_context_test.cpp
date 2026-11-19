@@ -262,9 +262,9 @@ void captures() {
 						if (source == 1) {
 							// Redirect the live open cell into the injected frame, retaining
 							// actual thread/frame ownership and its matching open-cell chain.
-							parents[i]->openUpvalueHead = 0;
-							upvalue->bind(frame->thread->address, frame->stackBase + 8, frame->openUpvalueHead);
-							frame->openUpvalueHead = upvalue->address;
+							parents[i]->writeControl(FrameField::OpenHead, 0);
+							upvalue->bind(frame->thread->address, frame->stackBase + 8, frame->readControl(FrameField::OpenHead));
+							frame->writeControl(FrameField::OpenHead, upvalue->address);
 						}
 					}
 					upvalue->setValue(value);

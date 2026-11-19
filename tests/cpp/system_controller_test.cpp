@@ -944,7 +944,7 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	require(cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "completion call remains in flight before RET");
 	const bmsx::CpuRuntimeState state = cpu.captureRuntimeState();
 	require(
-		state.threads[0].frames.size() == 1u && state.threads[0].frames.back().returnToCompletionLatch,
+		state.threads[0].frames.size() == 1u && cpu.rootThread()->currentFrame->hasControlFlag(bmsx::FRAME_COMPLETION),
 		"save-state retains the physical completion-latch return route"
 	);
 

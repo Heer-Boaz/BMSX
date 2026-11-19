@@ -210,9 +210,10 @@ test(`an active physical stack aliases bus loads and stores without losing code 
 	watches.armWord(page, word + 7);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, fn.address, fn.codeAddress);
 	cpu.runUntilDepth(0, cycles);
-	assert.equal(watches.groupData()[page] !== 0, true, 'the unused slot remains watched');
+	assert.equal(watches.anyWatched(offset, 4), false, 'the stack write consumed its exact word watch');
+	assert.equal(watches.anyWatched(offset + 7 * 4, 4), true, 'the unused slot remains watched');
 	watches.invalidateWrite(offset + 7 * 4, 4, RAM_BASE, cpu);
-	assert.equal(watches.groupData()[page], 0, 'the stack write consumed only its own watch');
+	assert.equal(watches.anyWatched(offset + 7 * 4, 4), false, 'unrelated descriptor watches need not be consumed');
 	cpu.memory.writeMappedU32LE(thread.address + ThreadField.StackBlock, RAM_BASE + MAIN_RAM_SIZE - 4);
 	assert.ok(thread.stackRegisters.ramMirrored(), 'the relocated bank needs the physical record port');
 	regs.setInteger(0, 123);

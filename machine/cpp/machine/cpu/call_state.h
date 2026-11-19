@@ -13,6 +13,7 @@ struct Blua32ExecutionImage;
 struct DecodedInstructionPage;
 struct Closure;
 struct Thread;
+class Memory;
 
 enum class ProtectedCallKind : uint8_t {
 	PCall,
@@ -25,11 +26,25 @@ constexpr u32 PROTECTED_CALL_BYTES = 20;
 constexpr u32 PROTECTED_CALL_KIND_MASK = 0xffu;
 constexpr u32 PROTECTED_CALL_PARENT = 1u << 8;
 
+enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16 };
+constexpr u32 FRAME_CONTROL_BYTES = 20;
+constexpr u32 FRAME_COMPLETION = 1u;
+constexpr u32 FRAME_EXCEPTION = 2u;
+constexpr u32 FRAME_NMI = 4u;
+
 struct CallFrame {
 	Thread* thread = nullptr;
 	CallFrame* previous = nullptr;
 	CallFrame* next = nullptr;
-	u32 functionAddress = 0;
+	Memory* controlMemory = nullptr;
+	u32 controlOffset = 0;
+	u8* nativeControl = nullptr;
+	void bindControl(Memory& memory, u32 offset);
+	u32 readControl(FrameField field) const;
+	void writeControl(FrameField field, u32 word);
+	void initializeControl(u32 function, u32 callSite, bool completion);
+	bool hasControlFlag(u32 mask) const;
+	void addControlFlags(u32 flags);
 	Blua32ExecutionImage* executionImage = nullptr;
 	DecodedInstructionPage* decodedPage = nullptr;
 	u32 decodedPageAddress = 0;
@@ -49,14 +64,7 @@ struct CallFrame {
 	Closure* closure = nullptr;
 	int returnBase = 0;
 	int returnCount = 0;
-	// Only the activation invoked as a protected target owns its completion.
-	i32 protectedContinuationIndex = -1;
 	int top = 0;
-	bool returnToCompletionLatch = false;
-	u32 callSitePc = 0;
-	bool isExceptionFrame = false;
-	bool isNonMaskableExceptionFrame = false;
-	u32 openUpvalueHead = 0;
 };
 
 } // namespace bmsx

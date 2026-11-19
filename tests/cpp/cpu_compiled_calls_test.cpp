@@ -45,9 +45,9 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
 	for (size_t index = 0; index < first.frameDepth; ++index, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& a = *firstFrame; const auto& b = *secondFrame;
-		require(a.pc == b.pc && a.top == b.top && a.functionAddress == b.functionAddress && a.stackCapacity == b.stackCapacity
+		require(a.pc == b.pc && a.top == b.top && a.readControl(FrameField::Function) == b.readControl(FrameField::Function) && a.stackCapacity == b.stackCapacity
 			&& a.stackBase == b.stackBase && a.varargBase == b.varargBase && a.varargCount == b.varargCount
-			&& a.returnBase == b.returnBase && a.returnCount == b.returnCount && a.callSitePc == b.callSitePc,
+			&& a.returnBase == b.returnBase && a.returnCount == b.returnCount && a.readControl(FrameField::CallSite) == b.readControl(FrameField::CallSite),
 			"both executions retain the same caller, callee and result ranges after stack growth");
 		for (int reg = 0; reg < a.stackCapacity; ++reg) {
 			const Value left = a.registers.get(reg), right = b.registers.get(reg);
@@ -97,10 +97,12 @@ void reusableFrameChain() {
 	auto* root = thread.acquireFrame();
 	require(thread.currentFrame == nullptr && thread.frameDepth == 0, "preparing a node does not expose an active frame");
 	thread.enterFrame(root);
-	root->isExceptionFrame = true;
+	root->addControlFlags(FRAME_EXCEPTION);
 	for (int depth = 1; depth <= 8; ++depth) {
 		auto* previous = thread.currentFrame;
 		auto* frame = thread.acquireFrame();
+		thread.reserveFrame(thread.stackCapacity);
+		frame->initializeControl(0, 0, false);
 		require(frame->previous == previous && previous->next == frame && frame->thread == &thread,
 			"reusable nodes have stable identity and belong to their thread");
 		thread.enterFrame(frame);
@@ -115,17 +117,18 @@ void reusableFrameChain() {
 	CallFrame* previous = nullptr;
 	for (auto* frame = thread.firstFrame; frame; frame = frame->next) {
 		require(frame->previous == previous, "tail reclamation repairs backward links");
+		require(frame->controlOffset == root->controlOffset + retained * FRAME_CONTROL_BYTES,
+			"surviving inactive views are rebound to their new physical depth");
 		previous = frame;
 		++retained;
 	}
 	require(retained == 5, "collection halves the inactive tail while preserving the active root");
 	thread.enterFrame(prepared);
-	prepared->protectedContinuationIndex = 3;
+	prepared->writeControl(FrameField::Protected, 3);
 	thread.leaveFrame();
-	require(prepared->protectedContinuationIndex == -1, "a new activation does not inherit a protected return");
+	require(thread.currentFrame == root && thread.frameDepth == 1, "the retired protected slot is not active");
 	thread.leaveFrame();
-	require(thread.currentFrame == nullptr && thread.frameDepth == 0 && !root->isExceptionFrame,
-		"retirement clears exception state without deleting reusable frames");
+	require(thread.currentFrame == nullptr && thread.frameDepth == 0, "retirement leaves an empty activation chain");
 	thread.trimFrames();
 	require(thread.acquireFrame() == root, "an empty thread retains its first prepared node through collection");
 }
@@ -199,7 +202,7 @@ void inactiveFrameMetadata() {
 			&& reused->executionImage == reused->previous->executionImage,
 			"a real activation reuses the node and rebinds all pointers after Value-stack growth");
 		require(reused->decodedPage == nullptr && reused->compilationEntry
-			&& reused->protectedContinuationIndex == -1 && !reused->isExceptionFrame && !reused->isNonMaskableExceptionFrame,
+			&& reused->readControl(FrameField::Protected) == static_cast<u32>(-1) && !reused->hasControlFlag(FRAME_EXCEPTION) && !reused->hasControlFlag(FRAME_NMI),
 			"reuse retains the required decode, protected-return and exception admission state");
 		cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	}
@@ -237,8 +240,8 @@ void protectedNestedFrames() {
 		for (int grant = 0; grant < 20 && machine.cpu.getFrameDepth() != 3; ++grant) machine.cpu.runUntilDepth(0, 1);
 		require(machine.cpu.getFrameDepth() == 3, "protected body invokes an ordinary child activation");
 		auto* thread = machine.cpu.activeThread();
-		require(thread->protectedDepth() == 1 && thread->currentFrame->protectedContinuationIndex == -1
-			&& thread->currentFrame->previous->protectedContinuationIndex == 0, "only the protected target owns its return obligation");
+		require(thread->protectedDepth() == 1 && thread->currentFrame->readControl(FrameField::Protected) == static_cast<u32>(-1)
+			&& thread->currentFrame->previous->readControl(FrameField::Protected) == 0, "only the protected target owns its return obligation");
 		const auto state = machine.cpu.captureRuntimeState();
 		const auto ram = machine.cpu.memory().captureSaveState();
 		const auto originalStack = thread->stackOffset();
@@ -247,18 +250,18 @@ void protectedNestedFrames() {
 			&& thread->protectedWord(0, ProtectedField::Caller) == 0,
 			"a live protected call relocates with its stack");
 		machine.cpu.memory().restoreSaveState(ram);
-		require(state.threads[0].frames[1].protectedContinuationIndex == 0, "the target frame stores a continuation index");
+		require(thread->frameAtDepth(1)->readControl(FrameField::Protected) == 0, "the target frame stores a continuation index");
 		machine.cpu.restoreRuntimeState(state);
 		thread = machine.cpu.activeThread();
-		require(thread->currentFrame->protectedContinuationIndex == -1
-			&& thread->currentFrame->previous->protectedContinuationIndex == 0, "restore installs protection on the target rather than its subtree");
+		require(thread->currentFrame->readControl(FrameField::Protected) == static_cast<u32>(-1)
+			&& thread->currentFrame->previous->readControl(FrameField::Protected) == 0, "restore installs protection on the target rather than its subtree");
 		require(machine.cpu.runUntilDepth(2, 100) == RunResult::Halted && thread->protectedDepth() == 1,
 			"ordinary child return must not finish protection");
 		require(machine.cpu.runUntilDepth(0, 100) == RunResult::Halted && thread->protectedDepth() == 0,
 			"only the protected target completes its continuation");
 		const auto values = machine.cpu.readCompletionValues();
 		require(values.size() == 2 && values.get(0) == valueBool(true) && values.get(1) == valueInteger(7), "protected result prefix remains exact");
-		require(thread->firstFrame->next->protectedContinuationIndex == -1, "retired target forgets its protected obligation");
+		require(thread->protectedDepth() == 0, "the retired target leaves no pending obligation");
 	}
 }
 
@@ -369,7 +372,8 @@ void haltedReceivingFrame() {
 		state.haltedUntilIrqThreadRef = state.activeThreadRef;
 		state.haltedUntilIrqFrameDepth = returning ? 1 : 2;
 		cpu.restoreRuntimeState(state);
-		cpu.activeThread()->acquireFrame(); // The call gate can reuse a node without allocating.
+		cpu.activeThread()->reserveFrame(cpu.activeThread()->stackCapacity);
+		cpu.activeThread()->acquireFrame(); // The call gate can reuse an admitted node without allocating.
 		if (!scalar) {
 			cpu.prepareSystemNativeCode();
 			const auto& lookup = *cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
@@ -497,8 +501,8 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	require(machine.cpu.getGlobalByKey(marker) == first && thread->currentFrame == spare && thread->frameDepth == 2,
 		"warm CALL tail-jumps through the raw native entry without the C++ CALL handler");
 	require(caller->pc == machine.rom.textAddress + 4 * INSTRUCTION_BYTES && caller->top == callerTop
-		&& spare->callSitePc == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
-		&& spare->returnBase == base && spare->returnCount == 2 && !spare->returnToCompletionLatch,
+		&& spare->readControl(FrameField::CallSite) == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
+		&& spare->returnBase == base && spare->returnCount == 2 && !spare->hasControlFlag(FRAME_COMPLETION),
 		"native CALL publishes exact caller continuation and callee result obligations");
 	require(spare->varargBase == base + 1 + params && spare->varargCount == count
 		&& spare->stackBase == calleeBase && spare->top == params
@@ -567,14 +571,14 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	auto* callee = thread->currentFrame;
 	auto* caller = callee->previous;
 	auto* closure = callee->closure;
-	require(thread->protectedDepth() == 1 && caller->protectedContinuationIndex == 0
-		&& callee->protectedContinuationIndex == -1, "native return admission concerns the target activation, not its protected subtree");
+	require(thread->protectedDepth() == 1 && caller->readControl(FrameField::Protected) == 0
+		&& callee->readControl(FrameField::Protected) == static_cast<u32>(-1), "native return admission concerns the target activation, not its protected subtree");
 	const std::array<Value, 6> payloads{valueNil(), valueBool(false), valueFloatBits(0x80000000),
 		valueString(machine.cpu.stringPool().intern("native-return-payload")), caller->registers.get(4), valueFloatBits(0xffa12345)};
 	for (int index = 0; index < produced; ++index) callee->registers.set(1 + index, payloads[index]);
 	callee->top = 1 + produced;
 	callee->returnBase = base; callee->returnCount = wanted == 0 ? 0 : wanted + 1;
-	callee->isExceptionFrame = exceptionFrame; callee->isNonMaskableExceptionFrame = exceptionFrame;
+	if (exceptionFrame) callee->addControlFlags(FRAME_EXCEPTION | FRAME_NMI);
 	caller->registers.set(6, valueInteger(-7));
 	caller->registers.set(7, valueInteger(99));
 	const auto marker = machine.cpu.stringPool().intern("nativeReturnMarker");
@@ -617,14 +621,13 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		"warm RET branches through the raw native code word without executeReturn or the C++ descriptor dispatcher");
 	if (grant <= returnBase + count) require(machine.cpu.instructionBudgetRemaining == grant - returnBase - count,
 		"native RET charges the receiving range once and cannot execute the next body with an exhausted grant");
-	require(callee->decodedPage == nullptr && callee->compilationEntry && callee->protectedContinuationIndex == -1
-		&& !callee->isExceptionFrame && !callee->isNonMaskableExceptionFrame,
-		"native retirement preserves required admission state, including unusual exception flags");
+	require(callee->decodedPage == nullptr && callee->compilationEntry && thread->currentFrame == caller,
+		"native retirement keeps the inactive record out of the live window");
 	machine.cpu.beginCompletionCall(*closure);
 	require(thread->currentFrame == callee && callee->closure == closure && callee->executionImage == caller->executionImage
 		&& callee->registers.words() == thread->stack.words() + callee->stackBase
-			&& callee->registers.tags() == thread->stack.tags() + callee->stackBase && callee->returnToCompletionLatch
-		&& callee->protectedContinuationIndex == -1 && !callee->isExceptionFrame && !callee->isNonMaskableExceptionFrame,
+			&& callee->registers.tags() == thread->stack.tags() + callee->stackBase && callee->hasControlFlag(FRAME_COMPLETION)
+		&& callee->readControl(FrameField::Protected) == static_cast<u32>(-1) && !callee->hasControlFlag(FRAME_EXCEPTION) && !callee->hasControlFlag(FRAME_NMI),
 		"a real activation rebinds the retired native node without inheriting protection or exception state");
 	callee->registers.set(1, valueInteger(17)); callee->top = 2;
 	require(machine.cpu.runUntilDepth(2, returnBase + 1) == RunResult::Halted && thread->currentFrame == caller
@@ -700,7 +703,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 			valueString(machine->cpu.stringPool().intern("frame-argument")), valueInteger(99)};
 		machine->cpu.beginCompletionCall(*asClosure(caller->registers.get(6), machine->cpu.gcHeap()), BuiltinArgsView(payloads.data(), args));
 		auto* callee = thread->currentFrame;
-		require(callee->stackCapacity == std::max({maxStack, params, 1}) && callee->top == params && callee->returnToCompletionLatch,
+		require(callee->stackCapacity == std::max({maxStack, params, 1}) && callee->top == params && callee->hasControlFlag(FRAME_COMPLETION),
 			"raw argument calls retain the same frame sizing and completion owner");
 		for (int index = 0; index < params; ++index) require(callee->registers.get(index) == (index < args ? payloads[index] : valueNil()),
 			"raw argument admission preserves supplied bits and initializes only the missing formal tail");
@@ -835,7 +838,8 @@ void protectedReturnPlacementCycles() {
 		require(thread->protectedDepth() == 2, "nested builtin pcall owns two result ranges");
 		thread->currentFrame->registers.set(0, valueInteger(17)); thread->currentFrame->registers.set(1, valueInteger(29));
 		const bool failFirst = wanted == static_cast<int>(PSX_MACHINE_SPEC.ramBytes + 1);
-		const u32 controls = thread->stackOffset() + ((thread->stackByteLength() + 3u) & ~3u);
+		const u32 frames = machine.cpu.memory().readRamRecordWord(thread->address + static_cast<u32>(ThreadField::FrameCapacity));
+		const u32 controls = thread->stackOffset() + ((thread->stackByteLength() + 3u) & ~3u) + frames * FRAME_CONTROL_BYTES;
 		machine.cpu.memory().writeRamRecordWord(controls + (failFirst ? PROTECTED_CALL_BYTES : 0)
 			+ static_cast<u32>(ProtectedField::Wanted), failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted);
 		const bool fault = wanted >= static_cast<int>(PSX_MACHINE_SPEC.ramBytes);
@@ -843,8 +847,9 @@ void protectedReturnPlacementCycles() {
 		// Both emergency collections scan/reclaim the compact five-byte stack slots.
 		// Completing the inner return drops its closure before the first scan: three fewer mark words.
 		// Each collection also visits 16 intern buckets and marks/visits the 14 RAM roots.
-		// Two reserved 20-byte continuations add ten words at each of three scans and at sweep.
-		const int gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14 + 4 * (2 * PROTECTED_CALL_BYTES / 4)) : 0;
+		// Four reserved frame slots and two continuation records are examined on all four visits.
+		const int extraWords = (heapAllocationBytes(8 * 5 + 4 * FRAME_CONTROL_BYTES + 2 * PROTECTED_CALL_BYTES) - heapAllocationBytes(8 * 5)) / 4;
+		const int gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14 + 4 * extraWords) : 0;
 		bool rejected = false;
 		try { require(machine.cpu.runUntilDepth(1, 2) == RunResult::Halted, "protected return completes at caller"); }
 		catch (const LuaOutOfMemorySignal&) { rejected = true; }
@@ -950,7 +955,7 @@ void errorHandlerReturnPlacementCycles() {
 		CpuMachine machine(image, scalar);
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("xpcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("error"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::Error));
-		while (machine.cpu.activeThread()->currentFrame->functionAddress != machine.rom.functionAddresses[2]) machine.cpu.runUntilDepth(0, 1);
+		while (machine.cpu.activeThread()->currentFrame->readControl(FrameField::Function) != machine.rom.functionAddresses[2]) machine.cpu.runUntilDepth(0, 1);
 		require(machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 2 - 1, "error CALL and primitive plus one placed handler argument");
 		require(machine.cpu.runUntilDepth(1, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 5,
 			"handler RET charges the selected error receiving range");

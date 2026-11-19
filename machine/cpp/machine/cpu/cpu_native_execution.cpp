@@ -236,7 +236,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			return nullptr;
 		}
 		state.stackOffset = thread.stackOffset();
-		state.stackBytes = thread.stackByteLength();
+		state.stackBytes = thread.backingByteLength();
 		frame = thread.currentFrame;
 		if (transition == NativeBlockTransition::NextInstruction && continuation) {
 			// These helpers neither change frames nor operate a device. Keep the

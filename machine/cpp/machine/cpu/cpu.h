@@ -105,7 +105,6 @@ struct ExecutionHookBinding {
 // Saved values are u32 offsets into the snapshot word arena. Object references
 // such as closureRef are ordinals in its object index.
 struct CpuFrameState {
-	u32 functionAddress = 0;
 	u32 pc = 0;
 	int closureRef = -1;
 	int stackBase = 0;
@@ -115,12 +114,6 @@ struct CpuFrameState {
 	int returnBase = 0;
 	int returnCount = 0;
 	int top = 0;
-	bool returnToCompletionLatch = false;
-	u32 callSitePc = 0;
-	bool isExceptionFrame = false;
-	bool isNonMaskableExceptionFrame = false;
-	u32 openUpvalueHead = 0;
-	i32 protectedContinuationIndex = -1;
 };
 
 struct CpuRootValueState {
@@ -412,7 +405,7 @@ private:
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
 	CallFrame* pushFrame(Closure* closure, BuiltinArgsView args,
-		int returnBase, int returnCount, bool returnToCompletionLatch);
+		int returnBase, int returnCount, bool returnToCompletionLatch, bool exception = false);
 	Closure* allocateClosure(const FunctionPrototype&, u32 count, bool canonical, std::span<u32> cells = {});
 	Closure* createClosure(CallFrame& frame);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
@@ -453,7 +446,7 @@ private:
 	void storeTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key, const Value& value);
 
 	void clearCallStack();
-	void ensureStackSize(size_t size, Value root = valueNil());
+	void ensureStackSize(size_t size, Value root = valueNil(), bool frameEntry = false, bool exception = false);
 	BuiltinResultsScratchScope acquireBuiltinResultScratch();
 	void releaseLocalRoots(size_t base);
 	void trackLocalRoot(Value value);
@@ -498,11 +491,11 @@ private:
 	NativeCompilationProfile m_nativeCompilationProfile;
 #endif
 	void clearHaltAfterAcceptedInterrupt();
-	void enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
+	CallFrame* enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
 	void returnFromException(CallFrame& frame);
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
 	void enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc);
-	void enterException(Blua32ExecutionImage& vectorImage, u32 functionAddress, u32 causeWord, u32 epcWord);
+	CallFrame* enterException(Blua32ExecutionImage& vectorImage, u32 functionAddress, u32 causeWord, u32 epcWord);
 	void enterLuaFaultException(u32 reason, Value errorValue);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);

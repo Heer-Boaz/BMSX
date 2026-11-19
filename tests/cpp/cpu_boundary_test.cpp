@@ -665,7 +665,7 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 		}
 		require(test::runCpuParity(native.cpu, scalar.cpu, 3) == RunResult::Yielded, "generated CALL preserves the consumed cycle boundary");
 		for (auto* machine : {&native, &scalar}) require(machine->cpu.getFrameDepth() == 2
-			&& machine->cpu.activeThread()->frameAtDepth(1)->callSitePc == machine->rom.textAddress + callBody * INSTRUCTION_BYTES,
+			&& machine->cpu.activeThread()->frameAtDepth(1)->readControl(FrameField::CallSite) == machine->rom.textAddress + callBody * INSTRUCTION_BYTES,
 			"generated CALL saves the physical body PC, including WIDE");
 		require(test::runCpuParity(native.cpu, scalar.cpu, 5) == RunResult::Yielded, "generated RET preserves the consumed cycle boundary");
 		for (auto* machine : {&native, &scalar}) {

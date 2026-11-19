@@ -7,10 +7,18 @@
 namespace bmsx {
 namespace {
 // Eighteen count bits cover every 20-byte record that can fit in physical RAM.
-constexpr u32 PROTECTED_COUNT_MASK = (1u << 18) - 1;
+constexpr u32 CONTROL_COUNT_MASK = (1u << 18) - 1;
 constexpr u32 controlOffset(u32 values) { return (values * THREAD_STACK_SLOT_BYTES + 3u) & ~3u; }
-constexpr u32 backingBytes(u32 values, u32 protectedCapacity) {
-	return controlOffset(values) + protectedCapacity * PROTECTED_CALL_BYTES;
+constexpr u32 backingBytes(u32 values, u32 frames, u32 continuations) {
+	return controlOffset(values) + frames * FRAME_CONTROL_BYTES + continuations * PROTECTED_CALL_BYTES;
+}
+
+void copyStackControl(Memory& memory, u8* destination, u32 source, u32 bytes) {
+	if (bytes == 0) return;
+	source &= RAM_RECORD_WORD_MASK;
+	const u32 first = std::min(bytes, MAIN_RAM_SIZE - source);
+	std::memmove(destination, memory.ramData() + source, first);
+	if (first != bytes) std::memmove(destination + first, memory.ramData(), bytes - first);
 }
 }
 
@@ -24,7 +32,11 @@ void Thread::initializeRecord(Closure* entry) {
 	writeLE32(record, THREAD_RECORD_KIND);
 	writeLE32(record + static_cast<u32>(ThreadField::Entry), entry ? entry->address : 0u);
 	writeLE32(record + static_cast<u32>(ThreadField::StackBlock), block);
-	writeLE32(record + static_cast<u32>(ThreadField::StackCapacity), 8u);
+	writeLE32(record + static_cast<u32>(ThreadField::StackCapacity), THREAD_INITIAL_VALUES);
+	writeLE32(record + static_cast<u32>(ThreadField::FrameCapacity), THREAD_INITIAL_FRAMES);
+	const u32 control = (block & RAM_RECORD_WORD_MASK) + controlOffset(THREAD_INITIAL_VALUES);
+	std::fill_n(heap.memory.ramData() + control, THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES, u8{0});
+	heap.memory.invalidateRamWrite(control, THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES);
 	bindStack();
 	heap.memory.invalidateRamWrite(offset, THREAD_HEAP_BYTES);
 	stack.clear(0, stackCapacity);
@@ -64,7 +76,7 @@ void Thread::setError(Value value) {
 Thread::NativeOffsets Thread::nativeOffsets() {
 	constexpr size_t stack = offsetof(Thread, stack);
 	return {offsetof(Thread, currentFrame), offsetof(Thread, frameDepth), offsetof(Thread, stackTop),
-		stack + ValueSpan::wordsOffset(), stack + ValueSpan::tagsOffset(), offsetof(Thread, stackCapacity)};
+		stack + ValueSpan::wordsOffset(), stack + ValueSpan::tagsOffset(), offsetof(Thread, stackCapacity), offsetof(Thread, boundFrameCapacity)};
 }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -80,12 +92,18 @@ Thread::~Thread() {
 }
 
 u32 Thread::stackOffset() const { return stack.wordAddress(); }
-u32 Thread::backingByteLength() const { return backingBytes(static_cast<u32>(stack.size()), protectedCapacity()); }
-u32 Thread::protectedCapacity() const { return read(ThreadField::ProtectedCapacity) & PROTECTED_COUNT_MASK; }
-u32 Thread::protectedDepth() const { return read(ThreadField::ProtectedDepth) & PROTECTED_COUNT_MASK; }
+u32 Thread::backingByteLength() const {
+	return backingBytes(static_cast<u32>(stack.size()), boundFrameCapacity, boundProtectedCapacity);
+}
+u32 Thread::frameCapacity() const { return read(ThreadField::FrameCapacity) & CONTROL_COUNT_MASK; }
+u32 Thread::protectedCapacity() const { return read(ThreadField::ProtectedCapacity) & CONTROL_COUNT_MASK; }
+u32 Thread::protectedDepth() const { return read(ThreadField::ProtectedDepth) & CONTROL_COUNT_MASK; }
 void Thread::setProtectedDepth(u32 depth) { write(ThreadField::ProtectedDepth, depth); }
+u32 Thread::frameControlAddress(u32 index) const {
+	return stackOffset() + controlOffset(static_cast<u32>(stack.size())) + index * FRAME_CONTROL_BYTES;
+}
 u32 Thread::protectedAddress(u32 index) const {
-	return stackOffset() + controlOffset(static_cast<u32>(stack.size())) + index * PROTECTED_CALL_BYTES;
+	return frameControlAddress(boundFrameCapacity) + index * PROTECTED_CALL_BYTES;
 }
 u32 Thread::protectedWord(u32 index, ProtectedField field) const {
 	return heap.memory.readRamRecordWord(protectedAddress(index) + static_cast<u32>(field));
@@ -108,8 +126,9 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int
 	const u32 reserved = protectedCapacity();
 	if (index == reserved) {
 		const u32 capacity = reserved == 0 ? 1 : reserved * 2;
-		const u32 bytes = backingBytes(static_cast<u32>(stack.size()), capacity);
-		replaceStack(heap.budget.allocateStack(bytes, this, valueNil()), stack.size(), capacity);
+		const u32 frames = boundFrameCapacity;
+		const u32 bytes = backingBytes(static_cast<u32>(stack.size()), frames, capacity);
+		replaceStack(heap.budget.allocateStack(bytes, this, valueNil()), stack.size(), frames, capacity);
 	}
 	const u32 addr = protectedAddress(index) & RAM_RECORD_WORD_MASK;
 	auto& memory = heap.memory;
@@ -129,11 +148,16 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int
 
 bool Thread::stackRequiresScalar() const {
 	const auto& watches = heap.memory.ramWriteWatches();
-	return stack.mirrored() || static_cast<size_t>(stackTop) > stack.size() || (watches.anyWatched() && watches.anyWatched(stackOffset(), stackByteLength()));
+	const u32 bytes = backingByteLength();
+	return stack.mirrored() || static_cast<size_t>(stackTop) > stack.size() || frameDepth > boundFrameCapacity
+		|| bytes > MAIN_RAM_SIZE - stackOffset()
+		|| (watches.anyWatched() && watches.anyWatched(stackOffset(), bytes));
 }
 
 void Thread::bindStack() {
 	stackCapacity = read(ThreadField::StackCapacity);
+	boundFrameCapacity = frameCapacity();
+	boundProtectedCapacity = protectedCapacity();
 	const u32 block = read(ThreadField::StackBlock) & RAM_RECORD_WORD_MASK;
 	size_t extent = 0;
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
@@ -142,6 +166,11 @@ void Thread::bindStack() {
 		stackCapacity > (MAIN_RAM_SIZE - block) / THREAD_STACK_SLOT_BYTES || extent > stackCapacity};
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
 		frame->registers = stack.subspan(frame->stackBase, frame->stackCapacity);
+	u32 index = 0;
+	for (auto* frame = firstFrame; frame; frame = frame->next, ++index) {
+		frame->bindControl(heap.memory, frameControlAddress(index));
+		if (index >= boundFrameCapacity) frame->nativeControl = nullptr;
+	}
 }
 
 void Thread::armStackWatch() {
@@ -151,12 +180,15 @@ void Thread::armStackWatch() {
 	const u32 word = ((address & MAPPED_PAGE_BYTE_MASK) + static_cast<u32>(ThreadField::StackBlock)) >> 2u;
 	binding.writeWatch.armWord(word);
 	binding.writeWatch.armWord(word + 1u);
+	binding.writeWatch.armWord(word + 2u);
+	binding.writeWatch.armWord(word + 3u);
 }
 
 bool Thread::observeStackWrite() {
 	armStackWatch();
 	if ((read(ThreadField::StackBlock) & RAM_RECORD_WORD_MASK) == stackOffset()
-		&& read(ThreadField::StackCapacity) == stackCapacity)
+		&& read(ThreadField::StackCapacity) == stackCapacity
+		&& frameCapacity() == boundFrameCapacity && protectedCapacity() == boundProtectedCapacity)
 		return false;
 	bindStack();
 	return true;
@@ -164,14 +196,22 @@ bool Thread::observeStackWrite() {
 
 void Thread::resizeStack(size_t capacity, Value root) {
 	if (capacity == stackCapacity) return;
-	const u32 continuations = protectedCapacity();
-	const auto bytes = backingBytes(static_cast<u32>(capacity), continuations);
-	replaceStack(heap.budget.allocateStack(bytes, this, root), capacity, continuations);
+	const auto bytes = backingBytes(static_cast<u32>(capacity), boundFrameCapacity, boundProtectedCapacity);
+	replaceStack(heap.budget.allocateStack(bytes, this, root), capacity, boundFrameCapacity, boundProtectedCapacity);
+}
+
+void Thread::reserveFrame(size_t values, Value root, bool exception) {
+	const size_t wanted = frameDepth + (exception ? 1 : 2);
+	u32 frames = std::max(THREAD_INITIAL_FRAMES, boundFrameCapacity);
+	while (frames < wanted) frames *= 2;
+	if (values == stackCapacity && frames == boundFrameCapacity) return;
+	const u32 bytes = backingBytes(static_cast<u32>(values), frames, boundProtectedCapacity);
+	replaceStack(heap.budget.allocateStack(bytes, this, root), values, frames, boundProtectedCapacity);
 }
 
 void Thread::freeStack() { heap.arena.free(read(ThreadField::StackBlock)); }
 
-void Thread::replaceStack(u32 block, size_t capacity, u32 continuationCapacity) {
+void Thread::replaceStack(u32 block, size_t capacity, u32 frames, u32 continuations) {
 	const size_t previousSize = stack.size();
 	const u32 previousBytes = backingByteLength();
 	const u32 oldBlock = read(ThreadField::StackBlock);
@@ -187,21 +227,25 @@ void Thread::replaceStack(u32 block, size_t capacity, u32 continuationCapacity) 
 	}
 	std::memset(words + retained * sizeof(u32), 0, (capacity - retained) * sizeof(u32));
 	std::memset(tags + retained, 0, capacity - retained);
-	auto* protectedRecords = words + controlOffset(static_cast<u32>(capacity));
-	const u32 occupied = std::min({protectedDepth(), protectedCapacity(), continuationCapacity}) * PROTECTED_CALL_BYTES;
-	if (occupied != 0) {
-		const u32 oldRecords = protectedAddress(0) & RAM_RECORD_WORD_MASK;
-		const u32 first = std::min(occupied, MAIN_RAM_SIZE - oldRecords);
-		std::memmove(protectedRecords, heap.memory.ramData() + oldRecords, first);
-		std::memmove(protectedRecords + first, heap.memory.ramData(), occupied - first);
-	}
-	const u32 bytes = backingBytes(static_cast<u32>(capacity), continuationCapacity);
-	std::fill(words + capacity * THREAD_STACK_SLOT_BYTES, protectedRecords, u8{0});
+	auto* frameRecords = words + controlOffset(static_cast<u32>(capacity));
+	const u32 frameBytes = std::min({static_cast<u32>(frameDepth), boundFrameCapacity, frames}) * FRAME_CONTROL_BYTES;
+	auto* protectedRecords = frameRecords + frames * FRAME_CONTROL_BYTES;
+	const u32 occupied = std::min({protectedDepth(), boundProtectedCapacity, continuations}) * PROTECTED_CALL_BYTES;
+	copyStackControl(heap.memory, frameRecords, frameControlAddress(0), frameBytes);
+	copyStackControl(heap.memory, protectedRecords, protectedAddress(0), occupied);
+	const u32 bytes = backingBytes(static_cast<u32>(capacity), frames, continuations);
+	std::fill(words + capacity * THREAD_STACK_SLOT_BYTES, frameRecords, u8{0});
+	std::fill(frameRecords + frameBytes, protectedRecords, u8{0});
 	std::fill(protectedRecords + occupied, words + bytes, u8{0});
 	heap.memory.invalidateRamWrite(block & RAM_RECORD_WORD_MASK, bytes);
-	write(ThreadField::ProtectedCapacity, continuationCapacity);
-	// The mapped watch installs the published window and rebinds its frames.
-	heap.memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::StackBlock), block, static_cast<u32>(capacity));
+	// Publish the four geometry words together so observers only bind once.
+	const u32 descriptor = (address + static_cast<u32>(ThreadField::StackBlock)) & RAM_RECORD_WORD_MASK;
+	auto* geometry = heap.memory.ramData() + descriptor;
+	writeLE32(geometry, block);
+	writeLE32(geometry + 4, static_cast<u32>(capacity));
+	writeLE32(geometry + 8, frames);
+	writeLE32(geometry + 12, continuations);
+	heap.memory.invalidateRamWrite(descriptor, 16);
 	heap.arena.free(oldBlock);
 	heap.budget.release(heapAllocationBytes(previousBytes));
 }
@@ -213,12 +257,13 @@ size_t Thread::shrinkStack() {
 	const u32 priorProtected = protectedCapacity();
 	const u32 nextProtected = priorProtected > 4 && 3ull * protectedDepth() < priorProtected ? priorProtected / 2 : priorProtected;
 	const size_t nextValues = stackCapacity > 16 && used * 3 < stackCapacity ? stackCapacity / 2 : stackCapacity;
-	if (nextValues == stackCapacity && nextProtected == priorProtected) return 0;
-	const auto bytes = backingBytes(static_cast<u32>(nextValues), nextProtected);
+	const u32 nextFrames = boundFrameCapacity > 4 && frameDepth * 3 < boundFrameCapacity ? boundFrameCapacity / 2 : boundFrameCapacity;
+	if (nextValues == stackCapacity && nextProtected == priorProtected && nextFrames == boundFrameCapacity) return 0;
+	const auto bytes = backingBytes(static_cast<u32>(nextValues), nextFrames, nextProtected);
 	const u32 block = heap.arena.allocate(bytes, true);
 	if (block == 0u) return 0; // Collection cannot recursively collect for a shrink.
 	heap.budget.restoreAllocate(heapAllocationBytes(bytes));
-	replaceStack(block, nextValues, nextProtected);
+	replaceStack(block, nextValues, nextFrames, nextProtected);
 	return bytes;
 }
 
@@ -228,6 +273,8 @@ CallFrame* Thread::acquireFrame() {
 		frame = new CallFrame;
 		frame->thread = this;
 		frame->previous = currentFrame;
+		frame->bindControl(heap.memory, frameControlAddress(static_cast<u32>(frameDepth)));
+		if (frameDepth >= boundFrameCapacity) frame->nativeControl = nullptr;
 	}
 	return frame;
 }
@@ -241,9 +288,6 @@ void Thread::leaveFrame() {
 	frame->registers = {};
 	frame->decodedPage = nullptr;
 	frame->compilationEntry = true;
-	frame->protectedContinuationIndex = -1;
-	frame->isExceptionFrame = false;
-	frame->isNonMaskableExceptionFrame = false;
 }
 
 CallFrame* Thread::frameAtDepth(size_t depth) const {
@@ -257,12 +301,18 @@ void Thread::trimFrames() {
 	// at collection. That first node can be awaiting activation while growth
 	// of the Value stack collects; it must retain its identity.
 	auto* frame = currentFrame ? currentFrame->next : firstFrame;
+	u32 index = static_cast<u32>(frameDepth);
 	while (frame && frame->next) {
 		auto* retired = frame->next;
 		frame->next = retired->next;
-		if (frame->next) frame->next->previous = frame;
+		if (frame->next) {
+			frame->next->previous = frame;
+			frame->next->bindControl(heap.memory, frameControlAddress(index + 1));
+			if (index + 1 >= boundFrameCapacity) frame->next->nativeControl = nullptr;
+		}
 		delete retired;
 		frame = frame->next;
+		++index;
 	}
 }
 

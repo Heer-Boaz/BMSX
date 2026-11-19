@@ -833,18 +833,11 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		for (size_t depth = 0; depth < thread->frameDepth; ++depth, framePtr = framePtr->next) {
 			const CallFrame& frame = *framePtr;
 			CpuFrameState frameState;
-			frameState.functionAddress = frame.functionAddress;
 			frameState.pc = frame.pc;
 			frameState.closureRef = captureObject(frame.closure);
-			frameState.openUpvalueHead = frame.openUpvalueHead;
-			frameState.protectedContinuationIndex = frame.protectedContinuationIndex;
 			frameState.returnBase = frame.returnBase;
 			frameState.returnCount = frame.returnCount;
 			frameState.top = frame.top;
-			frameState.returnToCompletionLatch = frame.returnToCompletionLatch;
-			frameState.callSitePc = frame.callSitePc;
-			frameState.isExceptionFrame = frame.isExceptionFrame;
-			frameState.isNonMaskableExceptionFrame = frame.isNonMaskableExceptionFrame;
 			frameState.stackCapacity = frame.stackCapacity;
 			frameState.stackBase = frame.stackBase;
 			frameState.varargBase = frame.varargBase;
@@ -997,7 +990,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	// host activations; following or changing old coroutine edges here would
 	// access the restored language records before their attachments exist.
 	while (m_rootThread->frameDepth != 0) {
-		m_rootThread->currentFrame->openUpvalueHead = 0;
 		m_rootThread->leaveFrame();
 	}
 	auto previousCanonical = std::move(m_staticClosuresByAddress);
@@ -1137,24 +1129,17 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		thread->stackTop = saved.stackTop;
 		for (const CpuFrameState& frameState : saved.frames) {
 			auto* frame = m_activeThread->acquireFrame();
-			frame->functionAddress = frameState.functionAddress;
 			frame->closure = static_cast<Closure*>(restoredObjects[static_cast<size_t>(frameState.closureRef)]);
 			frame->executionImage = executionImageForDomain(frame->closure->prototype->executionDomainId);
 			frame->pc = frameState.pc;
 			frame->returnBase = frameState.returnBase;
 			frame->returnCount = frameState.returnCount;
-			frame->returnToCompletionLatch = frameState.returnToCompletionLatch;
-			frame->callSitePc = frameState.callSitePc;
-			frame->isExceptionFrame = frameState.isExceptionFrame;
-			frame->isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
 			frame->varargBase = frameState.varargBase;
 			frame->varargCount = frameState.varargCount;
 			frame->stackBase = frameState.stackBase;
 			frame->stackCapacity = frameState.stackCapacity;
 			frame->registers = thread->stack.subspan(frame->stackBase, frame->stackCapacity);
 			frame->top = frameState.top;
-			frame->openUpvalueHead = frameState.openUpvalueHead;
-			frame->protectedContinuationIndex = frameState.protectedContinuationIndex;
 			m_activeThread->enterFrame(frame);
 		}
 		thread->bindStack();
@@ -1262,12 +1247,12 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			break;
 		case BuiltinFunctionId::FrameHeader: {
 			const auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
-			out.push_back(valueInteger(frame.functionAddress));
+			out.push_back(valueInteger(frame.readControl(FrameField::Function)));
 			out.push_back(valueInteger(frame.pc));
-			out.push_back(valueInteger(frame.callSitePc));
-			out.push_back(valueBool(frame.returnToCompletionLatch));
+			out.push_back(valueInteger(frame.readControl(FrameField::CallSite)));
+			out.push_back(valueBool(frame.hasControlFlag(FRAME_COMPLETION)));
 			out.push_back(valueInteger(static_cast<u32>(frame.executionImage->executionDomainId)));
-			out.push_back(valueBool(frame.isExceptionFrame));
+			out.push_back(valueBool(frame.hasControlFlag(FRAME_EXCEPTION)));
 			break;
 		}
 		case BuiltinFunctionId::GetFrameRegister:
@@ -1347,7 +1332,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 }
 
 Thread* CPU::createThread(Closure* entry) {
-	const u32 address = m_luaHeap.allocateRecord(THREAD_HEAP_BYTES, true, 8 * THREAD_STACK_SLOT_BYTES, static_cast<u32>(ThreadField::StackBlock),
+	const u32 address = m_luaHeap.allocateRecord(THREAD_HEAP_BYTES, true, THREAD_INITIAL_BACKING_BYTES, static_cast<u32>(ThreadField::StackBlock),
 		entry ? valueClosure(entry->address) : valueNil());
 	auto* thread = m_heap.allocate<Thread>(ObjType::Thread, m_heap, address);
 	thread->initializeRecord(entry);
@@ -1358,7 +1343,7 @@ Thread* CPU::createThread(Closure* entry) {
 bool CPU::coroutineYieldable(const Thread& thread) const {
 	if (&thread == m_rootThread) return false;
 	for (auto* frame = thread.currentFrame; frame; frame = frame->previous)
-		if (frame->isExceptionFrame || frame->returnToCompletionLatch) return false;
+		if (frame->hasControlFlag(FRAME_EXCEPTION | FRAME_COMPLETION)) return false;
 	const u32 depth = thread.protectedDepth();
 	for (u32 i = 0; i < depth; ++i) {
 		if ((thread.protectedWord(i, ProtectedField::Flags) & PROTECTED_CALL_KIND_MASK)
@@ -1433,7 +1418,7 @@ bool CPU::handleThreadError(Value error) {
 	Thread* thread = m_activeThread;
 	if (thread->resumer() == nullptr) return false;
 	for (auto* frame = thread->currentFrame; frame; frame = frame->previous)
-		if (frame->isExceptionFrame || frame->returnToCompletionLatch) return false;
+		if (frame->hasControlFlag(FRAME_EXCEPTION | FRAME_COMPLETION)) return false;
 	thread->setStatus(ThreadStatus::Failed);
 	thread->setError(error);
 	returnToResumer(0, 1, false);
@@ -1502,7 +1487,7 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, int argumen
 		Closure* closure = asClosure(target, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		auto* frame = pushFrame(caller, closure, argumentBase, argumentCount, 0, 0, false, caller.pc - INSTRUCTION_BYTES);
-		if (frame) frame->protectedContinuationIndex = static_cast<i32>(continuationIndex);
+		if (frame) frame->writeControl(FrameField::Protected, continuationIndex);
 		return;
 	}
 	if (valueIsBuiltinFunction(target)) {
@@ -1635,7 +1620,7 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 		auto* frame = m_activeThread->currentFrame;
 		for (size_t at = m_activeThread->frameDepth - 1; at > callerIndex; --at, frame = frame->previous) {
 			// Completion roots return to their latch, not the interrupted caller.
-			if (frame->isExceptionFrame || frame->returnToCompletionLatch) return false;
+			if (frame->hasControlFlag(FRAME_EXCEPTION | FRAME_COMPLETION)) return false;
 		}
 		unwindToDepth(callerIndex + 1, true);
 		const auto kind = static_cast<ProtectedCallKind>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Flags)
@@ -1779,7 +1764,6 @@ bool CPU::enterPendingInterrupt() {
 			CPU_CAUSE_NMI,
 			m_activeThread->currentFrame->pc
 		);
-		m_activeThread->currentFrame->isNonMaskableExceptionFrame = true;
 		m_nmiReturnCauseWord = returnCauseWord;
 		m_nmiReturnEpcWord = returnEpcWord;
 		m_nmiReturnBadAddressWord = returnBadAddressWord;
@@ -1798,9 +1782,9 @@ bool CPU::enterPendingInterrupt() {
 	return false;
 }
 
-void CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) {
+CallFrame* CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) {
 	interruptedFrame.pc = m_currentInstructionPc;
-	enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, m_currentInstructionPc);
+	return enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, m_currentInstructionPc);
 }
 
 void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address) {
@@ -1816,8 +1800,8 @@ void CPU::enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeW
 
 void CPU::enterLuaFaultException(u32 reason, Value errorValue) {
 	m_cop0Words[COP0_LUA_FAULT_REASON] = reason;
-	enterSynchronousException(*m_activeThread->currentFrame, CPU_CAUSE_CODE_TRAP);
-	m_activeThread->currentFrame->registers.set(0, errorValue);
+	if (auto* frame = enterSynchronousException(*m_activeThread->currentFrame, CPU_CAUSE_CODE_TRAP))
+		frame->registers.set(0, errorValue);
 }
 
 void CPU::returnFromException(CallFrame& frame) {
@@ -1825,11 +1809,11 @@ void CPU::returnFromException(CallFrame& frame) {
 		enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 		return;
 	}
-	if (!frame.isExceptionFrame) {
+	if (!frame.hasControlFlag(FRAME_EXCEPTION)) {
 		hardHalt();
 		return;
 	}
-	const bool returnFromNmi = frame.isNonMaskableExceptionFrame;
+	const bool returnFromNmi = frame.hasControlFlag(FRAME_NMI);
 	const u32 returnPc = m_cop0Words[COP0_EPC];
 	instructionBudgetRemaining -= closeUpvalues(frame);
 	m_activeThread->leaveFrame();
@@ -1849,7 +1833,7 @@ void CPU::returnFromException(CallFrame& frame) {
 	}
 }
 
-void CPU::enterException(
+CallFrame* CPU::enterException(
 	Blua32ExecutionImage& vectorImage,
 	u32 functionAddress,
 	u32 causeWord,
@@ -1863,18 +1847,19 @@ void CPU::enterException(
 	clearHaltAfterAcceptedInterrupt();
 	if (!readFunctionRecordOnBus(vectorImage, functionAddress, executionBusSignalsForDomain(vectorImage.executionDomainId))) {
 		hardHalt();
-		return;
+		return nullptr;
 	}
-	Closure* closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
-	CallFrame* frame = pushFrame(
-		closure,
-		{},
-		0,
-		0,
-		false
-	);
-	frame->callSitePc = epcWord;
-	frame->isExceptionFrame = true;
+	try {
+		Closure* closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
+		CallFrame* frame = pushFrame(closure, {}, 0, 0, false, true);
+		frame->writeControl(FrameField::CallSite, epcWord);
+		frame->addControlFlags(FRAME_EXCEPTION | (causeWord == CPU_CAUSE_NMI ? FRAME_NMI : 0));
+		return frame;
+	} catch (const LuaOutOfMemorySignal&) {
+		// Failure to admit an exception vector cannot recursively trap.
+		hardHalt();
+		return nullptr;
+	}
 }
 
 void CPU::clearHaltAfterAcceptedInterrupt() {
@@ -2244,7 +2229,7 @@ dispatch_native_block: {
 					.globalValues = m_globalValues.view(), .systemGlobalValues = m_systemGlobalValues.view(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.capacity()),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top,
-					.ram = m_memory.ramData(), .stackOffset = thread.stackOffset(), .stackBytes = thread.stackByteLength(),
+					.ram = m_memory.ramData(), .stackOffset = thread.stackOffset(), .stackBytes = thread.backingByteLength(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 					.diagnosticOpcodes = {},
 #endif
@@ -2446,7 +2431,7 @@ u32 CPU::readCurrentInstructionPc() const {
 }
 
 u32 CPU::readFrameFunctionAddress(int frameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->functionAddress;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->readControl(FrameField::Function);
 }
 
 u32 CPU::readFramePc(int frameIndex) const {
@@ -2454,12 +2439,12 @@ u32 CPU::readFramePc(int frameIndex) const {
 }
 
 u32 CPU::readFrameCallSitePc(int childFrameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->callSitePc;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->readControl(FrameField::CallSite);
 }
 
 bool CPU::completionCallPending() const {
 	for (auto* frame = m_completionThread->currentFrame; frame; frame = frame->previous) {
-		if (frame->returnToCompletionLatch) {
+		if (frame->hasControlFlag(FRAME_COMPLETION)) {
 			return true;
 		}
 	}
@@ -2467,7 +2452,7 @@ bool CPU::completionCallPending() const {
 }
 
 bool CPU::readFrameReturnsToCompletionLatch(int frameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->returnToCompletionLatch;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->hasControlFlag(FRAME_COMPLETION);
 }
 
 void CPU::abortCompletionCall(int frameIndex) {
@@ -2480,20 +2465,20 @@ auto CPU::readCompletionValues() const -> ConstValueSpan {
 }
 
 bool CPU::isExceptionFrame(int frameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->isExceptionFrame;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->hasControlFlag(FRAME_EXCEPTION);
 }
 
 // Frame depth reached after all currently active exception roots return.
 int CPU::readExceptionReturnFrameDepth() const {
 	const CallFrame* frame = m_activeThread->firstFrame;
 	for (size_t frameIndex = 0; frameIndex < m_activeThread->frameDepth; ++frameIndex, frame = frame->next) {
-		if (frame->isExceptionFrame) return static_cast<int>(frameIndex);
+		if (frame->hasControlFlag(FRAME_EXCEPTION)) return static_cast<int>(frameIndex);
 	}
 	return -1;
 }
 
 bool CPU::isNonMaskableExceptionFrame(int frameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->isNonMaskableExceptionFrame;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->hasControlFlag(FRAME_NMI);
 }
 
 int CPU::getFrameRegisterCount(int frameIndex) const {
@@ -2580,7 +2565,7 @@ void CPU::writeFrameExecution(
 			replacement->setCaptureAddress(index, oldClosure->captureAddress(index));
 		frame.closure = replacement;
 	}
-	frame.functionAddress = functionRecord.address;
+	frame.writeControl(FrameField::Function, functionRecord.address);
 	frame.executionImage = functionRecord.image;
 	frame.decodedPage = nullptr;
 	frame.decodedPageAddress = 0;
@@ -2592,12 +2577,12 @@ void CPU::writeFrameExecution(
 }
 
 void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
-	m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->callSitePc = pc;
+	m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->writeControl(FrameField::CallSite, pc);
 }
 
 Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
 	const u32 slot = static_cast<u32>(frame.stackBase) + static_cast<u32>(index);
-	u32 address = frame.openUpvalueHead;
+	u32 address = frame.readControl(FrameField::OpenHead);
 	for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
 		auto* upvalue = m_heap.openCellAt(address);
 		if (!upvalue) break;
@@ -2610,7 +2595,7 @@ Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
 
 void CPU::linkOpenUpvalue(CallFrame& frame, Upvalue& upvalue, u32 slot) {
 	Upvalue* previous = nullptr;
-	u32 next = frame.openUpvalueHead;
+	u32 next = frame.readControl(FrameField::OpenHead);
 	for (u32 remaining = UPVALUE_CHAIN_LIMIT; next != 0 && remaining != 0; --remaining) {
 		auto* current = m_heap.openCellAt(next);
 		if (!current || current->stackSlot() <= slot) break;
@@ -2619,7 +2604,7 @@ void CPU::linkOpenUpvalue(CallFrame& frame, Upvalue& upvalue, u32 slot) {
 	}
 	upvalue.bind(frame.thread->address, slot, next);
 	if (previous) previous->setNextAddress(upvalue.address);
-	else frame.openUpvalueHead = upvalue.address;
+	else frame.writeControl(FrameField::OpenHead, upvalue.address);
 }
 
 Closure* CPU::createClosure(CallFrame& frame) {
@@ -2678,7 +2663,8 @@ Closure* CPU::createClosure(CallFrame& frame) {
 
 int CPU::closeUpvalues(CallFrame& frame) {
 	int closed = 0;
-	u32 address = std::exchange(frame.openUpvalueHead, 0);
+	u32 address = frame.readControl(FrameField::OpenHead);
+	if (address != 0) frame.writeControl(FrameField::OpenHead, 0);
 	while (address != 0 && closed < static_cast<int>(UPVALUE_CHAIN_LIMIT)) {
 		auto* upvalue = m_heap.openCellAt(address);
 		if (!upvalue) break;
@@ -2712,15 +2698,13 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	const int stackBase = vararg ? argumentBase + argCount : argumentBase;
 	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
 	auto* frame = m_activeThread->acquireFrame();
-	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)));
-	frame->functionAddress = closure->prototype->functionAddress;
+	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->pc = functionRecord.codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
-	frame->returnToCompletionLatch = returnToCompletionLatch;
-	frame->callSitePc = callSitePc;
+	frame->initializeControl(functionRecord.functionAddress, callSitePc, returnToCompletionLatch);
 	frame->varargBase = argumentBase + static_cast<int>(functionRecord.numParams);
 	frame->varargCount = varargCount;
 	frame->stackBase = stackBase;
@@ -2749,7 +2733,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 }
 
 CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
-	int returnBase, int returnCount, bool returnToCompletionLatch) {
+	int returnBase, int returnCount, bool returnToCompletionLatch, bool exception) {
 	const FunctionPrototype& functionRecord = *closure->prototype;
 	const size_t argCount = args.size();
 	auto* frame = m_activeThread->acquireFrame();
@@ -2759,15 +2743,13 @@ CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 		? static_cast<int>(argCount - functionRecord.numParams) : 0;
 	const int stackBase = vararg ? argumentBase + static_cast<int>(argCount) : argumentBase;
 	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
-	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)));
-	frame->functionAddress = closure->prototype->functionAddress;
+	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true, exception);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->pc = functionRecord.codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
-	frame->returnToCompletionLatch = returnToCompletionLatch;
-	frame->callSitePc = functionRecord.codeAddress;
+	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, returnToCompletionLatch);
 	frame->varargBase = argumentBase + static_cast<int>(functionRecord.numParams);
 	frame->varargCount = varargCount;
 	frame->stackBase = stackBase;
@@ -2989,11 +2971,15 @@ void CPU::clearCallStack() {
 }
 
 
-void CPU::ensureStackSize(size_t size, Value root) {
-	if (size <= m_activeThread->stackCapacity) return;
-	size_t capacity = 8;
-	while (capacity < size) capacity *= 2;
-	m_activeThread->resizeStack(capacity, root);
+void CPU::ensureStackSize(size_t size, Value root, bool frameEntry, bool exception) {
+	const size_t current = m_activeThread->stackCapacity;
+	size_t capacity = current;
+	if (size > current) {
+		capacity = 8;
+		while (capacity < size) capacity *= 2;
+	}
+	if (frameEntry) m_activeThread->reserveFrame(capacity, root, exception);
+	else if (capacity != current) m_activeThread->resizeStack(capacity, root);
 }
 
 BuiltinResultsScratchScope CPU::acquireBuiltinResultScratch() {

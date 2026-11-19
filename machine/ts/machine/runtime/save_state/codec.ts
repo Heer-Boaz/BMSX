@@ -43,7 +43,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x58524d42; // BMRX
+const SAVE_STATE_SIGNATURE = 0x59524d42; // BMRY
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1118,7 +1118,6 @@ function readRuntimeSaveMachineState(reader: BinaryReader, ramByteCount: number,
 }
 
 function writeCpuFrameState(writer: BinarySink, state: CpuFrameState): void {
-	writer.u32(state.functionAddress);
 	writer.u32(state.pc);
 	writer.i32(state.closureRef);
 	writer.i32(state.stackBase);
@@ -1128,17 +1127,10 @@ function writeCpuFrameState(writer: BinarySink, state: CpuFrameState): void {
 	writer.i32(state.returnBase);
 	writer.i32(state.returnCount);
 	writer.i32(state.top);
-	writer.bool(state.returnToCompletionLatch);
-	writer.u32(state.callSitePc);
-	writer.bool(state.isExceptionFrame);
-	writer.bool(state.isNonMaskableExceptionFrame);
-	writer.u32(state.openUpvalueHead);
-	writer.i32(state.protectedContinuationIndex);
 }
 
 function readCpuFrameState(reader: BinaryReader): CpuFrameState {
 	return {
-		functionAddress: reader.u32(),
 		pc: reader.u32(),
 		closureRef: reader.i32(),
 		stackBase: reader.i32(),
@@ -1148,12 +1140,6 @@ function readCpuFrameState(reader: BinaryReader): CpuFrameState {
 		returnBase: reader.i32(),
 		returnCount: reader.i32(),
 		top: reader.i32(),
-		returnToCompletionLatch: reader.bool(),
-		callSitePc: reader.u32(),
-		isExceptionFrame: reader.bool(),
-		isNonMaskableExceptionFrame: reader.bool(),
-		openUpvalueHead: reader.u32(),
-		protectedContinuationIndex: reader.i32(),
 	};
 }
 

@@ -175,7 +175,7 @@ export class GcHeap {
 	public observeStackWrites(first: number, end: number): void {
 		for (let address = first & -THREAD_HEAP_BYTES; address < end; address += THREAD_HEAP_BYTES) {
 			const descriptor = address + ThreadField.StackBlock;
-			if (end <= descriptor || first >= descriptor + 8) continue;
+			if (end <= descriptor || first >= descriptor + 16) continue;
 			this.threadAt(address)?.observeStackWrite();
 		}
 	}

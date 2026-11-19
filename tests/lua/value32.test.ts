@@ -82,6 +82,7 @@ test('actual ValueSlots and Thread frame windows use five-byte backing', () => {
 	first.stackBase = 0; first.stackCapacity = 8; first.registers.rebind(thread.stackRegisters, 0, 8);
 	first.registers.setFloatBits(3, 0xffc00000); thread.resizeStack(64);
 	assert.equal(thread.stackRegisters.byteLength(), 320); assert.equal(first.registers.get(3), v.valueFloatBits(0xffc00000));
+	thread.reserveFrame(thread.stackRegisters.capacity());
 	const second = thread.acquireFrame(); second.stackBase = 4; second.stackCapacity = 4;
 	second.registers.rebind(thread.stackRegisters, 4, 4); thread.enterFrame(second);
 	second.registers.setInteger(0, 123); thread.resizeStack(96);

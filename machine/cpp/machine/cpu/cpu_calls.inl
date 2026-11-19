@@ -34,12 +34,13 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
 inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 	const int count = decodeValueCount(b, std::max(frame.top - a, 0));
 	instructionBudgetRemaining -= closeUpvalues(frame);
-	if (frame.protectedContinuationIndex >= 0) {
-		finishProtectedCall(static_cast<size_t>(frame.protectedContinuationIndex), frame, a, count);
+	const u32 continuation = frame.readControl(FrameField::Protected);
+	if (static_cast<i32>(continuation) >= 0) {
+		finishProtectedCall(continuation, frame, a, count);
 		m_activeThread->leaveFrame();
 		return false;
 	}
-	if (frame.returnToCompletionLatch) {
+	if (frame.hasControlFlag(FRAME_COMPLETION)) {
 		m_completionValues.reserveCapacity(count);
 		m_completionValues.view().copyFrom(frame.registers, 0, a, count);
 		m_completionValueCount = count;

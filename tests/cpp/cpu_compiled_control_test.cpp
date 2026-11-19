@@ -60,8 +60,8 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	require(left.frameDepth == right.frameDepth, "control transitions preserve frame depth");
 	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) {
 		require(x->pc == y->pc && x->top == y->top && x->stackBase == y->stackBase
-			&& x->stackCapacity == y->stackCapacity && x->isExceptionFrame == y->isExceptionFrame
-			&& x->isNonMaskableExceptionFrame == y->isNonMaskableExceptionFrame, "all live frame boundaries agree");
+			&& x->stackCapacity == y->stackCapacity && x->hasControlFlag(FRAME_EXCEPTION) == y->hasControlFlag(FRAME_EXCEPTION)
+			&& x->hasControlFlag(FRAME_NMI) == y->hasControlFlag(FRAME_NMI), "all live frame boundaries agree");
 	}
 }
 

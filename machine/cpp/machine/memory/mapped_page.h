@@ -24,6 +24,11 @@ public:
 inline constexpr u32 MAPPED_PAGE_WATCH_GROUP_COUNT = MAPPED_PAGE_BYTE_SIZE / (4u * 32u);
 static_assert(MAPPED_PAGE_WATCH_GROUP_COUNT <= 8u);
 
+constexpr u32 mappedWatchWordMask(u32 group, u32 firstWord, u32 lastWord) {
+	return (group == (firstWord >> 5u) ? 0xffffffffu << (firstWord & 31u) : 0xffffffffu)
+		& (group == (lastWord >> 5u) ? 0xffffffffu >> (31u - (lastWord & 31u)) : 0xffffffffu);
+}
+
 struct MappedPageWriteWatch {
 	u8* groups = nullptr;
 	u32* words = nullptr;
@@ -56,8 +61,7 @@ struct MappedPageWriteWatch {
 		for (u32 group = firstGroup; group <= lastGroup; ++group) {
 			const u32 groupBit = 1u << group;
 			if ((*groups & groupBit) == 0u) continue;
-			const u32 mask = (group == firstGroup ? 0xffffffffu << (firstWord & 31u) : 0xffffffffu)
-				& (group == lastGroup ? 0xffffffffu >> (31u - ((endWord - 1u) & 31u)) : 0xffffffffu);
+			const u32 mask = mappedWatchWordMask(group, firstWord, endWord - 1u);
 			const u32 watched = words[group];
 			affected |= (watched & mask) != 0u;
 			const u32 remaining = watched & ~mask;
@@ -82,9 +86,18 @@ public:
 	bool anyWatched(size_t first, size_t length) const {
 		if (length == 0u) return false;
 		const u8* groups = groupData();
-		const size_t end = (first + length - 1u) >> MAPPED_PAGE_BYTE_SHIFT;
-		for (size_t page = first >> MAPPED_PAGE_BYTE_SHIFT; page <= end; ++page)
-			if (groups[page] != 0u) return true;
+		const size_t last = first + length - 1u;
+		const size_t firstPage = first >> MAPPED_PAGE_BYTE_SHIFT, lastPage = last >> MAPPED_PAGE_BYTE_SHIFT;
+		for (size_t page = firstPage; page <= lastPage; ++page) {
+			const u32 watchedGroups = groups[page];
+			if (watchedGroups == 0u) continue;
+			if (page > firstPage && page < lastPage) return true;
+			const u32 firstWord = page == firstPage ? (first & MAPPED_PAGE_BYTE_MASK) >> 2u : 0u;
+			const u32 lastWord = page == lastPage ? (last & MAPPED_PAGE_BYTE_MASK) >> 2u : MAPPED_PAGE_BYTE_MASK >> 2u;
+			const u32* words = m_words + page * MAPPED_PAGE_WATCH_GROUP_COUNT;
+			for (u32 group = firstWord >> 5u; group <= lastWord >> 5u; ++group)
+				if ((watchedGroups & (1u << group)) && (words[group] & mappedWatchWordMask(group, firstWord, lastWord))) return true;
+		}
 		return false;
 	}
 	const u8* groupData() const { return reinterpret_cast<const u8*>(m_storage.get()); }
