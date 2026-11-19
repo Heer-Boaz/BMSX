@@ -1,3 +1,4 @@
+import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -183,9 +184,12 @@ test('a materialized but unrooted canonical closure remains part of the checkpoi
 	const warm = cpu.captureRuntimeState();
 	const warmRam = cpu.memory.captureSaveState();
 	assert.equal(cpu.readFrameRegister(0, 0), valueNil());
-	assert.ok(warm.snapshot.objectWords.some(offset => warm.snapshot.word(offset) === CpuSnapshotObjectKind.Closure
-		&& warm.snapshot.word(offset + CpuSnapshotClosure.Canonical) === 1
-		&& warm.snapshot.word(offset + CpuSnapshotClosure.FunctionAddress) === address));
+	assert.ok(warm.snapshot.objectWords.some(offset => {
+		if (warm.snapshot.word(offset) !== CpuSnapshotObjectKind.Closure) return false;
+		const record = warm.snapshot.word(offset + CpuSnapshotClosure.Record);
+		return cpu.memory.readRamRecordWord(record + CLOSURE_PROTOTYPE_ADDRESS) === address
+			&& (cpu.memory.readRamRecordByte(record + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0;
+	}));
 	cpu.runUntilDepth(0, 1000);
 	const expected = cpu.captureRuntimeState();
 	cpu.memory.restoreSaveState(coldRam);

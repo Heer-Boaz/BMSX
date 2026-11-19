@@ -388,7 +388,13 @@ for (const editReturn of [false, true]) test(`CALL keeps its bound record when t
 		assert.equal(cpu.readFramePc(0), DYNAMIC_RAM_BASE + (edit + 1) * INSTRUCTION_BYTES);
 		assert.equal(cpu.readFrameRegister(0, 6), valueInteger(73), 'the obsolete MOV must not run');
 		if (editReturn) assert.equal(cpu.readFrameRegister(0, 0), valueInteger(1), 'RET delivers its result before fetching the new instruction');
-		states.push(cpu.captureRuntimeState());
+		const state = cpu.captureRuntimeState();
+		const ram = memory.captureSaveState();
+		memory.restoreSaveState(ram);
+		cpu.restoreRuntimeState(state);
+		assert.equal(source.writes, 0, 'restoring an I/O-backed closure must not sample its source again');
+		assert.deepEqual(cpu.captureRuntimeState(), state);
+		states.push(state);
 	}
 	assert.deepEqual(states[1], states[0]);
 });

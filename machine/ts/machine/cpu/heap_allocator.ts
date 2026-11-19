@@ -134,8 +134,16 @@ export class HeapAllocator {
 
 	// The visitor returns charged work, negated when it releases the record.
 	public sweepObjects<Context>(allowance: number, context: Context, visit: (context: Context, address: number) => number): number {
+		return this.walkObjectPages(allowance, context, visit, true);
+	}
+
+	public visitObjectRecords<Context>(context: Context, visit: (context: Context, address: number) => number): void {
+		this.walkObjectPages(Infinity, context, visit, false);
+	}
+
+	private walkObjectPages<Context>(allowance: number, context: Context, visit: (context: Context, address: number) => number, sweep: boolean): number {
 		const cursor = this.management + SWEEP_PAGE;
-		let page = this.memory.readRamRecordWord(cursor);
+		let page = sweep ? this.memory.readRamRecordWord(cursor) : 0;
 		if (page >= this.pageLimit) return 0;
 		let work = 0;
 		while (page < this.pageLimit && work < allowance) {
@@ -165,7 +173,7 @@ export class HeapAllocator {
 				}
 			}
 		}
-		this.memory.writeRamRecordWord(cursor, page);
+		if (sweep) this.memory.writeRamRecordWord(cursor, page);
 		return work;
 	}
 

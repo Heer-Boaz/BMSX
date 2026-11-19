@@ -25,10 +25,10 @@ export function profileWarmGuestKernel(cpu: CPU, kernel: Closure, iterations: nu
 		reservedBytes += heapAllocationBytes(bytes) + (backingBytes === 0 ? 0 : heapAllocationBytes(backingBytes));
 		return address;
 	};
-	heap.allocateClosureRecord = function (captures, addresses, count = 0) {
-		const address = allocateClosureRecord.call(heap, captures, addresses, count);
+	heap.allocateClosureRecord = function (captures, latched, addresses, count = 0) {
+		const address = allocateClosureRecord.call(heap, captures, latched, addresses, count);
 		reservations += 1 + count;
-		reservedBytes += heapAllocationBytes(closureRecordBytes(captures)) + count * UPVALUE_HEAP_BYTES;
+		reservedBytes += heapAllocationBytes(closureRecordBytes(captures, latched)) + count * UPVALUE_HEAP_BYTES;
 		return address;
 	};
 	heap.allocateStack = function (bytes, thread, root) {

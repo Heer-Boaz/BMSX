@@ -257,9 +257,10 @@ void restoreUnrootedCanonicalClosure() {
 	require(cpu.readFrameRegister(0, 0) == bmsx::valueNil(), "static closure is no longer a guest root");
 	bool captured = false;
 	for (bmsx::u32 offset : warm.snapshot.objectWords()) {
-		if (warm.snapshot.word(offset) == static_cast<bmsx::u32>(bmsx::CpuSnapshotObjectKind::Closure)
-			&& warm.snapshot.word(offset + bmsx::SNAP_CLOSURE_CANONICAL) == 1u
-			&& warm.snapshot.word(offset + bmsx::SNAP_CLOSURE_FUNCTION_ADDRESS) == address) captured = true;
+		if (warm.snapshot.word(offset) != static_cast<bmsx::u32>(bmsx::CpuSnapshotObjectKind::Closure)) continue;
+		const bmsx::u32 record = warm.snapshot.word(offset + bmsx::SNAP_CLOSURE_RECORD);
+		if (cpu.memory().readRamRecordWord(record + bmsx::CLOSURE_PROTOTYPE_ADDRESS) == address
+			&& (cpu.memory().readRamRecordByte(record + bmsx::CLOSURE_BINDING_FLAGS) & bmsx::CLOSURE_CANONICAL)) captured = true;
 	}
 	require(captured, "snapshot must retain unrooted canonical cache entries");
 	cpu.runUntilDepth(0, 1000);

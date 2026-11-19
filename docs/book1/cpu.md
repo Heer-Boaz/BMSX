@@ -1219,7 +1219,8 @@ The occupied-byte counts used for admission are:
 | Allocation | Occupied budget bytes |
 | --- | --- |
 | Table with array capacity `A` and hash capacity `H` | `32 + S(5A + 14H)` |
-| Closure with `U` captured-variable references | `S(12 + 4U)` |
+| Closure with `U` captured-variable references, function record backed by contiguous ROM | `S(12 + 4U)` |
+| Closure with `U` captured-variable references, other mapped function record | `S(36 + 4U)` |
 | Captured-variable cell | `16` |
 | Thread with `V` reserved Value slots, `F` reserved frame-control records and `P` reserved protected continuations | `64 + S(round4(5V) + 56F + 20P)` |
 | RAM String containing `n` bytes | `S(16 + n)` |
@@ -1252,8 +1253,10 @@ be admitted. Frame capacity doubles as needed before an entry. The first
 protected call reserves one continuation, and a full continuation reservation
 doubles before being extended. If the processor cannot admit an exception
 activation, it halts rather than recursively raising another exception.
-A closure's header and
-capture references occupy one block. A RAM String occupies one block containing
+A closure's header and capture references occupy one block. If the function
+record is not entirely backed by contiguous ROM, the block also holds
+the six function words read at construction. Calling such a closure does not
+read the bus for those words again. A RAM String occupies one block containing
 its 16-byte header and its bytes. Its byte count is 22 bits. The String
 port selects main RAM for the record and uses the 22-bit physical byte
 address for its header and bytes; reaching the end of RAM wraps to its start.

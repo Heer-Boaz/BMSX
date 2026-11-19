@@ -988,9 +988,10 @@ void weakCanonicalClosuresAndStaticEntry() {
 		auto countVersions = [&](const CpuRuntimeState& state) {
 			size_t count = 0;
 			for (u32 offset : state.snapshot.objectWords()) {
-				if (state.snapshot.word(offset + SNAP_CLOSURE_KIND) == static_cast<u32>(CpuSnapshotObjectKind::Closure)
-					&& state.snapshot.word(offset + SNAP_CLOSURE_FUNCTION_ADDRESS) == record
-					&& state.snapshot.word(offset + SNAP_CLOSURE_CANONICAL) != 0) ++count;
+				if (state.snapshot.word(offset) != static_cast<u32>(CpuSnapshotObjectKind::Closure)) continue;
+				const u32 address = state.snapshot.word(offset + SNAP_CLOSURE_RECORD);
+				if (machine.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS) == record
+					&& (machine.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) != 0u) ++count;
 			}
 			return count;
 		};
@@ -1209,6 +1210,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		const u32 oldCode = asClosure(oldFunction, machine->cpu.gcHeap())->prototype->codeAddress;
 		const u32 newCode = asClosure(newFunction, machine->cpu.gcHeap())->prototype->codeAddress;
 		const auto snapshot = machine->cpu.captureRuntimeState();
+		const auto ram = machine->memory.captureSaveState();
 		machine->cpu.restoreRuntimeState(snapshot);
 		const auto restoredOld = machine->cpu.readFrameRegister(0, 1);
 		const auto restoredNew = machine->cpu.readFrameRegister(0, 0);
@@ -1219,15 +1221,18 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		// identical records. Their identities and hash keys must still survive.
 		auto relocatedSnapshot = snapshot;
 		u32 oldOffset = 0, newOffset = 0;
+		const u32 oldAddress = valuePayload(oldFunction), newAddress = valuePayload(newFunction);
 		for (const u32 offset : relocatedSnapshot.snapshot.objectWords()) {
-			if (relocatedSnapshot.snapshot.word(offset + SNAP_CLOSURE_KIND) != static_cast<u32>(CpuSnapshotObjectKind::Closure)) continue;
-			const u32 address = relocatedSnapshot.snapshot.word(offset + SNAP_CLOSURE_FUNCTION_ADDRESS);
-			if (address == largeRecord) oldOffset = offset;
-			if (address == secondRecord) newOffset = offset;
+			if (relocatedSnapshot.snapshot.word(offset) != static_cast<u32>(CpuSnapshotObjectKind::Closure)) continue;
+			const u32 address = relocatedSnapshot.snapshot.word(offset + SNAP_CLOSURE_RECORD);
+			if (address == oldAddress) oldOffset = offset;
+			if (address == newAddress) newOffset = offset;
 		}
-		for (const u32 field : {SNAP_CLOSURE_FUNCTION_ADDRESS, SNAP_CLOSURE_CODE_ADDRESS, SNAP_CLOSURE_NUM_PARAMS, SNAP_CLOSURE_MAX_STACK,
-			SNAP_CLOSURE_FLAGS, SNAP_CLOSURE_UPVALUE_TABLE_ADDRESS, SNAP_CLOSURE_EXECUTION_DOMAIN_ID})
-			relocatedSnapshot.snapshot.setWord(oldOffset + field, relocatedSnapshot.snapshot.word(newOffset + field));
+		machine->memory.writeRamRecordWord(oldAddress + CLOSURE_PROTOTYPE_ADDRESS, secondRecord);
+		for (u32 field = 0; field < CLOSURE_LATCHED_PROTOTYPE_BYTES; field += sizeof(u32)) {
+			machine->memory.writeRamRecordWord(Closure::captureWordAddress(oldAddress, 0) + field,
+				machine->memory.readRamRecordWord(Closure::captureWordAddress(newAddress, 0) + field));
+		}
 		machine->cpu.restoreRuntimeState(relocatedSnapshot);
 		const auto relocatedOld = asClosure(machine->cpu.readFrameRegister(0, 1), machine->cpu.gcHeap());
 		const auto relocatedNew = asClosure(machine->cpu.readFrameRegister(0, 0), machine->cpu.gcHeap());
@@ -1246,6 +1251,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.restoreRuntimeState(collidedSnapshot);
 		require(machine->cpu.readFrameRegister(0, 1) != machine->cpu.readFrameRegister(0, 0),
 			"canonical closure collision remains distinct across a second snapshot");
+		machine->memory.restoreSaveState(ram);
 		machine->cpu.restoreRuntimeState(snapshot);
 		machine->memory.writeBytes(unalignedEntryRecord, machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
 		machine->memory.writeMappedU32LE(unalignedEntryRecord + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, machine->rom.textAddress + DECODED_PAGE_WORDS * INSTRUCTION_BYTES + 1u);

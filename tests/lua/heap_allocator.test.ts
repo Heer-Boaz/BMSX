@@ -102,6 +102,13 @@ test('object sweep resumes from RAM, visits vacant issued slots and skips owned 
 	assert.ok(heap.objectSweepActive());
 	const midSweep = memory.captureSaveState();
 
+	// Load-time discovery starts at the bottom of RAM without copying or
+	// advancing an in-progress collector's hardware cursor.
+	const records: number[] = [];
+	heap.visitObjectRecords(records, (records, address) => { records.push(address); return 1; });
+	assert.deepEqual(records, [first, last]);
+	assert.deepEqual(memory.captureSaveState(), midSweep, 'attachment discovery has no RAM writes');
+
 	for (let replay = 0; replay < 2; ++replay) {
 		memory.restoreSaveState(midSweep);
 		visits.length = 0;

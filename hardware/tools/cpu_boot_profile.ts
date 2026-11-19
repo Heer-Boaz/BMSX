@@ -1,10 +1,12 @@
-// Bounded sampling of the actual headless runtime: successful reservations and
-// selected frame boundaries. These are logical charges, not physical VM usage,
-// a worst-case peak or compatibility proof.
+import { Closure, CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, UPVALUE_RECORD_KIND } from '../../machine/ts/machine/cpu/closure';
+// Bounded sampling of guest RAM allocations and selected frame boundaries
+// in the headless runtime, not a whole-game peak or host RSS measurement.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
-import { CpuSnapshotClosure, CpuSnapshotObjectKind, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
+import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread';
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { BLUA32_STRING_RECORD_KIND } from '../../machine/ts/spec/blua32/image_format';
 import type { InputControllerSnapshot } from '../../machine/ts/machine/devices/input/contracts';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { parseSystemRomImage } from '../../machine/ts/rompack/image';
@@ -25,21 +27,24 @@ function main(): void {
 	const gpu = runtime.machine.gxGpu;
 	const backend = new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const cpu = runtime.machine.cpu;
-	// Instrument this profiling run only. Do not retain argument references:
-	// those are temporary GC roots in the real reservation call.
-	const heap = cpu.luaHeap;
-	const reserve = heap.reserve;
-	let profileFrame = 0, successfulReservations = 0;
-	let peakReservationBytes = heap.usedBytes(), peakReservationFrame = 0, peakReservationCycles = 0;
-	heap.reserve = function (bytes, tag0, scalar0, reference0, tag1, scalar1, reference1, tag2, scalar2, reference2) {
-		reserve.call(heap, bytes, tag0, scalar0, reference0, tag1, scalar1, reference1, tag2, scalar2, reference2);
-		successfulReservations += 1;
-		const used = heap.usedBytes();
-		if (used > peakReservationBytes) {
-			peakReservationBytes = used;
-			peakReservationFrame = profileFrame;
-			peakReservationCycles = runtime.machine.scheduler.nowCycles;
+	// Instrument the physical producer in this process only. Include temporary
+	// blocks present while a record is resized or a multi-block request runs.
+	const arena = cpu.heapAllocator;
+	const allocate = arena.allocate;
+	let profileFrame = 0, successfulAllocations = 0;
+	let peakAllocationBytes = arena.occupiedBytes(), peakAllocationFrame = 0, peakAllocationCycles = 0;
+	arena.allocate = function (bytes, owned) {
+		const address = allocate.call(arena, bytes, owned);
+		if (address !== 0) {
+			++successfulAllocations;
+			const used = arena.occupiedBytes();
+			if (used > peakAllocationBytes) {
+				peakAllocationBytes = used;
+				peakAllocationFrame = profileFrame;
+				peakAllocationCycles = runtime.machine.scheduler.nowCycles;
+			}
 		}
+		return address;
 	};
 	runtime.boot();
 	let peakTracked = cpu.luaHeap.usedBytes(), peakActiveFrames = cpu.activeThread.frameDepth;
@@ -67,55 +72,56 @@ function main(): void {
 		if (newCart) firstCart = frame;
 		if (frame === 1 || frame === frameCount || newCart) {
 			const state = cpu.captureRuntimeState();
-			const objects = { tables: 0, closures: 0, upvalues: 0, threads: 0 };
-			let arraySlots = 0, hashSlots = 0, canonicalClosures = 0, closureUpvalueSlots = 0;
-			for (let id = 0; id < state.snapshot.objectCount; id += 1) {
-				const offset = state.snapshot.objectWord(id);
-				switch (state.snapshot.word(offset)) {
-					case CpuSnapshotObjectKind.Table: {
-						objects.tables += 1;
-						const record = state.snapshot.word(offset + CpuSnapshotTable.Record);
-						arraySlots += cpu.memory.readRamRecordWord(record + TableHeader.Array);
-						hashSlots += cpu.memory.readRamRecordWord(record + TableHeader.Hash);
+			const objects = { tables: 0, closures: 0, upvalues: 0, threads: 0, ramStrings: 0 };
+			let arraySlots = 0, hashSlots = 0, canonicalClosures = 0, closureUpvalueSlots = 0, ramStringBytes = 0;
+			let totalFrames = 0, totalReservedStackSlots = 0, protectedCalls = 0;
+			arena.visitObjectRecords(cpu, (cpu, record) => {
+				const memory = cpu.memory;
+				switch (memory.readRamRecordByte(record)) {
+					case ValueTag.Table:
+						++objects.tables;
+						arraySlots += memory.readRamRecordWord(record + TableHeader.Array);
+						hashSlots += memory.readRamRecordWord(record + TableHeader.Hash);
+						break;
+					case ValueTag.Closure:
+						++objects.closures;
+						if ((memory.readRamRecordByte(record + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0) ++canonicalClosures;
+						closureUpvalueSlots += Closure.captureCount(memory, record);
+						break;
+					case UPVALUE_RECORD_KIND:
+						++objects.upvalues;
+						break;
+					case THREAD_RECORD_KIND: {
+						++objects.threads;
+						const thread = cpu.gc.threadAt(record)!;
+						totalFrames += thread.frameDepth;
+						totalReservedStackSlots += thread.stackRegisters.capacity();
+						protectedCalls += thread.protectedDepth;
 						break;
 					}
-					case CpuSnapshotObjectKind.Closure:
-						objects.closures += 1;
-						canonicalClosures += state.snapshot.word(offset + CpuSnapshotClosure.Canonical);
-						closureUpvalueSlots += state.snapshot.word(offset + CpuSnapshotClosure.UpvalueCount);
+					case BLUA32_STRING_RECORD_KIND:
+						++objects.ramStrings;
+						ramStringBytes += cpu.stringPool.byteLength(record);
 						break;
-					case CpuSnapshotObjectKind.Upvalue: objects.upvalues += 1; break;
-					case CpuSnapshotObjectKind.Thread: objects.threads += 1; break;
 				}
-			}
-			const interned = cpu.stringPool.captureState().entries;
-			let trackedStrings = 0, trackedStringBytes = 0, allInternedStringBytes = 0;
-			const encoder = new TextEncoder();
-			for (const entry of interned) {
-				const bytes = encoder.encode(entry.value).length;
-				allInternedStringBytes += bytes;
-				if (entry.tracked) { trackedStrings += 1; trackedStringBytes += bytes; }
-			}
+				return 1;
+			});
 			snapshots.push({ frame, systemCycles: runtime.machine.scheduler.nowCycles,
-				trackedHeapBytes: state.luaHeap.trackedBytes,
+				occupiedHeapBytes: arena.occupiedBytes(),
 				ordinaryGlobals: state.globals.count, systemGlobals: state.systemGlobals.count,
 				lastExecutionDomainId: state.lastExecutionDomainId, activeExecutionDomainId: state.executionCartridgeSlot,
 				executionResidencyMask: state.executionResidencyMask, hardHalted: state.hardHalted,
-				threads: state.threads.length, totalFrames: state.threads.reduce((n, t) => n + t.frames.length, 0),
-				totalReservedStackSlots: state.threads.reduce((n, t) => n + t.stackCapacity, 0),
-				protectedCalls: state.threads.reduce((n, t) => n + t.protectedCalls.length, 0),
-				objects, arraySlots, hashSlots, canonicalClosures, closureUpvalueSlots,
-				internedStrings: interned.length, allInternedStringBytes, trackedStrings, trackedStringBytes });
+				totalFrames, totalReservedStackSlots, protectedCalls,
+				objects, arraySlots, hashSlots, canonicalClosures, closureUpvalueSlots, ramStringBytes });
 		}
 	}
 	process.stdout.write(JSON.stringify({
-		scope: 'Real TS runtime, bounded headless run with no controller input. Logical tracked bytes are observed after successful reserve calls and at frame boundaries; selected snapshots are taken at frame boundaries. restoreAllocate, adjustForRestore, other accounting updates and peaks during collection are not individually observed. These are not physical hardware bytes or full-game maxima.',
+		scope: 'Real TS runtime, bounded headless run with no controller input. Guest heap occupancy is observed after successful allocator calls and at frame boundaries, before any subsequent releases. These are not host RSS or full-game maxima.',
 		bios: { path: biosPath, sha256: createHash('sha256').update(bios).digest('hex') },
 		cartridge: { path: cartridgePath, sha256: createHash('sha256').update(cartridge).digest('hex') },
 		frames: frameCount, firstFrameWithAdditionalOrdinaryGlobals: firstCart,
-		successfulReservations, peakSuccessfulReservationTrackedBytes: peakReservationBytes,
-		peakSuccessfulReservationFrame: peakReservationFrame, peakSuccessfulReservationCycles: peakReservationCycles,
-		peakSampledTrackedHeapBytes: peakTracked, peakSampledActiveFrames: peakActiveFrames,
+		successfulAllocations, peakAllocationBytes, peakAllocationFrame, peakAllocationCycles,
+		peakSampledOccupiedHeapBytes: peakTracked, peakSampledActiveFrames: peakActiveFrames,
 		peakSampledActiveStackCapacity: peakActiveStackCapacity, snapshots,
 	}, null, 2) + '\n');
 }

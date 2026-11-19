@@ -142,9 +142,10 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 }
 
 Closure* CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool canonical, std::span<u32> cells) {
-	const u32 address = m_luaHeap.allocateClosureRecord(count, cells);
+	const bool latched = !m_functionRecordLatch.romBacked;
+	const u32 address = m_luaHeap.allocateClosureRecord(count, latched, cells);
 	Closure* closure = m_heap.bindClosureRecord(address, prototype, canonical);
-	closure->initializeRecord(m_heap.white(), count);
+	closure->initializeRecord(m_heap.white(), count, latched);
 	return closure;
 }
 
@@ -688,10 +689,10 @@ bool CPU::readFunctionRecord(
 	m_functionRecordLatch.image = &image;
 	m_functionRecordLatch.busSignals = busSignals;
 	m_functionRecordLatch.address = address;
-	m_functionRecordLatch.cacheableRead = false;
+	m_functionRecordLatch.romBacked = false;
 	Span<const u8> view;
 	if (m_memory.bindMappedReadView(address, BLUA32_FUNCTION_RECORD_SIZE, busSignals, view)) {
-		m_functionRecordLatch.cacheableRead = true;
+		m_functionRecordLatch.romBacked = address < RAM_BASE || (address >= CART_ROM_BASE && address < CART_ROM_END);
 		const u8* record = view.data();
 		m_functionRecordLatch.codeAddress = readLE32(
 			record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET
@@ -911,15 +912,6 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				offset = snapshot.reserveWords(SNAP_CLOSURE_SIZE);
 				snapshot.setWord(offset + SNAP_CLOSURE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Closure));
 				snapshot.setWord(offset + SNAP_CLOSURE_HASH_ID, closure->hashId);
-				snapshot.setWord(offset + SNAP_CLOSURE_FUNCTION_ADDRESS, closure->prototype->functionAddress);
-				snapshot.setWord(offset + SNAP_CLOSURE_CANONICAL, closure->canonical);
-				snapshot.setWord(offset + SNAP_CLOSURE_CODE_ADDRESS, closure->prototype->codeAddress);
-				snapshot.setWord(offset + SNAP_CLOSURE_NUM_PARAMS, closure->prototype->numParams);
-				snapshot.setWord(offset + SNAP_CLOSURE_MAX_STACK, closure->prototype->maxStack);
-				snapshot.setWord(offset + SNAP_CLOSURE_FLAGS, closure->prototype->flags);
-				snapshot.setWord(offset + SNAP_CLOSURE_UPVALUE_TABLE_ADDRESS, closure->prototype->upvalueTableAddress);
-				snapshot.setWord(offset + SNAP_CLOSURE_RECORD_UPVALUE_COUNT, closure->prototype->recordUpvalueCount);
-				snapshot.setWord(offset + SNAP_CLOSURE_EXECUTION_DOMAIN_ID, static_cast<u32>(closure->prototype->executionDomainId));
 				snapshot.setWord(offset + SNAP_CLOSURE_RECORD, closure->address);
 				break;
 			}
@@ -980,18 +972,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_rootThread->detachFrameViews();
 	auto previousCanonical = std::move(m_staticClosuresByAddress);
 	m_staticClosuresByAddress.clear();
-	auto savedClosure = [&](u32 offset) {
-		FunctionPrototype record;
-		record.functionAddress = snapshot.word(offset + SNAP_CLOSURE_FUNCTION_ADDRESS);
-		record.codeAddress = snapshot.word(offset + SNAP_CLOSURE_CODE_ADDRESS);
-		record.numParams = snapshot.word(offset + SNAP_CLOSURE_NUM_PARAMS);
-		record.maxStack = snapshot.word(offset + SNAP_CLOSURE_MAX_STACK);
-		record.flags = snapshot.word(offset + SNAP_CLOSURE_FLAGS);
-		record.upvalueTableAddress = snapshot.word(offset + SNAP_CLOSURE_UPVALUE_TABLE_ADDRESS);
-		record.recordUpvalueCount = snapshot.word(offset + SNAP_CLOSURE_RECORD_UPVALUE_COUNT);
-		record.executionDomainId = snapshot.integer(offset + SNAP_CLOSURE_EXECUTION_DOMAIN_ID);
-		return record;
-	};
 	m_heap.forgetPhysicalRecords();
 	std::vector<GCObject*> restoredObjects(snapshot.objectCount());
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
@@ -1013,10 +993,11 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				break;
 			}
 			case CpuSnapshotObjectKind::Closure: {
-				const FunctionPrototype record = savedClosure(offset);
 				const u32 address = snapshot.word(offset + SNAP_CLOSURE_RECORD);
+				const u8 binding = m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
+				const FunctionPrototype record = Closure::readBinding(m_memory, address, binding);
 				const u32 functionAddress = record.functionAddress;
-				const bool canonical = snapshot.word(offset + SNAP_CLOSURE_CANONICAL) != 0;
+				const bool canonical = (binding & CLOSURE_CANONICAL) != 0u;
 				Closure* closure;
 				if (canonical) {
 					const u32 hashId = snapshot.word(offset + SNAP_CLOSURE_HASH_ID);

@@ -218,7 +218,10 @@ bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
 size_t GcHeap::allocationBytes(const GCObject* object) const {
 	switch (object->type) {
 		case ObjType::Table: return static_cast<const Table*>(object)->trackedHeapBytes();
-		case ObjType::Closure: return heapAllocationBytes(closureRecordBytes(static_cast<const Closure*>(object)->upvalueCount()));
+		case ObjType::Closure: {
+			const auto* closure = static_cast<const Closure*>(object);
+			return heapAllocationBytes(closureRecordBytes(closure->upvalueCount(), closure->hasLatchedPrototype()));
+		}
 		case ObjType::Upvalue: return UPVALUE_HEAP_BYTES;
 		case ObjType::Thread: return THREAD_HEAP_BYTES + heapAllocationBytes(static_cast<const Thread*>(object)->backingByteLength());
 

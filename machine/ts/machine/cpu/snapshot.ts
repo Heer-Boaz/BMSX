@@ -8,7 +8,7 @@ import { ValueTag, valueFromTag, type Value } from './value';
 export const CPU_SNAPSHOT_VALUE_WORDS = 2;
 export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue, Thread }
 export const enum CpuSnapshotTable { Kind, HashId, Record, Size }
-export const enum CpuSnapshotClosure { Kind, HashId, FunctionAddress, Canonical, CodeAddress, NumParams, MaxStack, Flags, UpvalueTableAddress, RecordUpvalueCount, ExecutionDomainId, Record, Size }
+export const enum CpuSnapshotClosure { Kind, HashId, Record, Size }
 export const enum CpuSnapshotUpvalue { Kind, HashId, Address, Size }
 export const enum CpuSnapshotThread { Kind, HashId, Record, Size }
 export type CpuSnapshotObject = Table | Closure | Upvalue | Thread;

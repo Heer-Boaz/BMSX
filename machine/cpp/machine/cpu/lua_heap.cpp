@@ -81,8 +81,8 @@ u32 LuaHeap::allocateStack(u32 bytes, Thread* thread, Value root) {
 	throw LuaOutOfMemorySignal{};
 }
 
-u32 LuaHeap::allocateClosureRecord(u32 captures, std::span<u32> cells) {
-	const u32 bytes = closureRecordBytes(captures);
+u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> cells) {
+	const u32 bytes = closureRecordBytes(captures, latched);
 	const size_t charged = heapAllocationBytes(bytes) + cells.size() * UPVALUE_HEAP_BYTES;
 	const bool collected = admit(charged, valueNil(), valueNil(), valueNil(), nullptr);
 	auto& arena = m_cpu.heapAllocator();

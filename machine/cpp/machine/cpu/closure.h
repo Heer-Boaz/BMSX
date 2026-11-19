@@ -59,11 +59,18 @@ struct FunctionPrototypeHash {
 	}
 };
 
+inline constexpr u32 CLOSURE_BINDING_FLAGS = 2;
+inline constexpr u32 CLOSURE_BINDING_DOMAIN_MASK = 3;
+inline constexpr u32 CLOSURE_CANONICAL = 4;
+inline constexpr u32 CLOSURE_LATCHED_PROTOTYPE = 8;
 inline constexpr u32 CLOSURE_COUNT_HIGH_BYTE = 3;
 inline constexpr u32 CLOSURE_COUNT_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
 inline constexpr u32 CLOSURE_PROTOTYPE_ADDRESS = 8;
 inline constexpr u32 CLOSURE_CAPTURE_WORDS = 12;
-inline constexpr u32 closureRecordBytes(u32 captures) { return CLOSURE_CAPTURE_WORDS + 4u * captures; }
+inline constexpr u32 CLOSURE_LATCHED_PROTOTYPE_BYTES = 6 * sizeof(u32);
+inline constexpr u32 closureRecordBytes(u32 captures, bool latched = false) {
+	return CLOSURE_CAPTURE_WORDS + sizeof(u32) * captures + (latched ? CLOSURE_LATCHED_PROTOTYPE_BYTES : 0u);
+}
 
 struct Closure : GCObject {
 	Closure(Memory& memory, u32 address, const FunctionPrototype& prototype, bool canonical)
@@ -72,7 +79,9 @@ struct Closure : GCObject {
 	const u32 address;
 	const FunctionPrototype* prototype;
 	const bool canonical;
-		void initializeRecord(u8 white, u32 count);
+	void initializeRecord(u8 white, u32 count, bool latched = false);
+	bool hasLatchedPrototype() const;
+	static FunctionPrototype readBinding(const Memory& memory, u32 address, u8 flags);
 	static u32 captureCount(const Memory&, u32 address);
 	u32 upvalueCount() const { return captureCount(memory, address); }
 	static constexpr u32 captureWordAddress(u32 address, u32 index) {

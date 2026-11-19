@@ -89,7 +89,7 @@ export type Blua32ExecutionImage = {
 export type Blua32FunctionRecordLatch = FunctionPrototype & {
 	image: Blua32ExecutionImage;
 	busSignals: MappedBusSignals;
-	cacheableRead: boolean;
+	romBacked: boolean;
 };
 
 export function createDecodedInstructionPage(

@@ -1,3 +1,4 @@
+import { CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -220,7 +221,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		let count = 0;
 		for (let index = 0; index < snapshot.objectCount; ++index) {
 			const offset = snapshot.objectWord(index);
-			if (snapshot.word(offset) === CpuSnapshotObjectKind.Closure && snapshot.word(offset + CpuSnapshotClosure.FunctionAddress) === RAM_FUNCTION_ADDRESS) ++count;
+			if (snapshot.word(offset) !== CpuSnapshotObjectKind.Closure) continue;
+			const closure = snapshot.word(offset + CpuSnapshotClosure.Record);
+			if (memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) === RAM_FUNCTION_ADDRESS) ++count;
 		}
 		return count;
 	};

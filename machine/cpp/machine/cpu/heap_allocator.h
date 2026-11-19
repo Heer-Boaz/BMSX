@@ -53,8 +53,10 @@ public:
 	void beginObjectSweep();
 	bool objectSweepActive() const;
 	size_t sweepObjects(size_t allowance, void* context, SweepVisitor visit);
+	void visitObjectRecords(void* context, SweepVisitor visit) const;
 
 private:
+	size_t walkObjectPages(u32& page, size_t allowance, void* context, SweepVisitor visit) const;
 	u32 allocateRun(u32 byteCount, bool owned);
 	i32 takeTopPage();
 	i32 takeTopRun(u32 pages);

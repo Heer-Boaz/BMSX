@@ -29,7 +29,7 @@ public:
 	u32 allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
 	u32 allocateStack(u32 bytes, Thread* thread, Value root);
 	// Admit the closure and its new cells before publishing any frame link.
-	u32 allocateClosureRecord(u32 captures, std::span<u32> cells = {});
+	u32 allocateClosureRecord(u32 captures, bool latched = false, std::span<u32> cells = {});
 	void collectRuntime(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);
 	bool stepRuntime();
 	// Completed table-storage work consumes the current run's transient grant.

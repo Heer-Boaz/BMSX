@@ -115,6 +115,17 @@ size_t HeapAllocator::sweepObjects(size_t allowance, void* context, SweepVisitor
 	const u32 cursor = m_management + SWEEP_PAGE;
 	u32 page = m_memory.readRamRecordWord(cursor);
 	if (page >= m_pageLimit) return 0;
+	const size_t work = walkObjectPages(page, allowance, context, visit);
+	m_memory.writeRamRecordWord(cursor, page);
+	return work;
+}
+
+void HeapAllocator::visitObjectRecords(void* context, SweepVisitor visit) const {
+	u32 page = 0;
+	walkObjectPages(page, static_cast<size_t>(-1), context, visit);
+}
+
+size_t HeapAllocator::walkObjectPages(u32& page, size_t allowance, void* context, SweepVisitor visit) const {
 	size_t work = 0;
 	while (page < m_pageLimit && work < allowance) {
 		const u32 pageEntry = entry(page);
@@ -144,7 +155,6 @@ size_t HeapAllocator::sweepObjects(size_t allowance, void* context, SweepVisitor
 			default: break;
 		}
 	}
-	m_memory.writeRamRecordWord(cursor, page);
 	return work;
 }
 

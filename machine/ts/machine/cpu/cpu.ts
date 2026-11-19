@@ -4,7 +4,7 @@ import { GcKind } from './gc_object';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_END, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -123,7 +123,7 @@ import {
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table, TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
-import { Closure, Upvalue, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, sameFunctionPrototype } from './closure';
+import { Closure, CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, Upvalue, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, sameFunctionPrototype } from './closure';
 import { ValueSlots } from './value_slots';
 import { GlobalBank, type GlobalBankState } from './global_bank';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
@@ -310,7 +310,7 @@ export class CPU implements MappedPageInvalidator {
 	private readonly functionRecordLatch: Blua32FunctionRecordLatch = {
 		image: null!,
 		busSignals: MAPPED_BUS_MASTER_CPU,
-		cacheableRead: false,
+		romBacked: false,
 		functionAddress: 0,
 		codeAddress: 0,
 		numParams: 0,
@@ -847,8 +847,9 @@ export class CPU implements MappedPageInvalidator {
 			}
 			if (match !== null) return match;
 		}
-		const closure = new Closure(this.memory, this.luaHeap.allocateClosureRecord(0), record, true);
-		closure.initializeRecord(this.gc.white(), 0);
+		const latched = !record.romBacked;
+		const closure = new Closure(this.memory, this.luaHeap.allocateClosureRecord(0, latched), record, true);
+		closure.initializeRecord(this.gc.white(), 0, latched);
 		closure.hashId = this.allocateObjectHashId();
 		this.gc.track(closure);
 		closures = this.staticClosuresByAddress.get(record.functionAddress);
@@ -1238,10 +1239,10 @@ export class CPU implements MappedPageInvalidator {
 		latch.busSignals = busSignals;
 		latch.functionAddress = address;
 		latch.executionDomainId = image.executionDomainId;
-		latch.cacheableRead = false;
+		latch.romBacked = false;
 		const view = this.executionReadView;
 		if (this.memory.bindMappedReadView(address, BLUA32_FUNCTION_RECORD_SIZE, busSignals, view)) {
-			latch.cacheableRead = true;
+			latch.romBacked = address < RAM_BASE || (address >= CART_ROM_BASE && address < CART_ROM_END);
 			const bytes = view.bytes;
 			const recordByteOffset = view.byteOffset;
 			latch.codeAddress = readLE32(
@@ -3059,9 +3060,10 @@ export class CPU implements MappedPageInvalidator {
 			upvalues[index] = frame.captureAddress(upvalueIndex);
 		}
 		if (this.captureAddresses.length < newUpvalueCount) this.captureAddresses = new Uint32Array(newUpvalueCount);
-		const address = this.luaHeap.allocateClosureRecord(count, this.captureAddresses, newUpvalueCount);
+		const latched = !functionRecord.romBacked;
+		const address = this.luaHeap.allocateClosureRecord(count, latched, this.captureAddresses, newUpvalueCount);
 		const closure = new Closure(this.memory, address, functionRecord, false);
-		closure.initializeRecord(this.gc.white(), count);
+		closure.initializeRecord(this.gc.white(), count, latched);
 		closure.hashId = this.allocateObjectHashId();
 		this.gc.track(closure);
 		let nextCell = 0;
@@ -3985,15 +3987,6 @@ export class CPU implements MappedPageInvalidator {
 					offset = writer.reserveWords(CpuSnapshotClosure.Size);
 					writer.setWord(offset + CpuSnapshotClosure.Kind, kind);
 					writer.setWord(offset + CpuSnapshotClosure.HashId, closure.hashId);
-					writer.setWord(offset + CpuSnapshotClosure.FunctionAddress, closure.prototypeRecord.functionAddress);
-					writer.setWord(offset + CpuSnapshotClosure.Canonical, closure.canonical ? 1 : 0);
-					writer.setWord(offset + CpuSnapshotClosure.CodeAddress, closure.prototypeRecord.codeAddress);
-					writer.setWord(offset + CpuSnapshotClosure.NumParams, closure.prototypeRecord.numParams);
-					writer.setWord(offset + CpuSnapshotClosure.MaxStack, closure.prototypeRecord.maxStack);
-					writer.setWord(offset + CpuSnapshotClosure.Flags, closure.prototypeRecord.flags);
-					writer.setWord(offset + CpuSnapshotClosure.UpvalueTableAddress, closure.prototypeRecord.upvalueTableAddress);
-					writer.setWord(offset + CpuSnapshotClosure.RecordUpvalueCount, closure.prototypeRecord.recordUpvalueCount);
-					writer.setWord(offset + CpuSnapshotClosure.ExecutionDomainId, closure.prototypeRecord.executionDomainId);
 					writer.setWord(offset + CpuSnapshotClosure.Record, closure.address);
 					break;
 				}
@@ -4090,17 +4083,11 @@ export class CPU implements MappedPageInvalidator {
 					break;
 				}
 				case CpuSnapshotObjectKind.Closure: {
-					const functionAddress = snapshot.word(offset + CpuSnapshotClosure.FunctionAddress);
-					const codeAddress = snapshot.word(offset + CpuSnapshotClosure.CodeAddress);
-					const numParams = snapshot.word(offset + CpuSnapshotClosure.NumParams);
-					const maxStack = snapshot.word(offset + CpuSnapshotClosure.MaxStack);
-					const flags = snapshot.word(offset + CpuSnapshotClosure.Flags);
-					const upvalueTableAddress = snapshot.word(offset + CpuSnapshotClosure.UpvalueTableAddress);
-					const executionDomainId = snapshot.int(offset + CpuSnapshotClosure.ExecutionDomainId) as ExecutionDomainId;
-					const recordUpvalueCount = snapshot.word(offset + CpuSnapshotClosure.RecordUpvalueCount);
-					const canonical = snapshot.word(offset + CpuSnapshotClosure.Canonical) !== 0;
 					const address = snapshot.word(offset + CpuSnapshotClosure.Record);
-					const record = { functionAddress, codeAddress, numParams, maxStack, flags, upvalueTableAddress, executionDomainId, recordUpvalueCount };
+					const binding = this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
+					const record = Closure.readBinding(this.memory, address, binding, this.executionReadView);
+					const { functionAddress } = record;
+					const canonical = (binding & CLOSURE_CANONICAL) !== 0;
 					const previous = canonical ? previousCanonical.get(functionAddress) : undefined;
 					const existingIndex = previous === undefined ? -1 : previous.findIndex(item =>
 						item.hashId === snapshot.word(offset + CpuSnapshotClosure.HashId) && item.address === address

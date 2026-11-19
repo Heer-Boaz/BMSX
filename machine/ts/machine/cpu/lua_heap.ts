@@ -78,8 +78,8 @@ export class LuaHeap {
 	}
 
 	/** Admit the closure and its new cells before publishing any frame link. */
-	public allocateClosureRecord(captures: number, cells: Uint32Array = NO_NEW_CELLS, newCount = 0): number {
-		const bytes = closureRecordBytes(captures);
+	public allocateClosureRecord(captures: number, latched = false, cells: Uint32Array = NO_NEW_CELLS, newCount = 0): number {
+		const bytes = closureRecordBytes(captures, latched);
 		const charged = heapAllocationBytes(bytes) + newCount * UPVALUE_HEAP_BYTES;
 		const collected = this.admit(charged, valueNil(), valueNil(), valueNil(), null);
 		const arena = this.cpu.heapAllocator;
