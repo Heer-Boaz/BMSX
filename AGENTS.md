@@ -88,8 +88,10 @@
   ancestor cap is accepted without changing its swap or OOM settings, including
   a read-only container namespace root; stricter existing limits stay untouched.
   Newly installed test cgroups use 8 GiB, zero swap and group-wide OOM termination.
-  Nested invocations share the existing budget. Node test suites run one file at
-  a time by default.
+  Nested invocations share the existing budget. The unit suites (`npm test`,
+  `test:lua`, the area scripts and `test:rompacker`) run eight files at a time;
+  a test file that needs much memory is a defect to fix, not a reason to run
+  sequentially. Suites that share servers, ports or browsers stay sequential.
 - Do not bypass this runner with direct `node --test`, `tsx --test`, or unbounded
   harness commands; do not raise/remove limits without explicit user approval.
   A memory-limit failure is a failing test run, not permission to retry without

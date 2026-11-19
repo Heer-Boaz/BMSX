@@ -293,7 +293,7 @@ return target.value, active_data.retained, blackboard_instance:get(ticks_key), b
 // cycles detached; recording adds 2,620,000. Keep both bounds independent of
 // this implementation's results. The detached figure belongs to the harness's
 // module set: it rose by 2 cycles per transition when the harness began to
-// compile only the cart modules the entry requires.
+// compile only the cart modules the entry requires (cause not verified).
 const DETACHED_TRANSITION_CYCLES = 20_320_024;
 const RECORDER_TRANSITION_CYCLES = 2_620_000;
 const TRANSITION_CALL_GRANT = DETACHED_TRANSITION_CYCLES + RECORDER_TRANSITION_CYCLES + 1;
