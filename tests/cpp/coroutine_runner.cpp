@@ -24,7 +24,7 @@ static void exerciseCompletionBoundary(bmsx::CPU& cpu, bool fault) {
 	for (int grant = 0; grant < 10000 && cpu.completionCallPending() && cpu.readExceptionReturnFrameDepth() == -1; ++grant) {
 		cpu.runUntilDepth(depth, 1, thread);
 	}
-	if (cpu.activeThread() != thread || thread->status != bmsx::ThreadStatus::Running
+	if (cpu.activeThread() != thread || thread->status() != bmsx::ThreadStatus::Running
 		|| thread->protectedCallDepth != protectedDepth) throw std::runtime_error("completion changed interrupted coroutine/protected caller");
 	if (fault) {
 		if (cpu.readExceptionReturnFrameDepth() == -1 || !cpu.completionCallPending()) throw std::runtime_error("completion fault did not retain its physical root");
@@ -85,6 +85,18 @@ int main(int argc, char** argv) {
 				}
 				const auto values = runtime.readCompletionValues();
 				if (result != bmsx::RunResult::Halted || cpu.getFrameDepth() != 0 || values.size() != 1 || values.get(0) != bmsx::valueBool(true)) throw std::runtime_error("coroutine assertion failed");
+			}
+			if (std::string(argv[index]).find("protected_and_failed-") != std::string::npos) {
+				using namespace bmsx;
+				const auto value = cpu.getGlobalByKey(*cpu.stringPool().find("failed_thread"));
+				const auto& thread = *asThread(value, cpu.gcHeap());
+				const auto& memory = cpu.memory();
+				if (valuePayload(value) != thread.address
+					|| memory.readRamRecordWord(thread.address) != THREAD_RECORD_KIND
+					|| memory.readRamRecordWord(thread.address + static_cast<u32>(ThreadField::Status)) != static_cast<u32>(ThreadStatus::Failed)
+					|| memory.readRamRecordWord(thread.address + static_cast<u32>(ThreadField::ErrorWord)) != valuePayload(thread.error())) {
+					throw std::runtime_error("a failed Thread value must refer to its physical record");
+				}
 			}
 			const auto bytes = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
 			const auto decoded = bmsx::decodeRuntimeSaveState(bytes, bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);

@@ -48,8 +48,8 @@ export class LuaHeap {
 	}
 
 	public allocateRecord(bytes: number, owned: boolean, backingBytes: number, backingField: number,
-		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {
-		const charged = heapAllocationBytes(bytes) + (backingBytes === 0 ? 0 : heapAllocationBytes(backingBytes));
+		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(), retainedStackBytes = 0): number {
+		const charged = retainedStackBytes + heapAllocationBytes(bytes) + (backingBytes === 0 ? 0 : heapAllocationBytes(backingBytes));
 		const collected = this.admit(charged, root0, root1, root2, null);
 		const arena = this.cpu.heapAllocator;
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {

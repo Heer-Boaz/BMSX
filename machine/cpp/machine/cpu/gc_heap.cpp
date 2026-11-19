@@ -193,8 +193,8 @@ size_t GcHeap::trace(bool atomic) {
 		case ObjType::Thread: {
 			auto* thread = static_cast<Thread*>(obj);
 			if (!atomic) m_threads.push_back(thread);
-			markObject(thread->resumer);
-			if (thread->entry != nullptr) markObject(thread->entry);
+			markObject(thread->resumer());
+			markObject(thread->entry());
 			markValue(thread->error());
 			int liveTop = thread->currentFrame ? thread->currentFrame->stackBase
 				+ std::min(thread->currentFrame->top, thread->currentFrame->stackCapacity) : 0;
@@ -432,9 +432,14 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 					auto* object = m_sweep;
 					m_sweep = object->next;
 					// The allocator has already visited (or will visit) every physical record.
-					if (object->referenceId == 0) continue;
+					if (object->referenceId == 0 && object->type != ObjType::Thread) continue;
 					work += ceilDiv4(static_cast<int>(allocationBytes(object)));
 					if (sweepGarbage(object)) {
+						if (object->type == ObjType::Thread) {
+							const u32 address = static_cast<Thread*>(object)->address;
+							physicalSlot(address) = nullptr;
+							arena.free(address);
+						}
 						unlink(object); destroyObject(object);
 					}
 					else {

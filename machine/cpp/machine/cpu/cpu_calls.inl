@@ -47,9 +47,9 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 		m_activeThread->leaveFrame();
 		return false;
 	}
-	if (m_activeThread->frameDepth == 1 && m_activeThread->resumer != nullptr) {
+	if (m_activeThread->frameDepth == 1 && m_activeThread->resumer() != nullptr) {
 		Thread* thread = m_activeThread;
-		thread->status = ThreadStatus::Dead;
+		thread->setStatus(ThreadStatus::Dead);
 		returnToResumer(frame.stackBase + a, count, true);
 		thread->stackTop = 0;
 		thread->leaveFrame();

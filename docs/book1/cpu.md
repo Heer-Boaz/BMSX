@@ -1181,8 +1181,8 @@ allocated, it raises the Lua out-of-memory error. If language
 error handling does not handle it, the CPU takes a Trap exception with
 LuaFaultReason `9` (`OUT_OF_MEMORY`).
 
-A Table value carries the address of its record in the language heap. Its
-identity is that address word, not the contents of the record. The heap's
+A Table or Thread value carries the address of its record in the language heap.
+Its identity is that address word, not the contents of the record. The heap's
 record layouts are reserved for the language runtime; do not use the area for
 buffers. Internal record accesses use a main-RAM offset: a word access masks
 the address with `003FFFFCH`, and a byte access with `003FFFFFH`. This does not

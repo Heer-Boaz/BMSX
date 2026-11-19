@@ -44,6 +44,7 @@ void checkReferences(CPU& cpu) {
 			case ObjType::Table: require(heap.tableAt(id) == object, "table address round-trips"); break;
 			case ObjType::Closure: require(heap.closureAt(id) == object, "closure address round-trips"); break;
 			case ObjType::Upvalue: require(heap.cellAt(id) == object, "cell address round-trips"); break;
+			case ObjType::Thread: require(heap.threadAt(id) == object, "thread address round-trips"); break;
 			default: require(heap.object(id) == object, "host reference round-trips"); break;
 		}
 		return id;
@@ -94,8 +95,8 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 	const auto ram = cpu.memory().captureSaveState();
 	const u32 rootsRef = cpu.gcHeap().reference(roots);
 	const Value fourth = roots->getInteger(4);
-	require(std::count(saved.gc.references.begin(), saved.gc.references.end(), 0) == 8,
-		"physical tables, closures and cells do not consume directory slots");
+	require(std::ranges::all_of(saved.gc.references, [](u32 id) { return id == 0; }),
+		"every live guest object has a physical address rather than a directory slot");
 	for (int iteration = 0; iteration < 64; ++iteration) {
 		std::array<u32, 12> future{};
 		for (auto& address : future) address = cpu.createTable()->address();

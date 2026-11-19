@@ -196,8 +196,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			thread.protectedCallContinuations.peek(failFirst ? 1 : 0).returnCount = failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted;
 			const fault = wanted >= PSX_MACHINE_SPEC.ramBytes;
 			// Both success- and error-placement collect. If the inner return completed,
-			// its closure is already dead at the first scan (four fewer mark words).
-			const gcCycles = fault ? (failFirst ? 300 : 296) : 0;
+			// its closure is already dead at the first scan. Both passes visit the RAM String index.
+			const gcCycles = fault ? (failFirst ? 242 : 239) + 2 * (16 + 2 * 14) : 0;
 			if (fault) assert.throws(() => cpu.runUntilDepth(1, 2), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			else assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const outer = wanted === 0 ? 4 : wanted - 1;

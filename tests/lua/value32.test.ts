@@ -3,7 +3,9 @@ import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import * as v from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { Thread } from '../../machine/ts/machine/cpu/thread';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { formatFloat, formatInteger } from '../../machine/ts/common/number_format';
 import { f32BitsToNumber } from '../../machine/ts/common/float32';
 
@@ -73,8 +75,11 @@ test('actual ValueSlots and Thread frame windows use five-byte backing', () => {
 	borrowed.rebind(slots, 1, 5); assert.equal(borrowed.get(0), v.valueFloatBits(0xffa12345));
 	borrowed.copyWithin(1, 0, 3); assert.equal(slots.get(2), v.valueFloatBits(0xffa12345));
 	slots.resizeCapacity(29); assert.equal(slots.byteLength(), 145); assert.equal(slots.get(28), v.valueNil());
-	const thread = new Thread(null), first = thread.acquireFrame();
-	first.stackBase = 0; first.stackCapacity = 8; first.registers.rebind(thread.stackRegisters, 0, 8); thread.enterFrame(first);
+	const text = new Uint8Array(4);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }] }));
+	const thread = cpu.rootThread, first = thread.currentFrame!;
+	first.stackBase = 0; first.stackCapacity = 8; first.registers.rebind(thread.stackRegisters, 0, 8);
 	first.registers.setFloatBits(3, 0xffc00000); thread.resizeStack(64);
 	assert.equal(thread.stackRegisters.byteLength(), 320); assert.equal(first.registers.get(3), v.valueFloatBits(0xffc00000));
 	const second = thread.acquireFrame(); second.stackBase = 4; second.stackCapacity = 4;

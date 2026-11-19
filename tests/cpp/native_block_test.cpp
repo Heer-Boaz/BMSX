@@ -627,7 +627,7 @@ void comparisonDatapathsRespectEveryValueKind() {
 		valueTable(cpu.gcHeap().reference(cpu.createTable())), valueTable(cpu.gcHeap().reference(cpu.createTable())), valueClosure(heap.reference(firstClosure)), valueClosure(heap.reference(secondClosure)),
 		valueFromTag(ValueTag::Table, 37), valueFromTag(ValueTag::Table, 0x80000025u),
 		valueFromTag(ValueTag::BuiltinFunction, 37), valueFromTag(ValueTag::BuiltinFunction, 0x80000025u),
-		valueThread(heap.reference(cpu.activeThread())), valueThread(heap.reference(heap.allocate<Thread>(ObjType::Thread))), valueBuiltinFunction(BuiltinFunctionId::Type),
+		valueThread(heap.reference(cpu.activeThread())), valueThread(cpu.activeThread()->address - THREAD_HEAP_BYTES), valueBuiltinFunction(BuiltinFunctionId::Type),
 		valueBuiltinFunction(BuiltinFunctionId::Next)};
 	size_t bytes = 0;
 	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (const bool expected : {false, true}) {

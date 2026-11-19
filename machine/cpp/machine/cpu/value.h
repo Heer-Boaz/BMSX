@@ -122,7 +122,6 @@ inline uint32_t scalarValueHash(Value value) {
 Table* asTable(Value value, const GcHeap& heap);
 Closure* asClosure(Value value, const GcHeap& heap);
 Thread* asThread(Value value, const GcHeap& heap);
-uint32_t valueObjectHashId(Value value, const GcHeap& heap);
 
 int appendValueString(std::string& out, Value value, const StringPool& strings);
 std::string valueToString(Value value, const StringPool& strings);

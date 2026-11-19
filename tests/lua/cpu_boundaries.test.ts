@@ -1,3 +1,4 @@
+import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { integerConstant } from '../../toolchain/ts/lua/number';
@@ -16,7 +17,7 @@ import { readLE16, readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_BX, MAX_LOW_OPERAND, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
+import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
@@ -39,9 +40,10 @@ test('string.byte uses signed word positions in a builtin CALL', () => {
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		for (const [source, position, expected] of [
 			['Aé雪\0😀Z', undefined, 65], ['Aé雪\0😀Z', valueNil(), 65],
-			['Aé雪\0😀Z', valueInteger(2), 233], ['Aé雪\0😀Z', valueInteger(3), 0x96ea],
-			['Aé雪\0😀Z', valueInteger(4), 0], ['Aé雪\0😀Z', valueInteger(5), 0x1f600], ['Aé雪\0😀Z', valueInteger(6), 90],
-			['Aé雪\0😀Z', valueInteger(7), null], ['', undefined, null], ['abc', valueInteger(0), null],
+			['Aé雪\0😀Z', valueInteger(2), 0xc3], ['Aé雪\0😀Z', valueInteger(3), 0xa9],
+			['Aé雪\0😀Z', valueInteger(6), 0xaa], ['Aé雪\0😀Z', valueInteger(7), 0],
+			['Aé雪\0😀Z', valueInteger(8), 0xf0], ['Aé雪\0😀Z', valueInteger(12), 90],
+			['Aé雪\0😀Z', valueInteger(13), null], ['', undefined, null], ['abc', valueInteger(0), null],
 			['abc', valueInteger(-1), null], ['abc', valueFloat(2.9), 98], ['abc', valueFloat(2 ** 31), null],
 			['a'.repeat(511) + 'Z', valueFloat(2 ** 32 + 512), 90], ['a'.repeat(4096), valueInteger(4096), 97],
 			['abc', valueFloatBits(0xffa12345), 'fault'], ['abc', valueFloat(Infinity), 'fault'],
@@ -54,7 +56,7 @@ test('string.byte uses signed word positions in a builtin CALL', () => {
 			}), backend);
 			const registers = cpu.rootThread.frameAtDepth(0).registers;
 			registers.setBuiltinFunction(0, BuiltinFunctionId.StringByte);
-			registers.setString(1, cpu.stringPool.intern(source));
+			registers.setString(1, cpu.stringPool.intern(textToByteString(source)));
 			if (position !== undefined) registers.set(2, position);
 			const pc = cpu.readFramePc(0);
 			const callee = registers.get(0);
@@ -707,24 +709,20 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 	assert.equal(frame.pc, 0);
 });
 
-test('image text preserves an initial U+FEFF and rejects non-scalar or incomplete UTF8', () => {
+test('image String records preserve BOM bytes, NUL, and all validated-length byte sequences', () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.RET, 0, 2, 0);
-	const source = { text, functions: [{ firstWord: 0, wordCount: 2 }], constants: ['\ufeffA'] };
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source));
-	cpu.runUntilDepth(0, 100);
-	const results: Value[] = [];
-	cpu.readCompletionValues(results);
-	assert.ok(valueIsString(results[0]));
-	assert.equal(cpu.stringPool.toString(asStringId(results[0])), '\ufeffA');
-	for (const bytes of [[0xc0, 0x80], [0xed, 0xa0, 0x80], [0xf4, 0x90, 0x80, 0x80], [0xe2, 0x82], [0x80], [0xe2, 0x28, 0xa1]]) {
-		const image = linkRawTestSystemBlua32(source);
-		const table = readLE32(image.romBytes, 0x100 + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET);
-		const address = readLE32(image.romBytes, table + 4);
-		image.romBytes.set(bytes, address);
-		writeLE32(image.romBytes, table + 8, bytes.length);
-		assert.throws(() => createTestSystemCpu(image));
+	for (const sequence of [[0xef, 0xbb, 0xbf, 0x41], [0x00], [0xc0, 0x80], [0xed, 0xa0, 0x80],
+		[0xf4, 0x90, 0x80, 0x80], [0xe2, 0x82], [0x80], [0xe2, 0x28, 0xa1]]) {
+		const bytes = String.fromCharCode(...sequence);
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2 }], constants: [bytes] });
+		const { cpu } = createTestSystemCpu(image);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		const results: Value[] = [];
+		cpu.readCompletionValues(results);
+		assert.ok(valueIsString(results[0]));
+		assert.equal(cpu.stringPool.bytes(asStringId(results[0])), bytes);
 	}
 });
 

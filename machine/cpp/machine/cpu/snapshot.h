@@ -25,7 +25,7 @@ enum CpuSnapshotUpvalue : u32 {
 	SNAP_UPVALUE_KIND, SNAP_UPVALUE_HASH_ID, SNAP_UPVALUE_OPEN,
 	SNAP_UPVALUE_INDEX, SNAP_UPVALUE_THREAD_REF, SNAP_UPVALUE_FRAME_INDEX, SNAP_UPVALUE_ADDRESS, SNAP_UPVALUE_SIZE,
 };
-enum CpuSnapshotThread : u32 { SNAP_THREAD_KIND, SNAP_THREAD_HASH_ID, SNAP_THREAD_INDEX, SNAP_THREAD_SIZE };
+enum CpuSnapshotThread : u32 { SNAP_THREAD_KIND, SNAP_THREAD_HASH_ID, SNAP_THREAD_INDEX, SNAP_THREAD_RECORD, SNAP_THREAD_SIZE };
 using CpuSnapshotValueWriter = std::function<void(u32, Value)>;
 
 class CpuSnapshot {
@@ -55,13 +55,9 @@ private:
 
 class CpuSnapshotReader {
 public:
-	CpuSnapshotReader(const CpuSnapshot& snapshot, std::span<GCObject* const> objects, const GcHeap& heap)
-		: snapshot(snapshot), m_objects(objects), m_heap(heap) {}
+	explicit CpuSnapshotReader(const CpuSnapshot& snapshot) : snapshot(snapshot) {}
 	Value readValue(u32 offset) const;
 	const CpuSnapshot& snapshot;
-private:
-	std::span<GCObject* const> m_objects;
-	const GcHeap& m_heap;
 };
 
 } // namespace bmsx

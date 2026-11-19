@@ -49,7 +49,7 @@ export class GcHeap {
 		switch (tag) {
 			case ValueTag.Table: return this.isAlive(this.tableAt(valuePayload(value)));
 			case ValueTag.Closure: return this.isAlive(this.closureAt(valuePayload(value)));
-			case ValueTag.Thread: return this.isAlive(this.object(valuePayload(value)));
+			case ValueTag.Thread: return this.isAlive(this.threadAt(valuePayload(value)));
 			default: return true;
 		}
 	};
@@ -69,6 +69,7 @@ export class GcHeap {
 			case GcKind.Table: return (object as Table).address;
 			case GcKind.Closure: return (object as Closure).address;
 			case GcKind.Upvalue: return (object as Upvalue).address;
+			case GcKind.Thread: return (object as Thread).address;
 			default: return 0;
 		}
 	}
@@ -84,6 +85,10 @@ export class GcHeap {
 		const object = this.records[(address & GC_RECORD_MASK) >>> 3];
 		return object?.gcKind === GcKind.Closure ? object as Closure : null;
 	}
+	public threadAt(address: number): Thread | null {
+		const object = this.records[(address & GC_RECORD_MASK) >>> 3];
+		return object?.gcKind === GcKind.Thread ? object as Thread : null;
+	}
 	public forgetPhysicalRecords(): void { this.records.fill(null); }
 	public reference(object: GcObject): number {
 		const address = this.physicalAddress(object);
@@ -93,15 +98,9 @@ export class GcHeap {
 	public object(reference: number): GcObject { return this.references[reference] as GcObject; }
 	public hash(value: Value): number {
 		switch (valueTag(value)) {
-			case ValueTag.Table: case ValueTag.Closure: return scalarValueHash(valueInteger(valuePayload(value)));
-			case ValueTag.Thread:
-				return Math.imul(this.object(valuePayload(value)).hashId, 2654435761) >>> 0;
+			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return scalarValueHash(valueInteger(valuePayload(value)));
 			default: return scalarValueHash(value);
 		}
-	}
-	public keyIdentity(value: Value): number {
-		const tag = valueTag(value);
-		return tag === ValueTag.Table || tag === ValueTag.Closure ? valuePayload(value) : this.object(valuePayload(value)).hashId;
 	}
 	public track(object: GcObject): void {
 		if (object.gcKind === GcKind.Closure) {
@@ -159,7 +158,7 @@ export class GcHeap {
 		switch (valueTag(value)) {
 			case ValueTag.Table: return this.markObject(this.tableAt(valuePayload(value)));
 			case ValueTag.Closure: return this.markObject(this.closureAt(valuePayload(value)));
-			case ValueTag.Thread: return this.markObject(this.object(valuePayload(value)));
+			case ValueTag.Thread: return this.markObject(this.threadAt(valuePayload(value)));
 			case ValueTag.String: this.cpu.stringPool.markReachable(valuePayload(value)); break;
 		}
 		return false;
@@ -219,7 +218,7 @@ export class GcHeap {
 			case GcKind.Thread: {
 				const thread = object as Thread;
 				if (!atomic) this.threads.push(thread);
-				this.markObject(thread.resumer); this.markObject(thread.entry); this.markSlot(thread.error, 0);
+				this.markObject(thread.resumer); this.markObject(thread.entry); this.markValue(thread.error);
 				let liveTop = thread.currentFrame === null ? 0 : thread.currentFrame.stackBase + Math.min(thread.currentFrame.top, thread.currentFrame.stackCapacity);
 				let frame = thread.firstFrame!;
 				for (let depth = 0; depth < thread.frameDepth; ++depth, frame = frame.next!) {
@@ -335,10 +334,15 @@ export class GcHeap {
 					work += this.arena.sweepObjects(GC_STEP_WORDS - work, this.sweepRecord);
 					while (this.sweep !== null && work < GC_STEP_WORDS) {
 						const object = this.sweep; this.sweep = object.gcNext;
-						if (object.referenceId === 0) continue;
+						if (object.referenceId === 0 && object.gcKind !== GcKind.Thread) continue;
 						const bytes = this.allocationBytes(object);
 						work += ceilDiv4(bytes);
 						if (this.sweepGarbage(object)) {
+							if (object.gcKind === GcKind.Thread) {
+								const address = (object as Thread).address;
+								this.records[(address & GC_RECORD_MASK) >>> 3] = null;
+								this.arena.free(address);
+							}
 							this.unlink(object);
 							this.releaseHostMetadata(object);
 							this.budget.release(bytes);

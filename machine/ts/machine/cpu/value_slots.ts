@@ -80,7 +80,7 @@ export class ValueSlots implements ValueWriteTarget {
 	public getBuiltinFunctionId(index: number): BuiltinFunctionId { return this.words[this.base + index]; }
 	public getTable(index: number, heap: GcHeap): Table { return heap.tableAt(this.words[this.base + index])!; }
 	public getClosure(index: number, heap: GcHeap): Closure { return heap.closureAt(this.words[this.base + index])!; }
-	public getThread(index: number, heap: GcHeap): Thread { return heap.object(this.words[this.base + index]) as Thread; }
+	public getThread(index: number, heap: GcHeap): Thread { return heap.threadAt(this.words[this.base + index])!; }
 	public isTruthy(index: number): boolean { const tag = this.getTag(index); return tag !== ValueTag.Nil && tag !== ValueTag.False; }
 	public get(index: number): Value { const slot = this.base + index; return valueFromTag(this.tags[slot], this.words[slot]); }
 	public set(index: number, value: Value): void { this.setEncoded(index, valueTag(value), valuePayload(value)); }

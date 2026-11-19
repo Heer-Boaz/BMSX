@@ -22,14 +22,7 @@ u32 CpuSnapshot::addObject() {
 }
 
 Value CpuSnapshotReader::readValue(u32 offset) const {
-	const auto tag = static_cast<ValueTag>(snapshot.word(offset));
-	u32 payload = snapshot.word(offset + 1);
-	switch (tag) {
-		case ValueTag::Thread:
-			payload = m_heap.reference(m_objects[payload]); break;
-		default: break;
-	}
-	return valueFromTag(tag, payload);
+	return valueFromTag(static_cast<ValueTag>(snapshot.word(offset)), snapshot.word(offset + 1));
 }
 
 } // namespace bmsx

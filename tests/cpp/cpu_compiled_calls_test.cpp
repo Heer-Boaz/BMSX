@@ -59,7 +59,11 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 }
 
 void ownedValueStack() {
-	Thread thread;
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
+	auto& thread = *cpu.rootThread();
 	require(thread.stackCapacity == 8, "a thread owns the initial eight Value slots");
 	for (size_t index = 0; index < thread.stackCapacity; ++index)
 		require(thread.stack.get(index) == valueNil(), "new stack slots contain the guest nil representation");
@@ -85,7 +89,11 @@ void ownedValueStack() {
 }
 
 void reusableFrameChain() {
-	Thread thread;
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
+	auto& thread = *cpu.rootThread();
 	auto* root = thread.acquireFrame();
 	require(thread.currentFrame == nullptr && thread.frameDepth == 0, "preparing a node does not expose an active frame");
 	thread.enterFrame(root);

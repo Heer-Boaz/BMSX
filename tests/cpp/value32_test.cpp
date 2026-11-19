@@ -1,6 +1,8 @@
 #include "machine/cpu/value_slots.h"
 #include "machine/cpu/builtin_values.h"
-#include "machine/cpu/thread.h"
+#include "machine/cpu/cpu.h"
+#include "machine/devices/irq/controller.h"
+#include "spec/bmsx/model.h"
 #include "machine/cpu/closure.h"
 #include "common/number_format.h"
 #include <iostream>
@@ -28,7 +30,11 @@ void storageAndFrames() {
 	require(slots.get(2) == valueInteger(-1) && slots.get(3) == valueFloatBits(0xffa12345), "overlap copies both planes");
 	slots.resize(29); require(slots.byteLength() == 145 && slots.get(28) == valueNil(), "growth zeros only new slots");
 	require(slots.get(1) == valueFloatBits(0xffa12345), "resize does not materialize a Float");
-	Thread thread;
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
+	auto& thread = *cpu.rootThread();
 	auto* first = thread.acquireFrame(); first->stackBase = 0; first->stackCapacity = 8;
 	thread.enterFrame(first); first->registers = thread.stack.view().subspan(0, 8);
 	first->registers.set(3, valueFloatBits(0xffc00000));

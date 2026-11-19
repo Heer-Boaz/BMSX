@@ -268,6 +268,14 @@ export class Memory {
 		this.invalidateRamWrite(offset, 4);
 	}
 
+	public writeRamRecordPair(address: number, first: number, second: number): void {
+		const offset = address & (MAIN_RAM_SIZE - 8);
+		const word = offset >>> 2;
+		this.ram32[word] = first;
+		this.ram32[word + 1] = second;
+		this.invalidateRamWrite(offset, 8);
+	}
+
 	public readRamRecordByte(address: number): number {
 		return this.ram[address & (MAIN_RAM_SIZE - 1)];
 	}

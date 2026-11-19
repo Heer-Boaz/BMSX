@@ -145,7 +145,7 @@ export class SuspendedGuestSession {
 			case ValueTag.String: return this.stringPool.bytes(asStringId(value));
 			case ValueTag.Table: return asTable(value, this.cpu.gc).hashId;
 			case ValueTag.Closure: return asClosure(value, this.cpu.gc).hashId;
-			case ValueTag.Thread: return this.cpu.gc.object(valuePayload(value)).hashId;
+			case ValueTag.Thread: return this.cpu.gc.threadAt(valuePayload(value))!.hashId;
 			default: throw new Error('Internal table metadata is not a language value.');
 		}
 	}

@@ -88,7 +88,7 @@ int TableRecord::findNodeIndex(const Value& key, bool matchDead) const {
 		return -1;
 	}
 	const bool collectableKey = matchDead && (valueIsTable(key) || valueIsClosure(key) || valueIsThread(key));
-	const uint32_t deadKeyHashId = collectableKey ? valueObjectHashId(key, m_heap) : 0;
+	const uint32_t deadKeyHashId = collectableKey ? valuePayload(key) : 0;
 	const size_t mask = hashSlots() - 1;
 	int index = static_cast<int>(hashValue(key) & mask);
 	for (size_t remaining = hashSlots(); index >= 0 && remaining != 0; --remaining) {
@@ -337,7 +337,7 @@ void TableRecord::removeFromHash(const Value& key) {
 void TableRecord::markHashNodeDead(size_t index) {
 	const Value key = values().get(hashKeySlot(index));
 	if (valueIsTable(key) || valueIsThread(key) || valueIsClosure(key)) {
-		const uint32_t hashId = valueObjectHashId(key, m_heap);
+		const uint32_t hashId = valuePayload(key);
 		values().set(hashKeySlot(index), valueFromTag(ValueTag::Nil, valueHeader(key)));
 		values().set(hashValueSlot(index), valueFromTag(ValueTag::DeadKey, hashId));
 	} else {

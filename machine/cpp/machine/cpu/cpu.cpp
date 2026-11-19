@@ -106,9 +106,8 @@ CPU::CPU(
 		builtin.cyclePerArg = cost.perArg;
 		builtin.cyclePerRet = cost.perRet;
 	}
-	m_luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES);
-	m_rootThread = m_heap.allocate<Thread>(ObjType::Thread);
-	m_rootThread->status = ThreadStatus::Running;
+	m_rootThread = createThread(nullptr);
+	m_rootThread->setStatus(ThreadStatus::Running);
 	m_activeThread = m_rootThread;
 	m_completionThread = m_rootThread;
 	m_memory.attachMappedPageInvalidator(*this);
@@ -804,15 +803,8 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		return id;
 	};
 	const CpuSnapshotValueWriter writeValue = [&](u32 offset, Value value) {
-		const auto tag = valueTag(value);
-		u32 payload = valuePayload(value);
-		switch (tag) {
-			case ValueTag::Thread:
-				payload = captureObject(m_heap.object(payload)); break;
-			default: break;
-		}
-		snapshot.setWord(offset, static_cast<u32>(tag));
-		snapshot.setWord(offset + 1, payload);
+		snapshot.setWord(offset, static_cast<u32>(valueTag(value)));
+		snapshot.setWord(offset + 1, valuePayload(value));
 	};
 	const auto captureValueState = [&](Value value) -> u32 {
 		const u32 offset = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
@@ -823,6 +815,12 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	CpuRuntimeState state;
 	const auto captureThread = [&](const Thread* thread) -> u32 {
 		CpuThreadState saved;
+		saved.stackCapacity = thread->stackCapacity;
+		if (m_heap.sweepGarbage(thread)) {
+			const u32 index = static_cast<u32>(state.threads.size());
+			state.threads.push_back(std::move(saved));
+			return index;
+		}
 		saved.frames.reserve(thread->frameDepth);
 		const CallFrame* framePtr = thread->firstFrame;
 		for (size_t depth = 0; depth < thread->frameDepth; ++depth, framePtr = framePtr->next) {
@@ -870,15 +868,8 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				saved.openUpvalues.push_back(captureObject(upvalue));
 			}
 		}
-		saved.status = thread->status;
-		saved.entryRef = thread->entry == nullptr ? -1 : static_cast<int>(captureObject(thread->entry));
-		saved.resumerRef = thread->resumer == nullptr ? -1 : static_cast<int>(captureObject(thread->resumer));
-		saved.callBase = thread->callBase;
-		saved.returnCount = thread->returnCount;
-		saved.stackCapacity = thread->stackCapacity;
 		saved.stack.reserve(static_cast<size_t>(thread->stackTop));
 		for (int slot = 0; slot < thread->stackTop; ++slot) saved.stack.push_back(captureValueState(thread->stack.get(slot)));
-		saved.error = captureValueState(thread->error());
 		const u32 index = static_cast<u32>(state.threads.size());
 		state.threads.push_back(std::move(saved));
 		return index;
@@ -931,7 +922,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	for (u32 id = 0; id < pendingObjects.size(); ++id) {
 		const auto* object = pendingObjects[id];
 		u32 offset;
-		if (object->type != ObjType::Table && object->type != ObjType::Upvalue && object->type != ObjType::Closure && m_heap.sweepGarbage(object)) {
+		if (object->type == ObjType::Garbage) {
 			offset = snapshot.reserveWords(3);
 			snapshot.setWord(offset, static_cast<u32>(CpuSnapshotObjectKind::Garbage));
 			snapshot.setWord(offset + 1, object->hashId);
@@ -946,6 +937,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				snapshot.setWord(offset + SNAP_THREAD_KIND, static_cast<u32>(CpuSnapshotObjectKind::Thread));
 				snapshot.setWord(offset + SNAP_THREAD_HASH_ID, thread->hashId);
 				snapshot.setWord(offset + SNAP_THREAD_INDEX, captureThread(thread));
+				snapshot.setWord(offset + SNAP_THREAD_RECORD, thread->address);
 				break;
 			}
 			case ObjType::Table:
@@ -1029,7 +1021,14 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 #endif
 	const auto& snapshot = state.snapshot;
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
-	clearCallStack(false);
+	// The caller has already restored RAM. Retire only the reused root's
+	// host activations; following or changing old coroutine edges here would
+	// access the restored language records before their attachments exist.
+	while (m_rootThread->frameDepth != 0) {
+		m_rootThread->currentFrame->openUpvalueHead = nullptr;
+		m_rootThread->leaveFrame();
+	}
+	m_rootThread->protectedCallDepth = 0;
 	auto previousCanonical = std::move(m_staticClosuresByAddress);
 	m_staticClosuresByAddress.clear();
 	auto savedClosure = [&](u32 offset) {
@@ -1062,16 +1061,13 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				if (index != static_cast<size_t>(state.rootThreadRef)) {
 					m_luaHeap.restoreAllocate(THREAD_HEAP_BYTES + state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)].stackCapacity * THREAD_STACK_SLOT_BYTES);
 				}
-				Thread* thread = index == static_cast<size_t>(state.rootThreadRef) ? m_rootThread : m_heap.allocate<Thread>(ObjType::Thread);
+				Thread* thread = index == static_cast<size_t>(state.rootThreadRef) ? m_rootThread : m_heap.allocate<Thread>(ObjType::Thread, m_heap, snapshot.word(offset + SNAP_THREAD_RECORD));
 				const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
 				thread->restored = true;
 				thread->hashId = snapshot.word(offset + SNAP_THREAD_HASH_ID);
 				thread->resizeStack(saved.stackCapacity);
 				thread->stackTop = 0;
 				while (thread->currentFrame) thread->leaveFrame();
-				thread->status = saved.status;
-				thread->callBase = saved.callBase;
-				thread->returnCount = saved.returnCount;
 				restoredObjects[index] = thread;
 				break;
 			}
@@ -1133,7 +1129,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		}
 	}
 	m_heap.bindRestoredReferences(state.gc, restoredObjects, state.nextObjectHashId);
-	const CpuSnapshotReader reader(snapshot, restoredObjects, m_heap);
+	const CpuSnapshotReader reader(snapshot);
 	m_memory.clearMappedPageWriteWatches();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
@@ -1172,9 +1168,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
 		Thread* thread = static_cast<Thread*>(restoredObjects[objectIndex]);
 		m_activeThread = thread;
-		thread->entry = saved.entryRef < 0 ? nullptr : static_cast<Closure*>(restoredObjects[saved.entryRef]);
-		thread->resumer = saved.resumerRef < 0 ? nullptr : static_cast<Thread*>(restoredObjects[saved.resumerRef]);
-		thread->setError(reader.readValue(saved.error));
 		thread->stackTop = static_cast<int>(saved.stack.size());
 		for (size_t slot = 0; slot < saved.stack.size(); ++slot) thread->stack.set(slot, reader.readValue(saved.stack[slot]));
 		thread->stack.clear(thread->stackTop, thread->stackCapacity - thread->stackTop);
@@ -1384,9 +1377,9 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			if (thread == nullptr) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			if (fn.id == BuiltinFunctionId::CoroutineIsYieldable) out.push_back(valueBool(coroutineYieldable(*thread)));
 			else if (fn.id == BuiltinFunctionId::CoroutineStatus) {
-				out.push_back(valueInteger(static_cast<int>(thread->status)));
+				out.push_back(valueInteger(static_cast<int>(thread->status())));
 			} else {
-				const bool failed = thread->status == ThreadStatus::Failed;
+				const bool failed = thread->status() == ThreadStatus::Failed;
 				out.push_back(valueBool(!failed));
 				if (failed) out.push_back(thread->error());
 				closeThread(*thread);
@@ -1418,9 +1411,10 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 }
 
 Thread* CPU::createThread(Closure* entry) {
-	m_luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES, valueClosure(m_heap.reference(entry)));
-	auto* thread = m_heap.allocate<Thread>(ObjType::Thread);
-	thread->entry = entry;
+	const u32 address = m_luaHeap.allocateRecord(THREAD_HEAP_BYTES, true, 0, 0,
+		entry ? valueClosure(entry->address) : valueNil(), valueNil(), valueNil(), 8 * THREAD_STACK_SLOT_BYTES);
+	auto* thread = m_heap.allocate<Thread>(ObjType::Thread, m_heap, address);
+	thread->initializeRecord(entry);
 	trackLocalRoot(valueThread(m_heap.reference(thread)));
 	return thread;
 }
@@ -1437,21 +1431,22 @@ bool CPU::coroutineYieldable(const Thread& thread) const {
 
 void CPU::returnToResumer(int sourceBase, int sourceCount, bool succeeded) {
 	Thread* thread = m_activeThread;
-	Thread* resumer = thread->resumer;
+	Thread* resumer = thread->resumer();
 	m_activeThread = resumer;
-	resumer->status = ThreadStatus::Running;
+	resumer->setStatus(ThreadStatus::Running);
 	CallFrame& caller = *resumer->currentFrame;
-	const int count = decodeValueCount(resumer->returnCount, sourceCount + 1);
+	const int callBase = resumer->callBase();
+	const int count = decodeValueCount(resumer->returnCount(), sourceCount + 1);
 	if (count > 0) {
-		ensureRegisterCapacity(caller, resumer->callBase + count - 1);
-		caller.registers.set(resumer->callBase, valueBool(succeeded));
+		ensureRegisterCapacity(caller, callBase + count - 1);
+		caller.registers.set(callBase, valueBool(succeeded));
 		const int copied = std::min(sourceCount, count - 1);
 		for (int i = 0; i < copied; ++i)
-			caller.registers.set(resumer->callBase + i + 1, succeeded ? thread->stack.get(sourceBase + i) : thread->error());
-		for (int i = copied + 1; i < count; ++i) caller.registers.set(resumer->callBase + i, valueNil());
+			caller.registers.set(callBase + i + 1, succeeded ? thread->stack.get(sourceBase + i) : thread->error());
+		for (int i = copied + 1; i < count; ++i) caller.registers.set(callBase + i, valueNil());
 	}
-	caller.top = resumer->callBase + count;
-	thread->resumer = nullptr;
+	caller.top = callBase + count;
+	thread->setResumer(nullptr);
 	m_threadSwitchRequested = true;
 	m_yieldRequested = true;
 	instructionBudgetRemaining -= count;
@@ -1461,16 +1456,16 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 	Thread* thread = m_activeThread;
 	if (id == BuiltinFunctionId::CoroutineYield) {
 		if (!coroutineYieldable(*thread)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		thread->callBase = base;
-		thread->returnCount = count;
-		thread->status = ThreadStatus::Suspended;
+		thread->setReturnWindow(base, count);
+		thread->setStatus(ThreadStatus::Suspended);
 		returnToResumer(caller.stackBase + base + 1, argc, true);
 		return;
 	}
 	if (argc == 0 || !valueIsThread(caller.registers.get(base + 1))) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	Thread* target = asThread(caller.registers.get(base + 1), m_heap);
+	const ThreadStatus status = target->status();
 	const bool exceptionActive = readExceptionReturnFrameDepth() != -1;
-	if (exceptionActive || (target->status != ThreadStatus::New && target->status != ThreadStatus::Suspended)) {
+	if (exceptionActive || (status != ThreadStatus::New && status != ThreadStatus::Suspended)) {
 		auto scratch = acquireBuiltinResultScratch();
 		BuiltinResults& out = scratch.get();
 		out.push_back(valueBool(false));
@@ -1478,19 +1473,18 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 		writeReturnValuesFromBuiltinResults(caller, base, count, out);
 		return;
 	}
-	const bool fresh = target->status == ThreadStatus::New;
-	thread->callBase = base;
-	thread->returnCount = count;
-	thread->status = ThreadStatus::Normal;
-	target->resumer = thread;
-	target->status = ThreadStatus::Running;
+	const bool fresh = status == ThreadStatus::New;
+	thread->setReturnWindow(base, count);
+	thread->setStatus(ThreadStatus::Normal);
+	target->setResumer(thread);
+	target->setStatus(ThreadStatus::Running);
 	m_activeThread = target;
 	if (fresh) {
-		pushFrame(caller, target->entry, base + 2, argc - 1, 0, 0, false, 0);
-		target->entry = nullptr;
+		pushFrame(caller, target->entry(), base + 2, argc - 1, 0, 0, false, 0);
+		target->setEntry(nullptr);
 	} else {
 		CallFrame& frame = *target->currentFrame;
-		writeReturnValuesFromRegisters(frame, target->callBase, target->returnCount, caller, base + 2, argc - 1);
+		writeReturnValuesFromRegisters(frame, target->callBase(), target->returnCount(), caller, base + 2, argc - 1);
 	}
 	m_threadSwitchRequested = true;
 	m_yieldRequested = true;
@@ -1499,17 +1493,18 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 bool CPU::handleThreadError(Value error) {
 	if (handleProtectedCallError(error)) return true;
 	Thread* thread = m_activeThread;
-	if (thread->resumer == nullptr) return false;
+	if (thread->resumer() == nullptr) return false;
 	for (auto* frame = thread->currentFrame; frame; frame = frame->previous)
 		if (frame->isExceptionFrame || frame->returnToCompletionLatch) return false;
-	thread->status = ThreadStatus::Failed;
+	thread->setStatus(ThreadStatus::Failed);
 	thread->setError(error);
 	returnToResumer(0, 1, false);
 	return true;
 }
 
 void CPU::closeThread(Thread& thread) {
-	if (thread.status == ThreadStatus::Running || thread.status == ThreadStatus::Normal) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	const ThreadStatus status = thread.status();
+	if (status == ThreadStatus::Running || status == ThreadStatus::Normal) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	while (thread.currentFrame) {
 		instructionBudgetRemaining -= closeUpvalues(*thread.currentFrame);
 		thread.leaveFrame();
@@ -1518,8 +1513,8 @@ void CPU::closeThread(Thread& thread) {
 	thread.protectedCallContinuations.clear();
 	thread.stack.clear(0, thread.stackCapacity);
 	thread.stackTop = 0;
-	thread.entry = nullptr;
-	thread.status = ThreadStatus::Dead;
+	thread.setEntry(nullptr);
+	thread.setStatus(ThreadStatus::Dead);
 }
 
 void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount) {
@@ -3038,7 +3033,7 @@ void CPU::storeTableFieldIndexCached(
 	throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 }
 
-void CPU::clearCallStack(bool closeCaptures) {
+void CPU::clearCallStack() {
 	abortStalledMemoryWrite();
 	for (;;) {
 		for (size_t index = 0; index < m_activeThread->protectedCallDepth; ++index) {
@@ -3048,21 +3043,20 @@ void CPU::clearCallStack(bool closeCaptures) {
 		m_activeThread->protectedCallDepth = 0;
 		while (m_activeThread->frameDepth != 0) {
 			CallFrame* frame = m_activeThread->currentFrame;
-			if (closeCaptures) closeUpvalues(*frame);
-			else frame->openUpvalueHead = nullptr;
+			closeUpvalues(*frame);
 			m_activeThread->leaveFrame();
 		}
 		m_activeThread->stack.clear(0, m_activeThread->stackCapacity);
 		m_activeThread->stackTop = 0;
 		Thread* thread = m_activeThread;
-		thread->status = ThreadStatus::Dead;
-		thread->entry = nullptr;
+		thread->setStatus(ThreadStatus::Dead);
+		thread->setEntry(nullptr);
 		thread->setError(valueNil());
 		if (thread == m_rootThread) break;
-		m_activeThread = thread->resumer == nullptr ? m_rootThread : thread->resumer;
-		thread->resumer = nullptr;
+		m_activeThread = thread->resumer() == nullptr ? m_rootThread : thread->resumer();
+		thread->setResumer(nullptr);
 	}
-	m_rootThread->status = ThreadStatus::Running;
+	m_rootThread->setStatus(ThreadStatus::Running);
 	m_completionThread = m_rootThread;
 	m_threadSwitchRequested = false;
 }

@@ -137,14 +137,8 @@ struct CpuRootValueState {
 };
 
 struct CpuThreadState {
-	ThreadStatus status = ThreadStatus::New;
-	int entryRef = -1;
-	int resumerRef = -1;
-	int callBase = 0;
-	int returnCount = 0;
 	size_t stackCapacity = 0;
 	std::vector<u32> stack;
-	u32 error = 0;
 	std::vector<CpuFrameState> frames;
 	std::vector<CpuProtectedCallState> protectedCalls;
 	std::vector<int> openUpvalues;
@@ -468,7 +462,7 @@ private:
 	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
 	void storeTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key, const Value& value);
 
-	void clearCallStack(bool closeCaptures = true);
+	void clearCallStack();
 	void ensureStackSize(size_t size, Value root = valueNil());
 	BuiltinResultsScratchScope acquireBuiltinResultScratch();
 	void releaseLocalRoots(size_t base);

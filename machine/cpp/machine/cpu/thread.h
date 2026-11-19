@@ -8,12 +8,20 @@
 
 namespace bmsx {
 
-enum class ThreadStatus : uint8_t { New, Running, Normal, Suspended, Dead, Failed };
+class GcHeap;
+
+enum class ThreadStatus : u32 { New, Running, Normal, Suspended, Dead, Failed };
 constexpr size_t THREAD_HEAP_BYTES = 64;
 constexpr size_t THREAD_STACK_SLOT_BYTES = 5;
+constexpr u32 THREAD_RECORD_KIND = 4u;
+
+enum class ThreadField : u32 {
+	Header = 0, Status = 8, Resumer = 12, Entry = 16,
+	ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52
+};
 
 struct Thread : GCObject {
-	Thread();
+	Thread(GcHeap& heap, u32 address);
 	Thread(const Thread&) = delete;
 	Thread& operator=(const Thread&) = delete;
 	~Thread();
@@ -36,7 +44,19 @@ struct Thread : GCObject {
 	static NativeOffsets nativeOffsets();
 #endif
 
-	ThreadStatus status = ThreadStatus::New;
+	void initializeRecord(Closure* entry);
+	const u32 address;
+	ThreadStatus status() const;
+	void setStatus(ThreadStatus status);
+	Thread* resumer() const;
+	void setResumer(Thread* thread);
+	Closure* entry() const;
+	void setEntry(Closure* closure);
+	i32 callBase() const;
+	i32 returnCount() const;
+	void setReturnWindow(i32 base, i32 count);
+	Value error() const;
+	void setError(Value value);
 	// Stable nodes belong to this thread. The cursor, not the retained tail,
 	// determines which frames and register ranges are active roots.
 	CallFrame* firstFrame = nullptr;
@@ -52,14 +72,10 @@ struct Thread : GCObject {
 	int stackTop = 0;
 	ScratchBuffer<ProtectedCallContinuation> protectedCallContinuations{1};
 	size_t protectedCallDepth = 0;
-	Thread* resumer = nullptr;
-	Closure* entry = nullptr;
-	int callBase = 0;
-	int returnCount = 0;
-	uint32_t errorWord = 0;
-	ValueTag errorKind = ValueTag::Nil;
-	Value error() const { return valueFromTag(errorKind, errorWord); }
-	void setError(Value value) { errorWord = valuePayload(value); errorKind = valueTag(value); }
+private:
+	u32 read(ThreadField field) const;
+	void write(ThreadField field, u32 word);
+	GcHeap& heap;
 };
 
 } // namespace bmsx

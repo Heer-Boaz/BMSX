@@ -1,10 +1,10 @@
-import { asClosure, asThread, asTable, valueBool, valueNil } from '../../machine/ts/machine/cpu/value';
+import { asClosure, asThread, asTable, valueBool, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { compileCoroutineTest, coroutineVectors } from '../helpers/coroutine';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
+import { THREAD_RECORD_KIND, ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 
 for (const optLevel of [0, 3] as const) {
 	for (const [name, body] of Object.entries(coroutineVectors)) {
@@ -54,7 +54,13 @@ for (const optLevel of [0, 3] as const) {
 			assert.deepEqual(values, [valueBool(true)]);
 			assert.equal(cpu.activeThread.status, ThreadStatus.Running);
 			if (name === 'protected_and_failed') {
-				const failed = asThread(cpu.getGlobalByKey(cpu.stringPool.intern('failed_thread')), cpu.gc);
+				const value = cpu.getGlobalByKey(cpu.stringPool.intern('failed_thread'));
+				const failed = asThread(value, cpu.gc);
+				assert.equal(valuePayload(value), failed.address);
+				assert.equal(cpu.memory.readRamRecordWord(failed.address + ThreadField.Header), THREAD_RECORD_KIND);
+				assert.equal(cpu.memory.readRamRecordWord(failed.address + ThreadField.Status), ThreadStatus.Failed);
+				assert.equal(cpu.memory.readRamRecordWord(failed.address + ThreadField.ErrorWord), valuePayload(failed.error));
+				assert.equal(cpu.memory.readRamRecordWord(failed.address + ThreadField.ErrorKind), valueTag(failed.error));
 				assert.equal(failed.status, ThreadStatus.Failed);
 				assert.ok(failed.frameDepth > 0, 'failed coroutine keeps its authored frames');
 			}

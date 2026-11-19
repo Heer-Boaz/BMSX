@@ -37,9 +37,10 @@ public:
 	Table* tableAt(u32 address) const { return attachedRecord<Table, ObjType::Table>(address & ~(Table::HEADER_BYTES - 1)); }
 	Upvalue* cellAt(u32 address) const { return attachedRecord<Upvalue, ObjType::Upvalue>(address & ~(UPVALUE_HEAP_BYTES - 1)); }
 	Closure* closureAt(u32 address) const { return attachedRecord<Closure, ObjType::Closure>(address); }
+	Thread* threadAt(u32 address) const { return attachedRecord<Thread, ObjType::Thread>(address); }
 	void forgetPhysicalRecords() { std::fill(m_records.begin(), m_records.end(), nullptr); }
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
-		if constexpr (!std::is_same_v<T, Table> && !std::is_same_v<T, Upvalue>) reserveReference();
+		if constexpr (!std::is_same_v<T, Table> && !std::is_same_v<T, Upvalue> && !std::is_same_v<T, Thread>) reserveReference();
 		T* object;
 		if constexpr (std::is_same_v<T, Table>) object = m_tables.construct(std::forward<Args>(args)...);
 		else object = new T(std::forward<Args>(args)...);
@@ -63,10 +64,8 @@ public:
 #endif
 	uint32_t hash(Value value) const {
 		switch (valueTag(value)) {
-			case ValueTag::Table: case ValueTag::Closure:
+			case ValueTag::Table: case ValueTag::Closure: case ValueTag::Thread:
 				return scalarValueHash(valueInteger(static_cast<i32>(valuePayload(value))));
-			case ValueTag::Thread:
-				return object(valuePayload(value))->hashId * 2654435761u;
 			default: return scalarValueHash(value);
 		}
 	}
@@ -108,6 +107,7 @@ private:
 			case ObjType::Table: return static_cast<const Table*>(object)->address();
 			case ObjType::Closure: return static_cast<const Closure*>(object)->address;
 			case ObjType::Upvalue: return static_cast<const Upvalue*>(object)->address;
+			case ObjType::Thread: return static_cast<const Thread*>(object)->address;
 			default: return 0;
 		}
 	}
@@ -156,8 +156,5 @@ private:
 
 inline Table* asTable(Value value, const GcHeap& heap) { return heap.tableAt(valuePayload(value)); }
 inline Closure* asClosure(Value value, const GcHeap& heap) { return heap.closureAt(valuePayload(value)); }
-inline Thread* asThread(Value value, const GcHeap& heap) { return static_cast<Thread*>(heap.object(valuePayload(value))); }
-inline uint32_t valueObjectHashId(Value value, const GcHeap& heap) {
-	return valueIsTable(value) || valueIsClosure(value) ? valuePayload(value) : heap.object(valuePayload(value))->hashId;
-}
+inline Thread* asThread(Value value, const GcHeap& heap) { return heap.threadAt(valuePayload(value)); }
 } // namespace bmsx

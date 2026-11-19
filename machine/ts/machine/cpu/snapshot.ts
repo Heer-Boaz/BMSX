@@ -2,17 +2,16 @@ import type { GarbageAllocation } from './gc_object';
 import type { Closure, Upvalue } from './closure';
 import type { Table } from './table';
 import type { Thread } from './thread';
-import type { GcHeap } from './gc_heap';
 import { ValueTag, valueFromTag, type Value } from './value';
 
 // Snapshot-local word offsets, not a guest ABI. Values are a tag and one
-// payload word; references use object ordinals, never heap handles/hash ids.
+// payload word; Value references retain their physical words; attachment indices are separate.
 export const CPU_SNAPSHOT_VALUE_WORDS = 2;
 export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue, Thread, Garbage }
 export const enum CpuSnapshotTable { Kind, HashId, Record, Size }
 export const enum CpuSnapshotClosure { Kind, HashId, FunctionAddress, Canonical, UpvalueCount, CodeAddress, NumParams, MaxStack, Flags, UpvalueTableAddress, RecordUpvalueCount, ExecutionDomainId, Record, Size }
 export const enum CpuSnapshotUpvalue { Kind, HashId, Open, Index, ThreadRef, FrameIndex, Address, Size }
-export const enum CpuSnapshotThread { Kind, HashId, Index, Size }
+export const enum CpuSnapshotThread { Kind, HashId, Index, Record, Size }
 export type CpuSnapshotObject = Table | Closure | Upvalue | Thread | GarbageAllocation;
 export type CpuSnapshotValueWriter = (offset: number, value: Value) => void;
 
@@ -71,14 +70,10 @@ export class CpuSnapshotWriter {
 export class CpuSnapshotReader {
 	public tag = ValueTag.Nil;
 	public payload = 0;
-	public constructor(public readonly snapshot: CpuSnapshot, private readonly objects: CpuSnapshotObject[], private readonly heap: GcHeap) {}
+	public constructor(public readonly snapshot: CpuSnapshot) {}
 	public readValue(offset: number): void {
 		this.tag = this.snapshot.word(offset);
 		this.payload = this.snapshot.word(offset + 1);
-		switch (this.tag) {
-			case ValueTag.Thread:
-				this.payload = this.heap.reference(this.objects[this.payload]); break;
-		}
 	}
 	public value(): Value { return valueFromTag(this.tag, this.payload); }
 }

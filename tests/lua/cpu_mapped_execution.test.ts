@@ -47,7 +47,9 @@ test('compact and padded ROM calls use admitted record spans with identical cycl
 		functions: [{ firstWord: 0, wordCount: 4, maxStack: 2 }, { firstWord: 4, wordCount: 2 }],
 	});
 	const sourceRecord = image.symbols.functionAddresses[1];
-	const record = (image.romBytes.byteLength + BLUA32_FUNCTION_ALIGNMENT - 1) & ~(BLUA32_FUNCTION_ALIGNMENT - 1);
+	// The second image pads this same final record page; the compact one ends
+	// at the record, independently of how earlier image sections were laid out.
+	const record = (image.romBytes.byteLength + MAPPED_PAGE_BYTE_MASK) & ~MAPPED_PAGE_BYTE_MASK;
 	const compactLength = record + BLUA32_FUNCTION_RECORD_SIZE;
 	for (const instrumented of [false, true]) for (const padded of [false, true]) {
 		const romBytes = new Uint8Array(padded ? (compactLength + MAPPED_PAGE_BYTE_MASK) & ~MAPPED_PAGE_BYTE_MASK : compactLength);

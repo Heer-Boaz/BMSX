@@ -108,7 +108,7 @@ export class TableRecords {
 		if (this.hashSize(record) === 0) return -1;
 		const tag = valueTag(key);
 		const collectable = matchDead && (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread);
-		const hashId = collectable ? this.heap.keyIdentity(key) : 0;
+		const hashId = collectable ? valuePayload(key) : 0;
 		let index = this.heap.hash(key) & (this.hashSize(record) - 1);
 		for (let remaining = this.hashSize(record); index >= 0 && remaining !== 0; --remaining) {
 			const keySlot = this.hashKeySlot(record, index), valueSlot = this.hashValueSlot(record, index);
@@ -333,7 +333,7 @@ export class TableRecords {
 	private markHashNodeDead(record: number, index: number): void {
 		const keySlot = this.hashKeySlot(record, index), valueSlot = this.hashValueSlot(record, index), tag = this.tagAt(record, keySlot);
 		if (tag === ValueTag.Table || tag === ValueTag.Thread || tag === ValueTag.Closure) {
-			const hashId = this.heap.keyIdentity(valueFromTag(tag, this.wordAt(record, keySlot)));
+			const hashId = this.wordAt(record, keySlot);
 			this.setEncoded(record, keySlot, ValueTag.Nil, tag); this.setEncoded(record, valueSlot, ValueTag.DeadKey, hashId);
 		} else this.setEncoded(record, valueSlot, ValueTag.Nil, 0);
 	}

@@ -5,7 +5,6 @@ import { ValueTag, valueBool, valueBuiltinFunction, valueInteger, valueString, t
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
@@ -32,7 +31,9 @@ function callImage(maxStack: number, returns: number, base = 0) {
 }
 
 test('thread-owned nodes reuse stable identities and trim only the spare tail', () => {
-	const thread = new Thread(null), frames: CallFrame[] = [];
+	const { cpu } = createTestSystemCpu(callImage(8, 1));
+	const thread = cpu.rootThread, frames: CallFrame[] = [];
+	thread.leaveFrame();
 	for (let index = 0; index < 8; ++index) {
 		const frame = thread.acquireFrame();
 		assert.equal(thread.frameDepth, index, 'preparation does not activate a frame');

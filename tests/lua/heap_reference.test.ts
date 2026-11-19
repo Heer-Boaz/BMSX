@@ -39,6 +39,7 @@ function checkReferences(cpu: CPU): void {
 			case GcKind.Table: assert.equal(gc.tableAt(id), object); break;
 			case GcKind.Closure: assert.equal(gc.closureAt(id), object); break;
 			case GcKind.Upvalue: assert.equal(gc.cellAt(id), object); break;
+			case GcKind.Thread: assert.equal(gc.threadAt(id), object); break;
 			default: assert.equal(gc.object(id), object); break;
 		}
 		return id;
@@ -92,12 +93,12 @@ test('restore registers identities before edges and releases discarded future id
 	const saved = cpu.captureRuntimeState(), thread = cpu.gc.reference(cpu.rootThread), canonical = cpu.gc.reference(frame.closure);
 	const root = frame.registers.get(0), fourth = roots.records.getInteger(roots.address, 4);
 	const ram = cpu.memory.captureSaveState();
-	assert.equal(saved.gc.references.filter(id => id === 0).length, 8, "physical tables, closures and cells have no directory slots");
+	assert.equal(saved.gc.references.filter(id => id !== 0).length, 0, "physical guest objects have no directory slots");
 	for (let iteration = 0; iteration < 64; ++iteration) {
 		const future = Array.from({ length: 12 }, () => cpu.createTable());
 		cpu.memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(saved);
-		assert.equal(cpu.gc.object(thread), cpu.rootThread);
+		assert.equal(cpu.gc.threadAt(thread), cpu.rootThread);
 		assert.equal(cpu.gc.reference(cpu.rootThread.currentFrame!.closure), canonical);
 		assert.equal(cpu.rootThread.currentFrame!.registers.get(0), root);
 		assert.equal(cpu.gc.tables.getInteger(tableAddressPayload(root), 4), fourth);

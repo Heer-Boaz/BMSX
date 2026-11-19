@@ -36,7 +36,7 @@ public:
 	);
 	// A record with optional separately allocated backing. Record and backing
 	// are charged together, after both allocations are admitted.
-	u32 allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
+	u32 allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 retainedStackBytes = 0);
 	// Admit the closure and its new cells before publishing any frame link.
 	u32 allocateClosureRecord(u32 captures, std::span<u32> cells = {});
 	void collectRuntime(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);

@@ -61,6 +61,12 @@ public:
 		writeLE32(m_ram.data() + offset, value);
 		invalidateRamWrite(offset, sizeof(u32));
 	}
+	void writeRamRecordPair(u32 address, u32 first, u32 second) {
+		const u32 offset = address & (MAIN_RAM_SIZE - 2 * sizeof(u32));
+		writeLE32(m_ram.data() + offset, first);
+		writeLE32(m_ram.data() + offset + sizeof(u32), second);
+		invalidateRamWrite(offset, 2 * sizeof(u32));
+	}
 	u8 readRamRecordByte(u32 address) const { return m_ram[address & (MAIN_RAM_SIZE - 1u)]; }
 	void writeRamRecordByte(u32 address, u8 value) {
 		const u32 offset = address & (MAIN_RAM_SIZE - 1u);

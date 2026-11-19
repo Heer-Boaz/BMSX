@@ -48,8 +48,8 @@ bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, Thr
 }
 
 u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField,
-	Value root0, Value root1, Value root2) {
-	const size_t charged = heapAllocationBytes(bytes) + (backingBytes ? heapAllocationBytes(backingBytes) : 0u);
+	Value root0, Value root1, Value root2, u32 retainedStackBytes) {
+	const size_t charged = retainedStackBytes + heapAllocationBytes(bytes) + (backingBytes ? heapAllocationBytes(backingBytes) : 0u);
 	const bool collected = admit(charged, root0, root1, root2, nullptr);
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {

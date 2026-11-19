@@ -11,8 +11,8 @@ for (const optLevel of [0, 3] as const) {
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'local_roots.lua', optLevel)));
 		const baseline = cpu.collectTrackedHeapBytes();
 		const intern = cpu.stringPool.intern.bind(cpu.stringPool);
-		t.mock.method(cpu.stringPool, 'intern', (text: string, tracked = true) => {
-			const id = intern(text, tracked);
+		t.mock.method(cpu.stringPool, 'intern', (text: string) => {
+			const id = intern(text);
 			cpu.collectTrackedHeapBytes();
 			return id;
 		});
@@ -35,7 +35,8 @@ for (const optLevel of [0, 3] as const) {
 		} finally {
 			cpu.releaseLocalRoots(outer);
 		}
-		assert.equal(cpu.collectTrackedHeapBytes(), baseline);
+		assert.equal(cpu.collectTrackedHeapBytes(), baseline + (32 - 16) * 4,
+			'only the doubled intern bucket array remains allocated');
 		assert.equal(cpu.stringPool.find('outer-payload'), undefined);
 		assert.equal(cpu.stringPool.find('nested-payload'), undefined);
 	});

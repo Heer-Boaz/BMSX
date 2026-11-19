@@ -2,16 +2,24 @@ import { GcObject, GcKind } from './gc_object';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ProtectedCallContinuation, type CallFrame } from './call_state';
 import type { Closure } from './closure';
+import type { GcHeap } from './gc_heap';
+import { valueFromTag, valuePayload, valueTag, type Value } from './value';
+import { writeLE32 } from '../../common/endian';
+import { MAIN_RAM_SIZE } from '../../spec/bmsx/memory_map';
 import { ValueSlots } from './value_slots';
 import { MAPPED_BUS_MASTER_CPU } from '../memory/bus_signals';
 
 export const enum ThreadStatus { New, Running, Normal, Suspended, Dead, Failed }
 export const THREAD_HEAP_BYTES = 64;
 export const THREAD_STACK_SLOT_BYTES = 5;
+export const THREAD_RECORD_KIND = 4;
+export const enum ThreadField {
+	Header = 0, Status = 8, Resumer = 12, Entry = 16,
+	ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
+}
 
 /** Retained language execution state. Physical CPU/IRQ/bus state is not thread-local. */
 export class Thread extends GcObject {
-	public status = ThreadStatus.New;
 	public firstFrame: CallFrame | null = null;
 	public currentFrame: CallFrame | null = null;
 	public frameDepth = 0;
@@ -19,12 +27,41 @@ export class Thread extends GcObject {
 	public stackTop = 0;
 	public readonly protectedCallContinuations = new ScratchBuffer(() => new ProtectedCallContinuation(), 1);
 	public protectedCallDepth = 0;
-	public resumer: Thread | null = null;
-	public callBase = 0;
-	public returnCount = 0;
-	public readonly error = new ValueSlots(1);
+	public constructor(private readonly heap: GcHeap, public readonly address: number) { super(GcKind.Thread); }
 
-	public constructor(public entry: Closure | null) { super(GcKind.Thread); }
+	public initializeRecord(entry: Closure | null): void {
+		const memory = this.heap.memory, offset = this.address & (MAIN_RAM_SIZE - 1);
+		const ram = memory.ramData();
+		ram.fill(0, offset, offset + THREAD_HEAP_BYTES);
+		writeLE32(ram, offset + ThreadField.Header, THREAD_RECORD_KIND);
+		writeLE32(ram, offset + ThreadField.Entry, entry === null ? 0 : entry.address);
+		memory.invalidateRamWrite(offset, THREAD_HEAP_BYTES);
+	}
+
+	private read(field: ThreadField): number { return this.heap.memory.readRamRecordWord(this.address + field); }
+	private write(field: ThreadField, word: number): void { this.heap.memory.writeRamRecordWord(this.address + field, word); }
+
+	public get status(): ThreadStatus { return this.read(ThreadField.Status); }
+	public set status(status: ThreadStatus) { this.write(ThreadField.Status, status); }
+	public get resumer(): Thread | null {
+		const owner = this.read(ThreadField.Resumer);
+		return owner === 0 ? null : this.heap.threadAt(owner);
+	}
+	public set resumer(thread: Thread | null) { this.write(ThreadField.Resumer, thread === null ? 0 : thread.address); }
+	public get entry(): Closure | null {
+		const closure = this.read(ThreadField.Entry);
+		return closure === 0 ? null : this.heap.closureAt(closure);
+	}
+	public set entry(closure: Closure | null) { this.write(ThreadField.Entry, closure === null ? 0 : closure.address); }
+	public get callBase(): number { return this.read(ThreadField.CallBase) | 0; }
+	public get returnCount(): number { return this.read(ThreadField.ReturnCount) | 0; }
+	public setReturnWindow(base: number, count: number): void {
+		this.heap.memory.writeRamRecordPair(this.address + ThreadField.CallBase, base, count);
+	}
+	public get error(): Value { return valueFromTag(this.heap.memory.readRamRecordByte(this.address + ThreadField.ErrorKind), this.read(ThreadField.ErrorWord)); }
+	public set error(value: Value) {
+		this.heap.memory.writeRamRecordPair(this.address + ThreadField.ErrorWord, valuePayload(value), valueTag(value));
+	}
 
 	public resizeStack(capacity: number): void {
 		this.stackRegisters.resizeCapacity(capacity);
