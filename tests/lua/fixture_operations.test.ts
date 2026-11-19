@@ -18,6 +18,7 @@ test('fixture publication follows the current receipt key after string collectio
 	const input = new TestInput(), target = new OffscreenMachine(image.romBytes, [null, null], PSX_MACHINE_SPEC, input);
 	t.after(() => target.dispose());
 	const cpu = target.runtime.machine.cpu, pool = cpu.stringPool;
+	cpu.collectTrackedHeapBytes();
 	const retiredKey = pool.intern('reached');
 	const output: FixtureOutput = {
 		log() { assert.fail('Boundary waiting does not publish a log.'); },
@@ -30,7 +31,8 @@ test('fixture publication follows the current receipt key after string collectio
 	const operations = new FixtureOperations(target, input, output, () => { bindingChanges++; });
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.find('reached'), undefined, 'constructing the fixture transport does not root guest field names');
-	const unrelatedKey = pool.intern('unrelated field');
+	// Same byte length so this allocation reuses a slot in the same size class.
+	const unrelatedKey = pool.intern('unreach');
 	assert.equal(unrelatedKey, retiredKey, 'the old key slot is now a different string');
 	const reachedKey = pool.intern('reached');
 	assert.notEqual(reachedKey, retiredKey);
