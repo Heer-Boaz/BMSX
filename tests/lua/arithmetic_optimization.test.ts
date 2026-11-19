@@ -40,7 +40,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource(source, 'identities.lua', optLevel)), backend);
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 		const initial = cpu.captureRuntimeState();
+		const initialRam = cpu.memory.captureSaveState();
 		for (const [index, expr] of expressions.entries()) for (const input of [valueNil(), valueBool(false), valueBool(true)]) {
+			cpu.memory.restoreSaveState(initialRam);
 			cpu.restoreRuntimeState(initial);
 			const fn = asClosure(materializeCpuCompletionValues(cpu)[index], cpu.gc);
 			cpu.beginCompletionCall(fn, [input]);
