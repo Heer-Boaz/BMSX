@@ -5,11 +5,8 @@ import { test } from 'node:test';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import {
-	asStringId,
-	asClosure, asTable, valueBool, valueInteger,
-} from '../../machine/ts/machine/cpu/value';
+
+import { asStringId, asClosure, valueBool, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -280,20 +277,20 @@ test('ActionEffect fact stream preserves trigger and activity commits in produce
 	const runActivity = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('run_activity')!), cpu.gc);
 	const [channelValue, resultsValue, tagChecks, stateChecks,
 		customGateCalls, cooldownCalculations, innerRuns, finalActiveCount] = materializeCpuCompletionValues(cpu);
-	const channel = asTable(channelValue, cpu.gc), results = asTable(resultsValue, cpu.gc);
+	const channel = valuePayload(channelValue), results = valuePayload(resultsValue);
 	const strings = cpu.stringPool;
-	const readString = (table: Table, index: number): string =>
-		strings.toString(asStringId(table.records.getInteger(table.address, index)));
+	const readString = (table: number, index: number): string =>
+		strings.toString(asStringId(cpu.gc.tables.getInteger(table, index)));
 
 	assert.deepEqual([
-		results.records.getInteger(results.address, 1),
-		results.records.getInteger(results.address, 2),
-		results.records.getInteger(results.address, 3),
-		results.records.getInteger(results.address, 4),
-		results.records.getInteger(results.address, 5),
-		results.records.getInteger(results.address, 6),
-		results.records.getInteger(results.address, 7),
-		results.records.getInteger(results.address, 8),
+		cpu.gc.tables.getInteger(results, 1),
+		cpu.gc.tables.getInteger(results, 2),
+		cpu.gc.tables.getInteger(results, 3),
+		cpu.gc.tables.getInteger(results, 4),
+		cpu.gc.tables.getInteger(results, 5),
+		cpu.gc.tables.getInteger(results, 6),
+		cpu.gc.tables.getInteger(results, 7),
+		cpu.gc.tables.getInteger(results, 8),
 	], [false, false, false, false, false, false, true, true].map(valueBool));
 	assert.deepEqual(
 		[tagChecks, stateChecks, customGateCalls, cooldownCalculations, innerRuns],
@@ -302,9 +299,9 @@ test('ActionEffect fact stream preserves trigger and activity commits in produce
 	assert.equal(finalActiveCount, valueInteger(0));
 	assert.equal(readString(channel, 1), 'trace_owner.1');
 	assert.equal(readString(channel, 2), 'trace_owner');
-	assert.equal(channel.records.getInteger(channel.address, 3), valueInteger(16));
-	assert.equal(channel.records.getInteger(channel.address, 4), valueInteger(15));
-	const records = asTable(channel.records.getInteger(channel.address, 5), cpu.gc);
+	assert.equal(cpu.gc.tables.getInteger(channel, 3), valueInteger(16));
+	assert.equal(cpu.gc.tables.getInteger(channel, 4), valueInteger(15));
+	const records = valuePayload(cpu.gc.tables.getInteger(channel, 5));
 	const expectedTriggers = [
 		['on_cooldown', 'cooldown'],
 		['required_tag', 'required_tag_missing'],
@@ -315,44 +312,44 @@ test('ActionEffect fact stream preserves trigger and activity commits in produce
 		['outer', 'accepted'],
 	] as const;
 	for (let index = 0; index < expectedTriggers.length; index += 1) {
-		const record = asTable(records.records.getInteger(records.address, index + 1), cpu.gc);
-		assert.equal(record.records.getInteger(record.address, 1), valueInteger(index + 1));
+		const record = valuePayload(cpu.gc.tables.getInteger(records, index + 1));
+		assert.equal(cpu.gc.tables.getInteger(record, 1), valueInteger(index + 1));
 		assert.equal(readString(record, 3), 'trigger');
 		assert.equal(readString(record, 4), expectedTriggers[index][0]);
 		assert.equal(readString(record, 5), expectedTriggers[index][1]);
 	}
-	const nestedActivation = asTable(records.records.getInteger(records.address, 8), cpu.gc);
+	const nestedActivation = valuePayload(cpu.gc.tables.getInteger(records, 8));
 	assert.equal(readString(nestedActivation, 3), 'activate');
 	assert.equal(readString(nestedActivation, 4), 'nested');
-	assert.equal(nestedActivation.records.getInteger(nestedActivation.address, 5), valueInteger(1));
-	const nestedTrigger = asTable(records.records.getInteger(records.address, 9), cpu.gc);
+	assert.equal(cpu.gc.tables.getInteger(nestedActivation, 5), valueInteger(1));
+	const nestedTrigger = valuePayload(cpu.gc.tables.getInteger(records, 9));
 	assert.equal(readString(nestedTrigger, 3), 'trigger');
 	assert.equal(readString(nestedTrigger, 4), 'inner');
 	assert.equal(readString(nestedTrigger, 5), 'accepted');
-	const nestedDeactivation = asTable(records.records.getInteger(records.address, 10), cpu.gc);
+	const nestedDeactivation = valuePayload(cpu.gc.tables.getInteger(records, 10));
 	assert.equal(readString(nestedDeactivation, 3), 'deactivate');
 	assert.equal(readString(nestedDeactivation, 4), 'nested');
-	assert.equal(nestedDeactivation.records.getInteger(nestedDeactivation.address, 5), valueInteger(0));
-	const firstActivation = asTable(records.records.getInteger(records.address, 11), cpu.gc);
+	assert.equal(cpu.gc.tables.getInteger(nestedDeactivation, 5), valueInteger(0));
+	const firstActivation = valuePayload(cpu.gc.tables.getInteger(records, 11));
 	assert.equal(readString(firstActivation, 3), 'activate');
 	assert.equal(readString(firstActivation, 4), 'plain');
-	assert.equal(firstActivation.records.getInteger(firstActivation.address, 5), valueInteger(1));
-	const secondActivation = asTable(records.records.getInteger(records.address, 12), cpu.gc);
+	assert.equal(cpu.gc.tables.getInteger(firstActivation, 5), valueInteger(1));
+	const secondActivation = valuePayload(cpu.gc.tables.getInteger(records, 12));
 	assert.equal(readString(secondActivation, 3), 'activate');
 	assert.equal(readString(secondActivation, 4), 'plain');
-	assert.equal(secondActivation.records.getInteger(secondActivation.address, 5), valueInteger(2));
-	const retainedTrigger = asTable(records.records.getInteger(records.address, 13), cpu.gc);
+	assert.equal(cpu.gc.tables.getInteger(secondActivation, 5), valueInteger(2));
+	const retainedTrigger = valuePayload(cpu.gc.tables.getInteger(records, 13));
 	assert.equal(readString(retainedTrigger, 3), 'trigger');
 	assert.equal(readString(retainedTrigger, 4), 'plain');
 	assert.equal(readString(retainedTrigger, 5), 'accepted');
-	const firstDeactivation = asTable(records.records.getInteger(records.address, 14), cpu.gc);
+	const firstDeactivation = valuePayload(cpu.gc.tables.getInteger(records, 14));
 	assert.equal(readString(firstDeactivation, 3), 'deactivate');
 	assert.equal(readString(firstDeactivation, 4), 'plain');
-	assert.equal(firstDeactivation.records.getInteger(firstDeactivation.address, 5), valueInteger(1));
-	const finalDeactivation = asTable(records.records.getInteger(records.address, 15), cpu.gc);
+	assert.equal(cpu.gc.tables.getInteger(firstDeactivation, 5), valueInteger(1));
+	const finalDeactivation = valuePayload(cpu.gc.tables.getInteger(records, 15));
 	assert.equal(readString(finalDeactivation, 3), 'deactivate');
 	assert.equal(readString(finalDeactivation, 4), 'plain');
-	assert.equal(finalDeactivation.records.getInteger(finalDeactivation.address, 5), valueInteger(0));
+	assert.equal(cpu.gc.tables.getInteger(finalDeactivation, 5), valueInteger(0));
 
 	runCompletionClosure(cpu, runPlain, [valueInteger(20)]);
 	// Collection can shrink the shared stack. Count recorder bytes, not stack capacity.
@@ -360,11 +357,11 @@ test('ActionEffect fact stream preserves trigger and activity commits in produce
 	const heapBefore = cpu.collectTrackedHeapBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES;
 	const recordedCycles = runCompletionClosure(cpu, runPlain, [valueInteger(10_000)]);
 	assert.equal(cpu.luaHeap.usedBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES, heapBefore);
-	assert.equal(channel.records.getInteger(channel.address, 4), valueInteger(10_035));
+	assert.equal(cpu.gc.tables.getInteger(channel, 4), valueInteger(10_035));
 	for (let sequence = 10_020; sequence <= 10_035; sequence += 1) {
 		const slot = ((sequence - 1) % 16) + 1;
-		const record = asTable(records.records.getInteger(records.address, slot), cpu.gc);
-		assert.equal(record.records.getInteger(record.address, 1), valueInteger(sequence));
+		const record = valuePayload(cpu.gc.tables.getInteger(records, slot));
+		assert.equal(cpu.gc.tables.getInteger(record, 1), valueInteger(sequence));
 		assert.equal(readString(record, 3), 'trigger');
 		assert.equal(readString(record, 5), 'accepted');
 	}
@@ -373,7 +370,7 @@ test('ActionEffect fact stream preserves trigger and activity commits in produce
 	const activityHeapBefore = cpu.collectTrackedHeapBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES;
 	const activityRecordedCycles = runCompletionClosure(cpu, runActivity, [valueInteger(10_000)]);
 	assert.equal(cpu.luaHeap.usedBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES, activityHeapBefore);
-	assert.equal(channel.records.getInteger(channel.address, 4), valueInteger(30_075));
+	assert.equal(cpu.gc.tables.getInteger(channel, 4), valueInteger(30_075));
 
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(strings.find('dispose')!), cpu.gc), []);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
@@ -401,10 +398,10 @@ test('ActionEffect activity facts observe the committed count and periodic lane'
 	commitCpu.installBootPrimitives();
 	assert.equal(commitCpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const [observationList] = materializeCpuCompletionValues(commitCpu);
-	const observations = asTable(observationList, commitCpu.gc);
+	const observations = valuePayload(observationList);
 	const strings = commitCpu.stringPool;
-	const readString = (table: Table, index: number): string =>
-		strings.toString(asStringId(table.records.getInteger(table.address, index)));
+	const readString = (table: number, index: number): string =>
+		strings.toString(asStringId(commitCpu.gc.tables.getInteger(table, index)));
 	const expected = [
 		['activate', 1],
 		['activate', 2],
@@ -412,14 +409,14 @@ test('ActionEffect activity facts observe the committed count and periodic lane'
 		['deactivate', 0],
 	] as const;
 	for (let index = 0; index < expected.length; index += 1) {
-		const observation = asTable(observations.records.getInteger(observations.address, index + 1), commitCpu.gc);
+		const observation = valuePayload(commitCpu.gc.tables.getInteger(observations, index + 1));
 		assert.equal(readString(observation, 1), expected[index][0]);
 		assert.equal(readString(observation, 2), 'periodic');
-		assert.equal(observation.records.getInteger(observation.address, 3), valueInteger(expected[index][1]));
-		assert.equal(observation.records.getInteger(observation.address, 4), valueInteger(expected[index][1]));
-		assert.equal(observation.records.getInteger(observation.address, 5), valueInteger(1));
-		assert.equal(observation.records.getInteger(observation.address, 6), valueInteger(125));
-		assert.equal(observation.records.getInteger(observation.address, 7), valueInteger(1));
+		assert.equal(commitCpu.gc.tables.getInteger(observation, 3), valueInteger(expected[index][1]));
+		assert.equal(commitCpu.gc.tables.getInteger(observation, 4), valueInteger(expected[index][1]));
+		assert.equal(commitCpu.gc.tables.getInteger(observation, 5), valueInteger(1));
+		assert.equal(commitCpu.gc.tables.getInteger(observation, 6), valueInteger(125));
+		assert.equal(commitCpu.gc.tables.getInteger(observation, 7), valueInteger(1));
 	}
 });
 

@@ -1,5 +1,4 @@
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import { asFloat, asInteger, asStringId, asTable, isNil, isTruthy, valueInteger, valueIsInteger, type Value } from '../../machine/ts/machine/cpu/value';
+import { asFloat, asInteger, asStringId, isNil, isTruthy, valueInteger, valueIsInteger, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import type { FixtureTarget } from './target';
 import type { TestInput } from './input';
 
@@ -7,14 +6,14 @@ export interface FixtureOutput {
 	log(tick: number, value: Value): void;
 	captureRequested(tick: number, label: string): void;
 	captured(sequence: number, label: string): void;
-	observeFsm(recorder: Table): void;
-	observeActionEffects(recorder: Table): void;
+	observeFsm(recorder: number): void;
+	observeActionEffects(recorder: number): void;
 }
 
 type FixtureWait =
 	| { kind: 'ticks'; target: number }
 	| { kind: 'input'; target: number }
-	| { kind: 'boundary'; receipt: Table; deadline: number }
+	| { kind: 'boundary'; receipt: number; deadline: number }
 	| { kind: 'capture'; tick: number; label: string };
 
 /** Transport for compiled context yields, independent of case outcomes or play lifetime. */
@@ -26,7 +25,7 @@ export class FixtureOperations {
 	public get observesPublication(): boolean { return this.wait?.kind === 'boundary'; }
 	public shouldStopAtPublication(): boolean {
 		return this.wait?.kind === 'boundary'
-			&& isTruthy(this.wait.receipt.records.getStringKey(this.wait.receipt.address, this.target.runtime.machine.cpu.stringPool.find('reached')!));
+			&& isTruthy(this.target.runtime.machine.cpu.gc.tables.getStringKey(this.wait.receipt, this.target.runtime.machine.cpu.stringPool.find('reached')!));
 	}
 
 	/** The compiled context owns this protocol. Unknown operations are errors, not no-ops. */
@@ -35,8 +34,8 @@ export class FixtureOperations {
 		const operation = pool.toString(asStringId(values[1]));
 		const tick = runtime.frameScheduler.lastTickSequence;
 		switch (operation) {
-			case 'fsm': this.output.observeFsm(asTable(values[2], cpu.gc)); break;
-			case 'actioneffects': this.output.observeActionEffects(asTable(values[2], cpu.gc)); break;
+			case 'fsm': this.output.observeFsm(valuePayload(values[2])); break;
+			case 'actioneffects': this.output.observeActionEffects(valuePayload(values[2])); break;
 			case 'log': this.output.log(tick, values[2]); break;
 			case 'ticks': this.wait = { kind: 'ticks', target: tick + (valueIsInteger(values[2]) ? asInteger(values[2]) : asFloat(values[2])) }; break;
 			case 'key': {
@@ -53,7 +52,7 @@ export class FixtureOperations {
 				break;
 			}
 			case 'boundary':
-				this.wait = { kind: 'boundary', receipt: asTable(values[2], cpu.gc), deadline: tick + (valueIsInteger(values[3]) ? asInteger(values[3]) : asFloat(values[3])) };
+				this.wait = { kind: 'boundary', receipt: valuePayload(values[2]), deadline: tick + (valueIsInteger(values[3]) ? asInteger(values[3]) : asFloat(values[3])) };
 				this.bindingChanged();
 				break;
 			case 'capture': {
@@ -75,7 +74,7 @@ export class FixtureOperations {
 			case 'ticks': ready = runtime.frameScheduler.lastTickSequence >= wait.target; break;
 			case 'input': ready = this.input.samples >= wait.target; break;
 			case 'boundary': {
-				const reached = wait.receipt.records.getStringKey(wait.receipt.address, runtime.machine.cpu.stringPool.find('reached')!);
+				const reached = runtime.machine.cpu.gc.tables.getStringKey(wait.receipt, runtime.machine.cpu.stringPool.find('reached')!);
 				ready = isTruthy(reached) || runtime.frameScheduler.lastTickSequence >= wait.deadline;
 				if (ready) args[1] = reached;
 				break;

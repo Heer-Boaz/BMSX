@@ -255,12 +255,12 @@ test('generated moves retain reference values, string ids, boolean kinds and con
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 12 }], constants: [constant] }, RAM_CODE_FIXTURE_BYTES);
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.gc.reference(cpu.createTable(0, 0)));
+		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.createTable(0, 0));
 		runCpuParity(js, ref, 900);
 		assert.ok(compiledEntries(js) > 0);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		const registers = js.rootThread.frameAtDepth(0).registers;
-		assert.equal(registers.getTable(4, js.gc), registers.getTable(0, js.gc));
+		assert.equal(registers.getPayload(4), registers.getPayload(0));
 		assert.equal(registers.getTag(7), ValueTag.False);
 		assert.equal(registers.getTag(8), ValueTag.True);
 		assert.equal(registers.getInteger(11), -2);
@@ -424,7 +424,7 @@ test('dependent generated instructions preserve live values, raw copies and comp
 		for (const cpu of [js, ref]) {
 			const registers = cpu.rootThread.frameAtDepth(0).registers;
 			for (let reg = 0; reg < initialValues.length; ++reg) registers.set(reg, initialValues[reg]);
-			registers.setTable(0, cpu.gc.reference(cpu.createTable(0, 0)));
+			registers.setTable(0, cpu.createTable(0, 0));
 			registers.setFloat(7, -0);
 		}
 		for (const grant of [3 * (COMPILED_BLOCK_THRESHOLD + 1) * loopCycles, ...Array.from({ length: 40 }, (_, i) => i + 1)]) {
@@ -487,8 +487,8 @@ test('field cache hits stay in one generated block and misses publish only the e
 	const entry = image.image.functions[0].codeAddress;
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(0, 1);
-		table.records.storeStringKey(table.address, cpu.stringPool.intern('field'), ValueTag.Integer, 0);
-		cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.gc.reference(table));
+		cpu.gc.tables.storeStringKey(table, cpu.stringPool.intern('field'), ValueTag.Integer, 0);
+		cpu.rootThread.frameAtDepth(0).registers.setTable(0, table);
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1);
 		cpu.runUntilDepth(0, 1200);
 	}

@@ -1,4 +1,4 @@
-import { valueNil, asTable, asClosure, asStringId } from '../../machine/ts/machine/cpu/value';
+import { valueNil, asClosure, asStringId, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -162,9 +162,9 @@ for (const optLevel of [0, 3] as const) {
 			const [failure] = materializeCpuCompletionValues(cpu);
 			assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 			if (optLevel === 3) {
-				const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+				const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 				for (const lane of name === 'plain' ? ['run', 'affine'] : ['run']) {
-					const kernel = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(lane)!), cpu.gc);
+					const kernel = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(lane)!), cpu.gc);
 					const profile = profileWarmGuestKernel(cpu, kernel, 256);
 					assert.equal(profile.reservations, 0);
 					assert.equal(profile.reservedBytes, 0);

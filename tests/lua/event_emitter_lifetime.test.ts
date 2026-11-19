@@ -1,5 +1,5 @@
-import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
-import { asClosure, asTable, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { asClosure, valueInteger, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -243,7 +243,7 @@ end
 return true`, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('failure_kernel')!), cpu.gc);
-		const weak = asTable(cpu.getGlobalByKey(cpu.stringPool.find('weak')!), cpu.gc);
+		const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!));
 		let first = 0;
 		for (let batch = 0; batch < 128; batch++) {
 			cpu.beginCompletionCall(kernel, [valueInteger(32)]);
@@ -253,8 +253,8 @@ return true`, { optLevel });
 				assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 			}
 			assert.equal(result, RunResult.Halted);
-			const retained = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
-			for (let index = 1; index <= 64; index++) assert.equal(weak.records.getInteger(weak.address, index), valueNil());
+			const retained = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
+			for (let index = 1; index <= 64; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
 			if (batch === 0) first = retained;
 			assert.equal(retained, first, 'handled failures grew retained listener storage after warmup');
 		}
@@ -290,8 +290,8 @@ end
 return true`, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		cpu.collectTrackedHeapBytes();
-		const weak = asTable(cpu.getGlobalByKey(cpu.stringPool.find('weak')!), cpu.gc);
-		for (let index = 1; index <= 3; index++) assert.equal(weak.records.getInteger(weak.address, index), valueNil(),
+		const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!));
+		for (let index = 1; index <= 3; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil(),
 			'retired traversal nodes do not own subscribers or handler captures');
 		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('finish_traversal')!), cpu.gc));
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);

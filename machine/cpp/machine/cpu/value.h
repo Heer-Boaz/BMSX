@@ -12,7 +12,6 @@
 
 namespace bmsx {
 class GcHeap;
-struct Table;
 struct Closure;
 struct Thread;
 
@@ -117,9 +116,6 @@ inline uint32_t scalarValueHash(Value value) {
 		default: BMSX_UNREACHABLE();
 	}
 }
-// These conversions find collector metadata, not the storage addressed by
-// a Table payload. Language table operations consume the raw address instead.
-Table* asTable(Value value, const GcHeap& heap);
 Closure* asClosure(Value value, const GcHeap& heap);
 Thread* asThread(Value value, const GcHeap& heap);
 

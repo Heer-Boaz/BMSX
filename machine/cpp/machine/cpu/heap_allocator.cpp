@@ -43,15 +43,6 @@ enum PageKind : u32 {
 
 } // namespace
 
-u32 heapClassIndex(u32 byteCount) {
-	if (byteCount <= 64u) return ((byteCount + 7u) >> 3) - 1u;
-	// byteCount lies in (2^(ceilingShift - 1), 2^ceilingShift]; that span has four classes.
-	const u32 ceilingShift = 32u - static_cast<u32>(std::countl_zero(byteCount - 1u));
-	const u32 stepShift = ceilingShift - 3u;
-	const u32 quarter = (byteCount - (1u << (ceilingShift - 1u)) + (1u << stepShift) - 1u) >> stepShift;
-	return 8u + (ceilingShift - 7u) * 4u + quarter - 1u;
-}
-
 u32 heapAllocationBytes(u32 byteCount) {
 	if (byteCount == 0u) return 0u;
 	return byteCount <= HEAP_SMALL_LIMIT
@@ -101,6 +92,14 @@ u32 HeapAllocator::capacityBytes() const {
 
 u32 HeapAllocator::occupiedBytes() const {
 	return m_memory.readRamRecordWord(m_management + OCCUPIED);
+}
+
+bool HeapAllocator::isIssuedObjectSlot(u32 offset, u32 sizeClass) const {
+	const u32 page = offset >> PAGE_SHIFT;
+	if (page >= m_pageLimit) return false;
+	const u32 descriptor = entry(page);
+	return (m_memory.readRamRecordWord(descriptor) & 0xffffu) == (ObjectSlots | (sizeClass << 8u))
+		&& ((offset & PAGE_MASK) >> BUMP_SHIFT) < (m_memory.readRamRecordWord(descriptor + 8u) & LINK_MASK);
 }
 
 void HeapAllocator::beginObjectSweep() {

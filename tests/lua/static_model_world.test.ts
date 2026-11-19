@@ -1,4 +1,4 @@
-import { asClosure, asTable, numberToHost, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { asClosure, numberToHost, valueBool, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -133,8 +133,8 @@ probe = {
 for (const optLevel of [0, 3] as const) test(`static model pass consumes World membership and retained affine/resource generations (O${optLevel})`, t => {
 	const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')), cpu.gc);
-	const method = (name: string) => asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(name)), cpu.gc);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
+	const method = (name: string) => asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(name)), cpu.gc);
 	runCompletionClosure(cpu, method('check'), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	const steady = profileWarmGuestKernel(cpu, method('steady'), 256);
@@ -159,8 +159,8 @@ return {model=function(id) return record end,
 		modules: [...modules, { path: 'cartlib/rom_dir', source: ramDirectory }] });
 	cpu.memory.writeBytes(address, bytes);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')), cpu.gc);
-	const packet = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('packet')), cpu.gc);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
+	const packet = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('packet')), cpu.gc);
 	runCompletionClosure(cpu, packet, []);
 	const before = materializeCpuCompletionValues(cpu);
 	const changed: GLTFModel = { ...model, meshes: model.meshes.map((mesh, index) => index !== 0 ? mesh : {
@@ -171,7 +171,7 @@ return {model=function(id) return record end,
 	const replacement = packModelAsset(changed).buffer;
 	assert.equal(replacement.length, bytes.length);
 	cpu.memory.writeBytes(address, replacement);
-	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('renew')), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('renew')), cpu.gc), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	runCompletionClosure(cpu, packet, []);
 	const after = materializeCpuCompletionValues(cpu);

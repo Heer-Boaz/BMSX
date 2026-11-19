@@ -3,7 +3,7 @@ import { FsmTransitionObservation } from './observations/fsm_transition';
 import { ActionEffectObservation } from './observations/actioneffect';
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
-import type { Table } from '../../machine/ts/machine/cpu/table';
+
 import { asStringId, asThread, valueString, valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit } from '../../machine/ts/spec/blua32/execution_domain';
 import { readSupervisorFaultReport } from '../runtime/fault_state';
@@ -168,14 +168,14 @@ export class TestExecution implements FixtureOutput {
 		this.results.recordPresentation(this.result, sequence);
 		this.capturedFrame?.(this.target, label);
 	}
-	public observeFsm(recorder: Table): void {
+	public observeFsm(recorder: number): void {
 		const observation = new FsmTransitionObservation(recorder, this.target.runtime.machine.cpu.stringPool, this.target.runtime.machine.cpu.gc,
 			(sequence, time, tick, lane, previous, target, outcome) =>
 				this.results.appendFsmTransition(trace, sequence, time, tick, lane, previous, target, outcome));
 		const trace = this.results.beginFsmTransitionTrace(this.result, observation.instanceId, observation.machineId, this.program.sourceMedia.cartridgeSlots[0]!.sourceContextId);
 		this.fsm = observation;
 	}
-	public observeActionEffects(recorder: Table): void {
+	public observeActionEffects(recorder: number): void {
 		const observation = new ActionEffectObservation(recorder, this.target.runtime.machine.cpu.stringPool, this.target.runtime.machine.cpu.gc, {
 			trigger: (sequence, time, tick, effect, outcome) => this.results.appendActionEffectTrigger(trace, sequence, time, tick, effect, outcome),
 			activity: (sequence, time, tick, effect, kind, count) => this.results.appendActionEffectActivity(trace, sequence, time, tick, effect, kind, count),

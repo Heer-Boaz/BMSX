@@ -1,6 +1,5 @@
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
 import { GcHeap } from './gc_heap';
-import { GcKind } from './gc_object';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
@@ -122,7 +121,7 @@ import {
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { Table, TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
+import { TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
 import { Closure, CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, Upvalue, UPVALUE_RECORD_KIND, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, sameFunctionPrototype } from './closure';
 import { ValueSlots } from './value_slots';
 import { GlobalBank, type GlobalBankState } from './global_bank';
@@ -370,14 +369,12 @@ export class CPU implements MappedPageInvalidator {
 		this.memory.attachMappedPageInvalidator(this);
 	}
 
-	public createTable(arraySize: number = 0, hashSize: number = 0): Table {
+	public createTable(arraySize: number = 0, hashSize: number = 0): number {
 		const hashCapacity = TableRecords.hashCapacity(hashSize);
 		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, false, TableRecords.storageBytes(arraySize, hashCapacity), TableHeader.Storage);
-		const table = new Table(this.gc, address);
 		this.gc.tables.initialize(address, arraySize, hashCapacity);
-		this.gc.track(table);
-		if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(this.gc.reference(table)));
-		return table;
+		if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(address));
+		return address;
 	}
 
 	/** Synchronous host materialization owns roots until VM call admission. */
@@ -2501,8 +2498,9 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.InvalidLength: throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 				case CompiledBlockExit.AllocateTable: {
 					const table = this.createTable(exit.exitB, exit.exitC);
-					this.setRegisterTableFast(frame, registers, exit.exitA, table);
-					this.charge(2 * this.gc.tables.storedSlotCount(table.address) - exit.exitB);
+					registers.setTable(exit.exitA, table);
+					this.bumpRegisterTop(frame, exit.exitA);
+					this.charge(2 * this.gc.tables.storedSlotCount(table) - exit.exitB);
 					break;
 				}
 				case CompiledBlockExit.ReadMemory:
@@ -2708,8 +2706,9 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.NEWT: {
 					const arraySize = page.b[pageOffset];
 					const table = this.createTable(arraySize, page.c[pageOffset]);
-					this.setRegisterTableFast(frame, registers, a, table);
-					this.charge(2 * this.gc.tables.storedSlotCount(table.address) - arraySize);
+					registers.setTable(a, table);
+					this.bumpRegisterTop(frame, a);
+					this.charge(2 * this.gc.tables.storedSlotCount(table) - arraySize);
 					return;
 				}
 				case OpCode.ADD:
@@ -3173,11 +3172,6 @@ export class CPU implements MappedPageInvalidator {
 
 	private setRegisterStringFast(frame: CallFrame, registers: ValueSlots, index: number, value: StringId): void {
 		registers.setString(index, value);
-		this.bumpRegisterTop(frame, index);
-	}
-
-	private setRegisterTableFast(frame: CallFrame, registers: ValueSlots, index: number, value: Table): void {
-		registers.setTable(index, this.gc.reference(value));
 		this.bumpRegisterTop(frame, index);
 	}
 
@@ -3963,9 +3957,6 @@ export class CPU implements MappedPageInvalidator {
 				case THREAD_RECORD_KIND:
 					if (cpu.gc.threadAt(address) === null) cpu.gc.track(new Thread(cpu.gc, address));
 					break;
-				case ValueTag.Table:
-					cpu.gc.track(new Table(cpu.gc, address));
-					break;
 				case ValueTag.Closure: {
 					const binding = cpu.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
 					const record = Closure.readBinding(cpu.memory, address, binding, cpu.executionReadView);
@@ -4049,18 +4040,18 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public visitReachableClosures(visitor: (closure: Closure) => void): void {
-		const objects: (Table | Closure | Thread)[] = [];
+		const objects: number[] = [];
 		const upvalues: Upvalue[] = [];
-		const seen = new Set<Table | Closure | Thread | Upvalue>();
+		const seen = new Set<number>();
 		const add = (value: Value): void => {
 			const tag = valueTag(value);
 			if (tag === ValueTag.Table) {
-				const table = this.gc.tableAt(valuePayload(value));
-				if (table !== null) objects.push(table);
+				const address = this.gc.tableRecordAddress(valuePayload(value));
+				if (address !== 0) objects.push(address);
 			} else if (tag === ValueTag.Closure) {
 				const closure = this.gc.closureAt(valuePayload(value));
-				if (closure !== null) objects.push(closure);
-			} else if (tag === ValueTag.Thread) objects.push(asThread(value, this.gc));
+				if (closure !== null) objects.push(closure.address);
+			} else if (tag === ValueTag.Thread) objects.push(asThread(value, this.gc).address);
 		};
 		const addSlots = (slots: ValueSlots, count: number): void => {
 			for (let index = 0; index < count; index += 1) add(slots.get(index));
@@ -4074,9 +4065,9 @@ export class CPU implements MappedPageInvalidator {
 				add(valueFromTag(image.constTags[index], image.constWords[index]));
 		}
 		add(this.stringIndexTable);
-		objects.push(this.rootThread, this.activeThread, this.completionThread);
-		if (this.haltedUntilIrqThread !== null) objects.push(this.haltedUntilIrqThread);
-		for (const versions of this.staticClosuresByAddress.values()) objects.push(...versions);
+		objects.push(this.rootThread.address, this.activeThread.address, this.completionThread.address);
+		if (this.haltedUntilIrqThread !== null) objects.push(this.haltedUntilIrqThread.address);
+		for (const versions of this.staticClosuresByAddress.values()) for (const closure of versions) objects.push(closure.address);
 		for (const value of this.localRoots) add(value);
 		for (let index = 0; index < this.builtinResultsScratchIndex; index += 1) {
 			const slots = this.builtinResultsScratch.peek(index);
@@ -4085,21 +4076,21 @@ export class CPU implements MappedPageInvalidator {
 		while (objects.length > 0 || upvalues.length > 0) {
 			if (upvalues.length > 0) {
 				const upvalue = upvalues.pop()!;
-				if (seen.has(upvalue)) continue;
-				seen.add(upvalue);
+				if (seen.has(upvalue.address)) continue;
+				seen.add(upvalue.address);
 				if (upvalue.open) {
 					const thread = this.gc.threadAt(upvalue.ownerAddress);
-					if (thread !== null) objects.push(thread);
+					if (thread !== null) objects.push(thread.address);
 				}
 				add(upvalue.value);
 				continue;
 			}
-			const object = objects.pop()!;
-			if (seen.has(object)) continue;
-			seen.add(object);
-			switch (object.gcKind) {
-				case GcKind.Closure: {
-					const closure = object as Closure;
+			const address = objects.pop()!;
+			if (seen.has(address)) continue;
+			seen.add(address);
+			switch (this.memory.readRamRecordByte(address)) {
+				case ValueTag.Closure: {
+					const closure = this.gc.closureAt(address)!;
 					visitor(closure);
 					for (let index = 0, count = closure.upvalueCount; index < count; ++index) {
 						const cell = this.gc.cellAt(closure.captureAddress(index));
@@ -4107,16 +4098,16 @@ export class CPU implements MappedPageInvalidator {
 					}
 					break;
 				}
-				case GcKind.Table: {
-					const table = object as Table;
-					if (table.metatable !== null) objects.push(table.metatable);
-					this.gc.tables.forEachStoredEntry(table.address, (key, value) => { add(key); add(value); });
+				case ValueTag.Table: {
+					const meta = this.gc.tables.metatableAddress(address);
+					if (meta !== 0) add(valueTable(meta));
+					this.gc.tables.forEachStoredEntry(address, (key, value) => { add(key); add(value); });
 					break;
 				}
-				case GcKind.Thread: {
-					const thread = object as Thread;
-					if (thread.entry !== null) objects.push(thread.entry);
-					if (thread.resumer !== null) objects.push(thread.resumer);
+				case THREAD_RECORD_KIND: {
+					const thread = this.gc.threadAt(address)!;
+					if (thread.entry !== null) objects.push(thread.entry.address);
+					if (thread.resumer !== null) objects.push(thread.resumer.address);
 					add(thread.error);
 					addSlots(thread.stackRegisters, thread.stackTop);
 					for (let frame = thread.currentFrame; frame !== null; frame = frame.previous) {

@@ -84,10 +84,10 @@ test('cached values reach field, memory and fault owners without stale tags or n
 		.reduce((cycles, op) => cycles + BASE_CYCLES[op], 2); // Second bus transfer for F64LE.
 	for (const { cpu } of machines) {
 		const table = cpu.createTable(0, 2);
-		table.records.storeStringKey(table.address, cpu.stringPool.intern('stable'), ValueTag.Integer, 22);
-		table.records.storeStringKey(table.address, cpu.stringPool.intern('result'), ValueTag.Integer, 0);
+		cpu.gc.tables.storeStringKey(table, cpu.stringPool.intern('stable'), ValueTag.Integer, 22);
+		cpu.gc.tables.storeStringKey(table, cpu.stringPool.intern('result'), ValueTag.Integer, 0);
 		const frame = cpu.rootThread.frameAtDepth(0);
-		frame.registers.setTable(1, cpu.gc.reference(table)); frame.registers.setInteger(5, address);
+		frame.registers.setTable(1, table); frame.registers.setInteger(5, address);
 		frame.registers.setFloat(12, Infinity); frame.registers.setFloat(13, Infinity);
 		cpu.runUntilDepth(0, (COMPILED_BLOCK_THRESHOLD + 1) * loopCycles);
 	}

@@ -107,7 +107,7 @@ for (const optLevel of [0, 3] as const) test(`actor32 O${optLevel}: typed borrow
 	assert.ok(Object.is(model.world.oz, -0));
 	const owned = new ActorRenderGeometry(); owned.copyFrom(geometry);
 
-	const oldActor = v.asTable(actor, cpu.gc), saved = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	const oldActor = v.valuePayload(actor), saved = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	tree.release();
 	assert.equal(root.value, null); assert.equal(root.key, v.valueNil());
 	runCompletionClosure(cpu, v.asClosure(guest.readStringMember(world, 'mutate'), cpu.gc), [world]);
@@ -119,7 +119,7 @@ for (const optLevel of [0, 3] as const) test(`actor32 O${optLevel}: typed borrow
 	tree.release(); guest.invalidate('history-restored');
 	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(saved, runtime.model.ramBytes, runtime.model.gxGpuVramBytes));
 	const restored = findRuntimeActor(sources, guest, 0, actorHash)!;
-	assert.ok(v.asTable(restored, cpu.gc) !== oldActor, 'restore must reacquire its own heap reference');
+	assert.equal(v.valuePayload(restored), oldActor, 'restore recovers the saved actor address');
 	tree.update(sources, guest, 0, restored);
 	assert.equal(tree.roots[0].label, '16777217');
 	transport.refresh(tree.roots[0].children[1].children[0], false, guest, true, true);

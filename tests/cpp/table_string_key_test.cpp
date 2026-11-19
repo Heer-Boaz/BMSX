@@ -24,112 +24,112 @@ void collisionAndMutationParity(CPU& cpu) {
 		const auto key = cpu.stringPool().intern("collision_" + std::to_string(n));
 		if ((scalarValueHash(valueString(key)) & 31u) == 0u) keys[count++] = key;
 	}
-	auto* generic = cpu.createTable(0, 4);
-	auto* strings = cpu.createTable(0, 4);
-	auto* object = cpu.createTable();
+	auto generic = cpu.createTable(0, 4);
+	auto strings = cpu.createTable(0, 4);
+	auto object = cpu.createTable();
 
 	const std::array<Value, 8> values {
 		valueBool(false), valueFloatBits(0x80000000u), valueFloat(5.25f),
 		valueFloatBits(0xffc01234u),
 		valueFloatBits(0x7f800000u),
-		valueTable(cpu.gcHeap().reference(object)), valueString(keys[0]), valueNil()
+		valueTable(object.address()), valueString(keys[0]), valueNil()
 	};
 	int prediction = 0;
 	auto compare = [&]() {
-		const auto bytes = strings->trackedHeapBytes();
+		const auto bytes = strings.trackedHeapBytes();
 		for (const auto key : keys) {
-			const Value expected = generic->get(valueString(key));
-			require(strings->getStringKey(key) == expected, "known string search matches general value search");
-			require(strings->getStringKeyCached(key, prediction) == expected, "stale slot predictions cannot change lookup");
+			const Value expected = generic.get(valueString(key));
+			require(strings.getStringKey(key) == expected, "known string search matches general value search");
+			require(strings.getStringKeyCached(key, prediction) == expected, "stale slot predictions cannot change lookup");
 		}
-		require(strings->trackedHeapBytes() == bytes, "lookups allocate no guest storage");
+		require(strings.trackedHeapBytes() == bytes, "lookups allocate no guest storage");
 		// Physical iteration order is serialized state, not an incidental layout.
-		require(strings->storedSlotCount() == generic->storedSlotCount(), "lookup specialization preserves table storage");
-		for (size_t slot = 0; slot < generic->storedSlotCount(); ++slot) {
+		require(strings.storedSlotCount() == generic.storedSlotCount(), "lookup specialization preserves table storage");
+		for (size_t slot = 0; slot < generic.storedSlotCount(); ++slot) {
 			Value ak, av, bk, bv;
-			const bool a = generic->loadStoredEntry(slot, ak, av);
-			const bool b = strings->loadStoredEntry(slot, bk, bv);
+			const bool a = generic.loadStoredEntry(slot, ak, av);
+			const bool b = strings.loadStoredEntry(slot, bk, bv);
 			require(a == b && (!a || (ak == bk && av == bv)), "mutations preserve raw values and physical iteration order");
 		}
 	};
 	compare();
-	for (const auto key : {valueInteger(0), valueBool(false), valueTable(cpu.gcHeap().reference(object))}) {
-		generic->set(key, valueInteger(19));
-		strings->set(key, valueInteger(19));
+	for (const auto key : {valueInteger(0), valueBool(false), valueTable(object.address())}) {
+		generic.set(key, valueInteger(19));
+		strings.set(key, valueInteger(19));
 	}
 	for (size_t n = 0; n < 256; ++n) {
 		const auto key = keys[(n * 7u) & 15u];
 		const Value value = values[(n >> 4u) & 7u];
-		generic->set(valueString(key), value);
+		generic.set(valueString(key), value);
 		if ((n & 1u) == 0u) {
-			const auto before = strings->trackedHeapBytes();
-			const int slot = Table::storeStringKeyWithoutGrowth(strings, key, value);
-			require(strings->trackedHeapBytes() == before, "bounded mutation reserves no storage");
-			if (slot == TABLE_STORE_REQUIRES_GROWTH) strings->setStringKey(key, value);
-		} else strings->setStringKeyCached(key, value, prediction);
+			const auto before = strings.trackedHeapBytes();
+			const int slot = TableRecord::storeStringKeyWithoutGrowth(&strings, key, value);
+			require(strings.trackedHeapBytes() == before, "bounded mutation reserves no storage");
+			if (slot == TABLE_STORE_REQUIRES_GROWTH) strings.setStringKey(key, value);
+		} else strings.setStringKeyCached(key, value, prediction);
 		if ((n & 15u) == 0u) {
-			generic->setInteger(static_cast<int>(n / 16u) + 1, valueInteger(n));
-			strings->setInteger(static_cast<int>(n / 16u) + 1, valueInteger(n));
+			generic.setInteger(static_cast<int>(n / 16u) + 1, valueInteger(n));
+			strings.setInteger(static_cast<int>(n / 16u) + 1, valueInteger(n));
 		}
 		compare();
 	}
 	// A dead collectable key shares the string chain's zero hash bucket.
-	generic->set(valueTable(cpu.gcHeap().reference(object)), valueNil());
-	strings->set(valueTable(cpu.gcHeap().reference(object)), valueNil());
+	generic.set(valueTable(object.address()), valueNil());
+	strings.set(valueTable(object.address()), valueNil());
 	compare();
-	generic->clear();
-	strings->clear();
+	generic.clear();
+	strings.clear();
 	compare();
 }
 
 void rejectedGrowthRetainsExhaustedCursor(CPU& cpu) {
-	auto* table = cpu.createTable(0, 1);
+	auto table = cpu.createTable(0, 1);
 	const auto present = cpu.stringPool().intern("full"), missing = cpu.stringPool().intern("new");
-	table->setStringKey(present, valueInteger(73));
-	require(table->hashFree() == 0,
+	table.setStringKey(present, valueInteger(73));
+	require(table.hashFree() == 0,
 		"a direct main-bucket insertion has not searched the only free-slot candidate");
-	require(Table::storeStringKeyWithoutGrowth(table, missing, valueInteger(19)) == TABLE_STORE_REQUIRES_GROWTH,
+	require(TableRecord::storeStringKeyWithoutGrowth(&table, missing, valueInteger(19)) == TABLE_STORE_REQUIRES_GROWTH,
 		"a full hash requires allocating completion");
-	require(table->hashFree() == -1,
+	require(table.hashFree() == -1,
 		"rejected growth retains an exhausted cursor for the allocating completion");
-	require(table->getStringKey(present) == valueInteger(73) && isNil(table->getStringKey(missing)),
+	require(table.getStringKey(present) == valueInteger(73) && isNil(table.getStringKey(missing)),
 		"rejected growth leaves the original mappings intact");
-	require(Table::storeStringKeyWithoutGrowth(table, missing, valueInteger(19)) == TABLE_STORE_REQUIRES_GROWTH,
+	require(TableRecord::storeStringKeyWithoutGrowth(&table, missing, valueInteger(19)) == TABLE_STORE_REQUIRES_GROWTH,
 		"repeated capacity failure remains a request for allocating completion");
-	table->setStringKey(present, valueNil());
-	require(Table::storeStringKeyWithoutGrowth(table, missing, valueInteger(19)) == 0,
+	table.setStringKey(present, valueNil());
+	require(TableRecord::storeStringKeyWithoutGrowth(&table, missing, valueInteger(19)) == 0,
 		"an exhausted free cursor still permits reuse of a deleted main bucket");
-	require(table->storedSlotCount() == 1u && table->getStringKey(missing) == valueInteger(19),
+	require(table.storedSlotCount() == 1u && table.getStringKey(missing) == valueInteger(19),
 		"deleted main-bucket reuse does not rebuild storage");
 }
 
 void inheritedAndFullWordKeys(CPU& cpu) {
 	const auto key = cpu.stringPool().intern("field");
 	const auto indexKey = cpu.stringPool().intern("__index");
-	auto* parent = cpu.createTable(0, 2);
-	parent->setStringKey(key, valueBool(false));
-	auto* metatable = cpu.createTable(0, 1);
-	metatable->setStringKey(indexKey, valueTable(cpu.gcHeap().reference(parent)));
-	auto* child = cpu.createTable();
-	child->setMetatable(metatable);
+	auto parent = cpu.createTable(0, 2);
+	parent.setStringKey(key, valueBool(false));
+	auto metatable = cpu.createTable(0, 1);
+	metatable.setStringKey(indexKey, valueTable(parent.address()));
+	auto child = cpu.createTable();
+	child.setMetatableAddress(metatable.address());
 	TableLookupResult result;
-	child->resolveStringIndex(indexKey, key, result);
+	child.resolveStringIndex(indexKey, key, result);
 	require(result.status == TableLookupStatus::Resolved && result.value == valueBool(false), "inherited false is present");
-	child->resolveStringIndexCached(indexKey, key, -1, result);
+	child.resolveStringIndexCached(indexKey, key, -1, result);
 	require(result.slot >= 0 && result.value == valueBool(false) && result.extraVisits == 1, "inherited cached search returns the same value and semantic work");
-	parent->setStringKey(key, valueNil());
-	child->resolveStringIndexCached(indexKey, key, result.slot, result);
+	parent.setStringKey(key, valueNil());
+	child.resolveStringIndexCached(indexKey, key, result.slot, result);
 	require(result.slot == -1 && isNil(result.value), "deletion invalidates inherited predictions");
-	parent->setStringKey(key, valueFloatBits(0x80000000u));
-	child->resolveStringIndex(indexKey, key, result);
+	parent.setStringKey(key, valueFloatBits(0x80000000u));
+	child.resolveStringIndex(indexKey, key, result);
 	require(result.status == TableLookupStatus::Resolved && result.value == valueFloatBits(0x80000000u), "reinsertion preserves negative zero");
 
-	auto* raw = cpu.createTable(0, 8);
+	auto raw = cpu.createTable(0, 8);
 	const Value highBitKey = valueFromTag(ValueTag::String, key ^ 0x80000000u);
-	raw->set(highBitKey, valueInteger(21));
-	require(isNil(raw->getStringKey(key)), "a known StringId does not match a different high payload bit during chain search");
-	raw->setStringKey(key, valueInteger(42));
-	require(raw->get(highBitKey) == valueInteger(21) && raw->getStringKey(key) == valueInteger(42), "known string updates preserve distinct raw payloads");
+	raw.set(highBitKey, valueInteger(21));
+	require(isNil(raw.getStringKey(key)), "a known StringId does not match a different high payload bit during chain search");
+	raw.setStringKey(key, valueInteger(42));
+	require(raw.get(highBitKey) == valueInteger(21) && raw.getStringKey(key) == valueInteger(42), "known string updates preserve distinct raw payloads");
 }
 }
 

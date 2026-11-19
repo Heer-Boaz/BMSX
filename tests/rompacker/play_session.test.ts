@@ -1,4 +1,4 @@
-import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
+import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
@@ -18,8 +18,8 @@ import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { PlayInput } from '../../ide/workbench/services/play/input';
 import { PlayRuntimeSession } from '../../ide/workbench/play_runtime';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import { asInteger, asTable, ValueTag, valueBool, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+
+import { asInteger, ValueTag, valueBool, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -75,13 +75,13 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 		for (let frameCount = 0; !done() && frameCount < 2000; frameCount++) await frame();
 		assert.ok(done(), `session made no progress: ${session.state}`);
 	};
-	const game = (): Table => {
+	const game = (): number => {
 		const cpu = target.runtime.machine.cpu;
-		return asTable(cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))), cpu.gc);
+		return valuePayload(cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))));
 	};
 	const field = (name: string) => {
 		const table = game();
-		return table.records.getStringKey(table.address, target.runtime.machine.cpu.stringPool.intern(name));
+		return target.runtime.machine.cpu.gc.tables.getStringKey(table, target.runtime.machine.cpu.stringPool.intern(name));
 	};
 	await settle(() => session.ready);
 	await frame(0); // Install the target's initial history checkpoint, without a gameplay grant.
@@ -93,7 +93,7 @@ for (const optLevel of [0, 3] as const) test(`O${optLevel}: Play inspection uses
 	const f = await fixture(t, optLevel, SCENE, gameSource, 1), code = f.session, guest = f.session.guest;
 	const before = captureRuntimeMachineState(f.target.runtime);
 	const exported = readRuntimeLuaModuleExport(code, guest, 0, 'game');
-	assert.ok(exported.kind === 'value'); assert.strictEqual(asTable(exported.value, f.target.runtime.machine.cpu.gc), f.game());
+	assert.ok(exported.kind === 'value'); assert.strictEqual(valuePayload(exported.value), f.game());
 	const callback = guest.global('inspect_probe'), source = runtimeLuaFunctionSource(code, guest, callback)!;
 	assert.equal(source.executionDomain, 0);
 	assert.deepEqual(source.resource, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'entry.lua' });
@@ -121,7 +121,7 @@ for (const optLevel of [0, 3] as const) for (const closeAtStop of [false, true])
 		.replace('game.updates=game.updates+1', 'game.updates=game.updates+1\n if world.receipt ~= nil then world.receipt.reached=true end');
 	const f = await fixture(t, optLevel, SCENE, gameSource, 0, [{ path: 'cartlib/world/world', source: ACTOR_WORLD }]);
 	const session = f.session, guest = session.guest, world = runtimeWorld(session, guest, 0)!;
-	const actor = f.target.runtime.machine.cpu.gc.tables.getInteger(tableAddressPayload(guest.readStringMember(world, '_objects')), 1);
+	const actor = f.target.runtime.machine.cpu.gc.tables.getInteger(valuePayload(guest.readStringMember(world, '_objects')), 1);
 	assert.equal(readActorChoices(session, guest, 0)[0].hashId, guest.identityScalar(actor, ValueTag.Table));
 	const tree = new ActorRuntimeTree(); tree.update(session, guest, 0, actor);
 	const target = captureActorTarget(0, guest.identityScalar(world, ValueTag.Table), tree.roots, tree.roots[0]);
@@ -184,7 +184,7 @@ return {kind='integration', setup=function(t)
 	await f.settle(() => navigation.result !== undefined);
 	assert.equal(navigation.result!.status, 'completed');
 	assert.ok(evidence.epoch > epoch);
-	assert.notEqual(f.session.fixture.readContext(), oldContext, 'heap restore retires borrowed context objects');
+	assert.equal(f.session.fixture.readContext(), oldContext, 'the restored guest context retains its RAM address');
 	assert.equal(evidence.fsmTrace, undefined, 'hidden replay is not live evidence');
 	f.session.transport.resumeHere();
 	for (let index = 0; index < 3; index++) await f.frame();
@@ -238,7 +238,7 @@ test('Play history reconstructs privately, publishes the selected boundary and t
 	assert.ok(runtime.frameScheduler.lastTickSequence < beforeTick);
 	assert.equal(f.session.frames.published.cycles, selected);
 	assert.equal(runtime.history.latestCycles, end, 'review retains future history');
-	assert.notEqual(f.game(), prior);
+	assert.equal(f.game(), prior, "rewind restores the original guest address");
 	const selectedTick = runtime.frameScheduler.lastTickSequence;
 	f.session.rewind.stepFrame(1);
 	await f.settle(() => !f.session.rewind.seeking);
@@ -249,7 +249,7 @@ test('Play history reconstructs privately, publishes the selected boundary and t
 	assert.ok(runtime.history.latestCycles < end, 'explicit resume branches at the inspected point');
 	const restored = f.game();
 	f.session.stop(); await f.settle(() => f.session.state === 'stopped');
-	assert.equal(restored.records.getStringKey(restored.address, runtime.machine.cpu.stringPool.intern('closed')), valueBool(true));
+	assert.equal(runtime.machine.cpu.gc.tables.getStringKey(restored, runtime.machine.cpu.stringPool.intern('closed')), valueBool(true));
 	assert.equal(f.session.evidence.logs.length, 1);
 	assert.equal(f.session.evidence.logs.at(0).text, 'cleanup');
 });

@@ -46,7 +46,7 @@ test('runtime GC bills actual canonical scans, reclamation and three unique root
 	assert.equal(cpu.instructionBudgetRemaining, 7 - bootCollectionWork, 'only physical object slots and the RAM intern index are swept');
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'read-only ROM Strings are not allocated');
 	const frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(2, 3))); //32+S(10+4×14)=112.
+	frame.registers.setTable(0, cpu.createTable(2, 3)); //32+S(10+4×14)=112.
 	frame.registers.setString(1, cpu.stringPool.intern(textToByteString('é😀'))); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 112 + 24);
@@ -177,10 +177,10 @@ test('temporary roots survive charged steps; unreachable allocations pay reclama
 	const table = cpu.createTable(), id = cpu.stringPool.intern(textToByteString('é😀'));
 	const heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()]; assert.equal(heap[0], bootBytes + 32 + 24);
 	cpu.luaHeap.setCollectionTarget(0); cpu.instructionBudgetRemaining = 1;
-	cpu.luaHeap.admit(0, valueTable(cpu.gc.reference(table)), valueString(id));
+	cpu.luaHeap.admit(0, valueTable(table), valueString(id));
 	assert.equal(cpu.instructionBudgetRemaining, 1 - bootMarkWork - 8 - 1, 'first mark with two temporary roots; atomic and reclamation remain');
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 32 + 24); assert.equal(cpu.stringPool.toString(id), 'é😀');
-	while (cpu.gc.active()) cpu.gc.step(valueTable(cpu.gc.reference(table)), valueString(id));
+	while (cpu.gc.active()) cpu.gc.step(valueTable(table), valueString(id));
 	cpu.instructionBudgetRemaining = 1; cpu.luaHeap.collectRuntime();
 	assert.equal(cpu.instructionBudgetRemaining, 1 - bootCollectionWork - 2); assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 });

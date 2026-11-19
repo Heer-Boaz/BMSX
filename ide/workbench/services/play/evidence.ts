@@ -1,6 +1,6 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import type { Table } from '../../../../machine/ts/machine/cpu/table';
-import { asTable, isNil, valueToString, type Value } from '../../../../machine/ts/machine/cpu/value';
+
+import { isNil, valueToString, type Value, valuePayload } from '../../../../machine/ts/machine/cpu/value';
 import { RetainedSequence } from '../../../common/retained_sequence';
 import type { FixtureOutput } from '../../../testing/fixture_operations';
 import { FsmTransitionObservation } from '../../../testing/observations/fsm_transition';
@@ -24,7 +24,7 @@ export class PlayEvidence implements FixtureOutput {
 	private effects: ActionEffectObservation | undefined;
 	private capture: PlayCapture | undefined;
 	private restored = false;
-	public constructor(private readonly runtime: Runtime, private readonly readContext: () => Table) {}
+	public constructor(private readonly runtime: Runtime, private readonly readContext: () => number) {}
 	public get droppedFsmFacts(): number { return this.fsm === undefined ? 0 : this.fsm.droppedCount; }
 	public get droppedEffectFacts(): number { return this.effects === undefined ? 0 : this.effects.droppedCount; }
 	public log(tick: number, value: Value): void {
@@ -35,7 +35,7 @@ export class PlayEvidence implements FixtureOutput {
 		this.captures.push(this.capture); this.revision++;
 	}
 	public captured(sequence: number): void { this.capture!.sequence = sequence; this.capture = undefined; this.revision++; }
-	public observeFsm(channel: Table): void {
+	public observeFsm(channel: number): void {
 		this.fsm = new FsmTransitionObservation(channel, this.runtime.machine.cpu.stringPool, this.runtime.machine.cpu.gc,
 			(sequence, millisecondsWord, tick, lane, previous, target, outcome) => {
 				this.fsmTrace!.facts.push({ sequence, millisecondsWord, tick, lane, previous, target, outcome }); this.revision++;
@@ -43,7 +43,7 @@ export class PlayEvidence implements FixtureOutput {
 		this.fsmTrace = { instance: this.fsm.instanceId, machine: this.fsm.machineId, facts: new RetainedSequence(1024) };
 		this.revision++;
 	}
-	public observeActionEffects(channel: Table): void {
+	public observeActionEffects(channel: number): void {
 		this.effects = new ActionEffectObservation(channel, this.runtime.machine.cpu.stringPool, this.runtime.machine.cpu.gc, {
 			trigger: (sequence, millisecondsWord, tick, effect, outcome) => {
 				this.effectTrace!.facts.push({ sequence, millisecondsWord, tick, effect, kind: 'trigger', outcome }); this.revision++;
@@ -63,10 +63,10 @@ export class PlayEvidence implements FixtureOutput {
 	public drain(): void {
 		if (this.restored) {
 			const cpu = this.runtime.machine.cpu, pool = cpu.stringPool, context = this.readContext();
-			const fsm = context.records.getStringKey(context.address, pool.find('fsm_recorder')!);
-			const effects = context.records.getStringKey(context.address, pool.find('actioneffect_recorder')!);
-			if (!isNil(fsm)) { this.observeFsm(asTable(fsm, cpu.gc)); this.fsm!.discardPublished(); }
-			if (!isNil(effects)) { this.observeActionEffects(asTable(effects, cpu.gc)); this.effects!.discardPublished(); }
+			const fsm = cpu.gc.tables.getStringKey(context, pool.find('fsm_recorder')!);
+			const effects = cpu.gc.tables.getStringKey(context, pool.find('actioneffect_recorder')!);
+			if (!isNil(fsm)) { this.observeFsm(valuePayload(fsm)); this.fsm!.discardPublished(); }
+			if (!isNil(effects)) { this.observeActionEffects(valuePayload(effects)); this.effects!.discardPublished(); }
 			this.restored = false;
 		}
 		const tick = this.runtime.frameScheduler.lastTickSequence;

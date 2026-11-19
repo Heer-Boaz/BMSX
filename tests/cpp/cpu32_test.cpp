@@ -479,8 +479,8 @@ void scalarRegions() {
 			r.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x200));
 			m.memory.writeMappedF64LE(DYNAMIC_RAM_BASE + 0x100, 16777217.0);
 		} else if (std::string(name) == "table") {
-			auto* table = m.cpu.createTable(1, 1);
-			r.set(0, valueTable(m.cpu.gcHeap().reference(table)));
+			auto table = m.cpu.createTable(1, 1);
+			r.set(0, valueTable(table.address()));
 			r.set(7, valueFloat(1));
 		} else if (std::string(name) == "words")
 			r.set(0, valueInteger(DYNAMIC_RAM_BASE + 0x200));
@@ -632,13 +632,13 @@ void constantsGlobalsAndRestore() {
 	Number32Machine m(image);
 	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("saved"), valueFloatBits(0xffa54321));
 	m.cpu.setSystemGlobalByKey(*m.cpu.stringPool().find("system"), valueInteger(INT32_MIN));
-	auto *graph = m.cpu.createTable(), *child = m.cpu.createTable();
+	auto graph = m.cpu.createTable(), child = m.cpu.createTable();
 	const auto self = m.cpu.stringPool().intern("self"), childKey = m.cpu.stringPool().intern("child");
-	graph->setStringKey(self, valueTable(m.cpu.gcHeap().reference(graph)));
-	graph->setStringKey(childKey, valueTable(m.cpu.gcHeap().reference(child)));
-	child->setMetatable(graph);
-	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("graph"), valueTable(m.cpu.gcHeap().reference(graph)));
-	const auto graphHash = graph->address(), childHash = child->address();
+	graph.setStringKey(self, valueTable(graph.address()));
+	graph.setStringKey(childKey, valueTable(child.address()));
+	child.setMetatableAddress(graph.address());
+	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("graph"), valueTable(graph.address()));
+	const auto graphHash = graph.address(), childHash = child.address();
 	m.cpu.runUntilDepth(0, 1); // Stop after LOADK; retain the real active register graph.
 	require(m.cpu.readFrameRegister(0, 2) == valueFloatBits(0xffa12345), "Float constant preserves signaling NaN bits");
 	const auto state = m.cpu.captureRuntimeState();
@@ -654,11 +654,11 @@ void constantsGlobalsAndRestore() {
 		"compact global restore preserves raw Float word");
 	require(m.cpu.getSystemGlobalByKey(*m.cpu.stringPool().find("system")) == valueInteger(INT32_MIN),
 		"system globals retain signed Integer identity");
-	auto* restored = asTable(m.cpu.getGlobalByKey(*m.cpu.stringPool().find("graph")), m.cpu.gcHeap());
-	auto* restoredChild = asTable(restored->getStringKey(childKey), m.cpu.gcHeap());
-	require(restored->address() == graphHash && restoredChild->address() == childHash,
+	auto restored = asTable(m.cpu.getGlobalByKey(*m.cpu.stringPool().find("graph")), m.cpu.gcHeap());
+	auto restoredChild = asTable(restored.getStringKey(childKey), m.cpu.gcHeap());
+	require(restored.address() == graphHash && restoredChild.address() == childHash,
 		"heap restore preserves hash identities independently of payload ids");
-	require(asTable(restored->getStringKey(self), m.cpu.gcHeap()) == restored && restoredChild->metatable() == restored,
+	require(valuePayload(restored.getStringKey(self)) == restored.address() && restoredChild.metatableAddress() == restored.address(),
 		"restore remaps cyclic Table and metatable edges");
 	m.cpu.runUntilDepth(0, 100);
 	require(m.cpu.readCompletionValues().get(0) == valueFloatBits(0xffa12345), "restored function returns exact words");
@@ -668,17 +668,17 @@ void tableHeap() {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
-	auto *table = cpu.createTable(), *child = cpu.createTable();
-	const Value root = valueTable(cpu.gcHeap().reference(table)), key = valueTable(cpu.gcHeap().reference(child));
-	table->set(key, valueFloatBits(0xffa12345));
-	table->set(valueFloat(2.0f), valueInteger(9));
+	auto table = cpu.createTable(), child = cpu.createTable();
+	const Value root = valueTable(table.address()), key = valueTable(child.address());
+	table.set(key, valueFloatBits(0xffa12345));
+	table.set(valueFloat(2.0f), valueInteger(9));
 	for (i32 i = 1; i <= 512; ++i)
-		table->setStringKey(cpu.stringPool().intern("field" + std::to_string(i)), valueInteger(i));
+		table.setStringKey(cpu.stringPool().intern("field" + std::to_string(i)), valueInteger(i));
 	cpu.collectHeap(root);
-	require(table->get(key) == valueFloatBits(0xffa12345), "compact Table traces raw heap references");
-	require(table->getInteger(2) == valueInteger(9), "integral Float key normalizes into array");
+	require(table.get(key) == valueFloatBits(0xffa12345), "compact Table traces raw heap references");
+	require(table.getInteger(2) == valueInteger(9), "integral Float key normalizes into array");
 	for (i32 i = 1; i <= 512; ++i)
-		require(table->getStringKey(*cpu.stringPool().find("field" + std::to_string(i))) == valueInteger(i),
+		require(table.getStringKey(*cpu.stringPool().find("field" + std::to_string(i))) == valueInteger(i),
 			"compact hash growth retains entries");
 }
 } // namespace

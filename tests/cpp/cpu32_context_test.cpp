@@ -105,9 +105,9 @@ void methodReceivers() {
 				for (auto* machine : {&native, &scalar}) {
 					Value base = kind == 1 ? valueInteger(-1) : kind == 2 ? valueFloatBits(0xffa12345) : valueBool(false);
 					if (kind == 0) {
-						auto* table = machine->cpu.createTable();
-						table->setStringKey(machine->cpu.stringPool().intern("method"), valueInteger(77));
-						base = valueTable(machine->cpu.gcHeap().reference(table));
+						auto table = machine->cpu.createTable();
+						table.setStringKey(machine->cpu.stringPool().intern("method"), valueInteger(77));
+						base = valueTable(table.address());
 					}
 					auto registers = machine->cpu.activeThread()->currentFrame->registers;
 					registers.set(2, valueInteger(811));
@@ -187,12 +187,12 @@ void lengths() {
 				if (kind == 0)
 					value = valueString(m->cpu.stringPool().intern("A\xf0\x9f\x98\x80\xe2\x82\xac"));
 				else if (kind == 1 || kind == 2) {
-					auto* table = m->cpu.createTable(8, 8);
+					auto table = m->cpu.createTable(8, 8);
 					for (int i = 1; i <= (kind == 1 ? 8 : 20); ++i)
-						table->setInteger(i, valueBool(true));
+						table.setInteger(i, valueBool(true));
 					if (kind == 2)
-						table->setInteger(8, valueNil());
-					value = valueTable(m->cpu.gcHeap().reference(table));
+						table.setInteger(8, valueNil());
+					value = valueTable(table.address());
 				} else
 					value = kind == 3 ? valueFloatBits(0xffa12345) : valueBool(false);
 				auto r = m->cpu.activeThread()->currentFrame->registers;
@@ -284,7 +284,7 @@ void captures() {
 void closedBarrierAndDirectoryGrowth() {
 	const auto image = capturedChunk(true);
 	Number32Machine native(image), scalar(image, false);
-	Table* children[2];
+	u32 children[2];
 	Upvalue* upvalues[2];
 	for (int i = 0; i < 2; ++i) {
 		auto& m = i == 0 ? native : scalar;
@@ -293,14 +293,14 @@ void closedBarrierAndDirectoryGrowth() {
 		for (int n = 0; n < 600; ++n)
 			m.cpu.createTable();
 		auto* closure = beginCaptured(m);
-		auto* child = m.cpu.createTable(1);
-		child->setInteger(1, valueInteger(123));
-		children[i] = child;
+		auto child = m.cpu.createTable(1);
+		child.setInteger(1, valueInteger(123));
+		children[i] = child.address();
 		auto* upvalue = static_cast<Upvalue*>(m.cpu.gcHeap().cellAt(closure->captureAddress(0)));
 		upvalues[i] = upvalue;
 		m.cpu.gcHeap().step(valueNil(), valueNil(), valueNil());
 		require(upvalue->gcColor() == 3, "collector has scanned the closed cell before mutation");
-		m.cpu.activeThread()->currentFrame->registers.set(0, valueTable(m.cpu.gcHeap().reference(child)));
+		m.cpu.activeThread()->currentFrame->registers.set(0, valueTable(child.address()));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 1);
 	parity(native, scalar);
@@ -312,8 +312,8 @@ void closedBarrierAndDirectoryGrowth() {
 	for (int i = 0; i < 2; ++i) {
 		auto& m = i == 0 ? native : scalar;
 		m.cpu.collectHeap();
-		require(asTable(upvalues[i]->value(), m.cpu.gcHeap()) == children[i] &&
-					children[i]->getInteger(1) == valueInteger(123),
+		const auto child = asTable(upvalues[i]->value(), m.cpu.gcHeap());
+		require(child.address() == children[i] && child.getInteger(1) == valueInteger(123),
 			"a child introduced by a closed-cell write survives the incremental collector");
 	}
 }

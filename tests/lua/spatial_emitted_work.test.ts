@@ -1,5 +1,5 @@
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
-import { ValueTag, asClosure, asTable, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, asClosure, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
@@ -143,39 +143,39 @@ function inspectInstalledKernel(cpu: CPU, image: Blua32ImageLayout, closure: Clo
 for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware kernels have coarse, allocation-free datapaths (O${optLevel})`, t => {
 	const { cpu, images } = createCartlibProgramHarness(fixture, { optLevel, modules: WORLD_CPU_MODULES });
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-	const exports = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('kernels')!), cpu.gc);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	const exports = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('kernels')!));
 	const kernels: ReturnType<typeof inspectInstalledKernel>[] = [];
 	for (const name of ['resolve','write_origin2','write_origin3','write_local2','write_local3','evaluate2','evaluate3','visual']) {
-		const closure = asClosure(exports.records.getStringKey(exports.address, cpu.stringPool.find(name)!), cpu.gc);
+		const closure = asClosure(cpu.gc.tables.getStringKey(exports, cpu.stringPool.find(name)!), cpu.gc);
 		const inspected = inspectInstalledKernel(cpu, images.cartImage, closure, name);
 		assert.equal(inspected.methodLookups, 0, `${name}: coefficient work uses direct fields, not method dispatch`);
 		assert.ok(inspected.calls.length <= (name.startsWith('evaluate') ? 0 : 1), `${name}: only one coarse invalidate/evaluate/resolve boundary`);
 		kernels.push(inspected);
 	}
-	const compile = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('compile')!), cpu.gc);
+	const compile = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('compile')!), cpu.gc);
 	const compileBefore = cpu.collectTrackedHeapBytes();
 	cpu.beginCompletionCall(compile);
 	assert.equal(cpu.runUntilDepth(0, 100_000_000), RunResult.Halted);
 	const compileCycles = 100_000_000 - cpu.instructionBudgetRemaining;
 	const compileAllocatedBytes = cpu.luaHeap.usedBytes() - compileBefore;
 	const compileRetainedBytes = cpu.collectTrackedHeapBytes() - compileBefore;
-	const entries = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('entries')!), cpu.gc);
+	const entries = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('entries')!));
 	const groups = [];
 	for (let index = 1; index <= 4; index += 1) {
-		const entry = asTable(entries.records.getInteger(entries.address, index), cpu.gc);
-		const program = asTable(entry.records.getStringKey(entry.address, cpu.stringPool.find('program')!), cpu.gc);
-		const tracks = asTable(program.records.getStringKey(program.address, cpu.stringPool.find('tracks')!), cpu.gc);
-		const runners = asTable(tracks.records.getStringKey(tracks.address, cpu.stringPool.find('spatial_runners')!), cpu.gc);
-		const closure = asClosure(runners.records.getInteger(runners.address, 1), cpu.gc);
+		const entry = valuePayload(cpu.gc.tables.getInteger(entries, index));
+		const program = valuePayload(cpu.gc.tables.getStringKey(entry, cpu.stringPool.find('program')!));
+		const tracks = valuePayload(cpu.gc.tables.getStringKey(program, cpu.stringPool.find('tracks')!));
+		const runners = valuePayload(cpu.gc.tables.getStringKey(tracks, cpu.stringPool.find('spatial_runners')!));
+		const closure = asClosure(cpu.gc.tables.getInteger(runners, 1), cpu.gc);
 		assert.ok(!images.cartImage.functions.some(fn => fn.address === closure.prototypeRecord.functionAddress), 'inspect actual RAM firmware output, not an AOT stand-in');
 		const group = inspectInstalledKernel(cpu, images.cartImage, closure, `spatial-group-${index}`);
 		assert.equal(group.calls.length, 1, 'one publication per group, independent of two/six/twelve coefficient width');
 		assert.equal(group.methodLookups, 0);
 		groups.push(group);
 		kernels.push(group);
-		for (const [owner, callback] of [[`values-${index}`, tracks.records.getStringKey(tracks.address, cpu.stringPool.find('play_value_runner')!)],
-			['timeline.evaluate_play', program.records.getStringKey(program.address, cpu.stringPool.find('evaluate_play')!)]] as const) {
+		for (const [owner, callback] of [[`values-${index}`, cpu.gc.tables.getStringKey(tracks, cpu.stringPool.find('play_value_runner')!)],
+			['timeline.evaluate_play', cpu.gc.tables.getStringKey(program, cpu.stringPool.find('evaluate_play')!)]] as const) {
 			const inspected = inspectInstalledKernel(cpu, images.cartImage, asClosure(callback, cpu.gc), owner);
 			assert.equal(inspected.calls.length, 1, `${owner}: one group/values boundary, not one call per coefficient`);
 			assert.equal(inspected.methodLookups, 0);
@@ -186,8 +186,8 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 	}
 	const sites = new Map(kernels.flatMap(kernel => kernel.calls.map(call => [call.pc, { ...call, owner: kernel.owner }] as const)));
 	const readSites = new Map(kernels.flatMap(kernel => kernel.reads.map(read => [read.pc, { ...read, owner: kernel.owner }] as const)));
-	const coefficientOwners = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('coefficient_owners')!), cpu.gc);
-	const actualOwners = new Set(Array.from({ length: 5 }, (_, index) => coefficientOwners.records.getInteger(coefficientOwners.address, index + 1)));
+	const coefficientOwners = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('coefficient_owners')!));
+	const actualOwners = new Set(Array.from({ length: 5 }, (_, index) => cpu.gc.tables.getInteger(coefficientOwners, index + 1)));
 	const coefficients = ['xx','xy','xz','yx','yy','yz','zx','zy','zz','ox','oy','oz'];
 	const coefficientFields = new Set(['','w','attachment_','presentation_','_local_'].flatMap(prefix => coefficients.map(field => prefix + field)));
 	const directReads = new Map<string, number>();
@@ -231,26 +231,26 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 		callees.set(callee, (callees.get(callee) || 0) + 1);
 	} });
 	try {
-		for (const name of ['run2','run3','visual','tick']) runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(name)!), cpu.gc), [valueInteger(8)]);
-		for (let index = 1; index <= 4; index += 1) runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('sample')!), cpu.gc), [valueInteger(8), valueInteger(index)]);
+		for (const name of ['run2','run3','visual','tick']) runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(name)!), cpu.gc), [valueInteger(8)]);
+		for (let index = 1; index <= 4; index += 1) runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('sample')!), cpu.gc), [valueInteger(8), valueInteger(index)]);
 	} finally { cpu.setInstructionObserver(null); }
 	for (const owner of ['evaluate2','evaluate3','visual','spatial-group-1']) assert.ok(directReads.get(owner)! > 0, `${owner}: exercise real flat coefficient reads`);
 	for (let index = 1; index <= 4; index += 1) {
-		const entry = asTable(entries.records.getInteger(entries.address, index), cpu.gc);
-		const writer = asClosure(cpu.gc.tables.getInteger(valuePayload(entry.records.getStringKey(entry.address, cpu.stringPool.find('channel_writers')!)), 1), cpu.gc);
+		const entry = valuePayload(cpu.gc.tables.getInteger(entries, index));
+		const writer = asClosure(cpu.gc.tables.getInteger(valuePayload(cpu.gc.tables.getStringKey(entry, cpu.stringPool.find('channel_writers')!)), 1), cpu.gc);
 		const calls = observed.get(`spatial-group-${index}`)!;
 		assert.equal(calls.size, 1);
 		assert.ok(calls.has(writer.prototypeRecord.functionAddress), 'the sole group call must be its admitted substantive writer');
 	}
 	const measurements = [];
 	for (const name of ['run2','run3','visual','tick']) {
-		const profile = profileWarmGuestKernel(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(name)!), cpu.gc), 256);
+		const profile = profileWarmGuestKernel(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(name)!), cpu.gc), 256);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);
 		assert.equal(profile.retainedAfter, profile.retainedBefore);
 		measurements.push({ owner: name, ...profile });
 	}
-	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('check')!), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('check')!), cpu.gc), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	const addressOwners = new Map(kernels.map(kernel => [kernel.closure.prototypeRecord.functionAddress, kernel.owner]));
 	const callOwners = [...observed].map(([owner, targets]) => ({ owner, targets: [...targets].map(([address, calls]) => {

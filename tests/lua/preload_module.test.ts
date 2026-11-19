@@ -1,9 +1,9 @@
-import { valueInteger, valueBool, asTable } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valueBool, valueIsTable, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { Table } from '../../machine/ts/machine/cpu/table';
+
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
@@ -55,13 +55,14 @@ for (const optLevel of [0, 3] as const) test(`preloads use the existing dependen
 	const { cpu } = createTestSystemCpu(image);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(213), valueInteger(0), valueBool(true)]);
-	const common = asTable(cpu.getSystemGlobalByKey(cpu.stringPool.find(buildModuleExportSlotName('common', []))!), cpu.gc);
+	const exported = cpu.getSystemGlobalByKey(cpu.stringPool.find(buildModuleExportSlotName('common', []))!);
+	const common = valuePayload(exported);
 	// Read the retained exported object through the compiler-owned module slot.
-	assert.ok(common instanceof Table);
+	assert.ok(valueIsTable(exported));
 	cpu.beginCompletionCallInExecutionDomain(-1, image.vectors.initFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.equal(common.records.getStringKey(common.address, cpu.stringPool.find('calls')!), valueInteger(2134));
-	assert.equal(common.records.getStringKey(common.address, cpu.stringPool.find('order')!), valueInteger(213), 'init does not repeat module constructors');
+	assert.equal(cpu.gc.tables.getStringKey(common, cpu.stringPool.find('calls')!), valueInteger(2134));
+	assert.equal(cpu.gc.tables.getStringKey(common, cpu.stringPool.find('order')!), valueInteger(213), 'init does not repeat module constructors');
 });
 
 test('default and explicit empty preloads preserve executable bytes; cycles use require diagnostics', () => {

@@ -25,7 +25,7 @@ import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { asClosure, asInteger, asStringId, asTable, valueBool, valueInteger, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { asClosure, asInteger, asStringId, valueBool, valueInteger, valueNil, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { prepareLuaLiteral } from '../../ide/runtime/lua_literal';
 import { RuntimeGuestCallPlan, scheduleRuntimeGuestCall } from '../../ide/runtime/guest_call';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
@@ -376,7 +376,7 @@ return actor, advance
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
-	const actor = asTable(values[0], cpu.gc);
+	const actor = valuePayload(values[0]);
 	const closure = asClosure(values[1], cpu.gc);
 	const key = cpu.stringPool.find('value')!;
 	const depth = cpu.getFrameDepth();
@@ -384,13 +384,13 @@ return actor, advance
 	cpu.beginCompletionCall(closure, [values[0], valueInteger(100)]);
 	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, 'completion', false, value => { completed = value; }), 'workbench');
 	cpu.runUntilDepth(depth, 80);
-	const partial = actor.records.getStringKey(actor.address, key);
+	const partial = cpu.gc.tables.getStringKey(actor, key);
 	assert.ok(asInteger(partial) > 0 && asInteger(partial) < 100);
 	state.plans.setControlSuspended(true);
 	assert.equal(runtimeDebuggerExecutionRequested(state), false);
 	assert.equal(runtimeDebuggerExecutionIntent(state), HostExecutionIntent.None);
 	assert.equal(cpu.runUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
-	assert.equal(actor.records.getStringKey(actor.address, key), partial);
+	assert.equal(cpu.gc.tables.getStringKey(actor, key), partial);
 	assert.equal(cpu.getFrameDepth(), depth + 1);
 	state.plans.setControlSuspended(false);
 	assert.equal(runtimeDebuggerExecutionRequested(state), true);
@@ -399,7 +399,7 @@ return actor, advance
 	state.plans.didExecute();
 	assert.equal(completed, true);
 	assert.equal(state.plans.mutationActive, false);
-	assert.equal(actor.records.getStringKey(actor.address, key), valueInteger(100));
+	assert.equal(cpu.gc.tables.getStringKey(actor, key), valueInteger(100));
 	assert.equal(cpu.getFrameDepth(), depth);
 });
 
@@ -451,8 +451,8 @@ end
 			boundaryCalls++;
 			return { request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), args: () => [] },
 				condition: values => {
-					const receipt = asTable(values[0], cpu.gc), key = cpu.stringPool.find('reached')!;
-					return () => receipt.records.getStringKey(receipt.address, key) === valueBool(true);
+					const receipt = valuePayload(values[0]), key = cpu.stringPool.find('reached')!;
+					return () => cpu.gc.tables.getStringKey(receipt, key) === valueBool(true);
 				} };
 		},
 		prepare: () => {
@@ -496,8 +496,9 @@ end
 });
 
 for (const optLevel of [0, 3] as const) test(`guest boundary works in RAM code without linked symbols (O${optLevel})`, async () => {
-	const functionAddress = DYNAMIC_RAM_BASE + 0x1000, codeAddress = functionAddress + 0x100;
-	const { runtime, state } = createDebuggerHarness(`
+	const { image, runtime, state } = createDebuggerHarness(`
+bss function_record: word[64]
+bss function_code: word[64]
 passes = 0
 ram_body = function()
 	passes = passes + 1
@@ -506,11 +507,12 @@ end
 request_boundary = function() receipt = { reached = false }; return receipt end
 operation = function() return passes end
 return function()
-	ram_function = blua32.closure(${functionAddress})
+	ram_function = blua32.closure(&function_record)
 	ram_function()
 	passes = 100
 end
 `, optLevel);
+	const functionAddress = image.image.header.bssAddress, codeAddress = functionAddress + 64 * 4;
 	const { cpu, memory } = runtime.machine;
 	cpu.reset(); assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
 	const values: Value[] = []; cpu.readCompletionValues(values);
@@ -520,6 +522,7 @@ end
 	const record = new Uint8Array(BLUA32_FUNCTION_RECORD_SIZE);
 	memory.readBytesInto(source, record, record.length);
 	const code = new Uint8Array(memory.readMappedU32LE(source + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET));
+	assert.ok(code.length <= 64 * 4, 'the test function fits the reserved executable storage');
 	memory.readBytesInto(memory.readMappedU32LE(source + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET), code, code.length);
 	memory.writeBytes(functionAddress, record);
 	memory.writeMappedU32LE(functionAddress + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, codeAddress);
@@ -534,8 +537,8 @@ end
 		admission: 'quiescent', honorUserStops: false,
 		isCurrent: () => true,
 		boundary: () => ({ request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), args: () => [] },
-			condition: values => { const receipt = asTable(values[0], cpu.gc), key = cpu.stringPool.find('reached')!;
-				return () => receipt.records.getStringKey(receipt.address, key) === valueBool(true); } }),
+			condition: values => { const receipt = valuePayload(values[0]), key = cpu.stringPool.find('reached')!;
+				return () => cpu.gc.tables.getStringKey(receipt, key) === valueBool(true); } }),
 		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] }),
 	}, () => {}, ready => { completed = ready; cpu.readCompletionValues(values); }, assert.fail);
 	for (let phase = 0; phase < 3; phase++) {
@@ -779,9 +782,9 @@ test(`guest call admission roots prepare and recursive arguments across GC (O${o
 	assert.equal(finished, true);
 	cpu.readCompletionValues(values);
 	assert.equal(cpu.stringPool.toString(asStringId(values[0])), 'prepare-owned-string');
-	const table = asTable(values[1], cpu.gc);
-	const child = asTable(table.records.getStringKey(table.address, cpu.stringPool.find('argument_owned_key')!), cpu.gc);
-	assert.equal(cpu.stringPool.toString(asStringId(child.records.getInteger(child.address, 1))), 'nested-owned-string');
+	const table = valuePayload(values[1]);
+	const child = valuePayload(cpu.gc.tables.getStringKey(table, cpu.stringPool.find('argument_owned_key')!));
+	assert.equal(cpu.stringPool.toString(asStringId(cpu.gc.tables.getInteger(child, 1))), 'nested-owned-string');
 	assert.equal(cpu.stringPool.toString(asStringId(values[2])), 'last-owned-string');
 });
 

@@ -48,9 +48,9 @@ end`;
 		134217728, -134217729, 1073741823, -1073741824, 1073741824, -1073741825,
 		0x7fffffff, -0x80000000];
 	for (const value of integers) assert.equal(read(encodeBinary(value)), v.valueInteger(value));
-	const sequence = v.asTable(read(encodeBinary(integers)), cpu.gc);
-	assert.equal(sequence.records.length(sequence.address), integers.length);
-	for (const [index, value] of integers.entries()) assert.equal(sequence.records.getInteger(sequence.address, index + 1), v.valueInteger(value));
+	const sequence = v.valuePayload(read(encodeBinary(integers)));
+	assert.equal(cpu.gc.tables.length(sequence), integers.length);
+	for (const [index, value] of integers.entries()) assert.equal(cpu.gc.tables.getInteger(sequence, index + 1), v.valueInteger(value));
 	for (const [value, expected] of [[null, v.valueNil()], [false, v.valueBool(false)], [true, v.valueBool(true)],
 		[0.25, v.valueFloat(0.25)], [Math.PI, v.valueFloat(Math.PI)], [-0, v.valueFloatBits(0x80000000)],
 		[Infinity, v.valueFloatBits(0x7f800000)], [-Infinity, v.valueFloatBits(0xff800000)], [NaN, v.valueFloatBits(0x7fc00000)]] as const) {
@@ -62,30 +62,30 @@ end`;
 	for (const id of [0, 127, 128, 0x7fffffff, 0x80000000, 0xffffffff]) {
 		assert.equal(cpu.gc.tables.getStringKey(tableAddressPayload(read(encodeBinary({ r: id }))), cpu.stringPool.intern('r')), v.valueInteger(id));
 	}
-	const binary = v.asTable(read(encodeBinary(new Uint8Array([0, 1, 127, 128, 255]))), cpu.gc);
-	assert.deepEqual([1, 2, 3, 4, 5].map(index => binary.records.getInteger(binary.address, index)), [0, 1, 127, 128, 255].map(v.valueInteger));
-	const set = v.asTable(read(encodeBinary(new Set([3, 'set value', false]))), cpu.gc);
-	assert.equal(set.records.getInteger(set.address, 1), v.valueInteger(3));
-	assert.equal(cpu.stringPool.toString(v.asStringId(set.records.getInteger(set.address, 2))), 'set value');
-	assert.equal(set.records.getInteger(set.address, 3), v.valueBool(false));
-	const mixedRoot = v.asTable(read(encodeBinary({
+	const binary = v.valuePayload(read(encodeBinary(new Uint8Array([0, 1, 127, 128, 255]))));
+	assert.deepEqual([1, 2, 3, 4, 5].map(index => cpu.gc.tables.getInteger(binary, index)), [0, 1, 127, 128, 255].map(v.valueInteger));
+	const set = v.valuePayload(read(encodeBinary(new Set([3, 'set value', false]))));
+	assert.equal(cpu.gc.tables.getInteger(set, 1), v.valueInteger(3));
+	assert.equal(cpu.stringPool.toString(v.asStringId(cpu.gc.tables.getInteger(set, 2))), 'set value');
+	assert.equal(cpu.gc.tables.getInteger(set, 3), v.valueBool(false));
+	const mixedRoot = v.valuePayload(read(encodeBinary({
 		values: [0, -1, 63, -64, 64, -65, false, 3, null, -4, [5, 8192, -6], 7,
 			'雪🙂', -8, { value: 9 }, 10, 0.25, -11, 0x7fffffff, -0x80000000, 12],
 		after: 77,
-	})), cpu.gc);
-	const mixed = v.asTable(mixedRoot.records.getStringKey(mixedRoot.address, cpu.stringPool.intern('values')), cpu.gc);
+	})));
+	const mixed = v.valuePayload(cpu.gc.tables.getStringKey(mixedRoot, cpu.stringPool.intern('values')));
 	for (const [index, value] of [[1, 0], [2, -1], [3, 63], [4, -64], [5, 64], [6, -65],
 		[8, 3], [10, -4], [12, 7], [14, -8], [16, 10], [18, -11], [19, 0x7fffffff],
 		[20, -0x80000000], [21, 12]] as const) {
-		assert.equal(mixed.records.getInteger(mixed.address, index), v.valueInteger(value));
+		assert.equal(cpu.gc.tables.getInteger(mixed, index), v.valueInteger(value));
 	}
-	assert.equal(mixed.records.getInteger(mixed.address, 7), v.valueBool(false));
-	assert.equal(mixed.records.getInteger(mixed.address, 9), v.valueNil());
-	assert.equal(mixed.records.getInteger(mixed.address, 17), v.valueFloat(0.25));
-	assert.deepEqual([1, 2, 3].map(index => cpu.gc.tables.getInteger(v.valuePayload(mixed.records.getInteger(mixed.address, 11)), index)), [5, 8192, -6].map(v.valueInteger));
-	assert.equal(cpu.stringPool.toString(v.asStringId(mixed.records.getInteger(mixed.address, 13))), '雪🙂');
-	assert.equal(cpu.gc.tables.getStringKey(v.valuePayload(mixed.records.getInteger(mixed.address, 15)), cpu.stringPool.intern('value')), v.valueInteger(9));
-	assert.equal(mixedRoot.records.getStringKey(mixedRoot.address, cpu.stringPool.intern('after')), v.valueInteger(77),
+	assert.equal(cpu.gc.tables.getInteger(mixed, 7), v.valueBool(false));
+	assert.equal(cpu.gc.tables.getInteger(mixed, 9), v.valueNil());
+	assert.equal(cpu.gc.tables.getInteger(mixed, 17), v.valueFloat(0.25));
+	assert.deepEqual([1, 2, 3].map(index => cpu.gc.tables.getInteger(v.valuePayload(cpu.gc.tables.getInteger(mixed, 11)), index)), [5, 8192, -6].map(v.valueInteger));
+	assert.equal(cpu.stringPool.toString(v.asStringId(cpu.gc.tables.getInteger(mixed, 13))), '雪🙂');
+	assert.equal(cpu.gc.tables.getStringKey(v.valuePayload(cpu.gc.tables.getInteger(mixed, 15)), cpu.stringPool.intern('value')), v.valueInteger(9));
+	assert.equal(cpu.gc.tables.getStringKey(mixedRoot, cpu.stringPool.intern('after')), v.valueInteger(77),
 		'batched scalar runs publish the cursor before a following object field');
 	const key = '雪'.repeat(60);
 	const data = { [key]: { count: 0x7fffffff, nested: [true, 'name', { r: 128 }] }, tail: -0x80000000 };
@@ -96,13 +96,13 @@ end`;
 	memory.writeBytes(address, bytes);
 	runCompletionClosure(cpu, decodeMetadata, [v.valueInteger(address)]);
 	const [rootValue, headerLength] = materializeCpuCompletionValues(cpu);
-	const root = v.asTable(rootValue, cpu.gc);
+	const root = v.valuePayload(rootValue);
 	assert.equal(headerLength, v.valueInteger(section.header.length), 'the first payload starts immediately after the shared names');
-	assert.equal(root.records.getStringKey(root.address, cpu.stringPool.intern('tail')), v.valueInteger(-0x80000000));
-	const object = v.asTable(root.records.getStringKey(root.address, cpu.stringPool.intern(textToByteString(key))), cpu.gc);
-	assert.equal(object.records.getStringKey(object.address, cpu.stringPool.intern('count')), v.valueInteger(0x7fffffff));
-	const nested = v.asTable(object.records.getStringKey(object.address, cpu.stringPool.intern('nested')), cpu.gc);
-	assert.equal(nested.records.getInteger(nested.address, 1), v.valueBool(true));
-	assert.equal(cpu.stringPool.toString(v.asStringId(nested.records.getInteger(nested.address, 2))), 'name');
-	assert.equal(cpu.gc.tables.getStringKey(v.valuePayload(nested.records.getInteger(nested.address, 3)), cpu.stringPool.intern('r')), v.valueInteger(128));
+	assert.equal(cpu.gc.tables.getStringKey(root, cpu.stringPool.intern('tail')), v.valueInteger(-0x80000000));
+	const object = v.valuePayload(cpu.gc.tables.getStringKey(root, cpu.stringPool.intern(textToByteString(key))));
+	assert.equal(cpu.gc.tables.getStringKey(object, cpu.stringPool.intern('count')), v.valueInteger(0x7fffffff));
+	const nested = v.valuePayload(cpu.gc.tables.getStringKey(object, cpu.stringPool.intern('nested')));
+	assert.equal(cpu.gc.tables.getInteger(nested, 1), v.valueBool(true));
+	assert.equal(cpu.stringPool.toString(v.asStringId(cpu.gc.tables.getInteger(nested, 2))), 'name');
+	assert.equal(cpu.gc.tables.getStringKey(v.valuePayload(cpu.gc.tables.getInteger(nested, 3)), cpu.stringPool.intern('r')), v.valueInteger(128));
 });

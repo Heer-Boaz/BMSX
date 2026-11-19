@@ -43,9 +43,9 @@ test('tracked heap bytes include rooted tables', () => {
 	const before = cpu.collectTrackedHeapBytes();
 
 	const table = cpu.createTable(2, 2);
-	table.records.setInteger(table.address, 1, valueInteger(11));
-	table.records.setStringKey(table.address, key, valueInteger(7));
-	cpu.setGlobalByKey(key, valueTable(cpu.gc.reference(table)));
+	cpu.gc.tables.setInteger(table, 1, valueInteger(11));
+	cpu.gc.tables.setStringKey(table, key, valueInteger(7));
+	cpu.setGlobalByKey(key, valueTable(table));
 
 	const afterTable = cpu.collectTrackedHeapBytes();
 	assert.ok(afterTable > before, `expected table bytes to increase heap usage (${afterTable} <= ${before})`);

@@ -71,7 +71,7 @@ void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool ar
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), GC_COLOR_OFFSET);
 	auto* notBlack = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 3);
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver,
-		SLJIT_IMM, MAIN_RAM_SIZE - Table::HEADER_BYTES);
+		SLJIT_IMM, MAIN_RAM_SIZE - TableRecord::HEADER_BYTES);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, 0);
 	emitGrayChange(exit, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R0, SLJIT_R2, SLJIT_R3, GC_RECORD_LINK, 3u);
 	sljit_set_label(notBlack, sljit_emit_label(c));
@@ -232,7 +232,7 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), receiver, SLJIT_R0, 0);
 	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER, SLJIT_R0, 0, SLJIT_IMM,
-		MAIN_RAM_SIZE - Table::HEADER_BYTES), exit, m_cache.state());
+		MAIN_RAM_SIZE - TableRecord::HEADER_BYTES), exit, m_cache.state());
 	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R0, SLJIT_R0);
 	if (op == OpCode::GETT || op == OpCode::SETT) {
 		emitRawLoad(key, SLJIT_R3, SLJIT_R2);

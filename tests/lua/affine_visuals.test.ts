@@ -1,5 +1,5 @@
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
-import { valueBool, asClosure, valueNil, asTable, asStringId } from '../../machine/ts/machine/cpu/value';
+import { valueBool, asClosure, valueNil, asStringId } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -415,9 +415,9 @@ return {
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 	const [failure] = materializeCpuCompletionValues(cpu);
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
-	const sources = asTable(cpu.getGlobalByKey(cpu.stringPool.find('sources')!), cpu.gc);
+	const sources = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('sources')!));
 	let sourceBytes = 0;
-	for (let index = 1; index <= 1024; index += 1) sourceBytes += cpu.gc.tables.getTrackedHeapBytes(valuePayload(sources.records.getInteger(sources.address, index)));
+	for (let index = 1; index <= 1024; index += 1) sourceBytes += cpu.gc.tables.getTrackedHeapBytes(valuePayload(cpu.gc.tables.getInteger(sources, index)));
 	// The thousand-image stage exhausted RAM with 672-byte source descriptors.
 	// This is a retained-memory budget, independent of the sharing mechanism.
 	assert.ok(sourceBytes < 400 * 1024, `image source descriptors retained ${sourceBytes} bytes`);
@@ -456,9 +456,9 @@ probe = {
 }
 `, { optLevel: 3, modules });
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	for (const lane of ['translation', 'affine']) {
-		const kernel = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(lane)!), cpu.gc);
+		const kernel = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(lane)!), cpu.gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 256);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);

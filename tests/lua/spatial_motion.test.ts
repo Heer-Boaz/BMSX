@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { asClosure, asTable } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
@@ -238,9 +238,9 @@ for (const optLevel of [0, 3] as const) {
 		const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		if (optLevel === 3) {
-			const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+			const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 			for (const lane of ['run_candidates', 'run', 'run_callbacks']) {
-				const run = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(lane)!), cpu.gc);
+				const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(lane)!), cpu.gc);
 				const profile = profileWarmGuestKernel(cpu, run, 512);
 				t.diagnostic(JSON.stringify({ lane, ...profile }));
 				assert.equal(profile.reservations, 0);

@@ -123,7 +123,7 @@ int main(int argc, char** argv) {
 						<< ",\"compiled\":" << (compiled ? "true" : "false") << ",\"regionBytes\":" << regionBytes << '}';
 				}
 				if (phase >= 4) {
-					const auto& bindings = *asTable(cpu.getGlobalByKey(*cpu.stringPool().find("fsm_bindings")), cpu.gcHeap());
+					const auto& bindings = asTable(cpu.getGlobalByKey(*cpu.stringPool().find("fsm_bindings")), cpu.gcHeap());
 					for (int index = 1; index <= 32; ++index)
 						require(asClosure(bindings.getInteger(index), cpu.gcHeap())->prototype->functionAddress == primaryFunction,
 							"same-shape binding regenerated code instead of sharing the factory's evaluator");

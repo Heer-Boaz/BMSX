@@ -231,10 +231,10 @@ DISPATCH_LABEL(NEWT) {
 	const int a = decoded->a;
 	const int b = decoded->b;
 	const int c = decoded->c;
-	auto* table = createTable(b, c);
+	auto table = createTable(b, c);
 	registers = FRAME.registers;
-	CYCLES_ADD(2 * static_cast<int>(table->storedSlotCount()) - b);
-	SET_REGISTER_FAST(a, valueTable(m_heap.reference(table)));
+	CYCLES_ADD(2 * static_cast<int>(table.storedSlotCount()) - b);
+	SET_REGISTER_FAST(a, valueTable(table.address()));
 	DISPATCH_NEXT();
 }
 

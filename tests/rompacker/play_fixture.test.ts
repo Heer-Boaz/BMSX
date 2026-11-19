@@ -13,7 +13,7 @@ import { PlayFixture, DEFAULT_PLAY_FIXTURE_BUDGETS } from '../../ide/testing/pla
 import type { FixtureOutput } from '../../ide/testing/fixture_operations';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
-import { asInteger, asTable, valueBool, valueInteger, valueToString } from '../../machine/ts/machine/cpu/value';
+import { asInteger, valueBool, valueInteger, valueToString, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { Input } from '../../hosts/common/input/manager';
 import { InputChannel } from '../../hosts/common/input/channel';
@@ -85,8 +85,8 @@ test('physical viewport routing reaches only the selected independent machine th
 	};
 	const samples = (target: typeof primary | typeof secondary) => {
 		const cpu = target.runtime.machine.cpu;
-		const game = asTable(cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))), cpu.gc);
-		return asInteger(game.records.getStringKey(game.address, cpu.stringPool.intern('down_samples')));
+		const game = valuePayload(cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))));
+		return asInteger(cpu.gc.tables.getStringKey(game, cpu.stringPool.intern('down_samples')));
 	};
 	input.guestInputRecipient = channel;
 	advance(primary); advance(secondary);
@@ -130,13 +130,13 @@ return {kind='integration',
 		for (let grant = 0; play.admitting && grant < 10000; grant++) play.advance();
 		assert.equal(play.state, 'ready'); assert.equal(input.fixture.samples, 3);
 		const cpu = target.runtime.machine.cpu, pool = cpu.stringPool;
-		const game = asTable(cpu.getGlobalByKey(pool.intern(buildModuleExportSlotName('game', []))), cpu.gc);
+		const game = valuePayload(cpu.getGlobalByKey(pool.intern(buildModuleExportSlotName('game', []))));
 		const down = pool.intern('down_samples'), scriptedSamples = input.fixture.samples;
 		input.interactive = true;
 		const until = target.runtime.frameScheduler.lastTickSequence + 4;
 		for (let grant = 0; target.runtime.frameScheduler.lastTickSequence < until && grant < 1000; grant++) target.advanceGame(65536);
 		assert.equal(target.runtime.frameScheduler.lastTickSequence, until);
-		assert.ok(asInteger(game.records.getStringKey(game.address, down)) > 2, 'human samples reach normal gameplay IRQ');
+		assert.ok(asInteger(cpu.gc.tables.getStringKey(game, down)) > 2, 'human samples reach normal gameplay IRQ');
 		assert.equal(input.fixture.samples, scriptedSamples, 'the fixture port does not run during human play');
 		input.interactive = false; play.stop();
 		for (let grant = 0; play.admitting && grant < 10000; grant++) play.advance();
@@ -219,20 +219,20 @@ return {kind='integration',
 		f.drain(); assert.equal(f.play.state, 'ready');
 		const cpu = f.target.runtime.machine.cpu, pool = cpu.stringPool;
 		const slot = pool.intern(buildModuleExportSlotName('game', []));
-		const priorGame = asTable(cpu.getGlobalByKey(slot), cpu.gc);
+		const priorGame = valuePayload(cpu.getGlobalByKey(slot));
 		const marker = pool.intern('marker'), closed = pool.intern('closed');
 		const history = f.target.runtime.history;
 		history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
 		history.captureCheckpoint();
-		priorGame.records.setStringKey(priorGame.address, marker, valueInteger(25));
+		cpu.gc.tables.setStringKey(priorGame, marker, valueInteger(25));
 		history.beginSeek(history.latestCycles);
-		const restoredGame = asTable(cpu.getGlobalByKey(slot), cpu.gc);
-		assert.notEqual(restoredGame, priorGame, 'rewind installs the physical saved heap');
-		assert.equal(restoredGame.records.getStringKey(restoredGame.address, marker), valueInteger(12));
+		const restoredGame = valuePayload(cpu.getGlobalByKey(slot));
+		assert.equal(restoredGame, priorGame, 'rewind restores the original guest address');
+		assert.equal(cpu.gc.tables.getStringKey(restoredGame, marker), valueInteger(12));
 		f.play.stop(); f.drain();
 		assert.equal(f.play.state, 'stopped'); assert.deepEqual(f.logs, ['cleanup']);
-		assert.equal(restoredGame.records.getStringKey(restoredGame.address, closed), valueBool(true));
-		assert.equal(restoredGame.records.getStringKey(restoredGame.address, marker), valueInteger(12), 'teardown used the restored branch, not the discarded marker');
+		assert.equal(cpu.gc.tables.getStringKey(restoredGame, closed), valueBool(true));
+		assert.equal(cpu.gc.tables.getStringKey(restoredGame, marker), valueInteger(12), 'teardown used the restored branch, not the discarded marker');
 	});
 
 	test(`O${optLevel}: authored setup failure retains its real thread and still performs bounded teardown`, async t => {

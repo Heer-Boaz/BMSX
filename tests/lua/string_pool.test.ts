@@ -103,22 +103,22 @@ test('RAM restore replays string allocation after partial reuse', () => {
 test('reusing an unreachable deleted string-key ID cannot resurrect its old mapping', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	const root = pool.intern('table root'), table = cpu.createTable(0, 8);
-	cpu.setGlobalByKey(root, valueTable(cpu.gc.reference(table)));
+	cpu.setGlobalByKey(root, valueTable(table));
 	const removed = pool.intern('removed key');
-	table.records.setStringKey(table.address, removed, valueInteger(19));
-	table.records.setStringKey(table.address, removed, valueNil());
+	cpu.gc.tables.setStringKey(table, removed, valueInteger(19));
+	cpu.gc.tables.setStringKey(table, removed, valueNil());
 	const retained = pool.intern('retained key');
-	table.records.setStringKey(table.address, retained, valueInteger(23));
+	cpu.gc.tables.setStringKey(table, retained, valueInteger(23));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.find('removed key'), undefined);
 	const replacement = pool.intern('replacement key');
-	assert.equal(table.records.getStringKey(table.address, replacement), valueNil());
-	table.records.setStringKey(table.address, replacement, valueInteger(29));
-	assert.equal(table.records.get(table.address, valueString(replacement)), valueInteger(29));
-	assert.equal(table.records.getStringKey(table.address, retained), valueInteger(23));
+	assert.equal(cpu.gc.tables.getStringKey(table, replacement), valueNil());
+	cpu.gc.tables.setStringKey(table, replacement, valueInteger(29));
+	assert.equal(cpu.gc.tables.get(table, valueString(replacement)), valueInteger(29));
+	assert.equal(cpu.gc.tables.getStringKey(table, retained), valueInteger(23));
 	const entry = new ValueSlots(2), keys: string[] = [];
-	for (table.records.next(table.address, entry.get(0), entry, 0); entry.getTag(0) !== ValueTag.Nil;
-		table.records.next(table.address, entry.get(0), entry, 0)) {
+	for (cpu.gc.tables.next(table, entry.get(0), entry, 0); entry.getTag(0) !== ValueTag.Nil;
+		cpu.gc.tables.next(table, entry.get(0), entry, 0)) {
 		assert.equal(entry.getTag(0), ValueTag.String);
 		keys.push(pool.toString(entry.getStringId(0)));
 	}

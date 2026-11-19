@@ -35,7 +35,7 @@ test('runtime values expose distinct Integer and Float tags with equal payload w
 		[valueInteger(42), ValueTag.Integer],
 		[valueFloatBits(42), ValueTag.Float],
 		[stringValue, ValueTag.String],
-		[valueTable(cpu.gc.reference(table)), ValueTag.Table],
+		[valueTable(table), ValueTag.Table],
 		[valueClosure(42), ValueTag.Closure],
 		[valueBuiltinFunction(BuiltinFunctionId.Next), ValueTag.BuiltinFunction],
 		[valueThread(cpu.gc.reference(cpu.rootThread)), ValueTag.Thread],
@@ -44,7 +44,7 @@ test('runtime values expose distinct Integer and Float tags with equal payload w
 	for (let index = 0; index < values.length; index += 1) {
 		assert.equal(valueTag(values[index][0]), values[index][1]);
 	}
-	assert.equal(valueIsTable(valueTable(cpu.gc.reference(table))), true);
+	assert.equal(valueIsTable(valueTable(table)), true);
 });
 
 test('Table stores sparse high-bit Integer words in the hash part', () => {
@@ -54,13 +54,13 @@ test('Table stores sparse high-bit Integer words in the hash part', () => {
 	const highKey = valueInteger(0xffffffff);
 	const tokenKey = valueInteger(0x84222325);
 
-	table.records.set(table.address, highKey, valueInteger(11));
-	table.records.set(table.address, tokenKey, valueInteger(22));
+	cpu.gc.tables.set(table, highKey, valueInteger(11));
+	cpu.gc.tables.set(table, tokenKey, valueInteger(22));
 
-	assert.equal(table.records.get(table.address, highKey), valueInteger(11));
-	assert.equal(table.records.get(table.address, tokenKey), valueInteger(22));
-	assert.equal(table.records.length(table.address), 0);
-	assert.ok(table.records.getTrackedHeapBytes(table.address) < 4096);
+	assert.equal(cpu.gc.tables.get(table, highKey), valueInteger(11));
+	assert.equal(cpu.gc.tables.get(table, tokenKey), valueInteger(22));
+	assert.equal(cpu.gc.tables.length(table), 0);
+	assert.ok(cpu.gc.tables.getTrackedHeapBytes(table) < 4096);
 });
 
 for (const route of ['generic', 'float', 'encoded', 'integer', 'integer-array'] as const) {
@@ -69,60 +69,60 @@ for (const route of ['generic', 'float', 'encoded', 'integer', 'integer-array'] 
 		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 		const table = cpu.createTable(4, 8);
 		for (let key = 1; key <= 7; key += 1) {
-			table.records.set(table.address, valueInteger(key), valueInteger(key * 10));
+			cpu.gc.tables.set(table, valueInteger(key), valueInteger(key * 10));
 		}
-		const heapBytes = table.records.getTrackedHeapBytes(table.address);
-		assert.equal(table.records.length(table.address), 7);
+		const heapBytes = cpu.gc.tables.getTrackedHeapBytes(table);
+		assert.equal(cpu.gc.tables.length(table), 7);
 
 		for (const key of [2, 4]) {
 			switch (route) {
 				case 'generic':
-					table.records.set(table.address, valueInteger(key), valueNil());
+					cpu.gc.tables.set(table, valueInteger(key), valueNil());
 					break;
 				case 'float':
-					table.records.set(table.address, valueFloat(key), valueNil());
+					cpu.gc.tables.set(table, valueFloat(key), valueNil());
 					break;
 				case 'encoded':
-					table.records.store(table.address, ValueTag.Integer, key, ValueTag.Nil, 0);
+					cpu.gc.tables.store(table, ValueTag.Integer, key, ValueTag.Nil, 0);
 					break;
 				case 'integer':
-					table.records.setInteger(table.address, key, valueNil());
+					cpu.gc.tables.setInteger(table, key, valueNil());
 					break;
 				case 'integer-array':
-					assert.equal(table.records.storeIntegerArrayKey(table.address, key, ValueTag.Nil, 0), true);
+					assert.equal(cpu.gc.tables.storeIntegerArrayKey(table, key, ValueTag.Nil, 0), true);
 					break;
 			}
-			const boundary = table.records.length(table.address);
-			assert.ok(boundary === 0 || table.records.get(table.address, valueInteger(boundary)) !== valueNil());
-			assert.equal(table.records.get(table.address, valueInteger(boundary + 1)), valueNil());
-			assert.equal(table.records.getInteger(table.address, 7), valueInteger(70));
+			const boundary = cpu.gc.tables.length(table);
+			assert.ok(boundary === 0 || cpu.gc.tables.get(table, valueInteger(boundary)) !== valueNil());
+			assert.equal(cpu.gc.tables.get(table, valueInteger(boundary + 1)), valueNil());
+			assert.equal(cpu.gc.tables.getInteger(table, 7), valueInteger(70));
 
 			switch (route) {
 				case 'generic':
-					table.records.set(table.address, valueInteger(key), valueBool(false));
+					cpu.gc.tables.set(table, valueInteger(key), valueBool(false));
 					break;
 				case 'float':
-					table.records.set(table.address, valueFloat(key), valueBool(false));
+					cpu.gc.tables.set(table, valueFloat(key), valueBool(false));
 					break;
 				case 'encoded':
-					table.records.store(table.address, ValueTag.Integer, key, ValueTag.False, 0);
+					cpu.gc.tables.store(table, ValueTag.Integer, key, ValueTag.False, 0);
 					break;
 				case 'integer':
-					table.records.setInteger(table.address, key, valueBool(false));
+					cpu.gc.tables.setInteger(table, key, valueBool(false));
 					break;
 				case 'integer-array':
-					assert.equal(table.records.storeIntegerArrayKey(table.address, key, ValueTag.False, 0), true);
+					assert.equal(cpu.gc.tables.storeIntegerArrayKey(table, key, ValueTag.False, 0), true);
 					break;
 			}
-			assert.equal(table.records.length(table.address), 7);
-			assert.equal(table.records.get(table.address, valueInteger(key)), valueBool(false));
-			assert.equal(table.records.getTrackedHeapBytes(table.address), heapBytes);
+			assert.equal(cpu.gc.tables.length(table), 7);
+			assert.equal(cpu.gc.tables.get(table, valueInteger(key)), valueBool(false));
+			assert.equal(cpu.gc.tables.getTrackedHeapBytes(table), heapBytes);
 		}
 
-		table.records.setInteger(table.address, 9, valueInteger(90));
-		assert.equal(table.records.length(table.address), 7);
-		table.records.setInteger(table.address, 8, valueInteger(80));
-		assert.equal(table.records.length(table.address), 9);
+		cpu.gc.tables.setInteger(table, 9, valueInteger(90));
+		assert.equal(cpu.gc.tables.length(table), 7);
+		cpu.gc.tables.setInteger(table, 8, valueInteger(80));
+		assert.equal(cpu.gc.tables.length(table), 9);
 	});
 }
 
@@ -131,17 +131,17 @@ test('Table length is a pure boundary search and writes never scan a retained su
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(4096, 8);
 	// Descending construction leaves a hint of one, not an eagerly scanned length.
-	for (let key = 4096; key >= 1; key--) table.records.setInteger(table.address, key, valueBool(false));
-	const hint = table.address + TableHeader.Length;
+	for (let key = 4096; key >= 1; key--) cpu.gc.tables.setInteger(table, key, valueBool(false));
+	const hint = table + TableHeader.Length;
 	assert.equal(memory.readRamRecordWord(hint), 1);
-	assert.equal(table.records.length(table.address), 4096);
+	assert.equal(cpu.gc.tables.length(table), 4096);
 	for (let repeat = 0; repeat < 8; repeat++) {
-		table.records.setInteger(table.address, 2048, valueNil()); table.records.setInteger(table.address, 2048, valueBool(false));
+		cpu.gc.tables.setInteger(table, 2048, valueNil()); cpu.gc.tables.setInteger(table, 2048, valueBool(false));
 	}
 	assert.equal(memory.readRamRecordWord(hint), 1, 'neither LEN nor distant hole refill scans or changes the raw hint');
 	// Erase the hinted entry without moving the hint (the weak-clearing owner).
-	table.records.clearWeakEntries(table.address, false, true, () => false);
-	assert.equal(table.records.length(table.address), 0, 'a stale nonzero hint is only a search seed');
+	cpu.gc.tables.clearWeakEntries(table, false, true, () => false);
+	assert.equal(cpu.gc.tables.length(table), 0, 'a stale nonzero hint is only a search seed');
 	assert.equal(memory.readRamRecordWord(hint), 1);
 });
 
@@ -149,51 +149,52 @@ test('Table sparse hash boundaries include Integer boundaries up to INT32_MAX wi
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 128);
-	for (let bit = 30; bit >= 0; bit--) table.records.setInteger(table.address, 2 ** bit, valueBool(false));
-	assert.equal(table.records.length(table.address), 2 ** 30);
-	table.records.setInteger(table.address, 0x7fffffff, valueBool(false));
-	assert.equal(table.records.length(table.address), 0x7fffffff);
-	table.records.set(table.address, valueFloat(2 ** 31), valueBool(true));
-	assert.equal(table.records.length(table.address), 0x7fffffff, 'terminal sequence boundary does not wrap or loop');
-	table.records.setInteger(table.address, 0x7fffffff, valueNil());
-	assert.equal(table.records.length(table.address), 2 ** 30);
+	for (let bit = 30; bit >= 0; bit--) cpu.gc.tables.setInteger(table, 2 ** bit, valueBool(false));
+	assert.equal(cpu.gc.tables.length(table), 2 ** 30);
+	cpu.gc.tables.setInteger(table, 0x7fffffff, valueBool(false));
+	assert.equal(cpu.gc.tables.length(table), 0x7fffffff);
+	cpu.gc.tables.set(table, valueFloat(2 ** 31), valueBool(true));
+	assert.equal(cpu.gc.tables.length(table), 0x7fffffff, 'terminal sequence boundary does not wrap or loop');
+	cpu.gc.tables.setInteger(table, 0x7fffffff, valueNil());
+	assert.equal(cpu.gc.tables.length(table), 2 ** 30);
 });
 
 test('table values come directly from the allocator-owned RAM block', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const occupiedBefore = cpu.heapAllocator.occupiedBytes();
 	const table = cpu.createTable(2, 1);
-	table.records.setInteger(table.address, 1, valueInteger(71));
-	const base = table.records.storageAddress(table.address);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), 56, 'the 32-byte header and 24-byte body are physical allocations');
+	cpu.gc.tables.setInteger(table, 1, valueInteger(71));
+	const base = cpu.gc.tables.storageAddress(table);
+	assert.equal(cpu.heapAllocator.occupiedBytes() - occupiedBefore, 56, 'the 32-byte header and 24-byte body are physical allocations');
 	assert.equal(memory.readMappedU32LE(base), 71);
 	assert.equal(memory.readMappedU32LE(base + 4 * 4), 0xffffffff, 'the hash-chain word follows the four payload words');
 	const tags = base + 5 * 4;
 	assert.equal(memory.readMappedU8(tags), ValueTag.Integer);
-	const backing = table.address + TableHeader.Storage;
+	const backing = table + TableHeader.Storage;
 	assert.equal(memory.readMappedU32LE(backing), base);
 	memory.writeMappedU32LE(backing, base + MAIN_RAM_SIZE);
 	memory.writeMappedU32LE(base, 94);
-	assert.equal(table.records.getInteger(table.address, 1), valueInteger(94));
+	assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(94));
 	memory.writeMappedU8(tags, ValueTag.Nil);
-	assert.equal(valueTag(table.records.getInteger(table.address, 1)), ValueTag.Nil);
+	assert.equal(valueTag(cpu.gc.tables.getInteger(table, 1)), ValueTag.Nil);
 	memory.writeMappedU32LE(backing, base);
-	table.records.clear(table.address);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), 32, 'clearing releases only the owned body');
+	cpu.gc.tables.clear(table);
+	assert.equal(cpu.heapAllocator.occupiedBytes() - occupiedBefore, 32, 'clearing releases only the owned body');
 });
 
 test('numeric hash mixing distributes negative integral keys and preserves canonical matching', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 1024);
-	for (let key = -1; key >= -1024; key--) table.records.setInteger(table.address, key, valueInteger(key));
-	const links = table.records.storageAddress(table.address) + 1024 * 2 * 4;
+	for (let key = -1; key >= -1024; key--) cpu.gc.tables.setInteger(table, key, valueInteger(key));
+	const links = cpu.gc.tables.storageAddress(table) + 1024 * 2 * 4;
 	let longest = 0;
 	for (let slot = 0; slot < 1024; slot++) {
 		let count = 0;
 		for (let next = slot; next !== -1; next = (memory.readMappedU32LE(links + next * 4) | 0)) count++;
 		longest = Math.max(longest, count);
-		assert.equal(table.records.getInteger(table.address, -(slot + 1)), valueInteger(-(slot + 1)));
+		assert.equal(cpu.gc.tables.getInteger(table, -(slot + 1)), valueInteger(-(slot + 1)));
 	}
 	assert.ok(longest <= 8, `negative integers must not collapse into a single hash chain (${longest})`);
 	// The same physical buckets are checked in the C++ table inspection suite.
@@ -204,23 +205,23 @@ test('numeric hash mixing distributes negative integral keys and preserves canon
 		[valueFloatBits(0xffa01234), 981], [valueFloat(Infinity), 0],
 	];
 	for (const [key, bucket] of vectors) {
-		const one = cpu.createTable(0, 1024); one.records.set(one.address, key, valueBool(false));
-		assert.equal(one.records.loadStoredEntry(one.address, bucket, slots, 0), true);
+		const one = cpu.createTable(0, 1024); cpu.gc.tables.set(one, key, valueBool(false));
+		assert.equal(cpu.gc.tables.loadStoredEntry(one, bucket, slots, 0), true);
 		assert.equal(slots.get(1), valueBool(false));
 	}
-	table.records.set(table.address, valueFloat(-0), valueBool(true)); assert.equal(table.records.getInteger(table.address, 0), valueBool(true));
-	table.records.setInteger(table.address, 0, valueBool(false)); assert.equal(table.records.get(table.address, valueFloat(-0)), valueBool(false));
+	cpu.gc.tables.set(table, valueFloat(-0), valueBool(true)); assert.equal(cpu.gc.tables.getInteger(table, 0), valueBool(true));
+	cpu.gc.tables.setInteger(table, 0, valueBool(false)); assert.equal(cpu.gc.tables.get(table, valueFloat(-0)), valueBool(false));
 });
 
 test('Table hashes runtime object keys from value-owned identity', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 4);
-	const tableKey = valueTable(cpu.gc.reference(cpu.createTable(0, 0)));
+	const tableKey = valueTable(cpu.createTable(0, 0));
 
-	table.records.set(table.address, tableKey, valueInteger(101));
+	cpu.gc.tables.set(table, tableKey, valueInteger(101));
 
-	assert.equal(table.records.get(table.address, tableKey), valueInteger(101));
+	assert.equal(cpu.gc.tables.get(table, tableKey), valueInteger(101));
 });
 
 test('Table hashes all NaN keys through the canonical qNaN bucket', () => {
@@ -230,13 +231,13 @@ test('Table hashes all NaN keys through the canonical qNaN bucket', () => {
 	const secondNaN = valueFloatBits(0x7fc00002);
 	const table = cpu.createTable(0, 0);
 
-	table.records.set(table.address, firstNaN, valueInteger(11));
-	table.records.set(table.address, secondNaN, valueInteger(22));
+	cpu.gc.tables.set(table, firstNaN, valueInteger(11));
+	cpu.gc.tables.set(table, secondNaN, valueInteger(22));
 
-	assert.equal(table.records.get(table.address, firstNaN), valueInteger(22));
-	assert.equal(table.records.get(table.address, secondNaN), valueInteger(22));
-	table.records.set(table.address, firstNaN, valueNil());
-	assert.equal(table.records.get(table.address, secondNaN), valueNil());
+	assert.equal(cpu.gc.tables.get(table, firstNaN), valueInteger(22));
+	assert.equal(cpu.gc.tables.get(table, secondNaN), valueInteger(22));
+	cpu.gc.tables.set(table, firstNaN, valueNil());
+	assert.equal(cpu.gc.tables.get(table, secondNaN), valueNil());
 });
 
 test('CPU modulus follows Lua floor-modulo semantics', () => {
@@ -247,27 +248,27 @@ test('CPU modulus follows Lua floor-modulo semantics', () => {
 test('physical table inspection preserves Lua iteration order and tagged values without mutation', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const table = cpu.createTable(8, 16), child = valueTable(cpu.gc.reference(cpu.createTable(0, 0)));
+	const table = cpu.createTable(8, 16), child = valueTable(cpu.createTable(0, 0));
 	const removed = valueString(cpu.stringPool.intern('removed'));
-	table.records.setInteger(table.address, 1, valueFloatBits(0x80000000)); table.records.setInteger(table.address, 8, valueBool(false)); table.records.set(table.address, child, child);
-	table.records.set(table.address, valueString(cpu.stringPool.intern('number')), valueFloatBits(0xffc01234));
-	table.records.set(table.address, valueBool(false), valueFloat(Infinity)); table.records.set(table.address, removed, valueInteger(17)); table.records.set(table.address, removed, valueNil());
-	const before = table.records.getTrackedHeapBytes(table.address), values = new ValueSlots(4);
+	cpu.gc.tables.setInteger(table, 1, valueFloatBits(0x80000000)); cpu.gc.tables.setInteger(table, 8, valueBool(false)); cpu.gc.tables.set(table, child, child);
+	cpu.gc.tables.set(table, valueString(cpu.stringPool.intern('number')), valueFloatBits(0xffc01234));
+	cpu.gc.tables.set(table, valueBool(false), valueFloat(Infinity)); cpu.gc.tables.set(table, removed, valueInteger(17)); cpu.gc.tables.set(table, removed, valueNil());
+	const before = cpu.gc.tables.getTrackedHeapBytes(table), values = new ValueSlots(4);
 	values.setInteger(0, 123); values.setInteger(3, 456);
 	const physical: Value[][] = [];
-	for (let slot = 0; slot < table.records.storedSlotCount(table.address); slot++) {
-		if (table.records.loadStoredEntry(table.address, slot, values, 1)) physical.push([values.get(1), values.get(2)]);
+	for (let slot = 0; slot < cpu.gc.tables.storedSlotCount(table); slot++) {
+		if (cpu.gc.tables.loadStoredEntry(table, slot, values, 1)) physical.push([values.get(1), values.get(2)]);
 	}
 	const logical: Value[][] = [];
 	values.setNil(1);
-	for (table.records.next(table.address, values.get(1), values, 1); values.getTag(1) !== ValueTag.Nil;
-		table.records.next(table.address, values.get(1), values, 1)) logical.push([values.get(1), values.get(2)]);
+	for (cpu.gc.tables.next(table, values.get(1), values, 1); values.getTag(1) !== ValueTag.Nil;
+		cpu.gc.tables.next(table, values.get(1), values, 1)) logical.push([values.get(1), values.get(2)]);
 	assert.deepEqual(physical, logical);
 	assert.equal(physical.length, 5);
 	assert.equal(values.get(0), valueInteger(123));
 	assert.equal(values.get(3), valueInteger(456));
-	assert.equal(table.records.getTrackedHeapBytes(table.address), before);
+	assert.equal(cpu.gc.tables.getTrackedHeapBytes(table), before);
 	const previous = [values.get(1), values.get(2)];
-	assert.equal(table.records.loadStoredEntry(table.address, 1, values, 1), false);
+	assert.equal(cpu.gc.tables.loadStoredEntry(table, 1, values, 1), false);
 	assert.deepEqual([values.get(1), values.get(2)], previous);
 });

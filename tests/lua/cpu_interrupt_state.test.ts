@@ -12,11 +12,7 @@ import { BASE_CYCLES, encodeFixedValueCount, OpCode } from '../../machine/ts/spe
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
-import {
-	valueBuiltinFunction,
-	EMPTY_CALL_ARGS,
-	asClosure, asInteger, asTable, asStringId, valueIsString, valueTable, valueClosure, valueBool, valueInteger, valueFloat, valueNil,
-} from '../../machine/ts/machine/cpu/value';
+import { valueBuiltinFunction, EMPTY_CALL_ARGS, asClosure, asInteger, asStringId, valueIsString, valueTable, valueClosure, valueBool, valueInteger, valueFloat, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import {
 	INSTRUCTION_BYTES,
 	writeInstruction,
@@ -631,9 +627,9 @@ end)
 coroutine.resume(worker)
 `);
 	const coroutine = cpu.createTable(0, 2);
-	coroutine.records.setStringKey(coroutine.address, cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
-	coroutine.records.setStringKey(coroutine.address, cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
-	cpu.setGlobalByKey(cpu.stringPool.intern('coroutine'), valueTable(cpu.gc.reference(coroutine)));
+	cpu.gc.tables.setStringKey(coroutine, cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
+	cpu.gc.tables.setStringKey(coroutine, cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
+	cpu.setGlobalByKey(cpu.stringPool.intern('coroutine'), valueTable(coroutine));
 	let result = RunResult.Yielded;
 	for (let step = 0; step < 10 && result === RunResult.Yielded; step += 1) result = cpu.runUntilDepth(0, 100000);
 	assert.equal(result, RunResult.Halted);
@@ -924,17 +920,17 @@ test('completion-call return routing survives save-state through the raw CPU lat
 
 	cpu.restoreRuntimeState(state);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	const restoredTable = asTable(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+	const restoredTable = valuePayload(materializeCpuCompletionValues(cpu)[0]);
 	cpu.collectTrackedHeapBytes();
-	assert.equal(asTable(materializeCpuCompletionValues(cpu)[0], cpu.gc), restoredTable);
+	assert.equal(valuePayload(materializeCpuCompletionValues(cpu)[0]), restoredTable);
 
 	const restoredClosure = asClosure(cpu.getGlobalByKey(closureKey), cpu.gc);
 	const runtime = makeRuntime(cpu, irqController);
 	const results = runtime.callClosure(restoredClosure);
 	assert.equal(results, runtime.readCompletionValues());
-	const borrowedTable = asTable(results[0], cpu.gc);
+	const borrowedTable = valuePayload(results[0]);
 	cpu.collectTrackedHeapBytes();
-	assert.equal(asTable(results[0], cpu.gc), borrowedTable);
+	assert.equal(valuePayload(results[0]), borrowedTable);
 });
 
 test('CPU aborts a physical completion call at its marked root', () => {
@@ -1848,20 +1844,20 @@ test('CPU runtime snapshot preserves nested table object identities', () => {
 	const root = cpu.createTable(0, 64);
 	const child = cpu.createTable(0, 1);
 	const objectKey = cpu.createTable(0, 0);
-	child.records.setStringKey(child.address, parentKey, valueTable(cpu.gc.reference(root)));
-	root.records.setStringKey(root.address, childKey, valueTable(cpu.gc.reference(child)));
-	root.records.setStringKey(root.address, objectKeyName, valueTable(cpu.gc.reference(objectKey)));
-	root.records.set(root.address, valueTable(cpu.gc.reference(objectKey)), valueTable(cpu.gc.reference(child)));
-	cpu.setGlobalByKey(rootName, valueTable(cpu.gc.reference(root)));
+	cpu.gc.tables.setStringKey(child, parentKey, valueTable(root));
+	cpu.gc.tables.setStringKey(root, childKey, valueTable(child));
+	cpu.gc.tables.setStringKey(root, objectKeyName, valueTable(objectKey));
+	cpu.gc.tables.set(root, valueTable(objectKey), valueTable(child));
+	cpu.setGlobalByKey(rootName, valueTable(root));
 	const snapshot = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(snapshot);
 
-	const restoredRoot = asTable(cpu.getGlobalByKey(rootName), cpu.gc);
-	const restoredChild = asTable(restoredRoot.records.getStringKey(restoredRoot.address, childKey), cpu.gc);
-	const restoredObjectKey = restoredRoot.records.getStringKey(restoredRoot.address, objectKeyName);
+	const restoredRoot = valuePayload(cpu.getGlobalByKey(rootName));
+	const restoredChild = valuePayload(cpu.gc.tables.getStringKey(restoredRoot, childKey));
+	const restoredObjectKey = cpu.gc.tables.getStringKey(restoredRoot, objectKeyName);
 	assert.notEqual(restoredChild, restoredRoot);
-	assert.equal(asTable(restoredChild.records.getStringKey(restoredChild.address, parentKey), cpu.gc), restoredRoot);
-	assert.equal(asTable(restoredRoot.records.get(restoredRoot.address, restoredObjectKey), cpu.gc), restoredChild);
+	assert.equal(valuePayload(cpu.gc.tables.getStringKey(restoredChild, parentKey)), restoredRoot);
+	assert.equal(valuePayload(cpu.gc.tables.get(restoredRoot, restoredObjectKey)), restoredChild);
 });
 
 

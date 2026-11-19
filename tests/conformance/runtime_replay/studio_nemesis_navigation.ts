@@ -1,4 +1,4 @@
-import { asTable, valueNil } from '../../../machine/ts/machine/cpu/value';
+import { valueNil, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -6,18 +6,18 @@ import { check, type StudioFixture } from './studio_fixture';
 export function nemesisTitle(test: StudioFixture) {
 	const { guest } = test;
 	const world = guest.global(buildModuleExportSlotName('cartlib/world/world', []));
-	const objects = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
-	for (let index = 1; index <= objects.records.length(objects.address); index++) {
-		const object = objects.records.getInteger(objects.address, index);
+	const objects = valuePayload(guest.readStringMember(world, '_objects'));
+	for (let index = 1; index <= guest.cpu.gc.tables.length(objects); index++) {
+		const object = guest.cpu.gc.tables.getInteger(objects, index);
 		if (guest.formatValue(guest.readStringMember(object, 'id')) === 'nemesis_s.title_screen') return object;
 	}
 	throw new Error('real Nemesis title actor missing');
 }
 
 export function nemesisTitleState(test: StudioFixture) {
-	const machines = asTable(test.guest.readStringMember(
-		test.guest.readStringMember(nemesisTitle(test), 'state_machines'), '_machines'), test.guest.cpu.gc);
-	return test.guest.formatValue(test.guest.readStringMember(machines.records.getInteger(machines.address, 1), 'current_id'));
+	const machines = valuePayload(test.guest.readStringMember(
+		test.guest.readStringMember(nemesisTitle(test), 'state_machines'), '_machines'));
+	return test.guest.formatValue(test.guest.readStringMember(test.guest.cpu.gc.tables.getInteger(machines, 1), 'current_id'));
 }
 
 /** Confirm only the presentation actually on screen; never queue a title Start. */

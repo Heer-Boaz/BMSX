@@ -1,7 +1,7 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
-import type { Table } from '../../machine/ts/machine/cpu/table';
-import { asClosure, asTable, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+
+import { asClosure, valueNil, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { CpuSuspendedRunResult } from '../../machine/ts/machine/runtime/cpu_executor';
 import type { FrameState } from '../../machine/ts/machine/runtime/frame/state';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
@@ -93,19 +93,19 @@ export class GuestFixture {
 	}
 
 	/** The compiled context retains recorder roots across history restore. No phase call or heap scan is needed. */
-	public readContext(): Table {
+	public readContext(): number {
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
-		const execution = asTable(cpu.getGlobalByKey(pool.find(EXECUTION_SLOT)!), cpu.gc);
-		return asTable(execution.records.getStringKey(execution.address, pool.find('context')!), cpu.gc);
+		const execution = valuePayload(cpu.getGlobalByKey(pool.find(EXECUTION_SLOT)!));
+		return valuePayload(cpu.gc.tables.getStringKey(execution, pool.find('context')!));
 	}
 
 	private beginCall(method: 'bind' | 'resume' | 'cancel', args: readonly Value[]): void {
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
 		// Resolve the current guest module, not closures borrowed from an older heap.
-		const execution = asTable(cpu.getGlobalByKey(pool.intern(EXECUTION_SLOT)), cpu.gc);
+		const execution = valuePayload(cpu.getGlobalByKey(pool.intern(EXECUTION_SLOT)));
 		this.returnThread = cpu.activeThread;
 		this.returnDepth = cpu.getFrameDepth();
-		cpu.beginCompletionCall(asClosure(execution.records.getStringKey(execution.address, pool.intern(method)), cpu.gc), args);
+		cpu.beginCompletionCall(asClosure(cpu.gc.tables.getStringKey(execution, pool.intern(method)), cpu.gc), args);
 		this.callPending = true;
 	}
 }

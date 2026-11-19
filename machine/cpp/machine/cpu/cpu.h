@@ -63,7 +63,7 @@ class IrqController;
 class Memory;
 struct MappedPageBinding;
 
-struct Table;
+class TableRecord;
 class BuiltinResultsScratchScope {
 public:
 	BuiltinResultsScratchScope(CPU& cpu, BuiltinResults& out) noexcept;
@@ -200,7 +200,7 @@ public:
 	size_t globalSlotCount() const { return m_globalBank.count(); }
 
 	Value createBuiltinFunction(BuiltinFunctionId id);
-	Table* createTable(int arraySize = 0, int hashSize = 0);
+	TableRecord createTable(int arraySize = 0, int hashSize = 0);
 
 	void beginCompletionCall(Closure& closure, BuiltinArgsView args = {});
 	void beginCompletionCallInExecutionDomain(

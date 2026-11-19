@@ -1,6 +1,5 @@
 import type { StringId } from './string_pool';
 import type { GcHeap } from './gc_heap';
-import type { Table } from './table';
 import type { Closure } from './closure';
 import type { Thread } from './thread';
 import type { BuiltinFunctionId } from '../../spec/blua32/builtin';
@@ -163,7 +162,6 @@ export class ValueSlots implements ValueWriteTarget {
 	public getFloat(index: number): number { return this.mirrored ? f32BitsToNumber(this.getPayload(index)) : this.floats[this.base + index]; }
 	public getStringId(index: number): StringId { return this.getPayload(index); }
 	public getBuiltinFunctionId(index: number): BuiltinFunctionId { return this.getPayload(index); }
-	public getTable(index: number, heap: GcHeap): Table { return heap.tableAt(this.getPayload(index))!; }
 	public getClosure(index: number, heap: GcHeap): Closure { return heap.closureAt(this.getPayload(index))!; }
 	public getThread(index: number, heap: GcHeap): Thread { return heap.threadAt(this.getPayload(index))!; }
 	public isTruthy(index: number): boolean { const tag = this.getTag(index); return tag !== ValueTag.Nil && tag !== ValueTag.False; }

@@ -257,7 +257,7 @@ void exactGrantSweep(bool scalarControl) {
 		const Value nativeTable = native.cpu.readFrameRegister(0, 3), scalarTable = scalar.cpu.readFrameRegister(0, 3);
 		registersEqual &= (nativeTable == valueNil() && scalarTable == valueNil())
 			|| (valueIsTable(nativeTable) && valueIsTable(scalarTable)
-				&& asTable(nativeTable, native.cpu.gcHeap())->storedSlotCount() == asTable(scalarTable, scalar.cpu.gcHeap())->storedSlotCount());
+				&& asTable(nativeTable, native.cpu.gcHeap()).storedSlotCount() == asTable(scalarTable, scalar.cpu.gcHeap()).storedSlotCount());
 		for (auto* machine : {&native, &scalar}) {
 			machine->irq.raise(IRQ_GPU);
 			require(machine->cpu.enterPendingInterrupt(), "IRQ is accepted");

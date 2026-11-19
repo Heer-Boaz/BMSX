@@ -1,4 +1,4 @@
-import { asTable, type Value, valueInteger, valueNil, valueThread } from '../../../machine/ts/machine/cpu/value';
+import { type Value, valueInteger, valueNil, valueThread, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { applyRuntimeSaveState, captureRuntimeSaveState, type RuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import { readRuntimeLuaModuleExport } from '../../../ide/runtime/lua_inspection';
@@ -32,9 +32,9 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 	const scopes = (): Value[] => {
 		const module = readRuntimeLuaModuleExport(ide.sources, guest, -1, 'debug/frame_scopes');
 		if (module.kind !== 'value') throw new Error('Missing real firmware scope registry');
-		const active = asTable(guest.readStringMember(module.value, 'active'), guest.cpu.gc);
+		const active = valuePayload(guest.readStringMember(module.value, 'active'));
 		const result: Value[] = [];
-		active.records.forEachStoredEntry(active.address, (_key, scope) => result.push(scope));
+		guest.cpu.gc.tables.forEachStoredEntry(active, (_key, scope) => result.push(scope));
 		return result;
 	};
 	const first = await stopAtWait();

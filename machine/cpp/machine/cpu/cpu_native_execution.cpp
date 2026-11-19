@@ -207,9 +207,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			break;
 		case NativeBlockExit::AllocateTable: {
 			const int a = exit->exitA;
-			auto* table = cpu.createTable(exit->exitB, exit->exitC);
-			frame->registers.set(a, valueTable(cpu.m_heap.reference(table)));
-			cpu.instructionBudgetRemaining -= 2 * static_cast<int>(table->storedSlotCount()) - exit->exitB;
+			auto table = cpu.createTable(exit->exitB, exit->exitC);
+			frame->registers.set(a, valueTable(table.address()));
+			cpu.instructionBudgetRemaining -= 2 * static_cast<int>(table.storedSlotCount()) - exit->exitB;
 			frame->setTop(std::max(frame->readWindow(FrameField::Top), a + 1));
 			break;
 		}

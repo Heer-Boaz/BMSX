@@ -98,9 +98,9 @@ void rawFieldsAndInlineCaches() {
 		CpuMachine machine(image, instrumented);
 		auto& cpu = machine.cpu;
 		// Keep growth work separate from the operand and inline-cache base charges.
-		Table* table = cpu.createTable(0, 2);
+		TableRecord table = cpu.createTable(0, 2);
 		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
-		registers.set(1, valueTable(cpu.gcHeap().reference(table)));
+		registers.set(1, valueTable(table.address()));
 		registers.set(32767, valueFloat(91.5));
 		const u32 pc = cpu.readFramePc(0);
 		for (int pass = 0; pass < 2; ++pass) {
@@ -111,7 +111,7 @@ void rawFieldsAndInlineCaches() {
 			require(cpu.runUntilDepth(0, charge) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "raw-field and cached-field instructions preserve their charges");
 			require(cpu.readFrameRegister(0, 0) == valueFloat(91.5), "raw B retains its unsigned 15-bit register index");
 			for (int destination : {2, 3, 4}) require(cpu.readFrameRegister(0, destination) == valueFloat(101.5), "raw integer/string keys and signed RK values remain independent of inline caches");
-			require(cpu.readFrameRegister(0, 5) == valueTable(cpu.gcHeap().reference(table)), "SELF preserves the original table");
+			require(cpu.readFrameRegister(0, 5) == valueTable(table.address()), "SELF preserves the original table");
 		}
 	}
 }
@@ -125,7 +125,7 @@ void rewrittenPayloadVariants() {
 		image.constants = {std::string("field"), Blua32FloatConstant{numberToF32Bits(73.5f)}};
 		CpuMachine machine(image, instrumented);
 		auto& cpu = machine.cpu;
-		cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(cpu.gcHeap().reference(cpu.createTable())));
+		cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(cpu.createTable().address()));
 		cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueFloat(81.5));
 		std::array<u8, 2u * INSTRUCTION_BYTES> code{};
 		for (const OpCode op : {OpCode::KSMI, OpCode::SETFIELD, OpCode::JMP, OpCode::GETFIELD, OpCode::LOADK, OpCode::KSMI}) {

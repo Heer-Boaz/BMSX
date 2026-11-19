@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { Table } from '../../machine/ts/machine/cpu/table';
+
 import { valueBool, valueInteger, valueFloat, valueNil, valueString, valueTable, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -32,10 +32,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   const frame = cpu.rootThread.currentFrame!;
   const entry = image.image.functions[0].codeAddress;
   const grant = BASE_CYCLES[OpCode.CALL] + 1;
-  const runNext = (table: Table, after: Value, slots: number, expected: Value[]) => {
+  const runNext = (table: number, after: Value, slots: number, expected: Value[]) => {
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    frame.registers.set(0, next);
-   frame.registers.setTable(1, cpu.gc.reference(table));
+   frame.registers.setTable(1, table);
    frame.registers.set(2, after);
    frame.registers.setInteger(7, 91);
    assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
@@ -58,8 +58,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
    for (let repeat = 0; repeat < 3; ++repeat) runNext(empty, valueNil(), slots, [valueNil()]);
   }
   const sparse = cpu.createTable(8, 0);
-  sparse.records.setInteger(sparse.address, 3, valueInteger(33));
-  sparse.records.setInteger(sparse.address, 7, valueInteger(77));
+  cpu.gc.tables.setInteger(sparse, 3, valueInteger(33));
+  cpu.gc.tables.setInteger(sparse, 7, valueInteger(77));
   runNext(sparse, valueNil(), 3, [valueInteger(3), valueInteger(33)]);
   runNext(sparse, valueInteger(3), 4, [valueInteger(7), valueInteger(77)]);
   runNext(sparse, valueInteger(7), 1, [valueNil()]);
@@ -67,22 +67,22 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   runNext(sparse, valueInteger(2), 1, [valueInteger(3), valueInteger(33)]);
 
   const hash = cpu.createTable(0, 8);
-  for (let index = 0; index < 8; ++index) hash.records.setStringKey(hash.address, cpu.stringPool.intern(`next-${index}`), valueInteger(index + 10));
+  for (let index = 0; index < 8; ++index) cpu.gc.tables.setStringKey(hash, cpu.stringPool.intern(`next-${index}`), valueInteger(index + 10));
   const stored = new ValueSlots(2);
   const keys: Value[] = [], values: Value[] = [];
   for (let slot = 0; slot < 8; ++slot) {
-   assert.equal(hash.records.loadStoredEntry(hash.address, slot, stored, 0), true);
+   assert.equal(cpu.gc.tables.loadStoredEntry(hash, slot, stored, 0), true);
    keys.push(stored.get(0));
    values.push(stored.get(1));
   }
-  for (let slot = 0; slot < 8; ++slot) if (slot !== 1 && slot !== 4) hash.records.set(hash.address, keys[slot], valueNil());
+  for (let slot = 0; slot < 8; ++slot) if (slot !== 1 && slot !== 4) cpu.gc.tables.set(hash, keys[slot], valueNil());
   runNext(hash, valueNil(), 4, [keys[1], values[1]]);
   runNext(hash, keys[1], 6, [keys[4], values[4]]);
   runNext(hash, keys[2], 4, [keys[4], values[4]]);
   runNext(hash, keys[4], 6, [valueNil()]);
 
   const falseKey = cpu.createTable(0, 1);
-  falseKey.records.set(falseKey.address, valueBool(false), valueBool(false));
+  cpu.gc.tables.set(falseKey, valueBool(false), valueBool(false));
   runNext(falseKey, valueNil(), 2, [valueBool(false), valueBool(false)]);
   runNext(falseKey, valueBool(false), 0, [valueNil()]);
  });
@@ -140,7 +140,7 @@ return true`, 3);
   const frame = cpu.rootThread.currentFrame!;
   const entry = image.image.functions[0].codeAddress;
   const keys = Array.from({ length: 16 }, (_, index) => cpu.stringPool.intern(`growth-${index}`));
-  frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(0, 16)));
+  frame.registers.setTable(0, cpu.createTable(0, 16));
   frame.registers.setString(1, keys[0]);
   frame.registers.setInteger(2, 73);
   cpu.runUntilDepth(0, 10000);
@@ -150,9 +150,9 @@ return true`, 3);
   }
   for (const initialCapacity of [0, 16]) {
    const table = cpu.createTable(0, initialCapacity);
-   frame.registers.setTable(0, cpu.gc.reference(table));
+   frame.registers.setTable(0, table);
    let initializedSlots = 0;
-   let previousCapacity = table.records.storedSlotCount(table.address);
+   let previousCapacity = cpu.gc.tables.storedSlotCount(table);
    for (let index = 0; index < keys.length; index += 1) {
     frame.registers.setString(1, keys[index]);
     cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
@@ -163,8 +163,8 @@ return true`, 3);
     assert.equal(cpu.instructionBudgetRemaining, surcharge ? 1 - surcharge : 1 - BASE_CYCLES[OpCode.JMP]);
     assert.equal(frame.pc, surcharge ? entry + INSTRUCTION_BYTES : entry,
      'growth finishes atomically and stops before the following instruction');
-    assert.equal(table.records.getStringKey(table.address, keys[index]), valueInteger(73));
-    const capacity = table.records.storedSlotCount(table.address);
+    assert.equal(cpu.gc.tables.getStringKey(table, keys[index]), valueInteger(73));
+    const capacity = cpu.gc.tables.storedSlotCount(table);
     assert.equal(capacity, initialCapacity || (1 << (32 - Math.clz32(index))));
     if (capacity !== previousCapacity) initializedSlots += 2 * capacity;
     previousCapacity = capacity;
@@ -188,10 +188,10 @@ return true`, 3);
    const prepare = (capacity: number) => {
     const table = cpu.createTable(integer ? capacity : 0, integer ? 0 : capacity);
     if (op === OpCode.CALL) {
-     r.setBuiltinFunction(0, BuiltinFunctionId.RawSet); r.setTable(1, cpu.gc.reference(table));
+     r.setBuiltinFunction(0, BuiltinFunctionId.RawSet); r.setTable(1, table);
      r.set(2, key); r.setInteger(3, 73);
     } else {
-     r.setTable(0, cpu.gc.reference(table)); r.set(1, key); r.setInteger(2, 73);
+     r.setTable(0, table); r.set(1, key); r.setInteger(2, 73);
     }
     return table;
    };
@@ -207,7 +207,7 @@ return true`, 3);
    const initialization = integer ? 1 : 2;
    assert.equal(cpu.instructionBudgetRemaining, 1 - initialization);
    assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
-   assert.equal(table.records.get(table.address, key), valueInteger(73));
+   assert.equal(cpu.gc.tables.get(table, key), valueInteger(73));
   });
  }
 
@@ -222,7 +222,7 @@ return true`, 3);
    const { cpu } = createTestSystemCpu(image, backend);
    let frame = cpu.rootThread.currentFrame!, r = frame.registers;
    const entry = image.image.functions[0].codeAddress;
-   r.setTable(0, cpu.gc.reference(cpu.createTable(0, 1))); r.set(1, valueString(cpu.stringPool.intern('warm'))); r.setInteger(2, 73);
+   r.setTable(0, cpu.createTable(0, 1)); r.set(1, valueString(cpu.stringPool.intern('warm'))); r.setInteger(2, 73);
    cpu.runUntilDepth(0, 10000);
    if (backend === CpuExecutionBackend.JavaScript) {
     assert.ok(frame.decodedPage!.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]);
@@ -232,39 +232,39 @@ return true`, 3);
    const array = scenario === 'array-growth' ? 2 : scenario === 'array-to-hash' ? 8 : scenario === 'mixed' ? 4 : 0;
    const hash = scenario === 'hash-to-array' || scenario === 'mixed' || scenario === 'same-capacity' || scenario === 'weak-collection' ? 2 : scenario === 'failed-growth' ? 1024 : 0;
    let table = cpu.createTable(array, hash);
-   r.setTable(0, cpu.gc.reference(table)); r.setInteger(2, 73); frame.top = 5;
+   r.setTable(0, table); r.setInteger(2, 73); frame.top = 5;
    let surcharge: number, capacity: number;
    if (scenario === 'array-growth') {
-    table.records.setInteger(table.address, 1, valueInteger(11)); table.records.setInteger(table.address, 2, valueInteger(22)); r.setInteger(1, 3);
+    cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setInteger(table, 2, valueInteger(22)); r.setInteger(1, 3);
     surcharge = 10; capacity = 4;
    } else if (scenario === 'hash-to-array') {
-    table.records.setInteger(table.address, 1, valueInteger(11)); table.records.setInteger(table.address, 3, valueInteger(33)); r.setInteger(1, 2);
+    cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setInteger(table, 3, valueInteger(33)); r.setInteger(1, 2);
     surcharge = 14; capacity = 4;
    } else if (scenario === 'array-to-hash') {
-    table.records.setInteger(table.address, 8, valueInteger(88)); r.set(1, field);
+    cpu.gc.tables.setInteger(table, 8, valueInteger(88)); r.set(1, field);
     surcharge = 22; capacity = 2;
    } else if (scenario === 'mixed') {
-    table.records.setInteger(table.address, 1, valueInteger(11)); table.records.setInteger(table.address, 4, valueInteger(44)); table.records.set(table.address, field, valueInteger(55)); table.records.set(table.address, other, valueInteger(66));
+    cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setInteger(table, 4, valueInteger(44)); cpu.gc.tables.set(table, field, valueInteger(55)); cpu.gc.tables.set(table, other, valueInteger(66));
     r.set(1, valueString(cpu.stringPool.intern('third')));
     surcharge = 32; capacity = 5;
    } else if (scenario === 'same-capacity') {
-    table.records.set(table.address, field, valueInteger(55)); table.records.set(table.address, other, valueInteger(66)); table.records.set(table.address, other, valueNil());
+    cpu.gc.tables.set(table, field, valueInteger(55)); cpu.gc.tables.set(table, other, valueInteger(66)); cpu.gc.tables.set(table, other, valueNil());
     r.set(1, valueString(cpu.stringPool.intern('third')));
     surcharge = 14; capacity = 2;
    } else if (scenario === 'weak-collection') {
     const mode = cpu.createTable(0, 1);
-    mode.records.setStringKey(mode.address, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v'))); table.metatable = mode;
-    table.records.set(table.address, field, valueTable(cpu.gc.reference(cpu.createTable()))); table.records.set(table.address, other, valueTable(cpu.gc.reference(cpu.createTable())));
+    cpu.gc.tables.setStringKey(mode, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v'))); cpu.gc.tables.setMetatableAddress(table, mode);
+    cpu.gc.tables.set(table, field, valueTable(cpu.createTable())); cpu.gc.tables.set(table, other, valueTable(cpu.createTable()));
     r.set(1, valueString(cpu.stringPool.intern('third')));
     while (cpu.gc.phase() !== GcPhase.Atomic) cpu.gc.step();
     const trackedBytes = cpu.luaHeap.usedBytes();
     cpu.luaHeap.setCollectionTarget(trackedBytes);
     surcharge = 16; capacity = 4;
    } else {
-    for (let i = 0; i < 1024; ++i) table.records.set(table.address, valueFloat(i + 0.5), valueInteger(i));
+    for (let i = 0; i < 1024; ++i) cpu.gc.tables.set(table, valueFloat(i + 0.5), valueInteger(i));
     r.setFloat(1, 1024.5);
     const retainedSlots = ((cpu.luaHeap.capacity() - cpu.luaHeap.usedBytes() - 20 * HEAP_PAGE_SIZE) / 5) | 0;
-    r.setTable(4, cpu.gc.reference(cpu.createTable(retainedSlots)));
+    r.setTable(4, cpu.createTable(retainedSlots));
     cpu.collectTrackedHeapBytes();
     cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
     // Claim all remaining page runs so the live table has no contiguous
@@ -277,22 +277,22 @@ return true`, 3);
     const before = captureCpuCheckpoint(cpu);
     gcCycles = scenario === 'weak-collection' ? cpu.gc.step() : cpu.gc.collect();
     restoreCpuCheckpoint(cpu, before);
-    frame = cpu.rootThread.currentFrame!; r = frame.registers; table = r.getTable(0, cpu.gc);
+    frame = cpu.rootThread.currentFrame!; r = frame.registers; table = r.getPayload(0);
    }
    const key = r.get(1);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.SETT] + 1), RunResult.Yielded);
    assert.equal(cpu.instructionBudgetRemaining, 1 - surcharge - gcCycles);
    assert.equal(frame.pc, scenario === 'failed-growth' ? entry : entry + INSTRUCTION_BYTES);
-   assert.equal(table.records.storedSlotCount(table.address), capacity);
+   assert.equal(cpu.gc.tables.storedSlotCount(table), capacity);
    if (scenario === 'failed-growth') {
     assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-    assert.equal(table.records.get(table.address, key), valueNil(), 'failed admission performs no insertion');
-    assert.equal(table.records.get(table.address, valueFloat(0.5)), valueInteger(0), 'existing mappings survive failed admission');
+    assert.equal(cpu.gc.tables.get(table, key), valueNil(), 'failed admission performs no insertion');
+    assert.equal(cpu.gc.tables.get(table, valueFloat(0.5)), valueInteger(0), 'existing mappings survive failed admission');
    } else {
-    assert.equal(table.records.get(table.address, key), valueInteger(73));
+    assert.equal(cpu.gc.tables.get(table, key), valueInteger(73));
     if (scenario === 'weak-collection') {
-     assert.equal(table.records.get(table.address, field), valueNil()); assert.equal(table.records.get(table.address, other), valueNil());
+     assert.equal(cpu.gc.tables.get(table, field), valueNil()); assert.equal(cpu.gc.tables.get(table, other), valueNil());
     }
    }
   });
@@ -307,9 +307,9 @@ return true`, 3);
   scheduler.setNowCycles(73);
   const r = cpu.rootThread.currentFrame!.registers, table = cpu.createTable();
   const key = valueString(cpu.stringPool.intern('field'));
-  r.setTable(0, cpu.gc.reference(table)); r.set(1, key); r.setInteger(2, 91); cpu.rootThread.currentFrame!.top = 3;
+  r.setTable(0, table); r.set(1, key); r.setInteger(2, 91); cpu.rootThread.currentFrame!.top = 3;
   cpu.instructionBudgetRemaining = 29;
-  table.records.set(table.address, key, valueInteger(37));
+  cpu.gc.tables.set(table, key, valueInteger(37));
   assert.equal(cpu.instructionBudgetRemaining, 27);
   assert.equal(scheduler.currentNowCycles(), 73, 'host storage work does not advance machine time');
   const saved = cpu.captureRuntimeState();

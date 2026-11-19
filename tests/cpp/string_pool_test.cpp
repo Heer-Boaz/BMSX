@@ -115,11 +115,11 @@ void retainNestedMaterializationRoots() {
 		}
 		cpu.collectHeap();
 		require(!pool.find("inner string") && pool.find("outer string") == outerId, "inner roots retire without releasing the outer phase");
-		auto* table = cpu.createTable();
+		auto table = cpu.createTable();
 		const auto key = pool.intern("nested key");
-		table->setStringKey(key, valueInteger(7));
+		table.setStringKey(key, valueInteger(7));
 		cpu.collectHeap();
-		require(table->getStringKey(key) == valueInteger(7), "the same CPU materialization phase owns tables and strings");
+		require(table.getStringKey(key) == valueInteger(7), "the same CPU materialization phase owns tables and strings");
 	}
 	cpu.collectHeap();
 	require(!pool.find("outer string") && !pool.find("nested key"), "CPU scope retirement releases string roots");
@@ -151,22 +151,22 @@ void reuseDeletedStringKeyId() {
 	auto& cpu = machine.cpu;
 	auto& pool = cpu.stringPool();
 	const auto root = pool.intern("table root");
-	auto* table = cpu.createTable(0, 8);
-	cpu.setGlobalByKey(root, valueTable(cpu.gcHeap().reference(table)));
+	auto table = cpu.createTable(0, 8);
+	cpu.setGlobalByKey(root, valueTable(table.address()));
 	const auto removed = pool.intern("removed key");
-	table->setStringKey(removed, valueInteger(19));
-	table->setStringKey(removed, valueNil());
+	table.setStringKey(removed, valueInteger(19));
+	table.setStringKey(removed, valueNil());
 	const auto retained = pool.intern("retained key");
-	table->setStringKey(retained, valueInteger(23));
+	table.setStringKey(retained, valueInteger(23));
 	cpu.collectHeap();
 	require(!pool.find("removed key"), "dead hash nodes do not own their former string text");
 	const auto replacement = pool.intern("replacement key");
-	require(isNil(table->getStringKey(replacement)), "recycled IDs do not resurrect removed mappings");
-	table->setStringKey(replacement, valueInteger(29));
-	require(table->getStringKey(replacement) == valueInteger(29) && table->getStringKey(retained) == valueInteger(23), "a new mapping coexists with retained keys");
+	require(isNil(table.getStringKey(replacement)), "recycled IDs do not resurrect removed mappings");
+	table.setStringKey(replacement, valueInteger(29));
+	require(table.getStringKey(replacement) == valueInteger(29) && table.getStringKey(retained) == valueInteger(23), "a new mapping coexists with retained keys");
 	Value key = valueNil(), value = valueNil();
 	std::vector<std::string> keys;
-	for (table->nextEntry(key, key, value); !isNil(key); table->nextEntry(key, key, value)) {
+	for (table.nextEntry(key, key, value); !isNil(key); table.nextEntry(key, key, value)) {
 		require(valueIsString(key), "the fixture's live mappings retain string representation");
 		keys.push_back(pool.toString(asStringId(key)));
 	}

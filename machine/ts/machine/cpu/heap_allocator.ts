@@ -86,6 +86,15 @@ export class HeapAllocator {
 		return this.management;
 	}
 
+	/** The record port supplies an aligned physical slot offset. */
+	public isIssuedObjectSlot(offset: number, sizeClass: number): boolean {
+		const page = offset >>> PAGE_SHIFT;
+		if (page >= this.pageLimit) return false;
+		const descriptor = this.entry(page);
+		return (this.memory.readRamRecordWord(descriptor) & 0xffff) === (PageKind.ObjectSlots | (sizeClass << 8))
+			&& ((offset & PAGE_MASK) >>> BUMP_SHIFT) < (this.memory.readRamRecordWord(descriptor + 8) & LINK_MASK);
+	}
+
 	public reset(floorAddress: number): void {
 		this.memory.ramData().fill(0, this.management, this.management + RUNTIME_MANAGEMENT_SIZE);
 		this.memory.invalidateRamWrite(this.management, RUNTIME_MANAGEMENT_SIZE);

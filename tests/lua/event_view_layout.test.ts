@@ -318,8 +318,8 @@ test('Event Details keeps actual snapshot-budget warnings inline rather than hid
 test('compact Event Details keeps an omitted stored key visible even when its captured value is complete', t => {
 	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), slots = new ValueSlots(1);
 	const payload = cpu.createTable(0, 1);
-	payload.records.setStringKey(payload.address, cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), valueInteger(7));
-	slots.setTable(0, cpu.gc.reference(payload)); reader.begin();
+	cpu.gc.tables.setStringKey(payload, cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), valueInteger(7));
+	slots.setTable(0, payload); reader.begin();
 	const snapshot = reader.read(slots, 0); assert.ok(snapshot.kind === 'table');
 	assert.equal(snapshot.omitted, false); assert.equal(snapshot.entries.length, 1);
 	assert.ok(snapshot.entries[0].key.kind === 'string'); assert.equal(snapshot.entries[0].key.omitted, true);
@@ -336,9 +336,9 @@ test('compact Event Details keeps an omitted stored key visible even when its ca
 
 test('Event Details carries actual omitted-key identity into descendants without blaming retained sibling values', t => {
 	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), slots = new ValueSlots(1);
-	const payload = cpu.createTable(0, 1), nested = cpu.createTable(1, 0); nested.records.setInteger(nested.address, 1, valueInteger(7));
-	payload.records.setStringKey(payload.address, cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), valueTable(cpu.gc.reference(nested)));
-	slots.setTable(0, cpu.gc.reference(payload)); reader.begin();
+	const payload = cpu.createTable(0, 1), nested = cpu.createTable(1, 0); cpu.gc.tables.setInteger(nested, 1, valueInteger(7));
+	cpu.gc.tables.setStringKey(payload, cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), valueTable(nested));
+	slots.setTable(0, payload); reader.begin();
 	const snapshot = reader.read(slots, 0); assert.ok(snapshot.kind === 'table');
 	assert.equal(snapshot.omitted, false); assert.ok(snapshot.entries[0].key.kind === 'string'); assert.equal(snapshot.entries[0].key.omitted, true);
 	const child = snapshot.entries[0].value; assert.ok(child.kind === 'table'); assert.equal(child.omitted, false);
@@ -351,8 +351,8 @@ test('Event Details carries actual omitted-key identity into descendants without
 		assert.notEqual(row.descriptionDisplay, 'disclosure');
 	}
 	const completeChildren = cpu.createTable(VALUE_SNAPSHOT_ENTRIES + 1, 0);
-	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES + 1; index++) completeChildren.records.setInteger(completeChildren.address, index, valueInteger(index));
-	slots.setTable(0, cpu.gc.reference(completeChildren)); reader.begin();
+	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES + 1; index++) cpu.gc.tables.setInteger(completeChildren, index, valueInteger(index));
+	slots.setTable(0, completeChildren); reader.begin();
 	const omittedTable = reader.read(slots, 0); assert.ok(omittedTable.kind === 'table'); assert.equal(omittedTable.omitted, true);
 	const retained = eventProperties({ ...history.at(history.firstSequence), payload: omittedTable });
 	assert.equal(retained.find(row => row.label === 'Payload')!.warning, true);

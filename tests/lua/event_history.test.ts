@@ -183,9 +183,9 @@ test('snapshot work includes vacant storage and shares its scan budget across ne
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
 	const reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), values = new ValueSlots(1);
 	const child = cpu.createTable(VALUE_SNAPSHOT_SLOTS, 0), root = cpu.createTable(2, 0);
-	child.records.setInteger(child.address, VALUE_SNAPSHOT_SLOTS, v.valueInteger(17));
-	root.records.setInteger(root.address, 1, v.valueTable(cpu.gc.reference(child))); root.records.setInteger(root.address, 2, v.valueInteger(42));
-	values.set(0, v.valueTable(cpu.gc.reference(root)));
+	cpu.gc.tables.setInteger(child, VALUE_SNAPSHOT_SLOTS, v.valueInteger(17));
+	cpu.gc.tables.setInteger(root, 1, v.valueTable(child)); cpu.gc.tables.setInteger(root, 2, v.valueInteger(42));
+	values.set(0, v.valueTable(root));
 	reader.begin();
 	const result = reader.read(values, 0);
 	assert.ok(result.kind === 'table');
@@ -196,7 +196,7 @@ test('snapshot work includes vacant storage and shares its scan budget across ne
 	assert.equal(nested.entries.length, 0);
 	assert.equal(nested.omitted, true);
 	// This is one emission-wide budget, not a fresh allowance per argument.
-	values.setTable(0, cpu.gc.reference(cpu.createTable(1, 0)));
+	values.setTable(0, cpu.createTable(1, 0));
 	const exhausted = reader.read(values, 0);
 	assert.ok(exhausted.kind === 'table');
 	assert.equal(exhausted.omitted, true);
@@ -210,14 +210,14 @@ test('snapshot entry boundary distinguishes an exhausted budget from fully visit
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
 	const reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), values = new ValueSlots(1);
 	const table = cpu.createTable(VALUE_SNAPSHOT_ENTRIES + 1, 0);
-	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES; index++) table.records.setInteger(table.address, index, v.valueInteger(index));
-	values.set(0, v.valueTable(cpu.gc.reference(table)));
+	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES; index++) cpu.gc.tables.setInteger(table, index, v.valueInteger(index));
+	values.set(0, v.valueTable(table));
 	reader.begin();
 	const complete = reader.read(values, 0);
 	assert.ok(complete.kind === 'table');
 	assert.equal(complete.entries.length, VALUE_SNAPSHOT_ENTRIES);
 	assert.equal(complete.omitted, false);
-	table.records.setInteger(table.address, VALUE_SNAPSHOT_ENTRIES + 1, v.valueBool(false));
+	cpu.gc.tables.setInteger(table, VALUE_SNAPSHOT_ENTRIES + 1, v.valueBool(false));
 	reader.begin();
 	const truncated = reader.read(values, 0);
 	assert.ok(truncated.kind === 'table');

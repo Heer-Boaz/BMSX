@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { asInteger, asTable } from '../../machine/ts/machine/cpu/value';
+import { asInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { SceneRegistrationProvenance } from '../../ide/workbench/contrib/scene_editor/registration_provenance';
@@ -45,12 +45,12 @@ last = scenes.instantiate('same')
 	assert.equal(asInteger(cpu.getGlobalByKey(cpu.stringPool.find('registration_visits')!)), 15);
 	assert.equal(provenance.plans.size, 4, 'failed compilation has no plan publication');
 	const plans = ['first', 'second', 'third', 'last'].map(name => {
-		const scene = asTable(cpu.getGlobalByKey(cpu.stringPool.find(name)!), cpu.gc);
-		return asTable(scene.records.getStringKey(scene.address, cpu.stringPool.find('definition')!), cpu.gc);
+		const scene = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find(name)!));
+		return valuePayload(cpu.gc.tables.getStringKey(scene, cpu.stringPool.find('definition')!));
 	});
-	assert.equal(new Set(plans.map(plan => plan.address)).size, 4, 'plan identity survives repeated registry keys');
+	assert.equal(new Set(plans.map(plan => plan)).size, 4, 'plan identity survives repeated registry keys');
 	for (let index = 0; index < plans.length; index++) {
-		const record = provenance.plans.get(plans[index].address)!;
+		const record = provenance.plans.get(plans[index])!;
 		const call = record.calls.find(call => call.path === 'entry.lua')!;
 		assert.equal(readLuaSourceRange(new PieceTreeBuffer(source), call), index % 2 === 0
 			? "scenes.register('same', {objects={{member_id='first', definition_id='actor'}}})"

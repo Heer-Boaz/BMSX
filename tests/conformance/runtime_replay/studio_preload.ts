@@ -1,4 +1,4 @@
-import { asTable, valueInteger } from '../../../machine/ts/machine/cpu/value';
+import { valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import { traceSinkFieldName } from '../../../toolchain/ts/lua/compiler/trace_statement';
 import { PRELOAD_TRACE_CHANNELS } from '../../helpers/preload_source_fixture';
@@ -17,13 +17,13 @@ export async function runStudioPreload(test: StudioFixture) {
 	const recorded = (expectedType: string) => {
 		const current = moduleValue('observation');
 		const actor = guest.readStringMember(moduleValue('game'), 'actor');
-		const bindings = asTable(guest.readStringMember(current, 'completed_bindings'), guest.cpu.gc);
-		const program = bindings.records.get(bindings.address, actor);
-		const programs = asTable(guest.readStringMember(current, 'programs'), guest.cpu.gc);
-		const capture = programs.records.get(programs.address, program);
+		const bindings = valuePayload(guest.readStringMember(current, 'completed_bindings'));
+		const program = guest.cpu.gc.tables.get(bindings, actor);
+		const programs = valuePayload(guest.readStringMember(current, 'programs'));
+		const capture = guest.cpu.gc.tables.get(programs, program);
 		const nodes = guest.readStringMember(capture, 'nodes');
-		const types = asTable(guest.readStringMember(nodes, 'type'), guest.cpu.gc);
-		check(guest.readStringMember(capture, 'node_count') === valueInteger(2) && guest.formatValue(types.records.getInteger(types.address, 1)) === expectedType,
+		const types = valuePayload(guest.readStringMember(nodes, 'type'));
+		check(guest.readStringMember(capture, 'node_count') === valueInteger(2) && guest.formatValue(guest.cpu.gc.tables.getInteger(types, 1)) === expectedType,
 			`preload: actual completed compilation retains ${expectedType}, including erased single-child structure`);
 		return program;
 	};

@@ -46,16 +46,16 @@ struct Machine {
 #endif
 	}
 };
-Table* makeTable(CPU& cpu,Kind kind) {
-	auto* table=cpu.createTable(kind==Kind::Sparse||kind==Kind::Terminal?0:4096,128);
-	if (kind==Kind::Ascending) for (int k=1;k<=64;++k) table->setInteger(k,valueBool(false));
+TableRecord makeTable(CPU& cpu,Kind kind) {
+	auto table=cpu.createTable(kind==Kind::Sparse||kind==Kind::Terminal?0:4096,128);
+	if (kind==Kind::Ascending) for (int k=1;k<=64;++k) table.setInteger(k,valueBool(false));
 	if (kind==Kind::Descending||kind==Kind::Stale) {
-		const Value value=kind==Kind::Stale?valueTable(cpu.gcHeap().reference(cpu.createTable())):valueBool(false);
-		for (int k=4096;k>=1;--k) table->setInteger(k,value);
+		const Value value=kind==Kind::Stale?valueTable(cpu.createTable().address()):valueBool(false);
+		for (int k=4096;k>=1;--k) table.setInteger(k,value);
 	}
-	if (kind==Kind::Stale) table->clearWeakEntries(false,true,[](Value){return false;});
-	if (kind==Kind::Sparse||kind==Kind::Terminal) for (int bit=30;bit>=0;--bit) table->setInteger(1 << bit,valueBool(false));
-	if (kind==Kind::Terminal) table->setInteger(INT32_MAX,valueBool(false));
+	if (kind==Kind::Stale) table.clearWeakEntries(false,true,[](Value){return false;});
+	if (kind==Kind::Sparse||kind==Kind::Terminal) for (int bit=30;bit>=0;--bit) table.setInteger(1 << bit,valueBool(false));
+	if (kind==Kind::Terminal) table.setInteger(INT32_MAX,valueBool(false));
 	return table;
 }
 void sameSnapshot(const CpuRuntimeState& a, const CpuRuntimeState& b) {
@@ -66,28 +66,28 @@ void sameSnapshot(const CpuRuntimeState& a, const CpuRuntimeState& b) {
 void pureSearchAndSeed() {
 	Program program(false);
 	for (const auto test:cases) {
-		Machine m(program,true); auto* table=makeTable(m.cpu,test.kind); m.cpu.activeThread()->currentFrame->registers.set(0, valueTable(m.cpu.gcHeap().reference(table)));
+		Machine m(program,true); auto table=makeTable(m.cpu,test.kind); m.cpu.activeThread()->currentFrame->registers.set(0, valueTable(table.address()));
 		const auto before=m.cpu.captureRuntimeState();
 		for (int repeat=0;repeat<3;++repeat) {
-			u32 probes; require(Table::length(table,&probes)==test.boundary&&probes==static_cast<u32>(test.probes),"exact literal logical probe count and border");
-			require(Table::length(table)==test.boundary,"raw host query retains its Number-returning contract");
+			u32 probes; require(TableRecord::length(&table,&probes)==test.boundary&&probes==static_cast<u32>(test.probes),"exact literal logical probe count and border");
+			require(TableRecord::length(&table)==test.boundary,"raw host query retains its Number-returning contract");
 		}
 		sameSnapshot(m.cpu.captureRuntimeState(),before);
 	}
-	Machine m(program,true);auto* table=makeTable(m.cpu,Kind::Descending);require(table->lengthHint()==1,"descending writes retain seed1");
-	for (int i=0;i<300;++i) table->setStringKey(m.cpu.stringPool().intern("key"+std::to_string(i)),valueBool(true));
-	u32 probes;require(table->lengthHint()==1&&Table::length(table,&probes)==4096&&probes==26,"redistribution retains seed and semantic probes");
-	table->setInteger(2,valueBool(false));require(table->lengthHint()==2,"adjacent overwrite advances only one step");
-	table->setInteger(2,valueNil());require(table->lengthHint()==1,"adjacent deletion retreats one step");
-	table->clear();require(table->lengthHint()==0&&Table::length(table,&probes)==0&&probes==1,"complete clear resets seed0");
-	auto* hash=m.cpu.createTable(0,16);hash->setInteger(1,valueBool(false));require(hash->lengthHint()==1,"eligible integer in hash updates seed");
-	hash->setInteger(2,valueBool(false));require(hash->lengthHint()==2,"second eligible hash write advances one step");
+	Machine m(program,true);auto table=makeTable(m.cpu,Kind::Descending);require(table.lengthHint()==1,"descending writes retain seed1");
+	for (int i=0;i<300;++i) table.setStringKey(m.cpu.stringPool().intern("key"+std::to_string(i)),valueBool(true));
+	u32 probes;require(table.lengthHint()==1&&TableRecord::length(&table,&probes)==4096&&probes==26,"redistribution retains seed and semantic probes");
+	table.setInteger(2,valueBool(false));require(table.lengthHint()==2,"adjacent overwrite advances only one step");
+	table.setInteger(2,valueNil());require(table.lengthHint()==1,"adjacent deletion retreats one step");
+	table.clear();require(table.lengthHint()==0&&TableRecord::length(&table,&probes)==0&&probes==1,"complete clear resets seed0");
+	auto hash=m.cpu.createTable(0,16);hash.setInteger(1,valueBool(false));require(hash.lengthHint()==1,"eligible integer in hash updates seed");
+	hash.setInteger(2,valueBool(false));require(hash.lengthHint()==2,"second eligible hash write advances one step");
 }
 void everyGrant() {
 	for (bool wide:{false,true}) for (const auto test:cases) {
 		Program program(wide);Machine generated(program,false),scalar(program,true);
 		for (auto* m:{&generated,&scalar}) {
-			auto r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueTable(m->cpu.gcHeap().reference(makeTable(m->cpu,test.kind))));r.set(10, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable(1))));
+			auto r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueTable(makeTable(m->cpu,test.kind).address()));r.set(10, valueTable(m->cpu.createTable(1).address()));
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		const auto* page=generated.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup->find(generated.rom.textAddress,0);
@@ -98,14 +98,14 @@ void everyGrant() {
 		for (int grant=0;grant<=total;++grant) {
 			for (auto* m:{&generated,&scalar}) {
 				m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);
-				auto r=m->cpu.activeThread()->currentFrame->registers;r.set(6, valueInteger(91));r.set(8, valueNil());r.set(9, valueNil());asTable(r.get(10), m->cpu.gcHeap())->setInteger(1,valueInteger(-1));
+				auto r=m->cpu.activeThread()->currentFrame->registers;r.set(6, valueInteger(91));r.set(8, valueNil());r.set(9, valueNil());asTable(r.get(10), m->cpu.gcHeap()).setInteger(1,valueInteger(-1));
 			}
 			require(test::runCpuParity(generated.cpu,scalar.cpu,grant)==RunResult::Yielded,"LEN loop remains runnable");
 			int remaining=grant,completed=0;while (remaining>0)remaining-=charges[completed++];
 			auto* frame=generated.cpu.activeThread()->currentFrame;auto r=frame->registers;
 			require(generated.cpu.instructionBudgetRemaining==remaining&&frame->readControl(bmsx::FrameField::Pc)==generated.rom.textAddress+program.starts[completed==6?0:completed]*INSTRUCTION_BYTES,"literal full-P debt and instruction frontier");
 			require(r.get(6)==(completed>=3?valueInteger(test.boundary):completed>=2?r.get(0):valueInteger(91))
-				&&asTable(r.get(10), generated.cpu.gcHeap())->getInteger(1)==(completed>=4?valueInteger(test.boundary):valueInteger(-1))&&r.get(8)==(completed>=5?valueInteger(37):valueNil()),
+				&&asTable(r.get(10), generated.cpu.gcHeap()).getInteger(1)==(completed>=4?valueInteger(test.boundary):valueInteger(-1))&&r.get(8)==(completed>=5?valueInteger(37):valueNil()),
 				"aliased Integer result and side-effecting suffix commit only at admitted instruction frontiers");
 			sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 			require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
@@ -144,7 +144,7 @@ void skippedLength() {
 		Machine generated(program, false), scalar(program, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto r = m->cpu.activeThread()->currentFrame->registers;
-			r.set(0, valueTable(m->cpu.gcHeap().reference(makeTable(m->cpu, Kind::Descending)))); r.set(1, valueInteger(1)); r.set(6, valueInteger(91));
+			r.set(0, valueTable(makeTable(m->cpu, Kind::Descending).address())); r.set(1, valueInteger(1)); r.set(6, valueInteger(91));
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 4);
 		require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.readFrameRegister(0, 6) == valueInteger(91)
@@ -154,7 +154,7 @@ void skippedLength() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void oneGateFrontier() {
 	Program program(false);Machine m(program,false);auto* frame=m.cpu.activeThread()->currentFrame;auto r=frame->registers;
-	r.set(0, valueTable(m.cpu.gcHeap().reference(makeTable(m.cpu,Kind::Descending))));r.set(10, valueTable(m.cpu.gcHeap().reference(m.cpu.createTable(1))));asTable(r.get(10), m.cpu.gcHeap())->setInteger(1,valueInteger(-1));r.set(8, valueNil());
+	r.set(0, valueTable(makeTable(m.cpu,Kind::Descending).address()));r.set(10, valueTable(m.cpu.createTable(1).address()));asTable(r.get(10), m.cpu.gcHeap()).setInteger(1,valueInteger(-1));r.set(8, valueNil());
 	const auto* page=frame->executionImage->nativeCodeLookup->find(m.rom.textAddress,0);
 	const auto& block=page->nativeBlocks->entries[(m.rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES];
 	NativeBlockRunState state{};
@@ -163,7 +163,7 @@ void oneGateFrontier() {
 	const auto* exit=block->run(state);
 	require(exit->exit==NativeBlockExit::Continue&&exit->nextPc==m.rom.textAddress+program.starts[3]*INSTRUCTION_BYTES&&state.remainingCycles==-145,
 		"one actual gate invocation returns completed LEN debt before any outer CPU loop can intervene");
-	require(r.get(6)==valueInteger(4096)&&r.get(9)==valueInteger(37)&&asTable(r.get(10), m.cpu.gcHeap())->getInteger(1)==valueInteger(-1)&&isNil(r.get(8)),
+	require(r.get(6)==valueInteger(4096)&&r.get(9)==valueInteger(37)&&asTable(r.get(10), m.cpu.gcHeap()).getInteger(1)==valueInteger(-1)&&isNil(r.get(8)),
 		"Integer stays intact across scalar-work read and cached result is published before the unexecuted side effect");
 }
 #endif

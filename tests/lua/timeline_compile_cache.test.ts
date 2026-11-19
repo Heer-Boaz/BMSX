@@ -1,4 +1,4 @@
-import { asTable, asClosure, valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueNil, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -45,14 +45,14 @@ function probe.exercise()
 end
 `, { optLevel });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('exercise')!), cpu.gc), []);
-	const refs = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('refs')!), cpu.gc);
-	assert.notEqual(refs.records.getInteger(refs.address, 1), valueNil());
-	assert.notEqual(refs.records.getInteger(refs.address, 2), valueNil());
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('exercise')!), cpu.gc), []);
+	const refs = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
+	assert.notEqual(cpu.gc.tables.getInteger(refs, 1), valueNil());
+	assert.notEqual(cpu.gc.tables.getInteger(refs, 2), valueNil());
 	cpu.collectTrackedHeapBytes();
-	assert.equal(refs.records.getInteger(refs.address, 1), valueNil(), 'the cache must not retain unused appliers');
-	assert.equal(refs.records.getInteger(refs.address, 2), valueNil(), 'the cache must not retain unused writers');
+	assert.equal(cpu.gc.tables.getInteger(refs, 1), valueNil(), 'the cache must not retain unused appliers');
+	assert.equal(cpu.gc.tables.getInteger(refs, 2), valueNil(), 'the cache must not retain unused writers');
 });
 
 for (const optLevel of [0, 3] as const) test(`timeline value factories reuse only equivalent track capabilities (O${optLevel})`, () => {
@@ -122,12 +122,12 @@ function probe.recreate()
 end
 `, { optLevel, modules: instrumentedModules });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-	const refs = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('refs')!), cpu.gc);
-	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('seed')!), cpu.gc), []);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	const refs = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
+	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('seed')!), cpu.gc), []);
 	cpu.collectTrackedHeapBytes();
-	for (let index = 1; index <= 3; index++) assert.equal(refs.records.getInteger(refs.address, index), valueNil());
-	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('recreate')!), cpu.gc), []);
-	assert.equal(probe.records.getStringKey(probe.address, cpu.stringPool.find('compile_count')!), valueInteger(3),
+	for (let index = 1; index <= 3; index++) assert.equal(cpu.gc.tables.getInteger(refs, index), valueNil());
+	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('recreate')!), cpu.gc), []);
+	assert.equal(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('compile_count')!), valueInteger(3),
 		'an abandoned generated factory must be collected, then compiled on demand');
 });

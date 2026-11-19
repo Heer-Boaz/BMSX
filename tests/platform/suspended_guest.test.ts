@@ -17,12 +17,12 @@ test('suspended member reads consume lookup results without executing or chargin
 	const guest = new SuspendedGuestSession(runtime), key = cpu.stringPool.intern('member');
 	const index = cpu.stringPool.find('__index')!;
 	const parent = cpu.createTable(0, 1), child = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
-	const parentValue = v.valueTable(cpu.gc.reference(parent)), childValue = v.valueTable(cpu.gc.reference(child));
-	parent.records.setStringKey(parent.address, key, v.valueInteger(41));
-	meta.records.setStringKey(meta.address, index, parentValue); child.metatable = meta;
+	const parentValue = v.valueTable(parent), childValue = v.valueTable(child);
+	cpu.gc.tables.setStringKey(parent, key, v.valueInteger(41));
+	cpu.gc.tables.setStringKey(meta, index, parentValue); cpu.gc.tables.setMetatableAddress(child, meta);
 	const loop = cpu.createTable(0, 1), loopMeta = cpu.createTable(0, 1);
-	const loopValue = v.valueTable(cpu.gc.reference(loop));
-	loopMeta.records.setStringKey(loopMeta.address, index, loopValue); loop.metatable = loopMeta;
+	const loopValue = v.valueTable(loop);
+	cpu.gc.tables.setStringKey(loopMeta, index, loopValue); cpu.gc.tables.setMetatableAddress(loop, loopMeta);
 	cpu.setGlobalByKey(cpu.stringPool.intern('child'), childValue);
 	cpu.setGlobalByKey(cpu.stringPool.intern('loop'), loopValue);
 	cpu.instructionBudgetRemaining = 123;
@@ -36,7 +36,7 @@ test('suspended member reads consume lookup results without executing or chargin
 	assert.equal(cpu.instructionBudgetRemaining, 123);
 	assert.equal(runtime.machine.scheduler.nowCycles, cycle);
 	assert.deepEqual(cpu.captureRuntimeState(), before, 'inspection preserves the guest graph, PC, seed and allocation state');
-	child.records.setStringKey(child.address, key, v.valueBool(false));
+	cpu.gc.tables.setStringKey(child, key, v.valueBool(false));
 	assert.equal(guest.readStringMember(childValue, 'member'), v.valueBool(false), 'an own false value still wins over inherited data');
 });
 

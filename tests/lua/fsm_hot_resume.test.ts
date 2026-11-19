@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { asClosure, asStringId, asTable, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
+import { asClosure, asStringId, valueBool, valueInteger, valueNil, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test_harness';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
@@ -656,12 +656,12 @@ test('cold BT channel selection leaves actual FSM transition work identical to e
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		const [runValue, , recorderValue] = materializeCpuCompletionValues(cpu);
 		const run = asClosure(runValue, cpu.gc);
-		const recorder = asTable(recorderValue, cpu.gc);
+		const recorder = valuePayload(recorderValue);
 		runCompletionClosure(cpu, run, [valueInteger(20)]);
 		const warmBytes = cpu.luaHeap.usedBytes();
 		const cycles = runCompletionClosure(cpu, run, [valueInteger(10_000)], TRANSITION_CALL_GRANT);
 		assert.equal(cpu.luaHeap.usedBytes(), warmBytes);
-		assert.equal(recorder.records.getInteger(recorder.address, 4), valueInteger(mode === 'emit' ? 10_023 : 0));
+		assert.equal(cpu.gc.tables.getInteger(recorder, 4), valueInteger(mode === 'emit' ? 10_023 : 0));
 		measurements.push({ mode, cycles });
 	}
 	assert.equal(measurements[1].cycles, measurements[0].cycles);
@@ -675,29 +675,29 @@ test('FSM transition recorder publishes ordered fixed-capacity facts without ste
 	const [runValue, detachValue, channelValue] = materializeCpuCompletionValues(cpu);
 	const run = asClosure(runValue, cpu.gc);
 	const detach = asClosure(detachValue, cpu.gc);
-	const channel = asTable(channelValue, cpu.gc);
-	const records = asTable(channel.records.getInteger(channel.address, 5), cpu.gc);
-	const recordSlots = Array.from({ length: 4 }, (_, i) => records.records.getInteger(records.address, i + 1));
+	const channel = valuePayload(channelValue);
+	const records = valuePayload(cpu.gc.tables.getInteger(channel, 5));
+	const recordSlots = Array.from({ length: 4 }, (_, i) => cpu.gc.tables.getInteger(records, i + 1));
 	const strings = cpu.stringPool;
 	const text = (value: Value): string => strings.toString(asStringId(value));
 
-	assert.equal(text(channel.records.getInteger(channel.address, 1)), 'trace_target.trace_machine');
-	assert.equal(text(channel.records.getInteger(channel.address, 2)), 'trace_machine');
-	assert.equal(channel.records.getInteger(channel.address, 3), valueInteger(4));
-	assert.equal(channel.records.getInteger(channel.address, 4), valueInteger(3));
-	const rejected = asTable(records.records.getInteger(records.address, 1), cpu.gc);
-	const committed = asTable(records.records.getInteger(records.address, 2), cpu.gc);
-	const nested = asTable(records.records.getInteger(records.address, 3), cpu.gc);
-	assert.equal(rejected.records.getInteger(rejected.address, 1), valueInteger(1));
-	assert.equal(rejected.records.getInteger(rejected.address, 6), valueBool(false));
-	assert.equal(text(rejected.records.getInteger(rejected.address, 3)), 'trace_machine');
-	assert.equal(text(rejected.records.getInteger(rejected.address, 4)), 'trace_machine:/idle');
-	assert.equal(text(rejected.records.getInteger(rejected.address, 5)), 'trace_machine:/active');
-	assert.equal(committed.records.getInteger(committed.address, 1), valueInteger(2));
-	assert.equal(committed.records.getInteger(committed.address, 6), valueBool(true));
-	assert.equal(nested.records.getInteger(nested.address, 1), valueInteger(3));
-	assert.equal(text(nested.records.getInteger(nested.address, 4)), 'trace_machine:/active');
-	assert.equal(text(nested.records.getInteger(nested.address, 5)), 'trace_machine:/done');
+	assert.equal(text(cpu.gc.tables.getInteger(channel, 1)), 'trace_target.trace_machine');
+	assert.equal(text(cpu.gc.tables.getInteger(channel, 2)), 'trace_machine');
+	assert.equal(cpu.gc.tables.getInteger(channel, 3), valueInteger(4));
+	assert.equal(cpu.gc.tables.getInteger(channel, 4), valueInteger(3));
+	const rejected = valuePayload(cpu.gc.tables.getInteger(records, 1));
+	const committed = valuePayload(cpu.gc.tables.getInteger(records, 2));
+	const nested = valuePayload(cpu.gc.tables.getInteger(records, 3));
+	assert.equal(cpu.gc.tables.getInteger(rejected, 1), valueInteger(1));
+	assert.equal(cpu.gc.tables.getInteger(rejected, 6), valueBool(false));
+	assert.equal(text(cpu.gc.tables.getInteger(rejected, 3)), 'trace_machine');
+	assert.equal(text(cpu.gc.tables.getInteger(rejected, 4)), 'trace_machine:/idle');
+	assert.equal(text(cpu.gc.tables.getInteger(rejected, 5)), 'trace_machine:/active');
+	assert.equal(cpu.gc.tables.getInteger(committed, 1), valueInteger(2));
+	assert.equal(cpu.gc.tables.getInteger(committed, 6), valueBool(true));
+	assert.equal(cpu.gc.tables.getInteger(nested, 1), valueInteger(3));
+	assert.equal(text(cpu.gc.tables.getInteger(nested, 4)), 'trace_machine:/active');
+	assert.equal(text(cpu.gc.tables.getInteger(nested, 5)), 'trace_machine:/done');
 
 	runCompletionClosure(cpu, run, [valueInteger(20)]);
 	// The returned handles are borrowed by the scenario driver, not GC roots.
@@ -705,12 +705,12 @@ test('FSM transition recorder publishes ordered fixed-capacity facts without ste
 	const recordedCycles = runCompletionClosure(cpu, run, [valueInteger(10_000)], TRANSITION_CALL_GRANT);
 	// A full collection may shrink a retained stack; it must not retain extra storage.
 	assert.ok(cpu.collectTrackedHeapBytes(runValue, detachValue, channelValue) <= heapBefore);
-	assert.equal(channel.records.getInteger(channel.address, 4), valueInteger(10_023));
+	assert.equal(cpu.gc.tables.getInteger(channel, 4), valueInteger(10_023));
 	for (let sequence = 10_020; sequence <= 10_023; sequence += 1) {
 		const slot = ((sequence - 1) % 4) + 1;
-		assert.equal(records.records.getInteger(records.address, slot), recordSlots[slot - 1], 'the recorder overwrites the original slot in place');
-		const record = asTable(recordSlots[slot - 1], cpu.gc);
-		assert.equal(record.records.getInteger(record.address, 1), valueInteger(sequence));
+		assert.equal(cpu.gc.tables.getInteger(records, slot), recordSlots[slot - 1], 'the recorder overwrites the original slot in place');
+		const record = valuePayload(recordSlots[slot - 1]);
+		assert.equal(cpu.gc.tables.getInteger(record, 1), valueInteger(sequence));
 	}
 
 	runCompletionClosure(cpu, detach, []);

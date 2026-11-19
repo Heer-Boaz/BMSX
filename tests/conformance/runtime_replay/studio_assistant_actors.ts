@@ -1,4 +1,4 @@
-import { valueBool, asTable, valueInteger } from '../../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { ActorRuntimeInspection } from '../../../ide/workbench/contrib/actor_lab/runtime_inspection';
@@ -31,7 +31,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await runPaletteCommand('Game: Inspect');
 	await runPaletteCommand('Actor Lab: Select Running Actor');
 	const picker = ide.editor.editorParts.activePart.quickInput;
-	const actorIds = [asTable(guest.global('actor_tool_first'), guest.cpu.gc).address, asTable(guest.global('actor_tool_second'), guest.cpu.gc).address];
+	const actorIds = [valuePayload(guest.global('actor_tool_first')), valuePayload(guest.global('actor_tool_second'))];
 	check(picker.visible && picker.model.list.rows.length === actorIds.length
 		&& actorIds.every(id => picker.model.list.rows.some(row => (row.item as ActorChoice).hashId === id)), 'ordinary Actor Lab lists actual World membership');
 	await press('Enter'); await frame();

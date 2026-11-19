@@ -1,5 +1,5 @@
-import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
-import { asClosure, asTable, numberToHost, valueNil } from '../../machine/ts/machine/cpu/value';
+import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { asClosure, numberToHost, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -23,23 +23,23 @@ probe = { map = map, count = #keys }
 function probe.clear() clear(map) end
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		const map = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('map')!), cpu.gc);
-		const clear = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('clear')!), cpu.gc);
-		const next = map.records.next;
+		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		const map = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('map')!));
+		const clear = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('clear')!), cpu.gc);
+		const next = cpu.gc.tables.next;
 		let starts = 0, steps = 0;
 		// A destructive clear must advance one physical traversal. Restarting
 		// next(map) for each key repeatedly scans every already-cleared prefix.
-		t.mock.method(map.records, 'next', (record, after, output, outputIndex) => {
+		t.mock.method(cpu.gc.tables, 'next', (record, after, output, outputIndex) => {
 			steps++;
 			if (after === valueNil()) starts++;
-			return next.call(map.records, record, after, output, outputIndex);
+			return next.call(cpu.gc.tables, record, after, output, outputIndex);
 		});
 		runCompletionClosure(cpu, clear, []);
 		assert.equal(starts, 1);
-		assert.equal(steps, numberToHost(probe.records.getStringKey(probe.address, cpu.stringPool.find('count')!)) + 1);
-		assert.equal(asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('map')!), cpu.gc), map);
-		map.records.forEachStoredEntry(map.address, () => assert.fail('cleared map retained a mapping'));
+		assert.equal(steps, numberToHost(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('count')!)) + 1);
+		assert.equal(valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('map')!)), map);
+		cpu.gc.tables.forEachStoredEntry(map, () => assert.fail('cleared map retained a mapping'));
 	});
 
 	test(`clear_map releases collectable keys and values across repeated lifetimes (O${optLevel})`, () => {
@@ -62,16 +62,16 @@ end
 function probe.clear() clear(map) end
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		const seed = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('seed')!), cpu.gc);
-		const clear = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('clear')!), cpu.gc);
+		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		const seed = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('seed')!), cpu.gc);
+		const clear = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('clear')!), cpu.gc);
 		let warmed = 0;
 		for (let cycle = 0; cycle < 3; cycle++) {
 			runCompletionClosure(cpu, seed, []);
 			runCompletionClosure(cpu, clear, []);
-			const heap = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
-			const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak')!), cpu.gc);
-			for (let index = 1; index <= 64; index++) assert.equal(weak.records.getInteger(weak.address, index), valueNil());
+			const heap = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
+			const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
+			for (let index = 1; index <= 64; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
 			if (cycle === 0) warmed = heap;
 			else assert.equal(heap, warmed, 'historical keys must not grow retained clear storage');
 		}

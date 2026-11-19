@@ -1,4 +1,4 @@
-import { asInteger, asTable, canonicalTableKey, isNil, valueTag, ValueTag, valueTypeNameForLuaTag, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { asInteger, canonicalTableKey, isNil, valueTag, ValueTag, valueTypeNameForLuaTag, type Value, valuePayload } from '../../../../machine/ts/machine/cpu/value';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
@@ -130,8 +130,8 @@ export class LuaProgramRuntimeProjection {
 			input.live.textDirty = true;
 		}
 		if (changedState) {
-			const values = asTable(guest.readStringMember(state, 'values'), guest.cpu.gc);
-			for (const row of this.stateRows) this.setValue(input, row.element, guest.formatValue(values.records.getInteger(values.address, row.slot)));
+			const values = valuePayload(guest.readStringMember(state, 'values'));
+			for (const row of this.stateRows) this.setValue(input, row.element, guest.formatValue(guest.cpu.gc.tables.getInteger(values, row.slot)));
 		}
 		for (const row of this.receiptRows) row.applied = false;
 		guest.visitTableEntries(guest.readStringMember(state, 'apply_done'), (id, value) => {

@@ -1,6 +1,6 @@
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { heapAllocationBytes } from './heap_allocator';
-import { GC_RECORD_LINK, GcObject, GcKind } from './gc_object';
+import { GC_RECORD_LINK } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
@@ -495,14 +495,4 @@ export class TableRecords {
 		target.setNil(destination); return arrayWork + 2 * (this.hashSize(record) - hashStart);
 	}
 	public getTrackedHeapBytes(record: number): number { return TableRecords.trackedHeapBytesForCapacities(this.arrayCapacity(record), this.hashSize(record)); }
-}
-
-export class Table extends GcObject {
-	constructor(private readonly heap: GcHeap, public readonly address: number) { super(GcKind.Table); }
-	public get records(): TableRecords { return this.heap.tables; }
-	public get metatable(): Table | null {
-		const address = this.records.metatableAddress(this.address);
-		return address === 0 ? null : this.heap.tableAt(address);
-	}
-	public set metatable(table: Table | null) { this.records.setMetatableAddress(this.address, table === null ? 0 : table.address); }
 }

@@ -336,7 +336,7 @@ void rawContextValues(CpuMachine& machine) {
 	auto& cpu = machine.cpu;
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueFloat(std::numeric_limits<float>::infinity()),
-		valueString(cpu.stringPool().intern("context")), valueTable(cpu.gcHeap().reference(cpu.createTable())), valueClosure(cpu.gcHeap().reference(cpu.activeThread()->frameAtDepth(0)->attachedClosure())),
+		valueString(cpu.stringPool().intern("context")), valueTable(cpu.createTable().address()), valueClosure(cpu.gcHeap().reference(cpu.activeThread()->frameAtDepth(0)->attachedClosure())),
 		valueThread(cpu.gcHeap().reference(cpu.activeThread()))};
 	ContextBlock globals(machine, {{OpCode::SETGL, 12, 0, 0, 1}, {OpCode::GETGL, 0, 0, 0, 1},
 		{OpCode::SETSYS, 0, 0, 0, 1}, {OpCode::GETSYS, 1, 0, 0, 1}, {OpCode::K1, 2},
@@ -477,7 +477,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 	frame.writeControl(bmsx::FrameField::StackBase, 16);
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(0),
-		valueTable(machine.cpu.gcHeap().reference(machine.cpu.createTable())), valueThread(machine.cpu.gcHeap().reference(machine.cpu.activeThread()))};
+		valueTable(machine.cpu.createTable().address()), valueThread(machine.cpu.gcHeap().reference(machine.cpu.activeThread()))};
 	ContextBlock empty(machine, {{OpCode::VARARG, 31, 0}, {OpCode::JMP}});
 	frame.writeControl(bmsx::FrameField::VarargCount, 0); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
 	for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));

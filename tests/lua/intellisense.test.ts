@@ -1,5 +1,5 @@
-import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
-import { asClosure, asTable, numberToHost, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { valuePayload } from '../../machine/ts/machine/cpu/value';
+import { asClosure, numberToHost, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { TEST_SYSTEM_CONTEXT_ID, createTestRuntime, createTestRuntimeRomPayload, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createPathModuleProjectFixture, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { createTestCodeControl } from '../helpers/code_control';
@@ -190,7 +190,7 @@ end
 	const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
 	cpu.reset(); cpu.runUntilDepth(0, 100_000);
 	const target = guest.global('target'), component = guest.global('component');
-	const node: ActorNode = { kind: 'timeline', hashId: asTable(target, cpu.gc).address, keyIdentity: guest.identity(valueNil()), label: 'test', name: 'test', prefix: '', children: [],
+	const node: ActorNode = { kind: 'timeline', hashId: valuePayload(target), keyIdentity: guest.identity(valueNil()), label: 'test', name: 'test', prefix: '', children: [],
 		value: target, receiver: component, component, key: valueNil(), active: false, stateKeys: [] };
 	const transport = new ActorTimelineTransport();
 	let call: RuntimeGuestCall | undefined, observer: ((completed: boolean) => void) | undefined;
@@ -200,7 +200,7 @@ end
 		transport.refresh(node, false, guest, true, call === undefined);
 		transport.executePending(node, !checkpointPending && call === undefined, (selected, time, program, current, finished) => {
 			assert.equal(call, undefined, 'one admitted evaluation, not an input queue');
-			assert.equal(current(), true); assert.equal(program, asTable(guest.readStringMember(target, 'program'), guest.cpu.gc).address);
+			assert.equal(current(), true); assert.equal(program, valuePayload(guest.readStringMember(target, 'program')));
 			call = { domain: -1, closure: asClosure(guest.readStringMember(selected.receiver, 'scrub_time'), cpu.gc),
 				args: () => [component, selected.key, valueInteger(time)] };
 			observer = finished;
@@ -561,7 +561,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	assert.equal(cpu.getFrameDepth(), 0);
 
 	const replacement = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
-	cpu.gc.tables.setStringKey(tableAddressPayload(cpu.readClosureUpvalue(replacement, 0)), cpu.stringPool.find('value')!, valueInteger(99));
+	cpu.gc.tables.setStringKey(valuePayload(cpu.readClosureUpvalue(replacement, 0)), cpu.stringPool.find('value')!, valueInteger(99));
 
 	const usageColumn = source.split('\n')[3].indexOf('captured') + 1;
 	const resolved = readRuntimeLuaValue(

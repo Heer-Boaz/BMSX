@@ -72,8 +72,8 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 	}
 	const objectKey = cpu.stringPool.intern('object');
 	const object = cpu.createTable(1);
-	object.records.setInteger(object.address, 1, valueInteger(42));
-	cpu.setGlobalByKey(objectKey, valueTable(cpu.gc.reference(object)));
+	cpu.gc.tables.setInteger(object, 1, valueInteger(42));
+	cpu.setGlobalByKey(objectKey, valueTable(object));
 	const nilKey = cpu.stringPool.intern('nil-name');
 	cpu.setGlobalByKey(nilKey, valueNil());
 	assert.equal(cpu.globalSlotCount, count + 259);

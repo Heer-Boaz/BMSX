@@ -1,3 +1,4 @@
+import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { numberConstantFromHost } from '../../toolchain/ts/lua/number';
@@ -52,7 +53,7 @@ for (const destination of [0, 1, 2]) test(`compiled CONCAT converts every value 
 			if (kind < primitives.length) r.set(0, primitives[kind][0]);
 			else switch (kind - primitives.length) {
 				case 0: r.setString(0, cpu.stringPool.intern(textToByteString('λ\0🍻'))); break;
-				case 1: r.setTable(0, cpu.gc.reference(cpu.createTable(0, 0))); break;
+				case 1: r.setTable(0, cpu.createTable(0, 0)); break;
 				case 2: r.setClosure(0, cpu.gc.reference(root.closure)); break;
 				case 3: r.setThread(0, cpu.gc.reference(cpu.rootThread)); break;
 			}
@@ -132,19 +133,19 @@ for (const closure of [false, true]) test(`compiled allocation publishes moved r
 	for (const cpu of [js, ref]) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		const root = cpu.rootThread.frameAtDepth(0), r = root.registers, table = cpu.createTable(0, 1);
-		table.records.setStringKey(table.address, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
-		r.setTable(9, cpu.gc.reference(table)); r.setString(1, cpu.stringPool.intern('fresh-')); r.setString(2, cpu.stringPool.intern('result'));
+		cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
+		r.setTable(9, table); r.setString(1, cpu.stringPool.intern('fresh-')); r.setString(2, cpu.stringPool.intern('result'));
 		root.top = 0;
 		const trackedBytes = cpu.luaHeap.usedBytes();
 		cpu.luaHeap.setCollectionTarget(trackedBytes);
 	}
 	assert.equal(js.runUntilDepth(0, 6), ref.runUntilDepth(0, 6)); assertParity(js, ref);
 	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getTable(7, cpu.gc);
+		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getPayload(7);
 		assert.ok(cpu.gc.active(), 'allocation started the configured collection assist');
-		assert.equal(retained.gcColor, 3, 'the allocating operation traced the published reference before returning');
+		assert.equal(cpu.gc.memory.readRamRecordByte(retained + GC_COLOR_OFFSET), 3, 'the allocating operation traced the published reference before returning');
 		cpu.gc.collect();
-		assert.equal(retained.records.getStringKey(retained.address, cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
+		assert.equal(cpu.gc.tables.getStringKey(retained, cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
 		if (closure) assert.equal(cpu.readClosureUpvalue(r.getClosure(0, cpu.gc), 0), r.get(7));
 		else assert.equal(cpu.stringPool.toString(r.getStringId(0)), 'fresh-result');
 	}

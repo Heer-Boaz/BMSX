@@ -1,4 +1,4 @@
-import { asTable, isNil, valueInteger, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { isNil, valueInteger, ValueTag, type Value, valuePayload } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedGuestValue } from '../../../runtime/suspended_guest';
@@ -19,9 +19,9 @@ export function findStateMachineState(
 	const component = findRuntimeComponent(sources, guest, domain, 'cartlib/fsm/fsm_component', componentHashId);
 	if (component === undefined) return undefined;
 	let result: { machine: StateMachineInstance; state: Value } | undefined;
-	const machines = asTable(guest.readStringMember(component, '_machines'), guest.cpu.gc);
-	for (let index = 1, length = machines.records.length(machines.address); index <= length; index++) {
-		const machine = machines.records.getInteger(machines.address, index);
+	const machines = valuePayload(guest.readStringMember(component, '_machines'));
+	for (let index = 1, length = guest.cpu.gc.tables.length(machines); index <= length; index++) {
+		const machine = guest.cpu.gc.tables.getInteger(machines, index);
 		if (guest.identityScalar(machine, ValueTag.Table) !== machineHashId) continue;
 		visitStateMachineHierarchy(guest, machine, state => {
 			if (guest.identityScalar(state, ValueTag.Table) === stateHashId) result = { machine: { component, machine }, state };
@@ -45,9 +45,9 @@ function stateMachineStateChoice(guest: SuspendedGuestSession, state: Value): St
 export function readStateMachineInstances(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
 	const items: StateMachineInstanceChoice[] = [];
 	const available = visitRuntimeComponents(sources, guest, domain, 'cartlib/fsm/fsm_component', component => {
-		const machines = asTable(guest.readStringMember(component, '_machines'), guest.cpu.gc);
-		for (let index = 1, length = machines.records.length(machines.address); index <= length; index++) {
-			const machine = machines.records.getInteger(machines.address, index);
+		const machines = valuePayload(guest.readStringMember(component, '_machines'));
+		for (let index = 1, length = guest.cpu.gc.tables.length(machines); index <= length; index++) {
+			const machine = guest.cpu.gc.tables.getInteger(machines, index);
 			items.push(stateMachineInstanceChoice(guest, component, guest.readStringMember(machine, 'localdef_id'), machine));
 		}
 	});
@@ -72,9 +72,9 @@ export function readStateMachineDefinitionStates(guest: SuspendedGuestSession, r
 /** Both retained cartlib hierarchies use explicit child ids; never follow their parent/root backlinks. */
 function visitStateMachineHierarchy(guest: SuspendedGuestSession, state: Value, visit: (state: Value) => void): void {
 	visit(state);
-	const states = asTable(guest.readStringMember(state, 'states'), guest.cpu.gc);
-	const ids = asTable(guest.readStringMember(state, 'state_ids'), guest.cpu.gc);
-	for (let i = 1, length = ids.records.length(ids.address); i <= length; i += 1) visitStateMachineHierarchy(guest, states.records.get(states.address, ids.records.getInteger(ids.address, i)), visit);
+	const states = valuePayload(guest.readStringMember(state, 'states'));
+	const ids = valuePayload(guest.readStringMember(state, 'state_ids'));
+	for (let i = 1, length = guest.cpu.gc.tables.length(ids); i <= length; i += 1) visitStateMachineHierarchy(guest, guest.cpu.gc.tables.get(states, guest.cpu.gc.tables.getInteger(ids, i)), visit);
 }
 
 const EVENT_PRESENTATION = { prefix: 'EVENT ', suffix: ' / EXECUTION TARGET' };
@@ -120,11 +120,11 @@ export function inspectStateMachineDefinition(
 	});
 	const patternValue = guest.readStringMember(definition, 'input_patterns');
 	if (!isNil(patternValue)) {
-		const patterns = asTable(patternValue, guest.cpu.gc);
-		const transitions = asTable(guest.readStringMember(definition, 'input_transitions'), guest.cpu.gc);
-		for (let i = 1, length = patterns.records.length(patterns.address); i <= length; i += 1) {
-			properties.entry('input', valueInteger(i), transitions.records.getInteger(transitions.address, i), INPUT_PRESENTATION,
-				'COMPILED TRANSITION. THE ORIGINAL HANDLER TABLE IS NO LONGER RETAINED.', undefined, patterns.records.getInteger(patterns.address, i));
+		const patterns = valuePayload(patternValue);
+		const transitions = valuePayload(guest.readStringMember(definition, 'input_transitions'));
+		for (let i = 1, length = guest.cpu.gc.tables.length(patterns); i <= length; i += 1) {
+			properties.entry('input', valueInteger(i), guest.cpu.gc.tables.getInteger(transitions, i), INPUT_PRESENTATION,
+				'COMPILED TRANSITION. THE ORIGINAL HANDLER TABLE IS NO LONGER RETAINED.', undefined, guest.cpu.gc.tables.getInteger(patterns, i));
 		}
 	}
 	return properties.finish();

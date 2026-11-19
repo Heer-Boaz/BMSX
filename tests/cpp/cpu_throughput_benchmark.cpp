@@ -199,27 +199,27 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	ValueSpan registers = cpu.activeThread()->frameAtDepth(0)->registers;
 	registers.set(0, valueInteger(1)); registers.set(1, valueInteger(3));
 	registers.set(2, valueInteger(7)); registers.set(3, valueInteger(65535));
-	Table* retained = nullptr;
+	std::optional<TableRecord> retained;
 	if (workload == Workload::Globals) {
 		cpu.setGlobalByKey(cpu.stringPool().intern("value"), valueInteger(1));
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern("value"), valueInteger(1)); registers.set(5, valueInteger(0));
 	}
 	if (workload == Workload::TableChurnLive) {
 		retained = cpu.createTable(4096, 0);
-		cpu.setGlobalByKey(cpu.stringPool().intern("retained"), valueTable(cpu.gcHeap().reference(retained)));
+		cpu.setGlobalByKey(cpu.stringPool().intern("retained"), valueTable(retained->address()));
 		const auto field = cpu.stringPool().intern("field");
 		for (int index = 1; index <= 4096; ++index) {
-			auto* child = cpu.createTable(1, 1);
-			child->setInteger(1, valueInteger(index));
-			child->setStringKey(field, valueInteger(index));
-			retained->setInteger(index, valueTable(cpu.gcHeap().reference(child)));
+			auto child = cpu.createTable(1, 1);
+			child.setInteger(1, valueInteger(index));
+			child.setStringKey(field, valueInteger(index));
+			retained->setInteger(index, valueTable(child.address()));
 		}
 	}
 	if (workload == Workload::Tables) {
-		Table* table = cpu.createTable(8, 1);
-		registers.set(0, valueTable(cpu.gcHeap().reference(table)));
-		for (int index = 1; index <= 8; ++index) table->setInteger(index, valueInteger(index));
-		table->setStringKey(cpu.stringPool().intern("field"), valueInteger(1));
+		TableRecord table = cpu.createTable(8, 1);
+		registers.set(0, valueTable(table.address()));
+		for (int index = 1; index <= 8; ++index) table.setInteger(index, valueInteger(index));
+		table.setStringKey(cpu.stringPool().intern("field"), valueInteger(1));
 	} else if (workload == Workload::Builtin) {
 		registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
 		registers.set(1, valueString(cpu.stringPool().intern(std::string(1024, 'x'))));
@@ -293,7 +293,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	const auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
 	if (retained) {
 		for (int index = 1; index <= 4096; ++index) {
-			if (asTable(retained->getInteger(index), cpu.gcHeap())->getInteger(1) != valueInteger(index)) {
+			if (asTable(retained->getInteger(index), cpu.gcHeap()).getInteger(1) != valueInteger(index)) {
 				throw std::runtime_error("Collection must preserve the entire retained graph.");
 			}
 		}

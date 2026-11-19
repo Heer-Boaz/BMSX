@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { asClosure, asStringId, asTable, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { asClosure, asStringId, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { prepareLuaLiteral } from '../../ide/runtime/lua_literal';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
@@ -18,10 +18,10 @@ for (const optLevel of [0, 3] as const) {
 		});
 		const outer = cpu.acquireLocalRoots();
 		try {
-			const value = asTable(prepareLuaLiteral('{ local_root_key = "outer-payload", child = { "nested-payload" } }')(cpu), cpu.gc);
-			assert.equal(cpu.stringPool.toString(asStringId(value.records.getStringKey(value.address, cpu.stringPool.find('local_root_key')!))), 'outer-payload');
-			const child = asTable(value.records.getStringKey(value.address, cpu.stringPool.find('child')!), cpu.gc);
-			assert.equal(cpu.stringPool.toString(asStringId(child.records.getInteger(child.address, 1))), 'nested-payload');
+			const value = valuePayload(prepareLuaLiteral('{ local_root_key = "outer-payload", child = { "nested-payload" } }')(cpu));
+			assert.equal(cpu.stringPool.toString(asStringId(cpu.gc.tables.getStringKey(value, cpu.stringPool.find('local_root_key')!))), 'outer-payload');
+			const child = valuePayload(cpu.gc.tables.getStringKey(value, cpu.stringPool.find('child')!));
+			assert.equal(cpu.stringPool.toString(asStringId(cpu.gc.tables.getInteger(child, 1))), 'nested-payload');
 			const inner = cpu.acquireLocalRoots();
 			try {
 				cpu.stringPool.intern('inner-only-payload');

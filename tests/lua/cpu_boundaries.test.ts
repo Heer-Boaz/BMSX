@@ -167,11 +167,11 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 			const table = cpu.createTable(0, 0);
 			cpu.rootThread.frameAtDepth(0).registers.setInteger(0, 91);
-			cpu.rootThread.frameAtDepth(0).registers.setTable(1, cpu.gc.reference(table));
+			cpu.rootThread.frameAtDepth(0).registers.setTable(1, table);
 			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL]), RunResult.Yielded);
 			assert.equal(cpu.getFrameDepth(), 2);
 			const callee = cpu.rootThread.frameAtDepth(1);
-			const samples: Value[] = [valueFloat(-0), valueNil(), valueBool(false), valueString(cpu.stringPool.intern('result')), valueTable(cpu.gc.reference(table))];
+			const samples: Value[] = [valueFloat(-0), valueNil(), valueBool(false), valueString(cpu.stringPool.intern('result')), valueTable(table)];
 			for (let i = 0; i < produced; ++i) callee.registers.set(5 + i, samples[i % 5]);
 			callee.top = 5 + produced;
 			assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
@@ -179,7 +179,7 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 			const targetCount = requested === 0 ? produced : requested;
 			assert.equal(cpu.getFrameRegisterCount(0), 2 + targetCount);
 			assert.equal(cpu.readFrameRegister(0, 0), valueInteger(91));
-			assert.equal(cpu.readFrameRegister(0, 1), valueTable(cpu.gc.reference(table)));
+			assert.equal(cpu.readFrameRegister(0, 1), valueTable(table));
 			for (let i = 0; i < targetCount; ++i) assert.equal(cpu.readFrameRegister(0, 2 + i), i < produced ? samples[i % 5] : valueNil());
 			const caller = cpu.rootThread.frameAtDepth(0);
 			assert.equal(cpu.rootThread.stackTop, caller.stackBase + caller.stackCapacity);
@@ -198,11 +198,11 @@ test('builtin-owned result ranges survive destination growth with exact open/fix
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const table = cpu.createTable(1, 0);
 		const result = valueString(cpu.stringPool.intern('result'));
-		if (kind === 2) table.records.setInteger(table.address, 1, result);
+		if (kind === 2) cpu.gc.tables.setInteger(table, 1, result);
 		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		registers.setInteger(0, 91); registers.setBoolean(1, true);
 		registers.setBuiltinFunction(2, kind === 0 ? BuiltinFunctionId.Select : BuiltinFunctionId.Next);
-		registers.set(3, kind === 0 ? valueInteger(1) : valueTable(cpu.gc.reference(table)));
+		registers.set(3, kind === 0 ? valueInteger(1) : valueTable(table));
 		registers.setNil(4);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 		assert.equal(cpu.readCauseWord(), 0);

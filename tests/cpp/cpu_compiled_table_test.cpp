@@ -73,18 +73,18 @@ void stringReadChainBoundaries() {
 		for (auto* machine : {&native, &scalar}) {
 			auto& cpu = machine->cpu;
 			const auto key = cpu.stringPool().intern("chain field"), indexKey = cpu.stringPool().intern("__index");
-			auto* root = cpu.createTable(0, 1); auto* current = root;
+			auto root = cpu.createTable(0, 1); auto current = root;
 			for (int i = 1; i < depth; ++i) {
-				auto* next = cpu.createTable(0, 1); auto* meta = cpu.createTable(0, 1);
-				meta->setStringKey(indexKey, valueTable(cpu.gcHeap().reference(next))); current->setMetatable(meta); current = next;
+				auto next = cpu.createTable(0, 1); auto meta = cpu.createTable(0, 1);
+				meta.setStringKey(indexKey, valueTable(next.address())); current.setMetatableAddress(meta.address()); current = next;
 			}
-			if (depth > 1) current->setStringKey(key, valueFromTag(ValueTag::False, 37));
+			if (depth > 1) current.setStringKey(key, valueFromTag(ValueTag::False, 37));
 			else {
-				auto* meta = cpu.createTable(0, 1); meta->setStringKey(indexKey, valueBool(false)); root->setMetatable(meta);
+				auto meta = cpu.createTable(0, 1); meta.setStringKey(indexKey, valueBool(false)); root.setMetatableAddress(meta.address());
 			}
 			TableLookupResult scratch{valueInteger(73), -1, 0, TableLookupStatus::Resolved};
 			const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
-			Table::loadStringIndex(root, indexKey, key, scratch);
+			TableRecord::loadStringIndex(&root, indexKey, key, scratch);
 			require((depth == 33 ? scratch.status == TableLookupStatus::ChainExhausted : scratch.status == TableLookupStatus::Resolved)
 				&& (depth == 1 ? isNil(scratch.value) : depth == 33 || scratch.value == valueFromTag(ValueTag::False, 37)),
 				"the raw Table leaf preserves nil/false and the exact32-table chain bound");
@@ -92,7 +92,7 @@ void stringReadChainBoundaries() {
 				&& cpu.luaHeap().collectionTarget() == before.second,
 				"the leaf performs no tracked allocation or collection work");
 			auto& frame = *cpu.activeThread()->frameAtDepth(0);
-			frame.registers.set(1, valueString(key)); frame.registers.set(9, valueTable(cpu.gcHeap().reference(root))); frame.registers.set(8, valueInteger(73));
+			frame.registers.set(1, valueString(key)); frame.registers.set(9, valueTable(root.address())); frame.registers.set(8, valueInteger(73));
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		native.cpu.prepareSystemNativeCode();
@@ -128,7 +128,7 @@ void genericArraysAndHashKeys() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers;
-		r.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable(4, 1)))); r.set(1, valueInteger(1)); r.set(2, valueInteger(3));
+		r.set(0, valueTable(m->cpu.createTable(4, 1).address())); r.set(1, valueInteger(1)); r.set(2, valueInteger(3));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 896);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -166,7 +166,7 @@ void genericArraysAndHashKeys() {
 	}
 	for (auto* m : {&native, &scalar}) {
 		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers;
-		r.set(1, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable()))); r.set(2, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable())));
+		r.set(1, valueTable(m->cpu.createTable().address())); r.set(2, valueTable(m->cpu.createTable().address()));
 	}
 	for (const int grant : {9, 1, 2, 1, 2, 1, 1, 1, 256}) {
 		test::runCpuParity(native.cpu, scalar.cpu, grant); requireParity(native, scalar);
@@ -188,8 +188,8 @@ void inheritedTableFactsAreRecheckedOnCpuEntry() {
 	image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
-		auto* table = machine->cpu.createTable(2); table->setInteger(1, valueInteger(23));
-		machine->cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(machine->cpu.gcHeap().reference(table)));
+		auto table = machine->cpu.createTable(2); table.setInteger(1, valueInteger(23));
+		machine->cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(table.address()));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 900);
 	const u32 pc = native.rom.textAddress;
@@ -225,12 +225,12 @@ void inheritedArrayReads(bool generic) {
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 5}};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto& cpu = m->cpu; auto* own = cpu.createTable(2), *parent = cpu.createTable(2), *meta = cpu.createTable(0, 1);
-		parent->setInteger(1, valueInteger(73)); meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(parent))); own->setMetatable(meta);
-		auto& r = cpu.activeThread()->frameAtDepth(0)->registers; r.set(0, valueTable(cpu.gcHeap().reference(own))); r.set(1, valueInteger(1)); cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
+		auto& cpu = m->cpu; auto own = cpu.createTable(2), parent = cpu.createTable(2), meta = cpu.createTable(0, 1);
+		parent.setInteger(1, valueInteger(73)); meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address())); own.setMetatableAddress(meta.address());
+		auto& r = cpu.activeThread()->frameAtDepth(0)->registers; r.set(0, valueTable(own.address())); r.set(1, valueInteger(1)); cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
 	}
 	for (const Value value : {valueBool(false), valueInteger(0), valueNil(), valueBool(true), valueInteger(19), valueNil()}) {
-		for (auto* m : {&native, &scalar}) { asTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap())->setInteger(1, value); m->cpu.runUntilDepth(0, 6); }
+		for (auto* m : {&native, &scalar}) { asTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap()).setInteger(1, value); m->cpu.runUntilDepth(0, 6); }
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 3) == (isNil(value) ? valueInteger(73) : value), "only missing own slots traverse inheritance");
 	}
@@ -246,15 +246,15 @@ void boundaryLengthAndUtf8() {
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 9}};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto* table = m->cpu.createTable(2, 4); for (int i = 1; i <= 5; ++i) table->setInteger(i, valueInteger(i));
-		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers; r.set(0, valueTable(m->cpu.gcHeap().reference(table))); r.set(2, valueInteger(2)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 605);
+		auto table = m->cpu.createTable(2, 4); for (int i = 1; i <= 5; ++i) table.setInteger(i, valueInteger(i));
+		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers; r.set(0, valueTable(table.address())); r.set(2, valueInteger(2)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 605);
 	}
 	for (const Value value : {valueNil(), valueBool(false), valueNil(), valueInteger(2)}) {
 		for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers.set(2, value); m->cpu.runUntilDepth(0, 11); }
 		requireParity(native, scalar);
 		const auto boundary = asInteger(native.cpu.readFrameRegister(0, 3));
-		const Table* table = asTable(native.cpu.readFrameRegister(0, 0), native.cpu.gcHeap());
-		require((boundary == 0 || !isNil(table->get(valueInteger(boundary)))) && isNil(table->get(valueInteger(boundary + 1))), "native LEN returns a valid boundary");
+		const TableRecord table = asTable(native.cpu.readFrameRegister(0, 0), native.cpu.gcHeap());
+		require((boundary == 0 || !isNil(table.get(valueInteger(boundary)))) && isNil(table.get(valueInteger(boundary + 1))), "native LEN returns a valid boundary");
 		if (!isNil(value)) require(boundary == 5, "native LEN finds the unique sequence boundary");
 		require(native.cpu.readFrameRegister(0, 4) == valueInteger(boundary + 1), "the live definition survives the length helper");
 	}
@@ -282,10 +282,10 @@ void selfAndNilFaults() {
 	image.constants = {std::string("method")}; image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto& cpu = m->cpu; auto* table = cpu.createTable(0, 1); table->setStringKey(cpu.stringPool().intern("method"), valueInteger(73));
-		cpu.activeThread()->frameAtDepth(0)->registers.set(9, valueTable(cpu.gcHeap().reference(table))); cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
-		auto* meta = cpu.createTable(0, 1); table->setStringKey(cpu.stringPool().intern("method"), valueNil());
-		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(table))); table->setMetatable(meta);
+		auto& cpu = m->cpu; auto table = cpu.createTable(0, 1); table.setStringKey(cpu.stringPool().intern("method"), valueInteger(73));
+		cpu.activeThread()->frameAtDepth(0)->registers.set(9, valueTable(table.address())); cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
+		auto meta = cpu.createTable(0, 1); table.setStringKey(cpu.stringPool().intern("method"), valueNil());
+		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(table.address())); table.setMetatableAddress(meta.address());
 		cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Top, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 	}
@@ -302,7 +302,7 @@ void selfAndNilFaults() {
 	image.functions[0].wordCount = 4;
 	CpuMachine nilNative(image), nilScalar(image, true);
 	for (auto* m : {&nilNative, &nilScalar}) {
-		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers; r.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable(2)))); r.set(1, valueInteger(1)); r.set(2, valueInteger(73));
+		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers; r.set(0, valueTable(m->cpu.createTable(2).address())); r.set(1, valueInteger(1)); r.set(2, valueInteger(73));
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 504); r.set(1, valueNil()); r.set(3, valueInteger(19)); m->cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Top, 0);
 	}
 	nilNative.cpu.runUntilDepth(0, 5); nilScalar.cpu.runUntilDepth(0, 5); requireParity(nilNative, nilScalar);
@@ -341,18 +341,18 @@ void methodCallReturnsOriginalReceiver() {
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
 		auto& r = cpu.activeThread()->currentFrame->registers;
-		auto* obj = cpu.createTable(0, 4); auto* parent = cpu.createTable(0, 1); auto* meta = cpu.createTable(0, 1);
-		parent->setStringKey(*cpu.stringPool().find("method"), r.get(0));
-		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(parent)));
-		obj->setMetatable(meta);
-		obj->setStringKey(*cpu.stringPool().find("fromParent"), inherited);
-		obj->setStringKey(*cpu.stringPool().find("fromOwn"), overridden);
-		r.set(2, valueTable(cpu.gcHeap().reference(obj)));
+		auto obj = cpu.createTable(0, 4); auto parent = cpu.createTable(0, 1); auto meta = cpu.createTable(0, 1);
+		parent.setStringKey(*cpu.stringPool().find("method"), r.get(0));
+		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address()));
+		obj.setMetatableAddress(meta.address());
+		obj.setStringKey(*cpu.stringPool().find("fromParent"), inherited);
+		obj.setStringKey(*cpu.stringPool().find("fromOwn"), overridden);
+		r.set(2, valueTable(obj.address()));
 	}
 	for (const bool step : {false, true}) for (const bool own : {false, true, false}) {
 		for (auto* machine : {&native, &scalar}) {
 			auto& cpu = machine->cpu; auto& r = cpu.activeThread()->currentFrame->registers;
-			asTable(r.get(2), cpu.gcHeap())->setStringKey(*cpu.stringPool().find("method"), own ? r.get(1) : valueNil());
+			asTable(r.get(2), cpu.gcHeap()).setStringKey(*cpu.stringPool().find("method"), own ? r.get(1) : valueNil());
 			r.set(4, r.get(2)); r.set(3, valueNil());
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 4 * INSTRUCTION_BYTES);
 		}
@@ -404,7 +404,7 @@ void wideAllocationFailure() {
 #endif
 	for (auto* m : {&native, &scalar}) {
 		auto& cpu = m->cpu; auto& root = *cpu.activeThread()->frameAtDepth(0); root.registers.set(8, valueInteger(73)); root.registers.set(9, valueNil()); root.writeControl(bmsx::FrameField::Top, 9);
-		const auto key = cpu.stringPool().find("retained"); auto* retained = cpu.createTable(690000); cpu.setGlobalByKey(*key, valueTable(cpu.gcHeap().reference(retained)));
+		const auto key = cpu.stringPool().find("retained"); auto retained = cpu.createTable(690000); cpu.setGlobalByKey(*key, valueTable(retained.address()));
 		cpu.collectHeap();
 	}
 	const auto beforeGc = scalar.cpu.captureRuntimeState();
@@ -430,7 +430,7 @@ void stringStoreGrowthRoots(bool generic) {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers;
-		r.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable(0, 1)))); r.set(1, valueString(m->cpu.stringPool().intern("field"))); r.set(9, valueInteger(1));
+		r.set(0, valueTable(m->cpu.createTable(0, 1).address())); r.set(1, valueString(m->cpu.stringPool().intern("field"))); r.set(9, valueInteger(1));
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 500);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -444,9 +444,9 @@ void stringStoreGrowthRoots(bool generic) {
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto& r = frame.registers;
-		auto& strings = m->cpu.stringPool(); auto* retained = m->cpu.createTable(0, 1);
-		retained->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
-		r.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable()))); r.set(9, valueTable(m->cpu.gcHeap().reference(retained))); frame.writeControl(bmsx::FrameField::Top, 0);
+		auto& strings = m->cpu.stringPool(); auto retained = m->cpu.createTable(0, 1);
+		retained.setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
+		r.set(0, valueTable(m->cpu.createTable().address())); r.set(9, valueTable(retained.address())); frame.writeControl(bmsx::FrameField::Top, 0);
 		const auto heap = std::pair{m->cpu.luaHeap().usedBytes(), m->cpu.luaHeap().collectionTarget()};
 		m->cpu.luaHeap().setCollectionTarget(heap.first);
 	}
@@ -460,12 +460,12 @@ void stringStoreGrowthRoots(bool generic) {
 	test::runCpuParity(native.cpu, scalar.cpu, 1); requireParity(native, scalar);
 	for (auto* m : {&native, &scalar}) {
 		auto& strings = m->cpu.stringPool();
-		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers; auto* retained = asTable(r.get(7), m->cpu.gcHeap());
-		require(m->cpu.collecting() && retained->gcColor() == 3, "the hash growth assist traced the moved reference");
+		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers; auto retained = asTable(r.get(7), m->cpu.gcHeap());
+		require(m->cpu.collecting() && m->memory.readRamRecordByte(retained.address() + GC_COLOR_OFFSET) == 3, "the hash growth assist traced the moved reference");
 		m->cpu.collectHeap();
-		require(retained->getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")),
+		require(retained.getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")),
 			"growth sees all reference roots published by the completed native prefix");
-		require(asTable(r.get(0), m->cpu.gcHeap())->getStringKey(*strings.find("field")) == r.get(7), "growth commits the requested reference store once");
+		require(asTable(r.get(0), m->cpu.gcHeap()).getStringKey(*strings.find("field")) == r.get(7), "growth commits the requested reference store once");
 	}
 }
 } // namespace

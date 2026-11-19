@@ -128,8 +128,8 @@ void formalReservationRoots(bool interpreted) {
 	if (interpreted) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	auto* parent = cpu.activeThread()->currentFrame;
 	for (int index = 0; index < 6; ++index) parent->registers.set(5 + index, valueInteger(index));
-	auto* table = cpu.createTable(1, 0); table->setInteger(1, valueInteger(73));
-	parent->registers.set(11, valueTable(cpu.gcHeap().reference(table))); parent->writeControl(bmsx::FrameField::Top, 12);
+	auto table = cpu.createTable(1, 0); table.setInteger(1, valueInteger(73));
+	parent->registers.set(11, valueTable(table.address())); parent->writeControl(bmsx::FrameField::Top, 12);
 	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	auto* child = cpu.activeThread()->currentFrame;
 	require(cpu.getFrameDepth() == 2 && child->stackCapacity() == 7 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::Top)) == 7,
@@ -139,11 +139,11 @@ void formalReservationRoots(bool interpreted) {
 	require(memory.readRamRecordWord(child->thread->address + static_cast<u32>(ThreadField::StackTop)) == 12, "the thread header includes the complete formal reservation");
 	cpu.restoreRuntimeState(snapshot);
 	child = cpu.activeThread()->currentFrame;
-	require(asTable(child->registers.get(6), cpu.gcHeap())->getInteger(1) == valueInteger(73),
+	require(asTable(child->registers.get(6), cpu.gcHeap()).getInteger(1) == valueInteger(73),
 		"the last formal remains rooted through forced collection and restore");
 	cpu.runUntilDepth(0, 100);
 	const auto values = cpu.readCompletionValues();
-	require(values.size() == 7 && asTable(values.get(6), cpu.gcHeap())->getInteger(1) == valueInteger(73),
+	require(values.size() == 7 && asTable(values.get(6), cpu.gcHeap()).getInteger(1) == valueInteger(73),
 		"all formal results survive overlapping return transfer");
 }
 

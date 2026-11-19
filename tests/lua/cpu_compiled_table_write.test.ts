@@ -1,3 +1,4 @@
+import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
@@ -22,34 +23,34 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 			functions: [{ firstWord: 0, wordCount: 5, maxStack: 10 }] });
 		const cpu = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers, key = cpu.stringPool.intern('field');
-		r.setTable(0, cpu.gc.reference(cpu.createTable(0, 8))); r.setString(1, key); r.setInteger(4, 13);
+		r.setTable(0, cpu.createTable(0, 8)); r.setString(1, key); r.setInteger(4, 13);
 		cpu.runUntilDepth(0, 600);
 		const page = frame.decodedPage!, entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 		const block = page.compiledBlocks!.entries[entry]!;
 		assert.ok(block);
-		const parent = cpu.createTable(0, 1); parent.records.setStringKey(parent.address, key, valueInteger(71));
-		const meta = cpu.createTable(0, 1); meta.records.setStringKey(meta.address, cpu.stringPool.intern('__index'), valueTable(cpu.gc.reference(parent)));
-		const values = [valueBool(false), valueFloat(-0), valueFloatBits(0xffa12345), valueTable(cpu.gc.reference(cpu.createTable())), valueString(key), valueNil()];
+		const parent = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(parent, key, valueInteger(71));
+		const meta = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(parent));
+		const values = [valueBool(false), valueFloat(-0), valueFloatBits(0xffa12345), valueTable(cpu.createTable()), valueString(key), valueNil()];
 		for (let n = 0; n < values.length; n++) {
-			const table = cpu.createTable(0, 8); table.metatable = meta;
-			for (let prior = 0; prior < n; prior++) table.records.setStringKey(table.address, cpu.stringPool.intern(`prior_${prior}`), valueInteger(prior));
+			const table = cpu.createTable(0, 8); cpu.gc.tables.setMetatableAddress(table, meta);
+			for (let prior = 0; prior < n; prior++) cpu.gc.tables.setStringKey(table, cpu.stringPool.intern(`prior_${prior}`), valueInteger(prior));
 			for (const value of [values[n], valueNil(), values[n]]) {
-				r.setTable(0, cpu.gc.reference(table)); r.set(3, values[n]); r.set(4, value);
-				const before = table.records.getTrackedHeapBytes(table.address), state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
+				r.setTable(0, table); r.set(3, values[n]); r.set(4, value);
+				const before = cpu.gc.tables.getTrackedHeapBytes(table), state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
 				const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state)];
 				assert.equal(exit.exit, CompiledBlockExit.Continue, 'new keys, nil deletion and resurrection need no CPU semantic exit');
-				assert.equal(table.records.getStringKey(table.address, key), constant ? valueBool(false) : value);
-				assert.equal(table.records.getTrackedHeapBytes(table.address), before);
+				assert.equal(cpu.gc.tables.getStringKey(table, key), constant ? valueBool(false) : value);
+				assert.equal(cpu.gc.tables.getTrackedHeapBytes(table), before);
 				assert.equal(r.get(8), values[n]); assert.equal(r.get(9), values[n]); assert.equal(r.get(2), value);
-				assert.equal(parent.records.getStringKey(parent.address, key), valueInteger(71), 'writes shadow inheritance instead of modifying its source');
+				assert.equal(cpu.gc.tables.getStringKey(parent, key), valueInteger(71), 'writes shadow inheritance instead of modifying its source');
 				assert.equal(state.remainingCycles, 0);
 			}
 		}
-		const empty = cpu.createTable(); r.setTable(0, cpu.gc.reference(empty)); r.set(3, values[3]); r.set(4, values[3]); r.setNil(9);
+		const empty = cpu.createTable(); r.setTable(0, empty); r.set(3, values[3]); r.set(4, values[3]); r.setNil(9);
 		const state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
 		const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state)];
 		assert.equal(exit.exit, generic ? CompiledBlockExit.WriteIndex : CompiledBlockExit.WriteField);
-		assert.equal(empty.records.storedSlotCount(empty.address), 0); assert.equal(empty.records.getStringKey(empty.address, key), valueNil());
+		assert.equal(cpu.gc.tables.storedSlotCount(empty), 0); assert.equal(cpu.gc.tables.getStringKey(empty, key), valueNil());
 		assert.equal(r.get(8), values[3]); assert.equal(r.get(2), values[3]); assert.equal(r.get(9), valueNil());
 	});
 }
@@ -65,7 +66,7 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setTable(0, cpu.gc.reference(cpu.createTable(0, 1))); r.setString(1, cpu.stringPool.intern('field')); r.setInteger(9, 1);
+		r.setTable(0, cpu.createTable(0, 1)); r.setString(1, cpu.stringPool.intern('field')); r.setInteger(9, 1);
 		cpu.runUntilDepth(0, 504);
 	}
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -73,17 +74,17 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 	for (const cpu of [js, ref]) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-		const retained = cpu.createTable(0, 1); retained.records.setStringKey(retained.address, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
-		r.setTable(0, cpu.gc.reference(cpu.createTable())); r.setTable(9, cpu.gc.reference(retained)); frame.top = 0;
+		const retained = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(retained, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
+		r.setTable(0, cpu.createTable()); r.setTable(9, retained); frame.top = 0;
 		const trackedBytes = cpu.luaHeap.usedBytes();
 		cpu.luaHeap.setCollectionTarget(trackedBytes);
 	}
 	runCpuParity(js, ref, 6);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getTable(7, cpu.gc);
-		assert.ok(cpu.gc.active() && retained.gcColor === 3, 'the hash growth assist traced the moved reference');
-		assert.equal(retained.records.getStringKey(retained.address, cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
-		assert.equal(cpu.gc.tables.getStringKey(r.getPayload(0), cpu.stringPool.find('field')!), valueTable(cpu.gc.reference(retained)));
+		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getPayload(7);
+		assert.ok(cpu.gc.active() && cpu.gc.memory.readRamRecordByte(retained + GC_COLOR_OFFSET) === 3, 'the hash growth assist traced the moved reference');
+		assert.equal(cpu.gc.tables.getStringKey(retained, cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
+		assert.equal(cpu.gc.tables.getStringKey(r.getPayload(0), cpu.stringPool.find('field')!), valueTable(retained));
 	}
 });

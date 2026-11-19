@@ -189,7 +189,7 @@ std::vector<u8> mixedGrants() {
 		std::cout<<"mixed grant="<<grant<<" consumed="<<measured.consumed
 			<<" result="<<static_cast<int>(measured.result)<<'\n';
 	}
-	require(asTable(generated.frame().registers.get(0), generated.runtime.machine.cpu.gcHeap())->getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(1),
+	require(asTable(generated.frame().registers.get(0), generated.runtime.machine.cpu.gcHeap()).getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(1),
 		"mixed work actually performs the field write");
 	require(generated.frame().registers.get(3)==generated.frame().registers.get(6),"CONCAT and CONCATN produce identical complete strings");
 	require(isNil(generated.frame().registers.get(8)),"a compiled but untaken suffix never creates its table");
@@ -237,16 +237,16 @@ void tableWrites() {
 		Fixture generated(image,false),scalar(image,true);
 		for(auto* fixture : {&generated,&scalar}) {
 			auto& cpu=fixture->runtime.machine.cpu;
-			auto* table=cpu.createTable(0,2);
-			table->setStringKey(cpu.stringPool().intern("field"),valueInteger(11));
-			fixture->frame().registers.set(0, valueTable(cpu.gcHeap().reference(table))); fixture->frame().registers.set(2, valueInteger(73));
+			auto table=cpu.createTable(0,2);
+			table.setStringKey(cpu.stringPool().intern("field"),valueInteger(11));
+			fixture->frame().registers.set(0, valueTable(table.address())); fixture->frame().registers.set(2, valueInteger(73));
 		}
 		runPair(generated,scalar,32); // Bind the real generated field-cache fast path.
 		for(auto* fixture : {&generated,&scalar}) {
 			fixture->restart();
 			if(route==1) {
 				auto& cpu=fixture->runtime.machine.cpu;
-				fixture->frame().registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(0,0))));
+				fixture->frame().registers.set(0, valueTable(cpu.createTable(0,0).address()));
 			}
 			if(route==2) fixture->frame().registers.set(0, valueInteger(19));
 		}
@@ -258,7 +258,7 @@ void tableWrites() {
 #endif
 #endif
 		if(route==2) require(generated.runtime.machine.cpu.readLuaFaultReasonWord()!=0,"invalid table target actually enters the language-fault boundary");
-		else require(asTable(generated.frame().registers.get(0), generated.runtime.machine.cpu.gcHeap())->getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(73),
+		else require(asTable(generated.frame().registers.get(0), generated.runtime.machine.cpu.gcHeap()).getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(73),
 			"both field fast and growth paths perform the actual write");
 	}
 }

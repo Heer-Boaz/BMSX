@@ -1,4 +1,4 @@
-import { asTable, asClosure, valueNil } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -140,12 +140,12 @@ function probe.retire()
 end
 `, { optLevel, modules });
 			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-			const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-			runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('retire')!), cpu.gc), []);
+			const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+			runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('retire')!), cpu.gc), []);
 			cpu.collectTrackedHeapBytes();
-			const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak')!), cpu.gc);
+			const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
 			for (let index = 1; index <= 65; index += 1) {
-				assert.equal(weak.records.getInteger(weak.address, index), valueNil(), `retired object/geometry owner ${index} remained reachable`);
+				assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil(), `retired object/geometry owner ${index} remained reachable`);
 			}
 		});
 	}

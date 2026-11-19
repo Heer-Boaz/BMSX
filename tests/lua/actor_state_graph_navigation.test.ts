@@ -1,5 +1,5 @@
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
-import { asTable, asClosure } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { TEST_SYSTEM_CONTEXT_ID, createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
@@ -41,11 +41,11 @@ function fixture(worldSource = WORLD) {
 	cpu.reset(); cpu.runUntilDepth(0, 100_000);
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), font = new Font({ variant: 'tiny' });
 	const world = runtimeWorld(sources, guest, -1)!;
-	const actors = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
-	const actorHashId = asTable(actors.records.getInteger(actors.address, 1), cpu.gc).address;
+	const actors = valuePayload(guest.readStringMember(world, '_objects'));
+	const actorHashId = valuePayload(guest.cpu.gc.tables.getInteger(actors, 1));
 	tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, actorHashId));
 	const machine = tree.roots[0].children[0].children[0];
-	const target = captureActorTarget(-1, asTable(world, cpu.gc).address, tree.roots, machine);
+	const target = captureActorTarget(-1, valuePayload(world), tree.roots, machine);
 	const graph = new ActorStateGraph(target, font);
 	const refresh = () => {
 		tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, actorHashId));

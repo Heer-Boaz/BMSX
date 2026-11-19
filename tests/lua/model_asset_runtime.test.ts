@@ -1,5 +1,5 @@
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
-import { asClosure, asTable, valueBool, valueFloat, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueBool, valueFloat, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -114,8 +114,8 @@ for (const optLevel of [0, 3] as const) test(`model geometry binds ROM streams o
 	const { cpu, memory } = createTestBlua32PairCpu({ systemRomBytes, cartRomBytes: initial.bytes });
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')), cpu.gc);
-	const read = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('read')), cpu.gc);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
+	const read = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('read')), cpu.gc);
 	const observe = () => {
 		runCompletionClosure(cpu, read, []);
 		return materializeCpuCompletionValues(cpu);
@@ -129,13 +129,13 @@ for (const optLevel of [0, 3] as const) test(`model geometry binds ROM streams o
 	];
 	assert.deepEqual(observe(), expected(false, initial.address, 1.25));
 	assert.deepEqual(observe(), expected(true, initial.address, 1.25));
-	const steady = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('steady')), cpu.gc);
+	const steady = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('steady')), cpu.gc);
 	const profile = profileWarmGuestKernel(cpu, steady, 512);
 	assert.equal(profile.reservations, 0, 'warm resource resolution and typed reads allocate no guest heap');
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueFloat(512 * 10.25)]);
 	const replacement = modelCartridge(6.5, 0x800);
 	memory.cartridgeController.installRom(0, replacement.bytes);
-	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('reload')), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('reload')), cpu.gc), []);
 	assert.deepEqual(observe(), expected(false, replacement.address, 6.5));
 	assert.deepEqual(observe(), expected(true, replacement.address, 6.5));
 });

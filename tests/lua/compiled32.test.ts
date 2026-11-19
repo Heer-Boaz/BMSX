@@ -37,8 +37,8 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 		if (scenario === 'control') { r.setInteger(0,-2147483648);r.set(1,value); }
 		if (scenario === 'loop') { r.setInteger(0,3);r.setInteger(1,1);r.setInteger(2,0);r.setInteger(3,0); }
 		if (scenario === 'table') {
-			table.records.setInteger(table.address, 1, v.valueInteger(9));table.records.setStringKey(table.address, field, v.valueInteger(9));
-			r.setTable(0, cpu.gc.reference(table));r.set(1, value);r.setFloat(7, 1);
+			cpu.gc.tables.setInteger(table, 1, v.valueInteger(9));cpu.gc.tables.setStringKey(table, field, v.valueInteger(9));
+			r.setTable(0, table);r.set(1, value);r.setFloat(7, 1);
 		}
 		if (scenario === 'memory') {
 			r.setInteger(0, DYNAMIC_RAM_BASE + 0x100);r.setInteger(1, DYNAMIC_RAM_BASE + 0x200);

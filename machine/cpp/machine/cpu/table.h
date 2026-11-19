@@ -1,7 +1,5 @@
 #pragma once
 
-#include "machine/cpu/gc_object.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -14,7 +12,6 @@
 
 namespace bmsx {
 class GcHeap;
-class Table;
 
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
 inline constexpr int TABLE_STORE_REQUIRES_GROWTH = -2;
@@ -92,7 +89,7 @@ public:
 	void resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const {
 		u32 address = m_address;
 		for (int depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			const TableRecord current(m_heap, address);
+			const TableRecord current(*m_heap, address);
 			const Value value = current.getStringKeyCached(key, predictedSlot);
 			if (!isNil(value)) {
 				result = {value, predictedSlot, static_cast<u32>(depth), TableLookupStatus::Resolved};
@@ -124,7 +121,7 @@ public:
 	template <typename Fn>
 	void forEachEntry(Fn&& fn) const {
 		const u32 array = arrayCapacity(), hash = hashSlots(), words = storageAddress();
-		const TableValues slots{&m_memory, words, words + (array + 3u * hash) * 4u};
+		const TableValues slots{m_memory, words, words + (array + 3u * hash) * 4u};
 		for (u32 i = 0; i < array; ++i) {
 			const Value value = slots.get(i);
 			if (!isNil(value)) fn(valueInteger(static_cast<i32>(i + 1)), value);
@@ -202,8 +199,8 @@ private:
 	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
 	void initializeStorage();
 	void freeStorage();
-	u32 readHeader(TableHeader field) const { return m_memory.readRamRecordWord(m_address + static_cast<u32>(field)); }
-	void writeHeader(TableHeader field, u32 word) { m_memory.writeRamRecordWord(m_address + static_cast<u32>(field), word); }
+	u32 readHeader(TableHeader field) const { return m_memory->readRamRecordWord(m_address + static_cast<u32>(field)); }
+	void writeHeader(TableHeader field, u32 word) { m_memory->writeRamRecordWord(m_address + static_cast<u32>(field), word); }
 	u32 linksAddress() const { return storageAddress() + (arrayCapacity() + 2u * hashSlots()) * 4u; }
 	struct TableValues {
 		Memory* memory;
@@ -218,10 +215,10 @@ private:
 		}
 	};
 	i32 hashNext(size_t index) const {
-		return static_cast<i32>(m_memory.readRamRecordWord(linksAddress() + static_cast<u32>(index) * 4u));
+		return static_cast<i32>(m_memory->readRamRecordWord(linksAddress() + static_cast<u32>(index) * 4u));
 	}
 	void setHashNext(size_t index, i32 next) {
-		m_memory.writeRamRecordWord(linksAddress() + static_cast<u32>(index) * 4u, static_cast<u32>(next));
+		m_memory->writeRamRecordWord(linksAddress() + static_cast<u32>(index) * 4u, static_cast<u32>(next));
 	}
 	int rawSet(const Value& key, const Value& value);
 	int insertHash(const Value& key, const Value& value);
@@ -232,7 +229,7 @@ private:
 	void resolveIndexChain(StringId indexKey, TableLookupResult& result, Lookup&& lookup) const {
 		u32 address = m_address;
 		for (int depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			const TableRecord current(m_heap, address);
+			const TableRecord current(*m_heap, address);
 			const Value value = lookup(current);
 			if (!isNil(value)) {
 				result = {value, -1, static_cast<u32>(depth), TableLookupStatus::Resolved};
@@ -251,24 +248,14 @@ private:
 
 	TableValues values() const {
 		const u32 words = storageAddress();
-		return {&m_memory, words, words + (arrayCapacity() + 3u * hashSlots()) * 4u};
+		return {m_memory, words, words + (arrayCapacity() + 3u * hashSlots()) * 4u};
 	}
 
-protected:
-	GcHeap& m_heap;
-	Memory& m_memory;
+	GcHeap* m_heap;
+	Memory* m_memory;
 	u32 m_address;
 };
 
-// Transitional collection metadata. No language operation needs this object
-// to address the physical record.
-class Table : public GCObject, public TableRecord {
-public:
-	Table(GcHeap& heap, u32 address) : TableRecord(heap, address) {}
-	Table(const Table&) = delete;
-	Table& operator=(const Table&) = delete;
-	Table* metatable() const;
-	void setMetatable(Table* table) { setMetatableAddress(table ? table->address() : 0u); }
-};
+inline TableRecord asTable(Value value, GcHeap& heap) { return TableRecord(heap, valuePayload(value)); }
 
 } // namespace bmsx

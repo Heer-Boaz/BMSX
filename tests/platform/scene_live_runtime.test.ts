@@ -7,7 +7,7 @@ import { findRuntimeActor, runtimeWorld } from '../../ide/workbench/contrib/acto
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
-import { asInteger, asTable, isNil, valueBool, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { asInteger, isNil, valueBool, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { createLiveStudioFixture } from '../helpers/live_studio';
 
 async function fixture(t: TestContext, path = 'scenes/live.lua') {
@@ -59,12 +59,12 @@ test('Scene Inspect opens the exact normally initialized member in the existing 
 
 test('Inspect never constructs a registered Scene which normal gameplay has not initialized', async t => {
 	const f = await fixture(t, 'scenes/text.lua');
-	const world = runtimeWorld(f.sources, f.ide.guest, 0)!, objects = asTable(f.ide.guest.readStringMember(world, '_objects'), f.runtime.machine.cpu.gc);
-	const count = objects.records.length(objects.address), identity = f.ide.guest.identityScalar(world, ValueTag.Table);
+	const world = runtimeWorld(f.sources, f.ide.guest, 0)!, objects = valuePayload(f.ide.guest.readStringMember(world, '_objects'));
+	const count = f.runtime.machine.cpu.gc.tables.length(objects), identity = f.ide.guest.identityScalar(world, ValueTag.Table);
 	assert.equal(f.ide.sceneLive.select(f.authoring).status, 'not-live');
 	f.inspect();
 	assert.equal(f.part.activeGroup.panes.activePane === f.pane, true);
-	assert.equal(objects.records.length(objects.address), count);
+	assert.equal(f.runtime.machine.cpu.gc.tables.length(objects), count);
 	assert.equal(f.ide.guest.identityScalar(runtimeWorld(f.sources, f.ide.guest, 0)!, ValueTag.Table), identity);
 	assert.equal(f.ide.fault.faultSnapshot, null);
 });

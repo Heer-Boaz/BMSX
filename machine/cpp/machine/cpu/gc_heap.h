@@ -3,7 +3,6 @@
 #include <unordered_map>
 #include <vector>
 #include "common/compiler.h"
-#include "common/object_storage_pool.h"
 #include "machine/cpu/heap_allocator.h"
 #include "machine/cpu/table.h"
 #include "machine/cpu/thread.h"
@@ -41,7 +40,7 @@ public:
 	LuaHeap& budget;
 	Memory& memory;
 	HeapAllocator& arena;
-	Table* tableAt(u32 address) const { return attachedRecord<Table, ObjType::Table>(address & ~(Table::HEADER_BYTES - 1)); }
+	u32 tableRecordAddress(u32 address) const;
 	Upvalue* cellAt(u32 address) const { return attachedRecord<Upvalue, ObjType::Upvalue>(address & ~(UPVALUE_HEAP_BYTES - 1)); }
 	Closure* closureAt(u32 address) const { return attachedRecord<Closure, ObjType::Closure>(address); }
 	Upvalue* openCellAt(u32 address) const {
@@ -51,16 +50,13 @@ public:
 	Thread* threadAt(u32 address) const { return attachedRecord<Thread, ObjType::Thread>(address); }
 	void discardAttachments(Thread* retainedRoot);
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
-		T* object;
-		if constexpr (std::is_same_v<T, Table>) object = m_tables.construct(std::forward<Args>(args)...);
-		else object = new T(std::forward<Args>(args)...);
+		auto* object = new T(std::forward<Args>(args)...);
 		object->type = type;
 		track(object);
 		return object;
 	}
 	Closure* bindClosureRecord(u32 address, const FunctionPrototype&, bool canonical);
 	u32 reference(const GCObject* object) const { return physicalAddress(object); }
-	u32 reference(const Table* table) const { return table->address(); }
 	u32 reference(const Closure* closure) const { return closure->address; }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static size_t nativePhysicalRecordsOffset();
@@ -89,7 +85,7 @@ public:
 		return phase() == GcPhase::Sweep && object->gcColor() == (white() ^ 1u);
 	}
 	bool isAlive(const GCObject* object) const { return object && object->gcColor() != white(); }
-	size_t allocationBytes(const GCObject* object) const;
+	size_t allocationBytes(const Thread* thread) const;
 	void armThreadStackWatches();
 	bool observeStackWrites(u32 first, u32 end, const Thread* active);
 	size_t step(Value root0, Value root1, Value root2, Thread* growingStack = nullptr);
@@ -103,7 +99,6 @@ public:
 private:
 	static u32 physicalAddress(const GCObject* object) {
 		switch (object->type) {
-			case ObjType::Table: return static_cast<const Table*>(object)->address();
 			case ObjType::Closure: return static_cast<const Closure*>(object)->address;
 			case ObjType::Upvalue: return static_cast<const Upvalue*>(object)->address;
 			case ObjType::Thread: return static_cast<const Thread*>(object)->address;
@@ -116,13 +111,15 @@ private:
 		return object && object->type == kind ? static_cast<T*>(object) : nullptr;
 	}
 	void track(GCObject* object);
-	uint8_t tableWeakMode(const Table& table) const;
+	uint8_t tableWeakMode(const TableRecord& table);
+	bool markTable(u32 address);
+	size_t traceTable(u32 address);
 	bool valueIsAlive(Value value) const;
 	u32 indexWord(u32 queue) const { return memory.readRamRecordWord(m_controlOffset + queue) & GC_GRAY_INDEX_MASK; }
 	void enqueue(u32 address, u32 link, u32 queue);
 	void appendVisit(u32 list, u32 address);
 	void setVisitLink(u32 address, u8 meta, u32 index);
-	template<ObjType Kind, bool Drain, class Visitor>
+	template<u8 Kind, bool Drain, class Visitor>
 	size_t visitList(u32 list, Visitor&& visitor);
 	size_t markCell(Upvalue* cell);
 	size_t trace(bool atomic);
@@ -138,7 +135,6 @@ private:
 	StringId m_modeKey;
 	StringPool& m_stringPool;
 	const u32 m_controlOffset;
-	ObjectStoragePool<Table> m_tables;
 	// Map nodes are stable across rehash; erasure is tied to the last closure.
 	std::unordered_map<FunctionPrototype, size_t, FunctionPrototypeHash> m_prototypes;
 	std::vector<GCObject*> m_records = std::vector<GCObject*>(MAIN_RAM_SIZE / GC_RECORD_ALIGNMENT);
@@ -147,7 +143,6 @@ private:
 #endif
 };
 
-inline Table* asTable(Value value, const GcHeap& heap) { return heap.tableAt(valuePayload(value)); }
 inline Closure* asClosure(Value value, const GcHeap& heap) { return heap.closureAt(valuePayload(value)); }
 inline Thread* asThread(Value value, const GcHeap& heap) { return heap.threadAt(valuePayload(value)); }
 } // namespace bmsx

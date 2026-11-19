@@ -228,7 +228,7 @@ void unknownFieldStillFaultsAfterAnEarlierGuard() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
-		frame.registers.set(12, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable())));
+		frame.registers.set(12, valueTable(m->cpu.createTable().address()));
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(8)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 900);
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0));
 		require(m->cpu.runUntilDepth(0, 20) == RunResult::Halted, "a late unknown selector still hard-halts after the earlier guard succeeds");
@@ -244,7 +244,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 	const auto image = faultLoopImage(op, wide); CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
-		frame.registers.set(12, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable())));
+		frame.registers.set(12, valueTable(m->cpu.createTable().address()));
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0xa5a5a508u));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 900);

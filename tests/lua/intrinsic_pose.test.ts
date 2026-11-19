@@ -1,4 +1,4 @@
-import { asClosure, asTable, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
@@ -146,8 +146,8 @@ probe={run=function(count)
 end}
 `, { optLevel: 3, modules: WORLD_CPU_MODULES });
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-	const measured = profileWarmGuestKernel(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('run')!), cpu.gc), 256);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	const measured = profileWarmGuestKernel(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc), 256);
 	assert.equal(measured.reservations, 0); assert.equal(measured.reservedBytes, 0);
 	assert.equal(measured.retainedAfter, measured.retainedBefore);
 	t.diagnostic(JSON.stringify(measured));

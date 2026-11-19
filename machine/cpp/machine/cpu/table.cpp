@@ -14,21 +14,16 @@ constexpr int32_t kTableHashNextEnd = -1;
 } // namespace
 
 TableRecord::TableRecord(GcHeap& heap, u32 address)
-	: m_heap(heap), m_memory(heap.memory), m_address(address) {
+	: m_heap(&heap), m_memory(&heap.memory), m_address(address) {
 }
 
 void TableRecord::initialize(size_t array, size_t hash) {
-	writeHeader(TableHeader::Kind, static_cast<u32>(ValueTag::Table) | (static_cast<u32>(m_heap.white()) << 8u));
+	writeHeader(TableHeader::Kind, static_cast<u32>(ValueTag::Table) | (static_cast<u32>(m_heap->white()) << 8u));
 	writeHeader(TableHeader::Gray, 0);
 	writeHeader(TableHeader::Metatable, 0);
 	writeHeader(TableHeader::Length, 0);
 	bindStorage(array, hash, storageAddress());
 	initializeStorage();
-}
-
-Table* Table::metatable() const {
-	const u32 meta = metatableAddress();
-	return meta ? m_heap.tableAt(meta) : nullptr;
 }
 
 void TableRecord::setMetatableAddress(u32 address) {
@@ -37,7 +32,7 @@ void TableRecord::setMetatableAddress(u32 address) {
 }
 
 void TableRecord::writeBarrier() {
-	m_heap.writeBarrier(m_address, GC_RECORD_LINK);
+	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 }
 
 u32 TableRecord::storageBytes(size_t arraySize, size_t hashSize) {
@@ -64,7 +59,7 @@ bool TableRecord::getArrayIndex(const Value& key, int& outIndex) const {
 
 Value TableRecord::metatableIndexValue(StringId indexKey) const {
 	const u32 meta = metatableAddress();
-	return meta ? TableRecord(m_heap, meta).getStringKey(indexKey) : valueNil();
+	return meta ? TableRecord(*m_heap, meta).getStringKey(indexKey) : valueNil();
 }
 
 bool TableRecord::hasIntegerKey(u32 key) const {
@@ -76,7 +71,7 @@ bool TableRecord::hasIntegerKey(u32 key) const {
 }
 
 size_t TableRecord::hashValue(const Value& key) const {
-	return m_heap.hash(key);
+	return m_heap->hash(key);
 }
 
 bool TableRecord::keyEquals(const Value& a, const Value& b) const {
@@ -196,7 +191,7 @@ void TableRecord::rehash(const Value& key, const Value& value) {
 
 	size_t hashKeys = totalKeys - arrayKeys;
 	size_t hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
-	m_heap.budget.accountTableStorageWork(arrayCapacity() + 2 * hashSlots());
+	m_heap->budget.accountTableStorageWork(arrayCapacity() + 2 * hashSlots());
 	resize(arraySize, hashSize, key, value);
 }
 
@@ -206,13 +201,13 @@ void TableRecord::resize(
 	const Value& key,
 	const Value& value
 ) {
-	const u32 storage = m_heap.budget.allocateRecord(storageBytes(newArraySize, newHashSize), true, 0, 0,
+	const u32 storage = m_heap->budget.allocateRecord(storageBytes(newArraySize, newHashSize), true, 0, 0,
 		valueTable(m_address), key, value);
 	const auto oldValues = values();
 	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
 	bindStorage(newArraySize, newHashSize, storage);
 	initializeStorage();
-	m_heap.budget.accountTableStorageWork(newArraySize + 2 * newHashSize);
+	m_heap->budget.accountTableStorageWork(newArraySize + 2 * newHashSize);
 
 	size_t relocatedSlots = 0;
 	for (size_t i = 0; i < oldArraySize; ++i) {
@@ -228,8 +223,8 @@ void TableRecord::resize(
 			relocatedSlots += destination < 0 ? 1u : 2u;
 		}
 	}
-	m_heap.budget.accountTableStorageWork(oldArraySize + 2 * oldHashSize + relocatedSlots);
-	if (oldValues.words != 0) m_heap.arena.free(oldValues.words);
+	m_heap->budget.accountTableStorageWork(oldArraySize + 2 * oldHashSize + relocatedSlots);
+	if (oldValues.words != 0) m_heap->arena.free(oldValues.words);
 
 }
 
@@ -246,21 +241,21 @@ void TableRecord::initializeStorage() {
 	const u32 words = storageAddress() & RAM_RECORD_WORD_MASK;
 	const u32 links = words + (arrayCapacity() + 2u * hashSlots()) * 4u;
 	const u32 tags = links + hashSlots() * 4u;
-	u8* ram = m_memory.ramData();
+	u8* ram = m_memory->ramData();
 	std::fill(ram + words, ram + links, u8{0});
 	std::fill(ram + links, ram + tags, u8{0xff});
 	std::fill(ram + tags, ram + words + bytes, u8{0});
-	m_memory.invalidateRamWrite(words, bytes);
+	m_memory->invalidateRamWrite(words, bytes);
 }
 
 void TableRecord::freeStorage() {
 	const u32 storage = storageAddress();
-	if (storage != 0) m_heap.arena.free(storage);
+	if (storage != 0) m_heap->arena.free(storage);
 }
 
 void TableRecord::freeRecord() {
 	freeStorage();
-	m_heap.arena.free(m_address);
+	m_heap->arena.free(m_address);
 }
 
 // Storage redistribution must not change the logical boundary hint.

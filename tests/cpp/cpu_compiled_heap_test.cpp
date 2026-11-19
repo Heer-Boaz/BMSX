@@ -57,7 +57,7 @@ void fixedHelperContinuation(OpCode operation) {
 	writeInstruction(code, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(sourcePc, code.data(), code.size());
-		if (operation == OpCode::GETI) machine->cpu.activeThread()->currentFrame->registers.set(0, valueTable(machine->cpu.gcHeap().reference(machine->cpu.createTable())));
+		if (operation == OpCode::GETI) machine->cpu.activeThread()->currentFrame->registers.set(0, valueTable(machine->cpu.createTable().address()));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], sourcePc);
 	}
 	for (int pass = 0; pass < 4; ++pass) {
@@ -169,7 +169,7 @@ void concatKindsAndAliases(int destination) {
 			if (kind < values.size()) frame.registers.set(0, values[kind].first);
 			else switch (kind - values.size()) {
 				case 0: frame.registers.set(0, valueString(m->cpu.stringPool().intern(extra[0]))); break;
-				case 1: frame.registers.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable(0, 0)))); break;
+				case 1: frame.registers.set(0, valueTable(m->cpu.createTable(0, 0).address())); break;
 				case 2: frame.registers.set(0, valueClosure(m->cpu.gcHeap().reference(frame.attachedClosure()))); break;
 				case 3: frame.registers.set(0, valueThread(m->cpu.gcHeap().reference(m->cpu.activeThread()))); break;
 			}
@@ -259,19 +259,19 @@ void allocationRoots(bool closure) {
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto r = frame.registers;
-		Table* table = m->cpu.createTable(0, 1); auto& strings = m->cpu.stringPool();
-		table->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
-		r.set(9, valueTable(m->cpu.gcHeap().reference(table))); r.set(1, valueString(strings.intern("fresh-"))); r.set(2, valueString(strings.intern("result"))); frame.writeControl(bmsx::FrameField::Top, 0);
+		TableRecord table = m->cpu.createTable(0, 1); auto& strings = m->cpu.stringPool();
+		table.setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
+		r.set(9, valueTable(table.address())); r.set(1, valueString(strings.intern("fresh-"))); r.set(2, valueString(strings.intern("result"))); frame.writeControl(bmsx::FrameField::Top, 0);
 		const auto heap = std::pair{m->cpu.luaHeap().usedBytes(), m->cpu.luaHeap().collectionTarget()};
 		m->cpu.luaHeap().setCollectionTarget(heap.first);
 	}
 	require(native.cpu.runUntilDepth(0, 6) == scalar.cpu.runUntilDepth(0, 6), "the allocating instruction consumes the same grant"); requireParity(native, scalar);
 	for (auto* m : {&native, &scalar}) {
 		auto& strings = m->cpu.stringPool();
-		auto r = m->cpu.activeThread()->frameAtDepth(0)->registers; Table* retained = asTable(r.get(7), m->cpu.gcHeap());
-		require(m->cpu.collecting() && retained->gcColor() == 3, "the allocation assist traced the moved reference before returning");
+		auto r = m->cpu.activeThread()->frameAtDepth(0)->registers; TableRecord retained = asTable(r.get(7), m->cpu.gcHeap());
+		require(m->cpu.collecting() && m->memory.readRamRecordByte(retained.address() + GC_COLOR_OFFSET) == 3, "the allocation assist traced the moved reference before returning");
 		m->cpu.collectHeap();
-		require(retained->getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")), "a moved reference remains rooted across allocation");
+		require(retained.getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")), "a moved reference remains rooted across allocation");
 		if (closure) require(m->cpu.readClosureUpvalue(asClosure(r.get(0), m->cpu.gcHeap()), 0) == r.get(7), "capture observes the published reference value");
 		else require(strings.toString(asStringId(r.get(0))) == "fresh-result", "allocation commits the entire concatenation result");
 	}

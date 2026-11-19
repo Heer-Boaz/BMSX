@@ -1,4 +1,4 @@
-import { asTable } from '../../machine/ts/machine/cpu/value';
+import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
@@ -32,8 +32,8 @@ test('live world view retains unclipped initialized visuals, moving actors and t
 	const pane = part.activeGroup.panes.activePane!; assert.ok(pane instanceof ActorLabEditorPane); pane.focus();
 	editor.commands.execute('sceneViewport.view2d', pane.commandTarget); editor.update(0);
 	const view = input.worldView, frame = frames.displayed;
-	const markerHash = asTable(ide.guest.global('studio_test_world_marker'), ide.guest.cpu.gc).address;
-	const captionHash = asTable(ide.guest.global('studio_test_world_caption'), ide.guest.cpu.gc).address;
+	const markerHash = valuePayload(ide.guest.global('studio_test_world_marker'));
+	const captionHash = valuePayload(ide.guest.global('studio_test_world_caption'));
 	const marker = view.canvas.items.find(item => item.source.entry.hashId === markerHash)!;
 	assert.ok(marker); assert.equal(marker.affine.ox, 700, 'visual was outside the game camera, not reconstructed from scanout');
 	const caption = view.canvas.items.filter(item => item.source.entry.hashId === captionHash);

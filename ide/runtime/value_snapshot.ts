@@ -67,17 +67,17 @@ export class GuestValueSnapshot {
 			case ValueTag.Thread: return { kind: 'thread', id: values.getPayload(index) };
 			case ValueTag.BuiltinFunction: return { kind: 'builtin', id: values.getBuiltinFunctionId(index) };
 		}
-		const table = values.getTable(index, this.heap), id = table.address;
+		const id = values.getPayload(index);
 		if (this.visited.has(id)) return { kind: 'reference', id };
 		if (depth === VALUE_SNAPSHOT_DEPTH) return { kind: 'table', id, entries: NO_ENTRIES, omitted: true };
 		const entries: ValueSnapshotEntry[] = [], scratch = this.scratch[depth];
 		const snapshot = { kind: 'table' as const, id, entries, omitted: false };
 		this.visited.set(id, snapshot);
 		let slot = 0, omitted = false;
-		const count = table.records.storedSlotCount(table.address);
+		const count = this.heap.tables.storedSlotCount(id);
 		while (slot < count && this.remainingSlots > 0) {
 			this.remainingSlots--;
-			if (!table.records.loadStoredEntry(table.address, slot++, scratch, 0)) continue;
+			if (!this.heap.tables.loadStoredEntry(id, slot++, scratch, 0)) continue;
 			if (this.remainingEntries === 0) { omitted = true; break; }
 			this.remainingEntries--;
 			// Table keys are identities, not a second traversal of the object graph.

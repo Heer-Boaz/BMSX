@@ -559,11 +559,11 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 	constexpr u32 address = DYNAMIC_RAM_BASE + 0x1000;
 	CpuMachine native(image), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
-		auto* table = machine->cpu.createTable(0, 2);
-		table->setStringKey(machine->cpu.stringPool().intern("stable"), valueInteger(22));
-		table->setStringKey(machine->cpu.stringPool().intern("result"), valueInteger(0));
+		auto table = machine->cpu.createTable(0, 2);
+		table.setStringKey(machine->cpu.stringPool().intern("stable"), valueInteger(22));
+		table.setStringKey(machine->cpu.stringPool().intern("result"), valueInteger(0));
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		frame.registers.set(1, valueTable(machine->cpu.gcHeap().reference(table))); frame.registers.set(5, valueInteger(address));
+		frame.registers.set(1, valueTable(table.address())); frame.registers.set(5, valueInteger(address));
 		frame.registers.set(12, valueFloatBits(0x7f800000)); frame.registers.set(13, valueFloatBits(0x7f800000));
 		machine->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 	}

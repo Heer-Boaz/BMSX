@@ -23,31 +23,31 @@ int main() {
 		const auto key = cpu.stringPool().intern("retired");
 		const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 		const u32 physicalBefore = cpu.heapAllocator().occupiedBytes();
-		auto* first = cpu.createTable(3, 4);
+		auto first = cpu.createTable(3, 4);
 
-		const u32 bodyAddress = first->storageAddress();
-		first->setInteger(3, valueInteger(99));
+		const u32 bodyAddress = first.storageAddress();
+		first.setInteger(3, valueInteger(99));
 		require(memory.readMappedU32LE(bodyAddress + 2 * 4u) == 99u, "array payload lives in guest RAM");
 		memory.writeMappedU32LE(bodyAddress + 2 * 4u, 11u);
-		require(first->getInteger(3) == valueInteger(11), "table reads consume the physical bytes");
+		require(first.getInteger(3) == valueInteger(11), "table reads consume the physical bytes");
 		require(cpu.heapAllocator().occupiedBytes() == physicalBefore + 112u, "the header and body are separate physical allocations");
-		first->setStringKey(key, valueBool(false));
-		first->clear();
+		first.setStringKey(key, valueBool(false));
+		first.clear();
 		require(cpu.luaHeap().usedBytes() == before.first + 32,
 			"cleared tables retain only the table header charge");
 		// Different exact capacities can share one guest size class.
-		auto* second = cpu.createTable(4, 4);
-		require(second->trackedHeapBytes() == 112u && second->storageAddress() == bodyAddress, "the freed guest size class is reused");
+		auto second = cpu.createTable(4, 4);
+		require(second.trackedHeapBytes() == 112u && second.storageAddress() == bodyAddress, "the freed guest size class is reused");
 		for (int index = 1; index <= 4; ++index)
-			require(isNil(second->getInteger(index)), "reused array slots are initialized to nil");
-		require(isNil(second->getStringKey(key)), "reused hash storage does not retain old keys or values");
-		second->setStringKey(key, valueInteger(73));
-		for (int index = 1; index <= 300; ++index) second->setInteger(index, valueInteger(index));
+			require(isNil(second.getInteger(index)), "reused array slots are initialized to nil");
+		require(isNil(second.getStringKey(key)), "reused hash storage does not retain old keys or values");
+		second.setStringKey(key, valueInteger(73));
+		for (int index = 1; index <= 300; ++index) second.setInteger(index, valueInteger(index));
 		for (int index = 1; index <= 300; ++index)
-			require(second->getInteger(index) == valueInteger(index), "growth across the page allocation boundary preserves entries");
-		require(second->getStringKey(key) == valueInteger(73), "mixed array/hash growth preserves the hash entry");
-		second->clear();
-		first->clear();
+			require(second.getInteger(index) == valueInteger(index), "growth across the page allocation boundary preserves entries");
+		require(second.getStringKey(key) == valueInteger(73), "mixed array/hash growth preserves the hash entry");
+		second.clear();
+		first.clear();
 		require(cpu.luaHeap().usedBytes() == before.first + 64,
 			"empty tables keep only their canonical headers, and release both bodies");
 		require(cpu.heapAllocator().occupiedBytes() == physicalBefore + 64u, "only the two physical headers remain");

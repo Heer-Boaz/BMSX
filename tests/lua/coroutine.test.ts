@@ -1,4 +1,4 @@
-import { asClosure, asThread, asTable, valueBool, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
+import { asClosure, asThread, valueBool, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createTestSystemCpu } from '../helpers/blua32';
@@ -58,7 +58,7 @@ for (const optLevel of [0, 3] as const) {
 				const value = cpu.getGlobalByKey(cpu.stringPool.intern('failed_thread'));
 				const failed = asThread(value, cpu.gc);
 				assert.equal(valuePayload(value), failed.address);
-				assert.equal(cpu.memory.readRamRecordWord(failed.address + ThreadField.Header), THREAD_RECORD_KIND);
+				assert.equal(cpu.memory.readRamRecordByte(failed.address + ThreadField.Header), THREAD_RECORD_KIND);
 				assert.equal(cpu.memory.readRamRecordWord(failed.address + ThreadField.Status), ThreadStatus.Failed);
 				assert.equal(cpu.memory.readRamRecordWord(failed.address + ThreadField.ErrorWord), valuePayload(failed.error));
 				assert.equal(cpu.memory.readRamRecordWord(failed.address + ThreadField.ErrorKind), valueTag(failed.error));
@@ -67,8 +67,8 @@ for (const optLevel of [0, 3] as const) {
 			}
 			cpu.collectTrackedHeapBytes();
 			if (name === 'collection') {
-				const weak = asTable(cpu.getGlobalByKey(cpu.stringPool.intern('weak_threads')), cpu.gc);
-				assert.equal(weak.records.getInteger(weak.address, 1), valueNil(), 'unreachable thread is collected after its last stack roots return');
+				const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.intern('weak_threads')));
+				assert.equal(cpu.gc.tables.getInteger(weak, 1), valueNil(), 'unreachable thread is collected after its last stack roots return');
 			}
 		});
 	}

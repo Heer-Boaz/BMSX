@@ -1,5 +1,5 @@
 // Consumes the same-build cartlib layout in docs/cartlib_inspection_contract.md.
-import { asTable, isNil, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { isNil, ValueTag, type Value, valuePayload } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
@@ -13,11 +13,11 @@ export function visitRuntimeComponents(
 	const registry = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/registry');
 	const type = readRuntimeLuaModuleExport(sources, guest, domain, modulePath);
 	if (registry.kind === 'unavailable' || type.kind === 'unavailable' || isNil(registry.value) || isNil(type.value)) return false;
-	const index = asTable(guest.readStringMember(registry.value, '_entries_by_key'), guest.cpu.gc);
-	const bucket = index.records.get(index.address, type.value);
+	const index = valuePayload(guest.readStringMember(registry.value, '_entries_by_key'));
+	const bucket = guest.cpu.gc.tables.get(index, type.value);
 	if (!isNil(bucket)) {
-		const components = asTable(guest.readStringMember(bucket, 'items'), guest.cpu.gc);
-		for (let i = 1, length = components.records.length(components.address); i <= length; i += 1) visit(components.records.getInteger(components.address, i));
+		const components = valuePayload(guest.readStringMember(bucket, 'items'));
+		for (let i = 1, length = guest.cpu.gc.tables.length(components); i <= length; i += 1) visit(guest.cpu.gc.tables.getInteger(components, i));
 	}
 	return true;
 }

@@ -33,7 +33,7 @@ test('helper continuations are predeclared entries and read their own current Va
 	const table = cpu.createTable();
 	for (let iteration = 0; iteration < 32; ++iteration) for (let start = 0; start < entries.length; ++start) {
 		const registers = new ValueSlots(9), block = entries[start];
-		registers.setEncoded(0, ValueTag.False, 37); registers.setInteger(1, DYNAMIC_RAM_BASE); registers.set(8, start === 1 ? valueInteger(31) : valueTable(cpu.gc.reference(table)));
+		registers.setEncoded(0, ValueTag.False, 37); registers.setInteger(1, DYNAMIC_RAM_BASE); registers.set(8, start === 1 ? valueInteger(31) : valueTable(table));
 		memory.writeMappedWord(DYNAMIC_RAM_BASE, 17);
 		const run = { remainingCycles: 1, registerTop: 0, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
 		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constWords, page, frame, block.entry, run)];
@@ -51,7 +51,7 @@ test('helper continuations are predeclared entries and read their own current Va
 			assert.equal(memory.readMappedWord(DYNAMIC_RAM_BASE), 1);
 		} else {
 			for (const register of [0, 5]) { assert.equal(registers.getTag(register), ValueTag.False); assert.equal(registers.getPayload(register), 37); }
-			assert.equal(registers.get(8), start === 1 ? valueInteger(31) : valueTable(cpu.gc.reference(table)));
+			assert.equal(registers.get(8), start === 1 ? valueInteger(31) : valueTable(table));
 			assert.equal(registers.get(4), start === 1 ? valueInteger(31) : valueNil());
 			assert.equal(memory.readMappedWord(DYNAMIC_RAM_BASE), start === 1 ? 31 : 17);
 		}
@@ -113,7 +113,7 @@ test('resident Values cross internal string branches and publish only when leavi
 		const r = new ValueSlots(11), writes = new Uint32Array(11), store = r.setEncoded.bind(r);
 		r.setString(0, less ? alpha : omega); r.setString(1, less ? omega : alpha);
 		r.setInteger(3, 73); r.setInteger(4, 0);
-		r.setEncoded(8, kind, kind === ValueTag.False ? 37 : kind === ValueTag.Float ? 0x80000000 : cpu.gc.reference(table));
+		r.setEncoded(8, kind, kind === ValueTag.False ? 37 : kind === ValueTag.Float ? 0x80000000 : table);
 		r.setEncoded = (register, tag, word) => { ++writes[register]; store(register, tag, word); };
 		const run = { remainingCycles: grant, registerTop: 0, memoryAddress: 0, stackOffset: 0, stackBytes: 0, lengthWork: { probes: 0 } };
 		block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, run);
@@ -451,7 +451,7 @@ test('more than six live-through raw Values remain local across every internal e
 	const page = frame.decodedPage!, firstWord = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const table = cpu.createTable(), string = cpu.stringPool.intern('retained');
 	const tags = [ValueTag.Nil, ValueTag.False, ValueTag.True, ValueTag.Float, ValueTag.Float, ValueTag.String, ValueTag.Table, ValueTag.Integer];
-	const words = [13, 37, 42, 0x80000000, 0xffc12345, string, cpu.gc.reference(table), 19];
+	const words = [13, 37, 42, 0x80000000, 0xffc12345, string, table, 19];
 	for (const start of [0, 1]) for (const grant of [1, 15, 16, 63, 128, 257]) {
 		const block = page.compiledBlocks!.entries[firstWord + starts[start]]!, r = new ValueSlots(25);
 		const expected = Array.from({ length: 8 }, (_, index) => index);

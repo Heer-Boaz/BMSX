@@ -1,5 +1,5 @@
 // Consumes the same-build cartlib layout in docs/cartlib_inspection_contract.md.
-import { asTable, isNil, numberToHost, valueNil, valuesEqual, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { isNil, numberToHost, valueNil, valuesEqual, ValueTag, type Value, valuePayload } from '../../../../machine/ts/machine/cpu/value';
 import { createFsmStatePath } from '../../../../toolchain/ts/cartlib/fsm/state_path';
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
@@ -34,7 +34,7 @@ export function readRuntimeActors(sources: RuntimeInstalledSourceState, guest: S
 	const world = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/world/world');
 	if (world.kind === 'unavailable') return { domain, status: world.reason } as const;
 	if (isNil(world.value)) return { domain, status: 'uninitialized' } as const;
-	return { domain, status: 'available', objects: asTable(guest.readStringMember(world.value, '_objects'), guest.cpu.gc) } as const;
+	return { domain, status: 'available', objects: valuePayload(guest.readStringMember(world.value, '_objects')) } as const;
 }
 
 export function findRuntimeActor(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, hashId: number): Value | undefined {
@@ -44,9 +44,9 @@ export function findRuntimeActor(sources: RuntimeInstalledSourceState, guest: Su
 /** Lookup from an already resolved World; callers can retain its scalar identity separately. */
 export function findWorldActor(guest: SuspendedGuestSession, world: Value | undefined, hashId: number): Value | undefined {
 	if (world === undefined) return;
-	const objects = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
-	for (let i = 1, length = objects.records.length(objects.address); i <= length; i += 1) {
-		const actor = objects.records.getInteger(objects.address, i);
+	const objects = valuePayload(guest.readStringMember(world, '_objects'));
+	for (let i = 1, length = guest.cpu.gc.tables.length(objects); i <= length; i += 1) {
+		const actor = guest.cpu.gc.tables.getInteger(objects, i);
 		if (guest.identityScalar(actor, ValueTag.Table) === hashId) return actor;
 	}
 }
@@ -86,25 +86,25 @@ export class ActorRuntimeTree {
 		} else {
 			const id = guest.readStringMember(actor, 'id');
 			const root = this.node(guest, null, 0, 'actor', actor, actor, null, id, guest.isTruthy(guest.readStringMember(actor, 'active')));
-			const components = asTable(guest.readStringMember(actor, '_components'), guest.cpu.gc);
-			const componentCount = components.records.length(components.address);
+			const components = valuePayload(guest.readStringMember(actor, '_components'));
+			const componentCount = guest.cpu.gc.tables.length(components);
 			this.kinds.length = componentCount + 1;
 			this.kinds.fill(-1);
-			const classes = asTable(guest.readStringMember(actor, '_components_by_class'), guest.cpu.gc);
+			const classes = valuePayload(guest.readStringMember(actor, '_components_by_class'));
 			for (let i = 0; i < COMPONENT_TYPES.length; i += 1) {
 				const type = readRuntimeLuaModuleExport(sources, guest, domain, COMPONENT_TYPES[i][0]);
 				if (type.kind !== 'value' || isNil(type.value)) continue;
-				const bucketValue = classes.records.get(classes.address, type.value);
+				const bucketValue = guest.cpu.gc.tables.get(classes, type.value);
 				if (!isNil(bucketValue)) {
-					const bucket = asTable(bucketValue, guest.cpu.gc);
-					for (let j = 1, length = bucket.records.length(bucket.address); j <= length; j += 1) {
-						const index = numberToHost(guest.readStringMember(bucket.records.getInteger(bucket.address, j), '_owner_component_index'));
+					const bucket = valuePayload(bucketValue);
+					for (let j = 1, length = guest.cpu.gc.tables.length(bucket); j <= length; j += 1) {
+						const index = numberToHost(guest.readStringMember(guest.cpu.gc.tables.getInteger(bucket, j), '_owner_component_index'));
 						this.kinds[index] = i;
 					}
 				}
 			}
 			for (let i = 1; i <= componentCount; i += 1) {
-				const component = components.records.getInteger(components.address, i);
+				const component = guest.cpu.gc.tables.getInteger(components, i);
 				const type = this.kinds[i];
 				const id = guest.readStringMember(component, type === 1 ? 'tree_id' : 'id');
 				const branch = this.node(guest, root, i - 1, type === 1 ? 'tree' : 'component', component, component, component, id,
@@ -112,9 +112,9 @@ export class ActorRuntimeTree {
 					type === -1 ? 'COMPONENT' : COMPONENT_TYPES[type][1]);
 				let count = 0;
 				if (type === 0) {
-					const machines = asTable(guest.readStringMember(component, '_machines'), guest.cpu.gc);
-					for (let index = 1, length = machines.records.length(machines.address); index <= length; index++) {
-						const machine = machines.records.getInteger(machines.address, index);
+					const machines = valuePayload(guest.readStringMember(component, '_machines'));
+					for (let index = 1, length = guest.cpu.gc.tables.length(machines); index <= length; index++) {
+						const machine = guest.cpu.gc.tables.getInteger(machines, index);
 						const node = this.node(guest, branch, count++, 'machine', machine, machine, component, guest.readStringMember(machine, 'localdef_id'),
 							branch.active && guest.isTruthy(guest.readStringMember(component, '_started')));
 						this.states(guest, node, machine, component);
@@ -193,13 +193,13 @@ export class ActorRuntimeTree {
 
 	private states(guest: SuspendedGuestSession, parent: RetainedActorNode, machine: Value, component: Value): void {
 		const state = parent.value!;
-		const children = asTable(guest.readStringMember(state, 'states'), guest.cpu.gc);
-		const ids = asTable(guest.readStringMember(state, 'state_ids'), guest.cpu.gc);
+		const children = valuePayload(guest.readStringMember(state, 'states'));
+		const ids = valuePayload(guest.readStringMember(state, 'state_ids'));
 		const current = guest.readStringMember(state, 'current_id');
-		const stateCount = ids.records.length(ids.address);
+		const stateCount = guest.cpu.gc.tables.length(ids);
 		for (let i = 1; i <= stateCount; i += 1) {
-			const id = ids.records.getInteger(ids.address, i);
-			const child = children.records.get(children.address, id);
+			const id = guest.cpu.gc.tables.getInteger(ids, i);
+			const child = guest.cpu.gc.tables.get(children, id);
 			const active = parent.active && (valuesEqual(current, id) || guest.isTruthy(guest.readStringMember(guest.readStringMember(child, 'definition'), 'is_concurrent')));
 			const node = this.node(guest, parent, i - 1, 'state', child, machine, component, id, active);
 			this.states(guest, node, machine, component);

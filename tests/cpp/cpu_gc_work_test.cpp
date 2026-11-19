@@ -64,7 +64,7 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.instructionBudgetRemaining == 7 - bootCollectionWork, "runtime collection charges object passes, three root passes and String work");
 	require(cpu.luaHeap().usedBytes() == bootBytes, "readonly ROM String bytes are not charged as allocated text");
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(2, 3)))); //32+S(10+56)=112.
+	frame.registers.set(0, valueTable(cpu.createTable(2, 3).address())); //32+S(10+56)=112.
 	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
 	frame.writeControl(bmsx::FrameField::Top, 2);
 	require(cpu.luaHeap().usedBytes() == bootBytes + 112 + 24, "canonical reserved table capacity and UTF8 text bytes agree");
@@ -209,17 +209,17 @@ void allActivatedImagesAndUniqueGlobals() {
 
 void temporaryRootsAndUnreachablePool() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	Table* table = cpu.createTable(); //32; retained only by the reserve temporary root.
+	TableRecord table = cpu.createTable(); //32; retained only by the reserve temporary root.
 	const auto id = cpu.stringPool().intern("é😀"); //6; another temporary root.
 	const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 	require(before.first == bootBytes + 32 + 24, "precollection includes currently unreachable allocations");
 	cpu.luaHeap().setCollectionTarget(0);
 	cpu.instructionBudgetRemaining = 1;
-	cpu.luaHeap().admit(0, valueTable(cpu.gcHeap().reference(table)), valueString(id));
+	cpu.luaHeap().admit(0, valueTable(table.address()), valueString(id));
 	// First marking + live Table8 + String1; atomic and reclamation remain.
 	require(cpu.instructionBudgetRemaining == 1 - bootMarkWork - 8 - 1 && cpu.luaHeap().usedBytes() == bootBytes + 32 + 24
 		&& cpu.stringPool().toString(id) == "é😀", "all reserve temporary roots survive the first incremental pass");
-	while (cpu.collecting()) cpu.stepHeap(valueTable(cpu.gcHeap().reference(table)), valueString(id), valueNil());
+	while (cpu.collecting()) cpu.stepHeap(valueTable(table.address()), valueString(id), valueNil());
 	cpu.instructionBudgetRemaining = 1;
 	cpu.luaHeap().collectRuntime();
 	require(cpu.instructionBudgetRemaining == 1 - bootCollectionWork - 2 && cpu.luaHeap().usedBytes() == bootBytes,
@@ -228,33 +228,33 @@ void temporaryRootsAndUnreachablePool() {
 
 void incrementalStateAndBarriers() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	auto* roots = cpu.createTable(1024, 0);
-	cpu.rootThread()->currentFrame->registers.set(0, valueTable(cpu.gcHeap().reference(roots)));
+	auto roots = cpu.createTable(1024, 0);
+	cpu.rootThread()->currentFrame->registers.set(0, valueTable(roots.address()));
 	cpu.rootThread()->currentFrame->writeControl(bmsx::FrameField::Top, 1);
 	const auto field = cpu.stringPool().intern("child");
 	for (int i = 1; i <= 1000; ++i) {
-		auto* item = cpu.createTable(1, 1);
-		item->setStringKey(field, valueBool(false)); roots->setInteger(i, valueTable(cpu.gcHeap().reference(item)));
-		auto* dead = cpu.createTable(1, 0);
-		dead->setInteger(1, valueTable(cpu.gcHeap().reference(cpu.createTable())));
+		auto item = cpu.createTable(1, 1);
+		item.setStringKey(field, valueBool(false)); roots.setInteger(i, valueTable(item.address()));
+		auto dead = cpu.createTable(1, 0);
+		dead.setInteger(1, valueTable(cpu.createTable().address()));
 	}
 	for (int i = 0; i < 4200; ++i) cpu.stringPool().intern("dead-" + std::to_string(i) + std::string(16, 'x'));
-	auto* target = asTable(roots->getInteger(1000), cpu.gcHeap());
-	require(cpu.stepHeap(valueNil(), valueNil(), valueNil()) >= GC_STEP_WORDS && target->gcColor() == 3,
+	auto target = asTable(roots.getInteger(1000), cpu.gcHeap());
+	require(cpu.stepHeap(valueNil(), valueNil(), valueNil()) >= GC_STEP_WORDS && machine.memory.readRamRecordByte(target.address() + GC_COLOR_OFFSET) == 3,
 		"mutations target a black allocation while marking is incomplete");
-	auto* child = cpu.createTable();
-	target->setInteger(1, valueTable(cpu.gcHeap().reference(child)));
-	target->setStringKey(field, valueTable(cpu.gcHeap().reference(child)));
-	target->setMetatable(cpu.createTable());
-	const auto childId = child->address();
+	auto child = cpu.createTable();
+	target.setInteger(1, valueTable(child.address()));
+	target.setStringKey(field, valueTable(child.address()));
+	target.setMetatableAddress(cpu.createTable().address());
+	const auto childId = child.address();
 	u32 phases = 0, bornId = 0;
 	for (int step = 0; step < 1000; ++step) {
 		auto state = cpu.captureRuntimeState();
 		phases |= 1u << static_cast<u32>(cpu.gcHeap().phase());
 		if (cpu.gcHeap().phase() == GcPhase::Sweep && bornId == 0) {
-			auto* born = cpu.createTable(); bornId = born->address();
+			auto born = cpu.createTable(); bornId = born.address();
 			auto* frame = cpu.rootThread()->currentFrame;
-			frame->registers.set(1, valueTable(cpu.gcHeap().reference(born))); frame->writeControl(bmsx::FrameField::Top, 2);
+			frame->registers.set(1, valueTable(born.address())); frame->writeControl(bmsx::FrameField::Top, 2);
 			state = cpu.captureRuntimeState();
 		}
 		const auto ram = cpu.memory().captureSaveState();
@@ -268,11 +268,11 @@ void incrementalStateAndBarriers() {
 	}
 	require(phases == 59, "snapshot/restore exercised Mark, Atomic, Sweep, Strings and Pause");
 	roots = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
-	target = asTable(roots->getInteger(1000), cpu.gcHeap());
-	require(asTable(target->getInteger(1), cpu.gcHeap())->address() == childId
-		&& asTable(target->getStringKey(field), cpu.gcHeap())->address() == childId && target->metatable(),
+	target = asTable(roots.getInteger(1000), cpu.gcHeap());
+	require(asTable(target.getInteger(1), cpu.gcHeap()).address() == childId
+		&& asTable(target.getStringKey(field), cpu.gcHeap()).address() == childId && target.metatableAddress() != 0u,
 		"barriers preserve changed array, hash and metatable edges");
-	require(asTable(cpu.rootThread()->currentFrame->registers.get(1), cpu.gcHeap())->address() == bornId,
+	require(asTable(cpu.rootThread()->currentFrame->registers.get(1), cpu.gcHeap()).address() == bornId,
 		"an allocation born during sweep is retained");
 	require(!cpu.stringPool().find("dead-0" + std::string(16, 'x')), "incremental String sweep reclaims dead text");
 	cpu.collectHeap();
@@ -283,73 +283,73 @@ void incrementalStateAndBarriers() {
 void incrementalSharedWeakMode() {
 	Machine machine(image());
 	auto& cpu = machine.cpu;
-	auto* roots = cpu.createTable(1024, 0);
+	auto roots = cpu.createTable(1024, 0);
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.gcHeap().reference(roots)));
+	frame.registers.set(0, valueTable(roots.address()));
 	frame.writeControl(bmsx::FrameField::Top, 1);
-	for (int i = 1; i <= 1000; ++i) roots->setInteger(i, valueTable(cpu.gcHeap().reference(cpu.createTable())));
+	for (int i = 1; i <= 1000; ++i) roots.setInteger(i, valueTable(cpu.createTable().address()));
 	const auto modeKey = cpu.stringPool().intern("__mode");
-	auto* metatable = cpu.createTable(0, 1);
-	metatable->setStringKey(modeKey, valueString(cpu.stringPool().intern("v")));
-	auto* weak = asTable(roots->getInteger(1000), cpu.gcHeap());
-	auto* following = asTable(roots->getInteger(999), cpu.gcHeap());
-	weak->setMetatable(metatable);
-	following->setMetatable(metatable);
-	auto* child = cpu.createTable();
-	const Value childValue = valueTable(child->address());
-	weak->setInteger(1, childValue);
+	auto metatable = cpu.createTable(0, 1);
+	metatable.setStringKey(modeKey, valueString(cpu.stringPool().intern("v")));
+	auto weak = asTable(roots.getInteger(1000), cpu.gcHeap());
+	auto following = asTable(roots.getInteger(999), cpu.gcHeap());
+	weak.setMetatableAddress(metatable.address());
+	following.setMetatableAddress(metatable.address());
+	auto child = cpu.createTable();
+	const Value childValue = valueTable(child.address());
+	weak.setInteger(1, childValue);
 	cpu.stepHeap(valueNil(), valueNil(), valueNil());
 	const auto index = [](u32 address) { return (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT; };
 	const u32 control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
-	require(cpu.gcHeap().phase() == GcPhase::Mark && weak->gcColor() == 3 && child->gcColor() != 3
-		&& machine.memory.readRamRecordWord(control + GC_WEAK_VISITS) == index(weak->address())
-		&& machine.memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_TAIL) == index(following->address())
+	require(cpu.gcHeap().phase() == GcPhase::Mark && machine.memory.readRamRecordByte(weak.address() + GC_COLOR_OFFSET) == 3 && machine.memory.readRamRecordByte(child.address() + GC_COLOR_OFFSET) != 3
+		&& machine.memory.readRamRecordWord(control + GC_WEAK_VISITS) == index(weak.address())
+		&& machine.memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_TAIL) == index(following.address())
 		&& machine.memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_COUNT) == 2,
 		"the weak visit list records the two Tables in discovery order without keeping the weak value alive");
 	require(machine.memory.readRamRecordWord(control + GC_THREAD_VISITS) == index(cpu.rootThread()->address)
 		&& machine.memory.readRamRecordWord(control + GC_THREAD_VISITS + GC_VISIT_COUNT) == 1,
 		"the scanned Thread is pending its next remark");
-	const u32 weakAddress = weak->address(), metaAddress = metatable->address();
+	const u32 weakAddress = weak.address(), metaAddress = metatable.address();
 	const auto saved = cpu.captureRuntimeState();
 	const auto ram = machine.memory.captureSaveState();
 	machine.memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(saved);
 	require(machine.memory.captureSaveState().ram == ram.ram, "RAM restores both pending visit lists without rewriting them");
-	metatable = cpu.gcHeap().tableAt(metaAddress);
-	weak = cpu.gcHeap().tableAt(weakAddress);
-	metatable->setStringKey(modeKey, valueNil());
+	require(cpu.gcHeap().tableRecordAddress(metaAddress) == metatable.address()
+		&& cpu.gcHeap().tableRecordAddress(weakAddress) == weak.address(), "restore preserves both live physical table records");
+	metatable.setStringKey(modeKey, valueNil());
 	while (cpu.collecting()) cpu.stepHeap(valueNil(), valueNil(), valueNil());
-	require(weak->getInteger(1) == childValue && cpu.gcHeap().tableAt(valuePayload(childValue)),
+	require(weak.getInteger(1) == childValue && cpu.gcHeap().tableRecordAddress(valuePayload(childValue)),
 		"atomic remark observes the shared metatable change after restore");
 	require(machine.memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_COUNT) == 0
 		&& machine.memory.readRamRecordWord(control + GC_THREAD_VISITS + GC_VISIT_COUNT) == 0,
 		"both physical lists are empty after collection");
 	cpu.collectHeap();
-	require(weak->getInteger(1) == childValue, "the newly strong entry retains its child in the next cycle");
+	require(weak.getInteger(1) == childValue, "the newly strong entry retains its child in the next cycle");
 }
 
 void consumesSelfLinkedGrayEdge() {
 	Machine machine(image()); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap();
-	auto* rooted = cpu.createTable();
+	auto rooted = cpu.createTable();
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(rooted->address()));
+	frame.registers.set(0, valueTable(rooted.address()));
 	frame.writeControl(FrameField::Top, 1);
-	const u32 index = (rooted->address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT;
-	rooted->setGcColor(2);
-	machine.memory.writeRamRecordWord(rooted->address() + GC_RECORD_LINK, index);
+	const u32 index = (rooted.address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT;
+	machine.memory.writeRamRecordByte(rooted.address() + GC_COLOR_OFFSET, 2);
+	machine.memory.writeRamRecordWord(rooted.address() + GC_RECORD_LINK, index);
 	machine.memory.writeRamRecordWord(gc.changedHeadOffset(), index);
 	gc.step(valueNil(), valueNil(), valueNil());
-	require(gc.phase() == GcPhase::Atomic && rooted->gcColor() == 3
-		&& machine.memory.readRamRecordWord(rooted->address() + GC_RECORD_LINK) == 0,
+	require(gc.phase() == GcPhase::Atomic && machine.memory.readRamRecordByte(rooted.address() + GC_COLOR_OFFSET) == 3
+		&& machine.memory.readRamRecordWord(rooted.address() + GC_RECORD_LINK) == 0,
 		"consuming the mark and link terminates a circular physical queue");
 	while (gc.active()) gc.step(valueNil(), valueNil(), valueNil());
-	require(gc.tableAt(rooted->address()) == rooted, "the already visited Table remains reachable");
+	require(gc.tableRecordAddress(rooted.address()) == rooted.address(), "the already visited Table remains reachable");
 }
 
 void secondMarkPassAndCredit() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(4096, 0)))); frame.writeControl(bmsx::FrameField::Top, 1);
+	frame.registers.set(0, valueTable(cpu.createTable(4096, 0).address())); frame.writeControl(bmsx::FrameField::Top, 1);
 	const auto before = cpu.luaHeap().usedBytes();
 	cpu.luaHeap().setCollectionTarget(before); cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
@@ -358,8 +358,8 @@ void secondMarkPassAndCredit() {
 		"oversized marking earns its actual allocation credit before the pending request");
 	u32 phases = 0;
 	for (int i = 0; i < 12; ++i) {
-		auto* target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
-		target->setInteger(1, valueInteger(i));
+		auto target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
+		target.setInteger(1, valueInteger(i));
 		cpu.stepHeap(valueNil(), valueNil(), valueNil());
 		const auto state = cpu.captureRuntimeState(); phases |= 1u << static_cast<u32>(cpu.gcHeap().phase());
 		const auto ram = cpu.memory().captureSaveState();
@@ -369,10 +369,10 @@ void secondMarkPassAndCredit() {
 		if (cpu.gcHeap().phase() == GcPhase::Atomic) break;
 	}
 	require((phases & 12u) == 12u, "continuous stores do not restart either incremental mark pass indefinitely");
-	auto* target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
-	auto* late = cpu.createTable(); target->setInteger(2, valueTable(cpu.gcHeap().reference(late)));
+	auto target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
+	auto late = cpu.createTable(); target.setInteger(2, valueTable(late.address()));
 	while (cpu.collecting()) cpu.stepHeap(valueNil(), valueNil(), valueNil());
-	require(target->getInteger(2) == valueTable(cpu.gcHeap().reference(late)), "final remark retains writes after the second pass");
+	require(target.getInteger(2) == valueTable(late.address()), "final remark retains writes after the second pass");
 }
 
 void sweepCoroutineRecord() {
@@ -446,15 +446,15 @@ void stackShrinkAndAdmission() {
 
 void highRetainedPacing() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	auto* retained = cpu.createTable(419430, 0);
+	auto retained = cpu.createTable(419430, 0);
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.gcHeap().reference(retained))); frame.writeControl(bmsx::FrameField::Top, 1);
+	frame.registers.set(0, valueTable(retained.address())); frame.writeControl(bmsx::FrameField::Top, 1);
 	cpu.collectHeap();
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const auto before = cpu.diagnosticGcProfile();
 #endif
 	for (int i = 0; i < 24000; ++i) cpu.createTable(8, 0);
-	require(cpu.luaHeap().usedBytes() <= cpu.luaHeap().capacity() && frame.registers.get(0) == valueTable(cpu.gcHeap().reference(retained)),
+	require(cpu.luaHeap().usedBytes() <= cpu.luaHeap().capacity() && frame.registers.get(0) == valueTable(retained.address()),
 		"retained pool and transient allocation coexist inside the physical capacity");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const auto after = cpu.diagnosticGcProfile();

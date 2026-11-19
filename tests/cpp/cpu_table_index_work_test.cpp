@@ -78,18 +78,18 @@ Value keyFor(CPU& cpu, KeyKind kind) {
 	return kind == KeyKind::String ? valueString(cpu.stringPool().intern("field"))
 		: kind == KeyKind::Integer ? valueInteger(1) : valueBool(false);
 }
-Table* makeChain(CPU& cpu, Table* root, int depth, Value key, Value value) {
-	auto* current = root;
+TableRecord makeChain(CPU& cpu, TableRecord root, int depth, Value key, Value value) {
+	auto current = root;
 	for (int i = 1; i < depth; ++i) {
-		auto* next = cpu.createTable(2, 2); auto* meta = cpu.createTable(0, 1);
-		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(next))); current->setMetatable(meta); current = next;
+		auto next = cpu.createTable(2, 2); auto meta = cpu.createTable(0, 1);
+		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(next.address())); current.setMetatableAddress(meta.address()); current = next;
 	}
-	current->set(key, value);
+	current.set(key, value);
 	return current;
 }
-void cycle(CPU& cpu, Table* root) {
-	auto* meta = cpu.createTable(0, 1);
-	meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(root))); root->setMetatable(meta);
+void cycle(CPU& cpu, TableRecord root) {
+	auto meta = cpu.createTable(0, 1);
+	meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(root.address())); root.setMetatableAddress(meta.address());
 }
 
 void grantsAndRestore() {
@@ -98,10 +98,10 @@ void grantsAndRestore() {
 		const std::array charges{2, (op == OpCode::SELF ? 17 : op == OpCode::GETI ? 8 : 16) + 8 * (depth - 1), 2, 2};
 		const int total = charges[0] + charges[1] + charges[2] + charges[3];
 		for (auto* m : {&generated, &scalar}) {
-			auto* root = m->cpu.createTable(2, 2); const auto key = keyFor(m->cpu, kind);
+			auto root = m->cpu.createTable(2, 2); const auto key = keyFor(m->cpu, kind);
 			makeChain(m->cpu, root, depth, key, valueBool(false));
 			if (depth == 1) cycle(m->cpu, root);
-			auto r = m->cpu.activeThread()->currentFrame->registers; r.set(0, valueTable(m->cpu.gcHeap().reference(root))); r.set(1, key);
+			auto r = m->cpu.activeThread()->currentFrame->registers; r.set(0, valueTable(root.address())); r.set(1, key);
 		}
 		const auto heap = generated.cpu.luaHeap().usedBytes();
 		for (int grant = 0; grant <= total; ++grant) {
@@ -145,9 +145,9 @@ void faultsOnce() {
 	for (bool wide : {false, true}) for (const auto [op, kind] : forms) for (bool cyclic : {false, true}) {
 		Program program(op, wide); Machine generated(program, false), scalar(program, true);
 		for (auto* m : {&generated, &scalar}) {
-			auto* root = m->cpu.createTable(2, 2); const auto key = keyFor(m->cpu, kind);
+			auto root = m->cpu.createTable(2, 2); const auto key = keyFor(m->cpu, kind);
 			if (cyclic) cycle(m->cpu, root); else makeChain(m->cpu, root, 33, key, valueInteger(73));
-			auto r = m->cpu.activeThread()->currentFrame->registers; r.set(0, valueTable(m->cpu.gcHeap().reference(root))); r.set(1, key); r.set(8, valueInteger(57));
+			auto r = m->cpu.activeThread()->currentFrame->registers; r.set(0, valueTable(root.address())); r.set(1, key); r.set(8, valueInteger(57));
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);
 		require(3 - generated.cpu.instructionBudgetRemaining == 2 + (op == OpCode::SELF ? 17 : op == OpCode::GETI ? 8 : 16) + 248,
@@ -170,10 +170,10 @@ void stringReceiver() {
 	for (bool wide : {false, true}) {
 		Program program(OpCode::GETFIELD, wide, true); Machine generated(program, false), scalar(program, true);
 		for (auto* m : {&generated, &scalar}) {
-			auto& cpu = m->cpu; auto* installed = cpu.createTable(0, 2); const auto key = keyFor(cpu, KeyKind::String);
+			auto& cpu = m->cpu; auto installed = cpu.createTable(0, 2); const auto key = keyFor(cpu, KeyKind::String);
 			makeChain(cpu, installed, 3, key, valueInteger(73));
 			auto r = cpu.activeThread()->currentFrame->registers;
-			r.set(20, cpu.createBuiltinFunction(BuiltinFunctionId::SetStringIndex)); r.set(21, valueTable(cpu.gcHeap().reference(installed)));
+			r.set(20, cpu.createBuiltinFunction(BuiltinFunctionId::SetStringIndex)); r.set(21, valueTable(installed.address()));
 			r.set(0, valueString(cpu.stringPool().intern("receiver"))); r.set(8, valueInteger(57));
 			require(cpu.runUntilDepth(0, 7) == RunResult::Yielded, "the real builtin installs the String index Table");
 		}
@@ -187,8 +187,8 @@ void stringReceiver() {
 				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 				"physical allocator and pacing words agree");
 		for (auto* m : {&generated, &scalar}) {
-			auto* installed = asTable(m->cpu.readFrameRegister(0, 21), m->cpu.gcHeap());
-			installed->metatable()->setStringKey(m->cpu.stringPool().intern("__index"), valueTable(m->cpu.gcHeap().reference(m->cpu.createTable())));
+			auto installed = asTable(m->cpu.readFrameRegister(0, 21), m->cpu.gcHeap());
+			TableRecord(m->cpu.gcHeap(), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(m->cpu.createTable().address()));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);

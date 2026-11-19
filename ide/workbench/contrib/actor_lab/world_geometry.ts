@@ -1,4 +1,4 @@
-import { asTable, isNil, numberToHost, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { isNil, numberToHost, ValueTag, type Value, valuePayload } from '../../../../machine/ts/machine/cpu/value';
 import { luaFloorDivide } from '../../../../machine/ts/spec/blua32/numeric';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import type { Affine3 } from '../../../../machine/ts/common/affine3';
@@ -74,9 +74,9 @@ export class ActorWorldGeometry {
 			const image = this.image(source, item.actor.domain, guest);
 			packets.push({ image, x: 0, y: 0, width: image.width, height: image.height, color, flipH: false, flipV: false });
 		} else {
-			const tileArray = asTable(tiles, guest.cpu.gc);
-			for (let i = 1, length = tileArray.records.length(tileArray.address); i <= length; i++) {
-				const tile = tileArray.records.getInteger(tileArray.address, i), image = this.image(tile, item.actor.domain, guest);
+			const tileArray = valuePayload(tiles);
+			for (let i = 1, length = guest.cpu.gc.tables.length(tileArray); i <= length; i++) {
+				const tile = guest.cpu.gc.tables.getInteger(tileArray, i), image = this.image(tile, item.actor.domain, guest);
 				packets.push({ image, x: numberToHost(guest.readStringMember(tile, 'offset_x')), y: numberToHost(guest.readStringMember(tile, 'offset_y')),
 					width: image.width, height: image.height, color, flipH: false, flipV: false });
 			}
@@ -98,34 +98,34 @@ export class ActorWorldGeometry {
 	private captureText(item: WorldCanvasVisual, visual: Value, color: number, guest: SuspendedGuestSession): void {
 		const component = guest.identityScalar(visual, ValueTag.Table);
 		const previous = item.appearance, old = previous?.generation === this.generation && previous.domain === item.actor.domain ? previous : undefined, revision = numberToHost(guest.readStringMember(visual, '_layout_revision'));
-		const lines = asTable(guest.readStringMember(visual, 'glyph_lines'), guest.cpu.gc), count = numberToHost(guest.readStringMember(visual, 'glyph_line_count'));
+		const lines = valuePayload(guest.readStringMember(visual, 'glyph_lines')), count = numberToHost(guest.readStringMember(visual, 'glyph_line_count'));
 		const backgroundValue = guest.readStringMember(visual, 'background_color');
 		const background = isNil(backgroundValue) ? null : numberToHost(backgroundValue) >>> 0;
 		const revealValue = guest.readStringMember(visual, 'glyph_visible_height');
 		const reveal = isNil(revealValue) ? null : numberToHost(revealValue);
 		const sameLayout = old?.component === component && old.revision === revision;
 		let same = sameLayout && old.color === color && old.background === background;
-		if (same) for (let i = 0; i < count; i++) if (old.rows[i].visible !== numberToHost(guest.readStringMember(lines.records.getInteger(lines.address, i + 1), 'visible_count'))) { same = false; break; }
+		if (same) for (let i = 0; i < count; i++) if (old.rows[i].visible !== numberToHost(guest.readStringMember(guest.cpu.gc.tables.getInteger(lines, i + 1), 'visible_count'))) { same = false; break; }
 		if (same) return;
 		const offsetsValue = guest.readStringMember(visual, 'line_offsets');
-		const offsets = isNil(offsetsValue) ? null : asTable(offsetsValue, guest.cpu.gc);
+		const offsets = isNil(offsetsValue) ? null : valuePayload(offsetsValue);
 		const xOffsetsValue = guest.readStringMember(visual, 'line_x_offsets');
-		const xOffsets = isNil(xOffsetsValue) ? null : asTable(xOffsetsValue, guest.cpu.gc);
+		const xOffsets = isNil(xOffsetsValue) ? null : valuePayload(xOffsetsValue);
 		const centerValue = guest.readStringMember(visual, 'center_block_width');
 		const center = isNil(centerValue) ? null : numberToHost(centerValue);
 		const lineWidths = guest.readStringMember(visual, 'line_widths');
-		const widths = asTable(isNil(lineWidths) ? guest.readStringMember(visual, 'layout_line_widths') : lineWidths, guest.cpu.gc);
+		const widths = valuePayload(isNil(lineWidths) ? guest.readStringMember(visual, 'layout_line_widths') : lineWidths);
 		const lineHeight = numberToHost(guest.readStringMember(visual, 'line_height'));
 		const rows: GlyphRow[] = [], packets: WorldPacket[] = [];
 		for (let i = 0; i < count; i++) {
-			const line = lines.records.getInteger(lines.address, i + 1), visible = numberToHost(guest.readStringMember(line, 'visible_count'));
+			const line = guest.cpu.gc.tables.getInteger(lines, i + 1), visible = numberToHost(guest.readStringMember(line, 'visible_count'));
 			if (sameLayout) { rows.push({ ...old.rows[i], visible }); continue; }
-			const glyphLine = asTable(line, guest.cpu.gc);
-			const length = numberToHost(guest.readStringMember(line, 'glyph_count')), positions = asTable(guest.readStringMember(line, 'x_offsets'), guest.cpu.gc);
+			const glyphLine = valuePayload(line);
+			const length = numberToHost(guest.readStringMember(line, 'glyph_count')), positions = valuePayload(guest.readStringMember(line, 'x_offsets'));
 			const glyphs: Image[] = [], advances: number[] = [];
-			for (let g = 1; g <= length; g++) { glyphs.push(this.image(glyphLine.records.getInteger(glyphLine.address, g), item.actor.domain, guest)); advances.push(numberToHost(positions.records.getInteger(positions.address, g))); }
-			rows.push({ glyphs, offsets: advances, visible, x: xOffsets !== null ? numberToHost(xOffsets.records.getInteger(xOffsets.address, i + 1))
-				: center === null ? 0 : luaFloorDivide(center - numberToHost(widths.records.getInteger(widths.address, i + 1)), 2), y: offsets === null ? i * lineHeight : numberToHost(offsets.records.getInteger(offsets.address, i + 1)) });
+			for (let g = 1; g <= length; g++) { glyphs.push(this.image(guest.cpu.gc.tables.getInteger(glyphLine, g), item.actor.domain, guest)); advances.push(numberToHost(guest.cpu.gc.tables.getInteger(positions, g))); }
+			rows.push({ glyphs, offsets: advances, visible, x: xOffsets !== null ? numberToHost(guest.cpu.gc.tables.getInteger(xOffsets, i + 1))
+				: center === null ? 0 : luaFloorDivide(center - numberToHost(guest.cpu.gc.tables.getInteger(widths, i + 1)), 2), y: offsets === null ? i * lineHeight : numberToHost(guest.cpu.gc.tables.getInteger(offsets, i + 1)) });
 		}
 		if (background !== null) for (const row of rows) for (let i = 0; i < row.visible; i++) {
 			const image = row.glyphs[i]; packets.push({ x: row.x + row.offsets[i], y: row.y, width: image.width, height: image.height, color: background, flipH: false, flipV: false });
@@ -137,11 +137,11 @@ export class ActorWorldGeometry {
 		item.appearance = { generation: this.generation, domain: item.actor.domain, component, revision, source: 0, color, background, width: 0, height: 0, x: 0, y: 0, flipH: false, flipV: false, rows, packets };
 	}
 	public captureModels(renderer: Value, domain: ResourceDomain, guest: SuspendedGuestSession): void {
-		const view = guest.readStringMember(renderer, '_models'), models = asTable(guest.readStringMember(view, 'components'), guest.cpu.gc);
-		const count = models.records.length(models.address), visibility = asTable(guest.readStringMember(renderer, '_visible'), guest.cpu.gc);
+		const view = guest.readStringMember(renderer, '_models'), models = valuePayload(guest.readStringMember(view, 'components'));
+		const count = guest.cpu.gc.tables.length(models), visibility = valuePayload(guest.readStringMember(renderer, '_visible'));
 		for (let i = 1; i <= count; i++) {
-			if (!guest.isTruthy(visibility.records.getInteger(visibility.address, i))) continue;
-			const model = models.records.getInteger(models.address, i), owner = guest.readStringMember(model, 'owner');
+			if (!guest.isTruthy(guest.cpu.gc.tables.getInteger(visibility, i))) continue;
+			const model = guest.cpu.gc.tables.getInteger(models, i), owner = guest.readStringMember(model, 'owner');
 			const ownerId = guest.identityScalar(owner, ValueTag.Table);
 			const item = this.models.get(this.models.length), actor = item.entry, world = item.world;
 			if (actor.hashId !== ownerId || actor.domain !== domain) actor.label = guest.formatValue(guest.readStringMember(owner, 'id'));

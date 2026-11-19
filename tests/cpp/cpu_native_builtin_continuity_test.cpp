@@ -51,8 +51,8 @@ struct Machine {
 	IrqController irq;
 	ExecutionAddressSpace addresses;
 	CPU cpu;
-	Table* target = nullptr;
-	Table* meta = nullptr;
+	std::optional<TableRecord> target;
+	std::optional<TableRecord> meta;
 	Value expected = valueNil();
 	Machine(const test::Blua32TestRom& r, bool scalar) : rom(r),
 		memory(MemoryInit{r.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
@@ -77,10 +77,10 @@ struct Machine {
 			r.set(13, valueFloat(position));
 			expected = position == 3 ? valueInteger(3) : valueNil();
 		} else {
-			target = cpu.createTable(); meta = cpu.createTable(); target->setMetatable(meta);
-			r.set(13, mode == 3 ? valueInteger(17) : valueTable(cpu.gcHeap().reference(target)));
-			r.set(14, mode == 1 ? valueNil() : mode == 2 ? valueBool(false) : valueTable(cpu.gcHeap().reference(meta)));
-			expected = id == BuiltinFunctionId::GetMetatable ? valueTable(cpu.gcHeap().reference(meta)) : valueTable(cpu.gcHeap().reference(target));
+			target = cpu.createTable(); meta = cpu.createTable(); target->setMetatableAddress(meta->address());
+			r.set(13, mode == 3 ? valueInteger(17) : valueTable(target->address()));
+			r.set(14, mode == 1 ? valueNil() : mode == 2 ? valueBool(false) : valueTable(meta->address()));
+			expected = id == BuiltinFunctionId::GetMetatable ? valueTable(meta->address()) : valueTable(target->address());
 		}
 	}
 	void selectClosure() {
@@ -135,7 +135,7 @@ void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float positi
 		"the successor consumes the new result, or the retained callee when results are discarded");
 	require(machine.cpu.instructionBudgetRemaining == 12345 && frame->readControl(bmsx::FrameField::Pc) == rom.textAddress && static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) == 3,
 		"the base native ABI updates its own state, never hidden CPU/frame copies behind live native registers");
-	if (id == BuiltinFunctionId::SetMetatable) require(machine.target->metatable() == (mode == 1 ? nullptr : machine.meta),
+	if (id == BuiltinFunctionId::SetMetatable) require(machine.target->metatableAddress() == (mode == 1 ? 0u : machine.meta->address()),
 		"the inline route performs the real table mutation");
 }
 
@@ -166,11 +166,11 @@ void completedDebtDoesNotRunTheSuccessor() {
 		const auto* caller=preparedCaller(machine);const auto* exit=caller->run(state);const int receiving=results==1?0:1;
 		require(exit->exit!=NativeBlockExit::Call && exit->cycles==0 && exit->nextPc==caller->terminal.nextPc,
 			"an exhausting successful leaf returns its completed successor frontier, never the original CALL");
-		require(state.remainingCycles==-2-receiving && state.registerTop==receiving && machine.target->metatable()==nullptr,
+		require(state.remainingCycles==-2-receiving && state.registerTop==receiving && machine.target->metatableAddress()==0u,
 			"the complete primitive/result charge and real mutation commit even when CALL exhausted the grant");
 		require(frame->registers.get(8)==valueInteger(-8) && frame->registers.get(9)==valueInteger(-9),
 			"no successor executes after the completed CALL debt");
-		if(receiving) require(frame->registers.get(0)==valueTable(machine.cpu.gcHeap().reference(machine.target)),"completed debt publishes the raw aliased result");
+		if(receiving) require(frame->registers.get(0)==valueTable(machine.target->address()),"completed debt publishes the raw aliased result");
 	}
 }
 

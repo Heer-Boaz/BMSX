@@ -13,7 +13,7 @@ import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { asClosure, asTable, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { createTestSystemCpu, linkTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
@@ -529,7 +529,7 @@ test('Hot Resume keeps a live ROM String key even after removing its last litera
 	cpu.replaceExecutionImages(executionAddressSpace.resolveSystemDomain());
 	assert.equal(cpu.stringPool.intern('prior-key'), oldKey);
 	assert.equal(cpu.stringPool.toString(oldKey), 'prior-key');
-	const retained = asTable(table, cpu.gc);
-	assert.equal(retained.records.getStringKey(retained.address, oldKey), valueInteger(42));
+	const retained = valuePayload(table);
+	assert.equal(cpu.gc.tables.getStringKey(retained, oldKey), valueInteger(42));
 	assert.equal(cpu.stringPool.toString(cpu.stringPool.find('new-literal')!), 'new-literal');
 });

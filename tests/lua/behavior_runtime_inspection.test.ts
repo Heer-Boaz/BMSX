@@ -3,7 +3,7 @@ import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { asClosure, asTable, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { asClosure, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
@@ -59,7 +59,7 @@ return component`;
 	const choice = readStateMachineInstances(sources, guest, -1).items[0];
 	const transport = new RuntimeTransport(runtime, null!, rewind as HostRewind, null!, () => true);
 	const componentHashId = guest.identityScalar(choice.component, ValueTag.Table), machineHashId = guest.identityScalar(choice.machine, ValueTag.Table);
-	const machineObject = asTable(choice.machine, cpu.gc);
+	const machineObject = valuePayload(choice.machine);
 	const inspection = new BehaviorRuntimeInspection(sources, guest, rewind as HostRewind, -1, sources.currentBlua32Media.system!,
 		{ kind: 'state_machine', componentHashId, machineHashId, stateHashId: machineHashId }, transport);
 	return { runtime, cpu, guest, sources, rewind, inspection, transport, beforeBirth, choice, componentHashId, machineHashId, machineObject };
@@ -90,7 +90,7 @@ test('visible behavior inspection compares completed observations, not paused re
 	assert.equal(current.value, 'b'); assert.ok(document.every(row => row.valueChanged === false));
 	assert.ok(reads > observedReads);
 	restoreCpuCheckpoint(f.cpu, alive); f.guest.invalidate('history-restored');
-	assert.ok(asTable(readStateMachineInstances(f.sources, f.guest, -1).items[0].machine, f.cpu.gc) !== f.machineObject, 'history reconstructs a fresh machine object');
+	assert.equal(valuePayload(readStateMachineInstances(f.sources, f.guest, -1).items[0].machine), f.machineObject, 'history restores the machine record at its saved address');
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.deepEqual(document.map(row => row.value), before);
 	assert.equal(current.valueChanged, true, 'restoring a previous value is a change from the last completed observation');
@@ -178,7 +178,7 @@ test('historical absence preserves a behavior bookmark across replay and repeate
 		const restored = readStateMachineInstances(f.sources, f.guest, -1).items[0];
 		assert.equal(f.guest.identityScalar(restored.component, ValueTag.Table), f.componentHashId);
 		assert.equal(f.guest.identityScalar(restored.machine, ValueTag.Table), f.machineHashId);
-		assert.ok(asTable(restored.machine, f.cpu.gc) !== f.machineObject);
+		assert.equal(valuePayload(restored.machine), f.machineObject);
 		assert.strictEqual(f.inspection.refresh(), document);
 		assert.deepEqual(document.map(row => row.value), before);
 		assert.ok(document.every(row => row.valueChanged === false), 'unavailable membership ends the previous comparison baseline');

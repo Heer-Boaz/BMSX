@@ -36,15 +36,15 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			functions: [{ firstWord: 0, wordCount: word + 1, maxStack: 24 }] });
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, r = frame.registers;
 		const base = frame.pc, key = cpu.stringPool.intern('field'), global = cpu.stringPool.intern('value');
-		const table = cpu.createTable(1, 1); table.records.setInteger(table.address, 1, valueInteger(11)); table.records.setStringKey(table.address, key, valueInteger(17));
-		r.setTable(0, cpu.gc.reference(table)); r.setInteger(1, 1); r.setString(2, key); r.setInteger(3, 23);
+		const table = cpu.createTable(1, 1); cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setStringKey(table, key, valueInteger(17));
+		r.setTable(0, table); r.setInteger(1, 1); r.setString(2, key); r.setInteger(3, 23);
 		r.setInteger(4, 2); r.setInteger(5, 3); r.setInteger(6, 7); r.setInteger(7, 3); r.setString(8, cpu.stringPool.intern('abc'));
 		const charges = [...instructions.map(row => row[4]), 2], total = charges.reduce((a, b) => a + b, 0);
 		cpu.runUntilDepth(0, total * 32);
 		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 		for (let grant = 0; grant <= total; ++grant) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
-			r.clear(13, 9); table.records.setInteger(table.address, 1, valueInteger(11)); table.records.setStringKey(table.address, key, valueInteger(17));
+			r.clear(13, 9); cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setStringKey(table, key, valueInteger(17));
 			cpu.setSystemGlobalByKey(global, valueInteger(31)); cpu.setGlobalByKey(global, valueInteger(37));
 			assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
 			let remaining = grant, completed = 0;
@@ -54,9 +54,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			for (const [after, slot, value] of [[1, 9, valueInteger(1)], [2, 10, valueFloat(8)], [3, 11, valueFloat(8)], [4, 12, valueInteger(1)], [5, 13, valueInteger(3)], [6, 14, valueInteger(17)], [7, 15, valueInteger(11)], [8, 16, valueInteger(17)], [12, 17, valueInteger(23)], [14, 20, valueInteger(31)], [16, 21, valueInteger(37)]]) {
 				assert.equal(r.get(slot), completed >= after ? value : valueNil(), `R${slot} at grant ${grant}`);
 			}
-			assert.equal(table.records.getStringKey(table.address, key), valueInteger(completed >= 9 ? 23 : 17));
-			assert.equal(table.records.getInteger(table.address, 1), valueInteger(completed >= 10 ? 23 : 11));
-			assert.equal(r.get(18), completed >= 12 ? valueTable(cpu.gc.reference(table)) : valueNil());
+			assert.equal(cpu.gc.tables.getStringKey(table, key), valueInteger(completed >= 9 ? 23 : 17));
+			assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(completed >= 10 ? 23 : 11));
+			assert.equal(r.get(18), completed >= 12 ? valueTable(table) : valueNil());
 			assert.equal(r.getTag(19), completed >= 13 ? ValueTag.Table : ValueTag.Nil);
 			assert.equal(cpu.getSystemGlobalByKey(global), valueInteger(completed >= 15 ? 23 : 31));
 			assert.equal(cpu.getGlobalByKey(global), valueInteger(completed >= 17 ? 23 : 37));

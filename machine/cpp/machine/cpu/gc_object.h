@@ -11,7 +11,6 @@ inline constexpr uint32_t GC_RECORD_LINK = 4;
 inline constexpr uint32_t GC_GRAY_INDEX_BITS = 19;
 inline constexpr uint32_t GC_GRAY_INDEX_MASK = (1u << GC_GRAY_INDEX_BITS) - 1;
 enum class ObjType : uint8_t {
-	Table,
 	Closure,
 	Upvalue,
 	Thread,

@@ -23,7 +23,7 @@ for (const operation of [OpCode.NEWT, OpCode.GETI]) test(`same-frame helper cont
 	writeInstruction(code, 2, OpCode.JMP, 0, 63, 61, 255);
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(sourcePc, code);
-		if (operation === OpCode.GETI) cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.gc.reference(cpu.createTable()));
+		if (operation === OpCode.GETI) cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.createTable());
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], sourcePc);
 		cpu.runUntilDepth(0, 4096);
 	}

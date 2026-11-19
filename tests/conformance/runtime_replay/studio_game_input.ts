@@ -1,4 +1,4 @@
-import { valueInteger, asTable, numberToHost } from '../../../machine/ts/machine/cpu/value';
+import { valueInteger, numberToHost, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { createInputControllerSnapshot, INP_POINTER_BUTTON_SECONDARY, InputControllerGamepadButtonBit, InputControllerSampleContext } from '../../../machine/ts/machine/devices/input/contracts';
 import { IO_INP_KEYS, IO_INP_PADS, IO_INP_POINTER_BUTTONS } from '../../../machine/ts/spec/bmsx/io';
@@ -138,10 +138,10 @@ export async function runStudioGameInput(test: StudioFixture) {
 	const full = guest.identity(guest.readStringMember(sprite.value, 'draw_visual'));
 	const region = guest.identity(guest.readStringMember(sprite.value, 'draw_region_visual'));
 	const world = runtimeWorld(ide.sources, guest, actor.domain)!;
-	const lane = asTable(guest.readStringMember(world, '_render_visuals'), guest.cpu.gc);
+	const lane = valuePayload(guest.readStringMember(world, '_render_visuals'));
 	let pickX = -1, pickY = -1, pickHashId = 0;
 	for (let index = numberToHost(guest.readStringMember(world, '_render_visual_count')); index > 0; index--) {
-		const visual = lane.records.getInteger(lane.address, index), owner = guest.readStringMember(visual, 'owner');
+		const visual = guest.cpu.gc.tables.getInteger(lane, index), owner = guest.readStringMember(visual, 'owner');
 		const draw = guest.readStringMember(visual, 'draw'), cropped = guest.matchesIdentity(draw, region);
 		if (!cropped && !guest.matchesIdentity(draw, full) || !guest.isTruthy(guest.readStringMember(visual, 'visible'))
 			|| !guest.isTruthy(guest.readStringMember(owner, 'visible'))) continue;
@@ -154,7 +154,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 		const y = numberToHost(guest.readStringMember(owner, 'y')) + numberToHost(guest.readStringMember(visual, 'offset_y'))
 			+ numberToHost(guest.readStringMember(visual, 'draw_offset_y')) + height / 2;
 		if (width === 0 || height === 0 || x < 0 || y < 0 || x >= test.presenter.offscreenCanvasSize.x || y >= test.presenter.offscreenCanvasSize.y) continue;
-		pickX = x; pickY = y; pickHashId = asTable(owner, guest.cpu.gc).address; break;
+		pickX = x; pickY = y; pickHashId = valuePayload(owner); break;
 	}
 	check(pickHashId !== 0, 'real title presentation contains a visible sprite to pick');
 	const point = { left: actor.previewBounds.left + pickX * (actor.previewBounds.right - actor.previewBounds.left) / test.presenter.offscreenCanvasSize.x,

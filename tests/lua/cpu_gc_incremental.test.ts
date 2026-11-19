@@ -8,7 +8,7 @@ import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GcPhase, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
-import { ValueTag, asTable, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -22,34 +22,34 @@ function machine() {
 test('incremental marking preserves changed table edges, metatables and final register roots', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	const roots = cpu.createTable(1024, 0), field = cpu.stringPool.intern('child');
-	frame.registers.setTable(0, cpu.gc.reference(roots)); frame.top = 1;
+	frame.registers.setTable(0, roots); frame.top = 1;
 	for (let i = 1; i <= 1000; ++i) {
 		const item = cpu.createTable(1, 1);
-		item.records.setStringKey(item.address, field, valueBool(false)); roots.records.setInteger(roots.address, i, valueTable(cpu.gc.reference(item)));
+		cpu.gc.tables.setStringKey(item, field, valueBool(false)); cpu.gc.tables.setInteger(roots, i, valueTable(item));
 	}
-	const target = asTable(roots.records.getInteger(roots.address, 1000), cpu.gc);
+	const target = valuePayload(cpu.gc.tables.getInteger(roots, 1000));
 	const firstWork = cpu.gc.step();
 	assert.ok(firstWork >= GC_STEP_WORDS);
 	assert.equal(cpu.gc.phase(), GcPhase.Mark);
-	assert.equal(target.gcColor, 3, 'the mutation really targets an already traced allocation');
-	assert.equal(cpu.memory.readRamRecordByte(target.address + GC_COLOR_OFFSET), 3);
+	assert.equal(cpu.gc.memory.readRamRecordByte(target + GC_COLOR_OFFSET), 3, 'the mutation really targets an already traced allocation');
+	assert.equal(cpu.memory.readRamRecordByte(target + GC_COLOR_OFFSET), 3);
 	assert.equal(cpu.memory.readRamRecordByte(cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET), GcPhase.Mark);
 	const arrayChild = cpu.createTable(), fieldChild = cpu.createTable(), metatable = cpu.createTable();
-	target.records.setInteger(target.address, 1, valueTable(cpu.gc.reference(arrayChild)));
-	target.records.setStringKey(target.address, field, valueTable(cpu.gc.reference(fieldChild)));
-	target.metatable = metatable;
-	assert.equal(cpu.memory.readRamRecordWord(cpu.gc.changedHeadOffset()), (target.address & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT);
-	assert.equal(cpu.memory.readRamRecordWord(target.address + GC_RECORD_LINK), 0,
+	cpu.gc.tables.setInteger(target, 1, valueTable(arrayChild));
+	cpu.gc.tables.setStringKey(target, field, valueTable(fieldChild));
+	cpu.gc.tables.setMetatableAddress(target, metatable);
+	assert.equal(cpu.memory.readRamRecordWord(cpu.gc.changedHeadOffset()), (target & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT);
+	assert.equal(cpu.memory.readRamRecordWord(target + GC_RECORD_LINK), 0,
 		'repeated stores do not link the same table to itself');
 	const rootChild = cpu.createTable();
-	frame.registers.setTable(1, cpu.gc.reference(rootChild)); frame.top = 2;
-	const expectedIds = [arrayChild.address, fieldChild.address, metatable.address, rootChild.address];
+	frame.registers.setTable(1, rootChild); frame.top = 2;
+	const expectedIds = [arrayChild, fieldChild, metatable, rootChild];
 	let steps = 0;
 	while (cpu.gc.active() && steps++ < 1000) cpu.gc.step();
 	assert.ok(!cpu.gc.active()); assert.ok(steps > 2, 'the graph was not collected in one call');
 	for (const id of expectedIds) assert.ok(allocatedObjectRecords(cpu).includes(id));
-	assert.equal(target.records.getInteger(target.address, 1), valueTable(cpu.gc.reference(arrayChild))); assert.equal(target.records.getStringKey(target.address, field), valueTable(cpu.gc.reference(fieldChild)));
-	assert.equal(target.metatable, metatable); assert.equal(frame.registers.getTable(1, cpu.gc), rootChild);
+	assert.equal(cpu.gc.tables.getInteger(target, 1), valueTable(arrayChild)); assert.equal(cpu.gc.tables.getStringKey(target, field), valueTable(fieldChild));
+	assert.equal(cpu.gc.tables.metatableAddress(target), metatable); assert.equal(frame.registers.getPayload(1), rootChild);
 	frame.registers.clear(frame.stackCapacity); frame.top = 0;
 	cpu.collectTrackedHeapBytes();
 	for (const id of expectedIds) assert.ok(!allocatedObjectRecords(cpu).includes(id));
@@ -59,29 +59,29 @@ test('consuming a gray record also consumes a self-linked mark edge', () => {
 	const cpu = machine(), { gc, memory } = cpu;
 	const rooted = cpu.createTable();
 	const frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, rooted.address);
+	frame.registers.setTable(0, rooted);
 	frame.top = 1;
-	const index = (rooted.address & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT;
-	memory.writeRamRecordByte(rooted.address + GC_COLOR_OFFSET, 2);
-	memory.writeRamRecordWord(rooted.address + GC_RECORD_LINK, index);
+	const index = (rooted & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT;
+	memory.writeRamRecordByte(rooted + GC_COLOR_OFFSET, 2);
+	memory.writeRamRecordWord(rooted + GC_RECORD_LINK, index);
 	memory.writeRamRecordWord(gc.changedHeadOffset(), index);
 	gc.step();
 	assert.equal(gc.phase(), GcPhase.Atomic);
-	assert.equal(memory.readRamRecordWord(rooted.address + GC_RECORD_LINK), 0);
-	assert.equal(rooted.gcColor, 3);
+	assert.equal(memory.readRamRecordWord(rooted + GC_RECORD_LINK), 0);
+	assert.equal(cpu.gc.memory.readRamRecordByte(rooted + GC_COLOR_OFFSET), 3);
 	while (gc.active()) gc.step();
-	assert.equal(gc.tableAt(rooted.address), rooted);
+	assert.equal(gc.tableRecordAddress(rooted), rooted);
 });
 
 test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing dead graph edges', () => {
 	const cpu = machine(), roots = cpu.createTable(1024, 0);
-	cpu.rootThread.currentFrame!.registers.setTable(0, cpu.gc.reference(roots)); cpu.rootThread.currentFrame!.top = 1;
+	cpu.rootThread.currentFrame!.registers.setTable(0, roots); cpu.rootThread.currentFrame!.top = 1;
 	for (let i = 1; i <= 1000; ++i) {
-		roots.records.setInteger(roots.address, i, valueTable(cpu.gc.reference(cpu.createTable(1, 1))));
+		cpu.gc.tables.setInteger(roots, i, valueTable(cpu.createTable(1, 1)));
 		// Newer children are swept before their dead parents. Saving a sweep must
 		// retain the parents' retirement bytes, not follow the retired children.
 		const deadParent = cpu.createTable(1, 0);
-		deadParent.records.setInteger(deadParent.address, 1, valueTable(cpu.gc.reference(cpu.createTable())));
+		cpu.gc.tables.setInteger(deadParent, 1, valueTable(cpu.createTable()));
 	}
 	for (let i = 0; i < 4200; ++i) cpu.stringPool.intern(`dead-${i}-${'x'.repeat(16)}`);
 	const phases = new Set<GcPhase>();
@@ -91,9 +91,9 @@ test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing
 		let state = cpu.captureRuntimeState();
 		phases.add(cpu.gc.phase());
 		if (cpu.gc.phase() === GcPhase.Sweep && bornDuringSweep === 0) {
-			const born = cpu.createTable(); bornDuringSweep = born.address;
+			const born = cpu.createTable(); bornDuringSweep = born;
 			const frame = cpu.rootThread.currentFrame!;
-			frame.registers.setTable(1, cpu.gc.reference(born)); frame.top = 2;
+			frame.registers.setTable(1, born); frame.top = 2;
 			state = cpu.captureRuntimeState();
 		}
 		const ram = cpu.memory.captureSaveState();
@@ -103,7 +103,7 @@ test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing
 		if (!cpu.gc.active()) break;
 	}
 	assert.deepEqual(phases, new Set([GcPhase.Mark, GcPhase.Atomic, GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause]));
-	assert.equal(cpu.rootThread.currentFrame!.registers.getTable(1, cpu.gc).address, bornDuringSweep);
+	assert.equal(cpu.rootThread.currentFrame!.registers.getPayload(1), bornDuringSweep);
 	assert.equal(cpu.stringPool.find(`dead-0-${'x'.repeat(16)}`), undefined);
 	cpu.collectTrackedHeapBytes();
 	assert.equal(allocatedObjectRecords(cpu).length, 1004,
@@ -112,8 +112,8 @@ test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing
 
 test('allocation assists debit one bounded graph step and retain the pending request outside its work', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, root = cpu.createTable(2048, 0);
-	frame.registers.setTable(0, cpu.gc.reference(root)); frame.top = 1;
-	for (let i = 1; i <= 2048; ++i) root.records.setInteger(root.address, i, valueTable(cpu.gc.reference(cpu.createTable())));
+	frame.registers.setTable(0, root); frame.top = 1;
+	for (let i = 1; i <= 2048; ++i) cpu.gc.tables.setInteger(root, i, valueTable(cpu.createTable()));
 	const before = cpu.luaHeap.usedBytes();
 	cpu.luaHeap.setCollectionTarget(before);
 	cpu.instructionBudgetRemaining = 1;
@@ -122,7 +122,7 @@ test('allocation assists debit one bounded graph step and retain the pending req
 	assert.ok(cpu.instructionBudgetRemaining < 0);
 	assert.ok(cpu.instructionBudgetRemaining > -2 * GC_STEP_WORDS, 'one large root is indivisible, not the entire graph');
 	assert.equal(cpu.luaHeap.usedBytes(), before + 32);
-	frame.registers.setTable(1, cpu.gc.reference(pending)); frame.top = 2;
+	frame.registers.setTable(1, pending); frame.top = 2;
 	cpu.luaHeap.collectRuntime();
 	assert.equal(frame.registers.getTag(1), ValueTag.Table);
 	assert.equal(cpu.luaHeap.usedBytes(), before + 32);
@@ -133,26 +133,26 @@ test('final remark observes weak-to-strong changes through a shared metatable', 
 	const cpu = machine();
 	const frame = cpu.rootThread.currentFrame!;
 	const roots = cpu.createTable(1024, 0);
-	frame.registers.setTable(0, cpu.gc.reference(roots));
+	frame.registers.setTable(0, roots);
 	frame.top = 1;
-	for (let i = 1; i <= 1000; ++i) roots.records.setInteger(roots.address, i, valueTable(cpu.gc.reference(cpu.createTable())));
+	for (let i = 1; i <= 1000; ++i) cpu.gc.tables.setInteger(roots, i, valueTable(cpu.createTable()));
 	const modeKey = cpu.stringPool.intern('__mode');
 	let metatable = cpu.createTable(0, 1);
-	metatable.records.setStringKey(metatable.address, modeKey, valueString(cpu.stringPool.intern('v')));
-	let weak = asTable(roots.records.getInteger(roots.address, 1000), cpu.gc);
-	const following = asTable(roots.records.getInteger(roots.address, 999), cpu.gc);
-	weak.metatable = metatable;
-	following.metatable = metatable;
-	const child = cpu.createTable(), childValue = valueTable(child.address);
-	weak.records.setInteger(weak.address, 1, childValue);
+	cpu.gc.tables.setStringKey(metatable, modeKey, valueString(cpu.stringPool.intern('v')));
+	let weak = valuePayload(cpu.gc.tables.getInteger(roots, 1000));
+	const following = valuePayload(cpu.gc.tables.getInteger(roots, 999));
+	cpu.gc.tables.setMetatableAddress(weak, metatable);
+	cpu.gc.tables.setMetatableAddress(following, metatable);
+	const child = cpu.createTable(), childValue = valueTable(child);
+	cpu.gc.tables.setInteger(weak, 1, childValue);
 	cpu.gc.step();
 	const { memory } = cpu, control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const index = (address: number) => (address & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT;
 	assert.equal(cpu.gc.phase(), GcPhase.Mark);
-	assert.equal(weak.gcColor, 3);
-	assert.notEqual(child.gcColor, 3, 'the weak entry has not retained its child');
-	assert.equal(memory.readRamRecordWord(control + GC_WEAK_VISITS), index(weak.address));
-	assert.equal(memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_TAIL), index(following.address));
+	assert.equal(cpu.gc.memory.readRamRecordByte(weak + GC_COLOR_OFFSET), 3);
+	assert.notEqual(cpu.gc.memory.readRamRecordByte(child + GC_COLOR_OFFSET), 3, 'the weak entry has not retained its child');
+	assert.equal(memory.readRamRecordWord(control + GC_WEAK_VISITS), index(weak));
+	assert.equal(memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_TAIL), index(following));
 	assert.equal(memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_COUNT), 2);
 	assert.equal(memory.readRamRecordWord(control + GC_THREAD_VISITS), index(cpu.rootThread.address));
 	assert.equal(memory.readRamRecordWord(control + GC_THREAD_VISITS + GC_VISIT_COUNT), 1);
@@ -160,27 +160,27 @@ test('final remark observes weak-to-strong changes through a shared metatable', 
 	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
 	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 	assert.deepEqual(memory.captureSaveState().ram, ram.ram, 'restore does not reconstruct visit metadata');
-	metatable = cpu.gc.tableAt(metatable.address)!;
-	weak = cpu.gc.tableAt(weak.address)!;
+	metatable = cpu.gc.tableRecordAddress(metatable)!;
+	weak = cpu.gc.tableRecordAddress(weak)!;
 	// Only the shared mode table is written, not the table holding the edge.
-	metatable.records.setStringKey(metatable.address, modeKey, valueNil());
+	cpu.gc.tables.setStringKey(metatable, modeKey, valueNil());
 	while (cpu.gc.active()) cpu.gc.step();
-	assert.equal(weak.records.getInteger(weak.address, 1), childValue);
-	assert.ok(cpu.gc.tableAt(child.address), 'the shared weak-to-strong change is still seen after restore');
+	assert.equal(cpu.gc.tables.getInteger(weak, 1), childValue);
+	assert.ok(cpu.gc.tableRecordAddress(child), 'the shared weak-to-strong change is still seen after restore');
 	assert.equal(memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_COUNT), 0);
 	assert.equal(memory.readRamRecordWord(control + GC_THREAD_VISITS + GC_VISIT_COUNT), 0);
 	cpu.collectTrackedHeapBytes();
-	assert.equal(weak.records.getInteger(weak.address, 1), childValue);
+	assert.equal(cpu.gc.tables.getInteger(weak, 1), childValue);
 });
 
 test('changed objects wait for a finite second pass and retain later writes across restore', () => {
 	const cpu = machine();
 	const frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(4096, 0))); frame.top = 1;
+	frame.registers.setTable(0, cpu.createTable(4096, 0)); frame.top = 1;
 	const phases = new Set<GcPhase>();
 	for (let i = 0; i < 12; ++i) {
-		const target = cpu.rootThread.currentFrame!.registers.getTable(0, cpu.gc);
-		target.records.setInteger(target.address, 1, valueInteger(i));
+		const target = cpu.rootThread.currentFrame!.registers.getPayload(0);
+		cpu.gc.tables.setInteger(target, 1, valueInteger(i));
 		cpu.gc.step();
 		const state = cpu.captureRuntimeState(); phases.add(cpu.gc.phase());
 		const ram = cpu.memory.captureSaveState();
@@ -190,16 +190,16 @@ test('changed objects wait for a finite second pass and retain later writes acro
 	}
 	assert.ok(phases.has(GcPhase.MarkAgain));
 	assert.ok(phases.has(GcPhase.Atomic), 'continuous writes cannot restart the first or second pass indefinitely');
-	const target = cpu.rootThread.currentFrame!.registers.getTable(0, cpu.gc);
-	const late = cpu.createTable(); target.records.setInteger(target.address, 2, valueTable(cpu.gc.reference(late)));
+	const target = cpu.rootThread.currentFrame!.registers.getPayload(0);
+	const late = cpu.createTable(); cpu.gc.tables.setInteger(target, 2, valueTable(late));
 	while (cpu.gc.active()) cpu.gc.step();
-	assert.equal(target.records.getInteger(target.address, 2), valueTable(cpu.gc.reference(late)));
-	assert.ok(allocatedObjectRecords(cpu).includes(late.address));
+	assert.equal(cpu.gc.tables.getInteger(target, 2), valueTable(late));
+	assert.ok(allocatedObjectRecords(cpu).includes(late));
 });
 
 test('an oversized scan earns actual-work credit, not another assist after 256 bytes', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(8192, 0))); frame.top = 1;
+	frame.registers.setTable(0, cpu.createTable(8192, 0)); frame.top = 1;
 	const before = cpu.luaHeap.usedBytes();
 	cpu.luaHeap.setCollectionTarget(before);
 	cpu.instructionBudgetRemaining = 0;
@@ -283,14 +283,14 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 test('high retained usage advances automatically without emergency full collections', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	const retained = cpu.createTable(419430, 0);
-	frame.registers.setTable(0, cpu.gc.reference(retained)); frame.top = 1;
+	frame.registers.setTable(0, retained); frame.top = 1;
 	cpu.collectTrackedHeapBytes();
 	const diagnostics = cpu.gc.diagnostics = new GcDiagnostics();
 	for (let i = 0; i < 24000; ++i) cpu.createTable(8, 0);
 	assert.equal(diagnostics.fullCollections, 0);
 	assert.ok(diagnostics.collections > 0 && diagnostics.steps > diagnostics.collections);
 	assert.ok(cpu.luaHeap.usedBytes() <= cpu.luaHeap.capacity());
-	assert.equal(frame.registers.getTable(0, cpu.gc), retained);
+	assert.equal(frame.registers.getPayload(0), retained);
 });
 
 test('TS phase diagnostics include atomic pauses and survive restore without changing guest work', () => {

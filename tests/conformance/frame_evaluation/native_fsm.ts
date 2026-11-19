@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { asClosure, asTable, valueBool, valueInteger } from '../../../machine/ts/machine/cpu/value';
+import { asClosure, valueBool, valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
 import type { CompiledRegion } from '../../../machine/ts/machine/cpu/compiled_region';
@@ -119,9 +119,9 @@ for (const optLevel of [0, 3] as const) {
 					}
 				}
 				if (phase >= 4) {
-					const bindings = asTable(cpu.getGlobalByKey(cpu.stringPool.find('fsm_bindings')!), cpu.gc);
+					const bindings = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('fsm_bindings')!));
 					for (let index = 1; index <= 32; index++)
-						assert.equal(asClosure(bindings.records.getInteger(bindings.address, index), cpu.gc).prototypeRecord.functionAddress, primaryFunction);
+						assert.equal(asClosure(cpu.gc.tables.getInteger(bindings, index), cpu.gc).prototypeRecord.functionAddress, primaryFunction);
 				}
 			}
 			const state = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));

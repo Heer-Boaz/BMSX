@@ -8,23 +8,10 @@ import {
 	type TableLookupResult,
 } from '../../machine/ts/machine/cpu/table';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import {
-	EMPTY_CALL_ARGS,
-	type Value,
-	asInteger,
-	asStringId,
-	asTable,
-	asClosure,
-	isTruthy,
-	valueNil,
-	valuePayload,
-	valueIsTable,
-	valueToString,
-	valueTag,
-	ValueTag,
-} from '../../machine/ts/machine/cpu/value';
+import { EMPTY_CALL_ARGS, type Value, asInteger, asStringId, asClosure, isTruthy, valueNil, valuePayload, valueIsTable, valueToString, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
+import { observedTableLifetime } from './table_lifetimes';
 
 export type SuspendedGuestValue = Value;
 /** Owned semantic identity within one physical heap; RAM String addresses can be reused. */
@@ -160,7 +147,7 @@ export class SuspendedGuestSession {
 	public observedIdentityScalar(value: Value, tag: ValueTag): number | string {
 		let attachment: GcObject;
 		switch (tag) {
-			case ValueTag.Table: attachment = asTable(value, this.cpu.gc); break;
+			case ValueTag.Table: return observedTableLifetime(this.cpu.gc, valuePayload(value));
 			case ValueTag.Closure: attachment = asClosure(value, this.cpu.gc); break;
 			case ValueTag.Thread: attachment = this.cpu.gc.threadAt(valuePayload(value))!; break;
 			default: return this.identityScalar(value, tag);
@@ -248,8 +235,8 @@ export class SuspendedGuestSession {
 		if (key == null) {
 			return valueNil();
 		}
-		const table = asTable(value, this.cpu.gc);
-		table.records.resolveStringIndex(table.address, this.indexKey, key, this.lookupResult);
+		const table = valuePayload(value);
+		this.cpu.gc.tables.resolveStringIndex(table, this.indexKey, key, this.lookupResult);
 		if (this.lookupResult.status === TableLookupStatus.ChainExhausted) {
 			throw new Error(METATABLE_LOOP_MESSAGE);
 		}
@@ -328,16 +315,16 @@ export class SuspendedGuestSession {
 		if (!valueIsTable(value)) {
 			return valueToString(value, this.stringPool);
 		}
-		const table = asTable(value, this.cpu.gc);
-		if (depth >= maxDepth || this.previewVisited.has(table.address)) {
+		const table = valuePayload(value);
+		if (depth >= maxDepth || this.previewVisited.has(table)) {
 			return '{…}';
 		}
-		this.previewVisited.add(table.address);
+		this.previewVisited.add(table);
 		const parts = this.previewParts.get(depth);
 		const entry = this.entryScratch.get(depth);
 		parts.length = 0;
 		let entryCount = 0;
-		table.records.next(table.address, valueNil(), entry, 0);
+		this.cpu.gc.tables.next(table, valueNil(), entry, 0);
 		while (entry.getTag(0) !== ValueTag.Nil && entryCount < maxEntries) {
 			const key = entry.get(0);
 			parts.push(
@@ -354,7 +341,7 @@ export class SuspendedGuestSession {
 				)}`,
 			);
 			entryCount += 1;
-			table.records.next(table.address, key, entry, 0);
+			this.cpu.gc.tables.next(table, key, entry, 0);
 		}
 		if (entry.getTag(0) !== ValueTag.Nil) {
 			parts.push('…');

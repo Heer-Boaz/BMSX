@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <cstddef>
 
 #include "common/primitives.h"
@@ -25,7 +26,14 @@ inline constexpr std::array<u16, 28> HEAP_CLASS_BYTES{
 	1280, 1536, 1792, 2048,
 };
 
-u32 heapClassIndex(u32 byteCount);
+constexpr u32 heapClassIndex(u32 byteCount) {
+	if (byteCount <= 64u) return ((byteCount + 7u) >> 3) - 1u;
+	// Requests above 64 bytes use four size classes per doubling.
+	const u32 ceilingShift = 32u - static_cast<u32>(std::countl_zero(byteCount - 1u));
+	const u32 stepShift = ceilingShift - 3u;
+	const u32 quarter = (byteCount - (1u << (ceilingShift - 1u)) + (1u << stepShift) - 1u) >> stepShift;
+	return 8u + (ceilingShift - 7u) * 4u + quarter - 1u;
+}
 u32 heapAllocationBytes(u32 byteCount);
 
 // Owns the non-moving language-heap allocator whose entire state lives in the
@@ -42,6 +50,8 @@ public:
 	u32 floorAddress() const;
 	u32 capacityBytes() const;
 	u32 occupiedBytes() const;
+	// The record port supplies an aligned physical slot offset.
+	bool isIssuedObjectSlot(u32 offset, u32 sizeClass) const;
 	// Returns the guest address of the allocation, or 0 when no slot or page run fits.
 	u32 allocate(u32 byteCount, bool owned);
 	void free(u32 address);

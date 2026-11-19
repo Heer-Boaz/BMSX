@@ -36,7 +36,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const other = cpu.createThread(null);
 	other.resizeStack(22);
 	const values = [valueFromTag(ValueTag.False, 37), valueInteger(-1), valueFloatBits(0x80000000), valueFloatBits(0xffc01234),
-		valueString(cpu.stringPool.intern('upvalue')), valueTable(cpu.gc.reference(cpu.createTable()))];
+		valueString(cpu.stringPool.intern('upvalue')), valueTable(cpu.createTable())];
 	for (const source of ['own', 'other', 'closed']) for (const value of values) {
 		if (source === 'closed') {
 			if (upvalue.open) upvalue.close();
@@ -76,7 +76,7 @@ test('output locals become observable only after their definition, including hel
 		const r = new ValueSlots(22);
 		r.setEncoded(0, ValueTag.False, 37);
 		r.setInteger(1, mapped ? DYNAMIC_RAM_BASE : IO_BASE);
-		r.setTable(2, cpu.gc.reference(source)); r.setTable(20, cpu.gc.reference(old));
+		r.setTable(2, source); r.setTable(20, old);
 		r.set(21, valueFloatBits(0x80000000));
 		memory.writeMappedWord(DYNAMIC_RAM_BASE, 71);
 		const writes = new Uint32Array(22), store = r.setEncoded.bind(r);
@@ -86,14 +86,14 @@ test('output locals become observable only after their definition, including hel
 		if (!mapped) {
 			assert.equal(exit.exit, CompiledBlockExit.ReadMemory);
 			assert.equal(r.getTag(0), ValueTag.False); assert.equal(r.getPayload(0), 37);
-			assert.equal(r.getTable(20, cpu.gc), old); assert.equal(writes[20], 0);
+			assert.equal(r.getPayload(20), old); assert.equal(writes[20], 0);
 			assert.equal(r.get(21), valueFloatBits(0x80000000)); assert.equal(state.registerTop, 3);
 		} else {
-			assert.equal(r.getInteger(0), 71); assert.equal(r.getTable(20, cpu.gc), source);
+			assert.equal(r.getInteger(0), 71); assert.equal(r.getPayload(20), source);
 			if (grant === 1) {
 				assert.equal(r.get(21), valueFloatBits(0x80000000)); assert.equal(state.registerTop, 21);
 			} else {
-				assert.equal(r.getTable(21, cpu.gc), source); assert.equal(state.registerTop, 22);
+				assert.equal(r.getPayload(21), source); assert.equal(state.registerTop, 22);
 			}
 		}
 	}

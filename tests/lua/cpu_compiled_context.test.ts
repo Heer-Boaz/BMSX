@@ -51,7 +51,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	}
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setTable(12, cpu.gc.reference(cpu.createTable(0, 0)));
+		r.setTable(12, cpu.createTable(0, 0));
 		cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.get(12));
 	}
 	runCpuParity(js, ref, loopCycles);

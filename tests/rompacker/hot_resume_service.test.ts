@@ -30,7 +30,7 @@ import { createRuntimeDebuggerState, discardRuntimeDebuggerPlans, willExecuteRun
 import { HotResumeService } from '../../ide/workbench/services/execution/hot_resume';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
-import { asClosure, asTable, valueInteger, valueNil, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueInteger, valueNil, valueTag, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
@@ -195,22 +195,22 @@ local function put_weak()
  weak_values[1] = function(x) return x + retained_value + 3 end
 end
 put_weak()`);
-	const weakValues = asTable(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_values')), f.cpu.gc);
-	weakValues.metatable = asTable(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_meta')), f.cpu.gc);
-	const reference = weakValues.records.getInteger(weakValues.address, 1);
+	const weakValues = valuePayload(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_values')));
+	f.cpu.gc.tables.setMetatableAddress(weakValues, valuePayload(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_meta'))));
+	const reference = f.cpu.gc.tables.getInteger(weakValues, 1);
 	const retained = asClosure(reference, f.cpu.gc);
 	let visited = false;
-	weakValues.records.setInteger(weakValues.address, 1, valueNil());
+	f.cpu.gc.tables.setInteger(weakValues, 1, valueNil());
 	f.cpu.visitReachableClosures(closure => { if (closure === retained) visited = true; });
 	assert.equal(visited, false, 'the weak entry must be the only guest path to this closure');
-	weakValues.records.setInteger(weakValues.address, 1, reference);
+	f.cpu.gc.tables.setInteger(weakValues, 1, reference);
 	f.cpu.visitReachableClosures(closure => { if (closure === retained) visited = true; });
 	assert.equal(visited, true, 'tooling traversal includes stored weak entries');
 	const source = f.model.buffer.getText();
 	const offset = source.indexOf('retained_value + 3');
 	f.model.pushEditOperations([{ offset, deleteLength: 'retained_value + 3'.length, text: 'retained_value + 7' }]);
 	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
-	assert.equal(weakValues.records.getInteger(weakValues.address, 1), reference);
+	assert.equal(f.cpu.gc.tables.getInteger(weakValues, 1), reference);
 	const depth = f.cpu.getFrameDepth();
 	f.cpu.beginCompletionCall(retained, [valueInteger(2)]);
 	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);

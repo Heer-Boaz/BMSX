@@ -26,9 +26,9 @@ struct Fixture {
 	ExecutionAddressSpace addresses{memory};
 	CPU cpu{memory, irq, addresses};
 	std::array<StringId, KeyCount> keys{}, missing{};
-	std::array<Table*, TableCount> tables{};
+	std::vector<TableRecord> tables;
 	std::array<int, KeyCount> slots{};
-	Table* inherited = nullptr;
+	std::optional<TableRecord> inherited;
 	StringId indexKey;
 
 	Fixture() {
@@ -39,28 +39,28 @@ struct Fixture {
 			(count < KeyCount ? keys[count] : missing[count - KeyCount]) = key;
 			++count;
 		}
+		tables.reserve(TableCount);
 		for (size_t t = 0; t < TableCount; ++t) {
-			auto* table = cpu.createTable(0, 64);
-			tables[t] = table;
+			auto& table = tables.emplace_back(cpu.createTable(0, 64));
 			for (size_t i = 0; i < KeyCount; ++i) {
 				const size_t k = (i + t) & (KeyCount - 1);
-				table->setStringKey(keys[k], valueInteger(k + 1));
+				table.setStringKey(keys[k], valueInteger(k + 1));
 			}
 		}
 		indexKey = cpu.stringPool().intern("__index");
 		inherited = tables[0];
 		for (int depth = 0; depth < 4; ++depth) {
-			auto* metatable = cpu.createTable(0, 1);
-			metatable->setStringKey(indexKey, valueTable(cpu.gcHeap().reference(inherited)));
-			auto* child = cpu.createTable();
-			child->setMetatable(metatable);
+			auto metatable = cpu.createTable(0, 1);
+			metatable.setStringKey(indexKey, valueTable(inherited->address()));
+			auto child = cpu.createTable();
+			child.setMetatableAddress(metatable.address());
 			inherited = child;
 		}
 		for (size_t i = 0; i < KeyCount; ++i) {
 			slots[i] = -1;
 			const Value expected = valueInteger(i + 1);
-			if (tables[0]->getStringKeyCached(keys[i], slots[i]) != expected
-				|| !isNil(tables[0]->getStringKey(missing[i]))) {
+			if (tables[0].getStringKeyCached(keys[i], slots[i]) != expected
+				|| !isNil(tables[0].getStringKey(missing[i]))) {
 				throw std::runtime_error("Table benchmark must start with the expected collision chains.");
 			}
 			TableLookupResult value;
@@ -76,8 +76,8 @@ template <Mode mode>
 void measure(Fixture& fixture, const char* name, int round) {
 	fixture.slots.fill(-1);
 	for (size_t k = 0; k < KeyCount; ++k) {
-		fixture.tables[0]->setStringKey(fixture.keys[k], valueInteger(k + 1));
-		fixture.tables[0]->getStringKeyCached(fixture.keys[k], fixture.slots[k]);
+		fixture.tables[0].setStringKey(fixture.keys[k], valueInteger(k + 1));
+		fixture.tables[0].getStringKeyCached(fixture.keys[k], fixture.slots[k]);
 	}
 	u64 checksum = 0;
 	const auto start = std::chrono::steady_clock::now();
@@ -85,19 +85,19 @@ void measure(Fixture& fixture, const char* name, int round) {
 		const size_t k = (i >> 5u) & (KeyCount - 1u);
 		u64 result;
 		if constexpr (mode == Mode::Hit) {
-			result = fixture.tables[0]->getStringKey(fixture.keys[k]);
+			result = fixture.tables[0].getStringKey(fixture.keys[k]);
 		} else if constexpr (mode == Mode::Miss) {
-			result = fixture.tables[0]->getStringKey(fixture.missing[k]);
+			result = fixture.tables[0].getStringKey(fixture.missing[k]);
 		} else if constexpr (mode == Mode::Cached) {
-			result = fixture.tables[0]->getStringKeyCached(fixture.keys[k], fixture.slots[k]);
+			result = fixture.tables[0].getStringKeyCached(fixture.keys[k], fixture.slots[k]);
 		} else if constexpr (mode == Mode::Polymorphic) {
-			result = fixture.tables[i & (TableCount - 1u)]->getStringKeyCached(fixture.keys[k], fixture.slots[k]);
+			result = fixture.tables[i & (TableCount - 1u)].getStringKeyCached(fixture.keys[k], fixture.slots[k]);
 		} else if constexpr (mode == Mode::Inherited) {
 			TableLookupResult value;
 			fixture.inherited->resolveStringIndex(fixture.indexKey, fixture.keys[k], value);
 			result = value.value;
 		} else {
-			result = fixture.tables[0]->setStringKey(fixture.keys[k], valueInteger(i & 127u));
+			result = fixture.tables[0].setStringKey(fixture.keys[k], valueInteger(i & 127u));
 		}
 		checksum = (checksum << 5u) + checksum + result + i;
 	}

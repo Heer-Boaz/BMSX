@@ -260,20 +260,20 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 	const records = cpu.createTable(2, 0);
 	for (let index = 1; index <= 2; index += 1) {
 		const record = cpu.createTable(6, 0);
-		record.records.setInteger(record.address, 1, valueInteger(index));
-		record.records.setInteger(record.address, 2, valueInteger(100 + index));
-		record.records.setInteger(record.address, 3, valueString(stringPool.intern('machine:/lane')));
-		record.records.setInteger(record.address, 4, valueString(stringPool.intern(`machine:/from_${index}`)));
-		record.records.setInteger(record.address, 5, valueString(stringPool.intern(`machine:/to_${index}`)));
-		record.records.setInteger(record.address, 6, valueBool(index === 2));
-		records.records.setInteger(records.address, index, valueTable(record.address));
+		cpu.gc.tables.setInteger(record, 1, valueInteger(index));
+		cpu.gc.tables.setInteger(record, 2, valueInteger(100 + index));
+		cpu.gc.tables.setInteger(record, 3, valueString(stringPool.intern('machine:/lane')));
+		cpu.gc.tables.setInteger(record, 4, valueString(stringPool.intern(`machine:/from_${index}`)));
+		cpu.gc.tables.setInteger(record, 5, valueString(stringPool.intern(`machine:/to_${index}`)));
+		cpu.gc.tables.setInteger(record, 6, valueBool(index === 2));
+		cpu.gc.tables.setInteger(records, index, valueTable(record));
 	}
 	const channel = cpu.createTable(5, 0);
-	channel.records.setInteger(channel.address, 1, valueString(stringPool.intern('object.machine')));
-	channel.records.setInteger(channel.address, 2, valueString(stringPool.intern('machine')));
-	channel.records.setInteger(channel.address, 3, valueInteger(2));
-	channel.records.setInteger(channel.address, 4, valueInteger(2));
-	channel.records.setInteger(channel.address, 5, valueTable(records.address));
+	cpu.gc.tables.setInteger(channel, 1, valueString(stringPool.intern('object.machine')));
+	cpu.gc.tables.setInteger(channel, 2, valueString(stringPool.intern('machine')));
+	cpu.gc.tables.setInteger(channel, 3, valueInteger(2));
+	cpu.gc.tables.setInteger(channel, 4, valueInteger(2));
+	cpu.gc.tables.setInteger(channel, 5, valueTable(records));
 
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
@@ -297,7 +297,7 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 		trace.transitions.at(0).outcome,
 	], [1, 101, 20, 'machine:/from_1', 'machine:/to_1', 'rejected']);
 	assert.equal(trace.transitions.at(1).outcome, 'committed');
-	channel.records.setInteger(channel.address, 4, valueInteger(5));
+	cpu.gc.tables.setInteger(channel, 4, valueInteger(5));
 	assert.throws(() => observation.drain(21), /overflowed its 2-record buffer/);
 });
 
@@ -306,25 +306,25 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 	const stringPool = cpu.stringPool;
 	const records = cpu.createTable(2, 0);
 	const activation = cpu.createTable(5, 0);
-	activation.records.setInteger(activation.address, 1, valueInteger(1));
-	activation.records.setInteger(activation.address, 2, valueInteger(301));
-	activation.records.setInteger(activation.address, 3, valueString(stringPool.intern('activate')));
-	activation.records.setInteger(activation.address, 4, valueString(stringPool.intern('fire')));
-	activation.records.setInteger(activation.address, 5, valueInteger(1));
-	records.records.setInteger(records.address, 1, valueTable(activation.address));
+	cpu.gc.tables.setInteger(activation, 1, valueInteger(1));
+	cpu.gc.tables.setInteger(activation, 2, valueInteger(301));
+	cpu.gc.tables.setInteger(activation, 3, valueString(stringPool.intern('activate')));
+	cpu.gc.tables.setInteger(activation, 4, valueString(stringPool.intern('fire')));
+	cpu.gc.tables.setInteger(activation, 5, valueInteger(1));
+	cpu.gc.tables.setInteger(records, 1, valueTable(activation));
 	const rejection = cpu.createTable(5, 0);
-	rejection.records.setInteger(rejection.address, 1, valueInteger(2));
-	rejection.records.setInteger(rejection.address, 2, valueInteger(302));
-	rejection.records.setInteger(rejection.address, 3, valueString(stringPool.intern('trigger')));
-	rejection.records.setInteger(rejection.address, 4, valueString(stringPool.intern('fire')));
-	rejection.records.setInteger(rejection.address, 5, valueString(stringPool.intern('custom_gate')));
-	records.records.setInteger(records.address, 2, valueTable(rejection.address));
+	cpu.gc.tables.setInteger(rejection, 1, valueInteger(2));
+	cpu.gc.tables.setInteger(rejection, 2, valueInteger(302));
+	cpu.gc.tables.setInteger(rejection, 3, valueString(stringPool.intern('trigger')));
+	cpu.gc.tables.setInteger(rejection, 4, valueString(stringPool.intern('fire')));
+	cpu.gc.tables.setInteger(rejection, 5, valueString(stringPool.intern('custom_gate')));
+	cpu.gc.tables.setInteger(records, 2, valueTable(rejection));
 	const channel = cpu.createTable(5, 0);
-	channel.records.setInteger(channel.address, 1, valueString(stringPool.intern('player.1')));
-	channel.records.setInteger(channel.address, 2, valueString(stringPool.intern('player')));
-	channel.records.setInteger(channel.address, 3, valueInteger(2));
-	channel.records.setInteger(channel.address, 4, valueInteger(2));
-	channel.records.setInteger(channel.address, 5, valueTable(records.address));
+	cpu.gc.tables.setInteger(channel, 1, valueString(stringPool.intern('player.1')));
+	cpu.gc.tables.setInteger(channel, 2, valueString(stringPool.intern('player')));
+	cpu.gc.tables.setInteger(channel, 3, valueInteger(2));
+	cpu.gc.tables.setInteger(channel, 4, valueInteger(2));
+	cpu.gc.tables.setInteger(channel, 5, valueTable(records));
 
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
@@ -360,7 +360,7 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 		kind: 'trigger',
 		outcome: 'custom_gate',
 	});
-	channel.records.setInteger(channel.address, 4, valueInteger(5));
+	cpu.gc.tables.setInteger(channel, 4, valueInteger(5));
 	assert.throws(() => observation.drain(21), /overflowed its 2-record buffer/);
 });
 

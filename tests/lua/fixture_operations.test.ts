@@ -37,14 +37,14 @@ test('fixture publication follows the current receipt key after string collectio
 	const reachedKey = pool.intern('reached');
 	assert.notEqual(reachedKey, retiredKey);
 	const receipt = cpu.createTable(0, 2);
-	receipt.records.setStringKey(receipt.address, unrelatedKey, valueBool(true));
-	receipt.records.setStringKey(receipt.address, reachedKey, valueBool(false));
-	cpu.setGlobalByKey(pool.intern('receipt'), valueTable(receipt.address));
+	cpu.gc.tables.setStringKey(receipt, unrelatedKey, valueBool(true));
+	cpu.gc.tables.setStringKey(receipt, reachedKey, valueBool(false));
+	cpu.setGlobalByKey(pool.intern('receipt'), valueTable(receipt));
 
-	operations.accept([valueNil(), valueString(pool.intern('boundary')), valueTable(receipt.address), valueInteger(100)]);
+	operations.accept([valueNil(), valueString(pool.intern('boundary')), valueTable(receipt), valueInteger(100)]);
 	assert.equal(operations.observesPublication, true);
 	assert.equal(operations.shouldStopAtPublication(), false, 'an unrelated true field cannot publish the boundary');
-	receipt.records.setStringKey(receipt.address, reachedKey, valueBool(true));
+	cpu.gc.tables.setStringKey(receipt, reachedKey, valueBool(true));
 	assert.equal(operations.shouldStopAtPublication(), true);
 	const args: Value[] = [];
 	assert.equal(operations.advance(args, 0), true);
@@ -76,8 +76,8 @@ test('fixture wire values decode at input/wait boundaries and replies remain enc
 	assert.deepEqual(key.mock.calls.at(-1)!.arguments,['KeyA',false,null]); operations.cancel();
 	operations.accept(operation('press',valueString(pool.intern('a')),valueFloat(2),valueFloat(1)));
 	assert.deepEqual(press.mock.calls.at(-1)!.arguments,['a',2,1]); operations.cancel();
-	operations.accept(operation('fsm',valueTable(recorder.address)));
-	operations.accept(operation('actioneffects',valueTable(recorder.address)));
+	operations.accept(operation('fsm',valueTable(recorder)));
+	operations.accept(operation('actioneffects',valueTable(recorder)));
 	operations.accept(operation('log',valueFloatBits(0xffc54321)));
 	assert.deepEqual(logs,[valueFloatBits(0xffc54321)]);
 	t.mock.method(target,'advanceGame',()=>true);
@@ -91,8 +91,8 @@ test('fixture wire values decode at input/wait boundaries and replies remain enc
 	frame.lastTickSequence = 21; assert.equal(operations.advance(args,0),false);
 	frame.lastTickSequence = 22; assert.equal(operations.advance(args,0),true);
 
-	const receipt = cpu.createTable(0,1); receipt.records.setStringKey(receipt.address, pool.intern('reached'),valueInteger(0));
-	operations.accept(operation('boundary',valueTable(receipt.address),valueFloat(10)));
+	const receipt = cpu.createTable(0,1); cpu.gc.tables.setStringKey(receipt, pool.intern('reached'),valueInteger(0));
+	operations.accept(operation('boundary',valueTable(receipt),valueFloat(10)));
 	assert.equal(operations.shouldStopAtPublication(),true,'the transport uses guest truth, not host booleans');
 	assert.equal(operations.advance(args,0),true); assert.equal(args[1],valueInteger(0));
 	operations.accept(operation('capture',valueString(pool.intern('accepted'))));

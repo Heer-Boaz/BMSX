@@ -50,6 +50,7 @@ private:
 #endif
 
 constexpr uint8_t kTableWeakKeys = 1, kTableWeakValues = 2;
+constexpr u8 tableRecordKind = static_cast<u8>(ValueTag::Table);
 }
 void GCObject::setGcColor(uint8_t color) {
 	gcMemory->writeRamRecordByte(static_cast<u32>(gcRecord - gcMemory->ramData()) + GC_COLOR_OFFSET, color);
@@ -60,7 +61,7 @@ bool GcHeap::markValue(Value v) {
 		case ValueTag::Thread:
 			return markObject(asThread(v, *this));
 		case ValueTag::Table:
-			return markObject(asTable(v, *this));
+			return markTable(valuePayload(v));
 		case ValueTag::Closure:
 			return markObject(asClosure(v, *this));
 		case ValueTag::BuiltinFunction:
@@ -144,21 +145,26 @@ void GcHeap::appendVisit(u32 list, u32 address) {
 	memory.writeRamRecordWord(m_controlOffset + list + GC_VISIT_COUNT, (count + 1u) & GC_GRAY_INDEX_MASK);
 }
 
-template<ObjType Kind, bool Drain, class Visitor>
+template<u8 Kind, bool Drain, class Visitor>
 size_t GcHeap::visitList(u32 list, Visitor&& visitor) {
 	u32 index = indexWord(list);
 	u32 remaining = indexWord(list + GC_VISIT_COUNT);
 	size_t work = 0;
 	while (index != 0u && remaining-- != 0u) {
-		const u32 address = index << GC_RECORD_SHIFT;
+		const u32 address = RAM_BASE + (index << GC_RECORD_SHIFT);
 		const u8 meta = memory.readRamRecordByte(address + GC_VISIT_HEADER_BYTE);
-		auto* record = m_records[index];
 		// Only the matching, linked record clocks the list port.
-		if (!(meta & GC_VISIT_MEMBER) || !record || record->type != Kind) break;
+		if (!(meta & GC_VISIT_MEMBER)) break;
+		if constexpr (Kind == tableRecordKind) {
+			if (tableRecordAddress(address) != address) break;
+		} else {
+			static_assert(Kind == THREAD_RECORD_KIND);
+			if (!threadAt(address)) break;
+		}
 		const u32 low = memory.readRamRecordWord(address + GC_RECORD_LINK) >> GC_GRAY_INDEX_BITS;
 		index = low | ((meta & VISIT_LINK_HIGH_MASK) << VISIT_LINK_LOW_BITS);
 		if constexpr (Drain) setVisitLink(address, meta & ~GC_VISIT_MEMBER, 0u);
-		work += visitor(record);
+		work += visitor(address);
 	}
 	if constexpr (Drain) {
 		memory.writeRamRecordPair(m_controlOffset + list, 0u, 0u);
@@ -170,6 +176,19 @@ size_t GcHeap::visitList(u32 list, Visitor&& visitor) {
 bool GcHeap::markObject(GCObject* object) {
 	if (!object || object->gcColor() != white()) return false;
 	enqueue(physicalAddress(object), GC_RECORD_LINK, GC_TRACE_HEAD);
+	return true;
+}
+
+u32 GcHeap::tableRecordAddress(u32 address) const {
+	const u32 offset = address & (MAIN_RAM_SIZE - TableRecord::HEADER_BYTES);
+	return arena.isIssuedObjectSlot(offset, heapClassIndex(TableRecord::HEADER_BYTES))
+		&& memory.readRamRecordByte(offset) == tableRecordKind ? RAM_BASE + offset : 0u;
+}
+
+bool GcHeap::markTable(u32 address) {
+	const u32 record = tableRecordAddress(address);
+	if (record == 0u || memory.readRamRecordByte(record + GC_COLOR_OFFSET) != white()) return false;
+	enqueue(record, GC_RECORD_LINK, GC_TRACE_HEAD);
 	return true;
 }
 
@@ -213,25 +232,17 @@ bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
 	return rebound;
 }
 
-size_t GcHeap::allocationBytes(const GCObject* object) const {
-	switch (object->type) {
-		case ObjType::Table: return static_cast<const Table*>(object)->trackedHeapBytes();
-		case ObjType::Closure: {
-			const auto* closure = static_cast<const Closure*>(object);
-			return heapAllocationBytes(closureRecordBytes(closure->upvalueCount(), closure->hasLatchedPrototype()));
-		}
-		case ObjType::Upvalue: return UPVALUE_HEAP_BYTES;
-		case ObjType::Thread: return THREAD_HEAP_BYTES + heapAllocationBytes(static_cast<const Thread*>(object)->backingByteLength());
-
-	}
-	BMSX_UNREACHABLE();
+size_t GcHeap::allocationBytes(const Thread* thread) const {
+	return THREAD_HEAP_BYTES + heapAllocationBytes(thread->backingByteLength());
 }
-uint8_t GcHeap::tableWeakMode(const Table& table) const {
-	const auto* meta = table.metatable();
-	if (!meta) {
+uint8_t GcHeap::tableWeakMode(const TableRecord& table) {
+	const u32 meta = table.metatableAddress();
+	if (meta == 0u) {
 		return 0;
 	}
-	const Value modeValue = meta->getStringKey(m_modeKey);
+	const u32 address = tableRecordAddress(meta);
+	if (address == 0u) return 0;
+	const Value modeValue = TableRecord(*this, address).getStringKey(m_modeKey);
 	if (!valueIsString(modeValue)) {
 		return 0;
 	}
@@ -256,8 +267,10 @@ bool GcHeap::valueIsAlive(Value value) const {
 	switch (valueTag(value)) {
 		case ValueTag::Thread:
 			return isAlive(asThread(value, *this));
-		case ValueTag::Table:
-			return isAlive(asTable(value, *this));
+		case ValueTag::Table: {
+			const u32 address = tableRecordAddress(valuePayload(value));
+			return address != 0u && memory.readRamRecordByte(address + GC_COLOR_OFFSET) != white();
+		}
 		case ValueTag::Closure: {
 			const Closure* closure = asClosure(value, *this);
 			return isAlive(closure);
@@ -269,19 +282,22 @@ bool GcHeap::valueIsAlive(Value value) const {
 
 size_t GcHeap::trace(bool atomic) {
 	const u32 index = indexWord(GC_TRACE_HEAD);
-	auto* obj = m_records[index];
+	const u32 address = RAM_BASE + (index << GC_RECORD_SHIFT);
+	const bool table = tableRecordAddress(address) == address;
+	auto* obj = table ? nullptr : m_records[index];
 	// A link is clocked only by a queued record. Consuming its color bounds
 	// malformed cycles as well as preventing a duplicate scan.
-	if (!obj || obj->gcColor() != 2u) {
+	if ((!table && !obj) || memory.readRamRecordByte(address + GC_COLOR_OFFSET) != 2u) {
 		memory.writeRamRecordWord(m_controlOffset + GC_TRACE_HEAD, 0u);
 		return 0;
 	}
-	const u32 address = index << GC_RECORD_SHIFT;
-	const u32 link = address + (obj->type == ObjType::Upvalue ? UPVALUE_NEXT : GC_RECORD_LINK);
+	const bool cell = !table && obj->type == ObjType::Upvalue;
+	const u32 link = address + (cell ? UPVALUE_NEXT : GC_RECORD_LINK);
 	const u32 packed = memory.readRamRecordWord(link);
 	memory.writeRamRecordWord(m_controlOffset + GC_TRACE_HEAD, packed & GC_GRAY_INDEX_MASK);
-	memory.writeRamRecordWord(link, obj->type != ObjType::Upvalue ? packed & ~GC_GRAY_INDEX_MASK : 0u);
-	obj->setGcColor(3);
+	memory.writeRamRecordWord(link, cell ? 0u : packed & ~GC_GRAY_INDEX_MASK);
+	memory.writeRamRecordByte(address + GC_COLOR_OFFSET, 3u);
+	if (table) return traceTable(address);
 	switch (obj->type) {
 		case ObjType::Thread: {
 			auto* thread = static_cast<Thread*>(obj);
@@ -312,21 +328,6 @@ size_t GcHeap::trace(bool atomic) {
 			thread->trimFrames();
 			return cellWork + ceilDiv4(static_cast<int>(allocationBytes(thread)));
 		}
-		case ObjType::Table: {
-			auto* table = static_cast<Table*>(obj);
-			markObject(table->metatable());
-			const uint8_t weakMode = tableWeakMode(*table);
-			if (weakMode != 0) appendVisit(GC_WEAK_VISITS, table->address());
-			if ((weakMode & kTableWeakKeys) == 0) {
-				table->forEachEntry([this, weakMode](Value key, Value value) {
-					markValue(key);
-					if (weakMode == 0) {
-						markValue(value);
-					}
-				});
-			}
-			return Table::HEADER_BYTES / sizeof(u32) + table->scanSlots();
-		}
 		case ObjType::Closure: {
 			auto* closure = static_cast<Closure*>(obj);
 			const u32 count = closure->upvalueCount();
@@ -342,18 +343,33 @@ size_t GcHeap::trace(bool atomic) {
 	BMSX_UNREACHABLE();
 }
 
+size_t GcHeap::traceTable(u32 address) {
+	const TableRecord table(*this, address);
+	const u32 meta = table.metatableAddress();
+	if (meta != 0u) markTable(meta);
+	const u8 weakMode = tableWeakMode(table);
+	if (weakMode != 0u) appendVisit(GC_WEAK_VISITS, address);
+	if ((weakMode & kTableWeakKeys) == 0u) {
+		table.forEachEntry([this, weakMode](Value key, Value value) {
+			markValue(key);
+			if (weakMode == 0u) markValue(value);
+		});
+	}
+	return TableRecord::HEADER_BYTES / sizeof(u32) + table.scanSlots();
+}
+
 size_t GcHeap::remark(Value root0, Value root1, Value root2) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcPhaseMeasurement measurement(profile.rootsNanoseconds);
 #endif
-	const auto requeue = [&](GCObject* record) {
-		writeBarrier(physicalAddress(record), GC_RECORD_LINK);
+	const auto requeue = [&](u32 address) {
+		writeBarrier(address, GC_RECORD_LINK);
 		return 0u;
 	};
-	visitList<ObjType::Thread, true>(GC_THREAD_VISITS, requeue);
+	visitList<THREAD_RECORD_KIND, true>(GC_THREAD_VISITS, requeue);
 	// Also observe mode changes made through a shared metatable.
-	visitList<ObjType::Table, false>(GC_WEAK_VISITS, requeue);
+	visitList<tableRecordKind, false>(GC_WEAK_VISITS, requeue);
 	// The current trace queue is empty. Further writes go to grayAgain, so
 	// mutation cannot continually put the same object in this pass's queue.
 	memory.writeRamRecordPair(m_controlOffset + GC_TRACE_HEAD, indexWord(GC_CHANGED_HEAD), 0u);
@@ -379,13 +395,13 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 	bool changed;
 	do {
 		changed = false;
-		work += visitList<ObjType::Table, false>(GC_WEAK_VISITS, [&](GCObject* record) -> size_t {
-			auto* table = static_cast<Table*>(record);
-			if (tableWeakMode(*table) != kTableWeakKeys) return 0;
-			table->forEachEntry([&](Value key, Value value) {
+		work += visitList<tableRecordKind, false>(GC_WEAK_VISITS, [&](u32 address) -> size_t {
+			const TableRecord table(*this, address);
+			if (tableWeakMode(table) != kTableWeakKeys) return 0;
+			table.forEachEntry([&](Value key, Value value) {
 				if (valueIsAlive(key) && markValue(value)) changed = true;
 			});
-			return table->scanSlots();
+			return table.scanSlots();
 		});
 		while (indexWord(GC_TRACE_HEAD) != 0u) {
 			work += trace(true);
@@ -395,13 +411,13 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	measurement.phase(profile.weakNanoseconds);
 #endif
-	work += visitList<ObjType::Table, true>(GC_WEAK_VISITS, [&](GCObject* record) {
-		auto* table = static_cast<Table*>(record);
-		const auto mode = tableWeakMode(*table);
-		const auto slots = table->scanSlots();
-		table->clearWeakEntries((mode & 1) != 0, (mode & 2) != 0,
+	work += visitList<tableRecordKind, true>(GC_WEAK_VISITS, [&](u32 address) {
+		TableRecord table(*this, address);
+		const auto mode = tableWeakMode(table);
+		const auto slots = table.scanSlots();
+		table.clearWeakEntries((mode & 1) != 0, (mode & 2) != 0,
 			[this](Value value) { return valueIsAlive(value); });
-		table->forEachEntry([this](Value key, Value value) {
+		table.forEachEntry([this](Value key, Value value) {
 			if (valueIsString(key)) m_stringPool.markReachable(asStringId(key));
 			if (valueIsString(value)) m_stringPool.markReachable(asStringId(value));
 		});
@@ -424,10 +440,6 @@ void GcHeap::destroyObject(GCObject* object) {
 
 			delete static_cast<Thread*>(object);
 			break;
-		case ObjType::Table:
-
-			m_tables.destroy(static_cast<Table*>(object));
-			break;
 		case ObjType::Closure: {
 			auto* closure = static_cast<Closure*>(object);
 			auto prototype = m_prototypes.find(*closure->prototype);
@@ -446,6 +458,14 @@ void GcHeap::destroyObject(GCObject* object) {
 i32 GcHeap::sweepRecord(void* context, u32 address) {
 	const auto& sweep = *static_cast<SweepContext*>(context);
 	auto& heap = sweep.heap;
+	if (heap.memory.readRamRecordByte(address) == tableRecordKind) {
+		if (heap.memory.readRamRecordByte(address + GC_COLOR_OFFSET) == (sweep.white ^ 1u)) {
+			TableRecord(heap, address).freeRecord();
+			return -1;
+		}
+		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
+		return 1;
+	}
 	auto& slot = heap.physicalSlot(address);
 	auto* object = slot;
 	if (!object) return 1;
@@ -457,12 +477,8 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 	}
 
 	slot = nullptr;
-	if (object->type == ObjType::Table) {
-		static_cast<Table*>(object)->freeRecord();
-	} else {
-		if (thread) thread->freeStack();
-		heap.arena.free(address);
-	}
+	if (thread) thread->freeStack();
+	heap.arena.free(address);
 	heap.unlink(object);
 	heap.destroyObject(object);
 	return -work;

@@ -1,7 +1,7 @@
 import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
-import { asTable, valueNil, asClosure, valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
+import { valueNil, asClosure, valueInteger, valueBool, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -31,32 +31,32 @@ probe.drop_definition()
 `, { optLevel, traceStatements: observationChannels, modules: [recorderModule] });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	cpu.collectTrackedHeapBytes();
-	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-	const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak_inputs')!), cpu.gc);
-	assert.equal(weak.records.getInteger(weak.address, 1), valueNil(), 'capture does not retain the mutable declaration');
-	assert.equal(weak.records.getInteger(weak.address, 2), valueNil(), 'declaration identity map dies with the compilation layout');
-	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('check_replaced')!), cpu.gc), []);
-	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('check')!), cpu.gc), []);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak_inputs')!));
+	assert.equal(cpu.gc.tables.getInteger(weak, 1), valueNil(), 'capture does not retain the mutable declaration');
+	assert.equal(cpu.gc.tables.getInteger(weak, 2), valueNil(), 'declaration identity map dies with the compilation layout');
+	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('check_replaced')!), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('check')!), cpu.gc), []);
 	cpu.collectTrackedHeapBytes();
-	const displaced = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('displaced')!), cpu.gc);
-	for (let index = 1; index <= 3; index += 1) assert.equal(displaced.records.getInteger(displaced.address, index), valueNil());
+	const displaced = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('displaced')!));
+	for (let index = 1; index <= 3; index += 1) assert.equal(cpu.gc.tables.getInteger(displaced, index), valueNil());
 	const retained = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
 	for (let replacement = 0; replacement < 32; replacement += 1) {
-		runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('check_replaced')!), cpu.gc), []);
+		runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('check_replaced')!), cpu.gc), []);
 		assert.equal(cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength()), retained, 're-registration must not grow retained observation history');
 	}
 	const anchor = captureCpuCheckpoint(cpu);
 
-	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('run')!), cpu.gc), [valueInteger(32)]);
+	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc), [valueInteger(32)]);
 	const expected = cpu.captureRuntimeState();
 	for (let replay = 0; replay < 2; replay += 1) {
 
 		restoreCpuCheckpoint(cpu, anchor);
-		const restored = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		assert.notEqual(restored, probe);
-		runCompletionClosure(cpu, asClosure(restored.records.getStringKey(restored.address, cpu.stringPool.find('run')!), cpu.gc), [valueInteger(32)]);
+		const restored = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		assert.equal(restored, probe, "the unmodified probe occupies the same guest address");
+		runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(restored, cpu.stringPool.find('run')!), cpu.gc), [valueInteger(32)]);
 		assert.deepEqual(cpu.captureRuntimeState(), expected);
-		runCompletionClosure(cpu, asClosure(restored.records.getStringKey(restored.address, cpu.stringPool.find('check')!), cpu.gc), []);
+		runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(restored, cpu.stringPool.find('check')!), cpu.gc), []);
 	}
 });
 
@@ -213,20 +213,20 @@ function probe.drop_first() probe.first = nil end
 `, { optLevel, traceStatements: observationChannels, modules: [recorderModule] });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	cpu.collectTrackedHeapBytes();
-	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	for (const name of ['old', 'unused']) {
-		const references = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find(name)!), cpu.gc);
-		assert.notEqual(references.records.getInteger(references.address, 1), valueNil(), name);
-		assert.notEqual(references.records.getInteger(references.address, 2), valueNil(), name);
+		const references = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(name)!));
+		assert.notEqual(cpu.gc.tables.getInteger(references, 1), valueNil(), name);
+		assert.notEqual(cpu.gc.tables.getInteger(references, 2), valueNil(), name);
 	}
 	for (const [name, count] of [['cycle', 3], ['abandoned', 2]] as const) {
-		const references = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find(name)!), cpu.gc);
-		for (let index = 1; index <= count; index += 1) assert.equal(references.records.getInteger(references.address, index), valueNil(), name);
+		const references = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(name)!));
+		for (let index = 1; index <= count; index += 1) assert.equal(cpu.gc.tables.getInteger(references, index), valueNil(), name);
 	}
-	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('drop_first')!), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('drop_first')!), cpu.gc), []);
 	cpu.collectTrackedHeapBytes();
-	const old = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('old')!), cpu.gc);
-	for (let index = 1; index <= 3; index += 1) assert.equal(old.records.getInteger(old.address, index), valueNil());
+	const old = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('old')!));
+	for (let index = 1; index <= 3; index += 1) assert.equal(cpu.gc.tables.getInteger(old, index), valueNil());
 });
 
 test('BT completion records distinguish nested, failed and detached rebinds from current field state', () => {
@@ -285,20 +285,20 @@ test('BT capture costs are cold; retained aliases are not a compiled definition 
 			modules: [recorderModule],
 		});
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
+		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		const ready = cpu.collectTrackedHeapBytes();
 		if (mode === 'captured' || mode === 'cold-only') {
-			runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('observe')!), cpu.gc), []);
+			runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('observe')!), cpu.gc), []);
 		}
 		const before = cpu.collectTrackedHeapBytes();
 		const beforeObjects = allocatedObjectRecords(cpu).length;
-		const compileCycles = runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('compile')!), cpu.gc), [valueInteger(32), valueBool(mode === 'retained')]);
+		const compileCycles = runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('compile')!), cpu.gc), [valueInteger(32), valueBool(mode === 'retained')]);
 		const allocation = cpu.luaHeap.usedBytes() - before;
 		const retained = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength()) - before;
 		const objects = allocatedObjectRecords(cpu).length - beforeObjects;
-		const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak_inputs')!), cpu.gc);
-		assert.equal(weak.records.getInteger(weak.address, 1) === valueNil(), mode !== 'retained');
-		const run = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('run')!), cpu.gc);
+		const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak_inputs')!));
+		assert.equal(cpu.gc.tables.getInteger(weak, 1) === valueNil(), mode !== 'retained');
+		const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc);
 		runCompletionClosure(cpu, run, [valueInteger(384)]);
 		const warmBytes = cpu.luaHeap.usedBytes();
 		const tickCycles = runCompletionClosure(cpu, run, [valueInteger(9984)], 50_000_000);

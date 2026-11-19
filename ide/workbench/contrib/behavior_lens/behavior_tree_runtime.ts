@@ -1,4 +1,4 @@
-import { asInteger, asTable, canonicalTableKey, isNil, valueInteger, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { asInteger, canonicalTableKey, isNil, valueInteger, type Value, valuePayload } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
@@ -50,21 +50,21 @@ export function inspectBehaviorTreeInstance(
 			properties.field('blackboard', '_layout', 'BLACKBOARD LAYOUT', layout);
 			properties.field('blackboard', '_values', 'BLACKBOARD STORAGE', values);
 		} else {
-			const keys = asTable(guest.readStringMember(layout, 'keys'), guest.cpu.gc);
-			const defaults = asTable(guest.readStringMember(layout, 'initial_values'), guest.cpu.gc);
-			const slotsByKey = asTable(guest.readStringMember(layout, 'slots_by_key'), guest.cpu.gc);
-			const valueSlots = asTable(values, guest.cpu.gc);
-			const keyCount = keys.records.length(keys.address);
+			const keys = valuePayload(guest.readStringMember(layout, 'keys'));
+			const defaults = valuePayload(guest.readStringMember(layout, 'initial_values'));
+			const slotsByKey = valuePayload(guest.readStringMember(layout, 'slots_by_key'));
+			const valueSlots = valuePayload(values);
+			const keyCount = guest.cpu.gc.tables.length(keys);
 			if (keyCount === 0) properties.text('BLACKBOARD', '{}', 'NO DECLARED KEYS.');
 			for (let slot = 1; slot <= keyCount; slot += 1) {
 				// Logical names use slots_by_key's table-key equality, not raw subtype identity.
-				const key = canonicalTableKey(keys.records.getInteger(keys.address, slot));
+				const key = canonicalTableKey(guest.cpu.gc.tables.getInteger(keys, slot));
 				// compile/rebind resolve semantic keys through slots_by_key. Earlier
 				// duplicate declarations remain visible, but are not independent watches.
-				const watchable = asInteger(slotsByKey.records.get(slotsByKey.address, key)) === slot;
+				const watchable = asInteger(guest.cpu.gc.tables.get(slotsByKey, key)) === slot;
 				properties.entry(watchable ? 'blackboard' : 'blackboard-slot', watchable ? key : valueInteger(slot),
-					valueSlots.records.getInteger(valueSlots.address, slot), BLACKBOARD_PRESENTATION, `STORED SLOT ${slot}\nLOADED DEFAULT: `,
-					defaults.records.getInteger(defaults.address, slot), key, watchable);
+					guest.cpu.gc.tables.getInteger(valueSlots, slot), BLACKBOARD_PRESENTATION, `STORED SLOT ${slot}\nLOADED DEFAULT: `,
+					guest.cpu.gc.tables.getInteger(defaults, slot), key, watchable);
 			}
 		}
 	}

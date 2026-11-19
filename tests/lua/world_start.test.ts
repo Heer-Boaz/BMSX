@@ -1,5 +1,5 @@
 import { allocatedObjectRecords } from '../helpers/cpu_execution';
-import { asClosure, asTable, valueBool } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueBool, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -237,8 +237,8 @@ end
 `, { optLevel, modules });
 		cpu.memory.writeIoU32(IO_SYS_FRAME_MS_Q16, 20 * 0x10000);
 		assert.equal(cpu.runUntilDepth(0, 25_000_000), RunResult.Halted);
-		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		const repeat = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('repeat_start')!), cpu.gc);
+		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		const repeat = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('repeat_start')!), cpu.gc);
 		runCompletionClosure(cpu, repeat, []);
 		const before = allocatedObjectRecords(cpu).length;
 		const bytes = cpu.luaHeap.usedBytes();

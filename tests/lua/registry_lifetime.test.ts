@@ -1,17 +1,18 @@
-import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
-import { asTable, valueNil, asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
+import type { TableRecords } from '../../machine/ts/machine/cpu/table';
+import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { valueNil, asClosure, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import type { Table } from '../../machine/ts/machine/cpu/table';
+
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 import { runCompletionClosure } from './cpu_test_harness';
 
-function entryCount(table: Table): number {
+function entryCount(tables: TableRecords, table: number): number {
 	let count = 0;
-	table.records.forEachStoredEntry(table.address, () => count++);
+	tables.forEachStoredEntry(table, () => count++);
 	return count;
 }
 
@@ -46,10 +47,10 @@ registry:deregister(first)
 probe.remaining = registry._entries_by_key
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		assert.equal(probe.records.getStringKey(probe.address, cpu.stringPool.find('after_deregister')!), valueNil(), 'last deregistered member must retire its key');
-		assert.equal(probe.records.getStringKey(probe.address, cpu.stringPool.find('after_reconcile')!), valueNil(), 'last reconciled member must retire its key');
-		assert.equal(entryCount(asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('remaining')!), cpu.gc)), 0);
+		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		assert.equal(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('after_deregister')!), valueNil(), 'last deregistered member must retire its key');
+		assert.equal(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('after_reconcile')!), valueNil(), 'last reconciled member must retire its key');
+		assert.equal(entryCount(cpu.gc.tables, valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('remaining')!))), 0);
 	});
 
 	for (const keyKind of ['table', 'string'] as const) test(`Registry releases retired ${keyKind} keys and entries and plateaus across distinct-key lifetimes (O${optLevel})`, () => {
@@ -71,18 +72,18 @@ function probe.churn(count)
 end
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		const churn = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('churn')!), cpu.gc);
-		const registry = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('registry')!), cpu.gc);
-		const byKey = asTable(registry.records.getStringKey(registry.address, cpu.stringPool.find('_entries_by_key')!), cpu.gc);
+		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		const churn = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('churn')!), cpu.gc);
+		const registry = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('registry')!));
+		const byKey = valuePayload(cpu.gc.tables.getStringKey(registry, cpu.stringPool.find('_entries_by_key')!));
 		let warmed = 0;
 		for (let cycle = 0; cycle < 3; cycle++) {
 			runCompletionClosure(cpu, churn, [valueInteger(256)]);
-			const heap = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
-			const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak')!), cpu.gc);
-			assert.equal(weak.records.getInteger(weak.address, 1), valueNil(), 'retired key graph remained reachable');
-			assert.equal(weak.records.getInteger(weak.address, 2), valueNil(), 'deregistered entry remained reachable');
-			assert.equal(entryCount(byKey), 0, 'empty key buckets accumulated');
+			const heap = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
+			const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
+			assert.equal(cpu.gc.tables.getInteger(weak, 1), valueNil(), 'retired key graph remained reachable');
+			assert.equal(cpu.gc.tables.getInteger(weak, 2), valueNil(), 'deregistered entry remained reachable');
+			assert.equal(entryCount(cpu.gc.tables, byKey), 0, 'empty key buckets accumulated');
 			if (cycle === 0) warmed = heap;
 			else assert.equal(heap, warmed, 'distinct historical keys must not grow retained Registry storage');
 		}
@@ -116,14 +117,14 @@ function probe.churn(count)
 end
 `, { optLevel, modules: WORLD_CPU_MODULES });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
-		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		const churn = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('churn')!), cpu.gc);
+		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		const churn = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('churn')!), cpu.gc);
 		let warmed = 0;
 		for (let cycle = 0; cycle < 3; cycle++) {
 			runCompletionClosure(cpu, churn, [valueInteger(128)]);
-			const heap = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
-			const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak')!), cpu.gc);
-			for (let index = 1; index <= 128; index++) assert.equal(weak.records.getInteger(weak.address, index), valueNil());
+			const heap = cpu.collectTrackedHeapBytes() - heapAllocationBytes(cpu.rootThread.backingByteLength());
+			const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
+			for (let index = 1; index <= 128; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
 			if (cycle === 0) warmed = heap;
 			else assert.equal(heap, warmed, 'historical World tags must not grow retained Registry storage');
 		}

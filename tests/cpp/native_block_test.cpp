@@ -209,7 +209,7 @@ void residentValuesCrossInternalComparisonBranches() {
 	const std::array constants{valueInteger(1)};
 	const auto constantsBank = test::valueBank(constants);
 	const auto alpha = valueString(cpu.stringPool().intern("alpha")), omega = valueString(cpu.stringPool().intern("omega"));
-	const std::array values{valueFromTag(ValueTag::False, 37), valueTable(cpu.gcHeap().reference(cpu.createTable())), valueFloat(-0.0),
+	const std::array values{valueFromTag(ValueTag::False, 37), valueTable(cpu.createTable().address()), valueFloat(-0.0),
 		valueFloatBits(0x7fc0002au)};
 	size_t bytes = 0;
 	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (bool expected : {false, true}) {
@@ -271,7 +271,7 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 	decoded[11].bx = 0x2000u;
 	const std::span source(instructions);
 	const std::array plans{NativeBlockSource{source.first(6)}, NativeBlockSource{source.subspan(6)}};
-	const std::array constants{valueFromTag(ValueTag::False, 37), valueTable(cpu.gcHeap().reference(cpu.createTable())),
+	const std::array constants{valueFromTag(ValueTag::False, 37), valueTable(cpu.createTable().address()),
 		valueFloat(-0.0), valueString(cpu.stringPool().intern("register permutation")), valueInteger(73), valueInteger(2), valueInteger(4)};
 	const auto constantsBank = test::valueBank(constants);
 	const std::array<std::array<int, 4>, 3> permutations{{{3, 2, 1, 0}, {1, 2, 3, 0}, {2, 0, 3, 1}}};
@@ -320,7 +320,7 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 }
 
 void sparseRegionSuccessorsPreserveExactPcIdentity() {
-	const std::array values{valueFloat(-0.0), valueFromTag(ValueTag::False, 73), valueTable(cpu.gcHeap().reference(cpu.createTable()))};
+	const std::array values{valueFloat(-0.0), valueFromTag(ValueTag::False, 73), valueTable(cpu.createTable().address())};
 	for (const u32 page : {0x1000u, 0xfffffc00u}) {
 		std::array<DecodedInstruction, 5> decoded{};
 		const std::array ops{OpCode::MOV, OpCode::JMPIF, OpCode::JMP, OpCode::MOV, OpCode::JMP};
@@ -408,7 +408,7 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 		NativeBlockSource{source.subspan(10, 5)}, NativeBlockSource{source.subspan(15, 3), nullptr, true},
 		NativeBlockSource{source.subspan(18, 4)}, NativeBlockSource{source.subspan(22)}};
 	const std::array constants{valueInteger(2), valueInteger(3), valueFromTag(ValueTag::False, 57),
-		valueTable(cpu.gcHeap().reference(cpu.createTable())), valueFloat(-0.0), valueString(cpu.stringPool().intern("diamond register"))};
+		valueTable(cpu.createTable().address()), valueFloat(-0.0), valueString(cpu.stringPool().intern("diamond register"))};
 	const auto constantsBank = test::valueBank(constants);
 	size_t bytes = 0;
 	for (const bool helper : {false, true}) for (const bool bypassHelper : {false, true}) {
@@ -626,7 +626,7 @@ void comparisonDatapathsRespectEveryValueKind() {
 		valueString(strings.intern("")), valueString(strings.intern("a")),
 		valueString(strings.intern(std::string_view("a\0b", 3))),
 		valueString(strings.intern("\xee\x80\x80")), valueString(strings.intern("\xf0\x90\x80\x80")),
-		valueTable(cpu.gcHeap().reference(cpu.createTable())), valueTable(cpu.gcHeap().reference(cpu.createTable())), valueClosure(heap.reference(firstClosure)), valueClosure(heap.reference(secondClosure)),
+		valueTable(cpu.createTable().address()), valueTable(cpu.createTable().address()), valueClosure(heap.reference(firstClosure)), valueClosure(heap.reference(secondClosure)),
 		valueFromTag(ValueTag::Table, 37), valueFromTag(ValueTag::Table, 0x80000025u),
 		valueFromTag(ValueTag::BuiltinFunction, 37), valueFromTag(ValueTag::BuiltinFunction, 0x80000025u),
 		valueThread(heap.reference(cpu.activeThread())), valueThread(cpu.activeThread()->address - THREAD_HEAP_BYTES), valueBuiltinFunction(BuiltinFunctionId::Type),
@@ -1183,7 +1183,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 
 void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 	const std::array constants{valueFromTag(ValueTag::False, 37), valueFloat(-0.0),
-		valueFromTag(ValueTag::Nil, 19), valueTable(cpu.gcHeap().reference(cpu.createTable())),
+		valueFromTag(ValueTag::Nil, 19), valueTable(cpu.createTable().address()),
 		valueString(cpu.stringPool().intern("field")), valueInteger(5), valueInteger(2)};
 	const auto constantsBank = test::valueBank(constants);
 	size_t bytes = 0;

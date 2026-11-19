@@ -131,13 +131,13 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 	return valueBuiltinFunction(id);
 }
 
-Table* CPU::createTable(int arraySize, int hashSize) {
-	const size_t hashCapacity = Table::hashCapacity(hashSize);
-	const u32 address = m_luaHeap.allocateRecord(Table::HEADER_BYTES, false, Table::storageBytes(arraySize, hashCapacity),
+TableRecord CPU::createTable(int arraySize, int hashSize) {
+	const size_t hashCapacity = TableRecord::hashCapacity(hashSize);
+	const u32 address = m_luaHeap.allocateRecord(TableRecord::HEADER_BYTES, false, TableRecord::storageBytes(arraySize, hashCapacity),
 		static_cast<u32>(TableHeader::Storage));
-	Table* table = m_heap.allocate<Table>(ObjType::Table, m_heap, address);
-	table->initialize(arraySize, hashCapacity);
-	trackLocalRoot(valueTable(m_heap.reference(table)));
+	TableRecord table(m_heap, address);
+	table.initialize(arraySize, hashCapacity);
+	trackLocalRoot(valueTable(address));
 	return table;
 }
 
@@ -901,9 +901,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		switch (cpu.m_memory.readRamRecordByte(address)) {
 			case THREAD_RECORD_KIND:
 				if (!heap.threadAt(address)) heap.allocate<Thread>(ObjType::Thread, heap, address);
-				break;
-			case static_cast<u8>(ValueTag::Table):
-				heap.allocate<Table>(ObjType::Table, heap, address);
 				break;
 			case static_cast<u8>(ValueTag::Closure): {
 				const u8 binding = cpu.m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
