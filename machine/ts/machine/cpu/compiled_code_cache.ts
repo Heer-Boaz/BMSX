@@ -2,8 +2,12 @@ import { COMPILED_BLOCK_MAX_INSTRUCTIONS, type CompiledBlock, type CompiledBlock
 import { DECODED_PAGE_WORDS, DecodedDispatchOp, type DecodedInstructionPage } from './execution_image';
 import type { CompiledRegion } from './compiled_region';
 
-/** Generated source code units, not executable bytes or an upfront allocation. */
-const COMPILED_SOURCE_BUDGET = 4 * 1024 * 1024;
+/**
+ * Generated source code units, not executable bytes or an upfront allocation.
+ * Retiring every region is a last resort, so the budget holds the hot code of
+ * a full game with room to spare.
+ */
+const COMPILED_SOURCE_BUDGET = 16 * 1024 * 1024;
 
 function unlinkCompiledExit(exit: CompiledBlockExitSite): void {
 	const target = exit.linkedBlock;
