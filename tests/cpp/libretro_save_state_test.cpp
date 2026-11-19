@@ -120,6 +120,12 @@ void testLibretroStateEnvelopeRoundTrip() {
 		"serialization does not touch bytes outside its announced capacity");
 	memory.writeMappedU32LE((bmsx::DYNAMIC_RAM_BASE + 0x10000u), 0xaabbccddu);
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0u);
+	const bmsx::u32 currentFormat = bmsx::readLE32(envelope.data());
+	bmsx::writeLE32(envelope.data(), 0x31534d42u); // BMS1 did not serialize reference slots.
+	require(!bmsx::unserializeLibretroState(runtime, envelope)
+		&& memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0u,
+		"the previous layout is rejected before changing machine state");
+	bmsx::writeLE32(envelope.data(), currentFormat);
 	require(
 		bmsx::unserializeLibretroState(runtime, envelope),
 		"libretro envelope should decode its retained payload length");

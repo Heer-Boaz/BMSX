@@ -17,19 +17,11 @@ inline void emitValueTransportLoad(
 	sljit_emit_op1(compiler, SLJIT_MOV32, word, 0, SLJIT_MEM1(base), offset + VALUE_LOW_WORD_BYTE_OFFSET);
 	sljit_emit_op1(compiler, SLJIT_MOV32, tag, 0, SLJIT_MEM1(base), offset + VALUE_HEADER_BYTE_OFFSET);
 }
-// References keep the same 32-bit payload representation in every bank.
-// ARM32 consumes that word as a direct pointer; wider hosts use this heap's
-// currently published directory, never a process-global pointer table.
+// Heap-local slot words are independent of host pointer width.
 inline void emitObjectReference(sljit_compiler* compiler, sljit_s32 payload, sljit_s32 object, sljit_s32 heap) {
-#if UINTPTR_MAX == UINT32_MAX
-	(void)heap;
-	if (object != payload)
-		sljit_emit_op1(compiler, SLJIT_MOV_P, object, 0, payload, 0);
-#else
 	sljit_emit_op1(compiler, SLJIT_MOV_P, heap, 0, SLJIT_MEM1(heap), GcHeap::nativeReferencesOffset());
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, object, 0, payload, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, object, 0, SLJIT_MEM2(heap, object), sizeof(void*) == 8 ? 3 : 2);
-#endif
 }
 
 // The collector's backward barrier is nonallocating. Mirror the header's

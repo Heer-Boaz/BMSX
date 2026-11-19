@@ -4290,6 +4290,7 @@ export class CPU implements MappedPageInvalidator {
 					break;
 			}
 		}
+		this.gc.bindRestoredReferences(state.gc, restoredObjects);
 		const reader = new CpuSnapshotReader(snapshot, restoredObjects, this.gc);
 		for (let index = 0; index < snapshot.objectCount; index += 1) {
 			const offset = snapshot.objectWord(index);
@@ -4459,7 +4460,6 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = state.yieldRequested;
 		this.hardHalted = state.hardHalted;
 		this.nextObjectHashId = state.nextObjectHashId;
-		this.gc.finishRestore();
 		this.gc.restoreState(state.gc, restoredObjects);
 		this.luaHeap.restoreState(state.luaHeap);
 	}

@@ -18,7 +18,7 @@ struct GcState {
 	GcPhase phase = GcPhase::Pause;
 	u32 white = 0;
 	int sweep = -1;
-	std::vector<u32> allocations, colors, gray, grayAgain, threads, weak;
+	std::vector<u32> allocations, colors, gray, grayAgain, threads, weak, references, freeReferences;
 };
 
 class GcHeap {
@@ -30,9 +30,7 @@ public:
 	// Host backing lifetime follows the allocations, not the guest byte ledger.
 	SmallBlockPool tableStorage;
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
-#if UINTPTR_MAX > UINT32_MAX
 		reserveReference();
-#endif
 		T* object;
 		if constexpr (std::is_same_v<T, Table>) object = m_tables.construct(std::forward<Args>(args)...);
 		else object = new T(std::forward<Args>(args)...);
@@ -43,24 +41,10 @@ public:
 	Closure* allocateClosure(size_t count);
 	u32 allocateHashId() { return m_nextObjectHashId++; }
 	u32 nextObjectHashId() const { return m_nextObjectHashId; }
-	// A live object reference is a native pointer word on 32-bit hosts, a
-	// heap-local directory id on wider hosts. Neither form is a hash/snapshot id.
-	// The Value tag supplies the kind; only live references from this heap enter.
-	u32 reference(const GCObject* object) const {
-#if UINTPTR_MAX == UINT32_MAX
-		return reinterpret_cast<uintptr_t>(object);
-#else
-		return object->referenceId;
-#endif
-	}
-	GCObject* object(u32 reference) const {
-#if UINTPTR_MAX == UINT32_MAX
-		return reinterpret_cast<GCObject*>(static_cast<uintptr_t>(reference));
-#else
-		return m_references[reference].object;
-#endif
-	}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && UINTPTR_MAX > UINT32_MAX
+	// Heap-local, pointer-free references remain stable through restore.
+	u32 reference(const GCObject* object) const { return object->referenceId; }
+	GCObject* object(u32 reference) const { return m_references[reference].object; }
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static size_t nativeReferencesOffset();
 #endif
 	uint32_t hash(Value value) const {
@@ -80,7 +64,10 @@ public:
 		state.sweep = m_sweep ? static_cast<int>(ref(m_sweep)) : -1;
 		for (auto* object = m_objects; object; object = object->next) {
 			state.allocations.push_back(ref(object)); state.colors.push_back(object->gcColor);
+			state.references.push_back(object->referenceId);
 		}
+		for (u32 slot = m_freeReference; slot != 0; slot = m_references[slot].nextFree)
+			state.freeReferences.push_back(slot);
 		for (auto* object = m_gray; object; object = object->grayNext) state.gray.push_back(ref(object));
 		for (auto* object = m_grayAgain; object; object = object->grayNext) state.grayAgain.push_back(ref(object));
 		for (auto* object : m_threads) state.threads.push_back(ref(object));
@@ -88,7 +75,7 @@ public:
 		return state;
 	}
 	void restoreState(const GcState& state, const std::vector<GCObject*>& objects);
-	void finishRestore(u32 nextHashId);
+	void bindRestoredReferences(const GcState&, const std::vector<GCObject*>& objects, u32 nextHashId);
 	bool active() const { return m_phase != GcPhase::Pause; }
 	bool sweepGarbage(const GCObject* object) const {
 		return m_phase == GcPhase::Sweep && object->gcColor == (m_white ^ 1u);
@@ -100,14 +87,12 @@ public:
 	bool markValue(Value value);
 	bool markObject(GCObject* object);
 private:
-#if UINTPTR_MAX > UINT32_MAX
 	union ReferenceSlot {
 		GCObject* object;
 		u32 nextFree;
 	};
 	void reserveReference();
 	void releaseReference(GCObject* object);
-#endif
 	void track(GCObject* object);
 	uint8_t tableWeakMode(const Table& table) const;
 	bool valueIsAlive(Value value) const;
@@ -129,7 +114,6 @@ private:
 	StringId m_modeKey;
 	StringPool& m_stringPool;
 	ObjectStoragePool<Table> m_tables;
-#if UINTPTR_MAX > UINT32_MAX
 	std::vector<ReferenceSlot> m_references{{.object = nullptr}};
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Published address of this owner's current directory allocation. Native
@@ -137,7 +121,6 @@ private:
 	ReferenceSlot* m_referenceBase = m_references.data();
 #endif
 	u32 m_freeReference = 0;
-#endif
 };
 
 inline Table* asTable(Value value, const GcHeap& heap) { return static_cast<Table*>(heap.object(valuePayload(value))); }

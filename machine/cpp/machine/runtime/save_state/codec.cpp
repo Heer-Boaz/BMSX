@@ -1323,7 +1323,7 @@ template<class Writer> void writeGcState(Writer& writer, const GcState& state) {
 	writer.u32(static_cast<u32>(state.phase));
 	writer.u32(state.white);
 	writer.i32(state.sweep);
-	for (const auto* values : {&state.allocations, &state.colors, &state.gray, &state.grayAgain, &state.threads, &state.weak}) {
+	for (const auto* values : {&state.allocations, &state.colors, &state.gray, &state.grayAgain, &state.threads, &state.weak, &state.references, &state.freeReferences}) {
 		writer.u32(static_cast<u32>(values->size()));
 		writer.u32s(*values);
 	}
@@ -1331,7 +1331,7 @@ template<class Writer> void writeGcState(Writer& writer, const GcState& state) {
 GcState readGcState(BinaryReader& reader) {
 	GcState state;
 	state.phase = static_cast<GcPhase>(reader.u32()); state.white = reader.u32(); state.sweep = reader.i32();
-	for (auto* values : {&state.allocations, &state.colors, &state.gray, &state.grayAgain, &state.threads, &state.weak}) {
+	for (auto* values : {&state.allocations, &state.colors, &state.gray, &state.grayAgain, &state.threads, &state.weak, &state.references, &state.freeReferences}) {
 		values->resize(reader.u32()); reader.u32s(*values);
 	}
 	return state;

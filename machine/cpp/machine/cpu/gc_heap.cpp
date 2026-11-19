@@ -69,7 +69,6 @@ bool GcHeap::markValue(Value v) {
 	}
 }
 
-#if UINTPTR_MAX > UINT32_MAX
 void GcHeap::reserveReference() {
 	// Admit directory growth before constructing the object. Recycling a
 	// directory slot and binding a constructed object do not allocate.
@@ -99,9 +98,7 @@ void GcHeap::releaseReference(GCObject* object) {
 	m_freeReference = reference;
 	object->referenceId = 0;
 }
-#endif
 void GcHeap::track(GCObject* object) {
-#if UINTPTR_MAX > UINT32_MAX
 	if (m_freeReference != 0) {
 		object->referenceId = m_freeReference;
 		m_freeReference = m_references[m_freeReference].nextFree;
@@ -110,7 +107,6 @@ void GcHeap::track(GCObject* object) {
 		object->referenceId = static_cast<u32>(m_references.size());
 		m_references.push_back({.object = object});
 	}
-#endif
 	object->gcColor = m_white;
 	object->restored = false;
 	object->grayHead = &m_grayAgain;
@@ -122,9 +118,7 @@ void GcHeap::track(GCObject* object) {
 	m_objects = object;
 }
 Closure* GcHeap::allocateClosure(size_t count) {
-#if UINTPTR_MAX > UINT32_MAX
 	reserveReference();
-#endif
 	void* storage = ::operator new(sizeof(Closure) + count * sizeof(u32));
 	auto* closure = new (storage) Closure();
 	closure->type = ObjType::Closure;
@@ -330,9 +324,7 @@ void GcHeap::unlink(GCObject* object) {
 	if (object->next) object->next->previous = object->previous;
 }
 void GcHeap::destroyObject(GCObject* object) {
-#if UINTPTR_MAX > UINT32_MAX
 	releaseReference(object);
-#endif
 	switch (object->type) {
 		case ObjType::Garbage:
 			budget.release(static_cast<GarbageAllocation*>(object)->bytes);
@@ -455,12 +447,28 @@ size_t GcHeap::collect(Value root0, Value root1, Value root2, Thread* growingSta
 	do { work += step(root0, root1, root2, growingStack); } while (active());
 	return work;
 }
-void GcHeap::finishRestore(u32 nextHashId) {
+void GcHeap::bindRestoredReferences(const GcState& state, const std::vector<GCObject*>& objects, u32 nextHashId) {
 	for (auto* object = m_objects; object;) {
 		auto* next = object->next;
 		if (object->restored) object->restored = false;
 		else { unlink(object); destroyObject(object); }
 		object = next;
+	}
+	// The old references are retired. Install the saved slots before resolving
+	// any Value or upvalue edge in the newly constructed object graph.
+	m_references.resize(1u + state.references.size() + state.freeReferences.size());
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	m_referenceBase = m_references.data();
+#endif
+	for (size_t i = 0; i < state.references.size(); ++i) {
+		auto* object = objects[state.allocations[i]];
+		object->referenceId = state.references[i];
+		m_references[object->referenceId].object = object;
+	}
+	m_freeReference = 0;
+	for (auto it = state.freeReferences.rbegin(); it != state.freeReferences.rend(); ++it) {
+		m_references[*it].nextFree = m_freeReference;
+		m_freeReference = *it;
 	}
 	m_nextObjectHashId = nextHashId;
 }

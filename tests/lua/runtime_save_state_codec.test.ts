@@ -548,7 +548,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				nextObjectHashId: 0xfedcba98,
 				hardHalted: true,
 				luaHeap: { trackedBytes: 2345, nextCollectionBytes: 1048576 },
-				gc: { phase: 4, white: 1, sweep: 0, allocations: [0], colors: [3], gray: [], grayAgain: [], threads: [], weak: [] },
+				gc: { phase: 4, white: 1, sweep: 0, allocations: [0], colors: [3], gray: [], grayAgain: [], threads: [], weak: [], references: [1], freeReferences: [] },
 				executionCartridgeSlot: 0,
 				programExecutionDomainId: 0,
 				systemGlobals: [

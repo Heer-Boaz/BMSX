@@ -1442,6 +1442,10 @@ function writeGcState(writer: BinarySink, state: GcState): void {
 	writer.u32s(state.threads);
 	writer.u32(state.weak.length);
 	writer.u32s(state.weak);
+	writer.u32(state.references.length);
+	writer.u32s(state.references);
+	writer.u32(state.freeReferences.length);
+	writer.u32s(state.freeReferences);
 }
 function readGcState(reader: BinaryReader): GcState {
 	return {
@@ -1450,6 +1454,7 @@ function readGcState(reader: BinaryReader): GcState {
 		gray: Array.from(reader.u32s(reader.u32())), grayAgain: Array.from(reader.u32s(reader.u32())),
 		threads: Array.from(reader.u32s(reader.u32())),
 		weak: Array.from(reader.u32s(reader.u32())),
+		references: Array.from(reader.u32s(reader.u32())), freeReferences: Array.from(reader.u32s(reader.u32())),
 	};
 }
 

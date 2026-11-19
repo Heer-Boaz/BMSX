@@ -15,6 +15,7 @@ export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
 export type GcState = {
 	phase: GcPhase; white: number; sweep: number;
 	allocations: number[]; colors: number[]; gray: number[]; grayAgain: number[]; threads: number[]; weak: number[];
+	references: number[]; freeReferences: number[];
 };
 export class GcHeap {
 	public diagnostics: GcDiagnostics | null = null;
@@ -283,15 +284,18 @@ export class GcHeap {
 		return work;
 	}
 	public captureState(ref: (object: GcObject) => number): GcState {
-		const state: GcState = { phase: this.phase, white: this.white, sweep: this.sweep === null ? -1 : ref(this.sweep), allocations: [], colors: [], gray: [], grayAgain: [], threads: [], weak: [] };
-		for (let object = this.objects; object !== null; object = object.gcNext) { state.allocations.push(ref(object)); state.colors.push(object.gcColor); }
+		const state: GcState = { phase: this.phase, white: this.white, sweep: this.sweep === null ? -1 : ref(this.sweep), allocations: [], colors: [], gray: [], grayAgain: [], threads: [], weak: [], references: [], freeReferences: [] };
+		for (let object = this.objects; object !== null; object = object.gcNext) { state.allocations.push(ref(object)); state.colors.push(object.gcColor); state.references.push(object.referenceId); }
+		for (let slot = this.freeReference; slot !== 0; slot = this.references[slot] as number) {
+			state.freeReferences.push(slot);
+		}
 		for (let object = this.gray; object !== null; object = object.gcGrayNext) state.gray.push(ref(object));
 		for (let object = this.grayAgain; object !== null; object = object.gcGrayNext) state.grayAgain.push(ref(object));
 		for (const object of this.threads) state.threads.push(ref(object));
 		for (const object of this.weak) state.weak.push(ref(object));
 		return state;
 	}
-	public finishRestore(): void {
+	public bindRestoredReferences(state: GcState, objects: readonly GcObject[]): void {
 		for (let object = this.objects; object !== null;) {
 			const next = object.gcNext;
 			if (object.restored) object.restored = false;
@@ -300,6 +304,19 @@ export class GcHeap {
 				this.releaseReference(object);
 			}
 			object = next;
+		}
+		// Restore the saved slots before decoding any graph edge.
+		this.references.length = 1 + state.references.length + state.freeReferences.length;
+		for (let i = 0; i < state.references.length; ++i) {
+			const object = objects[state.allocations[i]];
+			object.referenceId = state.references[i];
+			this.references[object.referenceId] = object;
+		}
+		this.freeReference = 0;
+		for (let i = state.freeReferences.length - 1; i >= 0; --i) {
+			const slot = state.freeReferences[i];
+			this.references[slot] = this.freeReference;
+			this.freeReference = slot;
 		}
 	}
 	public restoreState(state: GcState, objects: GcObject[]): void {

@@ -162,10 +162,8 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 	fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 						 static_cast<u8>(ValueTag::Table)),
 		  exit, m_cache.state());
-#if UINTPTR_MAX > UINT32_MAX
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
 				   offsetof(NativeBlockRunState, heap));
-#endif
 	emitObjectReference(m_compiler, SLJIT_R0, SLJIT_R0, SLJIT_R1);
 	if (op == OpCode::GETT || op == OpCode::SETT) {
 		emitRawLoad(key, SLJIT_R3, SLJIT_R2);

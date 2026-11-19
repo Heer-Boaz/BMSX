@@ -66,18 +66,23 @@ test('restore registers identities before edges and releases discarded future id
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, roots = cpu.createTable(4);
 	frame.registers.setTable(0, cpu.gc.reference(roots)); frame.top = 2;
 	for (let i = 1; i <= 4; ++i) roots.setInteger(i, valueTable(cpu.gc.reference(cpu.createTable())));
+	cpu.createTable();
+	cpu.createTable();
 	cpu.collectTrackedHeapBytes();
 	const saved = cpu.captureRuntimeState(), thread = cpu.gc.reference(cpu.rootThread), canonical = cpu.gc.reference(frame.closure);
-	let peak = 0;
+	const root = frame.registers.get(0), fourth = roots.getInteger(4);
+	assert.ok(saved.gc.freeReferences.length >= 2);
 	for (let iteration = 0; iteration < 64; ++iteration) {
 		const future = Array.from({ length: 12 }, () => cpu.createTable());
 		cpu.restoreRuntimeState(saved);
 		assert.equal(cpu.gc.object(thread), cpu.rootThread);
 		assert.equal(cpu.gc.reference(cpu.rootThread.currentFrame!.closure), canonical);
+		assert.equal(cpu.rootThread.currentFrame!.registers.get(0), root);
+		assert.equal(asTable(root, cpu.gc).getInteger(4), fourth);
 		for (const object of future) assert.equal(object.referenceId, 0);
-		const highest = checkDirectory(cpu);
-		if (iteration < 2) peak = Math.max(peak, highest); else assert.ok(highest <= peak);
+		checkDirectory(cpu);
 		assert.deepEqual(cpu.captureRuntimeState(), saved);
+		assert.deepEqual([cpu.gc.reference(cpu.createTable()), cpu.gc.reference(cpu.createTable())], saved.gc.freeReferences.slice(0, 2));
 	}
 });
 

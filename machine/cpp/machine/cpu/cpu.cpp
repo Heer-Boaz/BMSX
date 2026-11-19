@@ -1170,6 +1170,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			}
 		}
 	}
+	m_heap.bindRestoredReferences(state.gc, restoredObjects, state.nextObjectHashId);
 	const CpuSnapshotReader reader(snapshot, restoredObjects, m_heap);
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
@@ -1324,7 +1325,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 	m_yieldRequested = state.yieldRequested;
 	m_hardHalted = state.hardHalted;
-	m_heap.finishRestore(state.nextObjectHashId);
 	m_heap.restoreState(state.gc, restoredObjects);
 	m_luaHeap.restoreState(state.luaHeap);
 }

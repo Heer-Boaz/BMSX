@@ -44,10 +44,8 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, closure));
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), Closure::nativeUpvaluesOffset());
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), instruction.b * sizeof(u32));
-#if UINTPTR_MAX > UINT32_MAX
 	sljit_emit_op1(
 		m_compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-#endif
 	emitObjectReference(m_compiler, SLJIT_R2, SLJIT_R2, SLJIT_R3);
 	const auto fields = Upvalue::nativeOffsets();
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), fields.open);

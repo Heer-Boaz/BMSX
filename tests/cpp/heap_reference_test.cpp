@@ -50,9 +50,6 @@ u32 checkReferences(CPU& cpu) {
 void liveReferencesAndReuse() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
 	static_assert(sizeof(decltype(cpu.gcHeap().reference(cpu.rootThread()))) == sizeof(u32));
-#if UINTPTR_MAX == UINT32_MAX
-	static_assert(offsetof(GCObject, next) == 8, "32-bit objects have no directory id");
-#endif
 	for (auto* object : {static_cast<GCObject*>(cpu.rootThread()), static_cast<GCObject*>(frame.closure),
 		static_cast<GCObject*>(asClosure(frame.registers.get(1),cpu.gcHeap())), static_cast<GCObject*>(cpu.gcHeap().object(asClosure(frame.registers.get(1),cpu.gcHeap())->upvalues[0]))})
 		require(cpu.gcHeap().object(cpu.gcHeap().reference(object)) == object, "threads, closures and upvalues have references at construction");
@@ -80,23 +77,33 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 	auto& frame = *cpu.rootThread()->currentFrame;
 	auto* roots = cpu.createTable(4); frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.top = 2;
 	for (int i = 1; i <= 4; ++i) roots->setInteger(i, valueTable(cpu.gcHeap().reference(cpu.createTable())));
+	// Leave holes before saving, then consume them on a discarded timeline.
+	cpu.createTable();
+	cpu.createTable();
 	cpu.collectHeap();
 	const auto saved = cpu.captureRuntimeState();
-	const u32 threadHash = cpu.rootThread()->hashId, canonicalHash = frame.closure->hashId;
-	u32 peak = 0;
+	const u32 rootsRef = cpu.gcHeap().reference(roots);
+	const Value fourth = roots->getInteger(4);
+	require(saved.gc.freeReferences.size() >= 2, "the saved directory has nontrivial free-slot order");
 	for (int iteration = 0; iteration < 64; ++iteration) {
 		for (int i = 0; i < 12; ++i) cpu.createTable();
 		cpu.restoreRuntimeState(saved);
-		require(cpu.rootThread()->hashId == threadHash && cpu.rootThread()->currentFrame->closure->hashId == canonicalHash,
-			"restore preserves guest root and canonical closure identities");
-		const u32 highest = checkReferences(cpu);
-		if constexpr (sizeof(void*) > sizeof(u32)) {
-			if (iteration < 2) peak = std::max(peak, highest);
-			else require(highest <= peak, "discarded futures recycle directory ids across repeated restore");
-		}
+		const Value restoredRoots = cpu.rootThread()->currentFrame->registers.get(0);
+		require(valuePayload(restoredRoots) == rootsRef &&
+			asTable(restoredRoots, cpu.gcHeap())->getInteger(4) == fourth,
+			"raw reference words still bind the restored table and its entries");
+		checkReferences(cpu);
 		const auto restored = cpu.captureRuntimeState();
 		require(std::ranges::equal(saved.snapshot.words(), restored.snapshot.words())
-			&& std::ranges::equal(saved.snapshot.objectWords(), restored.snapshot.objectWords()), "reference metadata does not change serialized guest state");
+			&& std::ranges::equal(saved.snapshot.objectWords(), restored.snapshot.objectWords())
+			&& saved.gc.references == restored.gc.references
+			&& saved.gc.freeReferences == restored.gc.freeReferences,
+			"restore preserves slot identities and the directory allocation order");
+		auto* first = cpu.createTable();
+		auto* second = cpu.createTable();
+		require(cpu.gcHeap().reference(first) == saved.gc.freeReferences[0]
+			&& cpu.gcHeap().reference(second) == saved.gc.freeReferences[1],
+			"the next allocations resume from the restored free chain");
 	}
 }
 
@@ -144,12 +151,7 @@ void isolatedHeaps() {
 	auto* a = first.cpu.createTable(); auto* b = second.cpu.createTable();
 	const u32 ar = first.cpu.gcHeap().reference(a), br = second.cpu.gcHeap().reference(b);
 	require(a != b, "concurrent CPUs own distinct allocations");
-#if UINTPTR_MAX == UINT32_MAX
-	require(ar == reinterpret_cast<uintptr_t>(a) && br == reinterpret_cast<uintptr_t>(b),
-		"32-bit references are the complete native pointer without indirection");
-#else
-	require(ar == br, "directory ids are local to equally initialized heaps");
-#endif
+	require(ar == br, "directory slots are local to equally initialized heaps");
 	require(first.cpu.gcHeap().object(ar) == a && second.cpu.gcHeap().object(br) == b,
 		"each CPU resolves its own object references");
 }

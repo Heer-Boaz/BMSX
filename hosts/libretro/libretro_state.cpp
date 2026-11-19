@@ -9,7 +9,7 @@
 namespace bmsx {
 namespace {
 
-constexpr u32 kSaveStateMagic = 0x31534d42u;
+constexpr u32 kSaveStateMagic = 0x32534d42u; // BMS2: saved heap-reference slots
 constexpr size_t kSaveStateHeaderBytes = 8u;
 constexpr size_t kSaveStateBasePayloadCapacityBytes = 0x01000000u;
 
