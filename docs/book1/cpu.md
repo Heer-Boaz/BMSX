@@ -871,7 +871,7 @@ separate Float values can produce the same text.
 
 ### Calling and returning values {#sec-cpu-calling-and-returning-values}
 
-Function calls use language value slots. Each call has a frame-relative register window in its thread's shared value stack and, for a variable-argument function, a saved argument range. The function record's maximum-stack value is a **slot count**, not a RAM address or byte count. These slots have no cartridge-addressable byte-RAM base; do not place an assumed stack at the top of main RAM.
+Function calls use language value slots. Each call has a frame-relative register window in its thread's shared value stack and, for a variable-argument function, a saved argument range. The function record's maximum-stack value is a **slot count**, not a RAM address or byte count. The stack occupies reserved language storage in main RAM. A cartridge uses the frame-relative slot numbers, not a fixed byte address for that stack; see [Language allocation and lifetime](#sec-cpu-language-allocation-and-lifetime).
 
 `CALL A,B,C` takes its callee from `R(A)`. Arguments occupy consecutive registers starting at `R(A+1)`, and returned values replace consecutive registers starting at `R(A)`.
 
