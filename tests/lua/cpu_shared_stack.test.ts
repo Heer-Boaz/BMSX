@@ -53,6 +53,49 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 }
 
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	test(`overlapping parent and child captures close with their own activation (${backend})`, () => {
+		const text = new Uint8Array(18 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.KSMI, 5, 0, 37);
+		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 2, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 3, OpCode.SETGL, 0, 0, 0);
+		writeInstruction(text, 4, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 5, OpCode.CLOSURE, 4, 0, 0);
+		writeInstruction(text, 6, OpCode.CALL, 4, 2, 1);
+		writeInstruction(text, 7, OpCode.KSMI, 5, 0, 51);
+		writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 9, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 10, OpCode.CLOSURE, 1, 0, 0);
+		writeInstruction(text, 11, OpCode.SETGL, 1, 0, 1);
+		writeInstruction(text, 12, OpCode.KSMI, 0, 0, 42);
+		writeInstruction(text, 13, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 14, OpCode.GETUP, 0, 0, 0);
+		writeInstruction(text, 15, OpCode.RET, 0, 2, 0);
+		writeInstruction(text, 16, OpCode.GETUP, 0, 0, 0);
+		writeInstruction(text, 17, OpCode.RET, 0, 2, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [
+			{ firstWord: 0, wordCount: 9, maxStack: 6 },
+			{ firstWord: 9, wordCount: 5, numParams: 1, maxStack: 2 },
+			{ firstWord: 14, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 5 }] },
+			{ firstWord: 16, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
+		], globalNames: ['outer_read', 'inner_read'], closureRelocations: [
+			{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(0, 2) },
+			{ wordIndex: 5, functionAddress: blua32TestFunctionAddress(0, 1) },
+			{ wordIndex: 10, functionAddress: blua32TestFunctionAddress(0, 3) },
+		] });
+		const { cpu } = createTestSystemCpu(image, backend);
+		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		for (const [name, expected] of [['outer_read', 51], ['inner_read', 42]] as const) {
+			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern(name)), cpu.gc));
+			assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+			const values: Value[] = [];
+			cpu.readCompletionValues(values);
+			assert.deepEqual(values, [valueInteger(expected)], name);
+		}
+	});
+}
+
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const optLevel of [0, 3] as const) {
 	test(`shared stack closes live captures and preserves varargs through nested GC and replay (${backend}, O${optLevel})`, () => {
 		const image = compileCoroutineTest(`
