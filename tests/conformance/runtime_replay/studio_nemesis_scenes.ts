@@ -1,4 +1,5 @@
-import { valueInteger, valueNil, asTable, numberToHost } from '../../../machine/ts/machine/cpu/value';
+import { valuePayload as tableAddressPayload } from '../../../machine/ts/machine/cpu/value';
+import { valueInteger, valueNil, numberToHost } from '../../../machine/ts/machine/cpu/value';
 import { openScene, editPosition } from './studio_scene_authoring';
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import { selectMember } from './studio_scene_source';
@@ -59,7 +60,7 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	await test.capture?.('gameplay-editor');
 	await runMenuCommand('reboot');
 	await until(() => tasks.ready && harness.isCartActive() && world() !== valueNil()
-		&& asTable(guest.readStringMember(world(), '_objects'), guest.cpu.gc).length() >= 4
+		&& guest.cpu.gc.tables.length(tableAddressPayload(guest.readStringMember(world(), '_objects'))) >= 4
 		&& !runtime.completionCallPending(), 'Reboot installs the saved scene sources and publishes the root composition');
 	check(nemesisTitle(test) !== oldTitle, 'cold reboot created a fresh controller');
 	const intro = guest.readStringMember(registered('nemesis_s.intro'), 'presentation');

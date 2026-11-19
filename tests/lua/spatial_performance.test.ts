@@ -163,28 +163,28 @@ for (const optLevel of [0, 3] as const) {
 		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 		const before = cpu.collectTrackedHeapBytes();
 		const beforeObjects = heapObjects(cpu);
-		const admissionCycles = runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('admit')!), cpu.gc), []);
+		const admissionCycles = runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('admit')!), cpu.gc), []);
 		const admittedAllocated = cpu.luaHeap.usedBytes() - before;
 		const admittedRetained = cpu.collectTrackedHeapBytes() - before;
 		const admittedObjects = heapObjects(cpu);
-		const graph = asTable(probe.getStringKey(cpu.stringPool.find('graph')!), cpu.gc);
-		const baseCount = graph.getStringKey(cpu.stringPool.find('_count')!);
+		const graph = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('graph')!), cpu.gc);
+		const baseCount = graph.records.getStringKey(graph.address, cpu.stringPool.find('_count')!);
 		const rows = [];
 		for (const unrelated of [0, 256]) {
-			if (unrelated !== 0) runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('unrelated')!), cpu.gc), [valueInteger(unrelated)]);
+			if (unrelated !== 0) runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('unrelated')!), cpu.gc), [valueInteger(unrelated)]);
 			const leafCycles = [];
 			const branchCycles: number[][] = [];
 			for (const dimension of [2, 3]) {
-				const leaf = asClosure(probe.getStringKey(cpu.stringPool.find(`leaf${dimension}`)!), cpu.gc);
+				const leaf = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(`leaf${dimension}`)!), cpu.gc);
 				const leafProfile = profileWarmGuestKernel(cpu, leaf, 128);
 				assert.equal(leafProfile.reservations, 0);
 				assert.equal(leafProfile.reservedBytes, 0);
 				assert.equal(leafProfile.retainedAfter, leafProfile.retainedBefore);
 				leafCycles.push(leafProfile.cycles);
-				const branch = asClosure(probe.getStringKey(cpu.stringPool.find(`branch${dimension}`)!), cpu.gc);
+				const branch = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(`branch${dimension}`)!), cpu.gc);
 				const widths = [];
 				for (let index = 1; index <= 3; index += 1) {
-					runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('select_width')!), cpu.gc), [valueInteger(index)]);
+					runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('select_width')!), cpu.gc), [valueInteger(index)]);
 					const branchProfile = profileWarmGuestKernel(cpu, branch, 128);
 					widths.push(branchProfile.cycles);
 					assert.equal(branchProfile.reservations, 0);
@@ -201,30 +201,30 @@ for (const optLevel of [0, 3] as const) {
 		}
 		assert.deepEqual(rows[1].leafCycles, rows[0].leafCycles);
 		assert.deepEqual(rows[1].branchCycles, rows[0].branchCycles);
-		runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('check')!), cpu.gc), []);
+		runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('check')!), cpu.gc), []);
 		t.diagnostic(JSON.stringify({ optLevel, iterations: 128, widths: [1, 8, 32], baseCount, rows,
 			bootCycles, bootAllocatedBytes, bootRetainedBytes: before - initialHeap, admissionCycles, admittedAllocated, admittedRetained,
 			admittedObjects: admittedObjects.objects - beforeObjects.objects,
 			admittedTables: admittedObjects.tables - beforeObjects.tables,
 			linkedCodeBytes: images.cartImage.textBytes.byteLength, configuredBssBytes: images.cartImage.header.bssByteCount,
-			scratchSlots: graph.getStringKey(cpu.stringPool.find('_scratch_capacity')!) }));
+			scratchSlots: graph.records.getStringKey(graph.address, cpu.stringPool.find('_scratch_capacity')!) }));
 	});
 
 	test(`spatial CPU: World churn retires identities and reuses bounded retained storage (O${optLevel})`, t => {
 		const { cpu, images } = createCartlibProgramHarness(worldFixture, { optLevel, modules: WORLD_CPU_MODULES });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('admit')!), cpu.gc), []);
-		const churn = asClosure(probe.getStringKey(cpu.stringPool.find('churn')!), cpu.gc);
-		const graph = asTable(probe.getStringKey(cpu.stringPool.find('graph')!), cpu.gc);
-		const scratch = graph.getStringKey(cpu.stringPool.find('_scratch')!);
+		runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('admit')!), cpu.gc), []);
+		const churn = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('churn')!), cpu.gc);
+		const graph = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('graph')!), cpu.gc);
+		const scratch = graph.records.getStringKey(graph.address, cpu.stringPool.find('_scratch')!);
 		// Warm the actual measurement shape, including managed queues and the
 		// event-port weak-key cache's rehash/collection cycle. A shorter warmup
 		// can leave that cache at a different capacity despite equal live keys.
 		profileWarmGuestKernel(cpu, churn, 16);
 		const retained = cpu.collectTrackedHeapBytes();
 		const objects = heapObjects(cpu);
-		const scratchSlots = graph.getStringKey(cpu.stringPool.find('_scratch_capacity')!);
+		const scratchSlots = graph.records.getStringKey(graph.address, cpu.stringPool.find('_scratch_capacity')!);
 		const measurements = [];
 		for (let batch = 0; batch < 3; batch += 1) {
 			const profile = profileWarmGuestKernel(cpu, churn, 16);
@@ -232,14 +232,14 @@ for (const optLevel of [0, 3] as const) {
 			assert.ok(profile.reservedBytes > 0);
 			assert.equal(cpu.collectTrackedHeapBytes(), retained, 'retired instances must not accumulate in queues or scratch');
 			assert.deepEqual(heapObjects(cpu), objects);
-			assert.equal(graph.getStringKey(cpu.stringPool.find('_scratch')!), scratch);
-			assert.equal(graph.getStringKey(cpu.stringPool.find('_scratch_capacity')!), scratchSlots);
-			const retired = asTable(probe.getStringKey(cpu.stringPool.find('retired')!), cpu.gc);
-			for (let index = 1; index <= 2; index += 1) assert.equal(retired.getInteger(index), valueNil());
-			runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('check')!), cpu.gc), []);
+			assert.equal(graph.records.getStringKey(graph.address, cpu.stringPool.find('_scratch')!), scratch);
+			assert.equal(graph.records.getStringKey(graph.address, cpu.stringPool.find('_scratch_capacity')!), scratchSlots);
+			const retired = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('retired')!), cpu.gc);
+			for (let index = 1; index <= 2; index += 1) assert.equal(retired.records.getInteger(retired.address, index), valueNil());
+			runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('check')!), cpu.gc), []);
 			measurements.push({ ...profile, collectedRetained: retained });
 		}
-		const steady = profileWarmGuestKernel(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('steady')!), cpu.gc), 512);
+		const steady = profileWarmGuestKernel(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('steady')!), cpu.gc), 512);
 		assert.equal(steady.reservations, 0);
 		assert.equal(steady.reservedBytes, 0);
 		assert.equal(steady.retainedAfter, steady.retainedBefore);
@@ -332,7 +332,7 @@ for (const optLevel of [0, 3] as const) for (const dimension of [2, 3] as const)
 			const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 			const kernels = [];
 			for (const name of ['clean', 'motion', 'compose', 'traverse']) {
-				const kernel = asClosure(probe.getStringKey(cpu.stringPool.find(name)!), cpu.gc);
+				const kernel = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(name)!), cpu.gc);
 				const emitted = linked.image.functions.find(fn => fn.address === kernel.functionAddress)!;
 				let f64Accesses = 0;
 				for (let pc = emitted.codeAddress; pc < emitted.codeAddress + emitted.codeByteCount; pc += INSTRUCTION_BYTES) {

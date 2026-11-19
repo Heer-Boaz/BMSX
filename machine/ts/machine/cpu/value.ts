@@ -47,7 +47,7 @@ export function asFloat(value: Value): number { return f32BitsToNumber(valuePayl
 export function numberToHost(value: Value): number { return valueIsInteger(value) ? asInteger(value) : asFloat(value); }
 export function asStringId(value: Value): StringId { return valuePayload(value); }
 export function asBuiltinFunctionId(value: Value): BuiltinFunctionId { return valuePayload(value); }
-export function asTable(value: Value, heap: GcHeap): Table { return heap.object(valuePayload(value)) as Table; }
+export function asTable(value: Value, heap: GcHeap): Table { return heap.tableAt(valuePayload(value))!; }
 export function asClosure(value: Value, heap: GcHeap): Closure { return heap.object(valuePayload(value)) as Closure; }
 export function asThread(value: Value, heap: GcHeap): Thread { return heap.object(valuePayload(value)) as Thread; }
 export function numberAsFloat(value: Value): number { return valueIsInteger(value) ? Math.fround(asInteger(value)) : asFloat(value); }

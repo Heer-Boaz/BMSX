@@ -567,7 +567,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const savedClosureName = cpu.stringPool.intern('saved_closure');
 	const closureTableName = cpu.stringPool.intern('closure_table');
 	const closureTable = cpu.createTable();
-	closureTable.set(slot0Closure, valueInteger(77));
+	closureTable.records.set(closureTable.address, slot0Closure, valueInteger(77));
 	cpu.setGlobalByKey(savedClosureName, slot0Closure);
 	cpu.setGlobalByKey(closureTableName, valueTable(cpu.gc.reference(closureTable)));
 
@@ -581,8 +581,8 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const slot1Closure = cpu.getGlobalByKey(selectedClosureName);
 	assert.notEqual(slot1Closure, slot0Closure, 'different execution domains own distinct canonical closures');
 	assert.equal(asClosure(slot1Closure, cpu.gc).functionAddress, slot0Object.functionAddress, 'both slots use the same mapped address');
-	assert.equal(closureTable.get(slot0Closure), valueInteger(77));
-	assert.equal(closureTable.get(slot1Closure), valueNil());
+	assert.equal(closureTable.records.get(closureTable.address, slot0Closure), valueInteger(77));
+	assert.equal(closureTable.records.get(closureTable.address, slot1Closure), valueNil());
 	assert.deepEqual(guest.linkedFunctionLocation(slot1Closure), { domain: 1, address: asClosure(slot1Closure, cpu.gc).functionAddress });
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(222));
 	assert.deepEqual(runtime.callClosure(slot0Object), [valueInteger(111)], 'a slot 0 closure still executes slot 0 while slot 1 is active');
@@ -624,10 +624,10 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const restoredClosure = cpu.getGlobalByKey(savedClosureName);
 	const restoredTable = asTable(cpu.getGlobalByKey(closureTableName), cpu.gc);
 	assert.equal(asClosure(restoredClosure, cpu.gc), slot0Object);
-	assert.equal(restoredTable.get(restoredClosure), valueInteger(77));
+	assert.equal(restoredTable.records.get(restoredTable.address, restoredClosure), valueInteger(77));
 	const restoredPublishedClosure = cpu.getGlobalByKey(selectedClosureName);
 	assert.notEqual(restoredPublishedClosure, restoredClosure);
-	assert.equal(restoredTable.get(restoredPublishedClosure), valueNil());
+	assert.equal(restoredTable.records.get(restoredTable.address, restoredPublishedClosure), valueNil());
 	assert.equal(cpu.activeCartridgeSlot(), 1);
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(222));
 	assert.equal(guest.linkedFunctionLocation(restoredClosure)!.domain, 0, 'wire restore retains the closure-bound domain');
@@ -660,8 +660,8 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	const secondName = cpu.stringPool.intern('second_closure');
 	const tableName = cpu.stringPool.intern('closure_table');
 	const closureTable = cpu.createTable(0, 2);
-	closureTable.set(firstClosure, valueInteger(11));
-	closureTable.set(secondClosure, valueInteger(22));
+	closureTable.records.set(closureTable.address, firstClosure, valueInteger(11));
+	closureTable.records.set(closureTable.address, secondClosure, valueInteger(22));
 	cpu.setGlobalByKey(firstName, firstClosure);
 	cpu.setGlobalByKey(secondName, secondClosure);
 	cpu.setGlobalByKey(tableName, valueTable(cpu.gc.reference(closureTable)));
@@ -681,8 +681,8 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	const restoredTable = asTable(cpu.getGlobalByKey(tableName), cpu.gc);
 	assert.notEqual(restoredFirst, restoredSecond);
 	assert.equal(asClosure(restoredFirst, cpu.gc).functionAddress, asClosure(restoredSecond, cpu.gc).functionAddress);
-	assert.equal(restoredTable.get(restoredFirst), valueInteger(11));
-	assert.equal(restoredTable.get(restoredSecond), valueInteger(22));
+	assert.equal(restoredTable.records.get(restoredTable.address, restoredFirst), valueInteger(11));
+	assert.equal(restoredTable.records.get(restoredTable.address, restoredSecond), valueInteger(22));
 });
 
 test('mixed static and non-static cartridge closures keep their identities across either save-state latch', () => {
@@ -718,8 +718,8 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	const canonicalName = cpu.stringPool.intern('canonical_closure');
 	const tableName = cpu.stringPool.intern('mixed_closure_table');
 	const closureTable = cpu.createTable(0, 2);
-	closureTable.set(dynamicClosure, valueInteger(11));
-	closureTable.set(canonicalClosure, valueInteger(22));
+	closureTable.records.set(closureTable.address, dynamicClosure, valueInteger(11));
+	closureTable.records.set(closureTable.address, canonicalClosure, valueInteger(22));
 	cpu.setGlobalByKey(dynamicName, dynamicClosure);
 	cpu.setGlobalByKey(canonicalName, canonicalClosure);
 	cpu.setGlobalByKey(tableName, valueTable(cpu.gc.reference(closureTable)));
@@ -736,8 +736,8 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	let restoredCanonical = cpu.getGlobalByKey(canonicalName);
 	let restoredTable = asTable(cpu.getGlobalByKey(tableName), cpu.gc);
 	assert.notEqual(restoredDynamic, restoredCanonical);
-	assert.equal(restoredTable.get(restoredDynamic), valueInteger(11));
-	assert.equal(restoredTable.get(restoredCanonical), valueInteger(22));
+	assert.equal(restoredTable.records.get(restoredTable.address, restoredDynamic), valueInteger(11));
+	assert.equal(restoredTable.records.get(restoredTable.address, restoredCanonical), valueInteger(22));
 
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
 	cpu.requestNonMaskableInterrupt();
@@ -755,13 +755,13 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	restoredCanonical = cpu.getGlobalByKey(canonicalName);
 	restoredTable = asTable(cpu.getGlobalByKey(tableName), cpu.gc);
 	assert.notEqual(restoredDynamic, restoredCanonical);
-	assert.equal(restoredTable.get(restoredDynamic), valueInteger(11));
-	assert.equal(restoredTable.get(restoredCanonical), valueInteger(22));
+	assert.equal(restoredTable.records.get(restoredTable.address, restoredDynamic), valueInteger(11));
+	assert.equal(restoredTable.records.get(restoredTable.address, restoredCanonical), valueInteger(22));
 
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.getGlobalByKey(selectedClosureName), restoredCanonical);
-	assert.equal(restoredTable.get(cpu.getGlobalByKey(selectedClosureName)), valueInteger(22));
+	assert.equal(restoredTable.records.get(restoredTable.address, cpu.getGlobalByKey(selectedClosureName)), valueInteger(22));
 });

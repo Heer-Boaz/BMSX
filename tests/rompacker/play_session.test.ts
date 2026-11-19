@@ -1,3 +1,4 @@
+import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
@@ -78,7 +79,10 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 		const cpu = target.runtime.machine.cpu;
 		return asTable(cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))), cpu.gc);
 	};
-	const field = (name: string) => game().getStringKey(target.runtime.machine.cpu.stringPool.intern(name));
+	const field = (name: string) => {
+		const table = game();
+		return table.records.getStringKey(table.address, target.runtime.machine.cpu.stringPool.intern(name));
+	};
 	await settle(() => session.ready);
 	await frame(0); // Install the target's initial history checkpoint, without a gameplay grant.
 	return { session, target, authoring, input, device, frame, settle, game, field, logs };
@@ -117,7 +121,7 @@ for (const optLevel of [0, 3] as const) for (const closeAtStop of [false, true])
 		.replace('game.updates=game.updates+1', 'game.updates=game.updates+1\n if world.receipt ~= nil then world.receipt.reached=true end');
 	const f = await fixture(t, optLevel, SCENE, gameSource, 0, [{ path: 'cartlib/world/world', source: ACTOR_WORLD }]);
 	const session = f.session, guest = session.guest, world = runtimeWorld(session, guest, 0)!;
-	const actor = asTable(guest.readStringMember(world, '_objects'), f.target.runtime.machine.cpu.gc).getInteger(1);
+	const actor = f.target.runtime.machine.cpu.gc.tables.getInteger(tableAddressPayload(guest.readStringMember(world, '_objects')), 1);
 	assert.equal(readActorChoices(session, guest, 0)[0].hashId, guest.identityScalar(actor, ValueTag.Table));
 	const tree = new ActorRuntimeTree(); tree.update(session, guest, 0, actor);
 	const target = captureActorTarget(0, guest.identityScalar(world, ValueTag.Table), tree.roots, tree.roots[0]);
@@ -245,8 +249,7 @@ test('Play history reconstructs privately, publishes the selected boundary and t
 	assert.ok(runtime.history.latestCycles < end, 'explicit resume branches at the inspected point');
 	const restored = f.game();
 	f.session.stop(); await f.settle(() => f.session.state === 'stopped');
-	assert.equal(restored.getStringKey(runtime.machine.cpu.stringPool.intern('closed')), valueBool(true));
-	assert.equal(prior.getStringKey(runtime.machine.cpu.stringPool.intern('closed')), valueNil());
+	assert.equal(restored.records.getStringKey(restored.address, runtime.machine.cpu.stringPool.intern('closed')), valueBool(true));
 	assert.equal(f.session.evidence.logs.length, 1);
 	assert.equal(f.session.evidence.logs.at(0).text, 'cleanup');
 });

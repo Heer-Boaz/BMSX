@@ -32,7 +32,7 @@ public:
 	Table* tableAt(u32 address) const { return m_tableRecords[(address & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES]; }
 	void forgetTableRecords() { std::fill(m_tableRecords.begin(), m_tableRecords.end(), nullptr); }
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
-		reserveReference();
+		if constexpr (!std::is_same_v<T, Table>) reserveReference();
 		T* object;
 		if constexpr (std::is_same_v<T, Table>) object = m_tables.construct(std::forward<Args>(args)...);
 		else object = new T(std::forward<Args>(args)...);
@@ -43,15 +43,20 @@ public:
 	Closure* allocateClosure(size_t count);
 	u32 allocateHashId() { return m_nextObjectHashId++; }
 	u32 nextObjectHashId() const { return m_nextObjectHashId; }
-	// Heap-local, pointer-free references remain stable through restore.
-	u32 reference(const GCObject* object) const { return object->referenceId; }
+	// Only the host-backed allocations still use directory slots.
+	u32 reference(const GCObject* object) const {
+		return object->type == ObjType::Table ? static_cast<const Table*>(object)->address() : object->referenceId;
+	}
+	u32 reference(const Table* table) const { return table->address(); }
 	GCObject* object(u32 reference) const { return m_references[reference].object; }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static size_t nativeReferencesOffset();
+	static size_t nativeTableRecordsOffset();
 #endif
 	uint32_t hash(Value value) const {
 		switch (valueTag(value)) {
-			case ValueTag::Table: case ValueTag::Closure: case ValueTag::Thread:
+			case ValueTag::Table: return scalarValueHash(valueInteger(static_cast<i32>(valuePayload(value))));
+			case ValueTag::Closure: case ValueTag::Thread:
 				return object(valuePayload(value))->hashId * 2654435761u;
 			default: return scalarValueHash(value);
 		}
@@ -82,7 +87,7 @@ public:
 	bool sweepGarbage(const GCObject* object) const {
 		return m_phase == GcPhase::Sweep && object->gcColor == (m_white ^ 1u);
 	}
-	bool isAlive(const GCObject* object) const { return object->gcColor != m_white; }
+	bool isAlive(const GCObject* object) const { return object && object->gcColor != m_white; }
 	size_t allocationBytes(const GCObject* object) const;
 	size_t step(Value root0, Value root1, Value root2, Thread* growingStack = nullptr);
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);
@@ -123,12 +128,15 @@ private:
 	// Published address of this owner's current directory allocation. Native
 	// code reloads it; reserve/restore never leave cached directory pointers.
 	ReferenceSlot* m_referenceBase = m_references.data();
+	Table* const* const m_tableRecordBase = m_tableRecords.data();
 #endif
 	u32 m_freeReference = 0;
 };
 
-inline Table* asTable(Value value, const GcHeap& heap) { return static_cast<Table*>(heap.object(valuePayload(value))); }
+inline Table* asTable(Value value, const GcHeap& heap) { return heap.tableAt(valuePayload(value)); }
 inline Closure* asClosure(Value value, const GcHeap& heap) { return static_cast<Closure*>(heap.object(valuePayload(value))); }
 inline Thread* asThread(Value value, const GcHeap& heap) { return static_cast<Thread*>(heap.object(valuePayload(value))); }
-inline uint32_t valueObjectHashId(Value value, const GcHeap& heap) { return heap.object(valuePayload(value))->hashId; }
+inline uint32_t valueObjectHashId(Value value, const GcHeap& heap) {
+	return valueIsTable(value) ? valuePayload(value) : heap.object(valuePayload(value))->hashId;
+}
 } // namespace bmsx

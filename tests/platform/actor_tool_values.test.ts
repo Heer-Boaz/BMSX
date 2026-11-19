@@ -57,7 +57,7 @@ end
 	// Observe fresh heap borrows after the operation, not pre-call handles or
 	// rounded display strings: payloads and subtype must both survive admission.
 	const current = guest.global('studio_test_actor'), stored = asTable(guest.readStringMember(current, 'tool_arguments'), cpu.gc);
-	assert.deepEqual(expected.map((_, index) => stored.getInteger(index + 1)), expected);
+	assert.deepEqual(expected.map((_, index) => stored.records.getInteger(stored.address, index + 1)), expected);
 	assert.equal(asInteger(guest.readStringMember(current, 'tool_call_count')), 1);
 	assert.throws(() => tools.execute('studio_list_actor_operations', { node: node.reference }), 'call entry expires the old suspended inspection');
 	assert.equal(cart.version, version); assert.equal(cart.buffer.getText(), text);

@@ -133,7 +133,7 @@ for (const closure of [false, true]) test(`compiled allocation publishes moved r
 	for (const cpu of [js, ref]) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		const root = cpu.rootThread.frameAtDepth(0), r = root.registers, table = cpu.createTable(0, 1);
-		table.setStringKey(cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
+		table.records.setStringKey(table.address, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
 		r.setTable(9, cpu.gc.reference(table)); r.setString(1, cpu.stringPool.intern('fresh-')); r.setString(2, cpu.stringPool.intern('result'));
 		root.top = 0;
 		const heap = cpu.captureRuntimeState().luaHeap, text = 'g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 1);
@@ -144,7 +144,7 @@ for (const closure of [false, true]) test(`compiled allocation publishes moved r
 	for (const [index, cpu] of [js, ref].entries()) {
 		assert.equal(cpu.stringPool.find(garbage[index]), undefined, 'the allocating operation really collected unreachable pressure');
 		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getTable(7, cpu.gc);
-		assert.equal(retained.getStringKey(cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
+		assert.equal(retained.records.getStringKey(retained.address, cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
 		if (closure) assert.equal(cpu.readClosureUpvalue(r.getClosure(0, cpu.gc), 0), r.get(7));
 		else assert.equal(cpu.stringPool.toString(r.getStringId(0)), 'fresh-result');
 	}

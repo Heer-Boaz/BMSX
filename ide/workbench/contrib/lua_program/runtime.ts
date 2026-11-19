@@ -131,7 +131,7 @@ export class LuaProgramRuntimeProjection {
 		}
 		if (changedState) {
 			const values = asTable(guest.readStringMember(state, 'values'), guest.cpu.gc);
-			for (const row of this.stateRows) this.setValue(input, row.element, guest.formatValue(values.getInteger(row.slot)));
+			for (const row of this.stateRows) this.setValue(input, row.element, guest.formatValue(values.records.getInteger(values.address, row.slot)));
 		}
 		for (const row of this.receiptRows) row.applied = false;
 		guest.visitTableEntries(guest.readStringMember(state, 'apply_done'), (id, value) => {

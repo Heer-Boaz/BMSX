@@ -240,7 +240,7 @@ for (const optLevel of [0, 3] as const) {
 		if (optLevel === 3) {
 			const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 			for (const lane of ['run_candidates', 'run', 'run_callbacks']) {
-				const run = asClosure(probe.getStringKey(cpu.stringPool.find(lane)!), cpu.gc);
+				const run = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(lane)!), cpu.gc);
 				const profile = profileWarmGuestKernel(cpu, run, 512);
 				t.diagnostic(JSON.stringify({ lane, ...profile }));
 				assert.equal(profile.reservations, 0);

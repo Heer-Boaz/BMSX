@@ -31,9 +31,9 @@ export class ActorRuntimeInspection {
 		const roots = this.roots;
 		if (roots.status !== 'available') return { inspection: inspection.id, domain: roots.domain, status: roots.status };
 		const entries = [];
-		const total = roots.objects.length();
+		const total = roots.objects.records.length(roots.objects.address);
 		for (let i = start, end = Math.min(start + count, total); i < end; i++) {
-			const actor = roots.objects.getInteger(i + 1);
+			const actor = roots.objects.records.getInteger(roots.objects.address, i + 1);
 			const reference = `${inspection.id}/actor/${guest.identityScalar(actor, ValueTag.Table)}`;
 			if (!this.actors.has(reference)) this.actors.set(reference, { value: actor });
 			entries.push({ reference, object: values.describe(actor), id: values.describe(guest.readStringMember(actor, 'id')),

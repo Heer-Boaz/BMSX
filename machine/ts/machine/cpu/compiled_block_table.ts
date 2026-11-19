@@ -18,7 +18,7 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 		const tag = `l${word}`, failure = r.exit(exit);
 		const value = `v${word}`;
 		return `const ${tag}=${r.tagOperand(b)};if(${tag}!==${ValueTag.Table}&&${tag}!==${ValueTag.String}) ${failure}
-			let ${value};if(${tag}===${ValueTag.Table}){${value}=h.object(${r.wordOperand(b)}).length(state.lengthWork);
+			let ${value};if(${tag}===${ValueTag.Table}){${value}=h.tables.length(${r.wordOperand(b)},state.lengthWork);
 			budget-=state.lengthWork.probes*${TABLE_LENGTH_PROBE_CYCLES};}else{${value}=q.codepointCount(${r.wordOperand(b)});}
 			${r.writeInteger(a, value)}`;
 	}
@@ -31,22 +31,22 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 	const target = load ? `r,${a}` : value;
 	let access: string;
 	if (op === OpCode.GETI || op === OpCode.SETI) {
-		access = `if(!t.${load ? 'load' : 'store'}IntegerArrayKey(${key},${target})) ${failure}`;
+		access = `if(!t.${load ? 'load' : 'store'}IntegerArrayKey(address,${key},${target})) ${failure}`;
 	} else if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF) {
-		access = `if(!t.${load ? 'load' : 'store'}PredictedStringKey(k[${key}],p.tableCacheSlots[${word}],${target})) ${load
+		access = `if(!t.${load ? 'load' : 'store'}PredictedStringKey(address,k[${key}],p.tableCacheSlots[${word}],${target})) ${load
 			? failure
-			: `{const slot=t.storeStringKeyWithoutGrowth(k[${key}],${target});
+			: `{const slot=t.storeStringKeyWithoutGrowth(address,k[${key}],${target});
 				if(slot===${TABLE_STORE_REQUIRES_GROWTH}) ${failure} p.tableCacheSlots[${word}]=slot;}`}`;
 	} else {
 		access = `const tag=${r.tagOperand(key)},key=${r.wordOperand(key)};
-			if(tag===${ValueTag.Integer}||tag===${ValueTag.Float}){const i=tag===${ValueTag.Integer}?key|0:fi(key);if(i===null||!t.${load ? 'load' : 'store'}IntegerArrayKey(i,${target})) ${failure}}
+			if(tag===${ValueTag.Integer}||tag===${ValueTag.Float}){const i=tag===${ValueTag.Integer}?key|0:fi(key);if(i===null||!t.${load ? 'load' : 'store'}IntegerArrayKey(address,i,${target})) ${failure}}
 			else if(tag!==${ValueTag.String}) ${failure}
-			else if(!t.${load ? 'load' : 'store'}PredictedStringKey(key,p.tableCacheSlots[${word}],${target})) ${load
+			else if(!t.${load ? 'load' : 'store'}PredictedStringKey(address,key,p.tableCacheSlots[${word}],${target})) ${load
 				? failure
-				: `{const slot=t.storeStringKeyWithoutGrowth(key,${target});
+				: `{const slot=t.storeStringKeyWithoutGrowth(address,key,${target});
 					if(slot===${TABLE_STORE_REQUIRES_GROWTH}) ${failure} p.tableCacheSlots[${word}]=slot;}`}`;
 	}
-	const source = `${receiver}if(${r.tagOperand(base)}!==${ValueTag.Table}) ${failure}{const t=h.object(${r.wordOperand(base)});${access}}`;
+	const source = `${receiver}if(${r.tagOperand(base)}!==${ValueTag.Table}) ${failure}{const t=h.tables,address=${r.wordOperand(base)};${access}}`;
 	if (load) {
 		r.discard(a);
 		return source + r.reloadRange(a, a + 1);

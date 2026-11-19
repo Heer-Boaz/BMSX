@@ -96,7 +96,7 @@ export class GuestFixture {
 	public readContext(): Table {
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
 		const execution = asTable(cpu.getGlobalByKey(pool.find(EXECUTION_SLOT)!), cpu.gc);
-		return asTable(execution.getStringKey(pool.find('context')!), cpu.gc);
+		return asTable(execution.records.getStringKey(execution.address, pool.find('context')!), cpu.gc);
 	}
 
 	private beginCall(method: 'bind' | 'resume' | 'cancel', args: readonly Value[]): void {
@@ -105,7 +105,7 @@ export class GuestFixture {
 		const execution = asTable(cpu.getGlobalByKey(pool.intern(EXECUTION_SLOT)), cpu.gc);
 		this.returnThread = cpu.activeThread;
 		this.returnDepth = cpu.getFrameDepth();
-		cpu.beginCompletionCall(asClosure(execution.getStringKey(pool.intern(method)), cpu.gc), args);
+		cpu.beginCompletionCall(asClosure(execution.records.getStringKey(execution.address, pool.intern(method)), cpu.gc), args);
 		this.callPending = true;
 	}
 }

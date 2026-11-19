@@ -68,7 +68,7 @@ function prepareLiteral(expression: LuaExpression): PreparedLuaLiteral {
 			});
 			return cpu => {
 				const table = cpu.createTable(arrayIndex, fields.length - arrayIndex);
-				for (const field of fields) table.set(field.key(cpu), field.value(cpu));
+				for (const field of fields) table.records.set(table.address, field.key(cpu), field.value(cpu));
 				return valueTable(cpu.gc.reference(table));
 			};
 		}

@@ -42,17 +42,17 @@ export class ActionEffectObservation {
 		private readonly publish: ActionEffectSink,
 		private readonly retention: 'strict' | 'rolling' = 'strict',
 	) {
-		this.capacity = asInteger(channel.getInteger(CHANNEL_CAPACITY));
-		this.records = asTable(channel.getInteger(CHANNEL_RECORDS), heap);
+		this.capacity = asInteger(channel.records.getInteger(channel.address, CHANNEL_CAPACITY));
+		this.records = asTable(channel.records.getInteger(channel.address, CHANNEL_RECORDS), heap);
 		this.ownerId = this.readString(channel, CHANNEL_OWNER_ID);
 		this.definitionId = this.readString(channel, CHANNEL_OWNER_DEFINITION_ID);
 	}
 
 	/** A restored live subscription begins at its accepted publication, not an older heap's cursor. */
-	public discardPublished(): void { this.consumedSequence = valuePayload(this.channel.getInteger(CHANNEL_PUBLISHED_SEQUENCE)); }
+	public discardPublished(): void { this.consumedSequence = valuePayload(this.channel.records.getInteger(this.channel.address, CHANNEL_PUBLISHED_SEQUENCE)); }
 
 	public drain(observedTick: number): void {
-		const publishedSequence = valuePayload(this.channel.getInteger(CHANNEL_PUBLISHED_SEQUENCE));
+		const publishedSequence = valuePayload(this.channel.records.getInteger(this.channel.address, CHANNEL_PUBLISHED_SEQUENCE));
 		let available = (publishedSequence - this.consumedSequence) >>> 0;
 		if (available === 0) return;
 		if (available > this.capacity) {
@@ -68,8 +68,8 @@ export class ActionEffectObservation {
 		while (available > 0) {
 			const producerSequence = (this.consumedSequence + 1) >>> 0;
 			const slot = ((producerSequence - 1) & (this.capacity - 1)) + 1;
-			const record = asTable(this.records.getInteger(slot), this.heap);
-			const recordSequence = valuePayload(record.getInteger(RECORD_PRODUCER_SEQUENCE));
+			const record = asTable(this.records.records.getInteger(this.records.address, slot), this.heap);
+			const recordSequence = valuePayload(record.records.getInteger(record.address, RECORD_PRODUCER_SEQUENCE));
 			if (recordSequence !== producerSequence) {
 				if (this.retention === 'strict') throw new Error(`ActionEffect recorder '${this.ownerId}' overflowed its ${this.capacity}-record buffer.`);
 				this.droppedCount++;
@@ -77,7 +77,7 @@ export class ActionEffectObservation {
 				available--;
 				continue;
 			}
-			const producerTime = valuePayload(record.getInteger(RECORD_PRODUCER_TIME_MILLISECONDS_WORD));
+			const producerTime = valuePayload(record.records.getInteger(record.address, RECORD_PRODUCER_TIME_MILLISECONDS_WORD));
 			const effectId = this.readString(record, RECORD_EFFECT_ID);
 			const kind = this.readString(record, RECORD_KIND) as 'trigger' | ActionEffectActivityKind;
 			if (kind === 'trigger') {
@@ -95,7 +95,7 @@ export class ActionEffectObservation {
 					observedTick,
 					effectId,
 					kind,
-					asInteger(record.getInteger(RECORD_VALUE)),
+					asInteger(record.records.getInteger(record.address, RECORD_VALUE)),
 				);
 			}
 			this.consumedSequence = producerSequence;
@@ -104,6 +104,6 @@ export class ActionEffectObservation {
 	}
 
 	private readString(table: Table, index: number): string {
-		return this.stringPool.toString(asStringId(table.getInteger(index)));
+		return this.stringPool.toString(asStringId(table.records.getInteger(table.address, index)));
 	}
 }

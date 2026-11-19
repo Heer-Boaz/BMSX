@@ -4,9 +4,9 @@ import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
 import { GcObject, GcKind, GarbageAllocation } from './gc_object';
 import { Closure, Upvalue, UPVALUE_HEAP_BYTES } from './closure';
-import { Table } from './table';
+import { Table, TableRecords } from './table';
 import { Thread, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
-import { ValueTag, valueTag, valuePayload, scalarValueHash, valueNil, type Value } from './value';
+import { ValueTag, valueTag, valuePayload, scalarValueHash, valueInteger, valueIsTable, valueNil, type Value } from './value';
 import { ValueSlots } from './value_slots';
 import type { LuaHeap } from './lua_heap';
 import { ceilDiv4 } from '../common/numeric';
@@ -43,7 +43,11 @@ export class GcHeap {
 	};
 	private readonly alive = (value: Value): boolean => {
 		const tag = valueTag(value);
-		return tag !== ValueTag.Table && tag !== ValueTag.Closure && tag !== ValueTag.Thread || this.isAlive(this.object(valuePayload(value)));
+		switch (tag) {
+			case ValueTag.Table: return this.isAlive(this.tableAt(valuePayload(value)));
+			case ValueTag.Closure: case ValueTag.Thread: return this.isAlive(this.object(valuePayload(value)));
+			default: return true;
+		}
 	};
 	private readonly ephemeronEntry = (key: Value, value: Value): void => {
 		if (this.alive(key) && this.markValue(value)) this.changed = true;
@@ -53,24 +57,27 @@ export class GcHeap {
 		if (valueTag(value) === ValueTag.String) this.cpu.stringPool.markReachable(valuePayload(value));
 	};
 	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory, public readonly arena: HeapAllocator, private readonly modeKey: number) {}
-	private readonly tableRecords = new Array<Table | null>(MAIN_RAM_SIZE / Table.HEADER_BYTES).fill(null);
+	public readonly tables = new TableRecords(this);
+	private readonly tableRecords = new Array<Table | null>(MAIN_RAM_SIZE / TableRecords.HEADER_BYTES).fill(null);
 	public tableAt(address: number): Table | null {
 		return this.tableRecords[(address & RAM_RECORD_WORD_MASK) >>> 5];
 	}
 	public forgetTableRecords(): void { this.tableRecords.fill(null); }
-	public reference(object: GcObject): number { return object.referenceId; }
+	public reference(object: GcObject): number { return object.gcKind === GcKind.Table ? (object as Table).address : object.referenceId; }
 	/** Consumes a live id produced by this heap; the Value tag supplies its kind. */
 	public object(reference: number): GcObject { return this.references[reference] as GcObject; }
 	public hash(value: Value): number {
 		switch (valueTag(value)) {
-			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread:
+			case ValueTag.Table: return scalarValueHash(valueInteger(valuePayload(value)));
+			case ValueTag.Closure: case ValueTag.Thread:
 				return Math.imul(this.object(valuePayload(value)).hashId, 2654435761) >>> 0;
 			default: return scalarValueHash(value);
 		}
 	}
+	public keyIdentity(value: Value): number { return valueIsTable(value) ? valuePayload(value) : this.object(valuePayload(value)).hashId; }
 	public track(object: GcObject): void {
 		if (object.gcKind === GcKind.Table) this.tableRecords[((object as Table).address & RAM_RECORD_WORD_MASK) >>> 5] = object as Table;
-		if (this.freeReference !== 0) {
+		else if (this.freeReference !== 0) {
 			object.referenceId = this.freeReference;
 			this.freeReference = this.references[this.freeReference] as number;
 			this.references[object.referenceId] = object;
@@ -97,7 +104,7 @@ export class GcHeap {
 		object.gcNext = null; object.gcPrevious = null; object.gcGrayNext = null;
 	}
 	public active(): boolean { return this.phase !== GcPhase.Pause; }
-	public isAlive(object: GcObject): boolean { return object.gcColor !== this.white; }
+	public isAlive(object: GcObject | null): boolean { return object !== null && object.gcColor !== this.white; }
 	public sweepGarbage(object: GcObject): boolean {
 		return this.phase === GcPhase.Sweep && object.gcColor === (this.white ^ 1);
 	}
@@ -108,7 +115,8 @@ export class GcHeap {
 	}
 	public markValue(value: Value): boolean {
 		switch (valueTag(value)) {
-			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return this.markObject(this.object(valuePayload(value)));
+			case ValueTag.Table: return this.markObject(this.tableAt(valuePayload(value)));
+			case ValueTag.Closure: case ValueTag.Thread: return this.markObject(this.object(valuePayload(value)));
 			case ValueTag.String: this.cpu.stringPool.markReachable(valuePayload(value)); break;
 		}
 		return false;
@@ -116,7 +124,7 @@ export class GcHeap {
 	public markSlot(slots: ValueSlots, index: number): void { this.markValue(slots.get(index)); }
 	public allocationBytes(object: GcObject): number {
 		switch (object.gcKind) {
-			case GcKind.Table: return (object as Table).getTrackedHeapBytes();
+			case GcKind.Table: return this.tables.getTrackedHeapBytes((object as Table).address);
 			case GcKind.Closure: return (object as Closure).heapBytes;
 			case GcKind.Upvalue: return UPVALUE_HEAP_BYTES;
 			case GcKind.Thread: return THREAD_HEAP_BYTES + (object as Thread).stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
@@ -124,8 +132,9 @@ export class GcHeap {
 		}
 	}
 	private tableMode(table: Table): number {
-		if (table.metatable === null) return 0;
-		table.metatable.loadStringKey(this.modeKey, this.scratch, 0);
+		const meta = this.tables.metatableAddress(table.address);
+		if (meta === 0) return 0;
+		this.tables.loadStringKey(meta, this.modeKey, this.scratch, 0);
 		let mode = 0;
 		if (this.scratch.getTag(0) === ValueTag.String) {
 			const text = this.cpu.stringPool.toString(this.scratch.getStringId(0));
@@ -146,8 +155,8 @@ export class GcHeap {
 				this.markObject(table.metatable);
 				this.mode = this.tableMode(table);
 				if (this.mode !== 0 && !table.gcWeakListed) { table.gcWeakListed = true; this.weak.push(table); }
-				if ((this.mode & 1) === 0) table.forEachStoredEntry(this.traceEntry);
-				return (Table.HEADER_BYTES >>> 2) + table.scanSlots();
+				if ((this.mode & 1) === 0) this.tables.forEachStoredEntry(table.address, this.traceEntry);
+				return (TableRecords.HEADER_BYTES >>> 2) + this.tables.scanSlots(table.address);
 			}
 			case GcKind.Closure:
 				for (const upvalue of (object as Closure).upvalues) this.markObject(this.object(upvalue));
@@ -200,17 +209,17 @@ export class GcHeap {
 			for (let i = 0; i < this.weak.length; ++i) {
 				const table = this.weak[i];
 				if (this.tableMode(table) !== 1) continue;
-				work += table.scanSlots();
-				table.forEachStoredEntry(this.ephemeronEntry);
+				work += this.tables.scanSlots(table.address);
+				this.tables.forEachStoredEntry(table.address, this.ephemeronEntry);
 			}
 			while (this.gray !== null) work += this.trace(true);
 		} while (this.changed);
 		this.diagnostics?.phase('weakNanoseconds');
 		for (const table of this.weak) {
 			const mode = this.tableMode(table);
-			work += table.scanSlots();
-			table.clearWeakEntries((mode & 1) !== 0, (mode & 2) !== 0, this.alive);
-			table.forEachStoredEntry(this.weakStrings); table.gcWeakListed = false;
+			work += this.tables.scanSlots(table.address);
+			this.tables.clearWeakEntries(table.address, (mode & 1) !== 0, (mode & 2) !== 0, this.alive);
+			this.tables.forEachStoredEntry(table.address, this.weakStrings); table.gcWeakListed = false;
 		}
 		this.cpu.pruneStaticClosures(); this.threads.length = 0; this.weak.length = 0;
 		this.white ^= 1; this.sweep = this.objects;
@@ -226,10 +235,10 @@ export class GcHeap {
 			return false;
 		}
 		if (this.sweep === table) this.sweep = table.gcNext;
-		const bytes = table.getTrackedHeapBytes();
+		const bytes = this.tables.getTrackedHeapBytes(table.address);
 		this.tableRecords[(address & RAM_RECORD_WORD_MASK) >>> 5] = null;
-		table.freeRecord();
-		this.unlink(table); this.releaseReference(table);
+		this.tables.freeRecord(table.address);
+		this.unlink(table);
 		this.budget.release(bytes);
 		return true;
 	};
@@ -328,16 +337,18 @@ export class GcHeap {
 			if (object.restored) object.restored = false;
 			else {
 				this.unlink(object);
-				this.releaseReference(object);
+				if (object.gcKind !== GcKind.Table) this.releaseReference(object);
 			}
 			object = next;
 		}
 		// Restore the saved slots before decoding any graph edge.
-		this.references.length = 1 + state.references.length + state.freeReferences.length;
+		let slots = 1 + state.freeReferences.length;
+		for (const reference of state.references) slots += reference !== 0 ? 1 : 0;
+		this.references.length = slots;
 		for (let i = 0; i < state.references.length; ++i) {
 			const object = objects[state.allocations[i]];
 			object.referenceId = state.references[i];
-			this.references[object.referenceId] = object;
+			if (object.gcKind !== GcKind.Table) this.references[object.referenceId] = object;
 		}
 		this.freeReference = 0;
 		for (let i = state.freeReferences.length - 1; i >= 0; --i) {

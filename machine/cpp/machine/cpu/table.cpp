@@ -13,11 +13,11 @@ namespace {
 constexpr int32_t kTableHashNextEnd = -1;
 } // namespace
 
-Table::Table(GcHeap& heap, u32 address)
+TableRecord::TableRecord(GcHeap& heap, u32 address)
 	: m_heap(heap), m_memory(heap.memory), m_address(address) {
 }
 
-void Table::initialize(size_t array, size_t hash) {
+void TableRecord::initialize(size_t array, size_t hash) {
 	writeHeader(TableHeader::Kind, static_cast<u32>(ValueTag::Table));
 	writeHeader(TableHeader::Gray, 0);
 	writeHeader(TableHeader::Metatable, 0);
@@ -27,58 +27,47 @@ void Table::initialize(size_t array, size_t hash) {
 }
 
 Table* Table::metatable() const {
-	return m_heap.tableAt(readHeader(TableHeader::Metatable));
+	const u32 meta = metatableAddress();
+	return meta ? m_heap.tableAt(meta) : nullptr;
 }
 
-void Table::setMetatable(Table* table) {
+void TableRecord::setMetatableAddress(u32 address) {
 	writeBarrier();
-	writeHeader(TableHeader::Metatable, table ? table->address() : 0u);
+	writeHeader(TableHeader::Metatable, address);
 }
 
-u32 Table::storageBytes(size_t arraySize, size_t hashSize) {
+void TableRecord::writeBarrier() {
+	if (auto* object = m_heap.tableAt(m_address)) object->writeBarrier();
+}
+
+u32 TableRecord::storageBytes(size_t arraySize, size_t hashSize) {
 	return static_cast<u32>(arraySize * 5 + hashSize * 14);
 }
 
-size_t Table::hashCapacity(int hashSize) {
+size_t TableRecord::hashCapacity(int hashSize) {
 	return hashSize > 0
 		? nextPowerOfTwo(static_cast<size_t>(hashSize))
 		: 0;
 }
 
-size_t Table::trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity) {
+size_t TableRecord::trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity) {
 	const u32 bytes = storageBytes(arrayCapacity, hashCapacity);
 	return HEADER_BYTES + (bytes ? heapAllocationBytes(bytes) : 0u);
 }
 
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-// Generated accesses use this compiler's inherited GC-object layout, not a
-// mirrored ABI or the implementation-specific layout of std::vector.
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Winvalid-offsetof"
-#endif
-size_t Table::nativeAddressOffset() { return offsetof(Table, m_address); }
-
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-#endif
-
-bool Table::getArrayIndex(const Value& key, int& outIndex) const {
+bool TableRecord::getArrayIndex(const Value& key, int& outIndex) const {
 	i32 integer;
 	if (!valueToInteger(key, integer) || integer <= 0) return false;
 	outIndex = integer - 1;
 	return true;
 }
 
-Table* Table::metatableIndexTable(StringId indexKey) const {
-	const Table* meta = metatable();
-	if (!meta) return nullptr;
-	const Value indexer = meta->getStringKey(indexKey);
-	return valueIsTable(indexer) ? asTable(indexer, m_heap) : nullptr;
+Value TableRecord::metatableIndexValue(StringId indexKey) const {
+	const u32 meta = metatableAddress();
+	return meta ? TableRecord(m_heap, meta).getStringKey(indexKey) : valueNil();
 }
 
-bool Table::hasIntegerKey(u32 key) const {
+bool TableRecord::hasIntegerKey(u32 key) const {
 	if (key <= arrayCapacity()) {
 		return !isNil(values().get(static_cast<size_t>(key - 1)));
 	}
@@ -86,15 +75,15 @@ bool Table::hasIntegerKey(u32 key) const {
 	return nodeIndex >= 0 && !isNil(values().get(hashValueSlot(static_cast<size_t>(nodeIndex))));
 }
 
-size_t Table::hashValue(const Value& key) const {
+size_t TableRecord::hashValue(const Value& key) const {
 	return m_heap.hash(key);
 }
 
-bool Table::keyEquals(const Value& a, const Value& b) const {
+bool TableRecord::keyEquals(const Value& a, const Value& b) const {
 	return ValueEq{}(a, b);
 }
 
-int Table::findNodeIndex(const Value& key, bool matchDead) const {
+int TableRecord::findNodeIndex(const Value& key, bool matchDead) const {
 	if (hashSlots() == 0) {
 		return -1;
 	}
@@ -107,7 +96,7 @@ int Table::findNodeIndex(const Value& key, bool matchDead) const {
 		const Value nodeKey = values().get(hashKeySlot(slot));
 		if ((!isNil(nodeKey) && keyEquals(nodeKey, key))
 			|| (isNil(nodeKey)
-				&& collectableKey
+				&& collectableKey && valuePayload(nodeKey) == valueHeader(key)
 				&& valueTag(values().get(hashValueSlot(slot))) == ValueTag::DeadKey
 				&& valuePayload(values().get(hashValueSlot(slot))) == deadKeyHashId)) {
 			return index;
@@ -117,7 +106,7 @@ int Table::findNodeIndex(const Value& key, bool matchDead) const {
 	return -1;
 }
 
-int Table::findNextLiveHashIndex(size_t start) const {
+int TableRecord::findNextLiveHashIndex(size_t start) const {
 	for (size_t index = start; index < hashSlots(); ++index) {
 		if (!isNil(values().get(hashKeySlot(index))) && !isNil(values().get(hashValueSlot(index)))) {
 			return static_cast<int>(index);
@@ -126,7 +115,7 @@ int Table::findNextLiveHashIndex(size_t start) const {
 	return -1;
 }
 
-int Table::findStringNodeIndex(StringId key) const {
+int TableRecord::findStringNodeIndex(StringId key) const {
 	if (hashSlots() == 0) {
 		return -1;
 	}
@@ -142,7 +131,7 @@ int Table::findStringNodeIndex(StringId key) const {
 	return -1;
 }
 
-int Table::getFreeIndex() {
+int TableRecord::getFreeIndex() {
 	for (int i = hashFree(); i >= 0; --i) {
 		if (isNil(values().get(hashKeySlot(static_cast<size_t>(i))))
 			&& isNil(values().get(hashValueSlot(static_cast<size_t>(i))))) {
@@ -154,7 +143,7 @@ int Table::getFreeIndex() {
 	return -1;
 }
 
-void Table::rehash(const Value& key, const Value& value) {
+void TableRecord::rehash(const Value& key, const Value& value) {
 	size_t totalKeys = 0;
 	std::array<u32, 32> counts{};
 	size_t countBins = 0;
@@ -211,14 +200,14 @@ void Table::rehash(const Value& key, const Value& value) {
 	resize(arraySize, hashSize, key, value);
 }
 
-void Table::resize(
+void TableRecord::resize(
 	size_t newArraySize,
 	size_t newHashSize,
 	const Value& key,
 	const Value& value
 ) {
 	const u32 storage = m_heap.budget.allocateRecord(storageBytes(newArraySize, newHashSize), true, 0, 0,
-		valueTable(m_heap.reference(this)), key, value);
+		valueTable(m_address), key, value);
 	const auto oldValues = values();
 	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
 	const size_t oldBytes = trackedHeapBytes() - HEADER_BYTES;
@@ -245,14 +234,14 @@ void Table::resize(
 	m_heap.budget.release(oldBytes);
 }
 
-void Table::bindStorage(size_t arraySize, size_t hashSize, u32 address) {
+void TableRecord::bindStorage(size_t arraySize, size_t hashSize, u32 address) {
 	writeHeader(TableHeader::Storage, address);
 	writeHeader(TableHeader::Array, static_cast<u32>(arraySize));
 	writeHeader(TableHeader::Hash, static_cast<u32>(hashSize));
 	writeHeader(TableHeader::Free, static_cast<u32>(hashSize) - 1u);
 }
 
-void Table::initializeStorage() {
+void TableRecord::initializeStorage() {
 	const u32 bytes = storageBytes(arrayCapacity(), hashSlots());
 	if (bytes == 0) return;
 	const u32 words = storageAddress() & RAM_RECORD_WORD_MASK;
@@ -265,18 +254,18 @@ void Table::initializeStorage() {
 	m_memory.invalidateRamWrite(words, bytes);
 }
 
-void Table::freeStorage() {
+void TableRecord::freeStorage() {
 	const u32 storage = storageAddress();
 	if (storage != 0) m_heap.arena.free(storage);
 }
 
-void Table::freeRecord() {
+void TableRecord::freeRecord() {
 	freeStorage();
 	m_heap.arena.free(m_address);
 }
 
 // Storage redistribution must not change the logical boundary hint.
-int Table::rawSet(const Value& key, const Value& value) {
+int TableRecord::rawSet(const Value& key, const Value& value) {
 	writeBarrier();
 	int index = 0;
 	if (getArrayIndex(key, index) && static_cast<size_t>(index) < arrayCapacity()) {
@@ -286,7 +275,7 @@ int Table::rawSet(const Value& key, const Value& value) {
 	return insertHash(key, value);
 }
 
-int Table::insertHash(const Value& key, const Value& value) {
+int TableRecord::insertHash(const Value& key, const Value& value) {
 	const int nodeIndex = insertHashWithoutGrowth(key, value);
 	if (nodeIndex >= 0) return nodeIndex;
 	// Growth may collect and relocate a source Thread's register storage.
@@ -295,7 +284,7 @@ int Table::insertHash(const Value& key, const Value& value) {
 	return rawSet(pendingKey, pendingValue);
 }
 
-int Table::insertHashWithoutGrowth(const Value& key, const Value& value) noexcept {
+int TableRecord::insertHashWithoutGrowth(const Value& key, const Value& value) noexcept {
 	if (hashSlots() == 0) {
 		return -1;
 	}
@@ -337,7 +326,7 @@ int Table::insertHashWithoutGrowth(const Value& key, const Value& value) noexcep
 	return freeIndex;
 }
 
-void Table::removeFromHash(const Value& key) {
+void TableRecord::removeFromHash(const Value& key) {
 	const int existingIndex = findNodeIndex(key);
 	if (existingIndex < 0 || isNil(values().get(hashValueSlot(static_cast<size_t>(existingIndex))))) {
 		return;
@@ -345,19 +334,18 @@ void Table::removeFromHash(const Value& key) {
 	markHashNodeDead(static_cast<size_t>(existingIndex));
 }
 
-void Table::markHashNodeDead(size_t index) {
-	if (valueIsTable(values().get(hashKeySlot(index)))
-		|| valueIsThread(values().get(hashKeySlot(index)))
-		|| valueIsClosure(values().get(hashKeySlot(index)))) {
-		const uint32_t hashId = valueObjectHashId(values().get(hashKeySlot(index)), m_heap);
-		values().set(hashKeySlot(index), valueNil());
+void TableRecord::markHashNodeDead(size_t index) {
+	const Value key = values().get(hashKeySlot(index));
+	if (valueIsTable(key) || valueIsThread(key) || valueIsClosure(key)) {
+		const uint32_t hashId = valueObjectHashId(key, m_heap);
+		values().set(hashKeySlot(index), valueFromTag(ValueTag::Nil, valueHeader(key)));
 		values().set(hashValueSlot(index), valueFromTag(ValueTag::DeadKey, hashId));
 	} else {
 		values().set(hashValueSlot(index), valueNil());
 	}
 }
 
-Value Table::get(const Value& rawKey) const {
+Value TableRecord::get(const Value& rawKey) const {
 	const Value key = canonicalTableKey(rawKey);
 	if (isNil(key)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
@@ -376,7 +364,7 @@ Value Table::get(const Value& rawKey) const {
 	return valueNil();
 }
 
-void Table::set(const Value& rawKey, const Value& value) {
+void TableRecord::set(const Value& rawKey, const Value& value) {
 	const Value key = canonicalTableKey(rawKey);
 	if (isNil(key)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
@@ -411,7 +399,7 @@ void Table::set(const Value& rawKey, const Value& value) {
 	if (isArrayKey) updateLengthHint(static_cast<size_t>(index), true);
 }
 
-Value Table::getInteger(int indexValue) const {
+Value TableRecord::getInteger(int indexValue) const {
 	const u32 index = static_cast<u32>(indexValue) - 1u;
 	if (index < arrayCapacity()) {
 		return values().get(static_cast<size_t>(index));
@@ -423,7 +411,7 @@ Value Table::getInteger(int indexValue) const {
 	return valueNil();
 }
 
-void Table::setInteger(int indexValue, const Value& value) {
+void TableRecord::setInteger(int indexValue, const Value& value) {
 	writeBarrier();
 	const u32 index = static_cast<u32>(indexValue) - 1u;
 	if (index < arrayCapacity()) {
@@ -446,7 +434,7 @@ void Table::setInteger(int indexValue, const Value& value) {
 	if (indexValue > 0) updateLengthHint(static_cast<size_t>(index), true);
 }
 
-Value Table::getStringKey(StringId key) const {
+Value TableRecord::getStringKey(StringId key) const {
 	const int nodeIndex = findStringNodeIndex(key);
 	if (nodeIndex >= 0) {
 		return values().get(hashValueSlot(static_cast<size_t>(nodeIndex)));
@@ -454,7 +442,7 @@ Value Table::getStringKey(StringId key) const {
 	return valueNil();
 }
 
-Value Table::getStringKeyCached(StringId key, int& predictedSlot) const {
+Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot) const {
 	if (predictedSlot >= 0 && static_cast<size_t>(predictedSlot) < hashSlots()) {
 		const size_t slot = static_cast<size_t>(predictedSlot);
 		if (valueIsString(values().get(hashKeySlot(slot)))
@@ -472,11 +460,15 @@ Value Table::getStringKeyCached(StringId key, int& predictedSlot) const {
 	return valueNil();
 }
 
-void Table::loadStringIndex(const Table* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept {
+void TableRecord::loadStringIndex(const TableRecord* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept {
 	table->resolveStringIndexCached(indexKey, key, -1, result);
 }
 
-int Table::setStringKey(StringId key, const Value& value) {
+void TableRecord::loadStringIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result) noexcept {
+	TableRecord(*heap, request.address).resolveStringIndexCached(request.indexKey, request.key, -1, result);
+}
+
+int TableRecord::setStringKey(StringId key, const Value& value) {
 	const int nodeIndex = storeStringKeyWithoutGrowth(this, key, value);
 	if (nodeIndex != TABLE_STORE_REQUIRES_GROWTH) return nodeIndex;
 	const Value keyValue = valueString(key);
@@ -485,14 +477,15 @@ int Table::setStringKey(StringId key, const Value& value) {
 	return rawSet(keyValue, pendingValue);
 }
 
-int Table::storeStringKeyInNative(Table* table, StringId key, const Value& value) noexcept {
+int TableRecord::storeStringKeyInNative(GcHeap* heap, u32 address, StringId key, const Value& value) noexcept {
 	// Hash maintenance can write any linked record word. Never invalidate code
 	// from a returning native leaf: the dispatcher owns that instruction then.
-	if (table->m_heap.memory.ramWriteWatches().anyWatched()) return TABLE_STORE_REQUIRES_GROWTH;
-	return storeStringKeyWithoutGrowth(table, key, value);
+	if (heap->memory.ramWriteWatches().anyWatched()) return TABLE_STORE_REQUIRES_GROWTH;
+	TableRecord table(*heap, address);
+	return storeStringKeyWithoutGrowth(&table, key, value);
 }
 
-int Table::storeStringKeyWithoutGrowth(Table* table, StringId key, const Value& value) noexcept {
+int TableRecord::storeStringKeyWithoutGrowth(TableRecord* table, StringId key, const Value& value) noexcept {
 	table->writeBarrier();
 	const Value keyValue = valueString(key);
 	if (isNil(value)) {
@@ -508,7 +501,7 @@ int Table::storeStringKeyWithoutGrowth(Table* table, StringId key, const Value& 
 	return inserted >= 0 ? inserted : TABLE_STORE_REQUIRES_GROWTH;
 }
 
-void Table::setStringKeyCached(StringId key, const Value& value, int& predictedSlot) {
+void TableRecord::setStringKeyCached(StringId key, const Value& value, int& predictedSlot) {
 	writeBarrier();
 	if (!isNil(value)
 		&& predictedSlot >= 0
@@ -524,7 +517,7 @@ void Table::setStringKeyCached(StringId key, const Value& value, int& predictedS
 	predictedSlot = setStringKey(key, value);
 }
 
-i32 Table::length(const Table* table, u32* work) noexcept {
+i32 TableRecord::length(const TableRecord* table, u32* work) noexcept {
 	constexpr u32 maxBoundary = 0x7fffffffu;
 	u32 low = table->lengthHint(), high;
 	u32 probes = low == 0 ? 0 : 1;
@@ -567,7 +560,7 @@ i32 Table::length(const Table* table, u32* work) noexcept {
 	return static_cast<i32>(low);
 }
 
-void Table::clear() {
+void TableRecord::clear() {
 	const size_t previousBytes = trackedHeapBytes();
 	writeHeader(TableHeader::Length, 0);
 	freeStorage();
@@ -575,7 +568,7 @@ void Table::clear() {
 	m_heap.budget.release(previousBytes - trackedHeapBytes());
 }
 
-bool Table::loadStoredEntry(size_t slot, Value& key, Value& value) const {
+bool TableRecord::loadStoredEntry(size_t slot, Value& key, Value& value) const {
 	if (slot < arrayCapacity()) {
 		if (isNil(values().get(slot))) return false;
 		key = valueInteger(static_cast<i32>(slot + 1));
@@ -589,7 +582,7 @@ bool Table::loadStoredEntry(size_t slot, Value& key, Value& value) const {
 	return true;
 }
 
-size_t Table::nextEntry(const Value& rawAfter, Value& key, Value& value) const {
+size_t TableRecord::nextEntry(const Value& rawAfter, Value& key, Value& value) const {
 	const Value after = canonicalTableKey(rawAfter);
 	size_t arrayStart = 0;
 	size_t hashStart = 0;
@@ -634,7 +627,7 @@ u32 Table::captureSnapshot(CpuSnapshot& snapshot) const {
 	return offset;
 }
 
-size_t Table::trackedHeapBytes() const {
+size_t TableRecord::trackedHeapBytes() const {
 	return trackedHeapBytesForCapacities(arrayCapacity(), hashSlots());
 }
 

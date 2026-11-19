@@ -1,3 +1,4 @@
+import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import { asInteger, asTable, isNil, valueNil, valueThread } from '../../machine/ts/machine/cpu/value';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -12,13 +13,13 @@ export function retireRuntimeFrameScopes(runtime: Runtime, sources: RuntimeSourc
 	// Source installs can precede BIOS startup. No scopes exist before this module initializes.
 	if (module.kind !== 'value' || isNil(module.value)) return;
 	const cpu = runtime.machine.cpu, pool = cpu.stringPool;
-	const active = asTable(asTable(module.value, cpu.gc).getStringKey(pool.find('active')!), cpu.gc);
+	const active = asTable(cpu.gc.tables.getStringKey(tableAddressPayload(module.value), pool.find('active')!), cpu.gc);
 	const threadKey = pool.find('thread')!, frameKey = pool.find('owner_frame')!;
 	const threadValue = thread === undefined ? valueNil() : valueThread(cpu.gc.reference(thread));
-	active.forEachStoredEntry((key) => {
+	active.records.forEachStoredEntry(active.address, (key) => {
 		const scope = asTable(key, cpu.gc);
-		if (thread !== undefined && (scope.getStringKey(threadKey) !== threadValue || asInteger(scope.getStringKey(frameKey)) < firstFrame)) return;
-		scope.setStringKey(threadKey, valueNil());
-		active.set(key, valueNil());
+		if (thread !== undefined && (scope.records.getStringKey(scope.address, threadKey) !== threadValue || asInteger(scope.records.getStringKey(scope.address, frameKey)) < firstFrame)) return;
+		scope.records.setStringKey(scope.address, threadKey, valueNil());
+		active.records.set(active.address, key, valueNil());
 	});
 }

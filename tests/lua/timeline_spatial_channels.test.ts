@@ -196,7 +196,7 @@ observed[6]=pose.oy
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const observed = asTable(cpu.getGlobalByKey(cpu.stringPool.find('observed')!), cpu.gc);
-		assert.deepEqual(Array.from({ length: 6 }, (_, index) => numberToHost(observed.getInteger(index + 1))),
+		assert.deepEqual(Array.from({ length: 6 }, (_, index) => numberToHost(observed.records.getInteger(observed.address, index + 1))),
 			[7, 1.25, 10, 2.5, 17, 3.75]);
 	});
 
@@ -347,7 +347,7 @@ observed[11]=manual.presentation
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const observed = asTable(cpu.getGlobalByKey(cpu.stringPool.find('observed')!), cpu.gc);
-		assert.deepEqual(Array.from({ length: 11 }, (_, index) => numberToHost(observed.getInteger(index + 1))),
+		assert.deepEqual(Array.from({ length: 11 }, (_, index) => numberToHost(observed.records.getInteger(observed.address, index + 1))),
 			[20, 20, 20, 20, 0, 0, 0, 40, 40, 20, 20],
 			'manual playback must retain its explicit driver without joining World clock views');
 	});
@@ -407,9 +407,9 @@ probe={
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		const step = asClosure(probe.getStringKey(cpu.stringPool.find('step')!), cpu.gc);
-		const space = asClosure(probe.getStringKey(cpu.stringPool.find('space')!), cpu.gc);
-		const restart = asClosure(probe.getStringKey(cpu.stringPool.find('restart')!), cpu.gc);
+		const step = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('step')!), cpu.gc);
+		const space = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('space')!), cpu.gc);
+		const restart = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('restart')!), cpu.gc);
 		// This CPU fixture drives the published clock words directly; it tests
 		// timeline consumption, not peripheral service timing or audio playback.
 		const advance = (milliseconds: number, samples: number, abort: boolean, expected: readonly number[]) => {
@@ -446,7 +446,7 @@ probe={run=function(count) for index=1,count do owner.timelines:tick_gameplay(1)
 `, { optLevel: 3, modules });
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-	const run = asClosure(probe.getStringKey(cpu.stringPool.find('run')!), cpu.gc);
+	const run = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('run')!), cpu.gc);
 	runCompletionClosure(cpu, run, [valueInteger(64)]);
 	const heap = cpu.luaHeap;
 	const before = cpu.collectTrackedHeapBytes();

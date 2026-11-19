@@ -43,8 +43,8 @@ test('tracked heap bytes include rooted tables', () => {
 	const before = cpu.collectTrackedHeapBytes();
 
 	const table = cpu.createTable(2, 2);
-	table.setInteger(1, valueInteger(11));
-	table.setStringKey(key, valueInteger(7));
+	table.records.setInteger(table.address, 1, valueInteger(11));
+	table.records.setStringKey(table.address, key, valueInteger(7));
 	cpu.setGlobalByKey(key, valueTable(cpu.gc.reference(table)));
 
 	const afterTable = cpu.collectTrackedHeapBytes();

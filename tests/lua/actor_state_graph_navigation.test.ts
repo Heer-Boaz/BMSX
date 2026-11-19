@@ -1,3 +1,4 @@
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { asTable, asClosure } from '../../machine/ts/machine/cpu/value';
 import { TEST_SYSTEM_CONTEXT_ID, createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
@@ -41,7 +42,7 @@ function fixture(worldSource = WORLD) {
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), font = new Font({ variant: 'tiny' });
 	const world = runtimeWorld(sources, guest, -1)!;
 	const actors = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
-	const actorHashId = asTable(actors.getInteger(1), cpu.gc).hashId;
+	const actorHashId = asTable(actors.records.getInteger(actors.address, 1), cpu.gc).hashId;
 	tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, actorHashId));
 	const machine = tree.roots[0].children[0].children[0];
 	const target = captureActorTarget(-1, asTable(world, cpu.gc).hashId, tree.roots, machine);
@@ -51,8 +52,8 @@ function fixture(worldSource = WORLD) {
 		graph.refresh(tree.roots); graph.layout(font);
 	};
 	refresh(); graph.viewport.layout(0, 0, 100, 100);
-	const snapshot = cpu.captureRuntimeState();
-	const restore = () => { tree.release(); guest.invalidate('history-restored'); cpu.restoreRuntimeState(snapshot); refresh(); };
+	const snapshot = captureCpuCheckpoint(cpu);
+	const restore = () => { tree.release(); guest.invalidate('history-restored'); restoreCpuCheckpoint(cpu, snapshot); refresh(); };
 	const execute = (name: string) => { tree.release(); guest.invalidate(); runCompletionClosure(cpu, asClosure(guest.global(name), guest.cpu.gc), []); refresh(); };
 	return { graph, target, tree, guest, font, refresh, restore, execute };
 }

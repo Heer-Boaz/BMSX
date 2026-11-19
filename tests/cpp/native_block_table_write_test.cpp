@@ -220,6 +220,32 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 	memory.writeRamRecordWord(backing, storage);
 }
 
+void rawTablePayloadUsesRamWithoutAnObject(CPU& cpu, Memory& memory) {
+	const u32 record = RAM_BASE + 0x20000u;
+	const u32 body = record + TableRecord::HEADER_BYTES;
+	// Supply a header and backing through RAM, without constructing a Table.
+	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Storage), body + MAIN_RAM_SIZE);
+	memory.writeRamRecordWord(record + static_cast<u32>(TableHeader::Array), 1);
+	const u32 mirror = record + MAIN_RAM_SIZE + 1u; // word accesses also discard the low two bits
+	require(cpu.gcHeap().tableAt(record) == nullptr, "fixture is not a registered object");
+
+	DecodedInstruction write{}, read{};
+	write.op = static_cast<u8>(OpCode::SETI); read.op = static_cast<u8>(OpCode::GETI);
+	write.a = read.b = 0; write.b = read.c = 1; write.c = 2; read.a = 3;
+	write.width = read.width = 1;
+	write.baseCycles = BASE_CYCLES[write.op]; read.baseCycles = BASE_CYCLES[read.op];
+	const std::array source{NativeBlockInstruction{&write, 0x1000}, NativeBlockInstruction{&read, 0x1004}};
+	size_t bytes = 0;
+	auto block = NativeBlock::compile(source, {}, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
+	ValueSlots registers(4); registers.set(0, valueTable(mirror)); registers.set(2, valueInteger(83));
+	NativeBlockRunState state{.registers = registers.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
+	require(block->run(state) == &block->terminal && registers.get(3) == valueInteger(83),
+		"both array operations execute in native code without a host object");
+	require(TableRecord(cpu.gcHeap(), mirror).getInteger(1) == valueInteger(83)
+		&& memory.readRamRecordWord(body) == 83 && memory.readRamRecordByte(body + 4) == static_cast<u8>(ValueTag::Integer),
+		"scalar and native use the same per-width aliases for header and backing");
+}
+
 void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
 	auto* table = cpu.createTable(4096, 0);
 	const u32 words = table->storageAddress();
@@ -476,6 +502,7 @@ int main() {
 		readsRetainNativeFrame(cpu, memory);
 		storesRetainNativeFrame(cpu, memory);
 		compactArraySlots(cpu, memory);
+		rawTablePayloadUsesRamWithoutAnObject(cpu, memory);
 		watchedTableWordOrTagLeavesBeforeWriting(cpu, memory);
 		boundaryLengthRetainsNativeFrame(cpu, memory);
 		guardedTableFactsFollowRegisterDefinitions(cpu, memory);

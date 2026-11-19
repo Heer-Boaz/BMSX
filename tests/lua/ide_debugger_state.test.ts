@@ -384,13 +384,13 @@ return actor, advance
 	cpu.beginCompletionCall(closure, [values[0], valueInteger(100)]);
 	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, 'completion', false, value => { completed = value; }), 'workbench');
 	cpu.runUntilDepth(depth, 80);
-	const partial = actor.getStringKey(key);
+	const partial = actor.records.getStringKey(actor.address, key);
 	assert.ok(asInteger(partial) > 0 && asInteger(partial) < 100);
 	state.plans.setControlSuspended(true);
 	assert.equal(runtimeDebuggerExecutionRequested(state), false);
 	assert.equal(runtimeDebuggerExecutionIntent(state), HostExecutionIntent.None);
 	assert.equal(cpu.runUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
-	assert.equal(actor.getStringKey(key), partial);
+	assert.equal(actor.records.getStringKey(actor.address, key), partial);
 	assert.equal(cpu.getFrameDepth(), depth + 1);
 	state.plans.setControlSuspended(false);
 	assert.equal(runtimeDebuggerExecutionRequested(state), true);
@@ -399,7 +399,7 @@ return actor, advance
 	state.plans.didExecute();
 	assert.equal(completed, true);
 	assert.equal(state.plans.mutationActive, false);
-	assert.equal(actor.getStringKey(key), valueInteger(100));
+	assert.equal(actor.records.getStringKey(actor.address, key), valueInteger(100));
 	assert.equal(cpu.getFrameDepth(), depth);
 });
 
@@ -452,7 +452,7 @@ end
 			return { request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), args: () => [] },
 				condition: values => {
 					const receipt = asTable(values[0], cpu.gc), key = cpu.stringPool.find('reached')!;
-					return () => receipt.getStringKey(key) === valueBool(true);
+					return () => receipt.records.getStringKey(receipt.address, key) === valueBool(true);
 				} };
 		},
 		prepare: () => {
@@ -535,7 +535,7 @@ end
 		isCurrent: () => true,
 		boundary: () => ({ request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), args: () => [] },
 			condition: values => { const receipt = asTable(values[0], cpu.gc), key = cpu.stringPool.find('reached')!;
-				return () => receipt.getStringKey(key) === valueBool(true); } }),
+				return () => receipt.records.getStringKey(receipt.address, key) === valueBool(true); } }),
 		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] }),
 	}, () => {}, ready => { completed = ready; cpu.readCompletionValues(values); }, assert.fail);
 	for (let phase = 0; phase < 3; phase++) {
@@ -780,8 +780,8 @@ test(`guest call admission roots prepare and recursive arguments across GC (O${o
 	cpu.readCompletionValues(values);
 	assert.equal(cpu.stringPool.toString(asStringId(values[0])), 'prepare-owned-string');
 	const table = asTable(values[1], cpu.gc);
-	const child = asTable(table.getStringKey(cpu.stringPool.find('argument_owned_key')!), cpu.gc);
-	assert.equal(cpu.stringPool.toString(asStringId(child.getInteger(1))), 'nested-owned-string');
+	const child = asTable(table.records.getStringKey(table.address, cpu.stringPool.find('argument_owned_key')!), cpu.gc);
+	assert.equal(cpu.stringPool.toString(asStringId(child.records.getInteger(child.address, 1))), 'nested-owned-string');
 	assert.equal(cpu.stringPool.toString(asStringId(values[2])), 'last-owned-string');
 });
 

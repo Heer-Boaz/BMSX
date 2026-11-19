@@ -2408,8 +2408,9 @@ al "outside reserved storage". Het heapgebied valt onder die regel zodra
    staan samen in één toegewezen RAM-blok; hun bezetting gebruikt size
    classes. De tabelkop staat ook in RAM. Markeren en weak passes rekenen
    waardeslots, niet de afgeronde bytebezetting; de sweep bezoekt objectblokken
-   op allocatorpagina’s. De adresidentiteit van tabelwaarden volgt nog.
-   Meet daarna de gameplaypiek met de nieuwe boekhouding.
+   op allocatorpagina’s. Table-payloads bevatten gastadressen; tabelopcodes
+   lezen de records rechtstreeks. Meet de gameplaypiek met de nieuwe
+   boekhouding.
 5. **Closures en captured-variable-cellen**, met de prototypes (O5).
 6. **Strings**, samen met de byte-strings.
 7. **Threads en frames.**

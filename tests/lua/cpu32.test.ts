@@ -156,7 +156,7 @@ test(`${backend}: CPU snapshot rebuilds compact globals, raw Float registers and
 	const saved=cpu.stringPool.find('saved')!, system=cpu.stringPool.find('system')!, graphKey=cpu.stringPool.find('graph')!;
 	cpu.setGlobalByKey(saved,v.valueFloatBits(0xffa54321));cpu.setSystemGlobalByKey(system,v.valueInteger(-2147483648));
 	const table=cpu.createTable(), child=cpu.createTable();const self=cpu.stringPool.intern('self'),childKey=cpu.stringPool.intern('child');
-	table.setStringKey(self,v.valueTable(cpu.gc.reference(table)));table.setStringKey(childKey,v.valueTable(cpu.gc.reference(child)));
+	table.records.setStringKey(table.address, self,v.valueTable(cpu.gc.reference(table)));table.records.setStringKey(table.address, childKey,v.valueTable(cpu.gc.reference(child)));
 	child.metatable=table;cpu.setGlobalByKey(graphKey,v.valueTable(cpu.gc.reference(table)));
 	cpu.runUntilDepth(0,1);assert.equal(cpu.readFrameRegister(0,2),v.valueFloatBits(0xffa12345));
 	const state=cpu.captureRuntimeState();const hash=table.hashId, childHash=child.hashId;
@@ -165,9 +165,9 @@ test(`${backend}: CPU snapshot rebuilds compact globals, raw Float registers and
 	cpu.restoreRuntimeState(state);
 	assert.equal(cpu.readFrameRegister(0,2),v.valueFloatBits(0xffa12345));
 	assert.equal(cpu.getGlobalByKey(saved),v.valueFloatBits(0xffa54321));assert.equal(cpu.getSystemGlobalByKey(system),v.valueInteger(-2147483648));
-	const restored=v.asTable(cpu.getGlobalByKey(graphKey),cpu.gc),restoredChild=v.asTable(restored.getStringKey(childKey),cpu.gc);
+	const restored=v.asTable(cpu.getGlobalByKey(graphKey),cpu.gc),restoredChild=v.asTable(restored.records.getStringKey(restored.address, childKey),cpu.gc);
 	assert.equal(restored.hashId,hash);assert.equal(restoredChild.hashId,childHash);
-	assert.equal(v.asTable(restored.getStringKey(self),cpu.gc),restored);assert.equal(restoredChild.metatable,restored);
+	assert.equal(v.asTable(restored.records.getStringKey(restored.address, self),cpu.gc),restored);assert.equal(restoredChild.metatable,restored);
 	assert.deepEqual(cpu.captureRuntimeState(),state);
 	cpu.runUntilDepth(0,100);const result:v.Value[]=[];cpu.readCompletionValues(result);assert.equal(result[0],v.valueFloatBits(0xffa12345));
 	cpu.gc.collect();assert.equal(v.asTable(cpu.getGlobalByKey(graphKey),cpu.gc),restored);

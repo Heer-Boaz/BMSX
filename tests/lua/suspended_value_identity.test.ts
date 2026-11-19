@@ -69,10 +69,10 @@ test('table previews use the returned key, not traversal work, to detect exhaust
 	const presentation = new SuspendedValuePresentation(guest, 'preview');
 	assert.equal(guest.previewValue(value, 1, 8), '{}', 'vacant allocated storage has no preview entries');
 	assert.equal(presentation.update(value), '{}');
-	table.set(valueBool(false), valueInteger(7));
+	table.records.set(table.address, valueBool(false), valueInteger(7));
 	assert.equal(guest.previewValue(value, 1, 8), '{ false = 7 }', 'a false key is a live entry');
 	assert.equal(presentation.update(value), '{ false = 7 }');
-	table.set(valueBool(false), valueNil());
+	table.records.set(table.address, valueBool(false), valueNil());
 	assert.equal(guest.previewValue(value, 1, 8), '{}', 'a deleted hash node is not a preview entry');
 	assert.equal(presentation.update(value), '{}');
 });

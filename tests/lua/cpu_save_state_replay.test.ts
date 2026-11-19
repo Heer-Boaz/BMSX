@@ -1,3 +1,4 @@
+import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -32,12 +33,12 @@ for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as co
 	if (op === OpCode.NEWT) {
 		const weak = cpu.createTable(1, 0);
 		const mode = cpu.createTable(0, 1);
-		mode.setStringKey(cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
+		mode.records.setStringKey(mode.address, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 		weak.metatable = mode;
-		weak.setInteger(1, cpu.readFrameRegister(0, 0));
+		weak.records.setInteger(weak.address, 1, cpu.readFrameRegister(0, 0));
 		cpu.setGlobalByKey(cpu.stringPool.intern('weak'), valueTable(cpu.gc.reference(weak)));
 		cpu.collectTrackedHeapBytes();
-		assert.ok(weak.getInteger(1) === cpu.readFrameRegister(0, 0), 'live caller locals remain heap roots across calls');
+		assert.ok(weak.records.getInteger(weak.address, 1) === cpu.readFrameRegister(0, 0), 'live caller locals remain heap roots across calls');
 	}
 	const saved = cpu.captureRuntimeState();
 	cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
@@ -49,7 +50,7 @@ for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as co
 	cpu.readCompletionValues(values);
 	assert.equal(values.length, 1);
 	if (op === OpCode.K1) assert.deepEqual(values, [valueInteger(1)]);
-	else assert.ok(values[0] === asTable(cpu.getGlobalByKey(cpu.stringPool.find('weak')!), cpu.gc).getInteger(1));
+	else assert.ok(values[0] === cpu.gc.tables.getInteger(tableAddressPayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!)), 1));
 });
 
 test('the mirrored CPU allocates a closure before its new upvalues and interns the same error prefix', () => {
@@ -131,9 +132,9 @@ test('restore retains weak referents until the original allocation-triggered col
 	const weakKey = cpu.stringPool.intern('weak');
 	const weak = cpu.createTable(1, 0);
 	const metatable = cpu.createTable(0, 1);
-	metatable.setStringKey(cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
+	metatable.records.setStringKey(metatable.address, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 	weak.metatable = metatable;
-	weak.setInteger(1, valueTable(cpu.gc.reference(cpu.createTable())));
+	weak.records.setInteger(weak.address, 1, valueTable(cpu.gc.reference(cpu.createTable())));
 	cpu.setGlobalByKey(weakKey, valueTable(cpu.gc.reference(weak)));
 	// These allocations have left guest accounting debt but are unreachable.
 	for (let index = 0; index < 17; index += 1) cpu.createTable(256, 0);
@@ -142,10 +143,10 @@ test('restore retains weak referents until the original allocation-triggered col
 	const strings = cpu.stringPool.captureState();
 	const allocateUntilCollected = (): number => {
 		const current = asTable(cpu.getGlobalByKey(weakKey), cpu.gc);
-		assert.ok(valueIsTable(current.getInteger(1)));
+		assert.ok(valueIsTable(current.records.getInteger(current.address, 1)));
 		for (let count = 1; count < 4096; count += 1) {
 			cpu.createTable(256, 0);
-			if (current.getInteger(1) === valueNil()) return count;
+			if (current.records.getInteger(current.address, 1) === valueNil()) return count;
 		}
 		assert.fail('allocation did not reach the guest collection threshold');
 	};
@@ -226,8 +227,8 @@ test('CPU snapshots reuse exclusive storage across graph growth, cycles and a sh
 		const child = cpu.createTable(1, 0);
 		// Allocation ids can wrap. They must never be used as snapshot identities.
 		child.hashId = 0xffffffff;
-		child.setInteger(1, valueTable(cpu.gc.reference(root)));
-		root.setInteger(index, valueTable(cpu.gc.reference(child)));
+		child.records.setInteger(child.address, 1, valueTable(cpu.gc.reference(root)));
+		root.records.setInteger(root.address, index, valueTable(cpu.gc.reference(child)));
 	}
 	const retainedMemory = cpu.memory.captureSaveState();
 	const retained = cpu.captureRuntimeState();
@@ -259,8 +260,8 @@ test('CPU snapshots reuse exclusive storage across graph growth, cycles and a sh
 	cpu.memory.restoreSaveState(retainedMemory);
 	cpu.restoreRuntimeState(retained);
 	const restored = asTable(cpu.getGlobalByKey(key), cpu.gc);
-	assert.notEqual(restored.getInteger(1), restored.getInteger(2), 'equal allocation ids do not merge objects');
-	assert.equal(asTable(restored.getInteger(130), cpu.gc).getInteger(1), valueTable(cpu.gc.reference(restored)), 'cycle survives buffer growth and restore');
+	assert.notEqual(restored.records.getInteger(restored.address, 1), restored.records.getInteger(restored.address, 2), 'equal allocation ids do not merge objects');
+	assert.equal(cpu.gc.tables.getInteger(tableAddressPayload(restored.records.getInteger(restored.address, 130)), 1), valueTable(cpu.gc.reference(restored)), 'cycle survives buffer growth and restore');
 	assert.deepEqual(cpu.captureRuntimeState(), retained);
 });
 
@@ -276,11 +277,11 @@ test('snapshot words preserve int32 and f32 bits, primitive tags and interned id
 	];
 	const table = cpu.createTable(values.length, 0);
 	cpu.setGlobalByKey(key, valueTable(cpu.gc.reference(table)));
-	for (let index = 0; index < values.length; index += 1) table.setInteger(index + 1, values[index]);
+	for (let index = 0; index < values.length; index += 1) table.records.setInteger(table.address, index + 1, values[index]);
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	const restored = asTable(cpu.getGlobalByKey(key), cpu.gc);
-	for (let index = 0; index < values.length; index += 1) assert.equal(restored.getInteger(index + 1), values[index]);
+	for (let index = 0; index < values.length; index += 1) assert.equal(restored.records.getInteger(restored.address, index + 1), values[index]);
 	assert.deepEqual(cpu.captureRuntimeState(), state);
 });
 
@@ -292,15 +293,15 @@ test('deep cyclic guest graphs do not consume the host serialization stack', () 
 	let tail = root;
 	for (let index = 1; index < 4096; index += 1) {
 		const child = cpu.createTable(1, 0);
-		tail.setInteger(1, valueTable(cpu.gc.reference(child)));
+		tail.records.setInteger(tail.address, 1, valueTable(cpu.gc.reference(child)));
 		tail = child;
 	}
-	tail.setInteger(1, valueTable(cpu.gc.reference(root)));
+	tail.records.setInteger(tail.address, 1, valueTable(cpu.gc.reference(root)));
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	const restored = asTable(cpu.getGlobalByKey(key), cpu.gc);
 	let current = restored;
-	for (let index = 0; index < 4096; index += 1) current = asTable(current.getInteger(1), cpu.gc);
+	for (let index = 0; index < 4096; index += 1) current = asTable(current.records.getInteger(current.address, 1), cpu.gc);
 	assert.equal(current, restored);
 	assert.deepEqual(cpu.captureRuntimeState(), state);
 });
@@ -310,20 +311,20 @@ test('table boundary hints and mixed numeric hash layout survive restore without
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-boundaries.lua')));
 	const key = cpu.stringPool.intern('boundary');
 	const table = cpu.createTable(64, 128);
-	for (let n = 64; n > 0; n--) table.setInteger(n, valueBool(false));
-	for (let n = -1; n >= -64; n--) table.setInteger(n, valueInteger(n));
+	for (let n = 64; n > 0; n--) table.records.setInteger(table.address, n, valueBool(false));
+	for (let n = -1; n >= -64; n--) table.records.setInteger(table.address, n, valueInteger(n));
 	cpu.setGlobalByKey(key, valueTable(cpu.gc.reference(table)));
 	const ram = cpu.memory.captureSaveState();
 	const state = cpu.captureRuntimeState();
-	assert.equal(table.length(), 64);
+	assert.equal(table.records.length(table.address), 64);
 	assert.deepEqual(cpu.captureRuntimeState(), state, 'inspection does not normalize a non-boundary hint');
-	table.setInteger(1, valueNil()); table.setInteger(64, valueNil()); table.setInteger(-32, valueInteger(999));
+	table.records.setInteger(table.address, 1, valueNil()); table.records.setInteger(table.address, 64, valueNil()); table.records.setInteger(table.address, -32, valueInteger(999));
 	cpu.memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
 	const restored = asTable(cpu.getGlobalByKey(key), cpu.gc);
-	assert.equal(restored.length(), 64);
-	assert.equal(restored.getInteger(-32), valueInteger(-32));
+	assert.equal(restored.records.length(restored.address), 64);
+	assert.equal(restored.records.getInteger(restored.address, -32), valueInteger(-32));
 	assert.deepEqual(cpu.captureRuntimeState(), state);
-	for (let n = -65; n >= -256; n--) restored.setInteger(n, valueInteger(n));
-	assert.equal(restored.length(), 64, 'hash growth redistributes storage without changing the boundary');
+	for (let n = -65; n >= -256; n--) restored.records.setInteger(restored.address, n, valueInteger(n));
+	assert.equal(restored.records.length(restored.address), 64, 'hash growth redistributes storage without changing the boundary');
 });

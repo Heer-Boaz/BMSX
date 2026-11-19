@@ -460,9 +460,9 @@ private:
 		}
 		return registers.get(static_cast<size_t>(rk));
 	}
-	Value resolveTableIndex(Table* table, const Value& key);
-	Value resolveTableIntegerIndex(Table* table, int index);
-	Value resolveTableFieldIndex(Table* table, StringId key);
+	Value resolveTableIndex(const TableRecord& table, const Value& key);
+	Value resolveTableIntegerIndex(const TableRecord& table, int index);
+	Value resolveTableFieldIndex(const TableRecord& table, StringId key);
 	Value loadTableIndex(const Value& base, const Value& key);
 	Value loadTableIntegerIndex(const Value& base, int index);
 	Value loadTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key);
@@ -601,7 +601,7 @@ private:
 	std::vector<StringId> m_globalNames;
 	ValueSlots m_globalValues;
 	std::unordered_map<StringId, size_t> m_globalSlotByKey;
-	Table* m_stringIndexTable = nullptr;
+	Value m_stringIndexTable = valueNil();
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	DiagnosticGcProfile m_diagnosticGcProfile;
 #endif

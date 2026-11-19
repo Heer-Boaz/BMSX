@@ -1,3 +1,5 @@
+import { TableHeader } from '../../machine/ts/machine/cpu/table';
+import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { utf8ByteLength } from '../../machine/ts/common/utf8';
 import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
 import assert from 'node:assert/strict';
@@ -5,7 +7,7 @@ import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -73,12 +75,12 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const own = cpu.createTable(2, 0), parent = cpu.createTable(2, 0), meta = cpu.createTable(0, 1);
-		parent.setInteger(1, valueInteger(73)); meta.setStringKey(cpu.stringPool.intern('__index'), valueTable(cpu.gc.reference(parent))); own.metatable = meta;
+		parent.records.setInteger(parent.address, 1, valueInteger(73)); meta.records.setStringKey(meta.address, cpu.stringPool.intern('__index'), valueTable(cpu.gc.reference(parent))); own.metatable = meta;
 		cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.gc.reference(own)); cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1);
 		cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SELF] + BASE_CYCLES[OpCode.JMP]));
 	}
 	for (const value of [valueBool(false), valueInteger(0), valueNil(), valueBool(true), valueInteger(19), valueNil()]) {
-		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.getTable(0, cpu.gc).setInteger(1, value);
+		for (const cpu of [js, ref]) cpu.gc.tables.setInteger(cpu.rootThread.frameAtDepth(0).registers.getPayload(0), 1, value);
 		runCpuParity(js, ref, 6);
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 		assert.equal(js.readFrameRegister(0, 3), value === valueNil() ? valueInteger(73) : value);
@@ -100,7 +102,7 @@ test('compiled array stores retain hints and length searches preserve live regis
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(2, 4);
-		for (let i = 1; i <= 5; ++i) table.setInteger(i, valueInteger(i));
+		for (let i = 1; i <= 5; ++i) table.records.setInteger(table.address, i, valueInteger(i));
 		cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.gc.reference(table)); cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 2); cpu.runUntilDepth(0, 605);
 	}
 	for (const value of [valueNil(), valueBool(false), valueNil(), valueInteger(2)]) {
@@ -109,8 +111,8 @@ test('compiled array stores retain hints and length searches preserve live regis
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 		const boundary = js.rootThread.frameAtDepth(0).registers.getInteger(3);
 		const table = js.rootThread.frameAtDepth(0).registers.getTable(0, js.gc);
-		assert.ok(boundary === 0 || table.get(valueInteger(boundary)) !== valueNil());
-		assert.equal(table.get(valueInteger(boundary + 1)), valueNil());
+		assert.ok(boundary === 0 || table.records.get(table.address, valueInteger(boundary)) !== valueNil());
+		assert.equal(table.records.get(table.address, valueInteger(boundary + 1)), valueNil());
 		if (value !== valueNil()) assert.equal(boundary, 5);
 		assert.equal(js.readFrameRegister(0, 4), valueInteger(boundary + 1), 'the live native definition survives the length helper');
 	}
@@ -144,7 +146,7 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 		{ firstWord: 32, wordCount: 1 }], constants: ['method'], exceptionFunctionIndex: 1 });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const table = cpu.createTable(0, 1); table.setStringKey(cpu.stringPool.intern('method'), valueInteger(73));
+		const table = cpu.createTable(0, 1); table.records.setStringKey(table.address, cpu.stringPool.intern('method'), valueInteger(73));
 		cpu.rootThread.frameAtDepth(0).registers.setTable(9, cpu.gc.reference(table)); cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SELF] + BASE_CYCLES[OpCode.JMP]));
 	}
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -152,7 +154,7 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 	assert.equal(frame.registers.get(7), frame.registers.get(9));
 	for (const cpu of [js, ref]) {
 		const root = cpu.rootThread.frameAtDepth(0), table = root.registers.getTable(9, cpu.gc), meta = cpu.createTable(0, 1);
-		table.setStringKey(cpu.stringPool.intern('method'), valueNil()); meta.setStringKey(cpu.stringPool.intern('__index'), valueTable(cpu.gc.reference(table)));
+		table.records.setStringKey(table.address, cpu.stringPool.intern('method'), valueNil()); meta.records.setStringKey(meta.address, cpu.stringPool.intern('__index'), valueTable(cpu.gc.reference(table)));
 		table.metatable = meta; root.top = 0;
 	}
 	runCpuParity(js, ref, 4);
@@ -180,16 +182,16 @@ for (const [op, key] of [
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 		const table = cpu.createTable(2, 1);
 		const encodedKey = key === 'field' ? valueString(cpu.stringPool.intern(key)) : key;
-		table.set(encodedKey, valueInteger(73));
+		table.records.set(table.address, encodedKey, valueInteger(73));
 		r.setTable(0, cpu.gc.reference(table)); r.set(1, encodedKey); r.setInteger(9, 17);
 		cpu.runUntilDepth(0, 32 * (2 * BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[op] + BASE_CYCLES[OpCode.JMP]));
 		if (backend === CpuExecutionBackend.JavaScript) {
 			const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 			assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'exercise an adopted generated loop');
 		}
-		table.set(encodedKey, valueNil());
+		table.records.set(table.address, encodedKey, valueNil());
 		const meta = cpu.createTable(0, 1);
-		meta.setStringKey(cpu.stringPool.intern('__index'), valueTable(cpu.gc.reference(table))); table.metatable = meta;
+		meta.records.setStringKey(meta.address, cpu.stringPool.intern('__index'), valueTable(cpu.gc.reference(table))); table.metatable = meta;
 		r.setInteger(3, 91); r.setInteger(4, 57); frame.top = 0;
 		cpu.runUntilDepth(0, 4);
 		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);
@@ -255,4 +257,39 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
 	assert.equal(frame.registers.getInteger(8), 73); assert.equal(frame.top, 9);
+});
+
+test('compiled and scalar table instructions address the same raw RAM without a host object', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.SETI, 0, 1, 2);
+	writeInstruction(text, 1, OpCode.GETI, 3, 0, 1);
+	writeInstruction(text, 2, OpCode.LEN, 4, 0, 0);
+	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 5 }] });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	for (const record of [RAM_BASE + 0x20000, RAM_BASE + MAIN_RAM_SIZE - 4]) {
+		const body = RAM_BASE + 0x21000;
+		for (const cpu of [js, scalar]) {
+			assert.equal(cpu.gc.tableAt(record), null, 'the reference is not an allocated Table descriptor');
+			cpu.memory.writeRamRecordWord(record + TableHeader.Metatable, 0);
+			cpu.memory.writeRamRecordWord(record + TableHeader.Storage, body + MAIN_RAM_SIZE);
+			cpu.memory.writeRamRecordWord(record + TableHeader.Array, 1);
+			cpu.memory.writeRamRecordWord(record + TableHeader.Hash, 0);
+			cpu.memory.writeRamRecordWord(record + TableHeader.Length, 0);
+			const registers = cpu.rootThread.currentFrame!.registers;
+			registers.setTable(0, record + MAIN_RAM_SIZE + 1); registers.setInteger(2, 83);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
+		}
+		runCpuParity(js, scalar, 1000);
+		for (const cpu of [js, scalar]) {
+			assert.equal(cpu.rootThread.currentFrame!.registers.get(3), valueInteger(83));
+			assert.equal(cpu.rootThread.currentFrame!.registers.get(4), valueInteger(1));
+			assert.equal(cpu.memory.readRamRecordWord(body), 83);
+			assert.equal(cpu.memory.readRamRecordByte(body + 4), ValueTag.Integer);
+		}
+	}
+	const frame = js.rootThread.currentFrame!;
+	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'the raw record path ran in a warmed block');
 });

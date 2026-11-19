@@ -121,21 +121,21 @@ test('reusing an unreachable deleted string-key ID cannot resurrect its old mapp
 	const root = pool.intern('table root', false), table = cpu.createTable(0, 8);
 	cpu.setGlobalByKey(root, valueTable(cpu.gc.reference(table)));
 	const removed = pool.intern('removed key');
-	table.setStringKey(removed, valueInteger(19));
-	table.setStringKey(removed, valueNil());
+	table.records.setStringKey(table.address, removed, valueInteger(19));
+	table.records.setStringKey(table.address, removed, valueNil());
 	const retained = pool.intern('retained key');
-	table.setStringKey(retained, valueInteger(23));
+	table.records.setStringKey(table.address, retained, valueInteger(23));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.find('removed key'), undefined);
 	const replacement = pool.intern('replacement key');
 	assert.equal(replacement, removed);
-	assert.equal(table.getStringKey(replacement), valueNil());
-	table.setStringKey(replacement, valueInteger(29));
-	assert.equal(table.get(valueString(replacement)), valueInteger(29));
-	assert.equal(table.getStringKey(retained), valueInteger(23));
+	assert.equal(table.records.getStringKey(table.address, replacement), valueNil());
+	table.records.setStringKey(table.address, replacement, valueInteger(29));
+	assert.equal(table.records.get(table.address, valueString(replacement)), valueInteger(29));
+	assert.equal(table.records.getStringKey(table.address, retained), valueInteger(23));
 	const entry = new ValueSlots(2), keys: string[] = [];
-	for (table.next(entry.get(0), entry, 0); entry.getTag(0) !== ValueTag.Nil;
-		table.next(entry.get(0), entry, 0)) {
+	for (table.records.next(table.address, entry.get(0), entry, 0); entry.getTag(0) !== ValueTag.Nil;
+		table.records.next(table.address, entry.get(0), entry, 0)) {
 		assert.equal(entry.getTag(0), ValueTag.String);
 		keys.push(pool.toString(entry.getStringId(0)));
 	}

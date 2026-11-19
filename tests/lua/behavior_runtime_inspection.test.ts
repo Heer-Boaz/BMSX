@@ -1,3 +1,4 @@
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
@@ -48,7 +49,7 @@ return component`;
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
 	cpu.reset();
-	const beforeBirth = cpu.captureRuntimeState();
+	const beforeBirth = captureCpuCheckpoint(cpu);
 	cpu.runUntilDepth(0, 100_000);
 	const guest = new SuspendedGuestSession(runtime);
 	runtime.history.onWillEndReview = () => guest.willEndHistoryReview();
@@ -66,7 +67,7 @@ return component`;
 
 test('visible behavior inspection compares completed observations, not paused refreshes, and reacquires history values', t => {
 	const f = fixture(); t.after(() => f.inspection.dispose());
-	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = f.cpu.captureRuntimeState();
+	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = captureCpuCheckpoint(f.cpu);
 	const current = document.find(row => row.value === 'a')!;
 	assert.ok(document.every(row => row.valueChanged === false));
 	let reads = 0;
@@ -88,7 +89,7 @@ test('visible behavior inspection compares completed observations, not paused re
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.equal(current.value, 'b'); assert.ok(document.every(row => row.valueChanged === false));
 	assert.ok(reads > observedReads);
-	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
+	restoreCpuCheckpoint(f.cpu, alive); f.guest.invalidate('history-restored');
 	assert.ok(asTable(readStateMachineInstances(f.sources, f.guest, -1).items[0].machine, f.cpu.gc) !== f.machineObject, 'history reconstructs a fresh machine object');
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.deepEqual(document.map(row => row.value), before);
@@ -133,7 +134,7 @@ test('live readback retains rows and skips warmed formatting while still reading
 
 test('retained value presentation compares mutable entries, preserves preview semantics and reacquires restored string ids', t => {
 	const f = fixture(); t.after(() => f.inspection.dispose());
-	const retained = new SuspendedValuePresentation(f.guest), alive = f.cpu.captureRuntimeState();
+	const retained = new SuspendedValuePresentation(f.guest), alive = captureCpuCheckpoint(f.cpu);
 	let data = f.guest.readStringMember(f.choice.machine, 'data');
 	const original = retained.update(data);
 	assert.equal(original, f.guest.formatStoredEntries(data));
@@ -144,7 +145,7 @@ test('retained value presentation compares mutable entries, preserves preview se
 	f.guest.invalidate(); runCompletionClosure(f.cpu, asClosure(f.guest.global('trim_nested'), f.cpu.gc), []);
 	assert.notEqual(retained.update(data), expanded);
 	assert.equal(retained.update(data), f.guest.formatStoredEntries(data));
-	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored'); retained.invalidate();
+	restoreCpuCheckpoint(f.cpu, alive); f.guest.invalidate('history-restored'); retained.invalidate();
 	data = f.guest.readStringMember(readStateMachineInstances(f.sources, f.guest, -1).items[0].machine, 'data');
 	assert.equal(retained.update(data), original);
 });
@@ -163,9 +164,9 @@ test('an inspector opened during history review retains absent membership throug
 
 test('historical absence preserves a behavior bookmark across replay and repeated retained-frame navigation', t => {
 	const f = fixture(); t.after(() => f.inspection.dispose());
-	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = f.cpu.captureRuntimeState();
+	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = captureCpuCheckpoint(f.cpu);
 	for (let visit = 0; visit < 2; visit++) {
-		f.cpu.restoreRuntimeState(f.beforeBirth); f.guest.invalidate('history-restored');
+		restoreCpuCheckpoint(f.cpu, f.beforeBirth); f.guest.invalidate('history-restored');
 		f.rewind.seeking = true;
 		assert.equal(f.inspection.refresh(), undefined);
 		f.rewind.seeking = false;
@@ -173,7 +174,7 @@ test('historical absence preserves a behavior bookmark across replay and repeate
 		assert.ok(document.every(row => row.warning && row.valueChanged === false));
 		f.guest.invalidate();
 		assert.equal(f.inspection.refresh(), undefined, 'replay execution does not admit a live branch');
-		f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
+		restoreCpuCheckpoint(f.cpu, alive); f.guest.invalidate('history-restored');
 		const restored = readStateMachineInstances(f.sources, f.guest, -1).items[0];
 		assert.equal(f.guest.identityScalar(restored.component, ValueTag.Table), f.componentHashId);
 		assert.equal(f.guest.identityScalar(restored.machine, ValueTag.Table), f.machineHashId);
@@ -187,7 +188,7 @@ test('historical absence preserves a behavior bookmark across replay and repeate
 for (const observed of [false, true]) test(`live admission retires ${observed ? 'observed' : 'hidden'} historical absence before reused table ids`, t => {
 	const f = fixture(); t.after(() => f.inspection.dispose());
 	const document = f.inspection.refresh()!;
-	f.cpu.restoreRuntimeState(f.beforeBirth); f.guest.invalidate('history-restored');
+	restoreCpuCheckpoint(f.cpu, f.beforeBirth); f.guest.invalidate('history-restored');
 	f.rewind.seeking = true;
 	assert.equal(f.inspection.refresh(), undefined);
 	f.rewind.seeking = false;
@@ -207,10 +208,10 @@ for (const observed of [false, true]) test(`live admission retires ${observed ? 
 
 test('live admission keeps a restored behavior instance and later live removal retires it', t => {
 	const f = fixture(); t.after(() => f.inspection.dispose());
-	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = f.cpu.captureRuntimeState();
-	f.cpu.restoreRuntimeState(f.beforeBirth); f.guest.invalidate('history-restored');
+	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = captureCpuCheckpoint(f.cpu);
+	restoreCpuCheckpoint(f.cpu, f.beforeBirth); f.guest.invalidate('history-restored');
 	f.inspection.refresh();
-	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
+	restoreCpuCheckpoint(f.cpu, alive); f.guest.invalidate('history-restored');
 	f.inspection.interaction.running = true;
 	f.guest.willEndHistoryReview();
 	assert.equal(f.inspection.interaction.running, true, 'admission resolves current membership even before the pane observes it');
@@ -252,7 +253,7 @@ for (const observed of [false, true]) test(`discarding review retires ${observed
 	const f = fixture(); t.after(() => f.inspection.dispose());
 	const document = f.inspection.refresh()!;
 	const history = f.runtime.history;
-	f.cpu.restoreRuntimeState(f.beforeBirth);
+	restoreCpuCheckpoint(f.cpu, f.beforeBirth);
 	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
 	history.captureCheckpoint();
 	f.cpu.runUntilDepth(0, 100_000);
@@ -286,10 +287,10 @@ for (const operation of ['reset', 'load'] as const) test(`${operation} ending re
 test('heap replacement remains terminal across historical navigation and live admission', t => {
 	const f = fixture(); t.after(() => f.inspection.dispose());
 	f.inspection.refresh();
-	const alive = f.cpu.captureRuntimeState();
+	const alive = captureCpuCheckpoint(f.cpu);
 	f.guest.invalidate('heap-replaced');
 	const document = f.inspection.refresh()!, retired = document.map(row => row.value);
-	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
+	restoreCpuCheckpoint(f.cpu, alive); f.guest.invalidate('history-restored');
 	f.guest.willEndHistoryReview();
 	assert.equal(f.inspection.refresh(), undefined);
 	assert.deepEqual(document.map(row => row.value), retired, 'history admission does not replace the retirement reason');

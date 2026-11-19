@@ -61,7 +61,7 @@ for (const optLevel of [0, 3] as const) {
 			cpu.collectTrackedHeapBytes();
 			if (name === 'collection') {
 				const weak = asTable(cpu.getGlobalByKey(cpu.stringPool.intern('weak_threads')), cpu.gc);
-				assert.equal(weak.getInteger(1), valueNil(), 'unreachable thread is collected after its last stack roots return');
+				assert.equal(weak.records.getInteger(weak.address, 1), valueNil(), 'unreachable thread is collected after its last stack roots return');
 			}
 		});
 	}

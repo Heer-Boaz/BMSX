@@ -118,9 +118,9 @@ DISPATCH_LABEL(GETI) {
 	const int c = decoded->c;
 	const Value tableValue = REG(b);
 	if (valueIsTable(tableValue)) {
-		Table* table = asTable(tableValue, m_heap);
+		const TableRecord table(m_heap, valuePayload(tableValue));
 		Value value;
-		if (table->getIntegerArrayKey(c, value)) {
+		if (table.getIntegerArrayKey(c, value)) {
 			SET_REGISTER_FAST(a, value);
 			DISPATCH_NEXT();
 		}
@@ -136,7 +136,7 @@ DISPATCH_LABEL(SETI) {
 	const Value tableValue = REG(a);
 	const Value& value = readRK(IMAGE, registers, rkC);
 	if (valueIsTable(tableValue)
-		&& asTable(tableValue, m_heap)->setIntegerArrayKey(b, value)) {
+		&& TableRecord(m_heap, valuePayload(tableValue)).setIntegerArrayKey(b, value)) {
 		DISPATCH_NEXT();
 	}
 	storeTableIntegerIndex(tableValue, b, value);
@@ -196,9 +196,9 @@ DISPATCH_LABEL(GETT) {
 	const Value tableValue = REG(b);
 	const Value& key = readRK(IMAGE, registers, rkC);
 	if (valueIsTable(tableValue) && valueIsInteger(key)) {
-		Table* table = asTable(tableValue, m_heap);
+		const TableRecord table(m_heap, valuePayload(tableValue));
 		Value value;
-		if (table->getIntegerArrayKey(asInteger(key), value)) {
+		if (table.getIntegerArrayKey(asInteger(key), value)) {
 			SET_REGISTER_FAST(a, value);
 			DISPATCH_NEXT();
 		}
@@ -216,7 +216,7 @@ DISPATCH_LABEL(SETT) {
 	const Value& value = readRK(IMAGE, registers, rkC);
 	if (valueIsTable(tableValue)
 		&& valueIsInteger(key)
-		&& asTable(tableValue, m_heap)->setIntegerArrayKey(asInteger(key), value)) {
+		&& TableRecord(m_heap, valuePayload(tableValue)).setIntegerArrayKey(asInteger(key), value)) {
 		DISPATCH_NEXT();
 	}
 	storeTableIndex(tableValue, key, value);
@@ -366,7 +366,8 @@ DISPATCH_LABEL(LEN) {
 	}
 	if (valueIsTable(val)) {
 		u32 probes;
-		const i32 boundary = Table::length(asTable(val, m_heap), &probes);
+		const TableRecord table(m_heap, valuePayload(val));
+		const i32 boundary = TableRecord::length(&table, &probes);
 		CYCLES_ADD(static_cast<int>(probes) * TABLE_LENGTH_PROBE_CYCLES);
 		SET_REGISTER_FAST(a, valueInteger(boundary));
 		DISPATCH_NEXT();

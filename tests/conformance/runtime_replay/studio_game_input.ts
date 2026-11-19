@@ -141,7 +141,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	const lane = asTable(guest.readStringMember(world, '_render_visuals'), guest.cpu.gc);
 	let pickX = -1, pickY = -1, pickHashId = 0;
 	for (let index = numberToHost(guest.readStringMember(world, '_render_visual_count')); index > 0; index--) {
-		const visual = lane.getInteger(index), owner = guest.readStringMember(visual, 'owner');
+		const visual = lane.records.getInteger(lane.address, index), owner = guest.readStringMember(visual, 'owner');
 		const draw = guest.readStringMember(visual, 'draw'), cropped = guest.matchesIdentity(draw, region);
 		if (!cropped && !guest.matchesIdentity(draw, full) || !guest.isTruthy(guest.readStringMember(visual, 'visible'))
 			|| !guest.isTruthy(guest.readStringMember(owner, 'visible'))) continue;

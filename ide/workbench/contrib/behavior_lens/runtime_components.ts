@@ -14,10 +14,10 @@ export function visitRuntimeComponents(
 	const type = readRuntimeLuaModuleExport(sources, guest, domain, modulePath);
 	if (registry.kind === 'unavailable' || type.kind === 'unavailable' || isNil(registry.value) || isNil(type.value)) return false;
 	const index = asTable(guest.readStringMember(registry.value, '_entries_by_key'), guest.cpu.gc);
-	const bucket = index.get(type.value);
+	const bucket = index.records.get(index.address, type.value);
 	if (!isNil(bucket)) {
 		const components = asTable(guest.readStringMember(bucket, 'items'), guest.cpu.gc);
-		for (let i = 1, length = components.length(); i <= length; i += 1) visit(components.getInteger(i));
+		for (let i = 1, length = components.records.length(components.address); i <= length; i += 1) visit(components.records.getInteger(components.address, i));
 	}
 	return true;
 }

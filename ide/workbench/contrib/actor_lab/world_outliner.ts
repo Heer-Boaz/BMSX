@@ -1,3 +1,4 @@
+import { valuePayload as tableAddressPayload } from '../../../../machine/ts/machine/cpu/value';
 import { asTable, isNil, numberToHost, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { ScrollableWorkbenchTree } from '../../ui/scrollable_tree';
@@ -53,8 +54,8 @@ export class ActorWorldOutliner {
 		this.objectsRevision = objectsRevision; this.topologyRevision = topologyRevision;
 		const tree = this.tree;
 		const stamp = ++this.revision, objects = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
-		for (let i = 1, length = objects.length(); i <= length; i++) {
-			const actor = objects.getInteger(i), parent = guest.readStringMember(actor, 'parent');
+		for (let i = 1, length = objects.records.length(objects.address); i <= length; i++) {
+			const actor = objects.records.getInteger(objects.address, i), parent = guest.readStringMember(actor, 'parent');
 			const hashId = guest.identityScalar(actor, ValueTag.Table);
 			let entry = this.members.get(hashId);
 			if (entry === undefined) {
@@ -84,7 +85,7 @@ export class ActorWorldOutliner {
 	public readActor(guest: SuspendedGuestSession, world: Value | undefined, hashId: number): Value | undefined {
 		const entry = this.members.get(hashId);
 		if (entry === undefined) return undefined;
-		return asTable(guest.readStringMember(world!, '_objects'), guest.cpu.gc).getInteger(entry.arrayIndex);
+		return guest.cpu.gc.tables.getInteger(tableAddressPayload(guest.readStringMember(world!, '_objects')), entry.arrayIndex);
 	}
 	public reveal(hashId: number): void {
 		this.updateSelection(hashId, false);
@@ -109,7 +110,7 @@ export class ActorWorldOutliner {
 		const first = tree.scroll | 0, end = Math.min(tree.rows.length, first + tree.layout.visibleRowCount);
 		let changed = false;
 		for (let i = first; i < end; i++) {
-			const entry = tree.rows[i].element, actor = objects.getInteger(entry.arrayIndex);
+			const entry = tree.rows[i].element, actor = objects.records.getInteger(objects.address, entry.arrayIndex);
 			const label = guest.formatValue(guest.readStringMember(actor, 'id'));
 			if (entry.label !== label) { entry.label = label; changed = true; }
 		}

@@ -76,7 +76,7 @@ export class CpuSnapshotReader {
 		this.tag = this.snapshot.word(offset);
 		this.payload = this.snapshot.word(offset + 1);
 		switch (this.tag) {
-			case ValueTag.Table: case ValueTag.Thread: case ValueTag.Closure:
+			case ValueTag.Thread: case ValueTag.Closure:
 				this.payload = this.heap.reference(this.objects[this.payload]); break;
 		}
 	}

@@ -63,8 +63,8 @@ export class PlayEvidence implements FixtureOutput {
 	public drain(): void {
 		if (this.restored) {
 			const cpu = this.runtime.machine.cpu, pool = cpu.stringPool, context = this.readContext();
-			const fsm = context.getStringKey(pool.find('fsm_recorder')!);
-			const effects = context.getStringKey(pool.find('actioneffect_recorder')!);
+			const fsm = context.records.getStringKey(context.address, pool.find('fsm_recorder')!);
+			const effects = context.records.getStringKey(context.address, pool.find('actioneffect_recorder')!);
 			if (!isNil(fsm)) { this.observeFsm(asTable(fsm, cpu.gc)); this.fsm!.discardPublished(); }
 			if (!isNil(effects)) { this.observeActionEffects(asTable(effects, cpu.gc)); this.effects!.discardPublished(); }
 			this.restored = false;

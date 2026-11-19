@@ -18,11 +18,11 @@ test('suspended member reads consume lookup results without executing or chargin
 	const index = cpu.stringPool.find('__index')!;
 	const parent = cpu.createTable(0, 1), child = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
 	const parentValue = v.valueTable(cpu.gc.reference(parent)), childValue = v.valueTable(cpu.gc.reference(child));
-	parent.setStringKey(key, v.valueInteger(41));
-	meta.setStringKey(index, parentValue); child.metatable = meta;
+	parent.records.setStringKey(parent.address, key, v.valueInteger(41));
+	meta.records.setStringKey(meta.address, index, parentValue); child.metatable = meta;
 	const loop = cpu.createTable(0, 1), loopMeta = cpu.createTable(0, 1);
 	const loopValue = v.valueTable(cpu.gc.reference(loop));
-	loopMeta.setStringKey(index, loopValue); loop.metatable = loopMeta;
+	loopMeta.records.setStringKey(loopMeta.address, index, loopValue); loop.metatable = loopMeta;
 	cpu.setGlobalByKey(cpu.stringPool.intern('child'), childValue);
 	cpu.setGlobalByKey(cpu.stringPool.intern('loop'), loopValue);
 	cpu.instructionBudgetRemaining = 123;
@@ -36,7 +36,7 @@ test('suspended member reads consume lookup results without executing or chargin
 	assert.equal(cpu.instructionBudgetRemaining, 123);
 	assert.equal(runtime.machine.scheduler.nowCycles, cycle);
 	assert.deepEqual(cpu.captureRuntimeState(), before, 'inspection preserves the guest graph, PC, seed and allocation state');
-	child.setStringKey(key, v.valueBool(false));
+	child.records.setStringKey(child.address, key, v.valueBool(false));
 	assert.equal(guest.readStringMember(childValue, 'member'), v.valueBool(false), 'an own false value still wins over inherited data');
 });
 

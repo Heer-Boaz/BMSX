@@ -9,7 +9,7 @@
 namespace bmsx {
 namespace {
 
-constexpr u32 kSaveStateMagic = 0x35534d42u; // BMS5: object page sweep progress is part of RAM
+constexpr u32 kSaveStateMagic = 0x36534d42u; // BMS6: Table Value payloads are guest addresses
 constexpr size_t kSaveStateHeaderBytes = 8u;
 constexpr size_t kSaveStateBasePayloadCapacityBytes = 0x01000000u;
 

@@ -15,6 +15,7 @@
 
 namespace bmsx {
 class GcHeap;
+class Table;
 
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
 inline constexpr int TABLE_STORE_REQUIRES_GROWTH = -2;
@@ -29,13 +30,15 @@ struct TableLookupResult {
 	TableLookupStatus status;
 };
 
+struct TableReadRequest { u32 address; StringId key, indexKey; };
+
 enum class TableHeader : u32 {
 	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
 };
 
-class Table : public GCObject {
+class TableRecord {
 public:
-	Table(GcHeap& heap, u32 address);
+	TableRecord(GcHeap& heap, u32 address);
 	static constexpr u32 HEADER_BYTES = 32;
 	static u32 storageBytes(size_t arraySize, size_t hashSize);
 	void initialize(size_t arrayCapacity, size_t hashCapacity);
@@ -46,13 +49,8 @@ public:
 	u32 hashSlots() const { return readHeader(TableHeader::Hash); }
 	u32 lengthHint() const { return readHeader(TableHeader::Length); }
 	i32 hashFree() const { return static_cast<i32>(readHeader(TableHeader::Free)); }
-	Table(const Table&) = delete;
-	Table& operator=(const Table&) = delete;
 	static size_t hashCapacity(int hashSize);
 	static size_t trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	static size_t nativeAddressOffset();
-#endif
 
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);
@@ -73,47 +71,50 @@ public:
 	Value getStringKeyCached(StringId key, int& predictedSlot) const;
 	int setStringKey(StringId key, const Value& value);
 	// Completes mutations within allocated storage; growth leaves the mapping unchanged.
-	static int storeStringKeyWithoutGrowth(Table* table, StringId key, const Value& value) noexcept;
-	static int storeStringKeyInNative(Table* table, StringId key, const Value& value) noexcept;
+	static int storeStringKeyWithoutGrowth(TableRecord* table, StringId key, const Value& value) noexcept;
+	static int storeStringKeyInNative(GcHeap* heap, u32 address, StringId key, const Value& value) noexcept;
 	void setStringKeyCached(StringId key, const Value& value, int& predictedSlot);
-	Table* metatableIndexTable(StringId indexKey) const;
+	Value metatableIndexValue(StringId indexKey) const;
 	void resolveIndex(StringId indexKey, const Value& key, TableLookupResult& result) const {
-		resolveIndexChain(indexKey, result, [&key](const Table& table) {
+		resolveIndexChain(indexKey, result, [&key](const TableRecord& table) {
 			return table.get(key);
 		});
 	}
 	void resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const {
-		resolveIndexChain(indexKey, result, [key](const Table& table) {
+		resolveIndexChain(indexKey, result, [key](const TableRecord& table) {
 			return table.getInteger(key);
 		});
 	}
 	void resolveStringIndex(StringId indexKey, StringId key, TableLookupResult& result) const {
-		resolveIndexChain(indexKey, result, [key](const Table& table) {
+		resolveIndexChain(indexKey, result, [key](const TableRecord& table) {
 			return table.getStringKey(key);
 		});
 	}
 	void resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const {
-		const Table* current = this;
+		u32 address = m_address;
 		for (int depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			const Value value = current->getStringKeyCached(key, predictedSlot);
+			const TableRecord current(m_heap, address);
+			const Value value = current.getStringKeyCached(key, predictedSlot);
 			if (!isNil(value)) {
 				result = {value, predictedSlot, static_cast<u32>(depth), TableLookupStatus::Resolved};
 				return;
 			}
-			current = current->metatableIndexTable(indexKey);
-			if (!current) {
+			const Value parent = current.metatableIndexValue(indexKey);
+			if (!valueIsTable(parent)) {
 				result = {valueNil(), -1, static_cast<u32>(depth), TableLookupStatus::Resolved};
 				return;
 			}
+			address = valuePayload(parent);
 		}
 		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
 		result.status = TableLookupStatus::ChainExhausted;
 	}
 	// Generated-code leaf: no allocation, guest callback or architectural write.
 	// The caller commits result only when the returned chain status succeeds.
-	static void loadStringIndex(const Table* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept;
+	static void loadStringIndex(const TableRecord* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept;
+	static void loadStringIndexInNative(GcHeap* heap, const TableReadRequest& request, TableLookupResult& result) noexcept;
 	// Pure boundary search; also the generated-code entry point.
-	static i32 length(const Table* table, u32* probes = nullptr) noexcept;
+	static i32 length(const TableRecord* table, u32* probes = nullptr) noexcept;
 	void clear();
 	// Physical array positions followed by hash nodes, including vacant/dead slots.
 	size_t storedSlotCount() const { return arrayCapacity() + hashSlots(); }
@@ -162,14 +163,12 @@ public:
 	}
 	// Returns inspected Value slots; a nil output key denotes exhaustion.
 	size_t nextEntry(const Value& after, Value& key, Value& value) const;
-	u32 captureSnapshot(CpuSnapshot& snapshot) const;
 	size_t trackedHeapBytes() const;
-
-	Table* metatable() const;
-	void setMetatable(Table* table);
-	bool gcWeakListed = false;
+	u32 metatableAddress() const { return readHeader(TableHeader::Metatable); }
+	void setMetatableAddress(u32 address);
 
 private:
+	void writeBarrier();
 	bool getArraySlot(size_t slot, Value& value) const {
 		if (slot >= arrayCapacity()) return false;
 		const Value own = values().get(slot);
@@ -232,18 +231,20 @@ private:
 	void markHashNodeDead(size_t index);
 	template <typename Lookup>
 	void resolveIndexChain(StringId indexKey, TableLookupResult& result, Lookup&& lookup) const {
-		const Table* current = this;
+		u32 address = m_address;
 		for (int depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			const Value value = lookup(*current);
+			const TableRecord current(m_heap, address);
+			const Value value = lookup(current);
 			if (!isNil(value)) {
 				result = {value, -1, static_cast<u32>(depth), TableLookupStatus::Resolved};
 				return;
 			}
-			current = current->metatableIndexTable(indexKey);
-			if (!current) {
+			const Value parent = current.metatableIndexValue(indexKey);
+			if (!valueIsTable(parent)) {
 				result = {valueNil(), -1, static_cast<u32>(depth), TableLookupStatus::Resolved};
 				return;
 			}
+			address = valuePayload(parent);
 		}
 		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
 		result.status = TableLookupStatus::ChainExhausted;
@@ -254,9 +255,24 @@ private:
 		return {&m_memory, words, words + (arrayCapacity() + 3u * hashSlots()) * 4u};
 	}
 
+protected:
 	GcHeap& m_heap;
 	Memory& m_memory;
 	u32 m_address;
+};
+
+// Transitional collection metadata. No language operation needs this object
+// to address the physical record.
+class Table : public GCObject, public TableRecord {
+public:
+	Table(GcHeap& heap, u32 address) : TableRecord(heap, address) {}
+	Table(const Table&) = delete;
+	Table& operator=(const Table&) = delete;
+	using GCObject::writeBarrier;
+	Table* metatable() const;
+	void setMetatable(Table* table) { setMetatableAddress(table ? table->address() : 0u); }
+	u32 captureSnapshot(CpuSnapshot& snapshot) const;
+	bool gcWeakListed = false;
 };
 
 } // namespace bmsx

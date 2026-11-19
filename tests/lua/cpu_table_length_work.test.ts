@@ -31,14 +31,14 @@ function program(wide: boolean) {
 
 function makeTable(cpu: CPU, kind: typeof cases[number][0]): Table {
 	const table = cpu.createTable(kind === 'sparse' || kind === 'terminal' ? 0 : 4096, 128);
-	if (kind === 'ascending') for (let k = 1; k <= 64; k++) table.setInteger(k, valueBool(false));
+	if (kind === 'ascending') for (let k = 1; k <= 64; k++) table.records.setInteger(table.address, k, valueBool(false));
 	if (kind === 'descending' || kind === 'stale') {
 		const value = kind === 'stale' ? valueTable(cpu.gc.reference(cpu.createTable())) : valueBool(false);
-		for (let k = 4096; k >= 1; k--) table.setInteger(k, value);
+		for (let k = 4096; k >= 1; k--) table.records.setInteger(table.address, k, value);
 	}
-	if (kind === 'stale') table.clearWeakEntries(false, true, () => false);
-	if (kind === 'sparse' || kind === 'terminal') for (let bit = 30; bit >= 0; bit--) table.setInteger(2 ** bit, valueBool(false));
-	if (kind === 'terminal') table.setInteger(0x7fffffff, valueBool(false));
+	if (kind === 'stale') table.records.clearWeakEntries(table.address, false, true, () => false);
+	if (kind === 'sparse' || kind === 'terminal') for (let bit = 30; bit >= 0; bit--) table.records.setInteger(table.address, 2 ** bit, valueBool(false));
+	if (kind === 'terminal') table.records.setInteger(table.address, 0x7fffffff, valueBool(false));
 	return table;
 }
 test('pure Table length emits exact logical own-presence work without repairing its saved seed', () => {
@@ -47,21 +47,21 @@ test('pure Table length emits exact logical own-presence work without repairing 
 		const table = makeTable(cpu, kind); cpu.rootThread.currentFrame!.registers.setTable(0, cpu.gc.reference(table));
 		const before = cpu.captureRuntimeState(), work: TableLengthWork = { probes: 0 };
 		for (let repeat = 0; repeat < 3; ++repeat) {
-			assert.equal(table.length(work), boundary); assert.equal(work.probes, probes, kind);
-			assert.equal(table.length(), boundary, 'raw host query preserves its Number-returning contract');
+			assert.equal(table.records.length(table.address, work), boundary); assert.equal(work.probes, probes, kind);
+			assert.equal(table.records.length(table.address), boundary, 'raw host query preserves its Number-returning contract');
 		}
 		assert.ok(isDeepStrictEqual(cpu.captureRuntimeState(), before), 'logical probe output mutates no guest state, storage, seed or heap');
 	}
 	const { image } = program(false), { cpu } = createTestSystemCpu(image), table = makeTable(cpu, 'descending');
 	assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 1);
-	for (let k = 0; k < 300; ++k) table.setStringKey(cpu.stringPool.intern(`key${k}`), valueBool(true));
+	for (let k = 0; k < 300; ++k) table.records.setStringKey(table.address, cpu.stringPool.intern(`key${k}`), valueBool(true));
 	assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 1, 'hash redistribution preserves the logical seed');
-	const work = { probes: 0 }; assert.equal(table.length(work), 4096); assert.equal(work.probes, 26);
-	table.setInteger(2, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 2, 'even an existing eligible mapping advances only one adjacent step');
-	table.setInteger(2, valueNil()); assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 1);
-	table.clear(); assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 0); assert.equal(table.length(work), 0); assert.equal(work.probes, 1);
-	const hash = cpu.createTable(0, 16); hash.setInteger(1, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash.address + TableHeader.Length), 1);
-	hash.setInteger(2, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash.address + TableHeader.Length), 2, 'eligible keys in preallocated hash storage use the same seed update');
+	const work = { probes: 0 }; assert.equal(table.records.length(table.address, work), 4096); assert.equal(work.probes, 26);
+	table.records.setInteger(table.address, 2, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 2, 'even an existing eligible mapping advances only one adjacent step');
+	table.records.setInteger(table.address, 2, valueNil()); assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 1);
+	table.records.clear(table.address); assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 0); assert.equal(table.records.length(table.address, work), 0); assert.equal(work.probes, 1);
+	const hash = cpu.createTable(0, 16); hash.records.setInteger(hash.address, 1, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash.address + TableHeader.Length), 1);
+	hash.records.setInteger(hash.address, 2, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash.address + TableHeader.Length), 2, 'eligible keys in preallocated hash storage use the same seed update');
 });
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
@@ -77,13 +77,13 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const savedSeed = cpu.memory.readRamRecordWord(table.address + TableHeader.Length), heap = cpu.luaHeap.usedBytes();
 			for (let grant = 0; grant <= total; ++grant) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
-				frame.registers.setInteger(6, 91); frame.registers.setNil(8); frame.registers.setNil(9); marker.setInteger(1, valueInteger(-1));
+				frame.registers.setInteger(6, 91); frame.registers.setNil(8); frame.registers.setNil(9); marker.records.setInteger(marker.address, 1, valueInteger(-1));
 				assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
 				let remaining = grant, completed = 0; while (remaining > 0) remaining -= charges[completed++];
 				assert.equal(cpu.instructionBudgetRemaining, remaining, `${kind}/${grant}: entire P charge once`);
 				assert.equal(frame.pc, base + starts[completed === 6 ? 0 : completed] * INSTRUCTION_BYTES);
 				assert.equal(frame.registers.get(6), completed >= 3 ? valueInteger(boundary) : completed >= 2 ? valueTable(cpu.gc.reference(table)) : valueInteger(91));
-				assert.equal(marker.getInteger(1), valueInteger(completed >= 4 ? boundary : -1), 'no future table mutation after exhausted LEN');
+				assert.equal(marker.records.getInteger(marker.address, 1), valueInteger(completed >= 4 ? boundary : -1), 'no future table mutation after exhausted LEN');
 				assert.equal(frame.registers.get(8), completed >= 5 ? valueInteger(37) : valueNil(), 'cached live Number survives the helper and exact prefix admission');
 			}
 			assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), savedSeed); assert.equal(cpu.luaHeap.usedBytes(), heap);
@@ -111,14 +111,14 @@ for (const kind of ['ascending', 'descending'] as const) test(`published JS regi
 	frame.registers.setTable(0, cpu.gc.reference(table)); frame.registers.setTable(10, cpu.gc.reference(marker)); cpu.runUntilDepth(0, (kind === 'ascending' ? 31 : 175) * 64);
 	const page = frame.decodedPage!, block = page.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
 	assert.ok(block && 18 > block.admissionCycles, 'the real generated body is admitted, not an interpreter fallback');
-	frame.registers.setInteger(6, 91); frame.registers.setNil(8); marker.setInteger(1, valueInteger(-1));
+	frame.registers.setInteger(6, 91); frame.registers.setNil(8); marker.records.setInteger(marker.address, 1, valueInteger(-1));
 	const state = { remainingCycles: 18, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
 	const exit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, state)];
 	assert.equal(exit.nextPc, base + starts[3] * INSTRUCTION_BYTES);
 	assert.equal(state.remainingCycles, kind === 'ascending' ? -1 : -145);
 	assert.equal(state.lengthWork.probes, kind === 'ascending' ? 2 : 26);
 	assert.equal(frame.registers.getInteger(6), kind === 'ascending' ? 64 : 4096, 'resident LEN result is raw-published on completed Continue');
-	assert.equal(marker.getInteger(1), valueInteger(-1)); assert.equal(frame.registers.get(8), valueNil());
+	assert.equal(marker.records.getInteger(marker.address, 1), valueInteger(-1)); assert.equal(frame.registers.get(8), valueNil());
 });
 
 for (const wide of [false, true]) test(`skipped LEN performs no logical search (WIDE=${wide})`, () => {

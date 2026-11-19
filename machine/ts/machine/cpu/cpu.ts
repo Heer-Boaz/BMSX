@@ -113,13 +113,13 @@ import {
 	EMPTY_CALL_ARGS,
 	ValueTag,
 	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToString,
-	valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, asTable, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread,
+	valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread,
 	valueTag, valueToInteger,
 	valueTypeNameForLuaTag,
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { Table, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
+import { Table, TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
 import { Closure, EMPTY_CLOSURE_UPVALUES, Upvalue, UPVALUE_HEAP_BYTES } from './closure';
 import { ValueSlots } from './value_slots';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
@@ -374,7 +374,7 @@ export class CPU implements MappedPageInvalidator {
 		byteLength: 0,
 	};
 	private readonly staticClosuresByAddress = new Map<number, Closure[]>();
-	private stringIndexTable: Table | null = null;
+	private stringIndexTable: Value = valueNil();
 	private systemGlobalNames: StringId[] = [];
 	private readonly systemGlobalSlots = new ValueSlots(0);
 	private systemGlobalSlotByKey: Map<StringId, number> = new Map();
@@ -427,10 +427,10 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public createTable(arraySize: number = 0, hashSize: number = 0): Table {
-		const hashCapacity = Table.hashCapacity(hashSize);
-		const address = this.luaHeap.allocateRecord(Table.HEADER_BYTES, false, Table.storageBytes(arraySize, hashCapacity), TableHeader.Storage);
+		const hashCapacity = TableRecords.hashCapacity(hashSize);
+		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, false, TableRecords.storageBytes(arraySize, hashCapacity), TableHeader.Storage);
 		const table = new Table(this.gc, address);
-		table.initialize(arraySize, hashCapacity);
+		this.gc.tables.initialize(address, arraySize, hashCapacity);
 		table.hashId = this.allocateObjectHashId();
 		this.gc.track(table);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(this.gc.reference(table)));
@@ -541,43 +541,43 @@ export class CPU implements MappedPageInvalidator {
 	// all indexed-read forms. Table-only resolution is an implementation limitation,
 	// not the intended BLua contract; raw Table storage must not execute guest code.
 	private loadTableIndex(base: Value, key: Value, target: ValueSlots, targetIndex: number): void {
-		let table: Table;
+		let address: number;
 		switch (valueTag(base)) {
-			case ValueTag.Table: table = asTable(base, this.gc); break;
-			case ValueTag.String: table = this.stringIndexTable!; break;
+			case ValueTag.Table: address = valuePayload(base); break;
+			case ValueTag.String: address = valuePayload(this.stringIndexTable); break;
 			default: throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
-		if (table.metatable === null) { table.load(valueTag(key), valuePayload(key), target, targetIndex); return; }
+		if (this.gc.tables.metatableAddress(address) === 0) { this.gc.tables.load(address, valueTag(key), valuePayload(key), target, targetIndex); return; }
 		const result = this.tableLookupResult;
-		table.resolveIndex(this.indexKey, valueTag(key), valuePayload(key), result);
+		this.gc.tables.resolveIndex(address, this.indexKey, valueTag(key), valuePayload(key), result);
 		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
 		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 		target.copySlotFrom(result.values, targetIndex, 0); result.values.setNil(0);
 	}
 	private loadTableIntegerIndex(base: Value, key: number, target: ValueSlots, targetIndex: number): void {
-		let table: Table;
+		let address: number;
 		switch (valueTag(base)) {
-			case ValueTag.Table: table = asTable(base, this.gc); break;
-			case ValueTag.String: table = this.stringIndexTable!; break;
+			case ValueTag.Table: address = valuePayload(base); break;
+			case ValueTag.String: address = valuePayload(this.stringIndexTable); break;
 			default: throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
-		if (table.metatable === null) { table.loadInteger(key, target, targetIndex); return; }
+		if (this.gc.tables.metatableAddress(address) === 0) { this.gc.tables.loadInteger(address, key, target, targetIndex); return; }
 		const result = this.tableLookupResult;
-		table.resolveIntegerIndex(this.indexKey, key, result);
+		this.gc.tables.resolveIntegerIndex(address, this.indexKey, key, result);
 		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
 		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 		target.copySlotFrom(result.values, targetIndex, 0); result.values.setNil(0);
 	}
 	private loadTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId, target: ValueSlots, targetIndex: number): void {
-		let table: Table;
+		let address: number;
 		switch (valueTag(base)) {
-			case ValueTag.Table: table = asTable(base, this.gc); break;
-			case ValueTag.String: table = this.stringIndexTable!; break;
+			case ValueTag.Table: address = valuePayload(base); break;
+			case ValueTag.String: address = valuePayload(this.stringIndexTable); break;
 			default: throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
-		if (table.metatable === null) { page.tableCacheSlots[pageOffset] = table.loadStringKeyCached(key, page.tableCacheSlots[pageOffset], target, targetIndex); return; }
+		if (this.gc.tables.metatableAddress(address) === 0) { page.tableCacheSlots[pageOffset] = this.gc.tables.loadStringKeyCached(address, key, page.tableCacheSlots[pageOffset], target, targetIndex); return; }
 		const result = this.tableLookupResult;
-		table.resolveStringIndexCached(this.indexKey, key, page.tableCacheSlots[pageOffset], result);
+		this.gc.tables.resolveStringIndexCached(address, this.indexKey, key, page.tableCacheSlots[pageOffset], result);
 		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
 		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 		page.tableCacheSlots[pageOffset] = result.slot;
@@ -585,15 +585,15 @@ export class CPU implements MappedPageInvalidator {
 	}
 	private storeTableIndex(base: Value, key: Value, value: Value): void {
 		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-		asTable(base, this.gc).set(key, value);
+		this.gc.tables.set(valuePayload(base), key, value);
 	}
 	private storeTableIntegerIndex(base: Value, index: number, value: Value): void {
 		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-		asTable(base, this.gc).setInteger(index, value);
+		this.gc.tables.setInteger(valuePayload(base), index, value);
 	}
 	private storeTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId, value: Value): void {
 		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-		page.tableCacheSlots[pageOffset] = asTable(base, this.gc).storeStringKeyCached(key, page.tableCacheSlots[pageOffset], valueTag(value), valuePayload(value));
+		page.tableCacheSlots[pageOffset] = this.gc.tables.storeStringKeyCached(valuePayload(base), key, page.tableCacheSlots[pageOffset], valueTag(value), valuePayload(value));
 	}
 
 	private clearCallStack(): void {
@@ -630,7 +630,7 @@ export class CPU implements MappedPageInvalidator {
 		const systemResetFunctionAddress = systemBoot.startupFunctionAddress;
 		this.clearCompletionValues();
 		this.clearCallStack();
-		this.stringIndexTable = null;
+		this.stringIndexTable = valueNil();
 		this.haltedUntilIrqFrameDepth = -1;
 		this.haltedUntilIrqThread = null;
 		this.interruptEventPending = false;
@@ -2509,7 +2509,7 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.AllocateTable: {
 					const table = this.createTable(exit.exitB, exit.exitC);
 					this.setRegisterTableFast(frame, registers, exit.exitA, table);
-					this.charge(2 * table.storedSlotCount - exit.exitB);
+					this.charge(2 * this.gc.tables.storedSlotCount(table.address) - exit.exitB);
 					break;
 				}
 				case CompiledBlockExit.ReadMemory:
@@ -2682,13 +2682,13 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				case OpCode.GETI: {
 					const base = registers.get(page.b[pageOffset]), index = page.c[pageOffset];
-					if (valueTag(base) !== ValueTag.Table || !asTable(base, this.gc).loadIntegerArrayKey(index, registers, a))
+					if (valueTag(base) !== ValueTag.Table || !this.gc.tables.loadIntegerArrayKey(valuePayload(base), index, registers, a))
 						this.loadTableIntegerIndex(base, index, registers, a);
 					this.bumpRegisterTop(frame, a); return;
 				}
 				case OpCode.SETI: {
 					const base = registers.get(a), index = page.b[pageOffset], value = this.readRKValue(frame, page.c[pageOffset]);
-					if (valueTag(base) !== ValueTag.Table || !asTable(base, this.gc).storeIntegerArrayKey(index, valueTag(value), valuePayload(value)))
+					if (valueTag(base) !== ValueTag.Table || !this.gc.tables.storeIntegerArrayKey(valuePayload(base), index, valueTag(value), valuePayload(value)))
 						this.storeTableIntegerIndex(base, index, value);
 					return;
 				}
@@ -2712,7 +2712,7 @@ export class CPU implements MappedPageInvalidator {
 					const arraySize = page.b[pageOffset];
 					const table = this.createTable(arraySize, page.c[pageOffset]);
 					this.setRegisterTableFast(frame, registers, a, table);
-					this.charge(2 * table.storedSlotCount - arraySize);
+					this.charge(2 * this.gc.tables.storedSlotCount(table.address) - arraySize);
 					return;
 				}
 				case OpCode.ADD:
@@ -2774,7 +2774,7 @@ export class CPU implements MappedPageInvalidator {
 							return;
 						}
 						case ValueTag.Table: {
-							const boundary = registers.getTable(b, this.gc).length(this.tableLengthWork);
+							const boundary = this.gc.tables.length(registers.getPayload(b), this.tableLengthWork);
 							this.instructionBudgetRemaining -= this.tableLengthWork.probes * TABLE_LENGTH_PROBE_CYCLES;
 							this.setRegisterIntegerFast(frame, registers, a, boundary);
 							return;
@@ -3353,7 +3353,7 @@ export class CPU implements MappedPageInvalidator {
 				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Table) {
 					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				}
-				this.stringIndexTable = args.registers.getTable(args.base, this.gc);
+				this.stringIndexTable = args.registers.get(args.base);
 				break;
 			case BuiltinFunctionId.CoroutineCreate:
 				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Closure) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -3826,8 +3826,8 @@ export class CPU implements MappedPageInvalidator {
 	private runBuiltinNextValue(args: BuiltinArgsView, out: BuiltinResults): void {
 		const registers = args.registers, base = args.base;
 		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ITERATE_NON_TABLE);
-		const table = registers.getTable(base, this.gc);
-		this.charge(table.next(args.length > 1 ? registers.get(base + 1) : valueNil(), out, 0));
+		const address = registers.getPayload(base);
+		this.charge(this.gc.tables.next(address, args.length > 1 ? registers.get(base + 1) : valueNil(), out, 0));
 	}
 
 	private runBuiltinType(tag: ValueTag, out: BuiltinResults): void {
@@ -3839,28 +3839,28 @@ export class CPU implements MappedPageInvalidator {
 		if (args.length === 0 || registers.getTag(args.base) !== ValueTag.Table) {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
-		const target = registers.getTable(args.base, this.gc);
-		let metatable: Table | null = null;
+		const address = registers.getPayload(args.base);
+		let metatable = 0;
 		if (args.length > 1) {
 			const metatableIndex = args.base + 1;
 			const metatableTag = registers.getTag(metatableIndex);
 			if (metatableTag === ValueTag.Table) {
-				metatable = registers.getTable(metatableIndex, this.gc);
+				metatable = registers.getPayload(metatableIndex);
 			} else if (metatableTag !== ValueTag.Nil) {
 				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			}
 		}
-		target.metatable = metatable;
-		out.push(valueTable(this.gc.reference(target)));
+		this.gc.tables.setMetatableAddress(address, metatable);
+		out.push(valueTable(address));
 	}
 
 	private runBuiltinGetMetatable(args: BuiltinArgsView, out: BuiltinResults): void {
 		if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Table) {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
-		const metatable = args.registers.getTable(args.base, this.gc).metatable;
+		const metatable = this.gc.tables.metatableAddress(args.registers.getPayload(args.base));
 		if (metatable) {
-			out.push(valueTable(this.gc.reference(metatable)));
+			out.push(valueTable(metatable));
 		} else {
 			out.push(valueNil());
 		}
@@ -3869,15 +3869,14 @@ export class CPU implements MappedPageInvalidator {
 	private runBuiltinRawGet(args: BuiltinArgsView, out: BuiltinResults): void {
 		const registers = args.registers, base = args.base;
 		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		const table = registers.getTable(base, this.gc);
-		if (args.length > 1) table.load(registers.getTag(base + 1), registers.getPayload(base + 1), out, 0);
-		else table.load(ValueTag.Nil, 0, out, 0);
+		const address = registers.getPayload(base);
+		if (args.length > 1) this.gc.tables.load(address, registers.getTag(base + 1), registers.getPayload(base + 1), out, 0);
+		else this.gc.tables.load(address, ValueTag.Nil, 0, out, 0);
 	}
 	private runBuiltinRawSet(args: BuiltinArgsView, out: BuiltinResults): void {
 		const registers = args.registers, base = args.base;
 		if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		const target = registers.getTable(base, this.gc);
-		target.set(args.length > 1 ? registers.get(base + 1) : valueNil(), args.length > 2 ? registers.get(base + 2) : valueNil());
+		this.gc.tables.set(registers.getPayload(base), args.length > 1 ? registers.get(base + 1) : valueNil(), args.length > 2 ? registers.get(base + 2) : valueNil());
 		out.push(registers.get(base));
 	}
 
@@ -3965,7 +3964,6 @@ export class CPU implements MappedPageInvalidator {
 		const writeValue: CpuSnapshotValueWriter = (offset, value): void => {
 			const tag = valueTag(value); let word = valuePayload(value);
 			switch (tag) {
-				case ValueTag.Table: word = captureObject(asTable(value, this.gc), CpuSnapshotObjectKind.Table); break;
 				case ValueTag.Closure: word = captureObject(this.gc.object(word) as Closure, CpuSnapshotObjectKind.Closure); break;
 				case ValueTag.Thread: word = captureObject(this.gc.object(word) as Thread, CpuSnapshotObjectKind.Thread); break;
 			}
@@ -4079,7 +4077,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 
 		const stringIndexTable = captureStoredValueState(
-			this.stringIndexTable === null ? valueNil() : valueTable(this.gc.reference(this.stringIndexTable)),
+			this.stringIndexTable,
 		);
 
 		// Materialization order affects later object hashes even for an unrooted
@@ -4240,7 +4238,7 @@ export class CPU implements MappedPageInvalidator {
 				}
 				case CpuSnapshotObjectKind.Table: {
 					const table = new Table(this.gc, snapshot.word(offset + CpuSnapshotTable.Record));
-					this.luaHeap.restoreAllocate(table.getTrackedHeapBytes());
+					this.luaHeap.restoreAllocate(this.gc.tables.getTrackedHeapBytes(table.address));
 					this.gc.track(table); table.restored = true;
 					table.hashId = snapshot.word(offset + CpuSnapshotTable.HashId);
 					restoredObjects[index] = table;
@@ -4419,7 +4417,7 @@ export class CPU implements MappedPageInvalidator {
 		this.completionThread = restoredObjects[state.completionThreadRef] as Thread;
 		this.threadSwitchRequested = false;
 		reader.readValue(state.stringIndexTable);
-		this.stringIndexTable = reader.tag === ValueTag.Nil ? null : asTable(reader.value(), this.gc);
+		this.stringIndexTable = reader.value();
 		if (state.completionValues.length > this.completionValueSlots.capacity()) {
 			let capacity = this.completionValueSlots.capacity() * 2;
 			while (capacity < state.completionValues.length) {
@@ -4481,7 +4479,10 @@ export class CPU implements MappedPageInvalidator {
 		const seen = new Set<Table | Closure | Thread | Upvalue>();
 		const add = (value: Value): void => {
 			const tag = valueTag(value);
-			if (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread) objects.push(this.gc.object(valuePayload(value)) as Table | Closure | Thread);
+			if (tag === ValueTag.Table) {
+				const table = this.gc.tableAt(valuePayload(value));
+				if (table !== null) objects.push(table);
+			} else if (tag === ValueTag.Closure || tag === ValueTag.Thread) objects.push(this.gc.object(valuePayload(value)) as Closure | Thread);
 		};
 		const addSlots = (slots: ValueSlots, count: number): void => {
 			for (let index = 0; index < count; index += 1) add(slots.get(index));
@@ -4489,13 +4490,16 @@ export class CPU implements MappedPageInvalidator {
 		addSlots(this.systemGlobalSlots, this.systemGlobalNames.length);
 		addSlots(this.globalSlots, this.globalNames.length);
 		addSlots(this.completionValueSlots, this.completionValueCount);
-		if (this.stringIndexTable !== null) objects.push(this.stringIndexTable);
+		add(this.stringIndexTable);
 		objects.push(this.rootThread, this.activeThread, this.completionThread);
 		if (this.haltedUntilIrqThread !== null) objects.push(this.haltedUntilIrqThread);
 		for (const versions of this.staticClosuresByAddress.values()) objects.push(...versions);
 		for (const value of this.localRoots) {
 			const tag = valueTag(value);
-			if (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread) objects.push(this.gc.object(valuePayload(value)) as Table | Closure | Thread);
+			if (tag === ValueTag.Table) {
+				const table = this.gc.tableAt(valuePayload(value));
+				if (table !== null) objects.push(table);
+			} else if (tag === ValueTag.Closure || tag === ValueTag.Thread) objects.push(this.gc.object(valuePayload(value)) as Closure | Thread);
 		}
 		for (let index = 0; index < this.builtinResultsScratchIndex; index += 1) {
 			const slots = this.builtinResultsScratch.peek(index);
@@ -4526,7 +4530,7 @@ export class CPU implements MappedPageInvalidator {
 				case GcKind.Table: {
 					const table = object as Table;
 					if (table.metatable !== null) objects.push(table.metatable);
-					table.forEachStoredEntry((key, value) => { add(key); add(value); });
+					this.gc.tables.forEachStoredEntry(table.address, (key, value) => { add(key); add(value); });
 					break;
 				}
 				case GcKind.Thread: {
@@ -4565,7 +4569,7 @@ export class CPU implements MappedPageInvalidator {
 		this.stringPool.markReachable(this.errorInErrorHandlingStringId);
 		for (let i = 0; i < this.luaFaultErrorStringIds.length; ++i)
 			if (i !== LUA_FAULT_REASON_EXPLICIT_ERROR) this.stringPool.markReachable(this.luaFaultErrorStringIds[i]);
-		heap.markObject(this.stringIndexTable);
+		heap.markValue(this.stringIndexTable);
 		for (let i = 0; i < this.completionValueCount; ++i) heap.markSlot(this.completionValueSlots, i);
 		for (let i = 0; i < this.builtinResultsScratchIndex; ++i) {
 			const slots = this.builtinResultsScratch.peek(i);

@@ -21,7 +21,7 @@ for (const optLevel of [0, 3] as const) {
 					const key = cpu.getGlobalByKey(cpu.stringPool.find('checkpoint_key')!);
 					if (key !== valueNil()) {
 						const table = asTable(cpu.getGlobalByKey(cpu.stringPool.find('checkpoint_table')!), cpu.gc);
-						assert.equal(table.get(key), valueNil());
+						assert.equal(table.records.get(table.address, key), valueNil());
 						deletedContinuationObserved = true;
 					}
 				}
@@ -38,9 +38,9 @@ for (const optLevel of [0, 3] as const) {
 				const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('churn_kernel')!), cpu.gc);
 				const keys = asTable(cpu.getGlobalByKey(cpu.stringPool.find('churn_keys')!), cpu.gc);
 				const table = asTable(cpu.getGlobalByKey(cpu.stringPool.find('churn_values')!), cpu.gc);
-				assert.equal(table.storedSlotCount, 32);
-				const bucket = asTable(keys.getInteger(1), cpu.gc).hashId & 31;
-				for (let index = 2; index <= 32; index++) assert.equal(asTable(keys.getInteger(index), cpu.gc).hashId & 31, bucket);
+				assert.equal(table.records.storedSlotCount(table.address), 32);
+				const bucket = asTable(keys.records.getInteger(keys.address, 1), cpu.gc).hashId & 31;
+				for (let index = 2; index <= 32; index++) assert.equal(asTable(keys.records.getInteger(keys.address, index), cpu.gc).hashId & 31, bucket);
 				const profile = profileWarmGuestKernel(cpu, kernel, 128);
 				assert.equal(profile.reservations, 0);
 				assert.equal(profile.reservedBytes, 0);
@@ -62,14 +62,14 @@ test('zero-valued object identity remains a deleted-key continuation', () => {
 	assert.equal(key.hashId, 0);
 	const table = cpu.createTable(0, 64);
 	const keyValue = valueTable(cpu.gc.reference(key));
-	table.set(keyValue, valueInteger(9));
-	for (let index = 1; index <= 8; index++) table.setStringKey(cpu.stringPool.intern(`other_${index}`), valueInteger(index));
+	table.records.set(table.address, keyValue, valueInteger(9));
+	for (let index = 1; index <= 8; index++) table.records.setStringKey(table.address, cpu.stringPool.intern(`other_${index}`), valueInteger(index));
 	const continuation = new ValueSlots(2);
-	table.next(keyValue, continuation, 0);
+	table.records.next(table.address, keyValue, continuation, 0);
 	assert.notEqual(continuation.getTag(0), ValueTag.Nil);
 	const expected = continuation.get(0);
-	table.set(keyValue, valueNil());
-	table.next(keyValue, continuation, 0);
+	table.records.set(table.address, keyValue, valueNil());
+	table.records.next(table.address, keyValue, continuation, 0);
 	assert.notEqual(continuation.getTag(0), ValueTag.Nil);
 	assert.equal(continuation.get(0), expected);
 });

@@ -1,3 +1,4 @@
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -99,11 +100,11 @@ function fixture(worldSource = WORLD) {
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
-	cpu.reset(); cpu.installBootPrimitives(); const beforeBirth = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 100_000);
+	cpu.reset(); cpu.installBootPrimitives(); const beforeBirth = captureCpuCheckpoint(cpu); cpu.runUntilDepth(0, 100_000);
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), details = new ActorDetails(sources, guest);
 	const world = runtimeWorld(sources, guest, -1)!;
 	const objects = asTable(guest.readStringMember(world, '_objects'), cpu.gc);
-	const actorHashId = guest.identityScalar(objects.getInteger(1), ValueTag.Table), otherHashId = guest.identityScalar(objects.getInteger(2), ValueTag.Table);
+	const actorHashId = guest.identityScalar(objects.records.getInteger(objects.address, 1), ValueTag.Table), otherHashId = guest.identityScalar(objects.records.getInteger(objects.address, 2), ValueTag.Table);
 	const update = (hashId = actorHashId) => tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, hashId));
 	update();
 	const target = captureActorTarget(-1, guest.identityScalar(world, ValueTag.Table), tree.roots, tree.roots[0]);
@@ -204,15 +205,15 @@ test('historical subject absence retains the path, but hidden live-branch admiss
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	f.details.followSelection(-1, f.target.worldHashId, f.actorHashId, f.target.path, f.tree);
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false); f.details.setLocked(true);
-	const live = f.cpu.captureRuntimeState(), path = f.details.subjectPath, subject = f.details.subject;
+	const live = captureCpuCheckpoint(f.cpu), path = f.details.subjectPath, subject = f.details.subject;
 	f.execute('remove_actor');
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, true);
 	assert.equal(f.details.available, false); assert.equal(f.details.retired, false);
 	assert.equal(f.details.subjectPath, path); assert.match(f.details.title, /UNAVAILABLE$/);
-	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(live); f.update();
+	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, live); f.update();
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, true);
 	assert.equal(f.details.subject, subject); assert.equal(f.details.available, true);
-	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(f.beforeBirth); f.update();
+	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, f.beforeBirth); f.update();
 	// This is the hidden identity-lifetime hook, without a property refresh.
 	f.details.resumeHistory(f.tree, -1, undefined);
 	assert.equal(f.details.retired, true); assert.equal(f.details.available, false);
@@ -274,7 +275,7 @@ test('details clears missing typed membership instead of borrowing an alias and 
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === valueInteger(1))!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state);
-	const document = f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false)!, before = capturePropertyDocument(document), alive = f.cpu.captureRuntimeState();
+	const document = f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false)!, before = capturePropertyDocument(document), alive = captureCpuCheckpoint(f.cpu);
 	const originalObject = asTable(state.value!, f.cpu.gc);
 	f.execute('remove_numeric');
 	assert.equal(resolveActorPath(f.tree.roots, target.path), undefined);
@@ -282,7 +283,7 @@ test('details clears missing typed membership instead of borrowing an alias and 
 	assert.ok(document.every(property => property.warning));
 	assert.ok(document.every(property => property.valueChanged === false));
 	assert.equal(f.details.refresh(undefined, target.path, f.tree, -1, f.target.worldHashId, false), undefined);
-	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(alive); f.update();
+	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, alive); f.update();
 	const restored = resolveActorPath(f.tree.roots, target.path)!;
 	assert.ok(asTable(restored.value!, f.cpu.gc) !== originalObject);
 	assert.strictEqual(f.details.refresh(restored, target.path, f.tree, -1, f.target.worldHashId, false), document);
@@ -316,14 +317,14 @@ test('details marks changed displayed values across completed observations and r
 	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false)!;
 	const health = document.find(item => item.identity?.field === 'health')!, shield = document.find(item => item.identity?.field === 'shield')!;
 	assert.ok(document.every(item => item.valueChanged === false));
-	const initial = f.cpu.captureRuntimeState();
+	const initial = captureCpuCheckpoint(f.cpu);
 	f.execute('advance_gameplay_state');
 	const samePath = structuredClone(f.target.path);
 	f.details.refresh(f.tree.roots[0], samePath, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(health.value, '1'); assert.equal(health.valueChanged, true); assert.equal(shield.valueChanged, false);
 	assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	assert.equal(health.valueChanged, true, 'a recreated equal navigation path does not clear the observation');
-	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(initial); f.update();
+	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, initial); f.update();
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(health.value, '0'); assert.equal(health.valueChanged, true);
 	f.invalidate(); f.update();
@@ -359,7 +360,7 @@ test('pins own their change baseline across selection, membership edits and hist
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.identity?.field === 'health')!);
-	const initial = f.cpu.captureRuntimeState();
+	const initial = captureCpuCheckpoint(f.cpu);
 	f.execute('advance_gameplay_state');
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(pin.item.valueChanged, true);
@@ -373,7 +374,7 @@ test('pins own their change baseline across selection, membership edits and hist
 	const other = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0]);
 	f.details.refresh(f.tree.roots[0], other.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(pin.item.valueChanged, true);
-	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(initial); f.update(f.otherHashId);
+	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, initial); f.update(f.otherHashId);
 	f.details.refresh(f.tree.roots[0], other.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.item.value, '0'); assert.equal(pin.item.valueChanged, true);
 	f.invalidate(); f.update(f.otherHashId);
@@ -513,14 +514,14 @@ test('typed node pins survive history absence and recover without borrowing a sa
 	f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(target, 'state', f.details.items.find(item => item.label === 'INSTANCE DATA')!);
 	f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false);
-	const original = pin.item.value, alive = f.cpu.captureRuntimeState();
-	f.execute('remove_numeric'); const missing = f.cpu.captureRuntimeState();
-	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(missing); f.update();
+	const original = pin.item.value, alive = captureCpuCheckpoint(f.cpu);
+	f.execute('remove_numeric'); const missing = captureCpuCheckpoint(f.cpu);
+	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, missing); f.update();
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.available, false); assert.equal(pin.retired, false);
 	assert.equal(pin.item.valueChanged, false);
 	assert.ok(f.tree.roots[0].children[0].children[0].children.some(node => node.hashId === target.path[target.path.length - 1].hashId));
-	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(alive); f.update();
+	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, alive); f.update();
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.available, true); assert.equal(pin.item.value, original);
 	assert.equal(pin.item.valueChanged, false, 'an unavailable pin recovers with a new baseline');
@@ -547,7 +548,7 @@ test('live branch admission retires an absent actor before discarded-future allo
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.identity?.field === 'health')!);
-	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(f.beforeBirth); f.update();
+	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, f.beforeBirth); f.update();
 	f.details.refresh(undefined, f.target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.available, false); assert.equal(pin.retired, false);
 	f.details.watches.resumeHistory(f.tree, -1);
@@ -561,13 +562,13 @@ test('live branch admission retires an absent actor before discarded-future allo
 
 test('live branch admission also retires absent dynamic property memberships on a surviving node', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	const beforeField = f.cpu.captureRuntimeState();
+	const beforeField = captureCpuCheckpoint(f.cpu);
 	f.execute('add_future_field');
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(target, 'ordinary', f.details.items.find(item => item.value === '91')!);
-	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(beforeField); f.update();
+	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, beforeField); f.update();
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.available, false); assert.equal(pin.retired, false);
 	f.details.watches.resumeHistory(f.tree, -1);
@@ -646,7 +647,7 @@ test('blackboard pins follow real semantic rebinds, not the previous value slot 
 	const health = f.details.items.find(item => item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, healthIdentity))!;
 	const unset = f.details.items.find(item => item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, unsetIdentity))!;
 	const pin = f.details.watches.add(target, 'tree', health), nilPin = f.details.watches.add(target, 'tree', unset);
-	const initial = f.cpu.captureRuntimeState();
+	const initial = captureCpuCheckpoint(f.cpu);
 	f.execute('reorder_blackboard_keys');
 	f.details.refresh(resolveActorPath(f.tree.roots, target.path), target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.strictEqual(f.details.items.find(item => item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, healthIdentity)), health);
@@ -662,7 +663,7 @@ test('blackboard pins follow real semantic rebinds, not the previous value slot 
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(pin.item.value, '300'); assert.equal(pin.available, true);
 	assert.equal(pin.item.valueChanged, false, 'returning availability starts a neutral baseline');
-	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(initial); f.update();
+	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, initial); f.update();
 	f.details.refresh(resolveActorPath(f.tree.roots, target.path), target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.item.value, '100'); assert.ok(runtimePropertyIdentitiesEqual(pin.property, healthIdentity));
 	assert.equal(nilPin.item.value, 'nil'); assert.equal(nilPin.available, true);
@@ -766,20 +767,20 @@ test('table pins observe every direct field even when compact text and history a
 test('table pin comparison follows restored string text even when the pool reuses an out-of-preview raw string id', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	f.execute('fill_data');
-	const beforeAllocation = f.cpu.captureRuntimeState(), beforeStrings = f.cpu.stringPool.captureState();
+	const beforeAllocation = captureCpuCheckpoint(f.cpu), beforeStrings = f.cpu.stringPool.captureState();
 	f.execute('set_data_tail_text');
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'Data')!);
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const data = asTable(f.guest.readStringMember(f.tree.roots[0].value!, 'data'), f.cpu.gc);
-	const id = asStringId(data.getInteger(12)), identity = f.guest.identity(data.getInteger(12));
-	const text = f.guest.formatValue(data.getInteger(12)), preview = pin.item.value;
-	f.invalidate('history-restored'); f.cpu.stringPool.restoreState(beforeStrings); f.cpu.restoreRuntimeState(beforeAllocation); f.update();
+	const id = asStringId(data.records.getInteger(data.address, 12)), identity = f.guest.identity(data.records.getInteger(data.address, 12));
+	const text = f.guest.formatValue(data.records.getInteger(data.address, 12)), preview = pin.item.value;
+	f.invalidate('history-restored'); f.cpu.stringPool.restoreState(beforeStrings); restoreCpuCheckpoint(f.cpu, beforeAllocation); f.update();
 	f.execute('advance_gameplay_state'); f.execute('set_data_tail_text');
 	const restoredData = asTable(f.guest.readStringMember(f.tree.roots[0].value!, 'data'), f.cpu.gc);
-	assert.equal(asStringId(restoredData.getInteger(12)), id, 'the restored pool really reused the same raw string id');
-	assert.equal(f.guest.matchesIdentity(restoredData.getInteger(12), identity), false, 'retained semantic identity never aliases recycled storage');
-	assert.notEqual(f.guest.formatValue(restoredData.getInteger(12)), text);
+	assert.equal(asStringId(restoredData.records.getInteger(restoredData.address, 12)), id, 'the restored pool really reused the same raw string id');
+	assert.equal(f.guest.matchesIdentity(restoredData.records.getInteger(restoredData.address, 12), identity), false, 'retained semantic identity never aliases recycled storage');
+	assert.notEqual(f.guest.formatValue(restoredData.records.getInteger(restoredData.address, 12)), text);
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.item.value, preview); assert.equal(pin.item.valueChanged, true);
 });

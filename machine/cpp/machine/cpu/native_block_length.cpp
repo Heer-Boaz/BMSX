@@ -4,14 +4,15 @@
 
 namespace bmsx {
 namespace {
-u32 lengthKernel(NativeBlockRunState* state, const StringPool* strings, const GcHeap* heap, Value* value) noexcept {
+u32 lengthKernel(NativeBlockRunState* state, const StringPool* strings, GcHeap* heap, Value* value) noexcept {
 	if (valueIsString(*value)) {
 		*value = valueInteger(static_cast<i32>(strings->codepointCount(asStringId(*value))));
 		return 1;
 	}
 	if (valueIsTable(*value)) {
 		u32 probes;
-		const auto boundary = Table::length(asTable(*value, *heap), &probes);
+		const TableRecord table(*heap, valuePayload(*value));
+		const auto boundary = TableRecord::length(&table, &probes);
 		state->remainingCycles -= static_cast<int>(probes) * TABLE_LENGTH_PROBE_CYCLES;
 		*value = valueInteger(boundary);
 		return 1;

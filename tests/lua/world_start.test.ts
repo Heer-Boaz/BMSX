@@ -237,7 +237,7 @@ end
 		cpu.memory.writeIoU32(IO_SYS_FRAME_MS_Q16, 20 * 0x10000);
 		assert.equal(cpu.runUntilDepth(0, 25_000_000), RunResult.Halted);
 		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		const repeat = asClosure(probe.getStringKey(cpu.stringPool.find('repeat_start')!), cpu.gc);
+		const repeat = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('repeat_start')!), cpu.gc);
 		runCompletionClosure(cpu, repeat, []);
 		const before = cpu.captureRuntimeState().nextObjectHashId;
 		const bytes = cpu.luaHeap.usedBytes();

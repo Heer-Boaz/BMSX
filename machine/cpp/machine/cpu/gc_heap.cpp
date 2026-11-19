@@ -88,6 +88,7 @@ size_t GcHeap::nativeReferencesOffset() {
 	static_assert(sizeof(ReferenceSlot) == sizeof(void*));
 	return offsetof(GcHeap, m_referenceBase);
 }
+size_t GcHeap::nativeTableRecordsOffset() { return offsetof(GcHeap, m_tableRecordBase); }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -102,8 +103,7 @@ void GcHeap::track(GCObject* object) {
 	if (object->type == ObjType::Table) {
 		auto* table = static_cast<Table*>(object);
 		m_tableRecords[(table->address() & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES] = table;
-	}
-	if (m_freeReference != 0) {
+	} else if (m_freeReference != 0) {
 		object->referenceId = m_freeReference;
 		m_freeReference = m_references[m_freeReference].nextFree;
 		m_references[object->referenceId].object = object;
@@ -327,7 +327,7 @@ void GcHeap::unlink(GCObject* object) {
 	if (object->next) object->next->previous = object->previous;
 }
 void GcHeap::destroyObject(GCObject* object) {
-	releaseReference(object);
+	if (object->type != ObjType::Table) releaseReference(object);
 	switch (object->type) {
 		case ObjType::Garbage:
 			budget.release(static_cast<GarbageAllocation*>(object)->bytes);
@@ -480,14 +480,14 @@ void GcHeap::bindRestoredReferences(const GcState& state, const std::vector<GCOb
 	}
 	// The old references are retired. Install the saved slots before resolving
 	// any Value or upvalue edge in the newly constructed object graph.
-	m_references.resize(1u + state.references.size() + state.freeReferences.size());
+	m_references.resize(1u + state.freeReferences.size() + std::count_if(state.references.begin(), state.references.end(), [](u32 slot) { return slot != 0; }));
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	m_referenceBase = m_references.data();
 #endif
 	for (size_t i = 0; i < state.references.size(); ++i) {
 		auto* object = objects[state.allocations[i]];
 		object->referenceId = state.references[i];
-		m_references[object->referenceId].object = object;
+		if (object->type != ObjType::Table) m_references[object->referenceId].object = object;
 	}
 	m_freeReference = 0;
 	for (auto it = state.freeReferences.rbegin(); it != state.freeReferences.rend(); ++it) {

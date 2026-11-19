@@ -25,7 +25,7 @@ Value CpuSnapshotReader::readValue(u32 offset) const {
 	const auto tag = static_cast<ValueTag>(snapshot.word(offset));
 	u32 payload = snapshot.word(offset + 1);
 	switch (tag) {
-		case ValueTag::Table: case ValueTag::Thread: case ValueTag::Closure:
+		case ValueTag::Thread: case ValueTag::Closure:
 			payload = m_heap.reference(m_objects[payload]); break;
 		default: break;
 	}

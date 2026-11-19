@@ -26,10 +26,10 @@ for (const optLevel of [0,3] as const) for (const backend of [CpuExecutionBacken
 		const {cpu} = createTestSystemCpu(image, backend); cpu.installBootPrimitives();
 		assert.equal(cpu.runUntilDepth(0,1_000_000),RunResult.Halted);
 		const roots = v.asTable(materializeCpuCompletionValues(cpu)[0],cpu.gc);
-		const fsm = v.asTable(roots.getInteger(1),cpu.gc), effects = v.asTable(roots.getInteger(2),cpu.gc);
-		const fsmRecord = v.asClosure(roots.getInteger(6),cpu.gc), effectRecord = v.asClosure(roots.getInteger(7),cpu.gc);
+		const fsm = v.asTable(roots.records.getInteger(roots.address, 1),cpu.gc), effects = v.asTable(roots.records.getInteger(roots.address, 2),cpu.gc);
+		const fsmRecord = v.asClosure(roots.records.getInteger(roots.address, 6),cpu.gc), effectRecord = v.asClosure(roots.records.getInteger(roots.address, 7),cpu.gc);
 		for (const start of [0x7ffffffd,0xfffffffd]) {
-			for (const channel of [fsm,effects]) channel.setInteger(4,v.valueInteger(start));
+			for (const channel of [fsm,effects]) channel.records.setInteger(channel.address, 4,v.valueInteger(start));
 			const transitions: unknown[][] = [], facts: unknown[][] = [];
 			const observation = new FsmTransitionObservation(fsm,cpu.stringPool,cpu.gc,(...args)=>transitions.push(args));
 			const effect = new ActionEffectObservation(effects,cpu.stringPool,cpu.gc,{
@@ -38,8 +38,8 @@ for (const optLevel of [0,3] as const) for (const backend of [CpuExecutionBacken
 			observation.discardPublished(); effect.discardPublished();
 			const produce = (index: number) => {
 				cpu.memory.writeIoU32(IO_SYS_TIME_MS,(0xfffffffc+index)>>>0);
-				runCompletionClosure(cpu,fsmRecord,[roots.getInteger(1),roots.getInteger(3),roots.getInteger(4),roots.getInteger(5),v.valueBool(index%2===0)]);
-				runCompletionClosure(cpu,effectRecord,[roots.getInteger(2),v.valueString(cpu.stringPool.intern(index%2===0?'trigger':'activate')),
+				runCompletionClosure(cpu,fsmRecord,[roots.records.getInteger(roots.address, 1),roots.records.getInteger(roots.address, 3),roots.records.getInteger(roots.address, 4),roots.records.getInteger(roots.address, 5),v.valueBool(index%2===0)]);
+				runCompletionClosure(cpu,effectRecord,[roots.records.getInteger(roots.address, 2),v.valueString(cpu.stringPool.intern(index%2===0?'trigger':'activate')),
 					v.valueString(cpu.stringPool.intern('fire')),index%2===0?v.valueString(cpu.stringPool.intern('accepted')):v.valueInteger(index)]);
 			};
 			for(let index=1;index<=8;index++) { produce(index); if(index%4===0) {observation.drain(20);effect.drain(20);} }
@@ -64,8 +64,8 @@ for (const optLevel of [0,3] as const) for (const backend of [CpuExecutionBacken
 				const channel = kind === 'fsm' ? fsm : effects;
 				const closure = kind === 'fsm' ? fsmRecord : effectRecord;
 				const args = kind === 'fsm'
-					? [roots.getInteger(1), roots.getInteger(3), roots.getInteger(4), roots.getInteger(5), v.valueBool(true)]
-					: [roots.getInteger(2), v.valueString(cpu.stringPool.intern('activate')), v.valueString(cpu.stringPool.intern('fire')), v.valueInteger(1)];
+					? [roots.records.getInteger(roots.address, 1), roots.records.getInteger(roots.address, 3), roots.records.getInteger(roots.address, 4), roots.records.getInteger(roots.address, 5), v.valueBool(true)]
+					: [roots.records.getInteger(roots.address, 2), v.valueString(cpu.stringPool.intern('activate')), v.valueString(cpu.stringPool.intern('fire')), v.valueInteger(1)];
 				const accepted: number[] = [];
 				const strict = kind === 'fsm'
 					? new FsmTransitionObservation(channel, cpu.stringPool, cpu.gc, () => assert.fail('overwritten data cannot be published'))
@@ -75,13 +75,13 @@ for (const optLevel of [0,3] as const) for (const backend of [CpuExecutionBacken
 					: new ActionEffectObservation(channel, cpu.stringPool, cpu.gc, { trigger: sequence => accepted.push(sequence), activity: sequence => accepted.push(sequence) }, 'rolling');
 				strict.discardPublished(); rolling.discardPublished();
 				for (let index = 0; index < 4; index++) runCompletionClosure(cpu, closure, args);
-				const published = v.valuePayload(channel.getInteger(4)), next = (published + 1) >>> 0;
-				const overwritten = v.asTable(v.asTable(channel.getInteger(5), cpu.gc).getInteger(((next - 1) & 3) + 1), cpu.gc);
-				cpu.setExecutionHook(() => v.valuePayload(overwritten.getInteger(1)) === next
-					&& v.valuePayload(channel.getInteger(4)) === published, ALL_EXECUTION_DOMAINS_MASK, ALL_EXECUTION_DOMAINS_MASK);
+				const published = v.valuePayload(channel.records.getInteger(channel.address, 4)), next = (published + 1) >>> 0;
+				const overwritten = v.asTable(cpu.gc.tables.getInteger(v.valuePayload(channel.records.getInteger(channel.address, 5)), ((next - 1) & 3) + 1), cpu.gc);
+				cpu.setExecutionHook(() => v.valuePayload(overwritten.records.getInteger(overwritten.address, 1)) === next
+					&& v.valuePayload(channel.records.getInteger(channel.address, 4)) === published, ALL_EXECUTION_DOMAINS_MASK, ALL_EXECUTION_DOMAINS_MASK);
 				cpu.beginCompletionCall(closure, args);
 				assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);
-				assert.equal(v.valuePayload(channel.getInteger(4)), published, 'the new record is not published yet');
+				assert.equal(v.valuePayload(channel.records.getInteger(channel.address, 4)), published, 'the new record is not published yet');
 				assert.throws(() => strict.drain(23), /overflowed its 4-record buffer/);
 				rolling.drain(23);
 				assert.equal(rolling.droppedCount, 1);
@@ -93,8 +93,8 @@ for (const optLevel of [0,3] as const) for (const backend of [CpuExecutionBacken
 			}
 
 		}
-		const fsmArgs = [roots.getInteger(1), roots.getInteger(3), roots.getInteger(4), roots.getInteger(5), v.valueBool(false)];
-		const effectArgs = [roots.getInteger(2), v.valueString(cpu.stringPool.intern('activate')), v.valueString(cpu.stringPool.intern('fire')), v.valueInteger(1)];
+		const fsmArgs = [roots.records.getInteger(roots.address, 1), roots.records.getInteger(roots.address, 3), roots.records.getInteger(roots.address, 4), roots.records.getInteger(roots.address, 5), v.valueBool(false)];
+		const effectArgs = [roots.records.getInteger(roots.address, 2), v.valueString(cpu.stringPool.intern('activate')), v.valueString(cpu.stringPool.intern('fire')), v.valueInteger(1)];
 		runCompletionClosure(cpu, fsmRecord, fsmArgs); runCompletionClosure(cpu, effectRecord, effectArgs);
 		const reserve = t.mock.method(cpu.luaHeap, 'reserve');
 		for (let index = 0; index < 32; index++) { runCompletionClosure(cpu, fsmRecord, fsmArgs); runCompletionClosure(cpu, effectRecord, effectArgs); }

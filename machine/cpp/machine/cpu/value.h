@@ -40,7 +40,7 @@ inline constexpr Value valueFloatBits(uint32_t bits) { return valueFromTag(Value
 // New arithmetic result, not a raw load/copy. NaNs canonicalize per operation.
 inline Value valueFloat(float value) { return valueFloatBits(luaFloatResultBits(value)); }
 inline constexpr Value valueString(StringId id) { return valueFromTag(ValueTag::String, id); }
-inline constexpr Value valueTable(uint32_t reference) { return valueFromTag(ValueTag::Table, reference); }
+inline constexpr Value valueTable(uint32_t address) { return valueFromTag(ValueTag::Table, address); }
 inline constexpr Value valueClosure(uint32_t reference) { return valueFromTag(ValueTag::Closure, reference); }
 inline constexpr Value valueThread(uint32_t reference) { return valueFromTag(ValueTag::Thread, reference); }
 inline constexpr Value valueBuiltinFunction(BuiltinFunctionId id) {
@@ -117,8 +117,8 @@ inline uint32_t scalarValueHash(Value value) {
 		default: BMSX_UNREACHABLE();
 	}
 }
-// Reference decoding requires the owner; an encoded payload is never itself a
-// wide-host pointer, nor a global directory or a hash identity.
+// These conversions find collector metadata, not the storage addressed by
+// a Table payload. Language table operations consume the raw address instead.
 Table* asTable(Value value, const GcHeap& heap);
 Closure* asClosure(Value value, const GcHeap& heap);
 Thread* asThread(Value value, const GcHeap& heap);

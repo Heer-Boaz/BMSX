@@ -38,17 +38,17 @@ export class FsmTransitionObservation {
 		private readonly publish: FsmTransitionSink,
 		private readonly retention: 'strict' | 'rolling' = 'strict',
 	) {
-		this.capacity = asInteger(channel.getInteger(CHANNEL_CAPACITY));
-		this.records = asTable(channel.getInteger(CHANNEL_RECORDS), heap);
+		this.capacity = asInteger(channel.records.getInteger(channel.address, CHANNEL_CAPACITY));
+		this.records = asTable(channel.records.getInteger(channel.address, CHANNEL_RECORDS), heap);
 		this.instanceId = this.readString(channel, CHANNEL_INSTANCE_ID);
 		this.machineId = this.readString(channel, CHANNEL_MACHINE_ID);
 	}
 
 	/** A restored live subscription begins at its accepted publication, not an older heap's cursor. */
-	public discardPublished(): void { this.consumedSequence = valuePayload(this.channel.getInteger(CHANNEL_PUBLISHED_SEQUENCE)); }
+	public discardPublished(): void { this.consumedSequence = valuePayload(this.channel.records.getInteger(this.channel.address, CHANNEL_PUBLISHED_SEQUENCE)); }
 
 	public drain(observedTick: number): void {
-		const publishedSequence = valuePayload(this.channel.getInteger(CHANNEL_PUBLISHED_SEQUENCE));
+		const publishedSequence = valuePayload(this.channel.records.getInteger(this.channel.address, CHANNEL_PUBLISHED_SEQUENCE));
 		let available = (publishedSequence - this.consumedSequence) >>> 0;
 		if (available === 0) return;
 		if (available > this.capacity) {
@@ -64,8 +64,8 @@ export class FsmTransitionObservation {
 		while (available > 0) {
 			const producerSequence = (this.consumedSequence + 1) >>> 0;
 			const slot = ((producerSequence - 1) & (this.capacity - 1)) + 1;
-			const record = asTable(this.records.getInteger(slot), this.heap);
-			const recordSequence = valuePayload(record.getInteger(RECORD_PRODUCER_SEQUENCE));
+			const record = asTable(this.records.records.getInteger(this.records.address, slot), this.heap);
+			const recordSequence = valuePayload(record.records.getInteger(record.address, RECORD_PRODUCER_SEQUENCE));
 			if (recordSequence !== producerSequence) {
 				if (this.retention === 'strict') throw new Error(`FSM transition recorder '${this.instanceId}' overflowed its ${this.capacity}-record buffer.`);
 				this.droppedCount++;
@@ -73,10 +73,10 @@ export class FsmTransitionObservation {
 				available--;
 				continue;
 			}
-			const committed = isTruthy(record.getInteger(RECORD_COMMITTED));
+			const committed = isTruthy(record.records.getInteger(record.address, RECORD_COMMITTED));
 			this.publish(
 				recordSequence,
-				valuePayload(record.getInteger(RECORD_PRODUCER_TIME_MILLISECONDS_WORD)),
+				valuePayload(record.records.getInteger(record.address, RECORD_PRODUCER_TIME_MILLISECONDS_WORD)),
 				observedTick,
 				this.readString(record, RECORD_LANE_DEF_ID),
 				this.readString(record, RECORD_FROM_DEF_ID),
@@ -89,6 +89,6 @@ export class FsmTransitionObservation {
 	}
 
 	private readString(table: Table, index: number): string {
-		return this.stringPool.toString(asStringId(table.getInteger(index)));
+		return this.stringPool.toString(asStringId(table.records.getInteger(table.address, index)));
 	}
 }

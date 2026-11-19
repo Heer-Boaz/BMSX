@@ -19,9 +19,9 @@ for (const optLevel of [0, 3] as const) {
 		const outer = cpu.acquireLocalRoots();
 		try {
 			const value = asTable(prepareLuaLiteral('{ local_root_key = "outer-payload", child = { "nested-payload" } }')(cpu), cpu.gc);
-			assert.equal(cpu.stringPool.toString(asStringId(value.getStringKey(cpu.stringPool.find('local_root_key')!))), 'outer-payload');
-			const child = asTable(value.getStringKey(cpu.stringPool.find('child')!), cpu.gc);
-			assert.equal(cpu.stringPool.toString(asStringId(child.getInteger(1))), 'nested-payload');
+			assert.equal(cpu.stringPool.toString(asStringId(value.records.getStringKey(value.address, cpu.stringPool.find('local_root_key')!))), 'outer-payload');
+			const child = asTable(value.records.getStringKey(value.address, cpu.stringPool.find('child')!), cpu.gc);
+			assert.equal(cpu.stringPool.toString(asStringId(child.records.getInteger(child.address, 1))), 'nested-payload');
 			const inner = cpu.acquireLocalRoots();
 			try {
 				cpu.stringPool.intern('inner-only-payload');

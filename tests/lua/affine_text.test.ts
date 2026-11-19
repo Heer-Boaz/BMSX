@@ -164,7 +164,7 @@ for (const optLevel of [0, 3] as const) {
 			if (optLevel === 3) {
 				const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 				for (const lane of name === 'plain' ? ['run', 'affine'] : ['run']) {
-					const kernel = asClosure(probe.getStringKey(cpu.stringPool.find(lane)!), cpu.gc);
+					const kernel = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(lane)!), cpu.gc);
 					const profile = profileWarmGuestKernel(cpu, kernel, 256);
 					assert.equal(profile.reservations, 0);
 					assert.equal(profile.reservedBytes, 0);

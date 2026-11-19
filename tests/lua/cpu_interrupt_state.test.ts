@@ -631,8 +631,8 @@ end)
 coroutine.resume(worker)
 `);
 	const coroutine = cpu.createTable(0, 2);
-	coroutine.setStringKey(cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
-	coroutine.setStringKey(cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
+	coroutine.records.setStringKey(coroutine.address, cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
+	coroutine.records.setStringKey(coroutine.address, cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
 	cpu.setGlobalByKey(cpu.stringPool.intern('coroutine'), valueTable(cpu.gc.reference(coroutine)));
 	let result = RunResult.Yielded;
 	for (let step = 0; step < 10 && result === RunResult.Yielded; step += 1) result = cpu.runUntilDepth(0, 100000);
@@ -1849,20 +1849,20 @@ test('CPU runtime snapshot preserves nested table object identities', () => {
 	const root = cpu.createTable(0, 64);
 	const child = cpu.createTable(0, 1);
 	const objectKey = cpu.createTable(0, 0);
-	child.setStringKey(parentKey, valueTable(cpu.gc.reference(root)));
-	root.setStringKey(childKey, valueTable(cpu.gc.reference(child)));
-	root.setStringKey(objectKeyName, valueTable(cpu.gc.reference(objectKey)));
-	root.set(valueTable(cpu.gc.reference(objectKey)), valueTable(cpu.gc.reference(child)));
+	child.records.setStringKey(child.address, parentKey, valueTable(cpu.gc.reference(root)));
+	root.records.setStringKey(root.address, childKey, valueTable(cpu.gc.reference(child)));
+	root.records.setStringKey(root.address, objectKeyName, valueTable(cpu.gc.reference(objectKey)));
+	root.records.set(root.address, valueTable(cpu.gc.reference(objectKey)), valueTable(cpu.gc.reference(child)));
 	cpu.setGlobalByKey(rootName, valueTable(cpu.gc.reference(root)));
 	const snapshot = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(snapshot);
 
 	const restoredRoot = asTable(cpu.getGlobalByKey(rootName), cpu.gc);
-	const restoredChild = asTable(restoredRoot.getStringKey(childKey), cpu.gc);
-	const restoredObjectKey = restoredRoot.getStringKey(objectKeyName);
+	const restoredChild = asTable(restoredRoot.records.getStringKey(restoredRoot.address, childKey), cpu.gc);
+	const restoredObjectKey = restoredRoot.records.getStringKey(restoredRoot.address, objectKeyName);
 	assert.notEqual(restoredChild, restoredRoot);
-	assert.equal(asTable(restoredChild.getStringKey(parentKey), cpu.gc), restoredRoot);
-	assert.equal(asTable(restoredRoot.get(restoredObjectKey), cpu.gc), restoredChild);
+	assert.equal(asTable(restoredChild.records.getStringKey(restoredChild.address, parentKey), cpu.gc), restoredRoot);
+	assert.equal(asTable(restoredRoot.records.get(restoredRoot.address, restoredObjectKey), cpu.gc), restoredChild);
 });
 
 

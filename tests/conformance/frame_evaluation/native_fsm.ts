@@ -121,7 +121,7 @@ for (const optLevel of [0, 3] as const) {
 				if (phase >= 4) {
 					const bindings = asTable(cpu.getGlobalByKey(cpu.stringPool.find('fsm_bindings')!), cpu.gc);
 					for (let index = 1; index <= 32; index++)
-						assert.equal(asClosure(bindings.getInteger(index), cpu.gc).functionAddress, primaryFunction);
+						assert.equal(asClosure(bindings.records.getInteger(bindings.address, index), cpu.gc).functionAddress, primaryFunction);
 				}
 			}
 			const state = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));

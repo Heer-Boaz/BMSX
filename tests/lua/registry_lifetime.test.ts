@@ -11,7 +11,7 @@ import { runCompletionClosure } from './cpu_test_harness';
 
 function entryCount(table: Table): number {
 	let count = 0;
-	table.forEachStoredEntry(() => count++);
+	table.records.forEachStoredEntry(table.address, () => count++);
 	return count;
 }
 
@@ -47,9 +47,9 @@ probe.remaining = registry._entries_by_key
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		assert.equal(probe.getStringKey(cpu.stringPool.find('after_deregister')!), valueNil(), 'last deregistered member must retire its key');
-		assert.equal(probe.getStringKey(cpu.stringPool.find('after_reconcile')!), valueNil(), 'last reconciled member must retire its key');
-		assert.equal(entryCount(asTable(probe.getStringKey(cpu.stringPool.find('remaining')!), cpu.gc)), 0);
+		assert.equal(probe.records.getStringKey(probe.address, cpu.stringPool.find('after_deregister')!), valueNil(), 'last deregistered member must retire its key');
+		assert.equal(probe.records.getStringKey(probe.address, cpu.stringPool.find('after_reconcile')!), valueNil(), 'last reconciled member must retire its key');
+		assert.equal(entryCount(asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('remaining')!), cpu.gc)), 0);
 	});
 
 	for (const keyKind of ['table', 'string'] as const) test(`Registry releases retired ${keyKind} keys and entries and plateaus across distinct-key lifetimes (O${optLevel})`, () => {
@@ -72,16 +72,16 @@ end
 `, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		const churn = asClosure(probe.getStringKey(cpu.stringPool.find('churn')!), cpu.gc);
-		const registry = asTable(probe.getStringKey(cpu.stringPool.find('registry')!), cpu.gc);
-		const byKey = asTable(registry.getStringKey(cpu.stringPool.find('_entries_by_key')!), cpu.gc);
+		const churn = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('churn')!), cpu.gc);
+		const registry = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('registry')!), cpu.gc);
+		const byKey = asTable(registry.records.getStringKey(registry.address, cpu.stringPool.find('_entries_by_key')!), cpu.gc);
 		let warmed = 0;
 		for (let cycle = 0; cycle < 3; cycle++) {
 			runCompletionClosure(cpu, churn, [valueInteger(256)]);
 			const heap = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
-			const weak = asTable(probe.getStringKey(cpu.stringPool.find('weak')!), cpu.gc);
-			assert.equal(weak.getInteger(1), valueNil(), 'retired key graph remained reachable');
-			assert.equal(weak.getInteger(2), valueNil(), 'deregistered entry remained reachable');
+			const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak')!), cpu.gc);
+			assert.equal(weak.records.getInteger(weak.address, 1), valueNil(), 'retired key graph remained reachable');
+			assert.equal(weak.records.getInteger(weak.address, 2), valueNil(), 'deregistered entry remained reachable');
 			assert.equal(entryCount(byKey), 0, 'empty key buckets accumulated');
 			if (cycle === 0) warmed = heap;
 			else assert.equal(heap, warmed, 'distinct historical keys must not grow retained Registry storage');
@@ -117,13 +117,13 @@ end
 `, { optLevel, modules: WORLD_CPU_MODULES });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-		const churn = asClosure(probe.getStringKey(cpu.stringPool.find('churn')!), cpu.gc);
+		const churn = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('churn')!), cpu.gc);
 		let warmed = 0;
 		for (let cycle = 0; cycle < 3; cycle++) {
 			runCompletionClosure(cpu, churn, [valueInteger(128)]);
 			const heap = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
-			const weak = asTable(probe.getStringKey(cpu.stringPool.find('weak')!), cpu.gc);
-			for (let index = 1; index <= 128; index++) assert.equal(weak.getInteger(index), valueNil());
+			const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak')!), cpu.gc);
+			for (let index = 1; index <= 128; index++) assert.equal(weak.records.getInteger(weak.address, index), valueNil());
 			if (cycle === 0) warmed = heap;
 			else assert.equal(heap, warmed, 'historical World tags must not grow retained Registry storage');
 		}

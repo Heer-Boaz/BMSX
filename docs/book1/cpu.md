@@ -1177,9 +1177,13 @@ allocated, it raises the Lua out-of-memory error. If language
 error handling does not handle it, the CPU takes a Trap exception with
 LuaFaultReason `9` (`OUT_OF_MEMORY`).
 
-Language allocations have value identity rather than cartridge-visible byte
-addresses. Plan DATA/BSS and hardware buffers using the separate byte-storage
-reservations in [[Memory](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, §2.3]{.content-visible when-format="pdf"}.
+A Table value carries the address of its record in the language heap. Its
+identity is that address word, not the contents of the record. The heap's
+record layouts are reserved for the language runtime; do not use the area for
+buffers. Internal record accesses use a main-RAM offset: a word access masks
+the address with `003FFFFCH`, and a byte access with `003FFFFFH`. This does not
+mirror ordinary loads, stores or DMA accesses. Plan DATA/BSS and hardware
+buffers using the separate byte-storage reservations in [[Memory](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, §2.3]{.content-visible when-format="pdf"}.
 Use addressed byte storage for exact device records and payloads.
 
 

@@ -254,7 +254,7 @@ return true`, { optLevel });
 			}
 			assert.equal(result, RunResult.Halted);
 			const retained = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
-			for (let index = 1; index <= 64; index++) assert.equal(weak.getInteger(index), valueNil());
+			for (let index = 1; index <= 64; index++) assert.equal(weak.records.getInteger(weak.address, index), valueNil());
 			if (batch === 0) first = retained;
 			assert.equal(retained, first, 'handled failures grew retained listener storage after warmup');
 		}
@@ -291,7 +291,7 @@ return true`, { optLevel });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		cpu.collectTrackedHeapBytes();
 		const weak = asTable(cpu.getGlobalByKey(cpu.stringPool.find('weak')!), cpu.gc);
-		for (let index = 1; index <= 3; index++) assert.equal(weak.getInteger(index), valueNil(),
+		for (let index = 1; index <= 3; index++) assert.equal(weak.records.getInteger(weak.address, index), valueNil(),
 			'retired traversal nodes do not own subscribers or handler captures');
 		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('finish_traversal')!), cpu.gc));
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);

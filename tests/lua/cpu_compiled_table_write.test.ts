@@ -27,21 +27,21 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 		const page = frame.decodedPage!, entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 		const block = page.compiledBlocks!.entries[entry]!;
 		assert.ok(block);
-		const parent = cpu.createTable(0, 1); parent.setStringKey(key, valueInteger(71));
-		const meta = cpu.createTable(0, 1); meta.setStringKey(cpu.stringPool.intern('__index'), valueTable(cpu.gc.reference(parent)));
+		const parent = cpu.createTable(0, 1); parent.records.setStringKey(parent.address, key, valueInteger(71));
+		const meta = cpu.createTable(0, 1); meta.records.setStringKey(meta.address, cpu.stringPool.intern('__index'), valueTable(cpu.gc.reference(parent)));
 		const values = [valueBool(false), valueFloat(-0), valueFloatBits(0xffa12345), valueTable(cpu.gc.reference(cpu.createTable())), valueString(key), valueNil()];
 		for (let n = 0; n < values.length; n++) {
 			const table = cpu.createTable(0, 8); table.metatable = meta;
-			for (let prior = 0; prior < n; prior++) table.setStringKey(cpu.stringPool.intern(`prior_${prior}`), valueInteger(prior));
+			for (let prior = 0; prior < n; prior++) table.records.setStringKey(table.address, cpu.stringPool.intern(`prior_${prior}`), valueInteger(prior));
 			for (const value of [values[n], valueNil(), values[n]]) {
 				r.setTable(0, cpu.gc.reference(table)); r.set(3, values[n]); r.set(4, value);
-				const before = table.getTrackedHeapBytes(), state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
+				const before = table.records.getTrackedHeapBytes(table.address), state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
 				const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state)];
 				assert.equal(exit.exit, CompiledBlockExit.Continue, 'new keys, nil deletion and resurrection need no CPU semantic exit');
-				assert.equal(table.getStringKey(key), constant ? valueBool(false) : value);
-				assert.equal(table.getTrackedHeapBytes(), before);
+				assert.equal(table.records.getStringKey(table.address, key), constant ? valueBool(false) : value);
+				assert.equal(table.records.getTrackedHeapBytes(table.address), before);
 				assert.equal(r.get(8), values[n]); assert.equal(r.get(9), values[n]); assert.equal(r.get(2), value);
-				assert.equal(parent.getStringKey(key), valueInteger(71), 'writes shadow inheritance instead of modifying its source');
+				assert.equal(parent.records.getStringKey(parent.address, key), valueInteger(71), 'writes shadow inheritance instead of modifying its source');
 				assert.equal(state.remainingCycles, 0);
 			}
 		}
@@ -49,7 +49,7 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 		const state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
 		const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state)];
 		assert.equal(exit.exit, generic ? CompiledBlockExit.WriteIndex : CompiledBlockExit.WriteField);
-		assert.equal(empty.storedSlotCount, 0); assert.equal(empty.getStringKey(key), valueNil());
+		assert.equal(empty.records.storedSlotCount(empty.address), 0); assert.equal(empty.records.getStringKey(empty.address, key), valueNil());
 		assert.equal(r.get(8), values[3]); assert.equal(r.get(2), values[3]); assert.equal(r.get(9), valueNil());
 	});
 }
@@ -74,7 +74,7 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 	for (const cpu of [js, ref]) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-		const retained = cpu.createTable(0, 1); retained.setStringKey(cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
+		const retained = cpu.createTable(0, 1); retained.records.setStringKey(retained.address, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
 		r.setTable(0, cpu.gc.reference(cpu.createTable())); r.setTable(9, cpu.gc.reference(retained)); frame.top = 0;
 		const heap = cpu.captureRuntimeState().luaHeap, pressure = 'g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 1);
 		cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
@@ -85,7 +85,7 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 	for (const [i, cpu] of [js, ref].entries()) {
 		assert.equal(cpu.stringPool.find(garbage[i]), undefined, 'hash growth really collected unreachable pressure');
 		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getTable(7, cpu.gc);
-		assert.equal(retained.getStringKey(cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
-		assert.equal(r.getTable(0, cpu.gc).getStringKey(cpu.stringPool.find('field')!), valueTable(cpu.gc.reference(retained)));
+		assert.equal(retained.records.getStringKey(retained.address, cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
+		assert.equal(cpu.gc.tables.getStringKey(r.getPayload(0), cpu.stringPool.find('field')!), valueTable(cpu.gc.reference(retained)));
 	}
 });

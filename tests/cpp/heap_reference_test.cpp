@@ -41,7 +41,7 @@ u32 checkReferences(CPU& cpu) {
 	u32 highest = 0;
 	for (u32 id : state.allocations) {
 		require(id != 0 && ids.insert(id).second, "every allocation has one nonzero reference");
-		require(cpu.gcHeap().reference(cpu.gcHeap().object(id)) == id, "reference round-trips its live allocation");
+		require(cpu.gcHeap().reference(id >= RAM_BASE ? static_cast<GCObject*>(cpu.gcHeap().tableAt(id)) : cpu.gcHeap().object(id)) == id, "reference round-trips its live allocation");
 		highest = std::max(highest, id);
 	}
 	return highest;
@@ -62,13 +62,13 @@ void liveReferencesAndReuse() {
 	}
 	cpu.collectHeap();
 	for (size_t i = 0; i < slots.capacity(); ++i)
-		require(cpu.gcHeap().object(slots.words()[i]) == asTable(roots->getInteger(static_cast<int>(i + 1)),cpu.gcHeap()), "32-bit payloads survive allocation growth and collection");
+		require(cpu.gcHeap().tableAt(slots.words()[i]) == asTable(roots->getInteger(static_cast<int>(i + 1)),cpu.gcHeap()), "32-bit payloads survive allocation growth and collection");
 	checkReferences(cpu);
 	auto* dead = cpu.createTable(); const u32 freeId = cpu.gcHeap().reference(dead), hash = dead->hashId;
 	cpu.collectHeap();
 	auto* replacement = cpu.createTable();
-	require(cpu.gcHeap().reference(replacement) == freeId && replacement->hashId != hash, "a recycled payload id is not a hash identity");
-	require(cpu.gcHeap().object(freeId) == replacement, "recycled ids resolve the replacement object");
+	require(cpu.gcHeap().reference(replacement) == freeId && replacement->hashId != hash, "allocator reuses the record address; collector ordinals remain distinct");
+	require(cpu.gcHeap().tableAt(freeId) == replacement, "recycled ids resolve the replacement object");
 	frame.registers.set(2,valueTable(cpu.gcHeap().reference(replacement))); frame.top = 3;
 }
 
@@ -82,11 +82,15 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 	cpu.createTable();
 	cpu.collectHeap();
 	const auto saved = cpu.captureRuntimeState();
+	const auto ram = cpu.memory().captureSaveState();
 	const u32 rootsRef = cpu.gcHeap().reference(roots);
 	const Value fourth = roots->getInteger(4);
-	require(saved.gc.freeReferences.size() >= 2, "the saved directory has nontrivial free-slot order");
+	require(std::count(saved.gc.references.begin(), saved.gc.references.end(), 0) == 5,
+		"the five physical tables do not consume directory slots");
 	for (int iteration = 0; iteration < 64; ++iteration) {
-		for (int i = 0; i < 12; ++i) cpu.createTable();
+		std::array<u32, 12> future{};
+		for (auto& address : future) address = cpu.createTable()->address();
+		cpu.memory().restoreSaveState(ram);
 		cpu.restoreRuntimeState(saved);
 		const Value restoredRoots = cpu.rootThread()->currentFrame->registers.get(0);
 		require(valuePayload(restoredRoots) == rootsRef &&
@@ -101,9 +105,10 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 			"restore preserves slot identities and the directory allocation order");
 		auto* first = cpu.createTable();
 		auto* second = cpu.createTable();
-		require(cpu.gcHeap().reference(first) == saved.gc.freeReferences[0]
-			&& cpu.gcHeap().reference(second) == saved.gc.freeReferences[1],
-			"the next allocations resume from the restored free chain");
+		require(first->address() == future[0] && second->address() == future[1],
+			"the allocator resumes its physical free chain from the RAM image");
+		cpu.memory().restoreSaveState(ram);
+		cpu.restoreRuntimeState(saved);
 	}
 }
 
@@ -152,7 +157,7 @@ void isolatedHeaps() {
 	const u32 ar = first.cpu.gcHeap().reference(a), br = second.cpu.gcHeap().reference(b);
 	require(a != b, "concurrent CPUs own distinct allocations");
 	require(ar == br, "directory slots are local to equally initialized heaps");
-	require(first.cpu.gcHeap().object(ar) == a && second.cpu.gcHeap().object(br) == b,
+	require(first.cpu.gcHeap().tableAt(ar) == a && second.cpu.gcHeap().tableAt(br) == b,
 		"each CPU resolves its own object references");
 }
 }

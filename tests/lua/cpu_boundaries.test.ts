@@ -196,7 +196,7 @@ test('builtin-owned result ranges survive destination growth with exact open/fix
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const table = cpu.createTable(1, 0);
 		const result = valueString(cpu.stringPool.intern('result'));
-		if (kind === 2) table.setInteger(1, result);
+		if (kind === 2) table.records.setInteger(table.address, 1, result);
 		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		registers.setInteger(0, 91); registers.setBoolean(1, true);
 		registers.setBuiltinFunction(2, kind === 0 ? BuiltinFunctionId.Select : BuiltinFunctionId.Next);

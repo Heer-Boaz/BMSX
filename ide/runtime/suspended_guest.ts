@@ -134,7 +134,7 @@ export class SuspendedGuestSession {
 	public matchesIdentity(value: Value, identity: SuspendedValueIdentity): boolean {
 		return valueTag(value) === identity.tag && this.identityScalar(value, identity.tag) === identity.scalar;
 	}
-	/** Strings retain immutable text, references their hash identity; never retains a guest reference. */
+	/** Strings retain text; reference selection uses a lifetime ordinal, not a guest hash or address. */
 	public identityScalar(value: Value, tag: Exclude<ValueTag, ValueTag.String>): number;
 	public identityScalar(value: Value, tag: ValueTag): number | string;
 	public identityScalar(value: Value, tag: ValueTag): number | string {
@@ -143,7 +143,8 @@ export class SuspendedGuestSession {
 			case ValueTag.Integer: return asInteger(value);
 			case ValueTag.Float: case ValueTag.BuiltinFunction: return valuePayload(value);
 			case ValueTag.String: return this.stringPool.toString(asStringId(value));
-			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return this.cpu.gc.object(valuePayload(value)).hashId;
+			case ValueTag.Table: return asTable(value, this.cpu.gc).hashId;
+			case ValueTag.Closure: case ValueTag.Thread: return this.cpu.gc.object(valuePayload(value)).hashId;
 			default: throw new Error('Internal table metadata is not a language value.');
 		}
 	}
@@ -225,7 +226,7 @@ export class SuspendedGuestSession {
 			return valueNil();
 		}
 		const table = asTable(value, this.cpu.gc);
-		table.resolveStringIndex(this.indexKey, key, this.lookupResult);
+		table.records.resolveStringIndex(table.address, this.indexKey, key, this.lookupResult);
 		if (this.lookupResult.status === TableLookupStatus.ChainExhausted) {
 			throw new Error(METATABLE_LOOP_MESSAGE);
 		}
@@ -251,7 +252,7 @@ export class SuspendedGuestSession {
 
 	/** Stored entries only: numeric/boolean/reference keys are not stringified into lookup keys. */
 	public visitTableEntries(value: SuspendedGuestValue, visitor: (key: SuspendedGuestValue, value: SuspendedGuestValue) => void): void {
-		asTable(value, this.cpu.gc).forEachStoredEntry(visitor);
+		this.cpu.gc.tables.forEachStoredEntry(valuePayload(value), visitor);
 	}
 
 	public visitTableStringMembers(
@@ -269,14 +270,14 @@ export class SuspendedGuestSession {
 				visitor(this.stringPool.toString(id), entry);
 			}
 		};
-		let current = asTable(value, this.cpu.gc);
+		let current = valuePayload(value);
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
-			current.forEachStoredEntry(visitEntry);
-			const next = current.metatableIndexTable(this.indexKey);
-			if (!next) {
+			this.cpu.gc.tables.forEachStoredEntry(current, visitEntry);
+			const next = this.cpu.gc.tables.metatableIndexValue(current, this.indexKey);
+			if (valueTag(next) !== ValueTag.Table) {
 				return;
 			}
-			current = next;
+			current = valuePayload(next);
 		}
 		throw new Error(METATABLE_LOOP_MESSAGE);
 	}
@@ -313,7 +314,7 @@ export class SuspendedGuestSession {
 		const entry = this.entryScratch.get(depth);
 		parts.length = 0;
 		let entryCount = 0;
-		table.next(valueNil(), entry, 0);
+		table.records.next(table.address, valueNil(), entry, 0);
 		while (entry.getTag(0) !== ValueTag.Nil && entryCount < maxEntries) {
 			const key = entry.get(0);
 			parts.push(
@@ -330,7 +331,7 @@ export class SuspendedGuestSession {
 				)}`,
 			);
 			entryCount += 1;
-			table.next(key, entry, 0);
+			table.records.next(table.address, key, entry, 0);
 		}
 		if (entry.getTag(0) !== ValueTag.Nil) {
 			parts.push('…');

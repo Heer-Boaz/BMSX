@@ -134,7 +134,7 @@ for (const optLevel of [0, 3] as const) test(`static model pass consumes World m
 	const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')), cpu.gc);
-	const method = (name: string) => asClosure(probe.getStringKey(cpu.stringPool.find(name)), cpu.gc);
+	const method = (name: string) => asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(name)), cpu.gc);
 	runCompletionClosure(cpu, method('check'), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	const steady = profileWarmGuestKernel(cpu, method('steady'), 256);
@@ -160,7 +160,7 @@ return {model=function(id) return record end,
 	cpu.memory.writeBytes(address, bytes);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')), cpu.gc);
-	const packet = asClosure(probe.getStringKey(cpu.stringPool.find('packet')), cpu.gc);
+	const packet = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('packet')), cpu.gc);
 	runCompletionClosure(cpu, packet, []);
 	const before = materializeCpuCompletionValues(cpu);
 	const changed: GLTFModel = { ...model, meshes: model.meshes.map((mesh, index) => index !== 0 ? mesh : {
@@ -171,7 +171,7 @@ return {model=function(id) return record end,
 	const replacement = packModelAsset(changed).buffer;
 	assert.equal(replacement.length, bytes.length);
 	cpu.memory.writeBytes(address, replacement);
-	runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('renew')), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('renew')), cpu.gc), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	runCompletionClosure(cpu, packet, []);
 	const after = materializeCpuCompletionValues(cpu);

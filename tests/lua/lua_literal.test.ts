@@ -13,11 +13,11 @@ test('literal submission parses without guest execution, then materializes real 
 	const prepare = prepareLuaLiteral('{ flag = false, nested = { 7, -2.5 }, [4] = "event" }');
 	assert.deepEqual(cpu.luaHeap.captureState(), before);
 	const result = asTable(prepare(cpu), cpu.gc);
-	assert.equal(result.get(valueString(cpu.stringPool.find('flag')!)), valueBool(false));
-	const nested = asTable(result.get(valueString(cpu.stringPool.find('nested')!)), cpu.gc);
-	assert.equal(nested.getInteger(1), valueInteger(7));
-	assert.equal(nested.getInteger(2), valueFloat(-2.5));
-	assert.equal(result.getInteger(4), valueString(cpu.stringPool.find('event')!));
+	assert.equal(result.records.get(result.address, valueString(cpu.stringPool.find('flag')!)), valueBool(false));
+	const nested = asTable(result.records.get(result.address, valueString(cpu.stringPool.find('nested')!)), cpu.gc);
+	assert.equal(nested.records.getInteger(nested.address, 1), valueInteger(7));
+	assert.equal(nested.records.getInteger(nested.address, 2), valueFloat(-2.5));
+	assert.equal(result.records.getInteger(result.address, 4), valueString(cpu.stringPool.find('event')!));
 	assert.deepEqual(prepareLuaArguments('nil, false, 1, -2').map(literal => literal(cpu)), [valueNil(), valueBool(false), valueInteger(1), valueInteger(-2)]);
 	for (const text of ['', '1, 2', 'world:spawn("actor")', 'function() end', '1; print(2)', '{ value = actor }', '{ [nil] = 1 }']) {
 		assert.throws(() => prepareLuaLiteral(text));

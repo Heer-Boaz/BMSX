@@ -260,20 +260,20 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 	const records = cpu.createTable(2, 0);
 	for (let index = 1; index <= 2; index += 1) {
 		const record = cpu.createTable(6, 0);
-		record.setInteger(1, valueInteger(index));
-		record.setInteger(2, valueInteger(100 + index));
-		record.setInteger(3, valueString(stringPool.intern('machine:/lane', false)));
-		record.setInteger(4, valueString(stringPool.intern(`machine:/from_${index}`, false)));
-		record.setInteger(5, valueString(stringPool.intern(`machine:/to_${index}`, false)));
-		record.setInteger(6, valueBool(index === 2));
-		records.setInteger(index, valueTable(record.referenceId));
+		record.records.setInteger(record.address, 1, valueInteger(index));
+		record.records.setInteger(record.address, 2, valueInteger(100 + index));
+		record.records.setInteger(record.address, 3, valueString(stringPool.intern('machine:/lane', false)));
+		record.records.setInteger(record.address, 4, valueString(stringPool.intern(`machine:/from_${index}`, false)));
+		record.records.setInteger(record.address, 5, valueString(stringPool.intern(`machine:/to_${index}`, false)));
+		record.records.setInteger(record.address, 6, valueBool(index === 2));
+		records.records.setInteger(records.address, index, valueTable(record.address));
 	}
 	const channel = cpu.createTable(5, 0);
-	channel.setInteger(1, valueString(stringPool.intern('object.machine', false)));
-	channel.setInteger(2, valueString(stringPool.intern('machine', false)));
-	channel.setInteger(3, valueInteger(2));
-	channel.setInteger(4, valueInteger(2));
-	channel.setInteger(5, valueTable(records.referenceId));
+	channel.records.setInteger(channel.address, 1, valueString(stringPool.intern('object.machine', false)));
+	channel.records.setInteger(channel.address, 2, valueString(stringPool.intern('machine', false)));
+	channel.records.setInteger(channel.address, 3, valueInteger(2));
+	channel.records.setInteger(channel.address, 4, valueInteger(2));
+	channel.records.setInteger(channel.address, 5, valueTable(records.address));
 
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
@@ -297,7 +297,7 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 		trace.transitions.at(0).outcome,
 	], [1, 101, 20, 'machine:/from_1', 'machine:/to_1', 'rejected']);
 	assert.equal(trace.transitions.at(1).outcome, 'committed');
-	channel.setInteger(4, valueInteger(5));
+	channel.records.setInteger(channel.address, 4, valueInteger(5));
 	assert.throws(() => observation.drain(21), /overflowed its 2-record buffer/);
 });
 
@@ -306,25 +306,25 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 	const stringPool = cpu.stringPool;
 	const records = cpu.createTable(2, 0);
 	const activation = cpu.createTable(5, 0);
-	activation.setInteger(1, valueInteger(1));
-	activation.setInteger(2, valueInteger(301));
-	activation.setInteger(3, valueString(stringPool.intern('activate', false)));
-	activation.setInteger(4, valueString(stringPool.intern('fire', false)));
-	activation.setInteger(5, valueInteger(1));
-	records.setInteger(1, valueTable(activation.referenceId));
+	activation.records.setInteger(activation.address, 1, valueInteger(1));
+	activation.records.setInteger(activation.address, 2, valueInteger(301));
+	activation.records.setInteger(activation.address, 3, valueString(stringPool.intern('activate', false)));
+	activation.records.setInteger(activation.address, 4, valueString(stringPool.intern('fire', false)));
+	activation.records.setInteger(activation.address, 5, valueInteger(1));
+	records.records.setInteger(records.address, 1, valueTable(activation.address));
 	const rejection = cpu.createTable(5, 0);
-	rejection.setInteger(1, valueInteger(2));
-	rejection.setInteger(2, valueInteger(302));
-	rejection.setInteger(3, valueString(stringPool.intern('trigger', false)));
-	rejection.setInteger(4, valueString(stringPool.intern('fire', false)));
-	rejection.setInteger(5, valueString(stringPool.intern('custom_gate', false)));
-	records.setInteger(2, valueTable(rejection.referenceId));
+	rejection.records.setInteger(rejection.address, 1, valueInteger(2));
+	rejection.records.setInteger(rejection.address, 2, valueInteger(302));
+	rejection.records.setInteger(rejection.address, 3, valueString(stringPool.intern('trigger', false)));
+	rejection.records.setInteger(rejection.address, 4, valueString(stringPool.intern('fire', false)));
+	rejection.records.setInteger(rejection.address, 5, valueString(stringPool.intern('custom_gate', false)));
+	records.records.setInteger(records.address, 2, valueTable(rejection.address));
 	const channel = cpu.createTable(5, 0);
-	channel.setInteger(1, valueString(stringPool.intern('player.1', false)));
-	channel.setInteger(2, valueString(stringPool.intern('player', false)));
-	channel.setInteger(3, valueInteger(2));
-	channel.setInteger(4, valueInteger(2));
-	channel.setInteger(5, valueTable(records.referenceId));
+	channel.records.setInteger(channel.address, 1, valueString(stringPool.intern('player.1', false)));
+	channel.records.setInteger(channel.address, 2, valueString(stringPool.intern('player', false)));
+	channel.records.setInteger(channel.address, 3, valueInteger(2));
+	channel.records.setInteger(channel.address, 4, valueInteger(2));
+	channel.records.setInteger(channel.address, 5, valueTable(records.address));
 
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
@@ -360,7 +360,7 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 		kind: 'trigger',
 		outcome: 'custom_gate',
 	});
-	channel.setInteger(4, valueInteger(5));
+	channel.records.setInteger(channel.address, 4, valueInteger(5));
 	assert.throws(() => observation.drain(21), /overflowed its 2-record buffer/);
 });
 

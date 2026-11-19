@@ -1,3 +1,4 @@
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { asTable, valueNil, asClosure, valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -30,31 +31,31 @@ probe.drop_definition()
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	cpu.collectTrackedHeapBytes();
 	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-	const weak = asTable(probe.getStringKey(cpu.stringPool.find('weak_inputs')!), cpu.gc);
-	assert.equal(weak.getInteger(1), valueNil(), 'capture does not retain the mutable declaration');
-	assert.equal(weak.getInteger(2), valueNil(), 'declaration identity map dies with the compilation layout');
-	runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('check_replaced')!), cpu.gc), []);
-	runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('check')!), cpu.gc), []);
+	const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak_inputs')!), cpu.gc);
+	assert.equal(weak.records.getInteger(weak.address, 1), valueNil(), 'capture does not retain the mutable declaration');
+	assert.equal(weak.records.getInteger(weak.address, 2), valueNil(), 'declaration identity map dies with the compilation layout');
+	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('check_replaced')!), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('check')!), cpu.gc), []);
 	cpu.collectTrackedHeapBytes();
-	const displaced = asTable(probe.getStringKey(cpu.stringPool.find('displaced')!), cpu.gc);
-	for (let index = 1; index <= 3; index += 1) assert.equal(displaced.getInteger(index), valueNil());
+	const displaced = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('displaced')!), cpu.gc);
+	for (let index = 1; index <= 3; index += 1) assert.equal(displaced.records.getInteger(displaced.address, index), valueNil());
 	const retained = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
 	for (let replacement = 0; replacement < 32; replacement += 1) {
-		runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('check_replaced')!), cpu.gc), []);
+		runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('check_replaced')!), cpu.gc), []);
 		assert.equal(cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES, retained, 're-registration must not grow retained observation history');
 	}
-	const anchor = cpu.captureRuntimeState();
+	const anchor = captureCpuCheckpoint(cpu);
 	const strings = cpu.stringPool.captureState();
-	runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('run')!), cpu.gc), [valueInteger(32)]);
+	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('run')!), cpu.gc), [valueInteger(32)]);
 	const expected = cpu.captureRuntimeState();
 	for (let replay = 0; replay < 2; replay += 1) {
 		cpu.stringPool.restoreState(strings);
-		cpu.restoreRuntimeState(anchor);
+		restoreCpuCheckpoint(cpu, anchor);
 		const restored = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 		assert.notEqual(restored, probe);
-		runCompletionClosure(cpu, asClosure(restored.getStringKey(cpu.stringPool.find('run')!), cpu.gc), [valueInteger(32)]);
+		runCompletionClosure(cpu, asClosure(restored.records.getStringKey(restored.address, cpu.stringPool.find('run')!), cpu.gc), [valueInteger(32)]);
 		assert.deepEqual(cpu.captureRuntimeState(), expected);
-		runCompletionClosure(cpu, asClosure(restored.getStringKey(cpu.stringPool.find('check')!), cpu.gc), []);
+		runCompletionClosure(cpu, asClosure(restored.records.getStringKey(restored.address, cpu.stringPool.find('check')!), cpu.gc), []);
 	}
 });
 
@@ -213,18 +214,18 @@ function probe.drop_first() probe.first = nil end
 	cpu.collectTrackedHeapBytes();
 	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 	for (const name of ['old', 'unused']) {
-		const references = asTable(probe.getStringKey(cpu.stringPool.find(name)!), cpu.gc);
-		assert.notEqual(references.getInteger(1), valueNil(), name);
-		assert.notEqual(references.getInteger(2), valueNil(), name);
+		const references = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find(name)!), cpu.gc);
+		assert.notEqual(references.records.getInteger(references.address, 1), valueNil(), name);
+		assert.notEqual(references.records.getInteger(references.address, 2), valueNil(), name);
 	}
 	for (const [name, count] of [['cycle', 3], ['abandoned', 2]] as const) {
-		const references = asTable(probe.getStringKey(cpu.stringPool.find(name)!), cpu.gc);
-		for (let index = 1; index <= count; index += 1) assert.equal(references.getInteger(index), valueNil(), name);
+		const references = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find(name)!), cpu.gc);
+		for (let index = 1; index <= count; index += 1) assert.equal(references.records.getInteger(references.address, index), valueNil(), name);
 	}
-	runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('drop_first')!), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('drop_first')!), cpu.gc), []);
 	cpu.collectTrackedHeapBytes();
-	const old = asTable(probe.getStringKey(cpu.stringPool.find('old')!), cpu.gc);
-	for (let index = 1; index <= 3; index += 1) assert.equal(old.getInteger(index), valueNil());
+	const old = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('old')!), cpu.gc);
+	for (let index = 1; index <= 3; index += 1) assert.equal(old.records.getInteger(old.address, index), valueNil());
 });
 
 test('BT completion records distinguish nested, failed and detached rebinds from current field state', () => {
@@ -286,17 +287,17 @@ test('BT capture costs are cold; retained aliases are not a compiled definition 
 		const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 		const ready = cpu.collectTrackedHeapBytes();
 		if (mode === 'captured' || mode === 'cold-only') {
-			runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('observe')!), cpu.gc), []);
+			runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('observe')!), cpu.gc), []);
 		}
 		const before = cpu.collectTrackedHeapBytes();
 		const beforeObjects = cpu.captureRuntimeState().snapshot.objectCount;
-		const compileCycles = runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('compile')!), cpu.gc), [valueInteger(32), valueBool(mode === 'retained')]);
+		const compileCycles = runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('compile')!), cpu.gc), [valueInteger(32), valueBool(mode === 'retained')]);
 		const allocation = cpu.luaHeap.usedBytes() - before;
 		const retained = cpu.collectTrackedHeapBytes() - cpu.rootThread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES - before;
 		const objects = cpu.captureRuntimeState().snapshot.objectCount - beforeObjects;
-		const weak = asTable(probe.getStringKey(cpu.stringPool.find('weak_inputs')!), cpu.gc);
-		assert.equal(weak.getInteger(1) === valueNil(), mode !== 'retained');
-		const run = asClosure(probe.getStringKey(cpu.stringPool.find('run')!), cpu.gc);
+		const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak_inputs')!), cpu.gc);
+		assert.equal(weak.records.getInteger(weak.address, 1) === valueNil(), mode !== 'retained');
+		const run = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('run')!), cpu.gc);
 		runCompletionClosure(cpu, run, [valueInteger(384)]);
 		const warmBytes = cpu.luaHeap.usedBytes();
 		const tickCycles = runCompletionClosure(cpu, run, [valueInteger(9984)], 50_000_000);

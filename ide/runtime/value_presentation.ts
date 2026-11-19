@@ -72,13 +72,13 @@ export class SuspendedValuePresentation {
 		if (valueTag(value) !== ValueTag.Table) { this.setEntryCount(index, 0); return; }
 		const table = asTable(value, this.guest.cpu.gc), entry = this.entry ??= new ValueSlots(2);
 		let count = 0;
-		table.next(valueNil(), entry, 0);
+		table.records.next(table.address, valueNil(), entry, 0);
 		try {
 			while (entry.getTag(0) !== ValueTag.Nil && count < STORED_ENTRIES_PREVIEW_LIMIT) {
 				this.setEntryCount(this.capture(entry.get(0)), 0);
 				this.setEntryCount(this.capture(entry.get(1)), 0);
 				count++;
-				table.next(entry.get(0), entry, 0);
+				table.records.next(table.address, entry.get(0), entry, 0);
 			}
 			this.setEntryCount(index, entry.getTag(0) !== ValueTag.Nil ? count + 1 : count);
 		} finally { entry.clear(2); }

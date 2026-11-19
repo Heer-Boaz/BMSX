@@ -74,10 +74,10 @@ export class GuestValueSnapshot {
 		const snapshot = { kind: 'table' as const, id, entries, omitted: false };
 		this.visited.set(id, snapshot);
 		let slot = 0, omitted = false;
-		const count = table.storedSlotCount;
+		const count = table.records.storedSlotCount(table.address);
 		while (slot < count && this.remainingSlots > 0) {
 			this.remainingSlots--;
-			if (!table.loadStoredEntry(slot++, scratch, 0)) continue;
+			if (!table.records.loadStoredEntry(table.address, slot++, scratch, 0)) continue;
 			if (this.remainingEntries === 0) { omitted = true; break; }
 			this.remainingEntries--;
 			// Table keys are identities, not a second traversal of the object graph.

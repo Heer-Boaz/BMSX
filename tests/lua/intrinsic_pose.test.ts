@@ -147,7 +147,7 @@ end}
 `, { optLevel: 3, modules: WORLD_CPU_MODULES });
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
 	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-	const measured = profileWarmGuestKernel(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('run')!), cpu.gc), 256);
+	const measured = profileWarmGuestKernel(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('run')!), cpu.gc), 256);
 	assert.equal(measured.reservations, 0); assert.equal(measured.reservedBytes, 0);
 	assert.equal(measured.retainedAfter, measured.retainedBefore);
 	t.diagnostic(JSON.stringify(measured));

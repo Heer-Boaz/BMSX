@@ -484,7 +484,7 @@ test('field cache hits stay in one generated block and misses publish only the e
 	const entry = image.image.functions[0].codeAddress;
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(0, 1);
-		table.storeStringKey(cpu.stringPool.intern('field'), ValueTag.Integer, 0);
+		table.records.storeStringKey(table.address, cpu.stringPool.intern('field'), ValueTag.Integer, 0);
 		cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.gc.reference(table));
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1);
 		cpu.runUntilDepth(0, 1200);
@@ -496,7 +496,7 @@ test('field cache hits stay in one generated block and misses publish only the e
 	assert.equal(block.region.exits.filter(exit => exit.exit === CompiledBlockExit.ReadField || exit.exit === CompiledBlockExit.WriteField).length, 2);
 	for (const cpu of [js, ref]) {
 		const f = cpu.rootThread.frameAtDepth(0);
-		f.registers.getTable(0, cpu.gc).storeStringKey(cpu.stringPool.intern('field'), ValueTag.Integer, 0);
+		cpu.gc.tables.storeStringKey(f.registers.getPayload(0), cpu.stringPool.intern('field'), ValueTag.Integer, 0);
 		f.registers.setInteger(4, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 	}

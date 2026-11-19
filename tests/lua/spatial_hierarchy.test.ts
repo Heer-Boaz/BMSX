@@ -559,9 +559,9 @@ probe = {
 }
 `, 3);
 	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-	const run = asClosure(probe.getStringKey(cpu.stringPool.find('run')!), cpu.gc);
+	const run = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('run')!), cpu.gc);
 	const measured = measureWarmKernel(cpu, run, 2048);
-	runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('check')!), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('check')!), cpu.gc), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 	t.diagnostic(JSON.stringify({ ...measured, codeBytes, allocated, retained }));
 });
@@ -588,9 +588,9 @@ probe = {
 }
 `, 3);
 	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-	const read = asClosure(probe.getStringKey(cpu.stringPool.find('read')!), cpu.gc);
-	const shallow = probe.getStringKey(cpu.stringPool.find('shallow')!);
-	const deep = probe.getStringKey(cpu.stringPool.find('deep')!);
+	const read = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('read')!), cpu.gc);
+	const shallow = probe.records.getStringKey(probe.address, cpu.stringPool.find('shallow')!);
+	const deep = probe.records.getStringKey(probe.address, cpu.stringPool.find('deep')!);
 	runCompletionClosure(cpu, read, [shallow, valueInteger(32)]);
 	runCompletionClosure(cpu, read, [deep, valueInteger(32)]);
 	const shallowCycles = runCompletionClosure(cpu, read, [shallow, valueInteger(2048)]);
@@ -651,9 +651,9 @@ probe = {
 `, 3);
 	const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
 	for (const lane of ['root', 'basis'] as const) {
-		const run = asClosure(probe.getStringKey(cpu.stringPool.find(`run_${lane}`)!), cpu.gc);
+		const run = asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(`run_${lane}`)!), cpu.gc);
 		const measured = measureWarmKernel(cpu, run, 2048);
-		runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find(`check_${lane}`)!), cpu.gc), []);
+		runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find(`check_${lane}`)!), cpu.gc), []);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 		t.diagnostic(JSON.stringify({ lane, ...measured, codeBytes, allocated, retained }));
 	}

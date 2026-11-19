@@ -141,11 +141,11 @@ end
 `, { optLevel, modules });
 			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 			const probe = asTable(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc);
-			runCompletionClosure(cpu, asClosure(probe.getStringKey(cpu.stringPool.find('retire')!), cpu.gc), []);
+			runCompletionClosure(cpu, asClosure(probe.records.getStringKey(probe.address, cpu.stringPool.find('retire')!), cpu.gc), []);
 			cpu.collectTrackedHeapBytes();
-			const weak = asTable(probe.getStringKey(cpu.stringPool.find('weak')!), cpu.gc);
+			const weak = asTable(probe.records.getStringKey(probe.address, cpu.stringPool.find('weak')!), cpu.gc);
 			for (let index = 1; index <= 65; index += 1) {
-				assert.equal(weak.getInteger(index), valueNil(), `retired object/geometry owner ${index} remained reachable`);
+				assert.equal(weak.records.getInteger(weak.address, index), valueNil(), `retired object/geometry owner ${index} remained reachable`);
 			}
 		});
 	}

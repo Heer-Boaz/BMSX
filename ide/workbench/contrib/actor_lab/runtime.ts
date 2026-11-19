@@ -45,8 +45,8 @@ export function findRuntimeActor(sources: RuntimeInstalledSourceState, guest: Su
 export function findWorldActor(guest: SuspendedGuestSession, world: Value | undefined, hashId: number): Value | undefined {
 	if (world === undefined) return;
 	const objects = asTable(guest.readStringMember(world, '_objects'), guest.cpu.gc);
-	for (let i = 1, length = objects.length(); i <= length; i += 1) {
-		const actor = objects.getInteger(i);
+	for (let i = 1, length = objects.records.length(objects.address); i <= length; i += 1) {
+		const actor = objects.records.getInteger(objects.address, i);
 		if (guest.identityScalar(actor, ValueTag.Table) === hashId) return actor;
 	}
 }
@@ -87,24 +87,24 @@ export class ActorRuntimeTree {
 			const id = guest.readStringMember(actor, 'id');
 			const root = this.node(guest, null, 0, 'actor', actor, actor, null, id, guest.isTruthy(guest.readStringMember(actor, 'active')));
 			const components = asTable(guest.readStringMember(actor, '_components'), guest.cpu.gc);
-			const componentCount = components.length();
+			const componentCount = components.records.length(components.address);
 			this.kinds.length = componentCount + 1;
 			this.kinds.fill(-1);
 			const classes = asTable(guest.readStringMember(actor, '_components_by_class'), guest.cpu.gc);
 			for (let i = 0; i < COMPONENT_TYPES.length; i += 1) {
 				const type = readRuntimeLuaModuleExport(sources, guest, domain, COMPONENT_TYPES[i][0]);
 				if (type.kind !== 'value' || isNil(type.value)) continue;
-				const bucketValue = classes.get(type.value);
+				const bucketValue = classes.records.get(classes.address, type.value);
 				if (!isNil(bucketValue)) {
 					const bucket = asTable(bucketValue, guest.cpu.gc);
-					for (let j = 1, length = bucket.length(); j <= length; j += 1) {
-						const index = numberToHost(guest.readStringMember(bucket.getInteger(j), '_owner_component_index'));
+					for (let j = 1, length = bucket.records.length(bucket.address); j <= length; j += 1) {
+						const index = numberToHost(guest.readStringMember(bucket.records.getInteger(bucket.address, j), '_owner_component_index'));
 						this.kinds[index] = i;
 					}
 				}
 			}
 			for (let i = 1; i <= componentCount; i += 1) {
-				const component = components.getInteger(i);
+				const component = components.records.getInteger(components.address, i);
 				const type = this.kinds[i];
 				const id = guest.readStringMember(component, type === 1 ? 'tree_id' : 'id');
 				const branch = this.node(guest, root, i - 1, type === 1 ? 'tree' : 'component', component, component, component, id,
@@ -113,8 +113,8 @@ export class ActorRuntimeTree {
 				let count = 0;
 				if (type === 0) {
 					const machines = asTable(guest.readStringMember(component, '_machines'), guest.cpu.gc);
-					for (let index = 1, length = machines.length(); index <= length; index++) {
-						const machine = machines.getInteger(index);
+					for (let index = 1, length = machines.records.length(machines.address); index <= length; index++) {
+						const machine = machines.records.getInteger(machines.address, index);
 						const node = this.node(guest, branch, count++, 'machine', machine, machine, component, guest.readStringMember(machine, 'localdef_id'),
 							branch.active && guest.isTruthy(guest.readStringMember(component, '_started')));
 						this.states(guest, node, machine, component);
@@ -196,10 +196,10 @@ export class ActorRuntimeTree {
 		const children = asTable(guest.readStringMember(state, 'states'), guest.cpu.gc);
 		const ids = asTable(guest.readStringMember(state, 'state_ids'), guest.cpu.gc);
 		const current = guest.readStringMember(state, 'current_id');
-		const stateCount = ids.length();
+		const stateCount = ids.records.length(ids.address);
 		for (let i = 1; i <= stateCount; i += 1) {
-			const id = ids.getInteger(i);
-			const child = children.get(id);
+			const id = ids.records.getInteger(ids.address, i);
+			const child = children.records.get(children.address, id);
 			const active = parent.active && (valuesEqual(current, id) || guest.isTruthy(guest.readStringMember(guest.readStringMember(child, 'definition'), 'is_concurrent')));
 			const node = this.node(guest, parent, i - 1, 'state', child, machine, component, id, active);
 			this.states(guest, node, machine, component);

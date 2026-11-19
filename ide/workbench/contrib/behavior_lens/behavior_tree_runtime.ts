@@ -54,17 +54,17 @@ export function inspectBehaviorTreeInstance(
 			const defaults = asTable(guest.readStringMember(layout, 'initial_values'), guest.cpu.gc);
 			const slotsByKey = asTable(guest.readStringMember(layout, 'slots_by_key'), guest.cpu.gc);
 			const valueSlots = asTable(values, guest.cpu.gc);
-			const keyCount = keys.length();
+			const keyCount = keys.records.length(keys.address);
 			if (keyCount === 0) properties.text('BLACKBOARD', '{}', 'NO DECLARED KEYS.');
 			for (let slot = 1; slot <= keyCount; slot += 1) {
 				// Logical names use slots_by_key's table-key equality, not raw subtype identity.
-				const key = canonicalTableKey(keys.getInteger(slot));
+				const key = canonicalTableKey(keys.records.getInteger(keys.address, slot));
 				// compile/rebind resolve semantic keys through slots_by_key. Earlier
 				// duplicate declarations remain visible, but are not independent watches.
-				const watchable = asInteger(slotsByKey.get(key)) === slot;
+				const watchable = asInteger(slotsByKey.records.get(slotsByKey.address, key)) === slot;
 				properties.entry(watchable ? 'blackboard' : 'blackboard-slot', watchable ? key : valueInteger(slot),
-					valueSlots.getInteger(slot), BLACKBOARD_PRESENTATION, `STORED SLOT ${slot}\nLOADED DEFAULT: `,
-					defaults.getInteger(slot), key, watchable);
+					valueSlots.records.getInteger(valueSlots.address, slot), BLACKBOARD_PRESENTATION, `STORED SLOT ${slot}\nLOADED DEFAULT: `,
+					defaults.records.getInteger(defaults.address, slot), key, watchable);
 			}
 		}
 	}

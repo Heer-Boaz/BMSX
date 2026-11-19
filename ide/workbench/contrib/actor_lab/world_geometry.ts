@@ -75,8 +75,8 @@ export class ActorWorldGeometry {
 			packets.push({ image, x: 0, y: 0, width: image.width, height: image.height, color, flipH: false, flipV: false });
 		} else {
 			const tileArray = asTable(tiles, guest.cpu.gc);
-			for (let i = 1, length = tileArray.length(); i <= length; i++) {
-				const tile = tileArray.getInteger(i), image = this.image(tile, item.actor.domain, guest);
+			for (let i = 1, length = tileArray.records.length(tileArray.address); i <= length; i++) {
+				const tile = tileArray.records.getInteger(tileArray.address, i), image = this.image(tile, item.actor.domain, guest);
 				packets.push({ image, x: numberToHost(guest.readStringMember(tile, 'offset_x')), y: numberToHost(guest.readStringMember(tile, 'offset_y')),
 					width: image.width, height: image.height, color, flipH: false, flipV: false });
 			}
@@ -105,7 +105,7 @@ export class ActorWorldGeometry {
 		const reveal = isNil(revealValue) ? null : numberToHost(revealValue);
 		const sameLayout = old?.component === component && old.revision === revision;
 		let same = sameLayout && old.color === color && old.background === background;
-		if (same) for (let i = 0; i < count; i++) if (old.rows[i].visible !== numberToHost(guest.readStringMember(lines.getInteger(i + 1), 'visible_count'))) { same = false; break; }
+		if (same) for (let i = 0; i < count; i++) if (old.rows[i].visible !== numberToHost(guest.readStringMember(lines.records.getInteger(lines.address, i + 1), 'visible_count'))) { same = false; break; }
 		if (same) return;
 		const offsetsValue = guest.readStringMember(visual, 'line_offsets');
 		const offsets = isNil(offsetsValue) ? null : asTable(offsetsValue, guest.cpu.gc);
@@ -118,14 +118,14 @@ export class ActorWorldGeometry {
 		const lineHeight = numberToHost(guest.readStringMember(visual, 'line_height'));
 		const rows: GlyphRow[] = [], packets: WorldPacket[] = [];
 		for (let i = 0; i < count; i++) {
-			const line = lines.getInteger(i + 1), visible = numberToHost(guest.readStringMember(line, 'visible_count'));
+			const line = lines.records.getInteger(lines.address, i + 1), visible = numberToHost(guest.readStringMember(line, 'visible_count'));
 			if (sameLayout) { rows.push({ ...old.rows[i], visible }); continue; }
 			const glyphLine = asTable(line, guest.cpu.gc);
 			const length = numberToHost(guest.readStringMember(line, 'glyph_count')), positions = asTable(guest.readStringMember(line, 'x_offsets'), guest.cpu.gc);
 			const glyphs: Image[] = [], advances: number[] = [];
-			for (let g = 1; g <= length; g++) { glyphs.push(this.image(glyphLine.getInteger(g), item.actor.domain, guest)); advances.push(numberToHost(positions.getInteger(g))); }
-			rows.push({ glyphs, offsets: advances, visible, x: xOffsets !== null ? numberToHost(xOffsets.getInteger(i + 1))
-				: center === null ? 0 : luaFloorDivide(center - numberToHost(widths.getInteger(i + 1)), 2), y: offsets === null ? i * lineHeight : numberToHost(offsets.getInteger(i + 1)) });
+			for (let g = 1; g <= length; g++) { glyphs.push(this.image(glyphLine.records.getInteger(glyphLine.address, g), item.actor.domain, guest)); advances.push(numberToHost(positions.records.getInteger(positions.address, g))); }
+			rows.push({ glyphs, offsets: advances, visible, x: xOffsets !== null ? numberToHost(xOffsets.records.getInteger(xOffsets.address, i + 1))
+				: center === null ? 0 : luaFloorDivide(center - numberToHost(widths.records.getInteger(widths.address, i + 1)), 2), y: offsets === null ? i * lineHeight : numberToHost(offsets.records.getInteger(offsets.address, i + 1)) });
 		}
 		if (background !== null) for (const row of rows) for (let i = 0; i < row.visible; i++) {
 			const image = row.glyphs[i]; packets.push({ x: row.x + row.offsets[i], y: row.y, width: image.width, height: image.height, color: background, flipH: false, flipV: false });
@@ -138,10 +138,10 @@ export class ActorWorldGeometry {
 	}
 	public captureModels(renderer: Value, domain: ResourceDomain, guest: SuspendedGuestSession): void {
 		const view = guest.readStringMember(renderer, '_models'), models = asTable(guest.readStringMember(view, 'components'), guest.cpu.gc);
-		const count = models.length(), visibility = asTable(guest.readStringMember(renderer, '_visible'), guest.cpu.gc);
+		const count = models.records.length(models.address), visibility = asTable(guest.readStringMember(renderer, '_visible'), guest.cpu.gc);
 		for (let i = 1; i <= count; i++) {
-			if (!guest.isTruthy(visibility.getInteger(i))) continue;
-			const model = models.getInteger(i), owner = guest.readStringMember(model, 'owner');
+			if (!guest.isTruthy(visibility.records.getInteger(visibility.address, i))) continue;
+			const model = models.records.getInteger(models.address, i), owner = guest.readStringMember(model, 'owner');
 			const ownerId = guest.identityScalar(owner, ValueTag.Table);
 			const item = this.models.get(this.models.length), actor = item.entry, world = item.world;
 			if (actor.hashId !== ownerId || actor.domain !== domain) actor.label = guest.formatValue(guest.readStringMember(owner, 'id'));

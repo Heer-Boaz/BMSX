@@ -18,18 +18,16 @@ bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& 
 		const Value target = args[0];
 		if (!valueIsTable(target)) return false;
 		const Value metatableValue = args[1];
-		Table* metatable = nullptr;
-		if (valueIsTable(metatableValue)) metatable = asTable(metatableValue, m_heap);
-		else if (!isNil(metatableValue)) return false;
-		asTable(target, m_heap)->setMetatable(metatable);
+		if (!valueIsTable(metatableValue) && !isNil(metatableValue)) return false;
+		TableRecord(m_heap, valuePayload(target)).setMetatableAddress(valueIsTable(metatableValue) ? valuePayload(metatableValue) : 0u);
 		result = target;
 		return true;
 	}
 	case BuiltinFunctionId::GetMetatable: {
 		const Value target = args[0];
 		if (!valueIsTable(target)) return false;
-		Table* metatable = asTable(target, m_heap)->metatable();
-		result = metatable ? valueTable(m_heap.reference(metatable)) : valueNil();
+		const u32 metatable = TableRecord(m_heap, valuePayload(target)).metatableAddress();
+		result = metatable ? valueTable(metatable) : valueNil();
 		return true;
 	}
 	case BuiltinFunctionId::StringByte: {

@@ -7,16 +7,31 @@ namespace bmsx {
 
 namespace {
 struct TableScratch {
-	Table* receiver;
-	u32 key, slot, wordOffset, tagOffset;
+	TableReadRequest request;
+	u32 slot, wordOffset, tagOffset;
+	Value transport;
+	TableLookupResult result;
 };
-constexpr auto result = NativeBlockAbi::helperResultOffset;
-constexpr auto receiver = result + offsetof(TableScratch, receiver);
-constexpr auto keyWord = result + offsetof(TableScratch, key);
-constexpr auto slot = result + offsetof(TableScratch, slot);
-constexpr auto wordOffset = result + offsetof(TableScratch, wordOffset);
-constexpr auto tagOffset = result + offsetof(TableScratch, tagOffset);
-static_assert(result + sizeof(TableScratch) <= NativeBlockAbi::stackBytes);
+constexpr auto scratch = NativeBlockAbi::helperResultOffset;
+constexpr auto request = scratch + offsetof(TableScratch, request);
+constexpr auto receiver = request + offsetof(TableReadRequest, address);
+constexpr auto keyWord = request + offsetof(TableReadRequest, key);
+constexpr auto slot = scratch + offsetof(TableScratch, slot);
+constexpr auto wordOffset = scratch + offsetof(TableScratch, wordOffset);
+constexpr auto tagOffset = scratch + offsetof(TableScratch, tagOffset);
+constexpr auto result = scratch + offsetof(TableScratch, result);
+constexpr auto transport = scratch + offsetof(TableScratch, transport);
+static_assert(scratch + sizeof(TableScratch) <= NativeBlockAbi::stackBytes);
+
+// A raw record needs a host descriptor only for the interim collector barrier.
+void emitTableObject(sljit_compiler* compiler) {
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), GcHeap::nativeTableRecordsOffset());
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), receiver);
+	sljit_emit_op2(compiler, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	sljit_emit_op2(compiler, SLJIT_LSHR, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 5);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R2, SLJIT_R0), sizeof(void*) == 8 ? 3 : 2);
+}
 } // namespace
 
 // R0 addresses the aligned table header; R1 is the slot. The stored backing
@@ -58,8 +73,8 @@ void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool ar
 	}
 	if (arraySlot) {
 		// The length word shares its page with the rest of the aligned header.
-		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver);
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), Table::nativeAddressOffset());
+		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver,
+			SLJIT_IMM, static_cast<u32>(TableHeader::Length));
 		sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 		checkPage();
 	}
@@ -125,8 +140,10 @@ void NativeBlockCompiler::emitArraySlot(bool load, int value, NativeBlockExitSit
 	for (auto* edge : {retained, advanced, unchanged})
 		if (edge)
 			sljit_set_label(edge, done);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), receiver);
+	emitTableObject(m_compiler);
+	auto* noObject = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
 	emitGcWriteBarrier(m_compiler, SLJIT_R0, SLJIT_R2, SLJIT_R3);
+	sljit_set_label(noObject, sljit_emit_label(m_compiler));
 }
 
 // Hash keys start after the array; hash values start after all hash keys.
@@ -159,8 +176,10 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSi
 			misses[n++] = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		emitTableWriteWatch(exit, false);
 		emitTableSlotTransfer(false, value);
-		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), receiver);
-		emitGcWriteBarrier(m_compiler, SLJIT_R0, SLJIT_R2, SLJIT_R3);
+		emitTableObject(m_compiler);
+		auto* noObject = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
+	emitGcWriteBarrier(m_compiler, SLJIT_R0, SLJIT_R2, SLJIT_R3);
+	sljit_set_label(noObject, sljit_emit_label(m_compiler));
 	} else {
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R2, 0);
 		emitTableSlotLoad(SLJIT_R2, true);
@@ -171,14 +190,15 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSi
 		sljit_set_label(misses[i], miss);
 
 	// The read leaf neither allocates nor writes guest RAM.
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), receiver);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
 	if (load) {
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), keyWord);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, m_bindings.indexKey);
-		sljit_get_local_base(m_compiler, SLJIT_R3, 0, result);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), request + offsetof(TableReadRequest, indexKey),
+			SLJIT_IMM, m_bindings.indexKey);
+		sljit_get_local_base(m_compiler, SLJIT_R1, 0, request);
+		sljit_get_local_base(m_compiler, SLJIT_R2, 0, result);
 		m_cache.spillCall(false, 0);
-		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4V(P, 32, 32, P), SLJIT_IMM,
-						 SLJIT_FUNC_ADDR(&Table::loadStringIndex));
+		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3V(P, P, P), SLJIT_IMM,
+			SLJIT_FUNC_ADDR(&TableRecord::loadStringIndexInNative));
 		m_cache.spillCall(true, 0);
 		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP),
 							 result + offsetof(TableLookupResult, status), SLJIT_IMM,
@@ -191,14 +211,14 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSi
 					   result + offsetof(TableLookupResult, slot));
 		emitValueTransportLoad(m_compiler, SLJIT_SP, result + offsetof(TableLookupResult, value), SLJIT_R2, SLJIT_R3);
 	} else {
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), keyWord);
 		emitRawLoad(value, SLJIT_R1, SLJIT_R2);
-		emitValueTransportStore(m_compiler, SLJIT_SP, result, SLJIT_R1, SLJIT_R2);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R3, 0);
-		sljit_get_local_base(m_compiler, SLJIT_R2, 0, result);
+		emitValueTransportStore(m_compiler, SLJIT_SP, transport, SLJIT_R1, SLJIT_R2);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), keyWord);
+		sljit_get_local_base(m_compiler, SLJIT_R3, 0, transport);
 		m_cache.spillCall(false, 0);
-		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, 32, P), SLJIT_IMM,
-			SLJIT_FUNC_ADDR(&Table::storeStringKeyInNative));
+		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM,
+			SLJIT_FUNC_ADDR(&TableRecord::storeStringKeyInNative));
 		m_cache.spillCall(true, 0);
 		fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, TABLE_STORE_REQUIRES_GROWTH),
 			exit, m_cache.state());
@@ -218,12 +238,10 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 	fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 						 static_cast<u8>(ValueTag::Table)),
 		  exit, m_cache.state());
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
-				   offsetof(NativeBlockRunState, heap));
-	emitObjectReference(m_compiler, SLJIT_R0, SLJIT_R0, SLJIT_R1);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), receiver, SLJIT_R0, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), Table::nativeAddressOffset());
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), receiver, SLJIT_R0, 0);
 	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER, SLJIT_R0, 0, SLJIT_IMM,
+		MAIN_RAM_SIZE - Table::HEADER_BYTES), exit, m_cache.state());
 	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R0, SLJIT_R0);
 	if (op == OpCode::GETT || op == OpCode::SETT) {
 		emitRawLoad(key, SLJIT_R3, SLJIT_R2);

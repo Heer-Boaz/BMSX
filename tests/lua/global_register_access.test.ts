@@ -1,7 +1,8 @@
+import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { asTable, valueBool, valueInteger, valueIsClosure, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueIsClosure, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
@@ -71,22 +72,24 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 	}
 	const objectKey = cpu.stringPool.intern('object');
 	const object = cpu.createTable(1);
-	object.setInteger(1, valueInteger(42));
+	object.records.setInteger(object.address, 1, valueInteger(42));
 	cpu.setGlobalByKey(objectKey, valueTable(cpu.gc.reference(object)));
 	const nilKey = cpu.stringPool.intern('nil-name');
 	cpu.setGlobalByKey(nilKey, valueNil());
 	assert.equal(cpu.globalSlotCount, count + 259);
 	cpu.collectTrackedHeapBytes();
 	const names = cpu.stringPool.captureState();
+	const memory = cpu.memory.captureSaveState();
 	const anchor = cpu.captureRuntimeState();
 	for (let index = 0; index < 257; index++) assert.equal(cpu.getGlobalByKey(cpu.stringPool.find(`dynamic${index}`)!), valueInteger(index));
 	cpu.setGlobalByKey(objectKey, valueNil());
 	cpu.setGlobalByKey(cpu.stringPool.intern('future'), valueInteger(100));
 	cpu.collectTrackedHeapBytes();
 	cpu.stringPool.restoreState(names);
+	cpu.memory.restoreSaveState(memory);
 	cpu.restoreRuntimeState(anchor);
 	assert.deepEqual(cpu.captureRuntimeState(), anchor);
-	assert.equal(asTable(cpu.getGlobalByKey(objectKey), cpu.gc).getInteger(1), valueInteger(42));
+	assert.equal(cpu.gc.tables.getInteger(tableAddressPayload(cpu.getGlobalByKey(objectKey)), 1), valueInteger(42));
 	assert.equal(cpu.stringPool.toString(nilKey), 'nil-name');
 	assert.equal(cpu.globalSlotCount, count + 259);
 });

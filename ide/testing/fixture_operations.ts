@@ -26,7 +26,7 @@ export class FixtureOperations {
 	public get observesPublication(): boolean { return this.wait?.kind === 'boundary'; }
 	public shouldStopAtPublication(): boolean {
 		return this.wait?.kind === 'boundary'
-			&& isTruthy(this.wait.receipt.getStringKey(this.target.runtime.machine.cpu.stringPool.find('reached')!));
+			&& isTruthy(this.wait.receipt.records.getStringKey(this.wait.receipt.address, this.target.runtime.machine.cpu.stringPool.find('reached')!));
 	}
 
 	/** The compiled context owns this protocol. Unknown operations are errors, not no-ops. */
@@ -75,7 +75,7 @@ export class FixtureOperations {
 			case 'ticks': ready = runtime.frameScheduler.lastTickSequence >= wait.target; break;
 			case 'input': ready = this.input.samples >= wait.target; break;
 			case 'boundary': {
-				const reached = wait.receipt.getStringKey(runtime.machine.cpu.stringPool.find('reached')!);
+				const reached = wait.receipt.records.getStringKey(wait.receipt.address, runtime.machine.cpu.stringPool.find('reached')!);
 				ready = isTruthy(reached) || runtime.frameScheduler.lastTickSequence >= wait.deadline;
 				if (ready) args[1] = reached;
 				break;

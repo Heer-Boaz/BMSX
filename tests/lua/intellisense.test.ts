@@ -1,3 +1,4 @@
+import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import { asClosure, asTable, numberToHost, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { TEST_SYSTEM_CONTEXT_ID, createTestRuntime, createTestRuntimeRomPayload, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createPathModuleProjectFixture, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
@@ -560,7 +561,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	assert.equal(cpu.getFrameDepth(), 0);
 
 	const replacement = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
-	asTable(cpu.readClosureUpvalue(replacement, 0), cpu.gc).setStringKey(cpu.stringPool.find('value')!, valueInteger(99));
+	cpu.gc.tables.setStringKey(tableAddressPayload(cpu.readClosureUpvalue(replacement, 0)), cpu.stringPool.find('value')!, valueInteger(99));
 
 	const usageColumn = source.split('\n')[3].indexOf('captured') + 1;
 	const resolved = readRuntimeLuaValue(
