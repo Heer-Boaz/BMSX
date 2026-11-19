@@ -43,7 +43,7 @@ void slidingFixedCall(bool interpreted) {
 	require(thread->frameDepth == 1, "warm execution returns to the original frame");
 	require(thread->stackCapacity == 128, "fixed calls share the allocation rather than appending maxStack windows");
 	require(parent->registers.get(0) == valueInteger(1), "the lower caller prefix survives calls");
-	require(parent->next && parent->next->stackBase == parent->stackBase + 5, "callee parameters alias the supplied argument slots");
+	require(parent->next && parent->next->stackBase() == parent->stackBase() + 5, "callee parameters alias the supplied argument slots");
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress + INSTRUCTION_BYTES);
 	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]
 		+ BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
@@ -99,7 +99,7 @@ void slidingVarargCall(bool interpreted, bool open) {
 	auto* thread = cpu.activeThread();
 	require(thread->frameDepth == 2, "vararg CALL enters before executing the body");
 	auto* child = thread->currentFrame;
-	require(child->stackBase == 8 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargBase)) == 6 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargCount)) == 2, "vararg working registers slide above original arguments");
+	require(child->stackBase() == 8 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargBase)) == 6 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargCount)) == 2, "vararg working registers slide above original arguments");
 	require(child->registers.get(0) == valueInteger(37) && thread->stack.get(5) == valueNil(), "fixed parameters move, original copies no longer retain roots");
 	cpu.collectHeap();
 	const auto snapshot = cpu.captureRuntimeState();
@@ -132,7 +132,7 @@ void formalReservationRoots(bool interpreted) {
 	parent->registers.set(11, valueTable(cpu.gcHeap().reference(table))); parent->writeControl(bmsx::FrameField::Top, 12);
 	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	auto* child = cpu.activeThread()->currentFrame;
-	require(cpu.getFrameDepth() == 2 && child->stackCapacity == 7 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::Top)) == 7,
+	require(cpu.getFrameDepth() == 2 && child->stackCapacity() == 7 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::Top)) == 7,
 		"the formal count owns every argument even when maxStack is smaller");
 	cpu.collectHeap();
 	const auto snapshot = cpu.captureRuntimeState();
@@ -224,6 +224,21 @@ void memoryAliasesActiveStack() {
 		"the stack write consumed the watch on that exact word");
 	require(binding.writeWatch.consume(slotOffset / INSTRUCTION_BYTES + 7, slotOffset / INSTRUCTION_BYTES + 8),
 		"the unused slot's watch survived");
+	auto* frame = thread->currentFrame;
+	const u32 baseWord = RAM_BASE + frame->controlOffset + static_cast<u32>(FrameField::StackBase);
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
+	regs.set(3, valueInteger(123)); regs.set(4, valueInteger(baseWord)); regs.set(5, valueInteger(0xfff00001u));
+	cpu.runUntilDepth(0, cycles);
+	require(thread->stack.get(3) == valueInteger(0), "the next instruction reads the newly selected register window");
+	require(frame->stackBase() == 1 && thread->stackTop == 9, "the frame base lane decodes the internal slot bits");
+	regs.set(0, valueInteger(99));
+	require(memory.readRamRecordWord(slot + sizeof(u32)) == 99u, "an external geometry write rebinds the register window");
+	memory.writeMappedU32LE(baseWord, 0);
+	// Relocating the whole physical stack must also move its control records.
+	const u32 relocated = MAIN_RAM_SIZE - 4u;
+	const u32 relocatedControl = relocated + ((thread->stackByteLength() + 3u) & ~3u);
+	for (u32 i = 0; i < FRAME_CONTROL_BYTES; i += sizeof(u32))
+		memory.writeRamRecordWord(relocatedControl + i, memory.readRamRecordWord(frame->controlOffset + i));
 	// A cartridge write changes the physical register aperture even if it
 	// straddles RAM's end. The two lanes wrap independently at the record port.
 	const u32 descriptor = thread->address + static_cast<u32>(ThreadField::StackBlock);

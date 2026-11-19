@@ -22,7 +22,8 @@ public:
 	virtual void invalidateMappedViews(u64, u32, u32) {}
 };
 
-inline constexpr u32 MAPPED_PAGE_WATCH_GROUP_COUNT = MAPPED_PAGE_BYTE_SIZE / (4u * 32u);
+inline constexpr u32 MAPPED_WATCH_GROUP_BYTE_SHIFT = 7u;
+inline constexpr u32 MAPPED_PAGE_WATCH_GROUP_COUNT = MAPPED_PAGE_BYTE_SIZE >> MAPPED_WATCH_GROUP_BYTE_SHIFT;
 static_assert(MAPPED_PAGE_WATCH_GROUP_COUNT <= 8u);
 
 constexpr u32 mappedWatchWordMask(u32 group, u32 firstWord, u32 lastWord) {
@@ -105,6 +106,8 @@ public:
 		return false;
 	}
 	const u8* groupData() const { return reinterpret_cast<const u8*>(m_storage.get()); }
+	const u32* codeWordMasks() const { return m_words; }
+	const u32* viewWordMasks() const { return m_viewWords; }
 
 	explicit MappedPageWriteWatches(size_t byteLength, bool watchViews = false) {
 		// The byte group bank precedes aligned word masks in one allocation.

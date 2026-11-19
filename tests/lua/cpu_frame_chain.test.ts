@@ -40,7 +40,7 @@ test('thread-owned nodes reuse stable identities and trim only the spare tail', 
 	for (let index = 0; index < 8; ++index) {
 		const frame = thread.acquireFrame();
 		thread.reserveFrame(thread.stackRegisters.capacity());
-		frame.initializeControl(0, 0, 0, false, -1, 0, 0, 0, 0, 0, 0);
+		frame.initializeControl(0, 0, 0, false, -1, 0, 0, 0, 0, 0, 0, 0, 0);
 		assert.equal(thread.frameDepth, index, 'preparation does not activate a frame');
 		thread.enterFrame(frame); frames.push(frame);
 		assert.equal(frame.previous, index === 0 ? null : frames[index - 1]);

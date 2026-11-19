@@ -45,6 +45,8 @@ struct Thread : GCObject {
 	void bindStack();
 	void armStackWatch();
 	bool observeStackWrite();
+	bool observeFrameWindowWrites(u32 first, u32 end);
+	void armFrameWindowWatches();
 	void freeStack();
 	u32 stackOffset() const;
 	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
@@ -92,6 +94,7 @@ private:
 	u32 frameCapacity() const;
 	u32 protectedCapacity() const;
 	u32 frameControlAddress(u32 index) const;
+	void armFrameWindowWatch(const CallFrame& frame);
 	u32 protectedAddress(u32 index) const;
 	u32 read(ThreadField field) const;
 	void write(ThreadField field, u32 word);

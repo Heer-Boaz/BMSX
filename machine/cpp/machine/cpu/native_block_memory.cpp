@@ -8,6 +8,24 @@
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
+void NativeBlockCompiler::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 address, sljit_sw addressArg, sljit_s32 bits, sljit_s32 group, u32 wordMask) {
+	auto* c = m_compiler;
+	sljit_emit_op2(c, SLJIT_LSHR32, bits, 0, address, addressArg, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
+	sljit_emit_op1(c, SLJIT_MOV_U8, bits, 0, SLJIT_MEM1(bits), reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
+	auto* clear = sljit_emit_cmp(c, SLJIT_EQUAL, bits, 0, SLJIT_IMM, 0);
+	// Active frame windows routinely arm words in a RAM page. The cold
+	// lookup uses exact word masks instead of retiring unrelated stores.
+	sljit_emit_op2(c, SLJIT_LSHR32, group, 0, address, addressArg, SLJIT_IMM, MAPPED_WATCH_GROUP_BYTE_SHIFT - 2u);
+	sljit_emit_op2(c, SLJIT_AND32, group, 0, group, 0, SLJIT_IMM, -4);
+	sljit_emit_op1(c, SLJIT_MOV32, bits, 0, SLJIT_MEM1(group), reinterpret_cast<sljit_sw>(m_bindings.ramCodeWatchWords));
+	sljit_emit_op2(c, SLJIT_OR32, bits, 0, bits, 0, SLJIT_MEM1(group), reinterpret_cast<sljit_sw>(m_bindings.ramViewWatchWords));
+	sljit_emit_op2(c, SLJIT_LSHR32, group, 0, address, addressArg, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_MLSHR32, bits, 0, bits, 0, group, 0);
+	sljit_emit_op2(c, SLJIT_AND32, bits, 0, bits, 0, SLJIT_IMM, wordMask);
+	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, bits, 0, SLJIT_IMM, 0), slow, m_cache.state());
+	sljit_set_label(clear, sljit_emit_label(c));
+}
+
 void NativeBlockCompiler::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {
 	const auto move = kind == MemoryAccessKind::U8 ? SLJIT_MOV32_U8 : kind == MemoryAccessKind::U16LE ? SLJIT_MOV32_U16 : SLJIT_MOV32;
 	if (kind != MemoryAccessKind::F64LE) {
@@ -165,16 +183,10 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 		return;
 	}
 	if (!load) {
-		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R3, 0, SLJIT_R1, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3),
-			reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
-		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0), slow, m_cache.state());
+		emitRamWordWriteWatch(slow, SLJIT_R1, 0, SLJIT_R3, SLJIT_R2);
 		if (width == 8) {
-			sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R1, 0, SLJIT_IMM, 4);
-			sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
-			sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3),
-				reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
-			fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0), slow, m_cache.state());
+			sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R1, 0, SLJIT_IMM, 4);
+			emitRamWordWriteWatch(slow, SLJIT_R0, 0, SLJIT_R3, SLJIT_R2);
 		}
 	}
 	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);

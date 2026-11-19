@@ -149,9 +149,11 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int
 bool Thread::stackRequiresScalar() const {
 	const auto& watches = heap.memory.ramWriteWatches();
 	const u32 bytes = backingByteLength();
+	const u32 offset = stackOffset(), controls = controlOffset(static_cast<u32>(stack.size()));
 	return stack.mirrored() || static_cast<size_t>(stackTop) > stack.size() || frameDepth > boundFrameCapacity
-		|| bytes > MAIN_RAM_SIZE - stackOffset()
-		|| (watches.anyWatched() && watches.anyWatched(stackOffset(), bytes));
+		|| bytes > MAIN_RAM_SIZE - offset
+		|| (watches.anyWatched() && (watches.anyWatched(offset, controls)
+			|| watches.anyWatched(offset + controls, bytes - controls, false)));
 }
 
 void Thread::bindStack() {
@@ -159,29 +161,54 @@ void Thread::bindStack() {
 	boundFrameCapacity = frameCapacity();
 	boundProtectedCapacity = protectedCapacity();
 	const u32 block = read(ThreadField::StackBlock) & RAM_RECORD_WORD_MASK;
+	const u32 controls = block + controlOffset(static_cast<u32>(stackCapacity));
+	u32 index = 0;
+	for (auto* frame = firstFrame; frame; frame = frame->next, ++index) {
+		frame->bindControl(heap.memory, controls + index * FRAME_CONTROL_BYTES);
+		if (index >= boundFrameCapacity || FRAME_CONTROL_BYTES > MAIN_RAM_SIZE - frame->controlOffset)
+			frame->nativeControl = nullptr;
+		armFrameWindowWatch(*frame);
+	}
 	size_t extent = 0;
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
-		extent = std::max(extent, static_cast<size_t>(frame->stackBase + frame->stackCapacity));
+		extent = std::max(extent, static_cast<size_t>(frame->stackBase() + frame->stackCapacity()));
 	stack = {heap.memory, block, block + static_cast<u32>(stackCapacity) * 4u, stackCapacity,
 		stackCapacity > (MAIN_RAM_SIZE - block) / THREAD_STACK_SLOT_BYTES || extent > stackCapacity};
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
-		frame->registers = stack.subspan(frame->stackBase, frame->stackCapacity);
+		frame->registers = stack.subspan(frame->stackBase(), frame->stackCapacity());
+}
+
+void Thread::armFrameWindowWatch(const CallFrame& frame) {
+	for (auto field : {FrameField::StackBase, FrameField::StackCapacity})
+		heap.memory.armRamViewWord((frame.controlOffset + static_cast<u32>(field)) & RAM_RECORD_WORD_MASK);
+}
+
+void Thread::armFrameWindowWatches() {
+	for (auto* frame = firstFrame; frame; frame = frame->next) armFrameWindowWatch(*frame);
+}
+
+bool Thread::observeFrameWindowWrites(u32 first, u32 end) {
+	bool active = false;
 	u32 index = 0;
 	for (auto* frame = firstFrame; frame; frame = frame->next, ++index) {
-		frame->bindControl(heap.memory, frameControlAddress(index));
-		if (index >= boundFrameCapacity) frame->nativeControl = nullptr;
+		const u32 base = RAM_BASE + ((frame->controlOffset + static_cast<u32>(FrameField::StackBase)) & RAM_RECORD_WORD_MASK);
+		const u32 size = RAM_BASE + ((frame->controlOffset + static_cast<u32>(FrameField::StackCapacity)) & RAM_RECORD_WORD_MASK);
+		if ((first <= base && base < end) || (first <= size && size < end)) {
+			armFrameWindowWatch(*frame);
+			active |= index < frameDepth;
+		}
 	}
+	if (active) {
+		bindStack();
+		stackTop = currentFrame->stackBase() + currentFrame->stackCapacity();
+	}
+	return active;
 }
 
 void Thread::armStackWatch() {
-	const u32 page = address & ~MAPPED_PAGE_BYTE_MASK;
-	MappedPageBinding binding{};
-	heap.memory.bindMappedPage(page, MAPPED_BUS_MASTER_CPU, binding);
-	const u32 word = ((address & MAPPED_PAGE_BYTE_MASK) + static_cast<u32>(ThreadField::StackBlock)) >> 2u;
-	binding.writeWatch.armViewWord(word);
-	binding.writeWatch.armViewWord(word + 1u);
-	binding.writeWatch.armViewWord(word + 2u);
-	binding.writeWatch.armViewWord(word + 3u);
+	const u32 first = (address + static_cast<u32>(ThreadField::StackBlock)) & RAM_RECORD_WORD_MASK;
+	for (u32 offset = 0; offset < 16; offset += sizeof(u32))
+		heap.memory.armRamViewWord(first + offset);
 }
 
 bool Thread::observeStackWrite() {
@@ -253,7 +280,7 @@ void Thread::replaceStack(u32 block, size_t capacity, u32 frames, u32 continuati
 size_t Thread::shrinkStack() {
 	size_t used = static_cast<size_t>(stackTop);
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
-		used = std::max(used, static_cast<size_t>(frame->stackBase + frame->stackCapacity));
+		used = std::max(used, static_cast<size_t>(frame->stackBase() + frame->stackCapacity()));
 	const u32 priorProtected = protectedCapacity();
 	const u32 nextProtected = priorProtected > 4 && 3ull * protectedDepth() < priorProtected ? priorProtected / 2 : priorProtected;
 	const size_t nextValues = stackCapacity > 16 && used * 3 < stackCapacity ? stackCapacity / 2 : stackCapacity;
@@ -274,7 +301,9 @@ CallFrame* Thread::acquireFrame() {
 		frame->thread = this;
 		frame->previous = currentFrame;
 		frame->bindControl(heap.memory, frameControlAddress(static_cast<u32>(frameDepth)));
-		if (frameDepth >= boundFrameCapacity) frame->nativeControl = nullptr;
+		if (frameDepth >= boundFrameCapacity || FRAME_CONTROL_BYTES > MAIN_RAM_SIZE - frame->controlOffset)
+			frame->nativeControl = nullptr;
+		armFrameWindowWatch(*frame);
 	}
 	return frame;
 }
@@ -282,7 +311,7 @@ CallFrame* Thread::acquireFrame() {
 void Thread::leaveFrame() {
 	auto* frame = currentFrame;
 	currentFrame = frame->previous;
-	stackTop = currentFrame ? currentFrame->stackBase + currentFrame->stackCapacity : 0;
+	stackTop = currentFrame ? currentFrame->stackBase() + currentFrame->stackCapacity() : 0;
 	--frameDepth;
 	// Inactive pointers are not roots; active paths establish them before use.
 	frame->registers = {};

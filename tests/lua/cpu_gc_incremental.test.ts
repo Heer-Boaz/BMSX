@@ -1,3 +1,4 @@
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -181,18 +182,18 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 	frame.registers.setInteger(0, 456);
 	assert.equal(thread.stackRegisters.getInteger(frame.stackBase), 456);
 	const parentCapacity = frame.stackCapacity;
-	frame.stackCapacity = 200;
-	frame.registers.rebind(thread.stackRegisters, frame.stackBase, frame.stackCapacity);
+	frame.growRegisterWindow(200);
 	thread.reserveFrame(thread.stackRegisters.capacity());
 	const child = thread.acquireFrame();
-	child.stackBase = 2; child.stackCapacity = 8; child.top = 0;
+	child.controlMemory.writeRamRecordPair(child.controlOffset + FrameField.StackBase, 2, 8);
+	child.top = 0;
 	child.closureAddress = frame.closureAddress; child.executionImage = frame.executionImage;
 	child.registers.rebind(thread.stackRegisters, 2, 8);
 	thread.enterFrame(child); thread.stackTop = 10;
 	cpu.collectTrackedHeapBytes();
 	assert.equal(thread.stackRegisters.capacity(), 512, 'the overlapping caller window, not just current stackTop, prevents shrinking');
-	thread.leaveFrame(); frame.stackCapacity = parentCapacity; thread.stackTop = parentCapacity;
-	frame.registers.rebind(thread.stackRegisters, frame.stackBase, parentCapacity);
+	thread.leaveFrame();
+	frame.controlMemory.writeRamRecordWord(frame.controlOffset + FrameField.StackCapacity, parentCapacity);
 	const grown = 2048;
 	cpu.luaHeap.restoreState({ trackedBytes: cpu.luaHeap.usedBytes(), nextCollectionBytes: 0 });
 	cpu.luaHeap.collectRuntime(valueNil(), valueNil(), valueNil(), thread);

@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x43534d42u; // BMSC
+constexpr u32 kSaveStateSignature = 0x44534d42u; // BMSD
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1148,18 +1148,6 @@ RuntimeSaveMachineState readRuntimeSaveMachineState(BinaryReader& reader, size_t
 	return state;
 }
 
-template<class Writer> void writeCpuFrameState(Writer& writer, const CpuFrameState& state) {
-	writer.i32(state.stackBase);
-	writer.i32(state.stackCapacity);
-}
-
-CpuFrameState readCpuFrameState(BinaryReader& reader) {
-	CpuFrameState state;
-	state.stackBase = reader.i32();
-	state.stackCapacity = reader.i32();
-	return state;
-}
-
 template<class Writer> void writeCpuRootValueState(Writer& writer, const CpuRootValueState& state) {
 	writer.u32(state.key);
 	writer.u32(state.value);
@@ -1174,20 +1162,13 @@ CpuRootValueState readCpuRootValueState(BinaryReader& reader) {
 
 template<class Writer> void writeCpuThreadState(Writer& writer, const CpuThreadState& state) {
 	writer.u32(state.stackTop);
-	writer.u32(static_cast<u32>(state.frames.size()));
-	for (const auto& value : state.frames) {
-		writeCpuFrameState(writer, value);
-	}
+	writer.u32(state.frameDepth);
 }
 
 CpuThreadState readCpuThreadState(BinaryReader& reader) {
 	CpuThreadState state;
 	state.stackTop = reader.u32();
-	const u32 framesCount = reader.u32();
-	state.frames.reserve(framesCount);
-	for (u32 index = 0; index < framesCount; ++index) {
-		state.frames.push_back(readCpuFrameState(reader));
-	}
+	state.frameDepth = reader.u32();
 	return state;
 }
 

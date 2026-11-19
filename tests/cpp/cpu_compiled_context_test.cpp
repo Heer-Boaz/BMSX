@@ -51,7 +51,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
 	for (size_t i = 0; i < first.frameDepth; ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& x = *firstFrame; const auto& y = *secondFrame;
-		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity
+		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase() == y.stackBase() && x.stackCapacity() == y.stackCapacity()
 			&& static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::VarargBase)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::VarargBase)) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::VarargCount)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::VarargCount)), "all live frame ranges agree after relocation");
 	}
 }
@@ -149,7 +149,7 @@ void hotVarargFrames(int fixed) {
 		require(native.cpu.readFramePc(1) == native.rom.textAddress + 22u * INSTRUCTION_BYTES,
 			"short grants reach the instruction after the final VARARG");
 		require(static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(1)->readControl(bmsx::FrameField::Top)) == count, "the final open VARARG replaces the former top exactly");
-		if (count == 63) require(native.cpu.activeThread()->frameAtDepth(1)->stackCapacity > 16, "the hot capacity exit grows the real stack");
+		if (count == 63) require(native.cpu.activeThread()->frameAtDepth(1)->stackCapacity() > 16, "the hot capacity exit grows the real stack");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		require(page.nativeBlocks->entries[entry].get() == block, "the compiled varargs body survives frame and stack replacement");
 #endif
@@ -178,7 +178,7 @@ void hotEmptyVararg() {
 	}
 	requireParity(native, scalar);
 	const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
-	require(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 31 && frame.stackCapacity == 4 && frame.registers.get(0) == valueInteger(73),
+	require(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 31 && frame.stackCapacity() == 4 && frame.registers.get(0) == valueInteger(73),
 		"zero saved varargs change top without forming an out-of-range host slot or extending capacity");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::waitForNativeEntry(native.cpu, *frame.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
@@ -273,7 +273,7 @@ void hotUpvalueAlias() {
 			auto* cell = heap.allocate<Upvalue>(ObjType::Upvalue, heap.memory,
 				heap.budget.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));
 			cell->hashId = heap.allocateHashId();
-			if (c == 0) cell->bind(frame.thread->address, frame.stackBase, 0);
+			if (c == 0) cell->bind(frame.thread->address, frame.stackBase(), 0);
 			closure->setCaptureAddress(c, cell->address);
 		}
 		frame.writeControl(bmsx::FrameField::Closure, closure->address); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1100);
@@ -427,13 +427,14 @@ void rawContextValues(CpuMachine& machine) {
 }
 
 void varargAliasesAndSideExits(CpuMachine& machine) {
-	ValueSlots stack(48); CallFrame frame; frame.stackBase = 16; frame.registers = stack.view().subspan(16, 32);
+	ValueSlots stack(48); CallFrame frame; frame.registers = stack.view().subspan(16, 32);
 	frame.bindControl(machine.memory, DYNAMIC_RAM_BASE - RAM_BASE + 0x700);
+	frame.writeControl(bmsx::FrameField::StackBase, 16);
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(0),
 		valueTable(machine.cpu.gcHeap().reference(machine.cpu.createTable())), valueThread(machine.cpu.gcHeap().reference(machine.cpu.activeThread()))};
 	ContextBlock empty(machine, {{OpCode::VARARG, 31, 0}, {OpCode::JMP}});
-	frame.writeControl(bmsx::FrameField::VarargCount, 0); frame.stackCapacity = 16;
+	frame.writeControl(bmsx::FrameField::VarargCount, 0); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
 	for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
 	NativeBlockRunState zero{.registers = frame.registers, .frame = &frame, .remainingCycles = 100, .registerTop = 48};
 	require(empty.block->run(zero) == &empty.block->terminal && zero.registerTop == 31,
@@ -460,8 +461,8 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 		second.block->linkFrom(first.block->terminal);
 		for (const int count : {0, 2, 8}) {
 			for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
-			frame.writeControl(bmsx::FrameField::VarargCount, count); frame.stackCapacity = 16;
-			frame.writeControl(bmsx::FrameField::VarargBase, frame.stackBase - count);
+			frame.writeControl(bmsx::FrameField::VarargCount, count); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
+			frame.writeControl(bmsx::FrameField::VarargBase, frame.stackBase() - count);
 			for (int i = 0; i < count; ++i) stack.set(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::VarargBase)) + i, values[i]);
 			frame.registers.set(14, valueInteger(1));
 			NativeBlockRunState state{.registers = frame.registers, .frame = &frame, .remainingCycles = 100, .registerTop = 16};
@@ -472,8 +473,8 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 				"a word consumer sees the overwritten vararg kind, not a cached literal fact; fixed ranges retain untouched facts");
 		}
 		for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
-		frame.writeControl(bmsx::FrameField::VarargCount, 8); frame.stackCapacity = 8;
-		frame.writeControl(bmsx::FrameField::VarargBase, frame.stackBase - 8);
+		frame.writeControl(bmsx::FrameField::VarargCount, 8); frame.writeControl(bmsx::FrameField::StackCapacity, 8);
+		frame.writeControl(bmsx::FrameField::VarargBase, frame.stackBase() - 8);
 		for (int i = 0; i < 8; ++i) stack.set(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::VarargBase)) + i, values[i]);
 		// Only the open first copy exceeds this capacity.
 		if (fixed == 0) {

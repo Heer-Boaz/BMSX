@@ -26,8 +26,8 @@ constexpr u32 PROTECTED_CALL_BYTES = 20;
 constexpr u32 PROTECTED_CALL_KIND_MASK = 0xffu;
 constexpr u32 PROTECTED_CALL_PARENT = 1u << 8;
 
-enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44 };
-constexpr u32 FRAME_CONTROL_BYTES = 48;
+enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
+constexpr u32 FRAME_CONTROL_BYTES = 56;
 // The stack datapath uses a RAM-word slot index, not a host signed integer.
 constexpr u32 FRAME_WINDOW_MASK = (MAIN_RAM_SIZE / sizeof(u32)) - 1;
 constexpr u32 FRAME_COMPLETION = 1u;
@@ -75,7 +75,10 @@ struct CallFrame {
 		writeControl(FrameField::Flags, (readControl(FrameField::Flags) & ~FRAME_BANK_MASK) | frameBankWord(domain));
 	}
 	void initializeControl(u32 function, u32 pc, u32 callSite, u32 flags,
-		i32 varargBase, i32 varargCount, i32 returnBase, i32 returnCount, i32 top, u32 closure);
+		i32 varargBase, i32 varargCount, i32 returnBase, i32 returnCount, i32 top, u32 closure, i32 base, i32 capacity);
+	i32 stackBase() const { return readWindow(FrameField::StackBase); }
+	i32 stackCapacity() const { return readWindow(FrameField::StackCapacity); }
+	void growRegisterWindow(i32 capacity);
 	bool hasControlFlag(u32 mask) const;
 	void addControlFlags(u32 flags);
 	Blua32ExecutionImage* executionImage = nullptr;
@@ -90,8 +93,6 @@ struct CallFrame {
 	u32 nativeContinuationPc = 0;
 #endif
 	ValueSpan registers;
-	int stackBase = 0;
-	int stackCapacity = 0;
 };
 
 } // namespace bmsx

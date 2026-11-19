@@ -16,8 +16,8 @@ export const enum ProtectedCallKind {
 	XPCallHandler,
 }
 
-export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44 }
-export const FRAME_CONTROL_BYTES = 48;
+export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 }
+export const FRAME_CONTROL_BYTES = 56;
 const FRAME_WINDOW_MASK = (MAIN_RAM_SIZE >>> 2) - 1;
 const FRAME_COMPLETION = 1;
 const FRAME_EXCEPTION = 2;
@@ -39,8 +39,8 @@ export class CallFrame {
 	public decodedPageBusSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU;
 	/** Host translation admission for the next PC, not checkpoint state. */
 	public compilationEntry = true;
-	public stackBase = 0;
-	public stackCapacity = 0;
+	public get stackBase(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.StackBase) & FRAME_WINDOW_MASK; }
+	public get stackCapacity(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.StackCapacity) & FRAME_WINDOW_MASK; }
 	public controlOffset = 0;
 
 	public readonly controlMemory: Memory;
@@ -60,7 +60,7 @@ export class CallFrame {
 
 	public bindControl(offset: number): void { this.controlOffset = offset & RAM_RECORD_WORD_MASK; }
 	public initializeControl(fn: number, pc: number, callSite: number, completion: boolean, domain: ExecutionDomainId,
-		varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number): void {
+		varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number): void {
 		const memory = this.controlMemory, ram = memory.ramData(), offset = this.controlOffset;
 		writeLE32(ram, (offset + FrameField.Function) & RAM_RECORD_WORD_MASK, fn);
 		writeLE32(ram, (offset + FrameField.CallSite) & RAM_RECORD_WORD_MASK, callSite);
@@ -75,9 +75,20 @@ export class CallFrame {
 		writeLE32(ram, (offset + FrameField.ReturnCount) & RAM_RECORD_WORD_MASK, returnCount);
 		writeLE32(ram, (offset + FrameField.Top) & RAM_RECORD_WORD_MASK, top);
 		writeLE32(ram, (offset + FrameField.Closure) & RAM_RECORD_WORD_MASK, closureAddress);
+		writeLE32(ram, (offset + FrameField.StackBase) & RAM_RECORD_WORD_MASK, base);
+		writeLE32(ram, (offset + FrameField.StackCapacity) & RAM_RECORD_WORD_MASK, capacity);
+		this.registers.rebind(this.thread.stackRegisters, base, capacity);
 		const first = Math.min(FRAME_CONTROL_BYTES, MAIN_RAM_SIZE - offset);
-		memory.invalidateRamWrite(offset, first);
-		if (first !== FRAME_CONTROL_BYTES) memory.invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
+		memory.invalidateRamWrite(offset, first, false);
+		if (first !== FRAME_CONTROL_BYTES) memory.invalidateRamWrite(0, FRAME_CONTROL_BYTES - first, false);
+	}
+	public growRegisterWindow(capacity: number): void {
+		const memory = this.controlMemory, address = (this.controlOffset + FrameField.StackCapacity) & RAM_RECORD_WORD_MASK;
+		writeLE32(memory.ramData(), address, (memory.readRamRecordWord(address) & ~FRAME_WINDOW_MASK) | capacity);
+		const base = this.stackBase;
+		this.registers.rebind(this.thread.stackRegisters, base, capacity);
+		if (this === this.thread.currentFrame) this.thread.stackTop = base + capacity;
+		memory.invalidateRamWrite(address, 4, false);
 	}
 	public get closureAddress(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Closure); }
 	public set closureAddress(address: number) { this.controlMemory.writeRamRecordWord(this.controlOffset + FrameField.Closure, address); }

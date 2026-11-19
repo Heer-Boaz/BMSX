@@ -555,7 +555,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			completionThreadRef: 0,
 			threads: [{
 				stackTop: 0,
-				frames: [],
+				frameDepth: 0,
 			}],
 			completionValues: [],
 			snapshot: snapshot.finish(),
@@ -667,12 +667,9 @@ test('runtime save-state codec preserves GPUREAD bytes and raw phase bits', () =
 	assert.deepEqual(decodedSubmitted.machineState.machine.gxGpu.commandBuffer, submittedReadback);
 });
 
-test('runtime save-state codec preserves frame datapath metadata', () => {
+test('runtime save-state codec preserves the thread cursor without frame-side state', () => {
 	const state = createRuntimeSaveState();
-	state.cpuState.threads[0].frames = [{
-		stackCapacity: 8,
-		stackBase: 0,
-	}];
+	state.cpuState.threads[0] = { stackTop: 8, frameDepth: 1 };
 
 	const decoded = decodeRuntimeSaveState(
 		encodeRuntimeSaveState(state),
@@ -680,7 +677,7 @@ test('runtime save-state codec preserves frame datapath metadata', () => {
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
 	);
 
-	assert.deepEqual(decoded.cpuState.threads[0].frames, state.cpuState.threads[0].frames);
+	assert.deepEqual(decoded.cpuState.threads[0], state.cpuState.threads[0]);
 });
 
 test('runtime save-state codec preserves builtin VM primitive ids', () => {

@@ -574,7 +574,9 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 	for (const auto op : {OpCode::MOV, OpCode::GETFIELD, OpCode::K0, OpCode::DIV, OpCode::SETFIELD,
 		OpCode::STORE_MEM, OpCode::K1, OpCode::ADD, OpCode::MOV, OpCode::MOV, OpCode::GETFIELD, OpCode::MOV, OpCode::JMP})
 		loopCycles += BASE_CYCLES[static_cast<u8>(op)];
-	require(block && block->sourceWords == 13 && block->run(nativeRunState = {.registers = frame.registers, .constants = frame.executionImage->constPool.view(), .frame = &frame, .heap = &native.cpu.gcHeap(), .remainingCycles = loopCycles})->nextPc == native.rom.textAddress,
+	require(block && block->sourceWords == 13, "cached values occupy one native block");
+	const auto* outcome = block->run(nativeRunState = {.registers = frame.registers, .constants = frame.executionImage->constPool.view(), .frame = &frame, .heap = &native.cpu.gcHeap(), .remainingCycles = loopCycles});
+	require(outcome->nextPc == native.rom.textAddress,
 		"cached table references, numbers and memory writes all reach the final native exit");
 	scalar.cpu.runUntilDepth(0, loopCycles);
 	require(native.memory.readMappedWord(address) == 0u && native.memory.readMappedWord(address + 4u) == 0x7ff80000u,

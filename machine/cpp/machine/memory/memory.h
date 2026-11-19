@@ -52,6 +52,11 @@ public:
 	u8* ramData() { return m_ram.data(); }
 	size_t ramByteCount() const { return m_ram.size(); }
 	const MappedPageWriteWatches& ramWriteWatches() const { return m_ramPageWriteWatches; }
+	void armRamViewWord(u32 offset) {
+		MappedPageBinding page{};
+		m_ramPageWriteWatches.bind(offset, page);
+		page.writeWatch.armViewWord((offset & MAPPED_PAGE_BYTE_MASK) >> 2u);
+	}
 	// The CPU record port addresses physical RAM, including bytes under MMIO.
 	u32 readRamRecordWord(u32 address) const {
 		return readLE32(m_ram.data() + (address & RAM_RECORD_WORD_MASK));

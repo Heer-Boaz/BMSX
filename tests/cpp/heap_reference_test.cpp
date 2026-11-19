@@ -174,7 +174,7 @@ void closedCellLivesInRam() {
 		"closure owns the physical capture word");
 	require(memory.readRamRecordByte(address + UPVALUE_FLAGS) == UPVALUE_OPEN
 		&& memory.readRamRecordWord(address + UPVALUE_OWNER) == frame.thread->address
-		&& memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == static_cast<u32>(frame.stackBase),
+		&& memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == static_cast<u32>(frame.stackBase()),
 		"the open variant records the owning Thread and absolute stack slot in RAM");
 	const auto openSnapshot = cpu.captureRuntimeState();
 	const auto openRam = memory.captureSaveState();

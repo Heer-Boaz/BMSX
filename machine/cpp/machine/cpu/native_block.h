@@ -134,6 +134,8 @@ struct NativeCodeBindings {
 	u32 ramBytes = 0;
 	u8* ram = nullptr;
 	const u8* ramWriteGroups = nullptr;
+	const u32* ramCodeWatchWords = nullptr;
+	const u32* ramViewWatchWords = nullptr;
 	const u32* cartridgeSelection = nullptr;
 	std::array<const Span<const u8>*, 2> cartridgeRom{};
 	const Span<const u8>* systemRom = nullptr;

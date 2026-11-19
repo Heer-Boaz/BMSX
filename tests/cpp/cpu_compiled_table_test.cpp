@@ -55,7 +55,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
 	for (size_t i = 0; i < first.frameDepth; ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& x = *firstFrame; const auto& y = *secondFrame;
-		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity,
+		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase() == y.stackBase() && x.stackCapacity() == y.stackCapacity(),
 			"all live frame boundaries agree");
 	}
 }

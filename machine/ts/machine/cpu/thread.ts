@@ -1,12 +1,12 @@
 import { ThreadField } from './thread_record';
 import { GcObject, GcKind } from './gc_object';
-import { CallFrame, FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind } from './call_state';
+import { CallFrame, FrameField, FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { Closure } from './closure';
 import type { GcHeap } from './gc_heap';
 import { heapAllocationBytes } from './heap_allocator';
 import { valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
-import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueSlots } from './value_slots';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SHIFT } from '../memory/mapped_page';
 
@@ -141,29 +141,65 @@ export class Thread extends GcObject {
 	}
 
 	public stackRequiresScalar(): boolean {
-		const bytes = this.backingByteLength();
+		const bytes = this.backingByteLength(), offset = this.stackOffset(), controls = controlOffset(this.stackRegisters.capacity());
+		const watches = this.heap.memory.ramWriteWatches();
 		return this.stackRegisters.ramMirrored() || this.stackTop > this.stackRegisters.capacity()
-			|| this.frameDepth > this.boundFrameCapacity || bytes > MAIN_RAM_SIZE - this.stackOffset()
-			|| this.heap.memory.ramWriteWatches().anyWatched(this.stackOffset(), bytes);
+			|| this.frameDepth > this.boundFrameCapacity || bytes > MAIN_RAM_SIZE - offset
+			|| watches.anyWatched(offset, controls) || watches.anyWatched(offset + controls, bytes - controls, false);
 	}
 
 	public bindStack(): void {
 		const capacity = this.read(ThreadField.StackCapacity);
 		this.boundFrameCapacity = this.frameCapacity;
 		this.boundProtectedCapacity = this.protectedCapacity;
+		const block = this.read(ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
+		this.bindFrameControls(block + controlOffset(capacity));
 		let extent = 0;
 		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
 			extent = Math.max(extent, frame.stackBase + frame.stackCapacity);
-		this.stackRegisters.bindRam(this.heap.memory, this.read(ThreadField.StackBlock) & (MAIN_RAM_SIZE - 4), capacity, false, extent > capacity);
+		this.stackRegisters.bindRam(this.heap.memory, block, capacity, false, extent > capacity);
 		this.rebindFrames();
 	}
 
 	private rebindFrames(): void {
 		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
 			frame.registers.rebind(this.stackRegisters, frame.stackBase, frame.stackCapacity);
+	}
+
+	private bindFrameControls(start: number): void {
 		let index = 0;
-		for (let frame = this.firstFrame; frame !== null; frame = frame.next, ++index)
-			frame.bindControl(this.frameControlAddress(index));
+		for (let frame = this.firstFrame; frame !== null; frame = frame.next, ++index) {
+			frame.bindControl(start + index * FRAME_CONTROL_BYTES);
+			this.armFrameWindowWatch(frame);
+		}
+	}
+
+	private armFrameWindowWatch(frame: CallFrame): void {
+		const watches = this.heap.memory.ramWriteWatches();
+		for (let field = FrameField.StackBase; field <= FrameField.StackCapacity; field += 4) {
+			const offset = (frame.controlOffset + field) & RAM_RECORD_WORD_MASK;
+			watches.armViewWord(offset >>> MAPPED_PAGE_BYTE_SHIFT, (offset & MAPPED_PAGE_BYTE_MASK) >>> 2);
+		}
+	}
+
+	public armFrameWindowWatches(): void {
+		for (let frame = this.firstFrame; frame !== null; frame = frame.next) this.armFrameWindowWatch(frame);
+	}
+
+	public observeFrameWindowWrites(first: number, end: number): void {
+		let active = false, index = 0;
+		for (let frame = this.firstFrame; frame !== null; frame = frame.next, ++index) {
+			const base = RAM_BASE + ((frame.controlOffset + FrameField.StackBase) & RAM_RECORD_WORD_MASK);
+			const size = RAM_BASE + ((frame.controlOffset + FrameField.StackCapacity) & RAM_RECORD_WORD_MASK);
+			if ((first <= base && base < end) || (first <= size && size < end)) {
+				this.armFrameWindowWatch(frame);
+				active ||= index < this.frameDepth;
+			}
+		}
+		if (active) {
+			this.bindStack();
+			this.stackTop = this.currentFrame!.stackBase + this.currentFrame!.stackCapacity;
+		}
 	}
 
 	public armStackWatch(): void {
@@ -229,6 +265,7 @@ export class Thread extends GcObject {
 		writeLE32(ram, descriptor + 4, capacity);
 		writeLE32(ram, descriptor + 8, frames);
 		writeLE32(ram, descriptor + 12, continuations);
+		this.bindFrameControls(records);
 		this.rebindFrames();
 		memory.invalidateRamWrite(descriptor, 16, false);
 		this.heap.arena.free(oldBlock);
@@ -259,6 +296,7 @@ export class Thread extends GcObject {
 		if (frame === null) {
 			frame = new CallFrame(this, this.currentFrame, this.heap);
 			frame.bindControl(this.frameControlAddress(this.frameDepth));
+			this.armFrameWindowWatch(frame);
 			if (this.currentFrame === null) this.firstFrame = frame;
 			else this.currentFrame.next = frame;
 		}

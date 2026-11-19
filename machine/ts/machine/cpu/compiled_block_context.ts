@@ -45,7 +45,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 		case OpCode.SETUP: {
 			const tag = registers.tagOperand(a), word = registers.wordOperand(a);
 			return `{const m=h.memory,c=frame.captureAddress(${b})&${UPVALUE_ADDRESS_MASK};
-				if(m.readRamRecordByte(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN}) ${registers.exit(exit)}
+				if((m.readRamRecordByte(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN})||(m.ramWriteWatches().anyWatched(c,8))) ${registers.exit(exit)}
 				h.cellAt(c)?.writeBarrier();m.writeRamRecordWord(c+${UPVALUE_VALUE_WORD},${word});m.writeRamRecordByte(c+${UPVALUE_VALUE_TAG},${tag});}`;
 		}
 		case OpCode.VARARG: {

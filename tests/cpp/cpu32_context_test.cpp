@@ -48,7 +48,7 @@ void parity(Number32Machine& native, Number32Machine& scalar) {
 	for (size_t i = 0; i < a.threads.size(); ++i) {
 		const auto& x = a.threads[i];
 		const auto& y = b.threads[i];
-		require(x.stackTop == y.stackTop && x.frames.size() == y.frames.size(),
+		require(x.stackTop == y.stackTop && x.frameDepth == y.frameDepth,
 			"context stack and frame extents agree");
 	}
 }
@@ -263,7 +263,7 @@ void captures() {
 							// Redirect the live open cell into the injected frame, retaining
 							// actual thread/frame ownership and its matching open-cell chain.
 							parents[i]->writeControl(FrameField::OpenHead, 0);
-							upvalue->bind(frame->thread->address, frame->stackBase + 8, frame->readControl(FrameField::OpenHead));
+							upvalue->bind(frame->thread->address, frame->stackBase() + 8, frame->readControl(FrameField::OpenHead));
 							frame->writeControl(FrameField::OpenHead, upvalue->address);
 						}
 					}

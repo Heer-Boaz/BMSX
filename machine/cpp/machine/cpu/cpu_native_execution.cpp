@@ -30,7 +30,7 @@ CPU::NativeFrameOffsets CPU::nativeFrameOffsets() {
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit) noexcept {
 	const int base = exit->exitA;
 	const int receiving = exit->exitC == 1 ? 0 : 1;
-	if (static_cast<u32>(exit->exitC) > 2u || (receiving && base >= state->frame->stackCapacity))
+	if (static_cast<u32>(exit->exitC) > 2u || (receiving && base >= state->frame->stackCapacity()))
 		return NativeBuiltinCallOutcome::Declined;
 	const int count = decodeValueCount(exit->exitB, std::max(state->registerTop - base - 1, 0));
 	const BuiltinArgsView args(state->registers.subspan(base + 1, static_cast<size_t>(count)));

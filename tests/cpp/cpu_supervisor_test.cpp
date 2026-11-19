@@ -229,7 +229,7 @@ void testManualNmiAndSaveStateReturn() {
 	require(machine.cpu.enterPendingInterrupt(), "NMI enters through the CPU interrupt boundary");
 
 	bmsx::CpuRuntimeState active = machine.cpu.captureRuntimeState();
-	require(active.threads[0].frames.size() == 2u, "NMI retains the user frame beneath the exception root");
+	require(active.threads[0].frameDepth == 2u, "NMI retains the user frame beneath the exception root");
 	require(machine.cpu.readFrameFunctionAddress(machine.cpu.getFrameDepth() - 1) == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "NMI selects the physical system exception vector");
 	require(machine.cpu.isExceptionFrame(machine.cpu.getFrameDepth() - 1), "NMI marks the exception root");
 	require(active.causeWord == bmsx::CPU_CAUSE_NMI, "NMI latches CAUSE.NMI");
@@ -345,7 +345,7 @@ void testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage() {
 	require(machine.cpu.isExecutionDomainResident(0), "CP0.EXEC makes the selected cartridge domain resident");
 	const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 	require(state.executionCartridgeSlot == 0, "CP0.EXEC selects the cartridge in the physical bus socket");
-	require(state.threads[0].frames.size() == 1u, "CP0.EXEC replaces the system root instead of stacking a host call");
+	require(state.threads[0].frameDepth == 1u, "CP0.EXEC replaces the system root instead of stacking a host call");
 	require(machine.cpu.readFrameFunctionAddress(machine.cpu.getFrameDepth() - 1) == machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION], "CP0.EXEC enters the function record addressed by the cartridge header");
 	require(state.statusWord == bmsx::CPU_STATUS_CART_ENTRY, "CP0.EXEC enters cartridge privilege mode");
 }
@@ -396,7 +396,7 @@ void testBranchesFetchAdjacentMappedInstructions() {
 
 		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, testCase.name);
 		const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
-		require(state.threads[0].frames.empty(), "branch target executes through the mapped instruction bus");
+		require(state.threads[0].frameDepth == 0, "branch target executes through the mapped instruction bus");
 	}
 }
 
@@ -479,7 +479,7 @@ void testUnmappedClosureRecordHardHalts() {
 
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "unmapped CLOSURE record hard-halts");
 	const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
-	require(state.threads[0].frames.size() == 1u, "unmapped CLOSURE record retains the active frame");
+	require(state.threads[0].frameDepth == 1u, "unmapped CLOSURE record retains the active frame");
 	require(machine.cpu.readFrameFunctionAddress(machine.cpu.getFrameDepth() - 1) == machine.systemRom.functionAddresses[0], "unmapped CLOSURE record does not enter host state");
 }
 
@@ -1333,7 +1333,7 @@ void testRfeResumesAtAnyMappedInstructionAddress() {
 	machine.cpu.restoreRuntimeState(state);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "RFE resumes mapped adjacent text");
 	state = machine.cpu.captureRuntimeState();
-	require(state.threads[0].frames.empty(), "mapped RET completes the retained frame after RFE");
+	require(state.threads[0].frameDepth == 0, "mapped RET completes the retained frame after RFE");
 }
 
 void testMappedBusErrorsEnterTheSystemExceptionVector() {

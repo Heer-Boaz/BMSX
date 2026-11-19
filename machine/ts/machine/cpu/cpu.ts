@@ -163,11 +163,6 @@ import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKin
 
 
 // These activation fields have not yet moved to the guest stack record.
-export type CpuFrameState = {
-	stackBase: number;
-	stackCapacity: number;
-};
-
 export type CpuRootValueState = {
 	key: StringId;
 	value: number;
@@ -175,7 +170,7 @@ export type CpuRootValueState = {
 
 export type CpuThreadState = {
 	stackTop: number;
-	frames: CpuFrameState[];
+	frameDepth: number;
 };
 
 export type CpuRuntimeState = {
@@ -2943,18 +2938,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private prepareFrameRegisters(frame: CallFrame, registerCount: number, stackBase: number, closure: Closure, exception = false): ValueSlots {
-		const capacity = Math.max(registerCount, 1);
-		const stackTop = stackBase + capacity;
-		this.ensureStackCapacity(stackTop, valueClosure(closure.address), true, exception);
-		frame.stackBase = stackBase;
-		frame.stackCapacity = capacity;
-		this.activeThread.stackTop = stackTop;
-		const registers = frame.registers;
-		registers.rebind(this.activeThread.stackRegisters, frame.stackBase, frame.stackCapacity);
-		return registers;
-	}
-
 	private pushFrame(
 		closure: Closure,
 		args: ReadonlyArray<Value>,
@@ -2969,13 +2952,15 @@ export class CPU implements MappedPageInvalidator {
 		const vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0;
 		const varargCount = vararg ? Math.max(args.length - functionRecord.numParams, 0) : 0;
 		const stackBase = vararg ? argumentBase + args.length : argumentBase;
-		const registers = this.prepareFrameRegisters(frame, Math.max(functionRecord.maxStack, functionRecord.numParams),
-			stackBase, closure, exception);
+		const capacity = Math.max(functionRecord.maxStack, functionRecord.numParams, 1);
+		this.ensureStackCapacity(stackBase + capacity, valueClosure(closure.address), true, exception);
 		frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
 		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress, returnToCompletionLatch, functionRecord.executionDomainId,
-			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure.address);
+			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure.address, stackBase, capacity);
+		const registers = frame.registers;
+		this.activeThread.stackTop = stackBase + capacity;
 
 		const copiedCount = Math.min(functionRecord.numParams, args.length);
 		for (let index = 0; index < copiedCount; index += 1) {
@@ -3003,13 +2988,15 @@ export class CPU implements MappedPageInvalidator {
 		const varargCount = vararg ? Math.max(argCount - functionRecord.numParams, 0) : 0;
 		const stackBase = vararg ? argumentBase + argCount : argumentBase;
 		const callerRegisters = caller.registers;
-		const registers = this.prepareFrameRegisters(frame, Math.max(functionRecord.maxStack, functionRecord.numParams),
-			stackBase, closure);
+		const capacity = Math.max(functionRecord.maxStack, functionRecord.numParams, 1);
+		this.ensureStackCapacity(stackBase + capacity, valueClosure(closure.address), true);
 		frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
 		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch, functionRecord.executionDomainId,
-			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure.address);
+			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure.address, stackBase, capacity);
+		const registers = frame.registers;
+		this.activeThread.stackTop = stackBase + capacity;
 		const copiedCount = Math.min(functionRecord.numParams, argCount);
 		if (vararg || !sharedStack) {
 			registers.copyRangeFrom(callerRegisters, 0, argBase, copiedCount);
@@ -3159,9 +3146,7 @@ export class CPU implements MappedPageInvalidator {
 			let capacity = 1 << (32 - Math.clz32(needed - 1));
 			if (capacity < 8) capacity = 8;
 			this.ensureStackCapacity(frame.stackBase + capacity, valueClosure(frame.closureAddress));
-			frame.stackCapacity = capacity;
-			registers.rebind(frame.thread.stackRegisters, frame.stackBase, capacity);
-			if (frame === frame.thread.currentFrame) frame.thread.stackTop = frame.stackBase + capacity;
+			frame.growRegisterWindow(capacity);
 		}
 		return registers;
 	}
@@ -3948,23 +3933,9 @@ export class CPU implements MappedPageInvalidator {
 
 		const threads: CpuThreadState[] = [];
 		const captureThread = (thread: Thread): number => {
-			if (this.gc.sweepGarbage(thread)) {
-				return threads.push({ stackTop: 0, frames: [] }) - 1;
-			}
-			const frames = new Array<CpuFrameState>(thread.frameDepth);
-			let frame = thread.firstFrame!;
-			for (let frameIndex = 0; frameIndex < thread.frameDepth; frameIndex += 1, frame = frame.next!) {
-				frames[frameIndex] = {
-					stackBase: frame.stackBase,
-					stackCapacity: frame.stackCapacity,
-
-				};
-			}
-			const index = threads.length;
-			threads.push({
-				stackTop: thread.stackTop, frames,
-			});
-			return index;
+			return threads.push(this.gc.sweepGarbage(thread)
+				? { stackTop: 0, frameDepth: 0 }
+				: { stackTop: thread.stackTop, frameDepth: thread.frameDepth }) - 1;
 		};
 		const rootThreadRef = captureObject(this.rootThread, CpuSnapshotObjectKind.Thread);
 		const activeThreadRef = captureObject(this.activeThread, CpuSnapshotObjectKind.Thread);
@@ -4240,13 +4211,8 @@ export class CPU implements MappedPageInvalidator {
 			const thread = restoredObjects[objectIndex] as Thread;
 			this.activeThread = thread;
 			thread.stackTop = saved.stackTop;
-			for (let frameIndex = 0; frameIndex < saved.frames.length; frameIndex += 1) {
-				const frameState = saved.frames[frameIndex];
+			for (let frameIndex = 0; frameIndex < saved.frameDepth; frameIndex += 1) {
 				const frame = this.activeThread.acquireFrame();
-				frame.stackBase = frameState.stackBase;
-				frame.stackCapacity = frameState.stackCapacity;
-
-				frame.registers.rebind(thread.stackRegisters, frame.stackBase, frame.stackCapacity);
 				frame.executionImage = this.executionImagesByDomain[frame.savedExecutionBank + 1]!;
 
 				this.activeThread.enterFrame(frame);

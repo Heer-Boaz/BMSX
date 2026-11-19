@@ -154,7 +154,7 @@ void parity(Machine& generated, Machine& scalar) {
 		const auto& x = *generated.cpu.activeThread()->frameAtDepth(depth);
 		const auto& y = *scalar.cpu.activeThread()->frameAtDepth(depth);
 		require(x.executionImage->executionDomainId == y.executionImage->executionDomainId && x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc)
-			&& static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity
+			&& static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase() == y.stackBase() && x.stackCapacity() == y.stackCapacity()
 			&& static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::ReturnBase)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::ReturnBase)) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::ReturnCount)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::ReturnCount)) && x.readControl(FrameField::CallSite) == y.readControl(FrameField::CallSite),
 			"each live frame retains its own image and exact argument/result window");
 	}

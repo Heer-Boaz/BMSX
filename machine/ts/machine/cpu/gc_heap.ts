@@ -174,7 +174,7 @@ export class GcHeap {
 			if (object.gcKind === GcKind.Thread) visit(object as Thread);
 	}
 	public armThreadStackWatches(): void {
-		this.visitThreads(thread => thread.armStackWatch());
+		this.visitThreads(thread => { thread.armStackWatch(); thread.armFrameWindowWatches(); });
 	}
 	public observeStackWrites(first: number, end: number): void {
 		for (let address = first & -THREAD_HEAP_BYTES; address < end; address += THREAD_HEAP_BYTES) {
@@ -182,6 +182,7 @@ export class GcHeap {
 			if (end <= descriptor || first >= descriptor + 16) continue;
 			this.threadAt(address)?.observeStackWrite();
 		}
+		this.visitThreads(thread => thread.observeFrameWindowWrites(first, end));
 	}
 	public allocationBytes(object: GcObject): number {
 		switch (object.gcKind) {

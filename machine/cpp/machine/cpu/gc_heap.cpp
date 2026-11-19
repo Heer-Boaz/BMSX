@@ -135,7 +135,11 @@ bool GcHeap::markObject(GCObject* object) {
 }
 void GcHeap::armThreadStackWatches() {
 	for (auto* object = m_objects; object; object = object->next)
-		if (object->type == ObjType::Thread) static_cast<Thread*>(object)->armStackWatch();
+		if (object->type == ObjType::Thread) {
+			auto* thread = static_cast<Thread*>(object);
+			thread->armStackWatch();
+			thread->armFrameWindowWatches();
+		}
 }
 
 bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
@@ -145,6 +149,11 @@ bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
 		if (end <= descriptor || first >= descriptor + 16u) continue;
 		if (auto* thread = threadAt(address))
 			rebound |= thread->observeStackWrite() && thread == active;
+	}
+	for (auto* object = m_objects; object; object = object->next) {
+		if (object->type != ObjType::Thread) continue;
+		auto* thread = static_cast<Thread*>(object);
+		rebound |= thread->observeFrameWindowWrites(first, end) && thread == active;
 	}
 	return rebound;
 }
@@ -212,8 +221,8 @@ size_t GcHeap::trace(bool atomic) {
 			markObject(thread->resumer());
 			markObject(thread->entry());
 			markValue(thread->error());
-			int liveTop = thread->currentFrame ? thread->currentFrame->stackBase
-				+ std::min(thread->currentFrame->readWindow(FrameField::Top), thread->currentFrame->stackCapacity) : 0;
+			int liveTop = thread->currentFrame ? thread->currentFrame->stackBase()
+				+ std::min(thread->currentFrame->readWindow(FrameField::Top), thread->currentFrame->stackCapacity()) : 0;
 			CallFrame* frame = thread->firstFrame;
 			for (size_t depth = 0; depth < thread->frameDepth; ++depth, frame = frame->next) {
 				markObject(frame->attachedClosure());

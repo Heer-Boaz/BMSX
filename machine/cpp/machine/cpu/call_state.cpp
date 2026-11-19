@@ -25,7 +25,7 @@ void CallFrame::addControlFlags(u32 flags) {
 }
 
 void CallFrame::initializeControl(u32 function, u32 pc, u32 callSite, u32 flags,
-	i32 varargBase, i32 varargCount, i32 returnBase, i32 returnCount, i32 top, u32 closure) {
+	i32 varargBase, i32 varargCount, i32 returnBase, i32 returnCount, i32 top, u32 closure, i32 base, i32 capacity) {
 	auto* ram = controlMemory->ramData();
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::Function)) & RAM_RECORD_WORD_MASK), function);
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::CallSite)) & RAM_RECORD_WORD_MASK), callSite);
@@ -39,9 +39,21 @@ void CallFrame::initializeControl(u32 function, u32 pc, u32 callSite, u32 flags,
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::ReturnCount)) & RAM_RECORD_WORD_MASK), static_cast<u32>(returnCount));
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::Top)) & RAM_RECORD_WORD_MASK), static_cast<u32>(top));
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::Closure)) & RAM_RECORD_WORD_MASK), closure);
+	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::StackBase)) & RAM_RECORD_WORD_MASK), static_cast<u32>(base));
+	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::StackCapacity)) & RAM_RECORD_WORD_MASK), static_cast<u32>(capacity));
+	registers = thread->stack.subspan(base, capacity);
 	const u32 first = std::min(FRAME_CONTROL_BYTES, MAIN_RAM_SIZE - controlOffset);
-	controlMemory->invalidateRamWrite(controlOffset, first);
-	if (first != FRAME_CONTROL_BYTES) controlMemory->invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
+	controlMemory->invalidateRamWrite(controlOffset, first, false);
+	if (first != FRAME_CONTROL_BYTES) controlMemory->invalidateRamWrite(0, FRAME_CONTROL_BYTES - first, false);
+}
+
+void CallFrame::growRegisterWindow(i32 capacity) {
+	const u32 address = (controlOffset + static_cast<u32>(FrameField::StackCapacity)) & RAM_RECORD_WORD_MASK;
+	writeLE32(controlMemory->ramData() + address, (readControl(FrameField::StackCapacity) & ~FRAME_WINDOW_MASK) | static_cast<u32>(capacity));
+	const int base = stackBase();
+	registers = thread->stack.subspan(base, capacity);
+	if (this == thread->currentFrame) thread->stackTop = base + capacity;
+	controlMemory->invalidateRamWrite(address, sizeof(u32), false);
 }
 
 } // namespace bmsx

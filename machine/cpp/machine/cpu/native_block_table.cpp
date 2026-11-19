@@ -66,23 +66,18 @@ void NativeBlockCompiler::emitTableSlotLoad(sljit_s32 destination, bool word) {
 }
 
 void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool arraySlot) {
-	const auto checkPage = [&] {
-		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2),
-			reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
-		fault(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0), exit, m_cache.state());
-	};
 	for (bool word : {true, false}) {
 		emitTableSlotOffset(SLJIT_R2, word);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), word ? wordOffset : tagOffset, SLJIT_R2, 0);
-		checkPage();
+		const auto address = word ? wordOffset : tagOffset;
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), address, SLJIT_R2, 0);
+		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), address, SLJIT_R2, SLJIT_R3);
 	}
 	if (arraySlot) {
-		// The length word shares its page with the rest of the aligned header.
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver,
 			SLJIT_IMM, static_cast<u32>(TableHeader::Length));
-		sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-		checkPage();
+		sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, 0);
+		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, SLJIT_R3);
 	}
 }
 

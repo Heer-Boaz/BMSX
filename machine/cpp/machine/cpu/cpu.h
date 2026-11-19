@@ -103,11 +103,6 @@ struct ExecutionHookBinding {
 };
 
 // These activation fields have not yet moved to the guest stack record.
-struct CpuFrameState {
-	int stackBase = 0;
-	int stackCapacity = 0;
-};
-
 struct CpuRootValueState {
 	StringId key = 0;
 	u32 value = 0;
@@ -115,7 +110,7 @@ struct CpuRootValueState {
 
 struct CpuThreadState {
 	u32 stackTop = 0;
-	std::vector<CpuFrameState> frames;
+	u32 frameDepth = 0;
 };
 
 struct CpuRuntimeState {

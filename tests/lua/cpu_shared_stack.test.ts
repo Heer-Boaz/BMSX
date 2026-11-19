@@ -1,3 +1,4 @@
+import { FrameField, FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SHIFT } from '../../machine/ts/machine/memory/mapped_page';
@@ -214,6 +215,20 @@ test(`an active physical stack aliases bus loads and stores without losing code 
 	assert.equal(watches.anyWatched(offset + 7 * 4, 4), true, 'the unused slot remains watched');
 	watches.invalidateWrite(offset + 7 * 4, 4, RAM_BASE, cpu);
 	assert.equal(watches.anyWatched(offset + 7 * 4, 4), false, 'unrelated descriptor watches need not be consumed');
+	const frame = thread.currentFrame!;
+	const baseWord = RAM_BASE + frame.controlOffset + FrameField.StackBase;
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, fn.address, fn.codeAddress);
+	regs.setInteger(3, 123); regs.setInteger(4, baseWord); regs.setInteger(5, 0xfff00001);
+	cpu.runUntilDepth(0, cycles);
+	assert.equal(thread.stackRegisters.getInteger(3), 0, 'the next instruction sees the newly selected register window');
+	assert.equal(frame.stackBase, 1, 'upper geometry bits do not drive the slot index');
+	assert.equal(thread.stackTop, 9);
+	regs.setInteger(0, 99);
+	assert.equal(cpu.memory.readRamRecordWord(offset + 4), 99, 'the external write rebinds the frame view');
+	cpu.memory.writeMappedU32LE(baseWord, 0);
+	const relocatedControl = MAIN_RAM_SIZE - 4 + ((thread.stackRegisters.byteLength() + 3) & ~3);
+	for (let i = 0; i < FRAME_CONTROL_BYTES; i += 4)
+		cpu.memory.writeRamRecordWord(relocatedControl + i, cpu.memory.readRamRecordWord(frame.controlOffset + i));
 	const descriptor = thread.address + ThreadField.StackBlock, descriptorOffset = descriptor - RAM_BASE;
 	watches.armWord(descriptorOffset >>> MAPPED_PAGE_BYTE_SHIFT, (descriptorOffset & MAPPED_PAGE_BYTE_MASK) >>> 2);
 	cpu.memory.writeMappedU32LE(descriptor, RAM_BASE + MAIN_RAM_SIZE - 4);

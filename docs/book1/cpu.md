@@ -1214,7 +1214,7 @@ The occupied-byte counts used for admission are:
 | Table with array capacity `A` and hash capacity `H` | `32 + S(5A + 14H)` |
 | Closure with `U` captured-variable references | `S(12 + 4U)` |
 | Captured-variable cell | `16` |
-| Thread with `V` reserved Value slots, `F` reserved frame-control records and `P` reserved protected continuations | `64 + S(round4(5V) + 48F + 20P)` |
+| Thread with `V` reserved Value slots, `F` reserved frame-control records and `P` reserved protected continuations | `64 + S(round4(5V) + 56F + 20P)` |
 | RAM String containing `n` bytes | `S(16 + n)` |
 | RAM String index with `B` buckets | `S(4B)` |
 
@@ -1229,9 +1229,11 @@ cartridge socket selector. An executing activation uses the latched bank
 until control transfers to another activation; modifying its saved bank
 does not switch an instruction fetch already in progress. If there is no
 execution image in the resumed bank, the next instruction fetch raises an
-instruction bus error. The saved variable-argument and return windows and the live register
-frontier use 20-bit slot indices and counts. Their upper bits are not
-decoded. Slot transfers use the main RAM address aperture.
+instruction bus error. Each frame stores the base and reserved size of
+its working register window in the Thread's Value slots. The saved variable-argument
+and return windows, the working register window and the live register frontier
+use 20-bit slot indices and counts. Their upper bits are not decoded. Slot
+transfers use the main RAM address aperture.
 Protected continuations follow the reserved frame controls. A suspended protected
 call records its caller and result window there so it can finish when that Thread
 resumes. A new Thread reserves two frame controls. An ordinary entry leaves
@@ -1282,7 +1284,7 @@ Collection work consumes cycles as follows:
 | Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |
 | Mark a previously unmarked RAM String | `1` |
 | Examine one RAM intern bucket, including an empty bucket | `1` |
-| Copy retained Thread storage when shrinking | `2 × ceil((round4(5V') + 48F' + 20P') / 4)` for the new reservations |
+| Copy retained Thread storage when shrinking | `2 × ceil((round4(5V') + 56F' + 20P') / 4)` for the new reservations |
 
 For charges based on bytes, round each allocation independently.
 A repeated scan costs again; unreachable objects that are not scanned still

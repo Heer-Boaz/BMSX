@@ -59,8 +59,8 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* x = left.firstFrame; const CallFrame* y = right.firstFrame;
 	require(left.frameDepth == right.frameDepth, "control transitions preserve frame depth");
 	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) {
-		require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y->readControl(bmsx::FrameField::Top)) && x->stackBase == y->stackBase
-			&& x->stackCapacity == y->stackCapacity && x->hasControlFlag(FRAME_EXCEPTION) == y->hasControlFlag(FRAME_EXCEPTION)
+		require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y->readControl(bmsx::FrameField::Top)) && x->stackBase() == y->stackBase()
+			&& x->stackCapacity() == y->stackCapacity() && x->hasControlFlag(FRAME_EXCEPTION) == y->hasControlFlag(FRAME_EXCEPTION)
 			&& x->hasControlFlag(FRAME_NMI) == y->hasControlFlag(FRAME_NMI), "all live frame boundaries agree");
 	}
 }

@@ -3,7 +3,7 @@ import type { PendingMemoryKind } from '../../cpu/memory_operation';
 import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
 import type { MachineSaveState } from '../../save_state';
-import type { CpuFrameState, CpuThreadState, CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
+import type { CpuThreadState, CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
 import { CpuSnapshot } from '../../cpu/snapshot';
 import type { LuaHeapState } from '../../cpu/lua_heap';
 import type { IrqControllerState } from '../../devices/irq/save_state';
@@ -43,7 +43,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x43534d42; // BMSC
+const SAVE_STATE_SIGNATURE = 0x44534d42; // BMSD
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1117,18 +1117,6 @@ function readRuntimeSaveMachineState(reader: BinaryReader, ramByteCount: number,
 	};
 }
 
-function writeCpuFrameState(writer: BinarySink, state: CpuFrameState): void {
-	writer.i32(state.stackBase);
-	writer.i32(state.stackCapacity);
-}
-
-function readCpuFrameState(reader: BinaryReader): CpuFrameState {
-	return {
-		stackBase: reader.i32(),
-		stackCapacity: reader.i32(),
-	};
-}
-
 function writeCpuRootValueState(writer: BinarySink, state: CpuRootValueState): void {
 	writer.u32(state.key);
 	writer.u32(state.value);
@@ -1143,16 +1131,13 @@ function readCpuRootValueState(reader: BinaryReader): CpuRootValueState {
 
 function writeCpuThreadState(writer: BinarySink, state: CpuThreadState): void {
 	writer.u32(state.stackTop);
-	writer.u32(state.frames.length);
-	for (const value of state.frames) {
-		writeCpuFrameState(writer, value);
-	}
+	writer.u32(state.frameDepth);
 }
 
 function readCpuThreadState(reader: BinaryReader): CpuThreadState {
 	return {
 		stackTop: reader.u32(),
-		frames: reader.array(readCpuFrameState),
+		frameDepth: reader.u32(),
 	};
 }
 

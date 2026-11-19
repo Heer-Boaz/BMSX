@@ -932,7 +932,7 @@ void returnRangesSurviveCallerStackGrowth() {
 				require(cpu.readFrameRegister(0, 2 + i) == (i < produced ? samples[i % 5] : valueNil()), "shifted source slots retain values and fixed results truncate or nil-pad");
 			}
 			const CallFrame& caller = *cpu.activeThread()->frameAtDepth(0);
-			require(cpu.activeThread()->stackTop == caller.stackBase + caller.stackCapacity, "retiring a shifted callee leaves the grown caller stack extent");
+			require(cpu.activeThread()->stackTop == caller.stackBase() + caller.stackCapacity(), "retiring a shifted callee leaves the grown caller stack extent");
 		}
 	}
 }

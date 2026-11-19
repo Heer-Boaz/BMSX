@@ -79,12 +79,13 @@ test('actual ValueSlots and Thread frame windows use five-byte backing', () => {
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }] }));
 	const thread = cpu.rootThread, first = thread.currentFrame!;
-	first.stackBase = 0; first.stackCapacity = 8; first.registers.rebind(thread.stackRegisters, 0, 8);
+	first.growRegisterWindow(8);
 	first.registers.setFloatBits(3, 0xffc00000); thread.resizeStack(64);
 	assert.equal(thread.stackRegisters.byteLength(), 320); assert.equal(first.registers.get(3), v.valueFloatBits(0xffc00000));
 	thread.reserveFrame(thread.stackRegisters.capacity());
-	const second = thread.acquireFrame(); second.stackBase = 4; second.stackCapacity = 4;
-	second.registers.rebind(thread.stackRegisters, 4, 4); thread.enterFrame(second);
+	const second = thread.acquireFrame();
+	second.initializeControl(0, 0, 0, false, -1, 0, 0, 0, 0, 0, 0, 4, 4);
+	thread.enterFrame(second);
 	second.registers.setInteger(0, 123); thread.resizeStack(96);
 	assert.equal(second.registers.getInteger(0), 123); assert.equal(first.registers.get(3), v.valueFloatBits(0xffc00000));
 	thread.leaveFrame(); assert.equal(thread.currentFrame, first);

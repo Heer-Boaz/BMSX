@@ -862,17 +862,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 			state.threads.push_back(std::move(saved));
 			return index;
 		}
-		saved.frames.reserve(thread->frameDepth);
-		const CallFrame* framePtr = thread->firstFrame;
-		for (size_t depth = 0; depth < thread->frameDepth; ++depth, framePtr = framePtr->next) {
-			const CallFrame& frame = *framePtr;
-			CpuFrameState frameState;
-
-			frameState.stackCapacity = frame.stackCapacity;
-			frameState.stackBase = frame.stackBase;
-
-			saved.frames.push_back(std::move(frameState));
-		}
+		saved.frameDepth = static_cast<u32>(thread->frameDepth);
 		saved.stackTop = thread->stackTop;
 		const u32 index = static_cast<u32>(state.threads.size());
 		state.threads.push_back(std::move(saved));
@@ -1156,12 +1146,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		Thread* thread = static_cast<Thread*>(restoredObjects[objectIndex]);
 		m_activeThread = thread;
 		thread->stackTop = saved.stackTop;
-		for (const CpuFrameState& frameState : saved.frames) {
+		for (u32 depth = 0; depth < saved.frameDepth; ++depth) {
 			auto* frame = m_activeThread->acquireFrame();
 			frame->executionImage = m_executionImagesByDomain[static_cast<size_t>(frame->savedExecutionBank() + 1)].get();
-			frame->stackBase = frameState.stackBase;
-			frame->stackCapacity = frameState.stackCapacity;
-			frame->registers = thread->stack.subspan(frame->stackBase, frame->stackCapacity);
 
 			m_activeThread->enterFrame(frame);
 		}
@@ -1406,7 +1393,7 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 		if (!coroutineYieldable(*thread)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		thread->setReturnWindow(base, count);
 		thread->setStatus(ThreadStatus::Suspended);
-		returnToResumer(caller.stackBase + base + 1, argc, true);
+		returnToResumer(caller.stackBase() + base + 1, argc, true);
 		return;
 	}
 	if (argc == 0 || !valueIsThread(caller.registers.get(base + 1))) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -2587,7 +2574,7 @@ void CPU::writeFrameExecution(
 	CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
 	if (&frame == m_activeThread->currentFrame) abortStalledMemoryWrite();
 	const u32 registerCount = std::max(functionRecord.maxStack, functionRecord.numParams);
-	if (registerCount > static_cast<u32>(frame.stackCapacity)) {
+	if (registerCount > static_cast<u32>(frame.stackCapacity())) {
 		ensureRegisterCapacity(frame, static_cast<int>(registerCount) - 1);
 	}
 	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
@@ -2618,7 +2605,7 @@ void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
 }
 
 Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
-	const u32 slot = static_cast<u32>(frame.stackBase) + static_cast<u32>(index);
+	const u32 slot = static_cast<u32>(frame.stackBase()) + static_cast<u32>(index);
 	u32 address = frame.readControl(FrameField::OpenHead);
 	for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
 		auto* upvalue = m_heap.openCellAt(address);
@@ -2687,7 +2674,7 @@ Closure* CPU::createClosure(CallFrame& frame) {
 		if (address == 0u && (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
 			address = m_captureAddressScratch[nextCell++];
 			auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue, m_memory, address);
-			linkOpenUpvalue(frame, *upvalue, static_cast<u32>(frame.stackBase)
+			linkOpenUpvalue(frame, *upvalue, static_cast<u32>(frame.stackBase())
 				+ (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_INDEX_MASK));
 		}
 		closure->setCaptureAddress(index, address);
@@ -2726,7 +2713,7 @@ void CPU::writeUpvalue(u32 address, const Value& value) {
 CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 	int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc) {
 	const FunctionPrototype& functionRecord = *closure->prototype;
-	const int callerArgBase = caller.stackBase + argBase;
+	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
 	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop;
 	const bool vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u;
@@ -2741,10 +2728,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc,
 		frameBankWord(functionRecord.executionDomainId) | (returnToCompletionLatch ? FRAME_COMPLETION : 0u),
-		varargBase, varargCount, returnBase, returnCount, top, closure->address);
-	frame->stackBase = stackBase;
-	frame->stackCapacity = static_cast<int>(targetCapacity);
-	frame->registers = m_activeThread->stack.subspan(stackBase, frame->stackCapacity);
+		varargBase, varargCount, returnBase, returnCount, top, closure->address, stackBase, static_cast<int>(targetCapacity));
 	const int copiedCount = std::min(top, argCount);
 	if (vararg || !sharedStack) {
 		frame->registers.copyFrom(caller.thread->stack, 0, callerArgBase, copiedCount);
@@ -2761,7 +2745,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	}
 	instructionBudgetRemaining -= (vararg || !sharedStack ? top : top - copiedCount)
 		+ (sharedStack ? 0 : varargCount);
-	m_activeThread->stackTop = stackBase + frame->stackCapacity;
+	m_activeThread->stackTop = stackBase + static_cast<int>(targetCapacity);
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(functionRecord.executionDomainId, frame->executionImage);
 	return frame;
@@ -2784,17 +2768,14 @@ CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress,
 		frameBankWord(functionRecord.executionDomainId) | (returnToCompletionLatch ? FRAME_COMPLETION : 0u),
-		varargBase, varargCount, returnBase, returnCount, top, closure->address);
-	frame->stackBase = stackBase;
-	frame->stackCapacity = static_cast<int>(targetCapacity);
-	frame->registers = m_activeThread->stack.subspan(stackBase, frame->stackCapacity);
+		varargBase, varargCount, returnBase, returnCount, top, closure->address, stackBase, static_cast<int>(targetCapacity));
 	const int copiedCount = std::min(top, static_cast<int>(argCount));
 	for (int i = 0; i < copiedCount; ++i) frame->registers.set(i, args[i]);
 	frame->registers.clear(copiedCount, top - copiedCount);
 	if (varargCount != 0) {
 		for (int i = 0; i < varargCount; ++i) m_activeThread->stack.set(varargBase + i, args[top + i]);
 	}
-	m_activeThread->stackTop = stackBase + frame->stackCapacity;
+	m_activeThread->stackTop = stackBase + static_cast<int>(targetCapacity);
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(functionRecord.executionDomainId, frame->executionImage);
 	return frame;
@@ -2840,7 +2821,7 @@ void CPU::setRegister(CallFrame& frame, int index, Value value) {
 }
 
 ValueSpan CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
-	if (index < frame.stackCapacity) {
+	if (index < frame.stackCapacity()) {
 		return frame.registers;
 	}
 	const size_t needed = static_cast<size_t>(index) + 1;
@@ -2848,12 +2829,8 @@ ValueSpan CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	if (bucket < 8) {
 		bucket = 8;
 	}
-	ensureStackSize(static_cast<size_t>(frame.stackBase) + bucket);
-	frame.stackCapacity = static_cast<int>(bucket);
-	frame.registers = frame.thread->stack.subspan(frame.stackBase, frame.stackCapacity);
-	if (&frame == frame.thread->currentFrame) {
-		frame.thread->stackTop = frame.stackBase + frame.stackCapacity;
-	}
+	ensureStackSize(static_cast<size_t>(frame.stackBase()) + bucket);
+	frame.growRegisterWindow(static_cast<int>(bucket));
 	return frame.registers;
 }
 

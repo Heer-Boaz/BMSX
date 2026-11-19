@@ -216,7 +216,7 @@ test('hard-halt is restored independently of the live future CPU latch', () => {
 	cpu.runUntilDepth(0, 1000);
 	const after = cpu.captureRuntimeState();
 	assert.equal(after.hardHalted, true);
-	assert.deepEqual(after.threads[0].frames, halted.threads[0].frames);
+	assert.deepEqual(after.threads[0].frameDepth, halted.threads[0].frameDepth);
 });
 
 test('CPU snapshots reuse exclusive storage across graph growth, cycles and a shorter capture', () => {
