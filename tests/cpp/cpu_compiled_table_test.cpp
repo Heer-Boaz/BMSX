@@ -408,7 +408,7 @@ void wideAllocationFailure() {
 	}
 	const auto strings = native.cpu.stringPool().captureState();
 	// Mark and sweep the retained table and closure, scan the thread four times and visit the global roots.
-	int gcCycles = 2 * ceilDiv4(Table::trackedHeapBytesForCapacities(690000, 0)) + 2 * 4
+	int gcCycles = (8 + 690000) + ceilDiv4(Table::trackedHeapBytesForCapacities(690000, 0)) + 2 * 4
 		+ 4 * ceilDiv4(64 + native.cpu.rootThread()->stackCapacity * 5) + 9 + strings.slots;
 	for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
 	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::NEWT)]); requireParity(native, scalar);

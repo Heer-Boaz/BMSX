@@ -64,8 +64,8 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.luaHeap().usedBytes() == 251, "canonical reserved table capacity and UTF8 text bytes agree");
 	cpu.instructionBudgetRemaining = 7;
 	cpu.luaHeap().collectRuntime();
-	require(cpu.instructionBudgetRemaining == -221 && cpu.luaHeap().usedBytes() == 251,
-		"base169 + Table28*2 + String(1+2) =228");
+	require(cpu.instructionBudgetRemaining == -211 && cpu.luaHeap().usedBytes() == 251,
+		"base169 + Table(8+2+8 scan, 28 sweep) + String(1+2) =218");
 	const auto threshold = cpu.luaHeap().captureState();
 	require(threshold.nextCollectionBytes == 1048576, "the existing minimum collection threshold is unchanged");
 	cpu.instructionBudgetRemaining = 123;

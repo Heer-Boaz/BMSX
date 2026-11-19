@@ -140,7 +140,6 @@ export class GcHeap {
 	private trace(atomic: boolean): number {
 		const object = this.gray!;
 		this.gray = object.gcGrayNext; object.gcGrayNext = null; object.gcColor = 3;
-		const work = ceilDiv4(this.allocationBytes(object));
 		switch (object.gcKind) {
 			case GcKind.Table: {
 				const table = object as Table;
@@ -148,7 +147,7 @@ export class GcHeap {
 				this.mode = this.tableMode(table);
 				if (this.mode !== 0 && !table.gcWeakListed) { table.gcWeakListed = true; this.weak.push(table); }
 				if ((this.mode & 1) === 0) table.forEachStoredEntry(this.traceEntry);
-				break;
+				return (Table.HEADER_BYTES >>> 2) + table.scanSlots();
 			}
 			case GcKind.Closure:
 				for (const upvalue of (object as Closure).upvalues) this.markObject(this.object(upvalue));
@@ -178,7 +177,7 @@ export class GcHeap {
 				break;
 			}
 		}
-		return work;
+		return ceilDiv4(this.allocationBytes(object));
 	}
 	/** Called with the current trace queue empty; mutations stay separate until this pass. */
 	private remark(t0: Value, t1: Value, t2: Value): number {
@@ -201,7 +200,7 @@ export class GcHeap {
 			for (let i = 0; i < this.weak.length; ++i) {
 				const table = this.weak[i];
 				if (this.tableMode(table) !== 1) continue;
-				work += ceilDiv4(table.getTrackedHeapBytes());
+				work += table.scanSlots();
 				table.forEachStoredEntry(this.ephemeronEntry);
 			}
 			while (this.gray !== null) work += this.trace(true);
@@ -209,7 +208,7 @@ export class GcHeap {
 		this.diagnostics?.phase('weakNanoseconds');
 		for (const table of this.weak) {
 			const mode = this.tableMode(table);
-			work += ceilDiv4(table.getTrackedHeapBytes());
+			work += table.scanSlots();
 			table.clearWeakEntries((mode & 1) !== 0, (mode & 2) !== 0, this.alive);
 			table.forEachStoredEntry(this.weakStrings); table.gcWeakListed = false;
 		}

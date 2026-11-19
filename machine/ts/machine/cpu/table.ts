@@ -452,12 +452,21 @@ export class Table extends GcObject {
 		if (this.tagAt(key) === ValueTag.Nil || this.tagAt(value) === ValueTag.Nil) return false;
 		target.setEncoded(destination, this.tagAt(key), this.wordAt(key)); target.setEncoded(destination + 1, this.tagAt(value), this.wordAt(value)); return true;
 	}
+	public scanSlots(): number { return this.arrayCapacity + 2 * this.hashSize; }
 	public forEachStoredEntry(visitor: StoredEntryVisitor): void {
-		for (let slot = 0; slot < this.arrayCapacity; ++slot)
-			if (this.tagAt(slot) !== ValueTag.Nil) visitor(valueInteger(slot + 1), this.valueAt(slot));
-		for (let index = 0; index < this.hashSize; ++index) {
-			const key = this.hashKeySlot(index), value = this.hashValueSlot(index);
-			if (this.tagAt(key) !== ValueTag.Nil && this.tagAt(value) !== ValueTag.Nil) visitor(this.valueAt(key), this.valueAt(value));
+		const memory = this.heap.memory;
+		const array = this.arrayCapacity, hash = this.hashSize, words = this.storageAddress();
+		const tags = words + (array + 3 * hash) * 4, end = array + hash;
+		for (let slot = 0; slot < array; ++slot) {
+			const tag = memory.readRamRecordByte(tags + slot);
+			if (tag !== ValueTag.Nil) visitor(valueInteger(slot + 1), valueFromTag(tag, memory.readRamRecordWord(words + slot * 4)));
+		}
+		for (let key = array; key < end; ++key) {
+			const value = key + hash;
+			const keyTag = memory.readRamRecordByte(tags + key), valueTag = memory.readRamRecordByte(tags + value);
+			if (keyTag === ValueTag.Nil || valueTag === ValueTag.Nil) continue;
+			visitor(valueFromTag(keyTag, memory.readRamRecordWord(words + key * 4)),
+				valueFromTag(valueTag, memory.readRamRecordWord(words + value * 4)));
 		}
 	}
 	public clearWeakEntries(weakKeys: boolean, weakValues: boolean, isAlive: StoredValuePredicate): void {

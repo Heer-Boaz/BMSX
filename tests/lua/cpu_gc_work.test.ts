@@ -35,18 +35,18 @@ test('runtime GC bills actual canonical scans, reclamation and three unique root
 	assert.equal(cpu.instructionBudgetRemaining, -162, 'Thread26×4 + Closure4×2 + roots12×3 + directory17 + text(2+2) =169');
 	assert.equal(cpu.luaHeap.usedBytes(), 133, 'ROM-backed strings and host object shapes are not pool text bytes');
 	const frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(2, 3))); //32+10+4×14=98.
+	frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(2, 3))); //32+S(10+4×14)=112.
 	frame.registers.setString(1, cpu.stringPool.intern('é😀')); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
-	assert.equal(cpu.luaHeap.usedBytes(), 237);
+	assert.equal(cpu.luaHeap.usedBytes(), 251);
 	cpu.instructionBudgetRemaining = 7; cpu.luaHeap.collectRuntime();
-	assert.equal(cpu.instructionBudgetRemaining, -215, 'base169 + Table25×2 + String(1slot+2words) =222');
-	assert.equal(cpu.luaHeap.usedBytes(), 237);
+	assert.equal(cpu.instructionBudgetRemaining, -211, 'base169 + Table(8+2+8 scan, 28 sweep) + String(1slot+2words) =218');
+	assert.equal(cpu.luaHeap.usedBytes(), 251);
 	assert.equal(cpu.luaHeap.captureState().nextCollectionBytes, 1048576);
 	cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'raw host collection is unbilled');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
-	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), 237);
+	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), 251);
 	cpu.reset();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'reset maintenance does not implicitly collect or bill the retained transient grant');
 });

@@ -158,7 +158,7 @@ test('changed objects wait for a finite second pass and retain later writes acro
 
 test('an oversized scan earns actual-work credit, not another assist after 256 bytes', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(4096, 0))); frame.top = 1;
+	frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(8192, 0))); frame.top = 1;
 	const before = cpu.luaHeap.usedBytes();
 	cpu.luaHeap.restoreState({ trackedBytes: before, nextCollectionBytes: before });
 	cpu.instructionBudgetRemaining = 0;

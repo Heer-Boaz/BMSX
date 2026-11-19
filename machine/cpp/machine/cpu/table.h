@@ -120,17 +120,20 @@ public:
 	// Constant-work inspection. Slot is in [0, storedSlotCount()); mutation invalidates
 	// positions. False leaves key/value untouched. Does not invoke guest code.
 	bool loadStoredEntry(size_t slot, Value& key, Value& value) const;
+	size_t scanSlots() const { return arrayCapacity() + 2u * hashSlots(); }
 	template <typename Fn>
 	void forEachEntry(Fn&& fn) const {
-		for (size_t i = 0; i < arrayCapacity(); ++i) {
-			if (!isNil(values().get(i))) {
-				fn(valueInteger(static_cast<i32>(i + 1)), values().get(i));
-			}
+		const u32 array = arrayCapacity(), hash = hashSlots(), words = storageAddress();
+		const TableValues slots{&m_memory, words, words + (array + 3u * hash) * 4u};
+		for (u32 i = 0; i < array; ++i) {
+			const Value value = slots.get(i);
+			if (!isNil(value)) fn(valueInteger(static_cast<i32>(i + 1)), value);
 		}
-		for (size_t i = 0; i < hashSlots(); ++i) {
-			if (!isNil(values().get(hashKeySlot(i))) && !isNil(values().get(hashValueSlot(i)))) {
-				fn(values().get(hashKeySlot(i)), values().get(hashValueSlot(i)));
-			}
+		for (u32 i = 0; i < hash; ++i) {
+			const Value key = slots.get(array + i);
+			if (isNil(key)) continue;
+			const Value value = slots.get(array + hash + i);
+			if (!isNil(value)) fn(key, value);
 		}
 	}
 	template <typename ValueIsAlive>

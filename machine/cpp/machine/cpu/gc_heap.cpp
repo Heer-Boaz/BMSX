@@ -197,7 +197,6 @@ size_t GcHeap::trace(bool atomic) {
 	m_gray = obj->grayNext;
 	obj->grayNext = nullptr;
 	obj->gcColor = 3;
-	const size_t work = ceilDiv4(static_cast<int>(allocationBytes(obj)));
 	switch (obj->type) {
 		case ObjType::Thread: {
 			auto* thread = static_cast<Thread*>(obj);
@@ -236,7 +235,7 @@ size_t GcHeap::trace(bool atomic) {
 					}
 				});
 			}
-			break;
+			return Table::HEADER_BYTES / sizeof(u32) + table->scanSlots();
 		}
 		case ObjType::Closure: {
 			auto* closure = static_cast<Closure*>(obj);
@@ -256,7 +255,7 @@ size_t GcHeap::trace(bool atomic) {
 			break;
 		}
 	}
-	return work;
+	return ceilDiv4(static_cast<int>(allocationBytes(obj)));
 }
 
 size_t GcHeap::remark(Value root0, Value root1, Value root2) {
@@ -293,7 +292,7 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 		for (size_t index = 0; index < m_weakTables.size(); ++index) {
 			auto* table = m_weakTables[index];
 			if (tableWeakMode(*table) != kTableWeakKeys) continue;
-			work += ceilDiv4(static_cast<int>(table->trackedHeapBytes()));
+			work += table->scanSlots();
 			table->forEachEntry([&](Value key, Value value) {
 				if (valueIsAlive(key) && markValue(value)) changed = true;
 			});
@@ -305,7 +304,7 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 #endif
 	for (auto* table : m_weakTables) {
 		const auto mode = tableWeakMode(*table);
-		work += ceilDiv4(static_cast<int>(table->trackedHeapBytes()));
+		work += table->scanSlots();
 		table->clearWeakEntries((mode & 1) != 0, (mode & 2) != 0,
 			[this](Value value) { return valueIsAlive(value); });
 		table->forEachEntry([this](Value key, Value value) {

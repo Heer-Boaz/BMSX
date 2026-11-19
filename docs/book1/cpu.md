@@ -1192,7 +1192,7 @@ paying for a complete pool traversal in a single instruction. An explicit
 collection and an emergency collection before an otherwise over-capacity
 request remain synchronous.
 
-The occupied-byte counts used for admission and collection work are:
+The occupied-byte counts used for admission are:
 
 | Allocation | Occupied budget bytes |
 | --- | --- |
@@ -1227,20 +1227,22 @@ examined again before reclamation. Allocations created during reclamation
 survive that collection. An object found reachable earlier in the cycle may
 therefore survive until a later collection even if its last reference has gone.
 
-Collection work consumes one cycle per 32-bit work word:
+Collection work consumes cycles as follows:
 
 | Work | Cycles |
 | --- | --- |
-| Scan one Table, closure, captured-variable cell or Thread | `ceil(occupied allocation bytes / 4)` |
+| Scan a Table | `8 + A + 2H`; eight header words and one cycle for each reserved Value slot |
+| Scan a closure, captured-variable cell or Thread | `ceil(occupied allocation bytes / 4)` |
 | Examine one allocation for reclamation, whether kept or freed | `ceil(occupied allocation bytes / 4)` |
 | Read the constant and global root ranges | `2C + 3(S + G)` per pass |
-| Examine a weak-key Table in one dependency-convergence pass | `ceil(occupied Table bytes / 4)` |
-| Clear weak entries and retain surviving String entries in one weak Table | `ceil(occupied Table bytes / 4)` |
+| Examine a weak-key Table in one dependency-convergence pass | `A + 2H` |
+| Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |
 | Examine one String-directory slot, including a vacant slot | `1` |
 | Examine occupied String text for reclamation | `ceil(allocated text bytes / 4)` |
 | Copy retained Thread storage when shrinking from `V` to `V/2` slots | `2 × ceil(5 × (V/2) / 4)` |
 
-Round each allocation or String's byte count separately. A repeated scan costs
+For charges based on bytes, round each allocation or String independently.
+A repeated scan costs
 again; unreachable objects that are not scanned still incur their reclamation
 work. Read-only String text supplied by a program image has no allocated-text
 charge, but its directory slot and constant or registered-name roots still
