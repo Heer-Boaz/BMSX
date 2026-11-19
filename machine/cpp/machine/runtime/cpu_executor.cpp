@@ -127,7 +127,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	if (!targetThread) targetThread = cpu.activeThread();
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
 	runDueRuntimeTimers(runtime);
-	while (static_cast<int>(targetThread->frameDepth) > targetDepth) {
+	while (static_cast<int>(targetThread->frameDepth()) > targetDepth) {
 		if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
 		if (machine.gxGpu.backendServiceBlocksMachine()
 			|| machine.systemController.cpuHeld()) {
@@ -171,7 +171,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				return CpuSuspendedRunResult::Halted;
 			}
 		}
-		if (static_cast<int>(targetThread->frameDepth) <= targetDepth) {
+		if (static_cast<int>(targetThread->frameDepth()) <= targetDepth) {
 			return CpuSuspendedRunResult::Completed;
 		}
 		if (result == RunResult::ExecutionStopped) {

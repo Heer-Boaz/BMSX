@@ -24,7 +24,7 @@ enum CpuSnapshotClosure : u32 {
 enum CpuSnapshotUpvalue : u32 {
 	SNAP_UPVALUE_KIND, SNAP_UPVALUE_HASH_ID, SNAP_UPVALUE_ADDRESS, SNAP_UPVALUE_SIZE,
 };
-enum CpuSnapshotThread : u32 { SNAP_THREAD_KIND, SNAP_THREAD_HASH_ID, SNAP_THREAD_INDEX, SNAP_THREAD_RECORD, SNAP_THREAD_SIZE };
+enum CpuSnapshotThread : u32 { SNAP_THREAD_KIND, SNAP_THREAD_HASH_ID, SNAP_THREAD_RECORD, SNAP_THREAD_SIZE };
 using CpuSnapshotValueWriter = std::function<void(u32, Value)>;
 
 class CpuSnapshot {

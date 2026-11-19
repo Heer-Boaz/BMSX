@@ -14,7 +14,7 @@ struct NativeCallScratch {
 	CallFrame* callee;
 	void* target;
 	int argumentBase;
-	u32 closureAddress, functionAddress, codeAddress, numParams, maxStack, flags;
+	u32 closureAddress, functionAddress, codeAddress, numParams, maxStack, flags, frameDepth;
 	int argCount, varargBase, varargCount, stackBase, stackTop;
 };
 

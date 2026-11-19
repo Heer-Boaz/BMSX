@@ -602,6 +602,12 @@ void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 	}
 }
 
+void CPU::bindPhysicalFrames(Thread& thread) {
+	thread.bindFrameViews();
+	for (auto* frame = thread.currentFrame; frame; frame = frame->previous)
+		frame->executionImage = m_executionImagesByDomain[static_cast<size_t>(frame->savedExecutionBank() + 1)].get();
+}
+
 void CPU::invalidateMappedViews(u64 key, u32 firstWord, u32 endWord) {
 	const auto address = static_cast<u32>(key);
 	m_activeStackRebound |= m_heap.observeStackWrites(address + firstWord * 4u,
@@ -855,19 +861,6 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	};
 
 	CpuRuntimeState state;
-	const auto captureThread = [&](const Thread* thread) -> u32 {
-		CpuThreadState saved;
-		if (m_heap.sweepGarbage(thread)) {
-			const u32 index = static_cast<u32>(state.threads.size());
-			state.threads.push_back(std::move(saved));
-			return index;
-		}
-		saved.frameDepth = static_cast<u32>(thread->frameDepth);
-		saved.stackTop = thread->stackTop;
-		const u32 index = static_cast<u32>(state.threads.size());
-		state.threads.push_back(std::move(saved));
-		return index;
-	};
 	state.rootThreadRef = static_cast<int>(captureObject(m_rootThread));
 	state.activeThreadRef = static_cast<int>(captureObject(m_activeThread));
 	state.completionThreadRef = static_cast<int>(captureObject(m_completionThread));
@@ -930,7 +923,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				offset = snapshot.reserveWords(SNAP_THREAD_SIZE);
 				snapshot.setWord(offset + SNAP_THREAD_KIND, static_cast<u32>(CpuSnapshotObjectKind::Thread));
 				snapshot.setWord(offset + SNAP_THREAD_HASH_ID, thread->hashId);
-				snapshot.setWord(offset + SNAP_THREAD_INDEX, captureThread(thread));
+
 				snapshot.setWord(offset + SNAP_THREAD_RECORD, thread->address);
 				break;
 			}
@@ -1008,9 +1001,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	// The caller has already restored RAM. Retire only the reused root's
 	// host activations; following or changing old coroutine edges here would
 	// access the restored language records before their attachments exist.
-	while (m_rootThread->frameDepth != 0) {
-		m_rootThread->leaveFrame();
-	}
+	m_rootThread->detachFrameViews();
 	auto previousCanonical = std::move(m_staticClosuresByAddress);
 	m_staticClosuresByAddress.clear();
 	auto savedClosure = [&](u32 offset) {
@@ -1045,8 +1036,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				if (index != static_cast<size_t>(state.rootThreadRef)) m_luaHeap.restoreAllocate(m_heap.allocationBytes(thread));
 				thread->restored = true;
 				thread->hashId = snapshot.word(offset + SNAP_THREAD_HASH_ID);
-				thread->stackTop = 0;
-				while (thread->currentFrame) thread->leaveFrame();
 				restoredObjects[index] = thread;
 				break;
 			}
@@ -1139,21 +1128,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	Blua32ExecutionImage* executionImage = m_executionImagesByDomain[static_cast<size_t>(state.executionCartridgeSlot + 1)].get();
 	latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
-	for (size_t objectIndex = 0; objectIndex < snapshot.objectCount(); ++objectIndex) {
-		const u32 offset = snapshot.objectWord(static_cast<u32>(objectIndex));
-		if (snapshot.word(offset) != static_cast<u32>(CpuSnapshotObjectKind::Thread)) continue;
-		const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
-		Thread* thread = static_cast<Thread*>(restoredObjects[objectIndex]);
-		m_activeThread = thread;
-		thread->stackTop = saved.stackTop;
-		for (u32 depth = 0; depth < saved.frameDepth; ++depth) {
-			auto* frame = m_activeThread->acquireFrame();
-			frame->executionImage = m_executionImagesByDomain[static_cast<size_t>(frame->savedExecutionBank() + 1)].get();
-
-			m_activeThread->enterFrame(frame);
-		}
-		thread->bindStack();
-	}
+	m_heap.restoreState(state.gc, restoredObjects);
+	m_heap.visitThreads([&](Thread& thread) {
+		if (!m_heap.sweepGarbage(&thread)) bindPhysicalFrames(thread);
+	});
 	m_activeThread = static_cast<Thread*>(restoredObjects[state.activeThreadRef]);
 	if (auto* current = m_activeThread->currentFrame) current->executionImage = m_activeExecutionImage;
 	m_completionThread = static_cast<Thread*>(restoredObjects[state.completionThreadRef]);
@@ -1188,7 +1166,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 	m_yieldRequested = state.yieldRequested;
 	m_hardHalted = state.hardHalted;
-	m_heap.restoreState(state.gc, restoredObjects);
 	m_luaHeap.restoreState(state.luaHeap);
 }
 
@@ -1201,7 +1178,7 @@ void CPU::haltUntilIrq() {
 		m_interruptEventPending = false;
 		return;
 	}
-	m_haltedUntilIrqFrameDepth = static_cast<int>(m_activeThread->frameDepth);
+	m_haltedUntilIrqFrameDepth = static_cast<int>(m_activeThread->frameDepth());
 	m_haltedUntilIrqThread = m_activeThread;
 	m_yieldRequested = false;
 }
@@ -1254,7 +1231,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			runBuiltinSelect(args, out, resultLimit);
 			break;
 		case BuiltinFunctionId::FrameCount:
-			out.push_back(valueInteger(asThread(args[0], m_heap)->frameDepth));
+			out.push_back(valueInteger(asThread(args[0], m_heap)->frameDepth()));
 			break;
 		case BuiltinFunctionId::FrameHeader: {
 			const auto& frame = *asThread(args[0], m_heap)->frameAtDepth(integerOperand(args[1]));
@@ -1447,7 +1424,7 @@ void CPU::closeThread(Thread& thread) {
 	}
 	thread.setProtectedDepth(0);
 	thread.stack.clear(0, thread.stackCapacity);
-	thread.stackTop = 0;
+	thread.setStackTop(0);
 	thread.setEntry(nullptr);
 	thread.setStatus(ThreadStatus::Dead);
 }
@@ -1466,7 +1443,7 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase
 	}
 	const BuiltinArgsView args(frame.registers.subspan(callBase + 1, argCount));
 	callBuiltinFunction(fn, args, out, returnCount == 0 ? -1 : returnCount - 1);
-	if (m_activeThread->frameDepth != 0 && m_activeThread->currentFrame == &frame) {
+	if (m_activeThread->frameDepth() != 0 && m_activeThread->currentFrame == &frame) {
 		writeReturnValuesFromBuiltinResults(frame, callBase, returnCount, out);
 	}
 }
@@ -1629,9 +1606,9 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 		if (depth == 0) return false;
 		const u32 continuationIndex = depth - 1;
 		const u32 callerIndex = m_activeThread->protectedWord(continuationIndex, ProtectedField::Caller);
-		if (callerIndex >= m_activeThread->frameDepth) return false;
+		if (callerIndex >= m_activeThread->frameDepth()) return false;
 		auto* frame = m_activeThread->currentFrame;
-		for (size_t at = m_activeThread->frameDepth - 1; at > callerIndex; --at, frame = frame->previous) {
+		for (size_t at = m_activeThread->frameDepth() - 1; at > callerIndex; --at, frame = frame->previous) {
 			// Completion roots return to their latch, not the interrupted caller.
 			if (frame->hasControlFlag(FRAME_EXCEPTION | FRAME_COMPLETION)) return false;
 		}
@@ -1833,7 +1810,7 @@ void CPU::returnFromException(CallFrame& frame) {
 	resumeFrameBank();
 	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_RFE_RESTORE_MASK)
 		| ((m_cop0Words[COP0_STATUS] >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
-	if (m_activeThread->frameDepth != 0) {
+	if (m_activeThread->frameDepth() != 0) {
 		auto& caller = *m_activeThread->currentFrame;
 		caller.writeControl(FrameField::Pc, returnPc);
 		caller.compilationEntry = true;
@@ -1929,20 +1906,20 @@ RunResult CPU::runLoop(
 #endif
 	for (;;) {
 		try {
-			if (static_cast<int>(thread.frameDepth) > targetDepth && instructionBudgetRemaining > 0
+			if (static_cast<int>(thread.frameDepth()) > targetDepth && instructionBudgetRemaining > 0
 				&& !m_memoryWriteBlocked && !m_hardHalted && !m_yieldRequested
-				&& !(m_haltedUntilIrqThread == m_activeThread && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth))) resumePendingMemoryOperation();
+				&& !(m_haltedUntilIrqThread == m_activeThread && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))) resumePendingMemoryOperation();
 			if constexpr (RootBoundary) {
-				if (thread.frameDepth == 0) {
+				if (thread.frameDepth() == 0) {
 					return RunResult::Halted;
 				}
 			} else {
-				if (static_cast<int>(thread.frameDepth) <= targetDepth) {
+				if (static_cast<int>(thread.frameDepth()) <= targetDepth) {
 					return RunResult::Halted;
 				}
 			}
 			if (m_hardHalted
-				|| (m_haltedUntilIrqThread == m_activeThread && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth))
+				|| (m_haltedUntilIrqThread == m_activeThread && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))
 				|| m_memoryWriteBlocked) {
 				return RunResult::Halted;
 			}
@@ -2016,8 +1993,9 @@ dispatch_fetch:
 
 dispatch_decode:
 			if (m_activeStackRebound) {
-				registers = frame->registers;
 				m_activeStackRebound = false;
+				if (frame != thread.currentFrame) continue;
+				registers = frame->registers;
 			}
 			const u32 pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
 			u8 refreshState = decodedPage->refreshState[pageOffset];
@@ -2279,13 +2257,13 @@ dispatch_rebind_frame:
 			if constexpr (Instrumented) goto dispatch_continue;
 			if (canReuseFrame && instructionBudgetRemaining > 0) {
 				if constexpr (RootBoundary) {
-					if (thread.frameDepth == 0) return RunResult::Halted;
+					if (thread.frameDepth() == 0) return RunResult::Halted;
 				} else {
-					if (static_cast<int>(thread.frameDepth) <= targetDepth) return RunResult::Halted;
+					if (static_cast<int>(thread.frameDepth()) <= targetDepth) return RunResult::Halted;
 				}
 				// A pure frame transition can activate the depth-sensitive HALT latch.
 				if (m_haltedUntilIrqThread == m_activeThread
-					&& m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth)) return RunResult::Halted;
+					&& m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth())) return RunResult::Halted;
 				frame = thread.currentFrame;
 				image = frame->executionImage;
 				if (!image) goto dispatch_continue;
@@ -2410,9 +2388,9 @@ void CPU::setExecutionHook(ExecutionHookBinding binding) {
 }
 
 void CPU::unwindToDepth(int targetDepth, bool chargeCaptures) {
-	const bool unwinding = static_cast<int>(m_activeThread->frameDepth) > targetDepth;
+	const bool unwinding = static_cast<int>(m_activeThread->frameDepth()) > targetDepth;
 	if (unwinding) abortStalledMemoryWrite();
-	while (static_cast<int>(m_activeThread->frameDepth) > targetDepth) {
+	while (static_cast<int>(m_activeThread->frameDepth()) > targetDepth) {
 		auto* finished = m_activeThread->currentFrame;
 		const int closed = closeUpvalues(*finished);
 		if (chargeCaptures) instructionBudgetRemaining -= closed;
@@ -2420,7 +2398,7 @@ void CPU::unwindToDepth(int targetDepth, bool chargeCaptures) {
 	}
 	if (unwinding) resumeFrameBank();
 	u32 depth = m_activeThread->protectedDepth();
-	while (depth > 0 && m_activeThread->protectedWord(depth - 1, ProtectedField::Caller) >= m_activeThread->frameDepth) --depth;
+	while (depth > 0 && m_activeThread->protectedWord(depth - 1, ProtectedField::Caller) >= m_activeThread->frameDepth()) --depth;
 	m_activeThread->setProtectedDepth(depth);
 }
 
@@ -2493,7 +2471,7 @@ bool CPU::isExceptionFrame(int frameIndex) const {
 // Frame depth reached after all currently active exception roots return.
 int CPU::readExceptionReturnFrameDepth() const {
 	const CallFrame* frame = m_activeThread->firstFrame;
-	for (size_t frameIndex = 0; frameIndex < m_activeThread->frameDepth; ++frameIndex, frame = frame->next) {
+	for (size_t frameIndex = 0; frameIndex < m_activeThread->frameDepth(); ++frameIndex, frame = frame->next) {
 		if (frame->hasControlFlag(FRAME_EXCEPTION)) return static_cast<int>(frameIndex);
 	}
 	return -1;
@@ -2715,7 +2693,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	const FunctionPrototype& functionRecord = *closure->prototype;
 	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
-	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop;
+	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop();
 	const bool vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u;
 	const int varargCount = vararg && static_cast<u32>(argCount) > functionRecord.numParams
 		? static_cast<int>(static_cast<u32>(argCount) - functionRecord.numParams) : 0;
@@ -2745,7 +2723,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	}
 	instructionBudgetRemaining -= (vararg || !sharedStack ? top : top - copiedCount)
 		+ (sharedStack ? 0 : varargCount);
-	m_activeThread->stackTop = stackBase + static_cast<int>(targetCapacity);
+	m_activeThread->setStackTop(stackBase + static_cast<int>(targetCapacity));
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(functionRecord.executionDomainId, frame->executionImage);
 	return frame;
@@ -2756,7 +2734,7 @@ CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 	const FunctionPrototype& functionRecord = *closure->prototype;
 	const size_t argCount = args.size();
 	auto* frame = m_activeThread->acquireFrame();
-	const int argumentBase = m_activeThread->stackTop;
+	const int argumentBase = m_activeThread->stackTop();
 	const bool vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u;
 	const int varargCount = vararg && argCount > functionRecord.numParams
 		? static_cast<int>(argCount - functionRecord.numParams) : 0;
@@ -2775,7 +2753,7 @@ CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 	if (varargCount != 0) {
 		for (int i = 0; i < varargCount; ++i) m_activeThread->stack.set(varargBase + i, args[top + i]);
 	}
-	m_activeThread->stackTop = stackBase + static_cast<int>(targetCapacity);
+	m_activeThread->setStackTop(stackBase + static_cast<int>(targetCapacity));
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(functionRecord.executionDomainId, frame->executionImage);
 	return frame;
@@ -2960,13 +2938,13 @@ void CPU::clearCallStack() {
 	abortStalledMemoryWrite();
 	for (;;) {
 		m_activeThread->setProtectedDepth(0);
-		while (m_activeThread->frameDepth != 0) {
+		while (m_activeThread->frameDepth() != 0) {
 			CallFrame* frame = m_activeThread->currentFrame;
 			closeUpvalues(*frame);
 			m_activeThread->leaveFrame();
 		}
 		m_activeThread->stack.clear(0, m_activeThread->stackCapacity);
-		m_activeThread->stackTop = 0;
+		m_activeThread->setStackTop(0);
 		Thread* thread = m_activeThread;
 		thread->setStatus(ThreadStatus::Dead);
 		thread->setEntry(nullptr);

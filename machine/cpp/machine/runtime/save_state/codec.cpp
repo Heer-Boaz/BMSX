@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x44534d42u; // BMSD
+constexpr u32 kSaveStateSignature = 0x45534d42u; // BMSE
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1160,18 +1160,6 @@ CpuRootValueState readCpuRootValueState(BinaryReader& reader) {
 	return state;
 }
 
-template<class Writer> void writeCpuThreadState(Writer& writer, const CpuThreadState& state) {
-	writer.u32(state.stackTop);
-	writer.u32(state.frameDepth);
-}
-
-CpuThreadState readCpuThreadState(BinaryReader& reader) {
-	CpuThreadState state;
-	state.stackTop = reader.u32();
-	state.frameDepth = reader.u32();
-	return state;
-}
-
 template<class Writer> void writeCpuSnapshot(Writer& writer, const CpuSnapshot& state) {
 	writer.u32(static_cast<u32>(state.words().size()));
 	writer.u32s(state.words());
@@ -1230,10 +1218,6 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.i32(state.rootThreadRef);
 	writer.i32(state.activeThreadRef);
 	writer.i32(state.completionThreadRef);
-	writer.u32(static_cast<u32>(state.threads.size()));
-	for (const auto& value : state.threads) {
-		writeCpuThreadState(writer, value);
-	}
 	writer.u32(static_cast<u32>(state.completionValues.size()));
 	writer.u32s(state.completionValues);
 	writeCpuSnapshot(writer, state.snapshot);
@@ -1289,11 +1273,6 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.rootThreadRef = reader.i32();
 	state.activeThreadRef = reader.i32();
 	state.completionThreadRef = reader.i32();
-	const u32 threadsCount = reader.u32();
-	state.threads.reserve(threadsCount);
-	for (u32 index = 0; index < threadsCount; ++index) {
-		state.threads.push_back(readCpuThreadState(reader));
-	}
 	state.completionValues = reader.u32s(reader.u32());
 	state.snapshot = readCpuSnapshot(reader);
 	state.lastExecutionDomainId = reader.i32();

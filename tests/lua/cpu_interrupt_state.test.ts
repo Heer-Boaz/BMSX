@@ -919,7 +919,7 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	cpu.beginCompletionCall(closure);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 	const state = cpu.captureRuntimeState();
-	assert.equal(state.threads[0].frameDepth, 1);
+	assert.equal(cpu.getFrameDepth(), 1);
 	assert.equal(cpu.rootThread.currentFrame!.returnToCompletionLatch, true);
 
 	cpu.restoreRuntimeState(state);

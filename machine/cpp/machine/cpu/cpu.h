@@ -102,15 +102,9 @@ struct ExecutionHookBinding {
 	ExecutionDomainMask preMaskableInterruptDomainMask;
 };
 
-// These activation fields have not yet moved to the guest stack record.
 struct CpuRootValueState {
 	StringId key = 0;
 	u32 value = 0;
-};
-
-struct CpuThreadState {
-	u32 stackTop = 0;
-	u32 frameDepth = 0;
 };
 
 struct CpuRuntimeState {
@@ -127,7 +121,6 @@ struct CpuRuntimeState {
 	int rootThreadRef = -1;
 	int activeThreadRef = -1;
 	int completionThreadRef = -1;
-	std::vector<CpuThreadState> threads;
 	std::vector<u32> completionValues;
 	CpuSnapshot snapshot;
 	ExecutionDomainId lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
@@ -175,6 +168,7 @@ public:
 	void prepareSystemNativeCode();
 #endif
 	void invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) override;
+	void bindPhysicalFrames(Thread& thread);
 	void invalidateMappedViews(u64 key, u32 firstWord, u32 endWord) override;
 	void invalidateMappedRange(u64 firstKey, u64 endKey) override;
 
@@ -228,7 +222,7 @@ public:
 	void clearHaltUntilIrq();
 	bool isHaltedUntilIrq() const {
 		return m_haltedUntilIrqThread == m_activeThread
-			&& m_haltedUntilIrqFrameDepth == static_cast<int>(m_activeThread->frameDepth);
+			&& m_haltedUntilIrqFrameDepth == static_cast<int>(m_activeThread->frameDepth());
 	}
 	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
 	uint32_t stalledMemoryWriteAddress() const { return m_memoryWriteBlockedAddress; }
@@ -267,7 +261,7 @@ public:
 
 	Thread* activeThread() const { return m_activeThread; }
 	Thread* rootThread() const { return m_rootThread; }
-	int getFrameDepth() const { return static_cast<int>(m_activeThread->frameDepth); }
+	int getFrameDepth() const { return static_cast<int>(m_activeThread->frameDepth()); }
 	ExecutionDomainId readFrameExecutionDomain(int frameIndex) const;
 	ExecutionDomainId readLastExecutionDomain() const;
 	// Instruction start (including WIDE), inspected only during CPU execution.

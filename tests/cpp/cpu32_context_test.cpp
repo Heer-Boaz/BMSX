@@ -41,16 +41,12 @@ void parity(Number32Machine& native, Number32Machine& scalar) {
 	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) &&
 				std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()),
 		"native context retains the complete serialized compact value graph");
-	require(a.threads.size() == b.threads.size(), "context thread counts agree");
+	require(native.cpu.activeThread()->stackTop() == scalar.cpu.activeThread()->stackTop()
+		&& native.cpu.getFrameDepth() == scalar.cpu.getFrameDepth(), "physical Thread cursors agree");
 	for (int frame = 0; frame < native.cpu.getFrameDepth(); ++frame)
 		require(native.cpu.readFramePc(frame) == scalar.cpu.readFramePc(frame)
 			&& native.cpu.getFrameRegisterCount(frame) == scalar.cpu.getFrameRegisterCount(frame), "active physical PCs and tops match the scalar owner");
-	for (size_t i = 0; i < a.threads.size(); ++i) {
-		const auto& x = a.threads[i];
-		const auto& y = b.threads[i];
-		require(x.stackTop == y.stackTop && x.frameDepth == y.frameDepth,
-			"context stack and frame extents agree");
-	}
+
 }
 void requireNative(CPU& cpu,u64 expectedReturns=1) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)

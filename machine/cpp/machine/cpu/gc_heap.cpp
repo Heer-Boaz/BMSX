@@ -146,9 +146,16 @@ bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
 	bool rebound = false;
 	for (u32 address = first & ~(static_cast<u32>(THREAD_HEAP_BYTES) - 1u); address < end; address += THREAD_HEAP_BYTES) {
 		const u32 descriptor = address + static_cast<u32>(ThreadField::StackBlock);
-		if (end <= descriptor || first >= descriptor + 16u) continue;
-		if (auto* thread = threadAt(address))
-			rebound |= thread->observeStackWrite() && thread == active;
+		const u32 depth = address + static_cast<u32>(ThreadField::FrameDepth);
+		const bool cursorWrite = first <= depth && depth < end;
+		if (!cursorWrite && (end <= descriptor || first >= descriptor + 16u)) continue;
+		if (auto* thread = threadAt(address)) {
+			if (cursorWrite) {
+				m_cpu.bindPhysicalFrames(*thread);
+				thread->armStackWatch();
+				rebound |= thread == active;
+			} else rebound |= thread->observeStackWrite() && thread == active;
+		}
 	}
 	for (auto* object = m_objects; object; object = object->next) {
 		if (object->type != ObjType::Thread) continue;
@@ -224,7 +231,7 @@ size_t GcHeap::trace(bool atomic) {
 			int liveTop = thread->currentFrame ? thread->currentFrame->stackBase()
 				+ std::min(thread->currentFrame->readWindow(FrameField::Top), thread->currentFrame->stackCapacity()) : 0;
 			CallFrame* frame = thread->firstFrame;
-			for (size_t depth = 0; depth < thread->frameDepth; ++depth, frame = frame->next) {
+			for (size_t depth = 0; depth < thread->frameDepth(); ++depth, frame = frame->next) {
 				markObject(frame->attachedClosure());
 				u32 address = frame->readControl(FrameField::OpenHead);
 				for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {

@@ -18,7 +18,7 @@ export const enum ProtectedCallKind {
 
 export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 }
 export const FRAME_CONTROL_BYTES = 56;
-const FRAME_WINDOW_MASK = (MAIN_RAM_SIZE >>> 2) - 1;
+export const FRAME_WINDOW_MASK = (MAIN_RAM_SIZE >>> 2) - 1;
 const FRAME_COMPLETION = 1;
 const FRAME_EXCEPTION = 2;
 const FRAME_NMI = 4;

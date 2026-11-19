@@ -40,23 +40,23 @@ void slidingFixedCall(bool interpreted) {
 	cpu.runUntilDepth(1, 100);
 	auto* thread = cpu.activeThread();
 	auto* parent = thread->currentFrame;
-	require(thread->frameDepth == 1, "warm execution returns to the original frame");
+	require(thread->frameDepth() == 1, "warm execution returns to the original frame");
 	require(thread->stackCapacity == 128, "fixed calls share the allocation rather than appending maxStack windows");
 	require(parent->registers.get(0) == valueInteger(1), "the lower caller prefix survives calls");
 	require(parent->next && parent->next->stackBase() == parent->stackBase() + 5, "callee parameters alias the supplied argument slots");
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress + INSTRUCTION_BYTES);
 	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]
 		+ BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
-	require(thread->frameDepth == 2, "exhausted CALL grant leaves the callee before its first instruction");
+	require(thread->frameDepth() == 2, "exhausted CALL grant leaves the callee before its first instruction");
 	auto* child = thread->currentFrame;
 	require(child->registers.words() == parent->registers.words() + 5 && child->registers.tags() == parent->registers.tags() + 5, "callee borrows both planes at the same argument offset");
 	require(child->registers.get(0) == valueInteger(37) && child->registers.get(1) == valueNil(), "arguments stay in place and missing formals become nil");
-	require(thread->stackTop == 13, "active stack extent excludes dead caller scratch");
+	require(thread->stackTop() == 13, "active stack extent excludes dead caller scratch");
 	child->registers.set(0, valueInteger(41));
 	require(parent->registers.get(5) == valueInteger(41), "both register views name the same storage");
 	cpu.collectHeap();
 	const auto snapshot = cpu.captureRuntimeState();
-	require(snapshot.threads[0].stackTop == 13, "snapshot records shared storage once");
+	require(memory.readRamRecordWord(thread->address + static_cast<u32>(ThreadField::StackTop)) == 13, "the thread header owns the shared stack extent");
 	cpu.restoreRuntimeState(snapshot);
 	thread = cpu.activeThread();
 	require(thread->currentFrame->registers.words() == thread->firstFrame->registers.words() + 5
@@ -64,7 +64,7 @@ void slidingFixedCall(bool interpreted) {
 	cpu.runUntilDepth(1, 100);
 	parent = thread->currentFrame;
 	require(parent->registers.get(4) == valueInteger(41) && parent->registers.get(5) == valueNil(), "overlapping return copies retain values and padding");
-	require(thread->stackTop == 128, "retirement restores the caller reservation without shifting any frame");
+	require(thread->stackTop() == 128, "retirement restores the caller reservation without shifting any frame");
 }
 void slidingVarargCall(bool interpreted, bool open) {
 	test::Blua32TestImage image;
@@ -97,7 +97,7 @@ void slidingVarargCall(bool interpreted, bool open) {
 	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]
 		+ 3 * BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	auto* thread = cpu.activeThread();
-	require(thread->frameDepth == 2, "vararg CALL enters before executing the body");
+	require(thread->frameDepth() == 2, "vararg CALL enters before executing the body");
 	auto* child = thread->currentFrame;
 	require(child->stackBase() == 8 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargBase)) == 6 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargCount)) == 2, "vararg working registers slide above original arguments");
 	require(child->registers.get(0) == valueInteger(37) && thread->stack.get(5) == valueNil(), "fixed parameters move, original copies no longer retain roots");
@@ -136,7 +136,7 @@ void formalReservationRoots(bool interpreted) {
 		"the formal count owns every argument even when maxStack is smaller");
 	cpu.collectHeap();
 	const auto snapshot = cpu.captureRuntimeState();
-	require(snapshot.threads[0].stackTop == 12, "snapshot includes the complete formal reservation once");
+	require(memory.readRamRecordWord(child->thread->address + static_cast<u32>(ThreadField::StackTop)) == 12, "the thread header includes the complete formal reservation");
 	cpu.restoreRuntimeState(snapshot);
 	child = cpu.activeThread()->currentFrame;
 	require(asTable(child->registers.get(6), cpu.gcHeap())->getInteger(1) == valueInteger(73),
@@ -230,7 +230,7 @@ void memoryAliasesActiveStack() {
 	regs.set(3, valueInteger(123)); regs.set(4, valueInteger(baseWord)); regs.set(5, valueInteger(0xfff00001u));
 	cpu.runUntilDepth(0, cycles);
 	require(thread->stack.get(3) == valueInteger(0), "the next instruction reads the newly selected register window");
-	require(frame->stackBase() == 1 && thread->stackTop == 9, "the frame base lane decodes the internal slot bits");
+	require(frame->stackBase() == 1 && thread->stackTop() == 9, "the frame base lane decodes the internal slot bits");
 	regs.set(0, valueInteger(99));
 	require(memory.readRamRecordWord(slot + sizeof(u32)) == 99u, "an external geometry write rebinds the register window");
 	memory.writeMappedU32LE(baseWord, 0);
@@ -266,6 +266,15 @@ void memoryAliasesActiveStack() {
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(checkpoint);
 	require(cpu.readFrameRegister(0, 1) == valueInteger(123), "restoring RAM restores a wrapped register bank");
+
+	const u32 depthWord = thread->address + static_cast<u32>(ThreadField::FrameDepth);
+	memory.writeMappedU32LE(depthWord, 0xfffc0000u);
+	require(cpu.getFrameDepth() == 0 && thread->currentFrame == nullptr && cpu.runUntilDepth(0, 30) == RunResult::Halted,
+		"a mapped depth write selects no activation without running or clearing the dormant frame");
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(checkpoint);
+	require(memory.readRamRecordWord(depthWord) == 1 && cpu.getFrameDepth() == 1
+		&& cpu.readFrameRegister(0, 1) == valueInteger(123), "restore derives the activation cursor only from RAM");
 
 }
 

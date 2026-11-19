@@ -6,8 +6,6 @@
 
 namespace bmsx {
 namespace {
-// Eighteen count bits cover every 20-byte record that can fit in physical RAM.
-constexpr u32 CONTROL_COUNT_MASK = (1u << 18) - 1;
 constexpr u32 controlOffset(u32 values) { return (values * THREAD_STACK_SLOT_BYTES + 3u) & ~3u; }
 constexpr u32 backingBytes(u32 values, u32 frames, u32 continuations) {
 	return controlOffset(values) + frames * FRAME_CONTROL_BYTES + continuations * PROTECTED_CALL_BYTES;
@@ -22,7 +20,8 @@ void copyStackControl(Memory& memory, u8* destination, u32 source, u32 bytes) {
 }
 }
 
-Thread::Thread(GcHeap& heap, u32 address) : address(address), heap(heap) {}
+Thread::Thread(GcHeap& heap, u32 address) : address(address),
+	nativeRecord(heap.memory.ramData() + (address & RAM_RECORD_WORD_MASK)), heap(heap) {}
 
 void Thread::initializeRecord(Closure* entry) {
 	const u32 offset = address & (MAIN_RAM_SIZE - 1u);
@@ -75,7 +74,7 @@ void Thread::setError(Value value) {
 #endif
 Thread::NativeOffsets Thread::nativeOffsets() {
 	constexpr size_t stack = offsetof(Thread, stack);
-	return {offsetof(Thread, currentFrame), offsetof(Thread, frameDepth), offsetof(Thread, stackTop),
+	return {offsetof(Thread, currentFrame), offsetof(Thread, nativeRecord),
 		stack + ValueSpan::wordsOffset(), stack + ValueSpan::tagsOffset(), offsetof(Thread, stackCapacity), offsetof(Thread, boundFrameCapacity)};
 }
 #if defined(__GNUC__)
@@ -95,9 +94,9 @@ u32 Thread::stackOffset() const { return stack.wordAddress(); }
 u32 Thread::backingByteLength() const {
 	return backingBytes(static_cast<u32>(stack.size()), boundFrameCapacity, boundProtectedCapacity);
 }
-u32 Thread::frameCapacity() const { return read(ThreadField::FrameCapacity) & CONTROL_COUNT_MASK; }
-u32 Thread::protectedCapacity() const { return read(ThreadField::ProtectedCapacity) & CONTROL_COUNT_MASK; }
-u32 Thread::protectedDepth() const { return read(ThreadField::ProtectedDepth) & CONTROL_COUNT_MASK; }
+u32 Thread::frameCapacity() const { return read(ThreadField::FrameCapacity) & THREAD_CONTROL_COUNT_MASK; }
+u32 Thread::protectedCapacity() const { return read(ThreadField::ProtectedCapacity) & THREAD_CONTROL_COUNT_MASK; }
+u32 Thread::protectedDepth() const { return read(ThreadField::ProtectedDepth) & THREAD_CONTROL_COUNT_MASK; }
 void Thread::setProtectedDepth(u32 depth) { write(ThreadField::ProtectedDepth, depth); }
 u32 Thread::frameControlAddress(u32 index) const {
 	return stackOffset() + controlOffset(static_cast<u32>(stack.size())) + index * FRAME_CONTROL_BYTES;
@@ -116,9 +115,9 @@ void Thread::setProtectedKind(u32 index, ProtectedCallKind kind) {
 CallFrame* Thread::protectedCaller(u32 index) const {
 	const u32 depth = protectedWord(index, ProtectedField::Caller);
 	// A bus-written index outside the active window has no activation.
-	if (depth >= frameDepth) return nullptr;
+	if (depth >= frameDepth()) return nullptr;
 	CallFrame* frame = currentFrame;
-	for (size_t at = frameDepth - 1; at > depth; --at) frame = frame->previous;
+	for (size_t at = frameDepth() - 1; at > depth; --at) frame = frame->previous;
 	return frame;
 }
 u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int wanted, int handler) {
@@ -135,7 +134,7 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int
 	auto* ram = memory.ramData();
 	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Flags)) & RAM_RECORD_WORD_MASK),
 		static_cast<u32>(kind) | (parent ? PROTECTED_CALL_PARENT : 0));
-	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Caller)) & RAM_RECORD_WORD_MASK), static_cast<u32>(frameDepth - 1));
+	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Caller)) & RAM_RECORD_WORD_MASK), static_cast<u32>(frameDepth() - 1));
 	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Base)) & RAM_RECORD_WORD_MASK), static_cast<u32>(base));
 	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Wanted)) & RAM_RECORD_WORD_MASK), static_cast<u32>(wanted));
 	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Handler)) & RAM_RECORD_WORD_MASK), static_cast<u32>(handler));
@@ -150,9 +149,11 @@ bool Thread::stackRequiresScalar() const {
 	const auto& watches = heap.memory.ramWriteWatches();
 	const u32 bytes = backingByteLength();
 	const u32 offset = stackOffset(), controls = controlOffset(static_cast<u32>(stack.size()));
-	return stack.mirrored() || static_cast<size_t>(stackTop) > stack.size() || frameDepth > boundFrameCapacity
+	return stack.mirrored() || static_cast<size_t>(stackTop()) > stack.size() || frameDepth() > boundFrameCapacity
 		|| bytes > MAIN_RAM_SIZE - offset
-		|| (watches.anyWatched() && (watches.anyWatched(offset, controls)
+		|| (watches.anyWatched() && (watches.anyWatched((address & RAM_RECORD_WORD_MASK) + static_cast<u32>(ThreadField::StackTop), 4)
+			|| watches.anyWatched((address & RAM_RECORD_WORD_MASK) + static_cast<u32>(ThreadField::FrameDepth), 4, false)
+			|| watches.anyWatched(offset, controls)
 			|| watches.anyWatched(offset + controls, bytes - controls, false)));
 }
 
@@ -195,12 +196,12 @@ bool Thread::observeFrameWindowWrites(u32 first, u32 end) {
 		const u32 size = RAM_BASE + ((frame->controlOffset + static_cast<u32>(FrameField::StackCapacity)) & RAM_RECORD_WORD_MASK);
 		if ((first <= base && base < end) || (first <= size && size < end)) {
 			armFrameWindowWatch(*frame);
-			active |= index < frameDepth;
+			active |= index < frameDepth();
 		}
 	}
 	if (active) {
 		bindStack();
-		stackTop = currentFrame->stackBase() + currentFrame->stackCapacity();
+		setStackTop(currentFrame->stackBase() + currentFrame->stackCapacity());
 	}
 	return active;
 }
@@ -209,6 +210,7 @@ void Thread::armStackWatch() {
 	const u32 first = (address + static_cast<u32>(ThreadField::StackBlock)) & RAM_RECORD_WORD_MASK;
 	for (u32 offset = 0; offset < 16; offset += sizeof(u32))
 		heap.memory.armRamViewWord(first + offset);
+	heap.memory.armRamViewWord((address + static_cast<u32>(ThreadField::FrameDepth)) & RAM_RECORD_WORD_MASK);
 }
 
 bool Thread::observeStackWrite() {
@@ -228,7 +230,7 @@ void Thread::resizeStack(size_t capacity, Value root) {
 }
 
 void Thread::reserveFrame(size_t values, Value root, bool exception) {
-	const size_t wanted = frameDepth + (exception ? 1 : 2);
+	const size_t wanted = frameDepth() + (exception ? 1 : 2);
 	u32 frames = std::max(THREAD_INITIAL_FRAMES, boundFrameCapacity);
 	while (frames < wanted) frames *= 2;
 	if (values == stackCapacity && frames == boundFrameCapacity) return;
@@ -255,7 +257,7 @@ void Thread::replaceStack(u32 block, size_t capacity, u32 frames, u32 continuati
 	std::memset(words + retained * sizeof(u32), 0, (capacity - retained) * sizeof(u32));
 	std::memset(tags + retained, 0, capacity - retained);
 	auto* frameRecords = words + controlOffset(static_cast<u32>(capacity));
-	const u32 frameBytes = std::min({static_cast<u32>(frameDepth), boundFrameCapacity, frames}) * FRAME_CONTROL_BYTES;
+	const u32 frameBytes = std::min({static_cast<u32>(frameDepth()), boundFrameCapacity, frames}) * FRAME_CONTROL_BYTES;
 	auto* protectedRecords = frameRecords + frames * FRAME_CONTROL_BYTES;
 	const u32 occupied = std::min({protectedDepth(), boundProtectedCapacity, continuations}) * PROTECTED_CALL_BYTES;
 	copyStackControl(heap.memory, frameRecords, frameControlAddress(0), frameBytes);
@@ -278,13 +280,13 @@ void Thread::replaceStack(u32 block, size_t capacity, u32 frames, u32 continuati
 }
 
 size_t Thread::shrinkStack() {
-	size_t used = static_cast<size_t>(stackTop);
+	size_t used = static_cast<size_t>(stackTop());
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
 		used = std::max(used, static_cast<size_t>(frame->stackBase() + frame->stackCapacity()));
 	const u32 priorProtected = protectedCapacity();
 	const u32 nextProtected = priorProtected > 4 && 3ull * protectedDepth() < priorProtected ? priorProtected / 2 : priorProtected;
 	const size_t nextValues = stackCapacity > 16 && used * 3 < stackCapacity ? stackCapacity / 2 : stackCapacity;
-	const u32 nextFrames = boundFrameCapacity > 4 && frameDepth * 3 < boundFrameCapacity ? boundFrameCapacity / 2 : boundFrameCapacity;
+	const u32 nextFrames = boundFrameCapacity > 4 && frameDepth() * 3 < boundFrameCapacity ? boundFrameCapacity / 2 : boundFrameCapacity;
 	if (nextValues == stackCapacity && nextProtected == priorProtected && nextFrames == boundFrameCapacity) return 0;
 	const auto bytes = backingBytes(static_cast<u32>(nextValues), nextFrames, nextProtected);
 	const u32 block = heap.arena.allocate(bytes, true);
@@ -294,25 +296,63 @@ size_t Thread::shrinkStack() {
 	return bytes;
 }
 
-CallFrame* Thread::acquireFrame() {
-	CallFrame*& frame = currentFrame ? currentFrame->next : firstFrame;
+CallFrame* Thread::frameNode(CallFrame* previous, size_t index) {
+	CallFrame*& frame = previous ? previous->next : firstFrame;
 	if (!frame) {
 		frame = new CallFrame;
 		frame->thread = this;
-		frame->previous = currentFrame;
-		frame->bindControl(heap.memory, frameControlAddress(static_cast<u32>(frameDepth)));
-		if (frameDepth >= boundFrameCapacity || FRAME_CONTROL_BYTES > MAIN_RAM_SIZE - frame->controlOffset)
+		frame->previous = previous;
+		frame->bindControl(heap.memory, frameControlAddress(static_cast<u32>(index)));
+		if (index >= boundFrameCapacity || FRAME_CONTROL_BYTES > MAIN_RAM_SIZE - frame->controlOffset)
 			frame->nativeControl = nullptr;
 		armFrameWindowWatch(*frame);
 	}
 	return frame;
 }
 
+CallFrame* Thread::acquireFrame() {
+	return frameNode(currentFrame, frameDepth());
+}
+
+void Thread::detachFrameViews() {
+	while (currentFrame) {
+		auto* frame = currentFrame;
+		currentFrame = frame->previous;
+		frame->registers = {};
+		frame->decodedPage = nullptr;
+		frame->compilationEntry = true;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		frame->nativeContinuationCells = {};
+#endif
+	}
+}
+
+void Thread::bindFrameViews() {
+	detachFrameViews();
+	const size_t depth = frameDepth();
+	for (size_t index = 0; index < depth; ++index) {
+		currentFrame = frameNode(currentFrame, index);
+		currentFrame->decodedPage = nullptr;
+		currentFrame->compilationEntry = true;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		currentFrame->nativeContinuationCells = {};
+#endif
+	}
+	bindStack();
+}
+
+void Thread::publishDepth(u32 depth) {
+	const u32 offset = (address + static_cast<u32>(ThreadField::FrameDepth)) & RAM_RECORD_WORD_MASK;
+	writeLE32(nativeRecord + static_cast<u32>(ThreadField::FrameDepth), depth);
+	// currentFrame already describes this publication. Preserve its view watch.
+	heap.memory.invalidateRamWrite(offset, sizeof(u32), false);
+}
+
 void Thread::leaveFrame() {
 	auto* frame = currentFrame;
 	currentFrame = frame->previous;
-	stackTop = currentFrame ? currentFrame->stackBase() + currentFrame->stackCapacity() : 0;
-	--frameDepth;
+	setStackTop(currentFrame ? currentFrame->stackBase() + currentFrame->stackCapacity() : 0);
+	publishDepth(static_cast<u32>(frameDepth()) - 1u);
 	// Inactive pointers are not roots; active paths establish them before use.
 	frame->registers = {};
 	frame->decodedPage = nullptr;
@@ -330,7 +370,7 @@ void Thread::trimFrames() {
 	// at collection. That first node can be awaiting activation while growth
 	// of the Value stack collects; it must retain its identity.
 	auto* frame = currentFrame ? currentFrame->next : firstFrame;
-	u32 index = static_cast<u32>(frameDepth);
+	u32 index = static_cast<u32>(frameDepth());
 	while (frame && frame->next) {
 		auto* retired = frame->next;
 		frame->next = retired->next;

@@ -561,12 +561,12 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	for (int grant = 1; grant <= 128; ++grant) {
 		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		const auto& first = *native.cpu.activeThread(); const auto& second = *scalar.cpu.activeThread();
-		require(first.frameDepth == second.frameDepth && first.stackTop == second.stackTop
+		require(first.frameDepth() == second.frameDepth() && first.stackTop() == second.stackTop()
 			&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
 			&& native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readLastExecutionDomain() == scalar.cpu.readLastExecutionDomain()
 			&& native.cpu.readCauseWord() == scalar.cpu.readCauseWord() && native.cpu.readEpcWord() == scalar.cpu.readEpcWord(),
 			"native and scalar CALL preserve frame, PC, domain and fault state at every short grant");
-		for (size_t depth = 0; depth < first.frameDepth; ++depth) {
+		for (size_t depth = 0; depth < first.frameDepth(); ++depth) {
 			const auto& a = *first.frameAtDepth(depth); const auto& b = *second.frameAtDepth(depth);
 			require(a.executionImage->executionDomainId == b.executionImage->executionDomainId && a.readControl(bmsx::FrameField::Pc) == b.readControl(bmsx::FrameField::Pc)
 				&& a.readControl(FrameField::Function) == b.readControl(FrameField::Function) && a.stackCapacity() == b.stackCapacity() && a.stackBase() == b.stackBase()

@@ -584,7 +584,7 @@ void pairedJumpFaultsOnlyOnTheNextGrant() {
 		machine->cpu.runUntilDepth(0, 1024);
 		r.set(0, valueInteger(0)); machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
 		require(machine->cpu.runUntilDepth(0, 4) == RunResult::Yielded && machine->cpu.readFramePc(0) == end
-			&& machine->cpu.readCurrentInstructionPc() == start + INSTRUCTION_BYTES && machine->cpu.activeThread()->frameDepth == 1,
+			&& machine->cpu.readCurrentInstructionPc() == start + INSTRUCTION_BYTES && machine->cpu.activeThread()->frameDepth() == 1,
 			"a paired JMP completes without speculatively fetching its unmapped target beyond the grant");
 	}
 	const auto beforeNative = native.cpu.captureRuntimeState(), beforeScalar = scalar.cpu.captureRuntimeState();

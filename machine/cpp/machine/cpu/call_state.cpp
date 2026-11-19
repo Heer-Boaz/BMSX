@@ -52,7 +52,7 @@ void CallFrame::growRegisterWindow(i32 capacity) {
 	writeLE32(controlMemory->ramData() + address, (readControl(FrameField::StackCapacity) & ~FRAME_WINDOW_MASK) | static_cast<u32>(capacity));
 	const int base = stackBase();
 	registers = thread->stack.subspan(base, capacity);
-	if (this == thread->currentFrame) thread->stackTop = base + capacity;
+	if (this == thread->currentFrame) thread->setStackTop(base + capacity);
 	controlMemory->invalidateRamWrite(address, sizeof(u32), false);
 }
 

@@ -314,10 +314,10 @@ void stackShrinkAndAdmission() {
 	child->writeControl(bmsx::FrameField::StackBase, 2); child->writeControl(bmsx::FrameField::StackCapacity, 8); child->writeControl(bmsx::FrameField::Top, 0);
 	child->writeControl(bmsx::FrameField::Closure, frame.readControl(bmsx::FrameField::Closure)); child->executionImage = frame.executionImage;
 	child->registers = thread->stack.subspan(2, 8);
-	thread->enterFrame(child); thread->stackTop = 10;
+	thread->enterFrame(child); thread->setStackTop(10);
 	cpu.collectHeap();
 	require(thread->stackCapacity == 512, "all caller windows participate in the shrink hysteresis");
-	thread->leaveFrame(); frame.writeControl(bmsx::FrameField::StackCapacity, 8); thread->stackTop = 8;
+	thread->leaveFrame(); frame.writeControl(bmsx::FrameField::StackCapacity, 8); thread->setStackTop(8);
 	cpu.luaHeap().collectRuntime(valueNil(), valueNil(), valueNil(), thread);
 	require(thread->stackCapacity == 512, "growth admission keeps the allocation being grown stable");
 	cpu.luaHeap().restoreState({cpu.luaHeap().usedBytes(), 0});

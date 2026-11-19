@@ -50,15 +50,15 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 		resumeFrameBank();
 		return false;
 	}
-	if (m_activeThread->frameDepth == 1 && m_activeThread->resumer() != nullptr) {
+	if (m_activeThread->frameDepth() == 1 && m_activeThread->resumer() != nullptr) {
 		Thread* thread = m_activeThread;
 		thread->setStatus(ThreadStatus::Dead);
 		returnToResumer(frame.stackBase() + a, count, true);
-		thread->stackTop = 0;
+		thread->setStackTop(0);
 		thread->leaveFrame();
 		return false;
 	}
-	if (m_activeThread->frameDepth == 1) {
+	if (m_activeThread->frameDepth() == 1) {
 		m_completionValues.reserveCapacity(count);
 		m_completionValues.view().copyFrom(frame.registers, 0, a, count);
 		m_completionValueCount = count;

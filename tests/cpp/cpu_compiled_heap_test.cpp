@@ -132,8 +132,8 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		"cycle grants and the physical instruction prefix/body boundary agree");
 	const auto& left = *native.cpu.activeThread(); const auto& right = *scalar.cpu.activeThread();
 	const CallFrame* x = left.firstFrame; const CallFrame* y = right.firstFrame;
-	require(left.frameDepth == right.frameDepth, "frame depths agree");
-	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y->readControl(bmsx::FrameField::Top))
+	require(left.frameDepth() == right.frameDepth(), "frame depths agree");
+	for (size_t i = 0; i < left.frameDepth(); ++i, x = x->next, y = y->next) require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y->readControl(bmsx::FrameField::Top))
 		&& x->stackBase() == y->stackBase() && x->stackCapacity() == y->stackCapacity(), "live frame extents agree");
 }
 

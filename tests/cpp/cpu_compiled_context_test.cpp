@@ -47,9 +47,9 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	require(std::ranges::equal(left.snapshot.words(), right.snapshot.words())
 		&& std::ranges::equal(left.snapshot.objectWords(), right.snapshot.objectWords()), "the complete retained value graph agrees with scalar execution");
 	const auto& first = *a.activeThread(); const auto& second = *b.activeThread();
-	require(first.frameDepth == second.frameDepth && first.stackTop == second.stackTop, "frame and stack extents agree");
+	require(first.frameDepth() == second.frameDepth() && first.stackTop() == second.stackTop(), "frame and stack extents agree");
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
-	for (size_t i = 0; i < first.frameDepth; ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
+	for (size_t i = 0; i < first.frameDepth(); ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& x = *firstFrame; const auto& y = *secondFrame;
 		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase() == y.stackBase() && x.stackCapacity() == y.stackCapacity()
 			&& static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::VarargBase)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::VarargBase)) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::VarargCount)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::VarargCount)), "all live frame ranges agree after relocation");

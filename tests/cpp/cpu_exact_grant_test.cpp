@@ -56,7 +56,7 @@ void waitForNativeEntries(Machine& machine, u32 base, std::initializer_list<u32>
 		if (ready) return;
 		require(std::chrono::steady_clock::now() < deadline, "native entries must actually be published");
 		machine.cpu.runUntilDepth(0, 4000);
-		if (machine.cpu.activeThread()->frameDepth > 1) machine.cpu.runUntilDepth(1, 100);
+		if (machine.cpu.activeThread()->frameDepth() > 1) machine.cpu.runUntilDepth(1, 100);
 		std::this_thread::yield();
 	}
 }
@@ -445,7 +445,7 @@ void exactCallVarargSweep() {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.runUntilDepth(0, 4000);
 			auto* thread = machine->cpu.activeThread();
-			if (thread->frameDepth > 1) machine->cpu.runUntilDepth(1, 100);
+			if (thread->frameDepth() > 1) machine->cpu.runUntilDepth(1, 100);
 			auto* frame = thread->frameAtDepth(0);
 			require(valueIsClosure(frame->registers.get(10)), "warm caller retains its closure");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -468,9 +468,9 @@ void exactCallVarargSweep() {
 		const auto* nativeThread = native.cpu.activeThread();
 		const auto* scalarThread = scalar.cpu.activeThread();
 		bool equal = nativeResult == scalarResult && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
-			&& native.cpu.lastPc == scalar.cpu.lastPc && nativeThread->frameDepth == scalarThread->frameDepth;
-		if (nativeThread->frameDepth == scalarThread->frameDepth) {
-			for (u32 depth = 0; depth < nativeThread->frameDepth; ++depth) {
+			&& native.cpu.lastPc == scalar.cpu.lastPc && nativeThread->frameDepth() == scalarThread->frameDepth();
+		if (nativeThread->frameDepth() == scalarThread->frameDepth()) {
+			for (u32 depth = 0; depth < nativeThread->frameDepth(); ++depth) {
 				const auto* a = nativeThread->frameAtDepth(depth); const auto* b = scalarThread->frameAtDepth(depth);
 				equal &= a->readControl(bmsx::FrameField::Pc) == b->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(a->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(b->readControl(bmsx::FrameField::Top)) && static_cast<bmsx::i32>(a->readControl(bmsx::FrameField::VarargCount)) == static_cast<bmsx::i32>(b->readControl(bmsx::FrameField::VarargCount));
 				for (int reg = 0; reg < 3; ++reg) {
@@ -483,7 +483,7 @@ void exactCallVarargSweep() {
 			++mismatchCount;
 			std::printf("call-vararg grant=%d cycles=%d/%d lastPc=%08x/%08x depth=%zu/%zu\n", grant,
 				native.cpu.instructionBudgetRemaining, scalar.cpu.instructionBudgetRemaining,
-				native.cpu.lastPc, scalar.cpu.lastPc, nativeThread->frameDepth, scalarThread->frameDepth);
+				native.cpu.lastPc, scalar.cpu.lastPc, nativeThread->frameDepth(), scalarThread->frameDepth());
 		}
 	}
 	std::printf("call-vararg sweep: %u/64 divergent budgets\n", mismatchCount);

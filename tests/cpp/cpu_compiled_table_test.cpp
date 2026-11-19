@@ -51,9 +51,9 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		&& left.luaHeap.trackedBytes == right.luaHeap.trackedBytes && left.luaHeap.nextCollectionBytes == right.luaHeap.nextCollectionBytes,
 		"complete value graphs and allocation/collection accounting agree");
 	const auto& first = *a.activeThread(); const auto& second = *b.activeThread();
-	require(first.frameDepth == second.frameDepth && first.stackTop == second.stackTop, "frame extents agree");
+	require(first.frameDepth() == second.frameDepth() && first.stackTop() == second.stackTop(), "frame extents agree");
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
-	for (size_t i = 0; i < first.frameDepth; ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
+	for (size_t i = 0; i < first.frameDepth(); ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& x = *firstFrame; const auto& y = *secondFrame;
 		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase() == y.stackBase() && x.stackCapacity() == y.stackCapacity(),
 			"all live frame boundaries agree");

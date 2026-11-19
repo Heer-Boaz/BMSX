@@ -43,7 +43,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(parent.registers.get(5), valueInteger(41), 'the argument and parameter are the same physical slot');
 		assert.equal(parent.registers.get(0), valueInteger(1));
 		const snapshot = cpu.captureRuntimeState();
-		assert.equal(snapshot.threads[0].stackTop, 13, 'snapshot retains the shared stack extent');
+		assert.equal(cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.StackTop), 13, 'the thread header owns the shared stack extent');
 		cpu.restoreRuntimeState(snapshot);
 		assert.deepEqual(cpu.captureRuntimeState(), snapshot);
 		cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
@@ -251,5 +251,14 @@ test(`an active physical stack aliases bus loads and stores without losing code 
 	cpu.memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(checkpoint);
 	assert.equal(cpu.readFrameRegister(0, 1), valueInteger(123), 'restoring RAM restores a wrapped register bank');
+	const depthWord = thread.address + ThreadField.FrameDepth;
+	cpu.memory.writeMappedU32LE(depthWord, 0xfffc0000);
+	assert.equal(thread.frameDepth, 0);
+	assert.equal(thread.currentFrame, null, 'depth selects no activation without executing or clearing it');
+	cpu.memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(checkpoint);
+	assert.equal(cpu.memory.readRamRecordWord(depthWord), 1);
+	assert.equal(cpu.getFrameDepth(), 1);
+	assert.equal(cpu.readFrameRegister(0, 1), valueInteger(123), 'restore derives the active frame only from RAM');
 
 });

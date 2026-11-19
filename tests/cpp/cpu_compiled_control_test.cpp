@@ -57,8 +57,8 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		"physical instruction boundaries and WIDE bodies agree");
 	const auto& left = *native.cpu.activeThread(); const auto& right = *scalar.cpu.activeThread();
 	const CallFrame* x = left.firstFrame; const CallFrame* y = right.firstFrame;
-	require(left.frameDepth == right.frameDepth, "control transitions preserve frame depth");
-	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) {
+	require(left.frameDepth() == right.frameDepth(), "control transitions preserve frame depth");
+	for (size_t i = 0; i < left.frameDepth(); ++i, x = x->next, y = y->next) {
 		require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y->readControl(bmsx::FrameField::Top)) && x->stackBase() == y->stackBase()
 			&& x->stackCapacity() == y->stackCapacity() && x->hasControlFlag(FRAME_EXCEPTION) == y->hasControlFlag(FRAME_EXCEPTION)
 			&& x->hasControlFlag(FRAME_NMI) == y->hasControlFlag(FRAME_NMI), "all live frame boundaries agree");
@@ -271,8 +271,8 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 #endif
 	for (auto* m : {&native, &scalar}) {
 		if (returnIntoRoot) {
-			for (int step = 0; step < 8 && m->cpu.activeThread()->frameDepth > 1; ++step) m->cpu.runUntilDepth(0, 1);
-			require(m->cpu.activeThread()->frameDepth == 1, "the warmed handler must return before revisiting it from an ordinary frame");
+			for (int step = 0; step < 8 && m->cpu.activeThread()->frameDepth() > 1; ++step) m->cpu.runUntilDepth(0, 1);
+			require(m->cpu.activeThread()->frameDepth() == 1, "the warmed handler must return before revisiting it from an ordinary frame");
 			m->cpu.runUntilDepth(0, 1);
 			m->cpu.writeEpcWord(m->rom.textAddress + 18u * INSTRUCTION_BYTES);
 		}

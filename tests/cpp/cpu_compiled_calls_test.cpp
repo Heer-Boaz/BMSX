@@ -36,14 +36,14 @@ struct CpuMachine {
 
 void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto& first = *native.cpu.activeThread(); const auto& second = *scalar.cpu.activeThread();
-	require(first.frameDepth == second.frameDepth && first.stackTop == second.stackTop
+	require(first.frameDepth() == second.frameDepth() && first.stackTop() == second.stackTop()
 		&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
 		&& native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readLastExecutionDomain() == scalar.cpu.readLastExecutionDomain()
 		&& native.cpu.readCauseWord() == scalar.cpu.readCauseWord() && native.cpu.readEpcWord() == scalar.cpu.readEpcWord()
 		&& native.cpu.readBadAddressWord() == scalar.cpu.readBadAddressWord(),
 		"compiled calls and returns preserve exact frame, PC, execution-domain and cycle boundaries");
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
-	for (size_t index = 0; index < first.frameDepth; ++index, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
+	for (size_t index = 0; index < first.frameDepth(); ++index, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& a = *firstFrame; const auto& b = *secondFrame;
 		require(a.readControl(bmsx::FrameField::Pc) == b.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::Top)) && a.readControl(FrameField::Function) == b.readControl(FrameField::Function) && a.stackCapacity() == b.stackCapacity()
 			&& a.stackBase() == b.stackBase() && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::VarargBase)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::VarargBase)) && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::VarargCount)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::VarargCount))
@@ -70,9 +70,9 @@ void ownedValueStack() {
 	const Value words[]{valueFloatBits(0x80000000), valueBool(true), valueNil(), valueFloatBits(0x7fc0002a)};
 	for (size_t i = 0; i < std::size(words); ++i) thread.stack.set(i, words[i]);
 	thread.stack.set(7, valueInteger(63));
-	thread.stackTop = 4;
+	thread.setStackTop(4);
 	thread.resizeStack(32);
-	require(thread.stackCapacity == 32 && thread.stackTop == 4, "capacity growth does not activate any stack slots");
+	require(thread.stackCapacity == 32 && thread.stackTop() == 4, "capacity growth does not activate any stack slots");
 	for (size_t index = 0; index < std::size(words); ++index)
 		require(thread.stack.get(index) == words[index], "stack relocation preserves raw Value bits");
 	require(thread.stack.get(7) == valueInteger(63), "relocation preserves allocated argument storage beyond the active prefix");
@@ -81,7 +81,7 @@ void ownedValueStack() {
 	auto storage = thread.stack;
 	thread.resizeStack(32);
 	require(thread.stack.words() == storage.words() && thread.stack.tags() == storage.tags(), "unchanged capacity retains the existing allocation");
-	thread.stackTop = 0;
+	thread.setStackTop(0);
 	thread.stack.clear(0, thread.stackCapacity);
 	thread.resizeStack(8);
 	for (size_t index = 0; index < thread.stackCapacity; ++index)
@@ -95,7 +95,7 @@ void reusableFrameChain() {
 	CPU cpu(memory, irq, addresses);
 	auto& thread = *cpu.rootThread();
 	auto* root = thread.acquireFrame();
-	require(thread.currentFrame == nullptr && thread.frameDepth == 0, "preparing a node does not expose an active frame");
+	require(thread.currentFrame == nullptr && thread.frameDepth() == 0, "preparing a node does not expose an active frame");
 	thread.enterFrame(root);
 	root->addControlFlags(FRAME_EXCEPTION);
 	for (int depth = 1; depth <= 8; ++depth) {
@@ -108,10 +108,10 @@ void reusableFrameChain() {
 		thread.enterFrame(frame);
 		require(thread.frameAtDepth(depth) == frame, "diagnostic depth follows the active chain");
 	}
-	while (thread.frameDepth > 1) thread.leaveFrame();
+	while (thread.frameDepth() > 1) thread.leaveFrame();
 	auto* prepared = thread.acquireFrame();
 	thread.trimFrames();
-	require(thread.currentFrame == root && thread.frameDepth == 1 && thread.acquireFrame() == prepared,
+	require(thread.currentFrame == root && thread.frameDepth() == 1 && thread.acquireFrame() == prepared,
 		"collection retains the first prepared spare without activating it");
 	size_t retained = 0;
 	CallFrame* previous = nullptr;
@@ -126,9 +126,9 @@ void reusableFrameChain() {
 	thread.enterFrame(prepared);
 	prepared->writeControl(FrameField::Protected, 3);
 	thread.leaveFrame();
-	require(thread.currentFrame == root && thread.frameDepth == 1, "the retired protected slot is not active");
+	require(thread.currentFrame == root && thread.frameDepth() == 1, "the retired protected slot is not active");
 	thread.leaveFrame();
-	require(thread.currentFrame == nullptr && thread.frameDepth == 0, "retirement leaves an empty activation chain");
+	require(thread.currentFrame == nullptr && thread.frameDepth() == 0, "retirement leaves an empty activation chain");
 	thread.trimFrames();
 	require(thread.acquireFrame() == root, "an empty thread retains its first prepared node through collection");
 }
@@ -441,7 +441,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	auto* thread = machine.cpu.activeThread();
 	auto* caller = thread->currentFrame;
 	auto* spare = caller->next;
-	require(spare && thread->frameDepth == 1, "warm CALL owns a spare frame and adequate retained Value backing");
+	require(spare && thread->frameDepth() == 1, "warm CALL owns a spare frame and adequate retained Value backing");
 	const int count = vararg ? std::max(args - params, 0) : 0;
 	const int capacity = std::max({ramRecord ? 7 : params == 0 ? 0 : maxStack, params, 1});
 	const int calleeBase = base + 1 + (vararg ? args : 0);
@@ -498,7 +498,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		return;
 	}
 	const Value first = params > 0 ? (args > 0 ? payloads[0] : valueNil()) : valueInteger(63);
-	require(machine.cpu.getGlobalByKey(marker) == first && thread->currentFrame == spare && thread->frameDepth == 2,
+	require(machine.cpu.getGlobalByKey(marker) == first && thread->currentFrame == spare && thread->frameDepth() == 2,
 		"warm CALL tail-jumps through the raw native entry without the C++ CALL handler");
 	require(caller->readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 4 * INSTRUCTION_BYTES && static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top)) == callerTop
 		&& spare->readControl(FrameField::CallSite) == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
@@ -612,7 +612,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 
 	const auto routeResult = machine.cpu.runUntilDepth(0, grant);
 	require(routeResult == RunResult::Yielded && thread->currentFrame == caller
-		&& thread->frameDepth == 2 && thread->protectedDepth() == 1, "ordinary native return retains its protected parent and exact grant boundary");
+		&& thread->frameDepth() == 2 && thread->protectedDepth() == 1, "ordinary native return retains its protected parent and exact grant boundary");
 	require(static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top)) == base + count, "fixed, open and empty returns assign exact caller top even after a late cold exit");
 	for (int index = 0; index < copied; ++index) require(caller->registers.get(base + index) == payloads[index],
 		"native and late-cold result movement preserve every raw tagged and numeric bit");
@@ -667,7 +667,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
 		machine->cpu.runUntilDepth(0, 1);
 		require(thread->stackCapacity >= 40, "an actual earlier call retained backing beyond the smaller raw frame reservation");
-		for (size_t i = thread->stackTop; i < thread->stackCapacity; ++i) thread->stack.set(i, valueInteger(63));
+		for (size_t i = thread->stackTop(); i < thread->stackCapacity; ++i) thread->stack.set(i, valueInteger(63));
 		const std::array<Value, 5> payloads{valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueBool(true),
 			valueString(machine->cpu.stringPool().intern("frame-argument")), valueInteger(99)};
 		for (int index = 0; index < args; ++index) caller->registers.set(base + 1 + index, alias ? valueInteger(71 + index) : payloads[index]);
@@ -680,7 +680,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 		auto* callee = thread->currentFrame;
 		const int count = vararg ? std::max(args - params, 0) : 0;
 		const int capacity = std::max({maxStack, params, 1});
-		require(thread->frameDepth == 2 && callee->readControl(bmsx::FrameField::Pc) == machine->rom.textAddress + 5 * INSTRUCTION_BYTES
+		require(thread->frameDepth() == 2 && callee->readControl(bmsx::FrameField::Pc) == machine->rom.textAddress + 5 * INSTRUCTION_BYTES
 			&& callee->stackCapacity() == capacity && static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::Top)) == params && static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::VarargCount)) == count,
 			"CALL exposes exact fixed-parameter and reserved-capacity counts at its exhausted grant");
 		const std::array<Value, 5> payloads{valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueBool(true),
@@ -700,7 +700,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 	for (auto* machine : {&native, &scalar}) {
 		auto* thread = machine->cpu.activeThread();
 		auto* caller = thread->currentFrame;
-		for (size_t i = thread->stackTop; i < thread->stackCapacity; ++i) thread->stack.set(i, valueInteger(63));
+		for (size_t i = thread->stackTop(); i < thread->stackCapacity; ++i) thread->stack.set(i, valueInteger(63));
 		const std::array<Value, 5> payloads{valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueBool(true),
 			valueString(machine->cpu.stringPool().intern("frame-argument")), valueInteger(99)};
 		machine->cpu.beginCompletionCall(*asClosure(caller->registers.get(6), machine->cpu.gcHeap()), BuiltinArgsView(payloads.data(), args));
@@ -728,7 +728,7 @@ void returnGrowthCollection() {
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	for (const bool scalar : {false, true}) {
 		CpuMachine machine(image, scalar);
-		while (machine.cpu.activeThread()->frameDepth != 2) machine.cpu.runUntilDepth(0, 1);
+		while (machine.cpu.activeThread()->frameDepth() != 2) machine.cpu.runUntilDepth(0, 1);
 		auto* caller = machine.cpu.activeThread()->firstFrame;
 		auto* callee = machine.cpu.activeThread()->currentFrame;
 		const Value result = valueString(machine.cpu.stringPool().intern("retained-only-by-returning-frame"));
@@ -770,14 +770,14 @@ void failedCallAdmission() {
 			bool rejected = false;
 			try { machine.cpu.beginCompletionCall(*asClosure(caller->registers.get(0), machine.cpu.gcHeap())); }
 			catch (const LuaOutOfMemorySignal&) { rejected = true; }
-			require(rejected && thread->frameDepth == 1 && thread->stackTop == 8,
+			require(rejected && thread->frameDepth() == 1 && thread->stackTop() == 8,
 				"failed completion admission never publishes an unallocated stack extent");
 			require(caller->next->executionImage == nullptr,
 				"the unadmitted reusable node retains no callee references");
 		} else {
 			machine.cpu.runUntilDepth(0, 2);
 			require(machine.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
-				&& thread->frameDepth == 2 && thread->stackTop == 16 && thread->currentFrame->stackBase() == 8,
+				&& thread->frameDepth() == 2 && thread->stackTop() == 16 && thread->currentFrame->stackBase() == 8,
 				"failed guest CALL enters its fault handler above the real caller, not a phantom callee window");
 		}
 		require(thread->firstFrame == caller && caller->stackBase() == 0 && caller->stackCapacity() == 8,
@@ -1067,14 +1067,14 @@ void rewriteActiveReturnAddress() {
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	for (auto* m : {&native, &scalar}) {
-		require(m->cpu.activeThread()->frameDepth == 2 && m->cpu.activeThread()->firstFrame->readControl(bmsx::FrameField::Pc) == returnPc,
+		require(m->cpu.activeThread()->frameDepth() == 2 && m->cpu.activeThread()->firstFrame->readControl(bmsx::FrameField::Pc) == returnPc,
 			"the original caller is suspended at its generated return address");
 		m->memory.writeMappedWord(returnPc, readLE32(replacement.data()));
 	}
 	require(test::runCpuParity(native.cpu, scalar.cpu, 100) == RunResult::Halted,
 		"RET executes the replacement HALT rather than the retired MOV and backedge");
 	for (auto* m : {&native, &scalar}) {
-		require(m->cpu.activeThread()->frameDepth == 1 && m->cpu.readFramePc(0) == returnPc + INSTRUCTION_BYTES
+		require(m->cpu.activeThread()->frameDepth() == 1 && m->cpu.readFramePc(0) == returnPc + INSTRUCTION_BYTES
 			&& m->cpu.readFrameRegister(0, 0) == valueInteger(1) && m->cpu.readFrameRegister(0, 6) == valueInteger(73),
 			"RET transfers the result once without executing the obsolete caller instruction");
 	}
@@ -1148,7 +1148,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.runUntilDepth(1, 100);
 		machine->cpu.activeThread()->frameAtDepth(0)->registers.set(3, valueInteger(99));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
-		require(machine->cpu.runUntilDepth(0, callPrefix) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 2,
+		require(machine->cpu.runUntilDepth(0, callPrefix) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth() == 2,
 			"CALL cannot consume a callee instruction without a further cycle grant");
 		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.instructionBudgetRemaining == 50 - BASE_CYCLES[static_cast<u8>(OpCode::ADD)] - BASE_CYCLES[static_cast<u8>(OpCode::MOV)] - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 2
 			&& machine->cpu.readFrameRegister(0, 3) == valueInteger(99),
@@ -1167,9 +1167,9 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
 		const auto heap = machine->cpu.luaHeap().captureState();
 		machine->cpu.luaHeap().restoreState({heap.trackedBytes, heap.trackedBytes});
-		require(machine->cpu.runUntilDepth(0, callPrefix) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 2,
+		require(machine->cpu.runUntilDepth(0, callPrefix) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth() == 2,
 			"the allocation assist completes CALL but not a callee instruction in its exhausted grant");
-		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.activeThread()->frameDepth == 1
+		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.activeThread()->frameDepth() == 1
 			&& machine->cpu.activeThread()->stackCapacity > capacity && machine->cpu.readFrameRegister(0, 4) == valueInteger(7),
 			"a hot call relocates the stack before a hot callee and return use the new register bases");
 		require(machine->cpu.collecting(), "callee stack growth triggers an allocation assist");

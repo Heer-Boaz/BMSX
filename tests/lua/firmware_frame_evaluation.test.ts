@@ -3,7 +3,7 @@ import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, valueBool, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { valueToString } from '../../machine/ts/machine/cpu/value';
-import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
+import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { compileFrameEvaluationTest, frameEvaluationCases } from '../helpers/frame_evaluation';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
@@ -66,10 +66,10 @@ return exercise(0)
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(20000)]);
 		assert.equal(cpu.getFrameDepth(), depth);
 		assert.equal(cpu.luaHeap.usedBytes(), heap, 'no transient guest allocation before explicit collection');
-		const previousCapacity = cpu.activeThread.stackRegisters.capacity();
+		const stackBytes = heapAllocationBytes(cpu.activeThread.backingByteLength());
 		const collected = cpu.collectTrackedHeapBytes();
-		const releasedSlots = previousCapacity - cpu.activeThread.stackRegisters.capacity();
-		assert.equal(collected, heap - releasedSlots * THREAD_STACK_SLOT_BYTES,
+		const releasedStackBytes = stackBytes - heapAllocationBytes(cpu.activeThread.backingByteLength());
+		assert.equal(collected, heap - releasedStackBytes,
 			'collection only releases retired compiler stack capacity');
 		assert.equal(cpu.globalSlotCount, globals);
 		assert.equal(cpu.isHaltedUntilIrq(), true);

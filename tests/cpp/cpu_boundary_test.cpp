@@ -932,7 +932,7 @@ void returnRangesSurviveCallerStackGrowth() {
 				require(cpu.readFrameRegister(0, 2 + i) == (i < produced ? samples[i % 5] : valueNil()), "shifted source slots retain values and fixed results truncate or nil-pad");
 			}
 			const CallFrame& caller = *cpu.activeThread()->frameAtDepth(0);
-			require(cpu.activeThread()->stackTop == caller.stackBase() + caller.stackCapacity(), "retiring a shifted callee leaves the grown caller stack extent");
+			require(cpu.activeThread()->stackTop() == caller.stackBase() + caller.stackCapacity(), "retiring a shifted callee leaves the grown caller stack extent");
 		}
 	}
 }
@@ -1017,7 +1017,7 @@ void instructionBoundaryResynchronizesAfterFetchOrObservation() {
 			continue;
 		}
 		require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)]) == RunResult::Yielded, "fetch/observer edge preserves instruction grant");
-		require(edge.count == 1 && cpu.activeThread()->frameDepth == 2, "device edge enters the IRQ frame before the next instruction");
+		require(edge.count == 1 && cpu.activeThread()->frameDepth() == 2, "device edge enters the IRQ frame before the next instruction");
 		require(cpu.readCauseWord() == CPU_CAUSE_IRQ && cpu.readEpcWord() == pc + INSTRUCTION_BYTES, "interrupt saves the next physical PC");
 		require(cpu.activeThread()->frameAtDepth(0)->registers.get(6) == valueInteger(99), "the fetched or observed instruction completes before accepting the edge");
 		require(cpu.activeThread()->currentFrame->registers.get(0) == valueInteger(1), "IRQ execution uses its own frame register base");
@@ -1489,13 +1489,13 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		machine.memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 		require(cpu.runUntilDepth(0, callAndValue) == RunResult::Yielded, "CALL and the next physical instruction exhaust their grant");
 		if (edgeKind == 2) {
-			require(edge.count == 1 && cpu.activeThread()->frameDepth == 3, "call-side device/observer edge enters IRQ before callee execution");
+			require(edge.count == 1 && cpu.activeThread()->frameDepth() == 3, "call-side device/observer edge enters IRQ before callee execution");
 			require(cpu.readCauseWord() == CPU_CAUSE_IRQ && cpu.readEpcWord() == calleePc, "CALL completes before IRQ saves the callee entry PC");
 			require(isNil(cpu.activeThread()->frameAtDepth(1)->registers.get(0)) && cpu.activeThread()->frameAtDepth(2)->registers.get(0) == valueInteger(1), "IRQ, callee and caller retain separate register bases");
 			continue;
 		}
 		if (edgeKind == 1) require(edge.count == 0, "CALL does not reread the closure-bound record");
-		require(cpu.activeThread()->frameDepth == 2 && cpu.readFramePc(1) == calleePc + INSTRUCTION_BYTES, "direct call rebinds the callee and stops before RET");
+		require(cpu.activeThread()->frameDepth() == 2 && cpu.readFramePc(1) == calleePc + INSTRUCTION_BYTES, "direct call rebinds the callee and stops before RET");
 		require(cpu.runUntilDepth(1, 20) == RunResult::Halted && cpu.instructionBudgetRemaining == 20 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 1, "return stops at the requested depth with unused cycles retained");
 		require(cpu.readFrameRegister(0, 3) == valueInteger(1) && cpu.readFrameRegister(0, 2) == valueInteger(99), "return publishes results without executing the caller continuation");
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 2) == valueInteger(1), "resuming after return binds the caller registers");

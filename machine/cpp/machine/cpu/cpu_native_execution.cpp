@@ -75,7 +75,7 @@ NativeBuiltinCallOutcome CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, co
 	cpu.instructionBudgetRemaining = state.remainingCycles;
 	if (completion == NativeBuiltinCallOutcome::CompletedResume) {
 		void* const* continuation = exit->continuationCells[run->cartridgeSlot];
-		if (!continuation || !*continuation || static_cast<int>(cpu.m_activeThread->frameDepth) <= run->targetDepth)
+		if (!continuation || !*continuation || static_cast<int>(cpu.m_activeThread->frameDepth()) <= run->targetDepth)
 			completion = NativeBuiltinCallOutcome::CompletedStop;
 	}
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -221,9 +221,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			return nullptr;
 		}
 		const auto& thread = *cpu.m_activeThread;
-		if (static_cast<int>(thread.frameDepth) <= run->targetDepth || cpu.instructionBudgetRemaining <= 0
+		if (static_cast<int>(thread.frameDepth()) <= run->targetDepth || cpu.instructionBudgetRemaining <= 0
 			|| (cpu.m_haltedUntilIrqThread == cpu.m_activeThread
-				&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth))) {
+				&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth()))) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			++gateProfile.returns;
 #endif

@@ -11,7 +11,7 @@ export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue, Thread, Garba
 export const enum CpuSnapshotTable { Kind, HashId, Record, Size }
 export const enum CpuSnapshotClosure { Kind, HashId, FunctionAddress, Canonical, UpvalueCount, CodeAddress, NumParams, MaxStack, Flags, UpvalueTableAddress, RecordUpvalueCount, ExecutionDomainId, Record, Size }
 export const enum CpuSnapshotUpvalue { Kind, HashId, Address, Size }
-export const enum CpuSnapshotThread { Kind, HashId, Index, Record, Size }
+export const enum CpuSnapshotThread { Kind, HashId, Record, Size }
 export type CpuSnapshotObject = Table | Closure | Upvalue | Thread | GarbageAllocation;
 export type CpuSnapshotValueWriter = (offset: number, value: Value) => void;
 

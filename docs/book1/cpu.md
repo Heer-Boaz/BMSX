@@ -1233,7 +1233,10 @@ instruction bus error. Each frame stores the base and reserved size of
 its working register window in the Thread's Value slots. The saved variable-argument
 and return windows, the working register window and the live register frontier
 use 20-bit slot indices and counts. Their upper bits are not decoded. Slot
-transfers use the main RAM address aperture.
+transfers use the main RAM address aperture. The Thread record holds the
+active frame count and the next free Value slot for a new, separate window.
+One count selects the active prefix of the frame area; the other is a
+20-bit slot index in the Value area.
 Protected continuations follow the reserved frame controls. A suspended protected
 call records its caller and result window there so it can finish when that Thread
 resumes. A new Thread reserves two frame controls. An ordinary entry leaves

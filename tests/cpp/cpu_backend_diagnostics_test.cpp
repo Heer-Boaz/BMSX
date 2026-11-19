@@ -332,13 +332,13 @@ void interruptBoundary() {
 		else { fixture->runtime.machine.memory.writeMappedU32LE(IO_IRQ_MASK,IRQ_GPU); fixture->runtime.machine.irqController.raise(IRQ_GPU); }
 	}
 	[[maybe_unused]] const auto handler=runPair(generated,scalar,1);
-	require(generated.runtime.machine.cpu.activeThread()->frameDepth==2,"the short grant executes the actual interrupt handler in its own frame");
+	require(generated.runtime.machine.cpu.activeThread()->frameDepth()==2,"the short grant executes the actual interrupt handler in its own frame");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	requireCounts(total(handler),{1,0,0,0,0},"an interrupt entry counts the handler allocation, not a second root allocation");
 #endif
 	if(!nmi) for(auto* fixture : {&generated,&scalar}) fixture->runtime.machine.irqController.acknowledge(IRQ_GPU);
 	runPair(generated,scalar,64);
-	require(generated.runtime.machine.cpu.activeThread()->frameDepth==1
+	require(generated.runtime.machine.cpu.activeThread()->frameDepth()==1
 		&& generated.runtime.machine.cpu.readFramePc(0)==generated.rom.textAddress+INSTRUCTION_BYTES,"RFE resumes the interrupted root at its real successor");
  }
 }

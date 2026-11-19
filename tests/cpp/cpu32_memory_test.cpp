@@ -40,7 +40,7 @@ void parity(Number32Machine& native, Number32Machine& scalar) {
 		"memory exits retain exact fault and blocking state");
 	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) &&
 		std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()), "memory exits publish all dirty word/tag slots");
-	require(a.threads.size()==b.threads.size(), "memory exits retain the same thread roots");
+	require(a.rootThreadRef == b.rootThreadRef && a.activeThreadRef == b.activeThreadRef, "memory exits retain the same thread roots");
 	require(std::equal(native.memory.ramData(), native.memory.ramData()+native.memory.ramByteCount(), scalar.memory.ramData()),
 		"memory effects, including a partial word span, match exactly");
 }

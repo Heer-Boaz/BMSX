@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
-import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
+import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
@@ -104,9 +104,9 @@ advance = assert(load('for i = 1, 1000 do forward(tuple()) end; return forward(t
 		runCompletionClosure(cpu, closure, []);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()]);
 		assert.equal(cpu.luaHeap.usedBytes(), heap, 'no transient guest allocation before collection');
-		const previousCapacity = cpu.activeThread.stackRegisters.capacity();
+		const stackBytes = heapAllocationBytes(cpu.activeThread.backingByteLength());
 		const collected = cpu.collectTrackedHeapBytes();
-		assert.equal(collected, heap - (previousCapacity - cpu.activeThread.stackRegisters.capacity()) * THREAD_STACK_SLOT_BYTES);
+		assert.equal(collected, heap - (stackBytes - heapAllocationBytes(cpu.activeThread.backingByteLength())));
 		heap = collected;
 		assert.equal(cpu.globalSlotCount, globals);
 	}

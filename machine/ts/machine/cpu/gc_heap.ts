@@ -178,9 +178,16 @@ export class GcHeap {
 	}
 	public observeStackWrites(first: number, end: number): void {
 		for (let address = first & -THREAD_HEAP_BYTES; address < end; address += THREAD_HEAP_BYTES) {
-			const descriptor = address + ThreadField.StackBlock;
-			if (end <= descriptor || first >= descriptor + 16) continue;
-			this.threadAt(address)?.observeStackWrite();
+			const descriptor = address + ThreadField.StackBlock, depth = address + ThreadField.FrameDepth;
+			const cursorWrite = first <= depth && depth < end;
+			if (!cursorWrite && (end <= descriptor || first >= descriptor + 16)) continue;
+			const thread = this.threadAt(address);
+			if (thread !== null) {
+				if (cursorWrite) {
+					this.cpu.bindPhysicalFrames(thread);
+					thread.armStackWatch();
+				} else thread.observeStackWrite();
+			}
 		}
 		this.visitThreads(thread => thread.observeFrameWindowWrites(first, end));
 	}

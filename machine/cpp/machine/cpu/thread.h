@@ -18,10 +18,13 @@ constexpr u32 THREAD_INITIAL_BACKING_BYTES = THREAD_INITIAL_VALUES * THREAD_STAC
 constexpr u32 THREAD_RECORD_KIND = 4u;
 
 enum class ThreadField : u32 {
-	Header = 0, Status = 8, Resumer = 12, Entry = 16, StackBlock = 24, StackCapacity = 28,
+	Header = 0, Status = 8, Resumer = 12, Entry = 16, StackTop = 20, StackBlock = 24, StackCapacity = 28,
 	FrameCapacity = 32, ProtectedCapacity = 36, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
-	ProtectedDepth = 60
+	FrameDepth = 56, ProtectedDepth = 60
 };
+
+// Eighteen count bits span the largest control reservation in the RAM bank.
+constexpr u32 THREAD_CONTROL_COUNT_MASK = (1u << 18) - 1;
 
 struct Thread : GCObject {
 	Thread(GcHeap& heap, u32 address);
@@ -35,9 +38,15 @@ struct Thread : GCObject {
 		// Ordinary/interpreter and exception entries have no compiled callsite.
 		if (currentFrame) currentFrame->nativeContinuationCells = {};
 #endif
-		currentFrame = frame; ++frameDepth;
+		currentFrame = frame;
+		publishDepth(static_cast<u32>(frameDepth()) + 1u);
 	}
 	void leaveFrame();
+	void detachFrameViews();
+	void bindFrameViews();
+	size_t frameDepth() const { return read(ThreadField::FrameDepth) & THREAD_CONTROL_COUNT_MASK; }
+	i32 stackTop() const { return static_cast<i32>(read(ThreadField::StackTop) & FRAME_WINDOW_MASK); }
+	void setStackTop(i32 top) { write(ThreadField::StackTop, static_cast<u32>(top)); }
 	CallFrame* frameAtDepth(size_t depth) const;
 	void trimFrames();
 	void resizeStack(size_t capacity, Value root = valueNil());
@@ -60,7 +69,7 @@ struct Thread : GCObject {
 	CallFrame* protectedCaller(u32 index) const;
 	u32 pushProtectedCall(ProtectedCallKind kind, bool parent, int base, int wanted, int handler);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	struct NativeOffsets { size_t currentFrame, frameDepth, stackTop, stackWords, stackTags, stackCapacity, frameCapacity; };
+	struct NativeOffsets { size_t currentFrame, record, stackWords, stackTags, stackCapacity, frameCapacity; };
 	static NativeOffsets nativeOffsets();
 #endif
 
@@ -81,13 +90,12 @@ struct Thread : GCObject {
 	// determines which frames and register ranges are active roots.
 	CallFrame* firstFrame = nullptr;
 	CallFrame* currentFrame = nullptr;
-	size_t frameDepth = 0;
 	// The thread owns the allocation and exposes its actual bounds to generated
 	// calls. stackTop is the current physical activation extent; caller
 	// windows overlap it above their call sites.
 	ValueSpan stack;
 	size_t stackCapacity = 0;
-	int stackTop = 0;
+	u8* const nativeRecord;
 private:
 	friend struct CallFrame;
 	void replaceStack(u32 block, size_t capacity, u32 frames, u32 continuations);
@@ -95,6 +103,8 @@ private:
 	u32 protectedCapacity() const;
 	u32 frameControlAddress(u32 index) const;
 	void armFrameWindowWatch(const CallFrame& frame);
+	CallFrame* frameNode(CallFrame* previous, size_t index);
+	void publishDepth(u32 depth);
 	u32 protectedAddress(u32 index) const;
 	u32 read(ThreadField field) const;
 	void write(ThreadField field, u32 word);

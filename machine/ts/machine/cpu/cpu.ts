@@ -168,11 +168,6 @@ export type CpuRootValueState = {
 	value: number;
 };
 
-export type CpuThreadState = {
-	stackTop: number;
-	frameDepth: number;
-};
-
 export type CpuRuntimeState = {
 	executionCartridgeSlot: ExecutionDomainId;
 	programExecutionDomainId: ExecutionDomainId;
@@ -187,7 +182,6 @@ export type CpuRuntimeState = {
 	rootThreadRef: number;
 	activeThreadRef: number;
 	completionThreadRef: number;
-	threads: CpuThreadState[];
 	completionValues: number[];
 	snapshot: CpuSnapshot;
 	lastExecutionDomainId: ExecutionDomainId;
@@ -988,6 +982,12 @@ export class CPU implements MappedPageInvalidator {
 				if (firstWord < DECODED_PAGE_WORDS) page.refreshState.fill(DECODED_REFRESH_DECODE, firstWord, endWord);
 			}
 		}
+	}
+
+	public bindPhysicalFrames(thread: Thread): void {
+		thread.bindFrameViews();
+		for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
+			frame.executionImage = this.executionImagesByDomain[frame.savedExecutionBank + 1]!;
 	}
 
 	public invalidateMappedViews(key: number, firstWord: number, endWord: number): void {
@@ -3931,12 +3931,6 @@ export class CPU implements MappedPageInvalidator {
 			const offset = writer.reserveWords(CPU_SNAPSHOT_VALUE_WORDS); writeValue(offset, value); return offset;
 		};
 
-		const threads: CpuThreadState[] = [];
-		const captureThread = (thread: Thread): number => {
-			return threads.push(this.gc.sweepGarbage(thread)
-				? { stackTop: 0, frameDepth: 0 }
-				: { stackTop: thread.stackTop, frameDepth: thread.frameDepth }) - 1;
-		};
 		const rootThreadRef = captureObject(this.rootThread, CpuSnapshotObjectKind.Thread);
 		const activeThreadRef = captureObject(this.activeThread, CpuSnapshotObjectKind.Thread);
 		const completionThreadRef = captureObject(this.completionThread, CpuSnapshotObjectKind.Thread);
@@ -4004,7 +3998,7 @@ export class CPU implements MappedPageInvalidator {
 					offset = writer.reserveWords(CpuSnapshotThread.Size);
 					writer.setWord(offset + CpuSnapshotThread.Kind, kind);
 					writer.setWord(offset + CpuSnapshotThread.HashId, thread.hashId);
-					writer.setWord(offset + CpuSnapshotThread.Index, captureThread(thread));
+
 					writer.setWord(offset + CpuSnapshotThread.Record, thread.address);
 					break;
 				}
@@ -4058,7 +4052,7 @@ export class CPU implements MappedPageInvalidator {
 			luaHeap: this.luaHeap.captureState(),
 			gc,
 			stringIndexTable,
-			rootThreadRef, activeThreadRef, completionThreadRef, threads,
+			rootThreadRef, activeThreadRef, completionThreadRef,
 			completionValues,
 			snapshot,
 			lastExecutionDomainId: this.lastExecutionDomainId,
@@ -4093,9 +4087,7 @@ export class CPU implements MappedPageInvalidator {
 		this.clearCompletionValues();
 		// RAM has already been restored. Only detach the host activations
 		// on the reused root; the restored Thread edges are not attached yet.
-		while (this.rootThread.frameDepth !== 0) {
-			this.rootThread.leaveFrame();
-		}
+		this.rootThread.detachFrameViews();
 		const previousCanonical = new Map(this.staticClosuresByAddress);
 		this.staticClosuresByAddress.clear();
 		// Allocate every identity before resolving edges, including cycles and weak references.
@@ -4117,7 +4109,6 @@ export class CPU implements MappedPageInvalidator {
 					thread.hashId = snapshot.word(offset + CpuSnapshotThread.HashId);
 					thread.bindStack();
 					if (index !== state.rootThreadRef) this.luaHeap.restoreAllocate(this.gc.allocationBytes(thread));
-					thread.stackTop = 0;
 					restoredObjects[index] = thread;
 					break;
 				}
@@ -4204,21 +4195,8 @@ export class CPU implements MappedPageInvalidator {
 		const executionImage = this.executionImagesByDomain[state.executionCartridgeSlot + 1];
 		this.latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
-		for (let objectIndex = 0; objectIndex < snapshot.objectCount; objectIndex += 1) {
-			const offset = snapshot.objectWord(objectIndex);
-			if (snapshot.word(offset) !== CpuSnapshotObjectKind.Thread) continue;
-			const saved = state.threads[snapshot.word(offset + CpuSnapshotThread.Index)];
-			const thread = restoredObjects[objectIndex] as Thread;
-			this.activeThread = thread;
-			thread.stackTop = saved.stackTop;
-			for (let frameIndex = 0; frameIndex < saved.frameDepth; frameIndex += 1) {
-				const frame = this.activeThread.acquireFrame();
-				frame.executionImage = this.executionImagesByDomain[frame.savedExecutionBank + 1]!;
-
-				this.activeThread.enterFrame(frame);
-			}
-			thread.bindStack();
-		}
+		this.gc.restoreState(state.gc, restoredObjects);
+		this.gc.visitThreads(thread => { if (!this.gc.sweepGarbage(thread)) this.bindPhysicalFrames(thread); });
 		this.activeThread = restoredObjects[state.activeThreadRef] as Thread;
 		if (this.activeThread.currentFrame !== null) this.activeThread.currentFrame.executionImage = this.activeExecutionImage;
 		this.completionThread = restoredObjects[state.completionThreadRef] as Thread;
@@ -4264,7 +4242,6 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = state.yieldRequested;
 		this.hardHalted = state.hardHalted;
 		this.nextObjectHashId = state.nextObjectHashId;
-		this.gc.restoreState(state.gc, restoredObjects);
 		this.luaHeap.restoreState(state.luaHeap);
 	}
 

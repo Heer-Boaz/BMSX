@@ -207,16 +207,20 @@ test('hard-halt is restored independently of the live future CPU latch', () => {
 		functions: [{ firstWord: 0, wordCount: 3 }],
 	}));
 	const start = cpu.captureRuntimeState();
+	const startingRam = cpu.memory.captureSaveState();
 	cpu.runUntilDepth(0, 1000);
 	const halted = cpu.captureRuntimeState();
+	const haltedRam = cpu.memory.captureSaveState(), depth = cpu.getFrameDepth();
 	assert.equal(halted.hardHalted, true);
+	cpu.memory.restoreSaveState(startingRam);
 	cpu.restoreRuntimeState(start);
 	assert.equal(cpu.captureRuntimeState().hardHalted, false);
+	cpu.memory.restoreSaveState(haltedRam);
 	cpu.restoreRuntimeState(halted);
 	cpu.runUntilDepth(0, 1000);
 	const after = cpu.captureRuntimeState();
 	assert.equal(after.hardHalted, true);
-	assert.deepEqual(after.threads[0].frameDepth, halted.threads[0].frameDepth);
+	assert.equal(cpu.getFrameDepth(), depth, 'hard halt retains the restored physical cursor');
 });
 
 test('CPU snapshots reuse exclusive storage across graph growth, cycles and a shorter capture', () => {

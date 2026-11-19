@@ -3,7 +3,7 @@ import type { PendingMemoryKind } from '../../cpu/memory_operation';
 import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
 import type { MachineSaveState } from '../../save_state';
-import type { CpuThreadState, CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
+import type { CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
 import { CpuSnapshot } from '../../cpu/snapshot';
 import type { LuaHeapState } from '../../cpu/lua_heap';
 import type { IrqControllerState } from '../../devices/irq/save_state';
@@ -43,7 +43,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x44534d42; // BMSD
+const SAVE_STATE_SIGNATURE = 0x45534d42; // BMSE
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1129,18 +1129,6 @@ function readCpuRootValueState(reader: BinaryReader): CpuRootValueState {
 	};
 }
 
-function writeCpuThreadState(writer: BinarySink, state: CpuThreadState): void {
-	writer.u32(state.stackTop);
-	writer.u32(state.frameDepth);
-}
-
-function readCpuThreadState(reader: BinaryReader): CpuThreadState {
-	return {
-		stackTop: reader.u32(),
-		frameDepth: reader.u32(),
-	};
-}
-
 function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void {
 	writer.i32(state.executionCartridgeSlot);
 	writer.i32(state.programExecutionDomainId);
@@ -1156,10 +1144,6 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.i32(state.rootThreadRef);
 	writer.i32(state.activeThreadRef);
 	writer.i32(state.completionThreadRef);
-	writer.u32(state.threads.length);
-	for (const value of state.threads) {
-		writeCpuThreadState(writer, value);
-	}
 	writer.u32(state.completionValues.length);
 	writer.u32s(state.completionValues);
 	writeCpuSnapshot(writer, state.snapshot);
@@ -1207,7 +1191,6 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 		rootThreadRef: reader.i32(),
 		activeThreadRef: reader.i32(),
 		completionThreadRef: reader.i32(),
-		threads: reader.array(readCpuThreadState),
 		completionValues: reader.u32s(reader.u32()),
 		snapshot: readCpuSnapshot(reader),
 		lastExecutionDomainId: reader.i32() as ExecutionDomainId,

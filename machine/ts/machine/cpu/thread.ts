@@ -1,6 +1,6 @@
 import { ThreadField } from './thread_record';
 import { GcObject, GcKind } from './gc_object';
-import { CallFrame, FrameField, FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind } from './call_state';
+import { CallFrame, FrameField, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { Closure } from './closure';
 import type { GcHeap } from './gc_heap';
 import { heapAllocationBytes } from './heap_allocator';
@@ -37,9 +37,10 @@ function copyStackControl(ram: Uint8Array, destination: number, source: number, 
 export class Thread extends GcObject {
 	public firstFrame: CallFrame | null = null;
 	public currentFrame: CallFrame | null = null;
-	public frameDepth = 0;
+	public get frameDepth(): number { return this.read(ThreadField.FrameDepth) & CONTROL_COUNT_MASK; }
 	public readonly stackRegisters = new ValueSlots(0);
-	public stackTop = 0;
+	public get stackTop(): number { return this.read(ThreadField.StackTop) & FRAME_WINDOW_MASK; }
+	public set stackTop(top: number) { this.write(ThreadField.StackTop, top); }
 	private boundFrameCapacity = 0;
 	private boundProtectedCapacity = 0;
 	public constructor(private readonly heap: GcHeap, public readonly address: number) { super(GcKind.Thread); }
@@ -145,6 +146,8 @@ export class Thread extends GcObject {
 		const watches = this.heap.memory.ramWriteWatches();
 		return this.stackRegisters.ramMirrored() || this.stackTop > this.stackRegisters.capacity()
 			|| this.frameDepth > this.boundFrameCapacity || bytes > MAIN_RAM_SIZE - offset
+			|| watches.anyWatched((this.address + ThreadField.StackTop) & RAM_RECORD_WORD_MASK, 4)
+			|| watches.anyWatched((this.address + ThreadField.FrameDepth) & RAM_RECORD_WORD_MASK, 4, false)
 			|| watches.anyWatched(offset, controls) || watches.anyWatched(offset + controls, bytes - controls, false);
 	}
 
@@ -211,6 +214,7 @@ export class Thread extends GcObject {
 		watches.armViewWord(page, word + 1);
 		watches.armViewWord(page, word + 2);
 		watches.armViewWord(page, word + 3);
+		watches.armViewWord(page, ((offset & MAPPED_PAGE_BYTE_MASK) + ThreadField.FrameDepth) >>> 2);
 	}
 
 	public observeStackWrite(): void {
@@ -291,21 +295,51 @@ export class Thread extends GcObject {
 	}
 
 	/** Prepare the first inactive node; stack growth can collect before entry. */
-	public acquireFrame(): CallFrame {
-		let frame = this.currentFrame === null ? this.firstFrame : this.currentFrame.next;
+	public acquireFrame(): CallFrame { return this.frameNode(this.currentFrame, this.frameDepth); }
+
+	private frameNode(previous: CallFrame | null, index: number): CallFrame {
+		let frame = previous === null ? this.firstFrame : previous.next;
 		if (frame === null) {
-			frame = new CallFrame(this, this.currentFrame, this.heap);
-			frame.bindControl(this.frameControlAddress(this.frameDepth));
+			frame = new CallFrame(this, previous, this.heap);
+			frame.bindControl(this.frameControlAddress(index));
 			this.armFrameWindowWatch(frame);
-			if (this.currentFrame === null) this.firstFrame = frame;
-			else this.currentFrame.next = frame;
+			if (previous === null) this.firstFrame = frame;
+			else previous.next = frame;
 		}
 		return frame;
 	}
 
 	public enterFrame(frame: CallFrame): void {
 		this.currentFrame = frame;
-		++this.frameDepth;
+		this.publishDepth(this.frameDepth + 1);
+	}
+
+	private publishDepth(depth: number): void {
+		const memory = this.heap.memory, offset = (this.address + ThreadField.FrameDepth) & RAM_RECORD_WORD_MASK;
+		writeLE32(memory.ramData(), offset, depth);
+		memory.invalidateRamWrite(offset, 4, false);
+	}
+
+	public detachFrameViews(): void {
+		while (this.currentFrame !== null) {
+			const frame = this.currentFrame;
+			this.currentFrame = frame.previous;
+			frame.registers.unbind();
+			frame.decodedPage = null;
+			frame.compilationEntry = true;
+		}
+	}
+
+	public bindFrameViews(): void {
+		this.detachFrameViews();
+		const depth = this.frameDepth;
+		for (let index = 0; index < depth; ++index) {
+			const frame = this.frameNode(this.currentFrame, index);
+			frame.decodedPage = null;
+			frame.compilationEntry = true;
+			this.currentFrame = frame;
+		}
+		this.bindStack();
 	}
 
 	/** Callers close upvalues and consume results before retiring the node. */
@@ -313,7 +347,7 @@ export class Thread extends GcObject {
 		const frame = this.currentFrame!;
 		this.currentFrame = frame.previous;
 		this.stackTop = this.currentFrame === null ? 0 : this.currentFrame.stackBase + this.currentFrame.stackCapacity;
-		--this.frameDepth;
+		this.publishDepth(this.frameDepth - 1);
 		frame.executionImage = null!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;

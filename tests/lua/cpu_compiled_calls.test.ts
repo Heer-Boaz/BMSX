@@ -227,7 +227,7 @@ for (const { numParams, maxStack, argCount } of [
 				}
 				cpu.collectTrackedHeapBytes();
 				const state = cpu.captureRuntimeState();
-				assert.equal(state.threads[0].stackTop, base + capacity);
+				assert.equal(thread.stackTop, base + capacity);
 				cpu.restoreRuntimeState(state);
 				for (let index = 0; index < argCount; ++index) assert.equal(cpu.rootThread.currentFrame!.registers.get(index), argumentsByMachine[machineIndex][index]);
 			}
