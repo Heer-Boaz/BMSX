@@ -1,5 +1,5 @@
 /** Collector-owned allocation header; separate from a guest Value's tag. */
-export const enum GcKind { Table, Closure, Upvalue, Thread, Garbage }
+export const enum GcKind { Table, Closure, Upvalue, Thread }
 export type GrayQueue = { grayAgain: GcObject | null };
 export class GcObject {
 	public hashId = 0;
@@ -21,6 +21,3 @@ export class GcObject {
 	}
 }
 /** Sweep state retains allocation work without retaining dead graph edges. */
-export class GarbageAllocation extends GcObject {
-	public constructor(public readonly bytes: number) { super(GcKind.Garbage); }
-}

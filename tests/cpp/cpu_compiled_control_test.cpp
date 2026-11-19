@@ -52,7 +52,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		b.haltedUntilIrqThreadRef, b.interruptEventPending, b.memoryWriteBlocked, b.memoryWriteBlockedAddress, b.yieldRequested), "all control words and latches agree");
 	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
 		&& std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()) && a.nextObjectHashId == b.nextObjectHashId
-		&& a.luaHeap.trackedBytes == b.luaHeap.trackedBytes, "guest values, roots and allocation accounting agree");
+		&& native.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes(), "guest values, roots and allocation accounting agree");
 	require(native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc(),
 		"physical instruction boundaries and WIDE bodies agree");
 	const auto& left = *native.cpu.activeThread(); const auto& right = *scalar.cpu.activeThread();

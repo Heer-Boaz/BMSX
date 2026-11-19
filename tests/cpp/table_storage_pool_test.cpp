@@ -21,7 +21,7 @@ int main() {
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
 		const auto key = cpu.stringPool().intern("retired");
-		const auto before = cpu.luaHeap().captureState();
+		const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 		const u32 physicalBefore = cpu.heapAllocator().occupiedBytes();
 		auto* first = cpu.createTable(3, 4);
 
@@ -33,7 +33,7 @@ int main() {
 		require(cpu.heapAllocator().occupiedBytes() == physicalBefore + 112u, "the header and body are separate physical allocations");
 		first->setStringKey(key, valueBool(false));
 		first->clear();
-		require(cpu.luaHeap().usedBytes() == before.trackedBytes + 32,
+		require(cpu.luaHeap().usedBytes() == before.first + 32,
 			"cleared tables retain only the table header charge");
 		// Different exact capacities can share one guest size class.
 		auto* second = cpu.createTable(4, 4);
@@ -48,10 +48,10 @@ int main() {
 		require(second->getStringKey(key) == valueInteger(73), "mixed array/hash growth preserves the hash entry");
 		second->clear();
 		first->clear();
-		require(cpu.luaHeap().usedBytes() == before.trackedBytes + 64,
+		require(cpu.luaHeap().usedBytes() == before.first + 64,
 			"empty tables keep only their canonical headers, and release both bodies");
 		require(cpu.heapAllocator().occupiedBytes() == physicalBefore + 64u, "only the two physical headers remain");
-		require(cpu.luaHeap().captureState().nextCollectionBytes == before.nextCollectionBytes,
+		require(cpu.luaHeap().collectionTarget() == before.second,
 			"recycling does not reschedule guest collection");
 		std::cout << "Table guest storage tests passed\n";
 		return 0;

@@ -2,7 +2,7 @@ import { MAIN_RAM_SIZE } from '../../spec/bmsx/memory_map';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import { heapAllocationBytes, type HeapAllocator } from './heap_allocator';
-import { GcObject, GcKind, GarbageAllocation } from './gc_object';
+import { GcObject, GcKind } from './gc_object';
 import { type Closure, type Upvalue, UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, FunctionPrototypePool, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
 import { Table, TableRecords } from './table';
 import { Thread, THREAD_HEAP_BYTES } from './thread';
@@ -197,7 +197,7 @@ export class GcHeap {
 			case GcKind.Closure: return (object as Closure).heapBytes;
 			case GcKind.Upvalue: return UPVALUE_HEAP_BYTES;
 			case GcKind.Thread: return THREAD_HEAP_BYTES + heapAllocationBytes((object as Thread).backingByteLength());
-			case GcKind.Garbage: return (object as GarbageAllocation).bytes;
+
 		}
 	}
 	private tableMode(table: Table): number {
@@ -317,13 +317,12 @@ export class GcHeap {
 			return false;
 		}
 		if (this.sweep === object) this.sweep = object.gcNext;
-		const bytes = this.allocationBytes(object);
 		this.records[index] = null;
 		if (object.gcKind === GcKind.Table) this.tables.freeRecord(address);
 		else this.arena.free(address);
 		this.unlink(object);
 		this.releaseHostMetadata(object);
-		this.budget.release(bytes);
+
 		return true;
 	};
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingStack: Thread | null = null): number {
@@ -381,7 +380,7 @@ export class GcHeap {
 							}
 							this.unlink(object);
 							this.releaseHostMetadata(object);
-							this.budget.release(bytes);
+
 						} else {
 							object.gcColor = this.white;
 							if (object.gcKind === GcKind.Thread && object !== growingStack) {

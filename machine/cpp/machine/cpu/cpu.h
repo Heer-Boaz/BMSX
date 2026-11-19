@@ -115,7 +115,6 @@ struct CpuRuntimeState {
 	ExecutionDomainMask executionResidencyMask = 0;
 	u32 nextObjectHashId = 1;
 	bool hardHalted = false;
-	LuaHeapState luaHeap;
 	GcState gc;
 	u32 stringIndexTable = 0;
 	int rootThreadRef = -1;

@@ -210,7 +210,6 @@ void TableRecord::resize(
 		valueTable(m_address), key, value);
 	const auto oldValues = values();
 	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
-	const size_t oldBytes = trackedHeapBytes() - HEADER_BYTES;
 	bindStorage(newArraySize, newHashSize, storage);
 	initializeStorage();
 	m_heap.budget.accountTableStorageWork(newArraySize + 2 * newHashSize);
@@ -231,7 +230,7 @@ void TableRecord::resize(
 	}
 	m_heap.budget.accountTableStorageWork(oldArraySize + 2 * oldHashSize + relocatedSlots);
 	if (oldValues.words != 0) m_heap.arena.free(oldValues.words);
-	m_heap.budget.release(oldBytes);
+
 }
 
 void TableRecord::bindStorage(size_t arraySize, size_t hashSize, u32 address) {
@@ -569,11 +568,10 @@ i32 TableRecord::length(const TableRecord* table, u32* work) noexcept {
 }
 
 void TableRecord::clear() {
-	const size_t previousBytes = trackedHeapBytes();
 	writeHeader(TableHeader::Length, 0);
 	freeStorage();
 	bindStorage(0, 0, 0);
-	m_heap.budget.release(previousBytes - trackedHeapBytes());
+
 }
 
 bool TableRecord::loadStoredEntry(size_t slot, Value& key, Value& value) const {

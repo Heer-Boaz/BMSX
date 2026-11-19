@@ -117,9 +117,9 @@ test('checkpoint capture preserves the authoritative global registers without mu
 	}));
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const key = cpu.stringPool.find('answer')!;
-	const heap = cpu.luaHeap.captureState();
+	const heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()];
 	const snapshot = cpu.captureRuntimeState();
-	assert.deepEqual(cpu.luaHeap.captureState(), heap);
+	assert.deepEqual([cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()], heap);
 	assert.equal(cpu.getGlobalByKey(key), valueInteger(1));
 	cpu.restoreRuntimeState(snapshot);
 	assert.deepEqual(cpu.captureRuntimeState(), snapshot);

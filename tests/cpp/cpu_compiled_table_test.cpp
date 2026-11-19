@@ -48,7 +48,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto left = a.captureRuntimeState(), right = b.captureRuntimeState();
 	require(std::ranges::equal(left.snapshot.words(), right.snapshot.words())
 		&& std::ranges::equal(left.snapshot.objectWords(), right.snapshot.objectWords()) && left.nextObjectHashId == right.nextObjectHashId
-		&& left.luaHeap.trackedBytes == right.luaHeap.trackedBytes && left.luaHeap.nextCollectionBytes == right.luaHeap.nextCollectionBytes,
+		&& native.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes() && native.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 		"complete value graphs and allocation/collection accounting agree");
 	const auto& first = *a.activeThread(); const auto& second = *b.activeThread();
 	require(first.frameDepth() == second.frameDepth() && first.stackTop() == second.stackTop(), "frame extents agree");
@@ -84,13 +84,13 @@ void stringReadChainBoundaries() {
 				auto* meta = cpu.createTable(0, 1); meta->setStringKey(indexKey, valueBool(false)); root->setMetatable(meta);
 			}
 			TableLookupResult scratch{valueInteger(73), -1, 0, TableLookupStatus::Resolved};
-			const auto before = cpu.luaHeap().captureState();
+			const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 			Table::loadStringIndex(root, indexKey, key, scratch);
 			require((depth == 33 ? scratch.status == TableLookupStatus::ChainExhausted : scratch.status == TableLookupStatus::Resolved)
 				&& (depth == 1 ? isNil(scratch.value) : depth == 33 || scratch.value == valueFromTag(ValueTag::False, 37)),
 				"the raw Table leaf preserves nil/false and the exact32-table chain bound");
-			require(cpu.luaHeap().usedBytes() == before.trackedBytes
-				&& cpu.luaHeap().captureState().nextCollectionBytes == before.nextCollectionBytes,
+			require(cpu.luaHeap().usedBytes() == before.first
+				&& cpu.luaHeap().collectionTarget() == before.second,
 				"the leaf performs no tracked allocation or collection work");
 			auto& frame = *cpu.activeThread()->frameAtDepth(0);
 			frame.registers.set(1, valueString(key)); frame.registers.set(9, valueTable(cpu.gcHeap().reference(root))); frame.registers.set(8, valueInteger(73));
@@ -448,8 +448,8 @@ void stringStoreGrowthRoots(bool generic) {
 		auto& strings = m->cpu.stringPool(); auto* retained = m->cpu.createTable(0, 1);
 		retained->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
 		r.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable()))); r.set(9, valueTable(m->cpu.gcHeap().reference(retained))); frame.writeControl(bmsx::FrameField::Top, 0);
-		const auto heap = m->cpu.captureRuntimeState().luaHeap;
-		m->cpu.luaHeap().restoreState({heap.trackedBytes, heap.trackedBytes});
+		const auto heap = std::pair{m->cpu.luaHeap().usedBytes(), m->cpu.luaHeap().collectionTarget()};
+		m->cpu.luaHeap().setCollectionTarget(heap.first);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
 	for (size_t i = 0; i < 2; ++i) {

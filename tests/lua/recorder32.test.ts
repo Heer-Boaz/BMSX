@@ -96,7 +96,7 @@ for (const optLevel of [0,3] as const) for (const backend of [CpuExecutionBacken
 		const fsmArgs = [roots.records.getInteger(roots.address, 1), roots.records.getInteger(roots.address, 3), roots.records.getInteger(roots.address, 4), roots.records.getInteger(roots.address, 5), v.valueBool(false)];
 		const effectArgs = [roots.records.getInteger(roots.address, 2), v.valueString(cpu.stringPool.intern('activate')), v.valueString(cpu.stringPool.intern('fire')), v.valueInteger(1)];
 		runCompletionClosure(cpu, fsmRecord, fsmArgs); runCompletionClosure(cpu, effectRecord, effectArgs);
-		const reserve = t.mock.method(cpu.luaHeap, 'reserve');
+		const reserve = t.mock.method(cpu.luaHeap, 'admit');
 		for (let index = 0; index < 32; index++) { runCompletionClosure(cpu, fsmRecord, fsmArgs); runCompletionClosure(cpu, effectRecord, effectArgs); }
 		assert.equal(reserve.mock.callCount(), 0, 'preallocated recorder writes reserve no guest storage after warmup');
 	});

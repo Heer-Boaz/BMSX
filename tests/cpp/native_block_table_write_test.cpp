@@ -53,7 +53,7 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			ValueSlots registers(11); for (size_t i = 0; i < registers.capacity(); ++i) registers.set(i, valueInteger(73));
 			registers.set(0, valueTable(cpu.gcHeap().reference(table))); registers.set(3, values[3]);
 			registers.set(4, values[0]); registers.set(5, valueString(key));
-			const auto heap = cpu.luaHeap().captureState();
+			const auto heap = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 			NativeBlockRunState state{.registers = registers.view(), .constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
 			const auto* exit = block->run(state);
 			require(exit == &block->terminal && exit->exit == NativeBlockExit::Continue,
@@ -62,8 +62,8 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 				&& registers.get(2) == values[0] && registers.get(10) == values[0],
 				"aliased destinations and all cached raw Values survive the returning table-read leaf");
 			if (op == OpCode::SELF) require(registers.get(destination + 1) == valueTable(cpu.gcHeap().reference(table)), "SELF retains its receiver before the read");
-			require(cpu.luaHeap().usedBytes() == heap.trackedBytes
-				&& cpu.luaHeap().captureState().nextCollectionBytes == heap.nextCollectionBytes,
+			require(cpu.luaHeap().usedBytes() == heap.first
+				&& cpu.luaHeap().collectionTarget() == heap.second,
 				"read resolution changes neither tracked allocation nor collection thresholds");
 			require(state.remainingCycles == 100 - block->terminal.cycles - 8, "one additional inherited target Table adds8 cycles independently of slot prediction");
 		}

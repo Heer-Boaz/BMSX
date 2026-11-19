@@ -58,8 +58,7 @@ for (const optLevel of [0, 3] as const) {
 				cpu.releaseLocalRoots(roots);
 			}
 			const gc = t.mock.method(cpu.gc, 'step');
-			const heap = cpu.luaHeap.captureState();
-			cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: 0 });
+			cpu.luaHeap.setCollectionTarget(0);
 			cpu.beginCompletionCall(closure, args);
 			assert.ok(gc.mock.callCount() > 0, 'actual call entry must grow the stack and collect before copying host arguments');
 			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);

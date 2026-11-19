@@ -45,7 +45,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
 	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
 		&& std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords()) && a.nextObjectHashId == b.nextObjectHashId
-		&& a.luaHeap.trackedBytes == b.luaHeap.trackedBytes && a.luaHeap.nextCollectionBytes == b.luaHeap.nextCollectionBytes,
+		&& native.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes() && native.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 		"the complete value graph, allocation roots and heap accounting agree");
 	require(std::tie(a.statusWord, a.causeWord, a.epcWord, a.badAddressWord, a.luaFaultReasonWord, a.exceptionDomainWord,
 		a.nmiReturnCauseWord, a.nmiReturnEpcWord, a.nmiReturnBadAddressWord, a.nmiReturnLuaFaultReasonWord,

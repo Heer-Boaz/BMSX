@@ -5,7 +5,6 @@ import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../.
 import type { MachineSaveState } from '../../save_state';
 import type { CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
 import { CpuSnapshot } from '../../cpu/snapshot';
-import type { LuaHeapState } from '../../cpu/lua_heap';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { CartridgeCardState, CartridgeControllerState, CartridgeMailboxState } from '../../devices/cartridge/contracts';
 import type { AudioControllerState, ApuBadpDecoderSaveState, ApuBiquadFilterState, ApuOutputState, ApuOutputVoiceState, ApuSampleTransferState } from '../../devices/audio/save_state';
@@ -43,7 +42,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x45534d42; // BMSE
+const SAVE_STATE_SIGNATURE = 0x46534d42; // BMSF
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1151,7 +1150,6 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(state.executionResidencyMask);
 	writer.u32(state.nextObjectHashId);
 	writer.bool(state.hardHalted);
-	writeLuaHeapState(writer, state.luaHeap);
 	writeGcState(writer, state.gc);
 	writer.u32(state.lastPc);
 	writer.i32(state.haltedUntilIrqThreadRef);
@@ -1197,7 +1195,6 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 		executionResidencyMask: reader.u32(),
 		nextObjectHashId: reader.u32(),
 		hardHalted: reader.bool(),
-		luaHeap: readLuaHeapState(reader),
 		gc: readGcState(reader),
 		lastPc: reader.u32(),
 		haltedUntilIrqThreadRef: reader.i32(),
@@ -1315,18 +1312,6 @@ function readGcState(reader: BinaryReader): GcState {
 		threads: Array.from(reader.u32s(reader.u32())),
 		weak: Array.from(reader.u32s(reader.u32())),
 		references: Array.from(reader.u32s(reader.u32())), freeReferences: Array.from(reader.u32s(reader.u32())),
-	};
-}
-
-function writeLuaHeapState(writer: BinarySink, state: LuaHeapState): void {
-	writer.u64(state.trackedBytes);
-	writer.u64(state.nextCollectionBytes);
-}
-
-function readLuaHeapState(reader: BinaryReader): LuaHeapState {
-	return {
-		trackedBytes: reader.u64(),
-		nextCollectionBytes: reader.u64(),
 	};
 }
 

@@ -3,7 +3,6 @@ import { GcObject, GcKind } from './gc_object';
 import { CallFrame, FrameField, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { Closure } from './closure';
 import type { GcHeap } from './gc_heap';
-import { heapAllocationBytes } from './heap_allocator';
 import { valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
 import { MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
@@ -247,7 +246,6 @@ export class Thread extends GcObject {
 	private replaceStack(block: number, capacity: number, frames: number, continuations: number): void {
 		const memory = this.heap.memory, ram = memory.ramData();
 		const oldBlock = this.read(ThreadField.StackBlock);
-		const oldBytes = this.backingByteLength();
 		const start = block & (MAIN_RAM_SIZE - 4);
 		const oldFrames = this.frameControlAddress(0), oldProtected = this.protectedAddress(0);
 		const records = start + controlOffset(capacity), protectedRecords = records + frames * FRAME_CONTROL_BYTES;
@@ -273,7 +271,7 @@ export class Thread extends GcObject {
 		this.rebindFrames();
 		memory.invalidateRamWrite(descriptor, 16, false);
 		this.heap.arena.free(oldBlock);
-		this.heap.budget.release(heapAllocationBytes(oldBytes));
+
 	}
 
 	public shrinkStack(): number {
@@ -289,7 +287,7 @@ export class Thread extends GcObject {
 		const bytes = backingBytes(nextValues, nextFrames, nextProtected);
 		const block = this.heap.arena.allocate(bytes, true);
 		if (block === 0) return 0; // Collection cannot recursively collect for a shrink.
-		this.heap.budget.restoreAllocate(heapAllocationBytes(bytes));
+
 		this.replaceStack(block, nextValues, nextFrames, nextProtected);
 		return bytes;
 	}

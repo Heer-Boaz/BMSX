@@ -1,6 +1,10 @@
 import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
 
+// Private management-area ranges not used by the allocator's page index.
+export const HEAP_STRING_METADATA_OFFSET = 0x300;
+export const HEAP_COLLECTION_TARGET_OFFSET = 0x340;
+
 // Requests up to half a page share 4 KB pages of one size class: multiples of
 // 8 bytes through 64, then four classes per doubling. Larger requests take the
 // highest fitting run of whole pages.

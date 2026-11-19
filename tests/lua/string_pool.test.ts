@@ -91,12 +91,11 @@ test('RAM restore replays string allocation after partial reuse', () => {
 	cpu.collectTrackedHeapBytes();
 	pool.intern('partially reused');
 	pool.endLocalRoots();
-	const state = cpu.luaHeap.captureState(), ram = cpu.memory.captureSaveState();
+	const ram = cpu.memory.captureSaveState();
 	const names = ['future one', 'future two', 'future three'];
 	const expected = names.map(text => pool.intern(text));
 	const expectedRam = cpu.memory.captureSaveState();
 	cpu.memory.restoreSaveState(ram);
-	cpu.luaHeap.restoreState(state);
 	assert.deepEqual(names.map(text => pool.intern(text)), expected);
 	assert.deepEqual(cpu.memory.captureSaveState(), expectedRam);
 });

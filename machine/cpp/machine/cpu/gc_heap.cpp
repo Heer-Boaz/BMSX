@@ -171,7 +171,7 @@ size_t GcHeap::allocationBytes(const GCObject* object) const {
 		case ObjType::Closure: return heapAllocationBytes(closureRecordBytes(static_cast<const Closure*>(object)->upvalueCount));
 		case ObjType::Upvalue: return UPVALUE_HEAP_BYTES;
 		case ObjType::Thread: return THREAD_HEAP_BYTES + heapAllocationBytes(static_cast<const Thread*>(object)->backingByteLength());
-		case ObjType::Garbage: return static_cast<const GarbageAllocation*>(object)->bytes;
+
 	}
 	BMSX_UNREACHABLE();
 }
@@ -275,7 +275,7 @@ size_t GcHeap::trace(bool atomic) {
 			}
 			return 3u + closure->upvalueCount;
 		}
-		case ObjType::Garbage: break;
+
 		case ObjType::Upvalue: {
 			auto* upvalue = static_cast<Upvalue*>(obj);
 			if (upvalue->isOpen()) markObject(threadAt(upvalue->ownerAddress()));
@@ -363,28 +363,24 @@ void GcHeap::unlink(GCObject* object) {
 void GcHeap::destroyObject(GCObject* object) {
 	if (object->referenceId != 0) releaseReference(object);
 	switch (object->type) {
-		case ObjType::Garbage:
-			budget.release(static_cast<GarbageAllocation*>(object)->bytes);
-			delete static_cast<GarbageAllocation*>(object);
-			break;
 		case ObjType::Thread:
-			budget.release(allocationBytes(object));
+
 			delete static_cast<Thread*>(object);
 			break;
 		case ObjType::Table:
-			budget.release(static_cast<Table*>(object)->trackedHeapBytes());
+
 			m_tables.destroy(static_cast<Table*>(object));
 			break;
 		case ObjType::Closure: {
 			auto* closure = static_cast<Closure*>(object);
 			auto prototype = m_prototypes.find(*closure->prototype);
 			if (--prototype->second == 0) m_prototypes.erase(prototype);
-			budget.release(heapAllocationBytes(closureRecordBytes(closure->upvalueCount)));
+
 			delete closure;
 			break;
 		}
 		case ObjType::Upvalue:
-			budget.release(UPVALUE_HEAP_BYTES);
+
 			delete static_cast<Upvalue*>(object);
 			break;
 	}

@@ -14,18 +14,20 @@ void stressHeapAllocation(LuaHeap& heap);
 #endif
 
 LuaHeap::LuaHeap(CPU& cpu)
-	: m_cpu(cpu) {
+	: m_cpu(cpu), m_targetAddress(cpu.heapAllocator().managementOffset() + HEAP_COLLECTION_TARGET_OFFSET) {
+	setCollectionTarget(MIN_COLLECTION_BYTES);
 }
 
-void LuaHeap::reserve(
-	size_t byteCount,
-	Value root0,
-	Value root1,
-	Value root2,
-	Thread* growingStack
-) {
-	admit(byteCount, root0, root1, root2, growingStack);
-	m_trackedBytes += byteCount;
+u32 LuaHeap::collectionTarget() const {
+	return m_cpu.memory().readRamRecordWord(m_targetAddress);
+}
+
+void LuaHeap::setCollectionTarget(u32 bytes) {
+	m_cpu.memory().writeRamRecordWord(m_targetAddress, bytes);
+}
+
+size_t LuaHeap::usedBytes() const {
+	return m_cpu.heapAllocator().occupiedBytes();
 }
 
 bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, Thread* growingStack) {
@@ -33,17 +35,17 @@ bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, Thr
 	stressHeapAllocation(*this);
 #endif
 	const size_t limit = capacity();
-	size_t nextBytes = m_trackedBytes + byteCount;
+	const size_t nextBytes = usedBytes() + byteCount;
 	const bool exhausted = nextBytes > limit;
+	if (!exhausted && nextBytes <= collectionTarget()) return false;
 	if (exhausted) {
 		collectRuntime(root0, root1, root2, growingStack);
-	} else if (nextBytes > m_nextCollectionBytes) {
+	} else {
 		const size_t work = m_cpu.stepHeap(root0, root1, root2, growingStack);
 		m_cpu.instructionBudgetRemaining -= static_cast<int>(work);
 		creditStep(work);
 	}
-	nextBytes = m_trackedBytes + byteCount;
-	if (nextBytes > limit) throw LuaOutOfMemorySignal{};
+	if (usedBytes() + byteCount > limit) throw LuaOutOfMemorySignal{};
 	return exhausted;
 }
 
@@ -53,17 +55,14 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backing
 	const bool collected = admit(charged, root0, root1, root2, nullptr);
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
-		if (m_trackedBytes + charged <= capacity()) {
-			const u32 address = arena.allocate(bytes, owned);
-			if (address) {
-				const u32 backing = backingBytes ? arena.allocate(backingBytes, true) : 0u;
-				if (!backingBytes || backing) {
-					if (backingField) m_cpu.memory().writeRamRecordWord(address + backingField, backing);
-					m_trackedBytes += charged;
-					return address;
-				}
-				arena.free(address);
+		const u32 address = arena.allocate(bytes, owned);
+		if (address) {
+			const u32 backing = backingBytes ? arena.allocate(backingBytes, true) : 0u;
+			if (!backingBytes || backing) {
+				if (backingField) m_cpu.memory().writeRamRecordWord(address + backingField, backing);
+				return address;
 			}
+			arena.free(address);
 		}
 		if (attempt == 0) collectRuntime(root0, root1, root2);
 	}
@@ -74,11 +73,8 @@ u32 LuaHeap::allocateStack(u32 bytes, Thread* thread, Value root) {
 	const auto charge = heapAllocationBytes(bytes);
 	const bool collected = admit(charge, root, valueNil(), valueNil(), thread);
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
-		if (m_trackedBytes + charge <= capacity()) {
-			if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) {
-				m_trackedBytes += charge;
-				return block;
-			}
+		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) {
+			return block;
 		}
 		if (attempt == 0) collectRuntime(root, valueNil(), valueNil(), thread);
 	}
@@ -91,28 +87,25 @@ u32 LuaHeap::allocateClosureRecord(u32 captures, std::span<u32> cells) {
 	const bool collected = admit(charged, valueNil(), valueNil(), valueNil(), nullptr);
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
-		if (m_trackedBytes + charged <= capacity()) {
-			if (const u32 closure = arena.allocate(bytes, false)) {
-				size_t count = 0;
-				for (; count < cells.size(); ++count) {
-					const u32 cell = arena.allocate(UPVALUE_HEAP_BYTES, false);
-					if (!cell) break;
-					cells[count] = cell;
-				}
-				if (count == cells.size()) {
-					auto& memory = m_cpu.memory();
-					for (u32 cell : cells) {
-						memory.writeRamRecordWord(cell, UPVALUE_RECORD_KIND);
-						memory.writeRamRecordWord(cell + 4u, 0u);
-						memory.writeRamRecordWord(cell + 8u, 0u);
-						memory.writeRamRecordWord(cell + 12u, 0u);
-					}
-					m_trackedBytes += charged;
-					return closure;
-				}
-				while (count != 0) arena.free(cells[--count]);
-				arena.free(closure);
+		if (const u32 closure = arena.allocate(bytes, false)) {
+			size_t count = 0;
+			for (; count < cells.size(); ++count) {
+				const u32 cell = arena.allocate(UPVALUE_HEAP_BYTES, false);
+				if (!cell) break;
+				cells[count] = cell;
 			}
+			if (count == cells.size()) {
+				auto& memory = m_cpu.memory();
+				for (u32 cell : cells) {
+					memory.writeRamRecordWord(cell, UPVALUE_RECORD_KIND);
+					memory.writeRamRecordWord(cell + 4u, 0u);
+					memory.writeRamRecordWord(cell + 8u, 0u);
+					memory.writeRamRecordWord(cell + 12u, 0u);
+				}
+				return closure;
+			}
+			while (count != 0) arena.free(cells[--count]);
+			arena.free(closure);
 		}
 		if (attempt == 0) collectRuntime();
 	}
@@ -131,7 +124,7 @@ bool LuaHeap::stepRuntime() {
 }
 
 void LuaHeap::creditStep(size_t work) {
-	if (m_cpu.collecting()) m_nextCollectionBytes = m_trackedBytes + std::max(GC_ASSIST_BYTES, work / 16);
+	if (m_cpu.collecting()) setCollectionTarget(static_cast<u32>(usedBytes() + std::max(GC_ASSIST_BYTES, work / 16)));
 }
 
 void LuaHeap::accountTableStorageWork(size_t valueSlots) {
@@ -143,10 +136,10 @@ size_t LuaHeap::capacity() const {
 }
 
 void LuaHeap::finishCollection() {
-	const size_t liveBytes = m_trackedBytes;
+	const size_t liveBytes = usedBytes();
 	const size_t limit = capacity();
-	m_nextCollectionBytes = std::max(liveBytes + GC_ASSIST_BYTES,
-		std::min(limit - limit / 8, std::max(MIN_COLLECTION_BYTES, liveBytes * 2)));
+	setCollectionTarget(static_cast<u32>(std::max(liveBytes + GC_ASSIST_BYTES,
+		std::min(limit - limit / 8, std::max(MIN_COLLECTION_BYTES, liveBytes * 2)))));
 }
 
 } // namespace bmsx

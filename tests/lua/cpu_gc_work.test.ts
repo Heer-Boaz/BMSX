@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
+import { HEAP_COLLECTION_TARGET_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { ValueTag, valueNil, valueInteger, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
@@ -52,13 +53,26 @@ test('runtime GC bills actual canonical scans, reclamation and three unique root
 	cpu.instructionBudgetRemaining = 7; cpu.luaHeap.collectRuntime();
 	assert.equal(cpu.instructionBudgetRemaining, 7 - bootCollectionWork - (8 + 2 + 8 + 1) - 2, 'scan the Table, mark the String leaf and visit each record');
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 112 + 24);
-	assert.equal(cpu.luaHeap.captureState().nextCollectionBytes, 1048576);
+	assert.equal(cpu.luaHeap.collectionTarget(), 1048576);
 	cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'raw host collection is unbilled');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
 	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 112 + 24);
 	cpu.reset();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'reset maintenance does not implicitly collect or bill the retained transient grant');
+});
+
+test('allocation assist target is only restored by the RAM checkpoint', () => {
+	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const target = cpu.heapAllocator.managementOffset() + HEAP_COLLECTION_TARGET_OFFSET;
+	const ram = cpu.memory.captureSaveState(), checkpoint = cpu.captureRuntimeState();
+	cpu.memory.writeRamRecordWord(target, 2048);
+	cpu.restoreRuntimeState(checkpoint);
+	assert.equal(cpu.luaHeap.collectionTarget(), 2048);
+	cpu.memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(checkpoint);
+	assert.equal(cpu.luaHeap.collectionTarget(), 1048576);
+	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 });
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
@@ -93,7 +107,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		frame.registers.setNil(0); frame.top = 0;
 		cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
 		assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
-		const heap = cpu.luaHeap.captureState(); cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: 0 });
+		cpu.luaHeap.setCollectionTarget(0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc); frame.registers.setNil(7);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - 24 - 4 - bootMarkWork, 'charge NEWT, its initialized slots and the first marking step');
@@ -107,7 +121,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 test('failed allocation retains the collection debit, not pending request bytes', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	cpu.instructionBudgetRemaining = 1;
-	assert.throws(() => cpu.luaHeap.reserve(cpu.luaHeap.capacity() + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
+	assert.throws(() => cpu.luaHeap.admit(cpu.luaHeap.capacity() + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
 	assert.equal(cpu.instructionBudgetRemaining, 1 - bootCollectionWork); assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted); assert.equal(cpu.instructionBudgetRemaining, -1);
 });
@@ -131,9 +145,9 @@ test('all activated image constants and unique namespace slots remain priced acr
 test('temporary roots survive charged steps; unreachable allocations pay reclamation but no mark scan', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const table = cpu.createTable(), id = cpu.stringPool.intern(textToByteString('é😀'));
-	const heap = cpu.luaHeap.captureState(); assert.equal(heap.trackedBytes, bootBytes + 32 + 24);
-	cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: 0 }); cpu.instructionBudgetRemaining = 1;
-	cpu.luaHeap.reserve(0, valueTable(cpu.gc.reference(table)), valueString(id));
+	const heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()]; assert.equal(heap[0], bootBytes + 32 + 24);
+	cpu.luaHeap.setCollectionTarget(0); cpu.instructionBudgetRemaining = 1;
+	cpu.luaHeap.admit(0, valueTable(cpu.gc.reference(table)), valueString(id));
 	assert.equal(cpu.instructionBudgetRemaining, 1 - bootMarkWork - 8 - 1, 'first mark with two temporary roots; atomic and reclamation remain');
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 32 + 24); assert.equal(cpu.stringPool.toString(id), 'é😀');
 	while (cpu.gc.active()) cpu.gc.step(valueTable(cpu.gc.reference(table)), valueString(id));

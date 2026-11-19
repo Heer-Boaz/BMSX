@@ -1,4 +1,3 @@
-import type { GarbageAllocation } from './gc_object';
 import type { Closure, Upvalue } from './closure';
 import type { Table } from './table';
 import type { Thread } from './thread';
@@ -7,12 +6,12 @@ import { ValueTag, valueFromTag, type Value } from './value';
 // Snapshot-local word offsets, not a guest ABI. Values are a tag and one
 // payload word; Value references retain their physical words; attachment indices are separate.
 export const CPU_SNAPSHOT_VALUE_WORDS = 2;
-export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue, Thread, Garbage }
+export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue, Thread }
 export const enum CpuSnapshotTable { Kind, HashId, Record, Size }
 export const enum CpuSnapshotClosure { Kind, HashId, FunctionAddress, Canonical, UpvalueCount, CodeAddress, NumParams, MaxStack, Flags, UpvalueTableAddress, RecordUpvalueCount, ExecutionDomainId, Record, Size }
 export const enum CpuSnapshotUpvalue { Kind, HashId, Address, Size }
 export const enum CpuSnapshotThread { Kind, HashId, Record, Size }
-export type CpuSnapshotObject = Table | Closure | Upvalue | Thread | GarbageAllocation;
+export type CpuSnapshotObject = Table | Closure | Upvalue | Thread;
 export type CpuSnapshotValueWriter = (offset: number, value: Value) => void;
 
 /** Exact active views of exclusively owned buffers. Spare capacity is not state. */

@@ -40,11 +40,9 @@ test('incremental marking preserves changed table edges, metatables and final re
 	let steps = 0;
 	while (cpu.gc.active() && steps++ < 1000) cpu.gc.step();
 	assert.ok(!cpu.gc.active()); assert.ok(steps > 2, 'the graph was not collected in one call');
-	const state = cpu.captureRuntimeState();
 	for (const id of expectedIds) assert.ok(cpu.gc.captureState(object => object.hashId).allocations.includes(id));
 	assert.equal(target.records.getInteger(target.address, 1), valueTable(cpu.gc.reference(arrayChild))); assert.equal(target.records.getStringKey(target.address, field), valueTable(cpu.gc.reference(fieldChild)));
 	assert.equal(target.metatable, metatable); assert.equal(frame.registers.getTable(1, cpu.gc), rootChild);
-	assert.equal(state.luaHeap.trackedBytes, cpu.luaHeap.usedBytes());
 	frame.registers.clear(frame.stackCapacity); frame.top = 0;
 	cpu.collectTrackedHeapBytes();
 	for (const id of expectedIds) assert.ok(!cpu.gc.captureState(object => object.hashId).allocations.includes(id));
@@ -92,7 +90,7 @@ test('allocation assists debit one bounded graph step and retain the pending req
 	frame.registers.setTable(0, cpu.gc.reference(root)); frame.top = 1;
 	for (let i = 1; i <= 2048; ++i) root.records.setInteger(root.address, i, valueTable(cpu.gc.reference(cpu.createTable())));
 	const before = cpu.luaHeap.usedBytes();
-	cpu.luaHeap.restoreState({ trackedBytes: before, nextCollectionBytes: before });
+	cpu.luaHeap.setCollectionTarget(before);
 	cpu.instructionBudgetRemaining = 1;
 	const pending = cpu.createTable();
 	assert.equal(cpu.captureRuntimeState().gc.phase, GcPhase.Mark);
@@ -162,13 +160,13 @@ test('an oversized scan earns actual-work credit, not another assist after 256 b
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(8192, 0))); frame.top = 1;
 	const before = cpu.luaHeap.usedBytes();
-	cpu.luaHeap.restoreState({ trackedBytes: before, nextCollectionBytes: before });
+	cpu.luaHeap.setCollectionTarget(before);
 	cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
 	const work = -cpu.instructionBudgetRemaining;
 	assert.ok(work > GC_STEP_WORDS);
-	assert.equal(cpu.luaHeap.captureState().nextCollectionBytes, before + (work >>> 4));
-	assert.ok(cpu.luaHeap.captureState().nextCollectionBytes > cpu.luaHeap.usedBytes() + 256);
+	assert.equal(cpu.luaHeap.collectionTarget(), before + (work >>> 4));
+	assert.ok(cpu.luaHeap.collectionTarget() > cpu.luaHeap.usedBytes() + 256);
 });
 
 test('sweep shrinks cold stacks with hysteresis, preserves caller windows and rebinds views', () => {
@@ -195,7 +193,7 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 	thread.leaveFrame();
 	frame.controlMemory.writeRamRecordWord(frame.controlOffset + FrameField.StackCapacity, parentCapacity);
 	const grown = 2048;
-	cpu.luaHeap.restoreState({ trackedBytes: cpu.luaHeap.usedBytes(), nextCollectionBytes: 0 });
+	cpu.luaHeap.setCollectionTarget(0);
 	cpu.luaHeap.collectRuntime(valueNil(), valueNil(), valueNil(), thread);
 	assert.equal(thread.stackRegisters.capacity(), 512, 'growth admission keeps its old allocation size stable');
 	thread.resizeStack(grown);

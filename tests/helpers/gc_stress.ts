@@ -5,26 +5,11 @@ import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 export function installAllocationStress(cpu: CPU): { allocations: number } {
 	const counter = { allocations: 0 };
 	const heap = cpu.luaHeap;
-	const reserve = heap.reserve, allocateRecord = heap.allocateRecord, allocateClosureRecord = heap.allocateClosureRecord, allocateStack = heap.allocateStack;
-	const forceAssist = () => {
-		heap.restoreState({ trackedBytes: heap.usedBytes(), nextCollectionBytes: 0 });
+	const admit = heap.admit;
+	heap.admit = (...args: Parameters<typeof admit>): boolean => {
+		heap.setCollectionTarget(0);
 		++counter.allocations;
-	};
-	heap.reserve = (...args: Parameters<typeof reserve>): void => {
-		forceAssist();
-		reserve.apply(heap, args);
-	};
-	heap.allocateRecord = (...args: Parameters<typeof allocateRecord>): number => {
-		forceAssist();
-		return allocateRecord.apply(heap, args);
-	};
-	heap.allocateClosureRecord = (...args: Parameters<typeof allocateClosureRecord>): number => {
-		forceAssist();
-		return allocateClosureRecord.apply(heap, args);
-	};
-	heap.allocateStack = (...args: Parameters<typeof allocateStack>): number => {
-		forceAssist();
-		return allocateStack.apply(heap, args);
+		return admit.apply(heap, args);
 	};
 	return counter;
 }

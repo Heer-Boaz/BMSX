@@ -8,7 +8,6 @@ enum class ObjType : uint8_t {
 	Closure,
 	Upvalue,
 	Thread,
-	Garbage,
 };
 
 struct GCObject {
@@ -32,9 +31,5 @@ struct GCObject {
 };
 
 // A sweep snapshot keeps the allocation's retirement work, not dead pointers.
-struct GarbageAllocation : GCObject {
-	explicit GarbageAllocation(size_t bytes) : bytes(bytes) {}
-	size_t bytes;
-};
 
 } // namespace bmsx

@@ -16,14 +16,9 @@ export function profileWarmGuestKernel(cpu: CPU, kernel: Closure, iterations: nu
 	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
 	const retainedBefore = heap.usedBytes();
 	const stackCapacityBefore = cpu.activeThread.stackRegisters.capacity();
-	const reserve = heap.reserve, allocateRecord = heap.allocateRecord, allocateClosureRecord = heap.allocateClosureRecord;
+	const allocateRecord = heap.allocateRecord, allocateClosureRecord = heap.allocateClosureRecord, allocateStack = heap.allocateStack;
 	let reservations = 0;
 	let reservedBytes = 0;
-	heap.reserve = function (bytes, root0, root1, root2, growingStack) {
-		reserve.call(heap, bytes, root0, root1, root2, growingStack);
-		reservations += 1;
-		reservedBytes += bytes;
-	};
 	heap.allocateRecord = function (bytes, owned, backingBytes, backingField, root0, root1, root2) {
 		const address = allocateRecord.call(heap, bytes, owned, backingBytes, backingField, root0, root1, root2);
 		reservations += backingBytes === 0 ? 1 : 2;
@@ -36,13 +31,19 @@ export function profileWarmGuestKernel(cpu: CPU, kernel: Closure, iterations: nu
 		reservedBytes += heapAllocationBytes(closureRecordBytes(captures)) + count * UPVALUE_HEAP_BYTES;
 		return address;
 	};
+	heap.allocateStack = function (bytes, thread, root) {
+		const address = allocateStack.call(heap, bytes, thread, root);
+		reservations += 1;
+		reservedBytes += heapAllocationBytes(bytes);
+		return address;
+	};
 	let cycles: number;
 	try {
 		cpu.beginCompletionCall(kernel, [valueInteger(iterations)]);
 		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
 		cycles = budget - cpu.instructionBudgetRemaining;
 	} finally {
-		heap.reserve = reserve; heap.allocateRecord = allocateRecord; heap.allocateClosureRecord = allocateClosureRecord;
+		heap.allocateRecord = allocateRecord; heap.allocateClosureRecord = allocateClosureRecord; heap.allocateStack = allocateStack;
 	}
 	return { iterations, cycles, reservations, reservedBytes, retainedBefore, retainedAfter: heap.usedBytes(),
 		stackCapacityBefore, stackCapacityAfter: cpu.activeThread.stackRegisters.capacity() };

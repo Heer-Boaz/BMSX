@@ -116,7 +116,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
 	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && std::ranges::equal(a.snapshot.objectWords(), b.snapshot.objectWords())
 		&& a.nextObjectHashId == b.nextObjectHashId
-		&& a.luaHeap.trackedBytes == b.luaHeap.trackedBytes && a.luaHeap.nextCollectionBytes == b.luaHeap.nextCollectionBytes,
+		&& native.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes() && native.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 		"the complete value graph, allocation roots and heap accounting agree");
 	require(std::tie(a.statusWord, a.causeWord, a.epcWord, a.badAddressWord, a.luaFaultReasonWord, a.exceptionDomainWord,
 		a.nmiReturnCauseWord, a.nmiReturnEpcWord, a.nmiReturnBadAddressWord, a.nmiReturnLuaFaultReasonWord,
@@ -263,8 +263,8 @@ void allocationRoots(bool closure) {
 		Table* table = m->cpu.createTable(0, 1); auto& strings = m->cpu.stringPool();
 		table->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
 		r.set(9, valueTable(m->cpu.gcHeap().reference(table))); r.set(1, valueString(strings.intern("fresh-"))); r.set(2, valueString(strings.intern("result"))); frame.writeControl(bmsx::FrameField::Top, 0);
-		const auto heap = m->cpu.captureRuntimeState().luaHeap;
-		m->cpu.luaHeap().restoreState({heap.trackedBytes, heap.trackedBytes});
+		const auto heap = std::pair{m->cpu.luaHeap().usedBytes(), m->cpu.luaHeap().collectionTarget()};
+		m->cpu.luaHeap().setCollectionTarget(heap.first);
 	}
 	require(native.cpu.runUntilDepth(0, 6) == scalar.cpu.runUntilDepth(0, 6), "the allocating instruction consumes the same grant"); requireParity(native, scalar);
 	for (auto* m : {&native, &scalar}) {
@@ -385,7 +385,7 @@ void concatAllocationFault(bool range) {
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(1, valueInteger(1)); frame.registers.set(2, valueInteger(2));
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (range ? 396 : 320));
-		m->cpu.luaHeap().restoreState({m->cpu.luaHeap().usedBytes(), m->cpu.luaHeap().capacity()});
+		m->cpu.luaHeap().setCollectionTarget(m->cpu.luaHeap().capacity());
 		const StringId id = m->cpu.stringPool().intern(std::string(2u * 1024u * 1024u, 'x'));
 		frame.registers.set(1, valueString(id)); frame.registers.set(2, valueString(id)); frame.registers.set(0, valueInteger(73)); frame.writeControl(bmsx::FrameField::Top, 0);
 	}

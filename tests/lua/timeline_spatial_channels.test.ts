@@ -450,11 +450,11 @@ probe={run=function(count) for index=1,count do owner.timelines:tick_gameplay(1)
 	runCompletionClosure(cpu, run, [valueInteger(64)]);
 	const heap = cpu.luaHeap;
 	const before = cpu.collectTrackedHeapBytes();
-	const reserve = heap.reserve;
+	const admit = heap.admit;
 	let reservations = 0;
-	heap.reserve = function (...args) { reservations += 1; reserve.apply(heap, args); };
+	heap.admit = function (...args) { reservations += 1; return admit.apply(heap, args); };
 	let cycles: number;
-	try { cycles = runCompletionClosure(cpu, run, [valueInteger(2048)]); } finally { heap.reserve = reserve; }
+	try { cycles = runCompletionClosure(cpu, run, [valueInteger(2048)]); } finally { heap.admit = admit; }
 	assert.equal(reservations, 0);
 	assert.equal(heap.usedBytes(), before);
 	t.diagnostic(JSON.stringify({ iterations: 2048, cycles, reservations }));

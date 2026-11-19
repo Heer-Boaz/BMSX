@@ -1,6 +1,6 @@
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
 import { GcHeap, type GcState } from './gc_heap';
-import { GarbageAllocation, GcKind } from './gc_object';
+import { GcKind } from './gc_object';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
@@ -124,7 +124,7 @@ import {
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table, TableRecords, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
-import { Closure, Upvalue, UPVALUE_CHAIN_LIMIT, UPVALUE_HEAP_BYTES, sameFunctionPrototype } from './closure';
+import { Closure, Upvalue, UPVALUE_CHAIN_LIMIT, sameFunctionPrototype } from './closure';
 import { ValueSlots } from './value_slots';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
 import {
@@ -145,7 +145,7 @@ import { ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_HEAP_BYTES, THREAD_INITIAL_BACKING_BYTES } from './thread';
 import { ThreadField } from './thread_record';
-import { LuaHeap, type LuaHeapState } from './lua_heap';
+import { LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
@@ -176,7 +176,6 @@ export type CpuRuntimeState = {
 	executionResidencyMask: ExecutionDomainMask;
 	nextObjectHashId: number;
 	hardHalted: boolean;
-	luaHeap: LuaHeapState;
 	gc: GcState;
 	stringIndexTable: number;
 	rootThreadRef: number;
@@ -3987,11 +3986,6 @@ export class CPU implements MappedPageInvalidator {
 			const object = pendingObjects[id];
 			const kind = pendingKinds[id];
 			let offset: number;
-			if (kind === CpuSnapshotObjectKind.Garbage) {
-				offset = writer.reserveWords(3); writer.setWord(offset, CpuSnapshotObjectKind.Garbage);
-				writer.setWord(offset + 1, object.hashId); writer.setWord(offset + 2, this.gc.allocationBytes(object));
-				writer.setObjectWord(id, offset); continue;
-			}
 			switch (kind) {
 				case CpuSnapshotObjectKind.Thread: {
 					const thread = object as Thread;
@@ -4049,7 +4043,6 @@ export class CPU implements MappedPageInvalidator {
 			executionResidencyMask,
 			nextObjectHashId: this.nextObjectHashId,
 			hardHalted: this.hardHalted,
-			luaHeap: this.luaHeap.captureState(),
 			gc,
 			stringIndexTable,
 			rootThreadRef, activeThreadRef, completionThreadRef,
@@ -4094,27 +4087,17 @@ export class CPU implements MappedPageInvalidator {
 		for (let index = 0; index < snapshot.objectCount; index += 1) {
 			const offset = snapshot.objectWord(index);
 			switch (snapshot.word(offset)) {
-				case CpuSnapshotObjectKind.Garbage: {
-					const bytes = snapshot.word(offset + 2);
-					this.luaHeap.restoreAllocate(bytes);
-					const object = new GarbageAllocation(bytes); object.hashId = snapshot.word(offset + 1);
-					this.gc.track(object); object.restored = true;
-					restoredObjects[index] = object;
-					break;
-				}
 				case CpuSnapshotObjectKind.Thread: {
 					const thread = index === state.rootThreadRef ? this.rootThread : new Thread(this.gc, snapshot.word(offset + CpuSnapshotThread.Record));
 					if (index !== state.rootThreadRef) this.gc.track(thread);
 					thread.restored = true;
 					thread.hashId = snapshot.word(offset + CpuSnapshotThread.HashId);
 					thread.bindStack();
-					if (index !== state.rootThreadRef) this.luaHeap.restoreAllocate(this.gc.allocationBytes(thread));
 					restoredObjects[index] = thread;
 					break;
 				}
 				case CpuSnapshotObjectKind.Table: {
 					const table = new Table(this.gc, snapshot.word(offset + CpuSnapshotTable.Record));
-					this.luaHeap.restoreAllocate(this.gc.tables.getTrackedHeapBytes(table.address));
 					this.gc.track(table); table.restored = true;
 					table.hashId = snapshot.word(offset + CpuSnapshotTable.HashId);
 					restoredObjects[index] = table;
@@ -4138,7 +4121,7 @@ export class CPU implements MappedPageInvalidator {
 						item.hashId === snapshot.word(offset + CpuSnapshotClosure.HashId) && item.address === address
 						&& sameFunctionPrototype(item.prototypeRecord, record));
 					const closure = existingIndex < 0 ? new Closure(this.memory, address, record, count, canonical) : previous!.splice(existingIndex, 1)[0];
-					if (existingIndex < 0) { this.luaHeap.restoreAllocate(closure.heapBytes); this.gc.track(closure); }
+					if (existingIndex < 0) { this.gc.track(closure); }
 					closure.restored = true;
 					closure.hashId = snapshot.word(offset + CpuSnapshotClosure.HashId);
 					if (canonical) {
@@ -4153,7 +4136,6 @@ export class CPU implements MappedPageInvalidator {
 					break;
 				}
 				case CpuSnapshotObjectKind.Upvalue:
-					this.luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
 					const upvalue = new Upvalue(this.memory, snapshot.word(offset + CpuSnapshotUpvalue.Address));
 					this.gc.track(upvalue); upvalue.restored = true;
 					upvalue.hashId = snapshot.word(offset + CpuSnapshotUpvalue.HashId);
@@ -4242,7 +4224,6 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = state.yieldRequested;
 		this.hardHalted = state.hardHalted;
 		this.nextObjectHashId = state.nextObjectHashId;
-		this.luaHeap.restoreState(state.luaHeap);
 	}
 
 	public markHeapImage(image: Blua32ExecutionImage): void {

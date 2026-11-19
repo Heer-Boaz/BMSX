@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x45534d42u; // BMSE
+constexpr u32 kSaveStateSignature = 0x46534d42u; // BMSF
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1191,18 +1191,6 @@ GcState readGcState(BinaryReader& reader) {
 	return state;
 }
 
-template<class Writer> void writeLuaHeapState(Writer& writer, const LuaHeapState& state) {
-	writer.u64(state.trackedBytes);
-	writer.u64(state.nextCollectionBytes);
-}
-
-LuaHeapState readLuaHeapState(BinaryReader& reader) {
-	LuaHeapState state;
-	state.trackedBytes = reader.u64();
-	state.nextCollectionBytes = reader.u64();
-	return state;
-}
-
 template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntimeState& state) {
 	writer.i32(state.executionCartridgeSlot);
 	writer.i32(state.programExecutionDomainId);
@@ -1225,7 +1213,6 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.u32(state.executionResidencyMask);
 	writer.u32(state.nextObjectHashId);
 	writer.boolean(state.hardHalted);
-	writeLuaHeapState(writer, state.luaHeap);
 	writeGcState(writer, state.gc);
 	writer.u32(state.lastPc);
 	writer.i32(state.haltedUntilIrqThreadRef);
@@ -1279,7 +1266,6 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.executionResidencyMask = reader.u32();
 	state.nextObjectHashId = reader.u32();
 	state.hardHalted = reader.boolean();
-	state.luaHeap = readLuaHeapState(reader);
 	state.gc = readGcState(reader);
 	state.lastPc = reader.u32();
 	state.haltedUntilIrqThreadRef = reader.i32();

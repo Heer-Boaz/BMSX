@@ -76,7 +76,7 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 		const retained = cpu.createTable(0, 1); retained.records.setStringKey(retained.address, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
 		r.setTable(0, cpu.gc.reference(cpu.createTable())); r.setTable(9, cpu.gc.reference(retained)); frame.top = 0;
 		const trackedBytes = cpu.luaHeap.usedBytes();
-		cpu.luaHeap.restoreState({ trackedBytes, nextCollectionBytes: trackedBytes });
+		cpu.luaHeap.setCollectionTarget(trackedBytes);
 	}
 	runCpuParity(js, ref, 6);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));

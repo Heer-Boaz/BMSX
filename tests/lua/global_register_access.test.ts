@@ -98,12 +98,12 @@ test('registered writes allocate no guest heap and missing reads create no regis
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'global-reuse.lua')));
 	const key = cpu.stringPool.intern('value'), absent = cpu.stringPool.intern('absent');
 	cpu.setGlobalByKey(key, valueInteger(0));
-	const count = cpu.globalSlotCount, heap = cpu.luaHeap.captureState();
+	const count = cpu.globalSlotCount, heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()];
 	for (let index = 0; index < 10000; index++) {
 		cpu.setGlobalByKey(key, valueInteger(index));
 		assert.equal(cpu.getGlobalByKey(key), valueInteger(index));
 		assert.equal(cpu.getGlobalByKey(absent), valueNil());
 	}
 	assert.equal(cpu.globalSlotCount, count);
-	assert.deepEqual(cpu.luaHeap.captureState(), heap);
+	assert.deepEqual([cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()], heap);
 });

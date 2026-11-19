@@ -9,7 +9,7 @@ import {
 } from '../../spec/blua32/image_format';
 import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
-import { heapAllocationBytes, type HeapAllocator } from './heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET, type HeapAllocator } from './heap_allocator';
 import type { LuaHeap } from './lua_heap';
 
 export type StringId = number;
@@ -35,7 +35,7 @@ export class StringPool {
 	private markWork = 0;
 
 	public constructor(private readonly heap: LuaHeap, private readonly memory: Memory, private readonly arena: HeapAllocator) {
-		this.metadataOffset = arena.managementOffset() + 0x300;
+		this.metadataOffset = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	}
 
 	private metadata(field: number): number { return this.memory.readRamRecordWord(this.metadataOffset + field); }
@@ -193,7 +193,7 @@ export class StringPool {
 		this.writeMetadata(CAPACITY, count);
 		if (oldCount !== 0) {
 			this.arena.free(oldBase);
-			this.heap.release(heapAllocationBytes(4 * oldCount));
+
 		}
 	}
 	public intern(value: string): StringId {
@@ -247,7 +247,7 @@ export class StringPool {
 	public sweeping(): boolean { return this.metadata(SWEEP) !== 0; }
 	public sweepStep(allowance: number): number {
 		const base = this.metadata(BUCKETS), count = this.metadata(CAPACITY), epoch = this.metadata(EPOCH);
-		let index = this.metadata(SWEEP) - 1, used = this.metadata(USED), work = 0, released = 0;
+		let index = this.metadata(SWEEP) - 1, used = this.metadata(USED), work = 0;
 		const memory = this.memory;
 		while (index < count && work < allowance) {
 			let link = base + 4 * index++;
@@ -256,7 +256,6 @@ export class StringPool {
 			while (record !== 0) {
 				const next = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
 				if (memory.readRamRecordByte(record + 1) !== epoch) {
-					released += heapAllocationBytes(BLUA32_STRING_RECORD_HEADER_SIZE + memory.readRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET));
 					memory.writeRamRecordWord(link, next);
 					this.arena.free(record);
 					--used;
@@ -266,7 +265,7 @@ export class StringPool {
 		}
 		this.writeMetadata(SWEEP, index === count ? 0 : index + 1);
 		this.writeMetadata(USED, used);
-		this.heap.release(released);
+
 		return work;
 	}
 }

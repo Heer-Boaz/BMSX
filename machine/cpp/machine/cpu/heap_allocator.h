@@ -9,6 +9,10 @@ namespace bmsx {
 
 class Memory;
 
+// Private management-area ranges not used by the allocator's page index.
+inline constexpr u32 HEAP_STRING_METADATA_OFFSET = 0x300u;
+inline constexpr u32 HEAP_COLLECTION_TARGET_OFFSET = 0x340u;
+
 // Requests up to half a page share 4 KB pages of one size class: multiples of
 // 8 bytes through 64, then four classes per doubling. Larger requests take the
 // highest fitting run of whole pages.

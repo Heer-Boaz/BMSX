@@ -208,6 +208,7 @@ void replayWeakCollectionSchedule() {
 	for (int index = 0; index < 17; ++index) cpu.createTable(256, 0);
 	const auto savedRam = cpu.memory().captureSaveState();
 	const auto anchor = cpu.captureRuntimeState();
+	const auto anchorBytes = cpu.luaHeap().usedBytes();
 
 	const auto allocateUntilCollected = [&]() {
 		auto* current = bmsx::asTable(cpu.getGlobalByKey(weakKey), cpu.gcHeap());
@@ -220,16 +221,18 @@ void replayWeakCollectionSchedule() {
 	};
 	const int expectedCount = allocateUntilCollected();
 	const auto expected = cpu.captureRuntimeState();
+	const auto expectedBytes = cpu.luaHeap().usedBytes();
+	const auto expectedTarget = cpu.luaHeap().collectionTarget();
 	for (int pass = 0; pass < 3; ++pass) {
 
 		cpu.memory().restoreSaveState(savedRam);
 		cpu.restoreRuntimeState(anchor);
-		require(cpu.captureRuntimeState().luaHeap.trackedBytes == anchor.luaHeap.trackedBytes, "unreachable allocation debt survives restore");
+		require(cpu.luaHeap().usedBytes() == anchorBytes, "unreachable allocation debt survives restore");
 		require(allocateUntilCollected() == expectedCount, "collection must happen after the same allocation");
 		const auto actual = cpu.captureRuntimeState();
 		require(actual.nextObjectHashId == expected.nextObjectHashId, "GC replay retains the allocator sequence");
-		require(actual.luaHeap.trackedBytes == expected.luaHeap.trackedBytes, "GC recomputes actual live bytes after restore");
-		require(actual.luaHeap.nextCollectionBytes == expected.luaHeap.nextCollectionBytes, "next GC threshold matches");
+		require(cpu.luaHeap().usedBytes() == expectedBytes, "GC recomputes actual live bytes after restore");
+		require(cpu.luaHeap().collectionTarget() == expectedTarget, "next GC threshold matches");
 	}
 }
 

@@ -375,7 +375,6 @@ export class TableRecords {
 			valueTable(record), key, value);
 		const oldWords = this.storageAddress(record), oldTags = this.tags(record), oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
 		const memory = this.heap.memory;
-		const oldBytes = this.getTrackedHeapBytes(record) - TableRecords.HEADER_BYTES;
 		this.bindStorage(record, array, hash, storage);
 		this.initializeStorage(record);
 		this.heap.budget.accountTableStorageWork(array + 2 * hash);
@@ -398,7 +397,7 @@ export class TableRecords {
 		}
 		this.heap.budget.accountTableStorageWork(oldArray + 2 * oldHash + relocated);
 		if (oldWords !== 0) this.heap.arena.free(oldWords);
-		this.heap.budget.release(oldBytes);
+
 	}
 	private updateLengthHint(record: number, slot: number, present: boolean): void {
 		const hint = this.lengthHint(record);
@@ -433,8 +432,8 @@ export class TableRecords {
 		if (work) work.probes = probes; return low;
 	}
 	public clear(record: number): void {
-		const bytes = this.getTrackedHeapBytes(record); this.writeHeader(record, TableHeader.Length, 0); this.freeStorage(record); this.bindStorage(record, 0, 0, 0);
-		this.heap.budget.release(bytes - this.getTrackedHeapBytes(record));
+		this.writeHeader(record, TableHeader.Length, 0); this.freeStorage(record); this.bindStorage(record, 0, 0, 0);
+
 	}
 	public storedSlotCount(record: number): number { return this.arrayCapacity(record) + this.hashSize(record); }
 	public loadStoredEntry(record: number, slot: number, target: ValueWriteTarget, destination: number): boolean {

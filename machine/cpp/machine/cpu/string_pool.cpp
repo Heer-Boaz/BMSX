@@ -28,7 +28,7 @@ constexpr u32 slotWord(ExecutionDomainId domain) { return domain == 1 ? SLOT_BIT
 }
 
 StringPool::StringPool(LuaHeap& heap, Memory& memory, HeapAllocator& arena)
-	: m_heap(heap), m_memory(memory), m_arena(arena), m_metadata(arena.managementOffset() + 0x300u) {}
+	: m_heap(heap), m_memory(memory), m_arena(arena), m_metadata(arena.managementOffset() + HEAP_STRING_METADATA_OFFSET) {}
 
 u32 StringPool::metadata(u32 field) const { return m_memory.readRamRecordWord(m_metadata + field); }
 void StringPool::writeMetadata(u32 field, u32 word) { m_memory.writeRamRecordWord(m_metadata + field, word); }
@@ -196,7 +196,7 @@ void StringPool::grow(u32 count) {
 	writeMetadata(CAPACITY, count);
 	if (oldCount != 0) {
 		m_arena.free(oldBase);
-		m_heap.release(heapAllocationBytes(4u * oldCount));
+
 	}
 }
 
@@ -252,7 +252,7 @@ bool StringPool::sweeping() const { return metadata(SWEEP) != 0; }
 size_t StringPool::sweepStep(size_t allowance) {
 	const u32 base = metadata(BUCKETS), count = metadata(CAPACITY), epoch = metadata(EPOCH);
 	u32 index = metadata(SWEEP) - 1u, used = metadata(USED);
-	size_t released = 0, work = 0;
+	size_t work = 0;
 	while (index < count && work < allowance) {
 		u32 link = base + 4u * index++;
 		u32 record = m_memory.readRamRecordWord(link);
@@ -260,7 +260,6 @@ size_t StringPool::sweepStep(size_t allowance) {
 		while (record != 0) {
 			const u32 next = m_memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
 			if (m_memory.readRamRecordByte(record + 1u) != epoch) {
-				released += heapAllocationBytes(BLUA32_STRING_RECORD_HEADER_SIZE + m_memory.readRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET));
 				m_memory.writeRamRecordWord(link, next);
 				m_arena.free(record);
 				--used;
@@ -270,7 +269,7 @@ size_t StringPool::sweepStep(size_t allowance) {
 	}
 	writeMetadata(SWEEP, index == count ? 0 : index + 1u);
 	writeMetadata(USED, used);
-	m_heap.release(released);
+
 	return work;
 }
 

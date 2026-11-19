@@ -19,7 +19,7 @@ size_t stressedAllocations = 0;
 namespace bmsx {
 void stressHeapAllocation(LuaHeap& heap) {
 	if (!stressEnabled) return;
-	heap.restoreState({heap.usedBytes(), 0});
+	heap.setCollectionTarget(0);
 	++stressedAllocations;
 }
 }

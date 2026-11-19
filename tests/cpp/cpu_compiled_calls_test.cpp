@@ -734,8 +734,8 @@ void returnGrowthCollection() {
 		const Value result = valueString(machine.cpu.stringPool().intern("retained-only-by-returning-frame"));
 		callee->registers.set(0, result);
 		callee->writeControl(bmsx::FrameField::Top, 1);
-		const auto heap = machine.cpu.luaHeap().captureState();
-		machine.cpu.luaHeap().restoreState({heap.trackedBytes, heap.trackedBytes});
+		const auto heap = std::pair{machine.cpu.luaHeap().usedBytes(), machine.cpu.luaHeap().collectionTarget()};
+		machine.cpu.luaHeap().setCollectionTarget(heap.first);
 		require(machine.cpu.runUntilDepth(1, 100) == RunResult::Halted, "return stops at the caller depth after growing its window");
 		require(machine.cpu.collecting(), "return window growth triggers an allocation assist");
 		require(machine.cpu.stringPool().find("retained-only-by-returning-frame") == asStringId(result)
@@ -1006,10 +1006,10 @@ void weakCanonicalClosuresAndStaticEntry() {
 		require(last->prototype->maxStack == 64, "the live closure survives guest GC");
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 4096);
-		const auto pressure = machine.cpu.luaHeap().captureState();
-		machine.cpu.luaHeap().restoreState({pressure.trackedBytes, pressure.trackedBytes + 32});
+		const auto pressure = std::pair{machine.cpu.luaHeap().usedBytes(), machine.cpu.luaHeap().collectionTarget()};
+		machine.cpu.luaHeap().setCollectionTarget(pressure.first + 32);
 		machine.cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, record);
-		require(machine.cpu.luaHeap().captureState().nextCollectionBytes > pressure.trackedBytes + 32,
+		require(machine.cpu.luaHeap().collectionTarget() > pressure.first + 32,
 			"callee stack growth collected while admitting a freshly created canonical closure");
 		const auto direct = machine.cpu.activeThread()->currentFrame->attachedClosure();
 		require(direct->prototype->recordUpvalueCount == 3 && direct->upvalueCount == 0,
@@ -1165,8 +1165,8 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 16u * INSTRUCTION_BYTES);
 		machine->cpu.runUntilDepth(0, 1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
-		const auto heap = machine->cpu.luaHeap().captureState();
-		machine->cpu.luaHeap().restoreState({heap.trackedBytes, heap.trackedBytes});
+		const auto heap = std::pair{machine->cpu.luaHeap().usedBytes(), machine->cpu.luaHeap().collectionTarget()};
+		machine->cpu.luaHeap().setCollectionTarget(heap.first);
 		require(machine->cpu.runUntilDepth(0, callPrefix) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth() == 2,
 			"the allocation assist completes CALL but not a callee instruction in its exhausted grant");
 		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.activeThread()->frameDepth() == 1

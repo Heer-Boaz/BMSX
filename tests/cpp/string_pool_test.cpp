@@ -138,12 +138,10 @@ void replaySparseAllocationOrder() {
 	cpu.collectHeap();
 	pool.intern("partially reused");
 	pool.endLocalRoots();
-	const auto checkpoint = cpu.luaHeap().captureState();
 	const auto ram = machine.memory.captureSaveState();
 	const std::array future{pool.intern("future one"), pool.intern("future two"), pool.intern("future three")};
 	const auto expected = machine.memory.captureSaveState();
 	machine.memory.restoreSaveState(ram);
-	cpu.luaHeap().restoreState(checkpoint);
 	require(std::array{pool.intern("future one"), pool.intern("future two"), pool.intern("future three")} == future, "restore reproduces the next physical addresses");
 	require(machine.memory.captureSaveState().ram == expected.ram, "restore reproduces the same String data and allocator state");
 }
@@ -202,8 +200,7 @@ void admitExternalArgumentsAcrossStackGrowth() {
 		const std::string text(4096, 'a');
 		const auto id = cpu.stringPool().intern(text);
 		const std::array args{valueString(id)};
-		const auto heap = cpu.luaHeap().captureState();
-		cpu.luaHeap().restoreState({heap.trackedBytes, 0});
+		cpu.luaHeap().setCollectionTarget(0);
 		cpu.beginCompletionCall(*closure, BuiltinArgsView(args.data(), args.size()));
 		require(cpu.stringPool().find(text) == id, "stack growth cannot collect incoming host arguments");
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the admitted callee returns normally");

@@ -242,7 +242,6 @@ void Thread::freeStack() { heap.arena.free(read(ThreadField::StackBlock)); }
 
 void Thread::replaceStack(u32 block, size_t capacity, u32 frames, u32 continuations) {
 	const size_t previousSize = stack.size();
-	const u32 previousBytes = backingByteLength();
 	const u32 oldBlock = read(ThreadField::StackBlock);
 	auto* words = heap.memory.ramData() + (block & RAM_RECORD_WORD_MASK);
 	auto* tags = words + capacity * sizeof(u32);
@@ -276,7 +275,7 @@ void Thread::replaceStack(u32 block, size_t capacity, u32 frames, u32 continuati
 	writeLE32(geometry + 12, continuations);
 	heap.memory.invalidateRamWrite(descriptor, 16);
 	heap.arena.free(oldBlock);
-	heap.budget.release(heapAllocationBytes(previousBytes));
+
 }
 
 size_t Thread::shrinkStack() {
@@ -291,7 +290,7 @@ size_t Thread::shrinkStack() {
 	const auto bytes = backingBytes(static_cast<u32>(nextValues), nextFrames, nextProtected);
 	const u32 block = heap.arena.allocate(bytes, true);
 	if (block == 0u) return 0; // Collection cannot recursively collect for a shrink.
-	heap.budget.restoreAllocate(heapAllocationBytes(bytes));
+
 	replaceStack(block, nextValues, nextFrames, nextProtected);
 	return bytes;
 }

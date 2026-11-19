@@ -261,7 +261,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const caller = thread.currentFrame!, prepared = thread.acquireFrame();
 		const live = cpu.stringPool.intern('caller-only-across-admission'); caller.registers.set(0, valueString(live));
 		const trackedBytes = cpu.luaHeap.usedBytes();
-		cpu.luaHeap.restoreState({ trackedBytes, nextCollectionBytes: trackedBytes });
+		cpu.luaHeap.setCollectionTarget(trackedBytes);
 		cpu.runUntilDepth(0, 2);
 		assert.ok(cpu.gc.active(), 'stack growth triggers an allocation assist');
 		assert.equal(thread.currentFrame, prepared); assert.equal(thread.firstFrame, caller); assert.equal(thread.frameDepth, 2);
@@ -281,7 +281,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const caller = thread.firstFrame!, callee = thread.currentFrame!;
 		const result = cpu.stringPool.intern('returning-frame-only'); callee.registers.set(0, valueString(result)); callee.top = 1;
 		const trackedBytes = cpu.luaHeap.usedBytes();
-		cpu.luaHeap.restoreState({ trackedBytes, nextCollectionBytes: trackedBytes });
+		cpu.luaHeap.setCollectionTarget(trackedBytes);
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		assert.ok(cpu.gc.active(), 'caller window growth triggers an allocation assist');
 		assert.equal(cpu.stringPool.find('returning-frame-only'), result);

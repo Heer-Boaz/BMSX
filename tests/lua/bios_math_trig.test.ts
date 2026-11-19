@@ -63,7 +63,7 @@ return trig_roots[1], trig_roots[2], trig_roots[3], trig_roots[4]`;
 			}
 		}
 		for (const fn of functions) runCompletionClosure(cpu, fn, [v.valueFloat(200)]);
-		const reserve = t.mock.method(cpu.luaHeap, 'reserve');
+		const reserve = t.mock.method(cpu.luaHeap, 'admit');
 		for (let repeat = 0; repeat < 32; ++repeat) for (const fn of functions) {
 			for (const value of [0.125, -0.125, 200, -200]) runCompletionClosure(cpu, fn, [v.valueFloat(value)]);
 		}

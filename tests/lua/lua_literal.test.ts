@@ -9,9 +9,9 @@ import type { Value } from '../../machine/ts/machine/cpu/value';
 
 test('literal submission parses without guest execution, then materializes real values', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'literal.lua')));
-	const before = cpu.luaHeap.captureState();
+	const before = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()];
 	const prepare = prepareLuaLiteral('{ flag = false, nested = { 7, -2.5 }, [4] = "event" }');
-	assert.deepEqual(cpu.luaHeap.captureState(), before);
+	assert.deepEqual([cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()], before);
 	const result = asTable(prepare(cpu), cpu.gc);
 	assert.equal(result.records.get(result.address, valueString(cpu.stringPool.find('flag')!)), valueBool(false));
 	const nested = asTable(result.records.get(result.address, valueString(cpu.stringPool.find('nested')!)), cpu.gc);

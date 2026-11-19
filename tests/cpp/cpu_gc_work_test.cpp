@@ -72,14 +72,14 @@ void canonicalPoolAndRootRanges() {
 	cpu.luaHeap().collectRuntime();
 	require(cpu.instructionBudgetRemaining == 7 - bootCollectionWork - (8 + 2 + 8 + 1) - 2 && cpu.luaHeap().usedBytes() == bootBytes + 112 + 24,
 		"table scans reserved slots; the String is marked and visited without reading its bytes");
-	const auto threshold = cpu.luaHeap().captureState();
-	require(threshold.nextCollectionBytes == 1048576, "the existing minimum collection threshold is unchanged");
+	const auto threshold = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
+	require(threshold.second == 1048576, "the existing minimum collection threshold is unchanged");
 	cpu.instructionBudgetRemaining = 123;
 	cpu.collectHeap();
 	require(cpu.instructionBudgetRemaining == 123, "host/reset raw collection does not bill guest work");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().captureState().trackedBytes == bootBytes + 112 + 24,
+	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 112 + 24,
 		"snapshot capture/restore does not collect or bill runtime work and preserves canonical accounting");
 	cpu.reset();
 	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes,
@@ -112,8 +112,7 @@ void allocationCollectionAndFailure() {
 	for (bool wide : {false, true}) {
 		Machine generated(image(OpCode::NEWT, wide)), scalar(image(OpCode::NEWT, wide), true);
 		for (auto* m : {&generated, &scalar}) {
-			const auto before = m->cpu.luaHeap().captureState();
-			m->cpu.luaHeap().restoreState({before.trackedBytes, 0});
+			m->cpu.luaHeap().setCollectionTarget(0);
 		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
 			&& generated.cpu.instructionBudgetRemaining == 1 - 24 - 4 - bootMarkWork,
@@ -127,7 +126,7 @@ void allocationCollectionAndFailure() {
 	Machine failure(image()); auto& cpu = failure.cpu;
 	cpu.instructionBudgetRemaining = 1;
 	bool failed = false;
-	try { cpu.luaHeap().reserve(4 * 1024 * 1024); }
+	try { cpu.luaHeap().admit(4 * 1024 * 1024); }
 	catch (const LuaOutOfMemorySignal&) { failed = true; }
 	require(failed && cpu.instructionBudgetRemaining == 1 - bootCollectionWork && cpu.luaHeap().usedBytes() == bootBytes,
 		"failed oversized admission retains complete collection charge, not pending request bytes");
@@ -169,11 +168,11 @@ void temporaryRootsAndUnreachablePool() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	Table* table = cpu.createTable(); //32; retained only by the reserve temporary root.
 	const auto id = cpu.stringPool().intern("é😀"); //6; another temporary root.
-	const auto before = cpu.luaHeap().captureState();
-	require(before.trackedBytes == bootBytes + 32 + 24, "precollection includes currently unreachable allocations");
-	cpu.luaHeap().restoreState({before.trackedBytes, 0});
+	const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
+	require(before.first == bootBytes + 32 + 24, "precollection includes currently unreachable allocations");
+	cpu.luaHeap().setCollectionTarget(0);
 	cpu.instructionBudgetRemaining = 1;
-	cpu.luaHeap().reserve(0, valueTable(cpu.gcHeap().reference(table)), valueString(id));
+	cpu.luaHeap().admit(0, valueTable(cpu.gcHeap().reference(table)), valueString(id));
 	// First marking + live Table8 + String1; atomic and reclamation remain.
 	require(cpu.instructionBudgetRemaining == 1 - bootMarkWork - 8 - 1 && cpu.luaHeap().usedBytes() == bootBytes + 32 + 24
 		&& cpu.stringPool().toString(id) == "é😀", "all reserve temporary roots survive the first incremental pass");
@@ -272,10 +271,10 @@ void secondMarkPassAndCredit() {
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(4096, 0)))); frame.writeControl(bmsx::FrameField::Top, 1);
 	const auto before = cpu.luaHeap().usedBytes();
-	cpu.luaHeap().restoreState({before, before}); cpu.instructionBudgetRemaining = 0;
+	cpu.luaHeap().setCollectionTarget(before); cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
 	const size_t work = static_cast<size_t>(-cpu.instructionBudgetRemaining);
-	require(work > GC_STEP_WORDS && cpu.luaHeap().captureState().nextCollectionBytes == before + work / 16,
+	require(work > GC_STEP_WORDS && cpu.luaHeap().collectionTarget() == before + work / 16,
 		"oversized marking earns its actual allocation credit before the pending request");
 	u32 phases = 0;
 	for (int i = 0; i < 12; ++i) {
@@ -320,7 +319,7 @@ void stackShrinkAndAdmission() {
 	thread->leaveFrame(); frame.writeControl(bmsx::FrameField::StackCapacity, 8); thread->setStackTop(8);
 	cpu.luaHeap().collectRuntime(valueNil(), valueNil(), valueNil(), thread);
 	require(thread->stackCapacity == 512, "growth admission keeps the allocation being grown stable");
-	cpu.luaHeap().restoreState({cpu.luaHeap().usedBytes(), 0});
+	cpu.luaHeap().setCollectionTarget(0);
 	thread->resizeStack(2048);
 	require(frame.registers.get(0) == valueInteger(456), "growth preserves values after prior shrink");
 	const auto state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);

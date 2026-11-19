@@ -136,7 +136,7 @@ for (const closure of [false, true]) test(`compiled allocation publishes moved r
 		r.setTable(9, cpu.gc.reference(table)); r.setString(1, cpu.stringPool.intern('fresh-')); r.setString(2, cpu.stringPool.intern('result'));
 		root.top = 0;
 		const trackedBytes = cpu.luaHeap.usedBytes();
-		cpu.luaHeap.restoreState({ trackedBytes, nextCollectionBytes: trackedBytes });
+		cpu.luaHeap.setCollectionTarget(trackedBytes);
 	}
 	assert.equal(js.runUntilDepth(0, 6), ref.runUntilDepth(0, 6)); assertParity(js, ref);
 	for (const cpu of [js, ref]) {
@@ -241,7 +241,7 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 	for (const cpu of [js, ref]) {
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1); cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 2);
 		cpu.runUntilDepth(0, range ? 396 : 320);
-		cpu.luaHeap.restoreState({ trackedBytes: cpu.luaHeap.usedBytes(), nextCollectionBytes: cpu.luaHeap.capacity() });
+		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 		const r = cpu.rootThread.frameAtDepth(0).registers, id = cpu.stringPool.intern('x'.repeat(2 * 1024 * 1024));
 		r.setString(1, id); r.setString(2, id); r.setInteger(0, 73); cpu.rootThread.frameAtDepth(0).top = 0;
 	}

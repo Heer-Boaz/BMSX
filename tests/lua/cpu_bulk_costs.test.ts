@@ -258,7 +258,7 @@ return true`, 3);
     r.set(1, valueString(cpu.stringPool.intern('third')));
     while (cpu.captureRuntimeState().gc.phase !== GcPhase.Atomic) cpu.gc.step();
     const trackedBytes = cpu.luaHeap.usedBytes();
-    cpu.luaHeap.restoreState({ trackedBytes, nextCollectionBytes: trackedBytes });
+    cpu.luaHeap.setCollectionTarget(trackedBytes);
     surcharge = 16; capacity = 4;
    } else {
     for (let i = 0; i < 1024; ++i) table.records.set(table.address, valueFloat(i + 0.5), valueInteger(i));
@@ -266,7 +266,7 @@ return true`, 3);
     const retainedSlots = ((cpu.luaHeap.capacity() - cpu.luaHeap.usedBytes() - 20 * HEAP_PAGE_SIZE) / 5) | 0;
     r.setTable(4, cpu.gc.reference(cpu.createTable(retainedSlots)));
     cpu.collectTrackedHeapBytes();
-    cpu.luaHeap.restoreState({ trackedBytes: cpu.luaHeap.usedBytes(), nextCollectionBytes: cpu.luaHeap.capacity() });
+    cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
     // Claim all remaining page runs so the live table has no contiguous
     // replacement backing even after the emergency collection.
     while (cpu.heapAllocator.allocate(HEAP_PAGE_SIZE, true) !== 0) { /* fixture-owned RAM */ }

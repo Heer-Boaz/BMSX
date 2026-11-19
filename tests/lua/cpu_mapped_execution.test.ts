@@ -243,8 +243,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	assert.equal(countVersions(), 1, 'weak cache and weak value are pruned in the same collection');
 	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
 	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
-	const heap = cpu.luaHeap.captureState();
-	cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: heap.trackedBytes + 16 });
+	const heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()];
+	cpu.luaHeap.setCollectionTarget(heap[0] + 16);
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, RAM_FUNCTION_ADDRESS);
 	assert.equal(countVersions(), 2, 'a new direct-entry closure remains indexed when stack growth collects');
 	const active = cpu.rootThread.currentFrame!;

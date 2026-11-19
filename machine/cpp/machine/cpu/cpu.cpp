@@ -909,14 +909,6 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	for (u32 id = 0; id < pendingObjects.size(); ++id) {
 		const auto* object = pendingObjects[id];
 		u32 offset;
-		if (object->type == ObjType::Garbage) {
-			offset = snapshot.reserveWords(3);
-			snapshot.setWord(offset, static_cast<u32>(CpuSnapshotObjectKind::Garbage));
-			snapshot.setWord(offset + 1, object->hashId);
-			snapshot.setWord(offset + 2, static_cast<u32>(m_heap.allocationBytes(object)));
-			snapshot.setObjectWord(id, offset);
-			continue;
-		}
 		switch (object->type) {
 			case ObjType::Thread: {
 				const auto* thread = static_cast<const Thread*>(object);
@@ -967,7 +959,6 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	}
 	state.nextObjectHashId = m_heap.nextObjectHashId();
 	state.hardHalted = m_hardHalted;
-	state.luaHeap = m_luaHeap.captureState();
 	state.snapshot = std::move(snapshot);
 	state.lastExecutionDomainId = m_lastExecutionDomainId;
 	state.lastPc = lastPc;
@@ -1021,19 +1012,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
 		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {
-			case CpuSnapshotObjectKind::Garbage: {
-				const auto bytes = snapshot.word(offset + 2);
-				m_luaHeap.restoreAllocate(bytes);
-				auto* object = m_heap.allocate<GarbageAllocation>(ObjType::Garbage, bytes);
-				object->restored = true;
-				object->hashId = snapshot.word(offset + 1);
-				restoredObjects[index] = object;
-				break;
-			}
 			case CpuSnapshotObjectKind::Thread: {
 				Thread* thread = index == static_cast<size_t>(state.rootThreadRef) ? m_rootThread : m_heap.allocate<Thread>(ObjType::Thread, m_heap, snapshot.word(offset + SNAP_THREAD_RECORD));
 				thread->bindStack();
-				if (index != static_cast<size_t>(state.rootThreadRef)) m_luaHeap.restoreAllocate(m_heap.allocationBytes(thread));
 				thread->restored = true;
 				thread->hashId = snapshot.word(offset + SNAP_THREAD_HASH_ID);
 				restoredObjects[index] = thread;
@@ -1041,7 +1022,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			}
 			case CpuSnapshotObjectKind::Table: {
 				Table* table = m_heap.allocate<Table>(ObjType::Table, m_heap, snapshot.word(offset + SNAP_TABLE_RECORD));
-				m_luaHeap.restoreAllocate(table->trackedHeapBytes());
 				table->restored = true;
 				table->hashId = snapshot.word(offset + SNAP_TABLE_HASH_ID);
 				restoredObjects[index] = table;
@@ -1070,12 +1050,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 						}
 					}
 					if (!closure) {
-						m_luaHeap.restoreAllocate(heapAllocationBytes(closureRecordBytes(upvalueCount)));
 						closure = m_heap.bindClosureRecord(address, record, upvalueCount, canonical);
 					}
 					versions.push_back(closure);
 				} else {
-					m_luaHeap.restoreAllocate(heapAllocationBytes(closureRecordBytes(upvalueCount)));
 					closure = m_heap.bindClosureRecord(address, record, upvalueCount, canonical);
 				}
 				closure->restored = true;
@@ -1084,7 +1062,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				break;
 			}
 			case CpuSnapshotObjectKind::Upvalue: {
-				m_luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
 				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue, m_memory, snapshot.word(offset + SNAP_UPVALUE_ADDRESS));
 				upvalue->restored = true;
 				upvalue->hashId = snapshot.word(offset + SNAP_UPVALUE_HASH_ID);
@@ -1166,7 +1143,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 	m_yieldRequested = state.yieldRequested;
 	m_hardHalted = state.hardHalted;
-	m_luaHeap.restoreState(state.luaHeap);
 }
 
 void CPU::requestYield() {

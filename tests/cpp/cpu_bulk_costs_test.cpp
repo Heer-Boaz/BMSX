@@ -126,7 +126,7 @@ void rebuildWork(bool scalar) {
    r.set(1, valueString(cpu.stringPool().intern("third")));
    while (cpu.captureRuntimeState().gc.phase != GcPhase::Atomic) cpu.stepHeap(valueNil(), valueNil(), valueNil());
    const auto bytes = cpu.luaHeap().usedBytes();
-   cpu.luaHeap().restoreState({bytes, bytes});
+   cpu.luaHeap().setCollectionTarget(bytes);
    surcharge = 16; capacity = 4;
   } else {
    for (int i = 0; i < 1024; ++i) table->set(valueFloat(i + 0.5f), valueInteger(i));
@@ -134,7 +134,7 @@ void rebuildWork(bool scalar) {
    const int retainedSlots = static_cast<int>((cpu.luaHeap().capacity() - cpu.luaHeap().usedBytes() - 20 * HEAP_PAGE_SIZE) / 5);
    r.set(4, valueTable(cpu.gcHeap().reference(cpu.createTable(retainedSlots))));
    cpu.collectHeap();
-   cpu.luaHeap().restoreState({cpu.luaHeap().usedBytes(), cpu.luaHeap().capacity()});
+   cpu.luaHeap().setCollectionTarget(cpu.luaHeap().capacity());
    // No contiguous replacement backing even after collection.
    while (cpu.heapAllocator().allocate(HEAP_PAGE_SIZE, true) != 0) { /* fixture-owned RAM */ }
    surcharge = 2048; capacity = 1024;
