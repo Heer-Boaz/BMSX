@@ -3,8 +3,7 @@ import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
 import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { type Table, type TableLengthWork } from '../../machine/ts/machine/cpu/table';
-import { CpuSnapshot, CpuSnapshotTable, CpuSnapshotWriter } from '../../machine/ts/machine/cpu/snapshot';
+import { TableHeader, type Table, type TableLengthWork } from '../../machine/ts/machine/cpu/table';
 import { valueBool, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE, MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { CPU_CAUSE_CODE_TRAP } from '../../machine/ts/spec/blua32/cop0';
@@ -42,12 +41,6 @@ function makeTable(cpu: CPU, kind: typeof cases[number][0]): Table {
 	if (kind === 'terminal') table.setInteger(0x7fffffff, valueBool(false));
 	return table;
 }
-function seed(table: Table): number {
-	const snapshot = new CpuSnapshot(), writer = new CpuSnapshotWriter(snapshot);
-	const offset = table.captureSnapshot(writer, () => {}); writer.finish();
-	return snapshot.word(offset + CpuSnapshotTable.LengthHint);
-}
-
 test('pure Table length emits exact logical own-presence work without repairing its saved seed', () => {
 	for (const [kind, boundary, probes] of cases) {
 		const { image } = program(false), { cpu } = createTestSystemCpu(image);
@@ -60,15 +53,15 @@ test('pure Table length emits exact logical own-presence work without repairing 
 		assert.ok(isDeepStrictEqual(cpu.captureRuntimeState(), before), 'logical probe output mutates no guest state, storage, seed or heap');
 	}
 	const { image } = program(false), { cpu } = createTestSystemCpu(image), table = makeTable(cpu, 'descending');
-	assert.equal(seed(table), 1);
+	assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 1);
 	for (let k = 0; k < 300; ++k) table.setStringKey(cpu.stringPool.intern(`key${k}`), valueBool(true));
-	assert.equal(seed(table), 1, 'hash redistribution preserves the logical seed');
+	assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 1, 'hash redistribution preserves the logical seed');
 	const work = { probes: 0 }; assert.equal(table.length(work), 4096); assert.equal(work.probes, 26);
-	table.setInteger(2, valueBool(false)); assert.equal(seed(table), 2, 'even an existing eligible mapping advances only one adjacent step');
-	table.setInteger(2, valueNil()); assert.equal(seed(table), 1);
-	table.clear(); assert.equal(seed(table), 0); assert.equal(table.length(work), 0); assert.equal(work.probes, 1);
-	const hash = cpu.createTable(0, 16); hash.setInteger(1, valueBool(false)); assert.equal(seed(hash), 1);
-	hash.setInteger(2, valueBool(false)); assert.equal(seed(hash), 2, 'eligible keys in preallocated hash storage use the same seed update');
+	table.setInteger(2, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 2, 'even an existing eligible mapping advances only one adjacent step');
+	table.setInteger(2, valueNil()); assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 1);
+	table.clear(); assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), 0); assert.equal(table.length(work), 0); assert.equal(work.probes, 1);
+	const hash = cpu.createTable(0, 16); hash.setInteger(1, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash.address + TableHeader.Length), 1);
+	hash.setInteger(2, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash.address + TableHeader.Length), 2, 'eligible keys in preallocated hash storage use the same seed update');
 });
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
@@ -81,7 +74,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const charges = [2, 2, 3 + 6 * probes, 8, 2, 2], total = charges.reduce((a, b) => a + b, 0);
 			cpu.runUntilDepth(0, total * 64);
 			if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
-			const savedSeed = seed(table), heap = cpu.luaHeap.usedBytes();
+			const savedSeed = cpu.memory.readRamRecordWord(table.address + TableHeader.Length), heap = cpu.luaHeap.usedBytes();
 			for (let grant = 0; grant <= total; ++grant) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
 				frame.registers.setInteger(6, 91); frame.registers.setNil(8); frame.registers.setNil(9); marker.setInteger(1, valueInteger(-1));
@@ -93,7 +86,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				assert.equal(marker.getInteger(1), valueInteger(completed >= 4 ? boundary : -1), 'no future table mutation after exhausted LEN');
 				assert.equal(frame.registers.get(8), completed >= 5 ? valueInteger(37) : valueNil(), 'cached live Number survives the helper and exact prefix admission');
 			}
-			assert.equal(seed(table), savedSeed); assert.equal(cpu.luaHeap.usedBytes(), heap);
+			assert.equal(cpu.memory.readRamRecordWord(table.address + TableHeader.Length), savedSeed); assert.equal(cpu.luaHeap.usedBytes(), heap);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
 			const before = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 5); const after = cpu.captureRuntimeState(), debt = cpu.instructionBudgetRemaining;
 			cpu.restoreRuntimeState(before); cpu.runUntilDepth(0, 5); frame = cpu.rootThread.currentFrame!;

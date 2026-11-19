@@ -45,23 +45,27 @@ export class LuaHeap {
 		return exhausted;
 	}
 
-	public allocateRecord(bytes: number, owned: boolean, extraBytes: number,
+	public allocateRecord(bytes: number, owned: boolean, backingBytes: number, backingField: number,
 		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {
-		const charged = (bytes === 0 ? 0 : heapAllocationBytes(bytes)) + extraBytes;
+		const charged = heapAllocationBytes(bytes) + (backingBytes === 0 ? 0 : heapAllocationBytes(backingBytes));
 		const collected = this.admit(charged, root0, root1, root2, null);
-		if (bytes === 0) {
-			this.trackedBytes += charged;
-			return 0;
-		}
 		const arena = this.cpu.heapAllocator;
-		let address = arena.allocate(bytes, owned);
-		if (address === 0 && !collected) {
-			this.collectRuntime(root0, root1, root2);
-			if (this.trackedBytes + charged <= this.capacity()) address = arena.allocate(bytes, owned);
+		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
+			if (this.trackedBytes + charged <= this.capacity()) {
+				const address = arena.allocate(bytes, owned);
+				if (address !== 0) {
+					const backing = backingBytes === 0 ? 0 : arena.allocate(backingBytes, true);
+					if (backingBytes === 0 || backing !== 0) {
+						if (backingField !== 0) this.cpu.memory.writeRamRecordWord(address + backingField, backing);
+						this.trackedBytes += charged;
+						return address;
+					}
+					arena.free(address);
+				}
+			}
+			if (attempt === 0) this.collectRuntime(root0, root1, root2);
 		}
-		if (address === 0) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		this.trackedBytes += charged;
-		return address;
+		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
 
 	public collectRuntime(

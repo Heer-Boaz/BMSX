@@ -122,7 +122,7 @@ void rebuildWork(bool scalar) {
    r.set(1, valueString(cpu.stringPool().intern("third"))); surcharge = 14; capacity = 2;
   } else if (scenario == "weak-collection") {
    auto* mode = cpu.createTable(0, 1);
-   mode->setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v"))); table->metatable = mode;
+   mode->setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v"))); table->setMetatable(mode);
    table->set(field, valueTable(cpu.gcHeap().reference(cpu.createTable()))); table->set(other, valueTable(cpu.gcHeap().reference(cpu.createTable())));
    r.set(1, valueString(cpu.stringPool().intern("third")));
    const auto heap = cpu.luaHeap().captureState();
@@ -132,7 +132,7 @@ void rebuildWork(bool scalar) {
   } else {
    for (int i = 0; i < 1024; ++i) table->set(valueFloat(i + 0.5f), valueInteger(i));
    r.set(1, valueFloat(1024.5f));
-   retainedSlots = static_cast<int>((cpu.luaHeap().capacity() - cpu.luaHeap().usedBytes() - 4096) / 5);
+   retainedSlots = static_cast<int>((cpu.luaHeap().capacity() - cpu.luaHeap().usedBytes() - 4 * 4096) / 5);
    r.set(4, valueTable(cpu.gcHeap().reference(cpu.createTable(retainedSlots))));
    cpu.collectHeap(); // Isolate failed admission from the preceding assist cycle.
    surcharge = 2048; capacity = 1024;

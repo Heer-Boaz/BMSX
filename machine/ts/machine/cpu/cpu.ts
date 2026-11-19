@@ -119,7 +119,7 @@ import {
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { Table, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
+import { Table, TableHeader, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
 import { Closure, EMPTY_CLOSURE_UPVALUES, Upvalue, UPVALUE_HEAP_BYTES } from './closure';
 import { ValueSlots } from './value_slots';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
@@ -428,9 +428,9 @@ export class CPU implements MappedPageInvalidator {
 
 	public createTable(arraySize: number = 0, hashSize: number = 0): Table {
 		const hashCapacity = Table.hashCapacity(hashSize);
-		const storage = this.luaHeap.allocateRecord(Table.storageBytes(arraySize, hashCapacity), true, Table.HEADER_BYTES);
-		const table = new Table(this.gc, arraySize, hashCapacity, storage);
-		table.initializeStorage();
+		const address = this.luaHeap.allocateRecord(Table.HEADER_BYTES, false, Table.storageBytes(arraySize, hashCapacity), TableHeader.Storage);
+		const table = new Table(this.gc, address);
+		table.initialize(arraySize, hashCapacity);
 		table.hashId = this.allocateObjectHashId();
 		this.gc.track(table);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(this.gc.reference(table)));
@@ -4102,10 +4102,12 @@ export class CPU implements MappedPageInvalidator {
 			const kind = pendingKinds[id];
 			let offset: number;
 			if (this.gc.sweepGarbage(object)) {
-				offset = writer.reserveWords(4); writer.setWord(offset, CpuSnapshotObjectKind.Garbage);
+				offset = writer.reserveWords(5); writer.setWord(offset, CpuSnapshotObjectKind.Garbage);
 				writer.setWord(offset + 1, object.hashId); writer.setWord(offset + 2, this.gc.allocationBytes(object));
 				writer.setWord(offset + 3, kind === CpuSnapshotObjectKind.Table ? (object as Table).storageAddress()
 					: kind === CpuSnapshotObjectKind.Garbage ? (object as GarbageAllocation).storage : 0);
+				writer.setWord(offset + 4, kind === CpuSnapshotObjectKind.Table ? (object as Table).address
+					: kind === CpuSnapshotObjectKind.Garbage ? (object as GarbageAllocation).record : 0);
 				writer.setObjectWord(id, offset); continue;
 			}
 			switch (kind) {
@@ -4118,7 +4120,7 @@ export class CPU implements MappedPageInvalidator {
 					break;
 				}
 				case CpuSnapshotObjectKind.Table:
-					offset = (object as Table).captureSnapshot(writer, writeValue);
+					offset = (object as Table).captureSnapshot(writer);
 					break;
 				case CpuSnapshotObjectKind.Closure: {
 					const closure = object as Closure;
@@ -4208,6 +4210,7 @@ export class CPU implements MappedPageInvalidator {
 	public restoreRuntimeState(state: CpuRuntimeState): void {
 		this.compiledCodeCache.retireAll();
 		const snapshot = state.snapshot;
+		this.gc.forgetTableRecords();
 		const restoredObjects = new Array<CpuSnapshotObject>(snapshot.objectCount);
 		this.clearCompletionValues();
 		this.clearCallStack();
@@ -4220,7 +4223,7 @@ export class CPU implements MappedPageInvalidator {
 				case CpuSnapshotObjectKind.Garbage: {
 					const bytes = snapshot.word(offset + 2);
 					this.luaHeap.restoreAllocate(bytes);
-					const object = new GarbageAllocation(bytes, snapshot.word(offset + 3)); object.hashId = snapshot.word(offset + 1);
+					const object = new GarbageAllocation(bytes, snapshot.word(offset + 3), snapshot.word(offset + 4)); object.hashId = snapshot.word(offset + 1);
 					this.gc.track(object); object.restored = true;
 					restoredObjects[index] = object;
 					break;
@@ -4240,10 +4243,8 @@ export class CPU implements MappedPageInvalidator {
 					break;
 				}
 				case CpuSnapshotObjectKind.Table: {
-					const arrayCapacity = snapshot.word(offset + CpuSnapshotTable.ArrayCapacity);
-					const hashSize = snapshot.word(offset + CpuSnapshotTable.HashSize);
-					this.luaHeap.restoreAllocate(Table.trackedHeapBytesForCapacities(arrayCapacity, hashSize));
-					const table = new Table(this.gc, arrayCapacity, hashSize, snapshot.word(offset + CpuSnapshotTable.Storage));
+					const table = new Table(this.gc, snapshot.word(offset + CpuSnapshotTable.Record));
+					this.luaHeap.restoreAllocate(table.getTrackedHeapBytes());
 					this.gc.track(table); table.restored = true;
 					table.hashId = snapshot.word(offset + CpuSnapshotTable.HashId);
 					restoredObjects[index] = table;
@@ -4299,7 +4300,6 @@ export class CPU implements MappedPageInvalidator {
 			const offset = snapshot.objectWord(index);
 			switch (snapshot.word(offset)) {
 				case CpuSnapshotObjectKind.Table:
-					(restoredObjects[index] as Table).restoreSnapshot(reader, offset);
 					break;
 				case CpuSnapshotObjectKind.Closure: {
 					const closure = restoredObjects[index] as Closure;

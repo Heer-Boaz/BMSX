@@ -36,7 +36,8 @@ NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState
 	const BuiltinArgsView args(state->registers.subspan(base + 1, static_cast<size_t>(count)));
 	const auto& function = cpu->m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(state->registers.get(base)))];
 	Value result;
-	if (!cpu->executeBuiltinLeaf(function.id, args, result)) return NativeBuiltinCallOutcome::Declined;
+	if ((function.id == BuiltinFunctionId::SetMetatable && cpu->m_memory.ramWriteWatches().anyWatched())
+		|| !cpu->executeBuiltinLeaf(function.id, args, result)) return NativeBuiltinCallOutcome::Declined;
 	if (receiving) state->registers.set(base, result);
 	state->registerTop = base + receiving;
 	state->remainingCycles -= static_cast<int>(function.cycleBase) + receiving;

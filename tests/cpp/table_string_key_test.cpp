@@ -86,14 +86,11 @@ void rejectedGrowthRetainsExhaustedCursor(CPU& cpu) {
 	auto* table = cpu.createTable(0, 1);
 	const auto present = cpu.stringPool().intern("full"), missing = cpu.stringPool().intern("new");
 	table->setStringKey(present, valueInteger(73));
-	CpuSnapshot before, after;
-	const auto beforeOffset = table->captureSnapshot(before, [](u32, Value) {});
+	require(table->hashFree() == 0,
+		"a direct main-bucket insertion has not searched the only free-slot candidate");
 	require(Table::storeStringKeyWithoutGrowth(table, missing, valueInteger(19)) == TABLE_STORE_REQUIRES_GROWTH,
 		"a full hash requires allocating completion");
-	const auto afterOffset = table->captureSnapshot(after, [](u32, Value) {});
-	require(before.word(beforeOffset + SNAP_TABLE_HASH_FREE) == 0u,
-		"a direct main-bucket insertion has not searched the only free-slot candidate");
-	require(after.word(afterOffset + SNAP_TABLE_HASH_FREE) == 0xffffffffu,
+	require(table->hashFree() == -1,
 		"rejected growth retains an exhausted cursor for the allocating completion");
 	require(table->getStringKey(present) == valueInteger(73) && isNil(table->getStringKey(missing)),
 		"rejected growth leaves the original mappings intact");
@@ -114,7 +111,7 @@ void inheritedAndFullWordKeys(CPU& cpu) {
 	auto* metatable = cpu.createTable(0, 1);
 	metatable->setStringKey(indexKey, valueTable(cpu.gcHeap().reference(parent)));
 	auto* child = cpu.createTable();
-	child->metatable = metatable;
+	child->setMetatable(metatable);
 	TableLookupResult result;
 	child->resolveStringIndex(indexKey, key, result);
 	require(result.status == TableLookupStatus::Resolved && result.value == valueBool(false), "inherited false is present");

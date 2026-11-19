@@ -65,6 +65,7 @@ void replayAllocationIdentities() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto anchor = cpu.captureRuntimeState();
+	const auto anchorRam = cpu.memory().captureSaveState();
 	const auto strings = cpu.stringPool().captureState();
 	const auto anchorBytes = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime));
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "program completes");
@@ -77,6 +78,7 @@ void replayAllocationIdentities() {
 	const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime));
 	for (const int budget : {1001, 2001, 4001, 8001}) {
 		cpu.stringPool().restoreState(strings);
+		cpu.memory().restoreSaveState(anchorRam);
 		cpu.restoreRuntimeState(anchor);
 		require(bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime)) == anchorBytes, "full CPU state is restored independently of the previous grant");
 		require(cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "the next call consumes only its newly supplied grant");
@@ -117,7 +119,7 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 			auto* weak = cpu.createTable(1, 0);
 			auto* mode = cpu.createTable(0, 1);
 			mode->setStringKey(cpu.stringPool().intern("__mode"), bmsx::valueString(cpu.stringPool().intern("v")));
-			weak->metatable = mode;
+			weak->setMetatable(mode);
 			weak->setInteger(1, cpu.readFrameRegister(0, 0));
 			cpu.setGlobalByKey(cpu.stringPool().intern("weak"), bmsx::valueTable(cpu.gcHeap().reference(weak)));
 			cpu.collectHeap();
@@ -200,7 +202,7 @@ void replayWeakCollectionSchedule() {
 	auto* weak = cpu.createTable(1, 0);
 	auto* metatable = cpu.createTable(0, 1);
 	metatable->setStringKey(cpu.stringPool().intern("__mode"), bmsx::valueString(cpu.stringPool().intern("v")));
-	weak->metatable = metatable;
+	weak->setMetatable(metatable);
 	weak->setInteger(1, bmsx::valueTable(cpu.gcHeap().reference(cpu.createTable())));
 	cpu.setGlobalByKey(weakKey, bmsx::valueTable(cpu.gcHeap().reference(weak)));
 	for (int index = 0; index < 17; ++index) cpu.createTable(256, 0);
@@ -244,9 +246,11 @@ void restoreUnrootedCanonicalClosure() {
 	SnapshotMachine machine(image);
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto cold = cpu.captureRuntimeState();
+	const auto coldRam = cpu.memory().captureSaveState();
 	cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE)]
 		+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::KNIL)]);
 	const auto warm = cpu.captureRuntimeState();
+	const auto warmRam = cpu.memory().captureSaveState();
 	require(warm.snapshot.word(warm.threads[0].stack[warm.threads[0].frames[0].stackBase]) == static_cast<bmsx::u32>(bmsx::CpuSnapshotValueTag::Nil), "static closure is no longer a guest root");
 	bool captured = false;
 	for (bmsx::u32 offset : warm.snapshot.objectWords()) {
@@ -257,7 +261,9 @@ void restoreUnrootedCanonicalClosure() {
 	require(captured, "snapshot must retain unrooted canonical cache entries");
 	cpu.runUntilDepth(0, 1000);
 	const auto expectedId = bmsx::asTable(cpu.readCompletionValues().get(0), cpu.gcHeap())->hashId;
+	cpu.memory().restoreSaveState(coldRam);
 	cpu.restoreRuntimeState(cold);
+	cpu.memory().restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
 	cpu.runUntilDepth(0, 1000);
 	require(bmsx::asTable(cpu.readCompletionValues().get(0), cpu.gcHeap())->hashId == expectedId, "warm cache restore must preserve the next guest allocation identity");
@@ -442,7 +448,7 @@ void diagnosticGcPhasesDoNotBecomeMachineState() {
 	auto* weak = cpu.createTable(1, 0);
 	auto* mode = cpu.createTable(0, 1);
 	mode->setStringKey(strings.intern("__mode"), bmsx::valueString(strings.intern("v")));
-	weak->metatable = mode;
+	weak->setMetatable(mode);
 	weak->setInteger(1, bmsx::valueTable(cpu.gcHeap().reference(cpu.createTable(64, 0))));
 	cpu.setGlobalByKey(weakKey, bmsx::valueTable(cpu.gcHeap().reference(weak)));
 	strings.intern("unrooted diagnostic text");

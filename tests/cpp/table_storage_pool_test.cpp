@@ -29,7 +29,7 @@ int main() {
 		require(memory.readMappedU32LE(bodyAddress + 2 * 4u) == 99u, "array payload lives in guest RAM");
 		memory.writeMappedU32LE(bodyAddress + 2 * 4u, 11u);
 		require(first->getInteger(3) == valueInteger(11), "table reads consume the physical bytes");
-		require(cpu.heapAllocator().occupiedBytes() == 80u, "one arena allocation contains the entire body");
+		require(cpu.heapAllocator().occupiedBytes() == 112u, "the header and body are separate physical allocations");
 		first->setStringKey(key, valueBool(false));
 		first->clear();
 		require(cpu.luaHeap().usedBytes() == before.trackedBytes + 32,
@@ -49,6 +49,7 @@ int main() {
 		first->clear();
 		require(cpu.luaHeap().usedBytes() == before.trackedBytes + 64,
 			"empty tables keep only their canonical headers, and release both bodies");
+		require(cpu.heapAllocator().occupiedBytes() == 64u, "only the two physical headers remain");
 		require(cpu.luaHeap().captureState().nextCollectionBytes == before.nextCollectionBytes,
 			"recycling does not reschedule guest collection");
 		std::cout << "Table guest storage tests passed\n";

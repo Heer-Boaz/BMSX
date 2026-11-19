@@ -99,6 +99,10 @@ void GcHeap::releaseReference(GCObject* object) {
 	object->referenceId = 0;
 }
 void GcHeap::track(GCObject* object) {
+	if (object->type == ObjType::Table) {
+		auto* table = static_cast<Table*>(object);
+		m_tableRecords[(table->address() & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES] = table;
+	}
 	if (m_freeReference != 0) {
 		object->referenceId = m_freeReference;
 		m_freeReference = m_references[m_freeReference].nextFree;
@@ -150,10 +154,11 @@ size_t GcHeap::allocationBytes(const GCObject* object) const {
 	BMSX_UNREACHABLE();
 }
 uint8_t GcHeap::tableWeakMode(const Table& table) const {
-	if (!table.metatable) {
+	const auto* meta = table.metatable();
+	if (!meta) {
 		return 0;
 	}
-	const Value modeValue = table.metatable->getStringKey(m_modeKey);
+	const Value modeValue = meta->getStringKey(m_modeKey);
 	if (!valueIsString(modeValue)) {
 		return 0;
 	}
@@ -217,9 +222,7 @@ size_t GcHeap::trace(bool atomic) {
 		}
 		case ObjType::Table: {
 			auto* table = static_cast<Table*>(obj);
-			if (table->metatable) {
-				markObject(table->metatable);
-			}
+			markObject(table->metatable());
 			const uint8_t weakMode = tableWeakMode(*table);
 			if (weakMode != 0 && !table->gcWeakListed) {
 				table->gcWeakListed = true;
@@ -404,10 +407,16 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 					m_sweep = object->next;
 					work += ceilDiv4(static_cast<int>(allocationBytes(object)));
 					if (sweepGarbage(object)) {
-						if (object->type == ObjType::Table) static_cast<Table*>(object)->freeStorage();
+						if (object->type == ObjType::Table) {
+							auto* table = static_cast<Table*>(object);
+							m_tableRecords[(table->address() & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES] = nullptr;
+							table->freeRecord();
+						}
 						else if (object->type == ObjType::Garbage) {
 							const u32 storage = static_cast<const GarbageAllocation*>(object)->storage;
 							if (storage) arena.free(storage);
+							const u32 record = static_cast<const GarbageAllocation*>(object)->record;
+							if (record) arena.free(record);
 						}
 						unlink(object); destroyObject(object);
 					}

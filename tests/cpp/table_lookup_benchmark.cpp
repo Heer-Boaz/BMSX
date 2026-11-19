@@ -53,7 +53,7 @@ struct Fixture {
 			auto* metatable = cpu.createTable(0, 1);
 			metatable->setStringKey(indexKey, valueTable(cpu.gcHeap().reference(inherited)));
 			auto* child = cpu.createTable();
-			child->metatable = metatable;
+			child->setMetatable(metatable);
 			inherited = child;
 		}
 		for (size_t i = 0; i < KeyCount; ++i) {

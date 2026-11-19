@@ -148,13 +148,13 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		slot = table->setStringKey(key, valueInteger(1));
 		block->sideExits[0].tableCacheSlot = slot;
 		if (!store) {
-			table->metatable = machine.cpu.createTable(0, 0);
+			table->setMetatable(machine.cpu.createTable(0, 0));
 			require(block->run(nativeRunState = {.registers = registers.view(), .constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue,
 				"a live own field bypasses inheritance even when the table has a metatable");
 			table->setStringKey(key, valueNil());
 			require(block->run(nativeRunState = {.registers = registers.view(), .constants = constants.view(), .heap = &machine.cpu.gcHeap(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
 				&& isNil(registers.get(0)), "an empty live metatable resolves to nil without a semantic side exit");
-			table->metatable = nullptr;
+			table->setMetatable(nullptr);
 			slot = table->setStringKey(key, valueInteger(1));
 		}
 	}

@@ -84,14 +84,14 @@ Table* makeChain(CPU& cpu, Table* root, int depth, Value key, Value value) {
 	auto* current = root;
 	for (int i = 1; i < depth; ++i) {
 		auto* next = cpu.createTable(2, 2); auto* meta = cpu.createTable(0, 1);
-		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(next))); current->metatable = meta; current = next;
+		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(next))); current->setMetatable(meta); current = next;
 	}
 	current->set(key, value);
 	return current;
 }
 void cycle(CPU& cpu, Table* root) {
 	auto* meta = cpu.createTable(0, 1);
-	meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(root))); root->metatable = meta;
+	meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(root))); root->setMetatable(meta);
 }
 
 void grantsAndRestore() {
@@ -176,7 +176,7 @@ void stringReceiver() {
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 		for (auto* m : {&generated, &scalar}) {
 			auto* installed = asTable(m->cpu.readFrameRegister(0, 21), m->cpu.gcHeap());
-			installed->metatable->setStringKey(m->cpu.stringPool().intern("__index"), valueTable(m->cpu.gcHeap().reference(m->cpu.createTable())));
+			installed->metatable()->setStringKey(m->cpu.stringPool().intern("__index"), valueTable(m->cpu.gcHeap().reference(m->cpu.createTable())));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);

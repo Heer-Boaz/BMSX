@@ -77,7 +77,7 @@ struct Machine {
 		} else {
 			target = cpu.createTable(0, 1); meta = cpu.createTable(0, 1);
 			meta->setStringKey(cpu.stringPool().intern("field"), valueInteger(71));
-			target->metatable = meta;
+			target->setMetatable(meta);
 			cpu.setGlobalByKey(cpu.stringPool().intern("target"), valueTable(cpu.gcHeap().reference(target)));
 			r.set(1, mode == 3 ? valueInteger(17) : valueTable(cpu.gcHeap().reference(target)));
 			r.set(2, mode == 1 ? valueNil() : mode == 2 ? valueBool(false) : valueTable(cpu.gcHeap().reference(meta)));
@@ -150,7 +150,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 		if (!interrupt) require(machine.cpu.readCauseWord() == 0 && machine.cpu.isHaltedUntilIrq()
 			&& machine.observedSuccessors == 1, "resuming the ordinary successor observes it once and never replays the already committed CALL");
 	}
-	if (id == BuiltinFunctionId::SetMetatable && mode == 1) require(machine.target->metatable == nullptr, "discard and receiving forms still perform the real metatable removal");
+	if (id == BuiltinFunctionId::SetMetatable && mode == 1) require(machine.target->metatable() == nullptr, "discard and receiving forms still perform the real metatable removal");
 	require(frame->registers.get(7) == valueFloat(99.75f), "the cached numeric prefix survives the returning helper ABI");
 	require(frame->top == receiving && machine.cpu.getFrameDepth() == 1 && frame->next == nullptr, "builtin completion owns exact top without a child frame");
 	if (receiving) require(frame->registers.get(0) == machine.expected, "the raw native result equals the primitive contract");
@@ -201,7 +201,7 @@ void ordinaryCases() {
 		require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT && native.cpu.readEpcWord() == rom.textAddress + INSTRUCTION_BYTES,
 			"unsupported argument shapes use the existing error owner at the original WIDE instruction PC");
 		require(native.cpu.instructionBudgetRemaining == -33, "argument errors pay prefix2+CALL32+primitive2 but no receiving-slot fee");
-		if (id == BuiltinFunctionId::SetMetatable) require(native.target->metatable == native.meta, "invalid metatable validation has no partial mutation");
+		if (id == BuiltinFunctionId::SetMetatable) require(native.target->metatable() == native.meta, "invalid metatable validation has no partial mutation");
 	}
 }
 } // namespace

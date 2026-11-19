@@ -13,11 +13,7 @@ struct GCObject;
 // The snapshot transports the same explicit tag and one raw payload word.
 using CpuSnapshotValueTag = ValueTag;
 enum class CpuSnapshotObjectKind : u32 { Table, Closure, Upvalue, Thread, Garbage };
-enum CpuSnapshotTable : u32 {
-	SNAP_TABLE_KIND, SNAP_TABLE_HASH_ID, SNAP_TABLE_LENGTH_HINT, SNAP_TABLE_ARRAY_CAPACITY,
-	SNAP_TABLE_HASH_SIZE, SNAP_TABLE_HASH_FREE, SNAP_TABLE_STORAGE, SNAP_TABLE_METATABLE,
-	SNAP_TABLE_SIZE = SNAP_TABLE_METATABLE + CPU_SNAPSHOT_VALUE_WORDS,
-};
+enum CpuSnapshotTable : u32 { SNAP_TABLE_KIND, SNAP_TABLE_HASH_ID, SNAP_TABLE_RECORD, SNAP_TABLE_SIZE };
 enum CpuSnapshotClosure : u32 {
 	SNAP_CLOSURE_KIND, SNAP_CLOSURE_HASH_ID, SNAP_CLOSURE_FUNCTION_ADDRESS,
 	SNAP_CLOSURE_CANONICAL, SNAP_CLOSURE_UPVALUE_COUNT,

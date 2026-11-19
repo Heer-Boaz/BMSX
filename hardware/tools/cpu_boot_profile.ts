@@ -3,6 +3,7 @@
 // a worst-case peak or compatibility proof.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { CpuSnapshotClosure, CpuSnapshotObjectKind, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
 import type { InputControllerSnapshot } from '../../machine/ts/machine/devices/input/contracts';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -71,11 +72,13 @@ function main(): void {
 			for (let id = 0; id < state.snapshot.objectCount; id += 1) {
 				const offset = state.snapshot.objectWord(id);
 				switch (state.snapshot.word(offset)) {
-					case CpuSnapshotObjectKind.Table:
+					case CpuSnapshotObjectKind.Table: {
 						objects.tables += 1;
-						arraySlots += state.snapshot.word(offset + CpuSnapshotTable.ArrayCapacity);
-						hashSlots += state.snapshot.word(offset + CpuSnapshotTable.HashSize);
+						const record = state.snapshot.word(offset + CpuSnapshotTable.Record);
+						arraySlots += cpu.memory.readRamRecordWord(record + TableHeader.Array);
+						hashSlots += cpu.memory.readRamRecordWord(record + TableHeader.Hash);
 						break;
+					}
 					case CpuSnapshotObjectKind.Closure:
 						objects.closures += 1;
 						canonicalClosures += state.snapshot.word(offset + CpuSnapshotClosure.Canonical);

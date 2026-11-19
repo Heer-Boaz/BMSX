@@ -1,9 +1,9 @@
+import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
 import { TABLE_STORE_REQUIRES_GROWTH, TableLookupStatus, type TableLookupResult } from '../../machine/ts/machine/cpu/table';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -122,13 +122,10 @@ test('rejected string-store growth retains the exhausted cursor for allocating c
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 1), present = cpu.stringPool.intern('full'), missing = cpu.stringPool.intern('new');
 	table.setStringKey(present, valueInteger(73));
-	const beforeWriter = new CpuSnapshotWriter(new CpuSnapshot());
-	const beforeOffset = table.captureSnapshot(beforeWriter, () => {}), before = beforeWriter.finish();
+	const free = table.address + TableHeader.Free;
+	assert.equal(memory.readRamRecordWord(free), 0);
 	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Integer, 19), TABLE_STORE_REQUIRES_GROWTH);
-	const afterWriter = new CpuSnapshotWriter(new CpuSnapshot());
-	const afterOffset = table.captureSnapshot(afterWriter, () => {}), after = afterWriter.finish();
-	assert.equal(before.word(beforeOffset + CpuSnapshotTable.HashFree), 0);
-	assert.equal(after.int(afterOffset + CpuSnapshotTable.HashFree), -1);
+	assert.equal(memory.readRamRecordWord(free) | 0, -1);
 	assert.equal(table.getStringKey(present), valueInteger(73)); assert.equal(table.getStringKey(missing), valueNil());
 	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Integer, 19), TABLE_STORE_REQUIRES_GROWTH);
 	table.setStringKey(present, valueNil());

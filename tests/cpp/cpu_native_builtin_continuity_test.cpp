@@ -77,7 +77,7 @@ struct Machine {
 			r.set(13, valueFloat(position));
 			expected = position == 3 ? valueInteger(3) : valueNil();
 		} else {
-			target = cpu.createTable(); meta = cpu.createTable(); target->metatable = meta;
+			target = cpu.createTable(); meta = cpu.createTable(); target->setMetatable(meta);
 			r.set(13, mode == 3 ? valueInteger(17) : valueTable(cpu.gcHeap().reference(target)));
 			r.set(14, mode == 1 ? valueNil() : mode == 2 ? valueBool(false) : valueTable(cpu.gcHeap().reference(meta)));
 			expected = id == BuiltinFunctionId::GetMetatable ? valueTable(cpu.gcHeap().reference(meta)) : valueTable(cpu.gcHeap().reference(target));
@@ -136,7 +136,7 @@ void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float positi
 		"the successor consumes the new result, or the retained callee when results are discarded");
 	require(machine.cpu.instructionBudgetRemaining == 12345 && frame->pc == rom.textAddress && frame->top == 3,
 		"the base native ABI updates its own state, never hidden CPU/frame copies behind live native registers");
-	if (id == BuiltinFunctionId::SetMetatable) require(machine.target->metatable == (mode == 1 ? nullptr : machine.meta),
+	if (id == BuiltinFunctionId::SetMetatable) require(machine.target->metatable() == (mode == 1 ? nullptr : machine.meta),
 		"the inline route performs the real table mutation");
 }
 
@@ -167,7 +167,7 @@ void completedDebtDoesNotRunTheSuccessor() {
 		const auto* caller=preparedCaller(machine);const auto* exit=caller->run(state);const int receiving=results==1?0:1;
 		require(exit->exit!=NativeBlockExit::Call && exit->cycles==0 && exit->nextPc==caller->terminal.nextPc,
 			"an exhausting successful leaf returns its completed successor frontier, never the original CALL");
-		require(state.remainingCycles==-2-receiving && state.registerTop==receiving && machine.target->metatable==nullptr,
+		require(state.remainingCycles==-2-receiving && state.registerTop==receiving && machine.target->metatable()==nullptr,
 			"the complete primitive/result charge and real mutation commit even when CALL exhausted the grant");
 		require(frame->registers.get(8)==valueInteger(-8) && frame->registers.get(9)==valueInteger(-9),
 			"no successor executes after the completed CALL debt");

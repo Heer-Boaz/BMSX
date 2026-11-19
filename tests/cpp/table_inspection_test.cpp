@@ -97,21 +97,15 @@ void boundarySearchAndHashMix(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	auto* table = cpu.createTable(4096, 8);
 	for (int key = 4096; key >= 1; --key) table->setInteger(key, valueBool(false));
-	CpuSnapshot before;
-	const u32 offset = table->captureSnapshot(before, [](u32, Value) {});
-	require(before.word(offset + SNAP_TABLE_LENGTH_HINT) == 1, "descending writes do not scan the retained suffix");
+	require(table->lengthHint() == 1, "descending writes do not scan the retained suffix");
 	require(Table::length(table) == 4096, "pure search finds the unique sequence boundary");
 	for (int repeat = 0; repeat < 8; ++repeat) {
 		table->setInteger(2048, valueNil()); table->setInteger(2048, valueBool(false));
 	}
-	CpuSnapshot after;
-	table->captureSnapshot(after, [](u32, Value) {});
-	require(std::equal(before.words().begin(), before.words().end(), after.words().begin()), "reads and distant hole refills retain the raw hint");
+	require(table->lengthHint() == 1, "reads and distant hole refills retain the raw hint");
 	table->clearWeakEntries(false, true, [](Value) { return false; });
 	require(Table::length(table) == 0, "a stale nonzero hint is only a search seed");
-	CpuSnapshot cleared;
-	table->captureSnapshot(cleared, [](u32, Value) {});
-	require(cleared.word(offset + SNAP_TABLE_LENGTH_HINT) == 1, "weak clearing need not rebuild the hint");
+	require(table->lengthHint() == 1, "weak clearing need not rebuild the hint");
 
 	auto* sparse = cpu.createTable(0, 128);
 	for (int bit = 30; bit >= 0; --bit) sparse->setInteger(1 << bit, valueBool(false));

@@ -78,11 +78,13 @@ return {}, cached, dynamic
 `, 'snapshot-identities.lua'));
 	const { cpu } = createTestSystemCpu(image);
 	const anchor = cpu.captureRuntimeState();
+	const anchorRam = cpu.memory.captureSaveState();
 	const strings = cpu.stringPool.captureState();
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const expected = cpu.captureRuntimeState();
 	for (const budget of [1001, 2001, 4001, 8001]) {
 		cpu.stringPool.restoreState(strings);
+		cpu.memory.restoreSaveState(anchorRam);
 		cpu.restoreRuntimeState(anchor);
 		assert.deepEqual(cpu.captureRuntimeState(), anchor);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded, 'the next call consumes only its newly supplied grant');
@@ -174,15 +176,19 @@ test('a materialized but unrooted canonical closure remains part of the checkpoi
 		closureRelocations: [{ wordIndex: 1, functionAddress: address }],
 	}));
 	const cold = cpu.captureRuntimeState();
+	const coldRam = cpu.memory.captureSaveState();
 	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.KNIL]), RunResult.Yielded);
 	const warm = cpu.captureRuntimeState();
+	const warmRam = cpu.memory.captureSaveState();
 	assert.equal(warm.snapshot.word(warm.threads[0].stack[warm.threads[0].frames[0].stackBase]), ValueTag.Nil);
 	assert.ok(warm.snapshot.objectWords.some(offset => warm.snapshot.word(offset) === CpuSnapshotObjectKind.Closure
 		&& warm.snapshot.word(offset + CpuSnapshotClosure.Canonical) === 1
 		&& warm.snapshot.word(offset + CpuSnapshotClosure.FunctionAddress) === address));
 	cpu.runUntilDepth(0, 1000);
 	const expected = cpu.captureRuntimeState();
+	cpu.memory.restoreSaveState(coldRam);
 	cpu.restoreRuntimeState(cold);
+	cpu.memory.restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
 	assert.deepEqual(cpu.captureRuntimeState(), warm);
 	cpu.runUntilDepth(0, 1000);

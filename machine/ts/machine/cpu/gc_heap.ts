@@ -1,3 +1,4 @@
+import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
@@ -52,6 +53,11 @@ export class GcHeap {
 		if (valueTag(value) === ValueTag.String) this.cpu.stringPool.markReachable(valuePayload(value));
 	};
 	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory, public readonly arena: HeapAllocator, private readonly modeKey: number) {}
+	private readonly tableRecords = new Array<Table | null>(MAIN_RAM_SIZE / Table.HEADER_BYTES).fill(null);
+	public tableAt(address: number): Table | null {
+		return this.tableRecords[(address & RAM_RECORD_WORD_MASK) >>> 5];
+	}
+	public forgetTableRecords(): void { this.tableRecords.fill(null); }
 	public reference(object: GcObject): number { return object.referenceId; }
 	/** Consumes a live id produced by this heap; the Value tag supplies its kind. */
 	public object(reference: number): GcObject { return this.references[reference] as GcObject; }
@@ -63,6 +69,7 @@ export class GcHeap {
 		}
 	}
 	public track(object: GcObject): void {
+		if (object.gcKind === GcKind.Table) this.tableRecords[((object as Table).address & RAM_RECORD_WORD_MASK) >>> 5] = object as Table;
 		if (this.freeReference !== 0) {
 			object.referenceId = this.freeReference;
 			this.freeReference = this.references[this.freeReference] as number;
@@ -254,9 +261,15 @@ export class GcHeap {
 						if (this.sweepGarbage(object)) {
 							this.unlink(object);
 							this.releaseReference(object);
-							if (object.gcKind === GcKind.Table) (object as Table).freeStorage();
-							else if (object.gcKind === GcKind.Garbage && (object as GarbageAllocation).storage !== 0)
-								this.arena.free((object as GarbageAllocation).storage);
+							if (object.gcKind === GcKind.Table) {
+								const table = object as Table;
+								this.tableRecords[(table.address & RAM_RECORD_WORD_MASK) >>> 5] = null;
+								table.freeRecord();
+							} else if (object.gcKind === GcKind.Garbage) {
+								const { storage, record } = object as GarbageAllocation;
+								if (storage !== 0) this.arena.free(storage);
+								if (record !== 0) this.arena.free(record);
+							}
 							this.budget.release(bytes);
 						} else {
 							object.gcColor = this.white;

@@ -1,4 +1,4 @@
-import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { heapAllocationBytes } from './heap_allocator';
 import { GcObject, GcKind } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
@@ -10,7 +10,7 @@ import {
 	ValueTag, asTable, canonicalTableKey, isNil, valueFromTag, valueInteger,
 	valueNil, valuePayload, valueString, valueTable, valueTag, type Value,
 } from './value';
-import { type CpuSnapshotWriter, CpuSnapshotObjectKind, CpuSnapshotTable, type CpuSnapshotValueWriter, type CpuSnapshotReader } from './snapshot';
+import { type CpuSnapshotWriter, CpuSnapshotObjectKind, CpuSnapshotTable } from './snapshot';
 import { ValueSlots, type ValueWriteTarget } from './value_slots';
 
 const TABLE_HASH_NEXT_END = -1;
@@ -23,61 +23,81 @@ export type TableLookupResult = { values: ValueSlots; slot: number; extraVisits:
 type StoredEntryVisitor = (key: Value, value: Value) => void;
 type StoredValuePredicate = (value: Value) => boolean;
 
+export const enum TableHeader {
+	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
+}
 export class Table extends GcObject {
-	private lengthHint = 0;
-	private words = 0;
-	private tags = 0;
-	private hashLinks = 0;
-	private arrayCapacity = 0;
-	private hashSize = 0;
-	private hashFree = -1;
 	public gcWeakListed = false;
-	private tableMetatable: Table | null = null;
 	private static readonly rehashIntegerCounts = new Uint32Array(32);
-
 	static readonly HEADER_BYTES = 32;
 
-	constructor(private readonly heap: GcHeap, arraySize: number, hashCapacity: number, storage: number) {
+	constructor(private readonly heap: GcHeap, public readonly address: number) {
 		super(GcKind.Table);
-		this.bindStorage(arraySize, hashCapacity, storage);
+	}
+	public initialize(array: number, hash: number): void {
+		this.writeHeader(TableHeader.Kind, ValueTag.Table);
+		this.writeHeader(TableHeader.Gray, 0);
+		this.writeHeader(TableHeader.Metatable, 0);
+		this.writeHeader(TableHeader.Length, 0);
+		this.bindStorage(array, hash, this.storageAddress());
+		this.initializeStorage();
 	}
 	public static hashCapacity(size: number): number { return size > 0 ? nextPowerOfTwo(size) : 0; }
-	public static storageBytes(array: number, hash: number): number { return 5 * array + 14 * hash; }
+	public static storageBytes(array: number, hash: number): number { return (5 * array + 14 * hash) >>> 0; }
 	public static trackedHeapBytesForCapacities(array: number, hash: number): number {
 		const bytes = Table.storageBytes(array, hash);
 		return Table.HEADER_BYTES + (bytes === 0 ? 0 : heapAllocationBytes(bytes));
 	}
-	public get metatable(): Table | null { return this.tableMetatable; }
-	public set metatable(table: Table | null) { this.writeBarrier(); this.tableMetatable = table; }
-
-	private bindStorage(array: number, hash: number, address: number): void {
-		this.words = address & RAM_RECORD_WORD_MASK;
-		this.hashLinks = this.words + (array + 2 * hash) * 4;
-		this.tags = this.hashLinks + hash * 4;
-		this.arrayCapacity = array; this.hashSize = hash; this.hashFree = hash - 1;
+	private readHeader(field: TableHeader): number { return this.heap.memory.readRamRecordWord(this.address + field); }
+	private writeHeader(field: TableHeader, word: number): void { this.heap.memory.writeRamRecordWord(this.address + field, word); }
+	public get metatable(): Table | null { return this.heap.tableAt(this.readHeader(TableHeader.Metatable)); }
+	public set metatable(table: Table | null) {
+		this.writeBarrier();
+		this.writeHeader(TableHeader.Metatable, table === null ? 0 : table.address);
 	}
-	public initializeStorage(): void {
+	public get arrayCapacity(): number { return this.readHeader(TableHeader.Array); }
+	public get hashSize(): number { return this.readHeader(TableHeader.Hash); }
+	private get lengthHint(): number { return this.readHeader(TableHeader.Length); }
+	private get hashFree(): number { return this.readHeader(TableHeader.Free) | 0; }
+	public storageAddress(): number { return this.readHeader(TableHeader.Storage); }
+	private get hashLinks(): number { return this.storageAddress() + (this.arrayCapacity + 2 * this.hashSize) * 4; }
+	private get tags(): number { return this.storageAddress() + (this.arrayCapacity + 3 * this.hashSize) * 4; }
+	private bindStorage(array: number, hash: number, address: number): void {
+		this.writeHeader(TableHeader.Storage, address);
+		this.writeHeader(TableHeader.Array, array);
+		this.writeHeader(TableHeader.Hash, hash);
+		this.writeHeader(TableHeader.Free, hash - 1);
+	}
+	private initializeStorage(): void {
 		const bytes = Table.storageBytes(this.arrayCapacity, this.hashSize);
 		if (bytes === 0) return;
 		const memory = this.heap.memory;
+		const words = this.storageAddress() & RAM_RECORD_WORD_MASK;
+		const links = words + (this.arrayCapacity + 2 * this.hashSize) * 4;
+		const tags = links + this.hashSize * 4;
 		const ram = memory.ramData();
-		ram.fill(0, this.words, this.hashLinks);
-		ram.fill(0xff, this.hashLinks, this.tags);
-		ram.fill(0, this.tags, this.words + bytes);
-		memory.invalidateRamWrite(this.words, bytes);
+		ram.fill(0, words, links);
+		ram.fill(0xff, links, tags);
+		ram.fill(0, tags, words + bytes);
+		memory.invalidateRamWrite(words, bytes);
 	}
-	public storageAddress(): number { return this.words === 0 ? 0 : RAM_BASE + this.words; }
-	public freeStorage(): void {
-		if (this.words !== 0) this.heap.arena.free(RAM_BASE + this.words);
+	private freeStorage(): void {
+		const storage = this.storageAddress();
+		if (storage !== 0) this.heap.arena.free(storage);
 	}
-	private wordAt(slot: number): number { return this.heap.memory.readRamRecordWord(this.words + slot * 4); }
+	public freeRecord(): void {
+		this.freeStorage();
+		this.heap.arena.free(this.address);
+	}
+	private wordAt(slot: number): number { return this.heap.memory.readRamRecordWord(this.storageAddress() + slot * 4); }
 	private tagAt(slot: number): ValueTag { return this.heap.memory.readRamRecordByte(this.tags + slot); }
 	private hashNext(index: number): number { return this.heap.memory.readRamRecordWord(this.hashLinks + index * 4) | 0; }
 	private setHashNext(index: number, next: number): void { this.heap.memory.writeRamRecordWord(this.hashLinks + index * 4, next); }
 	private valueAt(slot: number): Value { return valueFromTag(this.tagAt(slot), this.wordAt(slot)); }
 	private setEncoded(slot: number, tag: ValueTag, word: number): void {
-		this.heap.memory.writeRamRecordWord(this.words + slot * 4, word);
-		this.heap.memory.writeRamRecordByte(this.tags + slot, tag);
+		const words = this.storageAddress(), tags = this.tags;
+		this.heap.memory.writeRamRecordWord(words + slot * 4, word);
+		this.heap.memory.writeRamRecordByte(tags + slot, tag);
 	}
 	private setValue(slot: number, value: Value): void { this.setEncoded(slot, valueTag(value), valuePayload(value)); }
 	private hashKeySlot(index: number): number { return this.arrayCapacity + index; }
@@ -140,7 +160,7 @@ export class Table extends GcObject {
 	}
 	public loadIntegerArrayKey(index: number, target: ValueWriteTarget, destination: number): boolean {
 		const slot = (index >>> 0) - 1;
-		if (slot < 0 || slot >= this.arrayCapacity || (this.tableMetatable !== null && this.tagAt(slot) === ValueTag.Nil)) return false;
+		if (slot < 0 || slot >= this.arrayCapacity || (this.readHeader(TableHeader.Metatable) !== 0 && this.tagAt(slot) === ValueTag.Nil)) return false;
 		target.setEncoded(destination, this.tagAt(slot), this.wordAt(slot)); return true;
 	}
 	public storeIntegerArrayKey(index: number, tag: ValueTag, word: number): boolean {
@@ -176,8 +196,9 @@ export class Table extends GcObject {
 		target.setNil(destination); return -1;
 	}
 	public metatableIndexTable(indexKey: StringId): Table | null {
-		if (this.tableMetatable === null) return null;
-		const value = this.tableMetatable.getStringKey(indexKey);
+		const meta = this.metatable;
+		if (meta === null) return null;
+		const value = meta.getStringKey(indexKey);
 		return valueTag(value) === ValueTag.Table ? asTable(value, this.heap) : null;
 	}
 	public resolveIndex(indexKey: StringId, keyTag: ValueTag, keyWord: number, result: TableLookupResult): void {
@@ -275,10 +296,10 @@ export class Table extends GcObject {
 	private getFreeIndex(): number {
 		for (let index = this.hashFree; index >= 0; --index) {
 			if (this.tagAt(this.hashKeySlot(index)) === ValueTag.Nil && this.tagAt(this.hashValueSlot(index)) === ValueTag.Nil) {
-				this.hashFree = index - 1; return index;
+				this.writeHeader(TableHeader.Free, index - 1); return index;
 			}
 		}
-		this.hashFree = -1; return -1;
+		this.writeHeader(TableHeader.Free, -1); return -1;
 	}
 	private insertHashWithoutGrowth(key: Value, value: Value): number {
 		if (this.hashSize === 0) return -1;
@@ -355,9 +376,9 @@ export class Table extends GcObject {
 		this.resize(arraySize, hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0, key, value);
 	}
 	private resize(array: number, hash: number, key: Value, value: Value): void {
-		const storage = this.heap.budget.allocateRecord(Table.storageBytes(array, hash), true, 0,
+		const storage = this.heap.budget.allocateRecord(Table.storageBytes(array, hash), true, 0, 0,
 			valueTable(this.heap.reference(this)), key, value);
-		const oldWords = this.words, oldTags = this.tags, oldArray = this.arrayCapacity, oldHash = this.hashSize;
+		const oldWords = this.storageAddress(), oldTags = this.tags, oldArray = this.arrayCapacity, oldHash = this.hashSize;
 		const memory = this.heap.memory;
 		const oldBytes = this.getTrackedHeapBytes() - Table.HEADER_BYTES;
 		this.bindStorage(array, hash, storage);
@@ -381,12 +402,12 @@ export class Table extends GcObject {
 			}
 		}
 		this.heap.budget.accountTableStorageWork(oldArray + 2 * oldHash + relocated);
-		if (oldWords !== 0) this.heap.arena.free(RAM_BASE + oldWords);
+		if (oldWords !== 0) this.heap.arena.free(oldWords);
 		this.heap.budget.release(oldBytes);
 	}
 	private updateLengthHint(slot: number, present: boolean): void {
-		if (present) { if (slot === this.lengthHint) ++this.lengthHint; }
-		else if (slot + 1 === this.lengthHint) --this.lengthHint;
+		const hint = this.lengthHint;
+		if (present ? slot === hint : slot + 1 === hint) this.writeHeader(TableHeader.Length, present ? hint + 1 : hint - 1);
 	}
 	private hasIntegerKey(key: number): boolean {
 		if (key <= this.arrayCapacity) return this.tagAt(key - 1) !== ValueTag.Nil;
@@ -417,7 +438,7 @@ export class Table extends GcObject {
 		if (work) work.probes = probes; return low;
 	}
 	public clear(): void {
-		const bytes = this.getTrackedHeapBytes(); this.lengthHint = 0; this.freeStorage(); this.bindStorage(0, 0, 0);
+		const bytes = this.getTrackedHeapBytes(); this.writeHeader(TableHeader.Length, 0); this.freeStorage(); this.bindStorage(0, 0, 0);
 		this.heap.budget.release(bytes - this.getTrackedHeapBytes());
 	}
 	public get storedSlotCount(): number { return this.arrayCapacity + this.hashSize; }
@@ -471,23 +492,12 @@ export class Table extends GcObject {
 		}
 		target.setNil(destination); return arrayWork + 2 * (this.hashSize - hashStart);
 	}
-	public captureSnapshot(snapshot: CpuSnapshotWriter, writeValue: CpuSnapshotValueWriter): number {
+	public captureSnapshot(snapshot: CpuSnapshotWriter): number {
 		const offset = snapshot.reserveWords(CpuSnapshotTable.Size);
 		snapshot.setWord(offset + CpuSnapshotTable.Kind, CpuSnapshotObjectKind.Table);
 		snapshot.setWord(offset + CpuSnapshotTable.HashId, this.hashId);
-		snapshot.setWord(offset + CpuSnapshotTable.LengthHint, this.lengthHint);
-		snapshot.setWord(offset + CpuSnapshotTable.ArrayCapacity, this.arrayCapacity);
-		snapshot.setWord(offset + CpuSnapshotTable.HashSize, this.hashSize);
-		snapshot.setWord(offset + CpuSnapshotTable.HashFree, this.hashFree);
-		snapshot.setWord(offset + CpuSnapshotTable.Storage, this.storageAddress());
-		writeValue(offset + CpuSnapshotTable.Metatable, this.tableMetatable === null ? valueNil() : valueTable(this.heap.reference(this.tableMetatable)));
+		snapshot.setWord(offset + CpuSnapshotTable.Record, this.address);
 		return offset;
-	}
-	public restoreSnapshot(reader: CpuSnapshotReader, offset: number): void {
-		this.lengthHint = reader.snapshot.word(offset + CpuSnapshotTable.LengthHint);
-		this.hashFree = reader.snapshot.int(offset + CpuSnapshotTable.HashFree);
-		reader.readValue(offset + CpuSnapshotTable.Metatable);
-		this.tableMetatable = reader.tag === ValueTag.Nil ? null : asTable(reader.value(), this.heap);
 	}
 	public getTrackedHeapBytes(): number { return Table.trackedHeapBytesForCapacities(this.arrayCapacity, this.hashSize); }
 }

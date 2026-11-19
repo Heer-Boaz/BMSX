@@ -262,7 +262,7 @@ return true`, 3);
    } else {
     for (let i = 0; i < 1024; ++i) table.set(valueFloat(i + 0.5), valueInteger(i));
     r.setFloat(1, 1024.5);
-    retainedSlots = ((cpu.luaHeap.capacity() - cpu.luaHeap.usedBytes() - 4096) / 5) | 0;
+    retainedSlots = ((cpu.luaHeap.capacity() - cpu.luaHeap.usedBytes() - 4 * 4096) / 5) | 0;
     r.setTable(4, cpu.gc.reference(cpu.createTable(retainedSlots)));
     cpu.collectTrackedHeapBytes(); // Isolate failed admission from any preceding assist cycle.
     surcharge = 2048; capacity = 1024;

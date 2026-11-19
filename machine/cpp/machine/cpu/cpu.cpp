@@ -133,14 +133,10 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 
 Table* CPU::createTable(int arraySize, int hashSize) {
 	const size_t hashCapacity = Table::hashCapacity(hashSize);
-	const u32 storage = m_luaHeap.allocateRecord(Table::storageBytes(arraySize, hashCapacity), true, Table::HEADER_BYTES);
-	Table* table = m_heap.allocate<Table>(
-		ObjType::Table,
-		m_heap,
-		static_cast<size_t>(arraySize),
-		hashCapacity, storage
-	);
-	table->initializeStorage();
+	const u32 address = m_luaHeap.allocateRecord(Table::HEADER_BYTES, false, Table::storageBytes(arraySize, hashCapacity),
+		static_cast<u32>(TableHeader::Storage));
+	Table* table = m_heap.allocate<Table>(ObjType::Table, m_heap, address);
+	table->initialize(arraySize, hashCapacity);
 	trackLocalRoot(valueTable(m_heap.reference(table)));
 	return table;
 }
@@ -961,12 +957,14 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		const auto* object = pendingObjects[id];
 		u32 offset;
 		if (m_heap.sweepGarbage(object)) {
-			offset = snapshot.reserveWords(4);
+			offset = snapshot.reserveWords(5);
 			snapshot.setWord(offset, static_cast<u32>(CpuSnapshotObjectKind::Garbage));
 			snapshot.setWord(offset + 1, object->hashId);
 			snapshot.setWord(offset + 2, static_cast<u32>(m_heap.allocationBytes(object)));
 			snapshot.setWord(offset + 3, object->type == ObjType::Table ? static_cast<const Table*>(object)->storageAddress()
 				: object->type == ObjType::Garbage ? static_cast<const GarbageAllocation*>(object)->storage : 0);
+			snapshot.setWord(offset + 4, object->type == ObjType::Table ? static_cast<const Table*>(object)->address()
+				: object->type == ObjType::Garbage ? static_cast<const GarbageAllocation*>(object)->record : 0);
 			snapshot.setObjectWord(id, offset);
 			continue;
 		}
@@ -980,7 +978,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				break;
 			}
 			case ObjType::Table:
-				offset = static_cast<const Table*>(object)->captureSnapshot(snapshot, writeValue);
+				offset = static_cast<const Table*>(object)->captureSnapshot(snapshot);
 				break;
 			case ObjType::Closure: {
 				const auto* closure = static_cast<const Closure*>(object);
@@ -1077,6 +1075,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		record.executionDomainId = snapshot.integer(offset + SNAP_CLOSURE_EXECUTION_DOMAIN_ID);
 		return record;
 	};
+	m_heap.forgetTableRecords();
 	std::vector<GCObject*> restoredObjects(snapshot.objectCount());
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
@@ -1084,7 +1083,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			case CpuSnapshotObjectKind::Garbage: {
 				const auto bytes = snapshot.word(offset + 2);
 				m_luaHeap.restoreAllocate(bytes);
-				auto* object = m_heap.allocate<GarbageAllocation>(ObjType::Garbage, bytes, snapshot.word(offset + 3));
+				auto* object = m_heap.allocate<GarbageAllocation>(ObjType::Garbage, bytes, snapshot.word(offset + 3), snapshot.word(offset + 4));
 				object->restored = true;
 				object->hashId = snapshot.word(offset + 1);
 				restoredObjects[index] = object;
@@ -1108,10 +1107,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				break;
 			}
 			case CpuSnapshotObjectKind::Table: {
-				const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
-				const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
-				m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(arrayCapacity, hashSize));
-				Table* table = m_heap.allocate<Table>(ObjType::Table, m_heap, arrayCapacity, hashSize, snapshot.word(offset + SNAP_TABLE_STORAGE));
+				Table* table = m_heap.allocate<Table>(ObjType::Table, m_heap, snapshot.word(offset + SNAP_TABLE_RECORD));
+				m_luaHeap.restoreAllocate(table->trackedHeapBytes());
 				table->restored = true;
 				table->hashId = snapshot.word(offset + SNAP_TABLE_HASH_ID);
 				restoredObjects[index] = table;
@@ -1181,9 +1178,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			case CpuSnapshotObjectKind::Garbage: break;
 			case CpuSnapshotObjectKind::Thread:
 				break;
-			case CpuSnapshotObjectKind::Table:
-				static_cast<Table*>(restoredObjects[index])->restoreSnapshot(reader, offset);
-				break;
+			case CpuSnapshotObjectKind::Table: break;
 			case CpuSnapshotObjectKind::Closure: {
 				auto* closure = static_cast<Closure*>(restoredObjects[index]);
 				for (u32 slot = 0; slot < closure->upvalueCount; ++slot) {
@@ -3029,13 +3024,13 @@ Value CPU::resolveTableFieldIndex(Table* table, StringId key) {
 Value CPU::loadTableIndex(const Value& base, const Value& key) {
 	if (valueIsTable(base)) {
 		Table* table = asTable(base, m_heap);
-		if (!table->metatable) {
+		if (!table->metatable()) {
 			return table->get(key);
 		}
 		return resolveTableIndex(table, key);
 	}
 	if (valueIsString(base)) {
-		if (!m_stringIndexTable->metatable) {
+		if (!m_stringIndexTable->metatable()) {
 			return m_stringIndexTable->get(key);
 		}
 		return resolveTableIndex(m_stringIndexTable, key);
@@ -3046,13 +3041,13 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 	if (valueIsTable(base)) {
 		Table* table = asTable(base, m_heap);
-		if (!table->metatable) {
+		if (!table->metatable()) {
 			return table->getInteger(index);
 		}
 		return resolveTableIntegerIndex(table, index);
 	}
 	if (valueIsString(base)) {
-		if (!m_stringIndexTable->metatable) {
+		if (!m_stringIndexTable->metatable()) {
 			return m_stringIndexTable->getInteger(index);
 		}
 		return resolveTableIntegerIndex(m_stringIndexTable, index);
@@ -3065,7 +3060,7 @@ Value CPU::loadTableFieldIndexCached(int& predictedSlot, const Value& base, Stri
 	if (valueIsTable(base)) table = asTable(base, m_heap);
 	else if (valueIsString(base)) table = m_stringIndexTable;
 	else throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
-	if (!table->metatable) return table->getStringKeyCached(key, predictedSlot);
+	if (!table->metatable()) return table->getStringKeyCached(key, predictedSlot);
 	TableLookupResult result;
 	table->resolveStringIndexCached(asStringId(m_indexKey), key, predictedSlot, result);
 	instructionBudgetRemaining -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
@@ -3077,13 +3072,13 @@ Value CPU::loadTableFieldIndexCached(int& predictedSlot, const Value& base, Stri
 Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
 	if (valueIsTable(base)) {
 		Table* table = asTable(base, m_heap);
-		if (!table->metatable) {
+		if (!table->metatable()) {
 			return table->getStringKey(key);
 		}
 		return resolveTableFieldIndex(table, key);
 	}
 	if (valueIsString(base)) {
-		if (!m_stringIndexTable->metatable) {
+		if (!m_stringIndexTable->metatable()) {
 			return m_stringIndexTable->getStringKey(key);
 		}
 		return resolveTableFieldIndex(m_stringIndexTable, key);

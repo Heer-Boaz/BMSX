@@ -9,10 +9,7 @@ import { ValueTag, valueFromTag, type Value } from './value';
 // payload word; references use object ordinals, never heap handles/hash ids.
 export const CPU_SNAPSHOT_VALUE_WORDS = 2;
 export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue, Thread, Garbage }
-export const enum CpuSnapshotTable {
-	Kind, HashId, LengthHint, ArrayCapacity, HashSize, HashFree, Storage, Metatable,
-	Size = Metatable + CPU_SNAPSHOT_VALUE_WORDS,
-}
+export const enum CpuSnapshotTable { Kind, HashId, Record, Size }
 export const enum CpuSnapshotClosure { Kind, HashId, FunctionAddress, Canonical, UpvalueCount, CodeAddress, NumParams, MaxStack, Flags, UpvalueTableAddress, RecordUpvalueCount, ExecutionDomainId, Data }
 export const enum CpuSnapshotUpvalue { Kind, HashId, Open, Index, ThreadRef, FrameIndex, Value }
 export const enum CpuSnapshotThread { Kind, HashId, Index, Size }

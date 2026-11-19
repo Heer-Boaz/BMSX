@@ -22,5 +22,5 @@ export class GcObject {
 }
 /** Sweep state retains allocation work without retaining dead graph edges. */
 export class GarbageAllocation extends GcObject {
-	public constructor(public readonly bytes: number, public readonly storage: number) { super(GcKind.Garbage); }
+	public constructor(public readonly bytes: number, public readonly storage: number, public readonly record: number) { super(GcKind.Garbage); }
 }

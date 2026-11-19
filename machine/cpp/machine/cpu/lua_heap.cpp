@@ -47,22 +47,27 @@ bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, Thr
 	return exhausted;
 }
 
-u32 LuaHeap::allocateRecord(u32 bytes, bool owned, size_t extraBytes, Value root0, Value root1, Value root2) {
-	const size_t charged = (bytes ? heapAllocationBytes(bytes) : 0u) + extraBytes;
+u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField,
+	Value root0, Value root1, Value root2) {
+	const size_t charged = heapAllocationBytes(bytes) + (backingBytes ? heapAllocationBytes(backingBytes) : 0u);
 	const bool collected = admit(charged, root0, root1, root2, nullptr);
-	if (bytes == 0u) {
-		m_trackedBytes += charged;
-		return 0u;
-	}
 	auto& arena = m_cpu.heapAllocator();
-	u32 address = arena.allocate(bytes, owned);
-	if (!address && !collected) {
-		collectRuntime(root0, root1, root2);
-		if (m_trackedBytes + charged <= capacity()) address = arena.allocate(bytes, owned);
+	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
+		if (m_trackedBytes + charged <= capacity()) {
+			const u32 address = arena.allocate(bytes, owned);
+			if (address) {
+				const u32 backing = backingBytes ? arena.allocate(backingBytes, true) : 0u;
+				if (!backingBytes || backing) {
+					if (backingField) m_cpu.memory().writeRamRecordWord(address + backingField, backing);
+					m_trackedBytes += charged;
+					return address;
+				}
+				arena.free(address);
+			}
+		}
+		if (attempt == 0) collectRuntime(root0, root1, root2);
 	}
-	if (!address) throw LuaOutOfMemorySignal{};
-	m_trackedBytes += charged;
-	return address;
+	throw LuaOutOfMemorySignal{};
 }
 
 void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, Thread* growingStack) {

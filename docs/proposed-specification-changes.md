@@ -2406,8 +2406,9 @@ al "outside reserved storage". Het heapgebied valt onder die regel zodra
    `K` is opnieuw bepaald uit de gebouwde ROM’s (12.11).
 4. **Tabellen.** `K` is de capaciteit. De payload-, tag- en hashvlakken
    staan samen in één toegewezen RAM-blok; hun bezetting gebruikt size
-   classes. De kop, de adresidentiteit en de uiteindelijke collectiekosten
-   volgen nog. Meet daarna de gameplaypiek met de nieuwe boekhouding.
+   classes. De tabelkop staat ook in RAM. De adresidentiteit van tabelwaarden
+   en de uiteindelijke collectiekosten volgen nog. Meet daarna de gameplaypiek
+   met de nieuwe boekhouding.
 5. **Closures en captured-variable-cellen**, met de prototypes (O5).
 6. **Strings**, samen met de byte-strings.
 7. **Threads en frames.**

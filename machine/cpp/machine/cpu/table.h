@@ -29,30 +29,29 @@ struct TableLookupResult {
 	TableLookupStatus status;
 };
 
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-struct TableNativeFieldOffsets {
-	size_t hashSize;
-	size_t words, tags;
-	size_t arraySize;
-	size_t lengthHint;
-	size_t metatable;
+enum class TableHeader : u32 {
+	Kind = 0, Gray = 4, Metatable = 8, Storage = 12, Array = 16, Hash = 20, Length = 24, Free = 28,
 };
-#endif
 
 class Table : public GCObject {
 public:
-	Table(GcHeap& heap, size_t arrayCapacity, size_t hashCapacity, u32 storage);
+	Table(GcHeap& heap, u32 address);
 	static constexpr u32 HEADER_BYTES = 32;
 	static u32 storageBytes(size_t arraySize, size_t hashSize);
-	void initializeStorage();
-	void freeStorage();
-	u32 storageAddress() const { return m_values.words ? RAM_BASE + m_values.words : 0; }
+	void initialize(size_t arrayCapacity, size_t hashCapacity);
+	void freeRecord();
+	u32 address() const { return m_address; }
+	u32 storageAddress() const { return readHeader(TableHeader::Storage); }
+	u32 arrayCapacity() const { return readHeader(TableHeader::Array); }
+	u32 hashSlots() const { return readHeader(TableHeader::Hash); }
+	u32 lengthHint() const { return readHeader(TableHeader::Length); }
+	i32 hashFree() const { return static_cast<i32>(readHeader(TableHeader::Free)); }
 	Table(const Table&) = delete;
 	Table& operator=(const Table&) = delete;
 	static size_t hashCapacity(int hashSize);
 	static size_t trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	static TableNativeFieldOffsets nativeFieldOffsets();
+	static size_t nativeAddressOffset();
 #endif
 
 	Value get(const Value& key) const;
@@ -62,7 +61,7 @@ public:
 	}
 	bool setIntegerArrayKey(int key, const Value& value) {
 		const size_t slot = static_cast<size_t>(static_cast<u32>(key) - 1u);
-		if (slot >= m_arraySize) {
+		if (slot >= arrayCapacity()) {
 			return false;
 		}
 		setArraySlot(slot, value);
@@ -117,36 +116,36 @@ public:
 	static i32 length(const Table* table, u32* probes = nullptr) noexcept;
 	void clear();
 	// Physical array positions followed by hash nodes, including vacant/dead slots.
-	size_t storedSlotCount() const { return m_arraySize + m_hashSize; }
+	size_t storedSlotCount() const { return arrayCapacity() + hashSlots(); }
 	// Constant-work inspection. Slot is in [0, storedSlotCount()); mutation invalidates
 	// positions. False leaves key/value untouched. Does not invoke guest code.
 	bool loadStoredEntry(size_t slot, Value& key, Value& value) const;
 	template <typename Fn>
 	void forEachEntry(Fn&& fn) const {
-		for (size_t i = 0; i < m_arraySize; ++i) {
-			if (!isNil(m_values.get(i))) {
-				fn(valueInteger(static_cast<i32>(i + 1)), m_values.get(i));
+		for (size_t i = 0; i < arrayCapacity(); ++i) {
+			if (!isNil(values().get(i))) {
+				fn(valueInteger(static_cast<i32>(i + 1)), values().get(i));
 			}
 		}
-		for (size_t i = 0; i < m_hashSize; ++i) {
-			if (!isNil(m_values.get(hashKeySlot(i))) && !isNil(m_values.get(hashValueSlot(i)))) {
-				fn(m_values.get(hashKeySlot(i)), m_values.get(hashValueSlot(i)));
+		for (size_t i = 0; i < hashSlots(); ++i) {
+			if (!isNil(values().get(hashKeySlot(i))) && !isNil(values().get(hashValueSlot(i)))) {
+				fn(values().get(hashKeySlot(i)), values().get(hashValueSlot(i)));
 			}
 		}
 	}
 	template <typename ValueIsAlive>
 	void clearWeakEntries(bool weakKeys, bool weakValues, ValueIsAlive&& valueIsAlive) {
 		if (weakValues) {
-			for (size_t i = 0; i < m_arraySize; ++i) {
-				if (isNil(m_values.get(i)) || valueIsAlive(m_values.get(i))) {
+			for (size_t i = 0; i < arrayCapacity(); ++i) {
+				if (isNil(values().get(i)) || valueIsAlive(values().get(i))) {
 					continue;
 				}
-				m_values.set(i, valueNil());
+				values().set(i, valueNil());
 			}
 		}
-		for (size_t i = 0; i < m_hashSize; ++i) {
-			const Value key = m_values.get(hashKeySlot(i));
-			const Value value = m_values.get(hashValueSlot(i));
+		for (size_t i = 0; i < hashSlots(); ++i) {
+			const Value key = values().get(hashKeySlot(i));
+			const Value value = values().get(hashValueSlot(i));
 			if (isNil(key) || isNil(value)) {
 				continue;
 			}
@@ -160,37 +159,35 @@ public:
 	}
 	// Returns inspected Value slots; a nil output key denotes exhaustion.
 	size_t nextEntry(const Value& after, Value& key, Value& value) const;
-	u32 captureSnapshot(CpuSnapshot& snapshot, const CpuSnapshotValueWriter& writeValue) const;
-	void restoreSnapshot(const CpuSnapshotReader& reader, u32 offset);
+	u32 captureSnapshot(CpuSnapshot& snapshot) const;
 	size_t trackedHeapBytes() const;
 
-	Table* metatable = nullptr;
+	Table* metatable() const;
+	void setMetatable(Table* table);
 	bool gcWeakListed = false;
 
 private:
 	bool getArraySlot(size_t slot, Value& value) const {
-		if (slot >= m_arraySize) return false;
-		const Value own = m_values.get(slot);
-		if (isNil(own) && metatable) return false;
+		if (slot >= arrayCapacity()) return false;
+		const Value own = values().get(slot);
+		if (isNil(own) && readHeader(TableHeader::Metatable) != 0) return false;
 		value = own;
 		return true;
 	}
 
 	void updateLengthHint(size_t slot, bool present) {
-		if (present) {
-			if (slot == m_lengthHint) ++m_lengthHint;
-		} else if (slot + 1 == m_lengthHint) {
-			--m_lengthHint;
-		}
+		const u32 hint = lengthHint();
+		if (present ? slot == hint : slot + 1 == hint)
+			writeHeader(TableHeader::Length, present ? hint + 1 : hint - 1);
 	}
 	void setArraySlot(size_t slot, const Value& value) {
 		writeBarrier();
-		m_values.set(slot, value);
+		values().set(slot, value);
 		updateLengthHint(slot, !isNil(value));
 	}
 
-	size_t hashKeySlot(size_t index) const { return m_arraySize + index; }
-	size_t hashValueSlot(size_t index) const { return m_arraySize + m_hashSize + index; }
+	size_t hashKeySlot(size_t index) const { return arrayCapacity() + index; }
+	size_t hashValueSlot(size_t index) const { return arrayCapacity() + hashSlots() + index; }
 	bool getArrayIndex(const Value& key, int& outIndex) const;
 	bool hasIntegerKey(u32 key) const;
 	size_t hashValue(const Value& key) const;
@@ -202,6 +199,11 @@ private:
 	void rehash(const Value& key, const Value& value);
 	void resize(size_t newArraySize, size_t newHashSize, const Value& key, const Value& value);
 	void bindStorage(size_t arraySize, size_t hashSize, u32 address);
+	void initializeStorage();
+	void freeStorage();
+	u32 readHeader(TableHeader field) const { return m_memory.readRamRecordWord(m_address + static_cast<u32>(field)); }
+	void writeHeader(TableHeader field, u32 word) { m_memory.writeRamRecordWord(m_address + static_cast<u32>(field), word); }
+	u32 linksAddress() const { return storageAddress() + (arrayCapacity() + 2u * hashSlots()) * 4u; }
 	struct TableValues {
 		Memory* memory;
 		u32 words, tags;
@@ -215,10 +217,10 @@ private:
 		}
 	};
 	i32 hashNext(size_t index) const {
-		return static_cast<i32>(m_values.memory->readRamRecordWord(m_hashLinks + static_cast<u32>(index) * 4u));
+		return static_cast<i32>(m_memory.readRamRecordWord(linksAddress() + static_cast<u32>(index) * 4u));
 	}
 	void setHashNext(size_t index, i32 next) {
-		m_values.memory->writeRamRecordWord(m_hashLinks + static_cast<u32>(index) * 4u, static_cast<u32>(next));
+		m_memory.writeRamRecordWord(linksAddress() + static_cast<u32>(index) * 4u, static_cast<u32>(next));
 	}
 	int rawSet(const Value& key, const Value& value);
 	int insertHash(const Value& key, const Value& value);
@@ -244,14 +246,14 @@ private:
 		result.status = TableLookupStatus::ChainExhausted;
 	}
 
-	GcHeap& m_heap;
-	TableValues m_values;
-	size_t m_arraySize = 0;
-	u32 m_lengthHint = 0;
-	u32 m_hashLinks = 0;
-	size_t m_hashSize = 0;
-	int m_hashFree = -1;
-};
+	TableValues values() const {
+		const u32 words = storageAddress();
+		return {&m_memory, words, words + (arrayCapacity() + 3u * hashSlots()) * 4u};
+	}
 
+	GcHeap& m_heap;
+	Memory& m_memory;
+	u32 m_address;
+};
 
 } // namespace bmsx

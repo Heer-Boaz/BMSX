@@ -8,6 +8,8 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
+import { compileLuaSource } from './cpu_test_harness';
+import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import * as v from '../../machine/ts/machine/cpu/value';
 
 function machine(): CPU {
@@ -19,15 +21,17 @@ function machine(): CPU {
 
 test('Table backing is five bytes per Value plus four bytes per hash link', () => {
 	const cpu = machine(), start = cpu.luaHeap.usedBytes();
+	const occupied = cpu.heapAllocator.occupiedBytes();
 	const table = cpu.createTable(8, 16);
-	assert.equal(table.getTrackedHeapBytes(), 32 + 5 * 8 + 14 * 16);
 	assert.equal(cpu.luaHeap.usedBytes() - start, table.getTrackedHeapBytes());
-	// Observe the actual backing, not just its budget formula.
-	const backing = table as unknown as { words: Uint32Array; tags: Uint8Array; hashNext: Int32Array };
-	assert.equal(backing.words.buffer, backing.tags.buffer);
-	assert.equal(backing.words.buffer, backing.hashNext.buffer);
-	assert.equal(backing.words.buffer.byteLength, 5 * 8 + 14 * 16);
+	assert.equal(cpu.heapAllocator.occupiedBytes() - occupied, table.getTrackedHeapBytes());
+	const base = table.storageAddress();
+	const links = base + (8 + 2 * 16) * 4;
+	const tags = links + 16 * 4;
+	assert.equal(cpu.memory.readRamRecordWord(links), 0xffffffff);
 	table.setInteger(3, v.valueFloatBits(0xffa12345));
+	assert.equal(cpu.memory.readRamRecordWord(base + 8), 0xffa12345);
+	assert.equal(cpu.memory.readRamRecordByte(tags + 2), v.ValueTag.Float);
 	assert.equal(table.getInteger(3), v.valueFloatBits(0xffa12345));
 	table.clear(); assert.equal(cpu.luaHeap.usedBytes() - start, 32);
 });
@@ -140,33 +144,28 @@ test('Table mutation streams preserve raw words through collisions, growth and d
 	}
 });
 
-test('Table snapshots restore compact words and remap reference payloads to a different heap', async () => {
-	const { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader } = await import('../../machine/ts/machine/cpu/snapshot');
-	const source = machine(), table = source.createTable(4, 16), child = source.createTable(), meta = source.createTable();
+test('machine snapshots restore table records and their references to a different heap', () => {
+	const image = linkTestSystemBlua32(compileLuaSource('return 0', 'table-record-checkpoint.lua'));
+	const { cpu: source } = createTestSystemCpu(image);
+	const table = source.createTable(4, 16), child = source.createTable(), meta = source.createTable();
 	table.metatable = meta;
 	table.setInteger(1, v.valueFloatBits(0xffa54321));
 	table.setInteger(2, v.valueInteger(-2147483648));
 	table.setInteger(3, v.valueTable(source.gc.reference(child)));
 	table.set(v.valueFloatBits(0xffa12345), v.valueFloatBits(0xffc00000));
-	const objects: object[] = [], snapshot = new CpuSnapshot(), writer = new CpuSnapshotWriter(snapshot);
-	const offset = table.captureSnapshot(writer, (at, value) => {
-		const tag = v.valueTag(value); let payload = v.valuePayload(value);
-		if (tag === v.ValueTag.Table || tag === v.ValueTag.Closure || tag === v.ValueTag.Thread) {
-			const object = source.gc.object(payload); let id = objects.indexOf(object);
-			if (id < 0) { id = objects.length; objects.push(object); } payload = id;
-		}
-		writer.setWord(at, tag); writer.setWord(at + 1, payload);
-	});
-	writer.finish();
-	const target = machine(); for (let i = 0; i < 5; ++i) target.createTable();
-	const restored = target.createTable(), restoredChild = target.createTable(), restoredMeta = target.createTable();
-	assert.notEqual(target.gc.reference(restoredChild), source.gc.reference(child));
-	const resolved = objects.map(object => object === child ? restoredChild : restoredMeta);
-	restored.restoreSnapshot(new CpuSnapshotReader(snapshot, resolved, target.gc), offset);
-	assert.equal(restored.metatable, restoredMeta);
+	const name = source.stringPool.intern('saved_table');
+	source.setGlobalByKey(name, v.valueTable(source.gc.reference(table)));
+	const { cpu: target } = createTestSystemCpu(image);
+	for (let i = 0; i < 5; ++i) target.createTable();
+	target.stringPool.restoreState(source.stringPool.captureState());
+	target.memory.restoreSaveState(source.memory.captureSaveState());
+	target.restoreRuntimeState(source.captureRuntimeState());
+	const restored = v.asTable(target.getGlobalByKey(name), target.gc);
+	assert.equal(restored.address, table.address);
+	assert.equal(restored.metatable?.address, meta.address);
 	assert.equal(restored.getInteger(1), v.valueFloatBits(0xffa54321));
 	assert.equal(restored.getInteger(2), v.valueInteger(-2147483648));
-	assert.equal(v.asTable(restored.getInteger(3), target.gc), restoredChild);
+	assert.equal(v.asTable(restored.getInteger(3), target.gc).address, child.address);
 	assert.equal(restored.get(v.valueFloatBits(0x7fc00001)), v.valueFloatBits(0xffc00000));
 	assert.equal(restored.getTrackedHeapBytes(), table.getTrackedHeapBytes());
 });

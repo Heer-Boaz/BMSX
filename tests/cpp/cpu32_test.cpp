@@ -636,7 +636,7 @@ void constantsGlobalsAndRestore() {
 	const auto self = m.cpu.stringPool().intern("self"), childKey = m.cpu.stringPool().intern("child");
 	graph->setStringKey(self, valueTable(m.cpu.gcHeap().reference(graph)));
 	graph->setStringKey(childKey, valueTable(m.cpu.gcHeap().reference(child)));
-	child->metatable = graph;
+	child->setMetatable(graph);
 	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("graph"), valueTable(m.cpu.gcHeap().reference(graph)));
 	const auto graphHash = graph->hashId, childHash = child->hashId;
 	m.cpu.runUntilDepth(0, 1); // Stop after LOADK; retain the real active register graph.
@@ -656,7 +656,7 @@ void constantsGlobalsAndRestore() {
 	auto* restoredChild = asTable(restored->getStringKey(childKey), m.cpu.gcHeap());
 	require(restored->hashId == graphHash && restoredChild->hashId == childHash,
 		"heap restore preserves hash identities independently of payload ids");
-	require(asTable(restored->getStringKey(self), m.cpu.gcHeap()) == restored && restoredChild->metatable == restored,
+	require(asTable(restored->getStringKey(self), m.cpu.gcHeap()) == restored && restoredChild->metatable() == restored,
 		"restore remaps cyclic Table and metatable edges");
 	m.cpu.runUntilDepth(0, 100);
 	require(m.cpu.readCompletionValues().get(0) == valueFloatBits(0xffa12345), "restored function returns exact words");

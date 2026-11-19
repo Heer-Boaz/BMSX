@@ -196,7 +196,7 @@ void incrementalStateAndBarriers() {
 	auto* child = cpu.createTable();
 	target->setInteger(1, valueTable(cpu.gcHeap().reference(child)));
 	target->setStringKey(field, valueTable(cpu.gcHeap().reference(child)));
-	target->writeBarrier(); target->metatable = cpu.createTable();
+	target->writeBarrier(); target->setMetatable(cpu.createTable());
 	const auto childId = child->hashId;
 	u32 phases = 0, bornId = 0;
 	for (int step = 0; step < 1000; ++step) {
@@ -225,7 +225,7 @@ void incrementalStateAndBarriers() {
 	roots = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
 	target = asTable(roots->getInteger(1000), cpu.gcHeap());
 	require(asTable(target->getInteger(1), cpu.gcHeap())->hashId == childId
-		&& asTable(target->getStringKey(field), cpu.gcHeap())->hashId == childId && target->metatable,
+		&& asTable(target->getStringKey(field), cpu.gcHeap())->hashId == childId && target->metatable(),
 		"barriers preserve changed array, hash and metatable edges");
 	require(asTable(cpu.rootThread()->currentFrame->registers.get(1), cpu.gcHeap())->hashId == bornId,
 		"an allocation born during sweep is retained");
@@ -247,7 +247,7 @@ void incrementalSharedWeakMode() {
 	auto* metatable = cpu.createTable(0, 1);
 	metatable->setStringKey(modeKey, valueString(cpu.stringPool().intern("v")));
 	auto* weak = asTable(roots->getInteger(1000), cpu.gcHeap());
-	weak->metatable = metatable;
+	weak->setMetatable(metatable);
 	auto* child = cpu.createTable();
 	weak->setInteger(1, valueTable(cpu.gcHeap().reference(child)));
 	cpu.stepHeap(valueNil(), valueNil(), valueNil());

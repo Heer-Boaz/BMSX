@@ -77,11 +77,11 @@ void stringReadChainBoundaries() {
 			auto* root = cpu.createTable(0, 1); auto* current = root;
 			for (int i = 1; i < depth; ++i) {
 				auto* next = cpu.createTable(0, 1); auto* meta = cpu.createTable(0, 1);
-				meta->setStringKey(indexKey, valueTable(cpu.gcHeap().reference(next))); current->metatable = meta; current = next;
+				meta->setStringKey(indexKey, valueTable(cpu.gcHeap().reference(next))); current->setMetatable(meta); current = next;
 			}
 			if (depth > 1) current->setStringKey(key, valueFromTag(ValueTag::False, 37));
 			else {
-				auto* meta = cpu.createTable(0, 1); meta->setStringKey(indexKey, valueBool(false)); root->metatable = meta;
+				auto* meta = cpu.createTable(0, 1); meta->setStringKey(indexKey, valueBool(false)); root->setMetatable(meta);
 			}
 			TableLookupResult scratch{valueInteger(73), -1, 0, TableLookupStatus::Resolved};
 			const auto before = cpu.luaHeap().captureState();
@@ -227,7 +227,7 @@ void inheritedArrayReads(bool generic) {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& cpu = m->cpu; auto* own = cpu.createTable(2), *parent = cpu.createTable(2), *meta = cpu.createTable(0, 1);
-		parent->setInteger(1, valueInteger(73)); meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(parent))); own->metatable = meta;
+		parent->setInteger(1, valueInteger(73)); meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(parent))); own->setMetatable(meta);
 		auto& r = cpu.activeThread()->frameAtDepth(0)->registers; r.set(0, valueTable(cpu.gcHeap().reference(own))); r.set(1, valueInteger(1)); cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
 	}
 	for (const Value value : {valueBool(false), valueInteger(0), valueNil(), valueBool(true), valueInteger(19), valueNil()}) {
@@ -286,7 +286,7 @@ void selfAndNilFaults() {
 		auto& cpu = m->cpu; auto* table = cpu.createTable(0, 1); table->setStringKey(cpu.stringPool().intern("method"), valueInteger(73));
 		cpu.activeThread()->frameAtDepth(0)->registers.set(9, valueTable(cpu.gcHeap().reference(table))); cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
 		auto* meta = cpu.createTable(0, 1); table->setStringKey(cpu.stringPool().intern("method"), valueNil());
-		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(table))); table->metatable = meta;
+		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(table))); table->setMetatable(meta);
 		cpu.activeThread()->frameAtDepth(0)->top = 0;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 	}
@@ -345,7 +345,7 @@ void methodCallReturnsOriginalReceiver() {
 		auto* obj = cpu.createTable(0, 4); auto* parent = cpu.createTable(0, 1); auto* meta = cpu.createTable(0, 1);
 		parent->setStringKey(*cpu.stringPool().find("method"), r.get(0));
 		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(parent)));
-		obj->metatable = meta;
+		obj->setMetatable(meta);
 		obj->setStringKey(*cpu.stringPool().find("fromParent"), inherited);
 		obj->setStringKey(*cpu.stringPool().find("fromOwn"), overridden);
 		r.set(2, valueTable(cpu.gcHeap().reference(obj)));

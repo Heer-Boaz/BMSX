@@ -58,10 +58,6 @@ Table* makeTable(CPU& cpu,Kind kind) {
 	if (kind==Kind::Terminal) table->setInteger(INT32_MAX,valueBool(false));
 	return table;
 }
-u32 seed(Table* table) {
-	CpuSnapshot snapshot; const u32 offset=table->captureSnapshot(snapshot,[](u32,Value){});
-	return snapshot.word(offset+SNAP_TABLE_LENGTH_HINT);
-}
 void sameSnapshot(const CpuRuntimeState& a,const CpuRuntimeState& b) {
 	require(std::ranges::equal(a.snapshot.words(),b.snapshot.words())&&std::ranges::equal(a.snapshot.objectWords(),b.snapshot.objectWords())
 		&&a.nextObjectHashId==b.nextObjectHashId&&a.luaHeap.trackedBytes==b.luaHeap.trackedBytes&&a.luaHeap.nextCollectionBytes==b.luaHeap.nextCollectionBytes
@@ -79,14 +75,14 @@ void pureSearchAndSeed() {
 		}
 		sameSnapshot(m.cpu.captureRuntimeState(),before);
 	}
-	Machine m(program,true);auto* table=makeTable(m.cpu,Kind::Descending);require(seed(table)==1,"descending writes retain seed1");
+	Machine m(program,true);auto* table=makeTable(m.cpu,Kind::Descending);require(table->lengthHint()==1,"descending writes retain seed1");
 	for (int i=0;i<300;++i) table->setStringKey(m.cpu.stringPool().intern("key"+std::to_string(i)),valueBool(true));
-	u32 probes;require(seed(table)==1&&Table::length(table,&probes)==4096&&probes==26,"redistribution retains seed and semantic probes");
-	table->setInteger(2,valueBool(false));require(seed(table)==2,"adjacent overwrite advances only one step");
-	table->setInteger(2,valueNil());require(seed(table)==1,"adjacent deletion retreats one step");
-	table->clear();require(seed(table)==0&&Table::length(table,&probes)==0&&probes==1,"complete clear resets seed0");
-	auto* hash=m.cpu.createTable(0,16);hash->setInteger(1,valueBool(false));require(seed(hash)==1,"eligible integer in hash updates seed");
-	hash->setInteger(2,valueBool(false));require(seed(hash)==2,"second eligible hash write advances one step");
+	u32 probes;require(table->lengthHint()==1&&Table::length(table,&probes)==4096&&probes==26,"redistribution retains seed and semantic probes");
+	table->setInteger(2,valueBool(false));require(table->lengthHint()==2,"adjacent overwrite advances only one step");
+	table->setInteger(2,valueNil());require(table->lengthHint()==1,"adjacent deletion retreats one step");
+	table->clear();require(table->lengthHint()==0&&Table::length(table,&probes)==0&&probes==1,"complete clear resets seed0");
+	auto* hash=m.cpu.createTable(0,16);hash->setInteger(1,valueBool(false));require(hash->lengthHint()==1,"eligible integer in hash updates seed");
+	hash->setInteger(2,valueBool(false));require(hash->lengthHint()==2,"second eligible hash write advances one step");
 }
 void everyGrant() {
 	for (bool wide:{false,true}) for (const auto test:cases) {

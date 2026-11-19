@@ -21,15 +21,14 @@ bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& 
 		Table* metatable = nullptr;
 		if (valueIsTable(metatableValue)) metatable = asTable(metatableValue, m_heap);
 		else if (!isNil(metatableValue)) return false;
-		asTable(target, m_heap)->writeBarrier();
-		asTable(target, m_heap)->metatable = metatable;
+		asTable(target, m_heap)->setMetatable(metatable);
 		result = target;
 		return true;
 	}
 	case BuiltinFunctionId::GetMetatable: {
 		const Value target = args[0];
 		if (!valueIsTable(target)) return false;
-		Table* metatable = asTable(target, m_heap)->metatable;
+		Table* metatable = asTable(target, m_heap)->metatable();
 		result = metatable ? valueTable(m_heap.reference(metatable)) : valueNil();
 		return true;
 	}

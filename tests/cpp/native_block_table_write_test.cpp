@@ -46,7 +46,7 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 		auto* table = cpu.createTable(0, 8);
 		auto* parent = cpu.createTable(0, 1);
 		auto* meta = cpu.createTable(0, 1);
-		meta->setStringKey(indexKey, valueTable(cpu.gcHeap().reference(parent))); table->metatable = meta;
+		meta->setStringKey(indexKey, valueTable(cpu.gcHeap().reference(parent))); table->setMetatable(meta);
 		for (const Value value : values) for (const int prediction : {-1, 100000}) {
 			parent->setStringKey(key, value);
 			block->sideExits[0].tableCacheSlot = prediction;
@@ -124,7 +124,7 @@ void storesRetainNativeFrame(CPU& cpu, Memory& memory) {
 		auto* parent = cpu.createTable(0, 1); parent->setStringKey(key, valueInteger(71));
 		auto* meta = cpu.createTable(0, 1); meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(parent)));
 		for (size_t n = 0; n < values.size(); ++n) {
-			auto* table = cpu.createTable(0, 8); table->metatable = meta;
+			auto* table = cpu.createTable(0, 8); table->setMetatable(meta);
 			// Different receiver layouts share this one prediction site.
 			for (size_t prior = 0; prior < n; ++prior)
 				table->setStringKey(cpu.stringPool().intern("prior_" + std::to_string(prior)), valueInteger(prior));
@@ -164,6 +164,9 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 	auto* table = cpu.createTable(4, 2);
 	auto* model = cpu.createTable(4, 2);
 	const Value ref = valueTable(cpu.gcHeap().reference(table));
+	const u32 storage = table->storageAddress();
+	const u32 backing = table->address() + static_cast<u32>(TableHeader::Storage);
+	memory.writeRamRecordWord(backing, storage + MAIN_RAM_SIZE);
 	for (const bool generic : {false, true}) {
 		DecodedInstruction write{}, read{};
 		write.op = static_cast<u8>(generic ? OpCode::SETT : OpCode::SETI);
@@ -214,6 +217,7 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 				"non-array key leaves at its precise store for full table semantics");
 		}
 	}
+	memory.writeRamRecordWord(backing, storage);
 }
 
 void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
@@ -231,14 +235,16 @@ void watchedTableWordOrTagLeavesBeforeWriting(CPU& cpu, Memory& memory) {
 	registers.set(0, valueTable(cpu.gcHeap().reference(table)));
 	registers.set(2, valueFloatBits(0x80000000u));
 	NativeBlockRunState state{.registers = registers.view(), .heap = &cpu.gcHeap()};
-	for (const u32 address : {words, tags}) {
+	const u32 hint = table->address() + static_cast<u32>(TableHeader::Length);
+	for (const u32 address : {words, tags, hint}) {
 		table->setInteger(1, valueInteger(101));
+		memory.writeRamRecordWord(hint, 0);
 		MappedPageBinding binding;
 		memory.bindMappedPage(address, MAPPED_BUS_MASTER_CPU, binding);
 		binding.writeWatch.armWord((address & MAPPED_PAGE_BYTE_MASK) >> 2);
 		state.remainingCycles = 100;
 		require(block->run(state) == &block->sideExits.front() && table->getInteger(1) == valueInteger(101),
-			"watching either plane leaves before either part of the store");
+			"watching a destination plane or the length hint leaves before either part of the store");
 		table->setInteger(1, registers.get(2));
 		require(!memory.ramWriteWatches().anyWatched() && table->getInteger(1) == registers.get(2),
 			"the record write invalidates the physical code watch");

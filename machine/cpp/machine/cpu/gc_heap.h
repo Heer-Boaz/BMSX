@@ -29,6 +29,8 @@ public:
 	LuaHeap& budget;
 	Memory& memory;
 	HeapAllocator& arena;
+	Table* tableAt(u32 address) const { return m_tableRecords[(address & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES]; }
+	void forgetTableRecords() { std::fill(m_tableRecords.begin(), m_tableRecords.end(), nullptr); }
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
 		reserveReference();
 		T* object;
@@ -114,6 +116,7 @@ private:
 	StringId m_modeKey;
 	StringPool& m_stringPool;
 	ObjectStoragePool<Table> m_tables;
+	std::vector<Table*> m_tableRecords = std::vector<Table*>(MAIN_RAM_SIZE / Table::HEADER_BYTES);
 	std::vector<ReferenceSlot> m_references{{.object = nullptr}};
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Published address of this owner's current directory allocation. Native

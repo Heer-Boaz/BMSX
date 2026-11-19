@@ -19,7 +19,8 @@ import {
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { runCompiledLua } from './cpu_test_harness';
-import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
+import { TableHeader } from '../../machine/ts/machine/cpu/table';
+import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 
 test('runtime values expose distinct Integer and Float tags with equal payload words', () => {
@@ -131,22 +132,17 @@ test('Table length is a pure boundary search and writes never scan a retained su
 	const table = cpu.createTable(4096, 8);
 	// Descending construction leaves a hint of one, not an eagerly scanned length.
 	for (let key = 4096; key >= 1; key--) table.setInteger(key, valueBool(false));
-	const snapshot = new CpuSnapshot(), writer = new CpuSnapshotWriter(snapshot);
-	const offset = table.captureSnapshot(writer, () => {}); writer.finish();
-	assert.equal(snapshot.word(offset + CpuSnapshotTable.LengthHint), 1);
+	const hint = table.address + TableHeader.Length;
+	assert.equal(memory.readRamRecordWord(hint), 1);
 	assert.equal(table.length(), 4096);
 	for (let repeat = 0; repeat < 8; repeat++) {
 		table.setInteger(2048, valueNil()); table.setInteger(2048, valueBool(false));
 	}
-	const after = new CpuSnapshot(), afterWriter = new CpuSnapshotWriter(after);
-	table.captureSnapshot(afterWriter, () => {}); afterWriter.finish();
-	assert.deepEqual(after.words, snapshot.words, 'neither LEN nor distant hole refill scans or changes the raw hint');
+	assert.equal(memory.readRamRecordWord(hint), 1, 'neither LEN nor distant hole refill scans or changes the raw hint');
 	// Erase the hinted entry without moving the hint (the weak-clearing owner).
 	table.clearWeakEntries(false, true, () => false);
 	assert.equal(table.length(), 0, 'a stale nonzero hint is only a search seed');
-	const cleared = new CpuSnapshot(), clearedWriter = new CpuSnapshotWriter(cleared);
-	table.captureSnapshot(clearedWriter, () => {}); clearedWriter.finish();
-	assert.equal(cleared.word(offset + CpuSnapshotTable.LengthHint), 1);
+	assert.equal(memory.readRamRecordWord(hint), 1);
 });
 
 test('Table sparse hash boundaries include Integer boundaries up to INT32_MAX without consuming larger Float keys', () => {
@@ -169,17 +165,21 @@ test('table values come directly from the allocator-owned RAM block', () => {
 	const table = cpu.createTable(2, 1);
 	table.setInteger(1, valueInteger(71));
 	const base = table.storageAddress();
-	assert.equal(cpu.heapAllocator.occupiedBytes(), 24, 'the 24-byte body is one physical allocation');
+	assert.equal(cpu.heapAllocator.occupiedBytes(), 56, 'the 32-byte header and 24-byte body are physical allocations');
 	assert.equal(memory.readMappedU32LE(base), 71);
 	assert.equal(memory.readMappedU32LE(base + 4 * 4), 0xffffffff, 'the hash-chain word follows the four payload words');
 	const tags = base + 5 * 4;
 	assert.equal(memory.readMappedU8(tags), ValueTag.Integer);
+	const backing = table.address + TableHeader.Storage;
+	assert.equal(memory.readMappedU32LE(backing), base);
+	memory.writeMappedU32LE(backing, base + MAIN_RAM_SIZE);
 	memory.writeMappedU32LE(base, 94);
 	assert.equal(table.getInteger(1), valueInteger(94));
 	memory.writeMappedU8(tags, ValueTag.Nil);
 	assert.equal(valueTag(table.getInteger(1)), ValueTag.Nil);
+	memory.writeMappedU32LE(backing, base);
 	table.clear();
-	assert.equal(cpu.heapAllocator.occupiedBytes(), 0, 'clearing releases only the owned body');
+	assert.equal(cpu.heapAllocator.occupiedBytes(), 32, 'clearing releases only the owned body');
 });
 
 test('numeric hash mixing distributes negative integral keys and preserves canonical matching', () => {
@@ -187,9 +187,7 @@ test('numeric hash mixing distributes negative integral keys and preserves canon
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 1024);
 	for (let key = -1; key >= -1024; key--) table.setInteger(key, valueInteger(key));
-	const snapshot = new CpuSnapshot(), writer = new CpuSnapshotWriter(snapshot);
-	const offset = table.captureSnapshot(writer, () => {}); writer.finish();
-	const links = snapshot.word(offset + CpuSnapshotTable.Storage) + 1024 * 2 * 4;
+	const links = table.storageAddress() + 1024 * 2 * 4;
 	let longest = 0;
 	for (let slot = 0; slot < 1024; slot++) {
 		let count = 0;
