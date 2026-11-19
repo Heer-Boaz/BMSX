@@ -14,6 +14,7 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes=require('cartlib/world/scene_library')
 require('prefabs')
@@ -153,7 +154,7 @@ test('bulk closing neighboring documents cannot retire the Scene or its shared w
 test('group retirement cannot replace a newer focus-and-null request from disposal', async t => {
 	const f = await fixture(t), parts = f.editor.editorParts, part = parts.main, source = sourceGroup(f);
 	const sibling = part.splitGroup(source.group, 'down'); sibling.openEditor(new CodeEditorInput(f.model)); f.update(); source.group.focus();
-	t.after(source.group.onWillDispose(() => { f.second.focus(); inputFocus.setTarget(null); }));
+	afterTest(t, source.group.onWillDispose(() => { f.second.focus(); inputFocus.setTarget(null); }));
 	assert.equal(await parts.closeGroup(source.group), true); f.update();
 	assert.ok(inputFocus.target === null); assert.ok(part.groups.includes(sibling));
 	assert.ok(f.group.model.contains(f.client.input));
@@ -162,7 +163,7 @@ test('group retirement cannot replace a newer focus-and-null request from dispos
 test('a preserve-focus opening during clear revokes the old close receipt before a later background close', async t => {
 	const f = await fixture(t), source = sourceGroup(f), incoming = new CodeEditorInput(f.firstInput.workingCopy);
 	let unbind: () => void;
-	unbind = source.group.panes.onDidClearEditor(() => { unbind(); source.group.openEditor(incoming, { pinned: true, preserveFocus: true }); }); t.after(unbind);
+	unbind = source.group.panes.onDidClearEditor(() => { unbind(); source.group.openEditor(incoming, { pinned: true, preserveFocus: true }); }); afterTest(t, unbind);
 	assert.equal(await source.group.close(source.input.id), true); f.update();
 	assert.ok(source.group.model.activeTab === incoming); assert.ok(inputFocus.target === null);
 	assert.equal(await source.group.close(incoming.id), true); f.update();
@@ -177,7 +178,7 @@ test('withdrawing the game companion cannot replace a newer focus-and-null reque
 	pointer(f, bounds.left + 4, bounds.top + 4, PointerButton.Primary, PointerButton.Primary);
 	pointer(f, bounds.left + 4, bounds.top + 4, 0, 0, PointerButton.Primary);
 	const target = inputFocus.admittedTarget!; assert.ok(game.focusScope.contains(target.scope));
-	t.after(target.onDidBlur(() => { f.second.focus(); inputFocus.setTarget(null); }));
+	afterTest(t, target.onDidBlur(() => { f.second.focus(); inputFocus.setTarget(null); }));
 	game.close(); f.update();
 	assert.equal(game.visible, false); assert.ok(inputFocus.target === null);
 	assert.ok(source.group.model.activeTab === source.input && f.main.primary === f.client);
@@ -190,7 +191,7 @@ test(`closing a neighboring Source document preserves ${redirect}`, async t => {
 	else {
 		let unbind: () => void;
 		unbind = source.group.panes.onDidClearEditor(() => { unbind(); f.second.focus(); if (redirect === 'new focus then null') inputFocus.setTarget(null); });
-		t.after(unbind);
+		afterTest(t, unbind);
 	}
 	assert.equal(await source.group.close(source.input.id), true); f.update();
 	if (redirect === 'new focus then null') assert.ok(inputFocus.target === null);

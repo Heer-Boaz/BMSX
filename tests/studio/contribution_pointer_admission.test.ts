@@ -12,6 +12,7 @@ import { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/editor_
 import { collectLuaPrograms } from '../../ide/workbench/contrib/lua_program/source';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const AEM = 'events:\n  story:\n    channel: music\n    rules: []\n';
 const PROGRAM = "local progression=require('cartlib/progression')\nprogression.compile_program({initial='start',states={start={}}})\n";
@@ -64,7 +65,7 @@ for (const kind of ['aem', 'program'] as const) for (const action of ['activate'
 	const f = fixture(t, kind); f.first.focus(); const at = point(f);
 	if (action === 'activate') click(f, at);
 	f.second.focus(); let redirected = false;
-	const unbind = f.first.commandTarget.onDidFocus(() => { unbind(); redirected = true; f.second.focus(); }); t.after(unbind);
+	const unbind = f.first.commandTarget.onDidFocus(() => { unbind(); redirected = true; f.second.focus(); }); afterTest(t, unbind);
 	const execute = t.mock.method(f.editor.commands, 'execute'); click(f, at, action === 'contextMenu');
 	assert.equal(redirected, true);
 	assert.equal(execute.mock.calls.filter(call => call.arguments[0] === (kind === 'aem' ? 'aem.edit' : 'luaProgram.edit')).length, 0);
@@ -85,7 +86,7 @@ for (const kind of ['aem', 'program'] as const) for (const reattach of [false, t
 			f.firstGroup.openEditor(current);
 			if (current.kind === 'lua_program') current.tree.selectionIndex = current.tree.rows.findIndex(row => row.element.inlineEditable && row.element.field !== undefined);
 			else current.tree.selectionIndex = current.tree.rows.findIndex(row => row.element.inlineEditable);
-		}); t.after(unbind);
+		}); afterTest(t, unbind);
 		const execute = t.mock.method(f.editor.commands, 'execute'); click(f, at, action === 'contextMenu');
 		assert.equal(rebound, true); assert.ok(f.first.input === current && f.firstGroup.model.activeTab === current);
 		assert.equal(execute.mock.calls.filter(call => call.arguments[0] === (kind === 'aem' ? 'aem.edit' : 'luaProgram.edit')).length, 0);
@@ -126,7 +127,7 @@ for (const rebind of [false, true]) test(`Animation physical Details activation 
 		unbind(); redirected = true;
 		if (rebind) { f.firstGroup.activate(f.replacement.id); f.editor.commands.execute('animation.details', f.first.commandTarget); }
 		else f.second.focus();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	const execute = t.mock.method(f.editor.commands, 'execute'); pointer(true); pointer(false);
 	assert.equal(redirected, true); assert.equal(execute.mock.calls.filter(call => call.arguments[0] === 'animation.edit').length, 0);
 	if (rebind) assert.ok(f.first.input === f.replacement && f.firstGroup.model.activeTab === f.replacement);

@@ -6,6 +6,7 @@ import { BuildLogInput } from '../../ide/workbench/contrib/builds/editor_input';
 import { BuildOutputs } from '../../ide/workbench/contrib/builds/output';
 import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import { TEXT_VIEW_PADDING } from '../../ide/workbench/ui/text_view/layout';
+import { afterTest } from '../helpers/test_cleanup';
 
 const job: StudioBuildJob = { artifactAvailable: false,
 	request: { requestId: 'request-one', target: 'fixture-product', debug: true, optLevel: 0 },
@@ -35,7 +36,7 @@ class BuildReads implements WorkspaceBuilds {
 
 test('a build reader binds the exact shared request and distinguishes unfetched from fetched-empty output', async t => {
 	const source = new BuildReads(), outputs = new BuildOutputs(source), result = outputs.get(job), input = new BuildLogInput(result);
-	t.after(() => { input.dispose(); outputs.dispose(); });
+	afterTest(t, () => { input.dispose(); outputs.dispose(); });
 	const view = input.view, initial = result.output;
 	assert.equal(input.description, job.request.requestId); assert.ok(view.result === result);
 	assert.equal(input.kind, 'build_log'); assert.equal(input.resource, undefined);
@@ -57,7 +58,7 @@ test('raw output and diagnostic readers preserve separate CRLF, blank lines, tab
 	const failed = { ...job, state: 'failed' as const, error }, source = new BuildReads(), outputs = new BuildOutputs(source);
 	source.getResult = Promise.resolve(failed); source.logResult = Promise.resolve(output);
 	const result = outputs.get(failed), input = new BuildLogInput(result), view = input.view;
-	t.after(() => { input.dispose(); outputs.dispose(); });
+	afterTest(t, () => { input.dispose(); outputs.dispose(); });
 	assert.equal(view.channel, 'error'); assert.ok(view.document === view.error);
 	assert.equal(result.outputText, undefined); assert.equal(view.error!.buffer.getText(), error);
 	await result.refresh();
@@ -78,7 +79,7 @@ test('raw output and diagnostic readers preserve separate CRLF, blank lines, tab
 for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} an identical shared observation retains each reader's selection, query and reading`, async t => {
 		const source = new BuildReads(), outputs = new BuildOutputs(source), result = outputs.get(job), input = new BuildLogInput(result);
-		t.after(() => { input.dispose(); outputs.dispose(); });
+		afterTest(t, () => { input.dispose(); outputs.dispose(); });
 		const font = new EditorFont(variant), bounds = { left: 20, top: 30, right: 384, bottom: 120 };
 		const text = Array.from({ length: 100 }, (_, index) => `entry ${index} alpha\n`).join('');
 		source.logResult = Promise.resolve(text); await result.refresh();
@@ -95,7 +96,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 
 	test(`${variant} changed shared output maps two independently retained selections and reading occurrences`, async t => {
 		const source = new BuildReads(), outputs = new BuildOutputs(source), result = outputs.get(job), first = new BuildLogInput(result), second = first.createView();
-		t.after(() => { first.dispose(); second.dispose(); outputs.dispose(); });
+		afterTest(t, () => { first.dispose(); second.dispose(); outputs.dispose(); });
 		const font = new EditorFont(variant), bounds = { left: 20, top: 30, right: 384, bottom: 120 };
 		const text = Array.from({ length: 100 }, (_, index) => `entry ${index} alpha\n`).join('');
 		source.logResult = Promise.resolve(text); await result.refresh();
@@ -125,7 +126,7 @@ test('closing one reader leaves the shared pending read and the surviving reader
 	const source = new BuildReads(), outputs = new BuildOutputs(source), receipt = Promise.withResolvers<StudioBuildJob | undefined>();
 	source.getResult = receipt.promise;
 	const result = outputs.get(job), closed = new BuildLogInput(result), survivor = closed.createView();
-	t.after(() => { survivor.dispose(); outputs.dispose(); });
+	afterTest(t, () => { survivor.dispose(); outputs.dispose(); });
 	const pending = result.refresh(), joined = survivor.view.result.refresh();
 	assert.ok(pending === joined); assert.equal(source.gets.length, 1);
 	closed.dispose(); const revision = closed.view.revision;
@@ -134,21 +135,21 @@ test('closing one reader leaves the shared pending read and the surviving reader
 	assert.equal(result.loading, false); assert.equal(source.logs.length, 1);
 	assert.equal(survivor.view.error!.buffer.getText(), 'a newly captured failure\n');
 	assert.equal(closed.view.error, undefined); assert.equal(closed.view.revision, revision);
-	const fresh = new BuildLogInput(outputs.get(job)); t.after(() => fresh.dispose());
+	const fresh = new BuildLogInput(outputs.get(job)); afterTest(t, () => fresh.dispose());
 	assert.ok(fresh.view.result === result && fresh.view.error!.buffer === survivor.view.error!.buffer);
 	assert.equal(source.gets.length, 1, 'attaching another reader does not request source');
 });
 
 for (const phase of ['receipt', 'output'] as const) test(`disposing the output store aborts a pending ${phase} read and publishes explicit retirement to retained readers`, async t => {
 	const source = new BuildReads(), outputs = new BuildOutputs(source), result = outputs.get(job), input = new BuildLogInput(result);
-	t.after(() => { input.dispose(); outputs.dispose(); });
+	afterTest(t, () => { input.dispose(); outputs.dispose(); });
 	source.logResult = Promise.resolve('cached\r\n'); await result.refresh();
 	const buffer = result.output, receipt = Promise.withResolvers<StudioBuildJob | undefined>(), output = Promise.withResolvers<string>();
 	if (phase === 'receipt') source.getResult = receipt.promise;
 	else source.logResult = output.promise;
 	const pending = result.refresh(); await Promise.resolve();
 	const signal = source.gets.at(-1)!.signal!;
-	const published = t.mock.fn(); t.after(result.onDidChange(published));
+	const published = t.mock.fn(); afterTest(t, result.onDidChange(published));
 	outputs.dispose(); const publications = published.mock.callCount(), viewRevision = input.view.revision;
 	assert.equal(signal.aborted, true); assert.equal(result.isDisposed, true); assert.equal(result.loading, false);
 	assert.notEqual(result.readError, undefined);
@@ -163,7 +164,7 @@ for (const phase of ['receipt', 'output'] as const) test(`disposing the output s
 
 test('read failure retains the shared snapshot and each reader\'s actual selection and query', async t => {
 	const source = new BuildReads(), outputs = new BuildOutputs(source), result = outputs.get(job), input = new BuildLogInput(result);
-	t.after(() => { input.dispose(); outputs.dispose(); });
+	afterTest(t, () => { input.dispose(); outputs.dispose(); });
 	source.logResult = Promise.resolve('cached 😀\r\n'); await result.refresh(); input.view.output.selectAll(); input.view.output.setQuery('cached');
 	const buffer = result.output, logs = source.logs.length;
 	source.getResult = Promise.resolve(undefined); await result.refresh();
@@ -179,7 +180,7 @@ test('same-result views share captured documents but not channel, selection, que
 	const source = new BuildReads(), outputs = new BuildOutputs(source), failed = { ...job, error: 'failure alpha\n' }, result = outputs.get(failed);
 	source.getResult = Promise.resolve(failed); source.logResult = Promise.resolve('output alpha\n'); await result.refresh();
 	const first = new BuildLogInput(result), second = first.createView();
-	t.after(() => { first.dispose(); second.dispose(); outputs.dispose(); });
+	afterTest(t, () => { first.dispose(); second.dispose(); outputs.dispose(); });
 	assert.notEqual(first.id, second.id); assert.equal(first.matches(second), true); assert.equal(first.canMove(), true);
 	assert.ok(first.view !== second.view && first.view.result === second.view.result);
 	assert.ok(first.view.output !== second.view.output && first.view.error !== second.view.error);

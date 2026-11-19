@@ -9,6 +9,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('fixture publication follows the current receipt key after string collection and ID reuse', t => {
 	const code = new Uint8Array(INSTRUCTION_BYTES);
@@ -16,7 +17,7 @@ test('fixture publication follows the current receipt key after string collectio
 	const image = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 1 }],
 		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name) });
 	const input = new TestInput(), target = new OffscreenMachine(image.romBytes, [null, null], PSX_MACHINE_SPEC, input);
-	t.after(() => target.dispose());
+	afterTest(t, () => target.dispose());
 	const cpu = target.runtime.machine.cpu, pool = cpu.stringPool;
 	cpu.collectTrackedHeapBytes();
 	const retiredKey = pool.intern('reached');
@@ -59,7 +60,7 @@ test('fixture wire values decode at input/wait boundaries and replies remain enc
 	const image = linkRawTestSystemBlua32({text: code, functions: [{firstWord: 0, wordCount: 1}],
 		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name)});
 	const input = new TestInput(), target = new OffscreenMachine(image.romBytes, [null, null], PSX_MACHINE_SPEC, input);
-	t.after(() => target.dispose());
+	afterTest(t, () => target.dispose());
 	const cpu = target.runtime.machine.cpu, pool = cpu.stringPool, frame = target.runtime.frameScheduler;
 	const recorder = cpu.createTable(0,0), logs: Value[] = [], captures: (number|string)[][] = [];
 	const output: FixtureOutput = {

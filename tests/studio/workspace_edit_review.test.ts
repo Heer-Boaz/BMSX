@@ -16,6 +16,7 @@ import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import type { EditorInputSerializers } from '../../ide/workbench/services/editor/editor_serialization';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const models = new EditorTextModelService();
@@ -29,7 +30,7 @@ function fixture(t: TestContext) {
 	]);
 	const context = new WorkspaceSourceContext(models, sources.catalog);
 	const proposal = new WorkspaceEditProposal('Rename old to new', context, { kind: 'edit', edits });
-	t.after(() => { proposal.dispose(); models.clear(); });
+	afterTest(t, () => { proposal.dispose(); models.clear(); });
 	return { models, sources, a, b, proposal, edits, context };
 }
 
@@ -154,7 +155,7 @@ test('new read-only rights retire the proposal immediately without reviving on w
 test('review admission rejects foreign models and leaves its reading context with the caller', t => {
 	const f = fixture(t), other = new EditorTextModelService();
 	const context = new WorkspaceSourceContext(other, f.sources.catalog);
-	t.after(() => { context.dispose(); other.clear(); });
+	afterTest(t, () => { context.dispose(); other.clear(); });
 	assert.throws(() => new WorkspaceEditProposal('Foreign', context, { kind: 'edit', edits: f.edits }), /no longer belongs to this workspace/);
 	assert.equal(context.reason, undefined);
 });
@@ -174,7 +175,7 @@ test('a reading context starts before an asynchronous proposal, not when edits a
 test('workspace teardown retires contexts with no captured or retained models', t => {
 	const models = new EditorTextModelService();
 	const context = new WorkspaceSourceContext(models, createScenarioTestSourceState([]).catalog);
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	let retired = 0;
 	context.onDidInvalidate(() => retired++);
 	models.clear();
@@ -211,7 +212,7 @@ test('preview wrapping preserves source whitespace, long lines and Unicode witho
 	assert.equal(lines.join(''), source);
 	assert.ok(lines.some(line => line.includes('🐉')));
 	const f = fixture(t), input = new WorkspaceEditReviewInput(f.proposal);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	layoutEditReviewRows(input, 12, (_text, start, end) => end - start);
 	assert.ok(input.rows.some(row => row.kind === 'after'));
 	assert.ok(input.rows.map(row => row.text).join('').includes('return new, new'));
@@ -219,7 +220,7 @@ test('preview wrapping preserves source whitespace, long lines and Unicode witho
 
 test('session producer excludes transient proposals and remaps selection before serialization', async t => {
 	const f = fixture(t), group = new EditorTabGroupModel();
-	t.after(() => group.clear());
+	afterTest(t, () => group.clear());
 	const review = new WorkspaceEditReviewInput(f.proposal), game = new TerminalInput();
 	group.add(review); group.add(game, { pinned: false }); group.activate(review);
 	const unused = { serialize: () => assert.fail('unexpected serialization'), deserialize: () => assert.fail('unexpected reconstruction') };
@@ -237,7 +238,7 @@ test('session producer excludes transient proposals and remaps selection before 
 });
 
 test('session restore reports failed reconstruction rather than selecting a different resource', async t => {
-	const group = new EditorTabGroupModel(); t.after(() => group.clear());
+	const group = new EditorTabGroupModel(); afterTest(t, () => group.clear());
 	const error = new Error('missing resource');
 	const serializers = { terminal: { deserialize() { throw error; } } } as unknown as EditorInputSerializers;
 	await assert.rejects(group.deserialize({ inputs: [{ kind: 'terminal', value: '' }], active: 0, preview: null }, serializers), error);

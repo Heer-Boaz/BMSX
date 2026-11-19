@@ -16,6 +16,7 @@ import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
@@ -24,7 +25,7 @@ async function fixture(t: TestContext) {
 		['tracks.lua', "return {{kind='value',interpolation='linear',path={'x'},keys={{time_ms=0,value=0},{time_ms=100,value=1}}}}"],
 	]);
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	return { ...f, files, saves: f.ide.textFileSaves };
 }
 
@@ -166,7 +167,7 @@ test('Save All cannot admit source writes after accepting its field starts shutd
 	other.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty before admission closes\n' }]);
 	setFieldText(f.field.field, '123', true);
 	let closing: Promise<void> | undefined;
-	const release = f.model.onDidChangeContent(() => { release(); closing = f.saves.shutdown(); }); t.after(release);
+	const release = f.model.onDidChangeContent(() => { release(); closing = f.saves.shutdown(); }); afterTest(t, release);
 	f.editor.commands.execute('saveAll', f.field.field.focusTarget);
 	assert.ok(closing !== undefined); await closing;
 	assert.equal(f.field.pending, false); assert.equal(f.model.dirty, true); assert.equal(other.dirty, true);
@@ -182,7 +183,7 @@ test('a closed Save All owner cannot accept another field draft', async t => {
 });
 
 test('Save All admits every captured revision before a provider can reenter shutdown or edit a sibling model', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const f = await fixture(t), first = f.firstInput.workingCopy, second = f.secondInput.workingCopy;
 	for (const model of [first, second]) model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- revision captured by the batch\n' }]);
 	const firstSource = first.buffer.getText(), secondSource = second.buffer.getText();
@@ -212,7 +213,7 @@ test('Save All admits every captured revision before a provider can reenter shut
 });
 
 test('repeated Save All joins pending revisions and queues only the model with a newer accepted edit', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const f = await fixture(t), first = f.firstInput.workingCopy, second = f.secondInput.workingCopy;
 	for (const model of [first, second]) model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- first accepted batch\n' }]);
 	const write = t.mock.method(f.files, 'write', async (path, record, overwrite) => {
@@ -235,7 +236,7 @@ test('repeated Save All joins pending revisions and queues only the model with a
 });
 
 test('a failed Save All member retains its own dirty source without rolling back a saved sibling', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const f = await fixture(t), first = f.firstInput.workingCopy, second = f.secondInput.workingCopy;
 	for (const model of [first, second]) model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- accepted independent source\n' }]);
 	const failure = new Error('Fixture first canonical source write refused'), firstSource = first.buffer.getText(), secondSource = second.buffer.getText();

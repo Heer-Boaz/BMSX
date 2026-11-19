@@ -8,11 +8,12 @@ import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('read-only Lua capture observes its canonical dirty owner without admitting another model', async t => {
 	const record = createScenarioTestSourceRecord('source.lua', 1, 'return 1');
 	const sources = createScenarioTestSourceState([record]), models = new EditorTextModelService();
-	t.after(() => { models.clear(); sources.catalog.dispose(); });
+	afterTest(t, () => { models.clear(); sources.catalog.dispose(); });
 	const resource = sources.catalog.luaResources[0];
 	const unopened = await captureTextFileSource(models, sources.catalog, resource);
 	assert.equal(unopened.source, record.src); assert.equal([...models.models].length, 0);
@@ -28,7 +29,7 @@ test('read-only Lua capture observes its canonical dirty owner without admitting
 for (const type of ['data', 'aem'] as const) test(`${type} capture shares authored source precedence without materializing working copies`, async t => {
 	const files = new MemoryWorkspaceFiles(), models = new EditorTextModelService(), sources = createScenarioTestSourceState([]);
 	await openWorkspaceRecords(files);
-	t.after(async () => { models.clear(); sources.catalog.dispose(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
+	afterTest(t, async () => { models.clear(); sources.catalog.dispose(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
 	const resource: RuntimeResource = { contextLabel: 'Fixture', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: `res/source.${type === 'data' ? 'yaml' : 'aem'}`,
 		sourceFilePath: 'fixtures/authored-source', location: { kind: 'workspace', path: 'fixtures/authored-source' },
 		source: { type, resid: 'source', sourcemeta: { text: '# retained formatting\r\nvalue: "01"\r\n' } } };
@@ -49,7 +50,7 @@ for (const type of ['data', 'aem'] as const) test(`${type} capture shares author
 test('canonical admission and edits during asynchronous file reading win at the shared source boundary', async t => {
 	const files = new MemoryWorkspaceFiles(), models = new EditorTextModelService(), sources = createScenarioTestSourceState([]);
 	await openWorkspaceRecords(files);
-	t.after(async () => { models.clear(); sources.catalog.dispose(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
+	afterTest(t, async () => { models.clear(); sources.catalog.dispose(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
 	const resource: RuntimeResource = { contextLabel: 'Fixture', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'source.yaml',
 		sourceFilePath: 'fixtures/source.yaml', location: { kind: 'workspace', path: 'fixtures/source.yaml' }, source: { type: 'data', resid: 'source' } };
 	const read = Promise.withResolvers<{ contents: string; updatedAt: number } | null>();
@@ -67,7 +68,7 @@ test('canonical admission and edits during asynchronous file reading win at the 
 test('source read failures propagate without admitting models or substituting packaged content', async t => {
 	const files = new MemoryWorkspaceFiles(), models = new EditorTextModelService(), sources = createScenarioTestSourceState([]);
 	await openWorkspaceRecords(files);
-	t.after(async () => { models.clear(); sources.catalog.dispose(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
+	afterTest(t, async () => { models.clear(); sources.catalog.dispose(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
 	const resource: RuntimeResource = { contextLabel: 'Fixture', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'source.yaml',
 		sourceFilePath: 'fixtures/failure.yaml', location: { kind: 'workspace', path: 'fixtures/failure.yaml' },
 		source: { type: 'data', resid: 'source', sourcemeta: { text: 'packaged' } } };

@@ -11,15 +11,16 @@ import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/pri
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('reserving document recovery retains its published groups, controls and inputs until explicit preparation', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	parts.main.activeGroup.openEditor(new HomeInput(null));
 	const main = parts.main.activeGroup, inputs = [...main.model.tabs], documents = [...parts.documents];
 	let changes = 0, retirements = 0;
-	const unbind = parts.onDidChange(() => { changes++; }); t.after(unbind);
+	const unbind = parts.onDidChange(() => { changes++; }); afterTest(t, unbind);
 	for (const input of inputs) input.onWillDispose(() => { retirements++; });
-	const request = parts.beginRestore(); t.after(() => request.dispose());
+	const request = parts.beginRestore(); afterTest(t, () => request.dispose());
 	assert.equal(request.isCurrent(), true);
 	assert.ok(parts.main.activeGroup === main && parts.main.activeGroup.panes.activePane?.input === inputs[0]);
 	assert.deepEqual(parts.documents, documents);
@@ -31,7 +32,7 @@ test('document preparation publishes a fresh routing group and retires only its 
 	const previous = parts.main.activeGroup;
 	previous.openEditor(new HomeInput(null));
 	const state = parts.serialize(f.editor.editorInputSerializers), departing = [...parts.groups];
-	const request = parts.beginRestore(); t.after(() => request.dispose());
+	const request = parts.beginRestore(); afterTest(t, () => request.dispose());
 	let incoming: HomeInput | undefined;
 	previous.model.activeTab!.onWillDispose(() => {
 		assert.ok(parts.main.activeGroup !== previous);
@@ -53,13 +54,13 @@ test('a Home opening from initial document-topology publication supersedes only 
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	parts.main.activeGroup.openEditor(new HomeInput(null));
 	const state = parts.serialize(f.editor.editorInputSerializers), request = parts.beginRestore();
-	t.after(() => request.dispose());
+	afterTest(t, () => request.dispose());
 	let incoming: HomeInput | undefined;
 	const unbind = parts.onDidChange(() => {
 		if (parts.documents.length !== 0 || parts.main.activeGroup.model.activeTab !== null) return;
 		unbind(); incoming = new HomeInput(null); parts.main.activeGroup.openEditor(incoming);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.equal(request.prepare(), true); request.retire();
 	assert.equal(await request.restore(state, f.editor.editorInputSerializers), false);
 	assert.ok(incoming !== undefined && parts.main.activeGroup.model.activeTab === incoming);
@@ -69,7 +70,7 @@ test('a Home opening from initial document-topology publication supersedes only 
 test('a floating editor created by a departing input survives the older initial retirement', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	const state = parts.serialize(f.editor.editorInputSerializers), departing = [...parts.documents];
-	const request = parts.beginRestore(); t.after(() => request.dispose());
+	const request = parts.beginRestore(); afterTest(t, () => request.dispose());
 	let incoming: HomeInput | undefined;
 	f.firstInput.onWillDispose(() => {
 		assert.equal(parts.documents.length, 0);
@@ -90,7 +91,7 @@ test('floating recovery publishes its complete native owner before callbacks adm
 	const state = parts.serialize(f.editor.editorInputSerializers);
 	parts.clear();
 	const existing = new Set(f.editor.surfaces.windowSurfaces), request = parts.beginRestore();
-	t.after(() => request.dispose());
+	afterTest(t, () => request.dispose());
 	let incoming: HomeInput | undefined, observed = false, complete = false;
 	const unbind = inputFocus.onDidChangeTarget(() => {
 		const surface = f.editor.surfaces.windowSurfaces.find(candidate => !existing.has(candidate));
@@ -102,7 +103,7 @@ test('floating recovery publishes its complete native owner before callbacks adm
 			&& part.activeGroup.surface.published;
 		incoming = new HomeInput(null); parts.main.activeGroup.openEditor(incoming);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.equal(await request.restore(state, f.editor.editorInputSerializers), false);
 	assert.equal(observed, true);
 	assert.equal(complete, true, 'native discovery and focus callbacks cannot observe a half-constructed floating editor');
@@ -114,7 +115,7 @@ test('floating recovery publishes its complete native owner before callbacks adm
 test('a split admitted during initial group retirement supersedes older document topology', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	const state = parts.serialize(f.editor.editorInputSerializers), request = parts.beginRestore();
-	t.after(() => request.dispose());
+	afterTest(t, () => request.dispose());
 	let split = false;
 	f.firstGroup.onWillDispose(() => {
 		const group = parts.main.activeGroup;
@@ -130,7 +131,7 @@ test('a split admitted during initial group retirement supersedes older document
 test('initial preparation itself retains recovery admission and cannot repeat after newer work', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	const state = parts.serialize(f.editor.editorInputSerializers), previous = parts.main.activeGroup;
-	const request = parts.beginRestore(); t.after(() => request.dispose());
+	const request = parts.beginRestore(); afterTest(t, () => request.dispose());
 	assert.equal(request.prepare(), true);
 	assert.equal(request.isCurrent(), true);
 	assert.ok(parts.main.activeGroup !== previous && !previous.surface.retired);
@@ -147,7 +148,7 @@ test('an unsuperseded initial preparation restores independent document views ov
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	parts.main.activeGroup.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	const state = parts.serialize(f.editor.editorInputSerializers), copies = [f.firstInput.workingCopy, f.secondInput.workingCopy];
-	const request = parts.beginRestore(); t.after(() => request.dispose());
+	const request = parts.beginRestore(); afterTest(t, () => request.dispose());
 	assert.equal(request.prepare(), true);
 	request.retire();
 	assert.equal(await request.restore(state, f.editor.editorInputSerializers), true);
@@ -161,7 +162,7 @@ test('an unsuperseded initial preparation restores independent document views ov
 
 test('a superseded reservation cannot prepare over an already admitted newer document', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
-	const request = parts.beginRestore(); t.after(() => request.dispose());
+	const request = parts.beginRestore(); afterTest(t, () => request.dispose());
 	const previous = parts.main.activeGroup, documents = [...parts.documents], incoming = new HomeInput(null);
 	previous.openEditor(incoming);
 	assert.equal(request.prepare(), false);
@@ -176,7 +177,7 @@ test('initial retirement revokes an old pending opening without granting its lat
 	const incoming = new HomeInput(null); let retired = false;
 	incoming.onWillDispose(() => { retired = true; });
 	const opening = previous.openResolvedEditor(async () => { await pending; return incoming; });
-	const request = parts.beginRestore(); t.after(() => request.dispose());
+	const request = parts.beginRestore(); afterTest(t, () => request.dispose());
 	assert.equal(request.prepare(), true);
 	const current = parts.main.activeGroup;
 	admit(); assert.equal(await opening, undefined);
@@ -189,12 +190,12 @@ test('initial retirement revokes an old pending opening without granting its lat
 test('pure document preparation withdraws old routing without invoking opening, retirement or topology observers', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	const departing = [...parts.groups], inputs = departing.flatMap(group => [...group.model.tabs]);
-	const request = parts.beginRestore(); t.after(() => request.dispose());
+	const request = parts.beginRestore(); afterTest(t, () => request.dispose());
 	let openings = 0, retirements = 0, changes = 0;
 	const subscriptions = [parts.onDidChange(() => { changes++; }),
 		...departing.map(group => group.panes.onDidBeginOpen(() => { openings++; })),
 		...inputs.map(input => input.onWillDispose(() => { retirements++; }))];
-	t.after(() => { for (const release of subscriptions) release(); });
+	afterTest(t, () => { for (const release of subscriptions) release(); });
 	assert.equal(request.prepare(), true);
 	assert.equal(changes, 0); assert.equal(openings, 0); assert.equal(retirements, 0);
 	for (const group of departing) {
@@ -218,8 +219,8 @@ test('a real source-clear publication opens Home in prepared routing without str
 		assert.equal(findEditorGroup(previous.focusTarget), null);
 		incoming = new HomeInput(null); parts.main.activeGroup.openEditor(incoming);
 	});
-	t.after(unbind);
-	const request = parts.beginRestore(); t.after(() => request.dispose());
+	afterTest(t, unbind);
+	const request = parts.beginRestore(); afterTest(t, () => request.dispose());
 	const replacement = editorTextModelService.replace([]);
 	try {
 		assert.equal(request.prepare(), true);
@@ -235,7 +236,7 @@ test('a real source-clear publication opens Home in prepared routing without str
 
 test('disposing superseded recovery consumes its departure before reentrant cleanup and retains newer windows', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, departing = [...parts.documents];
-	const request = parts.beginRestore(); t.after(() => request.dispose());
+	const request = parts.beginRestore(); afterTest(t, () => request.dispose());
 	let retired = 0, incoming: HomeInput | undefined;
 	f.firstInput.onWillDispose(() => {
 		retired++; request.dispose();
@@ -269,7 +270,7 @@ test('fresh routing construction cannot retire a Main gesture before every pure 
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
 	pointerCapture.capture(gesture);
 	const primaryRequest = main.beginRestore(), documents = parts.beginRestore();
-	t.after(() => { primaryRequest.dispose(); documents.dispose(); });
+	afterTest(t, () => { primaryRequest.dispose(); documents.dispose(); });
 	assert.equal(primaryRequest.prepare(), true);
 	assert.equal(documents.prepare(), true);
 	assert.equal(cancelled, 0);
@@ -283,7 +284,7 @@ test('a document opening admitted during source hydration supersedes an older wo
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	const state = parts.serialize(f.editor.editorInputSerializers);
 	parts.clear();
-	const request = parts.beginRestore(); t.after(() => request.dispose());
+	const request = parts.beginRestore(); afterTest(t, () => request.dispose());
 	const incoming = new CodeEditorInput(f.firstInput.workingCopy);
 	parts.main.activeGroup.openEditor(incoming);
 	assert.equal(request.isCurrent(), false);
@@ -306,7 +307,7 @@ test('an unresolved newer document opening prevents older restored candidates fr
 		async deserialize(value: string) { await recoveredReady; return serializer.deserialize(value); },
 	} };
 	const group = parts.main.activeGroup, request = parts.beginRestore();
-	t.after(() => request.dispose());
+	afterTest(t, () => request.dispose());
 	const recovery = request.restore(state, serializers);
 	const incoming = new CodeEditorInput(f.firstInput.workingCopy);
 	const opening = group.openResolvedEditor(async () => { await openingReady; return incoming; });

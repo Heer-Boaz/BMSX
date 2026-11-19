@@ -11,6 +11,7 @@ import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/
 import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/details_control';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
@@ -43,7 +44,7 @@ function fixture(t: TestContext, source = SOURCE) {
 	const navigation = { isEnabled: () => true, run: () => assert.fail('source editing invoked view navigation') };
 	const details = new SceneDetailsControl(commands, scope, parent, { outline: navigation, details: navigation });
 	details.setView(view, bounds);
-	t.after(() => { details.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { details.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); });
 	return { model, view, editor: details.options, refresh: () => details.update(),
 		control: (label: string) => {
 			const entry = details.options.controls[view.optionProperties.findIndex(property => property.descriptor.label === label)];

@@ -15,6 +15,7 @@ import { selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavi
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PROGRAM = "local p=require('cartlib/progression'); p.compile_program({rules={{id='first',on='hit'}},filters={},handlers={}}); p.compile_program({rules={{id='second',on='hit'}},filters={},handlers={}})";
 const PROGRAM_SOURCES = [['program.lua', PROGRAM], ['cartlib/progression.lua', '']] as const;
@@ -58,7 +59,7 @@ test('same-editor admission keeps the attached Progress pane and disposes only t
 	assert.ok(original?.kind === 'lua_program');
 	const candidate = original.createView!(), pane = group.panes.activePane, count = group.model.tabs.length;
 	let cleared = 0, disposed = 0;
-	const unbind = group.panes.onDidClearEditor(() => { cleared++; }); t.after(unbind);
+	const unbind = group.panes.onDidClearEditor(() => { cleared++; }); afterTest(t, unbind);
 	candidate.onWillDispose(() => { disposed++; });
 	assert.ok(group.openEditor(candidate, { preserveFocus: true }));
 	assert.ok(group.model.activeTab === original && group.panes.activePane === pane);
@@ -76,11 +77,11 @@ test('Progress matching uses current authored occurrence and kind, not its view 
 	const wrongKind = new LuaProgramInput(original.workingCopy, 'input', original.occurrenceRange, f.editor.luaPrograms.guest);
 	const otherModel = new EditorTextModel({ ...resource, contextId: 'another-project' }, 'lua', PROGRAM);
 	const otherContext = new LuaProgramInput(otherModel, 'progression', original.occurrenceRange, f.editor.luaPrograms.guest);
-	t.after(() => otherModel.dispose());
+	afterTest(t, () => otherModel.dispose());
 	copy.title = 'independent caption'; original.inspectRuntime(f.editor.commands.transport);
 	assert.equal(original.matches(copy), true); assert.equal(copy.matches(original), true);
 	assert.equal(original.matches(other), false); assert.equal(original.matches(wrongKind), false); assert.equal(original.matches(otherContext), false);
-	const source = new EditorTabGroupModel(), target = group.model; t.after(() => source.clear());
+	const source = new EditorTabGroupModel(), target = group.model; afterTest(t, () => source.clear());
 	source.add(copy); source.activate(copy); target.add(other); target.add(wrongKind); target.add(otherContext);
 	const plan = source.planTransferTo(target); assert.ok(plan.entries[0].receiver === original);
 	assert.equal(source.findById(copy.id), copy); assert.equal(target.findById(copy.id), undefined);
@@ -110,11 +111,11 @@ test('Animation matching separates resource views, definition occurrences, consu
 	const otherRange = new AnimationEditorInput(model, context, ranges[1], 'same title', resourceIdentityKey(resource));
 	const otherConsumer = new AnimationEditorInput(model, context, ranges[0], 'same title', 'other.lua');
 	const otherProject = new AnimationEditorInput(model, 'another-project', ranges[0], 'same title', resourceIdentityKey(resource));
-	t.after(() => { for (const input of [root, rootCopy, otherConsumer, otherProject]) input.dispose(); });
+	afterTest(t, () => { for (const input of [root, rootCopy, otherConsumer, otherProject]) input.dispose(); });
 	assert.equal(root.matches(rootCopy), true); assert.equal(selected.matches(copy), true); assert.equal(copy.matches(selected), true);
 	for (const other of [root, otherRange, otherConsumer, otherProject]) assert.equal(selected.matches(other), false);
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel(); source.add(copy); target.add(selected); target.add(otherRange);
-	t.after(() => { source.clear(); target.clear(); });
+	afterTest(t, () => { source.clear(); target.clear(); });
 	assert.ok(source.planTransferTo(target).entries[0].receiver === selected); assert.equal(target.tabs.length, 2);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- mapped\n' }]);
 	assert.equal(selected.definitionRange!.start, ranges[0].start + 10); assert.equal(copy.definitionRange!.start, ranges[0].start + 10); assert.equal(selected.matches(copy), true);
@@ -132,7 +133,7 @@ test('Behavior matching follows the selected registration and its mapped occurre
 	assert.notEqual(original.id, copy.id); assert.equal(original.matches(copy), true); assert.equal(copy.matches(original), true);
 	assert.equal(original.matches(other), false);
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel(); source.add(copy); target.add(original); target.add(other);
-	t.after(() => { source.clear(); target.clear(); });
+	afterTest(t, () => { source.clear(); target.clear(); });
 	assert.ok(source.planTransferTo(target).entries[0].receiver === original); assert.equal(target.tabs.length, 2);
 	const range = original.view.source.ranges.get(original.view.selectionState.definitionRowKey!)!, start = range.start;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- mapped\n' }]);
@@ -148,7 +149,7 @@ test('prospective removal selection and actual transfer share the same previous-
 			sourceFilePath: path, source: { type: 'lua', resid: path },
 		}, 'lua', 'return 1'));
 		const inputs = models.map(model => new CodeEditorInput(model));
-		t.after(() => { source.clear(); target.clear(); for (const model of models) model.dispose(); });
+		afterTest(t, () => { source.clear(); target.clear(); for (const model of models) model.dispose(); });
 		for (const input of inputs) source.add(input);
 		if (active !== null) source.activate(inputs[active]);
 		const successor = expected === null ? null : inputs[expected];
@@ -160,7 +161,7 @@ test('prospective removal selection and actual transfer share the same previous-
 	const model = new EditorTextModel({ contextId: 'successor-fixture', path: 'only.lua', contextLabel: 'Successor fixture',
 		location: { kind: 'workspace', path: 'only.lua' }, sourceFilePath: 'only.lua', source: { type: 'lua', resid: 'only' } }, 'lua', 'return 1');
 	const input = new CodeEditorInput(model); source.add(input); source.activate(input);
-	t.after(() => { source.clear(); target.clear(); model.dispose(); });
+	afterTest(t, () => { source.clear(); target.clear(); model.dispose(); });
 	assert.equal(source.activeAfterRemoval(input), null); source.transferTo(target, input).publish(); assert.equal(source.activeTab, null);
 });
 
@@ -176,7 +177,7 @@ test('group transfer rechecks its semantic receiver after departing-pane callbac
 	const count = main.model.tabs.length;
 	const unbind = source.panes.onDidClearEditor(() => {
 		selectBehaviorLensDefinition(copy.view, copy.view.document.definitions[1].rowKey); copy.updateDefinition();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.equal(parts.moveGroup(source, { kind: 'group', group: main }), false);
 	assert.equal(main.model.tabs.length, count); assert.ok(main.model.activeTab === original && source.model.activeTab === copy);
 	assert.equal(original.matches(copy), false); assert.equal(window.retired, false);

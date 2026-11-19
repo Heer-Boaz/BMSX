@@ -8,6 +8,7 @@ import { resolveEditorCommandKeybinding } from '../../ide/input/keyboard/command
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import type { ClipboardContents } from '../../hosts/common/clipboard';
 import { executeClipboardAction } from '../../ide/input/clipboard';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('window scope membership is independent of its focus-return parent and command origin', () => {
 	const focus = new InputFocusService();
@@ -133,7 +134,7 @@ test('incoming publication cannot admit a retired request or overwrite its newer
 });
 
 test('pending clipboard reads cannot edit a control after blur, even when the same target is refocused', async t => {
-	t.after(() => inputFocus.setTarget(null));
+	afterTest(t, () => inputFocus.setTarget(null));
 	const field = new TextField();
 	const other = new TextField();
 	const clipboard = new HeadlessClipboard();
@@ -157,7 +158,7 @@ test('pending clipboard reads cannot edit a control after blur, even when the sa
 });
 
 test('a clipboard read completing after the control becomes read-only cannot edit its value', async t => {
-	t.after(() => inputFocus.setTarget(null));
+	afterTest(t, () => inputFocus.setTarget(null));
 	const field = new TextField();
 	const clipboard = new HeadlessClipboard();
 	clipboard.text = 'external text';
@@ -170,7 +171,7 @@ test('a clipboard read completing after the control becomes read-only cannot edi
 });
 
 test('input cancellation revokes pending clipboard edits without semantic blur or committing a draft', async t => {
-	t.after(() => inputFocus.setTarget(null));
+	afterTest(t, () => inputFocus.setTarget(null));
 	const field = new TextField(), clipboard = new HeadlessClipboard();
 	const read = Promise.withResolvers<ClipboardContents>();
 	clipboard.read = () => read.promise;
@@ -196,7 +197,7 @@ test('input cancellation revokes pending clipboard edits without semantic blur o
 });
 
 test('explicit clipboard operations subscribe to their actual owner, not another focused control', async t => {
-	t.after(() => inputFocus.setTarget(null));
+	afterTest(t, () => inputFocus.setTarget(null));
 	const selected = new TextField(), other = new TextField(), third = new TextField();
 	const clipboard = new HeadlessClipboard();
 	const read = Promise.withResolvers<ClipboardContents>(); clipboard.read = () => read.promise;
@@ -390,7 +391,7 @@ for (const sameTarget of [false, true]) test(`focus request completion remains d
 });
 
 test('empty and disabled focused history cannot fall through to document commands', (t) => {
-	t.after(() => inputFocus.setTarget(null));
+	afterTest(t, () => inputFocus.setTarget(null));
 	const document = inputFocus.createTarget();
 	let documentUndos = 0;
 	document.registerCommand('undo', { isEnabled: () => true, run: () => { documentUndos += 1; } });
@@ -409,7 +410,7 @@ test('empty and disabled focused history cannot fall through to document command
 });
 
 test('Space stays unbound unless Alt+Space has an admitted window-menu command', t => {
-	t.after(() => inputFocus.setTarget(null));
+	afterTest(t, () => inputFocus.setTarget(null));
 	const graph = inputFocus.createTarget();
 	const field = new TextField(graph);
 	for (const target of [graph, field.focusTarget, null]) {
@@ -423,7 +424,7 @@ test('Space stays unbound unless Alt+Space has an admitted window-menu command',
 });
 
 test('BT Delete belongs to graph focus, does not repeat, and cannot consume text-field or gameplay input', t => {
-	t.after(() => inputFocus.setTarget(null));
+	afterTest(t, () => inputFocus.setTarget(null));
 	const graph = inputFocus.createTarget();
 	let enabled = true;
 	let removals = 0;
@@ -453,7 +454,7 @@ test('BT Delete belongs to graph focus, does not repeat, and cannot consume text
 });
 
 test('BT duplicate uses Ctrl/Cmd+D only at concrete graph focus, without repeat or field inheritance', t => {
-	t.after(() => inputFocus.setTarget(null));
+	afterTest(t, () => inputFocus.setTarget(null));
 	const graph = inputFocus.createTarget();
 	let enabled = true;
 	let copies = 0;

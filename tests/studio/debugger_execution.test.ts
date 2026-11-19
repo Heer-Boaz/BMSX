@@ -23,6 +23,7 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
+import { afterTest } from '../helpers/test_cleanup';
 
 const RESOURCE = { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'debugger_probe.lua' };
 const SOURCE = `local output = {}
@@ -53,7 +54,7 @@ function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: 
 	const f = createRuntimeInspectionFixture(runtime, sources);
 	const state = f.debuggerState, owner = f.debuggerExecution, cpu = runtime.machine.cpu;
 	cpu.reset(); f.execution.setPauseReason(HostPauseReason.Workbench, true);
-	t.after(() => { owner.dispose(); f.presenter.dispose(); });
+	afterTest(t, () => { owner.dispose(); f.presenter.dispose(); });
 	const execute = () => {
 		owner.beforeHostFrame();
 		if (!f.execution.executionBlocked(runtimeDebuggerExecutionIntent(state)) && !state.plans.controlSuspended) cpu.runUntilDepth(0, 100_000);

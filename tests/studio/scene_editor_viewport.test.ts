@@ -22,6 +22,7 @@ import * as colors from '../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import { afterTest } from '../helpers/test_cleanup';
 
 function scene(t: TestContext, path = 'viewport.lua', source = SCENE_VIEWPORT_SOURCE) {
 	const { model, documents, sources } = createSceneSourceFixture(t, source, path, undefined, SCENE_VIEWPORT_IMPORTS);
@@ -44,7 +45,7 @@ function arrangeScene(view: SceneViewState, contentChanged: boolean, bounds: Rec
 
 test('replacing selected Scene source with the same member name retires the Details view target', t => {
 	configureFontVariant('tiny');
-	const input = scene(t); t.after(() => { input.dispose(); });
+	const input = scene(t); afterTest(t, () => { input.dispose(); });
 
 	const snapshot = captureSceneEditorView(input.view), selected = snapshot.selected!;
 	const originalLabel = input.view.hierarchy.outline.rows[input.view.hierarchy.outline.selectionIndex].element.label;
@@ -71,7 +72,7 @@ for (const font of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 		editorViewState.viewportWidth = width; editorViewState.viewportHeight = 288;
 		editorViewState.editorAreaTop = 31; editorViewState.editorAreaBottom = 275;
 		const input = scene(t);
-		t.after(() => { input.dispose(); });
+		afterTest(t, () => { input.dispose(); });
 		arrangeScene(input.view, true, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.deepEqual(input.view.details.properties.map(property => property.descriptor.value), [11, -22, 33]);
 		const height = input.view.details.viewport.contentHeight;
@@ -143,7 +144,7 @@ scenes.register('partial', {objects={
 	assert.ok(stream.batches.slice(0, stream.batchCount).some(batch => batch.clip.left === viewport.left && batch.clip.top === viewport.top));
 	for (let index = 0; index < 100; index += 1) draw();
 	assert.equal(stream.floatData, storage);
-	const theme = colors.getActiveIdeThemeVariant(); t.after(() => colors.setIdeThemeVariant(theme));
+	const theme = colors.getActiveIdeThemeVariant(); afterTest(t, () => colors.setIdeThemeVariant(theme));
 	for (const variant of ['dark', 'light']) {
 		colors.setIdeThemeVariant(variant);
 		const frame = draw(); let warning = false;

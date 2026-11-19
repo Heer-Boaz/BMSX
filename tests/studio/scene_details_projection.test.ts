@@ -8,6 +8,7 @@ import { createLuaTableFieldNumberEdits } from '../../ide/language/lua/source_ed
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { setWorkbenchTreeCollapsed } from '../../ide/workbench/ui/tree_view';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('first', { objects = {
@@ -29,7 +30,7 @@ const PREFABS = [
 function fixture(t: TestContext, source = SOURCE, imports: readonly (readonly [string, string])[] = []) {
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [...PREFABS, ...imports]), document = f.documents.get(f.model);
 	const authoring = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
-	t.after(() => authoring.dispose());
+	afterTest(t, () => authoring.dispose());
 	return { ...f, document, authoring, projection: new SceneDetailsProjection(authoring) };
 }
 
@@ -83,7 +84,7 @@ test('hierarchy disclosure or presentation disposal cannot withdraw the semantic
 
 test('Details follows its own context selection, not another source view or a same-named occurrence', t => {
 	const f = fixture(t), scene = f.document.scenes[0], sibling = new SceneAuthoringContext(f.model, f.documents);
-	t.after(() => sibling.dispose());
+	afterTest(t, () => sibling.dispose());
 	f.authoring.select(f.document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }); f.projection.refresh();
 	const first = f.projection.subject!;
 	sibling.select(f.document, f.model.version, { kind: 'scene', scene: f.document.scenes[1] });

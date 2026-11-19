@@ -8,6 +8,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createInputControllerSnapshot } from '../../machine/ts/machine/devices/input/contracts';
 import { RemoteInput } from '../../hosts/common/input/remote';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(text = '', offset = 0) {
 	const clock = new VirtualHeadlessClock();
@@ -53,7 +54,7 @@ function fixture(text = '', offset = 0) {
 }
 
 test('virtual typing preserves occurrence order and repeated letters without a host poll', t => {
-	const f = fixture(); t.after(() => f.input.dispose()); f.input.setEditingInput(f.host);
+	const f = fixture(); afterTest(t, () => f.input.dispose()); f.input.setEditingInput(f.host);
 	for (const code of ['KeyB', 'KeyA', 'KeyB', 'KeyB']) f.keyboard.releaseSource(f.press(code));
 	assert.equal(f.state.text, 'babb');
 	assert.deepEqual(f.events.map(event => [event.code, event.down]), [
@@ -64,7 +65,7 @@ test('virtual typing preserves occurrence order and repeated letters without a h
 });
 
 test('independent same-key contacts produce distinct editing activations without extra raw edges', t => {
-	const f = fixture(); t.after(() => f.input.dispose()); f.input.setEditingInput(f.host);
+	const f = fixture(); afterTest(t, () => f.input.dispose()); f.input.setEditingInput(f.host);
 	const first = f.press('KeyB');
 	f.snapshot();
 	const raw = f.input.getPlayerInput(1).inputHandlers.keyboard!;
@@ -82,7 +83,7 @@ test('independent same-key contacts produce distinct editing activations without
 });
 
 test('virtual editing snapshots both physical modifier sides before later releases', t => {
-	const f = fixture(); t.after(() => f.input.dispose()); f.input.setEditingInput(f.host);
+	const f = fixture(); afterTest(t, () => f.input.dispose()); f.input.setEditingInput(f.host);
 	f.physical('ShiftRight', true);
 	const first = f.press('KeyB');
 	f.physical('ShiftRight', false); f.keyboard.releaseSource(first);
@@ -103,7 +104,7 @@ test('virtual editing snapshots both physical modifier sides before later releas
 });
 
 test('virtual navigation and consumed commands run in source order before following text', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.host.dispatchKey = event => {
 		f.events.push(event);
 		if (!event.down || event.code !== 'ArrowLeft' && event.code !== 'KeyS') return false;
@@ -118,7 +119,7 @@ test('virtual navigation and consumed commands run in source order before follow
 });
 
 test('controller keyboard activation edits its selected key without retargeting an older hold', t => {
-	const f = fixture(); t.after(() => f.input.dispose()); f.input.setEditingInput(f.host);
+	const f = fixture(); afterTest(t, () => f.input.dispose()); f.input.setEditingInput(f.host);
 	const first = f.keyboard.allocateSource(), second = f.keyboard.allocateSource();
 	f.keyboard.selectKey(ON_SCREEN_KEY_INDEX_BY_CODE.get('KeyB'));
 	f.keyboard.command(first, OnScreenKeyboardCommand.Activate);
@@ -130,7 +131,7 @@ test('controller keyboard activation edits its selected key without retargeting 
 });
 
 test('virtual text uses absolute UTF-16 replacement offsets and never edits a read-only target', t => {
-	const f = fixture('a😀b', 42); t.after(() => f.input.dispose()); f.input.setEditingInput(f.host);
+	const f = fixture('a😀b', 42); afterTest(t, () => f.input.dispose()); f.input.setEditingInput(f.host);
 	f.state.selectionStart = 1; f.state.selectionEnd = 3;
 	f.keyboard.releaseSource(f.press('KeyX'));
 	f.keyboard.releaseSource(f.press('Space'));
@@ -146,7 +147,7 @@ test('virtual text uses absolute UTF-16 replacement offsets and never edits a re
 
 test('an unhandled editing recipient leaves guest keyboard samples unchanged', t => {
 	const baseline = fixture(), editing = fixture();
-	t.after(() => { baseline.input.dispose(); editing.input.dispose(); });
+	afterTest(t, () => { baseline.input.dispose(); editing.input.dispose(); });
 	editing.input.setEditingInput({ ...editing.host, textTarget: undefined });
 	const baselineSources: number[] = [], editingSources: number[] = [];
 	for (const code of ['ShiftLeft', 'KeyB', 'KeyB', 'ArrowLeft', 'ControlLeft', 'Space']) {
@@ -161,7 +162,7 @@ test('an unhandled editing recipient leaves guest keyboard samples unchanged', t
 });
 
 test('global and keyboard resets cancel host keyboard gestures without treating pointer reset as keyboard cancellation', t => {
-	const f = fixture('ab'); t.after(() => f.input.dispose());
+	const f = fixture('ab'); afterTest(t, () => f.input.dispose());
 	let cancellations = 0, pointerCancellations = 0;
 	f.host.cancelInput = () => { cancellations += 1; };
 	f.host.cancelPointerInput = () => { pointerCancellations += 1; };
@@ -179,7 +180,7 @@ test('global and keyboard resets cancel host keyboard gestures without treating 
 });
 
 test('a RemoteInput editor-consumed hold stays masked after guest recipient gain until physical release', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.host.dispatchKey = event => { f.events.push(event); event.consumed = event.code === 'Enter'; return event.consumed; };
 	f.input.setEditingInput(f.host);
 	const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
@@ -201,7 +202,7 @@ test('a RemoteInput editor-consumed hold stays masked after guest recipient gain
 });
 
 test('a consumed Enter release and fresh guest repress between polls cannot alias the old UI hold', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.host.dispatchKey = event => event.down && event.code === 'Enter';
 	f.input.setEditingInput(f.host);
 	const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
@@ -216,7 +217,7 @@ test('a consumed Enter release and fresh guest repress between polls cannot alia
 
 for (const captured of ['physical', 'virtual'] as const) {
 	test(`an editor-consumed ${captured} Enter does not consume the independent same-usage source`, t => {
-		const f = fixture(); t.after(() => f.input.dispose());
+		const f = fixture(); afterTest(t, () => f.input.dispose());
 		f.host.dispatchKey = event => event.code === 'Enter'; f.input.setEditingInput(f.host);
 		const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
 		let contact: number;
@@ -236,7 +237,7 @@ for (const captured of ['physical', 'virtual'] as const) {
 }
 
 test('successful printable editing owns the physical hold without consuming unrelated gameplay or host chords', t => {
-	const f = fixture(); t.after(() => f.input.dispose()); f.input.setEditingInput(f.host);
+	const f = fixture(); afterTest(t, () => f.input.dispose()); f.input.setEditingInput(f.host);
 	const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
 	remote.apply([{ type: 'key', code: 'KeyB', down: true }]);
 	assert.equal(f.state.text, 'b', 'the real manager text producer performed the insertion');
@@ -255,7 +256,7 @@ test('successful printable editing owns the physical hold without consuming unre
 });
 
 test('explicit physical host-chord ownership remains independent of an unhandled text-context modifier', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
 	remote.apply([{ type: 'key', code: 'ControlRight', down: true }]);
 	f.snapshot();
@@ -271,7 +272,7 @@ test('explicit physical host-chord ownership remains independent of an unhandled
 });
 
 test('an OSK sticky Shift latched in a text context agrees with the next guest Digit1 after focus transfer', t => {
-	const f = fixture(); t.after(() => f.input.dispose()); f.input.setEditingInput(f.host);
+	const f = fixture(); afterTest(t, () => f.input.dispose()); f.input.setEditingInput(f.host);
 	const shift = f.press('ShiftLeft'); f.keyboard.releaseSource(shift, true);
 	const digit = ON_SCREEN_KEY_INDEX_BY_CODE.get('Digit1');
 	assert.equal(f.keyboard.label(digit), '!'); assert.equal(f.keyboard.shiftActive, true);
@@ -289,7 +290,7 @@ test('an OSK sticky Shift latched in a text context agrees with the next guest D
 });
 
 test('a physical Shift held in a text context gives the OSK the same shifted legend as actual virtual typing', t => {
-	const f = fixture(); t.after(() => f.input.dispose()); f.input.setEditingInput(f.host);
+	const f = fixture(); afterTest(t, () => f.input.dispose()); f.input.setEditingInput(f.host);
 	const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
 	remote.apply([{ type: 'key', code: 'ShiftLeft', down: true }]);
 	f.snapshot(); f.keyboard.updateFeedback(f.clock.now());
@@ -302,7 +303,7 @@ test('a physical Shift held in a text context gives the OSK the same shifted leg
 
 for (const reset of ['keyboard', 'all', 'remote'] as const) {
 	test(`${reset} cancellation retires consumed keyboard ownership before a new guest occurrence`, t => {
-		const f = fixture(); t.after(() => f.input.dispose());
+		const f = fixture(); afterTest(t, () => f.input.dispose());
 		f.host.dispatchKey = event => event.code === 'Enter'; f.input.setEditingInput(f.host);
 		const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
 		remote.apply([{ type: 'key', code: 'Enter', down: true }]);

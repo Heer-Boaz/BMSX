@@ -21,6 +21,7 @@ import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createTestRuntime, createTestRuntimeRomPayload, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PROGRAM = "local progression = require('cartlib/progression')\nprogression.compile_program({ rules = {}, filters = {}, handlers = {} })";
 
@@ -43,7 +44,7 @@ function fixture(t: TestContext, source = PROGRAM, dependencies = [createScenari
 	const guest = new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload()));
 	const aem = new AemEditorController(sources, guest, null!, null!, null!);
 	const programs = new LuaProgramController(sources, guest, null!, null!);
-	t.after(() => {
+	afterTest(t, () => {
 		picker.dispose(); menu.dispose(); first.dispose(); second.dispose();
 		editorTextModelService.clear(); inputFocus.setTarget(null);
 	});
@@ -93,7 +94,7 @@ for (const kind of ['aem', 'lua'] as const) test(`${kind} destination retirement
 	const f = fixture(t);
 	f.first.panes.activePane!.focus();
 	const origin = inputFocus.target!;
-	t.after(origin.onDidBlur(next => { if (next === f.picker.field.focusTarget) f.first.dispose(); }));
+	afterTest(t, origin.onDidBlur(next => { if (next === f.picker.field.focusTarget) f.first.dispose(); }));
 	if (kind === 'aem') f.aem.open(f.first, f.picker);
 	else f.programs.open(f.first, f.picker, 'progression');
 	assert.equal(f.picker.visible, false);
@@ -107,7 +108,7 @@ test('Lua opening choices consume the canonical source published by invoking-con
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'return 0' }]);
 	f.first.panes.activePane!.focus();
 	const origin = inputFocus.target!;
-	t.after(origin.onDidBlur(next => {
+	afterTest(t, origin.onDidBlur(next => {
 		if (next === f.picker.field.focusTarget) model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: PROGRAM }]);
 	}));
 	f.programs.open(f.first, f.picker, 'progression');
@@ -149,7 +150,7 @@ for (const kind of ['aem', 'program'] as const) test(`one shared ${kind} control
 	const f = fixture(t);
 	const local = new QuickInputController(f.menu, undefined, undefined,
 		{ scope: f.second.focusScope, bounds: { left: 30, top: 40, right: 310, bottom: 240 }, kind: 'part', reveal() {} });
-	t.after(() => local.dispose());
+	afterTest(t, () => local.dispose());
 	const root = t.mock.method(f.picker, 'pick', () => assert.fail('the shared controller cannot open an unrelated root picker'));
 	f.second.panes.activePane!.focus();
 	if (kind === 'aem') f.aem.open(f.second, local);

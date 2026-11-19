@@ -19,6 +19,7 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { afterTest } from '../helpers/test_cleanup';
 
 const ENTRY = `local progression<const> = require('cartlib/progression')
 local events<const> = require('cartlib/event_emitter')
@@ -44,7 +45,7 @@ function fixture(t: TestContext, optLevel: 0 | 3, source = ENTRY, extraModules: 
 		{sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() {return false;}, applyInputControllerVibrationEffect() {}});
 	const registry = (): LuaSourceRegistry => ({ records: [], path2lua: {}, module2lua: {}, entrySourcePath: '', projectRootPath: 'test', can_boot_from_source: false, revision: 0 });
 	const sources = createTestRuntimeSourceState(registry(), [registry(), null], 0);
-	t.after(() => sources.catalog.dispose());
+	afterTest(t, () => sources.catalog.dispose());
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports, captureInstalledLuaSources(sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, images.systemSymbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID),
 		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols, captureInstalledLuaSources(sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources, images.cartSymbols!.metadata.compiledModulePaths), TEST_CARTRIDGE_CONTEXT_IDS[0]), null] };
 	runtime.machine.cpu.reset(); runtime.machine.cpu.installBootPrimitives();
@@ -53,7 +54,7 @@ function fixture(t: TestContext, optLevel: 0 | 3, source = ENTRY, extraModules: 
 	assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const model = new EditorTextModel({ contextLabel: 'fixture-source', sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua', source: {type: 'lua', resid: 'entry'} }, 'lua', source);
 	const input = new LuaProgramInput(model, 'progression', {start: 0, end: source.length}, guest);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const transport = new RuntimeTransport(runtime, null!, null!, null!, () => true);
 	input.inspectRuntime(transport);
 	input.runtimeDomain = 0; input.runtimeImage = sources.currentBlua32Media.cartridgeSlots[0]!;
@@ -181,7 +182,7 @@ function replace_input() registry:deregister(component); create() end
 	const choices = readProgramInstances(f.sources, f.guest, 0, 'input');
 	assert.equal(choices.length, 1); assert.equal(choices[0].label, '0'); assert.equal(choices[0].detail, 'Owner player');
 	const input = new LuaProgramInput(f.input.workingCopy, 'input', { start: 0, end: f.input.workingCopy.buffer.getText().length }, f.guest);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	input.instance = choices[0].identity; input.runtimeDomain = 0; input.runtimeImage = f.input.runtimeImage;
 	input.inspectRuntime(f.transport);
 	const projection = new LuaProgramRuntimeProjection(f.sources, f.guest), cpu = f.runtime.machine.cpu;
@@ -259,7 +260,7 @@ test(`history restore reacquires the typed context bookmark and restored state (
 test('Lua program mode changes publish their owned target before observers and never recover follow intent implicitly', t => {
 	const f = fixture(t, 0);
 	const input = f.input, observations: Array<[boolean, RuntimeTransport | null, boolean]> = [];
-	t.after(input.interaction.onDidChange(() => observations.push([input.liveVisible, input.interaction.transport, input.interaction.running])));
+	afterTest(t, input.interaction.onDidChange(() => observations.push([input.liveVisible, input.interaction.transport, input.interaction.running])));
 	input.interaction.running = true;
 	input.showAuthoring();
 	assert.equal(input.liveVisible, false);

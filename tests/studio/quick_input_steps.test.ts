@@ -15,6 +15,7 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { QuickInputController, type QuickInputOptions } from '../../ide/workbench/services/quick_input/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	configureFontVariant(font);
@@ -22,7 +23,7 @@ function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	const menu = new ContextMenuController(inputFocus, pointerCapture, area);
 	const picker = new QuickInputController(menu, undefined, undefined, { kind: 'workspace', bounds: area, scope: inputFocus.workbenchScope });
 	const origin = inputFocus.createTarget(null, new InputFocusScope(Symbol('step source'), inputFocus.workbenchScope));
-	t.after(origin.bindKeyboard(() => {})); origin.focus();
+	afterTest(t, origin.bindKeyboard(() => {})); origin.focus();
 	const listeners = new Set<() => void>();
 	const owner = {
 		isDisposed: false,
@@ -47,7 +48,7 @@ function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 		pointer(x, y, PointerButton.Primary, PointerButton.Primary); return { x, y };
 	};
 	const key = (code: string, modifiers = KeyModifier.none) => { const event = new KeyInputEvent(code, modifiers); inputFocus.handleKeyboard(event); return event; };
-	t.after(() => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); pointerHover.clear(); inputFocus.setTarget(null); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); pointerHover.clear(); inputFocus.setTarget(null); });
 	return { picker, area, origin, owner, items, first, second, firstStep, secondStep, pointer, pressBack, key, accepted: () => accepted, backs: () => backs };
 }
 
@@ -99,7 +100,7 @@ test(`the source lease blocks Back when its ${retirement} owner retires during f
 	const f = fixture(t), semantic = inputFocus.createTarget(null, new InputFocusScope(Symbol('semantic source'), inputFocus.workbenchScope));
 	if (retirement === 'semantic') f.origin.commandContext = semantic;
 	f.secondStep();
-	t.after(f.origin.onDidFocus(() => {
+	afterTest(t, f.origin.onDidFocus(() => {
 		if (retirement === 'resource') f.owner.dispose();
 		else (retirement === 'semantic' ? semantic : f.origin).scope.retireContext();
 	}));
@@ -114,7 +115,7 @@ for (const newer of ['foreground', 'picker'] as const) test(`focus-return observ
 		unbind();
 		if (newer === 'foreground') foreground.focus();
 		else f.secondStep({ step });
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.key('ArrowLeft', KeyModifier.alt);
 	assert.equal(f.backs(), 0); assert.equal(f.accepted(), 0);
 	if (newer === 'foreground') { assert.equal(f.picker.visible, false); assert.equal(inputFocus.admittedTarget, foreground); }
@@ -199,7 +200,7 @@ test('replacing and retiring stepped QuickInput removes only its own Back capabi
 	const f = createActualSourcePanes(t), picker = f.editor.quickInput;
 	f.first.focus(); let navigations = 0, backs = 0;
 	f.first.code.focusTarget.registerCommand('navigateBack', { isEnabled: () => true, run: () => { navigations++; } });
-	t.after(() => f.first.code.focusTarget.unregisterCommand('navigateBack'));
+	afterTest(t, () => f.first.code.focusTarget.unregisterCommand('navigateBack'));
 	const items = [{ label: 'target', description: '', detail: '' }];
 	picker.pick('Step', '', () => new TextQuickPickProvider(items), () => {}, undefined,
 		{ step: { index: 2, total: 2, back: () => { backs++; } } });

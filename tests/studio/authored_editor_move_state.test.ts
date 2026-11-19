@@ -16,6 +16,7 @@ import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/edito
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { captureWorkbenchTreeView, setWorkbenchTreeCollapsed } from '../../ide/workbench/ui/tree_view';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 function aemFixture(t: TestContext) {
 	const f = createActualSourcePanes(t), context = f.sources.systemContextId, path = 'events.aem.yaml';
@@ -38,7 +39,7 @@ test('portable inputs own their move capability without lending it to diagnostic
 	for (const input of inputs) f.editor.editorParts.main.activeGroup.model.add(input);
 	for (const input of [f.firstInput, f.input, ...inputs]) assert.equal(input.canMove(), true);
 	const game = f.editor.actorLab.resolveInput(), diagnostic = new HostErrorInput('fixture diagnostic');
-	t.after(() => { game.dispose(); diagnostic.dispose(); });
+	afterTest(t, () => { game.dispose(); diagnostic.dispose(); });
 	assert.equal(game.canMove(), true); assert.equal(diagnostic.canMove(), false);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const inspection = new BehaviorRuntimeInspection(f.sources, f.editor.luaPrograms.guest, f.host.rewind, -1,
@@ -77,7 +78,7 @@ test('AEM navigation restores semantic property, disclosure and reading state th
 	assert.ok(f.firstGroup.model.activeTab === f.input && f.firstGroup.panes.activePane instanceof AemEditorPane);
 	assert.deepEqual(captureWorkbenchTreeView(f.input.tree, element => element.key), view);
 	assert.equal(f.model.buffer.getText(), f.authored); assert.equal(f.model.version, version);
-	const selection = f.firstGroup.panes.activePane.getSelection!(); t.after(() => selection.dispose());
+	const selection = f.firstGroup.panes.activePane.getSelection!(); afterTest(t, () => selection.dispose());
 	f.receiver.applyStatus = 'receiver status'; f.receiver.applying = true;
 	f.secondGroup.panes.activePane!.setOptions(undefined, selection);
 	assert.deepEqual(captureWorkbenchTreeView(f.receiver.tree, element => element.key), view);
@@ -88,16 +89,16 @@ test('AEM navigation identity follows authored keys across reparsing rather than
 	const f = aemFixture(t), selected = '["events","event_20","channel"]';
 	f.input.tree.selectionIndex = f.input.tree.rows.findIndex(row => row.element.key === selected);
 	f.input.sourceSelection.select(f.input.tree.rows[f.input.tree.selectionIndex].element.sourceIdentity);
-	const before = new AemNavigationSelection(f.input); t.after(() => before.dispose());
+	const before = new AemNavigationSelection(f.input); afterTest(t, () => before.dispose());
 	const node = f.input.tree.rows[f.input.tree.selectionIndex].element.node;
 	f.model.pushEditOperations([{ offset: f.authored.indexOf('  event_0:'), deleteLength: 0, text: '  earlier: {channel: music}\n' }]);
 	projectAemSource(f.input);
-	const after = new AemNavigationSelection(f.input); t.after(() => after.dispose());
+	const after = new AemNavigationSelection(f.input); afterTest(t, () => after.dispose());
 	assert.equal(before.matches(after), true);
 	assert.notEqual(f.input.tree.rows[f.input.tree.selectionIndex].element.node, node);
 	f.input.tree.selectionIndex = 0; f.input.sourceSelection.select(f.input.tree.rows[0].element.sourceIdentity); before.restore(f.input);
 	assert.equal(f.input.tree.rows[f.input.tree.selectionIndex].element.key, selected);
-	const other = new AemNavigationSelection(f.receiver); t.after(() => other.dispose());
+	const other = new AemNavigationSelection(f.receiver); afterTest(t, () => other.dispose());
 	assert.equal(before.matches(other), false);
 });
 

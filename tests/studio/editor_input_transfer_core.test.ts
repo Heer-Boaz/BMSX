@@ -10,6 +10,7 @@ import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus } from '../../ide/input/focus';
+import { afterTest } from '../helpers/test_cleanup';
 
 function sourceInput(path: string): CodeEditorInput {
 	return new CodeEditorInput(new EditorTextModel({ contextId: TEST_SYSTEM_CONTEXT_ID, contextLabel: 'Fixture', path,
@@ -20,7 +21,7 @@ test('model handoff publishes both final memberships, selections, metadata and r
 	const source = new EditorTabGroupModel(), destination = new EditorTabGroupModel();
 	const before = sourceInput('before.lua'), moving = sourceInput('moving.lua'), after = sourceInput('after.lua');
 	const target = sourceInput('target.lua');
-	t.after(() => { source.clear(); destination.clear(); for (const input of [before, moving, after, target]) input.workingCopy.dispose(); });
+	afterTest(t, () => { source.clear(); destination.clear(); for (const input of [before, moving, after, target]) input.workingCopy.dispose(); });
 	source.add(before); source.add(moving, { pinned: false }); source.add(after); source.activate(moving);
 	destination.add(target, { pinned: false }); destination.activate(target);
 	const sourceRevision = source.revision, targetRevision = destination.revision;
@@ -51,7 +52,7 @@ test('model handoff publishes both final memberships, selections, metadata and r
 test('moving an inactive model member retains its source selection and pins only the admitted destination member', t => {
 	const source = new EditorTabGroupModel(), destination = new EditorTabGroupModel();
 	const active = sourceInput('active.lua'), moving = sourceInput('moving.lua');
-	t.after(() => { source.clear(); destination.clear(); active.workingCopy.dispose(); moving.workingCopy.dispose(); });
+	afterTest(t, () => { source.clear(); destination.clear(); active.workingCopy.dispose(); moving.workingCopy.dispose(); });
 	source.add(active, { pinned: false }); source.add(moving); source.activate(active);
 	source.transferTo(destination, moving).publish();
 	assert.strictEqual(source.activeTab, active); assert.strictEqual(source.previewTab, active);
@@ -62,7 +63,7 @@ test('moving an inactive model member retains its source selection and pins only
 test('model coalescence retains the exact destination view and leaves source retirement to the handoff owner', t => {
 	const source = new EditorTabGroupModel(), destination = new EditorTabGroupModel();
 	const moving = sourceInput('shared.lua'), retained = moving.createView();
-	t.after(() => { source.clear(); destination.clear(); moving.dispose(); moving.workingCopy.dispose(); });
+	afterTest(t, () => { source.clear(); destination.clear(); moving.dispose(); moving.workingCopy.dispose(); });
 	source.add(moving); source.activate(moving);
 	destination.add(retained, { pinned: false }); destination.activate(retained);
 	let retired = 0; moving.onWillDispose(() => retired++);
@@ -81,7 +82,7 @@ test('group move detaches the old Source control before either membership publis
 	const sourceGeneration = source.panes.beginOpen(), targetGeneration = destination.panes.beginOpen();
 	let published = 0, retired = 0, attached = 0;
 	const unbindDispose = input.onWillDispose(() => retired++);
-	t.after(unbindDispose);
+	afterTest(t, unbindDispose);
 	const assertDetached = () => {
 		published++;
 		assert.equal(f.first.code.model, null); assert.equal(f.second.code.model, null);
@@ -115,7 +116,7 @@ test('a group publishes the exact replacement owner before coalesced source inpu
 		assert.equal(source.model.tabs.length, 0); assert.strictEqual(destination.model.activeTab, retained);
 		moved = true;
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	input.onWillDispose(() => assert.equal(moved, true));
 	source.detachEditorForMove(input); destination.panes.clearEditor();
 	source.model.transferTo(destination.model, input, retained).publish();
@@ -129,7 +130,7 @@ test('group move admission commits only its own actual focused field and rejects
 	const f = createActualSourcePanes(t);
 	let accepted = 7;
 	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, value => { accepted = value; });
-	t.after(() => field.dispose());
+	afterTest(t, () => field.dispose());
 	field.setValue(accepted); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '-', true);
 	assert.equal(field.pending, true); assert.equal(f.firstGroup.commitPendingEdit(), false);
 	assert.equal(field.pending, true); assert.equal(accepted, 7); assert.strictEqual(inputFocus.target, field.field.focusTarget);

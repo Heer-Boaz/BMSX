@@ -11,6 +11,7 @@ import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const JOB: StudioBuildJob = { artifactAvailable: false,
 	request: { requestId: 'owned-build-request', target: 'synthetic-build-target', debug: true, optLevel: 0 },
@@ -61,7 +62,7 @@ class DeferredBuilds implements WorkspaceBuilds {
 function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t), builds = new DeferredBuilds();
 	f.editor.builds = builds; f.first.focus();
-	t.after(() => updateEditorMessage(editorFeedbackState.message.timer));
+	afterTest(t, () => updateEditorMessage(editorFeedbackState.message.timer));
 	return { ...f, builds };
 }
 
@@ -229,7 +230,7 @@ for (const handoff of ['target to recipe', 'jobs to details', 'refresh request']
 				f.second.focus();
 				if (destination === 'replacement picker') picker.pick('New owner', '', () => new TextQuickPickProvider([replacement]), () => {});
 			}
-		}); t.after(unbind);
+		}); afterTest(t, unbind);
 		f.key('Enter'); await setImmediate();
 		if (destination === 'replacement picker') {
 			assert.equal(picker.visible, true); assert.equal(picker.busy, false); assert.ok(picker.model.items[0] === replacement);
@@ -247,7 +248,7 @@ for (const outcome of ['receipt', 'error'] as const)
 		const replacement = { label: 'New admitted catalog', description: '', detail: '' };
 		const unbind = f.first.commandTarget.onDidBlur(() => {
 			unbind(); picker.pick('New owner', '', () => new TextQuickPickProvider([replacement]), () => {});
-		}); t.after(unbind);
+		}); afterTest(t, unbind);
 		f.key('End', KeyModifier.ctrl); f.key('Enter');
 		assert.equal(f.builds.cancellations.length, 1); assert.equal(f.builds.cancellations[0].id, JOB.request.requestId);
 		assert.ok(picker.model.items[0] === replacement); assert.equal(picker.busy, false);
@@ -264,7 +265,7 @@ for (const outcome of ['receipt', 'error'] as const)
 
 test('an explicitly accepted background cancellation keeps producer error feedback without taking newer native focus', async t => {
 	const f = fixture(t), picker = f.editor.quickInput; await openDetails(f);
-	const unbind = f.first.commandTarget.onDidFocus(() => { unbind(); f.second.focus(); }); t.after(unbind);
+	const unbind = f.first.commandTarget.onDidFocus(() => { unbind(); f.second.focus(); }); afterTest(t, unbind);
 	f.key('End', KeyModifier.ctrl); f.key('Enter');
 	assert.equal(f.builds.cancellations.length, 1); assert.equal(picker.visible, false);
 	assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
@@ -316,7 +317,7 @@ test('a published-open recovery retry cannot navigate after return-focus callbac
 	assert.equal(picker.visible, true); assert.equal(requests.length, 1);
 	const unbind = f.first.commandTarget.onDidFocus(() => {
 		unbind(); f.second.focus();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.key('Enter'); await setImmediate();
 	assert.deepEqual(requests, [JOB.request.requestId]);
 	assert.equal(picker.visible, false); assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
@@ -344,7 +345,7 @@ test('a published-open retry callback cannot publish its blocked feedback over a
 test('an obsolete provider retirement cannot close a fresh binding of the same reusable provider admitted by output cleanup', async t => {
 	const f = fixture(t), editor = f.editor, retiredOutput = editor.buildOutputs!.get(JOB);
 	let rebound = 0;
-	t.after(retiredOutput.onDidChange(() => {
+	afterTest(t, retiredOutput.onDidChange(() => {
 		if (!retiredOutput.isDisposed || rebound !== 0) return;
 		rebound++; editor.builds = f.builds; chooseBuild(editor);
 	}));
@@ -399,7 +400,7 @@ for (const handoff of ['initial receipt', 'refreshed receipt', 'cancellation rec
 			unbind(); f.editor.editorParts.activate(f.secondPart);
 			activated = f.editor.editorParts.activePart === f.secondPart;
 			retainedFocus = inputFocus.admittedTarget === f.first.commandTarget;
-		}); t.after(unbind);
+		}); afterTest(t, unbind);
 		// View Log is the receipt provider's third action. Exercise its native
 		// selection/acceptance, not a presentation-label lookup.
 		f.key('Home', KeyModifier.ctrl); f.key('ArrowDown'); f.key('ArrowDown'); f.key('Enter'); await setImmediate();
@@ -434,7 +435,7 @@ test('View Log does not refresh an observation retired by the receiving pane dep
 	let replacements = 0;
 	const unbind = f.first.inputScope.onDidRetireContext(() => {
 		unbind(); replacements++; f.editor.builds = next;
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	showEditorMessage('A retained observation from the current workflow', 'info', 30);
 	const feedback = { ...editorFeedbackState.message };
 	f.key('Home', KeyModifier.ctrl); f.key('ArrowDown'); f.key('ArrowDown');
@@ -461,7 +462,7 @@ for (const command of ['choose output', 'receipt Main output'] as const)
 		let replacements = 0;
 		const unbind = f.first.commandTarget.onDidBlur(() => {
 			unbind(); replacements++; f.editor.builds = next;
-		}); t.after(unbind);
+		}); afterTest(t, unbind);
 		showEditorMessage('A retained observation from the current workflow', 'info', 30);
 		const feedback = { ...editorFeedbackState.message };
 		assert.doesNotThrow(() => f.key('Enter')); await setImmediate();

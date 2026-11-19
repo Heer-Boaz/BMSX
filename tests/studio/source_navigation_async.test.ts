@@ -8,6 +8,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [['target.lua', 'local target = 1\nreturn target\n']]);
@@ -117,7 +118,7 @@ for (const change of ['clear', 'rebind', 'reselect', 'foreignFocus', 'sourceEdit
 
 test('a newer opening published during the async sender receipt cannot be adopted by that older request', async t => {
 	const f = fixture(t), read = Promise.withResolvers<EditorSourceLocation | undefined>(), newer = new HostErrorInput('reentrant source');
-	const unbind = f.firstGroup.panes.onDidBeginOpen(() => { unbind(); f.firstGroup.openEditor(newer); }); t.after(unbind);
+	const unbind = f.firstGroup.panes.onDidBeginOpen(() => { unbind(); f.firstGroup.openEditor(newer); }); afterTest(t, unbind);
 	const pending = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => read.promise }, placement: 'side' });
 	read.resolve(f.location()); assert.equal(await pending, undefined);
 	assert.equal(f.firstPart.groups.length, 1);

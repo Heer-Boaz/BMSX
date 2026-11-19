@@ -11,6 +11,7 @@ import { QuickInputController } from '../../ide/workbench/services/quick_input/c
 import type { QuickPickProjection } from '../../ide/workbench/services/quick_input/provider';
 import { buildResourceQuickPickItems } from '../../ide/workbench/contrib/resources/quick_access';
 import { FileQuickPickProvider } from '../../ide/workbench/services/quick_input/file_provider';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(paths: string[]) {
 	const resources: RuntimeResource[] = paths.map(path => ({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { resid: path, type: 'lua' } }));
@@ -95,7 +96,7 @@ test('same-path files from two sockets retain distinct original resources throug
 	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
 	const menu = new ContextMenuController(inputFocus, pointerCapture, menuArea);
 	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
-	t.after(() => { picker.dispose(); menu.dispose(); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); });
 	let accepted: RuntimeResource | undefined;
 	picker.pick('FILES', 'query', () => provider, item => { accepted = item.resource; });
 	picker.model.filter('src'); picker.update();

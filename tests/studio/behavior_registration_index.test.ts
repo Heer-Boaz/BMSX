@@ -22,6 +22,7 @@ import { QuickPickModel } from '../../ide/workbench/services/quick_input/model';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const API_MODULES = ['cartlib/fsm/library','cartlib/behaviour_tree/library','cartlib/actioneffects'];
 
@@ -63,7 +64,7 @@ test('API-provider edits and Undo update the catalogue and open documents withou
 	const bridge = "return require('cartlib/fsm/library').register";
 	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', [luaSource('system.lua', '')]),
 		[sourceRegistry('carts/fixture', [luaSource('actors.lua', source), luaSource('bridge.lua', bridge)]), null], 0);
-	t.after(() => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
+	afterTest(t, () => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
 	const main = editorTextModelService.retain(sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'actors.lua' })!, 'lua', source);
 	const provider = editorTextModelService.retain(sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'bridge.lua' })!, 'lua', bridge);
 	const index = new BehaviorRegistrationIndex(editorTextModelService, sources.catalog);
@@ -107,7 +108,7 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 		],
 		0,
 	);
-	t.after(() => {
+	afterTest(t, () => {
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
@@ -175,7 +176,7 @@ test('behavior registration index resolves separate FSM ids in the same Lua docu
 		[sourceRegistry('carts/game', [luaSource(path, source)]), null],
 		0,
 	);
-	t.after(() => {
+	afterTest(t, () => {
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
@@ -208,7 +209,7 @@ test('kind-specific behavior picks select producer kinds, not names, files or qu
 		[sourceRegistry('carts/game', [luaSource(path, source)]), null],
 		0,
 	);
-	t.after(() => {
+	afterTest(t, () => {
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
@@ -257,7 +258,7 @@ test('behavior registration index isolates domains and rebuilds on an authored d
 		],
 		0,
 	);
-	t.after(() => {
+	afterTest(t, () => {
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
@@ -305,13 +306,13 @@ test('definition views share one lazy source generation and immutable FSM index 
 		"fsm.register('first', { states = { idle = {} } })\nfsm.register('second', { states = { idle = {} } })";
 	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', [luaSource('system.lua', 'return true')]),
 		[sourceRegistry('carts/fixture', [luaSource(path, source)]), null], 0);
-	t.after(() => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
+	afterTest(t, () => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
 	const model = editorTextModelService.retain(sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })!, 'lua', source);
 	const documents = new BehaviorSourceDocuments(editorTextModelService, sources.catalog);
 	const first = documents.get(model);
 	const fsm = indexStateMachineSource(first);
 	const positions = BehaviorSourceIndex.acquire(first, model, assert.fail);
-	t.after(() => positions.release());
+	afterTest(t, () => positions.release());
 	const originalStart = positions.ranges.get(first.definitions[1].rowKey)!.start;
 	for (let request = 0; request < 1000; request += 1) {
 		assert.equal(documents.get(model), first);
@@ -342,7 +343,7 @@ test('an added module export refreshes cached behavior ids and topology without 
 	const initial = 'local unpublished = {}';
 	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', [luaSource('system.lua', 'return true')]),
 		[sourceRegistry('carts/fixture', [luaSource(path, source), luaSource('id.lua', initial), luaSource('definition.lua', initial)]), null], 0);
-	t.after(() => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
+	afterTest(t, () => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
 	const main = editorTextModelService.retain(sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })!, 'lua', source);
 	const id = editorTextModelService.retain(sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'id.lua' })!, 'lua', initial);
 	const provider = editorTextModelService.retain(sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definition.lua' })!, 'lua', initial);

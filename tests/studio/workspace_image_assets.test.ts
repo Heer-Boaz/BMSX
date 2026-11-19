@@ -4,6 +4,7 @@ import { createLuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { WorkspaceImageAssets } from '../../ide/workspace/image_assets';
 import { createTestRuntimeSourceState, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createPackedImageFixture } from '../helpers/packed_images';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const packed = [new Uint8Array([255, 0, 0, 255]), new Uint8Array([0, 255, 0, 255])]
@@ -18,7 +19,7 @@ function fixture(t: TestContext) {
 		context.previewPackage.img['shared-image'] = image.entries[0];
 	}
 	const images = new WorkspaceImageAssets(catalog), used = new Set(['shared-image']);
-	t.after(() => { images.dispose(); catalog.dispose(); });
+	afterTest(t, () => { images.dispose(); catalog.dispose(); });
 	return { catalog, contexts, images, used, packed };
 }
 

@@ -25,6 +25,7 @@ import { BEHAVIOR_SOURCE_FIXTURE } from '../helpers/behavior_source_fixture';
 import { FSM_PROOF_SOURCE } from '../helpers/fsm_source_fixture';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, source = BEHAVIOR_SOURCE_FIXTURE, presentation: 'graph' | 'state-graph' = 'graph',
 	createEngine: GraphLayoutEngineFactory = () => assert.fail('BT cameras do not create FSM layout workers')) {
@@ -39,7 +40,7 @@ function fixture(t: TestContext, source = BEHAVIOR_SOURCE_FIXTURE, presentation:
 	const model = resolveLuaTextFileModel(editorTextModelService, sources.catalog, resource);
 	const input = controller.createInput(model, presentation), inputs = [input];
 	selectBehaviorLensDefinition(input.view, input.view.document.definitions[0].rowKey);
-	t.after(() => {
+	afterTest(t, () => {
 		for (const input of inputs) input.dispose();
 		editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
 		editorViewState.font = previousFont;
@@ -58,7 +59,7 @@ class HeldEngine {
 
 test('authored FSM pending source/font generations revoke geometry without replacing the manual camera', async t => {
 	const held = new HeldEngine(), real = new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs')));
-	t.after(() => real.dispose());
+	afterTest(t, () => real.dispose());
 	const f = fixture(t, FSM_PROOF_SOURCE, 'state-graph', () => held), view = f.input.view;
 	assert.ok(view.presentation.kind === 'state-graph');
 	const graph = view.presentation, viewport = graph.viewport;
@@ -164,7 +165,7 @@ for (const mode of ['fit', 'manual'] as const)
 		if (mode === 'manual') { viewport.setZoom(2); viewport.pan(11, 19); }
 		const saved = captureBehaviorLensView(f.input), history = new BehaviorLensNavigationSelection(f.input);
 		assert.ok(saved.reading.kind === 'graph');
-		t.after(() => history.dispose());
+		afterTest(t, () => history.dispose());
 		const serializer = new BehaviorLensInputSerializer(f.sources.catalog, f.controller);
 		const serialized = serializer.serialize(f.input), clone = f.input.createView!();
 		const reopened = await serializer.deserialize(serialized);
@@ -198,7 +199,7 @@ test('a list reading bookmark supplies no invented camera when source navigation
 	const outline = view.presentation; assert.ok(outline.kind === 'outline');
 	view.selectionState.selectDefinition(subject.rowKey);
 	outline.scroll = 17;
-	const history = new BehaviorLensNavigationSelection(input); t.after(() => history.dispose());
+	const history = new BehaviorLensNavigationSelection(input); afterTest(t, () => history.dispose());
 	assert.deepEqual(history.snapshot.reading, { kind: 'list', scroll: 17 });
 	selectBehaviorLensDefinition(view, view.document.definitions[0].rowKey);
 	const graph = view.presentation; assert.ok(graph.kind === 'graph');

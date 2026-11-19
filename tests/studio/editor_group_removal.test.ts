@@ -13,6 +13,7 @@ import { MainWorkspace } from '../../ide/workbench/main_workspace';
 import type { EditorInputSerializers } from '../../ide/workbench/services/editor/editor_serialization';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createTestEditorPaneContributions, createTestGroupPresentation, createTestEditorCloseDependencies } from '../helpers/editor_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	configureFontVariant('tiny');
@@ -36,7 +37,7 @@ function fixture(t: TestContext) {
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope), layoutMain,
 	});
 	layoutMain();
-	t.after(() => { parts.dispose(); main.dispose(); presentation.contextMenu.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	afterTest(t, () => { parts.dispose(); main.dispose(); presentation.contextMenu.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { parts, surfaces, area: presentation.workArea };
 }
 

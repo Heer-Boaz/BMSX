@@ -11,6 +11,7 @@ import type { BehaviorTreeSourceList } from '../../ide/workbench/contrib/behavio
 import { SourceTableIssue } from '../../ide/workbench/contrib/behavior_lens/source';
 import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_transfer';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { afterTest } from '../helpers/test_cleanup';
 
 const prelude = `local trees<const> = require('cartlib/behaviour_tree/library')
 local leaf<const> = { type = 'wait', duration_ticks = 1 }
@@ -32,7 +33,7 @@ function rootList(document: BehaviorSourceDocument, index: number): BehaviorTree
 
 function fixture(t: TestContext, source = ordinary, index = 0, origin = 0) {
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'transfer.lua', location: { kind: 'workspace' as const, path: 'transfer.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'transfer.lua', source: { type: 'lua', resid: 'transfer' } }, 'lua', source);
-	t.after(() => model.dispose());
+	afterTest(t, () => model.dispose());
 	const analysis = buildResourceLuaSemanticFixtureFile(source, model.resource);
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], ['cartlib/behaviour_tree/library'])));
 	const branch = rootList(document, origin);

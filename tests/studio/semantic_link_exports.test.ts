@@ -8,6 +8,7 @@ import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { buildPossibleRomAssetAddressLinkExports, type RomAssetSymbol } from '../../toolchain/ts/rompack/asset_symbols';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import { createTestRuntimeSourceState, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('the asset producer classifies address relocations in either ROM domain, never payload lengths', () => {
 	const symbol = (name: string, payloadId: 'system' | 'cart'): RomAssetSymbol => ({
@@ -51,7 +52,7 @@ test('editor snapshots replace generated export metadata on registry changes and
 	const catalog = createTestRuntimeSourceState(system, [cart, null], 0).catalog;
 	const models = new EditorTextModelService();
 	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], models);
-	t.after(() => { project.dispose(); models.clear(); catalog.dispose(); });
+	afterTest(t, () => { project.dispose(); models.clear(); catalog.dispose(); });
 	project.synchronizeSources(catalog);
 	const identity = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'asset.lua' };
 	const address = resourceIdentityKey(identity);

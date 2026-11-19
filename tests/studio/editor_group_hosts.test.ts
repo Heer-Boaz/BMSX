@@ -4,6 +4,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 // Published shell/host bounds are the subject of this surface-ordering contract,
 // not fixed screenshot coordinates or editor wording.
@@ -81,7 +82,7 @@ test('host reveal preserves a newer sibling interaction published while a minimi
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	parts.minimize(f.firstPart); f.secondGroup.focus();
 	let redirected = false;
-	t.after(parts.onDidChange(() => {
+	afterTest(t, parts.onDidChange(() => {
 		if (redirected || f.firstPart.window!.model.minimized) return;
 		redirected = true; f.secondGroup.focus();
 	}));
@@ -145,7 +146,7 @@ for (const operation of ['focus', 'reveal'] as const) test(`a newer group clear 
 	const input = new CodeEditorInput(f.secondInput.workingCopy);
 	requested.openEditor(input, { preserveFocus: true }); f.update();
 	let cleared = false;
-	t.after(parts.onDidChange(() => {
+	afterTest(t, parts.onDidChange(() => {
 		if (cleared || main.activeGroup !== requested) return;
 		cleared = true; main.clear();
 	}));

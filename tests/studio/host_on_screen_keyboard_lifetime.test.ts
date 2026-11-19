@@ -16,6 +16,7 @@ import type { GlyphRenderSubmission, HostImageRenderSubmission, RectRenderSubmis
 import { createHostFrameFixture } from '../helpers/host_frame';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostRewind } from '../../hosts/common/rewind';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture() {
 	const clock = new VirtualHeadlessClock();
@@ -44,7 +45,7 @@ function fixture() {
 for (const hostHz of [60, 120]) {
 	test(`virtual key lifetime survives every host poll throughout a 100 ms source hold at ${hostHz} Hz`, t => {
 		const f = fixture();
-		t.after(() => f.input.dispose());
+		afterTest(t, () => f.input.dispose());
 		f.keyboard.activate(0);
 		for (let frame = 0; frame < hostHz / 10; frame += 1) {
 			f.poll(1000 / hostHz);
@@ -59,7 +60,7 @@ for (const hostHz of [60, 120]) {
 
 test('a controller and the logical pointer retain independent contributions to the same selected key', t => {
 	const f = fixture();
-	t.after(() => f.input.dispose());
+	afterTest(t, () => f.input.dispose());
 	f.keyboard.activate(0);
 	f.keyboard.activate(OnScreenKeyboard.POINTER_SOURCE);
 	f.poll();
@@ -75,7 +76,7 @@ test('a controller and the logical pointer retain independent contributions to t
 
 test('the composed keyboard owner forwards simultaneous controller commands and pointer holds independently', t => {
 	const f = fixture(); f.keyboard.close();
-	t.after(() => f.input.dispose());
+	afterTest(t, () => f.input.dispose());
 	for (let pad = 0; pad < 2; pad += 1) {
 		f.input.connectInputDevice({ id: `gamepad:${pad}`, kind: 'gamepad', gamepadIndex: pad, label: 'PAD',
 			vibrationInitialization: null, supportsVibration: false, setVibration() {} });
@@ -136,7 +137,7 @@ test('the composed keyboard owner forwards simultaneous controller commands and 
 
 test('moving keyboard selection cannot retarget held keys, and different keys stay independently held', t => {
 	const f = fixture();
-	t.after(() => f.input.dispose());
+	afterTest(t, () => f.input.dispose());
 	f.keyboard.activate(0);
 	f.keyboard.moveHorizontal(1);
 	f.keyboard.activate(OnScreenKeyboard.POINTER_SOURCE);
@@ -158,7 +159,7 @@ test('moving keyboard selection cannot retarget held keys, and different keys st
 
 test('one-shot Shift accompanies every contributing key through its whole physical hold', t => {
 	const f = fixture();
-	t.after(() => f.input.dispose());
+	afterTest(t, () => f.input.dispose());
 	f.keyboard.command(3, OnScreenKeyboardCommand.Shift);
 	f.keyboard.activate(0);
 	f.keyboard.moveHorizontal(1);
@@ -180,7 +181,7 @@ test('one-shot Shift accompanies every contributing key through its whole physic
 
 test('turning off a sticky modifier does not remove it from a key already held with that modifier', t => {
 	const f = fixture();
-	t.after(() => f.input.dispose());
+	afterTest(t, () => f.input.dispose());
 	for (let row = 0; row < 3; row += 1) f.keyboard.moveVertical(1);
 	f.keyboard.moveHorizontal(-1); // CTRL, adjacent to ALT at the same authored row.
 	f.keyboard.activate(3);
@@ -199,7 +200,7 @@ test('turning off a sticky modifier does not remove it from a key already held w
 
 test('held special keys publish one down/up pair; guest firmware owns typematic repeat', t => {
 	const f = fixture();
-	t.after(() => f.input.dispose());
+	afterTest(t, () => f.input.dispose());
 	f.keyboard.command(0, OnScreenKeyboardCommand.Backspace);
 	for (let frame = 0; frame < 120; frame += 1) {
 		f.poll(1000 / 120);
@@ -212,7 +213,7 @@ test('held special keys publish one down/up pair; guest firmware owns typematic 
 
 test('closing the keyboard releases every source, special key and sticky or captured modifier', t => {
 	const f = fixture();
-	t.after(() => f.input.dispose());
+	afterTest(t, () => f.input.dispose());
 	f.keyboard.command(3, OnScreenKeyboardCommand.Shift);
 	f.keyboard.activate(0);
 	f.keyboard.command(1, OnScreenKeyboardCommand.Home);
@@ -254,7 +255,7 @@ for (const bitmap of [true, false]) {
 			const toggle = keyboardView.togglePosition.bind(keyboardView);
 			keyboardView.togglePosition = () => { relocations += 1; toggle(); };
 		}
-		t.after(() => { menu.dismiss(); f.input.dispose(); });
+		afterTest(t, () => { menu.dismiss(); f.input.dispose(); });
 		const button = (player: number, code: string, down: boolean) => f.input.inputButton(`gamepad:${player}`, code, down, down ? 1 : 0, f.clock.now() + 1, ++pressId);
 		const tick = () => { f.poll(); menu.tickInput(); f.poll(); };
 		const press = (player: number, code: string) => { button(player, code, true); tick(); button(player, code, false); tick(); };
@@ -342,7 +343,7 @@ test('bitmap pointer interaction owns exact keys, real modifier holds and pendin
 	const view = new HostOnScreenKeyboard(presenter, f.keyboard);
 	const interaction = new HostKeyboardInteraction(f.input, f.keyboard, presenter, view);
 	const menu = new HostOverlayMenu(presenter, {} as Runtime, f.input, {} as HostRewind, createHostFrameFixture().execution, interaction);
-	t.after(() => { menu.dismiss(); f.input.dispose(); });
+	afterTest(t, () => { menu.dismiss(); f.input.dispose(); });
 	let pressId = 0, relocations = 0;
 	const toggle = view.togglePosition.bind(view);
 	view.togglePosition = () => { relocations += 1; toggle(); };

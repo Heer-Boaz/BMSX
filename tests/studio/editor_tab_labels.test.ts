@@ -14,6 +14,7 @@ import type { QuickPickItem } from '../../ide/workbench/services/quick_input/pro
 import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { createTestRuntimeSourceState, createTestSourceOnlyLuaRecord, TEST_CARTRIDGE_CONTEXT_IDS, TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, otherRoot = 'fixture/other') {
 	const sources = createTestRuntimeSourceState(createLuaSourceRegistry('fixture/project', ''),
@@ -28,7 +29,7 @@ function fixture(t: TestContext, otherRoot = 'fixture/other') {
 		const value = new EditorTextModel(sources.catalog.resolveResource({ contextId, path })!, type, contents);
 		models.push(value); return value;
 	};
-	t.after(() => { for (const value of groups) value.clear(); for (const value of models) value.dispose(); sources.catalog.dispose(); });
+	afterTest(t, () => { for (const value of groups) value.clear(); for (const value of models) value.dispose(); sources.catalog.dispose(); });
 	return { catalog: sources.catalog, group, model };
 }
 

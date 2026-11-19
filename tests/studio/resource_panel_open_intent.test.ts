@@ -15,6 +15,7 @@ import type { FileElement } from '../../ide/workbench/contrib/resources/panel/fi
 import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', sources: readonly (readonly [string, string])[] = []) {
 	const f = createActualSourcePanes(t, false, [['folder/third.lua', 'return 3'], ['folder/other.lua', 'return 4'], ...sources]);
@@ -184,7 +185,7 @@ test('an invalid Scene-side outgoing draft does not create a group or discard th
 	const { node: file } = reveal(f, 'definitions.lua'); f.panel.toggleFileDisclosure(file); f.update();
 	const node = file.children[0]; assert.ok(node?.element.kind === 'definition');
 	f.panel.setSelectionIndex(f.panel.files.tree.rows.indexOf(node));
-	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {}); t.after(() => field.dispose());
+	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {}); afterTest(t, () => field.dispose());
 	field.setValue(1); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '-', true);
 	f.panel.openSelected('side');
 	assert.equal(f.firstPart.groups.length, 1); assert.equal(field.pending, true); assert.equal(field.field.text, '-');
@@ -201,7 +202,7 @@ test('a Scene removed while accepting the outgoing draft cannot open a neighbori
 	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {
 		const declaration = "scenes.register('one',{objects={}})\n", offset = model.buffer.getText().indexOf(declaration);
 		model.pushEditOperations([{ offset, deleteLength: declaration.length, text: '' }]);
-	}); t.after(() => field.dispose());
+	}); afterTest(t, () => field.dispose());
 	field.setValue(1); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
 	f.panel.openSelected('side');
 	assert.equal(model.buffer.getText(), source.replace("scenes.register('one',{objects={}})\n", ''));
@@ -225,7 +226,7 @@ test('the scoped side shortcut is not reserved while a real game viewport owns i
 
 test('side publication keeps its captured file even if a callback selects another Files row', async t => {
 	const f = fixture(t), { resource } = reveal(f), open = t.mock.method(f.editor.navigation, 'openResource'); f.panel.setFocused(true);
-	const unbind = f.firstPart.onDidChangeGroups(() => { unbind(); reveal(f, 'folder/other.lua'); }); t.after(unbind);
+	const unbind = f.firstPart.onDidChangeGroups(() => { unbind(); reveal(f, 'folder/other.lua'); }); afterTest(t, unbind);
 	f.key('Enter', KeyModifier.ctrl); assert.equal(open.mock.callCount(), 1); await open.mock.calls[0].result;
 	const input = open.mock.calls[0].arguments[0].model.activeTab; assert.ok(input instanceof CodeEditorInput && input.resource === resource);
 });
@@ -236,21 +237,21 @@ test('side publication cannot use a catalog resource replaced under the same pat
 		unbind(); const registry = f.sources.catalog.getContext(resource.contextId).luaSources, record = registry.path2lua[resource.path];
 		registry.records.splice(registry.records.indexOf(record), 1); delete registry.path2lua[resource.path]; delete registry.module2lua[record.module_path];
 		f.sources.catalog.rebuildResources();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.key('Enter', KeyModifier.ctrl); assert.equal(open.mock.callCount(), 0); assert.equal(f.firstPart.groups.length, 2);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
 });
 
 test('side publication does not borrow a newer foreground interaction', t => {
 	const f = fixture(t); reveal(f); const open = t.mock.method(f.editor.navigation, 'openResource'); f.panel.setFocused(true);
-	const unbind = f.firstPart.onDidChangeGroups(() => { unbind(); f.second.focus(); }); t.after(unbind);
+	const unbind = f.firstPart.onDidChangeGroups(() => { unbind(); f.second.focus(); }); afterTest(t, unbind);
 	f.key('Enter', KeyModifier.ctrl); assert.equal(open.mock.callCount(), 0);
 	assert.ok(inputFocus.target === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
 });
 
 test('direct side opening rejects an actual invalid focused draft before creating topology', t => {
 	const f = fixture(t); reveal(f);
-	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {}); t.after(() => field.dispose());
+	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {}); afterTest(t, () => field.dispose());
 	field.setValue(1); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '-', true);
 	f.panel.openSelected('side'); assert.equal(f.firstPart.groups.length, 1); assert.equal(field.pending, true);
 	assert.ok(inputFocus.target === field.field.focusTarget && f.firstGroup.panes.activePane?.input === f.firstInput);
@@ -262,7 +263,7 @@ test('direct opening cannot keep its old subject when draft acceptance retires t
 		committed = true; const registry = f.sources.catalog.getContext(resource.contextId).luaSources, record = registry.path2lua[resource.path];
 		registry.records.splice(registry.records.indexOf(record), 1); delete registry.path2lua[resource.path]; delete registry.module2lua[record.module_path];
 		f.sources.catalog.rebuildResources();
-	}); t.after(() => field.dispose());
+	}); afterTest(t, () => field.dispose());
 	field.setValue(1); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
 	f.panel.openSelected(); assert.equal(committed, true); assert.equal(open.mock.callCount(), 0);
 	assert.ok(inputFocus.target === field.field.focusTarget && f.firstGroup.panes.activePane?.input === f.firstInput);
@@ -274,7 +275,7 @@ test('a physical Files hit cannot become another row when outgoing draft accepta
 		committed = true; const registry = f.sources.catalog.getContext(resource.contextId).luaSources, record = registry.path2lua[resource.path];
 		registry.records.splice(registry.records.indexOf(record), 1); delete registry.path2lua[resource.path]; delete registry.module2lua[record.module_path];
 		f.sources.catalog.rebuildResources(); f.update();
-	}); t.after(() => field.dispose());
+	}); afterTest(t, () => field.dispose());
 	field.setValue(1); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
 	click(f, node, KeyModifier.alt);
 	assert.equal(committed, true); assert.equal(open.mock.callCount(), 0); assert.equal(f.firstPart.groups.length, 1);
@@ -291,7 +292,7 @@ test('same-path catalog replacement publishes a retained Files row\'s changed se
 		registerLuaSourceRecord(registry, { ...record, update_timestamp: record.update_timestamp + 1 });
 		f.sources.catalog.rebuildResources(); f.panel.refresh();
 		replaced = node.element.kind === 'file' && node.element.resource !== resource;
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.key('Enter', KeyModifier.ctrl);
 	assert.equal(replaced, true); assert.ok(f.panel.files.revision > revision, 'resource replacement publishes even when its row text and location are unchanged');
 	assert.equal(open.mock.callCount(), 0); assert.equal(f.firstPart.groups.length, 2);
@@ -307,7 +308,7 @@ test('side declaration opening accepts a transient returning to its own Source p
 	f.panel.setSelectionIndex(f.panel.files.tree.rows.indexOf(node));
 	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {
 		field.field.focusTarget.release(); model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- accepted transient\n' }]);
-	}); t.after(() => field.dispose());
+	}); afterTest(t, () => field.dispose());
 	field.setValue(1); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
 	f.panel.openSelected('side'); const side = f.firstPart.groups.find(group => group !== f.firstGroup)!;
 	assert.equal(field.pending, false);
@@ -323,7 +324,7 @@ for (const modifiers of [KeyModifier.none, KeyModifier.alt]) test(`${modifiers =
 		registry.records.splice(registry.records.indexOf(record), 1); delete registry.path2lua[resource.path]; delete registry.module2lua[record.module_path];
 		f.sources.catalog.rebuildResources(); registerLuaSourceRecord(registry, { ...record, update_timestamp: record.update_timestamp + 1 });
 		f.sources.catalog.rebuildResources(); f.panel.refresh();
-	}); t.after(() => field.dispose());
+	}); afterTest(t, () => field.dispose());
 	field.setValue(1); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
 	click(f, node, modifiers);
 	assert.equal(committed, true); assert.ok(node.element.kind === 'file' && node.element.resource !== resource);

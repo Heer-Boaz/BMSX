@@ -11,6 +11,7 @@ import { WorkspaceImageAssets } from '../../ide/workspace/image_assets';
 import { createPackedImageFixture } from '../helpers/packed_images';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { SCENE_TEXT_MODULES, SCENE_TEXT_SOURCE } from '../fixtures/studio/scene_text';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, properties = "text='AA'", declaration = SCENE_TEXT_SOURCE) {
 	const source = declaration.replace("options={text='A'}", `options={${properties}}`);
@@ -26,7 +27,7 @@ function fixture(t: TestContext, properties = "text='AA'", declaration = SCENE_T
 	images.update(f.model.identity.contextId, ids);
 	const canvas = new SceneViewportCanvas(images), camera = new WorkbenchViewportCamera(), bounds = { left: 0, top: 0, right: 200, bottom: 120 };
 	canvas.prepare(read); camera.setViewport(200, 120); canvas.project(camera, bounds, 1, visual.entry);
-	t.after(() => { canvas.dispose(); images.dispose(); context.dispose(); });
+	afterTest(t, () => { canvas.dispose(); images.dispose(); context.dispose(); });
 	return { ...f, source, context, read, visual, images, ids, canvas, camera, bounds, provider };
 }
 

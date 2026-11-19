@@ -22,6 +22,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('host exclusive pages suspend every Studio editing channel and retire native targets without losing control focus', async t => {
 	const host = createHostFrameFixture();
@@ -54,7 +55,7 @@ test('host exclusive pages suspend every Studio editing channel and retire nativ
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
 	const wheel = { x: 100, y: 100, deltaX: 0, deltaY: 1, attachmentDeltaY: 1, modifiers: KeyModifier.none, timestamp: 0 };
 	const tick = () => { host.input.pollInput(); return menu.tickInput(); };
-	t.after(async () => {
+	afterTest(t, async () => {
 		unbindTarget(); menu.dismiss(); inputFocus.setTarget(null);
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});

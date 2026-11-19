@@ -11,6 +11,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: Parameters<typeof createActualSourcePanes>[0]) {
 	const f = createActualSourcePanes(t, false, [
@@ -72,7 +73,7 @@ test('Animation source acquisition cannot publish into a receiver after the invo
 	const target = f.firstGroup.panes.activePane!.commandTarget, receiver = f.secondGroup.panes.activePane!.commandTarget;
 	assert.equal(editorTextModelService.get(definition), undefined);
 	let acquired = false;
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource.path !== definition.path) return;
 		acquired = true;
 		f.firstGroup.activate(f.firstInput.id);
@@ -126,7 +127,7 @@ test('an explicit inactive source uses its retained membership, not another docu
 	const input = resolveLuaCodeEditorInput(f.sources.catalog, resource);
 	f.firstGroup.openEditor(input, { pinned: true }); f.firstGroup.activate(f.firstInput.id); f.update();
 	let acquired = false;
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource.path !== 'definition.lua') return;
 		acquired = true; f.firstGroup.activate(input.id);
 	}));

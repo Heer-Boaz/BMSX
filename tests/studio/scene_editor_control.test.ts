@@ -6,6 +6,7 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { createSceneDocumentFixture } from '../helpers/scene_document_fixture';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('detaching and reattaching a Scene pane settles its actual companion draft and retains its document selection', async t => {
 	const f = await createSceneDocumentFixture(t, SCENE_VIEWPORT_SOURCE, SCENE_VIEWPORT_IMPORTS);
@@ -50,7 +51,7 @@ for (const command of ['sceneEditor.removeMember', 'sceneEditor.moveMemberUp', '
 			release(); f.view.refresh();
 			selectSceneOutlineRow(f.view.hierarchy, command === 'sceneEditor.moveMemberUp' ? 1 : 2);
 			published = f.model.buffer.getText();
-		}); t.after(release);
+		}); afterTest(t, release);
 		f.editor.commands.execute(command, f.primary.commandTarget);
 		assert.notEqual(published, '');
 		assert.equal(f.model.buffer.getText(), published, 'the older command must not mutate the newly selected member');

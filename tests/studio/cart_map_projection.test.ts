@@ -15,6 +15,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = [
 	'2:', "  map: ['....', '....']",
@@ -34,7 +35,7 @@ function fixture(source = SOURCE, kind: 'pietious' | 'nemesis' = 'pietious') {
 
 test('map projection retains source identity, not object ordinal or type', t => {
 	const { model, input } = fixture();
-	t.after(() => { input.dispose(); model.dispose(); });
+	afterTest(t, () => { input.dispose(); model.dispose(); });
 	selectCartMapRow(input, 1);
 	const intent = input.selectionRevision;
 	const original = input.selectionRange.start;
@@ -58,7 +59,7 @@ test('map projection retains source identity, not object ordinal or type', t => 
 
 test('map coordinates use the same source history and reject stale proposals', t => {
 	const { model, input } = fixture();
-	t.after(() => { input.dispose(); model.dispose(); });
+	afterTest(t, () => { input.dispose(); model.dispose(); });
 	selectCartMapRow(input, 1);
 	const edit = createCartMapMove(input.selected!, 3, 1, input.editSource);
 	model.history.applyEdits(new Map([[model, edit]]));
@@ -78,7 +79,7 @@ test('map coordinates use the same source history and reject stale proposals', t
 test('marker moves restore source selection through shared undo/redo, including escaped cells', t => {
 	for (const source of ['map_rows: ["\\x6d \\x20 "]\n', 'map_rows: [" \\x20 \\x6d"]\n']) {
 		const { model, input } = fixture(source, 'nemesis');
-		t.after(() => { input.dispose(); model.dispose(); });
+		afterTest(t, () => { input.dispose(); model.dispose(); });
 		selectCartMapRow(input, 1);
 		const before = { ...input.selectionRange }, x = input.selected!.x;
 		const destination = x === 0 ? 2 : 1;
@@ -106,7 +107,7 @@ test('marker moves restore source selection through shared undo/redo, including 
 
 test('stationary map projection retains parsed nodes without rereading the source', t => {
 	const { model, input } = fixture();
-	t.after(() => { input.dispose(); model.dispose(); });
+	afterTest(t, () => { input.dispose(); model.dispose(); });
 	const roots = input.tree.roots.slice(), rows = input.tree.rows.slice(), grid = input.grid.content;
 	t.mock.method(model.buffer, 'getText', () => assert.fail('unchanged projection read the source'));
 	for (let iteration = 0; iteration < 100; iteration++) projectCartMap(input);
@@ -118,7 +119,7 @@ test('stationary map projection retains parsed nodes without rereading the sourc
 
 test('clearing map selection retains the sheet and its scroll in view recovery', t => {
 	const { model, input } = fixture();
-	t.after(() => { input.dispose(); model.dispose(); });
+	afterTest(t, () => { input.dispose(); model.dispose(); });
 	selectCartMapRow(input, 1);
 	input.grid.layout(0, 0, 20, 20);
 	input.grid.horizontal.setScroll(8);
@@ -129,7 +130,7 @@ test('clearing map selection retains the sheet and its scroll in view recovery',
 	assert.equal(input.grid.selected, undefined);
 	const snapshot = captureCartMapView(input);
 	const other = new CartMapInput(model, 'pietious');
-	t.after(() => other.dispose());
+	afterTest(t, () => other.dispose());
 	restoreCartMapView(other, snapshot);
 	assert.equal(other.activeSheet, input.activeSheet);
 	assert.equal(other.selected, undefined);
@@ -140,13 +141,13 @@ test('clearing map selection retains the sheet and its scroll in view recovery',
 	selectCartMapRow(other, other.tree.rows.indexOf(other.tree.roots[1]));
 	selectCartMapRow(other, -1);
 	const secondRoom = new CartMapNavigationSelection(other);
-	t.after(() => { firstRoom.dispose(); secondRoom.dispose(); });
+	afterTest(t, () => { firstRoom.dispose(); secondRoom.dispose(); });
 	assert.equal(firstRoom.matches(secondRoom), false, 'navigation retains distinct rooms even without a selected object');
 });
 
 test('invalid source revokes the map projection and recovers from ordinary text undo', t => {
 	const { model, input } = fixture();
-	t.after(() => { input.dispose(); model.dispose(); });
+	afterTest(t, () => { input.dispose(); model.dispose(); });
 	selectCartMapRow(input, 1);
 	model.pushEditOperations([{ offset: 0, deleteLength: SOURCE.length, text: '2: [broken\n' }]);
 	projectCartMap(input);
@@ -161,7 +162,7 @@ test('invalid source revokes the map projection and recovers from ordinary text 
 
 test('map viewport can reveal signed object positions outside the authored tile rectangle', t => {
 	const { model, input } = fixture();
-	t.after(() => { input.dispose(); model.dispose(); });
+	afterTest(t, () => { input.dispose(); model.dispose(); });
 	selectCartMapRow(input, 1);
 	model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, -3, -2, input.editSource)]]));
 	projectCartMap(input);
@@ -188,10 +189,10 @@ test('accepted map moves and focused history reveal the restored member in both 
 	const bounds = { left: 0, top: 0, right: 320, bottom: 200 }, surfaces = new WorkbenchSurfaceService();
 	const surface = surfaces.attach({ role: 'content', captureScope: Symbol('map fixture'), getBounds: () => bounds, getClip: () => bounds, isVisible: () => true, draw() {} });
 	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
-	t.after(() => menu.dispose());
+	afterTest(t, () => menu.dispose());
 	const pane = new CartMapPane(null!,
 		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]), surfaces, surface, bounds, inputFocus.workbenchScope, menu);
-	t.after(() => {
+	afterTest(t, () => {
 		inputFocus.setTarget(null);
 		pane.clearInput(); pane.dispose(); input.dispose(); model.dispose();
 		surfaces.dispose();
@@ -220,7 +221,7 @@ test('accepted map moves and focused history reveal the restored member in both 
 test('two map inputs share authored moves without sharing the invoking view selection', t => {
 	const { model, input } = fixture();
 	const sibling = new CartMapInput(model, 'pietious');
-	t.after(() => { input.dispose(); sibling.dispose(); model.dispose(); });
+	afterTest(t, () => { input.dispose(); sibling.dispose(); model.dispose(); });
 	projectCartMap(sibling);
 	selectCartMapRow(input, 1);
 	selectCartMapRow(sibling, 2);

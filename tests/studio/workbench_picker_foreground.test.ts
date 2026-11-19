@@ -11,6 +11,7 @@ import type { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/cont
 import type { EditorMoveDestination } from '../../ide/workbench/services/editor/editor_parts';
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 type NavigationItem = QuickPickItem & { input?: EditorInput; window?: WorkbenchFloatingWindow;
 	target?: Extract<EditorMoveDestination, { kind: 'group' | 'window' }>; destination?: EditorMoveDestination };
@@ -52,7 +53,7 @@ for (const route of ['editors', 'group', 'windows', 'minimized', 'moveEditor', '
 				wanted = item => item.target?.kind === 'group' && item.target.group === f.secondGroup; break;
 		}
 		assert.equal(picker.visible, true);
-		if (newerForeground) t.after(picker.field.focusTarget.onDidBlur(() => foreign.activeGroup.focus()));
+		if (newerForeground) afterTest(t, picker.field.focusTarget.onDidBlur(() => foreign.activeGroup.focus()));
 		choose(f, wanted);
 		if (!newerForeground && (route === 'moveEditor' || route === 'moveGroup')) {
 			assert.equal(picker.step?.index, 2);
@@ -87,7 +88,7 @@ for (const route of ['editors', 'group', 'windows', 'minimized', 'moveEditor', '
 test('foreground navigation still observes its selected input lifetime during focus return', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, picker = f.editor.quickInput;
 	f.firstGroup.focus(); showOpenEditors(parts, picker);
-	t.after(picker.field.focusTarget.onDidBlur(() => f.secondGroup.removeEditor(f.secondInput)));
+	afterTest(t, picker.field.focusTarget.onDidBlur(() => f.secondGroup.removeEditor(f.secondInput)));
 	choose(f, item => item.input === f.secondInput);
 	assert.equal(picker.visible, false);
 	assert.ok(parts.activeGroup === f.firstGroup && f.firstGroup.model.activeTab === f.firstInput);

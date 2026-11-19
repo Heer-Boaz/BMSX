@@ -10,10 +10,11 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { Font, type FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import { RectRenderKind, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, theme: string, variant: FontVariant) {
 	const previousTheme = colors.getActiveIdeThemeVariant();
-	colors.setIdeThemeVariant(theme); t.after(() => colors.setIdeThemeVariant(previousTheme));
+	colors.setIdeThemeVariant(theme); afterTest(t, () => colors.setIdeThemeVariant(previousTheme));
 	const font = new Font({ variant }), tree = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
 	const group = appendWorkbenchTreeNode(tree, null, { kind: 'group', label: 'Group', value: '2 entries', description: '', warning: false,
 		displayLabel: '', displayValue: '', displayValueLeft: 0 });

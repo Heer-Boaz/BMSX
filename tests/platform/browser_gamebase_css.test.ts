@@ -5,6 +5,7 @@ import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_layout';
 import { expandBrowserKeyboardTemplate } from '../../scripts/products/browser_keyboard';
+import { afterTest } from '../helpers/test_cleanup';
 
 // Like noVNC's display tests, assert effective geometry and retained presentation
 // across owner transitions, not stylesheet order or selector implementation.
@@ -34,7 +35,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 	const evidence = '.bmsx/hosting/conventional-keyboard-evidence/embedded';
 	await mkdir(evidence, { recursive: true });
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const profiles: Array<{
 		name: string;
 		width: number;

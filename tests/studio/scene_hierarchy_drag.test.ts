@@ -15,6 +15,7 @@ import type { SceneDetailsControl } from '../../ide/workbench/contrib/scene_edit
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes=require('cartlib/world/scene_library')
 local prefab=require('cartlib/world/prefab')
@@ -151,7 +152,7 @@ test('a departing Details draft can publish newer selection without arming the o
 	const release = f.model.onDidChangeContent(() => {
 		release(); f.context.refresh(); const scene = f.context.subject!;
 		f.context.select(f.context.document!, f.model.version, { kind: 'scene', scene });
-	}); t.after(release);
+	}); afterTest(t, release);
 	f.drag('b', 'c', 'after');
 	assert.equal(f.model.version, version + 1); assert.equal(f.context.selection?.kind, 'scene');
 	assert.equal(f.model.buffer.getText(), SOURCE.replace('x=10', 'x=42'));

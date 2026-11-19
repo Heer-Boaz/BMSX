@@ -17,6 +17,7 @@ import { setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/
 import { replaceSelectionWith, replaceTextRange } from '../../ide/editor/editing/text_editing_and_selection';
 import { prepareUndo, undo as undoSource, redo as redoSource } from '../../ide/editor/editing/undo_controller';
 import { resolveViewportCapacity } from '../../ide/editor/ui/view/caret/view';
+import { afterTest } from '../helpers/test_cleanup';
 
 function sourceRangeFixture(t: TestContext, source: string) {
 	const { models, documents, clock } = createTestCodeDocuments(t);
@@ -24,7 +25,7 @@ function sourceRangeFixture(t: TestContext, source: string) {
 	const input = new CodeEditorInput(model), view = input.context.view;
 	const code = createTestCodeControl(t, model, documents, clock, view, undefined, { left: 0, top: 10, right: 78, bottom: 270 });
 	code.focusTarget.focus();
-	t.after(() => {
+	afterTest(t, () => {
 		input.dispose();
 		clearBackgroundTasks();
 	});
@@ -35,7 +36,7 @@ test('native source caret projects the canonical tab and wrapped position before
 	const { code, model, view, layout } = sourceRangeFixture(t, '\tfirst\n' + 'local value = 12345; '.repeat(80) + 'return 7');
 	view.wordWrapEnabled = true;
 	const target = new CodeEditorTextInput(code), visible = code.caret.cursorVisible;
-	t.after(() => { code.caret.cursorVisible = visible; });
+	afterTest(t, () => { code.caret.cursorVisible = visible; });
 	target.setSelection(1, 1);
 	const viewport = resolveViewportCapacity(code), entry = layout.getViewLine(0);
 	const display = layout.columnToDisplay(entry.hi, 1);
@@ -65,7 +66,7 @@ test('prepared explicit multiline UTF16 range edits publish their internal caret
 	const observed: Array<{ kind: string; row: number; column: number; anchor: { row: number; column: number } | null }> = [];
 	const unbind = model.onDidChangeContent(event => observed.push({ kind: event.kind, row: view.cursorRow,
 		column: view.cursorColumn, anchor: view.selectionAnchor === null ? null : { ...view.selectionAnchor } }));
-	t.after(unbind);
+	afterTest(t, unbind);
 	const insertion = `\t😀inside\n\tmiddle_${'abcd'.repeat(12)}\n\ttail_${'wxyz'.repeat(15)}`;
 	const from = source.indexOf('AAAA'), to = source.indexOf('CCCC') + 'CCCC'.length;
 	const expected = source.slice(0, from) + insertion + source.slice(to);
@@ -121,7 +122,7 @@ test('the actual focused text field preserves virtual text, edits and submission
 		onDidChangeTarget: listener => inputFocus.onDidChangeTarget(listener),
 	};
 	input.setEditingInput(host); field.focusTarget.focus();
-	t.after(() => { inputFocus.setTarget(null); input.dispose(); });
+	afterTest(t, () => { inputFocus.setTarget(null); input.dispose(); });
 	for (const code of ['KeyA', 'ArrowLeft', 'KeyB', 'KeyB', 'Enter']) {
 		input.setVirtualKeyboardKey(code, true); input.setVirtualKeyboardKey(code, false);
 	}
@@ -154,7 +155,7 @@ test('native source replacement uses bounded canonical context and one shared Un
 	const input = new CodeEditorInput(model), view = input.context.view;
 	const code = createTestCodeControl(t, model, documents, clock, view);
 	const target = new CodeEditorTextInput(code);
-	t.after(() => { input.dispose(); code.detach(); clearBackgroundTasks(); });
+	afterTest(t, () => { input.dispose(); code.detach(); clearBackgroundTasks(); });
 	const from = source.indexOf('old'); target.setSelection(from, from + 3);
 	const context = target.readText();
 	assert.equal(context.offset, source.indexOf('local'));
@@ -173,7 +174,7 @@ test('native source selection notifies its actual cursor owner only on change', 
 	const input = new CodeEditorInput(model);
 	const code = createTestCodeControl(t, model, documents, clock, input.context.view);
 	let moves = 0; const unbind = code.onDidMoveCursor(() => moves++);
-	t.after(() => { unbind(); code.detach(); input.dispose(); clearBackgroundTasks(); });
+	afterTest(t, () => { unbind(); code.detach(); input.dispose(); clearBackgroundTasks(); });
 	const target = new CodeEditorTextInput(code); target.setSelection(1, 2); target.setSelection(1, 2);
 	assert.equal(moves, 1); target.setSelection(2, 2); assert.equal(moves, 2);
 	assert.equal(model.canUndo, false);

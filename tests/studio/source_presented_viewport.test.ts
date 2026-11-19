@@ -13,6 +13,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { InlineBarFieldLayout } from '../../ide/workbench/contrib/code_editor/inline_bar/field';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const { models, documents, clock } = createTestCodeDocuments(t);
@@ -21,7 +22,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'lua' as const, resid: path } };
 	const model = models.retain(resource, 'lua', source), input = new CodeEditorInput(model);
 	const code = createTestCodeControl(t, model, documents, clock, input.context.view, new EditorFont(variant));
-	t.after(() => { input.dispose(); inputFocus.setTarget(null); clearBackgroundTasks(); });
+	afterTest(t, () => { input.dispose(); inputFocus.setTarget(null); clearBackgroundTasks(); });
 	return { code, model, input, source };
 }
 
@@ -69,7 +70,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} source inline f
 	const layout = new InlineBarFieldLayout(code, field), logical = { left: -100, top: 20, right: 500, bottom: 80 };
 	const clip = { left: 0, top: 20, right: 100, bottom: 80 };
 	field.focusTarget.canFocus = () => layout.visible;
-	t.after(() => layout.hide());
+	afterTest(t, () => layout.hide());
 	setFieldText(field, 'x'.repeat(100), false); layout.layout(logical, '', '', 2, clip);
 	assert.equal(layout.visible, true); assert.equal(field.caretRect().width, 0);
 	const position = Math.trunc((clip.left - layout.viewport.textLeft) / code.charAdvance) + 3;

@@ -6,6 +6,7 @@ import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/languag
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PREFABS = `local prefab = require('cartlib/world/prefab')
 prefab.define({def_id='actor',class=require('cartlib/world/object_2d')})
@@ -27,7 +28,7 @@ scenes.register('same', { objects = {{member_id='untouched',definition_id='actor
 	assert.equal(document.analysis.chunk.syntaxError, null, source);
 	assert.ok(document.scenes[0], source);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog, f.sources.catalog.resolveResource({ contextId: f.resource.contextId, path: 'prefabs.lua' })!);
 	const select = (index: number) => {
 		assert.equal(context.isCurrent, true);
@@ -43,7 +44,7 @@ test('Add appends to only its exact primary declaration as one canonical source 
 	assert.deepEqual(request.choices.map(choice => choice.id), ['actor', 'other']);
 	for (let index = 0; index < 50; index++) assert.equal(f.context.canAddMember('2d'), true);
 	assert.equal(f.context.captureAddMember('2d')!.choices, request.choices, 'command presentation borrows generation-cached prefab choices');
-	let changes = 0; t.after(f.model.onDidChangeContent(() => changes++));
+	let changes = 0; afterTest(t, f.model.onDidChangeContent(() => changes++));
 	assert.equal(request.apply(request.choices[0], -17, 43, 0), true);
 	assert.equal(changes, 1); assert.equal(request.isCurrent(), false);
 	const inserted = "{ member_id = 'actor', definition_id = 'actor', position = { x = -17, y = 43 } }";
@@ -115,7 +116,7 @@ for (const objects of [
 
 test('Add never chooses a document scene or selected row as an implicit primary subject', t => {
 	const f = fixture(t), document = f.context.document!, context = new SceneAuthoringContext(f.model, f.documents);
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	assert.equal(context.select(document, f.model.version, { kind: 'scene', scene: document.scenes[0] }), true);
 	assert.equal(context.canAddMember('2d'), false); assert.equal(context.captureAddMember('2d'), undefined);
 });
@@ -145,7 +146,7 @@ test('Add admits a fresh prefab generation and never repairs duplicate or unknow
 
 test('Add preserves a newer explicit selection published by its canonical source edit', t => {
 	const f = fixture(t, "{{member_id='old',definition_id='actor'}}"), request = f.context.captureAddMember('2d')!;
-	const release = f.model.onDidChangeContent(() => { release(); f.select(0); }); t.after(release);
+	const release = f.model.onDidChangeContent(() => { release(); f.select(0); }); afterTest(t, release);
 	assert.equal(request.apply(request.choices[0], 11, 12, 0), true);
 	const selected = f.context.selection!; assert.ok(selected.kind === 'member' && selected.entry.kind === 'object');
 	assert.equal(stringLiteralValue(selected.entry.memberId), 'old'); assert.equal(f.context.subject!.objects.length, 2);
@@ -163,7 +164,7 @@ for (const change of ['source', 'dispose', 'subject-replacement'] as const)
 				const range = luaSourceRangeToTextRange(f.model.buffer, f.context.subject!.range);
 				f.model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: f.model.buffer.getTextRange(range.start, range.end) }]);
 			}
-		}); t.after(release);
+		}); afterTest(t, release);
 		assert.equal(request.apply(request.choices[0], 13, 14, 0), true);
 		assert.equal(f.context.selection, undefined);
 	});
@@ -183,7 +184,7 @@ test('3D Add writes an explicit world-unit position while retaining the prefab b
 	assert.equal(f.context.canAddMember('2d'), true); assert.equal(f.context.canAddMember('3d'), true);
 	const request = f.context.captureAddMember('3d')!;
 	assert.deepEqual(request.choices, [{ id: 'mesh', family: '3d' }]);
-	let changes = 0; t.after(f.model.onDidChangeContent(() => changes++));
+	let changes = 0; afterTest(t, f.model.onDidChangeContent(() => changes++));
 	assert.equal(request.apply(request.choices[0], 1.25, 0, -3.5), true);
 	assert.equal(changes, 1); assert.equal(request.isCurrent(), false);
 	// These exact bytes are the writer's canonical-source integrity contract.

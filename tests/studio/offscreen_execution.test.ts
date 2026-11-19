@@ -9,6 +9,7 @@ import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io'
 import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function execution(source: string, optLevel: 0 | 3) {
 	const image = linkTestSystemBlua32(compileLuaSource(source, 'offscreen_execution', optLevel));
@@ -27,7 +28,7 @@ local function fail(value)
  return #value
 end
 answer = fail(nil)`;
-		const target = execution(source, optLevel); t.after(() => target.dispose());
+		const target = execution(source, optLevel); afterTest(t, () => target.dispose());
 		const runtime = target.runtime;
 		await assert.rejects(exact ? target.runUntil(() => false) : target.advanceUntil(() => false), error => {
 			assert.ok(error instanceof RuntimeGuestFault);
@@ -45,7 +46,7 @@ answer = fail(nil)`;
 		const target = execution(`function exception(message) interrupted = true end
 ready = true
 while true do halt_until_irq end`, optLevel);
-		t.after(() => target.dispose());
+		afterTest(t, () => target.dispose());
 		const cpu = target.runtime.machine.cpu, ready = cpu.stringPool.intern('ready'), interrupted = cpu.stringPool.intern('interrupted');
 		await target.runUntil(() => cpu.getGlobalByKey(ready) === valueBool(true));
 		cpu.requestNonMaskableInterrupt();

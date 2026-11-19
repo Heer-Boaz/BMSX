@@ -12,6 +12,7 @@ import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture() {
 	const compiled = compileLuaSource(`
@@ -37,7 +38,7 @@ test('installed global values, typed table keys, aliases and cycles are inspecte
 	const original = f.guest.visitTableEntries.bind(f.guest);
 	let visits = 0;
 	t.mock.method(f.guest, 'visitTableEntries', (...args: Parameters<typeof original>) => { visits++; original(...args); });
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const scope = inspection.scopes[0]; assert.equal(scope.status, 'available');
 	const globals = inspection.read(scope.reference!, 0, scope.count!);
 	assert.ok(globals.entries.every(entry => entry.registerFile === 'ordinary' || entry.registerFile === 'system'));
@@ -92,7 +93,7 @@ test('tool admission rejects unknown targets/fields, has prompt-local lifetimes 
 test('runtime status exposes the retained host stack without inventing a guest fault or executing Lua', async t => {
 	const f = fixture(), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
-	t.after(() => { tools.dispose(); f.presenter.dispose(); });
+	afterTest(t, () => { tools.dispose(); f.presenter.dispose(); });
 	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.getFrameDepth(), f.runtime.machine.cpu.luaHeap.usedBytes()];
 	const failure = new TypeError('presenter failed');
 	f.fault.hostFrameFailure = failure.stack;
@@ -108,7 +109,7 @@ test('runtime status exposes the retained host stack without inventing a guest f
 for (const abortRequest of [false, true]) test(`Reboot tool retires queued installation on ${abortRequest ? 'request' : 'prompt'} cancellation`, async t => {
 	const f = fixture(), lifetime = new AbortController(), request = new AbortController(), gate = Promise.withResolvers<void>();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
-	t.after(async () => { gate.resolve(); tools.dispose(); await f.boots.shutdown(); f.presenter.dispose(); });
+	afterTest(t, async () => { gate.resolve(); tools.dispose(); await f.boots.shutdown(); f.presenter.dispose(); });
 	const before = f.runtime.machine.scheduler.currentNowCycles(), media = f.sources.currentBlua32Media;
 	assert.throws(() => tools.execute('studio_reboot_runtime', { target: 'foreign' }), /authoring target/);
 	assert.throws(() => tools.execute('studio_reboot_runtime', { target: f.inspection.target, save: true }), /declared fields/);
@@ -176,7 +177,7 @@ test('disconnect between inspection acquisition and publication releases the new
 		queueMicrotask(() => lifetime.abort());
 		return acquired;
 	});
-	t.after(() => { acquired?.dispose(); tools.dispose(); f.presenter.dispose(); });
+	afterTest(t, () => { acquired?.dispose(); tools.dispose(); f.presenter.dispose(); });
 	await assert.rejects(Promise.resolve(tools.execute('studio_inspect_runtime', { target: f.inspection.target })), { name: 'AbortError' });
 	assert.equal(acquired!.lifetime.isDisposed, true);
 });

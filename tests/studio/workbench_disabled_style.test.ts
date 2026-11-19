@@ -27,6 +27,7 @@ import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/edit
 import { drawAnimationEditor } from '../../ide/workbench/contrib/animation/render';
 import { layoutWorkbenchPropertyTree } from '../../ide/workbench/ui/property_tree';
 import { contrastRatio } from '../helpers/contrast.mjs';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, theme: string, variant: FontVariant) {
 	const previousTheme = colors.getActiveIdeThemeVariant();
@@ -35,7 +36,7 @@ function fixture(t: TestContext, theme: string, variant: FontVariant) {
 	colors.setIdeThemeVariant(theme);
 	const font = new EditorFont(variant), overlay = createHostOverlayFixture(384, 288);
 	Object.assign(editorViewState, { font, lineHeight: font.lineHeight, viewportWidth: 384, viewportHeight: 288 });
-	t.after(() => { colors.setIdeThemeVariant(previousTheme); Object.assign(editorViewState, previousView); });
+	afterTest(t, () => { colors.setIdeThemeVariant(previousTheme); Object.assign(editorViewState, previousView); });
 	const draw = (paint: () => void) => {
 		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		paint(); overlay.renderer.endFrame();
@@ -94,7 +95,7 @@ for (const theme of ['dark', 'light']) {
 			const f = fixture(t, theme, variant), bounds = { left: 4, top: 26, right: 380, bottom: 268 };
 			const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'empty.lua', location: { kind: 'workspace' as const, path: 'empty.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'empty.lua', source: { resid: 'empty', type: 'lua' } }, 'lua', 'return { tracks = {} }');
 			const input = new AnimationEditorInput(model, model.resource.contextId);
-			t.after(() => { input.dispose(); model.dispose(); });
+			afterTest(t, () => { input.dispose(); model.dispose(); });
 			layoutWorkbenchActionBar(input.actionBar, bounds.right - 4, bounds.top, bounds.top + f.font.lineHeight + 6,
 				text => f.font.measure(text), f.font.renderFont(), bounds.left + 4);
 			layoutWorkbenchPropertyTree(input.details, f.font.renderFont(), (text, start, end) => f.font.measure(text.slice(start, end)),
@@ -163,7 +164,7 @@ for (const theme of ['dark', 'light']) {
 		test(`${theme}/${variant} actual disabled menu label, shortcut and active mark cannot adopt selection colors`, t => {
 			const f = fixture(t, theme, variant), focus = new InputFocusService(), capture = new PointerCaptureService();
 			const origin = focus.createTarget(); origin.bindKeyboard(() => {}); origin.focus();
-			const menu = new ContextMenuController(focus, capture, { left: 0, top: 0, right: 384, bottom: 288 }); t.after(() => menu.dispose());
+			const menu = new ContextMenuController(focus, capture, { left: 0, top: 0, right: 384, bottom: 288 }); afterTest(t, () => menu.dispose());
 			let undoEnabled = true;
 			menu.show(40, 40, [{ type: 'command', command: 'undo' }, { type: 'command', command: 'save' }], {
 				isEnabled: command => command !== 'undo' || undoEnabled, isActive: command => command === 'undo', execute() {},

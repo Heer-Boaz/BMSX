@@ -11,10 +11,11 @@ import type { RomArtifact } from '../../toolchain/ts/rompack/build_manifest';
 import { RomArtifactStore } from '../../scripts/rompacker/artifacts';
 import { withArtifactStoreLock } from '../../scripts/rompacker/artifact_lock';
 import { publishArtifact as publish } from '../helpers/rom_artifact';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-artifact-store-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	return new RomArtifactStore(root);
 }
 
@@ -149,7 +150,7 @@ test('a killed reader process releases its collection lock without a stale PID f
 		});
 	`], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
 	const exited = once(child, 'exit');
-	t.after(async () => { child.kill('SIGKILL'); await exited; });
+	afterTest(t, async () => { child.kill('SIGKILL'); await exited; });
 	await once(child, 'message');
 	const collection = store.collect({ apply: true });
 	child.kill('SIGKILL'); await exited; await collection;

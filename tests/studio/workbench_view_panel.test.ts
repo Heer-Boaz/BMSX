@@ -22,6 +22,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { createWorkbenchViewPanelLayout, layoutWorkbenchViewPanel } from '../../ide/workbench/ui/view_panel/layout';
 import { WorkbenchTooltip } from '../../ide/workbench/ui/tooltip';
 import { pointerHover } from '../../ide/input/pointer/hover';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 local prefab = require('cartlib/world/prefab')
@@ -53,7 +54,7 @@ function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', source = SOURCE)
 		isPresented: () => true, measureContent: measureSceneDetails,
 		createControl: region => new SceneDetailsControl(commands, region, semantic, sections) });
 	panel.attach(bounds);
-	t.after(() => { panel.dispose(); view.dispose(); context.dispose(); menu.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	afterTest(t, () => { panel.dispose(); view.dispose(); context.dispose(); menu.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, context, view, panel, bounds, focusReturn, menu, saved, actions };
 }
 
@@ -174,7 +175,7 @@ test('hiding only the header cancels its activation but retains body focus trave
 test('a header-retirement callback can detach the panel without a stale body layout', t => {
 	const f = fixture(t), actions = f.panel.actionBar.focusTarget;
 	actions.focus(); const layout = t.mock.method(f.panel.control, 'layout');
-	const unbind = actions.onDidBlur(() => f.panel.detach()); t.after(unbind);
+	const unbind = actions.onDidBlur(() => f.panel.detach()); afterTest(t, unbind);
 	f.panel.setHeaderVisible(false);
 	assert.equal(f.panel.attached, false); assert.equal(layout.mock.callCount(), 0);
 	f.panel.attach(f.bounds); assert.deepEqual(f.panel.layoutState.client, f.bounds);
@@ -195,7 +196,7 @@ test('stable panel updates keep field draft history, placement and header geomet
 	const f = fixture(t), field = f.panel.control.controls[0];
 	field.field.focusTarget.focus(); setFieldText(field.field, '31', true);
 	const layout = f.panel.layoutState.actionRevision, projection = f.view.projection.subject;
-	let fieldChanges = 0; const unbind = field.field.onDidChangeText(() => { fieldChanges++; }); t.after(unbind);
+	let fieldChanges = 0; const unbind = field.field.onDidChangeText(() => { fieldChanges++; }); afterTest(t, unbind);
 	for (let index = 0; index < 100; index++) f.panel.update();
 	assert.equal(fieldChanges, 0); assert.equal(field.pending, true);
 	assert.equal(f.view.projection.subject, projection);
@@ -218,7 +219,7 @@ test('panel detach revokes its own source of input and field draft while retaini
 test('re-showing a panel during retirement cannot retain an armed header activation', t => {
 	const f = fixture(t), actions = f.panel.actionBar.focusTarget;
 	actions.focus(); inputFocus.handleKeyboard(new KeyInputEvent('Space', KeyModifier.none));
-	const unbind = f.panel.scope.onDidRetireContext(() => f.panel.attach(f.bounds)); t.after(unbind);
+	const unbind = f.panel.scope.onDidRetireContext(() => f.panel.attach(f.bounds)); afterTest(t, unbind);
 	f.panel.detach();
 	assert.equal(f.panel.attached, true);
 	inputFocus.handleKeyboard(new KeyInputEvent('Space', KeyModifier.none, false, false));

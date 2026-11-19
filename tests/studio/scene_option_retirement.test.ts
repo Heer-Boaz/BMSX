@@ -7,6 +7,7 @@ import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/pri
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('root', { objects = {
@@ -47,7 +48,7 @@ for (const reattach of [false, true]) test(`Scene option retirement stops its ol
 		assert.equal(target.focus(), true);
 		assert.equal(target.textInput!.replaceText(0, target.textInput!.readText().text.length, '1234'), true);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	selectSceneOutlineRow(input.view.hierarchy, 2);
 	if (!reattach) assert.equal(input.view.details.optionProperties.length, 0);
 	assert.doesNotThrow(() => f.update());

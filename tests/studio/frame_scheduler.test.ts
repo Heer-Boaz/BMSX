@@ -80,6 +80,7 @@ import {
 	GX_GPU_DISPLAY_TIMING_SYNCH2_LOW_WORD,
 	GX_GPU_DISPLAY_TIMING_SYNCV_HIGH_WORD,
 } from '../../machine/ts/spec/gx/display_presets';
+import { afterTest } from '../helpers/test_cleanup';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { createHostFrameFixture } from '../helpers/host_frame';
@@ -1186,7 +1187,7 @@ for (const { standard, preset, timing, refreshUfpsScaled } of [
 	test(`default host rewind retains thirty seconds at every ${standard} eviction across a minute`, async t => {
 		const host = createHostFrameFixture();
 		const { runtime, rewind, tasks } = host;
-		t.after(() => {
+		afterTest(t, () => {
 			rewind.service(false);
 			host.audio.dispose();
 			host.input.dispose();

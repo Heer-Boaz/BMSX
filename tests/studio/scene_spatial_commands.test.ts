@@ -21,6 +21,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const POSES = `return { dock = { xx=1,xy=0,yx=0,yy=1,ox=10,oy=20 } }\n`;
 const PREFABS = `local prefab = require('cartlib/world/prefab')
@@ -242,7 +243,7 @@ for (const placement of ['document', 'Main'] as const) {
 			const entry = member(f, 'spare');
 			const index = f.hierarchy.view.outline.rows.findIndex(row => row.element.kind === 'member' && row.element.entry === entry);
 			assert.equal(selectSceneOutlineRow(f.hierarchy.view, index), true);
-		}); t.after(release);
+		}); afterTest(t, release);
 		f.key('Enter'); f.update();
 		assert.equal(replaced, true); assert.equal(f.picker.visible, false);
 		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
@@ -410,7 +411,7 @@ test('Scene mutation pickers cannot retarget the member selected by accepted-pic
 			const entry = member(f, 'spare');
 			const index = f.hierarchy.view.outline.rows.findIndex(row => row.element.kind === 'member' && row.element.entry === entry);
 			assert.equal(selectSceneOutlineRow(f.hierarchy.view, index), true);
-		}); t.after(release);
+		}); afterTest(t, release);
 		f.key('Enter'); await setImmediate(); f.update();
 		assert.equal(replaced, true); assert.equal(f.picker.visible, false);
 		assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry === member(f, 'spare'));
@@ -483,7 +484,7 @@ test('Scene command execution settles its concrete Details draft before admittin
 		const entry = member(f, 'spare');
 		const index = f.hierarchy.view.outline.rows.findIndex(row => row.element.kind === 'member' && row.element.entry === entry);
 		assert.equal(selectSceneOutlineRow(f.hierarchy.view, index), true);
-	}); t.after(release);
+	}); afterTest(t, release);
 	f.editor.commands.execute('sceneEditor.reparentMember', f.commandTarget);
 	assert.equal(published, true); assert.equal(nextField.pending, false); assert.equal(f.picker.visible, false);
 	assert.deepEqual(coefficients(f, member(f, 'subject')), [1, 0, -0, 1, 55, 3]);

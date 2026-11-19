@@ -32,6 +32,7 @@ import { ActorRuntimeTree, runtimeWorld } from '../../ide/workbench/contrib/acto
 import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { captureActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SCENE = `local game<const> = require('game')
 return {kind='integration',
@@ -57,7 +58,7 @@ end`;
 async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameSource = GAME, sourceDomain: 0 | 1 = 0,
 	modules: readonly { path: string; source: string }[] = []) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-play-session-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: scene }], {
 		systemSource: "module<entry>\nrequire('base')\ncoroutine=require('coroutine')\ncop0.exec=mem[0x10000028]",
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert=function(value,message) if not value then raise(message) end return value end\nerror=raise\nsetmetatable=__bmsx_setmetatable' }, ...COROUTINE_FIRMWARE_MODULES],
@@ -69,7 +70,7 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 	const authoring = new OffscreenMachine(media.systemRom, sourceDomain === 0 ? [media.cartRom, null] : [null, media.cartRom], PSX_MACHINE_SPEC, input);
 	const logs: string[] = [], device = new HostAudioDevice(new DiscardingAudioSink());
 	const session = new PlayRuntimeSession(target, program, device, { log(_level, message) { logs.push(message); } });
-	t.after(async () => { await session.dispose(); authoring.dispose(); input.dispose(); });
+	afterTest(t, async () => { await session.dispose(); authoring.dispose(); input.dispose(); });
 	const frame = async (elapsed = 1000 / 60) => { session.advance(elapsed); await session.tasks.join(); };
 	const settle = async (done: () => boolean) => {
 		for (let frameCount = 0; !done() && frameCount < 2000; frameCount++) await frame();

@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createCodexModelFixture } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: Codex reads actual stopped cart frames and locals`, { timeout: 180000 }, async t => {
 	const call = (id: string, name: string, args: unknown) => [{ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) }];
@@ -41,7 +42,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	]);
 	const f = await createAssistantStudioFixture(t, `stack-tools-${backend}`, {
 		provider: { name: 'Offline stack tools fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
-	t.after(() => writeFile(join(f.evidence, `stack-tools-${backend}-requests.json`), JSON.stringify(model.requests)));
+	afterTest(t, () => writeFile(join(f.evidence, `stack-tools-${backend}-requests.json`), JSON.stringify(model.requests)));
 	const result = await f.page.evaluate(async backend => {
 		const entry = '/test.js', module = await import(entry);
 		return module.runAssistantStack(backend, document.querySelector('canvas'), globalThis.capture);

@@ -14,6 +14,7 @@ import { QuickInputController } from '../../ide/workbench/services/quick_input/c
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 const REQUEST: ActionPromptRequest = { title: 'Unsaved source', message: 'Choose the source operation.',
 	primary: 'Save', secondary: 'Discard', primaryEnabled: true, defaultChoice: 'primary' };
@@ -33,7 +34,7 @@ function fixture(t: TestContext) {
 		return { scope, bounds, origin, quick, prompt };
 	};
 	const first = part(24), second = part(424);
-	t.after(() => {
+	afterTest(t, () => {
 		for (const owner of [first, second]) { owner.quick.dispose(); owner.prompt.dispose(); owner.scope.retireContext(); }
 		menu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null);
 	});
@@ -248,7 +249,7 @@ test('a local response press cannot accept after its native focus request was re
 		if (next !== first.prompt.focusTarget) return;
 		unbind(); replacement.focus(); pointerCapture.capture(newerGesture, PointerButton.Primary, second.scope.surfaceScope);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	const button = first.prompt.view.buttons[0].bounds;
 	try {
 		first.prompt.handlePointer({ valid: true, insideViewport: true, viewportX: (button.left + button.right) / 2,
@@ -272,7 +273,7 @@ test('a refused older body focus request does not cancel a newer physical respon
 		if (next !== first.prompt.focusTarget) return;
 		unbind(); replacement.focus(); first.prompt.handlePointer(response);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	try {
 		const body = first.prompt.view.body.bounds;
 		first.prompt.handlePointer({ ...response, viewportX: body.left + 1, viewportY: body.top + 1 });

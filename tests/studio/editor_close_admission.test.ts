@@ -18,6 +18,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** Only the filesystem is controlled; close, prompt, working copies and Save are the real workbench owners. */
 class CloseFiles extends MemoryWorkspaceFiles {
@@ -36,9 +37,9 @@ async function fixture(t: TestContext, sameModel = false) {
 	const files = new CloseFiles();
 	await openWorkspaceRecords(files);
 	// Release accepted I/O even when a preceding assertion fails, before the actual workbench shuts down.
-	t.after(() => { files.delayed = false; for (const write of files.writes) write.complete(); });
+	afterTest(t, () => { files.delayed = false; for (const write of files.writes) write.complete(); });
 	const f = createActualSourcePanes(t, sameModel);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	return { ...f, files };
 }
 
@@ -153,7 +154,7 @@ test('closing a clean background view does not try to commit the focused sibling
 	let attempts = 0;
 	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
 	target.edit = draft;
-	t.after(() => { target.edit = priorEdit; });
+	afterTest(t, () => { target.edit = priorEdit; });
 	const closing = f.firstGroup.close(f.firstInput.id);
 	assert.ok(f.firstGroup.model.findById(f.firstInput.id) === undefined, 'the clean background view retires synchronously');
 	assert.equal(await closing, true);
@@ -189,7 +190,7 @@ test('closing a non-last dirty view leaves the focused shared-model sibling draf
 	let attempts = 0;
 	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
 	target.edit = draft;
-	t.after(() => { target.edit = priorEdit; });
+	afterTest(t, () => { target.edit = priorEdit; });
 	const closing = f.firstGroup.close(f.firstInput.id);
 	assert.ok(f.firstGroup.model.findById(f.firstInput.id) === undefined, 'the non-last view retires synchronously');
 	assert.equal(await closing, true);
@@ -391,7 +392,7 @@ test('an invalid draft in the closing Source control vetoes close without losing
 	let attempts = 0;
 	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
 	target.edit = draft;
-	t.after(() => { target.edit = priorEdit; });
+	afterTest(t, () => { target.edit = priorEdit; });
 	assert.equal(await f.firstGroup.close(f.firstInput.id), false);
 	assert.equal(attempts, 1);
 	assert.ok(target.edit === draft, 'close retains the concrete uncommitted draft');
@@ -411,7 +412,7 @@ test('an invalid focused sibling draft vetoes root-modal close admission without
 	let attempts = 0;
 	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
 	target.edit = draft;
-	t.after(() => { target.edit = priorEdit; });
+	afterTest(t, () => { target.edit = priorEdit; });
 	assert.equal(await f.editor.editorParts.closeController.close([{ group: f.firstGroup, input: f.firstInput }]), false);
 	assert.equal(attempts, 1);
 	assert.ok(target.edit === draft, 'close retains the concrete uncommitted draft');
@@ -436,7 +437,7 @@ test('retiring a saved view does not commit a sibling draft entered while its Sa
 	let attempts = 0;
 	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
 	target.edit = draft;
-	t.after(() => { target.edit = priorEdit; });
+	afterTest(t, () => { target.edit = priorEdit; });
 	f.files.writes[0].complete();
 	assert.equal(await closing, true);
 	assert.equal(attempts, 0);
@@ -458,7 +459,7 @@ test('a close reentered by the focused draft commit joins its original operation
 		reentered = f.firstGroup.close(f.firstInput.id);
 		return true;
 	} };
-	t.after(() => { target.edit = priorEdit; });
+	afterTest(t, () => { target.edit = priorEdit; });
 	const closing = f.firstGroup.close(f.firstInput.id);
 	assert.ok(reentered === closing, 'reentrant close joins the already admitted operation');
 	assert.equal(attempts, 1);
@@ -524,7 +525,7 @@ function retainedContext(t: TestContext, f: Awaited<ReturnType<typeof fixture>>)
 			if (input instanceof TextEditorInput) yield input;
 		if (retained) yield context;
 	}, f.ide.textFileSaves, f.editor.actionPrompt, f.ide.models);
-	t.after(() => { close.dispose(); context.dispose(); });
+	afterTest(t, () => { close.dispose(); context.dispose(); });
 	let retirements = 0;
 	const target = () => {
 		const request = ++generation;
@@ -631,7 +632,7 @@ test('source replacement cancels departing close operations without sweeping a n
 		unbind();
 		newer = f.secondGroup.close(f.secondInput.id);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	const replacement = editorTextModelService.replace([...editorTextModelService.models]);
 	try { assert.equal(replacement.publish(), true); }
 	finally { replacement.dispose(); }
@@ -706,7 +707,7 @@ test('an incoming same-model context retains source only for its own admitted re
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shared replacement source\n' }]);
 	const source = model.buffer.getText(); assert.equal(await c.closeSource(), true);
 	const replacement = new SceneAuthoringContext(model, f.editor.sceneEditor.documents);
-	t.after(() => replacement.dispose());
+	afterTest(t, () => replacement.dispose());
 	const completion = c.close.release({ ...c.target(), replacement }, null, f.firstPart.actionPrompt);
 	assert.equal(c.retained, false, 'the replacement is admitted synchronously without a dirty-close prompt');
 	assert.equal(await completion, true); assert.equal(c.retirements, 1);
@@ -721,7 +722,7 @@ test('a pending replacement cannot lend its unadmitted context to an unrelated S
 	b.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- Source B still owns this dirty model\n' }]);
 	const source = b.buffer.getText(); assert.equal(await c.closeSource(), true);
 	const replacement = new SceneAuthoringContext(b, f.editor.sceneEditor.documents);
-	t.after(() => replacement.dispose());
+	afterTest(t, () => replacement.dispose());
 	const primary = c.close.release({ ...c.target(), replacement }, null, f.firstPart.actionPrompt);
 	assert.equal(f.firstPart.actionPrompt.visible, true, 'A needs its own final-consumer decision');
 	const secondary = c.close.close([{ group: f.secondGroup, input: f.secondInput }], null, f.secondPart.actionPrompt);

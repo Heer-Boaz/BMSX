@@ -5,10 +5,11 @@ import type { SceneTextInputs, SceneTextRow } from '../../ide/workbench/contrib/
 import { collectSceneTextImages, layoutSceneText } from '../../ide/workbench/contrib/scene_editor/viewport/text_layout';
 import type { WorkspaceImageAsset } from '../../ide/workspace/image_assets';
 import { HostBitmap } from '../../machine/ts/render/host_overlay/bitmap';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, dimensions: readonly (readonly [string, number, number])[]) {
 	const bitmap = new HostBitmap({ width: 16, height: 16, pixels: new Uint8Array(16 * 16 * 4) });
-	t.after(() => bitmap.dispose());
+	afterTest(t, () => bitmap.dispose());
 	const images = new Map<string, WorkspaceImageAsset>();
 	for (const [id, width, height] of dimensions) images.set(id, { bitmap, width, height, u0: 0, v0: 0, u1: 1, v1: 1 });
 	return { images, get: (id: string) => images.get(id) };

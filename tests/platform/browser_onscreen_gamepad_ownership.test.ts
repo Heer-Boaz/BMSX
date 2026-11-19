@@ -4,6 +4,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { CONTROL_GAP } from '../../hosts/browser/onscreen_gamepad_layout';
+import { afterTest } from '../helpers/test_cleanup';
 
 // The production SVG/CSS are the presentation producer, not numbers copied into
 // a synthetic view. These are Chromium owner/geometry checks, not iPhone proof.
@@ -19,7 +20,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'ownerFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const evidence: unknown[] = [];
 	for (const profile of [
 		{ name: 'phone portrait', width: 393, height: 852, originX: 50, originY: 50, labelSize: 13, stroke: 3 },

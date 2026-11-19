@@ -22,6 +22,7 @@ import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { createTestToolingPackage } from '../helpers/runtime_sources';
 import { buildScenarioMediaFixture } from '../helpers/scenario_media';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import { afterTest } from '../helpers/test_cleanup';
 
 function sourceRecord(path: string, modulePath: string, canonicalPath: string, source: string): LuaSourceRecord {
 	return { resid: modulePath, type: 'lua', src: source, base_src: source, base_update_timestamp: 0,
@@ -38,7 +39,7 @@ function admitSourceFixture(catalog: WorkspaceSourceCatalog, id: string, root: s
 }
 
 test('file admission consumes source provenance independently of asset type and keeps canonical Lua authority', t => {
-	const catalog = new WorkspaceSourceCatalog(); t.after(() => catalog.dispose());
+	const catalog = new WorkspaceSourceCatalog(); afterTest(t, () => catalog.dispose());
 	const source = sourceRecord('shared.lua', 'shared', 'cartlib/shared.lua', 'return 1');
 	const assets: RomAsset[] = [
 		{ type: 'bin', resid: 'raw', source_path: 'res/raw.bin' },
@@ -63,14 +64,14 @@ test('file admission consumes source provenance independently of asset type and 
 	assert.equal(lua.sourceFilePath, 'cartlib/shared.lua'); assert.equal(lua.location.kind, 'workspace');
 	const retained = [...catalog.resources]; catalog.rebuildResources();
 	assert.ok(retained.every(resource => catalog.resolveResource(resource) === resource));
-	const fork = catalog.fork(); t.after(() => fork.dispose());
+	const fork = catalog.fork(); afterTest(t, () => fork.dispose());
 	assert.equal(fork.resources.length, retained.length);
 	assert.equal(fork.resolveResource(lua)!.sourceFilePath, lua.sourceFilePath);
 });
 
 test('working copies share admitted identity, never canonical file provenance or configuration values', t => {
 	const catalog = new WorkspaceSourceCatalog(), models = new EditorTextModelService();
-	t.after(() => { models.clear(); catalog.dispose(); });
+	afterTest(t, () => { models.clear(); catalog.dispose(); });
 	for (const id of ['first-admission', 'second-admission']) {
 		admitSourceFixture(catalog, id, 'carts/same', [sourceRecord('shared.lua', 'shared', 'cartlib/shared.lua', 'return 1')]);
 	}
@@ -102,7 +103,7 @@ test('admitted dependencies own module and asset shadowing and invalidate member
 	assert.equal(catalog.resolveModule(primary.id, 'shared')!.contextId, primary.id);
 	assert.equal(catalog.resolveModule(dependency.id, 'shared')!.contextId, dependency.id);
 	const project = new EditorLuaSemanticProject(primary.id, models);
-	t.after(() => { project.dispose(); models.clear(); catalog.dispose(); });
+	afterTest(t, () => { project.dispose(); models.clear(); catalog.dispose(); });
 	project.synchronizeSources(catalog);
 	assert.equal(project.getModuleCatalog({ contextId: dependency.id, path: 'shared.lua' }).get('shared'), resourceIdentityKey({ contextId: dependency.id, path: 'shared.lua' }));
 	assert.equal(project.getModuleCatalog({ contextId: primary.id, path: 'shared.lua' }).get('shared'), resourceIdentityKey({ contextId: primary.id, path: 'shared.lua' }));
@@ -110,7 +111,7 @@ test('admitted dependencies own module and asset shadowing and invalidate member
 
 test('one retained context has independent installed generations in both sockets and survives detachment', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-source-catalog-images-'));
-	t.after(async () => { clearWorkspaceSourceCaches(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { clearWorkspaceSourceCaches(); await rm(root, { recursive: true, force: true }); });
 	const firstDirectory = join(root, 'first'), secondDirectory = join(root, 'second');
 	await mkdir(firstDirectory); await mkdir(secondDirectory);
 	const systemSource = 'module<entry>\nreturn true';
@@ -123,7 +124,7 @@ test('one retained context has independent installed generations in both sockets
 	const cartridgeAdmission = { id: 'retained-project', projectRoot: firstMedia.cartridgeSlots[0]!.index.projectRootPath };
 	const catalog = createLoadedProjectSourceCatalog({ admission: systemAdmission, layer: firstMedia.system },
 		[{ admission: cartridgeAdmission, layer: firstMedia.cartridgeSlots[0]! }]);
-	t.after(() => catalog.dispose());
+	afterTest(t, () => catalog.dispose());
 	const identity = { contextId: cartridgeAdmission.id, path: 'entry.lua' };
 	applyLuaTextModelSources(catalog, [{ ...identity, source: authored }]);
 	const resource = catalog.resolveResource(identity)!;
@@ -139,7 +140,7 @@ test('one retained context has independent installed generations in both sockets
 	assert.equal(attached.cartridgeSlots[0]!.installedSourceRevision, -1);
 	assert.equal(attached.cartridgeSlots[1]!.installedSourceRevision, -1);
 	const fork = forkRuntimeSourceState(attached);
-	t.after(() => fork.catalog.dispose());
+	afterTest(t, () => fork.catalog.dispose());
 	assert.equal(fork.catalog.contexts.size, 2);
 	assert.notEqual(fork.catalog.getContext(cartridgeAdmission.id).luaSources, catalog.getContext(cartridgeAdmission.id).luaSources);
 	assert.equal(fork.cartridgeSlots[0]!.contextId, fork.cartridgeSlots[1]!.contextId);
@@ -156,7 +157,7 @@ test('a source-only admission discovers, analyzes, recovers and saves through th
 	await mkdir(join(root, projectRoot), { recursive: true });
 	await writeFile(join(root, projectRoot, 'entry.lua'), original);
 	await openWorkspaceRecords(new DiskWorkspaceRecordProvider(root));
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(root, { recursive: true, force: true }); });
 	const create = () => {
 		const catalog = new WorkspaceSourceCatalog(), models = new EditorTextModelService(), clock = new VirtualHeadlessClock();
 		admitSourceFixture(catalog, contextId, projectRoot, []);

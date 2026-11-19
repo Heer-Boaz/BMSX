@@ -9,6 +9,7 @@ import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animation/source';
 import { AnimationFramePreview } from '../../ide/workbench/contrib/animation/frame_preview';
 import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompack/assets';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('only a proven sprite factory treats a native frame value as a packed image reference', t => {
 	const sources = createScenarioTestSourceState([]), context = sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]), rom = context.previewRom!;
@@ -24,7 +25,7 @@ test('only a proven sprite factory treats a native frame value as a packed image
 	context.previewPackage.img.sprite = assets[0];
 	const document = buildAnimationSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua' },
 		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile("return {frames={'sprite'}}", { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua' })], [])))!;
-	const preview = new AnimationFramePreview(); t.after(() => preview.dispose());
+	const preview = new AnimationFramePreview(); afterTest(t, () => preview.dispose());
 	preview.update(document, 0, TEST_CARTRIDGE_CONTEXT_IDS[0], sources.catalog);
 	assert.equal(preview.bitmap, undefined, 'a timeline value is not an image even if its string matches a packed asset');
 	preview.update({ ...document, family: 'sprite' }, 0, TEST_CARTRIDGE_CONTEXT_IDS[0], sources.catalog);

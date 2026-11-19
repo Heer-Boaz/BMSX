@@ -11,6 +11,7 @@ import { WorkbenchGraphControl } from '../../ide/workbench/ui/graph/control';
 import { createWorkbenchGraphEdge, createWorkbenchGraphModel, createWorkbenchGraphNode } from '../../ide/workbench/ui/graph/model';
 import { WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
+import { afterTest } from '../helpers/test_cleanup';
 
 const font = new Font({ variant: 'tiny' });
 const COMMANDS = ['graph.fit', 'graph.frameSelection', 'graph.zoomIn', 'graph.zoomOut', 'graph.resetZoom'] as const;
@@ -25,7 +26,7 @@ function fixture(t: TestContext) {
 	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService(), undefined, semantic);
 	control.focusTarget.commandContext = semantic;
 	control.setInput(view); control.focusTarget.focus();
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	return { first, second, edge, model, view, focus, capture, semantic, control };
 }
 
@@ -65,8 +66,8 @@ for (const command of COMMANDS) test(`native ${command} ends its owned pan befor
 	f.control.handlePointer(pointer(100, 100), 0);
 	assert.equal(f.capture.active, true);
 	assert.equal(f.control.focusTarget.getCommand(command)!.isEnabled(), true);
-	t.after(f.view.horizontalScrollbar.onDidScroll(() => assert.equal(f.capture.active, false)));
-	t.after(f.view.verticalScrollbar.onDidScroll(() => assert.equal(f.capture.active, false)));
+	afterTest(t, f.view.horizontalScrollbar.onDidScroll(() => assert.equal(f.capture.active, false)));
+	afterTest(t, f.view.verticalScrollbar.onDidScroll(() => assert.equal(f.capture.active, false)));
 	f.focus.executeCommand(command);
 	assert.equal(f.capture.active, false);
 	const camera = f.view.captureViewState();
@@ -89,7 +90,7 @@ test('a native scrollbar gesture leaves Fit before its first scroll publication'
 	const f = fixture(t), bar = f.view.horizontalScrollbar, track = bar.getTrack();
 	assert.equal(f.view.cameraMode, 'fit');
 	let observed = false;
-	const release = bar.onDidScroll(() => { observed = true; assert.equal(f.view.cameraMode, 'manual'); }); t.after(release);
+	const release = bar.onDidScroll(() => { observed = true; assert.equal(f.view.cameraMode, 'manual'); }); afterTest(t, release);
 	f.control.handlePointer(pointer(track.right - 1, (track.top + track.bottom) / 2, PointerButton.Primary), 0);
 	assert.equal(f.view.cameraMode, 'manual');
 	assert.equal(observed, true);
@@ -104,8 +105,8 @@ test('a stationary pan press retains Fit; actual pan movement leaves Fit before 
 	f.control.handlePointer(press, 0);
 	f.control.handleCapturedPointer({ ...press, justPressedButtons: 0 }, 1);
 	assert.equal(f.view.cameraMode, 'fit');
-	t.after(f.view.horizontalScrollbar.onDidScroll(() => assert.equal(f.view.cameraMode, 'manual')));
-	t.after(f.view.verticalScrollbar.onDidScroll(() => assert.equal(f.view.cameraMode, 'manual')));
+	afterTest(t, f.view.horizontalScrollbar.onDidScroll(() => assert.equal(f.view.cameraMode, 'manual')));
+	afterTest(t, f.view.verticalScrollbar.onDidScroll(() => assert.equal(f.view.cameraMode, 'manual')));
 	f.control.handleCapturedPointer({ ...press, viewportX: 120, viewportY: 130, justPressedButtons: 0 }, 2);
 	assert.equal(f.view.cameraMode, 'manual');
 });

@@ -12,6 +12,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
+import { afterTest } from '../helpers/test_cleanup';
 
 const choices = [
 	{ label: 'alpha', description: '', detail: '', id: 1 },
@@ -26,7 +27,7 @@ function fixture(t: TestContext) {
 	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 	const scope = new InputFocusScope(Symbol('async catalog origin'), inputFocus.workbenchScope);
 	const origin = inputFocus.createTarget(null, scope); origin.bindKeyboard(() => {}); origin.focus();
-	t.after(() => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	return { picker, origin, scope };
 }
 
@@ -48,7 +49,7 @@ function createOwner() {
 test('async catalog discovery starts after blur and native session admission, then uses the query typed while loading', async t => {
 	const { picker, origin } = fixture(t), completion = Promise.withResolvers<TextQuickPickProvider<typeof choices[number]>>();
 	let blurred = false, calls = 0, accepted: typeof choices[number] | undefined;
-	t.after(origin.onDidBlur(() => { blurred = true; }));
+	afterTest(t, origin.onDidBlur(() => { blurred = true; }));
 	picker.pick('Catalog', '', prepared => {
 		calls++;
 		assert.ok(prepared === origin && blurred, 'discovery observes the committed invoking control');
@@ -107,7 +108,7 @@ for (const outcome of ['resolve', 'reject'] as const)
 		const replacement = new TextQuickPickProvider(choices.slice(1));
 		const unbind = origin.onDidBlur(() => {
 			unbind(); picker.pick('New owner', '', () => replacement, () => {});
-		}); t.after(unbind);
+		}); afterTest(t, unbind);
 		picker.pick('Vetoed', '', completion.promise, () => assert.fail('vetoed catalog accepted'));
 		assert.ok(picker.model.items === replacement.items);
 		const focus = inputFocus.admittedTarget;
@@ -121,7 +122,7 @@ test('a factory vetoed during blur never starts observational work', t => {
 	const { picker, origin } = fixture(t), replacement = new TextQuickPickProvider(choices);
 	const unbind = origin.onDidBlur(() => {
 		unbind(); picker.pick('Replacement', '', () => replacement, () => {});
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	picker.pick('Vetoed', '', () => assert.fail('vetoed discovery started'), () => assert.fail('vetoed pick accepted'));
 	assert.ok(picker.model.items === replacement.items); assert.equal(picker.busy, false);
 });
@@ -275,7 +276,7 @@ for (const outcome of ['resolve', 'reject'] as const)
 		picker.pick('Pending owner', '', completion.promise, () => assert.fail('retired source accepted'), undefined, { owner });
 		const unbind = picker.model.viewport.scrollbar.onDidChangeTrack(() => {
 			unbind(); owner.dispose(); picker.pick('Replacement', '', () => replacement, () => {});
-		}); t.after(unbind);
+		}); afterTest(t, unbind);
 		if (outcome === 'resolve') { completion.resolve(new TextQuickPickProvider(choices)); await completion.promise; }
 		else { completion.reject(new Error('old catalog failure')); await completion.promise.then(undefined, () => {}); }
 		assert.ok(picker.model.items === replacement.items, 'a newer admitted catalog owns the shared model');
@@ -293,7 +294,7 @@ for (const kind of ['pick', 'input'] as const)
 				const unbind = origin.onDidFocus(() => {
 					unbind(); assert.equal(owner.listenerCount, 1); owner.dispose();
 					picker.pick('New owner', '', () => replacement, () => {});
-				}); t.after(unbind);
+				}); afterTest(t, unbind);
 			}
 			const onWillShow = retireAt === 'resources' ? (lifetime: DisposableStore) => {
 				lifetime.add({ dispose: () => { assert.equal(owner.listenerCount, 1); owner.dispose(); } });

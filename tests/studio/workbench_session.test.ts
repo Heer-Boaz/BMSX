@@ -58,6 +58,7 @@ import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { captureScenarioLabTestView } from '../../ide/workbench/contrib/scenario_lab/view_snapshot';
 import { updateSelectedScenarioNode } from '../../ide/workbench/contrib/scenario_lab/projection';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = BT_TRANSFER_SOURCE + SCENE_VIEWPORT_SOURCE;
 
@@ -105,7 +106,7 @@ function fixture(t: TestContext) {
 	const resourcePanel = new ResourcePanelController({ editorParts, isActive: true } as CartEditor, sources.catalog,
 		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, content, new VirtualHeadlessClock());
 	resourcePanel.setFontMetrics(editorViewState.font);
-	t.after(() => { resourcePanel.dispose(); content.dispose(); scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
+	afterTest(t, () => { resourcePanel.dispose(); content.dispose(); scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
 	return { sources, group, editorParts, mainWorkspace, resourcePanel, behavior, scene, scenario, serializers, model, runtime };
@@ -208,7 +209,7 @@ for (const changeProvider of [false, true]) test(`behavior mementos fingerprint 
 	}
 	f.group.model.clear(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
 	const restored = await f.serializers.behavior_lens.deserialize(serialized);
-	t.after(() => restored.dispose());
+	afterTest(t, () => restored.dispose());
 	assert.equal(restored.workingCopy.buffer.getText(), SOURCE);
 	assert.equal(restored.workingCopy.dirty, false);
 	if (changeProvider) {

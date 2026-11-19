@@ -36,6 +36,7 @@ import { createHostFrameFixture } from '../helpers/host_frame';
 import { createLoadedTestRuntimeSourceState, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SCENE = `local game<const> = require('game')
 return {kind='integration', setup=function(t) game.marker=12; t:capture('ready') end,
@@ -85,7 +86,7 @@ while true do game.updates=game.updates+1; halt_until_irq end`,
 	const key = (code: string, modifiers = KeyModifier.none) => {
 		editor.dispatchKey(new KeyInputEvent(code, modifiers)); editor.dispatchKey(new KeyInputEvent(code, modifiers, false, false)); update();
 	};
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false); editor.editorParts.clear();
 		await editor.shutdown(); clearBackgroundTasks(); host.audio.dispose(); host.input.dispose(); primary.dispose();
 		editorTextModelService.clear(); closeWorkspaceRecords(); await rm(directory, { recursive: true, force: true });
@@ -183,7 +184,7 @@ test('Play More belongs to its invoking toolbar while another Part retains keybo
 	assert.ok(foreign === f.secondPart.activeGroup.panes.activePane!.commandTarget);
 	const cycles = handle.session!.target.runtime.machine.scheduler.nowCycles;
 	const pointer = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
-	t.after(() => pointer.release());
+	afterTest(t, () => pointer.release());
 	const more = input.actionBar.items.find(item => item.command === 'play.more')!.bounds;
 	pointer.apply([{ type: 'pointer', x: (more.left + more.right) / 2, y: (more.top + more.bottom) / 2 },
 		{ type: 'button', button: 'primary', down: true }]);
@@ -357,7 +358,7 @@ for (const route of ['native', 'application'] as const) {
 			unbind();
 			void play.service.close(old); play.start(f.module, f.secondPart.activeGroup);
 		});
-		t.after(unbind);
+		afterTest(t, unbind);
 		const target = f.firstPart.activeGroup.panes.activePane!.commandTarget;
 		if (route === 'native') inputFocus.executeCommand('play.stop', target);
 		else f.editor.commands.execute('play.stop', target);
@@ -403,7 +404,7 @@ test('a newer Play request during Reset close publication owns the retained inpu
 	const f = await fixture(t), play = f.editor.play;
 	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, old = input.handle;
 	let newer: PlayHandle | undefined;
-	t.after(play.service.onDidChange(event => {
+	afterTest(t, play.service.onDidChange(event => {
 		if (event.handle !== old || !old.closing || newer !== undefined) return;
 		play.start(f.module, f.secondPart.activeGroup); newer = play.input!.handle;
 	}));
@@ -422,7 +423,7 @@ for (const change of ['dispose', 'claim'] as const) test(`a Reset replacement ${
 		if (change === 'dispose') f.firstPart.activeGroup.removeEditor(input);
 		else input.replaceHandle(candidate);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	inputFocus.executeCommand('play.reset', f.firstPart.activeGroup.panes.activePane!.commandTarget);
 	assert.ok(candidate !== undefined); assert.notEqual(candidate, old);
 	if (change === 'dispose') {
@@ -440,7 +441,7 @@ test('input runtime publication rejects an outer replacement without reviving an
 	await f.ready(handle);
 	const before = input.bindingRevision;
 	const unbind = input.interaction.onDidChange(() => { unbind(); input.replaceHandle(handle); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.equal(input.replaceHandle(handle), undefined);
 	assert.equal(input.handle, handle); assert.equal(input.isBindingCurrent(handle, before), false);
 	assert.equal(input.isBindingCurrent(handle, input.bindingRevision), true);

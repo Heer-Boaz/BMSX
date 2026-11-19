@@ -12,6 +12,7 @@ import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/acti
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 const DECISION: ActionPromptRequest = { title: 'Pending source action', message: 'Continue with the captured source?',
 	primary: 'Save and continue', secondary: 'Continue without saving', primaryEnabled: true, defaultChoice: 'primary' };
@@ -24,9 +25,9 @@ test('a modeless window inside a local modal cannot use outer-region traversal t
 	const scope = new InputFocusScope(Symbol('sheet-owned window'), f.group.focusScope);
 	const window = surfaces.attach({ role: 'window', presentationParent: modal, lifetimeOwner: modal, captureScope: scope.surfaceScope,
 		isVisible: () => true, getBounds: () => bounds, getClip: () => bounds, draw() {} });
-	t.after(() => modal.dispose());
+	afterTest(t, () => modal.dispose());
 	const target = inputFocus.createTarget(null, scope); target.canFocus = () => window.visible;
-	t.after(target.bindKeyboard(() => {}));
+	afterTest(t, target.bindKeyboard(() => {}));
 	assert.equal(target.focus(), true);
 	for (const command of ['workspace.focusNextRegion', 'workspace.focusPreviousRegion'] as const)
 		assert.equal(f.editor.commands.isEnabled(command, target), false);
@@ -38,7 +39,7 @@ async function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const editor = f.editor, parts = editor.editorParts, main = editor.mainWorkspace;
 	// Invalid-field warnings belong to this test's Workbench presentation, not its successor.
-	t.after(() => updateEditorMessage(editorFeedbackState.message.timer));
+	afterTest(t, () => updateEditorMessage(editorFeedbackState.message.timer));
 	editor.preferences.fontVariant = 'tiny';
 	parts.minimize(f.firstPart); parts.minimize(f.secondPart);
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
@@ -146,7 +147,7 @@ for (const draft of ['123', '-'] as const) test(`ordinary region blur ${draft ==
 	const f = await fixture(t), field = f.primary.details.control.controls[0];
 	f.main.focusPrimary('details'); assert.equal(field.field.focusTarget.focus(), true);
 	const source = f.model.buffer.getText(), version = f.model.version;
-	let changes = 0; const release = f.model.onDidChangeContent(() => changes++); t.after(release);
+	let changes = 0; const release = f.model.onDidChangeContent(() => changes++); afterTest(t, release);
 	setFieldText(field.field, draft, true); f.key('F6');
 	assert.ok(inputFocus.admittedTarget === f.editor.problems.focusTarget);
 	assert.equal(field.pending, false);
@@ -197,7 +198,7 @@ test('actual empty Problems makes status ineligible while Files restores its own
 test('a newer real focus selected during departing draft publication wins without a second region attempt', async t => {
 	const f = await fixture(t), field = f.primary.details.control.controls[0];
 	f.main.focusPrimary('details'); field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
-	const release = f.model.onDidChangeContent(() => { release(); f.secondPart.focus(); }); t.after(release);
+	const release = f.model.onDidChangeContent(() => { release(); f.secondPart.focus(); }); afterTest(t, release);
 	f.key('F6');
 	assert.ok(inputFocus.admittedTarget === f.second.code.focusTarget && f.parts.activePart === f.secondPart);
 	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('position = { x = 11,', 'position = { x = 123,'));
@@ -207,7 +208,7 @@ test('a newer real focus selected during departing draft publication wins withou
 test('replacing the selected activity during blur revokes the captured destination without focusing a replacement or ring fallback', async t => {
 	const f = await fixture(t), field = f.primary.details.control.controls[0];
 	f.main.focusPrimary('details'); field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
-	const release = f.model.onDidChangeContent(() => { release(); f.main.openActivity('builds.output', { focus: false }); }); t.after(release);
+	const release = f.model.onDidChangeContent(() => { release(); f.main.openActivity('builds.output', { focus: false }); }); afterTest(t, release);
 	f.key('F6');
 	assert.notEqual(f.main.activity, f.editor.problems);
 	assert.notEqual(inputFocus.admittedTarget, f.main.activity!.commandTarget);
@@ -226,7 +227,7 @@ test('root and part-local modal origins cannot escape with either region key whi
 	f.key('Escape'); assert.equal(await rootDecision, 'cancel');
 	f.group.panes.activePane!.focus();
 	const prompt = f.parts.main.actionPrompt, localDecision = prompt.show(DECISION); f.update();
-	t.after(() => prompt.close('cancel', false));
+	afterTest(t, () => prompt.close('cancel', false));
 	assert.equal(prompt.visible, true);
 	for (const modifiers of [KeyModifier.none, KeyModifier.shift]) {
 		f.key('F6', modifiers); assert.ok(inputFocus.admittedTarget === prompt.focusTarget);

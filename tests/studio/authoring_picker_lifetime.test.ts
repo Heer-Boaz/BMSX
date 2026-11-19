@@ -16,6 +16,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PROGRAM = "local p=require('cartlib/progression'); p.compile_program({rules={},filters={},handlers={}})";
 const INPUT = "local c=require('cartlib/input/actioneffect/actioneffect_component'); c.factory({program={bindings={}}})";
@@ -33,7 +34,7 @@ function programs(t: TestContext) {
 async function audio(t: TestContext) {
 	const files = new MemoryWorkspaceFiles();
 	await openWorkspaceRecords(files);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const f = createActualSourcePanes(t), path = 'audio/events.aem.yaml';
 	f.sources.catalog.registerTextSources(f.sources.systemContextId, [{ type: 'aem', resid: 'events', source_path: path,
 		sourcemeta: { text: 'events: { hit: { channel: sfx, rules: [] } }\n' } }]);
@@ -60,7 +61,7 @@ function animation(t: TestContext) {
 
 async function maps(t: TestContext) {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const f = createActualSourcePanes(t), path = 'data/castle_map.yaml';
 	f.sources.catalog.registerTextSources(f.sources.systemContextId, [{ type: 'data', resid: 'map', source_path: path,
 		sourcemeta: { text: '1: { map: [".."], objects: [] }\n' } }]);
@@ -105,7 +106,7 @@ test('Program focus-return publication revokes the accepted occurrence before it
 	const f = programs(t);
 	f.editor.commands.execute('progression', f.first.commandTarget);
 	assert.equal(f.picker.model.list.rows.length, 1);
-	t.after(f.first.commandTarget.onDidFocus(() => {
+	afterTest(t, f.first.commandTarget.onDidFocus(() => {
 		f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: 'return {}' }]);
 	}));
 	f.picker.accept();
@@ -117,7 +118,7 @@ test('Program focus-return publication revokes the accepted occurrence before it
 test('Program accepts into its captured group without borrowing focus moved during picker blur', t => {
 	const f = programs(t);
 	f.editor.commands.execute('progression', f.first.commandTarget);
-	t.after(f.picker.field.focusTarget.onDidBlur(() => { f.second.focus(); }));
+	afterTest(t, f.picker.field.focusTarget.onDidBlur(() => { f.second.focus(); }));
 	f.picker.accept();
 	const input = f.firstGroup.model.activeTab;
 	assert.ok(input instanceof LuaProgramInput && input.programKind === 'progression' && input.workingCopy === f.model);
@@ -131,7 +132,7 @@ for (const restore of [false, true]) test(`Program canonical model admission can
 	f.first.focus(); f.editor.commands.execute('progression', f.first.commandTarget);
 	const picker = f.firstPart.quickInput;
 	assert.equal(picker.model.list.rows.length, 1); assert.ok(editorTextModelService.get(resource) === undefined);
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource !== resource) return;
 		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'return {}' }]);
 		if (restore) model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: PROGRAM }]);
@@ -148,7 +149,7 @@ for (const interaction of ['newerInput', 'foreignFocus'] as const) test(`Program
 	f.first.focus(); f.editor.commands.execute('progression', f.first.commandTarget);
 	assert.equal(f.firstPart.quickInput.model.list.rows.length, 1); assert.ok(editorTextModelService.get(resource) === undefined);
 	let newer: HostErrorInput | undefined;
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource !== resource) return;
 		if (interaction === 'newerInput') { newer = new HostErrorInput('Newer receiver'); f.firstGroup.openEditor(newer); }
 		else f.second.focus();
@@ -195,7 +196,7 @@ test('AEM chooser retirement follows workspace teardown even before its resource
 test('AEM focus-return catalog replacement revokes the accepted choice before opening starts', async t => {
 	const f = await audio(t);
 	f.editor.commands.execute('aem', f.first.commandTarget);
-	t.after(f.first.commandTarget.onDidFocus(() => { f.replace(); }));
+	afterTest(t, f.first.commandTarget.onDidFocus(() => { f.replace(); }));
 	f.picker.accept(); await setImmediate();
 	assert.equal(f.picker.visible, false);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
@@ -205,7 +206,7 @@ test('AEM focus-return catalog replacement revokes the accepted choice before op
 test('AEM accepts into its captured group without borrowing focus moved during picker blur', async t => {
 	const f = await audio(t);
 	f.editor.commands.execute('aem', f.first.commandTarget);
-	t.after(f.picker.field.focusTarget.onDidBlur(() => { f.second.focus(); }));
+	afterTest(t, f.picker.field.focusTarget.onDidBlur(() => { f.second.focus(); }));
 	f.picker.accept(); await setImmediate();
 	const input = f.firstGroup.model.activeTab;
 	assert.ok(input instanceof AemEditorInput && input.workingCopy.resource === f.resource
@@ -231,7 +232,7 @@ test('AEM resource choices stay valid across text edits and open the actual dirt
 for (const publication of ['catalog', 'clear'] as const) test(`pending AEM resolution cannot admit a candidate after ${publication} retirement`, async t => {
 	const f = await audio(t);
 	f.editor.commands.execute('aem', f.first.commandTarget);
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource !== f.resource) return;
 		if (publication === 'catalog') f.replace();
 		else editorTextModelService.clear();
@@ -264,7 +265,7 @@ test('Animation accepts its exact canonical subject without borrowing focus move
 	const f = animation(t), cycles = f.host.runtime.machine.scheduler.nowCycles;
 	f.editor.commands.execute('animation', f.first.commandTarget);
 	assert.equal(f.picker.model.list.rows.length, 1);
-	t.after(f.picker.field.focusTarget.onDidBlur(() => { f.second.focus(); }));
+	afterTest(t, f.picker.field.focusTarget.onDidBlur(() => { f.second.focus(); }));
 	f.picker.accept();
 	const input = f.firstGroup.model.activeTab;
 	assert.ok(input instanceof AnimationEditorInput && input.workingCopy === editorTextModelService.get(f.resource)
@@ -279,7 +280,7 @@ for (const interaction of ['newerInput', 'foreignFocus'] as const) test(`Animati
 	f.editor.commands.execute('animation', f.first.commandTarget);
 	assert.equal(f.picker.model.list.rows.length, 1); assert.ok(editorTextModelService.get(f.resource) === undefined);
 	let newer: HostErrorInput | undefined;
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource !== f.resource) return;
 		if (interaction === 'newerInput') { newer = new HostErrorInput('Newer animation receiver'); f.firstGroup.openEditor(newer); }
 		else f.second.focus();
@@ -295,7 +296,7 @@ for (const interaction of ['newerInput', 'foreignFocus'] as const) test(`Animati
 for (const interaction of ['newerInput', 'foreignFocus'] as const) test(`whole-file Animation production preserves a newer ${interaction} interaction`, t => {
 	const f = animation(t);
 	let newer: HostErrorInput | undefined;
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource !== f.resource) return;
 		if (interaction === 'newerInput') { newer = new HostErrorInput('Newer whole-file receiver'); f.firstGroup.openEditor(newer); }
 		else f.second.focus();
@@ -315,7 +316,7 @@ test('direct Animation definition admission certifies immutable syntax before co
 	project.synchronizeSources(f.sources.catalog);
 	const definition = collectAnimationDefinitions(f.resource, project.getSnapshot())[0];
 	assert.ok(definition !== undefined);
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource === f.resource) model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'return {}' }]);
 	}));
 	assert.ok(f.editor.animations.openDefinition(f.firstGroup, f.resource.contextId, definition) === undefined);
@@ -327,7 +328,7 @@ for (const restore of [false, true]) test(`Animation canonical model admission c
 	const f = animation(t);
 	f.editor.commands.execute('animation', f.first.commandTarget);
 	assert.equal(f.picker.model.list.rows.length, 1);
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource !== f.resource) return;
 		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'return {}' }]);
 		if (restore) model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ANIMATION }]);
@@ -341,7 +342,7 @@ test('Map accepts its exact canonical subject without borrowing focus moved duri
 	const f = await maps(t), cycles = f.host.runtime.machine.scheduler.nowCycles;
 	f.editor.commands.execute('cartMap', f.first.commandTarget);
 	assert.equal(f.picker.model.list.rows.length, 1);
-	t.after(f.picker.field.focusTarget.onDidBlur(() => { f.second.focus(); }));
+	afterTest(t, f.picker.field.focusTarget.onDidBlur(() => { f.second.focus(); }));
 	f.picker.accept(); await setImmediate();
 	const input = f.firstGroup.model.activeTab;
 	assert.ok(input instanceof CartMapInput && input.workingCopy.resource === f.resource
@@ -364,7 +365,7 @@ for (const publication of ['catalog', 'clear'] as const) test(`Map resource choo
 test('Map focus-return source replacement revokes the accepted resource choice', async t => {
 	const f = await maps(t);
 	f.editor.commands.execute('cartMap', f.first.commandTarget);
-	t.after(f.first.commandTarget.onDidFocus(() => { f.replace(); }));
+	afterTest(t, f.first.commandTarget.onDidFocus(() => { f.replace(); }));
 	f.picker.accept(); await setImmediate();
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
 	assert.equal(f.firstGroup.model.tabs.some(input => input instanceof CartMapInput), false);
@@ -373,7 +374,7 @@ test('Map focus-return source replacement revokes the accepted resource choice',
 for (const publication of ['catalog', 'clear'] as const) test(`pending Map resource resolution retires on ${publication} publication`, async t => {
 	const f = await maps(t);
 	f.editor.commands.execute('cartMap', f.first.commandTarget);
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource !== f.resource) return;
 		if (publication === 'catalog') f.replace();
 		else editorTextModelService.clear();

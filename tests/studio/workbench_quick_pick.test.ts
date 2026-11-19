@@ -39,6 +39,7 @@ import type { DisposableStore } from '../../ide/common/lifecycle';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { executeClipboardAction } from '../../ide/input/clipboard';
+import { afterTest } from '../helpers/test_cleanup';
 
 const items = [
 	{ label: 'scenes/root.lua', description: 'LUA / SLOT 0', detail: 'root', resourceId: 10 },
@@ -53,7 +54,7 @@ function createPicker(t: TestContext, onDidChangeVisibility?: () => void): Quick
 	const area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const menu = new ContextMenuController(inputFocus, pointerCapture, area);
 	const picker = new QuickInputController(menu, onDidChangeVisibility, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
-	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }
 
@@ -61,7 +62,7 @@ for (const kind of ['pick', 'input', 'replacement'] as const) test(`quick ${kind
 	const picker = createPicker(t), origin = inputFocus.createTarget(); origin.focus();
 	if (kind === 'replacement') picker.input('Previous', '', 'old draft', async value => value, () => {});
 	const published: { text: string; x: number; y: number; width: number; height: number }[] = [];
-	t.after(inputFocus.onDidChangeTarget(() => {
+	afterTest(t, inputFocus.onDidChangeTarget(() => {
 		if (inputFocus.target === picker.field.focusTarget) published.push({ text: picker.field.text, ...picker.field.caretRect() });
 	}));
 	if (kind === 'pick') picker.pick('Sources', '', () => new TextQuickPickProvider(items), () => {});
@@ -99,7 +100,7 @@ test('QuickInput command context is independent of its invoking control, interac
 		unbind(); returned = true;
 		assert.ok(picker.field.focusTarget.commandContext === picker.field.focusTarget);
 		assert.ok(picker.field.focusTarget.scope.interactionOrigin === undefined);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	picker.hide(); assert.equal(returned, true); assert.ok(inputFocus.admittedTarget === origin);
 });
 
@@ -130,7 +131,7 @@ for (const accept of [false, true]) test(`QuickInput ${accept ? 'acceptance' : '
 	const unbind = origin.onDidFocus(() => {
 		unbind(); reopened = true; assert.ok(picker.field.focusTarget.commandContext === picker.field.focusTarget);
 		picker.pick('Newer', '', () => new TextQuickPickProvider(items), () => {}, undefined, { commandTarget: second });
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	if (accept) { picker.model.list.selectionIndex = 0; picker.accept(); } else picker.hide();
 	assert.equal(reopened, true); assert.equal(accepted, false, 'the newer picker replaces the old handoff before its accept callback');
 	assert.ok(picker.visible && picker.invocationOrigin === origin);
@@ -154,13 +155,13 @@ for (const command of ['copy', 'cut', 'paste'] as const) for (const hasClipboard
 		const origin = inputFocus.createTarget(null, new InputFocusScope(Symbol('native clipboard owner')));
 		const alias = inputFocus.createTarget(null, new InputFocusScope(Symbol('semantic context')));
 		const editorTarget = inputFocus.createTarget(null, new InputFocusScope(Symbol('separate editor')));
-		origin.commandContext = alias; t.after(origin.bindKeyboard(() => {}));
+		origin.commandContext = alias; afterTest(t, origin.bindKeyboard(() => {}));
 		let selection = 'native selection', editorSelection = 'editor selection', aliasSelection = 'semantic selection';
-		if (hasClipboard) t.after(origin.bindClipboard({ readOnly: false, copy: () => selection,
+		if (hasClipboard) afterTest(t, origin.bindClipboard({ readOnly: false, copy: () => selection,
 			cut: () => { selection = ''; }, paste: contents => { selection = contents.text; } }));
-		t.after(alias.bindClipboard({ readOnly: false, copy: () => aliasSelection,
+		afterTest(t, alias.bindClipboard({ readOnly: false, copy: () => aliasSelection,
 			cut: () => { aliasSelection = ''; }, paste: contents => { aliasSelection = contents.text; } }));
-		t.after(editorTarget.bindClipboard({ readOnly: false, copy: () => editorSelection,
+		afterTest(t, editorTarget.bindClipboard({ readOnly: false, copy: () => editorSelection,
 			cut: () => { editorSelection = ''; }, paste: contents => { editorSelection = contents.text; } }));
 		origin.focus(); await clipboard.writeText('clipboard ingress');
 		const operations: (void | Promise<void>)[] = [];
@@ -190,14 +191,14 @@ for (const command of ['copy', 'cut', 'paste'] as const)
 	test(`Palette ${command} cannot accept after its native clipboard owner retires during focus return`, t => {
 		const picker = createPicker(t), origin = inputFocus.createTarget(null, new InputFocusScope(Symbol('native clipboard owner')));
 		const editorTarget = inputFocus.createTarget(null, new InputFocusScope(Symbol('separate editor')));
-		t.after(origin.bindKeyboard(() => {}));
-		t.after(origin.bindClipboard({ readOnly: false, copy: () => 'native selection', cut() {}, paste() {} }));
-		t.after(editorTarget.bindClipboard({ readOnly: false, copy: () => 'editor selection', cut() {}, paste() {} }));
+		afterTest(t, origin.bindKeyboard(() => {}));
+		afterTest(t, origin.bindClipboard({ readOnly: false, copy: () => 'native selection', cut() {}, paste() {} }));
+		afterTest(t, editorTarget.bindClipboard({ readOnly: false, copy: () => 'editor selection', cut() {}, paste() {} }));
 		origin.focus(); let executions = 0;
 		showCommandPalette(picker, { isEnabled: (candidate, target) => candidate === command && target?.clipboard?.[command] !== undefined,
 			isActive: () => false, execute: () => { executions++; } }, origin, editorTarget);
 		assert.equal(picker.model.list.rows.length, 1);
-		t.after(origin.onDidFocus(() => origin.scope.retireContext()));
+		afterTest(t, origin.onDidFocus(() => origin.scope.retireContext()));
 		picker.accept();
 		assert.equal(picker.visible, false); assert.equal(executions, 0);
 	});
@@ -220,7 +221,7 @@ for (const command of ['workspace.increaseViewWidth', 'workspace.focusNextRegion
 		const origin = inputFocus.createTarget(null, new InputFocusScope(Symbol('native view')));
 		const alias = inputFocus.createTarget(null, new InputFocusScope(Symbol('native semantic subject')));
 		const editorTarget = inputFocus.createTarget(null, new InputFocusScope(Symbol('separate captured editor')));
-		origin.commandContext = alias; t.after(origin.bindKeyboard(() => {})); origin.focus();
+		origin.commandContext = alias; afterTest(t, origin.bindKeyboard(() => {})); origin.focus();
 		let executions = 0;
 		showCommandPalette(picker, {
 			isEnabled: (candidate, target) => candidate === command && target === origin,
@@ -238,7 +239,7 @@ test('composed Palette captures secondary context before outgoing blur can repla
 	const picker = createPicker(t), origin = inputFocus.createTarget(), editorTarget = inputFocus.createTarget();
 	origin.bindKeyboard(() => {}); origin.focus();
 	let executed = false;
-	t.after(origin.onDidBlur(() => editorTarget.scope.retireContext()));
+	afterTest(t, origin.onDidBlur(() => editorTarget.scope.retireContext()));
 	showCommandPalette(picker, { isEnabled: command => command === 'save', isActive: () => false,
 		execute: () => { executed = true; } }, origin, editorTarget);
 	assert.equal(picker.visible, false); assert.equal(executed, false);
@@ -263,7 +264,7 @@ for (const enabledAtAccept of [true, false]) test(`Palette retains the actual pr
 	showCommandPalette(picker, commands);
 	assert.equal(picker.model.list.rows.length, 1);
 	assert.equal(picker.invocationOrigin, origin);
-	t.after(picker.field.focusTarget.onDidBlur(next => { if (next === origin) replacement.focus(); }));
+	afterTest(t, picker.field.focusTarget.onDidBlur(next => { if (next === origin) replacement.focus(); }));
 	enabled = enabledAtAccept;
 	picker.accept();
 	assert.equal(inputFocus.target, replacement);
@@ -281,7 +282,7 @@ test('popup origins and cancellation belong to the containing scope after an inl
 	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope, isVisible: () => true,
 		getBounds: () => area, getClip: () => area, draw() {} });
 	const edit = new WorkbenchPropertyEdit<string>(parent, value => value, surfaces, owner, area);
-	t.after(() => { menu.dispose(); edit.dispose(); surfaces.dispose(); model.dispose(); });
+	afterTest(t, () => { menu.dispose(); edit.dispose(); surfaces.dispose(); model.dispose(); });
 	const tree = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
 	const row = appendWorkbenchTreeNode<WorkbenchPropertyElement>(tree, null, { kind: 'property', label: 'value', value: '20', description: '', warning: false,
 		displayLabel: '', displayValue: '', displayValueLeft: 0 });
@@ -339,7 +340,7 @@ test('a field context menu keeps its actual local history and clipboard despite 
 			else target!.getCommand(command)!.run();
 		},
 	};
-	t.after(() => { menu.dispose(); model.dispose(); });
+	afterTest(t, () => { menu.dispose(); model.dispose(); });
 	const version = model.version;
 	menu.show(10, 10, [{ type: 'command', command: 'undo' }], commands, { selectFirst: true }); menu.accept();
 	assert.equal(field.text, 'field'); assert.equal(field.canRedo, true);
@@ -452,7 +453,7 @@ for (const kind of ['pick', 'input'] as const) test(`a blur-time replacement sup
 	const unbind = origin.onDidBlur(() => {
 		picker.pick('Replacement', '', () => new TextQuickPickProvider(replacement), () => {});
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	if (kind === 'pick') picker.pick('Outer', '', () => assert.fail('superseded provider was invoked'), () => {});
 	else {
 		let lifetime!: DisposableStore;
@@ -552,7 +553,7 @@ for (const kind of ['pick', 'input'] as const) test(`a ${kind} replacing a conte
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const menu = new ContextMenuController(inputFocus, pointerCapture, area), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
-	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	const invoker = inputFocus.createTarget(), subject = inputFocus.createTarget(), client = inputFocus.createTarget();
 	invoker.focus();
 	menu.show(20, 20, [{ type: 'command', command: 'copy' }], { isEnabled: () => true, execute: () => {} },
@@ -587,14 +588,14 @@ test('terminal controller disposal cannot reopen a surface from retiring session
 test('source lifetime initialization precedes blur publication and cancels an opening input to its invoker', t => {
 	const picker = createPicker(t), origin = inputFocus.createTarget();
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'draft.lua', location: { kind: 'workspace' as const, path: 'draft.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'draft.lua', source: { type: 'lua', resid: 'draft' } }, 'lua', 'return 1');
-	t.after(() => model.dispose());
+	afterTest(t, () => model.dispose());
 	let initialized = false, invalidations = 0;
 	origin.focus();
 	const unbind = origin.onDidBlur(() => {
 		assert.equal(initialized, true, 'the source lifetime exists before focus can publish a draft');
 		model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	let lifetime!: DisposableStore;
 	picker.input('Source action', '', 'stale', async value => value, () => assert.fail('stale input accepted'), owner => {
 		lifetime = owner;
@@ -612,7 +613,7 @@ test('source lifetime initialization precedes blur publication and cancels an op
 test('an input source lifetime also precedes publication from the previous session disposal', t => {
 	const picker = createPicker(t), origin = inputFocus.createTarget();
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'source.lua', location: { kind: 'workspace' as const, path: 'source.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', 'return 1');
-	t.after(() => model.dispose()); origin.focus();
+	afterTest(t, () => model.dispose()); origin.focus();
 	let previous!: DisposableStore, lifetime!: DisposableStore;
 	picker.input('Old', '', '', async value => value, () => {}, owner => {
 		previous = owner;
@@ -901,7 +902,7 @@ test('picker uses the actual tiny font and draws only a bounded span of an unbou
 	setFieldText(picker.field, '', true);
 	picker.field.didChangeText();
 	picker.update();
-	t.after(() => constants.setIdeThemeVariant('light'));
+	afterTest(t, () => constants.setIdeThemeVariant('light'));
 	for (const theme of ['light', 'dark'] as const) {
 		constants.setIdeThemeVariant(theme);
 		renderer.beginFrame();

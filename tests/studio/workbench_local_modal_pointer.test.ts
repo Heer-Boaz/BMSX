@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('a promoted main-local modal redirects only its named editor owner, not Files, Problems or a sibling tool', t => {
-	const surfaces = new WorkbenchSurfaceService(); t.after(() => surfaces.dispose());
+	const surfaces = new WorkbenchSurfaceService(); afterTest(t, () => surfaces.dispose());
 	// Exact regions exercise the surface hit-testing contract, not a UI placement oracle.
 	const extent: RectBounds = { left: 0, top: 0, right: 300, bottom: 200 };
 	const editorBounds: RectBounds = { left: 100, top: 20, right: 300, bottom: 150 };
@@ -36,7 +37,7 @@ test('a promoted main-local modal redirects only its named editor owner, not Fil
 });
 
 test('workspace modality still owns presses outside its own popup bounds', t => {
-	const surfaces = new WorkbenchSurfaceService(); t.after(() => surfaces.dispose());
+	const surfaces = new WorkbenchSurfaceService(); afterTest(t, () => surfaces.dispose());
 	const extent: RectBounds = { left: 0, top: 0, right: 300, bottom: 200 };
 	const bounds: RectBounds = { left: 100, top: 50, right: 200, bottom: 100 };
 	const owner = surfaces.attach({ role: 'window', captureScope: Symbol(), getBounds: () => extent,

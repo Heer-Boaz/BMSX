@@ -11,6 +11,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { createTestEditorWorkspace } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	configureFontVariant('tiny');
@@ -25,7 +26,7 @@ function fixture(t: TestContext) {
 	const group = editorParts.main.activeGroup;
 	for (const input of inputs) group.openEditor(input, { preserveFocus: true });
 	const viewport = inputFocus.createTarget(null, new InputFocusScope(Symbol('actual viewport'), group.focusScope));
-	t.after(() => { inputFocus.setTarget(null); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); sources.catalog.dispose(); });
+	afterTest(t, () => { inputFocus.setTarget(null); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); sources.catalog.dispose(); });
 	let constructions = 0, disposals = 0;
 	const bind = (input: CodeEditorInput, target: InputFocusTarget = viewport, beforeReturn?: () => void,
 		isCurrent: () => boolean = () => group.model.contains(input)) => main.bindPrimary(input, target, (_surfaces, scope) => {

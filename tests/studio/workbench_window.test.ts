@@ -20,6 +20,7 @@ import { drawWorkbenchWindow } from '../../ide/workbench/render/window';
 import * as colors from '../../ide/common/constants';
 import { WorkbenchTooltip } from '../../ide/workbench/ui/tooltip';
 import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
+import { afterTest } from '../helpers/test_cleanup';
 
 const pointer = (x: number, y: number, buttons = 0, pressed = 0, released = 0): PointerInputSnapshot => ({
 	viewportX: x, viewportY: y, valid: true, insideViewport: true,
@@ -96,7 +97,7 @@ function titlePoint(model: WorkbenchWindowModel) {
 
 for (const side of ['left', 'right'] as const) test(`resizing the exposed edge of a window clipped on the ${side} preserves its anchor`, t => {
 	const f = fixture(), a = f.window('CLIPPED'); a.show(true);
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const left = side === 'left' ? -1000 : 1000;
 	a.model.setRequestedBounds({ left, top: 100, right: left + 240, bottom: 280 }); a.layout();
 	const start = { ...a.model.bounds }, y = (start.top + start.bottom) / 2;
@@ -113,7 +114,7 @@ for (const side of ['left', 'right'] as const) test(`resizing the exposed edge o
 test('a small work area still permits dragging a window partly beyond its right edge', t => {
 	const f = fixture(); f.workArea.right = 50; f.workArea.bottom = 120;
 	const a = f.window('SMALL'); a.show(true);
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.model.setRequestedBounds({ left: 0, top: 40, right: 240, bottom: 220 }); a.layout();
 	const start = { ...a.model.bounds }, point = titlePoint(a.model);
 	f.dispatch(pointer(point.x, point.y, PointerButton.Primary, PointerButton.Primary), 0);
@@ -127,7 +128,7 @@ test('a small work area still permits dragging a window partly beyond its right 
 test('a responsive title keeps a draggable region exposed beyond its actual visible actions', t => {
 	const f = fixture(), actions = createWorkbenchActionBar('window.minimizable.title', true);
 	const a = f.window('RESPONSIVE', 40, 40, undefined, undefined, { focusScope: f.parent.scope }, actions); a.show(true);
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.model.setRequestedBounds({ left: -1000, top: 100, right: -760, bottom: 280 }); a.layout();
 	const before = { ...a.model.bounds }, y = (a.model.header.top + a.model.header.bottom) / 2;
 	const x = (f.workArea.left + actions.bounds.left) / 2;
@@ -143,7 +144,7 @@ test('a responsive title keeps a draggable region exposed beyond its actual visi
 test('changing responsive title actions updates the exposed drag region without repeating stable layout', t => {
 	const f = fixture(), actions = createWorkbenchActionBar('window.minimizable.title', true);
 	const a = f.window('RESPONSIVE', 40, 40, undefined, undefined, { focusScope: f.parent.scope }, actions); a.show(true);
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.model.setRequestedBounds({ left: -1000, top: 100, right: -760, bottom: 280 }); a.layout();
 	const wide = a.model.bounds.left;
 	actions.items[0].visible = false; actions.items[1].visible = false;
@@ -158,7 +159,7 @@ test('changing responsive title actions updates the exposed drag region without 
 
 test('reset requests owner defaults without retiring body input or a sibling capture', t => {
 	const f = fixture(), a = f.window('RESET'); a.show(true);
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const generation = a.control.clientScope.contextGeneration, retires = a.retires(), restores = a.restores();
 	const down = pointer(400, 300, PointerButton.Primary, PointerButton.Primary);
 	let cancelled = 0;
@@ -174,7 +175,7 @@ test('reset requests owner defaults without retiring body input or a sibling cap
 
 for (const gesture of ['title', 'button'] as const) test(`reset cancels a held ${gesture} gesture before its later release`, t => {
 	const f = fixture(), a = f.window('RESET'); a.show(true);
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const point = titlePoint(a.model);
 	if (gesture === 'button') {
 		const bounds = a.actions.items.find(item => item.command === 'window.hide')!.bounds;
@@ -190,7 +191,7 @@ for (const gesture of ['title', 'button'] as const) test(`reset cancels a held $
 
 test('reset ends prospective keyboard placement without accepting its later Enter', t => {
 	const f = fixture(), a = f.window('RESET'); a.show(true);
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.control.focusTarget.focus(); f.focus.executeCommand('window.move', a.control.focusTarget);
 	f.focus.handleKeyboard(new KeyInputEvent('ArrowRight', KeyModifier.none));
 	assert.equal(a.control.interactionActive, true);
@@ -206,7 +207,7 @@ test('window identity follows moved native controls without borrowing their sema
 	const retained = f.surfaces.attach({ role: 'content', captureScope: semanticScope.surfaceScope, lifetimeOwner: f.owner,
 		presentationParent: f.owner, isVisible: () => true, getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
 	const target = f.focus.createTarget(f.parent, semanticScope); target.bindKeyboard(() => {});
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	assert.equal(findWorkbenchWindowSurface(f.parent, f.surfaces), undefined);
 	assert.equal(findWorkbenchWindowSurface(null, f.surfaces), undefined);
 	assert.equal(findWorkbenchWindowSurface(target, f.surfaces), undefined);
@@ -237,7 +238,7 @@ test('native window discovery follows the invoking control and promoted popup ow
 		lifetimeOwner: region, presentationParent: b.control.clientSurface!, isVisible: () => true,
 		getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
 	const popupTarget = f.focus.createTarget(target, new InputFocusScope(popup.captureScope)); popupTarget.commandContext = f.parent;
-	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
 	assert.ok(findWorkbenchWindowSurface(target, f.surfaces) === a.control.surface);
 	assert.ok(findWorkbenchWindowSurface(popupTarget, f.surfaces) === a.control.surface);
 	assert.equal(f.surfaces.isInWindowFamily(popup.captureScope, a.control.surface!.captureScope), true);
@@ -263,7 +264,7 @@ test('retiring presentation ancestry cannot lend its still-registered child a su
 	const retained = f.surfaces.attach({ role: 'content', captureScope: scope.surfaceScope, lifetimeOwner: f.owner,
 		presentationParent: a.control.clientSurface!, isVisible: () => true, getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
 	const target = f.focus.createTarget(f.parent, scope); target.bindKeyboard(() => {});
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	assert.equal(findWorkbenchWindowSurface(target, f.surfaces), a.control.surface);
 	a.control.detach(); assert.equal(checked, 1); assert.equal(retained.retired, true);
 	assert.equal(findWorkbenchWindowSurface(target, f.surfaces), null);
@@ -272,7 +273,7 @@ test('retiring presentation ancestry cannot lend its still-registered child a su
 test('physical window discovery separates provisional construction, minimized presentation and native detachment', t => {
 	const f = fixture(), a = f.window('PROVISIONAL');
 	a.model.open = true; a.control.setPresented(false); a.control.attach();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const surface = a.control.surface!;
 	assert.equal(a.control.isOpen, false); assert.equal(workbenchWindowForSurface(surface), a.control);
 	assert.ok(f.surfaces.windowSurfaces.includes(surface));
@@ -297,7 +298,7 @@ test('native window lookup distinguishes retained unframed Main controls from ne
 	const content = f.surfaces.attach({ role: 'content', lifetimeOwner: main, presentationParent: main,
 		captureScope: scope.surfaceScope, isVisible: () => false, getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
 	const target = f.focus.createTarget(f.parent, scope);
-	t.after(() => f.surfaces.dispose());
+	afterTest(t, () => f.surfaces.dispose());
 	assert.equal(findWorkbenchWindowSurface(target, f.surfaces), main);
 	assert.equal(workbenchWindowForSurface(main), undefined, 'unframed Main has no floating chrome controller');
 	assert.equal(findWorkbenchWindowSurface(f.parent, f.surfaces), undefined, 'neutral root chrome has no native window');
@@ -311,7 +312,7 @@ test('shared window chrome contributes a cached font-aware minimum to zero-width
 	], undefined);
 	menu.refresh();
 	const a = f.window('CHROME CAPTION', 40, 40, undefined, undefined, { focusScope: f.parent.scope }, createWorkbenchActionBar(menu));
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.model.setMinimumSize(0, 0);
 	a.model.setRequestedBounds({ left: 40, top: 40, right: 41, bottom: 100 });
 	a.show();
@@ -339,7 +340,7 @@ test('window title uses its contributed menu with the actual native window comma
 	const f = fixture();
 	const a = f.window('CONTRIBUTED', 40, 40, undefined, undefined, { focusScope: f.parent.scope,
 		contextMenu: [{ type: 'command', command: 'window.hide' }] });
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.show();
 	const point = titlePoint(a.model); f.click(point.x, point.y, 0, PointerButton.Secondary);
 	assert.equal(f.contextMenu.visible, true); assert.equal(f.contextMenu.invocationOrigin, a.control.focusTarget);
@@ -350,7 +351,7 @@ test('window title uses its contributed menu with the actual native window comma
 
 test('window client and focused chrome publish their actual window commands without parent lookup', t => {
 	const f = fixture(), a = f.window('Owned window');
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.show(true); a.control.clientFocusTarget.focus();
 	for (const command of ['window.maximize', 'window.hide'] as const)
 		assert.equal(a.control.clientFocusTarget.getCommand(command), a.control.focusTarget.getCommand(command));
@@ -366,7 +367,7 @@ test('minimize is admitted only by the concrete window owner and its title actio
 		focusScope: f.parent.scope, requestMinimize() { requests++; document.control.minimize(); f.parent.focus(); },
 	});
 	const tool = f.window('TOOL', 260, 80);
-	t.after(() => { document.control.dispose(); tool.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { document.control.dispose(); tool.control.dispose(); f.surfaces.dispose(); });
 	document.show(true); tool.show();
 	assert.equal(tool.actions.items.some(item => item.command === 'window.minimize'), false, 'a utility title does not produce an unsupported action');
 	assert.equal(f.focus.getCommand('window.minimize', tool.control.clientFocusTarget)?.isEnabled() === true, false);
@@ -409,7 +410,7 @@ test('maximized placement fills the work area without replacing normal requested
 
 test('focused maximize and restore commands preserve the retained client', t => {
 	const f = fixture(), a = f.window('MAXIMIZE'); a.show(true);
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const client = a.control.clientSurface!, requested = { ...a.model.requestedBounds };
 	f.focus.executeCommand('window.maximize', a.control.clientFocusTarget);
 	assert.equal(a.model.placement, 'maximized'); assert.deepEqual(a.model.bounds, f.workArea);
@@ -432,7 +433,7 @@ test('focused maximize and restore commands preserve the retained client', t => 
 
 test('maximize and restore cancel held chrome moves and resizes without committing the remainder of the gesture', t => {
 	const f = fixture(), a = f.window('GESTURE'); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	for (const resize of [false, true]) {
 		const bounds = a.model.bounds;
 		const down = resize ? pointer(bounds.left + 1, bounds.top + 1, 1, 1) : pointer(bounds.left + 12, bounds.top + 7, 1, 1);
@@ -451,7 +452,7 @@ test('maximize and restore cancel held chrome moves and resizes without committi
 
 test('a maximized title drag presents an uncommitted normal window and cancellation retains placement intent', t => {
 	const f = fixture(), a = f.window('DRAG'); a.show(); a.control.setPlacement('maximized');
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const requested = { ...a.model.requestedBounds }, point = titlePoint(a.model);
 	f.dispatch(pointer(point.x, point.y, 1, 1), 0);
 	f.dispatch(pointer(point.x + 50, point.y + 50, 1), 1);
@@ -465,7 +466,7 @@ test('a maximized title drag presents an uncommitted normal window and cancellat
 
 test('complete title click pairs maximize and restore at event time zero while retaining clients and normal placement', t => {
 	const f = fixture(), a = f.window('FIRST'), b = f.window('SECOND', 260, 80); a.show(); b.show();
-	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
 	const requested = { ...a.model.requestedBounds }, siblingRequested = { ...b.model.requestedBounds };
 	const surface = a.control.clientSurface!, sibling = b.control.clientSurface!;
 	const writes = t.mock.method(a.model, 'setRequestedBounds');
@@ -488,7 +489,7 @@ test('complete title click pairs maximize and restore at event time zero while r
 
 test('complete title clicks coalesced into single pointer occurrences still form a pair without placement writes', t => {
 	const f = fixture(), a = f.window('SHORT CLICKS'); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const point = titlePoint(a.model), requested = { ...a.model.requestedBounds };
 	const writes = t.mock.method(a.model, 'setRequestedBounds');
 	f.dispatch(pointer(point.x, point.y, 0, PointerButton.Primary, PointerButton.Primary), 0);
@@ -500,7 +501,7 @@ test('complete title clicks coalesced into single pointer occurrences still form
 
 test('sub-threshold title jitter completes clicks without placement writes or client layout work', t => {
 	const f = fixture(), a = f.window('JITTER'); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const point = titlePoint(a.model), delta = colors.POINTER_DRAG_ACTIVATION_THRESHOLD - 1;
 	const requested = { ...a.model.requestedBounds }, layouts = a.layouts();
 	const writes = t.mock.method(a.model, 'setRequestedBounds');
@@ -515,7 +516,7 @@ test('sub-threshold title jitter completes clicks without placement writes or cl
 
 test('title clicks require nearby press origins even within the double-click interval', t => {
 	const f = fixture(), a = f.window('DISTANCE'); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const point = titlePoint(a.model), distance = colors.POINTER_DRAG_ACTIVATION_THRESHOLD;
 	f.click(point.x, point.y, 0);
 	f.click(point.x + distance, point.y, 100);
@@ -526,7 +527,7 @@ test('title clicks require nearby press origins even within the double-click int
 
 test('a long first title hold cannot make a late second press into a double-click', t => {
 	const f = fixture(), a = f.window('EVENT TIME'); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const point = titlePoint(a.model), afterInterval = colors.DOUBLE_CLICK_MAX_INTERVAL_MS + 1;
 	f.dispatch(pointer(point.x, point.y, 1, 1), 0);
 	f.dispatch(pointer(point.x, point.y, 0, 0, 1), afterInterval);
@@ -538,7 +539,7 @@ test('a long first title hold cannot make a late second press into a double-clic
 
 for (const coalesced of [false, true]) test(`title drag invalidates click history with ${coalesced ? 'release-only movement' : 'movement away and back'}`, t => {
 	const f = fixture(), a = f.window('DRAG'); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const point = titlePoint(a.model), requested = { ...a.model.requestedBounds };
 	const delta = colors.POINTER_DRAG_ACTIVATION_THRESHOLD;
 	f.click(point.x, point.y, 0);
@@ -561,7 +562,7 @@ for (const coalesced of [false, true]) test(`title drag invalidates click histor
 for (const interruption of ['action', 'resize', 'content', 'nonprimary', 'cancel', 'hide'] as const)
 	test(`${interruption} interaction cannot complete an earlier title click`, t => {
 		const f = fixture(), a = f.window('INTERRUPTED'); a.show();
-		t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+		afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 		const point = titlePoint(a.model);
 		f.click(point.x, point.y, 0);
 		switch (interruption) {
@@ -587,7 +588,7 @@ for (const interruption of ['action', 'resize', 'content', 'nonprimary', 'cancel
 
 test('complete title clicks belong to their own retained window', t => {
 	const f = fixture(), a = f.window('FIRST', 0, 40), b = f.window('SECOND', 260, 80); a.show(); b.show();
-	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
 	const first = titlePoint(a.model), second = titlePoint(b.model);
 	f.click(first.x, first.y, 0); f.click(second.x, second.y, 100);
 	assert.equal(a.model.placement, 'normal'); assert.equal(b.model.placement, 'normal');
@@ -597,7 +598,7 @@ test('complete title clicks belong to their own retained window', t => {
 
 test('maximize and restore retain client and sibling captures without retiring the input surface', t => {
 	const f = fixture(), a = f.window('FIRST'), b = f.window('SECOND', 200, 70); a.show(true); b.show();
-	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
 	const surface = a.control.clientSurface!;
 	for (const current of [a, b]) {
 		let cancelled = 0, released = 0;
@@ -619,7 +620,7 @@ test('custom window action contributions may omit maximize while the actual wind
 	const f = fixture(), standard = createWorkbenchActionBar('window.title');
 	const custom = { ...standard, items: standard.items.filter(item => item.command !== 'window.maximize') };
 	const a = f.window('CUSTOM', 40, 40, undefined, undefined, { focusScope: f.parent.scope }, custom);
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.show(); f.focus.executeCommand('window.maximize', a.control.clientFocusTarget);
 	assert.equal(a.model.placement, 'maximized'); assert.deepEqual(a.model.bounds, f.workArea);
 	f.focus.executeCommand('window.maximize', a.control.focusTarget);
@@ -643,7 +644,7 @@ test('requested placement survives narrow work areas', () => {
 
 test('attached window and client borrow the retained root work area through in-place shrink and restoration', t => {
 	const f = fixture(), a = f.window('RETAINED AREA', 170, 90); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const area = f.workArea, surface = a.control.surface!, client = a.control.clientSurface!;
 	const clientBounds = a.model.client, requestedBounds = a.model.requestedBounds;
 	const requested = { ...requestedBounds };
@@ -674,7 +675,7 @@ test('attached window and client borrow the retained root work area through in-p
 
 test('two real overlapping windows share paint/hit order but retain independent subjects and lifetimes', t => {
 	const f = fixture(), a = f.window('FIRST'), b = f.window('SECOND', 100, 70);
-	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
 	a.show(); b.show();
 	assert.equal(f.surfaces.hitTest(140, 120), b.control.clientSurface);
 	f.surfaces.hitTest(50, 48)!.handlePointer!(pointer(50, 48, 2, 2), 0);
@@ -697,7 +698,7 @@ test('raising a frontend preserves its modeless inspector family outside the pan
 	});
 	inspector.show();
 	const sibling = f.window('SIBLING', 140, 100); sibling.show();
-	t.after(() => { inspector.control.dispose(); document.control.dispose(); sibling.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { inspector.control.dispose(); document.control.dispose(); sibling.control.dispose(); f.surfaces.dispose(); });
 	const surface = inspector.control.surface!, client = inspector.control.clientSurface!, requested = { ...inspector.model.requestedBounds };
 	const layouts = inspector.layouts(), restores = inspector.restores();
 	const order: string[] = [];
@@ -733,7 +734,7 @@ test('raising a frontend preserves its modeless inspector family outside the pan
 
 test('surface retirement returns owned client focus without relying on content cleanup', t => {
 	const f = fixture(), a = f.window('RETIRED'), b = f.window('RETAINED', 100, 70);
-	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
 	a.show(true); b.show();
 	assert.equal(f.focus.target, a.client);
 	a.control.surface!.dispose();
@@ -748,7 +749,7 @@ test('surface retirement returns owned client focus without relying on content c
 
 test('window focus includes lifetime-owned promoted popups, not unrelated controls or paint order', t => {
 	const f = fixture(), a = f.window('FIRST'), b = f.window('SECOND', 100, 70);
-	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
 	a.show(); b.show();
 	assert.equal(a.control.hasFocus, false);
 	a.client.focus();
@@ -775,7 +776,7 @@ test('window focus includes lifetime-owned promoted popups, not unrelated contro
 test('content retirement may transfer focus to a live sibling without a trailing window override', t => {
 	const f = fixture();
 	const a = f.window('RETIRED', 40, 40, () => b.client.focus()), b = f.window('RETAINED', 100, 70);
-	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
 	a.show(true); b.show();
 	a.control.detach();
 	assert.equal(a.input(), false);
@@ -784,7 +785,7 @@ test('content retirement may transfer focus to a live sibling without a trailing
 
 test('window drag and all-edge resize use central capture, root work area and current scope', t => {
 	const f = fixture(), a = f.window('DRAG'); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const down = pointer(60, 48, 1, 1);
 	f.capture.beginRoute(a.control.scope.surfaceScope, down);
 	a.control.surface!.handlePointer!(down, 0);
@@ -817,14 +818,14 @@ test('window drag and all-edge resize use central capture, root work area and cu
 
 test('minimize hides presentation and cancels its gesture without retiring the retained client or context', t => {
 	const f = fixture(), a = f.window('MINIMIZE'); a.show(true);
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const height = a.model.requestedBounds.bottom - a.model.requestedBounds.top;
 	const clientSurface = a.control.clientSurface!;
 	let descendantRetired = 0, contextRetired = 0;
 	const descendant = f.surfaces.attach({ role: 'content', lifetimeOwner: clientSurface, presentationParent: clientSurface,
 		captureScope: Symbol('retained descendant'), isVisible: () => true, getBounds: () => a.model.client,
 		getClip: () => a.model.client, draw() {}, onRetire() { descendantRetired++; } });
-	t.after(a.control.clientScope.onDidRetireContext(() => { contextRetired++; }));
+	afterTest(t, a.control.clientScope.onDidRetireContext(() => { contextRetired++; }));
 	let popupRetired = 0, cancelled = 0;
 	const popup = f.surfaces.attach({ role: 'transient', outsidePress: 'consume', lifetimeOwner: clientSurface,
 		presentationParent: a.control.surface, captureScope: Symbol('client popup'), isVisible: () => true,
@@ -857,7 +858,7 @@ test('minimize hides presentation and cancels its gesture without retiring the r
 test('minimizing another window preserves an unrelated gesture', t => {
 	const f = fixture(), a = f.window('FIRST'), b = f.window('SECOND', 200, 70);
 	a.show(); b.show();
-	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
 	let cancelled = 0;
 	f.capture.beginRoute(b.control.clientScope.surfaceScope, pointer(250, 150, 1, 1));
 	const unrelated = { handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { cancelled += 1; } };
@@ -869,7 +870,7 @@ test('minimizing another window preserves an unrelated gesture', t => {
 
 test('a later explicit reveal during minimize focus departure remains visible and focused', t => {
 	const f = fixture(), a = f.window('REENTRANT'); a.show(true);
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.control.focusTarget.focus();
 	const release = a.control.focusTarget.onDidBlur(() => a.control.show(true));
 	a.control.minimize();
@@ -881,7 +882,7 @@ test('a later explicit reveal during minimize focus departure remains visible an
 
 test('idle frames do no chrome measurement/layout and hide differs from pane detachment', t => {
 	const f = fixture(), a = f.window('RETAIN'); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const measured = f.measurements(), layouts = a.layouts();
 	for (let frame = 0; frame < 100; frame += 1) { a.layout(); a.control.update(); }
 	assert.equal(f.measurements(), measured); assert.equal(a.layouts(), layouts);
@@ -904,7 +905,7 @@ test('idle frames do no chrome measurement/layout and hide differs from pane det
 
 test('window icon tooltips are passive, modal-admitted, retained feedback with no idle measurement', t => {
 	const f = fixture(), a = f.window('SUBJECT'); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const close = a.actions.items.find(item => item.command === 'window.hide')!;
 	a.control.surface!.handlePointer!(pointer((close.bounds.left + close.bounds.right) >> 1,
 		(close.bounds.top + close.bounds.bottom) >> 1), 0);
@@ -934,7 +935,7 @@ test('window icon tooltips are passive, modal-admitted, retained feedback with n
 
 test('floating windows share a translucent surface shadow without extending their hit bounds', t => {
 	const f = fixture(), a = f.window('SUBJECT'); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const fills: number[][] = [];
 	t.mock.method(api, 'fill_rect', (...args) => { fills.push(args); });
 	t.mock.method(api, 'blit_rect', () => {});
@@ -954,7 +955,7 @@ test('floating windows share a translucent surface shadow without extending thei
 test('a compact window caption exposes its full owner-supplied path without spending permanent layout rows', t => {
 	const f = fixture(), title = 'CART 0 / nemesis_s.intro / Timelines / logo';
 	const a = f.window('logo', 40, 40, undefined, () => title); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	const header = a.model.header;
 	a.control.surface!.handlePointer!(pointer(header.left + 12, header.top + 7), 0);
 	a.control.update();
@@ -974,7 +975,7 @@ test('a compact window caption exposes its full owner-supplied path without spen
 
 test('font changes reserve stable icon cells and measure the caption only in the remaining title budget', t => {
 	const f = fixture(), a = f.window('World/Actor/Component/SubjectSuffix'); a.show();
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.model.setRequestedBounds({ left: 40, top: 40, right: 170, bottom: 180 });
 	for (const variant of ['tiny', 'msx', 'tiny'] as const) {
 		const font = new Font({ variant });
@@ -989,7 +990,7 @@ test('font changes reserve stable icon cells and measure the caption only in the
 
 test('long title tooltips wrap every path glyph instead of moving caption truncation into the hint', t => {
 	const f = fixture(), tooltip = new WorkbenchTooltip();
-	t.after(() => { tooltip.detach(); f.surfaces.dispose(); });
+	afterTest(t, () => { tooltip.detach(); f.surfaces.dispose(); });
 	const area = { left: 0, top: 20, right: 120, bottom: 180 };
 	tooltip.attach(f.surfaces, f.owner, area);
 	const title = 'World/ActorWithALongName/ComponentWithALongName/FinalSubjectSuffix';
@@ -1022,7 +1023,7 @@ test('long title tooltips wrap every path glyph instead of moving caption trunca
 
 test('a minimized attachment retains logical input and descendant membership until explicit show', t => {
 	const f = fixture(), a = f.window('RESTORED');
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.model.open = true; a.model.setMinimized(true); a.control.attach(); a.layout();
 	const client = a.control.clientSurface!;
 	assert.ok(client !== undefined); assert.equal(client.visible, false); assert.equal(client.retired, false);
@@ -1043,7 +1044,7 @@ test('window ownership ancestry is independent of focus return and close admissi
 	let closeRequests = 0;
 	const a = f.window('DOCUMENT', 40, 40, undefined, undefined,
 		{ focusScope: ownerScope, requestClose() { closeRequests++; } });
-	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 	a.show(true);
 	assert.ok(f.focus.commandRunner === ownCommands, 'client commands follow the declared logical owner, not the return target');
 	f.focus.executeCommand('window.hide', a.control.clientFocusTarget);
@@ -1078,7 +1079,7 @@ for (const [horizontal, vertical, cursor] of [[-1, 0, 'ew-resize'], [1, 0, 'ew-r
 	[-1, -1, 'nwse-resize'], [1, 1, 'nwse-resize'], [1, -1, 'nesw-resize'], [-1, 1, 'nesw-resize']] as const)
 	test(`shared window resize cursor ${horizontal}/${vertical} follows hover and its captured owner`, t => {
 		const f = fixture(), a = f.window('CURSOR'); a.show(true);
-		t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+		afterTest(t, () => { a.control.dispose(); f.surfaces.dispose(); });
 		const bounds = a.model.bounds;
 		const x = horizontal < 0 ? bounds.left + 1 : horizontal > 0 ? bounds.right - 1 : (bounds.left + bounds.right) / 2;
 		const y = vertical < 0 ? bounds.top + 1 : vertical > 0 ? bounds.bottom - 1 : (bounds.top + bounds.bottom) / 2;

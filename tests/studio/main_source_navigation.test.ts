@@ -14,6 +14,7 @@ import { ResourceEditorResolver } from '../../ide/workbench/services/editor/reso
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 local prefab = require('cartlib/world/prefab')
@@ -124,7 +125,7 @@ test('Main Source to Side retains its exact document neighbor across draft settl
 	const floating = f.secondGroup.model.activeTab;
 	assert.equal(f.parts.main.activateGroup(origin), true); f.main.focusPrimary();
 	const field = f.primary.details.control.controls[0]; f.main.focusPrimary('details'); assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '123', true);
-	const release = f.model.onDidChangeContent(() => { release(); assert.equal(f.parts.main.activateGroup(side), true); }); t.after(release);
+	const release = f.model.onDidChangeContent(() => { release(); assert.equal(f.parts.main.activateGroup(side), true); }); afterTest(t, release);
 	const groups = [...f.parts.groups];
 	const expected = { row: 0, column: 0 }; f.model.buffer.positionAt(f.primary.authoring.selectionRange.start, expected);
 	const request = t.mock.method(f.editor.navigation, 'openSource');
@@ -269,7 +270,7 @@ for (const publication of ['opening', 'model activation'] as const)
 		const invoke = () => { release(); f.editor.commands.execute('editor.source', f.origin); };
 		const release = publication === 'opening' ? side.panes.onDidBeginOpen(invoke)
 			: side.model.onDidChange(change => { if (change === 'active') invoke(); });
-		t.after(release);
+		afterTest(t, release);
 		await request.mock.calls[0].result;
 		assert.equal(captures, 2); assert.equal(request.mock.callCount(), 2);
 		read.resolve(); assert.ok(await request.mock.calls[1].result !== undefined);
@@ -338,7 +339,7 @@ for (const change of ['selection', 'selected occurrence deletion', 'foreign focu
 			if (change === 'selection') { f.primary.view.refresh(); assert.equal(selectSceneOutlineRow(f.primary.view.hierarchy, 1), true); }
 			else if (change === 'selected occurrence deletion') assert.equal(f.primary.authoring.removeSelectedMember(), true);
 			else f.second.focus();
-		}); t.after(release);
+		}); afterTest(t, release);
 		const opening = t.mock.method(f.editor.navigation, 'openResource');
 		f.editor.commands.execute('editor.source', field.field.focusTarget);
 		assert.equal(published, true); assert.equal(field.pending, false); assert.equal(opening.mock.callCount(), 0);
@@ -380,7 +381,7 @@ for (const change of ['selection', 'selected occurrence deletion'] as const)
 			release(); published = true;
 			if (change === 'selection') assert.equal(selectSceneOutlineRow(f.primary.view.hierarchy, 1), true);
 			else assert.equal(f.primary.authoring.removeSelectedMember(), true);
-		}); t.after(release);
+		}); afterTest(t, release);
 		const opening = t.mock.method(f.editor.navigation, 'openResource');
 		menu.accept();
 		assert.equal(published, true); assert.equal(menu.visible, false); assert.equal(opening.mock.callCount(), 0);

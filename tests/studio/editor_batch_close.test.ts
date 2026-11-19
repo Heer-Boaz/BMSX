@@ -22,6 +22,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 type Fixture = ReturnType<typeof createActualSourcePanes>;
 
@@ -29,7 +30,7 @@ async function persistedFixture(t: TestContext, sameModel = false,
 	additionalSources: readonly (readonly [string, string])[] = []) {
 	const files = new MemoryWorkspaceFiles('workspace'); await openWorkspaceRecords(files);
 	const f = createActualSourcePanes(t, sameModel, additionalSources);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	return { ...f, files };
 }
 
@@ -121,7 +122,7 @@ test(`${phase} observer's newer null focus survives closing ${split ? 'an empty 
 	f.first.focus();
 	let calls = 0;
 	const redirect = () => { calls++; f.second.focus(); inputFocus.setTarget(null); };
-	t.after(phase === 'blur' ? f.first.commandTarget.onDidBlur(redirect) : group.panes.onDidClearEditor(redirect));
+	afterTest(t, phase === 'blur' ? f.first.commandTarget.onDidBlur(redirect) : group.panes.onDidClearEditor(redirect));
 	assert.equal(await group.close(f.firstInput.id), true);
 	assert.equal(calls, 1); assert.ok(inputFocus.target === null);
 	assert.equal(group.surface.retired, split);
@@ -134,7 +135,7 @@ test('group batch decision is local and does not publish or blur an excluded sib
 	target.focus(); const previous = target.edit;
 	let attempts = 0;
 	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
-	target.edit = draft; t.after(() => { target.edit = previous; });
+	target.edit = draft; afterTest(t, () => { target.edit = previous; });
 	const closing = f.editor.editorParts.closeEditors({ kind: 'group', group }, f.first.commandTarget);
 	assert.equal(f.firstPart.actionPrompt.visible, true); assert.equal(f.editor.actionPrompt.visible, false);
 	assert.equal(f.editor.surfaces.isAdmitted(f.secondGroup.paneSurface), true);
@@ -179,7 +180,7 @@ test('Cancel after an accepted batch Save retains all views without rolling back
 test('a group batch awaiting Save retires only its snapshot and admits a newly opened surviving tab', async t => {
 	const writing = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
 	// Accepted filesystem work drains before the real workbench fixture shuts down, even after a failed assertion.
-	t.after(() => release.resolve());
+	afterTest(t, () => release.resolve());
 	const f = await persistedFixture(t), group = f.firstGroup;
 	const write = f.files.write.bind(f.files);
 	t.mock.method(f.files, 'write', async (...args: Parameters<typeof write>) => {
@@ -283,7 +284,7 @@ test('Close Others pins its exact preview keeper after snapshotting targets so a
 	const unbind = group.model.onDidChange(change => {
 		if (change !== 'pin') return;
 		unbind(); group.openEditor(newer);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.equal(await f.editor.editorParts.closeEditors({ kind: 'others', group, input: keeper }, f.first.commandTarget), true);
 	assert.equal(group.model.previewTab, null); assert.ok(group.model.contains(keeper) && group.model.contains(newer));
 	assert.equal(group.model.contains(f.firstInput), false);
@@ -321,7 +322,7 @@ test('a newer Close Others admitted during keeper pin retains its exact keeper w
 	const unbind = group.model.onDidChange(change => {
 		if (change !== 'pin') return;
 		unbind(); newer = parts.closeEditors({ kind: 'others', group, input: newKeeper }, group.focusTarget);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	const older = parts.closeEditors({ kind: 'others', group, input: oldKeeper }, group.focusTarget);
 	assert.ok(newer !== undefined); assert.equal(await older, false);
 	assert.equal(parts.closeController.isPending(oldKeeper), true);
@@ -360,7 +361,7 @@ test('a captured Close Others target moved away and back during keeper pin belon
 		assert.equal(parts.moveEditor(group, target, { kind: 'group', group: receiver }), true);
 		assert.ok(receiver.model.activeTab === target && !group.model.contains(target));
 		assert.equal(parts.moveEditor(receiver, target, { kind: 'group', group }), true);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.equal(await parts.closeEditors({ kind: 'others', group, input: keeper }, group.focusTarget), false);
 	assert.ok(group.model.contains(keeper) && group.model.contains(target));
 	assert.ok(group.model.activeTab === target && group.panes.activePane?.input === target);

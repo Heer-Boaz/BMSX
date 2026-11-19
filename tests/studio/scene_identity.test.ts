@@ -16,6 +16,7 @@ import { installSceneOutline, selectSceneOutlineRow } from '../../ide/workbench/
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 local prefab=require('cartlib/world/prefab')
@@ -36,7 +37,7 @@ function scene(t: TestContext, contextId: string = TEST_CARTRIDGE_CONTEXT_IDS[0]
 	assert.equal(input.view.authoring.document!.analysis.syntaxError, null);
 	installSceneOutline(input.view.hierarchy);
 	selectSceneOutlineRow(input.view.hierarchy, 1);
-	t.after(() => { input.dispose(); });
+	afterTest(t, () => { input.dispose(); });
 	return input;
 }
 
@@ -159,7 +160,7 @@ function feedbackFixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const update = () => feedback.update(font, measure, measureText);
 	const point = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
 		viewportX: 24, viewportY: input.view.hierarchy.outline.layout.contentTop + input.view.hierarchy.outline.layout.rowHeight + 2 };
-	t.after(() => { feedback.dispose(); surfaces.dispose(); });
+	afterTest(t, () => { feedback.dispose(); surfaces.dispose(); });
 	return { input, source, font, area, parent, treeFocus, surfaces, owner, feedback, labels, point, paint, update, measurements: () => measurements };
 }
 

@@ -11,6 +11,7 @@ import { layoutEditReviewRows } from '../../ide/workbench/contrib/edit_review/pr
 import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy/workspace_edit';
 import { WorkspaceSourceContext } from '../../ide/workbench/services/working_copy/source_context';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, before: string, after: string) {
 	const models = new EditorTextModelService(), record = createScenarioTestSourceRecord('review.lua', 1, before);
@@ -20,7 +21,7 @@ function fixture(t: TestContext, before: string, after: string) {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 0, deleteLength: before.length, text: after }] }]]),
 	});
 	const input = new WorkspaceEditReviewInput(proposal);
-	t.after(() => { input.dispose(); models.clear(); });
+	afterTest(t, () => { input.dispose(); models.clear(); });
 	return { input, model, proposal };
 }
 
@@ -246,7 +247,7 @@ test('repeated source text keeps exact file/hunk/part identity and offsets withi
 		] }])),
 	});
 	const input = new WorkspaceEditReviewInput(proposal);
-	t.after(() => { input.dispose(); models.clear(); });
+	afterTest(t, () => { input.dispose(); models.clear(); });
 	assert.equal(proposal.files[1].hunks.length, 2);
 	project(input, 118, 1, 'msx');
 	const file = proposal.files[1], hunk = file.hunks[1];

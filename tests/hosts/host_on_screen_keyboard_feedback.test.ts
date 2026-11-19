@@ -11,6 +11,7 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { GlyphRenderSubmission, HostImageRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SELECTED = 0xff7eb4d9, PRESSED = 0xffffe09a, NORMAL = 0x80bccbdb;
 const TEXT = 0xffefefef;
@@ -55,7 +56,7 @@ function fixture() {
 }
 
 test('selection is visually distinct from a forwarded held key', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	assert.deepEqual(f.key(Q), { edge: SELECTED, text: SELECTED });
 	assert.deepEqual(f.key(W), { edge: NORMAL, text: TEXT });
 	f.keyboard.updateFeedback(10);
@@ -65,7 +66,7 @@ test('selection is visually distinct from a forwarded held key', t => {
 });
 
 test('120ms release feedback changes presentation only, never the sampled key lifetime', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.keyboard.updateFeedback(100);
 	f.keyboard.activate(0);
 	f.keyboard.updateFeedback(110);
@@ -79,7 +80,7 @@ test('120ms release feedback changes presentation only, never the sampled key li
 });
 
 test('long holds stay bright and feedback begins at the actual final release', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.keyboard.activate(0);
 	f.keyboard.updateFeedback(5000);
 	assert.equal(f.pressed('KeyQ'), true);
@@ -92,7 +93,7 @@ test('long holds stay bright and feedback begins at the actual final release', t
 });
 
 test('selection movement does not retarget held or released feedback', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.keyboard.activate(0);
 	f.keyboard.moveHorizontal(1);
 	assert.equal(f.key(Q).edge, PRESSED);
@@ -105,7 +106,7 @@ test('selection movement does not retarget held or released feedback', t => {
 });
 
 test('different keys have independent held colors and release deadlines', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.keyboard.activate(0);
 	f.keyboard.command(1, OnScreenKeyboardCommand.Backspace);
 	f.keyboard.updateFeedback(10);
@@ -122,7 +123,7 @@ test('different keys have independent held colors and release deadlines', t => {
 });
 
 test('another source keeps the shared key bright beyond the first release', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.keyboard.activate(0);
 	f.keyboard.activate(OnScreenKeyboard.POINTER_SOURCE);
 	f.keyboard.releaseSource(0);
@@ -138,7 +139,7 @@ test('another source keeps the shared key bright beyond the first release', t =>
 });
 
 test('repeated presses supersede their old visual release deadline without extending input', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.keyboard.activate(0);
 	f.keyboard.releaseSource(0);
 	f.keyboard.updateFeedback(100);
@@ -155,7 +156,7 @@ test('repeated presses supersede their old visual release deadline without exten
 });
 
 test('sticky and source-retained modifiers remain visible even when selected', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.keyboard.command(1, OnScreenKeyboardCommand.Shift);
 	assert.equal(f.pressed('ShiftLeft'), true);
 	assert.equal(f.key(SHIFT).edge, PRESSED);
@@ -181,7 +182,7 @@ test('sticky and source-retained modifiers remain visible even when selected', t
 });
 
 test('Home and End acknowledge forwarding through their existing help legend', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const idle = f.helpColor();
 	f.keyboard.command(0, OnScreenKeyboardCommand.Home);
 	f.keyboard.command(1, OnScreenKeyboardCommand.End);
@@ -197,7 +198,7 @@ test('Home and End acknowledge forwarding through their existing help legend', t
 });
 
 test('close cancels visual feedback and reopen cannot resurrect a stale flash', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.keyboard.activate(0);
 	f.keyboard.command(1, OnScreenKeyboardCommand.Backspace);
 	f.keyboard.close();
@@ -211,7 +212,7 @@ test('close cancels visual feedback and reopen cannot resurrect a stale flash', 
 });
 
 test('idle feedback ticks and unexpired afterglow reuse commands without rescanning colors', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const before = f.frame();
 	const rect = before.commandRefs[3 + Q * 3] as RectRenderSubmission;
 	let color = rect.color, writes = 0;
@@ -238,7 +239,7 @@ test('idle feedback ticks and unexpired afterglow reuse commands without rescann
 
 
 test('Shift released after view construction but before first paint restores base labels and retains MOVE', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.keyboard.pressKey(0, SHIFT);
 	assert.equal(f.keyboard.shiftActive, true);
 	const view = new HostOnScreenKeyboard(f.presenter, f.keyboard);

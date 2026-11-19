@@ -24,6 +24,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { TestTargetInspectionModel } from '../../ide/workbench/contrib/scenario_lab/target_inspection_model';
 import { decodeTestToolRequest } from '../../ide/workbench/services/assistant/test_tool_protocol';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local shared = { value = 0 }
 test_global = shared
@@ -44,7 +45,7 @@ return { kind = 'unit',
 
 async function fixture(t: TestContext, slot: 0 | 1 = 0, optLevel: 0 | 3 = 0) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-debug-tools-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: SOURCE }], {
 		systemSource: "module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]",
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable' },
@@ -59,7 +60,7 @@ async function fixture(t: TestContext, slot: 0 | 1 = 0, optLevel: 0 | 3 = 0) {
 	const initial = captureRuntimeMachineState(authoring.runtime), installed = sources.currentBlua32Media;
 	const service = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC, (bios, carts, model, input) => new OffscreenMachine(bios, carts, model, input));
 	const connection = new AbortController(), tools = new WorkspaceTestTools(service, connection.signal);
-	t.after(() => { tools.dispose(); service.dispose(); models.clear(); authoring.dispose(); });
+	afterTest(t, () => { tools.dispose(); service.dispose(); models.clear(); authoring.dispose(); });
 	async function settle<T>(work: T | Promise<T>): Promise<T> {
 		let settled = false;
 		const completion = Promise.resolve(work).finally(() => { settled = true; });
@@ -163,7 +164,7 @@ test('manual debug observation is read-only; request cancellation pauses only it
 	debug.pause(); debug.resume(Mode.Continue); old.abort();
 	assert.equal((await superseded).reason, 'pause'); assert.equal(debug.status, 'running', 'old command cancellation cannot pause a newer manual Continue');
 	await settle(service.wait(manual)); assert.equal(manual.state, 'passed');
-	const own = new WorkspaceTestTools(service, f.connection.signal); t.after(() => own.dispose());
+	const own = new WorkspaceTestTools(service, f.connection.signal); afterTest(t, () => own.dispose());
 	const discovery = await own.execute('studio_list_tests', {}); assert.ok(discovery.kind === 'tests');
 	const module = discovery.data.roots.find(root => root.contextId === f.module.resource.contextId)!
 		.modules.find(module => module.resource.path === f.module.resource.path)!;

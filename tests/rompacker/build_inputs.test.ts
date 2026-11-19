@@ -7,10 +7,11 @@ import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
 import { lintCartSources } from '../../scripts/rompacker/cart_lua_linter_runtime';
 import { loadGLTFModel } from '../../scripts/rompacker/gltfloader';
 import { generateRomAssets, getResMetaList, getResourcesList } from '../../scripts/rompacker/rombuilder';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('discovery, lint and packaged source consume captured bytes after disk changes', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-inputs-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const path = join(root, 'entry.lua');
 	const source = 'module<entry>\nreturn 42';
 	await writeFile(path, source);
@@ -28,7 +29,7 @@ test('discovery, lint and packaged source consume captured bytes after disk chan
 
 test('content and membership changes invalidate even when mtimes do not advance', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-membership-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const path = join(root, 'data.bin');
 	await writeFile(path, 'first');
 	const initial = await prepareRomInputs([root], [], { kind: 'filesystem' });
@@ -49,7 +50,7 @@ test('content and membership changes invalidate even when mtimes do not advance'
 
 test('GLTF buffers and images outside the resource root are captured before conversion', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-gltf-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const resources = join(root, 'res');
 	await mkdir(resources);
 	const mesh = join(resources, 'mesh.gltf');

@@ -10,11 +10,12 @@ import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semant
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { createFsmStatePath, parseFsmStatePath } from '../../toolchain/ts/cartlib/fsm/state_path';
 import { FSM_RETARGET_PATH_CASES, FSM_RETARGET_PATH_SOURCE, FSM_RETARGET_SOURCE } from '../helpers/fsm_retarget_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, source = FSM_RETARGET_SOURCE) {
 	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'retarget.lua', location: { kind: 'workspace' as const, path: 'retarget.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'retarget.lua', source: { type: 'lua' as const, resid: 'retarget' } };
 	const model = new EditorTextModel(resource, 'lua', source);
-	t.after(() => model.dispose());
+	afterTest(t, () => model.dispose());
 	const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], ['cartlib/fsm/library'])));
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');

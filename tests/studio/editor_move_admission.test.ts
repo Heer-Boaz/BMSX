@@ -4,10 +4,11 @@ import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('invalid actual source field vetoes transfer before creating an empty destination', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, input = f.firstInput;
-	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {}); t.after(() => field.dispose());
+	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {}); afterTest(t, () => field.dispose());
 	field.setValue(7); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '-', true);
 	const count = parts.documents.length;
 	assert.equal(parts.moveEditor(f.firstPart.activeGroup, input, { kind: 'window' }), false);
@@ -29,7 +30,7 @@ test('pending tab-close admission blocks move even though its containing window 
 test('reentrant close of an empty admitted destination cannot retire the incoming retained input', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, destination = parts.createDocument();
 	let close: Promise<boolean> | undefined;
-	const unbind = f.firstGroup.panes.onDidClearEditor(() => { unbind(); close = parts.close(destination); }); t.after(unbind);
+	const unbind = f.firstGroup.panes.onDidClearEditor(() => { unbind(); close = parts.close(destination); }); afterTest(t, unbind);
 	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, { kind: 'group', group: destination.activeGroup }), true);
 	assert.equal(await close, false); assert.equal(destination.retired, false);
 	assert.ok(destination.activeGroup.model.activeTab === f.firstInput && destination.activeGroup.panes.activePane!.input === f.firstInput);
@@ -43,7 +44,7 @@ test('new destination is born with move admission before membership observers ca
 		if (parts.documents.length === count) return;
 		unbind(); const destination = parts.documents.at(-1)!;
 		assert.equal(destination.operation, 'move'); close = parts.close(destination);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, { kind: 'window' }), true);
 	assert.equal(await close, false); assert.equal(parts.documents.length, count + 1);
 	const destination = parts.documents.at(-1)!;
@@ -54,7 +55,7 @@ test('new destination is born with move admission before membership observers ca
 test('a later destination focus callback may close the transferred input after admission releases', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	let close: Promise<boolean> | undefined;
-	const unbind = f.second.commandTarget.onDidFocus(() => { unbind(); close = parts.close(f.secondPart); }); t.after(unbind);
+	const unbind = f.second.commandTarget.onDidFocus(() => { unbind(); close = parts.close(f.secondPart); }); afterTest(t, unbind);
 	f.first.focus();
 	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, { kind: 'group', group: f.secondPart.activeGroup }), true);
 	assert.equal(await close, true); assert.equal(f.secondPart.retired, true);

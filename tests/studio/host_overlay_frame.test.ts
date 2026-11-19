@@ -6,6 +6,7 @@ import type { HostOverlayFrame } from '../../machine/ts/render/host_overlay/over
 import { RectRenderKind } from '../../machine/ts/render/shared/submissions';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('overlay frames snapshot the layout viewport, independently of the selected presentation target', () => {
 	const { renderer, queue } = createHostOverlayFixture(16, 12);
@@ -32,7 +33,7 @@ for (const lane of ['overlay', 'menu'] as const) test(`${lane} commands retain t
 	const { presenter, backend, queue } = createHostOverlayFixture(4, 3);
 	presenter.initialize(new RenderPassLibrary(backend, presenter));
 	presenter.crt_postprocessing_enabled = false;
-	t.after(() => presenter.dispose());
+	afterTest(t, () => presenter.dispose());
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const frame: HostOverlayFrame = { logicalWidth: 4, logicalHeight: 3,
 		commandKinds: [Host2DKind.Rect], commandRefs: [{ kind: RectRenderKind.Fill,

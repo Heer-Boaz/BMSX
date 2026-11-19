@@ -9,6 +9,7 @@ import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/
 import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/details_control';
 import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/details_view';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const MEMBER = 'authored.namespace.with.a.long.shared.prefix.Member01';
 const DEFINITION = 'authored.namespace.with.a.long.shared.prefix.Prefab02';
@@ -28,7 +29,7 @@ scenes.register('room',{objects={{member_id=${member},definition_id=${definition
 	const document = authoring.document!, scene = document.scenes[0];
 	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
 	control.setView(view, bounds);
-	t.after(() => { control.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	afterTest(t, () => { control.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, source, authoring, view, control, bounds };
 }
 

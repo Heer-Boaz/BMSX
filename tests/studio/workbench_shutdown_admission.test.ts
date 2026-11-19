@@ -22,12 +22,13 @@ import { WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE } from '../../ide/workspac
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** A real admitted source write keeps shutdown in its asynchronous drain phase. */
 async function fixture(t: TestContext, writeFailure?: Error) {
 	const release = Promise.withResolvers<void>(), writing = Promise.withResolvers<void>();
 	// Release before the actual Studio fixture's cleanup, including when an assertion fails.
-	t.after(() => release.resolve());
+	afterTest(t, () => release.resolve());
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE],
 		['cartlib/world/scene_library.lua', 'return {}']]);
 	const files = new MemoryWorkspaceFiles('workspace'), context = f.sources.catalog.getContext(f.sources.systemContextId).admission;
@@ -121,7 +122,7 @@ test('shutdown retains Main and document mementos plus unsaved canonical source 
 test('shutdown retires pending document openings and local picker catalogs before accepted Save finishes', { timeout: 10000 }, async t => {
 	const f = await fixture(t), save = await f.save();
 	const resolved = Promise.withResolvers<void>(), catalog = Promise.withResolvers<QuickPickProvider>();
-	t.after(() => resolved.resolve());
+	afterTest(t, () => resolved.resolve());
 	const candidate = new CodeEditorInput(f.model);
 	let disposed = 0, accepted = 0;
 	candidate.onWillDispose(() => { disposed++; });
@@ -158,7 +159,7 @@ test('retirement callbacks join the admitted shutdown without reopening or activ
 	const f = await fixture(t), save = await f.save(); f.first.focus();
 	const origin = inputFocus.admittedTarget!, inputs = [...f.firstGroup.model.tabs];
 	let joined: Promise<void> | undefined;
-	t.after(inputFocus.workbenchScope.onDidRetireContext(() => {
+	afterTest(t, inputFocus.workbenchScope.onDidRetireContext(() => {
 		joined = f.editor.shutdown();
 		f.editor.commands.execute('home', origin);
 		f.editor.activate();
@@ -219,9 +220,9 @@ test('failed accepted Save and a late root picker catalog error cannot revive UI
 
 test('root retirement callbacks cannot request a theme change, dirty-source prompt or confirmed action', { timeout: 10000 }, async t => {
 	const f = await fixture(t), save = await f.save(), theme = getActiveIdeThemeVariant(), runtimeTheme = editorRuntimeState.themeVariant;
-	t.after(() => { setIdeThemeVariant(theme); editorRuntimeState.themeVariant = runtimeTheme; });
+	afterTest(t, () => { setIdeThemeVariant(theme); editorRuntimeState.themeVariant = runtimeTheme; });
 	let requestedTheme: string | undefined, promptVisible: boolean | undefined, confirmed: Promise<boolean> | undefined;
-	t.after(inputFocus.workbenchScope.onDidRetireContext(() => {
+	afterTest(t, inputFocus.workbenchScope.onDidRetireContext(() => {
 		f.editor.commands.requestAction({ action: 'theme-toggle' });
 		requestedTheme = getActiveIdeThemeVariant();
 		f.editor.commands.requestAction({ action: 'reboot' });

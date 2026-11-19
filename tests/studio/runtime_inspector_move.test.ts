@@ -24,6 +24,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/event_history';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { afterTest } from '../helpers/test_cleanup';
 
 function inspectorWorkbench(t: TestContext, images: ReturnType<typeof compileEventHistoryFixture>) {
 	const { runtime, sources, cpu } = eventHistoryRuntime(images), host = createHostFrameFixture(runtime);
@@ -34,7 +35,7 @@ function inspectorWorkbench(t: TestContext, images: ReturnType<typeof compileEve
 		new IdeMicrotaskQueue(), { log() {} }, { width: 800, height: 320 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor;
 	ide.boots.didReplaceMachine(); editor.interaction.setActive(true);
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false);
 		await editor.shutdown(); clearBackgroundTasks(); host.audio.dispose(); host.input.dispose();
 	});
@@ -53,7 +54,7 @@ test('GPU move keeps expired owned words and both observation views, with destin
 	const f = createActualSourcePanes(t), history = new RuntimeGpuHistory(f.host.runtime, 2, 16);
 	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
 	const source = new GpuDebuggerInput(history), receiver = new GpuDebuggerInput(history);
-	t.after(() => history.dispose());
+	afterTest(t, () => history.dispose());
 	const issue = (color: number) => {
 		f.host.runtime.machine.scheduler.setNowCycles(f.host.runtime.machine.scheduler.nowCycles + 10000);
 		for (const word of [0x20000000 | color, 0x00100010, 0x00100020, 0x00200010]) f.host.runtime.machine.gxGpu.writeGp0(word);
@@ -99,7 +100,7 @@ return true`;
 	const f = inspectorWorkbench(t, createCartlibProgramHarness(program).images);
 	const history = new RuntimeGteHistory(f.host.runtime, f.sources, 2);
 	const source = new GteDebuggerInput(history), receiver = new GteDebuggerInput(history);
-	t.after(() => history.dispose());
+	afterTest(t, () => history.dispose());
 	const issueFunction = asClosure(f.cpu.getGlobalByKey(f.cpu.stringPool.find('issue')!), f.cpu.gc);
 	const issue = (word: number) => {
 		f.cpu.beginCompletionCall(issueFunction, [valueInteger(word)]);

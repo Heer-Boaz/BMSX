@@ -11,6 +11,7 @@ import type { LuaProgramOccurrence } from '../../ide/workbench/contrib/lua_progr
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
 import { LuaTableFieldKind } from '../../toolchain/ts/lua/syntax/ast';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local effects=require('cartlib/actioneffects')
 local trees=require('cartlib/behaviour_tree/library')
@@ -56,7 +57,7 @@ function fixture(t: TestContext, pinned = true) {
 
 for (const valid of [false, true]) test(`Behavior Details reads current source after ordinary ${valid ? 'valid' : 'invalid'} draft blur before another frame`, async t => {
 	const f = fixture(t), version = f.model.version, draft = f.draft(valid ? '123456' : '(');
-	let changes = 0; t.after(f.model.onDidChangeContent(() => { changes++; }));
+	let changes = 0; afterTest(t, f.model.onDidChangeContent(() => { changes++; }));
 	f.editor.commands.execute('behaviorLens.details', f.target);
 	assert.equal(draft.edit!.pending, false); assert.equal(draft.canFocus!(), false);
 	assert.equal(f.model.version, version + (valid ? 1 : 0)); assert.equal(changes, valid ? 1 : 0);
@@ -93,7 +94,7 @@ for (const phase of ['query', 'blur'] as const) for (const reattach of [false, t
 		if (phase === 'query') {
 			const update = f.editor.behaviorLens.updateView.bind(f.editor.behaviorLens);
 			t.mock.method(f.editor.behaviorLens, 'updateView', (input, selection) => { replace(); update(input, selection); });
-		} else t.after(f.draft('123456').onDidBlur(replace));
+		} else afterTest(t, f.draft('123456').onDidBlur(replace));
 		action.run();
 		assert.equal(replaced, true); assert.equal(f.pane.inspector.visible, false);
 		assert.equal(f.firstGroup.model.activeTab, reattach ? f.input : replacement);
@@ -106,7 +107,7 @@ test('Behavior Details cannot project an unpinned input disposed by its source q
 	const update = f.editor.behaviorLens.updateView.bind(f.editor.behaviorLens);
 	const presentation = t.mock.method(f.input, 'updatePresentation');
 	let replaced = false, disposed = false;
-	t.after(f.input.onWillDispose(() => { disposed = true; }));
+	afterTest(t, f.input.onWillDispose(() => { disposed = true; }));
 	t.mock.method(f.editor.behaviorLens, 'updateView', (input, selection) => {
 		if (!replaced) {
 			replaced = true;
@@ -133,7 +134,7 @@ for (const change of ['source', 'attachment'] as const) test(`Behavior Details o
 		if (replacement !== undefined) f.firstGroup.activate(replacement.id);
 		else f.model.pushEditOperations([{ offset: SOURCE.indexOf('40'), deleteLength: 2, text: '41' }]);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.doesNotThrow(() => f.editor.commands.execute('behaviorLens.details', f.target));
 	assert.equal(changed, true); assert.equal(f.pane.inspector.visible, false);
 	if (replacement !== undefined) assert.equal(f.firstGroup.model.activeTab, replacement);
@@ -158,8 +159,8 @@ for (const chooser of CHOOSERS) for (const valid of [false, true])
 			sourcemeta: { text: 'events: {}\n' } }]);
 		const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;
 		const draft = f.draft(valid ? chooser.expression : '('), events: string[] = [];
-		t.after(f.model.onDidChangeContent(() => { events.push('source'); }));
-		t.after(draft.onDidBlur(() => { events.push('blur'); }));
+		afterTest(t, f.model.onDidChangeContent(() => { events.push('source'); }));
+		afterTest(t, draft.onDidBlur(() => { events.push('blur'); }));
 		const publish = picker.model.setInput.bind(picker.model);
 		t.mock.method(picker.model, 'setInput', provider => { events.push('provider'); publish(provider); });
 		f.editor.commands.execute(chooser.command, f.target);
@@ -190,7 +191,7 @@ for (const command of ['progression.createProgram', 'input.createBindings', 'beh
 	'animation.create', 'animation.createSprite', 'aem.create'] as const) for (const valid of [false, true])
 	test(`${command} presents its new-resource prompt after ordinary ${valid ? 'valid' : 'invalid'} draft blur`, t => {
 		const f = fixture(t), version = f.model.version, draft = f.draft(valid ? '123456' : '(');
-		let changes = 0; t.after(f.model.onDidChangeContent(() => { changes++; }));
+		let changes = 0; afterTest(t, f.model.onDidChangeContent(() => { changes++; }));
 		f.editor.commands.execute(command, f.target);
 		assert.equal(draft.edit!.pending, false); assert.equal(draft.canFocus!(), false);
 		assert.equal(f.firstPart.quickInput.inputBox, true);

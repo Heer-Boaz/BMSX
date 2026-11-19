@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('browser vibration adapters preserve duration, replace effects and stop explicitly', async t => {
 	const fixture = await build({
@@ -16,7 +17,7 @@ export { VirtualHeadlessClock } from './hosts/node/headless/clock';`, resolveDir
 		tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage();
 	await page.setContent('<canvas id="screen"></canvas>');
 	await page.addScriptTag({ content: fixture.outputFiles[0].text });

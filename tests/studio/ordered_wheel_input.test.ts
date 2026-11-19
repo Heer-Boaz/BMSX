@@ -20,6 +20,7 @@ import { createTestEditorGroup, createTestGroupPresentation } from '../helpers/e
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { FrameBitmap } from '../../hosts/common/frame_bitmap';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('modal capture owns wheel until release, while ordinary pointer drags preserve hover routing', t => {
 	const surfaces = new WorkbenchSurfaceService(), calls: string[] = [];
@@ -27,7 +28,7 @@ test('modal capture owns wheel until release, while ordinary pointer drags prese
 	surfaces.attach({ role: 'window', captureScope: Symbol('hovered-wheel'), isVisible: () => true,
 		getBounds: () => extent, getClip: () => extent, draw() {},
 		handleWheel: () => { calls.push('hover'); return true; } });
-	t.after(() => { pointerCapture.cancel(); surfaces.dispose(); });
+	afterTest(t, () => { pointerCapture.cancel(); surfaces.dispose(); });
 	const ordinary = { handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() {} };
 	const modal = { ...ordinary, handleCapturedWheel() { calls.push('capture'); return true; } };
 	const wheel: WheelInputSnapshot = { viewportX: 150, viewportY: 70, valid: true, insideViewport: true,
@@ -48,7 +49,7 @@ test('modal capture owns wheel until release, while ordinary pointer drags prese
 test('remote wheel preserves ordering, fractions and source-time context before the next guest sample', t => {
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const events: Array<WheelInputEvent & { pane: number }> = [];
 	let pane = 0;
 	const scroll = [0, 0];
@@ -108,7 +109,7 @@ test('public wheel router delivers each occurrence to its current pane using sup
 	group.layout(bounds, bounds);
 	group.openEditor(new HostErrorInput('first view'));
 	t.mock.method(group.panes.activePane!, 'handleWheel', (event: WheelInputSnapshot) => firstPane.push(event));
-	t.after(() => { group.dispose(); surfaces.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { group.dispose(); surfaces.dispose(); inputFocus.setTarget(null); });
 
 	const first: WheelInputSnapshot = {
 		viewportX: 100, viewportY: 100, valid: true, insideViewport: true,
@@ -151,7 +152,7 @@ test('wheel ownership follows exclusive UI surfaces and spatial guest hits, not 
 	focusedGame.guestInput = { bounds: { left: 250, top: 40, right: 390, bottom: 250 }, recipient: input,
 		presentation: { kind: 'offscreen', frames } };
 	focusedGame.focus();
-	t.after(() => { inputFocus.setTarget(null); group.dispose(); surfaces.dispose(); frames.dispose(); input.dispose(); });
+	afterTest(t, () => { inputFocus.setTarget(null); group.dispose(); surfaces.dispose(); frames.dispose(); input.dispose(); });
 	const popup = { visible: false, handleWheel() {} };
 
 	surfaces.attach({

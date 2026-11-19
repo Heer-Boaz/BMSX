@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { SCALABLE_FONT_ATLAS } from '../../hosts/fonts/jetbrains_mono/scalable_font.generated';
 import { productNeedsRebuild } from '../../scripts/products/rebuild';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('unbundled tools and shipped products consume the same binary font atlas', async () => {
 	const bytes = await readFile('hosts/fonts/jetbrains_mono/scalable_font.rgba');
@@ -26,7 +27,7 @@ test('unbundled tools and shipped products consume the same binary font atlas', 
 
 test('a changed binary font atlas invalidates the product even when glyph metrics are unchanged', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-font-asset-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const pixels = join(root, 'font.rgba'), product = join(root, 'product.js');
 	await writeFile(pixels, new Uint8Array([1, 2, 3, 255]));
 	await writeFile(product, '');

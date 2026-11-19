@@ -8,6 +8,7 @@ import { InputFocusScope, InputFocusService, inputFocus } from '../../ide/input/
 import { EditorCommandKeybindingController } from '../../ide/input/keyboard/global_bindings';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { getWorkbenchWorkArea } from '../../ide/workbench/common/layout';
+import { afterTest } from '../helpers/test_cleanup';
 
 const WINDOW_COMMANDS = ['window.snapLeft', 'window.snapRight', 'window.maximize', 'window.restore'] as const;
 
@@ -30,7 +31,7 @@ function fixture(t: TestContext) {
 		const handled = controller.handle(event, commands);
 		return { event, handled };
 	};
-	t.after(() => { controller.dispose(); focus.setTarget(null); });
+	afterTest(t, () => { controller.dispose(); focus.setTarget(null); });
 	return { focus, clock, scope, target, controller, local, global, enabled, commands, key };
 }
 
@@ -124,7 +125,7 @@ test('focus transfer and blocked modal admission cannot revive a prefix when the
 	assert.equal(f.controller.inChordMode, false); f.target.focus();
 	assert.equal(f.key('ArrowLeft').handled, false);
 	let admitted = true;
-	const unbind = f.focus.bindScopeAdmission(() => admitted); t.after(unbind);
+	const unbind = f.focus.bindScopeAdmission(() => admitted); afterTest(t, unbind);
 	f.key('KeyK', KeyModifier.ctrl); admitted = false; f.focus.notifyTargetChanged();
 	assert.ok(f.focus.target === f.target && f.focus.admittedTarget === null);
 	assert.equal(f.controller.inChordMode, false);
@@ -157,12 +158,12 @@ test('independent frontend controllers own their pending labels without sharing 
 test('disposing a pending controller cancels its timer and cannot clear newer producer feedback', t => {
 	const focus = new InputFocusService(), clock = new VirtualHeadlessClock(), target = focus.createTarget();
 	target.bindKeyboard(() => {}); target.registerCommand('window.snapLeft', { isEnabled: () => true, run() {} }); target.focus();
-	t.after(() => focus.setTarget(null));
+	afterTest(t, () => focus.setTarget(null));
 	const controller = new EditorCommandKeybindingController(focus, clock);
 	controller.handle(new KeyInputEvent('KeyK', KeyModifier.ctrl), undefined);
 	assert.notEqual(controller.pendingLabel, undefined);
 	const message = 'newer producer feedback'; showEditorMessage(message, 'warning', 10);
-	t.after(() => updateEditorMessage(10));
+	afterTest(t, () => updateEditorMessage(10));
 	controller.dispose(); assert.equal(controller.inChordMode, false); clock.advance(5000);
 	assert.equal(controller.pendingLabel, undefined);
 	assert.equal(editorFeedbackState.message.visible, true); assert.equal(editorFeedbackState.message.text, message);
@@ -209,7 +210,7 @@ test('a pending window prefix preserves actual native word selection and the exi
 	assert.ok(view.selectionAnchor !== null && view.cursorColumn > 0, 'the actual Source word-selection handler receives the modified arrow');
 	let back = 0;
 	f.first.code.focusTarget.registerCommand('navigateBack', { isEnabled: () => true, run: () => { back++; } });
-	t.after(() => f.first.code.focusTarget.unregisterCommand('navigateBack'));
+	afterTest(t, () => f.first.code.focusTarget.unregisterCommand('navigateBack'));
 	f.key('KeyK', KeyModifier.ctrl); f.key('ArrowLeft', KeyModifier.alt);
 	assert.equal(back, 1); assert.equal(f.editor.keybindings.inChordMode, false);
 	assert.equal(f.firstPart.window!.model.placement, 'normal');

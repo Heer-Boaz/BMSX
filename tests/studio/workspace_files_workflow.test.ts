@@ -11,6 +11,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import { createTestSourceOnlyLuaRecord, createTestToolingPackage } from '../helpers/runtime_sources';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const files = new MemoryWorkspaceFiles('workspace');
@@ -19,7 +20,7 @@ async function fixture(t: TestContext) {
 	await files.write('first.lua', { contents: 'local alpha = 1\nreturn alpha\n', updatedAt: 1 }, false);
 	await openWorkspaceRecords(files);
 	const f = createActualSourcePanes(t, false, [], undefined, workspaceRecords!);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const directories = f.ide.directories!;
 	const root = directories.rootForContext(f.sources.systemContextId)!;
 	return { ...f, files, directories, root };
@@ -61,7 +62,7 @@ test('actual Files composes raw physical entries and empty folders with semantic
 });
 
 test('actual Files keeps its selected raw subject through refresh loading and errors, then removes only an acknowledged deletion', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const f = await fixture(t), panel = await showFiles(f);
 	const index = panel.files.tree.rows.findIndex(node => node.element.kind === 'physicalFile' && node.element.path === 'notes.txt');
 	assert.ok(index >= 0); panel.setSelectionIndex(index);
@@ -197,7 +198,7 @@ for (const location of ['workspace', 'generated'] as const) {
 }
 
 test('cancelling the actual folder input retires presentation but not its already accepted mkdir', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const f = await fixture(t), panel = await showFiles(f);
 	const index = panel.files.tree.rows.findIndex(node => node.element.kind === 'directory' && node.element.path === 'physical-empty');
 	assert.ok(index >= 0); panel.setSelectionIndex(index);
@@ -216,7 +217,7 @@ test('cancelling the actual folder input retires presentation but not its alread
 });
 
 test('actual workbench shutdown publishes its join before directory retirement callbacks and drains accepted mkdir', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const f = await fixture(t); await f.directories.resolve(f.root, '');
 	const reading = f.directories.children(f.root, '');
 	const fileCount = f.files.records.size;

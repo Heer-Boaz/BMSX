@@ -21,6 +21,7 @@ import { setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 function createFixture(t: TestContext, variant: 'tiny' | 'msx', theme: 'light' | 'dark', source: string) {
 	const previousTheme = constants.getActiveIdeThemeVariant();
@@ -34,7 +35,7 @@ function createFixture(t: TestContext, variant: 'tiny' | 'msx', theme: 'light' |
 	const viewport = { codeTop: 4, codeBottom: 20, codeLeft: 0, codeRight: 256,
 		gutterLeft: 0, gutterRight: 8, textLeft: 8, rows: 1, contentWidth: 248, visualCount: 1,
 		contentRight: 256, contentBottom: 20, trackRight: 256, wrapEnabled: false, maxScrollLeft: 0 };
-	t.after(() => {
+	afterTest(t, () => {
 		constants.setIdeThemeVariant(previousTheme);
 	});
 	return { code, model, view, line, overlay, viewport, documents };
@@ -125,7 +126,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 	test(`${variant}/${theme} idle, current and execution line numbers consume their own gutter pairs`, t => {
 		const f = createFixture(t, variant, theme, 'line');
 		const previousExecution = f.code.runtimeError.executionStopRow;
-		t.after(() => { f.code.runtimeError.executionStopRow = previousExecution; });
+		afterTest(t, () => { f.code.runtimeError.executionStopRow = previousExecution; });
 		for (const state of ['idle', 'current', 'execution'] as const) {
 			f.view.cursorRow = state === 'current' ? 0 : 1; f.code.runtimeError.executionStopRow = state === 'execution' ? 0 : -1;
 			f.overlay.renderer.beginFrame(); api.beginFrame(f.overlay.renderer);

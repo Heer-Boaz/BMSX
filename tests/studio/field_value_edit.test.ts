@@ -5,12 +5,13 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { parseLuaFieldValueEdit } from '../../ide/language/lua/field_value_edit';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = "local timing<const> = 7\nlocal effect<const> = { period_ms = (timing), -- keep this\n event = 'ready' }\nreturn effect";
 
 test('a submitted value is an isolated expression, not a second statement, printer or evaluated value', t => {
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'values.lua', location: { kind: 'workspace' as const, path: 'values.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'values.lua', source: { type: 'lua', resid: 'values' } }, 'lua', SOURCE);
-	t.after(() => model.dispose());
+	afterTest(t, () => model.dispose());
 	const file = buildLuaFileSemanticData(SOURCE, model.resource.path);
 	const statement = file.chunk.body.get(1)!;
 	assert.ok(statement.kind === LuaSyntaxKind.LocalAssignmentStatement && statement.values[0].kind === LuaSyntaxKind.TableConstructorExpression);

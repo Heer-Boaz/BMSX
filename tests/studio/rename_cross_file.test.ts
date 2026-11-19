@@ -13,6 +13,7 @@ import { resourceIdentityKey, SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/re
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { EditorWorkspaceEditConflict } from '../../ide/editor/model/undo_redo_service';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('cross file rename updates a retained background model without opening an editor input', (t) => {
 	const files = new Map<string, string>([
@@ -66,7 +67,7 @@ test('cross file rename updates a retained background model without opening an e
 	const resourceTab = new ResourceViewerInput(sources.catalog, usageResource);
 	const group = createTestEditorGroup();
 	group.model.initialize(resourceTab);
-	t.after(() => {
+	afterTest(t, () => {
 		group.dispose();
 		editorTextModelService.clear();
 	});

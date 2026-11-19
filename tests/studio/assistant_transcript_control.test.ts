@@ -38,6 +38,7 @@ import { createTestRuntime } from '../helpers/runtime_sources';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { contrastRatio } from '../helpers/contrast.mjs';
+import { afterTest } from '../helpers/test_cleanup';
 
 const FIRST = `data:image/png;base64,${readFileSync(join(__dirname, '../../carts/nemesis_s/res/img/title_screen_1@atlas=title.png')).toString('base64')}`;
 const SECOND = `data:image/png;base64,${readFileSync(join(__dirname, '../../carts/nemesis_s/res/img/intro_konami@atlas=intro.png')).toString('base64')}`;
@@ -125,7 +126,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 		overlay.presenter.present(captureRuntime!.machine.gxGpu.readDeviceOutput(), 0, 0);
 		writeFileSync(join(captureDirectory, `${label}.png`), encodeScreenshotPng(384, 288, overlay.backend.borrowPresentedPixels()));
 	};
-	t.after(() => { control.dispose(); preview.dispose(); cache.dispose(); unbind(); surfaces.dispose(); input.dispose(); conversation.dispose();
+	afterTest(t, () => { control.dispose(); preview.dispose(); cache.dispose(); unbind(); surfaces.dispose(); input.dispose(); conversation.dispose();
 		pointerCapture.cancel(); inputFocus.setTarget(null); overlay.presenter.dispose(); colors.setIdeThemeVariant(previousTheme); });
 	assert.equal(conversation.available, false);
 	return { input, conversation, control, preview, cache, decoded, reviews, parent, composer, surfaces, owner, overlay,
@@ -232,7 +233,7 @@ test('detach closes the image before releasing transcript focus and removes the 
 	f.control.clearInput(); assert.equal(f.preview.visible, false); assert.equal(f.control.scroll.focusTarget.hasFocus, false);
 	assert.equal(f.cache.use(FIRST).retained, 0);
 	const otherConversation = new TranscriptProducer(), other = new ConversationObserverInput(otherConversation);
-	t.after(() => { other.dispose(); otherConversation.dispose(); });
+	afterTest(t, () => { other.dispose(); otherConversation.dispose(); });
 	const target = otherConversation.message('', [SECOND]);
 	Object.assign(other.layout, f.input.layout); f.control.setInput(other);
 	other.transcript.update(otherConversation.entries, 360, measureStyledText, editorViewState.font);
@@ -245,7 +246,7 @@ test('transcript selection and detach cannot retire an actual draft-attachment p
 	const f = fixture(t), entry = f.conversation.message('', [SECOND]), attachments = new AssistantAttachments();
 	attachments.set([FIRST]); f.layout();
 	const strip = new AssistantAttachmentStrip(f.cache, url => f.preview.open(url), f.control.scroll.focusTarget); strip.setInput(attachments);
-	strip.layout(4, 180, 300, f.input.layout.rowHeight); t.after(() => strip.clearInput());
+	strip.layout(4, 180, 300, f.input.layout.rowHeight); afterTest(t, () => strip.clearInput());
 	strip.focusTarget.focus(); f.key('Enter'); f.key('Enter', false);
 	assert.equal(f.preview.visible, true); assert.equal(f.preview.origin, strip.focusTarget);
 	f.input.selection.select(entry, 0); assert.equal(f.preview.visible, true, 'a transcript target change does not own the draft subject');
@@ -301,7 +302,7 @@ test('only an explicitly selected proposal message invokes the real source Revie
 	const proposal = new WorkspaceEditProposal('Review source', new WorkspaceSourceContext(models, sources.catalog), {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 7, deleteLength: 6, text: 'after' }] }]]),
 	});
-	t.after(() => { proposal.dispose(); models.clear(); });
+	afterTest(t, () => { proposal.dispose(); models.clear(); });
 	f.conversation.message('Ordinary reply'); const entry = f.conversation.proposal(proposal); f.layout();
 	f.control.scroll.focusTarget.focus(); f.press('ArrowDown'); f.press('Enter'); assert.deepEqual(f.reviews, []);
 	f.press('ArrowDown'); assert.equal(f.input.selection.entry, entry); f.press('Enter'); assert.deepEqual(f.reviews, [proposal]);

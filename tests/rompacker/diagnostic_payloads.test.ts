@@ -14,6 +14,7 @@ import { readLE32 } from '../../machine/ts/common/endian';
 import { loadBlua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { afterTest } from '../helpers/test_cleanup';
 
 // Real installed BIOS consumers; neither reads the host symbol graph.
 const source = `module<entry>
@@ -51,7 +52,7 @@ const assets = [
 
 test('public BIOS diagnostics and embedded host symbols are independently selectable', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-diagnostic-payloads-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const executables: Uint8Array[] = [];
 	for (const includeDiagnostics of [false, true]) for (const includeSymbols of [false, true]) {
 		const tail = buildRomBlua32Tail(assets, { domain: 'system', generatedLuaModules: [], biosExports: [],

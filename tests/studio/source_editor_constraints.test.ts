@@ -8,12 +8,13 @@ import type { EditorPaneConstraints } from '../../ide/workbench/services/editor/
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Source retains a usable hard editing floor independently of companion reading intent`, t => {
 	const { models, documents, clock } = createTestCodeDocuments(t);
 	const model = models.retain({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], contextLabel: 'Fixture project', path: 'source.lua',
 		sourceFilePath: 'source.lua', location: { kind: 'workspace', path: 'source.lua' }, source: { resid: 'source', type: 'lua' } }, 'lua', 'return 42');
-	const input = new CodeEditorInput(model); t.after(() => input.dispose());
+	const input = new CodeEditorInput(model); afterTest(t, () => input.dispose());
 	const font = new EditorFont(variant), code = createTestCodeControl(t, model, documents, clock, input.context.view, font);
 	const target: EditorPaneConstraints = { minimumWidth: 0, minimumHeight: 0, companionWidth: undefined };
 	const version = model.version, source = model.buffer.getText();

@@ -16,6 +16,7 @@ import { undo } from '../../ide/editor/editing/undo_controller';
 import { resolveCodeAreaViewport } from '../../ide/editor/ui/code/area_viewport';
 import { resolveCursorScreenInfo } from '../../ide/editor/ui/view/caret/screen_geometry';
 import { codePointTextAt, nextCodePointOffset, previousCodePointOffset, splitsSurrogatePair } from '../../machine/ts/common/utf16';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('shared UTF-16 steps preserve paired and unpaired units without rewriting source offsets', () => {
 	for (const text of ['A😀B', '🐉🚀', '\ud800X\udc00', '\ud800\ud800\udc00\udc00', '']) {
@@ -99,7 +100,7 @@ test('source wrapping never splits a surrogate pair, even when one glyph exceeds
 	let width = font.advance('😀');
 	const layout = new CodeLayout(font, { computeWrapWidth: () => width,
 		inlineEdit: { version: 0, active: false, row: 0, startColumn: 0, endColumn: 0, text: '', preserveCase: true } });
-	layout.attach(documents.get(model)); t.after(() => layout.dispose());
+	layout.attach(documents.get(model)); afterTest(t, () => layout.dispose());
 	for (const available of [width, width / 2, width * 2]) {
 		width = available; layout.markVisualLinesDirty(); layout.ensureVisualLines(true, 0, 20);
 		const parts = layout.getVisualLines().map(segment => model.buffer.getLineContent(0).slice(segment.startColumn, segment.endColumn));

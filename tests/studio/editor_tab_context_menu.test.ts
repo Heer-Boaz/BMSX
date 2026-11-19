@@ -16,6 +16,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 type Fixture = ReturnType<typeof createActualSourcePanes>;
 
@@ -74,7 +75,7 @@ test('Keep Open pins the clicked inactive preview without selecting it or replac
 test('Save from an inactive Source tab publishes only its canonical working copy and preserves both Undo histories', async t => {
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
 	const f = createActualSourcePanes(t), group = f.firstGroup, input = f.firstInput;
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const active = new CodeEditorInput(f.secondInput.workingCopy); group.openEditor(active);
 	input.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- clicked source\n' }]);
 	active.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- other source\n' }]);
@@ -83,7 +84,7 @@ test('Save from an inactive Source tab publishes only its canonical working copy
 	const focused = pane!.commandTarget;
 	const draft = { pending: true, commit: () => { unrelatedCommits++; return false; }, cancel() { this.pending = false; } };
 	focused.edit = draft;
-	t.after(() => { focused.edit = undefined; });
+	afterTest(t, () => { focused.edit = undefined; });
 	secondary(f, group, input); accept(f, 'save');
 	const operation = f.ide.textFileSaves.latestOperation(input.workingCopy);
 	assert.ok(operation !== undefined); assert.equal((await operation.completion).status, 'saved');
@@ -162,7 +163,7 @@ for (const replace of [false, true]) test(`a departing control can ${replace ? '
 	const unbind = origin.onDidBlur(() => {
 		unbind(); changed = true; group.removeEditor(original);
 		if (replacement !== undefined) group.openEditor(replacement);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	secondary(f, group, original);
 	assert.equal(changed, true); assert.equal(f.editor.contextMenu.visible, false);
 	assert.equal(group.model.contains(original), false); assert.equal(group.model.contains(active), true);
@@ -184,7 +185,7 @@ test('accepting an inactive tab action retains its editor when focus return admi
 	secondary(f, group, f.firstInput); assert.equal(f.editor.contextMenu.visible, true);
 	const newer = new HomeInput(null), origin = f.editor.contextMenu.returnFocus!;
 	let redirected = false;
-	const unbind = origin.onDidFocus(() => { unbind(); redirected = true; f.secondGroup.openEditor(newer); }); t.after(unbind);
+	const unbind = origin.onDidFocus(() => { unbind(); redirected = true; f.secondGroup.openEditor(newer); }); afterTest(t, unbind);
 	accept(f, 'tabs.close');
 	assert.equal(redirected, true); assert.equal(group.model.contains(f.firstInput), false);
 	assert.ok(group.model.activeTab === active && f.secondGroup.model.activeTab === newer && f.secondGroup.panes.activePane?.input === newer);

@@ -26,9 +26,10 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { workspaceDirtyRecords } from '../../ide/workbench/workspace/state';
 import { buildWorkspaceDirtyEntryPath } from '../../ide/workspace/files';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('Studio runs fresh targets and current sources without touching the authoring machine, sources or debugger', async t => {
-	t.after(() => { workspaceDirtyRecords.clear(); editorTextModelService.clear(); });
+	afterTest(t, () => { workspaceDirtyRecords.clear(); editorTextModelService.clear(); });
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-isolation-'));
 	try {
 		const source = `local fixture = require('testlib/fixture')
@@ -157,7 +158,7 @@ return { kind = 'unit', tests = {
 
 test('Scenario compilation reads saved test-only libraries without dirtying or rebuilding the gameplay image', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-test-library-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const source = `local helper = require('cartlib/scenario_helper')
 return { kind = 'unit', tests = { saved = function() assert(helper == 37) end } }`;
 	const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
@@ -180,7 +181,7 @@ return { kind = 'unit', tests = { saved = function() assert(helper == 37) end } 
 	const models = new EditorTextModelService();
 	const runs = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC,
 		(systemRom, cartridges, model, input) => new OffscreenMachine(systemRom, cartridges, model, input));
-	t.after(() => { runs.dispose(); models.clear(); });
+	afterTest(t, () => { runs.dispose(); models.clear(); });
 	const entry = sources.catalog.resolveResource({ contextId: cartridge.contextId, path: 'entry.lua' })!;
 	models.retain(entry, 'lua', 'end end -- an unrelated gameplay draft must not enter a unit fixture');
 	const installed = sources.currentBlua32Media;

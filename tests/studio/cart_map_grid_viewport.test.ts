@@ -4,6 +4,7 @@ import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { CartMapGrid, type MapGridContent } from '../../ide/workbench/contrib/cart_maps/grid';
 import { SCROLLBAR_WIDTH } from '../../ide/common/constants';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const oldFont = editorViewState.font, oldHeight = editorViewState.lineHeight;
@@ -14,7 +15,7 @@ function fixture(t: TestContext) {
 	font('tiny');
 	const content: MapGridContent = { width: 100, rows: Array.from({ length: 100 }, () => []), markers: [] };
 	grid.content = content;
-	t.after(() => { editorViewState.font = oldFont; editorViewState.lineHeight = oldHeight; });
+	afterTest(t, () => { editorViewState.font = oldFont; editorViewState.lineHeight = oldHeight; });
 	return { grid, font, content };
 }
 

@@ -9,6 +9,7 @@ import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { WorkbenchTreeControl } from '../../ide/workbench/ui/tree_control';
 import { ScrollableWorkbenchTree } from '../../ide/workbench/ui/scrollable_tree';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ide/workbench/ui/tree_view';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService(), parent = focus.createTarget();
@@ -25,7 +26,7 @@ function fixture(t: TestContext) {
 		focus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none));
 		focus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, false));
 	};
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	return { focus, control, state, root, child, sibling, selected, font, bounds, key };
 }
 

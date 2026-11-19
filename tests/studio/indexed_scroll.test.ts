@@ -35,6 +35,7 @@ import { measureTextRange } from '../../ide/editor/common/text/layout';
 import { renderCodeArea } from '../../ide/editor/render/code_area/area';
 import { createProblemsPanelFixture } from '../helpers/problems_panel';
 import type { EditorDiagnostic } from '../../ide/common/models';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('indexed list and tree retain tiny deltas across layout while hit tests address real rows', () => {
 	const tree = new ScrollableWorkbenchTree<number>();
@@ -74,7 +75,7 @@ test('property and resource rendering preserves the actual retained fractional r
 	const menu = new ContextMenuController(inputFocus, pointerCapture, area);
 	const pane = new ResourceViewerEditorPane(inputFocus.workbenchScope, { isEnabled: () => false, execute() {} }, menu);
 	pane.setInput(input, area);
-	t.after(() => { pane.clearInput(); pane.dispose(); input.dispose(); menu.dispose(); });
+	afterTest(t, () => { pane.clearInput(); pane.dispose(); input.dispose(); menu.dispose(); });
 	for (let step = 0; step < 6; step++) pane.handleWheel({ viewportX: 5, viewportY: 5,
 		valid: true, insideViewport: true, deltaX: 0, deltaY: 0.25, modifiers: 0 });
 	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
@@ -126,7 +127,7 @@ test('Problems wheel integrates sub-row distances without changing selection or 
 	const { controller, wheel, arrange } = createProblemsPanelFixture(t, 'tiny');
 	controller.setDiagnostics(diagnostics, { ready: 1, pending: 0, unsupported: 0, failed: 0 });
 	controller.setSelectionIndex(0); controller.focus();
-	t.after(() => { model.dispose(); });
+	afterTest(t, () => { model.dispose(); });
 	const bounds = { left: 0, top: 0, right: 160, bottom: 100 };
 	arrange(bounds);
 	const rowHeight = controller.getItemLayout(0).height;
@@ -153,7 +154,7 @@ test('Problems wheel prepares current variable-height layout after show, resize 
 	const coverage = { ready: 1, pending: 0, unsupported: 0, failed: 0 };
 	const { controller, wheel, arrange } = createProblemsPanelFixture(t, 'tiny');
 	controller.setDiagnostics(diagnostics, coverage);
-	t.after(() => { model.dispose(); });
+	afterTest(t, () => { model.dispose(); });
 	const wide = { left: 0, top: 0, right: 320, bottom: 100 };
 
 	const firstRowLines = controller.getItemLayout(0, wide.right - wide.left - constants.PROBLEMS_PANEL_CONTENT_PADDING_X * 2).height / editorViewState.lineHeight;
@@ -189,7 +190,7 @@ test('actual Resource viewers keep arranged scrollbar gestures and retirement lo
 	pane.focus();
 	assert.equal(navigationState.activeOwner, first);
 	const focused = inputFocus.target;
-	t.after(() => { first.dispose(); second.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	afterTest(t, () => { first.dispose(); second.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	// Address the actual component's arranged scrollbar, not root-workbench chrome.
 	const down = { valid: true, insideViewport: true,
 		viewportX: bounds.right - 1, viewportY: bounds.top + 1,

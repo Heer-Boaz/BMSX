@@ -18,6 +18,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyModifier } from '../../hosts/common/input/text';
+import { afterTest } from '../helpers/test_cleanup';
 
 const source = "return {duration_frames=100,clock_scale=1,tracks={{kind='value',interpolation='linear',keys={{frame=0,value=1},{frame=100,value=2}}},{kind='event',keys={{frame=50,event='other'}}}}}";
 
@@ -30,7 +31,7 @@ function fixture(t: TestContext, text = source) {
 	controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 1); controller.selectProperty(input, 0);
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {});
 	const keys = new AnimationKeyControl(parent, controller, controller.authoring); keys.setInput(input);
-	t.after(() => { keys.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); });
+	afterTest(t, () => { keys.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); });
 	return { input, model, keys, controller };
 }
 
@@ -92,7 +93,7 @@ test('Animation renders decoded semantic track and clip captions without recasin
 	assert.deepEqual(document.tracks.slice(0, 6).map(track => track.label), ["Capt'n `One", 'MiXeD "Two"', 'PoseMiX.OffsetX', 'BodyMiX.Visible', '', 'apply_mix']);
 	assert.deepEqual(document.clips.map(clip => clip.preserveCase), [true, true, false], 'empty clip IDs remain semantic strings; generated clip captions remain UI text');
 	assert.deepEqual(input.tracks.rows.map(row => row.preserveCase), [false, true, true, true, true, true, false, false, true, true, false, false]);
-	const previousFont = editorViewState.font; t.after(() => { editorViewState.font = previousFont; });
+	const previousFont = editorViewState.font; afterTest(t, () => { editorViewState.font = previousFont; });
 	const overlay = createHostOverlayFixture(800, 1000), rendered: string[] = [];
 	t.mock.method(api, 'blit_text_inline_with_font', value => { rendered.push(value); });
 	const bounds = { left: 0, top: 0, right: 800, bottom: 1000 };
@@ -117,7 +118,7 @@ test('Animation renders decoded semantic track and clip captions without recasin
 test('animation composes measured child minima on both axes instead of squeezing every client', t => {
 	const { input, keys } = fixture(t);
 	const previousFont = editorViewState.font;
-	t.after(() => { editorViewState.font = previousFont; });
+	afterTest(t, () => { editorViewState.font = previousFont; });
 	for (const variant of ['tiny', 'msx'] as const) {
 		const font = new EditorFont(variant); editorViewState.font = font;
 		const measured = measureAnimationEditor(font);
@@ -145,7 +146,7 @@ test('animation composes measured child minima on both axes instead of squeezing
 test('the compact header keeps client navigation and More reachable while real root property names remain readable', t => {
 	const { input, keys, controller } = fixture(t);
 	const previousFont = editorViewState.font;
-	t.after(() => { editorViewState.font = previousFont; });
+	afterTest(t, () => { editorViewState.font = previousFont; });
 	controller.selectTrack(input, 0); input.activeClient = 'details';
 	for (const variant of ['tiny', 'msx'] as const) {
 		editorViewState.font = new EditorFont(variant);
@@ -167,10 +168,10 @@ test('the compact header keeps client navigation and More reachable while real r
 test('compact clients retain one source subject, viewport and requested sash placement through relayout', t => {
 	const { input, model, keys } = fixture(t);
 	const previousFont = editorViewState.font;
-	t.after(() => { editorViewState.font = previousFont; });
+	afterTest(t, () => { editorViewState.font = previousFont; });
 	input.keys.setView(20, 80); input.keys.setCursor(40);
 	const document = input.document, track = input.trackSelection, key = input.keySelection, detail = input.detailSelection;
-	let invalidations = 0; const unbind = input.onDidInvalidateProjection(() => invalidations++); t.after(unbind);
+	let invalidations = 0; const unbind = input.onDidInvalidateProjection(() => invalidations++); afterTest(t, unbind);
 	for (const variant of ['tiny', 'msx'] as const) {
 		editorViewState.font = new EditorFont(variant);
 		const measured = measureAnimationEditor(editorViewState.font);

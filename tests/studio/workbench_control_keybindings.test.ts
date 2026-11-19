@@ -43,6 +43,7 @@ import { InputInteraction } from '../../ide/input/interaction';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** Native key dispatch and real menu/popup owners in a source-backed workbench. */
 function menuFixture(t: TestContext) {
@@ -73,7 +74,7 @@ function menuFixture(t: TestContext) {
 	const key = (code: string, modifiers = KeyModifier.none, down = true, repeat = false) => {
 		const event = new KeyInputEvent(code, modifiers, repeat, down); editor.dispatchKey(event); editor.update(0); return event;
 	};
-	t.after(async () => { inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
+	afterTest(t, async () => { inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
 	return { editor, host, origin, model, view, source, key };
 }
 
@@ -143,7 +144,7 @@ test('F10 preserves the concrete step-over binding while closed and dismisses on
 	// This is the actual source focus owner. The contract is action admission,
 	// not CPU stepping, so its concrete capability records whether it was run.
 	origin.registerCommand('debugStepOver', { isEnabled: () => enabled, run: () => { steps++; } });
-	t.after(() => origin.unregisterCommand('debugStepOver'));
+	afterTest(t, () => origin.unregisterCommand('debugStepOver'));
 	assert.equal(key('F10').consumed, true);
 	assert.equal(steps, 1); assert.equal(editor.contextMenu.visible, false); assert.equal(editor.menubar.expanded, false);
 	assert.ok(inputFocus.target === origin);
@@ -160,7 +161,7 @@ test('the real menubar popup owns its F10 binding only for its admitted menu lif
 	const { editor, origin, key } = menuFixture(t);
 	let steps = 0;
 	origin.registerCommand('debugStepOver', { isEnabled: () => true, run: () => { steps++; } });
-	t.after(() => origin.unregisterCommand('debugStepOver'));
+	afterTest(t, () => origin.unregisterCommand('debugStepOver'));
 	key('AltLeft', KeyModifier.alt); key('AltLeft', KeyModifier.none, false);
 	const popup = editor.contextMenu.focusTarget;
 	const first = new KeyInputEvent('F10', KeyModifier.none);
@@ -196,7 +197,7 @@ test('menubar focus admission publishes and retires its normal F10 capability sy
 		assert.equal(editor.keybindings.handle(event, inputFocus.commandRunner, inputFocus.admittedTarget), true);
 		assert.equal(event.consumed, true);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	editor.commands.execute('menubar.focus', origin);
 	assert.equal(focused, 1); assert.equal(editor.contextMenu.visible, false); assert.equal(editor.menubar.expanded, false);
 	assert.equal(popup.getCommand('menubar.focus'), undefined); assert.ok(inputFocus.target === origin);
@@ -237,7 +238,7 @@ test('physical menu gestures remain guest input while a real scanout client has 
 	const { editor, host, origin, key, model, source } = menuFixture(t), version = model.version;
 	const game = new GameInputControl(origin, host.input, { kind: 'direct', presenter: host.presenter }, new InputInteraction(editor.commands.transport));
 	game.setInput({ left: 80, top: 32, right: 320, bottom: 240 }); game.focusTarget.focus();
-	t.after(() => game.dispose());
+	afterTest(t, () => game.dispose());
 	const binding = game.focusTarget.guestInput!;
 	for (const event of [key('F10'), key('AltLeft', KeyModifier.alt), key('AltLeft', KeyModifier.none, false),
 		key('AltRight', KeyModifier.alt), key('AltRight', KeyModifier.none, false),
@@ -420,7 +421,7 @@ function fixture(t: TestContext, scope = new InputFocusScope(Symbol('control')),
 		},
 	};
 	inputFocus.workbenchScope.commands = commands;
-	t.after(() => { keybindings.dispose(); control.cancel(); inputFocus.setTarget(null); control.dispose(); inputFocus.workbenchScope.commands = undefined; });
+	afterTest(t, () => { keybindings.dispose(); control.cancel(); inputFocus.setTarget(null); control.dispose(); inputFocus.workbenchScope.commands = undefined; });
 	return { clock, keybindings, parent, control, commands, scope, accepted, executed, checked };
 }
 
@@ -639,7 +640,7 @@ test('a parent or commandContext cannot lend list Find to a field, menu or toolb
 	const menu = new ContextMenuController(inputFocus, pointerCapture, { left: 0, top: 0, right: 384, bottom: 288 });
 	const toolbar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, f.commands, f.parent, () => f.parent.focus());
 	toolbar.setInput(createWorkbenchActionBar('events.title'), f.parent);
-	t.after(() => { toolbar.dispose(); menu.dispose(); });
+	afterTest(t, () => { toolbar.dispose(); menu.dispose(); });
 	f.control.field.focusTarget.commandContext = f.parent;
 	for (const target of [child, alias, f.control.field.focusTarget, toolbar.focusTarget]) {
 		target.focus();
@@ -676,7 +677,7 @@ test('a real QuickInput query cannot borrow its invoking list Find while retaini
 	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });
 	const area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const menu = new ContextMenuController(inputFocus, pointerCapture, area), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
-	t.after(() => { picker.dispose(); menu.dispose(); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); });
 	f.parent.focus();
 	picker.input('Filter events', 'Query', 'probe', async text => text, () => assert.fail('Ctrl/Cmd F submitted the query'));
 	const target = picker.field.focusTarget; target.commandContext = f.parent;
@@ -700,7 +701,7 @@ test('a genuine guest input target does not acquire list Find from an applicatio
 	const guest = inputFocus.createTarget(f.parent); guest.commandContext = f.parent;
 	guest.guestInput = { bounds: { left: 80, top: 24, right: 384, bottom: 274 }, recipient: input,
 		presentation: { kind: 'offscreen', frames } };
-	guest.focus(); t.after(() => { frames.dispose(); input.dispose(); });
+	guest.focus(); afterTest(t, () => { frames.dispose(); input.dispose(); });
 	assert.equal(inputFocus.commandRunner, f.commands); assert.equal(guest.getCommand('list.find'), undefined);
 	for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) for (const shift of [KeyModifier.none, KeyModifier.shift]) {
 		const event = new KeyInputEvent('KeyF', primary | shift);

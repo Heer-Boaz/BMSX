@@ -6,6 +6,7 @@ import { SceneSpatialProjection } from '../../ide/workbench/contrib/scene_editor
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
 prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
@@ -21,7 +22,7 @@ scenes.register('other',{objects={{member_id='other',definition_id='node2'}}})`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
 		[['cartlib/world/prefab.lua', 'return {define=function() end}'], ['prefabs.lua', PREFABS]]);
 	const context = new SceneAuthoringContext(f.model, f.documents);
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	const member = (id: string, document: SceneSourceDocument = f.documents.get(f.model)): SceneSourceObject => {
 		const entry = document.scenes[0].objects.find(entry => entry.kind === 'object' && stringLiteralValue(entry.memberId) === id);
 		assert.ok(entry?.kind === 'object'); return entry;
@@ -54,7 +55,7 @@ test('sibling slots preserve exact selected source, comments and one Undo withou
 	assert.equal(request.canPlace(undefined, f.member('b'), 'keep_world'), false, 'the existing sibling slot is not a source move');
 	for (let frame = 0; frame < 100; frame++) assert.equal(request.canPlace(undefined, f.member('c'), 'keep_world'), true);
 	assert.equal(writer.mock.callCount(), 0); assert.equal(f.model.version, version);
-	let changes = 0; t.after(f.model.onDidChangeContent(() => changes++));
+	let changes = 0; afterTest(t, f.model.onDidChangeContent(() => changes++));
 	assert.equal(request.apply(undefined, f.member('c'), 'keep_world'), true);
 	assert.equal(request.isCurrent(), false); assert.equal(request.apply(undefined, scene.objects[1], 'keep_world'), false);
 	assert.deepEqual(f.ids(), ['b', 'a', 'c']); assert.equal(changes, 1);
@@ -77,7 +78,7 @@ test('combined reparent and sibling order keep world poses and descendants in on
 	const initialWorld = f.world('child'), descendantWorld = f.world('descendant');
 	f.select('child'); const request = f.context.captureMemberMove()!, version = f.model.version;
 	assert.equal(request.canPlace(f.member('target'), f.member('last'), 'keep_world'), true);
-	let changes = 0; t.after(f.model.onDidChangeContent(() => changes++));
+	let changes = 0; afterTest(t, f.model.onDidChangeContent(() => changes++));
 	assert.equal(request.apply(f.member('target'), f.member('last'), 'keep_world'), true);
 	assert.equal(f.model.version, version + 1); assert.equal(changes, 1);
 	assert.deepEqual(f.ids(), ['descendant', 'first', 'old', 'child', 'last', 'target']);
@@ -202,7 +203,7 @@ for (const mode of ['keep_world', 'keep_local'] as const) for (const change of [
 for (const mode of ['keep_world', 'keep_local'] as const) test(`a canonical ${mode} move publication preserves a newer explicit selection instead of restoring the dragged member`, t => {
 	const f = fixture(t, `{member_id='a',definition_id='node2'}, {member_id='b',definition_id='node2'}, {member_id='c',definition_id='node2'}`);
 	f.select('a'); const request = f.context.captureMemberMove()!;
-	const release = f.model.onDidChangeContent(() => { release(); f.select('b'); }); t.after(release);
+	const release = f.model.onDidChangeContent(() => { release(); f.select('b'); }); afterTest(t, release);
 	assert.equal(request.apply(undefined, undefined, mode), true);
 	assert.deepEqual(f.ids(), ['b', 'c', 'a']);
 	assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry.kind === 'object');
@@ -217,7 +218,7 @@ test('local-only reparent preserves authored expressions through one source edit
 	assert.ok(request); assert.equal(request.canPlace(parent, undefined, 'keep_world'), false);
 	assert.equal(request.canPlace(parent, undefined, 'keep_local'), true);
 	assert.equal(request.apply(parent, undefined, 'keep_world'), false);
-	const version = f.model.version; let changes = 0; t.after(f.model.onDidChangeContent(() => changes++));
+	const version = f.model.version; let changes = 0; afterTest(t, f.model.onDidChangeContent(() => changes++));
 	assert.equal(request.apply(parent, undefined, 'keep_local'), true);
 	assert.equal(f.model.version, version + 1); assert.equal(changes, 1);
 	assert.ok(f.model.buffer.getText().includes('transform=compute_pose()'));

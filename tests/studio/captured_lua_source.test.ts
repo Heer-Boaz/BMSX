@@ -16,6 +16,7 @@ import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sou
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const TEXT = 'local value = 7\nreturn value\n';
 const RANGE = { path: 'modules/logic.lua', start: { line: 2, column: 1 }, end: { line: 2, column: 13 } };
@@ -31,7 +32,7 @@ function fixture(t: TestContext, domain: ResourceDomain = 0) {
 	const compiled: Blua32CompiledSource = { displayPath: resource.path, content: { kind: 'utf8', bytes: new TextEncoder().encode(TEXT) } };
 	const captured = createBlua32SourceImage(linked.image, linked.symbols, new Map([[toLuaModulePath(RANGE.path), compiled]]), contextId);
 	const pc = linked.image.header.textAddress, binding = new CapturedLuaSourceBinding(models, sources.catalog);
-	t.after(() => { binding.clear(); models.clear(); releaseWorkspaceSourceOverrides(registry); });
+	afterTest(t, () => { binding.clear(); models.clear(); releaseWorkspaceSourceOverrides(registry); });
 	return { record, sources, registry, resource, models, compiled, captured, pc, binding };
 }
 
@@ -105,7 +106,7 @@ test('unchanged source admission performs no further captured-source decoding or
 	const location = f.binding.location, revision = f.binding.revision;
 	const content = f.compiled.content;
 	Object.defineProperty(f.compiled, 'content', { configurable: true, get: () => assert.fail('unchanged binding re-read captured source') });
-	t.after(() => Object.defineProperty(f.compiled, 'content', { configurable: true, writable: true, value: content }));
+	afterTest(t, () => Object.defineProperty(f.compiled, 'content', { configurable: true, writable: true, value: content }));
 	t.mock.method(model.buffer, 'getText', () => assert.fail('unchanged binding re-read current source'));
 	for (let frame = 0; frame < 1000; frame++) { f.binding.bind(f.captured, f.pc); f.binding.update(); }
 	assert.equal(f.binding.location, location); assert.equal(f.binding.revision, revision); assert.equal(f.binding.status, 'available');
@@ -116,7 +117,7 @@ test('unchanged source admission performs no further captured-source decoding or
 test('source publication is complete and synchronous, including registry removal while a working copy remains', t => {
 	const f = fixture(t), model = f.models.retain(f.resource, 'lua', TEXT), states: string[] = [];
 	const unbind = f.binding.onDidChange(() => { f.binding.update(); states.push(f.binding.status); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.binding.bind(f.captured, f.pc);
 	assert.deepEqual(states, ['available'], 'the first observer must see the correct resource and computed source status');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed\n' }]);
@@ -159,7 +160,7 @@ test('a real Source popup cannot execute an attempt retired by equal-text catalo
 	const focus = new InputFocusService(), capture = new PointerCaptureService();
 	const origin = focus.createTarget(); origin.focus();
 	const menu = new ContextMenuController(focus, capture, { left: 0, top: 0, right: 384, bottom: 288 });
-	t.after(() => menu.dispose());
+	afterTest(t, () => menu.dispose());
 	let opened = 0;
 	menu.show(8, 8, [{ type: 'command', command: 'gte.source' }], {
 		isEnabled: () => { f.binding.update(); return f.binding.status === 'available'; },

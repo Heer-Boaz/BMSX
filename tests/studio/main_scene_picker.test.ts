@@ -29,6 +29,7 @@ import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntimeSourceState, createTestSourceOnlyLuaRecord, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
+import { afterTest } from '../helpers/test_cleanup';
 
 const FIRST = `local scenes = require('cartlib/world/scene_library')
 local prefab = require('cartlib/world/prefab')
@@ -66,7 +67,7 @@ async function fixture(t: TestContext) {
 	const model = (path: string) => resolveLuaTextFileModel(editorTextModelService, sources.catalog,
 		sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })!);
 	editorRuntimeState.active = true; editor.interaction.setActive(true); update(); editor.editorParts.main.activeGroup.focus();
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); await editor.shutdown(); await closeWorkspaceRecords(); clearWorkspaceSourceCaches();
 		host.audio.dispose(); host.input.dispose(); editorTextModelService.clear(); sources.catalog.dispose();
 	});
@@ -239,7 +240,7 @@ for (const invalidation of ['foreground', 'origin', 'canonical source'] as const
 		const notes = new CodeEditorInput(f.model('notes.lua')), part = f.editor.editorParts.createDocument();
 		part.activeGroup.openEditor(notes); f.editor.editorParts.main.activeGroup.focus(); f.update();
 		const picker = openPicker(f);
-		t.after(picker.field.focusTarget.onDidBlur(() => {
+		afterTest(t, picker.field.focusTarget.onDidBlur(() => {
 			if (invalidation === 'foreground') part.activeGroup.focus();
 			else if (invalidation === 'origin') origin.scope.retireContext();
 			else {
@@ -261,7 +262,7 @@ for (const invalidation of ['foreground', 'origin', 'canonical source'] as const
 test('canonical model admission cannot steal back foreground published by its own observers', async t => {
 	const f = await fixture(t), notes = new CodeEditorInput(f.model('notes.lua')), part = f.editor.editorParts.createDocument();
 	part.activeGroup.openEditor(notes); f.editor.editorParts.main.activeGroup.focus(); f.update(); openPicker(f);
-	t.after(editorTextModelService.onDidAddModel(model => { if (model.identity.path === 'first.lua') part.activeGroup.focus(); }));
+	afterTest(t, editorTextModelService.onDidAddModel(model => { if (model.identity.path === 'first.lua') part.activeGroup.focus(); }));
 	await choose(f, 'first.lua');
 	assert.equal(f.editor.mainWorkspace.primary, undefined);
 	assert.ok(f.editor.editorParts.activePart === part && part.scope.contains(inputFocus.admittedTarget!.scope));
@@ -287,10 +288,10 @@ for (const boundary of ['canonical model', 'content index'] as const) {
 			sameFocus = inputFocus.admittedTarget === origin;
 		};
 		if (boundary === 'canonical model') {
-			t.after(editorTextModelService.onDidAddModel(model => { if (model.identity.path === 'second.lua') clear(); }));
+			afterTest(t, editorTextModelService.onDidAddModel(model => { if (model.identity.path === 'second.lua') clear(); }));
 		} else {
-			const release = f.editor.projectContent.onDidChange(() => { release(); clear(); }); t.after(release);
-			t.after(picker.field.focusTarget.onDidBlur(() => {
+			const release = f.editor.projectContent.onDidChange(() => { release(); clear(); }); afterTest(t, release);
+			afterTest(t, picker.field.focusTarget.onDidBlur(() => {
 				const resource = f.sources.catalog.resolveResource({ contextId: f.contextId, path: 'unopened.lua' })!;
 				editorTextModelService.retain(resource, 'lua',
 					"local scenes = require('cartlib/world/scene_library')\nscenes.register('after return', { objects = {} })\n", 'return {}\n', null);
@@ -326,7 +327,7 @@ for (const replacement of ['model', 'context'] as const) {
 				for (const record of context.luaSources.records) registerLuaSourceRecord(registry, { ...record });
 				f.sources.catalog.contexts.delete(context.id); f.sources.catalog.admitContext({ ...context, luaSources: registry });
 			}
-		}); t.after(unbind);
+		}); afterTest(t, unbind);
 		openPicker(f); await choose(f, 'second.lua'); await setImmediate(); f.update();
 		assert.ok(f.editor.mainWorkspace.primary === previous);
 		assert.equal(current.buffer.getText(), source); assert.equal(current.dirty, true);

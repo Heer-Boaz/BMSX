@@ -13,6 +13,7 @@ import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus } from '../../ide/input/focus';
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('settings search and category filter share declared preference metadata', () => {
 	const model = new SettingsModel();
@@ -63,7 +64,7 @@ test('numeric settings use the common draft, cancel and reset contracts; checkbo
 		f.editor.commands, f.editor.editorParts.partForGroup(f.firstGroup).quickInput);
 	const boolean = new SettingControl(SETTINGS.find(setting => setting.id === 'fontSampling')!, preferences, f.first.commandTarget,
 		f.editor.commands, f.editor.editorParts.partForGroup(f.firstGroup).quickInput);
-	t.after(() => { number.dispose(); boolean.dispose(); });
+	afterTest(t, () => { number.dispose(); boolean.dispose(); });
 	number.attach(); boolean.attach();
 	setFieldText(number.value!.field, '75%', true); assert.equal(number.value!.commit(), false); assert.equal(preferences.fontSize, 14);
 	number.value!.cancel(); assert.equal(number.value!.pending, false);

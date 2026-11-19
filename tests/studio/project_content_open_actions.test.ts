@@ -13,6 +13,7 @@ import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/conte
 import { openProjectContent, openProjectContentSource, resolveProjectContentDestination } from '../../ide/workbench/contrib/resources/panel/open_actions';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local effects = require('cartlib/actioneffects')
 effects.register_effect('same', { cooldown_ms = 1 })
@@ -25,7 +26,7 @@ function fixture(t: TestContext, additional: readonly (readonly [string, string]
 		['content.lua', SOURCE], ...additional,
 	]);
 	const index = new ProjectContentIndex(editorTextModelService, f.sources.catalog, f.editor.behaviorLens.documents.registrations, f.editor.sceneEditor.documents);
-	t.after(() => index.dispose()); index.sync();
+	afterTest(t, () => index.dispose()); index.sync();
 	const resource = (path: string) => f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;
 	const entries = index.entriesFor(resource('content.lua')).filter(entry => entry.kind !== 'scene');
 	assert.equal(entries.length, 2);
@@ -36,7 +37,7 @@ function fixture(t: TestContext, additional: readonly (readonly [string, string]
 	const draft = (accept: () => void) => {
 		f.first.focus();
 		const control = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, accept);
-		t.after(() => control.dispose());
+		afterTest(t, () => control.dispose());
 		control.setValue(1); control.layout(f.firstGroup.panes.contentBounds);
 		control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 		assert.equal(control.pending, true);
@@ -136,7 +137,7 @@ for (const source of [false, true]) {
 
 	test(`${source ? 'Source' : 'visual'} canonical source admission cannot overwrite newer foreign focus from a model listener`, async t => {
 		const f = fixture(t), entry = f.entries[0];
-		t.after(editorTextModelService.onDidAddModel(model => { if (model.resource === entry.ownerResource) f.second.focus(); }));
+		afterTest(t, editorTextModelService.onDidAddModel(model => { if (model.resource === entry.ownerResource) f.second.focus(); }));
 		if (source) await openProjectContentSource(f.editor, f.index, entry, f.firstGroup, f.origin);
 		else openProjectContent(f.editor, f.index, entry, f.firstGroup, f.origin);
 		assert.ok(editorTextModelService.get(entry.ownerResource));
@@ -147,7 +148,7 @@ for (const source of [false, true]) {
 	for (const retirement of ['occurrence', 'origin', 'destination'] as const)
 		test(`${source ? 'Source' : 'visual'} canonical model admission respects ${retirement} retirement before opening`, async t => {
 			const f = fixture(t), entry = f.entries[0];
-			t.after(editorTextModelService.onDidAddModel(model => {
+			afterTest(t, editorTextModelService.onDidAddModel(model => {
 				if (model.resource !== entry.ownerResource) return;
 				if (retirement === 'occurrence') model.pushEditOperations([{ offset: entry.range.start,
 					deleteLength: entry.range.end - entry.range.start, text: '' }]);

@@ -9,6 +9,7 @@ import { drawWorkbenchTextView } from '../../ide/workbench/render/text_view';
 import { api } from '../../ide/runtime/overlay_api';
 import * as colors from '../../ide/common/constants';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(variant: FontVariant, text: string, width = variant === 'tiny' ? 78 : 118, height = 120) {
 	const font = new EditorFont(variant), buffer = new PieceTreeBuffer(text), model = new WorkbenchTextViewModel(buffer);
@@ -127,7 +128,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const f = fixture(variant, text), rows = f.model.projection.rows, first = rows[0], last = rows.at(-1);
 		const read = t.mock.method(f.buffer, 'getText'), lines = t.mock.method(f.buffer, 'getLineContent');
 		const advance = t.mock.method(f.font.renderFont(), 'advance'), push = t.mock.fn(rows.push);
-		const originalPush = rows.push; rows.push = push; t.after(() => { rows.push = originalPush; });
+		const originalPush = rows.push; rows.push = push; afterTest(t, () => { rows.push = originalPush; });
 		for (let frame = 0; frame < 1000; frame++) f.layout();
 		assert.equal(read.mock.callCount(), 0); assert.equal(lines.mock.callCount(), 0);
 		assert.equal(advance.mock.callCount(), 0); assert.equal(push.mock.callCount(), 0);

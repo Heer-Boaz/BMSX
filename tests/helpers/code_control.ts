@@ -7,6 +7,7 @@ import type { CodeDocumentProjections } from '../../ide/editor/ui/code/document_
 import { CodeEditorControl } from '../../ide/editor/ui/code_editor_control';
 import { createCodeEditorViewState, type CodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { EditorFont } from '../../ide/editor/ui/view/font';
+import { afterTest } from './test_cleanup';
 
 /** A real Source control with explicit document, clock and per-control lifetime. */
 export function createTestCodeControl(
@@ -21,6 +22,6 @@ export function createTestCodeControl(
 	const code = new CodeEditorControl(new InputFocusScope(Symbol('test-source')), font, clock);
 	code.attach(model, view, documents.get(model));
 	code.setBounds(bounds);
-	t.after(() => { code.dispose(); });
+	afterTest(t, () => { code.dispose(); });
 	return code;
 }

@@ -18,6 +18,7 @@ import { GRAPH_ZOOM_MAX, GRAPH_ZOOM_MIN, WorkbenchGraphViewport } from '../../id
 import type { HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult as Result } from '../../ide/workbench/ui/graph/control';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 const font = new Font({ variant: 'tiny' });
 function fixture() {
@@ -40,7 +41,7 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary, PointerBut
 		const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
 		let starts = 0;
 		control.setInput(old.view, { begin: () => { starts++; return undefined; } });
-		control.focusTarget.focus(); next.view.selection = next.b; t.after(() => control.dispose());
+		control.focusTarget.focus(); next.view.selection = next.b; afterTest(t, () => control.dispose());
 		capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { control.setInput(next.view); } });
 		const snapshot = { ...pointer(22, 22), pressedButtons: button, justPressedButtons: button };
 		assert.equal(control.handlePointer(snapshot, 0), Result.Rejected);
@@ -53,9 +54,9 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (cons
 	const { view, a, b } = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
 	control.setInput(view); view.selection = b;
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	const otherModel = createWorkbenchGraphModel(font, [a, b], []);
-	t.after(control.focusTarget.onDidFocus(() => {
+	afterTest(t, control.focusTarget.onDidFocus(() => {
 		if (change === 'model') view.setModel(otherModel, b);
 		else control.setInput(view);
 	}));
@@ -75,13 +76,13 @@ for (const gesture of [
 	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService()), departing = focus.createTarget(), away = focus.createTarget();
 	let starts = 0, callbacks = 0;
 	control.setInput(view, { begin: () => { starts++; return undefined; } }); view.selection = b;
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	departing.focus();
 	const target = control.focusTarget, context = target.scope.contextGeneration;
 	const unbind = departing.onDidBlur(() => {
 		unbind(); callbacks++; away.focus(); assert.ok(focus.admittedTarget === away);
 		target.focus(); assert.ok(focus.admittedTarget === target);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	const snapshot = { ...pointer(22, 22), pressedButtons: gesture.button, justPressedButtons: gesture.button };
 	assert.ok(view.hitTest(snapshot.viewportX, snapshot.viewportY) === a);
 	assert.equal(control.handlePointer(snapshot, 0, gesture.pan), Result.Rejected);
@@ -98,8 +99,8 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`gra
 	const other = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
 	control.setInput(current.view); current.view.selection = current.b;
 	other.setInput(sibling.view); other.focusTarget.focus();
-	t.after(() => { control.dispose(); other.dispose(); });
-	const unbind = other.focusTarget.onDidBlur(() => { unbind(); other.setInput(replacement.view); }); t.after(unbind);
+	afterTest(t, () => { control.dispose(); other.dispose(); });
+	const unbind = other.focusTarget.onDidBlur(() => { unbind(); other.setInput(replacement.view); }); afterTest(t, unbind);
 	assert.equal(control.handlePointer({ ...pointer(22, 22), pressedButtons: button === PointerButton.Secondary ? 0 : button, justPressedButtons: button, justReleasedButtons: button === PointerButton.Secondary ? button : 0 }, 0),
 		button === PointerButton.Secondary ? Result.Handled : Result.Selection);
 	assert.ok(focus.admittedTarget === control.focusTarget && current.view.selection === current.a);
@@ -111,11 +112,11 @@ test('clearing a graph attachment cannot erase the new view admitted by its blur
 	const original = fixture(), replacement = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
 	control.setInput(original.view); original.view.selection = original.b; replacement.view.selection = replacement.b;
-	control.focusTarget.focus(); t.after(() => control.dispose());
+	control.focusTarget.focus(); afterTest(t, () => control.dispose());
 	let rebound = false;
 	const unbind = control.focusTarget.onDidBlur(() => {
 		unbind(); rebound = true; control.setInput(replacement.view); control.focusTarget.focus();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	control.clearInput();
 	assert.equal(rebound, true); assert.ok(focus.admittedTarget === control.focusTarget);
 	const snapshot = { ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary };
@@ -148,14 +149,14 @@ test('disc symbols retain their actual pixel silhouette instead of routing to pa
 for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as const) {
 	test(`${theme}/${variant} graph disc selection and hover augment its retained filled symbol`, t => {
 		const originalTheme = colors.getActiveIdeThemeVariant();
-		t.after(() => colors.setIdeThemeVariant(originalTheme)); colors.setIdeThemeVariant(theme);
+		afterTest(t, () => colors.setIdeThemeVariant(originalTheme)); colors.setIdeThemeVariant(theme);
 		const symbolFont = new Font({ variant });
 		const disc = createWorkbenchGraphDisc(symbolFont.lineHeight + GRAPH_NODE_PADDING, 20, 20);
 		const model = createWorkbenchGraphModel(symbolFont, [disc], []);
 		const view = new WorkbenchGraphViewport(model); view.layout(0, 0, 100, 100);
 		view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
 		const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService(), new PointerHoverService());
-		control.setInput(view); t.after(() => control.dispose());
+		control.setInput(view); afterTest(t, () => control.dispose());
 		const { renderer, queue, backend } = createHostOverlayFixture(100, 100);
 		const target = backend.framebufferPixels;
 		let normal: Uint8Array;

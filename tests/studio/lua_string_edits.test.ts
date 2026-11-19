@@ -7,6 +7,7 @@ import { quoteLuaString } from '../../toolchain/ts/lua/syntax/string_literal';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaStringValueEdit } from '../../ide/language/lua/source_edits';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('Lua string emission round-trips bytes, delimiters and Unicode through the real lexer', () => {
 	const values = ['', "both ' and \"", '\\z\\x20', '\0' + '123', '\r\n\t', 'é雪🎮', '\u2028\u2029', ']=]'];
@@ -26,7 +27,7 @@ test('a string-value edit preserves grouping and all exterior trivia in one Undo
 	for (const original of ["'old'", '"old"', '[==[old]==]', 'nil', 'false', 'true', '7']) {
 		const source = `return ( --[[before]]\n ${original} --[[after]]\n)`;
 		const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'value.lua', location: { kind: 'workspace' as const, path: 'value.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'value.lua', source: { type: 'lua', resid: 'value' } }, 'lua', source);
-		t.after(() => model.dispose());
+		afterTest(t, () => model.dispose());
 		const file = buildLuaFileSemanticData(source, 'value.lua');
 		const statement = file.chunk.body.get(0)!;
 		assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);

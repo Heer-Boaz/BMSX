@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('control geometry follows CSS player layout independently of framebuffer resolution', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
@@ -15,7 +16,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'layoutFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
 	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${await readFile('gamebase.css', 'utf8')}</style><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div>`);
 	await page.addScriptTag({ content: bundle.outputFiles[0].text });

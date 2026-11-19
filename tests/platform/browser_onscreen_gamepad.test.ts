@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 const browserInputFixture = build({
 	stdin: {
@@ -28,7 +29,7 @@ test('native browser contacts reach the real common input and ICU without DOM-ta
 	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	const bundle = await browserInputFixture;
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
@@ -565,7 +566,7 @@ test('native browser contacts reach the real common input and ICU without DOM-ta
 test('standard browser gamepad face positions reach canonical independent player and ICU bits', async t => {
 	const bundle = await browserInputFixture;
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage();
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));

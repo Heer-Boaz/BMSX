@@ -8,6 +8,7 @@ import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { afterTest } from '../helpers/test_cleanup';
 
 configureFontVariant('tiny');
 
@@ -19,7 +20,7 @@ function snapshot(buttons: number, released = 0): PointerInputSnapshot {
 
 test('value input captures a selection on the initial focus press and ends it on release', t => {
 	const parent = inputFocus.createTarget(), field = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => assert.fail('selection wrote a value'));
-	t.after(() => { inputFocus.setTarget(null); pointerCapture.interrupt(false); field.dispose(); });
+	afterTest(t, () => { inputFocus.setTarget(null); pointerCapture.interrupt(false); field.dispose(); });
 	field.setValue(123456789);
 	field.handlePointer(0, 0, true, true);
 	assert.equal(field.field.focusTarget.hasFocus, true); assert.equal(pointerCapture.active, true);
@@ -34,7 +35,7 @@ test('value input captures a selection on the initial focus press and ends it on
 for (const ending of ['lost button', 'focus transfer', 'rebind', 'dispose'] as const) {
 	test(`value input retires pointer selection on ${ending}`, t => {
 		const parent = inputFocus.createTarget(), field = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => assert.fail('selection wrote a value'));
-		t.after(() => { inputFocus.setTarget(null); pointerCapture.interrupt(false); field.dispose(); });
+		afterTest(t, () => { inputFocus.setTarget(null); pointerCapture.interrupt(false); field.dispose(); });
 		field.setValue(123); field.handlePointer(0, 0, true, true);
 		assert.equal(pointerCapture.active, true); assert.equal(field.field.pointerSelecting, true);
 		if (ending === 'lost button') pointerCapture.dispatch(snapshot(0), false, 0);
@@ -48,7 +49,7 @@ for (const ending of ['lost button', 'focus transfer', 'rebind', 'dispose'] as c
 for (const ending of ['rebind', 'dispose'] as const) {
 	test(`focus handoff cannot start a selection after reentrant ${ending}`, t => {
 		const parent = inputFocus.createTarget(), previous = inputFocus.createTarget(), field = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => {});
-		t.after(() => { inputFocus.setTarget(null); pointerCapture.interrupt(false); field.dispose(); });
+		afterTest(t, () => { inputFocus.setTarget(null); pointerCapture.interrupt(false); field.dispose(); });
 		field.setValue(123); previous.focus();
 		previous.onDidBlur(() => { if (ending === 'rebind') field.setValue(456); else field.dispose(); });
 		field.handlePointer(0, 0, true, true);

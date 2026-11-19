@@ -9,6 +9,7 @@ import { StudioBuildJobs } from '../../hosts/node/builds/jobs';
 import { isBuildTerminal, type StudioBuildJob, type StudioBuildRequest } from '../../hosts/common/studio_builds';
 import { WorkspaceProjects } from '../../hosts/node/workspace/projects';
 import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
+import { afterTest } from '../helpers/test_cleanup';
 
 const POSITIONS = Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer);
 
@@ -40,7 +41,7 @@ test('Studio build input authority contains GLTF references and filesystem symli
 	const alias = join(base, 'workspace-alias');
 	await symlink(workspace, alias, 'dir');
 	const jobs = await StudioBuildJobs.open(alias, join(base, 'jobs'), projects);
-	t.after(async () => { await jobs.close(); await projects.close(); await rm(base, { recursive: true, force: true }); });
+	afterTest(t, async () => { await jobs.close(); await projects.close(); await rm(base, { recursive: true, force: true }); });
 	const build = async (): Promise<StudioBuildJob> => {
 		const request: StudioBuildRequest = { requestId: randomUUID(), target: 'sample', debug: true, optLevel: 0 };
 		const completed = Promise.withResolvers<StudioBuildJob>();
@@ -122,7 +123,7 @@ test('Studio build input authority contains GLTF references and filesystem symli
 
 test('standalone ROM input capture retains explicit external dependency access', async t => {
 	const base = await mkdtemp(join(tmpdir(), 'bmsx-cli-scope-'));
-	t.after(() => rm(base, { recursive: true, force: true }));
+	afterTest(t, () => rm(base, { recursive: true, force: true }));
 	const resources = join(base, 'project', 'res'), dependency = join(base, 'external.bin');
 	await mkdir(resources, { recursive: true }); await writeFile(dependency, POSITIONS);
 	await writeFile(join(resources, 'mesh.gltf'), model(relative(resources, dependency).replace(/\\/g, '/')));

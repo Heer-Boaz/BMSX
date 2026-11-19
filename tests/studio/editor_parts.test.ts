@@ -25,6 +25,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { COLOR_FRAME } from '../../ide/common/constants';
 import { captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('Focus Main changes actual paint and hit order while document inputs and local sessions remain retained', t => {
 	const f = createActualSourcePanes(t, true), parts = f.editor.editorParts, main = parts.main;
@@ -228,7 +229,7 @@ test('Scene and Source use real sibling groups while canonical edits, Save and S
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
 		['authoring_scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', ''],
 	]);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const parts = f.editor.editorParts, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	parts.clear();
 	const sceneGroup = parts.main.activeGroup;
@@ -272,7 +273,7 @@ test('local dirty close preserves an invalid sibling draft and revokes asynchron
 	f.first.code.focusTarget.focus(); f.first.code.focusTarget.textInput!.replaceText(6, 11, 'changed');
 	let accepted = 7;
 	const draft = new ValueInput(f.second.commandTarget, INTEGER_INPUT_FORMAT, value => { accepted = value; });
-	t.after(() => draft.dispose());
+	afterTest(t, () => draft.dispose());
 	draft.setValue(accepted); draft.layout(f.secondGroup.panes.contentBounds);
 	draft.field.focusTarget.focus(); draft.field.focusTarget.textInput!.replaceText(0, 1, '-');
 	assert.equal(draft.pending, true);

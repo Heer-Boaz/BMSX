@@ -12,6 +12,7 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { COLOR_FOCUS_BORDER, SCROLLBAR_THUMB_COLOR } from '../../ide/common/constants';
 import { api } from '../../ide/runtime/overlay_api';
 import { drawWorkbenchSplit } from '../../ide/workbench/render/split_view';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
@@ -41,7 +42,7 @@ function fixture(t: TestContext) {
 		const event = new KeyInputEvent(code, modifiers, repeat); focus.handleKeyboard(event);
 		focus.handleKeyboard(new KeyInputEvent(code, modifiers, false, false)); return event;
 	};
-	t.after(() => { control.dispose(); surfaces.dispose(); unbindAdmission(); focus.setTarget(null); });
+	afterTest(t, () => { control.dispose(); surfaces.dispose(); unbindAdmission(); focus.setTarget(null); });
 	return { focus, capture, hover, surfaces, area, root, parent, origin, sibling, originSurface, sashSurface, split, control, key };
 }
 
@@ -128,7 +129,7 @@ test('a constrained resettable sash retains reset authority without offering an 
 
 test('a newer focus chosen by the departing invoker prevents a resize entry from being admitted', t => {
 	const f = fixture(t); let departed = 0;
-	const unbind = f.origin.onDidBlur(() => { departed++; f.sibling.focus(); }); t.after(unbind);
+	const unbind = f.origin.onDidBlur(() => { departed++; f.sibling.focus(); }); afterTest(t, unbind);
 	assert.equal(f.control.focusForResize(f.origin), false);
 	assert.equal(departed, 1); assert.ok(f.focus.admittedTarget === f.sibling);
 	f.key('Enter'); assert.ok(f.focus.admittedTarget === f.sibling); assert.equal(f.split.ratio, f.split.defaultRatio);
@@ -136,7 +137,7 @@ test('a newer focus chosen by the departing invoker prevents a resize entry from
 
 test('invoker retirement during focus departure cannot leave an uncaptured incoming resize handle focused', t => {
 	const f = fixture(t);
-	const unbind = f.origin.onDidBlur(() => { unbind(); f.origin.scope.retireContext(); }); t.after(unbind);
+	const unbind = f.origin.onDidBlur(() => { unbind(); f.origin.scope.retireContext(); }); afterTest(t, unbind);
 	assert.equal(f.control.focusForResize(f.origin), false);
 	assert.equal(f.control.interactionActive, false); assert.ok(f.focus.admittedTarget !== f.control.focusTarget);
 	f.key('ArrowRight'); assert.equal(f.split.ratio, f.split.defaultRatio);
@@ -190,7 +191,7 @@ test('clearing an old sash input cannot withdraw a newer input and keyboard inte
 	const unbind = f.control.focusTarget.onDidBlur(() => {
 		unbind(); f.control.setInput(replacement); f.origin.focus();
 		assert.equal(f.control.focusForResize(f.origin), true); rebound++;
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.control.clearInput();
 	assert.equal(rebound, 1); assert.ok(f.control.input === replacement);
 	assert.equal(f.control.interactionActive, true); assert.ok(f.focus.admittedTarget === f.control.focusTarget);

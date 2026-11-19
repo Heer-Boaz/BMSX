@@ -12,6 +12,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { QuickInputController, type QuickPickOptions } from '../../ide/workbench/services/quick_input/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
+import { afterTest } from '../helpers/test_cleanup';
 
 type Choice = { id: number; label: string; description: string; detail: string };
 const REJECTION = 'Blocked';
@@ -40,7 +41,7 @@ function fixture(t: TestContext, options: QuickPickOptions<Choice> = {}) {
 			justReleasedButtons: pressed ? 0 : PointerButton.Primary, modifiers, spaceDown: false };
 		if (!pointerCapture.dispatch(snapshot, false, 0, picker.pointerScope)) picker.handlePointer(snapshot, pressed);
 	};
-	t.after(() => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	return { picker, origin, choices, provider, accepted, key, pointer, area, retirements: () => retirements };
 }
 

@@ -21,6 +21,7 @@ import { selectStateMachineSource, stateMachineSourceRange } from '../../ide/wor
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
+import { afterTest } from '../helpers/test_cleanup';
 
 const API_MODULES = ['cartlib/fsm/library'];
 
@@ -70,7 +71,7 @@ function fixture() {
 }
 
 test('binding and callback markers use their own resource, buffer and UTF-16 coordinates', t => {
-	const f = fixture(); t.after(() => f.dispose());
+	const f = fixture(); afterTest(t, () => f.dispose());
 	const selected = f.chooseReturn();
 	assert.ok(selected.kind === 'state-outcome' && selected.tracked.kind === 'return' && selected.outcome.proof.kind === 'return');
 	assert.equal(selected.tracked.binding.resource, f.main.identity);
@@ -99,7 +100,7 @@ test('binding and callback markers use their own resource, buffer and UTF-16 coo
 });
 
 test('inspection reads foreign evidence without opening a code tab or dirtying either working copy', t => {
-	const f = fixture(); t.after(() => f.dispose()); f.chooseReturn();
+	const f = fixture(); afterTest(t, () => f.dispose()); f.chooseReturn();
 	const items = buildBehaviorInspection(f.view);
 	const returned = items.find(item => item.source?.range.path === resourceIdentityKey(f.provider.resource))!;
 	assert.equal(returned.value, "RETURN '../active'");
@@ -109,7 +110,7 @@ test('inspection reads foreign evidence without opening a code tab or dirtying e
 });
 
 test('navigation copies map provider edits while hidden and release those subscriptions independently', t => {
-	const f = fixture(); t.after(() => f.dispose()); f.chooseReturn();
+	const f = fixture(); afterTest(t, () => f.dispose()); f.chooseReturn();
 	const history = new BehaviorLensNavigationSelection(f.input);
 	const captured = history.snapshot.selected!;
 	assert.ok(captured.kind === 'state-outcome' && captured.tracked.kind === 'return');
@@ -127,7 +128,7 @@ test('navigation copies map provider edits while hidden and release those subscr
 });
 
 test('equal coordinates in another file or socket do not identify the same source', t => {
-	const f = fixture(); t.after(() => f.dispose());
+	const f = fixture(); afterTest(t, () => f.dispose());
 	f.view.selectionState.select({ kind: 'node', rowKey: 'provider-return' });
 	const bookmark = captureBehaviorSourceBookmark(f.view, f.view.selectionState.selected);
 	const otherFile = { ...bookmark, path: bookmark.path.map(step => ({ ...step })) };
@@ -143,7 +144,7 @@ test('equal coordinates in another file or socket do not identify the same sourc
 });
 
 test('source correspondence does not transfer a selection to an equal-offset foreign replacement', t => {
-	const f = fixture(); t.after(() => f.dispose());
+	const f = fixture(); afterTest(t, () => f.dispose());
 	f.view.selectionState.select({ kind: 'node', rowKey: 'provider-return' });
 	const old = f.view.source.ranges.get('provider-return')!;
 	const document = f.project();
@@ -159,7 +160,7 @@ test('source correspondence does not transfer a selection to an equal-offset for
 });
 
 test('a same-path source from another resource domain cannot inherit the previous occurrence', t => {
-	const f = fixture(); t.after(() => f.dispose());
+	const f = fixture(); afterTest(t, () => f.dispose());
 	f.view.selectionState.select({ kind: 'node', rowKey: 'provider-return' });
 	const systemProvider = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: f.provider.identity.path, location: { kind: 'workspace' as const, path: f.provider.identity.path }, contextId: TEST_SYSTEM_CONTEXT_ID, path: f.provider.identity.path,
 		source: { type: 'lua', resid: 'system-provider' } }, 'lua', PROVIDER);

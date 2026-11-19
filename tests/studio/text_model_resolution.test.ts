@@ -3,6 +3,7 @@ import test from 'node:test';
 import { EditorTextModelService, type ResolvedTextModelSource } from '../../ide/editor/model/model_service';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import type { RuntimeResource } from '../../ide/common/resource';
+import { afterTest } from '../helpers/test_cleanup';
 
 function resource(contextId = 'first-source-context'): RuntimeResource {
 	return { contextLabel: 'Fixture project', sourceFilePath: 'res/cue.aem.yaml', location: { kind: 'workspace' as const, path: 'res/cue.aem.yaml' }, contextId, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem', generated: false } };
@@ -68,7 +69,7 @@ test('workspace teardown retires a pending source generation without retiring it
 
 test('model removal callbacks can admit a matching successor without the departing clear consuming it', t => {
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const address = resource(), departing = models.retain(address, 'aem', 'old');
 	let current: ReturnType<EditorTextModelService['retain']> | undefined;
 	const removed: typeof departing[] = [];
@@ -87,7 +88,7 @@ test('model removal callbacks can admit a matching successor without the departi
 
 test('a two-phase model departure publishes fresh admission before callbacks and retires only its captured models', t => {
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const address = resource(), departing = models.retain(address, 'aem', 'old');
 	let disposed = 0, freshClearNotifications = 0;
 	departing.onWillDispose(() => { disposed++; retirement.dispose(); });
@@ -98,9 +99,9 @@ test('a two-phase model departure publishes fresh admission before callbacks and
 		assert.equal(models.get(address), undefined);
 		assert.equal(disposed, 0);
 		current = models.retain(address, 'aem', 'new');
-		t.after(models.onWillClear(() => { freshClearNotifications++; }));
+		afterTest(t, models.onWillClear(() => { freshClearNotifications++; }));
 	});
-	t.after(removeClear);
+	afterTest(t, removeClear);
 	const retirement = models.replace([]);
 	assert.equal(current, undefined, 'registration alone cannot notify departing source consumers');
 	assert.equal(retirement.publish(), true);
@@ -116,7 +117,7 @@ test('a two-phase model departure publishes fresh admission before callbacks and
 
 test('a nested departure owns its source notifications without continuing the superseded clear', t => {
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const notifications: string[] = [];
 	const removeFirst = models.onWillClear(() => {
 		notifications.push('first departure');
@@ -124,14 +125,14 @@ test('a nested departure owns its source notifications without continuing the su
 		models.clear();
 	});
 	const removeSecond = models.onWillClear(() => { notifications.push('latest departure'); });
-	t.after(removeFirst); t.after(removeSecond);
+	afterTest(t, removeFirst); afterTest(t, removeSecond);
 	models.clear();
 	assert.deepEqual(notifications, ['first departure', 'latest departure']);
 });
 
 test('a source reader retiring its own admission cannot replace a newer pending resolution', async t => {
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const oldSource = Promise.withResolvers<ResolvedTextModelSource>(), currentSource = Promise.withResolvers<ResolvedTextModelSource>();
 	let current: Promise<ReturnType<EditorTextModelService['retain']>> | undefined;
 	const old = models.resolve(resource(), 'aem', () => {
@@ -151,16 +152,16 @@ test('a source reader retiring its own admission cannot replace a newer pending 
 
 test('complete replacement transfers retained working copies without disposing or wiring them twice', t => {
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const retained = models.retain(resource(), 'aem', 'retained'), old = models.retain(resource('other-context'), 'aem', 'old');
 	retained.pushEditOperations([{ offset: 0, deleteLength: 0, text: 'dirty ' }]);
 	const next = new EditorTextModel(old.resource, 'aem', 'new', models.history);
 	let retainedDisposals = 0, contentChanges = 0;
 	retained.onWillDispose(() => { retainedDisposals++; });
 	const added: EditorTextModel[] = [], removed: EditorTextModel[] = [];
-	t.after(models.onDidAddModel(model => { added.push(model); }));
-	t.after(models.onDidRemoveModel(model => { removed.push(model); }));
-	t.after(models.onDidChangeContent(model => { if (model === retained) contentChanges++; }));
+	afterTest(t, models.onDidAddModel(model => { added.push(model); }));
+	afterTest(t, models.onDidRemoveModel(model => { removed.push(model); }));
+	afterTest(t, models.onDidChangeContent(model => { if (model === retained) contentChanges++; }));
 	const replacement = models.replace([retained, next]);
 	assert.equal(replacement.publish(), true);
 	replacement.dispose();
@@ -176,22 +177,22 @@ test('complete replacement transfers retained working copies without disposing o
 
 test('replacement publishes complete canonical membership before its explicit one-shot added notification phase', t => {
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const old = models.retain(resource(), 'aem', 'old'), next = new EditorTextModel(old.resource, 'aem', 'new', models.history);
 	let oldDisposals = 0, cleared = 0, added = 0, reentrantAdded = 0;
 	let sourceAtClear: EditorTextModel | undefined, addedAtClear = -1;
 	old.onWillDispose(() => { oldDisposals++; });
-	t.after(models.onWillClear(() => {
+	afterTest(t, models.onWillClear(() => {
 		cleared++;
 		sourceAtClear = models.get(next.identity); addedAtClear = added;
 	}));
-	t.after(models.onDidAddModel(model => { if (model === next) added++; }));
+	afterTest(t, models.onDidAddModel(model => { if (model === next) added++; }));
 	const replacement = models.replace([next]);
 	assert.ok(models.get(next.identity) === next);
 	assert.equal(cleared, 0, 'canonical registration cannot invoke source-reset callbacks before routes and admission are published');
 	assert.equal(added, 0, 'canonical admission does not publish new view consumers before their routes are prepared');
 	assert.equal(oldDisposals, 0);
-	t.after(models.onDidAddModel(model => {
+	afterTest(t, models.onDidAddModel(model => {
 		if (model !== next) return;
 		reentrantAdded++;
 		assert.equal(replacement.publish(), true);

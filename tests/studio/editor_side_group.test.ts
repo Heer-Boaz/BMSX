@@ -8,6 +8,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { EditorGroupArrangement } from '../../ide/workbench/services/editor/group_arrangement';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('directional neighbors meet across the real sash and require positive overlap, independently of viewport clipping', () => {
 	const arrangement = new EditorGroupArrangement('a');
@@ -87,7 +88,7 @@ for (const outcome of ['invalid', 'foreign', 'retired'] as const) test(`side adm
 		if (outcome === 'foreign') f.second.focus();
 		else if (outcome === 'retired') f.firstPart.dispose();
 	});
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	control.setValue(1); control.layout(f.firstGroup.panes.contentBounds); control.field.focusTarget.focus();
 	setFieldText(control.field, outcome === 'invalid' ? 'not a number' : '2', true);
 	assert.ok(parts.sideGroup(f.firstGroup) === undefined);
@@ -103,7 +104,7 @@ for (const outcome of ['invalid', 'foreign', 'retired'] as const) test(`side adm
 test('a same-part relocation during split publication cancels the old side request without retry or rollback', t => {
 	const f = createActualSourcePanes(t), part = f.firstPart, parts = f.editor.editorParts;
 	f.editor.resourcePanel.show(); let moved = false;
-	t.after(part.onDidChangeGroups(() => {
+	afterTest(t, part.onDidChangeGroups(() => {
 		if (moved) return;
 		moved = true;
 		const created = part.groups.find(group => group !== f.firstGroup)!;
@@ -143,7 +144,7 @@ test('new receiver generation is retained before external split publication can 
 	f.editor.resourcePanel.show();
 	const newer = new HostErrorInput('new receiver publication');
 	let installed = false;
-	t.after(part.onDidChangeGroups(() => {
+	afterTest(t, part.onDidChangeGroups(() => {
 		if (installed) return;
 		installed = true;
 		part.groups.find(group => group !== f.firstGroup)!.openEditor(newer, { preserveFocus: true });
@@ -174,7 +175,7 @@ test('a layout callback restoring newer maximized intent cannot fabricate a dupl
 test('a newer foreign focus during real split publication survives while the accepted empty side remains', t => {
 	const f = createActualSourcePanes(t), part = f.firstPart, parts = f.editor.editorParts;
 	f.editor.resourcePanel.show();
-	t.after(part.onDidChangeGroups(() => { f.second.focus(); }));
+	afterTest(t, part.onDidChangeGroups(() => { f.second.focus(); }));
 	assert.ok(parts.sideGroup(f.firstGroup) === undefined);
 	assert.equal(part.groups.length, 2);
 	assert.equal(part.groups.find(group => group !== f.firstGroup)!.model.tabs.length, 0);

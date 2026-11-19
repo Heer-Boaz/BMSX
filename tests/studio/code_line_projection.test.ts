@@ -9,6 +9,7 @@ import { CodeLineProjection } from '../../ide/editor/ui/code/line_projection';
 import type { InlineEditState } from '../../ide/editor/ui/code_editor_state';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, text: string, variant: FontVariant = 'msx') {
 	const font = new EditorFont(variant);
@@ -20,13 +21,13 @@ function fixture(t: TestContext, text: string, variant: FontVariant = 'msx') {
 	const source = layout.measurements.getLine(0);
 	assert.equal(source.inline, null); assert.equal(source.src, text);
 	assert.equal(source.viewText, text); assert.equal(source.viewColumnToDisplay, source.hi.columnToDisplay);
-	t.after(() => { layout.dispose(); });
+	afterTest(t, () => { layout.dispose(); });
 	return { font, model, layout, source, projection: new CodeLineProjection(font) };
 }
 
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
 	test(`${variant}/${theme} an admitted replacement composes actual source prefix, ghost and surviving tail without changing the source`, t => {
-		const previous = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme); t.after(() => colors.setIdeThemeVariant(previous));
+		const previous = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme); afterTest(t, () => colors.setIdeThemeVariant(previous));
 		const f = fixture(t, 'abOLDcd', variant), snapshot = JSON.stringify(f.source);
 		const state: InlineEditState = { version: 1, active: true, row: 0, startColumn: 2, endColumn: 5, text: 'xy', preserveCase: false };
 		const line = f.projection.update(f.source, state);

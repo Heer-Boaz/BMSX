@@ -10,6 +10,7 @@ import { layoutActorLab, measureActorLab } from '../../ide/workbench/contrib/act
 import { ActorStateGraph } from '../../ide/workbench/contrib/actor_lab/state_graph';
 import { WORKBENCH_SPLIT_SIZE } from '../../ide/workbench/ui/split_view';
 import { GRAPH_NODE_PADDING } from '../../ide/workbench/ui/graph/model';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx', presentation: 'outline' | 'graph' = 'outline') {
 	configureFontVariant(variant);
@@ -23,7 +24,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', presentation: 'outline
 		if (input.timeline.visible) input.timelineLayout.update(input.timeline, input.layout);
 		layoutActorLab(input);
 	};
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	return { input, bounds, arrange };
 }
 

@@ -11,6 +11,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	configureFontVariant(font); editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
@@ -34,7 +35,7 @@ function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 			justReleasedButtons: pressed ? 0 : PointerButton.Primary, modifiers: KeyModifier.none, spaceDown: false };
 		if (!pointerCapture.dispatch(snapshot, false, 0, picker.pointerScope)) picker.handlePointer(snapshot, pressed);
 	};
-	t.after(() => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	return { picker, origin, key, pointer, checked: () => checked, accepted: () => accepted, retired: () => retired,
 		onChange: (f: (value: boolean) => void) => { onChange = f; }, onVisibility: (f: () => void) => { onVisibility = f; } };
 }

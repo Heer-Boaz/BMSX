@@ -15,6 +15,7 @@ import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_
 import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
 import { BehaviorLensNavigationSelection } from '../../ide/workbench/contrib/behavior_lens/navigation_selection';
 import { createBehaviorTreeChildRemovalEdits } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, weighted = false, edge = false, definition = 1) {
 	const source = weighted ? BT_TRANSFER_SOURCE
@@ -152,7 +153,7 @@ test('navigation restores a mapped occurrence and pan after choosing another reg
 	const input = f.input;
 	f.viewport.scrollX = 37; f.viewport.scrollY = 19;
 	const selected = new BehaviorLensNavigationSelection(input);
-	t.after(() => selected.dispose());
+	afterTest(t, () => selected.dispose());
 	const oldGraph = f.viewport.model;
 	selectBehaviorLensDefinition(f.view, f.view.document.definitions[0].rowKey);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 shifted\n' }]);
@@ -176,7 +177,7 @@ test('a removed history occurrence does not select a surviving namesake, even af
 	const f = fixture(t);
 	const input = f.input;
 	const selected = new BehaviorLensNavigationSelection(input);
-	t.after(() => selected.dispose());
+	afterTest(t, () => selected.dispose());
 	f.model.pushEditOperations(createBehaviorTreeChildRemovalEdits(f.model.buffer, f.member));
 	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(f.view.selectionState.definitionRowKey, f.view.document.definitions[1].rowKey);
@@ -230,7 +231,7 @@ test('two inputs on the same behavior registration consume only their own explic
 	graph.viewport.selection = graph.viewport.model.nodes[0].children[0].children[0].children[0];
 	acceptBehaviorGraphSelection(otherView, graph);
 	const unbind = f.model.onDidChangeContent(event => mapBehaviorLensSourceRanges(otherView, f.model.resource, event));
-	t.after(() => { unbind(); sibling.dispose(); });
+	afterTest(t, () => { unbind(); sibling.dispose(); });
 	const refresh = () => {
 		f.refresh();
 		installBehaviorLensDocument(otherView, f.view.document);

@@ -19,6 +19,7 @@ import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_in
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local trees=require('cartlib/behaviour_tree/library')
 local machines=require('cartlib/fsm/library')
@@ -80,7 +81,7 @@ for (const font of ['tiny', 'msx'] as const)
 		const f = fixture(t, font), origin = f.pane.commandTarget.commandContext;
 		let enabled = false, invoked = 0;
 		origin.registerCommand('animation', { isEnabled: () => enabled, run: () => { invoked++; } });
-		t.after(() => origin.unregisterCommand('animation'));
+		afterTest(t, () => origin.unregisterCommand('animation'));
 		f.update();
 		const section = f.home.sections.find(section => section.actions.items.some(item => item.command === 'animation'))!;
 		const action = section.actions.items.find(item => item.command === 'animation')!;
@@ -116,7 +117,7 @@ test('Home skips a wholly disabled section without withdrawing its supported act
 	const section = f.home.sections[1], following = f.home.sections[2], previous = inputFocus.target;
 	assert.equal(section.actions.hasFocus, true);
 	for (const item of section.actions.items) origin.registerCommand(item.command, { isEnabled: () => false, run: () => assert.fail('disabled Home action executed') });
-	t.after(() => { for (const item of section.actions.items) origin.unregisterCommand(item.command); });
+	afterTest(t, () => { for (const item of section.actions.items) origin.unregisterCommand(item.command); });
 	f.update();
 	for (const item of section.actions.items) { assert.equal(item.visible, true); assert.equal(item.enabled, false); }
 	assert.notEqual(inputFocus.target, previous, 'a section with no admitted actions cannot retain native focus');
@@ -182,7 +183,7 @@ test('a source replacement during chooser focus return revokes the accepted beha
 	const open = t.mock.method(f.editor.behaviorLens, 'openDefinition');
 	invoke(f, 'behaviorLens.stateMachines');
 	const origin = f.picker.invocationOrigin;
-	t.after(f.picker.field.focusTarget.onDidBlur(next => {
+	afterTest(t, f.picker.field.focusTarget.onDidBlur(next => {
 		if (next === origin) model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: SOURCE.replace('idle={},active={}', 'other={},newer={}') }]);
 	}));
 	f.key('Enter');
@@ -195,7 +196,7 @@ test('Home behavior acceptance opens in its captured group without stealing newe
 	invoke(f, 'behaviorLens.behaviorTrees');
 	const origin = f.picker.invocationOrigin;
 	let moved = false;
-	t.after(f.picker.field.focusTarget.onDidBlur(next => {
+	afterTest(t, f.picker.field.focusTarget.onDidBlur(next => {
 		if (next === origin) { moved = true; f.second.focus(); }
 	}));
 	f.key('Enter');
@@ -227,7 +228,7 @@ for (const replacement of ['return {}\n', SOURCE]) test(`working-copy admission 
 	invoke(f, 'behaviorLens.behaviorTrees');
 	assert.ok(editorTextModelService.get(f.resource) === undefined);
 	let edited = false;
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource === f.resource) {
 			edited = true; model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: replacement }]);
 		}
@@ -241,7 +242,7 @@ for (const interaction of ['newerEditor', 'foreignFocus'] as const)
 	test(`Home behavior production respects ${interaction} from canonical model admission`, t => {
 		const f = fixture(t), newer = new HostErrorInput('newer attachment');
 		invoke(f, 'behaviorLens.behaviorTrees');
-		t.after(editorTextModelService.onDidAddModel(model => {
+		afterTest(t, editorTextModelService.onDidAddModel(model => {
 			if (model.resource !== f.resource) return;
 			if (interaction === 'newerEditor') f.firstGroup.openEditor(newer);
 			else f.second.focus();
@@ -261,7 +262,7 @@ test('Home Scene acceptance does not publish a Main subject over newer popup-ret
 	const f = fixture(t), picker = f.editor.quickInput;
 	invoke(f, 'sceneEditor', picker);
 	let moved = false;
-	const release = picker.field.focusTarget.onDidBlur(() => { release(); moved = true; f.second.focus(); }); t.after(release);
+	const release = picker.field.focusTarget.onDidBlur(() => { release(); moved = true; f.second.focus(); }); afterTest(t, release);
 	f.key('Enter');
 	assert.equal(moved, true);
 	assert.equal(f.editor.mainWorkspace.primary, undefined); assert.equal(f.firstGroup.model.activeTab, f.home);
@@ -274,7 +275,7 @@ for (const interaction of ['newerEditor', 'foreignFocus'] as const)
 		const f = fixture(t), picker = f.editor.quickInput;
 		let newer: HostErrorInput | undefined;
 		invoke(f, 'sceneEditor', picker);
-		t.after(editorTextModelService.onDidAddModel(model => {
+		afterTest(t, editorTextModelService.onDidAddModel(model => {
 			if (model.resource !== f.sceneResource) return;
 			if (interaction === 'newerEditor') {
 				newer = new HostErrorInput('newer attachment'); f.firstGroup.openEditor(newer);
@@ -294,7 +295,7 @@ test('Home Scene filtering observes outgoing blur and opens the canonical subjec
 	const f = fixture(t), picker = f.editor.quickInput, model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.sceneResource);
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'return {}\n' }]);
 	const origin = inputFocus.target!;
-	t.after(origin.onDidBlur(next => {
+	afterTest(t, origin.onDidBlur(next => {
 		if (next === picker.field.focusTarget) model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: SCENE_SOURCE }]);
 	}));
 	invoke(f, 'sceneEditor', picker);
@@ -322,7 +323,7 @@ for (const replacement of ['return {}\n', SCENE_SOURCE])
 		const f = fixture(t), picker = f.editor.quickInput;
 		invoke(f, 'sceneEditor', picker);
 		let changed = false;
-		t.after(editorTextModelService.onDidAddModel(model => {
+		afterTest(t, editorTextModelService.onDidAddModel(model => {
 			if (model.resource === f.sceneResource) {
 				changed = true; model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: replacement }]);
 			}

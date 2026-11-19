@@ -15,6 +15,7 @@ import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { RectRenderKind, type GlyphRenderSubmission, type HostImageRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 function assertVisible(frame: HostOverlayFrame, bounds: Readonly<RectBounds>): void {
 	for (let index = 0; index < frame.commandCount; index += 1) {
@@ -48,7 +49,7 @@ function keyboardFixture() {
 }
 
 test('keyboard frames describe their arranged coordinates, not a pending presentation allocation', t => {
-	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	const f = keyboardFixture(); afterTest(t, () => f.input.dispose());
 	f.presenter.setFixedRenderTargetSize(512, 384, 512, 384);
 	const frame = f.frame();
 	assert.deepEqual([frame.logicalWidth, frame.logicalHeight], [256, 192]);
@@ -70,7 +71,7 @@ test('video presenter retains its producer visible rectangle without changing fu
 });
 
 test('real keyboard panel, glyphs, help and every interactive key fit the 5%-cropped native 256×192 surface', t => {
-	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	const f = keyboardFixture(); afterTest(t, () => f.input.dispose());
 	const normal = f.frame();
 	const panel = normal.commandRefs[0] as RectRenderSubmission;
 	const q = normal.commandRefs[48] as RectRenderSubmission;
@@ -101,7 +102,7 @@ test('real keyboard panel, glyphs, help and every interactive key fit the 5%-cro
 });
 
 test('keyboard relayouts on visible origin changes and reuses its real commands without repeated font measurement', t => {
-	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	const f = keyboardFixture(); afterTest(t, () => f.input.dispose());
 	write_rect_bounds(f.output.visibleViewportBounds, 12.8, 9.6, 243.2, 182.4);
 	const key = f.frame().commandRefs[48] as RectRenderSubmission;
 	const oldLeft = key.area.left, oldTop = key.area.top;
@@ -128,7 +129,7 @@ test('keyboard relayouts on visible origin changes and reuses its real commands 
 });
 
 test('host menu uses a selected visible row window and maps pointer activation through its first-row offset', t => {
-	const host = createHostFrameFixture(); t.after(() => host.input.dispose());
+	const host = createHostFrameFixture(); afterTest(t, () => host.input.dispose());
 	const { output, presenter, queue } = createHostOverlayFixture(256, 192);
 	const font = new Font(); presenter.default_font = font;
 	write_rect_bounds(output.visibleViewportBounds, 12.8, 9.6, 243.2, 182.4);
@@ -174,7 +175,7 @@ test('host menu uses a selected visible row window and maps pointer activation t
 });
 
 test('closed-menu FPS and usage HUD translate within retained safe bounds without shifting the game target', t => {
-	const host = createHostFrameFixture(); t.after(() => host.input.dispose());
+	const host = createHostFrameFixture(); afterTest(t, () => host.input.dispose());
 	const { output, presenter, queue } = createHostOverlayFixture(256, 192);
 	presenter.default_font = new Font();
 	write_rect_bounds(output.visibleViewportBounds, 12.8, 9.6, 243.2, 182.4);
@@ -220,7 +221,7 @@ test('closed-menu FPS and usage HUD translate within retained safe bounds withou
 
 
 test('native bitmap keyboard keeps every panel and key surface open, with retained one-pixel glyph shadows on all pages', t => {
-	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	const f = keyboardFixture(); afterTest(t, () => f.input.dispose());
 	for (const page of [KeyboardPage.Text, KeyboardPage.Symbols, KeyboardPage.Functions]) {
 		f.model.setPage(page);
 		const frame = f.frame();
@@ -250,7 +251,7 @@ test('native bitmap keyboard keeps every panel and key surface open, with retain
 });
 
 test('manual native keyboard docking preserves model ownership and follows live bounds, page sizes and Shift labels', t => {
-	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	const f = keyboardFixture(); afterTest(t, () => f.input.dispose());
 	write_rect_bounds(f.output.visibleViewportBounds, 12.8, 9.6, 243.2, 182.4);
 	const original = f.frame(), panel = original.commandRefs[0] as RectRenderSubmission;
 	const q = original.commandRefs[48] as RectRenderSubmission, glyph = original.commandRefs[50] as GlyphRenderSubmission;
@@ -296,7 +297,7 @@ test('manual native keyboard docking preserves model ownership and follows live 
 
 
 test('native keyboard pictograms replace only special-key artwork, remain centered, and indicate the destination docking edge', t => {
-	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	const f = keyboardFixture(); afterTest(t, () => f.input.dispose());
 	const icons = new Map([[13, 'keyboard_backspace'], [14, 'keyboard_tab'], [28, 'keyboard_caps_lock'], [40, 'keyboard_enter'],
 		[41, 'keyboard_shift'], [55, 'keyboard_space'], [56, 'keyboard_arrow_left'], [57, 'keyboard_arrow_down'],
 		[58, 'keyboard_arrow_up'], [59, 'keyboard_arrow_right'], [75, 'keyboard_dock_bottom']]);
@@ -341,7 +342,7 @@ test('native keyboard pictograms replace only special-key artwork, remain center
 
 
 test('bitmap hit testing retains its published page until the next presentation without changing logical selection', t => {
-	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	const f = keyboardFixture(); afterTest(t, () => f.input.dispose());
 	const text = f.frame();
 	const q = text.commandRefs[48] as RectRenderSubmission;
 	const x = (q.area.left + q.area.right) / 2, y = (q.area.top + q.area.bottom) / 2;

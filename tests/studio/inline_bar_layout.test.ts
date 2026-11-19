@@ -14,6 +14,7 @@ import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/backg
 import { inputFocus } from '../../ide/input/focus';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import { createTestCodeControl } from '../helpers/code_control';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, source = Array.from({ length: 200 }, () => 'x').join('\n')) {
 	const { models, documents, clock } = createTestCodeDocuments(t);
@@ -27,7 +28,7 @@ function fixture(t: TestContext, source = Array.from({ length: 200 }, () => 'x')
 	const bars = new SourceInlineBars(code, find, rename, lineJump);
 	const layout = () => { bars.layout(client); resolveCodeAreaViewport(code); };
 	const unbind = [find.onDidChangeLayout(layout), rename.onDidChangeLayout(layout), lineJump.onDidChangeLayout(layout)];
-	t.after(() => {
+	afterTest(t, () => {
 		for (const release of unbind) release();
 		find.dispose(); rename.dispose(); lineJump.dispose(); inputFocus.setTarget(null); clearBackgroundTasks();
 	});

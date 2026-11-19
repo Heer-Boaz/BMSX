@@ -6,6 +6,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** Only packaged assets, deliberately no BMSX APIs or HTML rewriting. */
 async function standalone(t: TestContext) {
@@ -22,7 +23,7 @@ async function standalone(t: TestContext) {
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
 	const browser = await chromium.launch({ args: ['--no-sandbox', '--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
 		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'] });
-	t.after(async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	afterTest(t, async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 	const page = await browser.newPage({ viewport: { width: 1024, height: 768 }, permissions: ['clipboard-read', 'clipboard-write'] });
 	page.on('request', request => { if (request.url().includes('/__bmsx__/')) requests.push(request.url()); });
 	page.on('pageerror', error => errors.push(String(error)));

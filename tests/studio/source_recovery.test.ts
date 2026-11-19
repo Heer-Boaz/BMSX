@@ -18,6 +18,7 @@ import { createLuaSourceRegistry, registerLuaSourceRecord } from '../../ide/runt
 import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import { createTestToolingPackage } from '../helpers/runtime_sources';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function recoveryOptions(sourceContextId: string, project: string, path: string, source: string) {
 	const catalog = new WorkspaceSourceCatalog(), registry = createLuaSourceRegistry(project, path);
@@ -33,7 +34,7 @@ function recoveryOptions(sourceContextId: string, project: string, path: string,
 
 test('viewless recovery shares working-copy semantics without touching the human editor session', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-source-recovery-'));
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(root, { recursive: true, force: true }); });
 	const project = 'carts/nemesis_s', path = `${project}/tests/save.lua`, source = 'return true';
 	await mkdir(join(root, project, 'tests'), { recursive: true });
 	await mkdir(join(root, project, '.bmsx'), { recursive: true });
@@ -67,7 +68,7 @@ test('viewless recovery shares working-copy semantics without touching the human
 
 test('source contexts isolate recovery manifests and drafts for the same project and session', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-source-context-recovery-'));
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(root, { recursive: true, force: true }); });
 	const project = 'carts/nemesis_s', path = `${project}/tests/save.lua`, source = 'return true';
 	await mkdir(join(root, project, 'tests'), { recursive: true });
 	await writeFile(join(root, path), source);
@@ -127,7 +128,7 @@ test('source contexts isolate recovery manifests and drafts for the same project
 
 for (const externalChange of ['changed', 'removed'] as const) test(`recovered draft retains its acknowledged baseline when the file was ${externalChange}`, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-recovery-conflict-'));
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(root, { recursive: true, force: true }); });
 	const project = 'carts/nemesis_s', path = `${project}/tests/save.lua`, original = 'return true', draft = '-- unsaved\n' + original;
 	await mkdir(join(root, project, 'tests'), { recursive: true });
 	await writeFile(join(root, path), original);

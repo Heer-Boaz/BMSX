@@ -25,6 +25,7 @@ import { readLocalWorkspaceRecord, WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE 
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `${SCENE_VIEWPORT_SOURCE}\nviewport_scenes.register('viewport proof with a deliberately long scene name', {
 	objects = { { member_id = 'other', definition_id = 'proof.actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 8, 9 } } } },
@@ -50,7 +51,7 @@ function fixture(t: TestContext) {
 			breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	};
 	const restore = (payload: WorkspaceAutosavePayload) => applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload);
-	t.after(() => { workspaceDirtyRecords.clear(); clearWorkspaceSourceCaches(); });
+	afterTest(t, () => { workspaceDirtyRecords.clear(); clearWorkspaceSourceCaches(); });
 	f.first.focus();
 	return { ...f, identity, model, open, checkpoint, restore };
 }
@@ -186,7 +187,7 @@ test('new document intent during dirty-model admission retains its group and can
 		incoming = new CodeEditorInput(resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource));
 		f.editor.editorParts.main.activeGroup.openEditor(incoming);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	await f.restore(payload);
 	assert.equal(f.editor.mainWorkspace.primary, undefined);
 	assert.ok([...f.editor.editorParts.groups].every(group => [...group.model.tabs].every(input => input.kind !== 'scene_editor')));
@@ -250,7 +251,7 @@ test('final shutdown persists primary state and its canonical dirty source befor
 	f.model().pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- final unsaved edit\n' }]);
 	const expected = f.editor.editorParts.captureEditorLocation(f.editor.mainWorkspace.primary!.input), source = f.model().buffer.getText();
 	const statePath = joinWorkspacePaths(context.projectRoot, WORKSPACE_METADATA_DIR, 'studio', context.id, 'primary-checkpoint', WORKSPACE_STATE_FILE);
-	t.after(() => {
+	afterTest(t, () => {
 		const record = readLocalWorkspaceRecord(storage, context.projectRoot, statePath); assert.ok(record !== null);
 		const payload: WorkspaceAutosavePayload = JSON.parse(record.contents);
 		assert.deepEqual(payload.sceneCompanion, expected);
@@ -271,7 +272,7 @@ test('a new Scene opened and closed during model retirement supersedes older rec
 		const group = f.editor.editorParts.findGroup(primary.input)!;
 		closing = group.close(primary.input.id);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	await f.restore(payload);
 	assert.ok(opening !== undefined); assert.equal(await opening, true);
 	assert.ok(closing !== undefined); assert.equal(await closing, true);
@@ -289,7 +290,7 @@ test('a newer Home document during initial model retirement survives independent
 		incoming = new HomeInput(null);
 		f.editor.editorParts.main.activeGroup.openEditor(incoming);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	await f.restore(payload);
 	assert.ok(incoming !== undefined && f.editor.editorParts.main.activeGroup.model.activeTab === incoming);
 	assert.equal(f.editor.editorParts.documents.length, 0);
@@ -308,7 +309,7 @@ test('a newer Home document during initial group retirement is not overwritten b
 		incoming = new HomeInput(null);
 		parts.main.activeGroup.openEditor(incoming);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	await f.restore(payload);
 	assert.ok(incoming !== undefined && parts.main.activeGroup.model.activeTab === incoming);
 	assert.equal(parts.documents.length, 0);
@@ -331,7 +332,7 @@ for (const action of ['visibility', 'filter', 'disclosure'] as const) test(`new 
 		else if (action === 'filter') panel.toggleFilterMode();
 		else panel.toggleFileDisclosure(file);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	await f.restore(payload);
 	assert.equal(changed, true);
 	if (action === 'visibility') assert.equal(panel.visible, true);
@@ -363,7 +364,7 @@ test('outgoing model observers resolve and edit the complete recovered canonical
 		incoming = new CodeEditorInput(admitted);
 		f.editor.editorParts.main.activeGroup.openEditor(incoming);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	await f.restore(payload);
 	assert.equal(observedSource, recoveredSource);
 	assert.ok(admitted !== undefined && admitted !== departing && f.model() === admitted);
@@ -416,7 +417,7 @@ for (const boundary of ['model-will-clear', 'primary-scope-retirement'] as const
 		incoming = new HomeInput(null); group.openEditor(incoming);
 	};
 	const unbind = boundary === 'model-will-clear' ? editorTextModelService.onWillClear(admit) : previous.scope.onDidRetireContext(admit);
-	t.after(unbind);
+	afterTest(t, unbind);
 	await f.restore(payload);
 	assert.ok(incoming !== undefined && parts.main.activeGroup.model.activeTab === incoming);
 	assert.ok(source !== undefined && parts.main.activeGroup.model.findById(source.id) === source);

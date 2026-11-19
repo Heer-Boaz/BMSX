@@ -9,6 +9,7 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { RectRenderKind, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, theme: string, variant: 'tiny' | 'msx') {
 	const previousTheme = colors.getActiveIdeThemeVariant(), previousFont = editorViewState.font, previousHeight = editorViewState.lineHeight;
@@ -26,7 +27,7 @@ function fixture(t: TestContext, theme: string, variant: 'tiny' | 'msx') {
 			rects.push(frame.commandRefs[index] as RectRenderSubmission);
 		return rects;
 	};
-	t.after(() => { colors.setIdeThemeVariant(previousTheme); editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; });
+	afterTest(t, () => { colors.setIdeThemeVariant(previousTheme); editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; });
 	return { grid, draw };
 }
 

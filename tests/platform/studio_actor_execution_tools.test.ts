@@ -6,6 +6,7 @@ import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
 import type { ActorRuntimeInspection } from '../../ide/workbench/contrib/actor_lab/runtime_inspection';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: Codex executes shared Actor operations without owning the pane`, { timeout: 180000 }, async t => {
 	type Body = { input: { type: string; call_id: string; output: string }[] };
@@ -51,7 +52,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const model = await createCodexModelFixture(t, steps);
 	const f = await createAssistantStudioFixture(t, `actor-execution-${backend}`, {
 		provider: { name: 'Offline Actor execution fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
-	t.after(() => writeFile(join(f.evidence, `actor-execution-${backend}-requests.json`), JSON.stringify(model.requests)));
+	afterTest(t, () => writeFile(join(f.evidence, `actor-execution-${backend}-requests.json`), JSON.stringify(model.requests)));
 	const result = await f.page.evaluate(async backend => {
 		const entry = '/test.js', module = await import(entry);
 		return module.runAssistantActorExecution(backend, document.querySelector('canvas'), globalThis.capture);

@@ -26,6 +26,7 @@ import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
 import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompack/assets';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 const point = (x: number, y: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({
 	viewportX: x, viewportY: y, valid: true, insideViewport: true, modifiers: KeyModifier.none, spaceDown: false,
@@ -80,7 +81,7 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 		const up = point(x, y, 0, 0, 1); pointerCapture.dispatch(up, false, 1, surface.captureScope); pointerCapture.endRoute(up);
 		key.update();
 	};
-	t.after(() => { key.dispose(); contextMenu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); unbind(); surfaces.dispose(); input.dispose();
+	afterTest(t, () => { key.dispose(); contextMenu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); unbind(); surfaces.dispose(); input.dispose();
 		inputFocus.workbenchScope.commands = previousCommands; colors.setIdeThemeVariant(previousTheme); });
 	return { input, surfaces, owner, origin, unrelated, commands, draw, clickAction, get key() { return key; },
 		recreate() { key.dispose(); key = new RomMapKeyWindow(input, commands, contextMenu, surfaces, owner, origin, area); } };
@@ -193,7 +194,7 @@ test('controller recreation retains placement and open state per snapshot withou
 	f.key.window.hide(); assert.equal(inputFocus.target, f.unrelated);
 	f.recreate(); f.key.update(); assert.equal(model.open, false); assert.equal(f.key.window.surface, undefined);
 	f.key.show(); assert.deepEqual(model.requestedBounds, requested); assert.equal(f.input.keyViewport.scrollTop, scroll);
-	const other = new RomInspectorInput({ ...f.input.snapshot, rom: f.input.snapshot.rom.slice() }); t.after(() => other.dispose());
+	const other = new RomInspectorInput({ ...f.input.snapshot, rom: f.input.snapshot.rom.slice() }); afterTest(t, () => other.dispose());
 	assert.equal(other.keyWindow.open, false); assert.equal(other.keyWindow.placementInitialized, false);
 });
 

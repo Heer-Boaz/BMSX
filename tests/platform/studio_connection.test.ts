@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { StudioSessions } from '../../hosts/node/studio/sessions';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('flapping registrations retain backoff and exhaust the recovery budget', { timeout: 15000 }, async t => {
 	let attempts = 0;
@@ -17,7 +18,7 @@ test('flapping registrations retain backoff and exhaust the recovery budget', { 
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
 	const browser = await chromium.launch({ args: ['--no-sandbox'] });
-	t.after(async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	afterTest(t, async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 	const page = await browser.newPage();
 	await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
 	await page.clock.pauseAt(new Date('2026-01-01T00:00:01Z'));
@@ -57,7 +58,7 @@ test('window registration recovers, expires authority, and retires on suspension
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
 	const browser = await chromium.launch({ args: ['--no-sandbox'] });
-	t.after(async () => { await browser.close(); sessions.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); });
+	afterTest(t, async () => { await browser.close(); sessions.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); });
 	const page = await browser.newPage();
 	const address = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 	await page.goto(address);
@@ -120,7 +121,7 @@ test('permanent admission/protocol failures require explicit retry, including af
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
 	const browser = await chromium.launch({ args: ['--no-sandbox'] });
-	t.after(async () => { await browser.close(); sessions.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	afterTest(t, async () => { await browser.close(); sessions.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 	const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
 		import { StudioHttpSession } from './ide/browser/http_session';
 		import { StudioServerConnection } from './ide/browser/server_connection';

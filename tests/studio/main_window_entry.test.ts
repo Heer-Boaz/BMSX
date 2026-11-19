@@ -9,6 +9,7 @@ import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/pri
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
@@ -113,7 +114,7 @@ for (const entry of ['minimize', 'close'] as const)
 		const f = await fixture(t);
 		f.main.focusPrimary('details'); f.second.focus();
 		const unbind = f.second.commandTarget.onDidBlur(() => { unbind(); f.first.focus(); });
-		t.after(unbind);
+		afterTest(t, unbind);
 		if (entry === 'minimize') f.parts.minimize(f.secondPart);
 		else assert.equal(await f.parts.close(f.secondPart), true);
 		assert.ok(inputFocus.admittedTarget === f.first.commandTarget && f.parts.activePart === f.firstPart);

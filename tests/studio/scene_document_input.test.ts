@@ -13,6 +13,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('same', { objects = {{ member_id='one', definition_id='actor' }} })
@@ -33,7 +34,7 @@ function fixture(t: TestContext) {
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, sources.catalog, resource);
 	const controller = new SceneEditorController(sources.catalog, documents), group = createTestEditorGroup();
-	t.after(() => { group.dispose(); inputFocus.setTarget(null); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); sources.catalog.dispose(); });
+	afterTest(t, () => { group.dispose(); inputFocus.setTarget(null); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); sources.catalog.dispose(); });
 	const create = (index: number) => {
 		const document = documents.get(model);
 		return new SceneEditorInput(model, documents, sources.catalog, controller.createView,
@@ -63,7 +64,7 @@ test('distinct same-named scene occurrences own separate tabs while admission re
 test('Scene occurrence lookup borrows the exact retained input without admitting a model or changing its editor', t => {
 	const f = fixture(t), document = f.documents.get(f.model);
 	const ranges = document.scenes.map(scene => luaSourceRangeToTextRange(f.model.buffer, scene.range));
-	t.after(f.model.trackRanges(new Map(ranges.map((range, index) => [index, range]))));
+	afterTest(t, f.model.trackRanges(new Map(ranges.map((range, index) => [index, range]))));
 	const other = f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'other.lua' })!;
 	const otherModel = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, other);
 	const models = [...editorTextModelService.models].length;
@@ -94,7 +95,7 @@ test('Scene occurrence lookup borrows the exact retained input without admitting
 test('Scene occurrence lookup follows an intact unavailable marker but never admits a removed occurrence', t => {
 	const f = fixture(t), scene = f.documents.get(f.model).scenes[0];
 	const range = luaSourceRangeToTextRange(f.model.buffer, scene.range);
-	t.after(f.model.trackRanges(new Map([['scene', range]])));
+	afterTest(t, f.model.trackRanges(new Map([['scene', range]])));
 	assert.equal(f.controller.openDefinition(f.group, f.model.resource, range), true);
 	const input = f.group.model.activeTab; assert.ok(input instanceof SceneEditorInput);
 	const offset = f.model.buffer.getText().indexOf('scenes.register');
@@ -151,15 +152,15 @@ test('identical scene ranges from different source models are not the same docum
 
 test('scene input restoration retains an exact occurrence and does not guess after source changes', async t => {
 	const f = fixture(t), input = f.create(1), serializer = new SceneEditorInputSerializer(f.sources.catalog, f.controller);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const value = serializer.serialize(input), reference = input.view.authoring.captureSourceReference();
-	const restored = await serializer.deserialize(value); t.after(() => restored.dispose());
+	const restored = await serializer.deserialize(value); afterTest(t, () => restored.dispose());
 	assert.ok(restored instanceof SceneEditorInput);
 	assert.equal(restored.view.authoring.availability, 'available');
 	assert.deepEqual(restored.view.authoring.captureSourceReference().subject, reference.subject);
 	assert.equal(restored.view.authoring.subject, f.documents.get(f.model).scenes[1]);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed\n' }]);
-	const stale = await serializer.deserialize(value); t.after(() => stale.dispose());
+	const stale = await serializer.deserialize(value); afterTest(t, () => stale.dispose());
 	assert.ok(stale instanceof SceneEditorInput);
 	assert.equal(stale.view.authoring.availability, 'unavailable');
 	assert.equal(stale.view.authoring.subject, undefined);
@@ -169,7 +170,7 @@ test('scene input restoration retains an exact occurrence and does not guess aft
 
 test('a missing scene source restores an unavailable document without inventing or reverting a working copy', async t => {
 	const f = fixture(t), input = f.create(1), serializer = new SceneEditorInputSerializer(f.sources.catalog, f.controller);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved\n' }]);
 	const source = f.model.buffer.getText(), value = serializer.serialize(input), original = input.view.authoring.captureSourceReference();
 	const lookup = t.mock.method(f.sources.catalog, 'resolveResource', () => undefined);
@@ -190,7 +191,7 @@ test('a missing scene source restores an unavailable document without inventing 
 test('scene definition openings retain each exact tracked occurrence of a dirty source', t => {
 	const f = fixture(t), document = f.documents.get(f.model);
 	const ranges = document.scenes.map(scene => luaSourceRangeToTextRange(f.model.buffer, scene.range));
-	const untrack = f.model.trackRanges(new Map(ranges.map((range, index) => [index, range]))); t.after(untrack);
+	const untrack = f.model.trackRanges(new Map(ranges.map((range, index) => [index, range]))); afterTest(t, untrack);
 	assert.equal(f.controller.openDefinition(f.group, f.model.resource, ranges[0]), true);
 	const first = f.group.model.activeTab; assert.ok(first instanceof SceneEditorInput);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved\n' }]);

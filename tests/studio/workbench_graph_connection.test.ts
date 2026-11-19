@@ -12,6 +12,7 @@ import { WorkbenchGraphConnectionPreview, hitWorkbenchGraphConnectionHandle } fr
 import { createWorkbenchGraphEdge } from '../../ide/workbench/ui/graph/model';
 import { writeWorkbenchGraphArrow } from '../../ide/workbench/ui/graph/geometry';
 import { graphConnectionFixture } from '../helpers/graph_connection_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 const font = new Font({ variant: 'tiny' });
 function fixture() {
@@ -32,11 +33,11 @@ function fixture() {
 
 for (const end of ['source', 'target'] as const) test(`graph ${end} grip rejects a superseded focus request without starting a connection drag`, t => {
 	const f = fixture(), departing = f.focus.createTarget(), away = f.focus.createTarget();
-	t.after(() => f.control.dispose()); departing.focus();
+	afterTest(t, () => f.control.dispose()); departing.focus();
 	const target = f.control.focusTarget, context = target.scope.contextGeneration;
 	const unbind = departing.onDidBlur(() => {
 		unbind(); away.focus(); assert.ok(f.focus.admittedTarget === away); target.focus();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.equal(f.press(end), Result.Rejected);
 	assert.ok(f.focus.admittedTarget === target && f.view.selection === f.edge && f.view.model === f.model);
 	assert.equal(target.scope.contextGeneration, context); assert.equal(f.capture.active, false);

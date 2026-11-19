@@ -17,6 +17,7 @@ import { GX_SYSTEM_TEXTURE_ASSET_ID } from '../../toolchain/ts/rompack/system_te
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { afterTest } from '../helpers/test_cleanup';
 
 const header: CartRomHeader = {
 	headerSize: 72,
@@ -213,7 +214,7 @@ test('preview changes retain decoded pixels and collision paths until selection 
 	const model = new RomInspectorModel({ domain: -1, sourceContextId: TEST_SYSTEM_CONTEXT_ID, label: 'System', rom, header: fixtureHeader, assets: entries });
 	const content = new RomInspectorContentModel(model.snapshot);
 	const originalBytes = rom.slice(), physical = model.inspection.sections.map(section => ({ ...section }));
-	t.after(() => content.dispose());
+	afterTest(t, () => content.dispose());
 	model.select(model.rows.findIndex(row => row.asset === sprite)); content.setSubject(model.selection);
 	assert.equal(content.preview, undefined, 'binding a subject must not decode hidden pixels');
 	content.preparePreview();
@@ -322,7 +323,7 @@ test('changing logical image subjects releases one bitmap but reuses the capture
 	const assets = [atlas, ...images]; finalizePackedRomAssets(assets);
 	const model = new RomInspectorModel({ domain: 0, sourceContextId: TEST_CARTRIDGE_CONTEXT_IDS[0], label: 'Cart 0', rom, assets,
 		header: { ...header, dataLength: stream.length, metadataOffset: end, tocOffset: end + 32 } });
-	const content = new RomInspectorContentModel(model.snapshot); t.after(() => content.dispose());
+	const content = new RomInspectorContentModel(model.snapshot); afterTest(t, () => content.dispose());
 	let atlasReads = 0;
 	Object.defineProperty(atlas, 'start', { configurable: true, get: () => { atlasReads++; return 72; } });
 	content.setSubject(model.assets.find(row => row.asset === images[0]));

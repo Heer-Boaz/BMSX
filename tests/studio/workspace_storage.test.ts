@@ -79,6 +79,7 @@ import {
 	captureLuaTextModelSources,
 	captureCurrentLuaSource,
 } from '../../ide/workbench/services/working_copy/lua_sources';
+import { afterTest } from '../helpers/test_cleanup';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
@@ -303,7 +304,7 @@ function installBrowserWorkspace(t: TestContext, storage: MockStorage, clock = n
 	workspaceEnvironment = createWorkspaceEnvironment(storage, clock);
 	workspaceFiles = new MemoryWorkspaceFiles();
 	globalThis.fetch = async () => { throw new Error('Unexpected network request in a browser workspace'); };
-	t.after(() => resetEnvironment(storage));
+	afterTest(t, () => resetEnvironment(storage));
 	return clock;
 }
 
@@ -316,7 +317,7 @@ function installWorkspaceServer(
 	workspaceFiles = new HttpWorkspaceRecordProvider();
 	workspaceEnvironment = createWorkspaceEnvironment(storage, clock);
 	globalThis.fetch = (input, init) => server.fetch(input, init);
-	t.after(() => resetEnvironment(storage));
+	afterTest(t, () => resetEnvironment(storage));
 	return { clock, server };
 }
 
@@ -495,7 +496,7 @@ test('code-input persistence retains unwrapped fractional scroll with the exact 
 	assert.equal('scrollColumn' in saved.view, false);
 	const serializer = new CodeEditorInputSerializer(sources.catalog);
 	const input = await serializer.deserialize(JSON.stringify({ ...saved, view: { ...saved.view, scrollRow: 1.25, wordWrapEnabled: false } }));
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	assert.equal(input.context.view.wordWrapEnabled, false);
 	assert.equal(input.workingCopy.buffer.getText(), source);
 	assert.equal(input.context.view.cursorColumn, 7); assert.deepEqual(input.context.view.selectionAnchor, { row: 0, column: 2 });
@@ -530,7 +531,7 @@ function editorStub(
 	const resourcePanel = new ResourcePanelController(editor as CartEditor, sources.catalog,
 		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, content, workspaceEnvironment.clock);
 	resourcePanel.setFontMetrics(editorViewState.font);
-	t.after(() => { resourcePanel.dispose(); content.dispose(); });
+	afterTest(t, () => { resourcePanel.dispose(); content.dispose(); });
 	return Object.assign(editor, { resourcePanel });
 }
 
@@ -548,7 +549,7 @@ async function startAutosaveSession(t: TestContext, storage: MockStorage, contex
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restored,
 	);
-	t.after(() => resetSemanticProjects(editorTextModelService));
+	afterTest(t, () => resetSemanticProjects(editorTextModelService));
 	return { sources, editor };
 }
 
@@ -565,7 +566,7 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 		[slot0Sources, slot1Sources],
 		0,
 	);
-	t.after(() => {
+	afterTest(t, () => {
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 		clearWorkspaceSourceCaches();
@@ -666,7 +667,7 @@ test('canonical source cache keys identical resource paths by physical project p
 		});
 	};
 	await openWorkspaceRecords(new HttpWorkspaceRecordProvider());
-	t.after(async () => {
+	afterTest(t, async () => {
 		await closeWorkspaceRecords();
 		globalThis.fetch = ORIGINAL_FETCH;
 		clearWorkspaceSourceCaches();
@@ -1032,7 +1033,7 @@ test('Lua model and code-view admission preserve effective overrides without mak
 	assert.equal(model.dirty, true);
 	editorTextModelService.clear();
 	const input = resolveLuaCodeEditorInput(sources.catalog, resource), context = input.context;
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	assert.equal(context.model.buffer.getText(), '-- effective unsaved source');
 	assert.equal(context.model.lastSavedSource, '-- saved source');
 	assert.equal(context.model.dirty, true);
@@ -1854,7 +1855,7 @@ test('dirty recovery admits its captured authority without reading canonical sou
 	const release = editorTextModelService.onDidAddModel(model => admitted.push({
 		source: model.buffer.getText(), savedSource: model.lastSavedSource, persistedBaseline: model.persistedBaseline, dirty: model.dirty,
 	}));
-	t.after(release);
+	afterTest(t, release);
 	restoreWorkspaceDirtyModels(editorTextModelService, sources.catalog, [{
 		contextId: resource.contextId, path: resource.path, updatedAt: 1,
 		savedSource: '-- acknowledged source', persistedBaseline: '-- acknowledged source',
@@ -1995,7 +1996,7 @@ test('YAML session recovery preserves exact Save bytes and baseline at its admit
 	assert.deepEqual(captureLuaTextModelSources(editorTextModelService, sources.catalog), []);
 	const recoveryPath = workspaceRecoveryRecordPath(sources.catalog, workspaceState.localGeneration!.payload.dirtyFiles[0], TEST_RECOVERY_IDENTITY);
 	const saves = new TextFileSaveService(editorTextModelService, workspaceEnvironment.clock, sources.catalog);
-	t.after(() => saves.shutdown());
+	afterTest(t, () => saves.shutdown());
 	const operation = saves.save(restored);
 	assert.equal((await operation.completion).status, 'saved');
 	assert.equal(operation.snapshot.source, unsaved);
@@ -2020,7 +2021,7 @@ for (const type of ['lua', 'data', 'aem'] as const) for (const recoveryAuthority
 			installBrowserWorkspace(t, storage);
 			const root = await mkdtemp(join(tmpdir(), 'bmsx-frontend-recovery-'));
 			workspaceFiles = new DiskWorkspaceRecordProvider(root);
-			t.after(() => rm(root, { recursive: true, force: true }));
+			afterTest(t, () => rm(root, { recursive: true, force: true }));
 			const path = type === 'lua' ? 'src/recovery.lua' : type === 'data' ? 'res/recovery.yaml' : 'res/recovery.aem.yaml';
 			const original = type === 'lua' ? 'return "original"' : 'value: original\n';
 			const draft = type === 'lua' ? '-- unsaved\n' + original : '# unsaved\n' + original;
@@ -2081,7 +2082,7 @@ for (const type of ['lua', 'data', 'aem'] as const) for (const recoveryAuthority
 			assert.equal(editor.editorParts.main.activeGroup.model.tabs.length, 0);
 			assert.equal(await resolveTextFileModel(editorTextModelService, sources.catalog, sources.catalog.resolveResource(resource)!), recovered);
 			const saves = new TextFileSaveService(editorTextModelService, workspaceEnvironment.clock, sources.catalog);
-			t.after(() => saves.shutdown());
+			afterTest(t, () => saves.shutdown());
 			const result = await saves.save(recovered).completion;
 			assert.ok(result.status === 'failed');
 			assert.equal((result.error as NodeJS.ErrnoException).code, 'ESTALE');
@@ -2150,7 +2151,7 @@ test('generated compiler sources ignore manifest dirty records', async (t) => {
 });
 
 test('runtime source capture reads the resource model independently of the active input', (t) => {
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
 	const registry = sourceRegistry('-- packed source', 'offline-cart', 'src/foo.lua');
@@ -2307,7 +2308,7 @@ test('explicit Lua save promotes one exact canonical record without deleting man
 test('built-in resolution admits source without opening tabs or stealing the preview', async t => {
 	const storage = new MockStorage(); installBrowserWorkspace(t, storage); installWorkspaceRestoreView();
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry('-- cart'), null], 0);
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	group.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_CONTEXT_ID, path: 'entry.lua' })!));
 	const entry = group.model.activeTab;
 	const aem = testResource('res/cue.aem.yaml', TEST_CARTRIDGE_CONTEXT_IDS[0], 'aem');
@@ -2354,7 +2355,7 @@ test('YAML data opens one authored working copy with shared edit history and no 
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
 	await openWorkspaceRecords(workspaceFiles);
-	t.after(() => resetSemanticProjects(editorTextModelService));
+	afterTest(t, () => resetSemanticProjects(editorTextModelService));
 	const registry = sourceRegistry('-- cart');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [registry, null], 0);
 	const project = getOrCreateSemanticProject(editorTextModelService, TEST_CARTRIDGE_CONTEXT_IDS[0]);

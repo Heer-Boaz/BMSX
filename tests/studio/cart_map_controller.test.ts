@@ -14,6 +14,7 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { afterTest } from '../helpers/test_cleanup';
 
 beforeEach(() => configureFontVariant('tiny'));
 
@@ -22,7 +23,7 @@ test('a map picker retains only its explicit destination group lifetime', t => {
 	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
 	const menu = new ContextMenuController(inputFocus, pointerCapture, menuArea), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 	const controller = new CartMapController(sources.catalog);
-	t.after(() => { picker.dispose(); menu.dispose(); destination.dispose(); sibling.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); destination.dispose(); sibling.dispose(); inputFocus.setTarget(null); });
 	controller.open(destination, picker);
 	assert.equal(picker.visible, true);
 	sibling.dispose();
@@ -40,7 +41,7 @@ test('a map choice cannot reopen its destination when chrome return focus retire
 	const controller = new CartMapController(sources.catalog), chrome = inputFocus.createTarget();
 	const unbindKeyboard = chrome.bindKeyboard(() => {});
 	const open = t.mock.method(controller, 'openResource');
-	t.after(() => {
+	afterTest(t, () => {
 		picker.dispose(); menu.dispose(); destination.dispose(); unbindKeyboard();
 		editorTextModelService.clear(); inputFocus.setTarget(null);
 	});
@@ -51,7 +52,7 @@ test('a map choice cannot reopen its destination when chrome return focus retire
 	picker.model.list.selectionIndex = 0;
 	let returned = 0;
 	const unbindFocus = chrome.onDidFocus(() => { unbindFocus(); returned++; destination.dispose(); });
-	t.after(unbindFocus);
+	afterTest(t, unbindFocus);
 	picker.accept();
 	await new Promise<void>(resolve => setImmediate(resolve));
 	assert.equal(returned, 1);
@@ -67,7 +68,7 @@ test('map source locations retain the canonical model and refreshed tracked memb
 		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
 	const model = editorTextModelService.retain(resource, 'yaml', 'map_rows: ["m m "]\n');
 	const input = new CartMapInput(model, 'nemesis'), controller = new CartMapController(sources.catalog);
-	t.after(() => { input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { input.dispose(); editorTextModelService.clear(); });
 	controller.getSourceLocation(input);
 	selectCartMapRow(input, 2);
 	const before = controller.getSourceLocation(input);

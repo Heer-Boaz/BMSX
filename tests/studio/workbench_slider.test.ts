@@ -11,6 +11,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { WorkbenchSlider } from '../../ide/workbench/ui/slider';
 import { WorkbenchSliderControl } from '../../ide/workbench/ui/slider_control';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('slider maps endpoints exactly and retains its geometry through value readbacks', () => {
 	const slider = new WorkbenchSlider();
@@ -35,7 +36,7 @@ test('slider preserves captured input through readback and cancels on geometry, 
 	const slider = new WorkbenchSlider(); slider.enabled = true;
 	slider.layout(0, 20, 106, 36); slider.setRange(0, 1000.5, 1);
 	const control = new WorkbenchSliderControl(focus, capture, parent, value => values.push(value), () => cancelled++);
-	control.setInput(slider); t.after(() => control.dispose());
+	control.setInput(slider); afterTest(t, () => control.dispose());
 	const button = PointerButton.Primary;
 	const pointer = (x: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false,
 		viewportX: x, viewportY: 25, valid: true, insideViewport: true,
@@ -72,13 +73,13 @@ for (const transition of ['replacement', 'retirement', 'refused focus'] as const
 	for (const slider of [original, replacement]) { slider.enabled = true; slider.layout(0, 20, 106, 36); slider.setRange(0, 100, 1); }
 	const values: number[] = [], control = new WorkbenchSliderControl(focus, capture, parent, value => values.push(value), () => {});
 	control.setInput(original); parent.focus();
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	const unbind = parent.onDidBlur(() => {
 		unbind();
 		if (transition === 'replacement') control.setInput(replacement);
 		else if (transition === 'retirement') control.clearInput();
 		else parent.focus();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	control.handlePointer({ valid: true, insideViewport: true, viewportX: 50, viewportY: 25,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
 	assert.deepEqual(values, [], 'an inadmissible press must not move either slider');
@@ -90,7 +91,7 @@ test('capture handoff cannot write a slider rebound by the departing control', t
 	const original = new WorkbenchSlider(), replacement = new WorkbenchSlider();
 	for (const slider of [original, replacement]) { slider.enabled = true; slider.layout(0, 20, 106, 36); slider.setRange(0, 100, 1); }
 	const values: number[] = [], control = new WorkbenchSliderControl(focus, capture, parent, value => values.push(value), () => {});
-	control.setInput(original); control.focusTarget.focus(); t.after(() => control.dispose());
+	control.setInput(original); control.focusTarget.focus(); afterTest(t, () => control.dispose());
 	capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { control.setInput(replacement); } });
 	control.handlePointer({ valid: true, insideViewport: true, viewportX: 50, viewportY: 25,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });

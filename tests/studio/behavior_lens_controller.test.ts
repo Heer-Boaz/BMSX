@@ -27,6 +27,7 @@ import { QuickInputController } from '../../ide/workbench/services/quick_input/c
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createTestRuntime, createTestRuntimeRomPayload, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local trees<const> = require('cartlib/behaviour_tree/library')
 trees.register('explicit.tree', { root = { type = 'sequence', children = {
@@ -74,7 +75,7 @@ function fixture(t: TestContext, source = SOURCE) {
 	const first = createGroup(), second = createGroup();
 	const registration = documents.registrations.getRegistrations(TEST_CARTRIDGE_CONTEXT_IDS[0])[0];
 	assert.ok(registration);
-	t.after(() => {
+	afterTest(t, () => {
 		picker.dispose(); menu.dispose(); first.dispose(); second.dispose(); surfaces.dispose();
 		editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); inputFocus.setTarget(null);
 	});
@@ -158,7 +159,7 @@ for (const command of ['behaviorLens.removeChild', 'behaviorLens.inspectRuntimeT
 		replacement.view.presentation.viewport.selection = replacement.view.presentation.viewport.model.nodes[0].children[0].children[1];
 		acceptBehaviorGraphSelection(replacement.view, replacement.view.presentation);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	const inspections = t.mock.method(f.controller, 'inspectRuntimeTree', () => {});
 	const version = first.workingCopy.version;
 	action.run();
@@ -176,7 +177,7 @@ test('the shared Behavior picker retains its requested group when focus returns 
 	f.first.panes.activePane!.focus();
 	f.controller.open(f.first, f.picker, 'behavior_tree');
 	assert.equal(f.picker.visible, true);
-	t.after(f.picker.field.focusTarget.onDidBlur(() => f.second.panes.activePane!.focus()));
+	afterTest(t, f.picker.field.focusTarget.onDidBlur(() => f.second.panes.activePane!.focus()));
 	f.picker.accept();
 	assert.ok(f.first.model.activeTab?.kind === 'behavior_lens');
 	assert.notEqual(f.first.model.activeTab, sibling);
@@ -212,7 +213,7 @@ test('Behavior destination retirement during invoking-control blur cancels befor
 	const f = fixture(t);
 	f.controller.openDefinition(f.first, f.registration);
 	const origin = inputFocus.target!;
-	t.after(origin.onDidBlur(next => { if (next === f.picker.field.focusTarget) f.first.dispose(); }));
+	afterTest(t, origin.onDidBlur(next => { if (next === f.picker.field.focusTarget) f.first.dispose(); }));
 	f.controller.open(f.first, f.picker, 'behavior_tree');
 	assert.equal(f.picker.visible, false);
 	assert.equal(f.first.model.tabs.length, 0);
@@ -256,7 +257,7 @@ test('Behavior presentation acknowledges a source generation consumed by its con
 	assert.equal(revealed.mock.callCount(), 1, 'stationary frames do not keep revealing the selection');
 	viewport.scrollX = 47; viewport.scrollY = 29;
 	const selection = new BehaviorLensNavigationSelection(input);
-	t.after(() => selection.dispose());
+	afterTest(t, () => selection.dispose());
 	input.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- navigation generation\n' }]);
 	f.controller.updateView(input);
 	pane.setOptions(undefined, selection);
@@ -291,7 +292,7 @@ effects.register_effect('explicit.effect', {
 	pane.update(0); pane.update(0);
 	assert.equal(tree.scroll, 0, 'manual reading position survives stationary presentation frames');
 	const selection = new BehaviorLensNavigationSelection(input);
-	t.after(() => selection.dispose());
+	afterTest(t, () => selection.dispose());
 	input.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- restored property viewport\n' }]);
 	f.controller.updateView(input);
 	pane.setOptions(undefined, selection);

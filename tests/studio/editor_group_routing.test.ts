@@ -15,6 +15,7 @@ import type { FileElement } from '../../ide/workbench/contrib/resources/panel/fi
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const MODULES = ['cartlib/world/scene_library', 'cartlib/behaviour_tree/library', 'cartlib/fsm/library', 'cartlib/actioneffects',
 	'cartlib/progression', 'cartlib/input/actioneffect/actioneffect_component', 'cartlib/timeline/program'];
@@ -158,7 +159,7 @@ for (const route of ['command', 'owner'] as const) for (const destination of ['s
 		if (destination === 'samePart') newer.openEditor(new CodeEditorInput(f.secondInput.workingCopy));
 		let accepted = 0;
 		const draft = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, value => { accepted = value; newer.focus(); });
-		t.after(() => draft.dispose());
+		afterTest(t, () => draft.dispose());
 		draft.setValue(1); draft.layout(f.firstGroup.panes.contentBounds);
 		draft.field.focusTarget.focus(); setFieldText(draft.field, '2', true);
 		assert.equal(draft.pending, true);
@@ -182,7 +183,7 @@ test('source command admission accepts a transient returning focus within the in
 	const draft = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, value => {
 		accepted = value; draft.field.focusTarget.release();
 	});
-	t.after(() => draft.dispose());
+	afterTest(t, () => draft.dispose());
 	draft.setValue(1); draft.layout(f.firstGroup.panes.contentBounds);
 	draft.field.focusTarget.focus(); setFieldText(draft.field, '2', true);
 	const count = parts.groups.length, cycles = f.host.runtime.machine.scheduler.nowCycles;

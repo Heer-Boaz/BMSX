@@ -16,6 +16,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { insertValue } from '../../ide/editor/ui/inline/text_field';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import type { QuickPickMatch } from '../../ide/workbench/services/quick_input/provider';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PRIMARY = PointerButton.Primary;
 
@@ -40,7 +41,7 @@ function fixture(t: TestContext) {
 	};
 	const press = (code: string) => { key(code, true); key(code, false); };
 	open();
-	t.after(() => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	return { picker, items, open, pointer, key, press, clock, accepted: () => accepted, acceptedModifiers: () => acceptedModifiers };
 }
 
@@ -196,11 +197,11 @@ for (const newerFocus of [false, true]) test(`acceptance reports focus-return in
 	const f = fixture(t); f.picker.hide(false);
 	const origin = inputFocus.createTarget(), foreign = inputFocus.createTarget();
 	const unbindOrigin = origin.bindKeyboard(() => {}), unbindForeign = foreign.bindKeyboard(() => {});
-	t.after(() => { unbindOrigin(); unbindForeign(); });
+	afterTest(t, () => { unbindOrigin(); unbindForeign(); });
 	origin.focus();
 	let preserve: boolean | undefined;
 	f.picker.pick('Choose', 'Filter', () => new TextQuickPickProvider(f.items), (_item, _modifiers, preserveFocus) => { preserve = preserveFocus; });
-	if (newerFocus) t.after(f.picker.field.focusTarget.onDidBlur(() => foreign.focus()));
+	if (newerFocus) afterTest(t, f.picker.field.focusTarget.onDidBlur(() => foreign.focus()));
 	f.press('Home'); f.press('Enter');
 	assert.equal(preserve, newerFocus, 'editor opening must receive the already-settled foreground policy, not recapture it after handoff');
 	assert.ok(inputFocus.target === (newerFocus ? foreign : origin));

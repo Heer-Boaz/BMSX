@@ -8,6 +8,7 @@ import { advanceLuaSourceRevision, createLuaSourceRegistry, registerLuaSourceRec
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, empty = false) {
 	const sources = createScenarioTestSourceState(empty ? [] : [createScenarioTestSourceRecord('suite_assert.lua', 7)]);
@@ -15,7 +16,7 @@ function fixture(t: TestContext, empty = false) {
 	const service = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC,
 		() => assert.fail('discovery and rejected admission never construct a target'));
 	const tools = new WorkspaceTestTools(service, connection.signal);
-	t.after(() => { tools.dispose(); service.dispose(); models.clear(); });
+	afterTest(t, () => { tools.dispose(); service.dispose(); models.clear(); });
 	return { tools, service, sources, models, connection };
 }
 
@@ -46,7 +47,7 @@ test('discovery projects working copies and diagnostics without running registra
 });
 
 test('foreign scopes reject while installed replacement preserves authored discovery authority', async t => {
-	const f = fixture(t), peer = new WorkspaceTestTools(f.service, f.connection.signal); t.after(() => peer.dispose());
+	const f = fixture(t), peer = new WorkspaceTestTools(f.service, f.connection.signal); afterTest(t, () => peer.dispose());
 	const before = await f.tools.execute('studio_list_tests', {}); assert.ok(before.kind === 'tests');
 	const scope = before.data.roots[0].scope;
 	assert.throws(() => peer.execute('studio_start_test_run', { scope }), /must be discovered/);

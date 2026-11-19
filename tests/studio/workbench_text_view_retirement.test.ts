@@ -6,6 +6,7 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus } from '../../ide/input/focus';
 import { WorkbenchTextViewControl } from '../../ide/workbench/ui/text_view/control';
 import { WorkbenchTextViewModel } from '../../ide/workbench/ui/text_view/model';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('retiring a focused Find publishes its old binding before focus return can admit a newer reader', t => {
 	configureFontVariant('tiny');
@@ -22,7 +23,7 @@ test('retiring a focused Find publishes its old binding before focus return can 
 		assert.equal(control.focusTarget.getCommand('text.find')!.isEnabled(), false);
 		control.setInput(next); control.update(bounds, font, font.lineHeight); control.openFind();
 	});
-	t.after(() => { unbind(); inputFocus.setTarget(null); control.dispose(); });
+	afterTest(t, () => { unbind(); inputFocus.setTarget(null); control.dispose(); });
 	control.clearInput();
 	assert.equal(returned, true);
 	assert.ok(inputFocus.admittedTarget === control.findField.focusTarget);

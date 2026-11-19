@@ -3,6 +3,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { KeyModifier } from '../../hosts/common/input/text';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('browser wheel delivers ordered event-time context without changing sampled guest input', async t => {
 	const bundle = await build({
@@ -33,7 +34,7 @@ export function start() {
 		tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));

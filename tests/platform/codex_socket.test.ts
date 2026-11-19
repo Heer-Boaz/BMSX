@@ -7,13 +7,14 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { WebSocketServer } from 'ws';
 import { CodexSocket } from '../../hosts/node/codex/socket';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function peer(t: TestContext) {
 	const home = await mkdtemp(join(tmpdir(), 'bmsx-codex-socket-'));
 	await mkdir(join(home, 'app-server-control'));
 	const server = createServer((_request, response) => response.writeHead(503).end());
 	server.listen(join(home, 'app-server-control/app-server-control.sock')); await once(server, 'listening');
-	t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(home, { recursive: true }); });
+	afterTest(t, async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(home, { recursive: true }); });
 	return { home, server };
 }
 
@@ -41,7 +42,7 @@ test('cancelling the opening handshake settles both readiness and closure', { ti
 test('closing a backpressured viewer rejects RPC work and completes the WebSocket close handshake', { timeout: 10000 }, async t => {
 	const { home, server } = await peer(t);
 	const sockets = new WebSocketServer({ server });
-	t.after(() => sockets.close());
+	afterTest(t, () => sockets.close());
 	const accepted = once(sockets, 'connection');
 	const socket = new CodexSocket(home, () => {});
 	await socket.ready;

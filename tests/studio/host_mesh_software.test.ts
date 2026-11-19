@@ -10,6 +10,7 @@ import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library'
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createHostGxMeshFixture, createHostTexturedMeshFixture } from '../helpers/host_textured_mesh';
 import { compareHostLayeredMesh, createHostLayeredMeshFixture } from '../helpers/host_layered_mesh';
+import { afterTest } from '../helpers/test_cleanup';
 
 const IDENTITY: Affine3 = { xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 };
 const CLIP_IDENTITY = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -27,7 +28,7 @@ function mesh(positions: number[], color: number, doubleSided = false): HostMesh
 function fixture(t: TestContext, width = 8, height = 8) {
 	const f = createHostOverlayFixture(width, height);
 	f.presenter.initialize(new RenderPassLibrary(f.backend, f.presenter));
-	t.after(() => f.presenter.dispose());
+	afterTest(t, () => f.presenter.dispose());
 	const context = f.backend.hostOverlayContext, pixels = f.backend.framebufferPixels;
 	const draw = (scene: HostMeshScene) => {
 		pixels.fill(0); beginHeadlessHost2D(context, pixels, width, height, width, height);
@@ -45,7 +46,7 @@ function pixel(pixels: Uint8Array, x: number, y: number, width = 8): number[] {
 for (const allocation of ['constructor', 'resize'] as const) test(`fractional viewport ${allocation} produces complete pixel rows, not fractional raster strides`, t => {
 	const f = fixture(t);
 	const viewport = new HostMeshScene(allocation === 'constructor' ? 8.2 : 8, 8.3);
-	t.after(() => viewport.dispose());
+	afterTest(t, () => viewport.dispose());
 	viewport.clipFromOrigin.set(CLIP_IDENTITY);
 	viewport.instances.push({ ...IDENTITY, mesh: mesh([-1, -1, 0.5, 1, -1, 0.5, -1, 1, 0.5, -1, 1, 0.5, 1, -1, 0.5, 1, 1, 0.5], 0xff123456) });
 	if (allocation === 'resize') viewport.resize(8.2, 8.3);
@@ -66,7 +67,7 @@ for (const allocation of ['constructor', 'resize'] as const) test(`fractional vi
 for (const [pixelSize, scale] of [[16, 1], [12, 1], [16, 2]] as const) test(`mesh view rasterizes at output density (${pixelSize} pixels, UI transform ${scale})`, t => {
 	const f = fixture(t, pixelSize, pixelSize);
 	const viewport = scene({ ...IDENTITY, mesh: mesh([-.85, -.75, .5, .7, -.5, .5, .2, .9, .5], 0xff123456) });
-	t.after(() => viewport.dispose());
+	afterTest(t, () => viewport.dispose());
 	viewport.resize(8 / scale, 8 / scale);
 	beginHeadlessHost2D(f.context, f.pixels, pixelSize, pixelSize, 8, 8);
 	renderHeadlessHost2DEntry(f.context, Host2DKind.Transform, { scale, offsetX: 0, offsetY: 0 });
@@ -80,7 +81,7 @@ for (const [pixelSize, scale] of [[16, 1], [12, 1], [16, 2]] as const) test(`mes
 
 test('mesh targets resize for display density without a scene edit and round after scaling', t => {
 	const f = fixture(t), viewport = new HostMeshScene(8.4, 8.25);
-	t.after(() => viewport.dispose());
+	afterTest(t, () => viewport.dispose());
 	const revision = viewport.revision, logical = f.context.meshScenes.get(viewport);
 	const physical = f.context.meshScenes.get(viewport, 1.5, 1.5);
 	assert.equal(physical.width, 13); assert.equal(physical.height, 12);
@@ -95,7 +96,7 @@ test('mesh targets resize for display density without a scene edit and round aft
 });
 
 test('software orbit canvas preserves painter order without writing the model depth buffer', t => {
-	const meshes = createHostLayeredMeshFixture(); t.after(() => meshes.dispose());
+	const meshes = createHostLayeredMeshFixture(); afterTest(t, () => meshes.dispose());
 	const f = fixture(t, 96, 96);
 	for (let frame = 0; frame < 12; frame++) {
 		meshes.orbit();
@@ -110,7 +111,7 @@ test('software orbit canvas preserves painter order without writing the model de
 });
 
 test('software model materials retain GX gain, RGB555 reduction, saturation and opaque black', t => {
-	const material = createHostGxMeshFixture(); t.after(() => material.dispose());
+	const material = createHostGxMeshFixture(); afterTest(t, () => material.dispose());
 	const f = fixture(t, material.scene.width, material.scene.height), pixels = f.draw(material.scene);
 	for (let y = 0; y < material.gains.length; y++) for (let x = 0; x < 32; x++) {
 		const channels = x < 2 ? [0, 0, 0] : [x, 31 - x, (x * 3) & 31];
@@ -125,7 +126,7 @@ test('software model materials retain GX gain, RGB555 reduction, saturation and 
 });
 
 test('software textures are point sampled and affine, including homogeneous near clipping', t => {
-	const f = fixture(t, 32, 32), meshes = createHostTexturedMeshFixture(); t.after(() => meshes.dispose());
+	const f = fixture(t, 32, 32), meshes = createHostTexturedMeshFixture(); afterTest(t, () => meshes.dispose());
 	const affine = f.draw(meshes.affine).slice();
 	assert.deepEqual(pixel(affine, 20, 24, 32), [0, 0, 255, 255], 'perspective-correct sampling would choose green');
 	assert.deepEqual(pixel(affine, 4, 8, 32), [0, 255, 255, 255]);
@@ -137,7 +138,7 @@ test('software textures are point sampled and affine, including homogeneous near
 });
 
 test('software planar layers keep transparent holes, coplanar painter order and source-over alpha', t => {
-	const f = fixture(t, 32, 32), meshes = createHostTexturedMeshFixture(); t.after(() => meshes.dispose());
+	const f = fixture(t, 32, 32), meshes = createHostTexturedMeshFixture(); afterTest(t, () => meshes.dispose());
 	const pixels = f.draw(meshes.layers);
 	assert.deepEqual(pixel(pixels, 3, 10, 32), [255, 255, 0, 255], 'alpha holes expose the model behind');
 	assert.deepEqual(pixel(pixels, 24, 8, 32), [255, 0, 0, 255]);
@@ -278,7 +279,7 @@ test('software mesh targets retain idle storage and retire on resize, scene disp
 	assert.equal(resized.pixels.length, 4 * 4 * 4);
 	viewport.dispose(); assert.equal(resized.pixels.length, 0); assert.equal(resized.depth.length, 0);
 	const remaining = scene(); const target = f.context.meshScenes.get(remaining);
-	t.after(() => {
+	afterTest(t, () => {
 		assert.equal(target.pixels.length, 0); assert.equal(target.depth.length, 0);
 		remaining.dispose();
 	});

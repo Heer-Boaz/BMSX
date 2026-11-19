@@ -38,6 +38,7 @@ import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
+import { afterTest } from '../helpers/test_cleanup';
 
 const pixels = { width: 2, height: 1, pixels: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255]) };
 const bounds = { left: 0, top: 10, right: 140, bottom: 100 };
@@ -66,7 +67,7 @@ function fixture(t: TestContext, commands: EditorCommandRunner = { isEnabled: ()
 	const origin = inputFocus.createTarget(); origin.bindKeyboard(() => {}); origin.focus();
 	const layout = (area: typeof bounds, rowHeight: number) => { ownerBounds = area; preview.layout(area, rowHeight); };
 	layout(bounds, 6);
-	t.after(() => {
+	afterTest(t, () => {
 		preview.dispose(); cache.dispose(); surfaces.dispose(); inputFocus.setTarget(null);
 		inputFocus.workbenchScope.commands = previousCommands;
 		editorViewState.font = previousFont;
@@ -101,7 +102,7 @@ function workbenchFixture(t: TestContext) {
 	const cache = new ImagePreviewCache(async () => pixels);
 	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.editorParts.main.activeGroup.paneSurface, editor.commands);
 	preview.layout(bounds, 6);
-	t.after(async () => {
+	afterTest(t, async () => {
 		preview.dispose(); cache.dispose(); inputFocus.setTarget(null);
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
@@ -255,7 +256,7 @@ test('only changed lightbox geometry and visibility publish invalidation, and se
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
 	test(`${variant}/${theme} minimum lightbox captions fit their actual modal surface and clean frames never remeasure`, t => {
 		const previousTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme);
-		t.after(() => colors.setIdeThemeVariant(previousTheme));
+		afterTest(t, () => colors.setIdeThemeVariant(previousTheme));
 		const f = fixture(t, undefined, variant), narrow = { ...bounds, right: variant === 'tiny' ? 78 : 118, bottom: 180 };
 		f.layout(narrow, editorViewState.font.lineHeight);
 		const overlay = createHostOverlayFixture(220, 180), font = editorViewState.font, glyphFont = font.renderFont(), advance = glyphFont.advance.bind(glyphFont);
@@ -438,7 +439,7 @@ test('a real Node PNG decode reaches the modal bitmap and remains leased while i
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
 	test(`${variant}/${theme} minimum modal wraps the complete real PNG decode error within its body`, async t => {
 		const previousTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme);
-		t.after(() => colors.setIdeThemeVariant(previousTheme));
+		afterTest(t, () => colors.setIdeThemeVariant(previousTheme));
 		let decoding!: ReturnType<ImageDecoder>;
 		const f = fixture(t, undefined, variant, (...args) => { decoding = decodeImage(...args); return decoding; });
 		const narrow = { left: 0, top: 24, right: variant === 'tiny' ? 78 : 118, bottom: 260 };

@@ -16,6 +16,7 @@ import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/acti
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { afterTest } from '../helpers/test_cleanup';
 
 const REQUEST: ActionPromptRequest = { title: 'Unsaved changes', message: 'Choose what happens to this source.',
 	primary: 'Save', secondary: 'Discard', primaryEnabled: true, defaultChoice: 'primary' };
@@ -45,7 +46,7 @@ function fixture(t: TestContext) {
 			pressedButtons: pressed, justPressedButtons: down, justReleasedButtons: up };
 		if (!capture.dispatch(snapshot, false, clock.now(), prompt.pointerScope)) prompt.handlePointer(snapshot);
 	};
-	t.after(() => { prompt.dispose(); input.dispose(); focus.setTarget(null); });
+	afterTest(t, () => { prompt.dispose(); input.dispose(); focus.setTarget(null); });
 	return { prompt, focus, origin, capture, frame, key, press, pointer };
 }
 
@@ -76,7 +77,7 @@ test('prompt visibility is published before modal focus admission and before ret
 	surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, captureScope: prompt.pointerScope,
 		isVisible: () => prompt.visible, getBounds: () => prompt.view.bounds, getClip: () => bounds, draw() {} });
 	const unbind = focus.bindScopeAdmission(scope => surfaces.isAdmitted(surfaces.findByScope(scope.surfaceScope)!));
-	t.after(() => { unbind(); prompt.dispose(); surfaces.dispose(); focus.setTarget(null); });
+	afterTest(t, () => { unbind(); prompt.dispose(); surfaces.dispose(); focus.setTarget(null); });
 	origin.focus();
 	const decision = prompt.show(REQUEST);
 	assert.ok(focus.target === prompt.focusTarget);

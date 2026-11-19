@@ -14,6 +14,7 @@ import type { QuickPickItem } from '../../ide/workbench/services/quick_input/pro
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 type Fixture = ReturnType<typeof createActualSourcePanes>;
 type Point = { x: number; y: number };
@@ -129,7 +130,7 @@ test('cross-part group split retains all input and view identities while replaci
 	const third = openThird(f, source);
 	third.context.view.cursorRow = 1; third.context.view.cursorColumn = 5; third.context.view.selectionAnchor = { row: 1, column: 1 };
 	const reading = captureCodeEditorView(third), oldScope = source.focusScope;
-	let retired = false; const unbind = oldScope.onDidRetireContext(() => { retired = true; }); t.after(unbind);
+	let retired = false; const unbind = oldScope.onDidRetireContext(() => { retired = true; }); afterTest(t, unbind);
 	beginGroupDrag(f, source);
 	const destination = bodyPoint(f.secondGroup, 'right'); dispatch(f, destination, 'move'); dispatch(f, destination, 'up');
 	const receiver = parts.findGroup(third);
@@ -147,7 +148,7 @@ test('coalesced group merge retargets every history entry before retiring duplic
 	const shared = f.secondInput.workingCopy; assert.equal(await receiver.close(f.secondInput.id), true);
 	const existing = new CodeEditorInput(shared); receiver.openEditor(existing, { pinned: false });
 	const third = openThird(f, source);
-	resetNavigationHistoryState(); t.after(resetNavigationHistoryState);
+	resetNavigationHistoryState(); afterTest(t, resetNavigationHistoryState);
 	const firstEntry = new NavigationHistoryEntry({ kind: 'input', input: f.firstInput }, new CodeEditorNavigationSelection(f.firstInput), source);
 	const thirdEntry = new NavigationHistoryEntry({ kind: 'input', input: third }, new CodeEditorNavigationSelection(third), source);
 	navigationState.back.push(firstEntry, thirdEntry);

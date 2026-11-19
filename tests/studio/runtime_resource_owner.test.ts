@@ -25,6 +25,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { workspaceCanonicalSourceCache } from '../../ide/workspace/cache';
+import { afterTest } from '../helpers/test_cleanup';
 
 function luaSource(path: string, resid: string, source: string): LuaSourceRecord {
 	return {
@@ -105,7 +106,7 @@ test('retained source admission refreshes its file address and catalog publicati
 });
 
 test('generated Lua has no canonical file baseline even when its virtual path matches a workspace record', t => {
-	t.after(() => { editorTextModelService.clear(); workspaceCanonicalSourceCache.clear(); });
+	afterTest(t, () => { editorTextModelService.clear(); workspaceCanonicalSourceCache.clear(); });
 	const generated = { ...luaSource('generated.lua', 'generated', 'return 3'), generated: true };
 	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', []), [sourceRegistry('carts/test', [generated]), null], 0);
 	workspaceCanonicalSourceCache.set(generated.normalized_source_path, { contents: 'return 99', updatedAt: 1 });
@@ -149,7 +150,7 @@ test('runtime source owner retains Lua resource identity when its source record 
 });
 
 test('catalog location follows canonical source provenance without changing execution identities or source roles', t => {
-	t.after(() => editorTextModelService.clear());
+	afterTest(t, () => editorTextModelService.clear());
 	const sharedPath = 'cartlib/world.lua';
 	const shared = { ...luaSource(sharedPath, 'shared-world', 'return 42'), sourceKind: 'library' as const };
 	const local = { ...luaSource('cartlib/local.lua', 'local-world', 'return 1'),
@@ -190,7 +191,7 @@ test('catalog location follows canonical source provenance without changing exec
 });
 
 test('same runtime resource publishes changed provenance while retaining its canonical working copy', t => {
-	t.after(() => editorTextModelService.clear());
+	afterTest(t, () => editorTextModelService.clear());
 	const source = luaSource('cartlib/world.lua', 'shared-world', 'return 42');
 	const registry = sourceRegistry('carts/test', [source]);
 	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', []), [registry, null], 0);
@@ -209,7 +210,7 @@ test('same runtime resource publishes changed provenance while retaining its can
 });
 
 test('resource panel, search, and code tabs consume the retained owner resource', (t) => {
-	t.after(() => editorTextModelService.clear());
+	afterTest(t, () => editorTextModelService.clear());
 	const systemRegistry = sourceRegistry('machine/ts', [
 		luaSource('system/main.lua', 'system-main', 'return 1'),
 	]);
@@ -236,7 +237,7 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 	assert.strictEqual(searchEntry.resource, retained);
 
 	const input = resolveLuaCodeEditorInput(sources.catalog, retained);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const model = input.workingCopy;
 	assert.strictEqual(model.resource, retained);
 
@@ -252,7 +253,7 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 
 test('fresh Source candidates keep their explicit authoring resource while the BIOS executes', (t) => {
 	editorTextModelService.clear();
-	t.after(() => {
+	afterTest(t, () => {
 		editorTextModelService.clear();
 	});
 	const systemRegistry = sourceRegistry('machine/bios', [
@@ -272,7 +273,7 @@ test('fresh Source candidates keep their explicit authoring resource while the B
 
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'cart.lua' })!;
 	const first = resolveLuaCodeEditorInput(sources.catalog, resource), second = resolveLuaCodeEditorInput(sources.catalog, resource);
-	t.after(() => { first.dispose(); second.dispose(); });
+	afterTest(t, () => { first.dispose(); second.dispose(); });
 	assert.equal(first.workingCopy.resource.contextId, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	assert.equal(first.workingCopy.resource.path, 'cart.lua');
 	first.context.view.cursorColumn = 7;

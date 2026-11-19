@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('canvas pointer events own field focus and caret before text input, independently of host frames', async t => {
 	const fixture = String.raw`import { BrowserInputHub } from './hosts/browser/input';
@@ -68,7 +69,7 @@ export function start() {
 	const bundle = await build({ stdin: { contents: fixture, resolveDir: process.cwd(), loader: 'ts' }, bundle: true,
 		platform: 'browser', format: 'iife', globalName: 'fixture', write: false, tsconfig: 'tsconfig.base.json' });
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 400, height: 200 }, hasTouch: true, isMobile: true });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));

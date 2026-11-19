@@ -21,6 +21,7 @@ import { SourceInlineBars } from '../../ide/workbench/contrib/code_editor/inline
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import { createTestCodeControl } from '../helpers/code_control';
+import { afterTest } from '../helpers/test_cleanup';
 
 const scope = WORKBENCH_POINTER_SCOPE;
 function pointer(x: number, pressedButtons: number = PointerButton.Primary, justPressedButtons = 0, justReleasedButtons = 0): PointerInputSnapshot {
@@ -32,7 +33,7 @@ function codeFixture(t: TestContext, variant: 'tiny' | 'msx', source = '-- sourc
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'hold.lua', location: { kind: 'workspace', path: 'hold.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'hold.lua',
 		source: { type: 'lua', resid: 'hold' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant));
-	t.after(() => {
+	afterTest(t, () => {
 		inputFocus.setTarget(null); pointerCapture.cancel();
 		const released = pointer(0, 0, 0, PointerButton.Primary);
 		pointerCapture.dispatch(released, false, 0, code.focusTarget.scope.surfaceScope); pointerCapture.endRoute(released);
@@ -49,7 +50,7 @@ function fieldFixture(t: TestContext, variant: 'tiny' | 'msx') {
 	field.focusTarget.canFocus = () => layout.visible;
 	setFieldText(field, 'abcdefghijklmnopqrstuvwxyz', true);
 	layout.layout(bar, '', '', 2); field.focusTarget.focus();
-	t.after(() => { layout.hide(); control.dispose(); });
+	afterTest(t, () => { layout.hide(); control.dispose(); });
 	const down = (x: number) => {
 		const sample = pointer(x, PointerButton.Primary, PointerButton.Primary);
 		pointerCapture.beginRoute(code.focusTarget.scope.surfaceScope, sample); control.handlePointer(sample, true);
@@ -116,7 +117,7 @@ test('an empty Source budget retires its actual Find capture before the next hel
 	const find = new EditorSearchController(code), lineJump = new CodeEditorLineJump(code);
 	const rename = new RenameController(code, sources.catalog, new CrossFileRenameManager(sources.catalog));
 	const bars = new SourceInlineBars(code, find, rename, lineJump);
-	t.after(() => { find.dispose(); rename.dispose(); lineJump.dispose(); });
+	afterTest(t, () => { find.dispose(); rename.dispose(); lineJump.dispose(); });
 	const client = { left: 0, top: 10, right: 384, bottom: 270 };
 	find.state.visible = true; setFieldText(find.state.field, 'retained_query', true);
 	bars.layout(client); find.focus();

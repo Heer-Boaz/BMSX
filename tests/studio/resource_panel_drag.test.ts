@@ -22,6 +22,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SCENES = "local scenes=require('cartlib/world/scene_library')\nscenes.register('one', {objects={}})\nscenes.register('two', {objects={}})\n";
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', sources: readonly (readonly [string, string])[] = []) {
@@ -178,7 +179,7 @@ test('replacing the exact catalog resource during a hold cancels it rather than 
 
 for (const font of ['tiny', 'msx'] as const) test(`${font} registered YAML defaults remain visual editors when a resource is dropped`, async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles()); const f = fixture(t, font), path = 'res/data/castle_map.yaml';
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	f.sources.catalog.registerTextSources(f.sources.systemContextId, [{ type: 'data', resid: 'map', source_path: path,
 		sourcemeta: { text: '1: {map: [".."], objects: []}\n' } }]); f.panel.toggleFilterMode();
 	const { node, resource } = reveal(f, path), input = await drop(f, node, body(f.secondGroup));
@@ -307,7 +308,7 @@ test('a receiving focused draft acquired during the hold vetoes production and e
 
 test('accepted model admission cannot steal a newer real foreground from another pane', async t => {
 	const f = fixture(t), { node, resource } = reveal(f); let redirected = false;
-	const unbind = editorTextModelService.onDidAddModel(model => { if (model.resource === resource) { redirected = true; f.first.focus(); } }); t.after(unbind);
+	const unbind = editorTextModelService.onDidAddModel(model => { if (model.resource === resource) { redirected = true; f.first.focus(); } }); afterTest(t, unbind);
 	const input = await drop(f, node, body(f.secondGroup));
 	assert.equal(redirected, true); assert.ok(input instanceof CodeEditorInput && f.secondGroup.model.activeTab === input);
 	assert.ok(inputFocus.target === f.first.commandTarget && f.editor.editorParts.activeGroup === f.firstGroup);

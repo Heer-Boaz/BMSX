@@ -10,6 +10,7 @@ import { workspaceDirtyRecords } from '../../ide/workbench/workspace/state';
 import type { WorkspaceAutosavePayload } from '../../ide/workbench/workspace/models';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('workspace restore retains a missing clean Scene as an unavailable document', async t => {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE],
@@ -31,7 +32,7 @@ test('workspace restore retains a missing clean Scene as an unavailable document
 		breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	await f.editor.shutdown();
 	const restored = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['cartlib/world/scene_library.lua', 'return {}']]);
-	t.after(() => workspaceDirtyRecords.clear());
+	afterTest(t, () => workspaceDirtyRecords.clear());
 	assert.equal(restored.sources.catalog.resolveResource(identity), undefined);
 	await applyWorkspaceAutosavePayload(restored.editor, restored.sources.catalog, restored.ide.debugger, payload);
 	const inputs = [...restored.editor.editorParts.groups].flatMap(group => group.model.tabs);
@@ -88,7 +89,7 @@ test('a missing dirty Scene aborts workspace recovery before retiring the live d
 		breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	await f.editor.shutdown();
 	const restored = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['cartlib/world/scene_library.lua', 'return {}']]);
-	t.after(() => workspaceDirtyRecords.clear());
+	afterTest(t, () => workspaceDirtyRecords.clear());
 	assert.equal(restored.sources.catalog.resolveResource(identity), undefined);
 	workspaceDirtyRecords.clear(); for (const [path, record] of dirty.dirtyRecords) workspaceDirtyRecords.set(path, record);
 	const live = restored.firstInput.workingCopy, liveText = live.buffer.getText();

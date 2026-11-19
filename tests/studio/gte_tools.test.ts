@@ -16,6 +16,7 @@ import { STUDIO_RUNTIME_TOOL_NAMES, STUDIO_TOOL_NAMES } from '../../ide/workbenc
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { eventHistoryRuntime } from '../helpers/event_history';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
+import { afterTest } from '../helpers/test_cleanup';
 
 const BUDGET = 10_000_000;
 const PROGRAM = `
@@ -50,7 +51,7 @@ function fixture(t: TestContext, program = PROGRAM) {
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
 		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
 	const issue = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), cpu.gc);
-	t.after(() => { lifetime.abort(); f.events.dispose(); f.gteHistory.dispose(); f.presenter.dispose(); });
+	afterTest(t, () => { lifetime.abort(); f.events.dispose(); f.gteHistory.dispose(); f.presenter.dispose(); });
 	return { ...f, tools, lifetime, cpu, issue, target: f.inspection.target };
 }
 
@@ -70,7 +71,7 @@ test('GTE tool leases are explicit, idempotent and prompt-local without stopping
 	const secondLifetime = new AbortController();
 	const second = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
 		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, gteHistory, f.gpuHistory, secondLifetime.signal);
-	t.after(() => secondLifetime.abort());
+	afterTest(t, () => secondLifetime.abort());
 	await second.execute('studio_gte_history', { target, action: 'start' });
 	assert.equal(gteHistory.generation, generation, 'another context joins the same active session');
 	const paneLease = gteHistory.observe();

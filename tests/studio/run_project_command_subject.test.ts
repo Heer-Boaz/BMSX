@@ -10,6 +10,7 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { createProjectRunFixture } from '../helpers/project_run';
 import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const kind of ['system', 'nonbootable', 'uninstalled'] as const)
 	test(`Run Project has no admitted attachment for the actual ${kind} Source subject despite another bootable project`, t => {
@@ -80,7 +81,7 @@ for (const retirement of ['scope', 'model'] as const)
 			release(); retired = true;
 			if (retirement === 'scope') primary.scope.retireContext();
 			else { editorTextModelService.clear(); editorTextModelService.retain(model.resource, 'lua', SCENE_VIEWPORT_SOURCE); }
-		}); t.after(release);
+		}); afterTest(t, release);
 		assert.equal(f.editor.commands.isEnabled('runProject', primary.commandTarget), true);
 		f.editor.commands.execute('runProject', primary.commandTarget); await setImmediate();
 		assert.equal(retired, true); assert.equal(field.pending, false);

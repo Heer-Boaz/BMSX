@@ -11,6 +11,7 @@ import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
@@ -53,7 +54,7 @@ function fixture(t: TestContext, attach = true, source = SOURCE, imports: readon
 		assert.equal(context.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[index], index }), true);
 	};
 	if (attach) control.setView(view, bounds);
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); });
+	afterTest(t, () => { control.dispose(); view.dispose(); context.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); });
 	return { ...f, document, context, view, control, scope, parent, bounds, commands, sections, select };
 }
 
@@ -88,7 +89,7 @@ test('two Details presentations share selection but own independent drafts, scro
 	const view = new SceneDetailsViewState(f.context);
 	const other = new SceneDetailsControl(f.commands, f.scope, f.parent, f.sections);
 	other.setView(view, f.bounds);
-	t.after(() => { other.dispose(); view.dispose(); });
+	afterTest(t, () => { other.dispose(); view.dispose(); });
 	const field = f.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '31', true);
 	f.view.viewport.scrollbar.setScroll(25);
 	assert.notEqual(f.view.viewport.scrollTop, view.viewport.scrollTop);
@@ -114,7 +115,7 @@ for (const kind of ['position', 'option'] as const) test(`${kind} acceptance can
 		if (!armed) return;
 		armed = false; f.select(1);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.equal(field.commit(), true);
 	assert.equal(f.context.selection?.kind, 'member');
 	assert.equal(f.context.selection?.kind === 'member' ? f.context.selection.index : -1, 1);
@@ -137,7 +138,7 @@ for (const kind of ['position', 'option'] as const) test(`${kind} acceptance obs
 		if (!armed) return;
 		armed = false; provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return external' }]);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	field.commit();
 	assert.equal(f.model.buffer.getText(), source);
 	assert.equal(f.context.selection, undefined);
@@ -162,13 +163,13 @@ test('hiding Details retires its invocation and draft without changing semantic 
 test('a Details detach callback may attach a new presentation without outgoing cleanup clearing it', t => {
 	const f = fixture(t); f.select(0);
 	const next = new SceneDetailsViewState(f.context);
-	t.after(() => next.dispose());
+	afterTest(t, () => next.dispose());
 	let armed = true;
 	const unbind = f.control.inputScope.onDidRetireContext(() => {
 		if (!armed) return;
 		armed = false; f.control.setView(next, f.bounds);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.control.clearView();
 	assert.equal(f.control.view, next);
 	assert.equal(f.control.canFocus, true);
@@ -183,7 +184,7 @@ test('old model disposal cannot clear the Details presentation attached by an ea
 	const nextContext = new SceneAuthoringContext(nextSource.model, nextSource.documents), next = new SceneDetailsViewState(nextContext);
 	const document = nextContext.document!, scene = document.scenes[0];
 	nextContext.select(document, nextSource.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
-	t.after(() => { next.dispose(); nextContext.dispose(); });
+	afterTest(t, () => { next.dispose(); nextContext.dispose(); });
 	f.model.onWillDispose(() => f.control.setView(next, f.bounds));
 	f.control.setView(f.view, f.bounds); f.select(0);
 	f.models.clear();
@@ -218,14 +219,14 @@ test('Details field Tab order exits through the composition-owned next region', 
 test('outgoing field cancellation cannot make a reattached Details field read-only', t => {
 	const f = fixture(t); f.select(0);
 	const next = new SceneDetailsViewState(f.context), field = f.control.controls[0];
-	t.after(() => next.dispose());
+	afterTest(t, () => next.dispose());
 	setFieldText(field.field, '73', true);
 	let armed = true;
 	const unbind = field.field.onDidChangeText(() => {
 		if (!armed) return;
 		armed = false; f.control.setView(next, f.bounds);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.control.clearView();
 	assert.equal(f.control.view, next);
 	assert.equal(field.field.readOnly, false);
@@ -237,14 +238,14 @@ test('outgoing field cancellation cannot make a reattached Details field read-on
 test('scroll-focus departure can attach another Details view without clearing its new scroll input', t => {
 	const f = fixture(t, true, SCROLL_SOURCE); f.select(0);
 	const next = new SceneDetailsViewState(f.context);
-	t.after(() => next.dispose());
+	afterTest(t, () => next.dispose());
 	f.control.focus();
 	let armed = true;
 	const unbind = f.control.commandTarget.onDidBlur(() => {
 		if (!armed) return;
 		armed = false; f.control.setView(next, f.bounds);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.control.clearView();
 	assert.equal(f.control.view, next);
 	assert.equal(f.control.handleWheel({ valid: true, insideViewport: true, viewportX: 10, viewportY: 10, modifiers: KeyModifier.none, deltaY: 1, deltaX: 0 }), true);

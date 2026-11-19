@@ -16,6 +16,7 @@ import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import type { GlyphRenderSubmission, HostImageRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 const Q = ON_SCREEN_KEY_INDEX_BY_CODE.get('KeyQ'), W = ON_SCREEN_KEY_INDEX_BY_CODE.get('KeyW');
 const SHIFT = ON_SCREEN_KEY_INDEX_BY_CODE.get('ShiftLeft'), CONTROL = ON_SCREEN_KEY_INDEX_BY_CODE.get('ControlLeft');
@@ -54,7 +55,7 @@ for (const [code, usage, base, shifted] of [
 	['Semicolon', 51, ';', ':'], ['Quote', 52, "'", '"'],
 ] as const) {
 	test(`${code} forwards its raw HID with base, held/sticky Shift and hardware Shift through independent source lifetimes`, t => {
-		const f = fixture(); t.after(() => f.input.dispose());
+		const f = fixture(); afterTest(t, () => f.input.dispose());
 		const key = ON_SCREEN_KEY_INDEX_BY_CODE.get(code);
 		const first = f.keyboard.allocateSource(), second = f.keyboard.allocateSource(), modifier = f.keyboard.allocateSource();
 		assert.equal(hidKeyUsageForCode(code), usage);
@@ -86,7 +87,7 @@ for (const [code, usage, base, shifted] of [
 }
 
 test('Backquote is navigable, painted, hit-tested and activated from the native Symbols page', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const key = ON_SCREEN_KEY_INDEX_BY_CODE.get('Backquote');
 	f.keyboard.setPage(KeyboardPage.Symbols); f.keyboard.moveVertical(1);
 	assert.equal(f.keyboard.selectedKey, key);
@@ -107,7 +108,7 @@ test('Backquote is navigable, painted, hit-tested and activated from the native 
 });
 
 test('extra contact slots retain independent key lifetimes through real MMIO, including same-key overlap', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const a = f.keyboard.allocateSource(), b = f.keyboard.allocateSource(), c = f.keyboard.allocateSource();
 	assert.equal(a, OnScreenKeyboard.INITIAL_SOURCE_COUNT); assert.equal(b, a + 1); assert.equal(c, b + 1);
 	f.keyboard.pressKey(a, Q); f.keyboard.pressKey(b, W); f.keyboard.pressKey(c, Q); f.poll();
@@ -120,7 +121,7 @@ test('extra contact slots retain independent key lifetimes through real MMIO, in
 });
 
 test('rare high-water growth does not cap contacts or overflow aggregate byte counts', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const sources = Array.from({ length: 300 }, () => f.keyboard.allocateSource());
 	for (const source of sources) f.keyboard.pressKey(source, Q);
 	f.poll(); assert.equal(f.pressed('KeyQ'), true);
@@ -131,7 +132,7 @@ test('rare high-water growth does not cap contacts or overflow aggregate byte co
 });
 
 test('physical held modifiers aggregate with other fingers and gamepad latches without one source clearing another', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const shiftA = f.keyboard.allocateSource(), shiftB = f.keyboard.allocateSource(), letter = f.keyboard.allocateSource();
 	f.keyboard.pressKey(shiftA, SHIFT); f.keyboard.pressKey(shiftB, SHIFT); f.keyboard.pressKey(letter, Q); f.poll();
 	assert.equal(f.pressed('ShiftLeft'), true); assert.equal(f.pressed('KeyQ'), true); assert.equal(f.keyboard.label(Q), 'Q');
@@ -150,7 +151,7 @@ test('physical held modifiers aggregate with other fingers and gamepad latches w
 });
 
 test('source retargeting publishes the real old release/new press and repeated same-key updates cannot leak a hold', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const source = f.keyboard.allocateSource();
 	f.keyboard.pressKey(source, Q); f.keyboard.pressKey(source, Q); f.keyboard.pressKey(source, W); f.poll();
 	assert.equal(f.pressed('KeyQ'), false); assert.equal(f.pressed('KeyW'), true);
@@ -158,7 +159,7 @@ test('source retargeting publishes the real old release/new press and repeated s
 });
 
 test('F1-F12 identities, injected page navigation and held-source page switching reach real MMIO', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const text = f.keyboard.allocateSource(), fn = f.keyboard.allocateSource();
 	f.keyboard.pressKey(text, Q); f.keyboard.setPage(KeyboardPage.Functions);
 	assert.equal(f.keyboard.selectedKey, ON_SCREEN_KEY_INDEX_BY_CODE.get('F1'));
@@ -179,7 +180,7 @@ test('navigation follows the active presentation centered rows and fractional wi
 		{ keys: [Q, W], starts: [0, 1], spans: [1, 1], units: 2 },
 		{ keys: [SHIFT], starts: [0], spans: [1.5], units: 1.5 },
 	] }, NATIVE_KEYBOARD_PAGES[1], NATIVE_KEYBOARD_PAGES[2]];
-	const f = fixture(pages); t.after(() => f.input.dispose());
+	const f = fixture(pages); afterTest(t, () => f.input.dispose());
 	f.keyboard.moveHorizontal(1); assert.equal(f.keyboard.selectedKey, W);
 	f.keyboard.moveVertical(1); assert.equal(f.keyboard.selectedKey, SHIFT);
 	f.keyboard.moveVertical(-1); assert.equal(f.keyboard.selectedKey, Q, 'a centered tie follows the authored left-first key order');
@@ -195,7 +196,7 @@ test('explicit row starts preserve arrow gaps in navigation, bitmap drawing and 
 		{ keys: [Q, UP, W], starts: [0, 3, 5], spans: [1, 1, 1], units: 6 },
 		{ keys: [CONTROL, LEFT, DOWN, RIGHT, 55], starts: [0, 2, 3, 4, 5], spans: [1, 1, 1, 1, 1], units: 6 },
 	] }, NATIVE_KEYBOARD_PAGES[1], NATIVE_KEYBOARD_PAGES[2]];
-	const f = fixture(pages); t.after(() => f.input.dispose());
+	const f = fixture(pages); afterTest(t, () => f.input.dispose());
 	f.keyboard.moveVertical(1); assert.equal(f.keyboard.selectedKey, DOWN, 'Up aligns directly over Down, not the compressed second-column Left');
 	f.keyboard.moveVertical(-1); assert.equal(f.keyboard.selectedKey, UP);
 	f.keyboard.moveHorizontal(1); assert.equal(f.keyboard.selectedKey, W, 'a non-key gap cannot become controller selection');
@@ -230,7 +231,7 @@ test('native row starts retain the existing contiguous physical keyboard geometr
 
 test('two authored pages cycle independently of native page names and retain real key sources', t => {
 	const pages = [NATIVE_KEYBOARD_PAGES[0], NATIVE_KEYBOARD_PAGES[2]];
-	const f = fixture(pages); t.after(() => f.input.dispose());
+	const f = fixture(pages); afterTest(t, () => f.input.dispose());
 	const textSource = f.keyboard.allocateSource(), functionSource = f.keyboard.allocateSource(), shiftSource = f.keyboard.allocateSource();
 	f.keyboard.pressKey(shiftSource, SHIFT); f.keyboard.pressKey(textSource, Q); f.keyboard.selectKey(W);
 	f.keyboard.command(0, OnScreenKeyboardCommand.TogglePage);
@@ -250,7 +251,7 @@ test('two authored pages cycle independently of native page names and retain rea
 });
 
 test('revision observers cover visibility, held/latched state, selection, pages and afterglow without idle churn', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	let changes = 0; const dispose = f.keyboard.subscribe(() => changes++);
 	f.keyboard.updateFeedback(10); assert.equal(changes, 0);
 	f.keyboard.selectKey(W); f.keyboard.pressKey(0, W); f.keyboard.releaseSource(0);
@@ -264,7 +265,7 @@ test('revision observers cover visibility, held/latched state, selection, pages 
 });
 
 test('bitmap consumer renders/hits every function-page key from the same actual logical keyboard identities', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const { presenter, queue } = createHostOverlayFixture(256, 192); presenter.default_font = new Font();
 	const view = new HostOnScreenKeyboard(presenter, f.keyboard);
 	f.keyboard.setPage(KeyboardPage.Functions); view.queueRenderCommands();
@@ -299,7 +300,7 @@ test('bitmap consumer renders/hits every function-page key from the same actual 
 });
 
 test('unused modifier tap completion observes ordinary keys from every source, including gamepad activation', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const touch = f.keyboard.allocateSource();
 	f.keyboard.pressKey(touch, SHIFT); f.keyboard.selectKey(Q); f.keyboard.activate(0); f.poll();
 	assert.equal(f.pressed('ShiftLeft'), true); assert.equal(f.pressed('KeyQ'), true);
@@ -319,7 +320,7 @@ test('unused modifier tap completion observes ordinary keys from every source, i
 });
 
 test('retained observer slots permit self-unsubscribe and old disposers cannot retire reused subscriptions', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	let first = 0, second = 0, reused = 0;
 	const disposeFirst = f.keyboard.subscribe(() => { first++; disposeFirst(); });
 	const disposeSecond = f.keyboard.subscribe(() => { second++; });
@@ -336,12 +337,12 @@ test('fractional injected centers stay fractional throughout directional navigat
 		{ keys: [Q, W, 17], starts: [0, 1.6, 2.2], spans: [1.6, 0.6, 1.4], units: 3.6 },
 		{ keys: [SHIFT, CONTROL, 54, 55], starts: [0, 1.35, 1.75, 2.25], spans: [1.35, 0.4, 0.5, 1.35], units: 3.6 },
 	] }, NATIVE_KEYBOARD_PAGES[1], NATIVE_KEYBOARD_PAGES[2]];
-	const f = fixture(pages); t.after(() => f.input.dispose());
+	const f = fixture(pages); afterTest(t, () => f.input.dispose());
 	f.keyboard.moveVertical(1); assert.equal(f.keyboard.selectedKey, 54, '3.8-unit W is closer to 4.0-unit ALT than 3.1-unit CTRL; truncation would incorrectly select CTRL');
 });
 
 test('queued origin-page key targets preserve active page navigation in both native batch orders', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const contact = f.keyboard.allocateSource();
 	for (const pageFirst of [true, false]) {
 		f.keyboard.open();
@@ -360,7 +361,7 @@ test('queued origin-page key targets preserve active page navigation in both nat
 
 
 test('MOVE is an authored native action target, not a physical key or held feedback identity', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	assert.equal(ON_SCREEN_KEY_DEFINITIONS.length, 75);
 	assert.equal(ON_SCREEN_KEYBOARD_POSITION_TARGET, 75); assert.equal(ON_SCREEN_KEYBOARD_TARGET_COUNT, 76);
 	assert.equal(ON_SCREEN_KEY_INDEX_BY_CODE.has('MOVE'), false);

@@ -4,13 +4,14 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import { NavigationHistoryEntry, createNavigationEntry, navigationState, resetNavigationHistoryState, withNavigationCaptureSuspended } from '../../ide/navigation/navigation_history';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('stacked and pending navigation follow an exact retained view after its original window closes', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	f.first.focus(); resetNavigationHistoryState();
 	f.firstInput.context.view.cursorColumn = 4;
 	const stacked = createNavigationEntry()!, pending = createNavigationEntry()!;
-	t.after(() => pending.dispose()); navigationState.back.push(stacked);
+	afterTest(t, () => pending.dispose()); navigationState.back.push(stacked);
 	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, { kind: 'group', group: f.secondPart.activeGroup }), true);
 	assert.ok(stacked.owner === f.secondGroup && pending.owner === f.secondGroup);
 	assert.equal(stacked.isDisposed, false); assert.equal(pending.isDisposed, false);

@@ -11,6 +11,7 @@ import { openWorkspaceRecords, closeWorkspaceRecords, type WorkspaceRecord } fro
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import { createTestRuntimeSourceState, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 function registry(root: string, entries: readonly (readonly [string, string])[]): LuaSourceRegistry {
 	const value = createLuaSourceRegistry(root, '');
@@ -25,7 +26,7 @@ async function fixture(t: TestContext, entries: readonly (readonly [string, stri
 	const models = new EditorTextModelService(), files = new MemoryWorkspaceFiles(), clock = new VirtualHeadlessClock();
 	await openWorkspaceRecords(files);
 	const contextId = TEST_CARTRIDGE_CONTEXT_IDS[0], search = new WorkspaceTextSearch(models, catalog, contextId);
-	t.after(async () => { search.dispose(); models.clear(); catalog.dispose(); clearWorkspaceSourceCaches(); clearBackgroundTasks(); await closeWorkspaceRecords(); });
+	afterTest(t, async () => { search.dispose(); models.clear(); catalog.dispose(); clearWorkspaceSourceCaches(); clearBackgroundTasks(); await closeWorkspaceRecords(); });
 	const drain = async () => { while (search.status === 'running') { await Promise.resolve(); runBackgroundTasks(clock); } };
 	return { sources, catalog, project, models, files, clock, contextId, search, drain };
 }
@@ -105,7 +106,7 @@ test('dense-file progress publishes one stable observation with bounded match ba
 		if (f.search.matchCount > previous) batches.push(f.search.matchCount - previous);
 		previous = f.search.matchCount;
 		if (f.search.files.length !== 0) files.add(f.search.files[0]);
-	}); t.after(release);
+	}); afterTest(t, release);
 	f.search.run('a', { matchCase: true, includeShared: false }); await f.drain();
 	assert.equal(f.search.matchCount, 5000); assert.equal(files.size, 1);
 	assert.ok(batches.length > 1 && batches.every(count => count > 0 && count <= 256));
@@ -121,7 +122,7 @@ test('a newer query published by a progress observer owns all subsequent results
 		const matches = f.search.files[0].matches;
 		retired.push({ matches, count: matches.length });
 		f.search.run('needle', { matchCase: true, includeShared: false });
-	}); t.after(release);
+	}); afterTest(t, release);
 	f.search.run('a', { matchCase: true, includeShared: false }); await f.drain();
 	assert.equal(superseded, true); assert.equal(f.search.query, 'needle'); assert.equal(f.search.matchCount, 1);
 	assert.equal(retired[0].matches.length, retired[0].count); assert.ok(retired[0].count <= 256);

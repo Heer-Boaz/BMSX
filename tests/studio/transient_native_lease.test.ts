@@ -8,6 +8,7 @@ import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/
 import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import type { EditorCommandRunner } from '../../ide/common/commands';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const kind of ['menu', 'picker'] as const) test(`${kind} retains its actual native authority through later acceptance-disposal callbacks`, t => {
 	configureFontVariant('tiny'); applyViewportSize({ width: 384, height: 288 }); refreshWorkbenchLayout();
@@ -37,7 +38,7 @@ for (const kind of ['menu', 'picker'] as const) test(`${kind} retains its actual
 			lifetime => { lifetime.add({ dispose: retireAndReadmit }); }, { invocationOrigin: origin, commandTarget: semantic });
 		picker.accept();
 	}
-	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	assert.equal(laterDisposal, 1); assert.ok(nativeScope.contextGeneration > generation);
 	assert.equal(semantic.scope.contextGeneration, semanticGeneration, 'the semantic command subject remains available');
 	assert.equal(admitted, 0);

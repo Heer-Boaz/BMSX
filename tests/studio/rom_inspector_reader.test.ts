@@ -37,6 +37,7 @@ import { createRomInspectorImageSnapshot } from '../fixtures/studio/rom_inspecto
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const area = { left: 0, top: 24, right: 384, bottom: 274 };
 const point = (x: number, y: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({
@@ -110,7 +111,7 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 	const opened: Parameters<EditorNavigationController['openResource']>[] = [];
 	const navigation = { openResource: async (...args: Parameters<EditorNavigationController['openResource']>) => { opened.push(args); return 1; } } as EditorNavigationController;
 	const pane = new RomInspectorPane(commands, sources, navigation, quickInput, contextMenu, surfaces, owner, area, group, group.focusScope);
-	t.after(() => { pane.clearInput(); pane.dispose(); quickInput.dispose(); contextMenu.dispose(); inputFocus.setTarget(null);
+	afterTest(t, () => { pane.clearInput(); pane.dispose(); quickInput.dispose(); contextMenu.dispose(); inputFocus.setTarget(null);
 		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); group.dispose(); });
 	pane.setInput(input, area); pane.focus();
 	const catalog = inputFocus.target;
@@ -192,7 +193,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'ligh
 		}
 		return { glyphs, bitmaps };
 	};
-	t.after(() => { reader.dispose(); quickInput.dispose(); contextMenu.dispose(); popup?.dispose(); inputFocus.setTarget(null);
+	afterTest(t, () => { reader.dispose(); quickInput.dispose(); contextMenu.dispose(); popup?.dispose(); inputFocus.setTarget(null);
 		pointerCapture.cancel(); pointerHover.clear(); unbind(); surfaces.dispose(); input.dispose(); group.dispose();
 		inputFocus.workbenchScope.commands = previousCommands; colors.setIdeThemeVariant(previousTheme); });
 	return { group, input, surfaces, owner, origin, commands, sources, opened, contextMenu, quickInput, press, key, select, choose, draw,

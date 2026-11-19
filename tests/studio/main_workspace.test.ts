@@ -11,6 +11,7 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('Main document activation raises its complete presentation family, including the retained Game companion', t => {
 	const f = createActualSourcePanes(t, true), parts = f.editor.editorParts, main = parts.main;
@@ -92,8 +93,8 @@ for (const redirected of [false, true]) test(`primary recovery retirement ${redi
 	const main = f.editor.mainWorkspace, primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	main.focusPrimary('hierarchy');
 	assert.ok(inputFocus.target === primary.hierarchy.control.focusTarget);
-	if (redirected) t.after(primary.hierarchy.control.focusTarget.onDidBlur(() => f.second.focus()));
-	const interaction = inputFocus.interactionRevision, request = main.beginRestore(); t.after(() => request.dispose());
+	if (redirected) afterTest(t, primary.hierarchy.control.focusTarget.onDidBlur(() => f.second.focus()));
+	const interaction = inputFocus.interactionRevision, request = main.beginRestore(); afterTest(t, () => request.dispose());
 	assert.equal(request.prepare(), true);
 	request.retire();
 	assert.ok(main.primary === undefined);
@@ -122,8 +123,8 @@ for (const captured of [false, true]) test(`departing primary retirement preserv
 			pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
 		if (captured) pointerCapture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { cancellations++; } });
 	});
-	t.after(unbind);
-	const request = main.beginRestore(); t.after(() => request.dispose());
+	afterTest(t, unbind);
+	const request = main.beginRestore(); afterTest(t, () => request.dispose());
 	assert.equal(request.prepare(), true); request.retire();
 	assert.equal(await opening, true);
 	assert.ok(successor !== undefined && main.primary === successor);
@@ -143,7 +144,7 @@ test('retiring a primary drains its uncaptured physical region hold before anoth
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
 	assert.equal(pointerCapture.active, false);
 	assert.equal(pointerCapture.routeScope, primary.hierarchy.scope.surfaceScope);
-	const request = main.beginRestore(); t.after(() => request.dispose());
+	const request = main.beginRestore(); afterTest(t, () => request.dispose());
 	assert.equal(request.prepare(), true); request.retire();
 	assert.equal(pointerCapture.routeScope, undefined);
 	assert.equal(pointerCapture.draining, true);

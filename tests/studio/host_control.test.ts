@@ -15,6 +15,7 @@ import { parseNodeToolingOptions } from '../../scripts/bootrom/platforms/node_to
 import { performHostControlAction } from '../../scripts/host_control/actions.mjs';
 import type { HostControlRequest } from '../../hosts/common/control/protocol';
 import { KeyModifier, type TextInputHost, type TextInputTarget } from '../../hosts/common/input/text';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('client chord waits for the press frame before releasing its keys', async () => {
 	const requests: HostControlRequest[] = [];
@@ -89,7 +90,7 @@ test('remote input owns press IDs across requests and releases only held input',
 
 test('reentrant release cancels the rest of an admitted input batch', t => {
 	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const keys: string[] = [];
 	const remote = new RemoteInput(input, clock, code => {
 		keys.push(code);
@@ -106,7 +107,7 @@ test('reentrant release cancels the rest of an admitted input batch', t => {
 test('remote key producer edits in request order with live modifiers independently of guest sampling', t => {
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const state = { text: '', selectionStart: 0, selectionEnd: 0, offset: 0 };
 	const target: TextInputTarget = {
 		readOnly: false, revision: 0,
@@ -161,7 +162,7 @@ test('remote key producer edits in request order with live modifiers independent
 test('remote pointer reaches the machine in raster pixels and signed logical wheel steps', t => {
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const remote = new RemoteInput(input, clock);
 	const snapshot = createInputControllerSnapshot();
 	remote.apply([{ type: 'pointer', x: 120, y: 80 }]);
@@ -177,7 +178,7 @@ test('remote pointer reaches the machine in raster pixels and signed logical whe
 
 test('disk workspace transport persists contents and record timestamps without replacing fetch', async t => {
 	const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-workspace-provider-'));
-	t.after(() => fs.rm(root, { recursive: true }));
+	afterTest(t, () => fs.rm(root, { recursive: true }));
 	const fetch = globalThis.fetch;
 	const provider = new DiskWorkspaceRecordProvider(root);
 	const record = { contents: 'return { name = "actor" }\n', updatedAt: 1712345678901 };
@@ -199,7 +200,7 @@ test('live control has no test TTL and Studio uses an explicit workspace', () =>
 
 test('filesystem-exclusive creation admits one concurrent writer and never overwrites the winner', async t => {
 	const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-create-'));
-	t.after(() => fs.rm(root, { recursive: true }));
+	afterTest(t, () => fs.rm(root, { recursive: true }));
 	const provider = new DiskWorkspaceRecordProvider(root);
 	const records = [{ contents: 'first', updatedAt: 1000 }, { contents: 'second', updatedAt: 2000 }];
 	const attempts = await Promise.allSettled(records.map(record => provider.write('src/actor.lua', record, false)));
@@ -212,7 +213,7 @@ test('filesystem-exclusive creation admits one concurrent writer and never overw
 
 test('remote disconnect releases raw keys without fabricating editor key-up activation', t => {
 	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	let armed = false, invoked = 0;
 	input.setEditingInput({ textTarget: undefined, onDidChangeTarget: () => () => {},
 		dispatchKey(event) { if (event.code === 'Enter') { if (event.down) armed = true; else if (armed) invoked++; } return false; },

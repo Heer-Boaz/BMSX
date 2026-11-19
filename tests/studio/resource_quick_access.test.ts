@@ -19,6 +19,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [['third.lua', 'return 3\n']]);
@@ -66,7 +67,7 @@ test('Go to File Alt acceptance opens a same-part side instead of borrowing defa
 
 test('Go to File cannot lend a later model-listener foreground interaction to its old request', async t => {
 	const f = fixture(t); f.open();
-	t.after(editorTextModelService.onDidAddModel(model => { if (model.resource === f.resource) f.second.focus(); }));
+	afterTest(t, editorTextModelService.onDidAddModel(model => { if (model.resource === f.resource) f.second.focus(); }));
 	f.editor.quickInput.accept(); await setImmediate();
 	assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
 	assert.ok(f.editor.editorParts.activePart === f.secondPart && f.editor.editorParts.activeGroup === f.secondGroup);
@@ -74,7 +75,7 @@ test('Go to File cannot lend a later model-listener foreground interaction to it
 
 test('resource input production runs inside the group opening receipt so a synchronous newer opening wins', async t => {
 	const f = fixture(t), newer = new HostErrorInput('newer receiver'); f.open();
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource === f.resource) f.firstGroup.openEditor(newer);
 	}));
 	f.editor.quickInput.accept(); await setImmediate();
@@ -120,7 +121,7 @@ test('a null prepared origin can open its captured group without a fabricated co
 test('the prepared origin follows ordinary Source draft blur before retaining its command lifetime', async t => {
 	const f = fixture(t); f.first.focus();
 	const edit = new WorkbenchPropertyEdit<string>(f.first.commandTarget, value => value, f.editor.surfaces, f.firstGroup.paneSurface, f.firstGroup.workArea);
-	t.after(() => edit.dispose());
+	afterTest(t, () => edit.dispose());
 	const tree = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
 	const row = appendWorkbenchTreeNode<WorkbenchPropertyElement>(tree, null, { kind: 'property', label: 'alpha', value: '1', description: '', warning: false,
 		displayLabel: '', displayValue: '', displayValueLeft: 0 });
@@ -142,7 +143,7 @@ test('the prepared origin follows ordinary Source draft blur before retaining it
 for (const side of [false, true]) test(`Go to File ${side ? 'Alt' : 'plain'} acceptance preserves the resource visual default and pinned canonical source`, async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const f = fixture(t), path = 'res/data/castle_map.yaml', source = '1: { map: [".."], objects: [] }\n';
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	f.sources.catalog.registerTextSources(f.sources.systemContextId, [{ type: 'data', resid: 'map', source_path: path, sourcemeta: { text: source } }]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;
 	f.first.focus(); executeEditorSearchCommand(f.editor, f.sources, 'resourceSearch', f.firstGroup, f.first.commandTarget, f.host.clock);
@@ -205,7 +206,7 @@ for (const change of ['foreignFocus', 'originRetirement', 'groupDisposal', 'reso
 			else if (change === 'originRetirement') f.first.commandTarget.scope.retireContext();
 			else if (change === 'groupDisposal') f.firstPart.dispose();
 			else registerLuaSourceRecord(f.registry, f.remove());
-		}); t.after(unbind);
+		}); afterTest(t, unbind);
 		f.editor.quickInput.accept(); await setImmediate();
 		if (change !== 'groupDisposal') assert.ok(f.firstGroup.model.activeTab === f.firstInput);
 		assert.ok(f.secondGroup.model.activeTab === f.secondInput && editorTextModelService.get(f.resource) === undefined);
@@ -214,7 +215,7 @@ for (const change of ['foreignFocus', 'originRetirement', 'groupDisposal', 'reso
 
 test('newer foreign interaction during accepted side publication cancels only the opening, not the explicit split', async t => {
 	const f = fixture(t); f.open();
-	t.after(f.firstPart.onDidChangeGroups(() => { f.second.focus(); }));
+	afterTest(t, f.firstPart.onDidChangeGroups(() => { f.second.focus(); }));
 	f.editor.quickInput.accept(KeyModifier.alt); await setImmediate();
 	assert.equal(f.firstPart.groups.length, 2);
 	assert.equal(f.firstPart.groups.find(group => group !== f.firstGroup)!.model.tabs.length, 0);

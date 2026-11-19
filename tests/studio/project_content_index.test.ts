@@ -12,6 +12,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS, TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const contextId = TEST_CARTRIDGE_CONTEXT_IDS[0];
 const modules = [
@@ -49,7 +50,7 @@ progression.compile_program({})
 input.factory({ program = {} })
 timeline.compile({ duration_frames = 4 })
 ` });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	assert.equal(f.index.sync(), true);
 	const entries = f.index.entriesFor(f.resource('main.lua'));
 	assert.deepEqual(new Set(entries.map(entry => entry.kind)), new Set(['scene', 'behavior_tree', 'state_machine', 'action_effect', 'progression', 'input', 'animation']));
@@ -63,7 +64,7 @@ timeline.compile({ duration_frames = 4 })
 
 test('unchanged refresh returns before semantic queries and retains publication arrays', t => {
 	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	f.index.sync();
 	const entries = f.index.entriesFor(f.resource('main.lua')), revision = f.index.revision;
 	const project = getOrCreateSemanticProject(f.models, contextId);
@@ -78,7 +79,7 @@ test('unchanged refresh returns before semantic queries and retains publication 
 test('a newly opened canonical model maps occurrence identity before the next sync', t => {
 	const source = "local fsm=require('cartlib/fsm/library'); fsm.register('one', {}); fsm.register('one', {})";
 	const f = fixture({ 'main.lua': source, 'other.lua': 'return false' });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	f.index.sync();
 	const entries = f.index.entriesFor(f.resource('main.lua')), first = entries[0], second = entries[1];
 	const model = f.model('main.lua'), start = second.range.start;
@@ -101,7 +102,7 @@ test('a newly opened canonical model maps occurrence identity before the next sy
 for (const mode of ['yaml', 'aem'] as const) test(`${mode} editor mode does not change canonical declaration ownership or tracking`, t => {
 	const source = "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})";
 	const f = fixture({ 'main.lua': source });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	f.index.sync();
 	const resource = f.resource('main.lua'), entry = f.index.entriesFor(resource)[0];
 	const model = f.models.retain(resource, mode, source);
@@ -120,7 +121,7 @@ for (const mode of ['yaml', 'aem'] as const) test(`${mode} editor mode does not 
 test('complete replacement and deletion retire occurrences rather than selecting same-position namesakes', t => {
 	const source = "local fsm=require('cartlib/fsm/library'); fsm.register('same', {}); fsm.register('same', {})";
 	const f = fixture({ 'main.lua': source });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	f.index.sync();
 	const first = f.index.entriesFor(f.resource('main.lua'))[0], second = f.index.entriesFor(f.resource('main.lua'))[1];
 	const model = f.model('main.lua');
@@ -140,7 +141,7 @@ test('complete replacement and deletion retire occurrences rather than selecting
 
 test('provider invalidation revokes unchanged consumers and does not resurrect retired entries on Undo', t => {
 	const f = fixture({ 'bridge.lua': "return require('cartlib/fsm/library').register", 'main.lua': "local publish=require('bridge'); publish('machine', {})" });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	f.index.sync();
 	const entry = f.index.entriesFor(f.resource('main.lua'))[0];
 	const project = getOrCreateSemanticProject(f.models, contextId), file = project.getFileData(f.resource('main.lua'));
@@ -161,7 +162,7 @@ test('animation keeps actual imported table ownership, consuming context, and se
 		'caller.lua': "local sprite=require('cartlib/component/sprite_animation_component'); sprite.factory(require('frames')); sprite.factory(require('frames'))",
 		'second.lua': "local sprite=require('cartlib/component/sprite_animation_component'); sprite.factory(require('frames'))",
 	});
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	f.index.sync();
 	assert.deepEqual(f.index.entriesFor(f.resource('alias.lua')), [], 'a reexport is not the authored table owner');
 	const raw = f.index.entriesFor(f.resource('frames.lua'));
@@ -184,7 +185,7 @@ test('animation keeps actual imported table ownership, consuming context, and se
 
 test('source replacement without canonical change mapping retires unprovable occurrence identities', t => {
 	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	f.index.sync();
 	const entry = f.index.entriesFor(f.resource('main.lua'))[0];
 	const project = getOrCreateSemanticProject(f.models, contextId);
@@ -196,7 +197,7 @@ test('source replacement without canonical change mapping retires unprovable occ
 test('plain declaration references recover the exact duplicate occurrence without admitting working copies', t => {
 	const source = "local fsm=require('cartlib/fsm/library'); fsm.register('same', {}); fsm.register('same', {})";
 	const first = fixture({ 'main.lua': source }), reopened = fixture({ 'main.lua': source });
-	t.after(first.dispose); t.after(reopened.dispose);
+	afterTest(t, first.dispose); afterTest(t, reopened.dispose);
 	first.index.sync();
 	const original = first.index.entriesFor(first.resource('main.lua'))[1];
 	const captured = first.index.captureReference(original)!;
@@ -213,7 +214,7 @@ test('plain declaration references recover the exact duplicate occurrence withou
 test('declaration recovery requires source provenance even when a namesake occupies the exact saved range', t => {
 	const source = "local fsm=require('cartlib/fsm/library'); fsm.register('same', {n=1})";
 	const f = fixture({ 'main.lua': source });
-	t.after(f.dispose); f.index.sync();
+	afterTest(t, f.dispose); f.index.sync();
 	const entry = f.index.entriesFor(f.resource('main.lua'))[0], reference = f.index.captureReference(entry)!;
 	const model = f.model('main.lua');
 	model.pushEditOperations([{ offset: source.indexOf('n=1') + 2, deleteLength: 1, text: '2' }]);
@@ -230,7 +231,7 @@ test('imported animation recovery proves both table owner and consuming browser 
 		'frames.lua': "return { frames = {'idle.1'}, frame_run = 2 }",
 		'caller.lua': "-- aa\nlocal sprite=require('cartlib/component/sprite_animation_component'); sprite.factory(require('frames'))",
 	});
-	t.after(f.dispose); f.index.sync();
+	afterTest(t, f.dispose); f.index.sync();
 	const entry = f.index.entriesFor(f.resource('caller.lua'))[0], reference = f.index.captureReference(entry)!;
 	const raw = f.index.entriesFor(f.resource('frames.lua'))[0], rawReference = f.index.captureReference(raw)!;
 	assert.equal(reference.owner.resource.path, 'frames.lua'); assert.equal(reference.browser.resource.path, 'caller.lua');
@@ -243,7 +244,7 @@ test('imported animation recovery proves both table owner and consuming browser 
 
 test('published nonsemantic source edits change provenance before reference queries consider a prior memento', t => {
 	const f = fixture({ 'main.lua': "-- aa\nlocal fsm=require('cartlib/fsm/library'); fsm.register('same', {})" });
-	t.after(f.dispose); f.index.sync();
+	afterTest(t, f.dispose); f.index.sync();
 	const entry = f.index.entriesFor(f.resource('main.lua'))[0], previous = f.index.captureReference(entry)!;
 	f.model('main.lua').pushEditOperations([{ offset: 3, deleteLength: 2, text: 'bb' }]);
 	f.index.sync();
@@ -255,7 +256,7 @@ test('published nonsemantic source edits change provenance before reference quer
 
 test('a catalog topology publication removes declarations even without a source edit event', t => {
 	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	f.index.sync();
 	const resource = f.resource('main.lua'), entry = f.index.entriesFor(resource)[0];
 	const registry = f.sources.catalog.getContext(contextId).luaSources;
@@ -269,7 +270,7 @@ test('a catalog topology publication removes declarations even without a source 
 
 test('equal caller paths and a shared imported table retain distinct project-context occurrences', t => {
 	const f = fixture({ 'main.lua': "local timeline=require('cartlib/timeline/program'); local sprite=require('cartlib/component/sprite_animation_component'); timeline.compile(require('shared')); sprite.factory(require('shared'))" });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	const system = f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID);
 	registerLuaSourceRecord(system.luaSources, createScenarioTestSourceRecord('shared.lua', 1, "return {frames={'one'},frame_run=2}", 'machine/bios/shared.lua'));
 	const firstContext = f.sources.catalog.getContext(contextId);
@@ -296,7 +297,7 @@ test('equal caller paths and a shared imported table retain distinct project-con
 
 test('model-service clear rebinds current semantic projects and disposal retires subscriptions', t => {
 	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	f.index.sync();
 	const entry = f.index.entriesFor(f.resource('main.lua'))[0];
 	const oldProject = getOrCreateSemanticProject(f.models, contextId);
@@ -316,7 +317,7 @@ test('model-service clear rebinds current semantic projects and disposal retires
 
 test('retirement revokes query authority but retains final declaration correspondence for session checkpoints', t => {
 	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	const model = f.model('main.lua');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- final authored source\n' }]);
 	f.index.sync();
@@ -344,7 +345,7 @@ test('retirement revokes query authority but retains final declaration correspon
 
 test('retiring an unobserved project index performs no semantic discovery', t => {
 	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	const snapshots = t.mock.method(EditorLuaSemanticProject.prototype, 'getSnapshot');
 	const sources = t.mock.method(EditorLuaSemanticProject.prototype, 'synchronizeSources');
 	f.index.dispose();
@@ -355,7 +356,7 @@ test('retiring an unobserved project index performs no semantic discovery', t =>
 
 test('retirement freezes mapped canonical correspondence without semantic discovery or reentrant admission', t => {
 	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	const model = f.model('main.lua');
 	f.index.sync();
 	const entry = f.index.entriesFor(model.resource)[0], previous = f.index.captureReference(entry)!;
@@ -380,7 +381,7 @@ test('retirement freezes mapped canonical correspondence without semantic discov
 for (const transition of ['reset project', 'clear models', 'admit context'] as const) {
 	test(`retiring an observed index after ${transition} never admits a replacement semantic generation`, t => {
 		const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
-		t.after(f.dispose); f.index.sync();
+		afterTest(t, f.dispose); f.index.sync();
 		if (transition === 'reset project') resetSemanticProject(f.models, contextId);
 		else if (transition === 'clear models') f.models.clear();
 		else f.sources.catalog.admitContext({ ...f.sources.catalog.getContext(contextId),
@@ -397,7 +398,7 @@ test('final imported-animation correspondence retains independently changed owne
 	const owner = "return { frames = {'idle.1'}, frame_run = 2 }";
 	const consumer = "local sprite=require('cartlib/component/sprite_animation_component'); sprite.factory(require('frames'))";
 	const f = fixture({ 'frames.lua': owner, 'caller.lua': consumer });
-	t.after(f.dispose); f.index.sync();
+	afterTest(t, f.dispose); f.index.sync();
 	const entry = f.index.entriesFor(f.resource('caller.lua'))[0];
 	const table = f.model('frames.lua'), caller = f.model('caller.lua');
 	table.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- owner\n' }]);
@@ -407,14 +408,14 @@ test('final imported-animation correspondence retains independently changed owne
 	assert.deepEqual(reference.owner.fingerprint, computeTextSnapshotFingerprint(getTextSnapshot(table.buffer)));
 	assert.deepEqual(reference.browser.fingerprint, computeTextSnapshotFingerprint(getTextSnapshot(caller.buffer)));
 	const reopened = fixture({ 'frames.lua': table.buffer.getText(), 'caller.lua': caller.buffer.getText() });
-	t.after(reopened.dispose); reopened.index.sync();
+	afterTest(t, reopened.dispose); reopened.index.sync();
 	assert.equal(reopened.index.resolveReference(reference), reopened.index.entriesFor(reopened.resource('caller.lua'))[0]);
 });
 
 test('retirement does not claim source correspondence for an untracked replacement working copy', t => {
 	const source = "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})";
 	const f = fixture({ 'main.lua': source });
-	t.after(f.dispose); f.index.sync();
+	afterTest(t, f.dispose); f.index.sync();
 	const resource = f.resource('main.lua'), entry = f.index.entriesFor(resource)[0], previous = f.index.captureReference(entry)!;
 	const model = f.models.retain(resource, 'lua', '-- changed before canonical admission\n' + source);
 	f.index.dispose();
@@ -426,7 +427,7 @@ test('retirement does not claim source correspondence for an untracked replaceme
 
 for (const reset of ['single', 'all'] as const) test(`${reset} semantic project reset retires warmed entries and rebinds replacement invalidation`, t => {
 	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
-	t.after(f.dispose);
+	afterTest(t, f.dispose);
 	const model = f.model('main.lua');
 	f.index.sync();
 	const entry = f.index.entriesFor(model.resource)[0], previous = getOrCreateSemanticProject(f.models, contextId);

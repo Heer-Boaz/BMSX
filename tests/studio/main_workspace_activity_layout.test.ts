@@ -9,6 +9,7 @@ import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { WorkbenchMainWorkspaceLayout, type WorkbenchMainWorkspaceState } from '../../ide/workbench/common/main_workspace_layout';
 import { WorkbenchSplitControl } from '../../ide/workbench/ui/split_control';
 import { WORKBENCH_SPLIT_SIZE } from '../../ide/workbench/ui/split_view';
+import { afterTest } from '../helpers/test_cleanup';
 
 // Positions and dimensions are the pure allocation/sash contract, not incidental UI assertions.
 const HIERARCHY = { minimumWidth: 80, preferredWidth: 120, minimumHeight: 0 };
@@ -180,7 +181,7 @@ test('the activity sash uses the actual shared vertical pointer and keyboard lif
 	const vertical = { rowMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 };
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
 	const parent = focus.createTarget(), control = new WorkbenchSplitControl(focus, capture, hover, parent);
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	layout.activityVisible = true;
 	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical);
 	control.setInput(layout.activitySash); parent.focus();

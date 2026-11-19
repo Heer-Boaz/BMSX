@@ -18,6 +18,7 @@ import { RemoteInput } from '../../hosts/common/input/remote';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { HeadlessCaptureCoordinator } from '../../scripts/bootrom/platforms/headless_capture';
 import { runIdeTest } from '../../scripts/bootrom/platforms/hostrunner/ide_test_runner';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('headless IDE scenario keeps physical postInput separate from ordered authored control input', async t => {
 	const host = createHostFrameFixture(), directory = await mkdtemp(join(tmpdir(), 'bmsx-ide-input-'));
@@ -37,7 +38,7 @@ test('headless IDE scenario keeps physical postInput separate from ordered autho
 		event => pointers.push([event.x, event.y, event.pressedButtons, event.releasedButtons, event.timestamp]),
 		event => { wheels.push(event.deltaY); return true; });
 	const capture = new HeadlessCaptureCoordinator(host.backend, directory, () => host.clock.now());
-	t.after(async () => {
+	afterTest(t, async () => {
 		controlInput.release(); capture.dispose(); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose();
 		await rm(directory, { recursive: true });
 	});

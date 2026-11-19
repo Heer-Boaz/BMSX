@@ -27,6 +27,7 @@ import { WorkspaceSourceContext } from '../../ide/workbench/services/working_cop
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const host = createHostFrameFixture(), record = createScenarioTestSourceRecord('review.lua', 1, 'return 1\n');
@@ -70,7 +71,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		pointer(input.layout.right + 2, y, PointerButton.Primary); pointer(x, y); pointer(x, y, 0); editor.update(0);
 	};
 	editor.gamePanel.toggle(); arrange();
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	return { ide, host, sources, editor, input, model, proposal, pane, arrange, drag, pointer, constraint, setMinimum: (value: number | undefined) => { minimum = value; } };
@@ -308,7 +309,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const movingActive of [true
 		if (movingActive) assert.ok(f.sourceGroup.minimumHeight > intrinsic.minimumHeight, 'the departing Source really has attached Find chrome that the fresh receiver must not inherit');
 		const logicalRuntime = f.editor.gamePanel.focusScope.runtime, timeline = f.reviewGroup.timeline;
 		if (movingActive) { assert.ok(logicalRuntime !== undefined); timeline.setContext(logicalRuntime); assert.equal(timeline.available, true); }
-		let retirements = 0; t.after(f.editor.gamePanel.focusScope.onDidRetireContext(() => { retirements++; }));
+		let retirements = 0; afterTest(t, f.editor.gamePanel.focusScope.onDidRetireContext(() => { retirements++; }));
 		const root = f.main.arrangement.root, tabs = f.sourceGroup.model.tabs.slice(), pane = f.sourceGroup.panes.activePane;
 		const focus = inputFocus.admittedTarget, surfaceRevision = f.editor.surfaces.revision;
 		const revision = f.main.arrangement.revision, layoutRevision = f.main.arrangement.layoutRevision, areaRevision = f.parts.mainArea.revision;

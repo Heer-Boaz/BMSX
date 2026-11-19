@@ -17,6 +17,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import * as colors from '../../ide/common/constants';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
@@ -49,14 +50,14 @@ function fixture(t: TestContext) {
 		clock.advance(20); input.pollInput(); focus.handleGamepad(input.getPlayerInput(1));
 	};
 	show(); layout();
-	t.after(() => inspector.dispose());
+	afterTest(t, () => inspector.dispose());
 	return { inspector, focus, parent, capture, hover, items, font, bounds, show, layout, key, press, pad,
 		measured: () => measured, opened: () => opened, disposed: () => disposed };
 }
 
 test('property descriptions use neutral UI ink in paragraph, inline and expanded rows without changing value semantics', t => {
 	const previousTheme = colors.getActiveIdeThemeVariant(), f = fixture(t);
-	t.after(() => colors.setIdeThemeVariant(previousTheme));
+	afterTest(t, () => colors.setIdeThemeVariant(previousTheme));
 	const overlay = createHostOverlayFixture(384, 288), glyphs = new Map<string, number>();
 	t.mock.method(api, 'blit_text_inline_with_font', (text, _x, _y, _z, color) => { glyphs.set(text, color); });
 	for (const theme of ['dark', 'light']) for (const variant of ['tiny', 'msx'] as const) {
@@ -593,7 +594,7 @@ function feedbackFixture(t: TestContext, property: Partial<InspectedProperty> = 
 	const area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('inspector owner'), isVisible: () => true,
 		getBounds: () => f.bounds, getClip: () => area, draw: () => drawWorkbenchPropertyInspector(f.inspector) });
-	t.after(() => surfaces.dispose());
+	afterTest(t, () => surfaces.dispose());
 	let childRequests = 0;
 	const expansion = { expanded: false, setExpanded(expanded: boolean) { this.expanded = expanded; childRequests++; } };
 	const item: InspectedProperty = { label: '_active_objects_by_definition', value: 'Table #7', description: '', warning: false,

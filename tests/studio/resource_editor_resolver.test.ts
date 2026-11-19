@@ -19,6 +19,7 @@ import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 function resource(path: string, type: RuntimeResource['source']['type']): RuntimeResource {
 	return { contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path },
@@ -120,7 +121,7 @@ for (const [path, kind, source] of [
 ] as const) test(`built-in ${path} resolution selects Map while explicit Source shares its canonical working copy`, async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const sources = createScenarioTestSourceState([]), inputs: EditorInput[] = [];
-	t.after(async () => {
+	afterTest(t, async () => {
 		for (const input of inputs) input.dispose();
 		editorTextModelService.clear(); clearWorkspaceSourceCaches(); sources.catalog.dispose(); await closeWorkspaceRecords();
 	});
@@ -147,7 +148,7 @@ for (const [path, kind, source] of [
 test('built-in generic YAML remains Source and Audio Event Maps retain their own default and explicit Source views', async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const sources = createScenarioTestSourceState([]), inputs: EditorInput[] = [];
-	t.after(async () => {
+	afterTest(t, async () => {
 		for (const input of inputs) input.dispose();
 		editorTextModelService.clear(); clearWorkspaceSourceCaches(); sources.catalog.dispose(); await closeWorkspaceRecords();
 	});

@@ -12,6 +12,7 @@ import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/conte
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const contextId = TEST_CARTRIDGE_CONTEXT_IDS[0];
 const SOURCE = `local publish = require('bridge')
@@ -31,7 +32,7 @@ function fixture(t: TestContext) {
 	const model = (path: string) => resolveLuaTextFileModel(models, sources.catalog, resource(path));
 	const project = getOrCreateSemanticProject(models, contextId);
 	project.synchronizeSources(sources.catalog);
-	t.after(() => { models.clear(); resetSemanticProjects(models); sources.catalog.dispose(); });
+	afterTest(t, () => { models.clear(); resetSemanticProjects(models); sources.catalog.dispose(); });
 	return { sources, models, documents, resource, model, project };
 }
 
@@ -60,7 +61,7 @@ test('a standalone Scene bookmark tracks source edits without semantic work unti
 	const f = fixture(t), model = f.model('scene.lua'), document = f.documents.get(model);
 	const context = new SceneAuthoringContext(model, f.documents, { document, sourceVersion: model.version, scene: document.scenes[0] });
 	const view = new SceneViewState(context, f.sources.catalog), bookmark = new SceneBookmark(context, view);
-	t.after(() => bookmark.dispose()); view.dispose(); context.dispose();
+	afterTest(t, () => bookmark.dispose()); view.dispose(); context.dispose();
 	const get = t.mock.method(f.documents, 'get'), snapshot = t.mock.method(f.project, 'getSnapshot');
 	const projection = t.mock.method(f.documents, 'getForSnapshot');
 	const offset = model.buffer.getText().indexOf('publish(') + 'publis'.length;
@@ -130,7 +131,7 @@ test('Scene cache namespaces end with their actual semantic project, not just a 
 test('project content and opened Scene views consume the exact same declaration objects', t => {
 	const f = fixture(t), registrations = new BehaviorRegistrationIndex(f.models, f.sources.catalog);
 	const index = new ProjectContentIndex(f.models, f.sources.catalog, registrations, f.documents);
-	t.after(() => index.dispose());
+	afterTest(t, () => index.dispose());
 	index.sync();
 	const entries = index.entriesFor(f.resource('scene.lua'));
 	assert.equal([...f.models.models].length, 0);

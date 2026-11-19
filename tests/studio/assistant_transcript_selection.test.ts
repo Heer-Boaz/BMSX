@@ -9,6 +9,7 @@ import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy
 import { WorkspaceSourceContext } from '../../ide/workbench/services/working_copy/source_context';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function entry(index: number, text: string, images?: readonly string[], proposal?: WorkspaceEditProposal): AssistantEntry {
 	return { index, text: new PieceTreeBuffer(text), images, proposal, kind: proposal === undefined ? 'assistant' : 'proposal', resetRevision: 0 };
@@ -24,7 +25,7 @@ function proposals(t: TestContext) {
 		});
 		created.push(proposal); return proposal;
 	};
-	t.after(() => { for (const proposal of created) proposal.dispose(); models.clear(); });
+	afterTest(t, () => { for (const proposal of created) proposal.dispose(); models.clear(); });
 	return { create, model, source };
 }
 

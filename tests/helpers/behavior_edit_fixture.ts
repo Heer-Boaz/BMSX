@@ -12,6 +12,7 @@ import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavio
 import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavior_lens/source_correspondence';
 import { createBehaviorLensViewState, type BehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { afterTest } from './test_cleanup';
 
 /** Real source models/history and Lens lifetimes, without a renderer or a running guest. */
 const API_MODULES = ['cartlib/fsm/library','cartlib/behaviour_tree/library','cartlib/actioneffects'];
@@ -32,6 +33,6 @@ export function createBehaviorEditFixture(t: TestContext, path: string, source: 
 	const input = new BehaviorLensInput(model, view, new Set([model.resource.contextId]), () => assert.fail('This source-only fixture does not run a layout worker'));
 	service.onDidChangeContent((model, event) => mapBehaviorLensSourceRanges(view, model.resource, event));
 	const refresh = () => { installBehaviorLensDocument(view, project()); input.updateDefinition(); };
-	t.after(() => { input.dispose(); service.clear(); editorViewState.font = oldFont; });
+	afterTest(t, () => { input.dispose(); service.clear(); editorViewState.font = oldFont; });
 	return { model, models, service, input, view, refresh };
 }

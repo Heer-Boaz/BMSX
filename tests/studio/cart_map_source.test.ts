@@ -8,6 +8,7 @@ import { EditorWorkspaceEditConflict } from '../../ide/editor/model/undo_redo_se
 import { buildPietiousSource, createPietiousPositionEdit } from '../../ide/workbench/contrib/cart_maps/pietious_source';
 import { buildNemesisSource, createNemesisMarkerMoveEdit } from '../../ide/workbench/contrib/cart_maps/nemesis_source';
 import { parseStructuredTextDocument } from '../../toolchain/ts/rompack/aem';
+import { afterTest } from '../helpers/test_cleanup';
 
 const castleSource = readFileSync('carts/pietious/res/data/castle_map.yaml', 'utf8');
 const stageSource = readFileSync('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8');
@@ -155,7 +156,7 @@ test('Nemesis source forms preserve quote style and refuse occupied or unsupport
 
 test('source and map edits share one history, and stale projections cannot write intervening text', t => {
 	const service = new EditorTextModelService();
-	t.after(() => service.clear());
+	afterTest(t, () => service.clear());
 	for (const [path, source] of [['castle_map.yaml', castleSource], ['glyph_stage.yaml', 'map_rows: ["m "] # retained\n']]) {
 		const model = service.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'data', resid: path } }, 'yaml', source);
 		let operation: EditorModelEdit;

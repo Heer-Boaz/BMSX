@@ -29,6 +29,7 @@ import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import type { EditorPart } from '../../ide/workbench/services/editor/editor_part';
 import type { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
+import { afterTest } from '../helpers/test_cleanup';
 
 const primary = PointerButton.Primary;
 const pointer = (x: number, y: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({
@@ -93,7 +94,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 		pointerCapture.beginRoute(scope, snapshot);
 		return strip.handlePointer(snapshot, now);
 	};
-	t.after(() => {
+	afterTest(t, () => {
 		strip.dispose(); contextMenu.dispose(); group.clear(); focusParent.release();
 		for (const model of models) model.dispose();
 	});
@@ -131,7 +132,7 @@ function gestureFixture(t: TestContext, width = 384, left = 0, top = 0,
 	const frame = (now: number) => { strip.update(now); layout(); };
 	const sibling = (width: number, left: number, top = 0) => gestureFixture(t, width, left, top,
 		{ parts, part: parts.createDocument({ requestedBounds: { left, top, right: left + width, bottom: top + 288 } }) });
-	t.after(() => { strip.cancelDrag(); for (const model of models) model.dispose(); });
+	afterTest(t, () => { strip.cancelDrag(); for (const model of models) model.dispose(); });
 	layout();
 	return { parts, part, view, group, strip, bar, bounds, scope, add, item, begin, dispatch, frame, layout,
 		draw: layout, activate: (input: EditorInput) => view.activate(input.id, { preserveFocus: true }),
@@ -165,7 +166,7 @@ test('tab layout publishes height and hits before paint; paint cannot measure or
 	f.layout();
 	assert.equal(f.item(first.id).bounds.left, f.strip.layoutState.viewportBounds.left);
 	assert.equal(f.strip.layoutState.items.peek(0).active, true);
-	t.after(() => { f.strip.hoverId = null; });
+	afterTest(t, () => { f.strip.hoverId = null; });
 });
 
 test('pinned input dirty and clean transitions publish group revisions for the retained tab layout', t => {
@@ -226,7 +227,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`same-name source captions 
 		const model = new EditorTextModel({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], contextLabel: projectRootPath,
 			path, sourceFilePath: `${projectRootPath}/${path}`, location: { kind: 'project', projectRootPath, path },
 			source: { type: 'lua', resid: `caption_${index}` } }, 'lua', `return ${index}\n`);
-		t.after(() => model.dispose());
+		afterTest(t, () => model.dispose());
 		const input = new CodeEditorInput(model); f.group.add(input); f.group.activate(input);
 		return input;
 	});
@@ -647,7 +648,7 @@ test('captured tab input retains full pointer occurrences and updates modifiers 
 		},
 		clear() { events.push('clear'); },
 	});
-	t.after(() => gesture.cancel());
+	afterTest(t, () => gesture.cancel());
 	const down = pointer(10, 10, primary, primary); gesture.begin({ kind: 'editor', model: f.group, input: tab }, down, 0);
 	const move = { ...pointer(30, 10, primary), modifiers: KeyModifier.ctrl, spaceDown: true };
 	capture.dispatch(move, false, 10, scope);
@@ -672,7 +673,7 @@ test('starting a new tab drag retires old feedback without overwriting a reentra
 		clears++;
 		if (replace) { replace = false; drag.begin({ kind: 'editor', model: f.group, input: newest }, down, 2); }
 	} });
-	t.after(() => drag.cancel());
+	afterTest(t, () => drag.cancel());
 	drag.begin({ kind: 'editor', model: f.group, input: first }, down, 0);
 	replace = true; drag.begin({ kind: 'editor', model: f.group, input: attempted }, down, 1);
 	assert.ok(drag.state?.source.kind === 'editor' && drag.state.source.input === newest);
@@ -684,7 +685,7 @@ test('starting a new tab drag retires old feedback without overwriting a reentra
 test('capture handoff cannot create tab drag state after its owner cancels admission', t => {
 	const f = fixture(t), tab = f.add('retired'), capture = new PointerCaptureService(), scope = Symbol('tab admission');
 	const drag = new EditorTabDrag(capture, scope, () => {}, { update() { assert.fail('retired drag moved'); }, drop() { assert.fail('retired drag dropped'); }, clear() {} });
-	t.after(() => drag.cancel());
+	afterTest(t, () => drag.cancel());
 	capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { drag.cancel(); } });
 	drag.begin({ kind: 'editor', model: f.group, input: tab }, pointer(10, 10, primary, primary), 0);
 	assert.equal(drag.state, null); assert.equal(capture.active, false);
@@ -723,7 +724,7 @@ test('double-click pin publication cannot recapture a retired tab strip', t => {
 	const f = fixture(t), tab = f.add('preview', true); f.layout();
 	const bounds = f.item(tab.id).bounds, x = bounds.left + 2, y = bounds.top + 1;
 	f.press(pointer(x, y, primary, primary), 0); f.dispatch(pointer(x, y, 0, 0, primary), false, 10);
-	const unbind = f.group.onDidChange(() => { if (f.group.previewTab === null) f.strip.clear(); }); t.after(unbind);
+	const unbind = f.group.onDidChange(() => { if (f.group.previewTab === null) f.strip.clear(); }); afterTest(t, unbind);
 	f.press(pointer(x, y, primary, primary), 20);
 	assert.equal(f.group.previewTab, null); assert.equal(pointerCapture.active, false); assert.equal(f.strip.drag.state, null);
 	f.dispatch(pointer(x, y, 0, 0, primary), false, 30);

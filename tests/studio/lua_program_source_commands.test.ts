@@ -9,6 +9,7 @@ import type { EditorCommandId } from '../../ide/common/commands';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../ide/language/lua/field_value_edit';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PROGRAM = "local p=require('cartlib/progression'); p.compile_program({rules={{id='first',on='hit'},{id='second',on='land'}},filters={},handlers={}})";
 const INPUT = "local p=require('cartlib/input/actioneffect/actioneffect_component'); p.factory({program={bindings={{on={press='a[jp]'},go={}}}}})";
@@ -77,7 +78,7 @@ for (const application of [false, true]) for (const valid of [false, true])
 				control.setValue(initial.value); control.layout(f.firstBounds); control.field.focusTarget.focus();
 				control.field.replaceText(0, control.field.text.length, valid ? "'accepted'" : '(');
 				draft = control.field.focusTarget;
-				t.after(() => { control.cancel(); control.field.focusTarget.release(); control.dispose(); });
+				afterTest(t, () => { control.cancel(); control.field.focusTarget.release(); control.dispose(); });
 			} else draft = f.draft(valid ? "'accepted'" : '(');
 			f.execute(command, application);
 			assert.equal(draft.edit!.pending, false);
@@ -103,7 +104,7 @@ for (const application of [false, true])
 	test(`Lua Program ${application ? 'application' : 'native'} capture cannot revive explicit A to B to A intent during draft acceptance`, t => {
 		const f = fixture(t); f.draft("'accepted'");
 		let fired = false;
-		t.after(f.model.onDidChangeContent(() => {
+		afterTest(t, f.model.onDidChangeContent(() => {
 			if (fired) return; fired = true;
 			f.select(['rules', 2, 'id']); f.select(['rules', 1, 'id']);
 		}));
@@ -116,7 +117,7 @@ for (const application of [false, true])
 	test(`Lua Program ${application ? 'application' : 'native'} source capture expires on same-input reattachment`, t => {
 		const f = fixture(t); f.draft("'accepted'");
 		let fired = false;
-		t.after(f.model.onDidChangeContent(() => {
+		afterTest(t, f.model.onDidChangeContent(() => {
 			if (fired) return; fired = true;
 			f.firstGroup.openEditor(f.firstInput); f.firstGroup.activate(f.input.id);
 		}));
@@ -273,7 +274,7 @@ test('Lua Program source acquisition publishes complete roots and preserves late
 	const f = fixture(t, PROGRAM, 'progression', [['later.lua', 'return {}']]);
 	const root = f.input.tree.roots[0], revision = f.input.sourceRevision;
 	let acquired = false;
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource.path !== 'later.lua') return;
 		acquired = true;
 		assert.equal(f.input.sourceProjecting, true); assert.equal(f.input.sourceRevision, revision);

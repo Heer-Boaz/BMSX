@@ -13,6 +13,7 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { SCENE_AUTHORING_IMPORTS } from '../fixtures/studio/scene_authoring';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 local prefab = require('cartlib/world/prefab')
@@ -272,7 +273,7 @@ test('a Main region hide cannot steal a newer document interaction published by 
 	const field = primary.details.control.controls[0]; assert.equal(field.field.focusTarget.focus(), true);
 	setFieldText(field.field, '31', true);
 	let published = false;
-	const release = f.model.onDidChangeContent(() => { release(); published = true; f.second.focus(); }); t.after(release);
+	const release = f.model.onDidChangeContent(() => { release(); published = true; f.second.focus(); }); afterTest(t, release);
 	assert.equal(f.main.setRegionVisible('details', false), false); f.update();
 	assert.equal(published, true); assert.equal(field.pending, false);
 	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1', 'x = 31'));
@@ -288,7 +289,7 @@ test('a restored layout publication preserves a newer Scene activation', async t
 	const release = f.main.onDidChange(() => {
 		release(); f.main.regionLayout.detailsWidth = 319;
 		assert.equal(f.main.setRegionVisible('details', false), true); newer = f.open(1);
-	}); t.after(release);
+	}); afterTest(t, release);
 	try {
 		assert.equal(await request.restore(snapshot), true); assert.equal(await newer, true); f.update();
 		const primary = f.main.primary; assert.ok(primary instanceof ScenePrimaryClient);
@@ -323,7 +324,7 @@ for (const change of ['none', 'return-focus retirement', 'pending Source retirem
 			const release = origin.onDidFocus(() => {
 				release(); retired = true;
 				f.main.setRegionVisible('details', false); f.main.setRegionVisible('details', true);
-			}); t.after(release);
+			}); afterTest(t, release);
 		}
 		f.key('Enter'); assert.equal(picker.visible, false);
 		if (change === 'return-focus retirement') {
@@ -365,7 +366,7 @@ test('newer placement from restore publication survives without cancelling indep
 		release(); published = true;
 		f.main.regionLayout.detailsWidth = 319;
 		assert.equal(f.main.setRegionVisible('details', false), true);
-	}); t.after(release);
+	}); afterTest(t, release);
 	try {
 		assert.equal(await request.restore(snapshot), true); f.update();
 		const primary = f.main.primary; assert.ok(primary instanceof ScenePrimaryClient && primary === original);
@@ -381,7 +382,7 @@ test('a Main region hide cannot retire Details reacquired by its intended docume
 	let published = false;
 	const release = primary.viewportTarget.onDidFocus(() => {
 		release(); published = true; f.main.focusPrimary('details');
-	}); t.after(release);
+	}); afterTest(t, release);
 	assert.equal(f.main.setRegionVisible('details', false), false); f.update();
 	assert.equal(published, true); assert.equal(f.main.regionLayout.detailsVisible, true);
 	assert.ok(primary.details.attached && f.main.primary === primary);

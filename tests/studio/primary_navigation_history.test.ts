@@ -6,6 +6,7 @@ import {
 } from '../../ide/navigation/navigation_history';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { inputFocus } from '../../ide/input/focus';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** Unit-owned source correspondence, deliberately independent of any authoring context or editor input. */
 class PrimaryLocation implements NavigationLocation {
@@ -33,7 +34,7 @@ test.afterEach(() => resetNavigationHistoryState());
 test('the frontend captures its actual primary owner without manufacturing a document group', t => {
 	const occurrence = Symbol('authored occurrence');
 	const owner = { captureNavigationEntry: () => new NavigationHistoryEntry({ kind: 'location', location: new PrimaryLocation(occurrence) }) };
-	t.after(initializeNavigationState(owner));
+	afterTest(t, initializeNavigationState(owner));
 	const first = createNavigationEntry()!, second = createNavigationEntry()!;
 	assert.equal(first.owner, undefined);
 	assert.equal(first.target.kind, 'location');

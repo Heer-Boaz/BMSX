@@ -32,6 +32,7 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 import { createTestRuntime, createTestRuntimeRomPayload, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 beforeEach(() => configureFontVariant('tiny'));
 afterEach(() => {
@@ -46,7 +47,7 @@ test('Scene fresh views preserve the selected source occurrence while retaining 
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
 	const controller = new SceneEditorController(sources.catalog, new SceneSourceDocuments(editorTextModelService, sources.catalog));
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
 	controller.openResource(group, resource);
 	const source = group.model.activeTab;
@@ -54,7 +55,7 @@ test('Scene fresh views preserve the selected source occurrence while retaining 
 	source.view.refresh(); selectSceneOutlineRow(source.view.hierarchy, 1);
 	source.view.preferredPart = 'details'; source.view.hierarchy.position = 2; source.view.details.position = 7;
 	const before = captureSceneEditorView(source.view), input = source.createView!();
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	assert.ok(input !== source && input.workingCopy === source.workingCopy);
 	assert.deepEqual(captureSceneEditorView(input.view), before, 'the selected member and reading position, not a namesake/default scene, are copied');
 	assert.ok(input.view.hierarchy.outline !== source.view.hierarchy.outline && input.view.details !== source.view.details && input.view.authoring.selectionRange !== source.view.authoring.selectionRange);
@@ -63,7 +64,7 @@ test('Scene fresh views preserve the selected source occurrence while retaining 
 	source.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shared\n' }]);
 	source.view.refresh(); input.view.refresh();
 	assert.equal(input.isDirty(), true); assert.equal(source.isDirty(), true);
-	const again = input.createView!(); t.after(() => again.dispose());
+	const again = input.createView!(); afterTest(t, () => again.dispose());
 	assert.ok(again !== input && again.workingCopy === source.workingCopy, 'a fresh view retains the real contribution factory');
 	assert.equal(source.workingCopy.buffer.getText(), `-- shared\n${SCENE_VIEWPORT_SOURCE}`);
 });
@@ -75,7 +76,7 @@ test('Animation fresh views retain their exact imported subject and deep-copy so
 		createScenarioTestSourceRecord('animation.lua', 1, text), createScenarioTestSourceRecord('tracks.lua', 1, imported),
 	]);
 	const controller = new AnimationEditorController(sources.catalog), group = createTestEditorGroup();
-	t.after(() => group.dispose());
+	afterTest(t, () => group.dispose());
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua' })!;
 	const source = controller.openResource(group, resource);
 	assert.ok(source !== undefined);
@@ -83,7 +84,7 @@ test('Animation fresh views retain their exact imported subject and deep-copy so
 	source.activeClient = 'keys'; source.keys.setView(20, 120); source.keys.setCursor(37); source.keys.snap = false;
 	source.columnSplit.ratio = 0.4; source.rowSplit.ratio = 0.6; source.tracks.scroll = 3; source.details.scroll = 4;
 	const selected = { track: structuredClone(source.trackSelection), key: structuredClone(source.keySelection), detail: structuredClone(source.detailSelection) };
-	const input = source.createView!(); t.after(() => input.dispose());
+	const input = source.createView!(); afterTest(t, () => input.dispose());
 	assert.ok(input !== source && input.workingCopy === source.workingCopy);
 	assert.ok(input instanceof AnimationEditorInput);
 	assert.deepEqual([...input.sourceModels.values()], [...source.sourceModels.values()], 'imported edit targets are the same canonical models');
@@ -109,13 +110,13 @@ test('Animation fresh views keep the selected definition and its consuming sourc
 		createScenarioTestSourceRecord('second.lua', 1, 'return {duration_frames=2}'),
 		createScenarioTestSourceRecord('cartlib/component/sprite_animation_component.lua', 1, ''),
 	]);
-	const controller = new AnimationEditorController(sources.catalog), group = createTestEditorGroup(); t.after(() => group.dispose());
+	const controller = new AnimationEditorController(sources.catalog), group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'consumer.lua' })!;
 	const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId); project.synchronizeSources(sources.catalog);
 	const definition = collectAnimationDefinitions(resource, project.getSnapshot()).find(candidate => candidate.file.file === resourceIdentityKey({ contextId: resource.contextId, path: 'second.lua' }))!;
 	const source = controller.openDefinition(group, resource.contextId, definition);
 	assert.ok(source !== undefined);
-	const input = source.createView!(); t.after(() => input.dispose());
+	const input = source.createView!(); afterTest(t, () => input.dispose());
 	assert.ok(input.workingCopy === source.workingCopy);
 	assert.deepEqual(input.definitionRange, source.definitionRange); assert.ok(input.definitionRange !== source.definitionRange);
 	assert.equal(input.consumerPath, resourceIdentityKey(resource)); assert.equal(input.document!.family, source.document!.family);
@@ -136,7 +137,7 @@ test('LuaProgram fresh views share authored imported working copies but never co
 	const runtime = createTestRuntime(createTestRuntimeRomPayload()), guest = new SuspendedGuestSession(runtime);
 	const transport = new RuntimeTransport(runtime, null!, null!, null!, () => true);
 	const controller = new LuaProgramController(sources, guest, null!, transport), group = createTestEditorGroup();
-	t.after(() => group.dispose());
+	afterTest(t, () => group.dispose());
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'program.lua' })!;
 	const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId); project.synchronizeSources(sources.catalog);
 	const occurrence = collectLuaPrograms(resource, project.getSnapshot())[0];
@@ -147,7 +148,7 @@ test('LuaProgram fresh views share authored imported working copies but never co
 	source.inspectRuntime(transport); source.interaction.running = true;
 	source.instance = { tag: ValueTag.Table, scalar: 17 }; source.runtimeDomain = 0;
 	source.programHashId = 13; source.stateHashId = 19; source.stateRevision = 5;
-	const cycles = runtime.machine.scheduler.nowCycles, input = source.createView!(); t.after(() => input.dispose());
+	const cycles = runtime.machine.scheduler.nowCycles, input = source.createView!(); afterTest(t, () => input.dispose());
 	assert.ok(input !== source && input.workingCopy === source.workingCopy && input.tree !== source.tree);
 	assert.deepEqual(input.occurrenceRange, source.occurrenceRange); assert.ok(input.occurrenceRange !== source.occurrenceRange);
 	assert.deepEqual([...input.sourceModels.values()], [...source.sourceModels.values()]);
@@ -170,7 +171,7 @@ test('Behavior fresh views acquire their own source lease and graph state withou
 		() => assert.fail('copying source does not run an FSM layout'), null!, null!, null!, null!);
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'tree.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, sources.catalog, resource), source = controller.createInput(model, 'graph');
-	const group = createTestEditorGroup(); group.openEditor(source); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); group.openEditor(source); afterTest(t, () => group.dispose());
 	selectBehaviorLensDefinition(source.view, source.view.document.definitions[0].rowKey); source.updateDefinition();
 	assert.ok(source.view.presentation.kind === 'graph');
 	source.view.selectionState.select({ kind: 'node', rowKey: source.view.source.nodes.at(-1)!.rowKey });
@@ -179,8 +180,8 @@ test('Behavior fresh views acquire their own source lease and graph state withou
 	const rewind = new HostRewind(runtime, null!, null!, null!, null!, null!);
 	const inspection = new BehaviorRuntimeInspection(sources, guest, rewind, 0, sources.currentBlua32Media.cartridgeSlots[0]!, undefined,
 		new RuntimeTransport(runtime, null!, null!, null!, () => true));
-	source.runtimeInspection = inspection; t.after(() => inspection.dispose());
-	const before = captureBehaviorLensView(source), input = source.createView!(); t.after(() => input.dispose());
+	source.runtimeInspection = inspection; afterTest(t, () => inspection.dispose());
+	const before = captureBehaviorLensView(source), input = source.createView!(); afterTest(t, () => input.dispose());
 	assert.ok(input !== source && input.workingCopy === model && input.view !== source.view);
 	assert.ok(input.view.document === source.view.document && input.view.source === source.view.source, 'immutable source generations are acquired, not copied');
 	assert.ok(input.graphLayout !== source.graphLayout && input.view.presentation !== source.view.presentation);

@@ -15,6 +15,7 @@ import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import { clamp } from '../../machine/ts/common/clamp';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 function pointer(bounds: Readonly<RectBounds>, modifiers = KeyModifier.none): PointerInputSnapshot {
 	return { viewportX: (bounds.left + bounds.right) / 2, viewportY: (bounds.top + bounds.bottom) / 2,
@@ -224,7 +225,7 @@ test('foreign tab autoscroll uses host time without activating the hovered recei
 test('foreign drop feedback consumes the final receiver font layout before the same frame paints', t => {
 	const variant = editorViewState.fontVariant; configureFontVariant('tiny');
 	const f = createActualSourcePanes(t), source = f.firstGroup, receiver = f.secondGroup;
-	t.after(() => configureFontVariant(variant));
+	afterTest(t, () => configureFontVariant(variant));
 	const sourceTab = source.tabStrip.layoutState.items.peek(0), receiverTab = receiver.tabStrip.layoutState.items.peek(0);
 	const down = pointer(sourceTab.bounds); down.viewportX = sourceTab.bounds.left + 2;
 	down.pressedButtons = PointerButton.Primary; down.justPressedButtons = PointerButton.Primary;

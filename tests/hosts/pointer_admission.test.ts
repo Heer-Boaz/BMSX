@@ -13,6 +13,7 @@ import {
 	INP_POINTER_BUTTON_AUX, INP_POINTER_BUTTON_PRIMARY, INP_POINTER_BUTTON_SECONDARY,
 } from '../../machine/ts/machine/devices/input/contracts';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
+import { afterTest } from '../helpers/test_cleanup';
 
 function occurrence(buttons: number, pressedButtons = 0, releasedButtons = 0, cancelledButtons = 0): PointerInputEvent {
 	return { pointerId: 0, pointerType: 'mouse', x: 500, y: 400, buttons, pressedButtons, releasedButtons, cancelledButtons,
@@ -22,7 +23,7 @@ function occurrence(buttons: number, pressedButtons = 0, releasedButtons = 0, ca
 test('routed pointer recipients are independent of keyboard focus and physical sampled holds', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const first = new InputChannel(input), second = new InputChannel(input);
-	t.after(() => { first.dispose(); second.dispose(); input.dispose(); });
+	afterTest(t, () => { first.dispose(); second.dispose(); input.dispose(); });
 	input.setPointerAdmissionMode('routed');
 	input.inputButton('keyboard:0', 'KeyA', true, 1, 0, 1);
 	input.inputButton('pointer:0', 'pointer_primary', true, 1, 0, 2);
@@ -56,7 +57,7 @@ test('routed pointer recipients are independent of keyboard focus and physical s
 
 test('admission maps all UI button bits and cancellation never reimports a held physical level', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	input.setPointerAdmissionMode('routed');
 	const snapshot = createInputControllerSnapshot();
 	input.pointerContribution.admit(occurrence(31, 31), 1, 2);
@@ -79,7 +80,7 @@ test('admission maps all UI button bits and cancellation never reimports a held 
 test('recipient wheel publication occurs once per host poll and sampling does not consume it', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const first = new InputChannel(input), second = new InputChannel(input);
-	t.after(() => { first.dispose(); second.dispose(); input.dispose(); });
+	afterTest(t, () => { first.dispose(); second.dispose(); input.dispose(); });
 	input.setPointerAdmissionMode('routed');
 	first.pointerContribution.admit(occurrence(0), 12, 34);
 	first.pointerContribution.admitWheel(13, 35, 0.5);
@@ -107,7 +108,7 @@ test('recipient wheel publication occurs once per host poll and sampling does no
 test('retiring a pointer recipient cancels its own contribution without stealing another recipient', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const first = new InputChannel(input), second = new InputChannel(input);
-	t.after(() => { second.dispose(); input.dispose(); });
+	afterTest(t, () => { second.dispose(); input.dispose(); });
 	input.setPointerAdmissionMode('routed');
 	input.guestInputRecipient = second;
 	first.pointerContribution.admit(occurrence(1, 1), 1, 2);
@@ -126,7 +127,7 @@ test('retiring a pointer recipient cancels its own contribution without stealing
 
 test('leaving routed mode drains a Studio-held physical press before standalone input resumes', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const remote = new RemoteInput(input, new VirtualHeadlessClock());
 	const snapshot = createInputControllerSnapshot();
 	input.setPointerAdmissionMode('routed');
@@ -151,7 +152,7 @@ test('leaving routed mode drains a Studio-held physical press before standalone 
 
 test('leaving routed mode excludes old attachment wheel work but preserves subsequent player wheel and physical history', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const snapshot = createInputControllerSnapshot();
 	input.setPointerAdmissionMode('routed');
 	input.inputAxis1('pointer:0', 'pointer_attachment_wheel', 2, 0);
@@ -171,7 +172,7 @@ test('leaving routed mode excludes old attachment wheel work but preserves subse
 
 test('leaving routed mode cannot replay a previous sampled button after its physical release', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	input.setPointerAdmissionMode('routed');
 	input.inputButton('pointer:0', 'pointer_primary', true, 1, 0, 1);
 	input.pollInput();

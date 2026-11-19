@@ -11,6 +11,7 @@ import {
 	createTestRuntime,
 	createTestRuntimeRomPayload,
 } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('PCRTC revision drives render-target changes', () => {
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
@@ -52,7 +53,7 @@ test('target requests retain the displayed image and coalesce allocation at pres
 	const { presenter, backend, output } = createHostOverlayFixture(4, 3);
 	presenter.initialize(new RenderPassLibrary(backend, presenter));
 	presenter.crt_postprocessing_enabled = false;
-	t.after(() => presenter.dispose());
+	afterTest(t, () => presenter.dispose());
 	presenter.configurePresentation('completed', true);
 	presenter.present(device, 0, 0);
 	const pixels = Array.from(backend.borrowPresentedPixels()), sequence = presenter.gameFrameSequence;
@@ -97,7 +98,7 @@ test('logical UI scaling reuses raster storage and publishes an independent inpu
 	const { presenter, backend, output, renderer } = createHostOverlayFixture(4, 3);
 	presenter.initialize(new RenderPassLibrary(backend, presenter));
 	presenter.crt_postprocessing_enabled = false;
-	t.after(() => presenter.dispose());
+	afterTest(t, () => presenter.dispose());
 	presenter.configurePresentation('completed', true); presenter.present(device, 0, 0);
 	const native = await presenter.captureGameFrame(), sequence = presenter.gameFrameSequence;
 	const graphRevision = presenter.deviceQuantizeConfigurationRevision;

@@ -4,13 +4,14 @@ import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { SCENE_TEXT_MODULES, SCENE_TEXT_SOURCE as SOURCE } from '../fixtures/studio/scene_text';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, source = SOURCE, imports: readonly (readonly [string, string])[] = SCENE_TEXT_MODULES) {
 	const f = createSceneSourceFixture(t, source, 'text.lua', undefined, imports), document = f.documents.get(f.model);
 	assert.equal(document.analysis.chunk.syntaxError?.message, undefined);
 	assert.equal(document.scenes.length, 1);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, scene: document.scenes[0], sourceVersion: f.model.version });
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	const text = () => { context.refresh(); const visual = context.visualScene!.canvas[0]; assert.ok(visual?.kind === 'text'); return visual; };
 	return { ...f, context, text };
 }

@@ -12,6 +12,7 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createTestToolingPackage } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('an admitted source-only image opens its information client without cooked metadata or fabricated preview pixels', t => {
 	configureFontVariant('tiny');
@@ -30,7 +31,7 @@ test('an admitted source-only image opens its information client without cooked 
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const pane = new ResourceViewerEditorPane(inputFocus.workbenchScope, commands, menu);
-	t.after(() => { pane.clearInput(); pane.dispose(); input.dispose(); menu.dispose(); catalog.dispose(); });
+	afterTest(t, () => { pane.clearInput(); pane.dispose(); input.dispose(); menu.dispose(); catalog.dispose(); });
 	assert.doesNotThrow(() => pane.setInput(input, { left: 0, top: 0, right: 240, bottom: 160 }));
 	assert.ok(pane.input.resource === resource);
 	assert.equal(input.view.content.image?.rom, null);

@@ -6,6 +6,7 @@ import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/ru
 import { decodeEventToolRequest } from '../../ide/workbench/services/assistant/event_tool_protocol';
 import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/event_history';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('Studio tools share automatic history with the viewer, page snapshots and reject cleared generations', async t => {
 	const { cpu, runtime, sources } = eventHistoryRuntime(compileEventHistoryFixture());
@@ -14,7 +15,7 @@ test('Studio tools share automatic history with the viewer, page snapshots and r
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
 		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
 	const events = f.events, target = f.inspection.target;
-	t.after(() => { lifetime.abort(); events.dispose(); });
+	afterTest(t, () => { lifetime.abort(); events.dispose(); });
 	assert.throws(() => tools.execute('studio_event_history', { target: 'foreign', action: 'status' }), /authoring target/);
 	const started = await tools.execute('studio_event_history', { target, action: 'status' });
 	assert.ok('status' in started.data);
@@ -69,7 +70,7 @@ test('event navigation is admitted by recording provenance and cancelled by the 
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
 		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
-	t.after(() => { lifetime.abort(); f.events.dispose(); f.presenter.dispose(); });
+	afterTest(t, () => { lifetime.abort(); f.events.dispose(); f.presenter.dispose(); });
 	const history = runtime.history;
 	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
 	history.captureCheckpoint();

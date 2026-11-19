@@ -12,6 +12,7 @@ import type { EditorPaneConstraints } from '../../ide/workbench/services/editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { WORKBENCH_ICON_SIZE } from '../../ide/workbench/ui/icon';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 // Card and intrinsic extents are the subject of these layout tests. No command wording or framebuffer snapshot is frozen.
 const CARD_CHROME = HOME_CARD_PADDING * 2 + WORKBENCH_ICON_SIZE + HOME_ICON_GAP + 4;
@@ -19,7 +20,7 @@ const EDITOR_CHROME = HOME_PADDING * 2 + SCROLLBAR_WIDTH;
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} prospective Home measures potential action labels once without an attached control or availability-dependent floor`, t => {
 	const input = new HomeInput(null), font = new EditorFont(variant);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const labelWidth = font.measure.bind(font), measuring = t.mock.method(font, 'measure');
 	const constraints: EditorPaneConstraints = { minimumWidth: 0, minimumHeight: 0, companionWidth: 0 };
 	measureHomeEditor(input, font, true, constraints);
@@ -38,7 +39,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} prospective Hom
 });
 
 test('Home remeasures its existing action-width cache at a font switch and retains the new pure-label metric', t => {
-	const input = new HomeInput(null), tiny = new EditorFont('tiny'), msx = new EditorFont('msx'); t.after(() => input.dispose());
+	const input = new HomeInput(null), tiny = new EditorFont('tiny'), msx = new EditorFont('msx'); afterTest(t, () => input.dispose());
 	const tinyMeasure = t.mock.method(tiny, 'measure'), msxMeasure = t.mock.method(msx, 'measure');
 	const constraints: EditorPaneConstraints = { minimumWidth: 0, minimumHeight: 0, companionWidth: undefined };
 	measureHomeEditor(input, tiny, false, constraints); const tinyWidth = constraints.minimumWidth;

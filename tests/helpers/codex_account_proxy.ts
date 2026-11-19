@@ -9,6 +9,7 @@ import type { Socket } from 'node:net';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterTest } from './test_cleanup';
 
 export const CODEX_ACCOUNT_FIXTURE = {
 	email: 'studio-fixture@example.invalid', planType: 'pro', accountId: 'studio-fixture-account',
@@ -125,7 +126,7 @@ export async function createCodexAccountProxy(t: TestContext, usageStatus = 200)
 		server.emit('connection', socket);
 	});
 	proxy.listen(0, '127.0.0.1'); await once(proxy, 'listening');
-	t.after(async () => {
+	afterTest(t, async () => {
 		for (const socket of sockets) socket.destroy();
 		await new Promise<void>(resolve => proxy.close(() => resolve()));
 		await rm(root, { recursive: true });

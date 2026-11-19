@@ -6,6 +6,7 @@ import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/sem
 import { inputFocus } from '../../ide/input/focus';
 import { LuaProgramEditorPane } from '../../ide/workbench/contrib/lua_program/editor_pane';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PROGRAM = "local p=require('cartlib/progression'); p.compile_program({rules={{id='first',on='hit'}},filters={},handlers={}})";
 
@@ -39,7 +40,7 @@ for (const retained of [false, true]) for (const valid of [false, true])
 		if (retained) f.input.instance = f.editor.luaPrograms.guest.identity(valueInteger(1));
 		const draft = f.draft(valid ? '31' : '(');
 		let changes = 0;
-		t.after(model.onDidChangeContent(() => { changes++; }));
+		afterTest(t, model.onDidChangeContent(() => { changes++; }));
 		f.editor.commands.execute('luaProgram.live', f.target);
 		assert.equal(draft.edit!.pending, false);
 		assert.notEqual(inputFocus.target, draft);
@@ -94,7 +95,7 @@ for (const command of ['luaProgram.live', 'luaProgram.authoring'] as const)
 				f.firstGroup.activate(replacement.id);
 				if (reattach) f.firstGroup.activate(f.input.id);
 			});
-			t.after(unbind);
+			afterTest(t, unbind);
 			action.run();
 			assert.equal(rebound, true);
 			assert.equal(f.input.liveVisible, command === 'luaProgram.authoring');
@@ -115,7 +116,7 @@ test('Lua Program Live cannot continue after its draft publication replaces the 
 	const unbind = f.input.workingCopy.onDidChangeContent(() => {
 		unbind(); replaced = true; f.firstGroup.activate(replacement.id);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.editor.commands.execute('luaProgram.live', f.target);
 	assert.equal(replaced, true);
 	assert.ok(f.firstGroup.panes.activePane === f.pane && f.pane.input === replacement);

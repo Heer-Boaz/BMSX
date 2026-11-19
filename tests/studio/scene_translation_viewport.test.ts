@@ -14,6 +14,7 @@ import { SceneViewportViewState } from '../../ide/workbench/contrib/scene_editor
 import { TranslateHandle } from '../../ide/workbench/contrib/scene_editor/viewport/translate_gizmo';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const BOUNDS = { left: 10, top: 20, right: 410, bottom: 260 };
 const PREFABS = `local prefab=require('cartlib/world/prefab')
@@ -51,7 +52,7 @@ function fixture(t: TestContext, members = MEMBERS) {
 	};
 	const move = (x: number, y: number) => pointerCapture.dispatch(pointer(x, y), false, 0, scope.surfaceScope);
 	const release = (x: number, y: number) => pointerCapture.dispatch(pointer(x, y, 0, 0, PointerButton.Primary), false, 0, scope.surfaceScope);
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	afterTest(t, () => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, source, context, view, scope, panel, control, select, start, move, release };
 }
 
@@ -169,14 +170,14 @@ test('font changes retire physical move geometry instead of continuing against s
 
 test('an older layout continuation cannot revoke a replacement attachment gesture', t => {
 	const f = fixture(t); f.select(1);
-	const incoming = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => incoming.dispose());
+	const incoming = new SceneViewportViewState(f.context, f.sources.catalog); afterTest(t, () => incoming.dispose());
 	let x = 0, y = 0;
 	const unbind = f.view.camera.onDidChange(() => {
 		unbind(); f.control.setView(incoming, BOUNDS);
 		const points = incoming.gizmo.axes[0]; x = (points[0] + points[2]) / 2; y = (points[1] + points[3]) / 2;
 		f.control.handlePointer(pointer(x, y, PointerButton.Primary, PointerButton.Primary), true);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.control.layout({ ...BOUNDS, right: 510 });
 	assert.ok(f.control.view === incoming); assert.equal(pointerCapture.active, true); assert.ok(incoming.transformPreview !== undefined);
 	f.move(x + 20, y); f.release(x + 20, y); assert.equal(f.model.canUndo, true);

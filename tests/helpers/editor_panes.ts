@@ -43,6 +43,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { drawEditorText } from '../../ide/editor/render/text_renderer';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { measureText, measureTextRange } from '../../ide/editor/common/text/layout';
+import { afterTest } from './test_cleanup';
 
 export const TEST_EDITOR_TAB_LAYOUT_CONTEXT = {
 	get font() { return editorViewState.font.renderFont(); },
@@ -146,7 +147,7 @@ export function createTestEditorCloseDependencies(t: TestContext, presentation: 
 	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), catalog);
 	const prompt = new ActionPrompt(inputFocus, pointerCapture, () => presentation.surfaces.changed(), undefined,
 		{ kind: 'workspace', scope: presentation.focusScope, bounds: presentation.workArea });
-	t.after(async () => { await saves.shutdown(); prompt.dispose(); models.clear(); catalog.dispose(); });
+	afterTest(t, async () => { await saves.shutdown(); prompt.dispose(); models.clear(); catalog.dispose(); });
 	return { models, saves, prompt };
 }
 
@@ -175,7 +176,7 @@ export function createTestEditorWorkspace(
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope), layoutMain,
 	});
 	layoutMain();
-	t.after(() => { parts.dispose(); main.dispose(); contextMenu.dispose(); surfaces.dispose(); });
+	afterTest(t, () => { parts.dispose(); main.dispose(); contextMenu.dispose(); surfaces.dispose(); });
 	return { editorParts: parts, mainWorkspace: main };
 }
 

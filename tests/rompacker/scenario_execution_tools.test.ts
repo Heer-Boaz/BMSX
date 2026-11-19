@@ -20,10 +20,11 @@ import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { TestInput } from '../../ide/testing/input';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('tool execution uses actual isolated cases, source admission, terminal waits and run-specific cancellation', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-test-tools-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const source = `local helper<const> = require('testlib/fixture')
 return { kind = 'integration',
  teardown = function(t) t:log('cleanup begins'); t:wait_ticks(2); t:log('cleanup ends') end,
@@ -49,7 +50,7 @@ return { kind = 'integration',
 			const target = new OffscreenMachine(bios, carts, model, input); targets.push(target); return target;
 		});
 	const connection = new AbortController(), tools = new WorkspaceTestTools(service, connection.signal);
-	t.after(() => { tools.dispose(); service.dispose(); models.clear(); authoring.dispose(); });
+	afterTest(t, () => { tools.dispose(); service.dispose(); models.clear(); authoring.dispose(); });
 	async function advanceUntil(predicate: () => boolean) {
 		for (let grant = 0; !predicate() && grant < 10000; grant++) { service.advance(); await setImmediate(); }
 		assert.ok(predicate(), 'bounded host driver must reach the requested boundary');

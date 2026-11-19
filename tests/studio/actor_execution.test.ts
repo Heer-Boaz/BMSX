@@ -8,6 +8,7 @@ import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createFrameRuntime } from '../helpers/frame_runtime';
 import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** Operation lifecycle against the real plan manager; real World admission is covered by the live Studio tool test. */
 function fixture(t: TestContext, phase: 'queued' | 'boundary' | 'invoked' = 'invoked') {
@@ -18,7 +19,7 @@ function fixture(t: TestContext, phase: 'queued' | 'boundary' | 'invoked' = 'inv
 		operation.status = 'running'; operation.invoked = phase === 'invoked';
 		f.debuggerState.plans.pushControlPlan(new RuntimeGuestCallPlan(f.runtime, 0, 'completion', true, () => {}), 'workbench');
 	}
-	t.after(() => { service.didReplaceMachine(); f.presenter.dispose(); });
+	afterTest(t, () => { service.didReplaceMachine(); f.presenter.dispose(); });
 	return { ...f, operation, service };
 }
 

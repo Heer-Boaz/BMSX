@@ -14,6 +14,7 @@ import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/quick_pick_provider';
+import { afterTest } from '../helpers/test_cleanup';
 
 type Fixture = ReturnType<typeof createActualSourcePanes>;
 
@@ -45,7 +46,7 @@ function utility(t: TestContext, f: Fixture) {
 		focusContent: () => { contentFocus++; window.clientFocusTarget.focus(); },
 	});
 	window.show(false); window.layout(editorViewState.font.renderFont(), measureTextRange, measureText); window.update();
-	t.after(() => window.dispose());
+	afterTest(t, () => window.dispose());
 	return { window, model, contentFocus: () => contentFocus };
 }
 
@@ -185,7 +186,7 @@ test(`native stacking publication preserves newer focus during ${route}`, t => {
 		unbind(); redirected++; f.second.focus();
 		assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	if (route === 'system-menu command') f.editor.commands.execute('window.systemMenu', f.first.commandTarget);
 	else if (route === 'Alt+Space') f.key('Space', KeyModifier.alt);
 	else f.key('KeyZ', KeyModifier.ctrl);
@@ -222,7 +223,7 @@ for (const operation of ['move', 'resize'] as const)
 		const input = f.firstGroup.model.activeTab, source = f.firstInput.workingCopy.buffer.getText();
 		const documentPlacement = f.firstPart.window!.model.placement, requested = { ...u.model.requestedBounds };
 		let publications = 0;
-		const unbind = u.model.onDidChangePlacement(() => publications++); t.after(unbind);
+		const unbind = u.model.onDidChangePlacement(() => publications++); afterTest(t, unbind);
 		window.clientFocusTarget.focus(); f.key('Space', KeyModifier.alt);
 		assert.equal(f.editor.contextMenu.visible, true); assert.ok(f.editor.contextMenu.invocationOrigin === window.focusTarget);
 		choose(f, `window.${operation}`);

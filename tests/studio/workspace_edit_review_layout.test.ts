@@ -21,6 +21,7 @@ import { WorkspaceSourceContext } from '../../ide/workbench/services/working_cop
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = Array.from({ length: 30 }, (_, index) => `local value_${index} = 'before\t🐉 ${'source words '.repeat(8)}'\r\n`).join('');
 
@@ -45,7 +46,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		if (nextVariant !== editorViewState.font.variant) ide.editor.preferences.fontVariant = nextVariant;
 		pane.layout({ left, top: 31, right, bottom }); pane.update(0);
 	};
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	return { input, model, proposal, pane, arrange, host, ide };

@@ -24,6 +24,7 @@ import { workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_vie
 import { setWorkbenchTreeCollapsed } from '../../ide/workbench/ui/tree_view';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { pointerHover } from '../../ide/input/pointer/hover';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = [
 	'2:', "  map: ['........................................................................................................................']",
@@ -45,7 +46,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
-	t.after(() => menu.dispose());
+	afterTest(t, () => menu.dispose());
 	const pane = new CartMapPane(null!, commands,
 		createScenarioTestSourceState([]), surfaces, surface, bounds, inputFocus.workbenchScope, menu);
 	const keybindings = new EditorCommandKeybindingController(inputFocus, new VirtualHeadlessClock());
@@ -67,7 +68,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 			modifiers: KeyModifier.none, spaceDown: false, pressedButtons: held, justPressedButtons: down, justReleasedButtons: up };
 		if (!pointerCapture.dispatch(snapshot, false, ++time)) pane.handlePointer(snapshot, down !== 0, false, time, false);
 	};
-	t.after(() => {
+	afterTest(t, () => {
 		keybindings.dispose(); pane.clearInput(); inputFocus.setTarget(null); pointerCapture.cancel(); pane.dispose(); surfaces.dispose(); input.dispose(); model.dispose();
 
 	});
@@ -119,7 +120,7 @@ test('Cart Map retains supported source secondary actions and an input replaceme
 	assert.equal(menu.visible, true);
 	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, true));
 	const replacement = input.createView();
-	t.after(() => replacement.dispose());
+	afterTest(t, () => replacement.dispose());
 	pane.setInput(replacement, f.bounds); pane.update();
 	assert.equal(menu.visible, false);
 	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));

@@ -28,6 +28,7 @@ import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SCENE_SOURCE = `local scenes = require('cartlib/world/scene_library')
 local prefab = require('cartlib/world/prefab')
@@ -65,7 +66,7 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 		new IdeMicrotaskQueue(), { log() {} }, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
 	editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
-	t.after(async () => {
+	afterTest(t, async () => {
 		const primary = editor.mainWorkspace.primary;
 		if (primary instanceof ScenePrimaryClient) {
 			for (const control of primary.details.control.controls) control.cancel();

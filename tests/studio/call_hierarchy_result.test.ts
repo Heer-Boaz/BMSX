@@ -18,6 +18,7 @@ import { EditorGroupView } from '../../ide/workbench/services/editor/editor_grou
 import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import { createTestEditorPaneContributions, createTestGroupPresentation } from '../helpers/editor_panes';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local function target() end
 local function left() target() end
@@ -32,7 +33,7 @@ function fixture(t: TestContext) {
 	const symbol = frontend.findSymbolsByPosition(resourceIdentityKey(resource), 1, 16)!;
 	const model = new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target', project);
 	const input = new CallHierarchyInput(model);
-	t.after(() => { input.dispose(); project.dispose(); models.clear(); resetNavigationHistoryState(); });
+	afterTest(t, () => { input.dispose(); project.dispose(); models.clear(); resetNavigationHistoryState(); });
 	return { model, input };
 }
 
@@ -49,7 +50,7 @@ function paneFixture(t: TestContext) {
 		constraints.minimumWidth = 0; constraints.minimumHeight = 0; constraints.companionWidth = undefined;
 	} };
 	const group = new EditorGroupView(contributions, commands, () => Promise.resolve(false), presentation);
-	t.after(() => { inputFocus.setTarget(null); group.dispose(); presentation.contextMenu.dispose(); presentation.surfaces.dispose(); catalog.dispose(); });
+	afterTest(t, () => { inputFocus.setTarget(null); group.dispose(); presentation.contextMenu.dispose(); presentation.surfaces.dispose(); catalog.dispose(); });
 	group.layout({ left: 0, top: 0, right: 400, bottom: 100 }, presentation.workArea, true);
 	group.openEditor(f.input);
 	const pane = group.panes.activePane; assert.ok(pane instanceof CallHierarchyPane);
@@ -90,7 +91,7 @@ test('direction changes preserve independent topology, selection and reading sta
 });
 
 test('query identity is distinct from identical captions and never participates as a source working-copy consumer', t => {
-	const f = fixture(t), other = new CallHierarchyInput(f.model); t.after(() => other.dispose());
+	const f = fixture(t), other = new CallHierarchyInput(f.model); afterTest(t, () => other.dispose());
 	assert.equal(f.input.matches(other), false);
 	assert.equal(f.input.serializable, false); assert.equal(f.input.canMove(), true);
 	assert.equal(f.input.isDirty(), false); assert.equal(f.input.resource, undefined);
@@ -103,7 +104,7 @@ test('navigation restores the selected query occurrence and direction without re
 	tree.select(1); tree.navigate('right'); tree.navigate('right');
 	tree.updateLayout(0, 0, 100, 10, 10, 10); tree.scroll = 0;
 	const selected = tree.rows[tree.selectionIndex], location = new CallHierarchyNavigationSelection(f.input);
-	t.after(() => location.dispose());
+	afterTest(t, () => location.dispose());
 	tree.setCollapsed(0, true); f.input.setDirection(CallHierarchyDirection.CallsFrom);
 	assert.equal(location.matches(new CallHierarchyNavigationSelection(f.input)), false);
 	location.restore(f.input);

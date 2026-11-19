@@ -6,6 +6,7 @@ import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/edito
 import { SceneNavigationLocation } from '../../ide/workbench/contrib/scene_editor/scene_navigation';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { createSceneDocumentFixture } from '../helpers/scene_document_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('same', { objects = {
@@ -17,13 +18,13 @@ async function fixture(t: test.TestContext) {
 	const f = await createSceneDocumentFixture(t, SOURCE, []);
 	assert.ok(f.primary.input instanceof SceneEditorInput);
 	selectSceneOutlineRow(f.view.hierarchy, 1); f.update();
-	t.after(() => resetNavigationHistoryState());
+	afterTest(t, () => resetNavigationHistoryState());
 	return { ...f, input: f.primary.input,
 		location: () => new SceneNavigationLocation(f.primary.input as SceneEditorInput, f.group, f.editor.sceneEditor) };
 }
 
 test('a Scene history location restores its exact bookmark after the old input ends', async t => {
-	const f = await fixture(t), location = f.location(); t.after(() => location.dispose());
+	const f = await fixture(t), location = f.location(); afterTest(t, () => location.dispose());
 	assert.equal(await f.group.close(f.input.id), true);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved\n' }]);
 	assert.equal(await location.restore({ isCurrent: () => true, preserveFocus: false }), true);
@@ -59,6 +60,6 @@ test('history release disposes the occurrence without announcing source retireme
 test('Scene history equality uses the occurrence and selection rather than a former pane', async t => {
 	const f = await fixture(t), first = f.location(), same = f.location();
 	selectSceneOutlineRow(f.view.hierarchy, 2);
-	const other = f.location(); t.after(() => { first.dispose(); same.dispose(); other.dispose(); });
+	const other = f.location(); afterTest(t, () => { first.dispose(); same.dispose(); other.dispose(); });
 	assert.equal(first.matches(same), true); assert.equal(first.matches(other), false);
 });

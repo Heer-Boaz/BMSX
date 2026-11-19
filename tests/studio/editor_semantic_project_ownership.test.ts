@@ -6,10 +6,11 @@ import test from 'node:test';
 import { EditorTextModelService, type ResolvedTextModelSource } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject, resetSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('project identity includes the working-copy owner and unchanged queries reuse each exact snapshot', t => {
 	const first = new EditorTextModelService(), second = new EditorTextModelService();
-	t.after(() => { first.clear(); second.clear(); });
+	afterTest(t, () => { first.clear(); second.clear(); });
 	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'same.lua', location: { kind: 'workspace' as const, path: 'same.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua', source: { type: 'lua' as const, resid: 'same' } };
 	const a = first.retain(resource, 'lua', 'return 1'), b = second.retain(resource, 'lua', 'return 2');
 	const projectA = getOrCreateSemanticProject(first, TEST_CARTRIDGE_CONTEXT_IDS[0]), projectB = getOrCreateSemanticProject(second, TEST_CARTRIDGE_CONTEXT_IDS[0]);
@@ -32,7 +33,7 @@ test('project identity includes the working-copy owner and unchanged queries reu
 
 test('model teardown retires only its projects and a reopened matching source cannot revive them', t => {
 	const first = new EditorTextModelService(), second = new EditorTextModelService();
-	t.after(() => { first.clear(); second.clear(); });
+	afterTest(t, () => { first.clear(); second.clear(); });
 	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'same.lua', location: { kind: 'workspace' as const, path: 'same.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua', source: { type: 'lua' as const, resid: 'same' } };
 	first.retain(resource, 'lua', 'return 1'); second.retain(resource, 'lua', 'return 2');
 	const project = getOrCreateSemanticProject(first, TEST_CARTRIDGE_CONTEXT_IDS[0]), foreign = getOrCreateSemanticProject(second, TEST_CARTRIDGE_CONTEXT_IDS[0]);
@@ -51,7 +52,7 @@ test('model teardown retires only its projects and a reopened matching source ca
 
 test('domain reset and collection reset are owner-scoped with one model-lifetime subscription', t => {
 	const first = new EditorTextModelService(), second = new EditorTextModelService();
-	t.after(() => { first.clear(); second.clear(); });
+	afterTest(t, () => { first.clear(); second.clear(); });
 	const subscribe = t.mock.method(first, 'onWillClear');
 	const cartridge = getOrCreateSemanticProject(first, TEST_CARTRIDGE_CONTEXT_IDS[0]), system = getOrCreateSemanticProject(first, TEST_SYSTEM_CONTEXT_ID);
 	const foreign = getOrCreateSemanticProject(second, TEST_CARTRIDGE_CONTEXT_IDS[0]);
@@ -67,7 +68,7 @@ test('domain reset and collection reset are owner-scoped with one model-lifetime
 
 test('semantic project retirement publishes its lifetime without scheduling source invalidation work', t => {
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const project = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	let retired = 0, sourceInvalidations = 0;
 	project.onDidInvalidate(() => { sourceInvalidations++; });
@@ -85,7 +86,7 @@ test('semantic project retirement publishes its lifetime without scheduling sour
 
 test('semantic collection retirement detaches its projects before callbacks admit matching successors', t => {
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const old = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	let current: typeof old | undefined, currentDisposals = 0;
 	old.onWillDispose(() => {
@@ -100,7 +101,7 @@ test('semantic collection retirement detaches its projects before callbacks admi
 
 test('single-context semantic retirement preserves a successor admitted by the old project disposal', t => {
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const old = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	let current: typeof old | undefined;
 	old.onWillDispose(() => { current = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]); });
@@ -111,7 +112,7 @@ test('single-context semantic retirement preserves a successor admitted by the o
 
 test('model departure gives old project disposal a fresh pending source and semantic owner', async t => {
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'same.lua', location: { kind: 'workspace' as const, path: 'same.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua', source: { type: 'lua' as const, resid: 'same' } };
 	const oldSource = Promise.withResolvers<ResolvedTextModelSource>(), currentSource = Promise.withResolvers<ResolvedTextModelSource>();
 	const pending = models.resolve(resource, 'lua', () => oldSource.promise);

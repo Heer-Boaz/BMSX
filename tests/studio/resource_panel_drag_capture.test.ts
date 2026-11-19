@@ -6,6 +6,7 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { ResourcePanelDrag } from '../../ide/workbench/contrib/resources/panel/drag';
 import type { ProspectiveEditorOpenSource } from '../../ide/workbench/services/editor/editor_opening';
+import { afterTest } from '../helpers/test_cleanup';
 
 const down: PointerInputSnapshot = { valid: true, insideViewport: true, viewportX: 10, viewportY: 10,
 	pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0,
@@ -17,7 +18,7 @@ test('resource drag admission cannot revive a retired owner or open its source o
 	pointerCapture.interrupt(false);
 	let updates = 0, drops = 0, clicks = 0;
 	const drag = new ResourcePanelDrag({ update() { updates++; }, drop() { drops++; }, clear() {} });
-	t.after(() => { drag.cancel(); pointerCapture.interrupt(false); });
+	afterTest(t, () => { drag.cancel(); pointerCapture.interrupt(false); });
 	pointerCapture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { drag.cancel(); } });
 	drag.begin(source, down, 0, () => clicks++);
 	assert.equal(pointerCapture.active, false);
@@ -33,7 +34,7 @@ test('resource feedback retirement keeps the newest source gesture admitted by i
 		clears++;
 		if (replacement) { replacement = false; drag.begin(source, down, 2, () => newestClicks++); }
 	} });
-	t.after(() => { drag.cancel(); pointerCapture.interrupt(false); });
+	afterTest(t, () => { drag.cancel(); pointerCapture.interrupt(false); });
 	drag.begin(source, down, 0, () => firstClicks++);
 	replacement = true; drag.begin(source, down, 1, () => attemptedClicks++);
 	assert.equal(clears, 2); assert.equal(pointerCapture.active, true);

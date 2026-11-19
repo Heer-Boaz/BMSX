@@ -12,6 +12,7 @@ import { getCodeAreaBounds, resolveTextPositionBounds } from '../../ide/editor/u
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('real group surfaces route pointer and wheel to their own Source and retire without disturbing a sibling gesture', async t => {
 	const f = createActualSourcePanes(t, true), a = f.first.code, b = f.second.code;
@@ -221,7 +222,7 @@ test('Source navigation restore and input retirement target one actual pane with
 	const f = createActualSourcePanes(t), a = f.first.code, b = f.second.code;
 	a.focusTarget.textInput!.setSelection(6, 11); b.focusTarget.textInput!.setSelection(6, 10);
 	const selection = new CodeEditorNavigationSelection(f.firstInput);
-	t.after(() => selection.dispose());
+	afterTest(t, () => selection.dispose());
 	a.focusTarget.textInput!.setSelection(0, 0);
 	f.firstGroup.activate(f.firstInput.id, { navigationSelection: selection });
 	assert.equal(a.view.cursorColumn, 11); assert.deepEqual(a.view.selectionAnchor, { row: 0, column: 6 });

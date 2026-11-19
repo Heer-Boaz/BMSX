@@ -4,6 +4,7 @@ import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
 prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
@@ -19,7 +20,7 @@ scenes.register('second',{objects={{member_id='other',definition_id='node2'}}})`
 		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', prefabs]]);
 	const document = f.documents.get(f.model), scene = document.scenes[index];
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, scene, sourceVersion: f.model.version });
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	const member = (id: string) => context.spatialScene!.entries.find(entry => stringLiteralValue(entry.memberId) === id)!;
 	return { ...f, source, context, member };
 }
@@ -91,7 +92,7 @@ test('a primary scene read never infers its subject from selection, another decl
 	const f = fixture(t, `{member_id='first',definition_id='node2'}`, 1);
 	assert.equal(stringLiteralValue(f.context.spatialScene!.entries[0].memberId), 'other');
 	const document = f.documents.get(f.model), unbound = new SceneAuthoringContext(f.model, f.documents);
-	t.after(() => unbound.dispose());
+	afterTest(t, () => unbound.dispose());
 	unbound.select(document, f.model.version, { kind: 'scene', scene: document.scenes[0] });
 	assert.equal(unbound.spatialScene, undefined, 'a selection in an ordinary Scene document does not bind Main');
 	f.model.pushEditOperations([{ offset: 0, deleteLength: f.source.length, text: 'return {}' }]);

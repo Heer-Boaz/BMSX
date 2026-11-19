@@ -16,10 +16,11 @@ import { IDENTITY_HOST_OVERLAY_TRANSFORM } from '../../machine/ts/render/host_ov
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { HostMeshScene } from '../../machine/ts/render/host_overlay/mesh';
 import { beginHeadlessHost2D, renderHeadlessHost2DEntry } from '../../machine/ts/render/headless/host_2d';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('mesh raster scale survives clip and glyph-atlas batches but not a new frame', t => {
 	const stream = new HostOverlayQuadStream(), scene = new HostMeshScene(8, 8);
-	t.after(() => scene.dispose());
+	afterTest(t, () => scene.dispose());
 	stream.reset(32, 32);
 	stream.appendEntry(Host2DKind.Transform, { scale: -1.5, offsetX: 24, offsetY: 24 });
 	const command = { scene, left: 0, top: 0, right: 8, bottom: 8 };

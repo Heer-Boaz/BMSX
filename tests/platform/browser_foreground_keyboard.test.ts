@@ -4,6 +4,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SELECT = 1 << 8;
 const LB = 1 << 4;
@@ -39,7 +40,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 		bundle: true, platform: 'browser', target: 'es2022', format: 'iife', globalName: 'fixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	for (const profile of [
 		{ name: 'phone landscape', width: 852, height: 393, sourceHeight: 212, fit: 'fit' },
 		{ name: 'phone portrait', width: 393, height: 852, sourceHeight: 212, fit: 'fit' },

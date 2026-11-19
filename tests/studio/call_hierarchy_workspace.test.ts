@@ -14,6 +14,7 @@ import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/pri
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const CALLS = [
 	'local function target() end',
@@ -213,7 +214,7 @@ for (const change of ['selection', 'direction'] as const) test(`Source admission
 		admitted = true;
 		if (change === 'selection') tree.select(0);
 		else input.setDirection(CallHierarchyDirection.CallsFrom);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	const opening = t.mock.method(f.editor.navigation, 'openResource');
 	f.editor.commands.execute('editor.source', pane.commandTarget);
 	assert.equal(admitted, true); assert.equal(opening.mock.callCount(), 0);
@@ -248,7 +249,7 @@ test('a query captures its authored cursor before opening admission can publish 
 	const release = f.firstGroup.panes.onDidBeginOpen(() => {
 		release(); f.sourcePane.code.view.cursorRow = original + 1;
 	});
-	t.after(release);
+	afterTest(t, release);
 	const { input } = f.open();
 	assert.ok(input.model.roots[0].range.start.line === original + 1, 'the result belongs to the invocation cursor, not its later neighbor');
 	assert.ok(input.model.roots[0].range.start.line !== original + 2);

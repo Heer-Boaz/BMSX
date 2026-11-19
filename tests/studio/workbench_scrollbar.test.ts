@@ -10,11 +10,12 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { api } from '../../ide/runtime/overlay_api';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import * as colors from '../../ide/common/constants';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('shared scrollbar feedback follows hover, capture, release and track retirement', t => {
 	const capture = new PointerCaptureService(), hover = new PointerHoverService();
 	const control = new ScrollbarPointerControl(capture, undefined, hover), bar = new Scrollbar('vertical');
-	t.after(() => control.cancelPointer());
+	afterTest(t, () => control.cancelPointer());
 	const draw = t.mock.method(api, 'fill_rect', () => {});
 	const ink = () => { bar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR); return draw.mock.calls.at(-1)!.arguments[5]; };
 	bar.layout({ left: 0, right: 5, top: 0, bottom: 100 }, 400, 100, 0);

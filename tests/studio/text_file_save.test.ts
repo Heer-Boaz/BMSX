@@ -19,6 +19,7 @@ import { editorFeedbackState } from '../../ide/common/feedback_state';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
 import { resolveWorkspacePath } from '../../ide/workspace/path';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 class SaveStorage extends MemoryStorage {
 	public failure: Error | undefined;
@@ -50,7 +51,7 @@ async function fixture(t: TestContext) {
 	const models = new EditorTextModelService();
 	const saves = new TextFileSaveService(models, clock, sources.catalog);
 	await openWorkspaceRecords(files);
-	t.after(async () => {
+	afterTest(t, async () => {
 		await saves.shutdown();
 		models.clear();
 		await closeWorkspaceRecords();
@@ -450,7 +451,7 @@ test('Save admits only the session owner model, not a foreign copy of the same r
 	const f = await fixture(t);
 	const current = f.yaml();
 	const other = new EditorTextModelService();
-	t.after(() => other.clear());
+	afterTest(t, () => other.clear());
 	const foreign = other.retain(current.resource, current.mode, 'value: foreign');
 	assert.equal(current.version, foreign.version);
 	assert.equal(f.saves.canSave(current), true);

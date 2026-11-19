@@ -15,6 +15,7 @@ import { handleSearchNavigationKeybinding } from '../../ide/input/keyboard/edit_
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { getSelectionText } from '../../ide/editor/editing/text_editing_and_selection';
 import { LiteralTextMatcher } from '../../ide/common/search_text';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} query Home and Shift-End retain text editing even with results`, t => {
 
@@ -23,7 +24,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} query Home and 
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'query.lua', location: { kind: 'workspace' as const, path: 'query.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'query.lua', source: { resid: 'query', type: 'lua' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant));
 	const search = new EditorSearchController(code);
-	t.after(() => { search.dispose(); inputFocus.setTarget(null); code.detach();  clearBackgroundTasks(); });
+	afterTest(t, () => { search.dispose(); inputFocus.setTarget(null); code.detach();  clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true); search.openSearch(false); runBackgroundTasks(clock);
 	assert.equal(search.state.matches.length, 2);
 	const field = search.state.field;
@@ -43,7 +44,7 @@ test('local Find cancels before detach; clearing its retained field cannot acces
 	const view = createCodeEditorViewState();
 	const code = createTestCodeControl(t, model, documents, clock, view);
 	const search = new EditorSearchController(code);
-	t.after(() => {
+	afterTest(t, () => {
 		search.dispose();
 		inputFocus.setTarget(null);
 		code.detach();
@@ -75,7 +76,7 @@ test('Find seeds from the source selection before applying query effects, includ
 	const view = createCodeEditorViewState();
 	const code = createTestCodeControl(t, model, documents, clock, view);
 	const search = new EditorSearchController(code);
-	t.after(() => {
+	afterTest(t, () => {
 		search.dispose();
 		inputFocus.setTarget(null);
 		code.detach();
@@ -100,7 +101,7 @@ test('Find field edits and Undo rebind on opening; leaving an empty Find ends th
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'edits.lua', location: { kind: 'workspace' as const, path: 'edits.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'edits.lua', source: { resid: 'edits', type: 'lua' } }, 'lua', 'first second');
 	const code = createTestCodeControl(t, model, documents, clock);
 	const search = new EditorSearchController(code);
-	t.after(() => {
+	afterTest(t, () => {
 		search.dispose();
 		inputFocus.setTarget(null);
 		code.detach();
@@ -134,7 +135,7 @@ test('Escape retains the local query and F3 resumes from the actual Source selec
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'resume.lua', location: { kind: 'workspace', path: 'resume.lua' },
 		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'resume.lua', source: { resid: 'resume', type: 'lua' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock), search = new EditorSearchController(code);
-	t.after(() => { search.dispose(); inputFocus.setTarget(null); clearBackgroundTasks(); });
+	afterTest(t, () => { search.dispose(); inputFocus.setTarget(null); clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true); search.openSearch(false); search.focus(); runBackgroundTasks(clock);
 	search.applySearchSelection(0, { preview: true, keepSearchActive: true });
 	assert.equal(code.view.cursorRow, 0); assert.equal(code.view.cursorColumn, 0);
@@ -158,7 +159,7 @@ test('local insensitive matches retain original UTF-16 source coordinates throug
 		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'unicode.lua', source: { resid: 'unicode', type: 'lua' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock), search = new EditorSearchController(code);
 	const previousCase = editorRuntimeState.caseInsensitive; editorRuntimeState.caseInsensitive = true;
-	t.after(() => { editorRuntimeState.caseInsensitive = previousCase; search.dispose(); inputFocus.setTarget(null); clearBackgroundTasks(); });
+	afterTest(t, () => { editorRuntimeState.caseInsensitive = previousCase; search.dispose(); inputFocus.setTarget(null); clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true); search.openSearch(false); runBackgroundTasks(clock);
 	assert.deepEqual(search.state.matches, [{ row: 0, start: 3, end: 9 }, { row: 0, start: 11, end: 17 }, { row: 1, start: 3, end: 9 }]);
 	search.jumpToNextMatch(); assert.equal(getSelectionText(code), 'NEEDLE');
@@ -172,7 +173,7 @@ test('a long Source line yields through the bounded literal cursor instead of dr
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'long.lua', location: { kind: 'workspace', path: 'long.lua' },
 		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'long.lua', source: { resid: 'long', type: 'lua' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock), search = new EditorSearchController(code);
-	t.after(() => { search.dispose(); clearBackgroundTasks(); });
+	afterTest(t, () => { search.dispose(); clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true); search.openSearch(false); runBackgroundTasks(clock);
 	assert.ok(search.state.job !== null);
 	while (search.state.job !== null) runBackgroundTasks(clock);
@@ -184,7 +185,7 @@ test('retained local no-result navigation reuses its completed source receipt un
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'generation.lua', location: { kind: 'workspace', path: 'generation.lua' },
 		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'generation.lua', source: { resid: 'generation', type: 'lua' } }, 'lua', 'other');
 	const code = createTestCodeControl(t, model, documents, clock), search = new EditorSearchController(code);
-	t.after(() => { search.dispose(); clearBackgroundTasks(); });
+	afterTest(t, () => { search.dispose(); clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true); search.openSearch(false); search.closeSearch(false);
 	search.jumpToNextMatch();
 	// This producer cache contract prevents a fresh whole-document scan per F3.
@@ -200,7 +201,7 @@ test('F3 on a long Source yields and the latest navigation direction owns comple
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'pending.lua', location: { kind: 'workspace', path: 'pending.lua' },
 		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'pending.lua', source: { resid: 'pending', type: 'lua' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock), search = new EditorSearchController(code);
-	t.after(() => { search.dispose(); clearBackgroundTasks(); });
+	afterTest(t, () => { search.dispose(); clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true); search.openSearch(false); search.closeSearch(false);
 	code.view.cursorColumn = source.length;
 	search.jumpToNextMatch(); assert.ok(search.state.job !== null);
@@ -218,7 +219,7 @@ test('a pending local navigation cannot select a newer model with the same versi
 	const first = models.retain(resource('old.lua'), 'lua', `${'x'.repeat(131072)} needle`);
 	const second = models.retain(resource('new.lua'), 'lua', 'second needle');
 	const code = createTestCodeControl(t, first, documents, clock), search = new EditorSearchController(code);
-	t.after(() => { search.dispose(); clearBackgroundTasks(); });
+	afterTest(t, () => { search.dispose(); clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true); search.openSearch(false); search.closeSearch(false); search.jumpToNextMatch();
 	assert.ok(search.state.job !== null); assert.equal(first.version, second.version);
 	code.attach(second, createCodeEditorViewState(), documents.get(second)); runBackgroundTasks(clock);
@@ -232,7 +233,7 @@ test('a newer Source caret intention vetoes the cursor effect of an older pendin
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'caret.lua', location: { kind: 'workspace', path: 'caret.lua' },
 		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'caret.lua', source: { resid: 'caret', type: 'lua' } }, 'lua', `${'x'.repeat(131072)} needle`);
 	const code = createTestCodeControl(t, model, documents, clock), search = new EditorSearchController(code);
-	t.after(() => { search.dispose(); clearBackgroundTasks(); });
+	afterTest(t, () => { search.dispose(); clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true); search.openSearch(false); search.closeSearch(false); search.jumpToNextMatch();
 	assert.ok(search.state.job !== null);
 	code.view.cursorColumn = 17; code.emitCursorMoved();
@@ -251,7 +252,7 @@ test('Find selection seeding cannot publish into a replacement Source attachment
 	const release = code.onDidMoveCursor(() => {
 		release(); search.clearInput(); code.detach(); code.attach(second, createCodeEditorViewState(), documents.get(second));
 	});
-	t.after(() => { release(); search.dispose(); clearBackgroundTasks(); });
+	afterTest(t, () => { release(); search.dispose(); clearBackgroundTasks(); });
 	search.openSearch(true); runBackgroundTasks(clock);
 	assert.ok(code.model === second); assert.equal(search.state.visible, false); assert.equal(search.state.job, null);
 	assert.equal(code.view.cursorColumn, 0); assert.equal(code.view.selectionAnchor, null);
@@ -270,7 +271,7 @@ test('Find publishes completed result selection before layout observers can repl
 		search.clearInput(); code.detach(); code.attach(second, createCodeEditorViewState(), documents.get(second));
 		code.view.cursorColumn = 5; code.emitCursorMoved();
 	});
-	t.after(() => { release(); search.dispose(); clearBackgroundTasks(); });
+	afterTest(t, () => { release(); search.dispose(); clearBackgroundTasks(); });
 	search.applySearchSelection(1, { preview: true });
 	assert.ok(code.model === second); assert.equal(code.view.cursorColumn, 5); assert.equal(code.view.selectionAnchor, null);
 	assert.equal(search.state.visible, false); assert.equal(search.state.currentIndex, -1); assert.equal(search.state.job, null);

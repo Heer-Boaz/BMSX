@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('Scene placement cannot edit through a falsely fixed class prototype', t => {
 	for (const construction of [
@@ -26,7 +27,7 @@ prefab.define({def_id='node',class=class})`;
 			['cartlib/world/prefab.lua', 'return {define=function() end}'], ['prefabs.lua', prefabs],
 		]);
 		const context = new SceneAuthoringContext(f.model, f.documents);
-		t.after(() => context.dispose());
+		afterTest(t, () => context.dispose());
 		const document = f.documents.get(f.model), scene = document.scenes[0];
 		context.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
 		assert.equal(context.selectedLocalTransform, undefined, construction);

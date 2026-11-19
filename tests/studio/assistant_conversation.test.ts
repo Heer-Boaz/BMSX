@@ -36,6 +36,7 @@ import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collecti
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { afterTest } from '../helpers/test_cleanup';
 
 class Connection implements AssistantConnection {
 	public readonly lifetime = new AbortController();
@@ -79,7 +80,7 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 		await waitForConnection?.(connection);
 		return connection;
 	});
-	t.after(async () => { conversation.dispose(); tools.dispose(); await saves.shutdown(); await boots.shutdown(); testRuns.dispose(); presenter.dispose(); diagnostics.dispose(); models.clear(); });
+	afterTest(t, async () => { conversation.dispose(); tools.dispose(); await saves.shutdown(); await boots.shutdown(); testRuns.dispose(); presenter.dispose(); diagnostics.dispose(); models.clear(); });
 	return { conversation, model, models, connections, testResults, testRuns, inspection, frameNavigation, runtime, presenter, backend, tasks, presentation };
 }
 
@@ -351,7 +352,7 @@ test('conversation hands off a source-backed proposal; completion preserves revi
 for (const outcome of ['applied', 'discarded', 'stale'] as const) {
 	test(`conversation observes ${outcome} reviews without rereading transcript text or stealing selection`, async t => {
 		const f = fixture(t), c = f.conversation;
-		const input = new AssistantInput(c); t.after(() => input.dispose());
+		const input = new AssistantInput(c); afterTest(t, () => input.dispose());
 		await c.connect(); await c.sendPrompt('Review'); const proposal = await propose(f);
 		f.connections[0].emit({ type: 'turn-completed', turnId: 'turn', status: 'completed' });
 		// A settled old proposal must not rewrap the much larger, unchanged later transcript.
@@ -381,7 +382,7 @@ for (const outcome of ['applied', 'discarded', 'stale'] as const) {
 test('closing the transient input invalidates handed-off rights; reopening does not replay the conversation', async t => {
 	const f = fixture(t), c = f.conversation;
 	await c.connect(); await c.sendPrompt('Read'); const proposal = await propose(f);
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	const view = openAssistant(group, c)!; group.removeEditor(view);
 	assert.equal(c.state, 'disconnected'); assert.equal(proposal.state, 'stale');
 	assert.equal(f.connections[0].signal.aborted, true);
@@ -404,7 +405,7 @@ for (const command of ['assistant.commands', 'assistant.history', 'assistant.new
 		const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
 		const contextMenu = new ContextMenuController(inputFocus, pointerCapture, menuArea), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 		const commands = new AssistantChatCommands(c, new HeadlessClipboard());
-		t.after(() => {
+		afterTest(t, () => {
 			control.cancel(); inputFocus.setTarget(null); control.dispose(); quickInput.dispose(); contextMenu.dispose(); group.dispose();
 		});
 		const state = c.state, source = f.model.buffer.getText();
@@ -442,7 +443,7 @@ test('a rejected observer view neither disconnects the shared observer nor reque
 	control.setValue(1); control.field.focusTarget.focus(); setFieldText(control.field, '-', false);
 	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, menuArea), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
-	t.after(() => {
+	afterTest(t, () => {
 		control.cancel(); inputFocus.setTarget(null); control.dispose(); quickInput.dispose(); contextMenu.dispose(); group.dispose(); conversation.dispose();
 	});
 	openObservedConversation(group, conversation, quickInput);
@@ -468,7 +469,7 @@ test('workspace clear retires an active connection synchronously', async t => {
 
 test('workspace clear resets detached projection identity before a same-sized replacement transcript', async t => {
 	const f = fixture(t), c = f.conversation;
-	const input = new AssistantInput(c); t.after(() => input.dispose());
+	const input = new AssistantInput(c); afterTest(t, () => input.dispose());
 	await c.connect(); await c.sendPrompt('Old workspace '.repeat(100)); await propose(f);
 	f.connections[0].emit({ type: 'turn-completed', turnId: 'old', status: 'completed' });
 	const font = {}, measure = (_text: string, start: number, end: number) => end - start;
@@ -631,7 +632,7 @@ test('native queue notifications alone dispatch fresh source context; direct mes
 
 test('history pages are text only, revoke source proposals and retain existing buffers on older-page insertion', async t => {
 	const f = fixture(t), c = f.conversation; await c.sendPrompt('Propose'); const connection = f.connections[0];
-	const view = new AssistantInput(c); t.after(() => view.dispose());
+	const view = new AssistantInput(c); afterTest(t, () => view.dispose());
 	const proposal = await propose(f);
 	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
 	const thread = { id: 'saved', title: 'Saved conversation', updatedAt: 1 };

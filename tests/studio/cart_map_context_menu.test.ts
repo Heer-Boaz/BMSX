@@ -13,6 +13,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `2:
   map: ['........', '........']
@@ -23,7 +24,7 @@ const SOURCE = `2:
 
 async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const f = createActualSourcePanes(t), path = 'res/data/castle_map.yaml';
 	f.sources.catalog.registerTextSources(f.sources.systemContextId, [{ type: 'data', resid: 'fixture-map', source_path: path, sourcemeta: { text: SOURCE } }]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;
@@ -144,7 +145,7 @@ for (const surface of ['body', 'more'] as const) test(`${surface} Source accepta
 	let returned = false;
 	const origin = f.menu.returnFocus!;
 	const unbind = origin.onDidFocus(() => { unbind(); returned = true; selectCartMapRow(f.input, 2); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	const tabs = [...f.firstGroup.model.tabs];
 	await f.chooseSource();
 	assert.equal(returned, true); assert.equal(f.menu.visible, false);

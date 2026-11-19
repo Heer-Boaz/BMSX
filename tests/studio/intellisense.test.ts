@@ -48,6 +48,7 @@ import {
 	type RuntimeSourceState,
 } from '../../ide/runtime/sources';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { afterTest } from '../helpers/test_cleanup';
 
 const semanticFrontendModulePromise = import('../../toolchain/ts/lua/semantic/frontend');
 const semanticDiagnosticsModulePromise = import('../../toolchain/ts/lua/semantic/diagnostics');
@@ -644,7 +645,7 @@ halt_until_irq`;
 		assert.deepEqual(location.resource, { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'cart.lua' });
 		assert.deepEqual(location.range.start, { line: 1, column: 12 });
 		assert.equal(location.installedSource, source);
-		t.after(() => editorTextModelService.clear());
+		afterTest(t, () => editorTextModelService.clear());
 		const detail: BehaviorInspectionProperty = { label: 'callback', value: '', description: '', warning: false, source: location };
 		assert.equal(canOpenBehaviorInspectionSource(bridge.sources.catalog, detail), true);
 		const model = editorTextModelService.retain(testLuaResource('cart.lua'), 'lua', source);
@@ -1162,7 +1163,7 @@ test('project reference catalog resolves globals across paths', async t => {
 	].join('\n');
 
 	const workspace = new EditorLuaSemanticProject(TEST_SYSTEM_CONTEXT_ID, new EditorTextModelService());
-	t.after(() => workspace.dispose());
+	afterTest(t, () => workspace.dispose());
 	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'usage.lua' }, usageSource);
 	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'global.lua' }, globalSource);
 	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'parameter.lua' }, parameterSource);
@@ -1225,7 +1226,7 @@ test('reference lookup resolves global definition across paths', async t => {
 	].join('\n');
 
 	const workspace = new EditorLuaSemanticProject(TEST_SYSTEM_CONTEXT_ID, new EditorTextModelService());
-	t.after(() => workspace.dispose());
+	afterTest(t, () => workspace.dispose());
 	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'usage.lua' }, usageSource);
 	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'global.lua' }, globalSource);
 
@@ -1310,7 +1311,7 @@ test('reference lookup prefers local parameter over global', async t => {
 	].join('\n');
 
 	const workspace = new EditorLuaSemanticProject(TEST_SYSTEM_CONTEXT_ID, new EditorTextModelService());
-	t.after(() => workspace.dispose());
+	afterTest(t, () => workspace.dispose());
 	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'usage.lua' }, usageSource);
 	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'global.lua' }, globalSource);
 

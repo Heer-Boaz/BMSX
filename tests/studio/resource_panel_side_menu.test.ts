@@ -16,6 +16,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', sources: readonly (readonly [string, string])[] = []) {
 	const f = createActualSourcePanes(t, false, [['folder/third.lua', 'return 3'], ['folder/other.lua', 'return 4'], ...sources]);
@@ -77,7 +78,7 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} Files side opening is
 for (const font of ['tiny', 'msx'] as const) test(`${font} Open to Side uses YAML's visual contribution while Source to Side shares its dirty canonical working copy`, async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const f = fixture(t, font), path = 'res/data/castle_map.yaml';
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	f.sources.catalog.registerTextSources(f.sources.systemContextId, [{ type: 'data', resid: 'map', source_path: path,
 		sourcemeta: { text: '1: { map: [".."], objects: [] }\n' } }]);
 	f.panel.toggleFilterMode(); const { node, resource } = reveal(f, path), open = t.mock.method(f.editor.navigation, 'openResource');
@@ -139,7 +140,7 @@ for (const retirement of ['filter', 'models'] as const) test(`${retirement} reti
 test('a newer foreign focus on menu return aborts side opening before creating a destination', t => {
 	const f = fixture(t), { node } = reveal(f, 'folder/third.lua'), open = t.mock.method(f.editor.navigation, 'openResource');
 	secondary(f, node); let redirected = false;
-	const unbind = f.panel.focusTarget.onDidFocus(() => { unbind(); redirected = true; f.second.focus(); }); t.after(unbind);
+	const unbind = f.panel.focusTarget.onDidFocus(() => { unbind(); redirected = true; f.second.focus(); }); afterTest(t, unbind);
 	accept(f, 'resources.openToSide');
 	assert.equal(redirected, true); assert.equal(open.mock.callCount(), 0); assert.equal(f.firstPart.groups.length, 1);
 	assert.ok(inputFocus.target === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
@@ -148,7 +149,7 @@ test('a newer foreign focus on menu return aborts side opening before creating a
 test('workspace replacement during accepted side publication cannot open a retired destination', t => {
 	const f = fixture(t), { node } = reveal(f, 'folder/third.lua'), parts = f.editor.editorParts;
 	const open = t.mock.method(f.editor.navigation, 'openResource'); secondary(f, node); let cleared = false;
-	const unbind = f.firstPart.onDidChangeGroups(() => { unbind(); cleared = true; parts.clear(); }); t.after(unbind);
+	const unbind = f.firstPart.onDidChangeGroups(() => { unbind(); cleared = true; parts.clear(); }); afterTest(t, unbind);
 	assert.doesNotThrow(() => accept(f, 'resources.openToSide'));
 	assert.equal(cleared, true); assert.equal(open.mock.callCount(), 0); assert.equal(f.firstPart.retired, true);
 	assert.equal(parts.groups.length, 1); assert.ok(parts.activeGroup === parts.main.activeGroup);
@@ -157,7 +158,7 @@ test('workspace replacement during accepted side publication cannot open a retir
 test('a newer real pane focused by side publication retains focus while the explicit split intent remains', t => {
 	const f = fixture(t), { node } = reveal(f, 'folder/third.lua'), open = t.mock.method(f.editor.navigation, 'openResource');
 	secondary(f, node); let redirected = false;
-	const unbind = f.firstPart.onDidChangeGroups(() => { unbind(); redirected = true; f.second.focus(); }); t.after(unbind);
+	const unbind = f.firstPart.onDidChangeGroups(() => { unbind(); redirected = true; f.second.focus(); }); afterTest(t, unbind);
 	accept(f, 'resources.openToSide');
 	assert.equal(redirected, true); assert.equal(open.mock.callCount(), 0); assert.equal(f.firstPart.groups.length, 2);
 	assert.ok(inputFocus.target === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);

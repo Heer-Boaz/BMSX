@@ -23,6 +23,7 @@ import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisens
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { afterTest } from '../helpers/test_cleanup';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'definitions.lua', location: { kind: 'workspace' as const, path: 'definitions.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua', source: { resid: 'definitions', type: 'lua' as const } };
 
@@ -159,7 +160,7 @@ test('independent inline views share real documents/history and retire stale ses
 	const source = "local first = {frames=function() end,frame_duration=20}; local second={duration_frames=8}; return {}";
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	const controller = new AnimationEditorController(sources.catalog);
 	const project = getOrCreateSemanticProject(editorTextModelService, TEST_CARTRIDGE_CONTEXT_IDS[0]); project.synchronizeSources(sources.catalog);
 	const file = project.getFileData(resource)!;
@@ -167,7 +168,7 @@ test('independent inline views share real documents/history and retire stale ses
 	const input = new AnimationEditorInput(model, model.resource.contextId, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(first.span)));
 	const other = new AnimationEditorInput(model, model.resource.contextId, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(second.span)));
 	group.model.add(input); group.model.add(other);
-	t.after(() => { group.model.clear(); input.dispose(); other.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { group.model.clear(); input.dispose(); other.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.refresh(other);
 	assert.equal(controller.authoring.canAddTrack(input), true);
 	assert.notEqual(input.id, other.id);

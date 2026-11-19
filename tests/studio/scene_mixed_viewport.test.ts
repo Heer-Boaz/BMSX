@@ -23,6 +23,7 @@ import { createPackedImageFixture } from '../helpers/packed_images';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { SCENE_TEXT_MODULES } from '../fixtures/studio/scene_text';
+import { afterTest } from '../helpers/test_cleanup';
 
 const BOUNDS = { left: 0, top: 0, right: 400, bottom: 300 };
 const SOURCE = `local scenes=require('cartlib/world/scene_library')
@@ -84,7 +85,7 @@ function fixture(t: TestContext, source = SOURCE) {
 		const scene = context.subject!;
 		context.select(context.document!, f.model.version, { kind: 'member', scene, entry: scene.objects[index], index }); control.update();
 	};
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	afterTest(t, () => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, context, view, control, scope, select };
 }
 

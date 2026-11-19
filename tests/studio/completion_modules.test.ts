@@ -15,6 +15,7 @@ import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { CompletionController } from '../../ide/workbench/contrib/code_editor/suggest/completion_controller';
 import { buildLuaSemanticFrontend, buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('module completion replaces a whole path while preserving its Lua delimiters', () => {
 	for (const [open, close] of [["'", "'"], ['"', '"'], ['[[', ']]'], ['[=[', ']=]']]) {
@@ -62,7 +63,7 @@ test('Lua completion context distinguishes escaped and multiline strings from co
 });
 
 test('completion sees a newly created module without editing the importer or rebooting', t => {
-	t.after(() => {
+	afterTest(t, () => {
 		resetSemanticProjects(editorTextModelService);
 		editorTextModelService.clear();
 	});
@@ -78,7 +79,7 @@ test('completion sees a newly created module without editing the importer or reb
 		protected override isCompletionReady() { return true; }
 	}
 	const controller = new ReadyCompletionController(code, sources, null, null, null);
-	t.after(() => controller.clearInput());
+	afterTest(t, () => controller.clearInput());
 	const version = importer.version;
 	assert.deepEqual(controller.listCompletionCandidates()!.filteredItems, []);
 	const path = 'carts/example/authoring/palette.lua';
@@ -93,7 +94,7 @@ test('completion sees a newly created module without editing the importer or reb
 
 
 test('resolved require spellings do not become duplicate completion insertions outside the declared module catalog', t => {
-	t.after(() => { resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
+	afterTest(t, () => { resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	const source = "local existing = require('res/palette.lua')\nlocal candidate = require('')\nreturn existing.value";
 	const sources = createScenarioTestSourceState([
 		createScenarioTestSourceRecord('main.lua', 1, source),
@@ -107,7 +108,7 @@ test('resolved require spellings do not become duplicate completion insertions o
 	const code = createTestCodeControl(t, importer, documents, clock, view);
 	code.focusTarget.focus();
 	const controller = new CompletionController(code, sources, null, null, null);
-	t.after(() => controller.clearInput());
+	afterTest(t, () => controller.clearInput());
 	const candidates = controller.listCompletionCandidates()!;
 	assert.equal(candidates.context.kind, 'module');
 	assert.deepEqual(candidates.filteredItems.map(item => item.insertText).sort(), ['main', 'palette'],

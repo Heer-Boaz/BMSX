@@ -21,6 +21,7 @@ import { createWorkspaceRecord } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SAVED = `local scenes = require('cartlib/world/scene_library')
 scenes.register('same', { objects = { { member_id = 'same', definition_id = 'first' } } })
@@ -28,7 +29,7 @@ scenes.register('same', { objects = { { member_id = 'same', definition_id = 'sec
 `;
 
 function fixture(t: TestContext) {
-	const models = new EditorTextModelService(); t.after(() => models.clear());
+	const models = new EditorTextModelService(); afterTest(t, () => models.clear());
 	const sources = createScenarioTestSourceState(['first.lua', 'second.lua'].map(path =>
 		createScenarioTestSourceRecord(path, 1, SAVED, `tests/fixtures/recovery/${path}`)));
 	const catalog = sources.catalog, clock = new VirtualHeadlessClock();
@@ -47,8 +48,8 @@ for (const equal of [false, true]) for (const baseline of [null, 'acknowledged f
 			updatedAt: record.updatedAt, savedSource: SAVED, persistedBaseline: baseline };
 		const path = buildWorkspaceDirtyEntryPath(root, resource.contextId, resource.path);
 		let additions = 0, contentChanges = 0;
-		t.after(models.onDidChangeContent(() => { contentChanges++; }));
-		t.after(models.onDidAddModel(model => {
+		afterTest(t, models.onDidChangeContent(() => { contentChanges++; }));
+		afterTest(t, models.onDidAddModel(model => {
 			additions++;
 			assert.equal(models.get(resource), model);
 			assert.equal(model.buffer.getText(), source);
@@ -56,7 +57,7 @@ for (const equal of [false, true]) for (const baseline of [null, 'acknowledged f
 			assert.equal(model.persistedBaseline, baseline);
 			assert.equal(model.dirty, true, 'the recovery manifest owns dirty identity independently of byte equality');
 			assert.equal(model.canUndo, false);
-			t.after(model.onDidChangeContent(() => { contentChanges++; }));
+			afterTest(t, model.onDidChangeContent(() => { contentChanges++; }));
 		}));
 		assert.equal(restoreWorkspaceDirtyModels(models, catalog, [entry], new Map([[path, record]])), true);
 		const model = models.get(resource)!;
@@ -79,14 +80,14 @@ test('a recovery observer resolving a later dirty resource receives its already 
 		savedSource: SAVED, persistedBaseline: null }));
 	const added: EditorTextModel[] = [];
 	let input: CodeEditorInput | undefined;
-	t.after(f.models.onDidAddModel(model => {
+	afterTest(t, f.models.onDidAddModel(model => {
 		added.push(model);
 		assert.equal(f.models.get(model.identity), model);
 		if (model.identity.path !== f.first.path) return;
 		const later = f.models.get(f.second); assert.ok(later !== undefined && later.dirty);
 		assert.equal(later.buffer.getText(), `-- recovered ${f.second.path}\n${SAVED}`);
 		input = new CodeEditorInput(resolveLuaTextFileModel(f.models, f.catalog, f.second));
-		t.after(() => input!.dispose());
+		afterTest(t, () => input!.dispose());
 		assert.equal(input.workingCopy, later);
 	}));
 	assert.equal(restoreWorkspaceDirtyModels(f.models, f.catalog, entries, records), true);
@@ -117,9 +118,9 @@ test('every departing-source callback resolves the complete recovered generation
 		model.pushEditOperations([{ offset: 0, deleteLength: 0, text }]);
 	};
 	const releaseClear = f.models.onWillClear(() => observe('-- clear callback edit\n'));
-	t.after(releaseClear);
+	afterTest(t, releaseClear);
 	departing.onWillDispose(() => observe('-- disposal callback edit\n'));
-	t.after(f.models.onDidRemoveModel(model => { if (model === departing) observe('-- removal callback edit\n'); }));
+	afterTest(t, f.models.onDidRemoveModel(model => { if (model === departing) observe('-- removal callback edit\n'); }));
 	let restored: boolean;
 	try { restored = restoreWorkspaceDirtyModels(f.models, f.catalog, entries, records); }
 	finally { releaseClear(); }
@@ -149,8 +150,8 @@ for (const replacement of [false, true]) test(`clearing recovery during first pu
 	const nextRecords = new Map([[buildWorkspaceDirtyEntryPath(f.root, f.second.contextId, f.second.path), next]]);
 	const leading: EditorTextModel[] = [], trailing: EditorTextModel[] = [], removed: EditorTextModel[] = [];
 	let retired: EditorTextModel[] = [], restarted = false;
-	t.after(f.models.onDidRemoveModel(model => { removed.push(model); }));
-	t.after(f.models.onDidAddModel(model => {
+	afterTest(t, f.models.onDidRemoveModel(model => { removed.push(model); }));
+	afterTest(t, f.models.onDidAddModel(model => {
 		leading.push(model); assert.equal(f.models.get(model.identity), model);
 		if (restarted) return;
 		restarted = true; retired = [...f.models.models];
@@ -158,7 +159,7 @@ for (const replacement of [false, true]) test(`clearing recovery during first pu
 		f.models.clear();
 		if (replacement) assert.equal(restoreWorkspaceDirtyModels(f.models, f.catalog, [nextEntry], nextRecords), true);
 	}));
-	t.after(f.models.onDidAddModel(model => {
+	afterTest(t, f.models.onDidAddModel(model => {
 		assert.equal(f.models.get(model.identity), model, 'an observer cannot receive a retired model');
 		trailing.push(model);
 	}));
@@ -182,14 +183,14 @@ test('clear from the final recovery publication callback cannot report successfu
 	const entry: WorkingCopyRecoveryEntry = { contextId: f.first.contextId, path: f.first.path,
 		updatedAt: record.updatedAt, savedSource: SAVED, persistedBaseline: null };
 	const path = buildWorkspaceDirtyEntryPath(f.root, f.first.contextId, f.first.path);
-	t.after(f.models.onDidAddModel(() => f.models.clear()));
+	afterTest(t, f.models.onDidAddModel(() => f.models.clear()));
 	assert.equal(restoreWorkspaceDirtyModels(f.models, f.catalog, [entry], new Map([[path, record]])), false);
 	assert.deepEqual([...f.models.models], []);
 });
 
 test('retiring recovered source during first publication aborts frontend document and breakpoint restoration', async t => {
 	const f = createActualSourcePanes(t), copy = f.firstInput.workingCopy;
-	workspaceDirtyRecords.clear(); t.after(() => workspaceDirtyRecords.clear());
+	workspaceDirtyRecords.clear(); afterTest(t, () => workspaceDirtyRecords.clear());
 	copy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- recovered frontend source\n' }]);
 	const dirty = captureWorkspaceDirtySources(editorTextModelService, f.sources.catalog, f.host.clock, workspaceDirtyRecords);
 	for (const [path, record] of dirty.dirtyRecords) workspaceDirtyRecords.set(path, record);
@@ -200,7 +201,7 @@ test('retiring recovered source during first publication aborts frontend documen
 	}));
 	assert.equal(payload.editorParts.documents.length, 2);
 	let retired = false;
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (retired || model.identity.contextId !== copy.identity.contextId || model.identity.path !== copy.identity.path) return;
 		retired = true;
 		editorTextModelService.clear();
@@ -225,7 +226,7 @@ for (const equal of [false, true]) test(`Scene and browser occurrences admitted 
 		updatedAt: record.updatedAt, savedSource: SAVED, persistedBaseline: baseline };
 	const dirtyPath = buildWorkspaceDirtyEntryPath(f.sources.catalog.getContext(resource.contextId).projectRootPath, resource.contextId, resource.path);
 	workspaceDirtyRecords.clear(); workspaceDirtyRecords.set(dirtyPath, record);
-	t.after(() => workspaceDirtyRecords.clear());
+	afterTest(t, () => workspaceDirtyRecords.clear());
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({
 		dirtyFiles: [entry], editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
 		mainWorkspace: f.editor.mainWorkspace.serialize(), sceneCompanion: undefined, filesBrowser: f.editor.resourcePanel.serialize(),
@@ -237,12 +238,12 @@ for (const equal of [false, true]) test(`Scene and browser occurrences admitted 
 	let primary: ScenePrimaryClient | undefined, browser: WorkbenchTreeNode<FileElement> | undefined;
 	let bookmark: SceneBookmark | undefined, request: EditorSourceLocationRequest | undefined, opening: Promise<boolean> | undefined;
 	let additions = 0, replacements = 0;
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.identity.contextId !== resource.contextId || model.identity.path !== resource.path) return;
 		additions++;
 		assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, true);
 		assert.equal(model.lastSavedSource, SAVED); assert.equal(model.persistedBaseline, baseline);
-		t.after(model.onDidChangeContent(() => { replacements++; }));
+		afterTest(t, model.onDidChangeContent(() => { replacements++; }));
 		panel.refresh(); panel.queuePendingSelection(resource); panel.applyPendingSelection();
 		const file = panel.files.selectedNode!; assert.equal(file.element.kind, 'file');
 		if (file.collapsed) panel.toggleFileDisclosure(file);
@@ -254,7 +255,7 @@ for (const equal of [false, true]) test(`Scene and browser occurrences admitted 
 		const admitted = f.editor.mainWorkspace.primary; assert.ok(admitted instanceof ScenePrimaryClient); primary = admitted;
 		assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
 		primary.hierarchy.update(); primary.details.update();
-		bookmark = new SceneBookmark(primary.authoring, primary.view); t.after(() => bookmark!.dispose());
+		bookmark = new SceneBookmark(primary.authoring, primary.view); afterTest(t, () => bookmark!.dispose());
 		request = primary.captureSourceLocation();
 	}));
 	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload);

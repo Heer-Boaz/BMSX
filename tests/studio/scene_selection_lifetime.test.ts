@@ -5,6 +5,7 @@ import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/
 import { createLuaTableFieldNumberEdits, createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('same', { objects = {
@@ -16,14 +17,14 @@ scenes.register('same', { objects = {} })`;
 function fixture(t: TestContext, source = SOURCE, imports: readonly (readonly [string, string])[] = []) {
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, imports), document = f.documents.get(f.model);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	return { ...f, context, document };
 }
 
 test('Scene selection lifetime advances once for an actual selection change or explicit clear', t => {
 	const f = fixture(t), { context, document, model } = f, scene = document.scenes[0];
 	const initial = context.selectionRevision, observed: number[] = [];
-	t.after(context.onDidChangeSelection(() => { observed.push(context.selectionRevision); }));
+	afterTest(t, context.onDidChangeSelection(() => { observed.push(context.selectionRevision); }));
 	assert.equal(context.select(document, model.version, { kind: 'scene', scene }), true);
 	assert.equal(context.selectionRevision, initial + 1);
 	assert.equal(context.select(document, model.version, { kind: 'scene', scene }), true);
@@ -59,7 +60,7 @@ for (const edit of ['delete', 'equal-byte replacement'] as const) test(`Source a
 	const f = fixture(t), { context, model, document } = f, scene = document.scenes[0];
 	assert.equal(context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
 	const intent = context.selectionRevision, request = context.captureSourceLocation(), { start, end } = context.selectionRange;
-	let notifications = 0; t.after(context.onDidChangeSelection(() => { notifications++; assert.equal(context.selectionRevision, intent + 1); }));
+	let notifications = 0; afterTest(t, context.onDidChangeSelection(() => { notifications++; assert.equal(context.selectionRevision, intent + 1); }));
 	if (edit === 'delete') model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, document.analysis.chunk.locations, document.analysis.chunk.tokens, scene.objects[0].field));
 	else model.pushEditOperations([{ offset: start, deleteLength: end - start, text: model.buffer.getTextRange(start, end) }]);
 	assert.equal(request.readLocation(), undefined);
@@ -129,7 +130,7 @@ for (const newer of [false, true]) test(`fresh explicit Scene selection survives
 	if (newer) {
 		const release = context.onDidChangeSelection(() => {
 			release(); assert.equal(context.select(current, model.version, { kind: 'scene', scene: replacement }), true);
-		}); t.after(release);
+		}); afterTest(t, release);
 	}
 	assert.equal(context.select(current, model.version, { kind: 'member', scene: replacement, entry: replacement.objects[0], index: 0 }), !newer);
 	assert.equal(context.selection!.kind, newer ? 'scene' : 'member');
@@ -182,7 +183,7 @@ test('restoring a retired Scene member cannot clear a newer selection published 
 	context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
 	const reference = context.captureSourceReference().selected!;
 	const request = context.captureSelectionRequest();
-	t.after(model.trackRanges(new Map([['root', reference.root], ['member', reference.span]])));
+	afterTest(t, model.trackRanges(new Map([['root', reference.root], ['member', reference.span]])));
 	const range = { ...context.selectionRange };
 	let published = false;
 	const unsubscribe = context.onDidChangeSelection(() => {
@@ -191,7 +192,7 @@ test('restoring a retired Scene member cannot clear a newer selection published 
 		const current = context.document!, surviving = current.scenes[0];
 		published = context.select(current, model.version, { kind: 'member', scene: surviving, entry: surviving.objects[1], index: 1 });
 	});
-	t.after(unsubscribe);
+	afterTest(t, unsubscribe);
 	model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: 'nil' }]);
 	assert.equal(request.restore(reference), false);
 	assert.equal(published, true);
@@ -204,7 +205,7 @@ test('a reserved Scene selection request follows its exact mapped occurrence thr
 	const f = fixture(t), { context, model, document } = f, scene = document.scenes[0];
 	context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
 	const reference = context.captureSourceReference().selected!;
-	t.after(model.trackRanges(new Map([['root', reference.root], ['member', reference.span]])));
+	afterTest(t, model.trackRanges(new Map([['root', reference.root], ['member', reference.span]])));
 	const request = context.captureSelectionRequest(), intent = context.selectionRevision;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved declaration\n' }]);
 	assert.equal(request.isCurrent(), true);

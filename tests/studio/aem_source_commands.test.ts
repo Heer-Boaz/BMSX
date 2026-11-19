@@ -11,6 +11,7 @@ import { projectAemSource } from '../../ide/workbench/contrib/aem/source';
 import { createStructuredValueEdit } from '../../ide/language/yaml/structured_edits';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = '# authored audio\nevents:\n  first: { channel: sfx, rules: [] }\n  second: { channel: music, rules: [] }\nvalues: [first, second]\n';
 afterEach(() => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
@@ -75,7 +76,7 @@ for (const application of [false, true])
 	test(`AEM ${application ? 'application' : 'native'} selected A to B to A during acceptance never revives the captured action`, t => {
 		const f = fixture(t); f.draft('music');
 		let fired = false;
-		t.after(f.model.onDidChangeContent(() => {
+		afterTest(t, f.model.onDidChangeContent(() => {
 			if (fired) return; fired = true;
 			f.select(['events', 'second', 'channel']); f.select(['events', 'first', 'channel']);
 		}));
@@ -88,7 +89,7 @@ for (const application of [false, true])
 	test(`AEM ${application ? 'application' : 'native'} retired same-input attachment cannot execute after draft acceptance`, t => {
 		const f = fixture(t); f.draft('music');
 		let fired = false;
-		t.after(f.model.onDidChangeContent(() => {
+		afterTest(t, f.model.onDidChangeContent(() => {
 			if (fired) return; fired = true;
 			f.firstGroup.openEditor(f.firstInput); f.firstGroup.activate(f.input.id);
 		}));
@@ -120,7 +121,7 @@ test('AEM key removal and Undo do not revive an old native occurrence', t => {
 test('AEM typed scalar acceptance does not overwrite a reentrant explicit selection', t => {
 	const f = fixture(t, SOURCE, ['values', 0]), property = f.input.sourceSelection.selected!.property!;
 	let fired = false;
-	t.after(f.model.onWillChangeContent(() => {
+	afterTest(t, f.model.onWillChangeContent(() => {
 		if (fired) return; fired = true;
 		f.select(['values', 1]);
 	}));
@@ -167,7 +168,7 @@ for (const application of [false, true])
 		f.execute('aem.add', application); assert.equal(f.firstPart.quickInput.visible, true);
 		f.firstPart.quickInput.field.replaceText(0, f.firstPart.quickInput.field.text.length, '"added"');
 		let observed = false;
-		t.after(inputFocus.onDidChangeTarget(() => {
+		afterTest(t, inputFocus.onDidChangeTarget(() => {
 			if (inputFocus.target !== f.target) return;
 			observed = true;
 			assert.ok(f.model.buffer.getText().includes('"added"'));
@@ -202,7 +203,7 @@ test('AEM typed scalar Undo publishes new intent and maps through a second sourc
 	f.draft('"accepted"'); assert.equal(inputFocus.commitEdit(f.target.commandContext.scope), true);
 	const revision = f.input.sourceSelection.revision;
 	let fired = false;
-	t.after(f.model.onDidChangeContent(event => {
+	afterTest(t, f.model.onDidChangeContent(event => {
 		if (event.kind !== 'undo' || fired) return; fired = true;
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '# after Undo\n' }]);
 	}));

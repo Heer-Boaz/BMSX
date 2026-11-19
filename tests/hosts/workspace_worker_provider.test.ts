@@ -4,10 +4,11 @@ import test from 'node:test';
 import { MessageChannel } from 'node:worker_threads';
 import { WorkerWorkspaceRecordProvider } from '../../hosts/node/studio/workspace';
 import type { StudioWorkspaceRequest } from '../../hosts/node/studio/headless_protocol';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const success of [true, false]) test(`worker directory creation retains its canonical request until ${success ? 'acknowledged' : 'rejected'}`, async t => {
 	const { port1, port2 } = new MessageChannel();
-	t.after(() => { port1.close(); port2.close(); });
+	afterTest(t, () => { port1.close(); port2.close(); });
 	const provider = new WorkerWorkspaceRecordProvider(port1), message = once(port2, 'message');
 	const creation = provider.createDirectory('cart/empty');
 	let settled = false; void creation.then(() => { settled = true; }, () => { settled = true; });

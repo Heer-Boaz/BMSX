@@ -14,6 +14,7 @@ const EMPTY_CONTENT: ReadonlyMap<string, readonly ProjectContentEntry[]> = new M
 import { WorkbenchTreeNavigationResult, type WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
 import { createTestRuntimeSourceState, createTestToolingPackage, TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function registry(root: string, paths: readonly string[]): LuaSourceRegistry {
 	const value: LuaSourceRegistry = { projectRootPath: root, records: [], path2lua: {}, module2lua: {}, entrySourcePath: '', can_boot_from_source: false, revision: 0 };
@@ -89,12 +90,12 @@ test('a new earlier sibling retains the selected folder node instead of its obso
 test('full catalog publications and same-key source replacement preserve nodes without row rebuild or sorting', t => {
 	const f = fixture(), selected = file(f.model, TEST_CARTRIDGE_CONTEXT_IDS[0], 'deep/inner/main.lua'), rows = f.model.tree.rows;
 	const roots = [...f.model.tree.roots], revision = f.model.revision, originalPush = rows.push;
-	const push = t.mock.fn(originalPush); rows.push = push; t.after(() => { rows.push = originalPush; });
+	const push = t.mock.fn(originalPush); rows.push = push; afterTest(t, () => { rows.push = originalPush; });
 	const children = roots[1].children, originalSort = children.sort, sort = t.mock.fn(originalSort);
-	children.sort = sort; t.after(() => { children.sort = originalSort; });
+	children.sort = sort; afterTest(t, () => { children.sort = originalSort; });
 	const iterate = f.sources.catalog.resourceByIdentity[Symbol.iterator], iteration = t.mock.fn(iterate);
 	f.sources.catalog.resourceByIdentity[Symbol.iterator] = iteration;
-	t.after(() => { f.sources.catalog.resourceByIdentity[Symbol.iterator] = iterate; });
+	afterTest(t, () => { f.sources.catalog.resourceByIdentity[Symbol.iterator] = iterate; });
 	for (let frame = 0; frame < 1000; frame++) assert.equal(f.model.sync(f.sources.catalog, 'lua_only', EMPTY_CONTENT, 0), false);
 	assert.equal(iteration.mock.callCount(), 0); assert.equal(push.mock.callCount(), 0); assert.equal(sort.mock.callCount(), 0);
 	f.sources.catalog.rebuildResources();
@@ -196,7 +197,7 @@ test('shared animation rows expose their different project namespaces without re
 	first.previewPackage.img.one = { type: 'image', resid: 'one', source_path: 'res/first/one.png' };
 	second.previewPackage.img.one = { type: 'image', resid: 'one', source_path: 'res/second/one.png' };
 	const models = new EditorTextModelService(), index = new ProjectContentIndex(models, catalog, new BehaviorRegistrationIndex(models, catalog), new SceneSourceDocuments(models, catalog));
-	t.after(() => { index.dispose(); models.clear(); catalog.dispose(); });
+	afterTest(t, () => { index.dispose(); models.clear(); catalog.dispose(); });
 	index.sync();
 	const tree = new ResourceFilesModel(); tree.sync(catalog, 'lua_only', index.entriesByResource, index.revision);
 	const shared = file(tree, TEST_SYSTEM_CONTEXT_ID, 'shared.lua');
@@ -333,7 +334,7 @@ test('publishing Lua at an existing data identity publishes its new catalog clas
 test('browser mementos retain filtered disclosure, exact folder selection and independent reading without expanding new nodes', t => {
 	const f = fixture(), models = new EditorTextModelService();
 	const content = new ProjectContentIndex(models, f.sources.catalog, new BehaviorRegistrationIndex(models, f.sources.catalog), new SceneSourceDocuments(models, f.sources.catalog));
-	t.after(() => { content.dispose(); models.clear(); f.sources.catalog.dispose(); });
+	afterTest(t, () => { content.dispose(); models.clear(); f.sources.catalog.dispose(); });
 	f.sources.catalog.registerTextSources(TEST_CARTRIDGE_CONTEXT_IDS[0], [{ type: 'data', resid: 'settings', source_path: 'config/nested/settings.yaml' }]);
 	f.model.sync(f.sources.catalog, 'all', EMPTY_CONTENT, 0);
 	const excluded = file(f.model, TEST_CARTRIDGE_CONTEXT_IDS[0], 'config/nested/settings.yaml'), excludedParent = excluded.parent!;
@@ -370,7 +371,7 @@ test('browser recovery never transfers missing declaration selection to its file
 	]);
 	const models = new EditorTextModelService(), content = new ProjectContentIndex(models, sources.catalog,
 		new BehaviorRegistrationIndex(models, sources.catalog), new SceneSourceDocuments(models, sources.catalog));
-	t.after(() => { content.dispose(); models.clear(); sources.catalog.dispose(); });
+	afterTest(t, () => { content.dispose(); models.clear(); sources.catalog.dispose(); });
 	content.sync();
 	const original = new ResourceFilesModel(); original.sync(sources.catalog, 'lua_only', content.entriesByResource, content.revision);
 	const leaf = file(original, TEST_CARTRIDGE_CONTEXT_IDS[0], 'main.lua'); original.toggle(original.tree.rows.indexOf(leaf));
@@ -396,14 +397,14 @@ test('browser capture observes newer navigation delivered during source publicat
 	]);
 	const models = new EditorTextModelService(), content = new ProjectContentIndex(models, sources.catalog,
 		new BehaviorRegistrationIndex(models, sources.catalog), new SceneSourceDocuments(models, sources.catalog));
-	t.after(() => { content.dispose(); models.clear(); sources.catalog.dispose(); });
+	afterTest(t, () => { content.dispose(); models.clear(); sources.catalog.dispose(); });
 	content.sync();
 	const browser = new ResourceFilesModel(); browser.sync(sources.catalog, 'lua_only', content.entriesByResource, content.revision);
 	const leaf = file(browser, TEST_CARTRIDGE_CONTEXT_IDS[0], 'main.lua'); browser.toggle(browser.tree.rows.indexOf(leaf));
 	browser.tree.selectionIndex = browser.tree.rows.findIndex(node => node.element.kind === 'definition');
 	const model = resolveLuaTextFileModel(models, sources.catalog, sources.catalog.resolveResource(leaf.element)!);
 	const releases = [content.onDidChange(() => browser.navigate('home'))];
-	t.after(() => { for (const release of releases) release(); });
+	afterTest(t, () => { for (const release of releases) release(); });
 	model.pushEditOperations([{ offset: 3, deleteLength: 2, text: 'bb' }]);
 	const snapshot = browser.captureView(content);
 	assert.equal(browser.selectedNode!.element.kind, 'root'); assert.equal(snapshot.selected!.kind, 'root');
@@ -415,13 +416,13 @@ test('browser capture observes newer navigation delivered during source publicat
 test('browser recovery publishes disclosure changes once without invalidating metrics for reading or selection alone', t => {
 	const f = fixture(), models = new EditorTextModelService();
 	const content = new ProjectContentIndex(models, f.sources.catalog, new BehaviorRegistrationIndex(models, f.sources.catalog), new SceneSourceDocuments(models, f.sources.catalog));
-	t.after(() => { content.dispose(); models.clear(); f.sources.catalog.dispose(); });
+	afterTest(t, () => { content.dispose(); models.clear(); f.sources.catalog.dispose(); });
 	const leaf = file(f.model, TEST_CARTRIDGE_CONTEXT_IDS[0], 'deep/inner/main.lua');
 	const expanded = f.model.captureView(content), expandedRows = f.model.tree.rows.length;
 	f.model.navigate('left'); f.model.navigate('left');
 	assert.equal(leaf.parent!.collapsed, true); assert.ok(f.model.tree.rows.length < expandedRows);
 	let publications = 0;
-	const release = f.model.onDidChange(() => { publications++; }); t.after(release);
+	const release = f.model.onDidChange(() => { publications++; }); afterTest(t, release);
 	const collapsedRevision = f.model.revision;
 	f.model.restoreView(expanded, content);
 	assert.equal(leaf.parent!.collapsed, false); assert.equal(f.model.tree.rows.length, expandedRows);

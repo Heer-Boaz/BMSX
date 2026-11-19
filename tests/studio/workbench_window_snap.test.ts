@@ -17,6 +17,7 @@ import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
 import { WorkbenchWindowModel, type WindowPlacement } from '../../ide/workbench/ui/window/model';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, placement: WindowPlacement = 'normal', areaWidth = 600, minimumWidth = 120) {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
@@ -66,7 +67,7 @@ function fixture(t: TestContext, placement: WindowPlacement = 'normal', areaWidt
 	};
 	const title = () => ({ x: model.header.left + (model.header.right - model.header.left) * 0.6,
 		y: (model.header.top + model.header.bottom) / 2 });
-	t.after(() => { control.dispose(); contextMenu.dispose(); surfaces.dispose(); focus.setTarget(null); });
+	afterTest(t, () => { control.dispose(); contextMenu.dispose(); surfaces.dispose(); focus.setTarget(null); });
 	return { focus, capture, surfaces, model, control, client, commands, area, layout, paint, dispatch, title,
 		restores: () => restores, retires: () => retires };
 }

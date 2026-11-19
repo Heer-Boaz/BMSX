@@ -37,6 +37,7 @@ import {
 	DisplayPointMappingResult,
 	mapDisplayPointToViewport,
 } from '../../machine/ts/render/video_output';
+import { afterTest } from '../helpers/test_cleanup';
 
 function createInput(): { input: Input; setTime(time: number): void } {
 	let currentTime = 0;
@@ -469,7 +470,7 @@ test('real host short-hold requests preserve rewind entry and fresh unmodified S
 	const view = new HostOnScreenKeyboard(presenter, model);
 	const interaction = new HostKeyboardInteraction(input, model, presenter, view);
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, host.execution, interaction);
-	t.after(() => { model.close(); rewind.service(false); host.audio.dispose(); input.dispose(); });
+	afterTest(t, () => { model.close(); rewind.service(false); host.audio.dispose(); input.dispose(); });
 	rewind.service(true); await tasks.join();
 	assert.equal(rewind.available, true, 'the real host service captured the initial runtime checkpoint');
 	const tick = () => { const result = tickMenu(input, menu); clock.advance(20); return result; };

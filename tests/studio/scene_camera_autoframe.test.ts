@@ -7,6 +7,7 @@ import { loadModelFromBuffer, packModelAsset } from '../../toolchain/ts/rompack/
 import { createPackedImageFixture } from '../helpers/packed_images';
 import { createSceneDocumentFixture } from '../helpers/scene_document_fixture';
 import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
+import { afterTest } from '../helpers/test_cleanup';
 
 const IMPORTS = [...CARTLIB_OBJECT_SOURCE_MODULES,
 	['cartlib/world/prefab.lua', 'return {define=function() end}'],
@@ -153,7 +154,7 @@ for (const reading of ['initial', 'manual'] as const) test(`serialized ${reading
 	if (reading === 'manual') viewport.camera.pan(12, -7);
 	const original = viewport.camera.capture(), serializer = f.editor.editorInputSerializers.scene_editor;
 	const restored = await serializer.deserialize(serializer.serialize(f.primary.input)); assert.ok(restored instanceof SceneEditorInput);
-	t.after(() => restored.dispose());
+	afterTest(t, () => restored.dispose());
 	const next = restored.view.viewport;
 	next.layout({ left: 0, top: 0, right: 320, bottom: 240 }, 8); next.refresh();
 	assert.deepEqual(next.camera.capture(), original);
@@ -169,7 +170,7 @@ for (const reading of ['initial', 'manual'] as const) test(`serialized ${reading
 	if (reading === 'manual') viewport.camera.orbit(12, -7);
 	const original = viewport.camera.capture(), serializer = f.editor.editorInputSerializers.scene_editor;
 	const restored = await serializer.deserialize(serializer.serialize(f.primary.input)); assert.ok(restored instanceof SceneEditorInput);
-	t.after(() => restored.dispose());
+	afterTest(t, () => restored.dispose());
 	const next = restored.view.viewport;
 	next.layout({ left: 0, top: 0, right: 320, bottom: 240 }, 8); next.refresh();
 	assert.deepEqual(next.camera.capture(), original);

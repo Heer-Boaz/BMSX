@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
+import { afterTest } from '../helpers/test_cleanup';
 
 const run = promisify(execFile);
 const directionIds = ['d-pad-u', 'd-pad-d', 'd-pad-l', 'd-pad-r'] as const;
@@ -18,7 +19,7 @@ test('transparent digital D-pad stays passive and preserves every raw direction 
 	const repository = process.cwd();
 	const tsxLoader = createRequire(join(repository, 'package.json')).resolve('tsx');
 	const fixture = await mkdtemp(join(tmpdir(), 'bmsx-dpad-artwork-'));
-	t.after(() => rm(fixture, { recursive: true, force: true }));
+	afterTest(t, () => rm(fixture, { recursive: true, force: true }));
 	await mkdir(join(fixture, 'rom'));
 	// Packaging must not need any of the retired opaque D-pad PNGs.
 	for (const path of ['gamebase.html', 'gamebase.css', 'rom/bmsx.png', 'rom/manifest.json']) {
@@ -64,7 +65,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'artworkFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 852, height: 393 } });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));

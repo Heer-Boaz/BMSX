@@ -20,6 +20,7 @@ import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SCENE = `local scenes=require('cartlib/world/scene_library')
 scenes.register('room',{objects={{member_id='unit',definition_id='actor',spatial={local_transform={1,0,0,0,1,0,0,0,1,1,2,3}}}}})
@@ -114,7 +115,7 @@ test('Scene Source to Side consumes the actual focused draft before reading the 
 	const before = await pane.getSourceLocation!(); assert.ok(before?.selection !== undefined);
 	const start = model.buffer.offsetAt(before.selection.row, before.selection.startColumn), prefix = '-- accepted source draft\n';
 	const field = new ValueInput(pane.commandTarget, INTEGER_INPUT_FORMAT, () => model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }]));
-	t.after(() => field.dispose()); field.setValue(1); field.layout(group.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
+	afterTest(t, () => field.dispose()); field.setValue(1); field.layout(group.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
 	const opening = t.mock.method(f.editor.navigation, 'openSource'); f.editor.commands.execute('editor.sourceToSide', pane.commandTarget);
 	assert.equal(field.pending, false); assert.equal(opening.mock.callCount(), 1); await opening.mock.calls[0].result;
 	const side = f.firstPart.groups.find(candidate => candidate !== group)!, code = side.model.activeTab;
@@ -164,8 +165,8 @@ test('Animation never certifies stale AST coordinates when imported model admiss
 	const contextId = TEST_CARTRIDGE_CONTEXT_IDS[0], resource = sources.catalog.resolveResource({ contextId, path: 'generated.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, sources.catalog, resource), input = new AnimationEditorInput(model, contextId);
 	const controller = new AnimationEditorController(sources.catalog); let edited = false;
-	t.after(() => { input.dispose(); editorTextModelService.clear(); });
-	t.after(editorTextModelService.onDidAddModel(dependency => {
+	afterTest(t, () => { input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, editorTextModelService.onDidAddModel(dependency => {
 		if (dependency.resource.path !== 'builders.lua' || edited) return;
 		edited = true; model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- reentrant source edit\n' }]);
 	}));
@@ -176,7 +177,7 @@ test('Animation never certifies stale AST coordinates when imported model admiss
 
 for (const kind of ['AEM', 'Map'] as const) test(`${kind} generic Source to Side forces the text editor over its same canonical working copy`, async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
-	const f = fixture(t); t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	const f = fixture(t); afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const path = kind === 'AEM' ? 'res/data/events.aem.yaml' : 'res/data/castle_map.yaml';
 	f.sources.catalog.registerTextSources(f.sources.systemContextId, [{ type: kind === 'AEM' ? 'aem' : 'data', resid: kind, source_path: path,
 		sourcemeta: { text: kind === 'AEM' ? 'events: {}\n' : '1: { map: [".."], objects: [] }\n' } }]);

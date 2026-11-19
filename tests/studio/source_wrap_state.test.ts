@@ -9,6 +9,7 @@ import { resetNavigationHistoryState } from '../../ide/navigation/navigation_his
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { resolveCodeAreaViewport } from '../../ide/editor/ui/code/area_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('new Source views keep authored rows intact until wrapping is explicitly enabled', t => {
 	const f = createActualSourcePanes(t, false, [['long.lua', `local long_value = '${'authored_'.repeat(80)}'\nreturn long_value`]]);
@@ -86,7 +87,7 @@ test('a mode-only wrap toggle publishes a view-state change without editing its 
 	const f = createActualSourcePanes(t), model = f.firstInput.workingCopy, version = model.version;
 	f.first.focus();
 	let changed = 0;
-	t.after(f.first.code.onDidChangeViewState(() => changed++));
+	afterTest(t, f.first.code.onDidChangeViewState(() => changed++));
 	f.editor.commands.execute('wrap', f.first.commandTarget);
 	assert.ok(changed > 0);
 	assert.equal(model.version, version); assert.equal(model.canUndo, false); assert.equal(model.dirty, false);
@@ -119,7 +120,7 @@ test('Source serializer restores wrapping onto the same canonical model in a fre
 test('navigation bookmarks and text Undo do not restore an earlier wrapping preference', t => {
 	const f = createActualSourcePanes(t), commands = f.editor.commands, model = f.firstInput.workingCopy;
 	f.first.focus();
-	const selection = new CodeEditorNavigationSelection(f.firstInput); t.after(() => selection.dispose());
+	const selection = new CodeEditorNavigationSelection(f.firstInput); afterTest(t, () => selection.dispose());
 	commands.execute('wrap', f.first.commandTarget);
 	selection.restore(f.firstInput, f.first.code);
 	assert.equal(commands.isActive('wrap', f.first.commandTarget), true);

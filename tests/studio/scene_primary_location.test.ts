@@ -12,6 +12,7 @@ import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { SceneEditorController } from '../../ide/workbench/contrib/scene_editor/controller';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneEditorInputSerializer, type SerializedSceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_serializer';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('same', { objects = {
@@ -27,9 +28,9 @@ function fixture(t: TestContext, source = SOURCE, imports: readonly (readonly [s
 	const document = f.documents.get(f.model);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
 	const view = new SceneViewState(context, f.sources.catalog); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
-	t.after(() => { view.dispose(); context.dispose(); });
+	afterTest(t, () => { view.dispose(); context.dispose(); });
 	const bookmark = () => {
-		const location = new SceneBookmark(context, view); t.after(() => location.dispose()); return location;
+		const location = new SceneBookmark(context, view); afterTest(t, () => location.dispose()); return location;
 	};
 	return { ...f, document, context, view, bookmark };
 }
@@ -53,7 +54,7 @@ test('primary capture observes a newer domain selection published by semantic re
 		if (selected || f.context.selection !== undefined) return;
 		selected = true;
 		assert.equal(f.context.select(f.context.document!, f.model.version, { kind: 'scene', scene: f.context.subject! }), true);
-	}); t.after(release);
+	}); afterTest(t, release);
 	const chunk = f.document.analysis.chunk;
 	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, chunk.locations, chunk.tokens, f.document.scenes[0].objects[0].field));
 	f.view.refresh();
@@ -75,7 +76,7 @@ test('explicit domain refresh publishes reentrant selection and source edits bef
 		const document = f.context.document!, scene = f.context.subject!;
 		assert.equal(f.context.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- reentrant source edit\n' }]);
-	}); t.after(release);
+	}); afterTest(t, release);
 	const chunk = f.document.analysis.chunk;
 	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, chunk.locations, chunk.tokens, f.document.scenes[0].objects[0].field));
 	f.context.refresh();
@@ -98,7 +99,7 @@ test('primary serialization observes the published source without querying or pu
 	const release = f.context.onDidChangeSelection(() => {
 		notifications++;
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- must not be published by capture\n' }]);
-	}); t.after(release);
+	}); afterTest(t, release);
 	const version = f.model.version, source = f.model.buffer.getText();
 	const query = t.mock.method(f.documents, 'get', () => assert.fail('serialization must not query semantic projections'));
 	const snapshot = ({ ...f.context.captureSourceReference(), view: captureSceneEditorView(f.view) });
@@ -113,7 +114,7 @@ test('primary serialization observes the published source without querying or pu
 });
 
 test('document serialization observes current mapped source without resolving or publishing a retired selection', t => {
-	const f = fixture(t), input = new SceneEditorInput(f.model, f.documents, f.sources.catalog); t.after(() => input.dispose());
+	const f = fixture(t), input = new SceneEditorInput(f.model, f.documents, f.sources.catalog); afterTest(t, () => input.dispose());
 	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1);
 	const context = input.view.authoring;
 	const chunk = f.document.analysis.chunk;
@@ -122,7 +123,7 @@ test('document serialization observes current mapped source without resolving or
 	const release = context.onDidChangeSelection(() => {
 		notifications++;
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- must not be published by serialization\n' }]);
-	}); t.after(release);
+	}); afterTest(t, release);
 	const version = f.model.version, source = f.model.buffer.getText();
 	const serializer = new SceneEditorInputSerializer(f.sources.catalog, new SceneEditorController(f.sources.catalog, f.documents));
 	const query = t.mock.method(f.documents, 'get', () => assert.fail('serialization must not query semantic projections'));
@@ -180,7 +181,7 @@ test('primary and member bookmark spans map before an earlier content observer c
 		assert.equal(subject.scene, subject.document.scenes[0]);
 		assert.deepEqual(location.view.selected!.root, luaSourceRangeToTextRange(f.model.buffer, subject.scene.range));
 		observed = true;
-	}); t.after(release);
+	}); afterTest(t, release);
 	location = f.bookmark();
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- pre-publication mapping\n' }]);
 	assert.equal(observed, true);
@@ -249,7 +250,7 @@ test('capturing an already unavailable primary or disposing its model produces n
 	assert.equal(location.isDisposed, true); assert.equal(retired, 1);
 	location.dispose(); assert.equal(retired, 1);
 	const retiredCapture = new SceneBookmark(f.context, f.view);
-	t.after(() => retiredCapture.dispose());
+	afterTest(t, () => retiredCapture.dispose());
 	assert.equal(retiredCapture.isDisposed, true);
 	assert.equal(retiredCapture.resolve(f.documents), undefined);
 	let immediate = false; retiredCapture.onDidRetire(() => { immediate = true; });

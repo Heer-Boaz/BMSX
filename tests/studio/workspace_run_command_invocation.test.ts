@@ -31,6 +31,7 @@ import { createLoadedTestRuntimeSourceState, createTestRuntime, TEST_CARTRIDGE_C
 import { buildScenarioMediaFixture, type ScenarioMediaFixture } from '../helpers/scenario_media';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 let directory: string, media: ScenarioMediaFixture;
 before(async () => {
@@ -59,7 +60,7 @@ async function fixture(t: TestContext) {
 		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, { width: 800, height: 320 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor, part = editor.editorParts.createDocument(), group = part.activeGroup;
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false);
 		await editor.shutdown(); clearBackgroundTasks(); host.audio.dispose(); host.input.dispose();
 	});
@@ -87,7 +88,7 @@ function pendingDraft(t: TestContext, f: Awaited<ReturnType<typeof fixture>>, af
 	});
 	control.setValue(1); control.layout(f.group.panes.contentBounds); control.field.focusTarget.focus();
 	assert.equal(control.field.replaceText(0, control.field.text.length, '17'), true);
-	t.after(() => { control.cancel(); control.field.focusTarget.release(); control.dispose(); });
+	afterTest(t, () => { control.cancel(); control.field.focusTarget.release(); control.dispose(); });
 	return { control, model, text, version };
 }
 

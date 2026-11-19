@@ -6,6 +6,7 @@ import { SceneHierarchyViewState } from '../../ide/workbench/contrib/scene_edito
 import { captureSceneEditorView, restoreSceneEditorView } from '../../ide/workbench/contrib/scene_editor/view_snapshot';
 import { rebuildWorkbenchTreeRows } from '../../ide/workbench/ui/tree_view';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 local prefab=require('cartlib/world/prefab')
@@ -19,7 +20,7 @@ test('constructing and refreshing a Scene hierarchy never admits a semantic sele
 	const { model, documents } = createSceneSourceFixture(t, SOURCE, 'regions.lua', undefined, [['cartlib/world/prefab.lua','return {define=function() end}']]);
 	const context = new SceneAuthoringContext(model, documents);
 	const hierarchy = new SceneHierarchyViewState(context);
-	t.after(() => { hierarchy.dispose(); context.dispose(); });
+	afterTest(t, () => { hierarchy.dispose(); context.dispose(); });
 	hierarchy.refresh();
 	assert.equal(hierarchy.outline.rows.length, 3);
 	assert.equal(context.selection, undefined);
@@ -46,7 +47,7 @@ test('Scene snapshot restores exact semantic member independently of a collapsed
 	view.hierarchy.position = 0; view.details.position = 31; view.preferredPart = 'details';
 	const snapshot = captureSceneEditorView(view);
 	const restoredContext = new SceneAuthoringContext(model, documents, subject), restored = new SceneViewState(restoredContext, sources.catalog);
-	t.after(() => { restored.dispose(); restoredContext.dispose(); context.dispose(); });
+	afterTest(t, () => { restored.dispose(); restoredContext.dispose(); context.dispose(); });
 	restoreSceneEditorView(restored, snapshot);
 	restored.refresh();
 	const selected = restoredContext.selection;
@@ -68,7 +69,7 @@ test('Scene snapshot restores exact semantic member independently of a collapsed
 test('same-source Scene selection projects a new highlight without rebuilding hierarchy occurrences', t => {
 	const { model, documents } = createSceneSourceFixture(t, SOURCE, 'regions.lua', undefined, [['cartlib/world/prefab.lua','return {define=function() end}']]);
 	const context = new SceneAuthoringContext(model, documents), hierarchy = new SceneHierarchyViewState(context);
-	t.after(() => { hierarchy.dispose(); context.dispose(); });
+	afterTest(t, () => { hierarchy.dispose(); context.dispose(); });
 	hierarchy.refresh();
 	const roots = hierarchy.outline.roots.slice(), rows = hierarchy.outline.rows.slice();
 	const document = context.document!, scene = document.scenes[0];

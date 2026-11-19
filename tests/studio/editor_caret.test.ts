@@ -13,6 +13,7 @@ import { EditorFont } from '../../ide/editor/ui/view/font';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { invertThemeToken, resolveThemeTokenColor } from '../../ide/theme/tokens';
+import { afterTest } from '../helpers/test_cleanup';
 
 function renderActiveCursor(code: CodeEditorControl, baseColor: number): HostOverlayFrame {
 	const { queue, renderer } = createHostOverlayFixture(64, 32);
@@ -34,7 +35,7 @@ function renderActiveCursor(code: CodeEditorControl, baseColor: number): HostOve
 
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) test(`${variant}/${theme} active code caret glyph contrasts with its actual block fill, independent of source syntax`, (t) => {
 	const originalTheme = constants.getActiveIdeThemeVariant();
-	t.after(() => {
+	afterTest(t, () => {
 		constants.setIdeThemeVariant(originalTheme);
 	});
 

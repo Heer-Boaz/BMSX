@@ -21,6 +21,7 @@ import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { HostBitmapRenderSubmission } from '../../machine/ts/render/host_overlay/bitmap';
+import { afterTest } from '../helpers/test_cleanup';
 
 const BOUNDS = { left: 10, top: 20, right: 410, bottom: 260 };
 const PREFABS = `local prefab=require('cartlib/world/prefab')
@@ -66,7 +67,7 @@ scenes.register('main',{objects={{member_id='old',definition_id='shape',position
 		assert.equal(control.beginAddMember(request, choice, () => {}), true);
 		return { request, choice };
 	};
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	afterTest(t, () => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, source, context, view, scope, control, prefab, arm };
 }
 

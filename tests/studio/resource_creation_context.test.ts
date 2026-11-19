@@ -21,6 +21,7 @@ import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, path: string, canonicalPath: string, generated = false) {
 	const clock = new VirtualHeadlessClock();
@@ -33,7 +34,7 @@ function fixture(t: TestContext, path: string, canonicalPath: string, generated 
 	group.model.initialize(resolveLuaCodeEditorInput(sources.catalog, resource));
 	const picker = part.quickInput;
 	const editor = { editorParts: parts } as CartEditor;
-	t.after(() => {
+	afterTest(t, () => {
 		editorTextModelService.clear(); inputFocus.setTarget(null);
 	});
 	return { clock, sources, editor, picker, resource, group, part };
@@ -62,7 +63,7 @@ function commandFixture(t: TestContext) {
 	receiver.openEditor(resolveLuaCodeEditorInput(sources.catalog,
 		sources.catalog.luaResources.find(resource => resource.path === 'receiver/target.lua')!));
 	editor.update(0);
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); await editor.shutdown();
 		host.audio.dispose(); host.input.dispose(); editorTextModelService.clear();
 	});
@@ -138,7 +139,7 @@ for (const stage of ['project chooser', 'filename'] as const) {
 			? fixture(t, 'cartlib/shared.lua', 'cartlib/shared.lua')
 			: fixture(t, 'local.lua', 'carts/nemesis_s/local.lua');
 		const chrome = inputFocus.createTarget(), unbindKeyboard = chrome.bindKeyboard(() => {});
-		t.after(unbindKeyboard);
+		afterTest(t, unbindKeyboard);
 		chrome.focus();
 		openCreateResourcePrompt(f.editor, f.group, f.sources.catalog, f.clock, f.resource);
 		assert.ok(f.picker.invocationOrigin === chrome, 'an explicit foreground command retains its real invoker');
@@ -165,7 +166,7 @@ test('New File cannot advance after focus return retires its invoking part conte
 	assert.ok(f.picker.model.list.selectionIndex >= 0);
 	let returned = 0;
 	const unbindFocus = origin.onDidFocus(() => { unbindFocus(); returned++; f.part.scope.retireContext(); });
-	t.after(unbindFocus);
+	afterTest(t, unbindFocus);
 	f.picker.accept();
 	assert.equal(returned, 1);
 	assert.equal(input.mock.callCount(), 0, 'the retired project choice cannot create a filename session');

@@ -24,6 +24,7 @@ import { invertThemeToken, resolveThemeTokenColor } from '../../ide/theme/tokens
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { renderCodeArea } from '../../ide/editor/render/code_area/area';
 import { create_rect_bounds } from '../../machine/ts/common/rect';
+import { afterTest } from '../helpers/test_cleanup';
 
 const rowViewport: CodeAreaViewport = {
 	codeTop: 4, codeBottom: 20, codeLeft: 0, codeRight: 128,
@@ -44,7 +45,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 			const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font,
 				{ left: rowViewport.codeLeft, top: rowViewport.codeTop, right: rowViewport.codeRight, bottom: rowViewport.codeBottom });
 			code.view.wordWrapEnabled = false;
-			t.after(() => {
+			afterTest(t, () => {
 
 				editorRuntimeState.uppercaseDisplay = previousUppercase; colors.setIdeThemeVariant(previousTheme);
 			});
@@ -115,7 +116,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'marks.lua', location: { kind: 'workspace' as const, path: 'marks.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'marks.lua', source: { type: 'lua', resid: 'marks' } }, 'lua', source);
 		const view = createCodeEditorViewState(); view.cursorColumn = 5; const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font);
 		code.setInlineEdit(0, 5, 10, 'n');
-		t.after(() => { colors.setIdeThemeVariant(previousTheme);
+		afterTest(t, () => { colors.setIdeThemeVariant(previousTheme);
 		});
 		const line = code.layout.getViewLine(0), left = 8, top = 4, bottom = top + code.lineHeight;
 		assert.equal(line.viewText, 'return + 2');
@@ -180,7 +181,7 @@ test('an empty replacement of a source tab measures the surviving visible glyph 
 	const code = createTestCodeControl(t, model, documents, clock, undefined, editorViewState.font);
 	code.setInlineEdit(0, 0, 1, '');
 	code.view.wordWrapEnabled = false;
-	t.after(() => {
+	afterTest(t, () => {
 
 		editorRuntimeState.uppercaseDisplay = previousUppercase;
 	});
@@ -208,7 +209,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const view = createCodeEditorViewState(); view.cursorColumn = 6; const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font, { left: 0, top: 10, right: 128, bottom: 78 });
 		code.view.wordWrapEnabled = false;
 		code.setInlineEdit(0, 6, 11, 'n');
-		t.after(() => {
+		afterTest(t, () => {
 
 			colors.setIdeThemeVariant(previousTheme); editorRuntimeState.uppercaseDisplay = previousUppercase;
 		});

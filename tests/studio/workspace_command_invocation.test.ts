@@ -11,6 +11,7 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext, main = false, text = '123') {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
@@ -70,7 +71,7 @@ for (const valid of [true, false]) test(`explicit background Save leaves an unre
 test('Save cannot reacquire an implicit subject after acceptance activates another tab and returns', async t => {
 	const f = await fixture(t), subject = f.firstGroup.model.activeTab!;
 	let armed = true;
-	t.after(f.model.onDidChangeContent(() => {
+	afterTest(t, f.model.onDidChangeContent(() => {
 		if (!armed) return;
 		armed = false; f.firstGroup.activate(f.firstInput.id); f.firstGroup.activate(subject.id);
 	}));
@@ -85,7 +86,7 @@ test('Save cannot reacquire an implicit subject after acceptance activates anoth
 test('Save rechecks service admission after accepting its concrete field', async t => {
 	const f = await fixture(t); let accepting = true;
 	t.mock.getter(f.ide.textFileSaves, 'acceptingSaves', () => accepting);
-	t.after(f.model.onDidChangeContent(() => { accepting = false; }));
+	afterTest(t, f.model.onDidChangeContent(() => { accepting = false; }));
 	f.editor.commands.execute('save', f.target);
 	assert.equal(f.control.pending, false); assert.equal(f.model.dirty, true);
 	assert.equal(f.ide.textFileSaves.latestOperation(f.model), undefined);
@@ -127,7 +128,7 @@ for (const command of ['reboot', 'hot-resume'] as const)
 	test(`Main ${command} does not borrow an unrelated document attachment during acceptance`, async t => {
 		const f = await fixture(t, true);
 		t.mock.getter(f.host.execution, 'launchPending', () => false);
-		t.after(f.model.onDidChangeContent(() => f.firstGroup.openEditor(f.firstInput.createView(), { preserveFocus: true })));
+		afterTest(t, f.model.onDidChangeContent(() => f.firstGroup.openEditor(f.firstInput.createView(), { preserveFocus: true })));
 		f.editor.commands.execute(command, f.target);
 		assert.equal(f.control.pending, false); assert.equal(f.editor.actionPrompt.visible, true);
 		f.editor.actionPrompt.close('cancel');

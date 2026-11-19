@@ -3,6 +3,7 @@ import test, { before } from 'node:test';
 import { build } from 'esbuild';
 import { glsl } from 'esbuild-plugin-glsl';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 let bundle: string;
 before(async () => {
@@ -18,7 +19,7 @@ for (const kind of ['webgl2', 'webgpu'] as const) test(`${kind} retained host me
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
 		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage();
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));

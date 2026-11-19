@@ -7,6 +7,7 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { SCENE_AUTHORING_IMPORTS, SCENE_AUTHORING_SOURCE } from '../fixtures/studio/scene_authoring';
 import { createSceneDocumentFixture } from '../helpers/scene_document_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('reattaching the actual Details companion preserves the document selection', async t => {
 	const f = await createSceneDocumentFixture(t, SCENE_AUTHORING_SOURCE, SCENE_AUTHORING_IMPORTS);
@@ -22,7 +23,7 @@ test('reattaching the actual Details companion preserves the document selection'
 test('independent Scene contexts share source but not semantic selection or control drafts', async t => {
 	const f = await createSceneDocumentFixture(t, SCENE_AUTHORING_SOURCE, SCENE_AUTHORING_IMPORTS);
 	const other = new SceneAuthoringContext(f.model, f.ide.sceneSources), otherView = new SceneViewState(other, f.sources.catalog);
-	t.after(() => { otherView.dispose(); other.dispose(); });
+	afterTest(t, () => { otherView.dispose(); other.dispose(); });
 	otherView.refresh(); selectSceneOutlineRow(otherView.hierarchy, 3);
 	selectSceneOutlineRow(f.view.hierarchy, 1); f.update();
 	const field = f.primary.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '31', true);

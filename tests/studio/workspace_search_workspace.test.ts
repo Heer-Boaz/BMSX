@@ -19,6 +19,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 const MATCHES = Array.from({ length: 32 }, (_, index) => `local value_${index} = 'needle'`).join('\n');
 const SCENES = `local scenes = require('cartlib/world/scene_library')\n${Array.from({ length: 16 }, (_, index) =>
@@ -30,7 +31,7 @@ async function fixture(t: TestContext, bound = true, additionalSources: readonly
 	const previousContext = workspaceState.context;
 	const context = f.sources.catalog.getContext(f.sources.systemContextId).admission;
 	workspaceState.context = bound ? context : null;
-	t.after(async () => { workspaceState.context = previousContext; clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
+	afterTest(t, async () => { workspaceState.context = previousContext; clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
 	const resource = (path: string) => f.sources.catalog.resolveResource({ contextId: context.id, path })!;
 	const scene = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource('scene.lua'));
 	const document = f.ide.sceneSources.get(scene);
@@ -168,7 +169,7 @@ for (const phase of ['pending read', 'model admission'] as const) test(`a newer 
 	assert.equal(editorTextModelService.get(yaml), undefined);
 	const read = Promise.withResolvers<{ contents: string; updatedAt: number } | null>();
 	if (phase === 'pending read') t.mock.method(f.files, 'read', () => read.promise);
-	else t.after(editorTextModelService.onDidAddModel(model => { if (model.identity.path === yaml.path) selectMatch(input, 'query.yaml', 1); }));
+	else afterTest(t, editorTextModelService.onDidAddModel(model => { if (model.identity.path === yaml.path) selectMatch(input, 'query.yaml', 1); }));
 	const opening = t.mock.method(f.editor.navigation, 'openSource'); f.editor.commands.execute('editor.sourceToSide', pane.commandTarget);
 	assert.equal(opening.mock.callCount(), 1);
 	if (phase === 'pending read') { selectMatch(input, 'query.yaml', 1); read.resolve(null); }
@@ -218,7 +219,7 @@ test('query reading changes and same-run file publication preserve an earlier ca
 	while (!reading) { f.update(); await setImmediate(); }
 	selectMatch(input, 'matches.lua', 3);
 	const files = input.search.files, row = input.tree.rows[input.tree.selectionIndex], scroll = input.tree.scroll, captured = pane.getSelection();
-	t.after(() => captured.dispose());
+	afterTest(t, () => captured.dispose());
 	selectMatch(input, 'matches.lua', 24); input.tree.scroll = 0;
 	assert.equal(captured.isDisposed, false);
 	read.resolve(null); await f.drain(input);
@@ -238,8 +239,8 @@ for (const publication of ['opening', 'model', 'attachment'] as const) test(`que
 	let replaced = false;
 	const replace = () => { if (!replaced) { replaced = true; input.setQuery('newer draft'); } };
 	if (publication === 'opening') {
-		const unbind = f.firstGroup.panes.onDidBeginOpen(() => { unbind(); replace(); }); t.after(unbind);
-	} else if (publication === 'model') t.after(f.firstGroup.model.onDidChange(() => { if (f.firstGroup.model.activeTab === input) replace(); }));
+		const unbind = f.firstGroup.panes.onDidBeginOpen(() => { unbind(); replace(); }); afterTest(t, unbind);
+	} else if (publication === 'model') afterTest(t, f.firstGroup.model.onDidChange(() => { if (f.firstGroup.model.activeTab === input) replace(); }));
 	else {
 		const update = pane.update.bind(pane);
 		t.mock.method(pane, 'update', () => { replace(); update(); });
@@ -298,7 +299,7 @@ for (const publication of ['draft', 'search'] as const) test(`closing the actual
 	const f = await fixture(t), { input, pane } = f.open();
 	let closing: Promise<boolean> | undefined, disposed = 0;
 	input.onWillDispose(() => { disposed++; });
-	t.after(input.onDidChange(() => {
+	afterTest(t, input.onDidChange(() => {
 		if (closing === undefined && (publication === 'draft' ? input.pending : input.search.status === 'running')) closing = f.firstGroup.close(input.id);
 	}));
 	if (publication === 'search') f.submit(pane, 'needle');

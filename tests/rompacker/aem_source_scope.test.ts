@@ -32,12 +32,13 @@ import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace
 import { createTextResource, saveLuaResourceSource } from '../../ide/workspace/workspace';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { resolveWorkspacePath } from '../../ide/workspace/path';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('new AEM sources save without applying absent guest modules or unbuilt assets', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-aem-source-admission-'));
 	const files = new MemoryWorkspaceFiles();
 	await openWorkspaceRecords(files);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
 	const media = await buildScenarioMediaFixture(directory, [], {
 		systemSource: 'module<entry>\ncop0.exec = mem[0x10000028]', systemModules: [],
 		cartSource: "module<entry>\nlocal aem<const> = require('cartlib/aem')\nwhile true do halt_until_irq end",
@@ -53,7 +54,7 @@ test('new AEM sources save without applying absent guest modules or unbuilt asse
 	const audio = new HostAudioOutput(new HostAudioDevice(new DiscardingAudioSink()), runtime.machine.audioController, runtime.timing.ufpsScaled);
 	const tasks = new RuntimeTaskQueue(audio, target.presenter);
 	const saves = new TextFileSaveService(models, clock, sources.catalog);
-	t.after(async () => { await saves.shutdown(); models.clear(); audio.dispose(); target.dispose(); });
+	afterTest(t, async () => { await saves.shutdown(); models.clear(); audio.dispose(); target.dispose(); });
 	assert.equal(sources.systemInstalledBlua32Sources.has('cartlib/aem'), false);
 	assert.equal(sources.cartridgeSlots[0]!.installedBlua32Sources.has('cartlib/aem'), true);
 
@@ -88,7 +89,7 @@ test('new AEM sources save without applying absent guest modules or unbuilt asse
 for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks installed code, never pending workspace Lua`, async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-aem-source-scope-'));
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
 	const aemSource = 'events: {}\n';
 	const asset = { resid: 'events', type: 'aem' as const, buffer: encodeBinary({}), source_path: 'events.aem.yaml', sourcemeta: { text: aemSource } };
 	const mapSource = '# authored map\r\nx: 3\r\n', mapBytes = encodeBinary({ x: 3 });
@@ -103,7 +104,7 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, media.cartRom]);
 	const sources = createLoadedTestRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const maps = ([-1, 0, 1] as const).map(domain => {
 		const contextId = domain === -1 ? TEST_SYSTEM_CONTEXT_ID : TEST_CARTRIDGE_CONTEXT_IDS[domain];
 		const resource = sources.catalog.resources.find(resource => resource.contextId === contextId && resource.path === 'map.yaml')!;
@@ -117,7 +118,7 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 	const target = new OffscreenMachine(media.systemRom, [media.cartRom, media.cartRom], PSX_MACHINE_SPEC,
 		new Input(clock, new HeadlessInputHub(), -1));
 	const runtime = target.runtime;
-	t.after(() => target.dispose());
+	afterTest(t, () => target.dispose());
 	for (let frame = 0; frame < 100 && !runtime.machine.cpu.isCartridgeExecutionActive(); frame++) target.advanceGame(10000);
 	assert.equal(runtime.machine.cpu.isCartridgeExecutionActive(), true);
 	const guest = new SuspendedGuestSession(runtime);

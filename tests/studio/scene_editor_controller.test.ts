@@ -28,13 +28,14 @@ import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
+import { afterTest } from '../helpers/test_cleanup';
 
 beforeEach(() => configureFontVariant('tiny'));
 
 test('Scene status follows installed source independently of Save in both presentations', async t => {
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
 	const f = await createSceneDocumentFixture(t, SCENE_VIEWPORT_SOURCE, SCENE_VIEWPORT_IMPORTS);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const pane = f.group.panes.getPane('scene_editor'); assert.ok(pane instanceof SceneEditorPane);
 	const media = f.sources.currentBlua32Media, system = media.system!;
 	f.sources.currentBlua32Media = { ...media, system: { ...system, sources: new Map([...system.sources,
@@ -65,7 +66,7 @@ test('a shared Scene controller keeps group openings and explicit mutation subje
 	const first = createTestEditorGroup(), second = createTestEditorGroup();
 	const controller = new SceneEditorController(sources.catalog, new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
-	t.after(() => {
+	afterTest(t, () => {
 		first.dispose(); second.dispose(); inputFocus.setTarget(null);
 		editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
 	});
@@ -136,7 +137,7 @@ scenes.register('incomplete', {})
 	const document = actual.ide.sceneSources.get(model);
 	const ranges = document.scenes.map(scene => luaSourceRangeToTextRange(model.buffer, scene.range));
 	const untrack = model.trackRanges(new Map(ranges.map((range, index) => [index, range])));
-	t.after(untrack);
+	afterTest(t, untrack);
 	group.focus(); actual.update();
 	return { ...actual, controller, group, parts, resource, unopened, model, ranges, source,
 		get primary() { const primary = editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient); return primary; } };
@@ -170,7 +171,7 @@ test('reopening the same Scene retains its reading while another occurrence is a
 	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[0]), true);
 	const input = f.group.model.activeTab; assert.ok(input instanceof SceneEditorInput);
 	selectSceneOutlineRow(input.view.hierarchy, 1); f.update();
-	const history = new SceneEditorNavigationSelection(input.view); t.after(() => history.dispose());
+	const history = new SceneEditorNavigationSelection(input.view); afterTest(t, () => history.dispose());
 	const subject = { ...input.view.authoring.selectionRange };
 	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[0]), true);
 	assert.equal(f.group.model.activeTab, input); assert.deepEqual(input.view.authoring.selectionRange, subject);
@@ -273,7 +274,7 @@ test('domain admission cannot hide a revoked provider generation from its retain
 	const source = SCENE_VIEWPORT_SOURCE.replace("require('cartlib/world/scene_library')", "require('bridge')");
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [...SCENE_VIEWPORT_IMPORTS, ['bridge.lua', "return require('cartlib/world/scene_library')"]]);
 	const input = new SceneEditorInput(f.model, f.documents, f.sources.catalog);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1);
 	const displayed = input.view.hierarchy.outlineDocument, row = input.view.hierarchy.outline.rows[1];
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog,
@@ -293,7 +294,7 @@ test('domain admission cannot hide a revoked provider generation from its retain
 
 test('same-byte replacement retires a row receipt even when its source projection is reused', t => {
 	const f = createSceneSourceFixture(t, SCENE_VIEWPORT_SOURCE, 'scene.lua', undefined, SCENE_VIEWPORT_IMPORTS), input = new SceneEditorInput(f.model, f.documents, f.sources.catalog);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1);
 	const displayed = input.view.hierarchy.outlineDocument, row = input.view.hierarchy.outline.rows[1], version = input.view.hierarchy.outlineSourceVersion;
 	const { start, end } = input.view.authoring.selectionRange;
@@ -320,7 +321,7 @@ test('Scene removal projects rather than clears a newer source selection from it
 		const document = f.controller.documents.get(f.model);
 		input.view.authoring.select(document, f.model.version, { kind: 'scene', scene: document.scenes[0] });
 	});
-	t.after(release);
+	afterTest(t, release);
 	input.view.authoring.removeSelectedMember(); input.view.refresh();
 	const selected = input.view.hierarchy.outline.rows[input.view.hierarchy.outline.selectionIndex].element;
 	assert.equal(selected.kind, 'scene');

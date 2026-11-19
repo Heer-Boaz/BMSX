@@ -7,6 +7,7 @@ import { AnimationEditorPane } from '../../ide/workbench/contrib/animation/edito
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local first_frame = 'first'
 local second_frame = 'second'
@@ -67,7 +68,7 @@ test(`Animation ${kind} ${placement} Source through ${application ? 'application
 for (const kind of ['written', 'producer'] as const) for (const placement of ['default', 'side'] as const)
 test(`Animation ${kind} ${placement} Source retains the accepted whole-field occurrence instead of freezing its earlier syntax`, async t => {
 	const f = fixture(t), detail = f.input.detailSelection, field = f.draft('replacement_frame');
-	let changes = 0; t.after(f.model.onDidChangeContent(() => changes++));
+	let changes = 0; afterTest(t, f.model.onDidChangeContent(() => changes++));
 	assert.ok(await f.invoke(kind, placement, true) !== undefined);
 	const code = f.editor.editorParts.activeGroup.model.activeTab;
 	assert.ok(code instanceof CodeEditorInput && code.workingCopy === f.model);
@@ -86,7 +87,7 @@ test(`Animation ${kind} ${placement} Source cancels when accepting its actual dr
 	t.mock.method(f.editor.animations, method, input => { queries++; return read(input); });
 	const unbind = f.model.onDidChangeContent(() => {
 		unbind(); f.editor.animations.refresh(f.input); f.editor.animations.selectProperty(f.input, 1);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.equal(await f.invoke(kind, placement, true), undefined);
 	assert.equal(queries, 0); assert.equal(field.edit!.pending, false);
 	assert.equal(f.firstPart.groups.length, 1); assert.equal(f.firstGroup.model.activeTab, f.input);

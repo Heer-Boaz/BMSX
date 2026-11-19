@@ -12,6 +12,7 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from '../helpers/cpu_test_harness';
 import type { RgbaImage } from '../../machine/ts/render/image';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('completed pixels and their physical position are retained together, not borrowed from the producer', () => {
 	const output = new FrameBitmap(), pixels = new Uint8Array([10, 20, 30, 255, 40, 50, 60, 255]);
@@ -84,7 +85,7 @@ test('the software overlay reads the accepted bitmap revision, not unaccepted pr
 test('offscreen output publishes only actual completed presentations, never held repaints or late subscriptions', t => {
 	const system = linkTestSystemBlua32(compileLuaSource('return nil', 'frame_bitmap', 0));
 	const target = new OffscreenMachine(system.romBytes, [null, null], PSX_MACHINE_SPEC, new TestInput());
-	t.after(() => target.dispose());
+	afterTest(t, () => target.dispose());
 	const scanout = target.runtime.machine.gxGpu.readDeviceOutput().pcrtcScanout;
 	scanout.backgroundColor = 0x00332211;
 	target.presentation.requestRestoredPresentation(); target.present();
@@ -114,7 +115,7 @@ test('offscreen output publishes only actual completed presentations, never held
 test('restored image publication survives weaker requests until its pixels are committed', t => {
 	const system = linkTestSystemBlua32(compileLuaSource('return nil', 'presentation_intent', 0));
 	const target = new OffscreenMachine(system.romBytes, [null, null], PSX_MACHINE_SPEC, new TestInput());
-	t.after(() => target.dispose());
+	afterTest(t, () => target.dispose());
 	const { runtime, presentation } = target, output = target.frameOutput;
 	const state = captureRuntimeSaveState(runtime), pcrtc = state.machineState.machine.gxGpu.pcrtc;
 	pcrtc.registerWords[GX_GPU_PCRTC_PMODE_LOW] = 0;

@@ -10,6 +10,7 @@ import { WorkspaceDirectoryModel } from '../../ide/workspace/directory_model';
 import { WorkspaceRecords } from '../../ide/workspace/records';
 import { createTestRuntimeSourceState, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('a physical-only project root replacement consumes preloaded alias inventory without retaining the old parent, selection or recovery address', async t => {
 	const provider = new MemoryWorkspaceFiles('workspace');
@@ -25,7 +26,7 @@ test('a physical-only project root replacement consumes preloaded alias inventor
 	const models = new EditorTextModelService(), content = new ProjectContentIndex(models, sources.catalog,
 		new BehaviorRegistrationIndex(models, sources.catalog), new SceneSourceDocuments(models, sources.catalog));
 	const files = new ResourceFilesModel(directories);
-	t.after(async () => { content.dispose(); models.clear(); directories.dispose(); sources.catalog.dispose(); await records.close(); });
+	afterTest(t, async () => { content.dispose(); models.clear(); directories.dispose(); sources.catalog.dispose(); await records.close(); });
 	const previous = directories.rootForContext(contextId)!, alias = directories.rootForContext('preloaded-directory-alias')!;
 	await directories.resolve(previous, ''); await directories.resolve(alias, '');
 	content.sync(); files.sync(sources.catalog, 'all', content.entriesByResource, content.revision);

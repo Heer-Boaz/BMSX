@@ -24,6 +24,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { StaticDeclarationKind } from '../../toolchain/ts/lua/compiler/declaration_kind';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(source: string, optLevel: 0 | 3, breakpoint?: number, faulting = false) {
 	const compiled = faulting
@@ -69,7 +70,7 @@ return run(7)`;
 	const before = [cpu.luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()];
 	const registers = Array.from({ length: cpu.getFrameDepth() }, (_, index) => t.mock.method(cpu.activeThread.frameAtDepth(index).registers, 'get'));
 	const globals = t.mock.method(f.guest, 'global');
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const frame = inspection.readStack(0, 100).frames.find(frame => frame.functionName === 'inspect')!;
 	assert.equal(frame.inlineDepth, level === 3 ? 1 : 0);
 	const statics = inspection.frameScopes(frame.reference).scopes.find(scope => scope.kind === 'statics')!;
@@ -90,7 +91,7 @@ return run(7)`;
 	}
 	const lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
-	t.after(() => tools.dispose());
+	afterTest(t, () => tools.dispose());
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
 	assert.ok('inspection' in opened.data);
 	const stack = await tools.execute('studio_read_runtime_stack', { inspection: opened.data.inspection, start: 0, count: 100 });
@@ -125,7 +126,7 @@ return descend(2)`, level);
 	const cpu = f.runtime.machine.cpu;
 	const before = [cpu.getFrameDepth(), cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	const reads = Array.from({ length: cpu.getFrameDepth() }, (_, index) => t.mock.method(cpu.activeThread.frameAtDepth(index).registers, 'get'));
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const first = inspection.readStack(0, 1), rest = inspection.readStack(1, 100);
 	assert.equal(first.origin, 'current-cpu'); assert.equal(first.source, 'installed');
 	const frames = [...first.frames, ...rest.frames];
@@ -160,7 +161,7 @@ do
 	result = value
 end
 return value, folded`, level);
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const frame = inspection.readStack(0, 1).frames[0];
 	const scope = inspection.frameScopes(frame.reference).scopes[0];
 	const reads = t.mock.method(f.runtime.machine.cpu.activeThread.frameAtDepth(frame.physicalFrameIndex).registers, 'get');
@@ -186,7 +187,7 @@ local run<const> = function(seed, ...)
 	return result + seed
 end
 return run(41)`, 3, 2);
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	assert.equal(inspection.state.stop!.reason, 'breakpoint');
 	const frames = inspection.readStack(0, 100).frames;
 	const callee = frames.find(frame => frame.functionName === 'inspect')!;
@@ -209,7 +210,7 @@ return run(41)`, 3, 2);
 
 test('nil and false locals are real values, not missing bindings', t => {
 	const f = fixture('local run = function(a, b)\n halt_until_irq\n return a, b\nend\nreturn run(nil, false)', 0);
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const frame = inspection.readStack(0, 1).frames[0];
 	const values = inspection.read(inspection.frameScopes(frame.reference).scopes[0].reference!, 0, 100).entries;
 	assert.deepEqual(values.find(entry => entry.key.display === 'a')!.value, { kind: 'nil', display: 'nil' });
@@ -233,7 +234,7 @@ return run(false)`, level);
 	f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.records[0].src = f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.records[0].src.replaceAll('<const>', '');
 	const cpu = f.runtime.machine.cpu;
 	const before = [cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const frame = inspection.readStack(0, 100).frames.find(frame => frame.functionName === 'run')!;
 	const scopes = inspection.frameScopes(frame.reference).scopes;
 	const reads = t.mock.method(cpu.activeThread.frameAtDepth(frame.physicalFrameIndex).registers, 'get');
@@ -264,7 +265,7 @@ local run<const> = function(seed, ...)
 	return result + seed
 end
 return run(41)`, 3, 3);
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const frame = inspection.readStack(0, 100).frames.find(frame => frame.functionName === 'inspect')!;
 	assert.equal(frame.inlineDepth, 1);
 	const scope = inspection.frameScopes(frame.reference).scopes[0];
@@ -285,7 +286,7 @@ local run = function(seed, ...)
 	return x
 end
 return run(42)`, level);
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const frame = inspection.readStack(0, 100).frames.find(frame => frame.functionName === 'run')!;
 	const scope = inspection.frameScopes(frame.reference).scopes[0];
 	const value = inspection.read(scope.reference!, 0, 100).entries.find(entry => entry.key.display === 'x')!.value;
@@ -299,7 +300,7 @@ test('installed symbols own stack/scopes despite source edits; fault diagnostics
 	recordSupervisorFault(f.fault, f.sources, f.runtime, f.guest);
 	const captured = f.fault.lastCpuFaultSnapshot;
 	f.runtime.machine.cpu.reset();
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	assert.equal(inspection.state.fault!.message, 'retained diagnostic');
 	const frame = inspection.readStack(0, 1).frames[0];
 	assert.notEqual(frame.pc, captured[captured.length - 1].tracePc, 'stack is the current CPU, not the retained diagnostic');
@@ -319,7 +320,7 @@ test('missing symbols are explicit and execution invalidates frame, scope and va
 	assert.throws(() => inspection.read(table, 0, 1), /expired/);
 	const image = f.sources.currentBlua32Media.system!;
 	f.sources.currentBlua32Media = { system: { ...image, symbols: null }, cartridgeSlots: [null, null] };
-	inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	assert.throws(() => inspection.frameScopes(frame.reference), /does not belong/);
 	const unlabelled = inspection.readStack(0, 1).frames[0];
 	assert.equal(unlabelled.kind, 'instruction');
@@ -332,7 +333,7 @@ test('missing symbols are explicit and execution invalidates frame, scope and va
 test('tool stack/frame handles are prompt-local and external paging arguments are decoded only at the tool boundary', async t => {
 	const f = fixture('local x = 42\nhalt_until_irq\nreturn x', 0);
 	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
-	t.after(() => tools.dispose());
+	afterTest(t, () => tools.dispose());
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
 	assert.ok('inspection' in opened.data);
 	const inspectionId = opened.data.inspection;
@@ -370,7 +371,7 @@ return run(40)`, level, 8);
 	const cpu = f.runtime.machine.cpu;
 	const before = [cpu.luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()];
 	const registers = Array.from({ length: cpu.getFrameDepth() }, (_, index) => t.mock.method(cpu.activeThread.frameAtDepth(index).registers, 'get'));
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const frames = inspection.readStack(0, 100).frames;
 	const inner = frames.find(frame => frame.functionName === 'inner')!;
 	const outer = frames.find(frame => frame.functionName === 'outer')!;
@@ -406,7 +407,7 @@ local outer<const> = function()
 end
 return outer()`, 3);
 	const cpu = f.runtime.machine.cpu;
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const frame = inspection.readStack(0, 100).frames.find(frame => frame.functionName === 'outer')!;
 	const physical = cpu.activeThread.frameAtDepth(frame.physicalFrameIndex);
 	const reads = t.mock.method(physical.registers, 'get');
@@ -431,7 +432,7 @@ end
 return run(1)`, 3, 4);
 	const lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
-	t.after(() => tools.dispose());
+	afterTest(t, () => tools.dispose());
 	const before = [f.runtime.machine.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
 	assert.ok('inspection' in opened.data);
@@ -459,7 +460,7 @@ return run(1)`, 3, 4);
 
 test('manual frame contexts retain only installed source identity and expire across real stop generations', t => {
 	const f = fixture('local x = 42\nreturn x', 0, 2), source = f.debuggerState.source, cpu = f.runtime.machine.cpu;
-	t.after(() => f.presenter.dispose());
+	afterTest(t, () => f.presenter.dispose());
 	const inspection = f.inspection.open();
 	const frame = inspection.readStack(0, 1).frames[0], context = f.luaEvaluation.frameContext(frame);
 	assert.deepEqual(Object.keys(context).sort(), ['frame', 'kind', 'stopId'], 'manual selection must not root an old guest heap or tooling image');
@@ -495,7 +496,7 @@ test('a debugger completion root does not invent a guest call site in its suspen
 test('captured stack source proof stays with its exact frame, outside transported descriptors', t => {
 	const source = 'local value = 7\nreturn value';
 	const f = fixture(source, 0, 2);
-	t.after(() => { f.presenter.dispose(); f.sources.catalog.dispose(); });
+	afterTest(t, () => { f.presenter.dispose(); f.sources.catalog.dispose(); });
 	const captured = buildLuaStackFrames(readRuntimeStackFrames(f.runtime.machine.cpu, f.sources));
 	const frame = captured.frames.find(frame => frame.kind === 'source')!;
 	assert.ok(frame.kind === 'source');
@@ -505,7 +506,7 @@ test('captured stack source proof stays with its exact frame, outside transporte
 	registerLuaSourceRecord(registry, { ...registry.records[0], src: 'return 99' });
 	assert.equal(captured.sources.get(frame), proof);
 	assert.equal(readBlua32CompiledSource(proof), source);
-	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	for (const descriptor of inspection.readStack(0, 10).frames) {
 		assert.equal(Object.hasOwn(descriptor, 'sources'), false, 'stack transport carries locations, not the retained proof map');
 		assert.equal(Object.hasOwn(descriptor, 'content'), false, 'source bytes have their own read authority');

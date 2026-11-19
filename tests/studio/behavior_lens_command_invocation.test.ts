@@ -7,6 +7,7 @@ import { BehaviorLensEditorPane } from '../../ide/workbench/contrib/behavior_len
 import { selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { acceptEffectPropertySelection } from '../../ide/workbench/contrib/behavior_lens/action_effect_properties';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const TREE_SOURCE = `local trees<const> = require('cartlib/behaviour_tree/library')
 trees.register('tree.one', { root = { type = 'sequence', children = {
@@ -137,7 +138,7 @@ for (const route of ['native', 'application'] as const) {
 	test(`${route} property mutation rechecks authored permission after its concrete focus admission`, t => {
 		const f = fixture(t, EFFECT_SOURCE); f.selectProperty();
 		f.second.commandTarget.focus();
-		t.after(f.pane.commandTarget.onDidFocus(() => f.model.refreshResource({ ...f.model.resource,
+		afterTest(t, f.pane.commandTarget.onDidFocus(() => f.model.refreshResource({ ...f.model.resource,
 			source: { ...f.model.resource.source, generated: true } })));
 		invoke(f, route, 'behaviorLens.removeProperty');
 		assert.equal(f.model.readOnly, true);

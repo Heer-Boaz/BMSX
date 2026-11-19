@@ -17,6 +17,7 @@ import { BehaviorRuntimeProperties, runtimePropertyIdentitiesEqual, type Runtime
 import { parseLuaChunk, runCompletionClosure } from '../helpers/cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const WORLD = `setmetatable = __bmsx_setmetatable
 local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
@@ -119,7 +120,7 @@ function capturePropertyDocument(items: readonly RuntimeInspectionProperty[]) {
 }
 
 test('actor inspection shares one retained property sink across every runtime node kind', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const kinds = new Set<ActorNode['kind']>();
 	const visit = (nodes: readonly ActorNode[]) => {
 		for (const node of nodes) {
@@ -140,7 +141,7 @@ test('actor inspection shares one retained property sink across every runtime no
 });
 
 test('actor details reads only dirty suspensions and retains warmed property rows and formatting', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false)!;
 	const data = document.find(item => item.label === 'Data')!;
 	assert.match(data.value, /^Table #/);
@@ -171,7 +172,7 @@ test('actor details reads only dirty suspensions and retains warmed property row
 });
 
 test('locked Details owns an independent typed subject while tree navigation and playback continue', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.followSelection(-1, f.target.worldHashId, f.actorHashId, f.target.path, f.tree);
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
 	const subject = f.details.subject!, path = f.details.subjectPath;
@@ -202,7 +203,7 @@ test('locked Details owns an independent typed subject while tree navigation and
 });
 
 test('historical subject absence retains the path, but hidden live-branch admission retires discarded identities', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.followSelection(-1, f.target.worldHashId, f.actorHashId, f.target.path, f.tree);
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false); f.details.setLocked(true);
 	const live = captureCpuCheckpoint(f.cpu), path = f.details.subjectPath, subject = f.details.subject;
@@ -230,7 +231,7 @@ test('historical subject absence retains the path, but hidden live-branch admiss
 });
 
 test('locked subject and cross-actor watches share resolved trees and warmed checks do no runtime enumeration', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.followSelection(-1, f.target.worldHashId, f.actorHashId, f.target.path, f.tree);
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
 	const property = f.details.items.find(item => item.identity?.field === 'health')!;
@@ -256,7 +257,7 @@ test('locked subject and cross-actor watches share resolved trees and warmed che
 });
 
 test('explicit selection changes refresh details without execution and mutable members remain authoritative', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false)!;
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
@@ -272,7 +273,7 @@ test('explicit selection changes refresh details without execution and mutable m
 });
 
 test('details clears missing typed membership instead of borrowing an alias and reacquires history values', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === valueInteger(1))!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state);
 	const document = f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false)!, before = capturePropertyDocument(document), alive = captureCpuCheckpoint(f.cpu);
@@ -295,7 +296,7 @@ test('details clears missing typed membership instead of borrowing an alias and 
 });
 
 test('history and heap replacement invalidate warmed value presentations even when raw identities match', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	let formatted = 0;
 	const format = f.guest.formatValue.bind(f.guest);
@@ -313,7 +314,7 @@ test('history and heap replacement invalidate warmed value presentations even wh
 });
 
 test('details marks changed displayed values across completed observations and rewind, not repaint or reselection', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false)!;
 	const health = document.find(item => item.identity?.field === 'health')!, shield = document.find(item => item.identity?.field === 'shield')!;
 	assert.ok(document.every(item => item.valueChanged === false));
@@ -346,7 +347,7 @@ test('details marks changed displayed values across completed observations and r
 });
 
 test('details change comparison belongs to the full domain and world binding', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	f.execute('advance_gameplay_state');
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, 0, f.target.worldHashId, false);
@@ -357,7 +358,7 @@ test('details change comparison belongs to the full domain and world binding', t
 });
 
 test('pins own their change baseline across selection, membership edits and history observations', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.identity?.field === 'health')!);
 	const initial = captureCpuCheckpoint(f.cpu);
@@ -383,7 +384,7 @@ test('pins own their change baseline across selection, membership edits and hist
 });
 
 test('pins retain independent row identities and filter a shared projection of another selected node', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const health = f.details.items.find(item => item.identity?.field === 'health')!, energy = f.details.items.find(item => item.identity?.field === 'energy')!;
 	const healthPin = f.details.watches.add(f.target, 'actor', health), energyPin = f.details.watches.add(f.target, 'actor', energy);
@@ -417,7 +418,7 @@ test('pins retain independent row identities and filter a shared projection of a
 });
 
 test('watch readback is idle while dirty but unrefreshed, clean reads do no work, and warmed reads do not execute the guest', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.identity?.field === 'health')!);
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
@@ -440,7 +441,7 @@ test('watch readback is idle while dirty but unrefreshed, clean reads do no work
 });
 
 test('cross-actor pins keep their actor membership and reconcile one tree per watched actor, not per pin', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const healthPin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.identity?.field === 'health')!);
 	const energyPin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.identity?.field === 'energy')!);
@@ -465,7 +466,7 @@ test('cross-actor pins keep their actor membership and reconcile one tree per wa
 });
 
 test('cross-actor pinned tables reread mutable entries and format only after their contents change', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'Data')!);
 	f.update(f.otherHashId);
@@ -487,7 +488,7 @@ test('cross-actor pinned tables reread mutable entries and format only after the
 });
 
 test('pinned property identities distinguish numeric and string keys with identical display labels', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
@@ -508,7 +509,7 @@ test('pinned property identities distinguish numeric and string keys with identi
 });
 
 test('typed node pins survive history absence and recover without borrowing a same-table alias', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === valueInteger(1))!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state);
 	f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false);
@@ -528,7 +529,7 @@ test('typed node pins survive history absence and recover without borrowing a sa
 });
 
 test('live actor removal retires its watches and later invalidations do not read retired memberships', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.identity?.field === 'health')!);
 	f.execute('remove_actor');
@@ -545,7 +546,7 @@ test('live actor removal retires its watches and later invalidations do not read
 });
 
 test('live branch admission retires an absent actor before discarded-future allocation ids are reused', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.identity?.field === 'health')!);
 	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, f.beforeBirth); f.update();
@@ -561,7 +562,7 @@ test('live branch admission retires an absent actor before discarded-future allo
 });
 
 test('live branch admission also retires absent dynamic property memberships on a surviving node', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const beforeField = captureCpuCheckpoint(f.cpu);
 	f.execute('add_future_field');
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
@@ -587,7 +588,7 @@ test('live branch admission also retires absent dynamic property memberships on 
 });
 
 test('heap replacement retires pins, clears loaded source actions, and keeps each watch independently removable', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
@@ -603,7 +604,7 @@ test('heap replacement retires pins, clears loaded source actions, and keeps eac
 });
 
 test('pinned callbacks reuse current loaded source mappings and clear them when their value stops being a closure', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
@@ -621,7 +622,7 @@ test('pinned callbacks reuse current loaded source mappings and clear them when 
 });
 
 test('watch labels update independently of a stable indexed runtime property identity', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === valueInteger(1))!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state);
 	f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false);
@@ -637,7 +638,7 @@ test('watch labels update independently of a stable indexed runtime property ide
 });
 
 test('blackboard pins follow real semantic rebinds, not the previous value slot or loaded default', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.execute('bind_health_speed');
 	const node = f.tree.roots[0].children.find(node => node.kind === 'tree')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node);
@@ -670,7 +671,7 @@ test('blackboard pins follow real semantic rebinds, not the previous value slot 
 });
 
 test('duplicate blackboard occurrences stay distinct while only the owner-resolved key admits a pin', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.execute('duplicate_blackboard_slots');
 	const node = f.tree.roots[0].children.find(node => node.kind === 'tree')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node);
@@ -702,7 +703,7 @@ test('duplicate blackboard occurrences stay distinct while only the owner-resolv
 });
 
 test('surviving callback rows retain loaded source caches when an earlier component field disappears', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
@@ -717,7 +718,7 @@ test('surviving callback rows retain loaded source caches when an earlier compon
 });
 
 test('paused Details disclosures refresh without execution and hidden storage remains explicitly inspectable', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const dataTable = f.guest.readStringMember(f.tree.roots[0].value!, 'data');
 	const visits = t.mock.method(f.guest, 'visitTableEntries');
 	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false)!;
@@ -746,7 +747,7 @@ test('paused Details disclosures refresh without execution and hidden storage re
 });
 
 test('table pins observe every direct field even when compact text and history admission hide the changed field', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.execute('fill_data');
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'Data')!);
@@ -765,7 +766,7 @@ test('table pins observe every direct field even when compact text and history a
 
 
 test('table pin comparison follows restored string text even when the pool reuses an out-of-preview raw string id', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	f.execute('fill_data');
 	const beforeAllocation = captureCpuCheckpoint(f.cpu);
 	f.execute('set_data_tail_text');
@@ -786,7 +787,7 @@ test('table pin comparison follows restored string text even when the pool reuse
 });
 
 test('internal component storage visibility cannot suppress an explicitly retained typed watch', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const node = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node);
 	const key = valueString(f.cpu.stringPool.find('_owner_component_index')!), identity = f.guest.identity(key);
@@ -813,7 +814,7 @@ function add_timeline_component()
  actor._components_by_class[timelines][2] = sibling
 end
 return world`);
-	const f = fixture(source); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(source); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.prefix === 'TIMELINES')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.followSelection(-1, f.target.worldHashId, f.actorHashId, target.path, f.tree);
@@ -826,7 +827,7 @@ return world`);
 });
 
 test('pinned callback presentation and change baseline are independent of selected-row reuse', t => {
-	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);

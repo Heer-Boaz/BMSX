@@ -12,11 +12,12 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { contrastRatio } from '../helpers/contrast.mjs';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 	const previousFont = editorViewState.font, previousHeight = editorViewState.lineHeight;
 	const font = new EditorFont(variant); editorViewState.font = font; editorViewState.lineHeight = font.lineHeight;
-	t.after(() => { editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; });
+	afterTest(t, () => { editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; });
 	const host = createHostOverlayFixture(640, 240), caption = new WorkbenchCanvasCaption();
 	return { caption, font, draw(left = 0, top = 0) {
 		host.renderer.beginFrame(); api.beginFrame(host.renderer);
@@ -69,7 +70,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} caption truncat
 });
 
 test('caption plaque and normal/warning submissions keep readable opaque pairs in either UI theme', t => {
-	const originalTheme = colors.getActiveIdeThemeVariant(); t.after(() => colors.setIdeThemeVariant(originalTheme));
+	const originalTheme = colors.getActiveIdeThemeVariant(); afterTest(t, () => colors.setIdeThemeVariant(originalTheme));
 	const f = fixture(t), caption = f.caption; caption.lines.push('ROW A', 'ROW B'); caption.warningLine = 1; caption.layout(400);
 	for (const theme of ['light', 'dark']) {
 		colors.setIdeThemeVariant(theme); const output = f.draw(), background = output.fills[0].color;

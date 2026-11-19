@@ -3,6 +3,7 @@ import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { mapLuaSourceReference, type LuaSourceReference } from '../../ide/language/lua/source_reference';
 import { LuaTokenType } from '../../toolchain/ts/lua/syntax/token';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const [label, source, spelling, token, offset, inserted, retained] of [
 	['identifier suffix', 'return spec.first', 'first', LuaTokenType.Identifier, 17, '_new', false],
@@ -18,10 +19,10 @@ for (const [label, source, spelling, token, offset, inserted, retained] of [
 ] as const) test(`Lua authored reference ${label} follows its actual token boundary`, t => {
 	const model = new EditorTextModel({ contextLabel: 'reference fixture', sourceFilePath: 'reference.lua', location: { kind: 'workspace', path: 'reference.lua' },
 		contextId: 'reference-fixture', path: 'reference.lua', source: { type: 'lua', resid: 'reference' } }, 'lua', source);
-	t.after(() => model.dispose());
+	afterTest(t, () => model.dispose());
 	const start = source.indexOf(spelling), reference: LuaSourceReference = { resource: model.identity, start, end: start + spelling.length, token };
 	let available = true;
-	t.after(model.onDidApplyChanges(event => { available = mapLuaSourceReference(reference, model.buffer, event.changes); }));
+	afterTest(t, model.onDidApplyChanges(event => { available = mapLuaSourceReference(reference, model.buffer, event.changes); }));
 	model.pushEditOperations([{ offset, deleteLength: 0, text: inserted }]);
 	assert.equal(available, retained);
 	if (retained) assert.equal(model.buffer.getTextRange(reference.start, reference.end), spelling);

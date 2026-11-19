@@ -24,6 +24,7 @@ import { TextFileSaveService } from '../../ide/workbench/services/working_copy/t
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createTextResource, discoverWorkspaceSources } from '../../ide/workspace/workspace';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1, 'return old -- saved\n')]);
@@ -41,7 +42,7 @@ function fixture(t: TestContext) {
 	const diagnostics = new ResourceDiagnosticsService(models, sources.catalog, new VirtualHeadlessClock());
 	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources.catalog);
 	const tools = new WorkspaceSourceTools(models, sources.catalog, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources.catalog), saves, new VirtualHeadlessClock(), sources);
-	t.after(async () => { tools.dispose(); connection.abort(); await saves.shutdown(); presenter.dispose(); diagnostics.dispose(); models.clear(); workspaceCanonicalSourceCache.delete(yamlPath); });
+	afterTest(t, async () => { tools.dispose(); connection.abort(); await saves.shutdown(); presenter.dispose(); diagnostics.dispose(); models.clear(); workspaceCanonicalSourceCache.delete(yamlPath); });
 	const list = async () => {
 		const result = await tools.execute('studio_list_sources', {});
 		assert.ok(result.kind === 'sources'); return result.data;
@@ -74,7 +75,7 @@ test('tools read unsaved working copies and propose exact multi-file review with
 	f.tools.dispose();
 	const lua = f.models.retain(f.sources.catalog.luaResources[0], 'lua', 'return old -- saved\n');
 	lua.pushEditOperations([{ offset: 7, deleteLength: 3, text: 'unsaved' }]);
-	const tools = new WorkspaceSourceTools(f.models, f.sources.catalog, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources.catalog), f.saves, new VirtualHeadlessClock(), f.sources); t.after(() => tools.dispose());
+	const tools = new WorkspaceSourceTools(f.models, f.sources.catalog, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources.catalog), f.saves, new VirtualHeadlessClock(), f.sources); afterTest(t, () => tools.dispose());
 	const catalog = await tools.execute('studio_list_sources', {}); assert.ok(catalog.kind === 'sources');
 	const reads = await Promise.all(catalog.data.map(resource => tools.execute('studio_read_source', { resource: resource.resource })));
 	assert.ok(reads[0].kind === 'source'); assert.ok(reads[1].kind === 'source');
@@ -84,7 +85,7 @@ test('tools read unsaved working copies and propose exact multi-file review with
 		{ receipt: reads[1].data.receipt, edits: [{ offset: f.yamlSource.indexOf('old'), deleteLength: 3, expectedText: 'old', text: 'new' }] },
 	] });
 	assert.ok(proposed.kind === 'proposal');
-	const input = new WorkspaceEditReviewInput(proposed.proposal); t.after(() => input.dispose());
+	const input = new WorkspaceEditReviewInput(proposed.proposal); afterTest(t, () => input.dispose());
 	assert.deepEqual(proposed.data, { status: 'review-required', review: proposed.data.review, files: 2 });
 	assert.match(proposed.data.review, /\/review$/);
 	assert.notEqual(proposed.data.review, reads[0].data.receipt, 'observing a review does not grant source rights');
@@ -131,7 +132,7 @@ test('source changes retire the original prompt context even before its first re
 
 test('resource handles and read receipts from another connection/context cannot retarget matching paths and versions', async t => {
 	const f = fixture(t), first = await f.read('cart.lua'), catalog = await f.list();
-	const other = new WorkspaceSourceTools(f.models, f.sources.catalog, f.diagnostics, new AbortController().signal, new BehaviorSourceDocuments(f.models, f.sources.catalog), f.saves, new VirtualHeadlessClock(), f.sources); t.after(() => other.dispose());
+	const other = new WorkspaceSourceTools(f.models, f.sources.catalog, f.diagnostics, new AbortController().signal, new BehaviorSourceDocuments(f.models, f.sources.catalog), f.saves, new VirtualHeadlessClock(), f.sources); afterTest(t, () => other.dispose());
 	await assert.rejects(other.execute('studio_read_source', { resource: catalog[0].resource }), /does not belong/);
 	await assert.rejects(other.execute('studio_read_source', { resource: '../../etc/passwd' }), /does not belong/);
 	await assert.rejects(other.execute('studio_propose_edits', { title: 'Old rights', files: [{ receipt: first.receipt,
@@ -210,7 +211,7 @@ test('diagnostic receipts preserve exact unsaved source coordinates and reuse th
 	const prefix = "local before = '🐉'; return ";
 	lua.pushEditOperations([{ offset: 0, deleteLength: lua.buffer.length, text: `-- 🐉\r\n${prefix}missing_after_unicode\r\n` }]);
 	f.tools.dispose();
-	const tools = new WorkspaceSourceTools(f.models, f.sources.catalog, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources.catalog), f.saves, new VirtualHeadlessClock(), f.sources); t.after(() => tools.dispose());
+	const tools = new WorkspaceSourceTools(f.models, f.sources.catalog, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources.catalog), f.saves, new VirtualHeadlessClock(), f.sources); afterTest(t, () => tools.dispose());
 	const catalog = await tools.execute('studio_list_sources', {}); assert.ok(catalog.kind === 'sources');
 	const read = await tools.execute('studio_read_source', { resource: catalog.data[0].resource }); assert.ok(read.kind === 'source');
 	const result = await tools.execute('studio_read_diagnostics', { receipt: read.data.receipt }); assert.ok(result.kind === 'diagnostics');
@@ -260,7 +261,7 @@ test('diagnostics reject external malformed, unread and foreign receipts before 
 	for (const input of [{}, { receipt: 0 }, { receipt: read.receipt, path: 'cart.lua' }, { receipt: 'cart.lua' }, { receipt: read.resource }]) {
 		await assert.rejects(f.tools.execute('studio_read_diagnostics', input), StudioToolInputError);
 	}
-	const other = new WorkspaceSourceTools(f.models, f.sources.catalog, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources.catalog), f.saves, new VirtualHeadlessClock(), f.sources); t.after(() => other.dispose());
+	const other = new WorkspaceSourceTools(f.models, f.sources.catalog, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources.catalog), f.saves, new VirtualHeadlessClock(), f.sources); afterTest(t, () => other.dispose());
 	await assert.rejects(other.execute('studio_read_diagnostics', { receipt: read.receipt }), /this source context/);
 	assert.equal(compute.mock.callCount(), 0);
 });
@@ -290,7 +291,7 @@ test('a synchronous source change during diagnostics publication cannot return a
 
 test('new Scenario source stays a review until exclusive creation; discovery consumes the canonical file', async t => {
 	const files = new MemoryWorkspaceFiles();
-	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	await openWorkspaceRecords(files); afterTest(t, closeWorkspaceRecords);
 	const f = fixture(t);
 	const source = "return { kind = 'unit', tests = { works = function() assert(2 + 2 == 4) end } }";
 	const result = await f.tools.execute('studio_propose_source', { title: 'A reproducible case', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'tools_assert.lua', source });
@@ -312,10 +313,10 @@ for (const [path, source, mode] of [
 	['res/data/level.yaml', '# authored level\nwidth: 320\n', 'yaml'],
 ] as const) test(`new ${mode} source survives catalog rebuilding and workspace reopening before compilation: ${path}`, async t => {
 	const files = new MemoryWorkspaceFiles();
-	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	await openWorkspaceRecords(files); afterTest(t, closeWorkspaceRecords);
 	const f = fixture(t);
 	const canonicalPath = `carts/nemesis_s/${path}`;
-	t.after(() => workspaceCanonicalSourceCache.delete(canonicalPath));
+	afterTest(t, () => workspaceCanonicalSourceCache.delete(canonicalPath));
 	const result = await f.tools.execute('studio_propose_source', { title: 'Authored asset', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source });
 	assert.ok(result.kind === 'proposal');
 	assert.equal(await files.read(canonicalPath), null);
@@ -334,7 +335,7 @@ for (const [path, source, mode] of [
 	await discoverWorkspaceSources(reopened.catalog);
 	const resource = reopened.catalog.resources.find(resource => resource.path === path)!;
 	assert.ok(resource);
-	const models = new EditorTextModelService(); t.after(() => models.clear());
+	const models = new EditorTextModelService(); afterTest(t, () => models.clear());
 	const restored = await resolveTextFileModel(models, reopened.catalog, resource);
 	assert.equal(restored.mode, mode);
 	assert.equal(restored.buffer.getText(), source);
@@ -343,7 +344,7 @@ for (const [path, source, mode] of [
 
 test('new source review displays and creates the same canonical identity', async t => {
 	const files = new MemoryWorkspaceFiles();
-	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	await openWorkspaceRecords(files); afterTest(t, closeWorkspaceRecords);
 	const f = fixture(t);
 	const result = await f.tools.execute('studio_propose_source', { title: 'Canonical map', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		path: 'res/temporary/../data/events.aem.yaml', source: 'events: {}\n' });
@@ -352,12 +353,12 @@ test('new source review displays and creates the same canonical identity', async
 	const [model] = await result.proposal.apply();
 	assert.deepEqual(model.identity, result.proposal.files[0].identity);
 	assert.equal((await files.read('carts/nemesis_s/res/data/events.aem.yaml'))!.contents, 'events: {}\n');
-	t.after(() => workspaceCanonicalSourceCache.delete('carts/nemesis_s/res/data/events.aem.yaml'));
+	afterTest(t, () => workspaceCanonicalSourceCache.delete('carts/nemesis_s/res/data/events.aem.yaml'));
 });
 
 test('structured source creation and reopening share excluded-folder admission', async t => {
 	const files = new MemoryWorkspaceFiles();
-	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	await openWorkspaceRecords(files); afterTest(t, closeWorkspaceRecords);
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1)]);
 	for (const directory of ['.bmsx', '.git', '_ignore', 'node_modules', 'test']) {
 		for (const name of ['events.aem.yaml', 'events.aem.json', 'level.yaml']) {
@@ -376,11 +377,11 @@ test('structured source creation and reopening share excluded-folder admission',
 
 for (const name of ['events.aem.yaml', 'level.yaml']) test(`workspace reopening rejects duplicate unbuilt asset identities: ${name}`, async t => {
 	const files = new MemoryWorkspaceFiles();
-	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	await openWorkspaceRecords(files); afterTest(t, closeWorkspaceRecords);
 	const first = `carts/nemesis_s/res/a/${name}`, second = `carts/nemesis_s/res/b/${name}`;
 	await files.write(first, { contents: '{}\n', updatedAt: 1 }, false);
 	await files.write(second, { contents: '{}\n', updatedAt: 2 }, false);
-	t.after(() => { workspaceCanonicalSourceCache.delete(first); workspaceCanonicalSourceCache.delete(second); });
+	afterTest(t, () => { workspaceCanonicalSourceCache.delete(first); workspaceCanonicalSourceCache.delete(second); });
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1)]);
 	await assert.rejects(discoverWorkspaceSources(sources.catalog), /already belongs to res\/a\//);
 	assert.deepEqual(sources.catalog.resources.map(resource => resource.path), ['cart.lua'], 'no partial structured catalog is published');
@@ -388,12 +389,12 @@ for (const name of ['events.aem.yaml', 'level.yaml']) test(`workspace reopening 
 
 test('new structured sources reject logical identities already admitted under another path', async t => {
 	const files = new MemoryWorkspaceFiles();
-	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	await openWorkspaceRecords(files); afterTest(t, closeWorkspaceRecords);
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1)]);
 	const clock = new VirtualHeadlessClock();
 	const original = await createTextResource(clock, sources.catalog,
 		{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], relativePath: 'res/data/events.aem.yaml', contents: 'events: {}\n' });
-	t.after(() => workspaceCanonicalSourceCache.delete('carts/nemesis_s/res/data/events.aem.yaml'));
+	afterTest(t, () => workspaceCanonicalSourceCache.delete('carts/nemesis_s/res/data/events.aem.yaml'));
 	await assert.rejects(createTextResource(clock, sources.catalog,
 		{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], relativePath: 'res/other/events.aem.json', contents: '{ "events": {} }\n' }), /already belongs to res\/data\/events.aem.yaml/);
 	assert.equal(await files.read('carts/nemesis_s/res/other/events.aem.json'), null);
@@ -405,7 +406,7 @@ for (const [first, second] of [
 	['same name.lua', 'samename.lua'],
 ] as const) test(`concurrent source creation serializes logical identity admission: ${first}`, async t => {
 	const files = new MemoryWorkspaceFiles();
-	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	await openWorkspaceRecords(files); afterTest(t, closeWorkspaceRecords);
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1)]);
 	const clock = new VirtualHeadlessClock();
 	const creation = createTextResource(clock, sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], relativePath: first, contents: '{}\n' });
@@ -416,12 +417,12 @@ for (const [first, second] of [
 	assert.equal((await files.read(`carts/nemesis_s/${first}`))!.contents, '{}\n');
 	assert.equal(await files.read(`carts/nemesis_s/${second}`), null, 'logical collision is rejected before writing another file');
 	assert.equal(sources.catalog.resources.filter(candidate => candidate.source.resid === resource.source.resid).length, 1);
-	t.after(() => workspaceCanonicalSourceCache.delete(`carts/nemesis_s/${first}`));
+	afterTest(t, () => workspaceCanonicalSourceCache.delete(`carts/nemesis_s/${first}`));
 });
 
 for (const path of ['new.lua', 'res/data/events.aem.yaml']) for (const end of ['discard', 'disconnect', 'changed', 'collision'] as const) test(`new source review ${path}: ${end} does not overwrite source`, async t => {
 	const files = new MemoryWorkspaceFiles();
-	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	await openWorkspaceRecords(files); afterTest(t, closeWorkspaceRecords);
 	const f = fixture(t);
 	const result = await f.tools.execute('studio_propose_source', { title: 'New source', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: 'return 1' });
 	assert.ok(result.kind === 'proposal');

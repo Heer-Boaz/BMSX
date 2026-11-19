@@ -17,6 +17,7 @@ import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import type { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { afterTest } from '../helpers/test_cleanup';
 
 function sourceRecord(path: string, source: string): LuaSourceRecord {
 	return {
@@ -80,7 +81,7 @@ test('document syntax survives unrelated reads and is isolated across domains wi
 	const models = new EditorTextModelService();
 	const first = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], models);
 	const second = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[1], models);
-	t.after(() => { first.dispose(); second.dispose(); models.clear(); });
+	afterTest(t, () => { first.dispose(); second.dispose(); models.clear(); });
 	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
 	const left = models.retain(resource(TEST_CARTRIDGE_CONTEXT_IDS[0], 'same.lua'), 'lua', 'return { left = 1 }');
 	models.retain(resource(TEST_CARTRIDGE_CONTEXT_IDS[1], 'same.lua'), 'lua', 'return { right = 2 }');
@@ -198,7 +199,7 @@ test('factory source origins follow a hidden working copy through edit and Undo 
 	const provider = 'local function make()\n return 1\nend\nreturn make()';
 	const models = new EditorTextModelService();
 	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], models);
-	t.after(() => { project.dispose(); models.clear(); });
+	afterTest(t, () => { project.dispose(); models.clear(); });
 	project.synchronizeSources(sourceCatalog(sourceRegistry([['system.lua', 'return true']]),
 		sourceRegistry([['main.lua', "local function consume(value) end; consume(require('dependency'))"], ['dependency.lua', provider]])));
 	const initial = project.getSnapshot();
@@ -360,7 +361,7 @@ test('non-Lua model changes do not invalidate a Lua semantic project', () => {
 test('explicit editor parses replace same-text generations without replacing retained snapshots', t => {
 	const models = new EditorTextModelService();
 	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], models);
-	t.after(() => { project.dispose(); models.clear(); });
+	afterTest(t, () => { project.dispose(); models.clear(); });
 	const path = 'explicit.lua';
 	const source = 'local value = 1; return value';
 	project.updateDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: path }, source);
@@ -377,7 +378,7 @@ test('explicit editor parses replace same-text generations without replacing ret
 test('model deltas compose across multiple events and preserve lexical identities through Undo and Redo', t => {
 	const models = new EditorTextModelService();
 	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], models);
-	t.after(() => { project.dispose(); models.clear(); });
+	afterTest(t, () => { project.dispose(); models.clear(); });
 	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
 	const model = models.retain(resource(TEST_CARTRIDGE_CONTEXT_IDS[0], 'composed.lua'), 'lua', source);
 	const first = project.getFileData({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'composed.lua' })!;
@@ -405,7 +406,7 @@ test('model deltas compose across multiple events and preserve lexical identitie
 test('explicit same-text parses replace the model baseline and the next model analysis starts from that generation', t => {
 	const models = new EditorTextModelService();
 	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], models);
-	t.after(() => { project.dispose(); models.clear(); });
+	afterTest(t, () => { project.dispose(); models.clear(); });
 	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
 	const model = models.retain(resource(TEST_CARTRIDGE_CONTEXT_IDS[0], 'explicit_model.lua'), 'lua', source);
 	project.analyzeDocument(model.resource, model.buffer);
@@ -418,7 +419,7 @@ test('explicit same-text parses replace the model baseline and the next model an
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- next\n' }]);
 	assert.ok(Array.from(project.analyzeDocument(model.resource, model.buffer).chunk.tokens).includes(retained));
 	const detached = new EditorTextModelService();
-	t.after(() => detached.clear());
+	afterTest(t, () => detached.clear());
 	const other = detached.retain(resource(TEST_CARTRIDGE_CONTEXT_IDS[0], model.resource.path), 'lua', 'return 77');
 	assert.equal(project.analyzeDocument(model.resource, other.buffer).source, 'return 77', 'detached buffers are explicit full-source input');
 	assert.equal(project.analyzeDocument(model.resource, model.buffer).source, model.buffer.getText(), 'retained input reestablishes its own baseline');
@@ -427,7 +428,7 @@ test('explicit same-text parses replace the model baseline and the next model an
 test('ownership changes discard queued deltas before SYSTEM models are uncovered or a path is re-added', t => {
 	const models = new EditorTextModelService();
 	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], models);
-	t.after(() => { project.dispose(); models.clear(); });
+	afterTest(t, () => { project.dispose(); models.clear(); });
 	let sources = sourceCatalog(sourceRegistry([['shared.lua', 'return 1']]), sourceRegistry([['entry.lua', 'return 0']]));
 	const system = models.retain(resource(TEST_SYSTEM_CONTEXT_ID, 'shared.lua'), 'lua', 'return 1');
 	project.synchronizeSources(sources);
@@ -458,7 +459,7 @@ test('actual editor frontend and context token queries consume queued model edit
 	const project = resetSemanticProject(editorTextModelService, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	const sources = sourceCatalog(sourceRegistry([['system.lua', 'return 0']]), sourceRegistry([[path, source]]));
 
-	t.after(() => { resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
+	afterTest(t, () => { resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	const initial = buildEditorSemanticSnapshot(sources, model.resource, model.buffer);
 	const retained = initial.getFileData(resourceIdentityKey(model.resource))!.chunk.tokens.get(initial.getFileData(resourceIdentityKey(model.resource))!.chunk.tokens.length - 2);
 	const explicit = t.mock.method(project, 'updateDocument');
@@ -477,7 +478,7 @@ test('queued edits for multiple models publish one workspace batch and full-sour
 	const { LuaSemanticWorkspace } = await import('../../toolchain/ts/lua/semantic/model');
 	const models = new EditorTextModelService();
 	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], models);
-	t.after(() => { project.dispose(); models.clear(); });
+	afterTest(t, () => { project.dispose(); models.clear(); });
 	const left = models.retain(resource(TEST_CARTRIDGE_CONTEXT_IDS[0], 'left.lua'), 'lua', 'return 1');
 	const right = models.retain(resource(TEST_CARTRIDGE_CONTEXT_IDS[0], 'right.lua'), 'lua', 'return 2');
 	project.getSnapshot();
@@ -508,7 +509,7 @@ test('diagnostics consume model deltas without replacing incremental baselines w
 	const project = resetSemanticProject(editorTextModelService, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	const sources = sourceCatalog(sourceRegistry([['system.lua', 'return 0']]), sourceRegistry([[path, source]]));
 
-	t.after(() => { resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
+	afterTest(t, () => { resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	project.synchronizeSources(sources);
 	const before = project.getFileData({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: path })!;
 	const retained = before.chunk.tokens.get(before.chunk.tokens.length - 2);
@@ -537,7 +538,7 @@ test('scheduled syntax highlighting consumes current model deltas and invalidate
 	});
 	const document = documents.get(model);
 	const code = createTestCodeControl(t, model, documents, clock), layout = code.layout;
-	t.after(() => { layout.dispose(); documents.dispose(); resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
+	afterTest(t, () => { layout.dispose(); documents.dispose(); resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	const explicit = t.mock.method(project, 'updateDocument');
 	const analyze = t.mock.method(project, 'analyzeDocument');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- superseded\n' }]);
@@ -573,7 +574,7 @@ test('public listeners registered before a lazy semantic project observe current
 		applied = event;
 	});
 	project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], models);
-	t.after(() => { project.dispose(); models.clear(); });
+	afterTest(t, () => { project.dispose(); models.clear(); });
 	project.getSnapshot();
 	model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '22' }]);
 	model.undo(); model.redo();
@@ -607,7 +608,7 @@ test('first public callback of a compound edit and Undo/Redo sees every applied 
 	});
 	models.onDidApplyChanges((model, applied) => versions.set(model, applied.version));
 	project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], models);
-	t.after(() => { project.dispose(); models.clear(); });
+	afterTest(t, () => { project.dispose(); models.clear(); });
 	project.getSnapshot();
 	models.history.applyEdits(new Map([
 		[left, { version: left.version, edits: [{ offset: 7, deleteLength: 1, text: '11' }] }],
@@ -623,7 +624,7 @@ test('first public callback of a compound edit and Undo/Redo sees every applied 
 test('editor model edits, inactive documents and undo reuse unchanged binding bodies', t => {
 	const models = new EditorTextModelService();
 	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], models);
-	t.after(() => { project.dispose(); models.clear(); });
+	afterTest(t, () => { project.dispose(); models.clear(); });
 	const padding = 'do end\n'.repeat(80);
 	const source = `local item = { field = 1 }\n${padding}local function changed()\n${padding}return item end\nlocal function retained()\n${padding}return item.field end\n${padding}`;
 	const model = models.retain(resource(TEST_CARTRIDGE_CONTEXT_IDS[0], 'reuse.lua'), 'lua', source);
@@ -654,7 +655,7 @@ test('semantic input generations advance for model and registry changes, never f
 	const cartridge = sourceRegistry([['main.lua', "return require('dependency')"], ['dependency.lua', 'return { value = 1 }']]);
 	const sources = sourceCatalog(sourceRegistry([['system.lua', 'return true']]), cartridge);
 	project.synchronizeSources(sources);
-	t.after(() => { project.dispose(); models.clear(); });
+	afterTest(t, () => { project.dispose(); models.clear(); });
 	const generations: number[] = [];
 	project.onDidInvalidate(() => generations.push(project.generation));
 	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
@@ -699,7 +700,7 @@ for (const admission of ['before', 'after'] as const) test(`Lua resource members
 	const project = new EditorLuaSemanticProject(identity.contextId, models);
 	const model = seeded ?? models.retain(identity, 'yaml', source);
 	const sources = sourceCatalog(sourceRegistry([['system.lua', 'return true']]), sourceRegistry([['registry.lua', 'return true']]));
-	t.after(() => { project.dispose(); models.clear(); });
+	afterTest(t, () => { project.dispose(); models.clear(); });
 	project.synchronizeSources(sources);
 	const initial = project.getSnapshot(), file = project.getFileData(identity);
 	assert.ok(file, 'the admitted Lua resource remains a Lua source regardless of editor mode');
@@ -707,7 +708,7 @@ for (const admission of ['before', 'after'] as const) test(`Lua resource members
 	assert.equal(model.mode, 'yaml');
 	const range = luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(file.callSites[0].expression.span));
 	const untrack = model.trackRanges(new Map([[0, range]]));
-	t.after(untrack);
+	afterTest(t, untrack);
 	let invalidations = 0;
 	project.onDidInvalidate(() => { invalidations++; });
 	const nonLua: RuntimeResource = { ...resource(identity.contextId, 'settings.yaml'), source: { type: 'data', resid: 'settings' } };

@@ -16,6 +16,7 @@ import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad_stream';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { afterTest } from '../helpers/test_cleanup';
 
 const diagnostic: EditorDiagnostic = { row: 0, startColumn: 0, endColumn: 1,
 	message: 'The authored source contains an undefined name and remains editable.', severity: 'error',
@@ -25,9 +26,9 @@ for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark
 	test(`Problems inactive selection preserves legible row geometry (${font}, ${theme})`, t => {
 		configureFontVariant(font);
 		const previousTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme);
-		t.after(() => colors.setIdeThemeVariant(previousTheme));
+		afterTest(t, () => colors.setIdeThemeVariant(previousTheme));
 		const { controller, arrange } = createProblemsPanelFixture(t, font); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
-		t.after(() => controller.focusTarget.release());
+		afterTest(t, () => controller.focusTarget.release());
 		const overlay = createHostOverlayFixture(256, 192);
 		const bounds = { left: 8, top: 8, right: 248, bottom: 168 };
 		const draw = (focused: boolean) => {
@@ -84,7 +85,7 @@ for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark
 for (const empty of [false, true]) test(`Problems owns its panel/content clips (empty: ${empty})`, t => {
 	configureFontVariant('tiny');
 	const { controller, arrange } = createProblemsPanelFixture(t, 'tiny'); controller.setDiagnostics(empty ? [] : [diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(empty ? -1 : 0);
-	t.after(() => controller.focusTarget.release());
+	afterTest(t, () => controller.focusTarget.release());
 	const overlay = createHostOverlayFixture(160, 96);
 	const bounds = { left: 8, top: 8, right: 112, bottom: 8 + editorViewState.lineHeight * 3 + 12 };
 	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
@@ -110,7 +111,7 @@ test('Problems restores a nested caller clip and retains warm paint/layout stora
 	configureFontVariant('tiny');
 	const { controller, arrange } = createProblemsPanelFixture(t, 'tiny');
 	controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
-	t.after(() => controller.focusTarget.release());
+	afterTest(t, () => controller.focusTarget.release());
 	const overlay = createHostOverlayFixture(160, 96);
 	const bounds = { left: 8, top: 8, right: 112, bottom: 48 };
 	const caller = { left: 16, top: 10, right: 100, bottom: 80 };
@@ -156,7 +157,7 @@ test('Problems padding and header cannot hover clipped row geometry', t => {
 	configureFontVariant('tiny');
 	const { controller, group, arrange } = createProblemsPanelFixture(t, 'tiny');
 	controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(-1);
-	t.after(() => controller.focusTarget.release());
+	afterTest(t, () => controller.focusTarget.release());
 		const bounds = { left: 8, top: 8, right: 112, bottom: 38 };
 	arrange(bounds); const layout = controller.layoutState;
 	const snapshot: PointerSnapshot = { valid: true, insideViewport: true, viewportX: 12, viewportY: 0,

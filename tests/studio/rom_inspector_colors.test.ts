@@ -22,6 +22,7 @@ import type { RomInspectionSection } from '../../toolchain/ts/rompack/inspection
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
 import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompack/assets';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 const ASSET_TYPES: readonly AssetType[] = ['image', 'texture', 'audio', 'data', 'bin', 'collision_shape', 'romlabel', 'model', 'aem', 'lua', 'code'];
 const ASSET_COLORS: Record<AssetType, number> = {
@@ -84,7 +85,7 @@ function fixture(t: TestContext) {
 		return rects;
 	};
 	layout();
-	t.after(() => { input.dispose(); Object.assign(editorViewState, previous); colors.setIdeThemeVariant(previousTheme); });
+	afterTest(t, () => { input.dispose(); Object.assign(editorViewState, previous); colors.setIdeThemeVariant(previousTheme); });
 	return { input, presentation, assets, layout, draw };
 }
 
@@ -245,7 +246,7 @@ test('the byte key includes genuine subpixel payloads but not zero-only, metadat
 		{ resid: 'removed-texture', type: 'texture', op: 'delete' },
 	];
 	finalizePackedRomAssets(assets);
-	const input = new RomInspectorInput({ ...f.input.snapshot, assets }); t.after(() => input.dispose());
+	const input = new RomInspectorInput({ ...f.input.snapshot, assets }); afterTest(t, () => input.dispose());
 	const entries = input.model.keyEntries;
 	assert.equal(entries.find(entry => entry.category === ROM_CATEGORIES.audio)!.byteLength, 1);
 	for (const category of [ROM_CATEGORIES.image, ROM_CATEGORIES.model, ROM_CATEGORIES.texture])

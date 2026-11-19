@@ -6,6 +6,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { LuaEvaluation } from '../../ide/runtime/lua_evaluation';
 import { STATUS_PRIORITY_HINT } from '../../ide/workbench/common/status_bar';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 // Exact text comparisons below verify producer-to-reader data integrity and
 // retained observations; they do not freeze any particular UI wording.
@@ -21,7 +22,7 @@ function fixture(t: TestContext) {
 	};
 	f.first.commandTarget.scope.statusSource = source;
 	f.first.focus();
-	t.after(() => updateEditorMessage(editorFeedbackState.message.timer));
+	afterTest(t, () => updateEditorMessage(editorFeedbackState.message.timer));
 	return { ...f, statusSource: source };
 }
 
@@ -85,7 +86,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const operation of ['move',
 			f.key('KeyZ', KeyModifier.alt);
 			assert.equal(editorFeedbackState.message.visible, true); assert.equal(editorFeedbackState.message.kind, 'info');
 			const feedback = { ...editorFeedbackState.message }, model = f.firstInput.workingCopy, version = model.version;
-			t.after(() => updateEditorMessage(editorFeedbackState.message.timer));
+			afterTest(t, () => updateEditorMessage(editorFeedbackState.message.timer));
 			editor.commands.execute(`window.${operation}`, f.first.commandTarget); editor.update(0);
 			assert.equal(window.interactionActive, true); assert.ok(inputFocus.admittedTarget === window.focusTarget);
 			const guidance = window.statusItems[0], presented = editor.statusBar.itemsLayout.items.peek(0);

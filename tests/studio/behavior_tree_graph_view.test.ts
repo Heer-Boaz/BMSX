@@ -18,6 +18,7 @@ import { acceptBehaviorGraphSelection } from '../../ide/workbench/contrib/behavi
 import { executeBehaviorLensNavigation, finishBehaviorLensNavigation, selectedBehaviorLensSourceRange } from '../../ide/workbench/contrib/behavior_lens/navigation';
 import { readLuaSourceRange, luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../helpers/behavior_source_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 const font = new Font({ variant: 'tiny' });
 function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
@@ -42,7 +43,7 @@ for (const [expression, value] of [
 local prefix<const> = 'Ch'
 trees.register('Fixture.Tree', { root = { type = 'timeline', timeline_id = ${expression} } })`;
 	const f = fixture(source);
-	t.after(() => f.model.dispose());
+	afterTest(t, () => f.model.dispose());
 	assert.ok(f.definition.root?.kind === 'node');
 	const graph = projectBehaviorTreeGraph(f.definition, font);
 	assert.deepEqual(graph.nodesBySource.get(f.definition.root.rowKey)!.lines, ['TIMELINE', `TIMELINE_ID=${value}`]);
@@ -63,7 +64,7 @@ trees.register('Fixture.Tree', { [root_key] = {
 	},
 } })`;
 	const f = fixture(source);
-	t.after(() => f.model.dispose());
+	afterTest(t, () => f.model.dispose());
 	assert.equal(f.definition.resolution, 'complete');
 	assert.ok(f.definition.root?.kind === 'node');
 	assert.equal(f.definition.root.nodeType, 'weighted_random_selector');
@@ -133,7 +134,7 @@ trees.register('leaf', { root = { type = 'wait', children = { { type = 'wait' } 
 test('concrete graph retains layout, source-backed edge selection and its screen anchor through edits', t => {
 	const previous = { font: editorViewState.font, viewportWidth: editorViewState.viewportWidth, viewportHeight: editorViewState.viewportHeight,
 		lineHeight: editorViewState.lineHeight, editorAreaTop: editorViewState.editorAreaTop, editorAreaBottom: editorViewState.editorAreaBottom };
-	t.after(() => Object.assign(editorViewState, previous));
+	afterTest(t, () => Object.assign(editorViewState, previous));
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, editorAreaTop: 24, editorAreaBottom: 276 });
 	const f = fixture();
 	const view = createBehaviorLensViewState(f.document, f.model, 'graph', assert.fail);

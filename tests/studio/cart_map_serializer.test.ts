@@ -12,6 +12,7 @@ import { createCartMapMove, projectCartMap, selectCartMapRow } from '../../ide/w
 import { captureCartMapView } from '../../ide/workbench/contrib/cart_maps/view_snapshot';
 import { setWorkbenchTreeCollapsed } from '../../ide/workbench/ui/tree_view';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('inactive restored map retains its pending viewport across another session capture', async t => {
 	editorViewState.font = new EditorFont('tiny');
@@ -22,7 +23,7 @@ test('inactive restored map retains its pending viewport across another session 
 	const source = `map_rows:\n${Array.from({ length: 40 }, () => `  - "m${' '.repeat(119)}"\n`).join('')}`;
 	const model = editorTextModelService.retain(resource, 'yaml', source);
 	const input = new CartMapInput(model, 'nemesis');
-	t.after(() => { input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { input.dispose(); editorTextModelService.clear(); });
 	projectCartMap(input);
 	selectCartMapRow(input, 1);
 	input.section = 'map';
@@ -37,7 +38,7 @@ test('inactive restored map retains its pending viewport across another session 
 	const authored = model.buffer.getText(), version = model.version;
 	const serializer = new CartMapInputSerializer(sources.catalog);
 	const restored = await serializer.deserialize(serializer.serialize(input));
-	t.after(() => restored.dispose());
+	afterTest(t, () => restored.dispose());
 	assert.equal(restored.workingCopy, model);
 	assert.equal(restored.restoredTreeScroll, 5);
 	assert.equal(restored.section, 'map');
@@ -45,7 +46,7 @@ test('inactive restored map retains its pending viewport across another session 
 	assert.equal(restored.grid.horizontal.getScroll(), 0, 'inactive input has not been laid out');
 	assert.deepEqual(captureCartMapView(restored), expected);
 	const reloaded = await serializer.deserialize(serializer.serialize(restored));
-	t.after(() => reloaded.dispose());
+	afterTest(t, () => reloaded.dispose());
 	assert.deepEqual(captureCartMapView(reloaded), expected);
 	layoutCartMap(reloaded, bounds, true);
 	assert.equal(reloaded.restoredTreeScroll, undefined);
@@ -68,13 +69,13 @@ test('map recovery rejects a view snapshot when its canonical source changed', a
 	const source = 'map_rows: ["m   "]\n';
 	const model = editorTextModelService.retain(resource, 'yaml', source);
 	const input = new CartMapInput(model, 'nemesis');
-	t.after(() => { input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { input.dispose(); editorTextModelService.clear(); });
 	projectCartMap(input);
 	selectCartMapRow(input, 1);
 	const serializer = new CartMapInputSerializer(sources.catalog), serialized = serializer.serialize(input);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '# authored after capture\n' }]);
 	const restored = await serializer.deserialize(serialized);
-	t.after(() => restored.dispose());
+	afterTest(t, () => restored.dispose());
 	assert.equal(restored.workingCopy, model);
 	assert.equal(model.buffer.getText(), `# authored after capture\n${source}`);
 	assert.equal(restored.restoredTreeScroll, undefined);
@@ -92,19 +93,19 @@ for (const variant of ['tiny', 'msx'] as const) for (const section of ['outline'
 		sources.catalog.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 		const source = `map_rows:\n${Array.from({ length: 60 }, () => `  - "m${' '.repeat(119)}"\n`).join('')}`;
 		const model = editorTextModelService.retain(resource, 'yaml', source), input = new CartMapInput(model, 'nemesis'), version = model.version;
-		t.after(() => { input.dispose(); editorTextModelService.clear(); });
+		afterTest(t, () => { input.dispose(); editorTextModelService.clear(); });
 		projectCartMap(input); selectCartMapRow(input, 1);
 		const wide = { left: 17, top: 29, right: 617, bottom: 249 };
 		layoutCartMap(input, wide, true);
 		input.grid.restoreView({ x: 17.25, y: 12.5 }); layoutCartMap(input, wide, false);
 		input.tree.scroll = 7.25; input.section = section;
 		const expected = captureCartMapView(input), serializer = new CartMapInputSerializer(sources.catalog);
-		const restored = await serializer.deserialize(serializer.serialize(input)); t.after(() => restored.dispose());
+		const restored = await serializer.deserialize(serializer.serialize(input)); afterTest(t, () => restored.dispose());
 		const narrow = { ...wide, right: wide.left + (variant === 'tiny' ? 78 : 118) };
 		layoutCartMap(restored, narrow, true);
 		assert.equal(restored.layout.mode, section);
 		assert.deepEqual(captureCartMapView(restored), expected, 'a hidden client cannot replace its saved world or tree position');
-		const again = await serializer.deserialize(serializer.serialize(restored)); t.after(() => again.dispose());
+		const again = await serializer.deserialize(serializer.serialize(restored)); afterTest(t, () => again.dispose());
 		assert.deepEqual(captureCartMapView(again), expected, 'capturing before the other client opens preserves the same complete memento');
 		if (section === 'outline') {
 			assert.equal(restored.restoredTreeScroll, undefined);
@@ -135,7 +136,7 @@ test('Source undo preserves a background map view selection and collapsed room',
 	].join('\n');
 	const model = editorTextModelService.retain(resource, 'yaml', source);
 	const input = new CartMapInput(model, 'pietious');
-	t.after(() => { input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { input.dispose(); editorTextModelService.clear(); });
 	projectCartMap(input);
 	selectCartMapRow(input, 1);
 	model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, 2, 0, input.editSource)]]));
@@ -151,7 +152,7 @@ test('Source undo preserves a background map view selection and collapsed room',
 	assert.equal(input.tree.roots[0].collapsed, true);
 	const serializer = new CartMapInputSerializer(sources.catalog);
 	const restored = await serializer.deserialize(serializer.serialize(input));
-	t.after(() => restored.dispose());
+	afterTest(t, () => restored.dispose());
 	assert.deepEqual(restored.selectionRange, selection);
 	assert.equal(restored.activeSheet, '7');
 	assert.equal(restored.selected, undefined);
@@ -168,7 +169,7 @@ test('an outline-selected far marker keeps its queued reveal through serializati
 	const cells = Array<string>(300).fill(' '); cells[257] = 'm';
 	const source = `map_rows: ["${cells.join('')}"]\n`;
 	const model = editorTextModelService.retain(resource, 'yaml', source), input = new CartMapInput(model, 'nemesis'), version = model.version;
-	t.after(() => { input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { input.dispose(); editorTextModelService.clear(); });
 	projectCartMap(input);
 	const bounds = { left: 19, top: 27, right: 97, bottom: 245 };
 	layoutCartMap(input, bounds, true); assert.equal(input.layout.mode, 'outline');
@@ -178,7 +179,7 @@ test('an outline-selected far marker keeps its queued reveal through serializati
 	const selectedRange = { ...input.selectionRange }, expected = captureCartMapView(input);
 	assert.deepEqual(expected.grid, { x: 2.25, y: 0, reveal: { x: 257, y: 0 } });
 	const serializer = new CartMapInputSerializer(sources.catalog), restored = await serializer.deserialize(serializer.serialize(input));
-	t.after(() => restored.dispose());
+	afterTest(t, () => restored.dispose());
 	assert.equal(restored.workingCopy, model); assert.deepEqual(captureCartMapView(restored), expected);
 	layoutCartMap(restored, bounds, true);
 	assert.equal(restored.layout.mode, 'outline'); assert.deepEqual(captureCartMapView(restored), expected,

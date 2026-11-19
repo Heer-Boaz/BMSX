@@ -7,6 +7,7 @@ import { CompositeTextEditorInput } from '../../ide/workbench/common/composite_t
 import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
 import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { afterTest } from '../helpers/test_cleanup';
 
 class SourceInput extends CompositeTextEditorInput<'fixture', 'fixture'> {
 	public constructor(public readonly workingCopy: EditorTextModel) { super('fixture', 'fixture', 'SOURCES', true); }
@@ -18,7 +19,7 @@ test('composite source membership, dirty notifications and write access follow r
 	const catalog = new WorkspaceSourceCatalog(), saves = new TextFileSaveService(service, new VirtualHeadlessClock(), catalog);
 	const [a, b, c] = ['a', 'b', 'c'].map(path => service.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'lua', resid: path } }, 'lua', path));
 	const input = new SourceInput(a);
-	t.after(async () => { await saves.shutdown(); input.dispose(); service.clear(); catalog.dispose(); });
+	afterTest(t, async () => { await saves.shutdown(); input.dispose(); service.clear(); catalog.dispose(); });
 	input.present(a, b, b);
 	assert.deepEqual(input.getWorkingCopies(), [a, b]);
 	const states: boolean[] = [];
@@ -58,7 +59,7 @@ test('pending draft admission uses an owned writable member even when the primar
 	primary.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]);
 	primary.refreshResource({ ...primary.resource, source: { ...primary.resource.source, generated: true } });
 	const input = new SourceInput(primary);
-	t.after(async () => { await saves.shutdown(); input.dispose(); service.clear(); catalog.dispose(); });
+	afterTest(t, async () => { await saves.shutdown(); input.dispose(); service.clear(); catalog.dispose(); });
 	input.present(primary, imported);
 	assert.equal(input.isDirty(), true);
 	assert.equal(primary.readOnly, true);
@@ -84,7 +85,7 @@ for (const membership of ['retired', 'foreign'] as const) test(`${membership} di
 	if (membership === 'retired') service.clear();
 	const current = service.retain(resource, 'lua', 'return true');
 	const input = new SourceInput(source);
-	t.after(async () => { await saves.shutdown(); input.dispose(); service.clear(); other.clear(); catalog.dispose(); });
+	afterTest(t, async () => { await saves.shutdown(); input.dispose(); service.clear(); other.clear(); catalog.dispose(); });
 	assert.notEqual(current, source);
 	assert.deepEqual(current.identity, source.identity);
 	input.present(source);

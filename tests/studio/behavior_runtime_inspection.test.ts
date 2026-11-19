@@ -19,6 +19,7 @@ import type { HostRewind } from '../../hosts/common/rewind';
 import { SuspendedValuePresentation } from '../../ide/runtime/value_presentation';
 import { applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** Real guest tables/type bucket. Browser validation separately executes actual cartlib constructors. */
 function fixture(historical = false) {
@@ -66,7 +67,7 @@ return component`;
 }
 
 test('visible behavior inspection compares completed observations, not paused refreshes, and reacquires history values', t => {
-	const f = fixture(); t.after(() => f.inspection.dispose());
+	const f = fixture(); afterTest(t, () => f.inspection.dispose());
 	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = captureCpuCheckpoint(f.cpu);
 	const current = document.find(row => row.value === 'a')!;
 	assert.ok(document.every(row => row.valueChanged === false));
@@ -106,7 +107,7 @@ test('visible behavior inspection compares completed observations, not paused re
 });
 
 test('live readback retains rows and skips warmed formatting while still reading authoritative mutable state', t => {
-	const f = fixture(); t.after(() => f.inspection.dispose());
+	const f = fixture(); afterTest(t, () => f.inspection.dispose());
 	const document = f.inspection.refresh()!, rows = document.slice();
 	let formatted = 0, reads = 0;
 	const format = f.guest.formatStoredEntries.bind(f.guest), read = f.guest.readStringMember.bind(f.guest);
@@ -133,7 +134,7 @@ test('live readback retains rows and skips warmed formatting while still reading
 });
 
 test('retained value presentation compares mutable entries, preserves preview semantics and reacquires restored string ids', t => {
-	const f = fixture(); t.after(() => f.inspection.dispose());
+	const f = fixture(); afterTest(t, () => f.inspection.dispose());
 	const retained = new SuspendedValuePresentation(f.guest), alive = captureCpuCheckpoint(f.cpu);
 	let data = f.guest.readStringMember(f.choice.machine, 'data');
 	const original = retained.update(data);
@@ -151,7 +152,7 @@ test('retained value presentation compares mutable entries, preserves preview se
 });
 
 test('an inspector opened during history review retains absent membership through forward replay', t => {
-	const f = fixture(true); t.after(() => f.inspection.dispose());
+	const f = fixture(true); afterTest(t, () => f.inspection.dispose());
 	const document = f.inspection.refresh()!, before = document.map(row => row.value);
 	f.guest.invalidate(); runCompletionClosure(f.cpu, asClosure(f.guest.global('remove_component'), f.cpu.gc), []);
 	assert.strictEqual(f.inspection.refresh(), document);
@@ -163,7 +164,7 @@ test('an inspector opened during history review retains absent membership throug
 });
 
 test('historical absence preserves a behavior bookmark across replay and repeated retained-frame navigation', t => {
-	const f = fixture(); t.after(() => f.inspection.dispose());
+	const f = fixture(); afterTest(t, () => f.inspection.dispose());
 	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = captureCpuCheckpoint(f.cpu);
 	for (let visit = 0; visit < 2; visit++) {
 		restoreCpuCheckpoint(f.cpu, f.beforeBirth); f.guest.invalidate('history-restored');
@@ -186,7 +187,7 @@ test('historical absence preserves a behavior bookmark across replay and repeate
 });
 
 for (const observed of [false, true]) test(`live admission retires ${observed ? 'observed' : 'hidden'} historical absence before reused table ids`, t => {
-	const f = fixture(); t.after(() => f.inspection.dispose());
+	const f = fixture(); afterTest(t, () => f.inspection.dispose());
 	const document = f.inspection.refresh()!;
 	restoreCpuCheckpoint(f.cpu, f.beforeBirth); f.guest.invalidate('history-restored');
 	f.rewind.seeking = true;
@@ -207,7 +208,7 @@ for (const observed of [false, true]) test(`live admission retires ${observed ? 
 });
 
 test('live admission keeps a restored behavior instance and later live removal retires it', t => {
-	const f = fixture(); t.after(() => f.inspection.dispose());
+	const f = fixture(); afterTest(t, () => f.inspection.dispose());
 	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = captureCpuCheckpoint(f.cpu);
 	restoreCpuCheckpoint(f.cpu, f.beforeBirth); f.guest.invalidate('history-restored');
 	f.inspection.refresh();
@@ -232,7 +233,7 @@ test('live admission keeps a restored behavior instance and later live removal r
 });
 
 test('a live guest call ending review retires subsequently missing membership', t => {
-	const f = fixture(); t.after(() => f.inspection.dispose());
+	const f = fixture(); afterTest(t, () => f.inspection.dispose());
 	const document = f.inspection.refresh()!;
 	const history = f.runtime.history;
 	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
@@ -250,7 +251,7 @@ test('a live guest call ending review retires subsequently missing membership', 
 });
 
 for (const observed of [false, true]) test(`discarding review retires ${observed ? 'observed' : 'hidden'} missing identities before reuse`, t => {
-	const f = fixture(); t.after(() => f.inspection.dispose());
+	const f = fixture(); afterTest(t, () => f.inspection.dispose());
 	const document = f.inspection.refresh()!;
 	const history = f.runtime.history;
 	restoreCpuCheckpoint(f.cpu, f.beforeBirth);
@@ -271,7 +272,7 @@ for (const observed of [false, true]) test(`discarding review retires ${observed
 });
 
 for (const operation of ['reset', 'load'] as const) test(`${operation} ending review still retires the replaced guest heap`, t => {
-	const f = fixture(); t.after(() => f.inspection.dispose());
+	const f = fixture(); afterTest(t, () => f.inspection.dispose());
 	f.inspection.refresh();
 	const replacement = captureRuntimeSaveState(f.runtime);
 	const history = f.runtime.history;
@@ -285,7 +286,7 @@ for (const operation of ['reset', 'load'] as const) test(`${operation} ending re
 });
 
 test('heap replacement remains terminal across historical navigation and live admission', t => {
-	const f = fixture(); t.after(() => f.inspection.dispose());
+	const f = fixture(); afterTest(t, () => f.inspection.dispose());
 	f.inspection.refresh();
 	const alive = captureCpuCheckpoint(f.cpu);
 	f.guest.invalidate('heap-replaced');
@@ -298,11 +299,11 @@ test('heap replacement remains terminal across historical navigation and live ad
 
 
 test('behavior inspection owns its physical target before readback and retires only its own attachment', t => {
-	const f = fixture(); t.after(() => f.inspection.dispose());
+	const f = fixture(); afterTest(t, () => f.inspection.dispose());
 	assert.equal(f.inspection.interaction.transport, f.transport);
 	assert.equal(f.inspection.interaction.running, false);
 	const observations: Array<[RuntimeTransport | null, boolean]> = [];
-	t.after(f.inspection.interaction.onDidChange(() => observations.push([f.inspection.interaction.transport, f.inspection.interaction.running])));
+	afterTest(t, f.inspection.interaction.onDidChange(() => observations.push([f.inspection.interaction.transport, f.inspection.interaction.running])));
 	f.inspection.interaction.running = true;
 	f.guest.invalidate('heap-replaced');
 	assert.deepEqual(observations, [[f.transport, true], [f.transport, false]]);

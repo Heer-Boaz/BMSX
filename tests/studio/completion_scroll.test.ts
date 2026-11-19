@@ -13,9 +13,10 @@ import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state
 import { api } from '../../ide/runtime/overlay_api';
 import { CompletionController } from '../../ide/workbench/contrib/code_editor/suggest/completion_controller';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('completion wheel scrolls continuously without changing selection; keyboard navigation reveals its selection', t => {
-	t.after(() => {
+	afterTest(t, () => {
 		resetSemanticProjects(editorTextModelService);
 		editorTextModelService.clear();
 	});
@@ -36,7 +37,7 @@ test('completion wheel scrolls continuously without changing selection; keyboard
 		protected override isCompletionContextActive() { return true; }
 	}
 	const controller = new ReadyCompletionController(code, sources, null, null, null);
-	t.after(() => controller.clearInput());
+	afterTest(t, () => controller.clearInput());
 	controller.handleKeybindings(new KeyInputEvent('Space', KeyModifier.ctrl));
 	const session = controller.session!;
 	assert.ok(session);

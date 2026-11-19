@@ -39,6 +39,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { afterTest } from '../helpers/test_cleanup';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'parent.lua', location: { kind: 'workspace' as const, path: 'parent.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'parent.lua', source: { resid: 'parent.lua', type: 'lua' as const } };
 const child = "return {duration_ms=100, tracks={{kind='value',interpolation='linear',path={'x'},keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}}";
@@ -72,14 +73,14 @@ test('hidden Animation string-proof provider edits invalidate the generation wit
 		createScenarioTestSourceRecord('names.lua', 2, names)]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
 	const controller = new AnimationEditorController(sources.catalog), input = new AnimationEditorInput(model, model.resource.contextId);
-	t.after(() => { input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { input.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input);
 	const document = input.document;
 	const read = () => input.details.rows.find(row => row.element.label === 'playback_mode')!.element.value;
 	assert.equal(read(), 'prefix.once');
 	const provider = editorTextModelService.retain(sources.catalog.resolveResource({ contextId: resource.contextId, path: 'names.lua' })!, 'lua', names);
 	let invalidations = 0;
-	const unbind = input.onDidInvalidateProjection(() => invalidations++); t.after(unbind);
+	const unbind = input.onDidInvalidateProjection(() => invalidations++); afterTest(t, unbind);
 	provider.pushEditOperations([{ offset: names.indexOf('once'), deleteLength: 4, text: 'loop' }]);
 	assert.equal(invalidations, 1); assert.equal(input.document, document, 'hidden inputs revoke authority without rebuilding source');
 	assert.deepEqual(input.getWorkingCopies(), [model], 'query-only providers do not acquire Save/dirty/Undo participation');
@@ -97,10 +98,10 @@ test('Animation semantic invalidation publishes only after every compound source
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
 	const provider = editorTextModelService.retain(sources.catalog.resolveResource({ contextId: resource.contextId, path: 'names.lua' })!, 'lua', names);
 	const controller = new AnimationEditorController(sources.catalog), input = new AnimationEditorInput(model, model.resource.contextId);
-	t.after(() => { input.dispose(); editorTextModelService.clear(); }); controller.refresh(input);
+	afterTest(t, () => { input.dispose(); editorTextModelService.clear(); }); controller.refresh(input);
 	const changedSource = '-- changed\n' + source, changedNames = names.replace('once', 'loop');
 	let observations = 0;
-	t.after(input.onDidInvalidateProjection(() => {
+	afterTest(t, input.onDidInvalidateProjection(() => {
 		observations++;
 		assert.equal(model.buffer.getText(), changedSource);
 		assert.equal(provider.buffer.getText(), changedNames, 'projection retirement can run UI callbacks only after the full source batch applied');
@@ -117,7 +118,7 @@ test('Animation decoded values retain the written alias as their edit seed and o
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
 	const controller = new AnimationEditorController(sources.catalog), input = new AnimationEditorInput(model, model.resource.contextId);
-	t.after(() => { input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { input.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input);
 	const rowIndex = input.details.rows.findIndex(row => row.element.label === 'playback_mode');
 	controller.selectProperty(input, rowIndex);
@@ -146,7 +147,7 @@ test('overview key picking does not clear the active occurrence before resolving
 	input.overview.layout(0, 0, 106, 60); input.keys.range.layout(0, 0, 106, 20);
 	const focus = inputFocus.createTarget(); focus.bindKeyboard(() => {});
 	const control = new AnimationLaneControl(focus, controller); control.setInput(input);
-	t.after(() => { control.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); });
+	afterTest(t, () => { control.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); });
 	const pointer = { modifiers: KeyModifier.none, spaceDown: false, viewportX: input.keys.xAt(50), viewportY: 30, valid: true, insideViewport: true,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
 	control.handlePointer({ modifiers: KeyModifier.none, spaceDown: false, ...pointer, viewportX: input.keys.xAt(25), viewportY: 50,
@@ -161,7 +162,7 @@ test('overview key picking does not clear the active occurrence before resolving
 	assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
 	const departing = inputFocus.createTarget(); departing.bindKeyboard(() => {}); departing.focus();
 	const previousTrack = input.trackIndex;
-	const unbindFocus = departing.onDidBlur(() => { unbindFocus(); control.clearInput(); }); t.after(unbindFocus);
+	const unbindFocus = departing.onDidBlur(() => { unbindFocus(); control.clearInput(); }); afterTest(t, unbindFocus);
 	control.handlePointer(pointer);
 	assert.equal(input.trackIndex, previousTrack, 'a retired lane cannot change selection after focus admission');
 	assert.equal(pointerCapture.active, false);
@@ -229,7 +230,7 @@ test('a multiline clip trim inserts missing transport fields as one syntax batch
 		const source = ['-- parent', 'return {subsequences={{', `\tduration_ms=100${separator}`,
 			`\tsequence=require('child')${trailing} -- child stays here`, '}}}'].join(newline);
 		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.contextId);
-		t.after(() => { input.dispose(); model.dispose(); });
+		afterTest(t, () => { input.dispose(); model.dispose(); });
 		input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource), buildResourceLuaSemanticFixtureFile(child, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'child.lua' })], [])))!;
 		const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!);
 		let changes = 0; model.onDidChangeContent(() => changes++);
@@ -296,7 +297,7 @@ test('imported sprite configuration retains its actual consumer and selected sou
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, config), createScenarioTestSourceRecord('caller.lua', 1, caller),
 		createScenarioTestSourceRecord('cartlib/component/sprite_animation_component.lua', 1, 'return {factory=function(definition) return definition end}')]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', config);
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	const controller = new AnimationEditorController(sources.catalog);
 	const project = getOrCreateSemanticProject(editorTextModelService, TEST_CARTRIDGE_CONTEXT_IDS[0]); project.synchronizeSources(sources.catalog);
 	const snapshot = project.getSnapshot(), factory = collectAnimationDefinitions({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'caller.lua' }, snapshot)[0];
@@ -306,7 +307,7 @@ test('imported sprite configuration retains its actual consumer and selected sou
 	const input = new AnimationEditorInput(model, model.resource.contextId, luaSourceRangeToTextRange(model.buffer, factory.file.chunk.locations.range(factory.table.span)), 'sprite', factory.consumer!.file);
 	const consumer = controller.modelFor(input, factory.consumer!);
 	group.model.add(input);
-	t.after(() => { group.model.clear(); input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { group.model.clear(); input.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.selectTrack(input, input.tracks.rows.length - 1); controller.selectProperty(input, 1);
 	assert.equal(input.document!.family, 'sprite');
 	controller.authoring.reorder(input, -1);
@@ -351,12 +352,12 @@ test('an imported BIOS animation definition retains cart semantic scope through 
 	assert.equal(definition.consumer!.file, resourceIdentityKey(callerResource));
 	const input = controller.openDefinition(group, callerResource.contextId, definition);
 	assert.ok(input !== undefined);
-	t.after(() => { group.model.clear(); group.dispose(); input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { group.model.clear(); group.dispose(); input.dispose(); editorTextModelService.clear(); });
 	assert.equal(input.projectContextId, callerResource.contextId);
 	assert.deepEqual(input.workingCopy.identity, biosResource);
 	assert.equal(input.document!.family, 'sprite');
 	assert.equal(controller.openDefinition(group, callerResource.contextId, definition), input, 'open reuses the same definition inside its owning semantic project');
-	const siblingGroup = createTestEditorGroup(); t.after(() => siblingGroup.dispose());
+	const siblingGroup = createTestEditorGroup(); afterTest(t, () => siblingGroup.dispose());
 	const sibling = controller.openDefinition(siblingGroup, callerResource.contextId, definition);
 	assert.ok(sibling !== undefined);
 	assert.notEqual(sibling, input, 'the same shared controller opens an independent input in another group');
@@ -379,7 +380,7 @@ test('an imported BIOS animation definition retains cart semantic scope through 
 	assert.equal(saved.source.resource.contextId, biosResource.contextId);
 	assert.equal(saved.consumer, resourceIdentityKey(callerResource));
 	assert.equal(saved.detail.path, resourceIdentityKey(biosResource));
-	const restored = await serializer.deserialize(JSON.stringify(saved)); t.after(() => restored.dispose());
+	const restored = await serializer.deserialize(JSON.stringify(saved)); afterTest(t, () => restored.dispose());
 	assert.equal(restored.projectContextId, callerResource.contextId);
 	assert.equal(restored.workingCopy, input.workingCopy);
 	assert.equal(restored.consumerPath, resourceIdentityKey(callerResource));
@@ -392,10 +393,10 @@ test('a selected mixed-coordinate lane remains Source after a shared working-cop
 	const source = "return {tracks={{kind='event',keys={{time_ms=0,event='first'}}},{kind='event',keys={{frame=1,event='second'},{u=1,event='third'}}}}}";
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	const controller = new AnimationEditorController(sources.catalog);
 	const input = new AnimationEditorInput(model, model.resource.contextId); group.model.add(input);
-	t.after(() => { group.model.clear(); input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { group.model.clear(); input.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.selectTrack(input, 2);
 	assert.equal(input.keys.unit, undefined);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shared edit\n' }]); controller.refresh(input);
@@ -405,7 +406,7 @@ test('a selected mixed-coordinate lane remains Source after a shared working-cop
 });
 
 test('animation recovery restores the native cursor after the document admits its axis', async t => {
-	t.after(() => { editorTextModelService.clear(); });
+	afterTest(t, () => { editorTextModelService.clear(); });
 	for (const unit of ['time_ms', 'frame', 'u'] as const) {
 		const source = `return {tracks={{kind='event',keys={{${unit}=0,event='start'},{${unit}=1,event='end'}}}}}`;
 		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
@@ -435,7 +436,7 @@ test('animation recovery persists project ownership and opaque source selections
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
 	const controller = new AnimationEditorController(sources.catalog);
 	const input = new AnimationEditorInput(model, model.resource.contextId);
-	t.after(() => { input.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { input.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 1); controller.selectProperty(input, 0);
 	input.tracks.scroll = 1; input.keys.setView(10, 90); input.keys.setCursor(50);
 	input.activeClient = 'details'; input.columnSplit.resize(0.45); input.rowSplit.resize(0.4);
@@ -443,7 +444,7 @@ test('animation recovery persists project ownership and opaque source selections
 	const current = JSON.parse(serializer.serialize(input));
 	assert.equal(current.projectContextId, resource.contextId);
 	for (const selection of [current.track, current.key, current.detail]) assert.equal(selection.path, resourceIdentityKey(resource));
-	const restored = await serializer.deserialize(JSON.stringify(current)); t.after(() => restored.dispose());
+	const restored = await serializer.deserialize(JSON.stringify(current)); afterTest(t, () => restored.dispose());
 	assert.equal(restored.projectContextId, resource.contextId);
 	assert.equal(restored.workingCopy, model); assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
 	assert.deepEqual(restored.trackSelection, input.trackSelection); assert.deepEqual(restored.keySelection, input.keySelection);
@@ -474,7 +475,7 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 		getBounds: () => bounds, getClip: () => bounds, draw() {} });
 	const picker = new QuickInputController(menu, undefined, undefined, { scope: group.focusScope, bounds, kind: 'part', reveal() {} });
 	const pane = new AnimationEditorPane(controller, commands as IdeCommandController, menu, surfaces, owner, root, group, group.focusScope, picker, navigation);
-	t.after(() => {
+	afterTest(t, () => {
 		picker.dispose(); menu.dispose(); pane.dispose(); input.dispose(); group.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear();
 		editorTextModelService.clear();
 	});

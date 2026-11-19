@@ -7,12 +7,13 @@ import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/sem
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
+import { afterTest } from '../helpers/test_cleanup';
 
 function callHierarchyFixture(t: TestContext, path: string, source: string) {
 	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], new EditorTextModelService());
 	const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path };
 	project.updateDocument(resource, source);
-	t.after(() => project.dispose());
+	afterTest(t, () => project.dispose());
 	return { project, resource, address: resourceIdentityKey(resource), frontend: buildLuaSemanticFrontendFromSnapshot(project.getSnapshot()) };
 }
 

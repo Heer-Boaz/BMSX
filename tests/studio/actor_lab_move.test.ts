@@ -25,6 +25,7 @@ import { RuntimeIdeState } from '../../ide/workbench/state';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { eventHistoryRuntime } from '../helpers/event_history';
 import { createHostFrameFixture } from '../helpers/host_frame';
+import { afterTest } from '../helpers/test_cleanup';
 
 const WORLD = `local actor<const> = { id = 'actor', definition_id = 'fixture', active = true, _components = {}, _components_by_class = {} }
 function actor:mark_for_disposal() self.active = false end
@@ -53,7 +54,7 @@ function fixture(t: TestContext) {
 	const editor = ide.editor, parts = editor.editorParts, controller = editor.actorLab;
 	ide.boots.didReplaceMachine(); editor.interaction.setActive(true);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false);
 		await editor.shutdown(); clearBackgroundTasks(); host.audio.dispose(); host.input.dispose();
 	});
@@ -212,7 +213,7 @@ test('Actor reveal cannot start a picker after focus callbacks replace its reque
 	const f = fixture(t), replacement = new TerminalInput();
 	f.destination.focus();
 	const unbind = f.pane.commandTarget.onDidFocus(() => f.origin.activeGroup.openEditor(replacement));
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.input.actorHashId = 0; f.input.dirty = true;
 	assert.doesNotThrow(() => f.controller.open(f.parts.main.activeGroup));
 	assert.equal(f.origin.activeGroup.model.activeTab, replacement);

@@ -26,6 +26,7 @@ import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavio
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, literal: string, useIdAliases = false, mixedFsmNames = false) {
 	const idle = mixedFsmNames ? 'IdleState' : 'idle', active = mixedFsmNames ? 'ActiveState' : 'active';
@@ -56,7 +57,7 @@ fsm.register(${useIdAliases ? 'fsm_id' : "'Fixture.Fsm'"}, { initial = '${idle}'
 	const outline = view.presentation;
 	outline.collapsedRowKeys.clear(); rebuildBehaviorLensRows(view, outline);
 	const registrations = collectBehaviorRegistrations(resource, new LuaSourceReader(snapshot)).registrations;
-	t.after(() => { view.source.release(); model.dispose(); });
+	afterTest(t, () => { view.source.release(); model.dispose(); });
 	return { source, model, document, view, outline, registrations };
 }
 
@@ -86,7 +87,7 @@ test('equivalent Lua literal spellings yield decoded behavior captions without c
 for (const [literal, caption] of [["''", ''], ['"O\'Brien`Fx"', "O'Brien`Fx"], ["[=[O'Brien`Fx]=]", "O'Brien`Fx"]] as const) {
 	test(`semantic behavior captions preserve their actual ${caption.length === 0 ? 'empty value' : 'internal quote and backtick'} without expression-format bleed`, t => {
 		const previous = editorViewState.font;
-		editorViewState.font = new EditorFont('tiny'); t.after(() => { editorViewState.font = previous; });
+		editorViewState.font = new EditorFont('tiny'); afterTest(t, () => { editorViewState.font = previous; });
 		const f = fixture(t, literal);
 		prepareBehaviorLensLayout(f.view, { left: 0, top: 0, right: 1600, bottom: 1000 });
 		const named = f.view.source.nodes.filter(node => (node.kind === 'service' || node.kind === 'decorator' || node.kind === 'event') && node.preserveLabelCase);
@@ -121,7 +122,7 @@ test('symbolic attachment and input expressions remain source-oriented rather th
 
 for (const aliases of [false, true]) test(`${aliases ? 'immutable ID aliases' : 'literal IDs'} preserve registration case in the actual definition header and BT root card`, t => {
 	const previous = editorViewState.font;
-	editorViewState.font = new EditorFont('tiny'); t.after(() => { editorViewState.font = previous; });
+	editorViewState.font = new EditorFont('tiny'); afterTest(t, () => { editorViewState.font = previous; });
 	const f = fixture(t, "'Semantic.Name'", aliases);
 	assert.deepEqual(f.registrations.map(registration => registration.semanticId), ['Fixture.Tree', 'Fixture.Fsm']);
 	assert.deepEqual(f.registrations.map(registration => readLuaSourceRange(f.model.buffer, registration.range)),
@@ -143,7 +144,7 @@ for (const aliases of [false, true]) test(`${aliases ? 'immutable ID aliases' : 
 
 test('actual FSM nodes, event and input edges, and inspector captions preserve semantic case and exact source outcomes', async t => {
 	const previous = editorViewState.font;
-	editorViewState.font = new EditorFont('tiny'); t.after(() => { editorViewState.font = previous; });
+	editorViewState.font = new EditorFont('tiny'); afterTest(t, () => { editorViewState.font = previous; });
 	const caption = "O'Brien`Fx", f = fixture(t, '"O\'Brien`Fx"', false, true);
 	const definition = f.document.definitions.find(definition => definition.behaviorKind === 'state_machine')!;
 	assert.ok(definition.behaviorKind === 'state_machine');
@@ -155,7 +156,7 @@ test('actual FSM nodes, event and input edges, and inspector captions preserve s
 		assert.ok(f.outline.rows[findVisibleRowIndex(f.outline, node.rowKey)].text.includes(node.label));
 	}
 	const engine = new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs')));
-	t.after(() => engine.dispose());
+	afterTest(t, () => engine.dispose());
 	const graph = await layoutStateGraph(definition, f.view.stateMachines.references, new Font({ variant: 'tiny' }), engine);
 	assert.equal(graph.nodesBySource.get(definition.rowKey)!.lines[0], definition.label);
 	assert.equal(graph.nodesBySource.get(idle.rowKey)!.lines[0], idle.label);
@@ -191,7 +192,7 @@ test('actual FSM nodes, event and input edges, and inspector captions preserve s
 
 test('partial BT attachment membership preserves semantic captions through actual graph Details inspection', t => {
 	const previous = editorViewState.font;
-	editorViewState.font = new EditorFont('tiny'); t.after(() => { editorViewState.font = previous; });
+	editorViewState.font = new EditorFont('tiny'); afterTest(t, () => { editorViewState.font = previous; });
 	for (const [members, expression] of [
 		['{ type = "MiXeD.Name" }, [computed] = make_decorator()', '[computed]'],
 		['{ type = decorators.loop }, [7] = { type = "MiXeD.Name" }', 'decorators.loop'],
@@ -206,7 +207,7 @@ trees.register('Partial.Tree', { root = { type = 'wait', decorators = { ${member
 		const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file],
 			['cartlib/behaviour_tree/library'])));
 		const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
-		t.after(() => { view.source.release(); model.dispose(); });
+		afterTest(t, () => { view.source.release(); model.dispose(); });
 		const definition = document.definitions[0];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const attachment = view.source.nodes.find(node => node.kind === 'decorator' && node.label === 'MiXeD.Name')!;

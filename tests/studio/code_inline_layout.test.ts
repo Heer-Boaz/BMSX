@@ -8,6 +8,7 @@ import { CodeLayout } from '../../ide/editor/ui/code/layout';
 
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, source: string, variant: FontVariant = 'tiny', width = 8) {
 	const { models, documents, clock } = createTestCodeDocuments(t);
@@ -18,7 +19,7 @@ function fixture(t: TestContext, source: string, variant: FontVariant = 'tiny', 
 	const layout = new CodeLayout(font, { inlineEdit: widget.inlineEdit,
 		computeWrapWidth: () => font.advance('M') * width });
 	layout.attach(documents.get(model));
-	t.after(() => { widget.detach(); layout.dispose(); });
+	afterTest(t, () => { widget.detach(); layout.dispose(); });
 	return { model, widget, font, layout, documents };
 }
 

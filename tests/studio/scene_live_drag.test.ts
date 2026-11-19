@@ -10,6 +10,7 @@ import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/
 import { SceneLivePositionDrag } from '../../ide/workbench/contrib/scene_editor/live_drag';
 import { SceneLivePosition } from '../../ide/workbench/contrib/scene_editor/live_positions';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes=require('cartlib/world/scene_library')
 local prefab=require('cartlib/world/prefab')
@@ -37,7 +38,7 @@ function fixture(t: TestContext) {
 	const start = () => drag.begin(binding, quad, hit, pointer(100, 100), BOUNDS, 400, 240, focus, () => current);
 	const move = (x: number, y: number) => pointerCapture.dispatch(pointer(x, y), false, 0, scope.surfaceScope);
 	const release = (x: number, y: number) => pointerCapture.dispatch(pointer(x, y, true), false, 0, scope.surfaceScope);
-	t.after(() => { pointerCapture.interrupt(false); inputFocus.setTarget(null); binding.dispose(); });
+	afterTest(t, () => { pointerCapture.interrupt(false); inputFocus.setTarget(null); binding.dispose(); });
 	return { ...f, context, binding, quad, drag, focus, start, move, release, retireFrame: () => { current = false; } };
 }
 

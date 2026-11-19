@@ -10,6 +10,7 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { NavigationHistoryEntry, navigationState, resetNavigationHistoryState } from '../../ide/navigation/navigation_history';
 import { createSceneDocumentFixture } from '../helpers/scene_document_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('first', { objects = { { member_id = 'actor', definition_id = 'actor' } } })
@@ -20,7 +21,7 @@ async function fixture(t: test.TestContext) {
 	const f = await createSceneDocumentFixture(t, SOURCE, []);
 	const input = f.primary.input; assert.ok(input instanceof SceneEditorInput);
 	assert.equal(selectSceneOutlineRow(input.view.hierarchy, 1), true); f.update();
-	const bookmark = new SceneBookmark(input.view.authoring, input.view); t.after(() => bookmark.dispose());
+	const bookmark = new SceneBookmark(input.view.authoring, input.view); afterTest(t, () => bookmark.dispose());
 	f.firstGroup.openEditor(new CodeEditorInput(f.model), { pinned: true }); f.update();
 	const pane = f.firstGroup.panes.activePane; assert.ok(pane instanceof CodeEditorPane); pane.focus();
 	return { ...f, bookmark };
@@ -65,7 +66,7 @@ test('a bookmark captured while Source is incomplete retains only the exact mapp
 	const f = await fixture(t), input = f.primary.input; assert.ok(input instanceof SceneEditorInput);
 	const offset = f.model.buffer.getText().indexOf("'first'") + "'first".length;
 	assert.equal(f.editor.textTarget!.replaceText(offset, offset + 1, ''), true); f.update();
-	const bookmark = new SceneBookmark(input.view.authoring, input.view); t.after(() => bookmark.dispose());
+	const bookmark = new SceneBookmark(input.view.authoring, input.view); afterTest(t, () => bookmark.dispose());
 	assert.equal(bookmark.isDisposed, false); assert.ok(bookmark.view.selected?.kind === 'member');
 	assert.equal(bookmark.resolve(f.ide.sceneSources), undefined);
 	assert.equal(f.editor.textTarget!.replaceText(offset, offset, "'"), true); f.update();
@@ -77,7 +78,7 @@ test('a bookmark captured while Source is incomplete retains only the exact mapp
 test('Back retains an incomplete Scene destination until its exact source occurrence is recognized', async t => {
 	const f = await fixture(t), input = f.primary.input; assert.ok(input instanceof SceneEditorInput);
 	const location = new SceneNavigationLocation(input, f.group, f.editor.sceneEditor);
-	resetNavigationHistoryState(); t.after(() => resetNavigationHistoryState());
+	resetNavigationHistoryState(); afterTest(t, () => resetNavigationHistoryState());
 	const entry = new NavigationHistoryEntry({ kind: 'location', location }); navigationState.back.push(entry);
 	const offset = f.model.buffer.getText().indexOf("'first'") + "'first".length;
 	assert.equal(f.editor.textTarget!.replaceText(offset, offset + 1, ''), true); f.update();

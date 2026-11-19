@@ -13,6 +13,7 @@ import { loadModelFromBuffer, packModelAsset } from '../../toolchain/ts/rompack/
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
 import { createTestRuntimeRomPayload } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** External glTF inputs, not a gameplay cart or a substituted model decoder. */
 function fixture() {
@@ -77,7 +78,7 @@ test('external mesh instances survive the real resource packer, package reader a
 	bytes.set(toc, header.tocOffset);
 	const layer = await buildSystemToolingLayer({ bytes, header });
 	const catalog = createLoadedProjectSourceCatalog({ admission: { id: 'models', projectRoot: 'model-fixture' }, layer }, []);
-	t.after(() => catalog.dispose());
+	afterTest(t, () => catalog.dispose());
 	const binding = catalog.resolveAsset('models', 'model', 'fixture')!;
 	assert.equal(binding.contextId, 'models'); assert.ok(binding.value === layer.package.model.fixture);
 	const model = binding.value.source;

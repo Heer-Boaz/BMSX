@@ -22,6 +22,7 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import * as constants from '../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
+import { afterTest } from '../helpers/test_cleanup';
 
 function ranges(projection: QuickPickProjection, match: QuickPickMatch): QuickPickHighlight[] {
 	const result: QuickPickHighlight[] = [];
@@ -119,7 +120,7 @@ test('shared picker consumes provider spans, updates them without text queries a
 	const area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const menu = new ContextMenuController(inputFocus, pointerCapture, area);
 	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
-	t.after(() => { picker.dispose(); menu.dispose(); constants.setIdeThemeVariant('light'); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); constants.setIdeThemeVariant('light'); });
 	const item = { label: 'source_choice', description: 'independent.lua', detail: '7:1' };
 	const highlights = new ScratchBuffer<QuickPickHighlight>(() => ({ field: 'label', start: 0, end: 0 }));
 	const match = { item, itemIndex: 0, highlightStart: 0, highlightEnd: 1 };

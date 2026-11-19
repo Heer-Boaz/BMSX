@@ -23,6 +23,7 @@ import * as colors from '../../ide/common/constants';
 import { WORKBENCH_ICON_SIZE, type WorkbenchIcon } from '../../ide/workbench/ui/icon';
 import { drawWorkbenchIcon } from '../../ide/workbench/render/icon';
 import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, orientation: 'horizontal' | 'vertical' = 'horizontal', menu: WorkbenchActionMenuId = 'workspaceEditReview.evidence.title') {
 	const focus = new InputFocusService();
@@ -64,7 +65,7 @@ function fixture(t: TestContext, orientation: 'horizontal' | 'vertical' = 'horiz
 		if (!capture.dispatch(snapshot, blocked, clock.now())) bar.handlePointer(snapshot);
 		hover.endDispatch();
 	};
-	t.after(() => { bar.dispose(); focus.setTarget(null); });
+	afterTest(t, () => { bar.dispose(); focus.setTarget(null); });
 	return { focus, capture, hover, content, state, enabled, calls, commands, bar, input, player, frame, key, press, pointer,
 		execute: (callback: (command: EditorCommandId) => void) => { onExecute = callback; } };
 }
@@ -324,7 +325,7 @@ test('Escape returns to owner content independently of command context and popup
 		cancelled++; content.focus();
 	});
 	bar.setInput(f.state, context);
-	t.after(() => bar.dispose());
+	afterTest(t, () => bar.dispose());
 	bar.focusTarget.focus(); f.key('Space', true); f.press('Escape');
 	assert.equal(f.focus.target, content);
 	assert.equal(bar.focusTarget.commandContext, context);
@@ -344,7 +345,7 @@ test('a global toolbar can cancel its own command scope into editor content', t 
 	const f = fixture(t);
 	const bar = new WorkbenchActionBarControl(f.focus, f.capture, f.hover, f.commands, null, () => f.content.focus());
 	bar.setInput(f.state, bar.focusTarget);
-	t.after(() => bar.dispose());
+	afterTest(t, () => bar.dispose());
 	bar.focusTarget.focus(); f.press('Escape');
 	assert.equal(f.focus.target, f.content);
 	bar.focusTarget.focus(); bar.clearInput();
@@ -657,7 +658,7 @@ test('an admitted physical action press activates its actual control once withou
 		assert.ok(target === f.bar.focusTarget && target !== context);
 		assert.equal(f.capture.active, true); assert.equal(f.state.pressedCommand, command);
 		assert.ok(f.focus.target === field);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.pointer(0, PRIMARY, PRIMARY);
 	assert.deepEqual(activations, [f.bar.focusTarget]); assert.deepEqual(f.calls, []); assert.ok(f.focus.target === field);
 	f.pointer(0, 0, 0, PRIMARY);
@@ -674,7 +675,7 @@ test('physical action activation may retire the armed input before a coalesced r
 		assert.ok(target === f.bar.focusTarget); activations++;
 		assert.equal(f.capture.active, true); assert.equal(f.state.pressedCommand, f.state.items[0].command);
 		f.bar.clearInput();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.doesNotThrow(() => f.pointer(0, 0, PRIMARY, PRIMARY));
 	assert.equal(activations, 1); assert.equal(f.capture.active, false); assert.equal(f.state.pressedCommand, null);
 	assert.deepEqual(f.calls, []); assert.ok(f.focus.target === field);

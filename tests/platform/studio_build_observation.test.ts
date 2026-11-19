@@ -10,6 +10,7 @@ import type { RomArtifact, RomBuildUnit } from '../../toolchain/ts/rompack/build
 import { loadPublishedBuild } from '../../ide/browser/published_media';
 import { StudioHttpSession } from '../../ide/browser/http_session';
 import type { PublishedBuildOpenResult } from '../../ide/workbench/services/builds';
+import { afterTest } from '../helpers/test_cleanup';
 
 // Exercise browser storage and independently ordered HTTP/stream observations, not UI copy.
 test('published navigation reports browser policy denial and an allowed gesture opens an isolated exact-build tab', { timeout: 30000 }, async t => {
@@ -29,7 +30,7 @@ test('published navigation reports browser policy denial and an allowed gesture 
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
 	const browser = await chromium.launch({ args: ['--no-sandbox'], ignoreDefaultArgs: ['--disable-popup-blocking'] });
-	t.after(async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	afterTest(t, async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 	const address = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 	const context = await browser.newContext(), page = await context.newPage();
 	const original = `${address}/studio.debug.html?rom=original.debug.rom#original`;
@@ -93,7 +94,7 @@ test('published build admission retains the exact receipt project even when arti
 		res.writeHead(404).end();
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
-	t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	afterTest(t, async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 	const address = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 	const session = new StudioHttpSession(address);
 	for (const [requestId, project] of [[firstId, firstProject], [secondId, secondProject]] as const) {
@@ -143,7 +144,7 @@ test('build receipts survive multiple windows and HTTP/stream reordering', { tim
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
 	const browser = await chromium.launch({ args: ['--no-sandbox'] });
-	t.after(async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	afterTest(t, async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 	const address = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 	const context = await browser.newContext(), first = await context.newPage(), second = await context.newPage();
 	await first.goto(address); await second.goto(address);
@@ -219,7 +220,7 @@ test('closing a Build Output reader aborts actual metadata and log fetches witho
 	});
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
 	const browser = await chromium.launch({ args: ['--no-sandbox'] });
-	t.after(async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	afterTest(t, async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 	const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`, page = await browser.newPage();
 	await page.goto(origin);
 	for (const method of ['get', 'log']) {

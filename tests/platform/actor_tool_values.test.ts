@@ -4,6 +4,7 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { asInteger, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { createLiveStudioFixture } from '../helpers/live_studio';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** Real BIOS, cartlib World admission and the ordinary tool context. This is
  * an in-process headless wire test, not browser UI or an external MCP session. */
@@ -26,7 +27,7 @@ end
 	ide.transport.pause(); editor.interaction.setActive(true);
 	const version = cart.version, text = cart.buffer.getText();
 	const lifetime = new AbortController(), tools = ide.tools.open(lifetime.signal);
-	t.after(() => lifetime.abort());
+	afterTest(t, () => lifetime.abort());
 	const target = ide.inspection.target;
 	const inspected = await tools.execute('studio_inspect_runtime', { target });
 	assert.ok('inspection' in inspected.data);

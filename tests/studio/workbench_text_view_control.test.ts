@@ -15,6 +15,7 @@ import { pointerCapture, WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { WorkbenchTextViewControl } from '../../ide/workbench/ui/text_view/control';
 import { WorkbenchTextViewModel } from '../../ide/workbench/ui/text_view/model';
+import { afterTest } from '../helpers/test_cleanup';
 
 const P = PointerButton.Primary;
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
@@ -44,7 +45,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		}
 		pointerCapture.endRoute(event); pointerHover.endDispatch(); update();
 	};
-	t.after(() => { keybindings.dispose(); control.dispose(); pointerCapture.interrupt(false); pointerHover.clear(); inputFocus.setTarget(null); });
+	afterTest(t, () => { keybindings.dispose(); control.dispose(); pointerCapture.interrupt(false); pointerHover.clear(); inputFocus.setTarget(null); });
 	return { control, model, actions, bounds, update, press, pointer };
 }
 
@@ -135,7 +136,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const unbind = f.control.focusTarget.onDidFocus(() => {
 			unbind(); returned = true; f.control.setInput(newer); f.update(); newer.selectAll();
 		});
-		t.after(unbind);
+		afterTest(t, unbind);
 		f.control.setInput(requested);
 		assert.equal(returned, true); assert.ok(inputFocus.admittedTarget === f.control.focusTarget);
 		clipboard.execute('copy', inputFocus.admittedTarget!.clipboard!);

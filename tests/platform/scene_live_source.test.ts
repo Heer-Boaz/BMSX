@@ -11,6 +11,7 @@ import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createLiveStudioFixture } from '../helpers/live_studio';
 import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const pages of [1, 2]) test(`a visible initialized visual shares position history with its ${pages}-page runtime image`, async t => {
 	const f = await createLiveStudioFixture(t), { editor, ide, sources } = f;
@@ -82,7 +83,7 @@ for (const pages of [1, 2]) test(`a visible initialized visual shares position h
 	assert.equal(source.buffer.getText(), original, 'pointer motion does not mutate source or run Lua');
 	let changes = SourceChangeMap.unchanged(original.length);
 	const releaseChanges = source.onDidChangeContent(event => { changes = changes.append(event.changes); });
-	t.after(releaseChanges);
+	afterTest(t, releaseChanges);
 	f.native.apply([{ type: 'button', button: 'primary', down: false }, { type: 'key', code: 'AltLeft', down: false }]);
 	releaseChanges();
 	const moved = authoring.selectedLocalTransform!;

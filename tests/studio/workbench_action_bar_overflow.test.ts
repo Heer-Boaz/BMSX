@@ -28,6 +28,7 @@ import { WORKBENCH_MENUS } from '../../ide/workbench/ui/menu/registry';
 import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/configuration';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PRIMARY = PointerButton.Primary;
 const ACTION_MENUS = ['aem.title', 'play.title'] as const;
@@ -114,7 +115,7 @@ function fixture(t: TestContext, menuId: WorkbenchActionMenuId = 'aem.title') {
 		else pointer(state.items.length, PRIMARY, PRIMARY, PRIMARY);
 		assert.equal(menu.visible, true); assert.equal(menu.invocationOrigin, bar.focusTarget);
 	};
-	t.after(() => { bar.dispose(); menu.dispose(); focus.setTarget(null); });
+	afterTest(t, () => { bar.dispose(); menu.dispose(); focus.setTarget(null); });
 	return { focus, capture, parent, content, unrelated, menu, state, font, bar, calls, layout, key, press, pointer, open };
 }
 
@@ -234,7 +235,7 @@ for (const replacement of ['origin', 'other', 'none', 'menu'] as const) test(`va
 		}) });
 		lifetime.add({ dispose: () => { detached = true; } });
 	};
-	t.after(() => { bar.dispose(); menu.dispose(); surfaces.dispose(); field.dispose(); model.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { bar.dispose(); menu.dispose(); surfaces.dispose(); field.dispose(); model.dispose(); inputFocus.setTarget(null); });
 	field.setValue(1); field.field.focusTarget.focus(); setFieldText(field.field, '2', false);
 	const bounds = state.overflow!.button.bounds;
 	bar.handlePointer({ valid: true, insideViewport: true, viewportX: bounds.left + 1, viewportY: bounds.top + 1,

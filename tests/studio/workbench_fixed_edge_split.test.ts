@@ -8,6 +8,7 @@ import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { WorkbenchSplitControl } from '../../ide/workbench/ui/split_control';
 import { WorkbenchFixedEdgeSplitView, WORKBENCH_SPLIT_SIZE } from '../../ide/workbench/ui/split_view';
+import { afterTest } from '../helpers/test_cleanup';
 
 // Widths and sash positions here are the shared geometry/input primitive's contract.
 test('fixed-edge sizing preserves requested pixels through host and minimum changes, with a producer-owned default', () => {
@@ -86,7 +87,7 @@ for (const edge of ['start', 'end'] as const) test(`the shared ${edge}-edge sash
 	const view = new WorkbenchFixedEdgeSplitView(edge);
 	view.preferredSize = 160; view.minimumFirstSize = 84; view.minimumSecondSize = 24;
 	view.layout(100, 20, 1100, 220); control.setInput(view);
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	parent.focus();
 	const position = view.position;
 	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true,
@@ -115,7 +116,7 @@ test('an exactly constrained fixed-edge sash has no resize admission and preserv
 	view.minimumFirstSize = 80 + WORKBENCH_SPLIT_SIZE / 2;
 	view.minimumSecondSize = 200 + WORKBENCH_SPLIT_SIZE / 2;
 	view.requestedSize = 300; view.layout(37, 19, 37 + 288, 219);
-	control.setInput(view); parent.focus(); t.after(() => control.dispose());
+	control.setInput(view); parent.focus(); afterTest(t, () => control.dispose());
 	assert.equal(view.resizable, false); assert.equal(control.focusTarget.focus(), false); assert.ok(focus.target === parent);
 	view.moveTo(50); assert.equal(view.requestedSize, 300);
 	assert.equal(view.position, 37 + 84);

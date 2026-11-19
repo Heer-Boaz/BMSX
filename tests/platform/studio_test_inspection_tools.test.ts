@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createCodexModelFixture } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: conversation and ordinary UI inspect the same real failed test target`, { timeout: 180000 }, async t => {
 	const call = (id: string, name: string, args: unknown) => [{ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) }];
@@ -25,7 +26,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	]);
 	const f = await createAssistantStudioFixture(t, `test-inspection-${backend}`, {
 		provider: { name: 'Offline test inspection fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
-	t.after(() => writeFile(join(f.evidence, `test-inspection-${backend}-requests.json`), JSON.stringify(model.requests)));
+	afterTest(t, () => writeFile(join(f.evidence, `test-inspection-${backend}-requests.json`), JSON.stringify(model.requests)));
 	const result = await f.page.evaluate(async backend => {
 		const entry = '/test.js', module = await import(entry);
 		return module.runAssistantTestInspection(backend, document.querySelector('canvas'), globalThis.capture);

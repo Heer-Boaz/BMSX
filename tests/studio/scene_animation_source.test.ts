@@ -5,6 +5,7 @@ import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { SCENE_ANIMATION_IMPORTS, SCENE_ANIMATION_MODULES, SCENE_NAMED_ANIMATION } from '../fixtures/studio/scene_animation';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, definitions: string, members = "{member_id='actor',definition_id='actor'}",
 	providers: readonly (readonly [string, string])[] = []) {
@@ -19,7 +20,7 @@ scenes.register('main',{objects={${members}}})`;
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });
 	const resource = f.sources.catalog.resolveResource({ contextId: f.resource.contextId, path: 'prefabs.lua' })!;
 	const prefabs = resolveLuaTextFileModel(f.models, f.sources.catalog, resource);
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	const images = () => { context.refresh(); return context.visualScene!.canvas.filter(visual => visual.kind === 'sprite').map(visual => visual.image); };
 	return { ...f, source, context, prefabs, images };
 }

@@ -12,6 +12,7 @@ import { workbenchWindowForSurface } from '../../ide/workbench/ui/window/control
 import type { SerializedEditorGroupLayout, SerializedEditorParts } from '../../ide/workbench/services/editor/editor_parts_serialization';
 import { createRomInspectorImageSnapshot } from '../fixtures/studio/rom_inspector';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('editor layout reset retains exact part topology, duplicate views, nonportable inputs and dirty canonical history', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
@@ -66,7 +67,7 @@ test('editor reset preserves newer native focus published by document default pl
 	for (const part of parts.documents) part.window!.resetPlacement();
 	let published = false;
 	const release = f.firstPart.window!.model.onDidChangePlacement(() => { release(); published = true; f.second.focus(); });
-	t.after(release);
+	afterTest(t, release);
 	assert.equal(parts.captureLayoutReset().reset(), true);
 	assert.equal(published, true); assert.ok(inputFocus.admittedTarget === f.second.code.focusTarget && parts.activePart === f.secondPart);
 	assert.equal(f.firstPart.window!.model.placementInitialized, true); assert.equal(f.secondPart.window!.model.placementInitialized, true);
@@ -78,7 +79,7 @@ test('a document admitted during reset placement retains its explicit request an
 	const bounds = { left: 40, top: 50, right: 240, bottom: 180 };
 	let newer: ReturnType<typeof parts.createDocument> | undefined;
 	const release = f.firstPart.window!.model.onDidChangePlacement(() => { release(); newer = parts.createDocument({ requestedBounds: bounds }); });
-	t.after(release);
+	afterTest(t, release);
 	assert.equal(parts.captureLayoutReset().reset(), false); assert.ok(newer !== undefined && parts.documents.includes(newer));
 	// Requested placement is this owner algorithm's output, not a screenshot coordinate assertion.
 	assert.deepEqual(newer.window!.model.requestedBounds, bounds);
@@ -100,7 +101,7 @@ test('a newer later-document placement published by an earlier reset target is n
 	const bounds = { left: 40, top: 50, right: 240, bottom: 180 };
 	const release = f.firstPart.window!.model.onDidChangePlacement(() => {
 		release(); f.secondPart.window!.model.setState({ requestedBounds: bounds, placement: 'maximized', minimized: false });
-	}); t.after(release);
+	}); afterTest(t, release);
 	assert.equal(request.reset(), false);
 	assert.equal(f.secondPart.window!.model.placement, 'maximized');
 	assert.deepEqual(f.secondPart.window!.model.requestedBounds, bounds);
@@ -112,7 +113,7 @@ test('a newer same-document placement callback keeps its own request instead of 
 	const bounds = { left: 40, top: 50, right: 240, bottom: 180 };
 	const release = f.firstPart.window!.model.onDidChangePlacement(() => {
 		release(); f.firstPart.window!.model.setState({ requestedBounds: bounds, placement: 'maximized', minimized: false });
-	}); t.after(release);
+	}); afterTest(t, release);
 	assert.equal(request.reset(), false);
 	assert.equal(f.firstPart.window!.model.placement, 'maximized');
 	assert.deepEqual(f.firstPart.window!.model.requestedBounds, bounds);
@@ -122,7 +123,7 @@ test('a prepared editor reset cannot overwrite a newer later-part ratio publishe
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	parts.splitGroup(f.secondGroup, 'right')!.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	const branch = f.secondPart.arrangement.splits[0], request = parts.captureLayoutReset();
-	const release = f.firstPart.window!.model.onDidChangePlacement(() => { release(); branch.split.ratio = 0.7; }); t.after(release);
+	const release = f.firstPart.window!.model.onDidChangePlacement(() => { release(); branch.split.ratio = 0.7; }); afterTest(t, release);
 	assert.equal(request.reset(), false); assert.equal(branch.split.ratio, 0.7);
 	assert.ok(f.secondPart.arrangement.splits[0] === branch && f.secondGroup.model.activeTab === f.secondInput);
 });
@@ -197,7 +198,7 @@ test('a newer editor split request from sash return-focus supersedes the reset t
 	const release = inputFocus.onDidChangeTarget(() => {
 		if (inputFocus.admittedTarget !== f.first.code.focusTarget) return;
 		release(); returned = true; branch.split.ratio = 0.7;
-	}); t.after(release);
+	}); afterTest(t, release);
 	assert.equal(request.reset(), false); assert.equal(returned, true);
 	assert.equal(branch.split.ratio, 0.7); assert.equal(control.interactionActive, false);
 	assert.ok(inputFocus.admittedTarget === f.first.code.focusTarget);

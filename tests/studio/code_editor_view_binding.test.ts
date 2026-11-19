@@ -12,6 +12,7 @@ import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { undo as undoSource, redo as redoSource } from '../../ide/editor/editing/undo_controller';
 import { inputFocus } from '../../ide/input/focus';
+import { afterTest } from '../helpers/test_cleanup';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'positions.lua', location: { kind: 'workspace' as const, path: 'positions.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'positions.lua', source: { resid: 'positions.lua', type: 'lua' as const } };
 
@@ -22,7 +23,7 @@ test('external model edits track an unattached code cursor, oriented selection a
 	setSingleCursorSelectionAnchor(view, 1, 1);
 	view.scrollRow = 70; // Wrapped visual rows are not buffer rows.
 	const binding = new CodeEditorViewBinding(model, view);
-	t.after(() => { binding.dispose(); model.dispose(); });
+	afterTest(t, () => { binding.dispose(); model.dispose(); });
 	let events = 0;
 	model.onDidChangeContent(() => events += 1);
 	const prefix = '-- 🐉\r\n';
@@ -53,7 +54,7 @@ test('selection edge affinity excludes new text, in either direction, and an emp
 		view.cursorColumn = reverse ? 1 : 5;
 		setSingleCursorSelectionAnchor(view, 0, reverse ? 5 : 1);
 		const binding = new CodeEditorViewBinding(model, view);
-		t.after(() => { binding.dispose(); model.dispose(); });
+		afterTest(t, () => { binding.dispose(); model.dispose(); });
 		model.pushEditOperations([{ offset: 1, deleteLength: 0, text: 'L' }, { offset: 5, deleteLength: 0, text: 'R' }]);
 		assert.equal(view.cursorColumn, reverse ? 2 : 6);
 		assert.equal(view.selectionAnchor.column, reverse ? 6 : 2);
@@ -74,7 +75,7 @@ test('the old-buffer boundary fires once per atomic edit, including coalesced mu
 	const view = createCodeEditorViewState();
 	view.cursorColumn = 3;
 	const binding = new CodeEditorViewBinding(model, view);
-	t.after(() => { binding.dispose(); model.dispose(); });
+	afterTest(t, () => { binding.dispose(); model.dispose(); });
 	const before: string[] = [];
 	const after: string[] = [];
 	model.onWillChangeContent(() => before.push(model.buffer.getText()));
@@ -105,7 +106,7 @@ test('an explicit Source history receiver restores text selection without restor
 	const view = createCodeEditorViewState();
 	view.scrollRow = 7.25; view.scrollLeft = 19.75;
 	const binding = new CodeEditorViewBinding(model, view);
-	t.after(() => { binding.dispose(); model.dispose(); });
+	afterTest(t, () => { binding.dispose(); model.dispose(); });
 	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 1, selectionAnchor: null }, view.editSource);
 	const after = codeEditorEditState.of({ ...before.value, cursorRow: 1, cursorColumn: 3 }, view.editSource);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '\n' }], before, () => after);
@@ -124,7 +125,7 @@ test('history captures canonical source positions independently of retained view
 	const input = new CodeEditorInput(model), view = input.context.view;
 	view.cursorColumn = 6; view.scrollRow = 5; view.scrollLeft = 10.25;
 	const selection = new CodeEditorNavigationSelection(input);
-	t.after(() => { selection.dispose(); input.dispose(); model.dispose(); });
+	afterTest(t, () => { selection.dispose(); input.dispose(); model.dispose(); });
 	assert.equal(selection.snapshot.cursor, 6); assert.equal(selection.snapshot.anchor, null);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉\n' }]);
 	assert.equal(selection.snapshot.cursor, 12); assert.equal(selection.snapshot.anchor, null);
@@ -137,7 +138,7 @@ test('Source Undo and Redo deliver recorded selections only to the invoking view
 	const origin = createCodeEditorViewState(), invoking = createCodeEditorViewState();
 	origin.cursorColumn = 3; origin.scrollRow = 70; origin.scrollLeft = 41.5;
 	const originBinding = new CodeEditorViewBinding(model, origin), invokingBinding = new CodeEditorViewBinding(model, invoking);
-	t.after(() => {
+	afterTest(t, () => {
 		inputFocus.setTarget(null);
 		originBinding.dispose(); invokingBinding.dispose();
 	});
@@ -171,7 +172,7 @@ test('programmatic model history maps both Source views without restoring the or
 	origin.scrollRow = 7; origin.scrollLeft = 13;
 	sibling.cursorColumn = 6; sibling.scrollRow = 70; sibling.scrollLeft = 41.5;
 	const originBinding = new CodeEditorViewBinding(model, origin), siblingBinding = new CodeEditorViewBinding(model, sibling);
-	t.after(() => { originBinding.dispose(); siblingBinding.dispose(); model.dispose(); });
+	afterTest(t, () => { originBinding.dispose(); siblingBinding.dispose(); model.dispose(); });
 	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 1, selectionAnchor: { row: 0, column: 0 } }, origin.editSource);
 	const after = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 3, selectionAnchor: null }, origin.editSource);
 	model.pushEditOperations([{ offset: 1, deleteLength: 0, text: 'X' }], before, () => after);
@@ -190,7 +191,7 @@ test('typing coalesces within a Source view but changing the origin separates sh
 	const first = createCodeEditorViewState(), second = createCodeEditorViewState();
 	first.cursorColumn = 4;
 	const firstBinding = new CodeEditorViewBinding(model, first), secondBinding = new CodeEditorViewBinding(model, second);
-	t.after(() => { firstBinding.dispose(); secondBinding.dispose(); model.dispose(); });
+	afterTest(t, () => { firstBinding.dispose(); secondBinding.dispose(); model.dispose(); });
 	const firstBefore = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 4, selectionAnchor: null }, first.editSource);
 	const firstMiddle = codeEditorEditState.of({ ...firstBefore.value, cursorColumn: 5 }, first.editSource);
 	const firstAfter = codeEditorEditState.of({ ...firstBefore.value, cursorColumn: 6 }, first.editSource);
@@ -231,7 +232,7 @@ test('retiring a Source view does not transfer its history snapshot authority to
 	const replacement = createCodeEditorViewState();
 	replacement.cursorColumn = 4; replacement.scrollRow = 71; replacement.scrollLeft = 8;
 	const replacementBinding = new CodeEditorViewBinding(model, replacement);
-	t.after(() => { replacementBinding.dispose(); model.dispose(); });
+	afterTest(t, () => { replacementBinding.dispose(); model.dispose(); });
 	model.undo();
 	assert.equal(retired.cursorColumn, 2);
 	assert.equal(replacement.cursorColumn, 3); assert.equal(replacement.scrollRow, 71); assert.equal(replacement.scrollLeft, 8);
@@ -247,7 +248,7 @@ test('Source Undo of a compound workspace edit restores only the invoking model 
 	const aOrigin = createCodeEditorViewState(), aSibling = createCodeEditorViewState(), bOrigin = createCodeEditorViewState(), invoking = createCodeEditorViewState();
 	const bindings = [new CodeEditorViewBinding(a, aOrigin), new CodeEditorViewBinding(a, aSibling),
 		new CodeEditorViewBinding(b, bOrigin), new CodeEditorViewBinding(b, invoking)];
-	t.after(() => {
+	afterTest(t, () => {
 		inputFocus.setTarget(null);
 		for (const binding of bindings) binding.dispose();
 		models.clear();

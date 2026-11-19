@@ -25,6 +25,7 @@ import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { applyAemSourceRevision } from '../../ide/runtime/aem';
 import { resourceIdentityKey } from '../../ide/common/resource';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = 'module<entry>\nreturn 17';
 const YAML = '# authored input\nvalue: 3\n';
@@ -39,7 +40,7 @@ test('actual installed Lua/YAML/AEM input remains independent of edit, source Sa
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, null]);
 	const sources = createLoadedTestRuntimeSourceState(loaded.system, loaded.cartridgeSlots), models = new EditorTextModelService();
 	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources.catalog);
-	t.after(async () => { await saves.shutdown(); models.clear(); await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
+	afterTest(t, async () => { await saves.shutdown(); models.clear(); await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
 	const installed = sources.currentBlua32Media, bytes = sources.cartridgeSlots[0]!.rom.bytes;
 	for (const [path, mode, source] of [['entry.lua', 'lua', SOURCE], ['map.yaml', 'yaml', YAML], ['events.aem.yaml', 'aem', AEM]] as const) {
 		const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })!;
@@ -59,7 +60,7 @@ test('actual installed Lua/YAML/AEM input remains independent of edit, source Sa
 
 test('status retains every explicit installation of one context and admits an absent context without selecting a socket', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-source-installations-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const options = { systemSource: 'module<entry>\nreturn', systemModules: [] };
 	const a = await buildScenarioMediaFixture(join(directory, 'a'), [], { ...options, cartSource: SOURCE });
 	const b = await buildScenarioMediaFixture(join(directory, 'b'), [], { ...options, cartSource: 'module<entry>\nreturn 29' });
@@ -67,7 +68,7 @@ test('status retains every explicit installation of one context and admits an ab
 	const seed = createLoadedTestRuntimeSourceState(loaded.system, [loaded.cartridgeSlots[0], null]);
 	const sources = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots, { catalog: seed.catalog, systemContextId: TEST_SYSTEM_CONTEXT_ID,
 		cartridgeContextIds: [TEST_CARTRIDGE_CONTEXT_IDS[0], TEST_CARTRIDGE_CONTEXT_IDS[0]] });
-	const models = new EditorTextModelService(); t.after(() => models.clear());
+	const models = new EditorTextModelService(); afterTest(t, () => models.clear());
 	const model = models.retain(sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua' })!, 'lua', SOURCE);
 	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
 	const installations = getTextFileRuntimeSourceInstallations(sources, model);
@@ -98,7 +99,7 @@ test('failed explicit AEM application preserves the exact installed acknowledgem
 	const audio = new HostAudioOutput(new HostAudioDevice(new DiscardingAudioSink()), runtime.machine.audioController, runtime.timing.ufpsScaled);
 	const tasks = new RuntimeTaskQueue(audio, target.presenter), guest = new SuspendedGuestSession(runtime);
 	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources.catalog);
-	t.after(async () => { await saves.shutdown(); models.clear(); audio.dispose(); target.dispose(); await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
+	afterTest(t, async () => { await saves.shutdown(); models.clear(); audio.dispose(); target.dispose(); await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'events.aem.yaml' })!;
 	const model = models.retain(resource, 'aem', AEM, AEM, null);
 	const accepted = 'events:\n  stop:\n    channel: music\n    rules:\n      - go:\n          stop: { fade_ms: 7 }\n';
@@ -138,7 +139,7 @@ test('failed explicit AEM application preserves the exact installed acknowledgem
 
 test('aggregate source status requires every installation to be applied, without hiding source-only members', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-source-status-aggregate-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const modulePath = 'cartlib/status_library', moduleSource = 'return 17';
 	const options = { systemSource: 'module<entry>\nreturn', systemModules: [], cartModules: [{ path: modulePath, source: moduleSource }] };
 	const a = await buildScenarioMediaFixture(join(directory, 'a'), [], { ...options,
@@ -149,7 +150,7 @@ test('aggregate source status requires every installation to be applied, without
 	const bindings = { catalog: seed.catalog, systemContextId: TEST_SYSTEM_CONTEXT_ID,
 		cartridgeContextIds: [TEST_CARTRIDGE_CONTEXT_IDS[0], TEST_CARTRIDGE_CONTEXT_IDS[0]] as const };
 	const mixed = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots, bindings);
-	const models = new EditorTextModelService(); t.after(() => models.clear());
+	const models = new EditorTextModelService(); afterTest(t, () => models.clear());
 	const resource = seed.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: `${modulePath}.lua` })!;
 	const model = models.retain(resource, 'lua', moduleSource);
 	assert.deepEqual(getTextFileRuntimeSourceInstallations(mixed, model).map(({ domain, status }) => ({ domain, status })),

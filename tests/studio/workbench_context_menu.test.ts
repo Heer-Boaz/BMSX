@@ -17,6 +17,7 @@ import { WORKBENCH_MENUS, type WorkbenchMenuItem } from '../../ide/workbench/ui/
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PRIMARY = PointerButton.Primary;
 const ITEMS: readonly WorkbenchMenuItem[] = [
@@ -62,13 +63,13 @@ function fixture(t: TestContext) {
 			clock.advance(20); input.pollInput(); focus.handleKeyboard(new KeyInputEvent(code, input.getPlayerInput(1).modifiers, false, down));
 		}
 	};
-	t.after(() => menu.dispose());
+	afterTest(t, () => menu.dispose());
 	return { focus, capture, origin, menu, commands, executed, disabled, show, row, event, pointer, press };
 }
 
 test('menu enablement, checked state and execution retain the same explicit editor and command origin', t => {
 	const f = fixture(t), input = new HomeInput(null), clicked = f.focus.createTarget();
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	let enabled = 0, checked = 0, executed = 0;
 	f.menu.show(100, 80, [{ type: 'command', command: 'keepEditor' }], {
 		isEnabled(command, target, editor) {
@@ -341,7 +342,7 @@ test('real popup surfaces distinguish owned disposal from external owner retirem
 			} });
 		lifetime.add(surface);
 	});
-	t.after(() => { menu.dispose(); surfaces.dispose(); });
+	afterTest(t, () => { menu.dispose(); surfaces.dispose(); });
 	const commands = { isEnabled: () => true, execute() {} };
 	const first = menu.show(2, 2, ITEMS, commands, { selectFirst: true });
 	menu.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none));
@@ -474,7 +475,7 @@ for (const populated of [false, true])
 				getBounds: () => menu.model.bounds, getClip: () => area, draw() {},
 				onRetire: () => { if (!lifetime.isDisposed) menu.hide(false); } }));
 		});
-		t.after(() => { menu.dispose(); unbindAdmission(); surfaces.dispose(); });
+		afterTest(t, () => { menu.dispose(); unbindAdmission(); surfaces.dispose(); });
 		assert.equal(origin.focus(), true);
 		// An anchor outside the local clip is representable; placement belongs to the menu model.
 		menu.show(20, 30, populated ? ITEMS : [], { isEnabled: () => true, execute() {} });

@@ -12,6 +12,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { WorkbenchImageControl } from '../../ide/workbench/ui/image_control';
 import { WorkbenchImageViewport } from '../../ide/workbench/ui/image_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, keyboard?: (event: KeyInputEvent) => boolean) {
 	const view = new WorkbenchImageViewport();
@@ -29,7 +30,7 @@ function fixture(t: TestContext, keyboard?: (event: KeyInputEvent) => boolean) {
 		if (!capture.dispatch(snapshot, false, 0)) control.handlePointer(snapshot);
 		return snapshot;
 	};
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	return { view, focus, capture, parent, control, pointer };
 }
 

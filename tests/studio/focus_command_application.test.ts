@@ -9,6 +9,7 @@ import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE as SCENE_SOURCE } from '.
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { afterTest } from '../helpers/test_cleanup';
 
 function commandFixture(t: TestContext) {
 	const f = createActualSourcePanes(t), context = f.first.commandTarget;
@@ -179,7 +180,7 @@ test('Scene field draft settlement can detach its invoking Details without movin
 		if (!armed) return;
 		armed = false; f.control.details.control.clearView();
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.editor.commands.execute('sceneEditor.moveMemberDown', field.field.focusTarget);
 	assert.equal(f.control.scope.contextGeneration, rootGeneration);
 	assert.equal(f.control.details.control.hasView, false);

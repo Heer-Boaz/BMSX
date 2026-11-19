@@ -14,11 +14,12 @@ import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
 	const document = f.ide.sceneSources.get(model);
@@ -54,7 +55,7 @@ for (const route of ['keyboard', 'application', 'native'] as const)
 		const f = await fixture(t), target = f.field.field.focusTarget;
 		setFieldText(f.field.field, '123', true); assert.equal(f.field.pending, true);
 		let closing: Promise<void> | undefined;
-		const release = f.model.onDidChangeContent(() => { release(); closing = f.saves.shutdown(); }); t.after(release);
+		const release = f.model.onDidChangeContent(() => { release(); closing = f.saves.shutdown(); }); afterTest(t, release);
 		const save = t.mock.method(f.saves, 'save');
 		assert.doesNotThrow(() => {
 			if (route === 'keyboard') f.key('KeyS', KeyModifier.ctrl);
@@ -113,7 +114,7 @@ for (const route of ['application', 'native'] as const) for (const retirement of
 				editorTextModelService.clear();
 				editorTextModelService.retain(f.model.resource, 'lua', replacementSource);
 			}
-		}); t.after(release);
+		}); afterTest(t, release);
 		const save = t.mock.method(f.saves, 'save');
 		if (route === 'application') f.editor.commands.execute('save', target);
 		else inputFocus.executeCommand('save', f.primary.commandTarget);

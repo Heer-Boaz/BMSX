@@ -11,6 +11,7 @@ import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { WorkbenchSplitControl } from '../../ide/workbench/ui/split_control';
 import { WorkbenchSplitView } from '../../ide/workbench/ui/split_view';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('split intent changes notify session consumers, while constrained layout retains the same intent', () => {
 	const view = new WorkbenchSplitView(0.4), ratios: number[] = [];
@@ -76,7 +77,7 @@ test('shared pane sash captures drag, releases on blur/replacement and consumes 
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
 	const parent = focus.createTarget(), control = new WorkbenchSplitControl(focus, capture, hover, parent);
 	const view = new WorkbenchSplitView(0.4);
-	t.after(() => { control.dispose(); input.dispose(); });
+	afterTest(t, () => { control.dispose(); input.dispose(); });
 	view.layout(100, 20, 1100, 600);
 	control.setInput(view);
 	parent.focus();
@@ -117,7 +118,7 @@ test('vertical split uses its height for drag, limits and focused keyboard resiz
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
 	const parent = focus.createTarget(), control = new WorkbenchSplitControl(focus, capture, hover, parent);
 	const view = new WorkbenchSplitView(0.4, 'vertical');
-	t.after(() => { control.dispose(); input.dispose(); });
+	afterTest(t, () => { control.dispose(); input.dispose(); });
 	view.layout(150, 100, 300, 1100);
 	control.setInput(view);
 	parent.focus();
@@ -190,7 +191,7 @@ test('unarranged or minimum-filled sashes cannot receive resize focus or capture
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
 	const parent = focus.createTarget(), control = new WorkbenchSplitControl(focus, capture, hover, parent);
 	const view = new WorkbenchSplitView(0.6);
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	control.setInput(view); parent.focus();
 	control.focusTarget.focus(); assert.equal(control.focusTarget.hasFocus, false);
 	view.resize(0.2); assert.equal(view.ratio, 0.6, 'no arranged resize interval preserves requested intent');
@@ -213,7 +214,7 @@ test('rebinding the same sash control to another arranged axis drains its old ho
 	columns.layout(10, 20, 610, 420); rows.layout(10, 20, 610, 420);
 	control.setInput(columns); control.focusTarget.focus();
 	let blurred = false; const unbind = control.focusTarget.onDidBlur(() => { blurred = true; });
-	t.after(() => { unbind(); control.dispose(); });
+	afterTest(t, () => { unbind(); control.dispose(); });
 	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0,
 		viewportX: columns.position, viewportY: 60 };

@@ -16,6 +16,7 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
+import { afterTest } from '../helpers/test_cleanup';
 
 const source = 'return 1\n'.repeat(20);
 function diagnostic(model: TextModel, row = 13, column = 5): EditorDiagnostic {
@@ -39,7 +40,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 240) 
 		return glyphs;
 	};
 	const press = (code: string) => { inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none)); inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, false)); };
-	t.after(() => { for (const model of models) model.dispose(); });
+	afterTest(t, () => { for (const model of models) model.dispose(); });
 	return { ...f, models, paint, press };
 }
 
@@ -67,7 +68,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} row disclosure 
 
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
 	test(`${variant}/${theme} diagnostic paint distinguishes actual files and reserves an unambiguous 1-based location line`, t => {
-		const before = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme); t.after(() => colors.setIdeThemeVariant(before));
+		const before = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme); afterTest(t, () => colors.setIdeThemeVariant(before));
 		const f = fixture(t, variant), painted = f.paint(), a = f.controller.getItemLayout(0), b = f.controller.getItemLayout(1);
 		assert.equal(a.location, 'intro.lua:14:6'); assert.equal(b.location, 'cart.lua:14:6');
 		assert.equal(a.height, (a.lines.length + 1) * editorViewState.lineHeight);
@@ -150,7 +151,7 @@ test('intrinsic activity height stops materializing additional diagnostics at it
 
 test('qualified feedback distinguishes duplicate basenames and retires on replacement, modality, hide and detach', t => {
 	const f = fixture(t), duplicate = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'other/intro.lua', location: { kind: 'workspace' as const, path: 'other/intro.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'other/intro.lua', source: { type: 'lua', resid: 'other' } }, 'lua', source);
-	t.after(() => duplicate.dispose());
+	afterTest(t, () => duplicate.dispose());
 	f.controller.setDiagnostics([diagnostic(f.models[0]), diagnostic(duplicate)], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	f.controller.focus(); f.press('Home'); f.paint();
 	assert.ok(f.controller.getItemLayout(0).feedback.startsWith(`${f.models[0].resource.contextLabel} / scenes/intro.lua:14:6`));
@@ -188,10 +189,10 @@ test('new row heights govern Home/End/Page and wheel hit geometry without changi
 
 test('Enter preserves the diagnostic model/version and exact source selection rather than the displayed basename', t => {
 	const f = fixture(t); editorTextModelService.clear(); f.group.model.clear();
-	t.after(initializeNavigationState(f.group));
+	afterTest(t, initializeNavigationState(f.group));
 	const a = editorTextModelService.retain({ contextLabel: 'Fixture project', sourceFilePath: 'a/shared.lua', location: { kind: 'workspace' as const, path: 'a/shared.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'a/shared.lua', source: { type: 'lua', resid: 'a' } }, 'lua', source);
 	const b = editorTextModelService.retain({ contextLabel: 'Fixture project', sourceFilePath: 'b/shared.lua', location: { kind: 'workspace' as const, path: 'b/shared.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'b/shared.lua', source: { type: 'lua', resid: 'b' } }, 'lua', source);
-	t.after(() => { f.group.model.clear(); resetNavigationHistoryState(); editorTextModelService.clear(); });
+	afterTest(t, () => { f.group.model.clear(); resetNavigationHistoryState(); editorTextModelService.clear(); });
 	f.controller.setDiagnostics([diagnostic(a), diagnostic(b, 7, 3)], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	f.controller.focus(); f.paint(); f.press('End'); f.press('Enter');
 	const opened = f.parts.activeGroup.model.activeTab!; assert.equal(opened.kind, 'code_editor');
@@ -200,7 +201,7 @@ test('Enter preserves the diagnostic model/version and exact source selection ra
 });
 
 for (const theme of ['light', 'dark']) test(`${theme} diagnostic severity uses its actual surface ink and selected foreground`, t => {
-	const previous = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme); t.after(() => colors.setIdeThemeVariant(previous));
+	const previous = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme); afterTest(t, () => colors.setIdeThemeVariant(previous));
 	const f = fixture(t), error = diagnostic(f.models[0]), warning = { ...diagnostic(f.models[1]), severity: 'warning' as const };
 	f.controller.setDiagnostics([error, warning], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	f.controller.setSelectionIndex(-1);

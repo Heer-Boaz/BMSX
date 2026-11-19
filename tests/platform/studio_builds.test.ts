@@ -13,12 +13,13 @@ import { BuildLedger } from '../../hosts/node/builds/ledger';
 import { parseCartridgePackage, parseSystemRomImage } from '../../machine/ts/rompack/image';
 import { loadBlua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('real worker builds, idempotent admission, cancellation and restart reconciliation', { timeout: 120000 }, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-jobs-'));
 	let projects = new WorkspaceProjects(process.cwd(), join(root, 'workspace'));
 	let jobs = await StudioBuildJobs.open(process.cwd(), root, projects);
-	t.after(async () => { await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
 	await assert.rejects(StudioBuildJobs.open(process.cwd(), root, projects), BuildStoreLockedError);
 	const request: StudioBuildRequest = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 };
 	const reordered = { optLevel: request.optLevel, debug: request.debug, target: request.target, requestId: request.requestId };
@@ -129,7 +130,7 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 
 test('ledger upgrades existing receipts and orders lifetimes without persisting progress ticks', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-ledger-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const request: StudioBuildRequest = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 };
 	const legacy = { request, state: 'running', phase: 'Compile', acceptedAt: 1, updatedAt: 2 };
 	const database = new DatabaseSync(join(root, 'jobs.sqlite'));
@@ -162,7 +163,7 @@ test('existing server exposes the same durable jobs to HTTP and MCP without a br
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-http-'));
 	const child = spawn(process.execPath, ['scripts/serve-dist.mjs', '--host', '127.0.0.1', '--port', '0', '--build-store', root], { stdio: ['ignore', 'pipe', 'pipe'] });
 	const exit = once(child, 'exit');
-	t.after(async () => { child.kill(); await exit; await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { child.kill(); await exit; await rm(root, { recursive: true, force: true }); });
 	let log = '';
 	const address = await new Promise<string>((resolve, reject) => {
 		child.stderr.on('data', bytes => { log += bytes; });
@@ -204,7 +205,7 @@ test('a second server reports the locked build store without a stack trace', { t
 	const child = spawn(process.execPath, ['scripts/serve-dist.mjs', '--host', '127.0.0.1', '--port', '0',
 		'--build-store', root, '--project-state', join(root, 'workspace')], { stdio: ['ignore', 'ignore', 'pipe'] });
 	const closed = once(child, 'close');
-	t.after(async () => { child.kill('SIGKILL'); await closed; owner.close(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { child.kill('SIGKILL'); await closed; owner.close(); await rm(root, { recursive: true, force: true }); });
 	let log = '';
 	child.stderr.on('data', bytes => { log += bytes; });
 	const [code] = await closed;
@@ -219,7 +220,7 @@ test('a killed server releases ledger ownership and interrupts, rather than repl
 	const { resolve } = await import('node:path');
 	const { pathToFileURL } = await import('node:url');
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-killed-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const request: StudioBuildRequest = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 2 };
 	const program = `import { StudioBuildJobs } from ${JSON.stringify(pathToFileURL(resolve('hosts/node/builds/jobs.ts')).href)};
         import { WorkspaceProjects } from ${JSON.stringify(pathToFileURL(resolve('hosts/node/workspace/projects.ts')).href)};
@@ -227,7 +228,7 @@ test('a killed server releases ledger ownership and interrupts, rather than repl
 		jobs.subscribe(({job}) => { if(job.state === 'running') process.send('admitted'); });
 		await jobs.admit(${JSON.stringify(request)});`;
 	const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', program], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
-	const closed = once(child, 'exit'); t.after(async () => { child.kill('SIGKILL'); await closed; });
+	const closed = once(child, 'exit'); afterTest(t, async () => { child.kill('SIGKILL'); await closed; });
 	await once(child, 'message'); child.kill('SIGKILL'); await closed;
 	const projects = new WorkspaceProjects(process.cwd(), join(root, 'workspace'));
 	const replacement = await StudioBuildJobs.open(process.cwd(), root, projects);

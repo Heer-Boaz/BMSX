@@ -10,11 +10,12 @@ import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_le
 import { createStateMachineInitialEdits } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
 import { FSM_INITIAL_SOURCE, FSM_INITIAL_MODULE_SOURCE, fsmInitialImportedSource } from '../helpers/fsm_initial_fixture';
 import { createBehaviorEditFixture } from '../helpers/behavior_edit_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, source = FSM_INITIAL_SOURCE) {
 	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'initial.lua', location: { kind: 'workspace' as const, path: 'initial.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
 	const model = new EditorTextModel(resource, 'lua', source);
-	t.after(() => model.dispose());
+	afterTest(t, () => model.dispose());
 	const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], ['cartlib/fsm/library'])));
 	const index = indexStateMachineSource(document);
 	return { model, document, index };

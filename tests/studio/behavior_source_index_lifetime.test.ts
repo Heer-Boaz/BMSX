@@ -12,6 +12,7 @@ import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavio
 import { BehaviorSourceIndex } from '../../ide/workbench/contrib/behavior_lens/source_index';
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { afterTest } from '../helpers/test_cleanup';
 
 const API_MODULES = ['cartlib/behaviour_tree/library'];
 
@@ -53,7 +54,7 @@ test('multiple source-index users share model tracking until the last release', 
 test('retained behavior inputs release retired generations and retain hidden-view positions', t => {
 	const font = editorViewState.font;
 	editorViewState.font = new EditorFont('tiny');
-	t.after(() => { editorViewState.font = font; });
+	afterTest(t, () => { editorViewState.font = font; });
 	const model = new CountingModel();
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource)], API_MODULES)));
 	const document = project();
@@ -80,7 +81,7 @@ test('retained behavior inputs release retired generations and retain hidden-vie
 test('source positions are updated before any feature forwards the edit notification', t => {
 	const font = editorViewState.font;
 	editorViewState.font = new EditorFont('tiny');
-	t.after(() => { editorViewState.font = font; });
+	afterTest(t, () => { editorViewState.font = font; });
 	const model = new CountingModel();
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(SOURCE, model.resource)], API_MODULES)));
 	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);

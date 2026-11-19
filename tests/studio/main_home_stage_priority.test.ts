@@ -10,6 +10,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE],
@@ -29,7 +30,7 @@ async function fixture(t: TestContext) {
 
 test('opening a Scene admits its real document while retaining the startup Home preview', async t => {
 	const f = await fixture(t), scene = f.primary.input;
-	let disposed = false; t.after(f.home.onWillDispose(() => { disposed = true; }));
+	let disposed = false; afterTest(t, f.home.onWillDispose(() => { disposed = true; }));
 	assert.equal(f.group.model.activeTab, scene); assert.equal(f.group.model.previewTab, f.home);
 	assert.ok(f.group.model.contains(f.home)); assert.equal(f.group.presented, true); assert.equal(f.part.contentPresented, true);
 	assert.equal(f.group.panes.activePane?.input, scene);
@@ -71,7 +72,7 @@ test('moving canonical Source between groups preserves the real Scene document a
 	let handoff = false;
 	const release = f.group.onDidMoveEditor(() => {
 		handoff = true; assert.equal(f.group.model.contains(input), false); assert.equal(f.secondGroup.model.contains(input), true);
-	}); t.after(release);
+	}); afterTest(t, release);
 	assert.equal(f.parts.moveEditor(f.group, input, { kind: 'group', group: f.secondGroup }), true); f.update();
 	assert.equal(handoff, true); release(); assert.ok(f.group.model.contains(scene));
 	assert.equal(f.secondGroup.model.activeTab, input); assert.equal(input.workingCopy, model);
@@ -98,7 +99,7 @@ test('whole-group adoption and departure preserve Scene and Home in their origin
 
 test('group serialization retains implicit versus explicitly kept Home beside the Scene document', async t => {
 	const f = await fixture(t), restored = new EditorTabGroupModel();
-	t.after(() => restored.clear());
+	afterTest(t, () => restored.clear());
 	const implicit = f.group.model.serialize(f.editor.editorInputSerializers);
 	assert.equal(await restored.deserialize(implicit, f.editor.editorInputSerializers), true);
 	assert.ok(restored.previewTab instanceof HomeInput); assert.equal(restored.activeTab?.kind, 'scene_editor');

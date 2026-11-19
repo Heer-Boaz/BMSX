@@ -20,6 +20,7 @@ import { createTestSystemCpu } from '../helpers/blua32';
 import { createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { buildScenarioMediaFixture } from '../helpers/scenario_media';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { afterTest } from '../helpers/test_cleanup';
 
 const RAM_BYTES = 0x00400000;
 const source = `module<entry>
@@ -31,7 +32,7 @@ const probe = { type: 'bin' as const, resid: 'probe', buffer: Buffer.from([0x78,
 for (const optLevel of [0, 3] as const) for (const debug of [false, true])
 	test(`compact system ROM executes final asset-address relocations (${debug ? 'debug' : 'release'} O${optLevel})`, async t => {
 		const directory = await mkdtemp(join(tmpdir(), 'bmsx-compact-system-'));
-		t.after(() => rm(directory, { recursive: true, force: true }));
+		afterTest(t, () => rm(directory, { recursive: true, force: true }));
 		const built = buildRomBlua32Tail([probe, { type: 'lua', resid: 'entry', program_module: true,
 			source_path: 'entry.lua', buffer: Buffer.from(source) }], { domain: 'system',
 			generatedLuaModules: [], biosExports: [], ramByteCount: RAM_BYTES, optLevel,
@@ -57,12 +58,12 @@ for (const optLevel of [0, 3] as const) for (const debug of [false, true])
 
 test('system source rebuild relocates asset references after code growth without moving BIOS import slots', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-compact-system-relink-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const fixture = await buildScenarioMediaFixture(directory, [], { systemSource: source, systemModules: [],
 		cartSource: 'module<entry>\nreturn true', systemAssets: [probe], systemOptLevel: 0 });
 	const loaded = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, null]);
 	const sources = createLoadedTestRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
-	t.after(() => sources.catalog.dispose());
+	afterTest(t, () => sources.catalog.dispose());
 	const registry = sources.catalog.getContext(sources.systemContextId).luaSources;
 	const original = registry.module2lua.entry;
 	const changed = source.replace('return *p,', `local function grow(n)\n${'n = n + 1\n'.repeat(128)}return n end\nreturn grow(*p),`);
@@ -83,7 +84,7 @@ test('system source rebuild relocates asset references after code growth without
 
 test('system function growth preserves static addresses until a cold boot grows the bounded table', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-system-function-growth-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const source = `module<entry>
 rodata retained: word[1] = { 0x12345678 }
 local p: *word = retained
@@ -92,7 +93,7 @@ return *p`;
 		cartSource: 'module<entry>\nreturn true', systemOptLevel: 0 });
 	const loaded = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, null]);
 	const sources = createLoadedTestRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
-	t.after(() => sources.catalog.dispose());
+	afterTest(t, () => sources.catalog.dispose());
 	const registry = sources.catalog.getContext(sources.systemContextId).luaSources;
 	const original = registry.module2lua.entry;
 	const before = sources.currentBlua32Media.system!.layout;

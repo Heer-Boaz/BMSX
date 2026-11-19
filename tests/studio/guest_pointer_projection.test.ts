@@ -15,10 +15,11 @@ import { projectEditorPointerEvent } from '../../ide/input/pointer/frame';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { KeyModifier } from '../../hosts/common/input/text';
 import type { PointerInputSnapshot } from '../../ide/common/models';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('direct guest projection uses the painted scanout extent and constrains captured outside motion', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const presenter = new VideoPresenter(new OffscreenVideoOutput(320, 240),
 		new HeadlessGPUBackend(320, 240, PSX_MACHINE_SPEC.gxGpuVramBytes), 320, 240);
 	// Studio's fixed render target is independent from the native source image.
@@ -45,7 +46,7 @@ test('direct guest projection uses the painted scanout extent and constrains cap
 test('offscreen projection follows the retained bitmap, including its held and republished image dimensions', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const frames = new FrameBitmap();
-	t.after(() => { frames.dispose(); input.dispose(); });
+	afterTest(t, () => { frames.dispose(); input.dispose(); });
 	frames.publish(new Uint8Array(320 * 224 * 4), 320, 224, { presentationSequence: 7, cycles: 100, videoTick: 2 });
 	const binding: GuestInputBinding = { bounds: { left: 20, top: 30, right: 660, bottom: 478 }, recipient: input,
 		presentation: { kind: 'offscreen', frames } };
@@ -65,7 +66,7 @@ test('browser display-to-Studio projection and remote Studio coordinates admit t
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const frames = new FrameBitmap();
 	const oldWidth = editorViewState.viewportWidth, oldHeight = editorViewState.viewportHeight;
-	t.after(() => { frames.dispose(); input.dispose(); editorViewState.viewportWidth = oldWidth; editorViewState.viewportHeight = oldHeight; });
+	afterTest(t, () => { frames.dispose(); input.dispose(); editorViewState.viewportWidth = oldWidth; editorViewState.viewportHeight = oldHeight; });
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	frames.publish(new Uint8Array(320 * 240 * 4), 320, 240, { presentationSequence: 1, cycles: 0, videoTick: 0 });
 	const binding: GuestInputBinding = { bounds: { left: 64, top: 48, right: 320, bottom: 240 }, recipient: input,

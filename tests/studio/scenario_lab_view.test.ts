@@ -48,6 +48,7 @@ import {
 	createScenarioTestSourceRecord,
 	createScenarioTestSourceState,
 } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const VIEWPORT_WIDTH = 384;
 const VIEWPORT_HEIGHT = 288;
@@ -64,7 +65,7 @@ function installWorkbenchViewport(t: TestContext, variant: 'tiny' | 'msx' = 'tin
 		editorAreaTop: editorViewState.editorAreaTop,
 		editorAreaBottom: editorViewState.editorAreaBottom,
 	};
-	t.after(() => {
+	afterTest(t, () => {
 		editorViewState.font = previous.font;
 		editorViewState.lineHeight = previous.lineHeight;
 		editorViewState.charAdvance = previous.charAdvance;
@@ -150,7 +151,7 @@ function scenarioFeedbackFixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const overlay = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
 	const update = () => feedback.update(font, measure, measureText);
 	const paint = () => { labels.length = 0; overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame(); };
-	t.after(() => { feedback.dispose(); surfaces.dispose(); });
+	afterTest(t, () => { feedback.dispose(); surfaces.dispose(); });
 	const point = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
 		viewportX: 40, viewportY: view.testPane.layout.contentTop + view.testPane.layout.rowHeight + 2 };
 	return { view, collection, results, surfaces, owner, area, parent, testsFocus, resultsFocus, feedback, labels, paint, point, update, measurements: () => measurements };
@@ -414,7 +415,7 @@ test('navigation restores a result by identity after log eviction and keeps the 
 	const id = view.resultPane.rows[4].id;
 	view.focus = 'results';
 	const selected = new ScenarioLabNavigationSelection(view);
-	t.after(() => selected.dispose());
+	afterTest(t, () => selected.dispose());
 	view.focus = 'tests';
 	executeScenarioLabNavigation(view, 'down');
 	assert.notEqual(view.testPane.selection.nodeId, item.id);
@@ -429,7 +430,7 @@ test('navigation restores a result by identity after log eviction and keeps the 
 	view.resultPane.projectedRevision = -1;
 	refreshScenarioLabProjection(view);
 	const collapsed = new ScenarioLabNavigationSelection(view);
-	t.after(() => collapsed.dispose());
+	afterTest(t, () => collapsed.dispose());
 	view.focus = 'tests';
 	executeScenarioLabNavigation(view, 'down'); refreshScenarioLabProjection(view);
 	collapsed.restore(view); prepareScenarioLabLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
@@ -692,7 +693,7 @@ test('explicit run reveal expands ancestors; later results do not steal the sele
 for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as const) {
 	test(`Scenario ${theme}/${variant} state ink and header focus consume their actual surfaces`, t => {
 		const originalTheme = colors.getActiveIdeThemeVariant();
-		t.after(() => colors.setIdeThemeVariant(originalTheme)); colors.setIdeThemeVariant(theme);
+		afterTest(t, () => colors.setIdeThemeVariant(originalTheme)); colors.setIdeThemeVariant(theme);
 		const overlay = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
 		for (const state of ['queued', 'preparing', 'running', 'passed', 'failed', 'cancelled', 'skipped'] as const) {
 			const { collection, results, view } = createViewFixture(t, variant);
@@ -775,7 +776,7 @@ test('Scenario controller refresh, wheel and status rendering retain the actual 
 		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
 		sources, new Map(), unused, unused, unused);
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	ide.editor.scenarioLab.open(ide.editor.editorParts.main.activeGroup);

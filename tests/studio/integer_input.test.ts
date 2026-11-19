@@ -4,6 +4,7 @@ import { INTEGER_INPUT_FORMAT, parseIntegerInput } from '../../ide/editor/ui/inl
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { insertValue, selectAll } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus } from '../../ide/input/focus';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('integer control admits decimal signed words at the human-input boundary, not expressions', () => {
 	for (const [text, value] of [['0', 0], ['+17', 17], ['-0', -0], ['00017', 17],
@@ -20,7 +21,7 @@ test('integer draft history is local; accepting or valid blur publishes exactly 
 	const parent = inputFocus.createTarget();
 	const accepted: number[] = [];
 	const input = new ValueInput(parent, INTEGER_INPUT_FORMAT, value => accepted.push(value));
-	t.after(() => { inputFocus.setTarget(null); input.dispose(); });
+	afterTest(t, () => { inputFocus.setTarget(null); input.dispose(); });
 	input.setValue(5);
 	input.field.focusTarget.focus();
 	insertValue(input.field, '1');
@@ -46,7 +47,7 @@ test('integer draft history is local; accepting or valid blur publishes exactly 
 test('invalid submission retains focused draft; leaving visibly cancels, never publishes invalid source', (t) => {
 	const parent = inputFocus.createTarget();
 	const input = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => assert.fail('invalid value accepted'));
-	t.after(() => { inputFocus.setTarget(null); input.dispose(); });
+	afterTest(t, () => { inputFocus.setTarget(null); input.dispose(); });
 	input.setValue(17);
 	input.field.focusTarget.focus();
 	insertValue(input.field, '-');
@@ -77,7 +78,7 @@ test('a source binding can revoke a pending draft before commit, including reent
 			input.field.focusTarget.release();
 		}
 	});
-	t.after(() => { inputFocus.setTarget(null); input.dispose(); });
+	afterTest(t, () => { inputFocus.setTarget(null); input.dispose(); });
 	input.setValue(17);
 	for (const text of ['9', '-']) {
 		input.field.focusTarget.focus();

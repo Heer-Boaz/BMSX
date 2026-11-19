@@ -20,6 +20,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import type { KeyValueStorage } from '../../ide/workspace/key_value_storage';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SCENES = [
 	"local scenes = require('cartlib/world/scene_library')",
@@ -54,7 +55,7 @@ async function fixture(t: TestContext) {
 			breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	};
 	const restore = (payload: WorkspaceAutosavePayload) => applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload);
-	t.after(() => { workspaceDirtyRecords.clear(); clearWorkspaceSourceCaches(); });
+	afterTest(t, () => { workspaceDirtyRecords.clear(); clearWorkspaceSourceCaches(); });
 	return { ...f, panel, resource, model, primary, checkpoint, restore };
 }
 
@@ -143,7 +144,7 @@ for (const action of ['selection', 'scroll', 'filter'] as const) test(`new brows
 		else if (action === 'scroll') { panel.setScroll(7.5); reading = panel.scroll; }
 		else { panel.toggleFilterMode(); filter = panel.getFilterMode(); }
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	await f.restore(payload); f.update();
 	assert.equal(changed, true);
 	if (action === 'selection') {
@@ -239,7 +240,7 @@ test('inactive recovery retains Main primary and preferred Details region until 
 
 test('browser reading changes publish persistence intent without invalidating cached topology measurements', async t => {
 	const f = await fixture(t), panel = f.panel;
-	let changes = 0; t.after(panel.onDidChange(() => { changes++; }));
+	let changes = 0; afterTest(t, panel.onDidChange(() => { changes++; }));
 	const revision = panel.files.revision;
 	panel.setScroll(panel.scroll + 1); panel.setHScroll(panel.hscroll + 1); panel.navigateFiles('up');
 	assert.ok(changes > 0); assert.equal(panel.files.revision, revision);

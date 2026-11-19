@@ -11,6 +11,7 @@ import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/de
 import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/details_view';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
 prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
@@ -42,7 +43,7 @@ scenes.register('other',{objects={{member_id='other',definition_id='node2'}}})`;
 	};
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.model.identity.contextId, path: 'prefabs.lua' })!);
-	t.after(() => { control.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	afterTest(t, () => { control.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	select(0);
 	return { ...f, source, authoring, view, control, select, provider };
 }

@@ -9,6 +9,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { findWorkbenchWindowSurface } from '../../ide/workbench/ui/window/control';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes=require('cartlib/world/scene_library')
 local prefab=require('cartlib/world/prefab')
@@ -198,7 +199,7 @@ test('a replaced prompt cannot publish an older Scene close after its focus call
 	const unbind = origin.onDidFocus(() => {
 		unbind(); published = true;
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- newer edit\n' }]);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	const closing = group.close(input.id, origin);
 	assert.equal(await previous, 'cancel'); assert.equal(await closing, false);
 	assert.equal(published, true); assert.equal(prompt.visible, false);

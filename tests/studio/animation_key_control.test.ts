@@ -20,6 +20,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('a key beneath a coincident tangent endpoint owns the pointer gesture', t => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0,leave_tangent=0},{time_ms=32,value=0,arrive_tangent=0,leave_tangent=0},{time_ms=100,value=0,arrive_tangent=0}}}}}";
@@ -32,7 +33,7 @@ test('a key beneath a coincident tangent endpoint owns the pointer gesture', t =
 	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!);
 	const control = new AnimationKeyControl(parent, { selectKey(input, index) { input.keyIndex = index; input.keys.select(index); } }, authoring);
 	control.setInput(input); control.layout(0, 0, 106, 20); input.keys.curve.layout(0, 30, 106, 142); input.keys.curve.update(input.keys);
-	t.after(() => { control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	afterTest(t, () => { control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	const x = input.keys.xAt(32), y = input.keys.curve.yAt(0);
 	assert.deepEqual(input.keys.curve.leaveHandle.slice(2), [x, y]);
 	assert.equal(input.keys.curve.keyAt(input.keys, x, y), 1);
@@ -71,7 +72,7 @@ test('key capture preserves grab offset and commits only a physical drop; click,
 	});
 	control.setInput(input); control.layout(400, 20, 960, 50);
 	const unbind = model.onDidChangeContent(() => input.invalidateProjection());
-	t.after(() => { unbind(); control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	afterTest(t, () => { unbind(); control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	const primary = PointerButton.Primary;
 	const pointer = (x: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false,
 		viewportX: x, viewportY: 35, valid: true, insideViewport: true,
@@ -102,7 +103,7 @@ test('key capture preserves grab offset and commits only a physical drop; click,
 	model.undo(); assert.equal(model.buffer.getText(), source);
 	assert.equal(model.undo(), null, 'one drop is one history operation');
 	parent.focus();
-	const unbindFocus = parent.onDidBlur(() => { unbindFocus(); control.clearInput(); }); t.after(unbindFocus);
+	const unbindFocus = parent.onDidBlur(() => { unbindFocus(); control.clearInput(); }); afterTest(t, unbindFocus);
 	control.handlePointer(pointer(origin, primary, primary));
 	assert.equal(pointerCapture.active, false, 'focus retirement cannot admit a stale key drag');
 	assert.equal(model.buffer.getText(), source);
@@ -120,7 +121,7 @@ test('frame and clip axes navigate without a scalar track or a document edit', t
 		canMoveKey: unexpected, moveKey: unexpected, canEditCurveField: unexpected, editCurveKey: unexpected,
 	});
 	control.setInput(input); control.layout(400, 20, 960, 50);
-	t.after(() => { control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	afterTest(t, () => { control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	const pointer = (x: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false,
 		viewportX: x, viewportY: 35, valid: true, insideViewport: true,
 		pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
@@ -168,7 +169,7 @@ test('tangent direction uses both pointer axes and commits one native slope with
 		control.setInput(input); control.layout(0, 0, 806, 20);
 		input.keys.curve.layout(0, 30, 806, 230); input.keys.curve.update(input.keys);
 		const unbind = model.onDidChangeContent(() => input.invalidateProjection());
-		t.after(() => { unbind(); control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+		afterTest(t, () => { unbind(); control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 		const handle = field === 'leave' ? input.keys.curve.leaveHandle : input.keys.curve.arriveHandle;
 		const x = handle[2] + 1, y = handle[3] + 1, delta = handle[2] - handle[0];
 		const primary = PointerButton.Primary;

@@ -7,6 +7,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { serializeEditorPart } from '../../ide/workbench/services/editor/editor_part_serialization';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('same-group raw gaps reorder and pin without replacing the retained pane or its attachment', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, group = f.firstGroup, input = f.firstInput;
@@ -31,7 +32,7 @@ test('receiver insertion is final before either group publishes its membership',
 		observed++;
 		coherent = coherent && !source.model.contains(input) && target.model.tabs[0] === f.secondInput && target.model.tabs[1] === input && target.model.tabs[2] === home;
 	};
-	t.after(source.model.onDidChange(observe)); t.after(target.model.onDidChange(observe));
+	afterTest(t, source.model.onDidChange(observe)); afterTest(t, target.model.onDidChange(observe));
 	assert.equal(parts.moveEditor(source, input, { kind: 'group', group: target, index: 1 }), true);
 	assert.equal(observed, 2); assert.equal(coherent, true); assert.ok(target.panes.activePane?.input === input);
 });
@@ -55,8 +56,8 @@ for (const kind of ['split', 'window'] as const) test(`${kind} adoption publishe
 		const target = parts.findGroup(input);
 		coherent = coherent && target !== undefined && target !== source && target.model.activeTab === input && !source.model.contains(input);
 	};
-	t.after(parts.onDidChange(observe));
-	t.after(source.model.onDidChange(observe));
+	afterTest(t, parts.onDidChange(observe));
+	afterTest(t, source.model.onDidChange(observe));
 	const destination = kind === 'split' ? { kind, group: f.secondGroup, direction: 'right' as const }
 		: { kind, requestedBounds: { left: 12, top: 23, right: 230, bottom: 210 } };
 	assert.equal(parts.moveEditor(source, input, destination), true);
@@ -72,7 +73,7 @@ for (const kind of ['split', 'window'] as const) test(`${kind} adoption publishe
 
 test('destination draft veto precedes split construction and preserves both live views', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
-	const field = new ValueInput(f.second.commandTarget, INTEGER_INPUT_FORMAT, () => {}); t.after(() => field.dispose());
+	const field = new ValueInput(f.second.commandTarget, INTEGER_INPUT_FORMAT, () => {}); afterTest(t, () => field.dispose());
 	field.setValue(1); field.layout(f.secondGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '-', true);
 	assert.equal(parts.moveEditor(f.firstGroup, f.firstInput, { kind: 'split', group: f.secondGroup, direction: 'right' }), false);
 	assert.equal(f.secondPart.groups.length, 1); assert.equal(parts.documents.length, 2); assert.equal(field.pending, true);
@@ -86,7 +87,7 @@ test('restore requested by a moving source rejects before constructing candidate
 	let restoration: Promise<boolean> | undefined;
 	const unbind = source.model.onDidChange(() => {
 		if (!source.model.contains(f.firstInput) && restoration === undefined) restoration = f.firstPart.restore(saved, f.editor.editorInputSerializers);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.equal(parts.moveEditor(source, f.firstInput, { kind: 'group', group: f.secondGroup }), true);
 	assert.equal(await restoration, false); assert.equal(deserialize.mock.callCount(), 0);
 	assert.equal(f.firstPart.retired, false); assert.equal(source.openingAdmitted, true); assert.equal(f.firstPart.operation, 'none');

@@ -23,6 +23,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx') {
 	configureFontVariant(variant);
@@ -57,7 +58,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx') {
 		return window;
 	};
 	const details = createDetails();
-	t.after(() => { details.dispose(); picker.dispose(); menu.hide(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); history.dispose(); });
+	afterTest(t, () => { details.dispose(); picker.dispose(); menu.hide(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); history.dispose(); });
 	const press = (code: string) => {
 		inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, true));
 		inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, false));
@@ -184,7 +185,7 @@ test('GPU pane detachment restores the retained page document instead of mistaki
 	details.show(); details.inspector.model.select(details.inspector.model.rows.length - 1);
 	const selected = details.inspector.model.selectionIndex, scroll = details.inspector.model.viewport.scrollTop;
 	details.dispose();
-	const restored = f.createDetails(); t.after(() => restored.dispose()); restored.update();
+	const restored = f.createDetails(); afterTest(t, () => restored.dispose()); restored.update();
 	assert.equal(restored.inspector.model.selectionIndex, selected);
 	assert.equal(restored.inspector.model.viewport.scrollTop, scroll);
 	restored.window.hide(); configureFontVariant('tiny'); restored.update();
@@ -208,7 +209,7 @@ test('GPU Words preserves its independently scrolled word/fraction through both 
 		assert.equal(input.selectedWord, selected, 'reading with the wheel does not retarget word selection');
 	}
 	assert.equal(decode.mock.callCount(), 0, 'Words and font reflow never decode fabricated geometry');
-	details.dispose(); const restored = f.createDetails(); t.after(() => restored.dispose()); restored.update();
+	details.dispose(); const restored = f.createDetails(); afterTest(t, () => restored.dispose()); restored.update();
 	assert.equal(input.words.scrollTop / editorViewState.lineHeight, 17.5, 'a fresh control cannot reveal a stale selectedWord over the retained reading anchor');
 	assert.equal(input.selectedWord, selected);
 });
@@ -229,7 +230,7 @@ test('GPU Diagram keeps the same source-text anchor through a wrapping font roun
 	assert.equal(input.diagramView.textOffset, offset, 'reflow projection cannot replace the source-text anchor with the new line start');
 	assert.equal(input.diagram.scrollTop, before, 'returning to the original font restores the same logical reading location');
 	configureFontVariant('tiny'); details.update(); details.dispose();
-	const restored = f.createDetails(); t.after(() => restored.dispose()); restored.update();
+	const restored = f.createDetails(); afterTest(t, () => restored.dispose()); restored.update();
 	configureFontVariant('msx'); restored.update();
 	assert.equal(input.diagramView.textOffset, offset, 'retiring a reflowed client preserves the original character identity');
 	assert.equal(input.diagram.scrollTop, before);
@@ -243,7 +244,7 @@ test('GPU Diagram keeps the same source-text anchor through a wrapping font roun
 		configureFontVariant(variant); restored.update();
 		assert.equal(input.diagram.scrollTop, 0, 'Home is the logical origin, not the heading padding');
 	}
-	restored.dispose(); const origin = f.createDetails(); t.after(() => origin.dispose()); origin.update();
+	restored.dispose(); const origin = f.createDetails(); afterTest(t, () => origin.dispose()); origin.update();
 	assert.equal(input.diagram.scrollTop, 0, 'recreating a client at Home cannot introduce a synthetic pixel offset');
 });
 
@@ -317,7 +318,7 @@ test('GPU View choice applies in the background when picker blur selects a newer
 	details.chooseView(); assert.equal(picker.visible, true);
 	assert.ok(picker.invocationOrigin === details.inspector.focusTarget);
 	let redirected = false;
-	t.after(picker.field.focusTarget.onDidBlur(() => { redirected = true; f.origin.focus(); }));
+	afterTest(t, picker.field.focusTarget.onDidBlur(() => { redirected = true; f.origin.focus(); }));
 	f.press('ArrowDown'); f.press('Enter'); details.update();
 	assert.equal(redirected, true); assert.equal(picker.visible, false);
 	assert.equal(input.inspectorPage, 'diagram'); assert.equal(input.view, 'geometry');

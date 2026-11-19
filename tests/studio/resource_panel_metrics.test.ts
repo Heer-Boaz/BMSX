@@ -17,6 +17,7 @@ import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { afterTest } from '../helpers/test_cleanup';
 
 // The contract under test is the font-dependent measurement cache, not UI wording or pixel placement.
 function fixture(t: TestContext, variant: FontVariant) {
@@ -33,7 +34,7 @@ function fixture(t: TestContext, variant: FontVariant) {
 		configureFontVariant(next, 'linear', scale);
 		panel.setFontMetrics(editorViewState.font); refreshWorkbenchLayout();
 	};
-	t.after(() => { panel.dispose(); content.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { panel.dispose(); content.dispose(); inputFocus.setTarget(null); });
 	return { panel, index, publish };
 }
 

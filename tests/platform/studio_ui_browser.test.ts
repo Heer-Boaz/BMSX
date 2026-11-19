@@ -8,15 +8,16 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { chromium, type Browser } from 'playwright';
 import { PNG } from 'pngjs';
 import { createStudioServer } from '../helpers/studio_server.mjs';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const backend of ['webgl2', 'webgpu'] as const) test(`${backend}: native UI capture observes the real Studio canvas without bypassing user review`, { timeout: 60000 }, async t => {
 	const client = new Client({ name: 'studio-ui-capture', version: '1.0.0' });
 	let transport: StreamableHTTPClientTransport, browser: Browser;
 	// Retire clients and the browser before the server. Independent cleanup hooks
 	// still close the browser when a transport failure is the test's outcome.
-	t.after(() => transport?.terminateSession());
-	t.after(() => client.close());
-	t.after(() => browser?.close());
+	afterTest(t, () => transport?.terminateSession());
+	afterTest(t, () => client.close());
+	afterTest(t, () => browser?.close());
 	const f = await createStudioServer(t);
 	transport = new StreamableHTTPClientTransport(new URL(`${f.address}/__bmsx__/mcp`), { requestInit: { headers: f.headers } });
 	browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage', ...(backend === 'webgpu'

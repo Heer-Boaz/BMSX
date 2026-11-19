@@ -6,6 +6,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import { createInputControllerSnapshot, INP_POINTER_BUTTON_PRIMARY, INP_POINTER_BUTTON_SECONDARY, InputControllerGamepadAxis, InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
+import { afterTest } from '../helpers/test_cleanup';
 
 const A = 1 << InputControllerGamepadButtonBit.A;
 const B = 1 << InputControllerGamepadButtonBit.B;
@@ -29,7 +30,7 @@ function fixture() {
 
 test('host focus exit retains only already-held pad bits, leaving axes and independent new controls untouched', t => {
 	const f = fixture();
-	t.after(() => f.input.dispose());
+	afterTest(t, () => f.input.dispose());
 	f.ui.reset(HostUiInputSource.Gamepad, 0);
 	f.tick();
 	for (const code of ['a', 'lt', 'ls']) f.button('gamepad:0', code, true);
@@ -63,7 +64,7 @@ test('host focus exit retains only already-held pad bits, leaving axes and indep
 
 test('physical keyboard aliases retain distinct focus-exit lifetimes and leaving keyboard focus does not capture new typing', t => {
 	const f = fixture();
-	t.after(() => f.input.dispose());
+	afterTest(t, () => f.input.dispose());
 	f.ui.reset(HostUiInputSource.Keyboard | HostUiInputSource.Gamepad, A);
 	f.tick();
 	f.button('keyboard:0', 'Enter', true);
@@ -85,7 +86,7 @@ test('physical keyboard aliases retain distinct focus-exit lifetimes and leaving
 
 test('closing host pointer focus retains the existing primary hold but does not capture secondary or a fresh primary press', t => {
 	const f = fixture();
-	t.after(() => f.input.dispose());
+	afterTest(t, () => f.input.dispose());
 	f.ui.reset(HostUiInputSource.Pointer, 0);
 	f.tick();
 	f.input.inputAxis2('pointer:0', 'pointer_position', 10, 10, 21);
@@ -107,7 +108,7 @@ test('closing host pointer focus retains the existing primary hold but does not 
 
 test('host actions distinguish physical Enter from controller south without remapping either input', t => {
 	const f = fixture();
-	t.after(() => f.input.dispose());
+	afterTest(t, () => f.input.dispose());
 	f.ui.reset(HostUiInputSource.Keyboard | HostUiInputSource.Gamepad, A);
 	f.tick();
 	f.button('gamepad:0', 'a', true); f.tick();

@@ -24,6 +24,7 @@ import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { afterTest } from '../helpers/test_cleanup';
 
 const pointer = (x: number, y: number): PointerInputSnapshot => ({
 	viewportX: x, viewportY: y, valid: true, insideViewport: true,
@@ -39,7 +40,7 @@ function fixture(t: TestContext) {
 	const content = new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const panel = new ResourcePanelController(editor, sources.catalog,
 		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, content, new VirtualHeadlessClock());
-	t.after(() => { panel.dispose(); content.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); pointerHover.clear(); });
+	afterTest(t, () => { panel.dispose(); content.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); pointerHover.clear(); });
 	panel.setFontMetrics(editorViewState.font); panel.show();
 	return { panel, parts };
 }
@@ -99,7 +100,7 @@ test('Files resize retains its extent while hiding retires only its own captured
 	const sibling = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, parts.main.focusTarget);
 	const split = new WorkbenchSplitView(0.5, 'vertical');
 	split.layout(0, 40, 384, 240); sibling.setInput(split);
-	t.after(() => sibling.dispose());
+	afterTest(t, () => sibling.dispose());
 	const strip = panel.resizeBounds, right = panel.getBounds().right;
 	panel.sash.handlePointer(pointer(right, strip.top));
 	assert.equal(pointerCapture.active, true);
@@ -125,7 +126,7 @@ test('Files pointer resizing preserves the active control and its unsubmitted dr
 	let commits = 0, blurs = 0;
 	const draft = { pending: true, commit: () => { commits++; return false; }, cancel() { this.pending = false; } };
 	field.edit = draft;
-	t.after(field.onDidBlur(() => { blurs++; }));
+	afterTest(t, field.onDidBlur(() => { blurs++; }));
 	field.focus();
 	const original = panel.split.position, strip = panel.resizeBounds;
 	const press = pointer(panel.split.position + 2, strip.top);

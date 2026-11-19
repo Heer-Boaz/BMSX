@@ -12,6 +12,7 @@ import { drawWorkbenchGraph } from '../../ide/workbench/render/graph';
 import { createWorkbenchGraphModel, createWorkbenchGraphNode } from '../../ide/workbench/ui/graph/model';
 import { WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const theme of ['light', 'dark'] as const) {
 	test(`${theme} enabled button states own readable opaque foreground/background pairs`, () => {
@@ -101,7 +102,7 @@ for (const theme of ['light', 'dark'] as const) {
 	});
 	for (const variant of ['tiny', 'msx'] as const) test(`${theme}/${variant} active graph nodes resolve markers from the actual painted state`, t => {
 		const previousTheme = colors.getActiveIdeThemeVariant();
-		t.after(() => colors.setIdeThemeVariant(previousTheme)); colors.setIdeThemeVariant(theme);
+		afterTest(t, () => colors.setIdeThemeVariant(previousTheme)); colors.setIdeThemeVariant(theme);
 		const font = new Font({ variant }), node = { ...createWorkbenchGraphNode(font, 'ACTIVE', 20, 20), active: true };
 		const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [node], []));
 		view.layout(0, 0, 160, 100);

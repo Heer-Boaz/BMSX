@@ -10,6 +10,7 @@ import { drawEditorGroupWatermark } from '../../ide/workbench/render/editor_grou
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 configureFontVariant('tiny');
 
@@ -20,7 +21,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', theme: string) {
 	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const overlay = createHostOverlayFixture(384, 288);
-	t.after(() => {
+	afterTest(t, () => {
 		configureFontVariant(previous.variant); colors.setIdeThemeVariant(previous.theme);
 		editorViewState.viewportWidth = previous.width; editorViewState.viewportHeight = previous.height;
 	});

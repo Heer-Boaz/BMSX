@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createCodexModelFixture } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
 import type { ToolBehaviorDocument, ToolBehaviorRegistration } from '../../ide/workbench/services/assistant/behavior_tools';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: native Codex semantic source tools share review, builders and Undo`, { timeout: 180000 }, async t => {
 	const call = (id: string, name: string, args: unknown) => [{ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) }];
@@ -23,7 +24,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 		[{ type: 'message', id: `proposed-${index}`, role: 'assistant', content: [{ type: 'output_text', text: `${kind}: source change offered for Studio review. Not applied, saved or installed.` }] }],
 	]));
 	const f = await createAssistantStudioFixture(t, `behavior-${backend}`, { provider: { name: 'Offline behavior tool fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
-	t.after(() => writeFile(join(f.evidence, `behavior-${backend}-requests.json`), JSON.stringify(model.requests)));
+	afterTest(t, () => writeFile(join(f.evidence, `behavior-${backend}-requests.json`), JSON.stringify(model.requests)));
 	const result = await f.page.evaluate(async backend => {
 		const entry = '/test.js', module = await import(entry);
 		return module.runAssistantBehavior(backend, document.querySelector('canvas'), globalThis.capture);

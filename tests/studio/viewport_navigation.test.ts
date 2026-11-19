@@ -7,6 +7,7 @@ import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { WorkbenchViewportCamera } from '../../ide/workbench/ui/viewport_camera';
 import { WorkbenchViewportNavigation, type WorkbenchViewportNavigationState } from '../../ide/workbench/ui/viewport_navigation';
+import { afterTest } from '../helpers/test_cleanup';
 
 const bounds = { left: 0, top: 0, right: 640, bottom: 480 };
 function fixture(t: TestContext, mode: '2d' | '3d') {
@@ -17,7 +18,7 @@ function fixture(t: TestContext, mode: '2d' | '3d') {
 	const control = new WorkbenchViewportNavigation(focus, capture, target, () => changes++, () => contexts++);
 	target.bindKeyboard(event => control.handleKeyboard(event, now));
 	control.setInput(input, bounds);
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	const pointer: PointerInputSnapshot = { valid: true, insideViewport: true, viewportX: 200, viewportY: 200,
 		pressedButtons: PointerButton.Secondary, justPressedButtons: PointerButton.Secondary, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };
 	return { focus, capture, parent, target, input, camera, control, pointer, contexts: () => contexts, changes: () => changes,
@@ -80,7 +81,7 @@ test('camera commands share focused dispatch, while held F in flight remains mot
 
 test('source invalidation while admitting focus revokes the pending camera press, not the next press', t => {
 	const f = fixture(t, '3d'); f.parent.focus();
-	const unbind = f.parent.onDidBlur(() => { unbind(); f.control.cancel(); }); t.after(unbind);
+	const unbind = f.parent.onDidBlur(() => { unbind(); f.control.cancel(); }); afterTest(t, unbind);
 	const before = f.camera.capture();
 	assert.equal(f.control.handlePointer(f.pointer, 0), true); assert.equal(f.capture.active, false);
 	assert.deepEqual(f.camera.capture(), before);

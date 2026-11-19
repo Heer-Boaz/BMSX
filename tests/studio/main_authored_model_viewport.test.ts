@@ -16,6 +16,7 @@ import { packModelAsset, loadModelFromBuffer } from '../../toolchain/ts/rompack/
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { createTexturedModelFixture } from '../helpers/textured_model';
 import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
+import { afterTest } from '../helpers/test_cleanup';
 
 const MEMBERS = `{member_id='back',definition_id='paint'},
  {member_id='front',definition_id='paint',position={z=2}}`;
@@ -126,7 +127,7 @@ test('workspace model binding consumes compiled directories without reading or r
 	const model = f.context.previewPackage.model.shape, rich = model.source;
 	let sourceReads = 0;
 	Object.defineProperty(model, 'source', { get() { sourceReads++; return rich; } });
-	const assets = new WorkspaceModelAssets(f.sources.catalog); t.after(() => assets.dispose());
+	const assets = new WorkspaceModelAssets(f.sources.catalog); afterTest(t, () => assets.dispose());
 	const ids = new Set(['shape']); assets.update(f.context.id, ids);
 	const scene = assets.get('shape')!.get()!;
 	for (let index = 0; index < scene.parts.length; index++) {
@@ -186,14 +187,14 @@ test('framing preserves an off-origin mesh pivot beside a large world origin', a
 test('model availability follows the selected scene profile, explicit default and mounted provider generation', async t => {
 	const model = geometry(); model.meshes.push({ primitives: [{ positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), materialIndex: 2 }] });
 	model.materials!.push({ alphaMode: 'BLEND' }); model.nodes!.push({ mesh: 1 }); model.scenes!.push({ nodes: [1] }); delete model.scene;
-	const f = await fixture(t, 'tiny', MEMBERS, model), assets = new WorkspaceModelAssets(f.sources.catalog); t.after(() => assets.dispose());
+	const f = await fixture(t, 'tiny', MEMBERS, model), assets = new WorkspaceModelAssets(f.sources.catalog); afterTest(t, () => assets.dispose());
 	assets.update(f.context.id, new Set(['shape']));
 	assert.equal(assets.get('shape')?.get(), undefined); assert.equal(assets.get('shape')?.get(1), undefined);
 	const first = assets.get('shape')?.get(0)!; assert.equal(first.parts.length, 1);
 	assert.ok(assets.get('shape')?.get(0) === first); assert.equal(f.view.geometry.scene.instances.length, 0);
 	let retired = 0; first.parts[0].meshes[0].onDispose(() => retired++);
-	const unmounted = new WorkspaceSourceCatalog(); unmounted.admitContext({ ...f.context, previewRom: null }); t.after(() => unmounted.dispose());
-	const unmountedAssets = new WorkspaceModelAssets(unmounted); t.after(() => unmountedAssets.dispose());
+	const unmounted = new WorkspaceSourceCatalog(); unmounted.admitContext({ ...f.context, previewRom: null }); afterTest(t, () => unmounted.dispose());
+	const unmountedAssets = new WorkspaceModelAssets(unmounted); afterTest(t, () => unmountedAssets.dispose());
 	unmountedAssets.update(f.context.id, new Set(['shape'])); assert.equal(unmountedAssets.get('shape'), undefined);
 	delete f.context.previewPackage.model.shape; f.sources.catalog.rebuildResources(); assets.update(f.context.id, new Set(['shape']));
 	assert.equal(retired, 1); assert.equal(assets.get('shape')?.get(0), undefined);

@@ -17,6 +17,7 @@ import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { drawEventViewer } from '../../ide/workbench/contrib/events/render';
 import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/event_history';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 const images = compileEventHistoryFixture();
 const BUDGET = 10_000_000;
@@ -33,7 +34,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', count = 200, capacity 
 	const projected = input.projection.update(history, '');
 	assert.equal(input.projection.rows.length, count);
 	input.selected = 0;
-	t.after(() => { input.dispose(); history.dispose(); });
+	afterTest(t, () => { input.dispose(); history.dispose(); });
 	return { input, history, projected, cpu, emit };
 }
 
@@ -176,7 +177,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 			const event = record.event;
 			Object.defineProperty(record, 'event', { configurable: true, get() { reads[index]++; return event; } });
 		});
-		t.after(() => input.projection.rows.forEach((record, index) => Object.defineProperty(record, 'event', descriptors[index])));
+		afterTest(t, () => input.projection.rows.forEach((record, index) => Object.defineProperty(record, 'event', descriptors[index])));
 		const view = new EventViewerPresentation();
 		view.update(input, changed, projected);
 		assert.ok(view.rows.length > 0 && view.rows.length < input.projection.rows.length);

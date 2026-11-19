@@ -23,6 +23,7 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	configureFontVariant('tiny');
@@ -80,7 +81,7 @@ function fixture(t: TestContext) {
 			pressedButtons: 0, justPressedButtons: pressed ? PointerButton.Primary : 0, justReleasedButtons: 0 });
 		layout();
 	};
-	t.after(() => { menubar.dispose(); popup.dispose(); surfaces.dispose(); group.dispose(); editorFeedbackState.message.visible = false; });
+	afterTest(t, () => { menubar.dispose(); popup.dispose(); surfaces.dispose(); group.dispose(); editorFeedbackState.message.visible = false; });
 	layout();
 	return { group, layout, paint, context, popup, menubar, focus, origin, active, disabled, executed, pointer,
 		measured: () => measurements, queried: () => queries };

@@ -28,6 +28,7 @@ import { cartridgeSlots } from './cartridge';
 import { createHostFrameFixture } from './host_frame';
 import { createTestRuntimeSourceState, createTestRomToolingLayer, TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from './runtime_sources';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from './test_cleanup';
 
 const SYSTEM_SOURCE = 'return true', CART_SOURCE = 'return 1';
 const IMAGES = linkTestBlua32Pair(
@@ -69,7 +70,7 @@ export function createProjectRunFixture(t: TestContext, bootable = true, attachm
 		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, { width: 800, height: 320 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor, part = editor.editorParts.createDocument(), group = part.activeGroup;
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false); await editor.shutdown();
 		clearBackgroundTasks(); host.audio.dispose(); host.input.dispose();
 	});

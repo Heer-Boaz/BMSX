@@ -11,6 +11,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/quick_pick_provider';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [['folder/third.lua', 'return 3']]);
@@ -50,7 +51,7 @@ test('a disabled actual Files local command does not borrow the captured Source 
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- canonical Undo belongs to Source\n' }]);
 	const source = model.buffer.getText(), version = model.version; assert.equal(model.canUndo, true);
 	f.panel.focusTarget.registerCommand('undo', { isEnabled: () => false, run: () => { throw new Error('A disabled Files command cannot execute.'); } });
-	t.after(() => f.panel.focusTarget.unregisterCommand('undo'));
+	afterTest(t, () => f.panel.focusTarget.unregisterCommand('undo'));
 	f.panel.setFocused(true); palette(f);
 	assert.equal(row(f, 'undo'), -1); assert.ok(row(f, 'resources.openToSide') >= 0);
 	f.key('Escape'); assert.ok(inputFocus.admittedTarget === f.panel.focusTarget);
@@ -69,7 +70,7 @@ test('an actual Files clipboard binding without Copy cannot borrow the captured 
 	f.firstGroup.openEditor(new HostErrorInput('exact attached diagnostic'));
 	const body = f.firstGroup.panes.activePane!.commandTarget;
 	assert.equal(f.editor.commands.isEnabled('copy', body), true);
-	t.after(f.panel.focusTarget.bindClipboard({ paste() {} }));
+	afterTest(t, f.panel.focusTarget.bindClipboard({ paste() {} }));
 	f.panel.setFocused(true); palette(f);
 	assert.equal(row(f, 'copy'), -1); f.key('Escape');
 	assert.ok(inputFocus.admittedTarget === f.panel.focusTarget);
@@ -78,7 +79,7 @@ test('an actual Files clipboard binding without Copy cannot borrow the captured 
 test('readonly Files clipboard owns Copy bytes and suppresses the editable Source clipboard operations', async t => {
 	const f = fixture(t);
 	assert.equal(f.editor.commands.isEnabled('paste', f.first.commandTarget), true);
-	t.after(f.panel.focusTarget.bindClipboard({ readOnly: true, copy: () => f.resource.path }));
+	afterTest(t, f.panel.focusTarget.bindClipboard({ readOnly: true, copy: () => f.resource.path }));
 	f.panel.setFocused(true); palette(f);
 	assert.equal(row(f, 'cut'), -1); assert.equal(row(f, 'paste'), -1);
 	accept(f, 'copy'); await setImmediate();
@@ -102,7 +103,7 @@ for (const retirement of ['rebind', 'detach'] as const) test(`Files survives sec
 		unbind(); retired = true;
 		if (retirement === 'rebind') f.firstGroup.openEditor(newer);
 		else f.firstPart.window!.detach();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	accept(f, 'group.splitRight');
 	assert.equal(retired, true); assert.equal(f.firstPart.groups.length, 1); assert.equal(f.secondPart.groups.length, 1);
 	if (retirement === 'rebind') assert.ok(f.firstGroup.model.activeTab === newer && f.firstGroup.panes.activePane?.input === newer);
@@ -171,10 +172,10 @@ test('Source draft acceptance retires the captured editor context independently 
 	let accepted = false, executed = false;
 	f.panel.focusTarget.registerCommand('save', { editScope: f.firstGroup.focusScope,
 		isEnabled: () => true, run: () => { executed = true; } });
-	t.after(() => f.panel.focusTarget.unregisterCommand('save'));
+	afterTest(t, () => f.panel.focusTarget.unregisterCommand('save'));
 	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {
 		accepted = true; f.firstPart.suspend(); inputFocus.setTarget(null);
-	}); t.after(() => field.dispose());
+	}); afterTest(t, () => field.dispose());
 	field.setValue(1); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
 	f.editor.commands.execute('save', f.panel.focusTarget, undefined, f.first.commandTarget);
 	assert.equal(accepted, true); assert.equal(executed, false); assert.equal(field.pending, false);
@@ -188,7 +189,7 @@ test('Files Palette navigation does not borrow a newer real pane focused during 
 	const unbind = f.editor.quickInput.field.focusTarget.onDidBlur(next => {
 		if (next !== f.panel.focusTarget) return;
 		unbind(); redirected = true; f.second.focus();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	accept(f, 'resources.openToSide'); await setImmediate();
 	assert.equal(redirected, true); assert.equal(open.mock.callCount(), 0);
 	assert.equal(f.firstPart.groups.length, 1); assert.equal(f.secondPart.groups.length, 1);

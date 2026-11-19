@@ -9,6 +9,7 @@ import { EditorTabGroupModel, type EditorTabGroupChange } from '../../ide/workbe
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { findEditorGroup } from '../../ide/workbench/services/editor/editor_group';
+import { afterTest } from '../helpers/test_cleanup';
 
 const group: SerializedEditorGroup = { inputs: [{ kind: 'home', value: 'first' }], active: 0, preview: null };
 
@@ -27,7 +28,7 @@ function snapshot(layout: SerializedEditorGroupLayout = { kind: 'group', group }
 
 test('deserialization classifies both empty retirement and final admission as structural events after input disposal', async t => {
 	const model = new EditorTabGroupModel(), original = new HomeInput(null), restored = new HomeInput(null);
-	model.initialize(original); t.after(() => model.clear());
+	model.initialize(original); afterTest(t, () => model.clear());
 	const revision = model.revision, changes: (EditorTabGroupChange | 'retired')[] = [];
 	const unbind = model.onDidChange(kind => { changes.push(kind); });
 	original.onWillDispose(() => { changes.push('retired'); });
@@ -39,7 +40,7 @@ test('deserialization classifies both empty retirement and final admission as st
 
 test('a newer model intent from clear publication revokes staged restore admission', t => {
 	const model = new EditorTabGroupModel(), newer = new HomeInput(null);
-	t.after(() => model.clear());
+	afterTest(t, () => model.clear());
 	let redirected = false, resolutions = 0, candidateRetired = false;
 	model.onDidChange(() => {
 		if (redirected) return;
@@ -53,7 +54,7 @@ test('a newer model intent from clear publication revokes staged restore admissi
 });
 
 test('a candidate resolving after a newer model opening is retired instead of replacing that opening', async t => {
-	const model = new EditorTabGroupModel(); t.after(() => model.clear());
+	const model = new EditorTabGroupModel(); afterTest(t, () => model.clear());
 	let resolve!: (input: HomeInput) => void;
 	const waiting = new Promise<HomeInput>(done => { resolve = done; });
 	const serializers = homeSerializers(() => waiting);
@@ -66,7 +67,7 @@ test('a candidate resolving after a newer model opening is retired instead of re
 });
 
 test('a newer restore request supersedes an unresolved request without changing the published model revision', async t => {
-	const model = new EditorTabGroupModel(); t.after(() => model.clear());
+	const model = new EditorTabGroupModel(); afterTest(t, () => model.clear());
 	let resolveOld!: (input: HomeInput) => void, resolveNew!: (input: HomeInput) => void;
 	const oldCandidate = new Promise<HomeInput>(done => { resolveOld = done; }), newCandidate = new Promise<HomeInput>(done => { resolveNew = done; });
 	const serializers = homeSerializers(value => value === 'old' ? oldCandidate : newCandidate);
@@ -81,7 +82,7 @@ test('a newer restore request supersedes an unresolved request without changing 
 
 test('replacement admission does not erase a newer opening from the previous input retirement', async t => {
 	const model = new EditorTabGroupModel(), original = new HomeInput(null), newer = new TerminalInput();
-	model.initialize(original); t.after(() => model.clear());
+	model.initialize(original); afterTest(t, () => model.clear());
 	original.onWillDispose(() => { model.add(newer); model.activate(newer); });
 	const candidate = new HomeInput(null); let candidateRetired = false; candidate.onWillDispose(() => { candidateRetired = true; });
 	assert.equal(await model.deserialize(group, homeSerializers(() => candidate)), false);
@@ -140,7 +141,7 @@ test('closing admission revokes a pending part restore before its candidate writ
 });
 
 test('aborting a two-input reconstruction preserves the coherent published model and retires all staged candidates', async t => {
-	const model = new EditorTabGroupModel(), original = new HomeInput(null); model.initialize(original); t.after(() => model.clear());
+	const model = new EditorTabGroupModel(), original = new HomeInput(null); model.initialize(original); afterTest(t, () => model.clear());
 	let originalRetired = false; original.onWillDispose(() => { originalRetired = true; });
 	let resolve!: (input: TerminalInput) => void, started!: () => void;
 	const waiting = new Promise<TerminalInput>(done => { resolve = done; }), entered = new Promise<void>(done => { started = done; });
@@ -208,7 +209,7 @@ test('restored topology is fully registered before observers see the replacement
 		observed = true;
 		coherent = coherent && parts.groups.length === part.groups.length && part.groups.every(group => parts.groups.includes(group) && parts.partForGroup(group) === part)
 			&& !parts.groups.includes(original);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	let retiredCoherent = false;
 	original.onWillDispose(() => { retiredCoherent = !parts.groups.includes(original) && part.groups.every(group => parts.groups.includes(group)); });
 	assert.equal(await part.restore(snapshot({ kind: 'split', orientation: 'horizontal', ratio: 0.5,
@@ -237,7 +238,7 @@ test('restore observers can invoke a retired source command target only after it
 		const active = part.activeGroup, count = parts.groups.length;
 		f.editor.commands.execute('group.focusNext', priorTarget);
 		assert.ok(part.activeGroup === active); assert.equal(parts.groups.length, count);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.equal(await part.restore(saved, f.editor.editorInputSerializers), true);
 	assert.equal(observed, true); assert.equal(retired, true);
 });
@@ -252,7 +253,7 @@ for (const retire of ['clear', 'dispose'] as const) test(`workspace ${retire} fr
 		if (subscribed || parts.main.activeGroup === before) return;
 		subscribed = true;
 		parts.main.activeGroup.panes.onWillShowEditor(() => { redirected = true; parts[retire](); });
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.equal(await parts.restore({ ...saved, active: 1, mru: [1, 0] }, serializers), false);
 	assert.equal(redirected, true); assert.equal(parts.documents.length, 0);
 	assert.equal(parts.main.activeGroup.model.tabs.length, 0); assert.equal(parts.main.activeGroup.panes.activePane, null);

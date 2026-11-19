@@ -11,6 +11,7 @@ import { workspaceDirtyRecords } from '../../ide/workbench/workspace/state';
 import type { WorkspaceAutosavePayload } from '../../ide/workbench/workspace/models';
 import { createSceneDocumentFixture } from '../helpers/scene_document_fixture';
 import { SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes=require('cartlib/world/scene_library')
 local prefab=require('cartlib/world/prefab')
@@ -33,7 +34,7 @@ test('workspace recovery preserves an incomplete dirty Scene occurrence and sele
 	const f = await fixture(t), contents = f.model.buffer.getText();
 	const dirty = captureWorkspaceDirtySources(editorTextModelService, f.sources.catalog, f.host.clock, workspaceDirtyRecords);
 	workspaceDirtyRecords.clear(); for (const [path, record] of dirty.dirtyRecords) workspaceDirtyRecords.set(path, record);
-	t.after(() => workspaceDirtyRecords.clear());
+	afterTest(t, () => workspaceDirtyRecords.clear());
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({ mainWorkspace: f.editor.mainWorkspace.serialize(),
 		sceneCompanion: f.editor.editorParts.captureEditorLocation(f.input), dirtyFiles: dirty.dirtyFiles,
 		filesBrowser: f.editor.resourcePanel.serialize(), editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
@@ -59,7 +60,7 @@ test('an incomplete Scene snapshot never binds to a later different source gener
 	const f = await fixture(t), serialized = f.editor.editorInputSerializers.scene_editor.serialize(f.input);
 	assert.equal(f.editor.textTarget!.replaceText(f.quote, f.quote, "'"), true); f.update();
 	const restored = await f.editor.editorInputSerializers.scene_editor.deserialize(serialized);
-	assert.ok(restored instanceof SceneEditorInput); t.after(() => restored.dispose());
+	assert.ok(restored instanceof SceneEditorInput); afterTest(t, () => restored.dispose());
 	assert.equal(restored.view.authoring.subject, undefined);
 	assert.equal(restored.view.authoring.availability, 'unavailable');
 	assert.equal(restored.view.authoring.captureSourceReference().subject?.availability, 'unavailable');
@@ -76,7 +77,7 @@ test('serialization preserves an exact temporarily unrecognized occurrence in va
 	assert.equal(input.view.authoring.suspended, true);
 	const serialized = f.editor.editorInputSerializers.scene_editor.serialize(input);
 	const restored = await f.editor.editorInputSerializers.scene_editor.deserialize(serialized);
-	assert.ok(restored instanceof SceneEditorInput); t.after(() => restored.dispose());
+	assert.ok(restored instanceof SceneEditorInput); afterTest(t, () => restored.dispose());
 	assert.equal(restored.view.authoring.suspended, true); assert.equal(restored.view.authoring.subject, undefined);
 	assert.equal(restored.view.authoring.selection, undefined);
 	assert.equal(restored.view.authoring.captureSourceReference().selected?.kind, 'member');

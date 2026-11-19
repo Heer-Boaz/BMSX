@@ -14,6 +14,7 @@ import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const variant of ['tiny', 'msx'] as const) for (const allocation of ['document', 'activity'] as const) {
 	test(`${variant} build reader fits toolbar glyphs and centers its heading within the ${allocation} header allocation`, t => {
@@ -33,7 +34,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const allocation of ['docum
 		const owner = surfaces.attach({ role: 'content', captureScope: Symbol('header layout owner'), getBounds: () => bounds,
 			getClip: () => bounds, isVisible: () => true, draw() {} });
 		const control = new BuildLogControl(new HeadlessClipboard(), menu, surfaces, owner, bounds, inputFocus.workbenchScope);
-		t.after(() => { control.dispose(); view.dispose(); outputs.dispose(); menu.dispose(); surfaces.dispose(); });
+		afterTest(t, () => { control.dispose(); view.dispose(); outputs.dispose(); menu.dispose(); surfaces.dispose(); });
 		control.attach(view, bounds, header);
 		const row = header === undefined ? { ...bounds, bottom: view.document.viewport.bounds.top } : header;
 		const items = view.actions.items.filter(item => item.visible && !item.overflowed);

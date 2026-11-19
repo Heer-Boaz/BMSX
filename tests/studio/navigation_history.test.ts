@@ -22,6 +22,7 @@ import type { EditorGroupView } from '../../ide/workbench/services/editor/editor
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { afterTest } from '../helpers/test_cleanup';
 
 test.afterEach(() => editorTextModelService.clear());
 
@@ -38,7 +39,7 @@ function code(path: string) {
 }
 
 test('Back/Forward preserve the live destination, not an earlier captured cursor', t => {
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	resetNavigationHistoryState();
 	const origin = entry(group, 'main.lua', 4);
 	const current = entry(group, 'enemy.lua', 37);
@@ -55,7 +56,7 @@ test('Back/Forward preserve the live destination, not an earlier captured cursor
 });
 
 test('bounded history owns disposal on duplicates, eviction, forward pruning and reset', t => {
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	resetNavigationHistoryState();
 	const first = entry(group, 'a.lua', 0); pushUniqueNavigationEntry(navigationState.back, first);
 	const duplicate = entry(group, 'a.lua', 0); pushUniqueNavigationEntry(navigationState.back, duplicate);
@@ -86,7 +87,7 @@ test('a contribution location retires once after releasing its resources, includ
 });
 
 test('location retirement removes exact stacked destinations and revokes an outstanding Back decision', t => {
-	const group = createTestEditorGroup(); t.after(() => { resetNavigationHistoryState(); group.dispose(); });
+	const group = createTestEditorGroup(); afterTest(t, () => { resetNavigationHistoryState(); group.dispose(); });
 	resetNavigationHistoryState();
 	const back = entry(group, 'observed.lua', 1), forward = entry(group, 'other.lua', 2);
 	navigationState.back.push(back); navigationState.forward.push(forward);
@@ -104,7 +105,7 @@ test('location retirement removes exact stacked destinations and revokes an outs
 });
 
 test('history reset unsubscribes location retirement before releasing every owned selection', t => {
-	const group = createTestEditorGroup(); t.after(() => group.dispose()); resetNavigationHistoryState();
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose()); resetNavigationHistoryState();
 	const back = [entry(group, 'a.lua', 1), entry(group, 'b.lua', 2), entry(group, 'c.lua', 3)];
 	const forward = [entry(group, 'd.lua', 4), entry(group, 'e.lua', 5)];
 	let retired = 0;
@@ -116,17 +117,17 @@ test('history reset unsubscribes location retirement before releasing every owne
 });
 
 test('location retirement at receiver opening releases a fresh unadmitted input without replacing the sender', t => {
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	const retained = code('retained.lua'), offered = code('offered.lua'), location = new Location(1);
 	group.openEditor(retained); let disposed = 0; offered.onWillDispose(() => { disposed++; });
-	const unbind = group.panes.onDidBeginOpen(() => { unbind(); location.dispose(); }); t.after(unbind);
+	const unbind = group.panes.onDidBeginOpen(() => { unbind(); location.dispose(); }); afterTest(t, unbind);
 	assert.equal(group.openEditor(offered, { navigationSelection: location }), undefined);
 	assert.equal(disposed, 1); assert.equal(group.model.contains(offered), false);
 	assert.ok(group.model.activeTab === retained && group.panes.activePane?.input === retained);
 });
 
 test('input close removes visual destinations from both stacks; resource destinations stay reopenable', t => {
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const group = createTestEditorGroup(); afterTest(t, () => group.dispose());
 	resetNavigationHistoryState();
 	const text = code('close.lua');
 	const visual = new HostErrorInput('retained diagnostic');
@@ -145,14 +146,14 @@ test('input close removes visual destinations from both stacks; resource destina
 test('child pane construction and disposal cannot replace the frontend navigation owner', t => {
 	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
-	t.after(initializeNavigationState(group));
+	afterTest(t, initializeNavigationState(group));
 	const input = code('main.lua'); group.openEditor(input);
-	t.after(() => { group.dispose(); input.dispose(); });
+	afterTest(t, () => { group.dispose(); input.dispose(); });
 	const retained = createNavigationEntry()!;
 	navigationState.back.push(retained);
 
 	const sibling = createTestEditorGroup();
-	t.after(() => sibling.dispose());
+	afterTest(t, () => sibling.dispose());
 	assert.deepEqual(navigationState.back, [retained]);
 	const afterConstruction = createNavigationEntry()!;
 	assert.equal(afterConstruction.owner, group);
@@ -176,9 +177,9 @@ test('child pane construction and disposal cannot replace the frontend navigatio
 test('pane retirement releases pending selections before a later completion', t => {
 	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
-	t.after(initializeNavigationState(group));
+	afterTest(t, initializeNavigationState(group));
 	const input = code('retiring.lua'); group.openEditor(input);
-	t.after(() => { group.dispose(); input.dispose(); });
+	afterTest(t, () => { group.dispose(); input.dispose(); });
 	const pending = beginNavigationCapture()!;
 	const target = entry(group, 'closed.lua', 3);
 	navigationState.back.push(target);
@@ -201,7 +202,7 @@ test('pane retirement releases pending selections before a later completion', t 
 
 test('matching resources and selections retain distinct capturing pane lifetimes', t => {
 	const primary = createTestEditorGroup(), sibling = createTestEditorGroup();
-	t.after(() => { primary.dispose(); sibling.dispose(); });
+	afterTest(t, () => { primary.dispose(); sibling.dispose(); });
 	const first = entry(primary, 'same.lua', 1), second = entry(sibling, 'same.lua', 1);
 	assert.equal(areNavigationEntriesEqual(first, second), false);
 	first.dispose(); second.dispose();
@@ -210,9 +211,9 @@ test('matching resources and selections retain distinct capturing pane lifetimes
 test('one explicit navigation records a departure before mutating the same retained input', t => {
 	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
-	t.after(initializeNavigationState(group));
+	afterTest(t, initializeNavigationState(group));
 	const input = code('same.lua'); group.openEditor(input);
-	t.after(() => { group.dispose(); });
+	afterTest(t, () => { group.dispose(); });
 	const original = createNavigationEntry()!;
 	captureNavigation(() => {
 		input.context.view.cursorRow = 2;
@@ -234,7 +235,7 @@ test('one explicit navigation records a departure before mutating the same retai
 test('history awaits the registered resource opener and restores a closed text input after hidden edits', async t => {
 	configureFontVariant('tiny');
 	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
-	t.after(initializeNavigationState(group));
+	afterTest(t, initializeNavigationState(group));
 	const origin = code('origin.lua'); group.openEditor(origin);
 	const closed = code('target.lua'); closed.context.view.cursorRow = 1; closed.context.view.cursorColumn = 6;
 	const selection = new CodeEditorNavigationSelection(closed);
@@ -255,7 +256,7 @@ test('history awaits the registered resource opener and restores a closed text i
 			},
 		}]), parts,
 	);
-	t.after(() => { group.dispose(); });
+	afterTest(t, () => { group.dispose(); });
 	const version = reopened.workingCopy.version;
 	const pending = navigation.goBackward();
 	assert.equal(navigationState.captureSuspendDepth, 0, 'I/O must not suspend unrelated user navigation');
@@ -272,7 +273,7 @@ test('history awaits the registered resource opener and restores a closed text i
 test('Back activates a surviving visual preview without turning navigation into Keep Open', async t => {
 	configureFontVariant('tiny');
 	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
-	t.after(initializeNavigationState(group));
+	afterTest(t, initializeNavigationState(group));
 	const origin = code('origin.lua'); group.openEditor(origin);
 	const visual = new HostErrorInput('retained diagnostic');
 	group.model.add(visual, { pinned: false });
@@ -282,7 +283,7 @@ test('Back activates a surviving visual preview without turning navigation into 
 		new WorkspaceSourceCatalog(),
 		new ResourceEditorResolver([]), parts,
 	);
-	t.after(() => { group.dispose(); });
+	afterTest(t, () => { group.dispose(); });
 	await navigation.goBackward();
 	assert.equal(group.model.activeTab, visual);
 	assert.equal(group.model.previewTab, visual);
@@ -295,7 +296,7 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 	test(`slow ${route} resolution cannot reactivate after ${interruption}`, async t => {
 		configureFontVariant('tiny');
 		const parts = createTestEditorParts(t), group = parts.main.activeGroup;
-		t.after(initializeNavigationState(group));
+		afterTest(t, initializeNavigationState(group));
 		const origin = code('origin.lua'); group.openEditor(origin);
 		const older = code('older.lua'), newer = code('newer.lua');
 		let discarded = 0; older.onWillDispose(() => { discarded += 1; });
@@ -312,7 +313,7 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 				},
 			}]), parts,
 		);
-		t.after(() => { group.dispose(); });
+		afterTest(t, () => { group.dispose(); });
 		const target = new NavigationHistoryEntry({ kind: 'resource', ...older.toResourceEditor() }, new CodeEditorNavigationSelection(older), group);
 		if (route === 'history') navigationState.back.push(target);
 		const pending = route === 'history' ? navigation.goBackward() : navigation.openResource(group, older.workingCopy.resource);
@@ -346,7 +347,7 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 test('cancelled resolution disposes its fresh candidate without disturbing the retained same-resource input', async t => {
 	configureFontVariant('tiny');
 	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
-	t.after(initializeNavigationState(group));
+	afterTest(t, initializeNavigationState(group));
 	const input = code('retained.lua'); group.openEditor(input);
 	const candidate = new CodeEditorInput(input.workingCopy);
 	let retainedDisposals = 0, candidateDisposals = 0;
@@ -355,7 +356,7 @@ test('cancelled resolution disposes its fresh candidate without disturbing the r
 		new WorkspaceSourceCatalog(),
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => candidate }]), parts,
 	);
-	t.after(() => { group.dispose(); });
+	afterTest(t, () => { group.dispose(); });
 	const pending = navigation.openResource(group, input.workingCopy.resource);
 	group.activate(input.id);
 	assert.equal(await pending, undefined);
@@ -367,8 +368,8 @@ test('cancelled resolution disposes its fresh candidate without disturbing the r
 test('a delayed resource open preserves a newer focus target in the same owning group', async t => {
 	configureFontVariant('tiny');
 	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
-	t.after(initializeNavigationState(group));
-	t.after(() => group.dispose());
+	afterTest(t, initializeNavigationState(group));
+	afterTest(t, () => group.dispose());
 	group.openEditor(code('origin.lua'));
 	const candidate = code('destination.lua');
 	let finish!: () => void;
@@ -381,7 +382,7 @@ test('a delayed resource open preserves a newer focus target in the same owning 
 	const pending = navigation.openResource(group, candidate.workingCopy.resource);
 	// A group-owned popup may take focus while its content resource is resolving.
 	const popup = inputFocus.createTarget(group.tabFocusTarget);
-	const unbind = popup.bindKeyboard(() => {}); t.after(unbind);
+	const unbind = popup.bindKeyboard(() => {}); afterTest(t, unbind);
 	popup.focus();
 	assert.equal(navigationState.activeOwner, group);
 	finish();
@@ -394,8 +395,8 @@ test('a delayed resource open preserves a newer focus target in the same owning 
 test('async resource admission captures the departure before an in-control caret move', async t => {
 	configureFontVariant('tiny');
 	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
-	t.after(initializeNavigationState(group));
-	t.after(() => group.dispose());
+	afterTest(t, initializeNavigationState(group));
+	afterTest(t, () => group.dispose());
 	const origin = code('origin.lua');
 	group.openEditor(origin);
 	origin.context.view.cursorRow = 0; origin.context.view.cursorColumn = 1;
@@ -412,7 +413,7 @@ test('async resource admission captures the departure before an in-control caret
 	const pending = navigation.openResource(group, destination.workingCopy.resource);
 	origin.context.view.cursorRow = 2; origin.context.view.cursorColumn = 3;
 	const later = createNavigationEntry()!;
-	t.after(() => { invocation.dispose(); later.dispose(); });
+	afterTest(t, () => { invocation.dispose(); later.dispose(); });
 	assert.ok(inputFocus.target === focused, 'caret motion does not leave the concrete source control');
 	assert.equal(areNavigationEntriesEqual(invocation, later), false);
 	finish();
@@ -426,8 +427,8 @@ test('async resource admission captures the departure before an in-control caret
 for (const direction of ['back', 'forward'] as const) test(`invalid focused draft does not consume ${direction} navigation or leave its current view`, async t => {
 	configureFontVariant('tiny');
 	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
-	t.after(initializeNavigationState(group));
-	t.after(() => group.dispose());
+	afterTest(t, initializeNavigationState(group));
+	afterTest(t, () => group.dispose());
 	const first = code('first.lua'), second = code('second.lua');
 	group.openEditor(first); group.openEditor(second);
 	const catalog = new WorkspaceSourceCatalog();
@@ -442,7 +443,7 @@ for (const direction of ['back', 'forward'] as const) test(`invalid focused draf
 	let attempts = 0;
 	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
 	focus.edit = draft;
-	t.after(() => { focus.edit = undefined; });
+	afterTest(t, () => { focus.edit = undefined; });
 	if (direction === 'back') await navigation.goBackward(); else await navigation.goForward();
 	assert.equal(attempts, 1);
 	assert.ok(group.model.activeTab === current, 'failed validation preserves the admitted view');
@@ -455,9 +456,9 @@ for (const direction of ['back', 'forward'] as const) test(`invalid focused draf
 for (const direction of ['back', 'forward'] as const) test(`an invalid draft begun during ${direction} resolution retains the original destination for retry`, async t => {
 	configureFontVariant('tiny');
 	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
-	t.after(initializeNavigationState(group));
+	afterTest(t, initializeNavigationState(group));
 	let control: ValueInput<number> | undefined;
-	t.after(() => { control?.cancel(); inputFocus.setTarget(null); control?.dispose(); group.dispose(); });
+	afterTest(t, () => { control?.cancel(); inputFocus.setTarget(null); control?.dispose(); group.dispose(); });
 	const first = code('first.lua'), second = code('second.lua');
 	group.openEditor(first); group.openEditor(second);
 	let blocked = false, finish!: () => void, rejectedCandidate: CodeEditorInput | undefined, retired = 0;

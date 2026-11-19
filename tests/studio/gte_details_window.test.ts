@@ -26,6 +26,7 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import { eventHistoryRuntime } from '../helpers/event_history';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PROGRAM = `
 local data<const>: *word = 0x08010244
@@ -77,7 +78,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', withSource = f
 	}, surfaces, owner, origin, area, quickInput, contextMenu, source, () => { sourceOpens++; });
 	const format = details.presentation.details.bind(details.presentation);
 	t.mock.method(details.presentation, 'details', (...args: Parameters<typeof format>) => { formats++; return format(...args); });
-	t.after(() => { details.dispose(); quickInput.dispose(); contextMenu.dispose(); source.clear(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); history.dispose(); models.clear(); });
+	afterTest(t, () => { details.dispose(); quickInput.dispose(); contextMenu.dispose(); source.clear(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); history.dispose(); models.clear(); });
 	const key = (code: string, down: boolean) => inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, down));
 	const press = (code: string) => { key(code, true); key(code, false); };
 	return { runtime, input, history, issue, area, surfaces, owner, origin, details, synchronize, source, models, resource,
@@ -246,7 +247,7 @@ test('GTE View choice applies in the background when picker blur admits newer ou
 	details.show(); details.chooseView();
 	assert.ok(quickInput.invocationOrigin === details.inspector.focusTarget);
 	f.press('ArrowDown');
-	t.after(quickInput.field.focusTarget.onDidBlur(() => f.origin.focus()));
+	afterTest(t, quickInput.field.focusTarget.onDidBlur(() => f.origin.focus()));
 	f.press('Enter');
 	assert.equal(quickInput.visible, false); assert.equal(input.inspectorPage, 'diagram');
 	assert.equal(details.window.visible, true); assert.equal(input.detailsWindow.open, true);
@@ -276,7 +277,7 @@ test('GTE selection retires its real view chooser before copying another retaine
 	const previous = input.selected.sequence;
 	let before = -1;
 	const unbind = input.onWillChangeSelection(() => { before = input.selected.sequence; assert.equal(quickInput.visible, false); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.issue(); input.select(input.history.endSequence - 1);
 	assert.equal(before, previous); assert.equal(details.inspector.visible, false);
 	f.synchronize(); details.update();
@@ -426,7 +427,7 @@ return true`;
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	}, f.surfaces, f.owner, f.origin, f.area, f.quickInput, f.contextMenu, f.source, () => assert.fail('reading-position restore is not Source navigation'));
-	t.after(() => reopened.dispose());
+	afterTest(t, () => reopened.dispose());
 	reopened.show();
 	assert.equal(input.diagram.scrollTop, reading.top, 'a fresh controller restores retained source coordinates, not the old font pixels');
 	configureFontVariant('tiny'); reopened.update();

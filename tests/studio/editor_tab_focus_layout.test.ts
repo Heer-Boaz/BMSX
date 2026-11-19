@@ -20,6 +20,7 @@ import { beginHeadlessHost2D, renderHeadlessHost2DEntry } from '../../machine/ts
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { RectRenderKind, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** Geometry assertions exercise the strip's interval-reveal and retained paint contracts. */
 function fixture(t: TestContext, count = 12, variant: 'tiny' | 'msx' = 'tiny') {
@@ -56,7 +57,7 @@ function fixture(t: TestContext, count = 12, variant: 'tiny' | 'msx' = 'tiny') {
 		const tab = item(input).bounds, viewport = strip.layoutState.viewportBounds;
 		assert.ok(tab.left >= viewport.left && tab.right <= viewport.right, 'the requested complete tab interval is visible');
 	};
-	t.after(() => {
+	afterTest(t, () => {
 		strip.dispose(); menu.dispose(); model.clear(); parent.release();
 		for (const copy of copies) copy.dispose();
 	});
@@ -119,7 +120,7 @@ test('focused interval and viewport changes reveal the retained exact input whil
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark'] as const) for (const active of [false, true]) {
 	test(`${variant}/${theme} ${active ? 'active' : 'inactive'} tab focus preserves bitmap label ink and changes only the existing border footprint`, t => {
 		const previousTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme);
-		t.after(() => colors.setIdeThemeVariant(previousTheme));
+		afterTest(t, () => colors.setIdeThemeVariant(previousTheme));
 		const f = fixture(t, 3, variant), focused = f.inputs[1];
 		focused.setLabel('CART.LUA', focused.description);
 		if (active) f.model.activate(focused);

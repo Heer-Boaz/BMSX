@@ -6,13 +6,14 @@ import { EditorWorkspaceEditConflict } from '../../ide/editor/model/undo_redo_se
 import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy/workspace_edit';
 import { WorkspaceSourceContext } from '../../ide/workbench/services/working_copy/source_context';
 import { createScenarioTestSourceState, createScenarioTestSourceRecord } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'proposal.lua', location: { kind: 'workspace' as const, path: 'proposal.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'proposal.lua', source: { type: 'lua' as const, resid: 'proposal' } };
 const edit = { version: 1, edits: [{ offset: 0, deleteLength: 1, text: 'new' }] };
 
 test('reopening the same resource/version cannot revive edit rights from a retired workspace', t => {
 	const models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const retired = models.retain(resource, 'lua', 'x');
 	models.clear();
 	const current = models.retain(resource, 'lua', 'x');
@@ -28,7 +29,7 @@ test('reopening the same resource/version cannot revive edit rights from a retir
 
 test('a multi-file proposal cannot mix models belonging to different workspace history owners', t => {
 	const first = new EditorTextModelService(), second = new EditorTextModelService();
-	t.after(() => { first.clear(); second.clear(); });
+	afterTest(t, () => { first.clear(); second.clear(); });
 	const a = first.retain(resource, 'lua', 'x'), b = second.retain(resource, 'lua', 'x');
 	let notifications = 0;
 	a.onWillChangeContent(() => notifications++);
@@ -43,7 +44,7 @@ test('a review retains captured evidence but permanently loses authority when it
 	const model = models.retain(sources.catalog.luaResources[0], 'lua', 'x');
 	const proposal = new WorkspaceEditProposal('Replace authored source', new WorkspaceSourceContext(models, sources.catalog),
 		{ kind: 'edit', edits: new Map([[model, edit]]) });
-	t.after(() => { proposal.dispose(); models.clear(); });
+	afterTest(t, () => { proposal.dispose(); models.clear(); });
 	const files = proposal.files;
 	models.clear();
 	const reopened = models.retain(sources.catalog.luaResources[0], 'lua', 'x');

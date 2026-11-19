@@ -12,6 +12,7 @@ import { PNG } from 'pngjs';
 import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_layout';
 import { ON_SCREEN_KEY_DEFINITIONS } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { expandBrowserKeyboardTemplate } from '../../scripts/products/browser_keyboard';
+import { afterTest } from '../helpers/test_cleanup';
 
 // Hacker's Keyboard's full layout supplies conventional US typing rows and
 // keeps Up above Down rather than a horizontal cursor strip.
@@ -128,7 +129,7 @@ test('package expansion uses every authored HTML fragment, including the close-b
 
 test('Player and Studio package the same complete keyboard before any host script runs', async t => {
 	const folder = await mkdtemp(join(tmpdir(), 'bmsx-keyboard-template-'));
-	t.after(() => rm(folder, { recursive: true, force: true }));
+	afterTest(t, () => rm(folder, { recursive: true, force: true }));
 	await mkdir(join(folder, 'rom'));
 	for (const file of ['gamebase.html', 'gamebase.css', 'rom/bmsx.png', 'rom/manifest.json']) {
 		await copyFile(file, join(folder, file));
@@ -141,7 +142,7 @@ await buildBrowserStudioPackage(false);`], { cwd: folder });
 	const expanded = expandBrowserKeyboardTemplate(await readFile('gamebase.html', 'utf8'));
 	const markup = expanded.match(/<section id="bmsx-touch-keyboard"[\s\S]*?<\/section>/)![0];
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage();
 	for (const file of ['index.html', 'player.template.html', 'player.input-trace.template.html', 'studio.html', 'studio.template.html']) {
 		const html = await readFile(join(folder, 'dist', file), 'utf8');
@@ -192,7 +193,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 	const folder = '.bmsx/hosting/conventional-keyboard-evidence';
 	await mkdir(folder, { recursive: true });
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const profileEvidence: unknown[] = [];
 	for (const profile of [
 		{ name: 'phone-portrait', width: 393, height: 852, dpr: 3 },

@@ -10,6 +10,7 @@ import { ScenarioRunService } from '../../ide/workbench/services/testing/scenari
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const source = "-- captured 🐉\r\nreturn { kind = 'unit', tests = { sample = function() assert(false) end } }\r\n";
@@ -21,7 +22,7 @@ async function fixture(t: TestContext) {
 	const owner = service.results, connection = new AbortController();
 	const run = owner.beginRun(module.id, [{ test: item, source, sourceRevision: 7 }]);
 	const tools = new WorkspaceTestTools(service, connection.signal);
-	t.after(() => { tools.dispose(); connection.abort(); if (owner.liveRun) owner.cancelRun(owner.liveRun); service.dispose(); models.clear(); });
+	afterTest(t, () => { tools.dispose(); connection.abort(); if (owner.liveRun) owner.cancelRun(owner.liveRun); service.dispose(); models.clear(); });
 	const catalog = await tools.execute('studio_list_test_runs', {}); assert.ok(catalog.kind === 'test-runs');
 	const read = await tools.execute('studio_read_test_run', { run: catalog.data.runs[0].run }); assert.ok(read.kind === 'test-run');
 	return { source, collection, module, owner, service, connection, run, tools, handle: catalog.data.runs[0].run, resultHandle: read.data.cases[0].result };
@@ -111,7 +112,7 @@ test('retained output reports every omitted record and preserves raw trace words
 });
 
 test('foreign handles, eviction and connection retirement cannot reuse cached evidence', async t => {
-	const f = await fixture(t), peer = new WorkspaceTestTools(f.service, f.connection.signal); t.after(() => peer.dispose());
+	const f = await fixture(t), peer = new WorkspaceTestTools(f.service, f.connection.signal); afterTest(t, () => peer.dispose());
 	assert.throws(() => peer.execute('studio_read_test_run', { run: f.handle }), /does not belong/);
 	assert.throws(() => peer.execute('studio_read_test_result', { result: f.resultHandle }), /must be read/);
 	f.tools.execute('studio_read_test_result', { result: f.resultHandle });

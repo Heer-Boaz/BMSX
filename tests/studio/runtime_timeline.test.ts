@@ -15,6 +15,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { drawRuntimeTimeline } from '../../ide/workbench/render/runtime_timeline';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} runtime transport shares one compact row without title or pseudo-icon labels`, t => {
 	const font = new Font({ variant }), actions = createWorkbenchActionBar('runtime.title');
@@ -65,7 +66,7 @@ test('history readback and changing offset text preserve a captured inline timel
 	parent.bindKeyboard(() => {}); parent.focus();
 	const values: number[] = []; let cancelled = 0;
 	const slider = new WorkbenchSliderControl(focus, capture, parent, value => values.push(value), () => cancelled++);
-	slider.setInput(range); t.after(() => slider.dispose());
+	slider.setInput(range); afterTest(t, () => slider.dispose());
 	const pointer = (x: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false,
 		viewportX: x, viewportY: range.bounds.top + 4, valid: true, insideViewport: true,
 		pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,

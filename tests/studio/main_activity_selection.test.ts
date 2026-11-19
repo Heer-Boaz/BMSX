@@ -14,6 +14,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SCENE = `local scenes = require('cartlib/world/scene_library')
 require('cartlib/world/prefab').define({def_id='actor',class=require('cartlib/world/object_3d')})
@@ -63,7 +64,7 @@ test('a newer native owner admitted during activity departure supersedes the old
 	f.main.openActivity('problems'); assert.ok(inputFocus.admittedTarget === problems.focusTarget);
 	const generation = problems.scope.contextGeneration;
 	const unbind = problems.focusTarget.onDidBlur(() => { unbind(); f.second.focus(); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.equal(f.main.openActivity('builds.output'), false);
 	assert.ok(f.main.activity === problems && problems.attached && !f.activity.attached);
 	assert.equal(problems.scope.contextGeneration, generation);

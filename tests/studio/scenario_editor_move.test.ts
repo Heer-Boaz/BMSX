@@ -41,6 +41,7 @@ import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxError } from '../../toolchain/ts/lua/errors';
 import type { ScenarioLabExecutionCommand } from '../../ide/workbench/contrib/scenario_lab/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
+import { afterTest } from '../helpers/test_cleanup';
 
 let directory: string;
 let media: ScenarioMediaFixture;
@@ -73,7 +74,7 @@ async function fixture(t: TestContext) {
 		new IdeMicrotaskQueue(), { log() {} }, { width: 800, height: 320 }, sources, new Map(), externalWork,
 		(bios, cartridges, model, input) => { const target = new OffscreenMachine(bios, cartridges, model, input); targets.push(target); return target; }, externalWork);
 	const editor = ide.editor, parts = editor.editorParts, controller = editor.scenarioLab, runs = controller.runs;
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false);
 		await editor.shutdown(); clearBackgroundTasks(); host.audio.dispose(); host.input.dispose();
 	});
@@ -121,7 +122,7 @@ function sourceDraft(t: TestContext, f: Awaited<ReturnType<typeof fixture>>, tex
 	control.setValue(source); control.layout({ left: 0, top: 32, right: 384, bottom: 64 });
 	control.field.focusTarget.focus();
 	assert.equal(control.field.replaceText(0, source.length, text), true);
-	t.after(() => { control.cancel(); control.field.focusTarget.release(); control.dispose(); });
+	afterTest(t, () => { control.cancel(); control.field.focusTarget.release(); control.dispose(); });
 	const execute = (command: ScenarioLabExecutionCommand, application: boolean) => {
 		if (application) f.editor.commands.execute(command, target);
 		else inputFocus.executeCommand(command, target);
@@ -210,7 +211,7 @@ for (const foreignFocus of ['before-inspection', 'after-inspection'] as const)
 		const [left, top, right, bottom] = borders.mock.calls[0].arguments;
 		borders.mock.restore();
 		const pointer = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
-		t.after(() => pointer.release());
+		afterTest(t, () => pointer.release());
 		pointer.apply([{ type: 'pointer', x: (left + right) / 2, y: (top + bottom) / 2 },
 			{ type: 'button', button: 'primary', down: true }]);
 		assert.ok(inputFocus.target === foreign, 'pointer admission keeps the foreign editor keyboard focus');
@@ -269,7 +270,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} withho
 	f.key('Tab'); const sash = inputFocus.admittedTarget!;
 	const x = view.split.position, y = (view.split.bounds.top + view.split.bounds.bottom) / 2, ratio = view.split.ratio;
 	const control = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
-	t.after(() => control.release());
+	afterTest(t, () => control.release());
 	control.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'primary', down: true }]);
 	assert.equal(pointerCapture.active, true); assert.ok(inputFocus.admittedTarget === sash);
 	f.firstPart.window!.model.setRequestedBounds({ left: 0, top: 32, right: 240, bottom: 290 }); f.update();
@@ -401,7 +402,7 @@ test('Scenario reveal cannot override an unrelated editor activation published w
 	const unbind = f.firstPart.activeGroup.panes.onWillShowEditor(() => {
 		unbind(); f.secondPart.activeGroup.openEditor(replacement);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.controller.open(f.parts.main.activeGroup);
 	assert.ok(f.firstPart.activeGroup.model.activeTab === f.input, 'the requested input was attached before its owner published the newer activation');
 	assert.ok(f.secondPart.activeGroup.model.activeTab === replacement);
@@ -415,7 +416,7 @@ test('Scenario reveal finishes only the attachment that survived its owning pane
 	const unbind = f.firstPart.activeGroup.panes.onWillShowEditor(() => {
 		unbind(); assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, { kind: 'group', group: f.secondPart.activeGroup }), true);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.doesNotThrow(() => f.controller.open(f.parts.main.activeGroup));
 	assert.ok(f.parts.findGroup(f.input) === f.secondPart.activeGroup);
 	assert.ok(f.parts.activePart === f.secondPart && f.secondPart.activeGroup.panes.activePane!.input === f.input);
@@ -429,7 +430,7 @@ test('Scenario reveal cannot overwrite a newer model selection before attaching 
 		if (f.firstPart.activeGroup.model.activeTab !== f.input) return;
 		unbind(); f.firstPart.activeGroup.activate(replacement.id); f.secondPart.focus();
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.doesNotThrow(() => f.controller.open(f.parts.main.activeGroup));
 	assert.ok(f.firstPart.activeGroup.model.activeTab === replacement);
 	assert.ok(f.firstPart.activeGroup.panes.activePane!.input === replacement, 'the newer model selection owns the actual pane too');
@@ -585,11 +586,11 @@ for (const application of [false, true]) test(`Scenario ${application ? 'applica
 		options: { allowSpace: true }, format: (value: string) => value,
 		invalidBlurMessage: 'invalid', parse: value => ({ value }),
 	}, () => { publishes++; });
-	t.after(() => { foreign.cancel(); foreign.field.focusTarget.release(); foreign.dispose(); });
+	afterTest(t, () => { foreign.cancel(); foreign.field.focusTarget.release(); foreign.dispose(); });
 	foreign.setValue('before'); foreign.layout({ left: 400, top: 32, right: 800, bottom: 64 });
 	foreign.field.focusTarget.focus(); foreign.field.replaceText(0, 6, 'pending');
 	let consumed = false;
-	t.after(f.runs.onDidChangeRun(event => {
+	afterTest(t, f.runs.onDidChangeRun(event => {
 		if (event.type !== 'started') return;
 		consumed = true; assert.equal(foreign.pending, true); assert.equal(publishes, 0);
 	}));

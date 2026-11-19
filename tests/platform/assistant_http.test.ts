@@ -18,6 +18,7 @@ import type { AssistantEvent } from '../../hosts/common/assistant_protocol';
 import { WorkspaceHttpSession, HttpError } from '../../scripts/dev/http_security.mjs';
 import { handleWorkspaceRequest } from '../../scripts/dev/workspace_api.mjs';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE, CODEX_FIXTURE_WAIT } from '../helpers/codex_model_fixture.mjs';
+import { afterTest } from '../helpers/test_cleanup';
 
 const readCall = { type: 'function_call', call_id: 'codex-private-id', name: 'studio_read', arguments: '{"resource":"cart.lua"}' };
 const tools = [{ name: 'studio_read', description: 'Read a Studio source', inputSchema: { type: 'object', properties: { resource: { type: 'string' } },
@@ -51,7 +52,7 @@ async function fixture(t: TestContext, steps: unknown[], clientScript?: Uint8Arr
 	server.listen(0, '127.0.0.1'); await once(server, 'listening');
 	const address = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 	const session = new StudioHttpSession(address);
-	t.after(async () => {
+	afterTest(t, async () => {
 		await api.close(); server.closeAllConnections();
 		await new Promise<void>(resolve => server.close(() => resolve()));
 		await rm(root, { recursive: true });
@@ -239,7 +240,7 @@ test('Chromium uses the real same-origin transport and shares admission with ord
 	await writeFile(join(f.root, 'source.lua'), 'return 1');
 	const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
 	const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage(), errors: Error[] = [];
 	page.on('pageerror', error => errors.push(error));
 	await page.goto(f.address);
@@ -303,7 +304,7 @@ test('embedded Codex calls server-owned build tools; disconnecting chat does not
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-build-'));
 	const projects = new WorkspaceProjects(process.cwd(), join(root, 'workspace'));
 	const jobs = await StudioBuildJobs.open(process.cwd(), root, projects);
-	t.after(async () => { await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
+	afterTest(t, async () => { await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
 	const request = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 };
 	const completed = Promise.withResolvers<StudioBuildJob>();
 	jobs.subscribe(({ job }) => { if (job.request.requestId === request.requestId && isBuildTerminal(job.state)) completed.resolve(job); });

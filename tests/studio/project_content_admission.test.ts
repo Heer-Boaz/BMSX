@@ -20,6 +20,7 @@ import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/edito
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const API_MODULES = ['cartlib/world/scene_library', 'cartlib/behaviour_tree/library', 'cartlib/fsm/library', 'cartlib/actioneffects',
 	'cartlib/progression', 'cartlib/input/actioneffect/actioneffect_component', 'cartlib/timeline/program'];
@@ -58,7 +59,7 @@ function fixture(t: TestContext, kind: ProjectContentEntry['kind'] = 'progressio
 	const draft = (accept: () => void) => {
 		f.firstPart.focus();
 		const control = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, accept);
-		t.after(() => control.dispose());
+		afterTest(t, () => control.dispose());
 		control.setValue(1); control.layout(f.firstGroup.panes.contentBounds);
 		control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 		assert.equal(control.pending, true);
@@ -81,7 +82,7 @@ test('later focus published while the destination shows survives the earlier con
 	const f = fixture(t);
 	f.secondPart.focus(); f.panel.setFocused(true);
 	let redirected = false;
-	t.after(f.secondGroup.panes.onWillShowEditor(() => {
+	afterTest(t, f.secondGroup.panes.onWillShowEditor(() => {
 		if (redirected) return;
 		redirected = true; f.firstPart.focus();
 	}));

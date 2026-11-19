@@ -43,6 +43,7 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { contrastRatio } from '../helpers/contrast.mjs';
+import { afterTest } from '../helpers/test_cleanup';
 
 const captureDirectory = process.env.BMSX_UI_CAPTURE_DIR;
 if (captureDirectory !== undefined) mkdirSync(captureDirectory, { recursive: true });
@@ -74,7 +75,7 @@ function fixture(t: TestContext) {
 	const proposal = (title: string) => new WorkspaceEditProposal(title, new WorkspaceSourceContext(models, sources.catalog), {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 0, deleteLength: 0, text: '-- proposal\n' }] }]]),
 	});
-	t.after(async () => { input.dispose(); conversation.dispose(); tools.dispose(); await saves.shutdown(); await f.boots.shutdown();
+	afterTest(t, async () => { input.dispose(); conversation.dispose(); tools.dispose(); await saves.shutdown(); await f.boots.shutdown();
 		runs.dispose(); diagnostics.dispose(); f.presenter.dispose(); models.clear(); });
 	assert.equal(conversation.available, false);
 	return { input, conversation, proposal, model, runtime };
@@ -152,7 +153,7 @@ function toolbarFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme 
 		return { glyphs, rects };
 	};
 	toolbar.setInput(input, parent); parent.focus(); layout();
-	t.after(() => { toolbar.dispose(); menu.dispose(); unbind(); surfaces.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null);
+	afterTest(t, () => { toolbar.dispose(); menu.dispose(); unbind(); surfaces.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null);
 		overlay.presenter.dispose(); colors.setIdeThemeVariant(previousTheme); });
 	return { ...f, area, surfaces, owner, parent, toolbar, menu, opened, executed, layout, key, press, pointer, open, draw, overlay };
 }

@@ -16,12 +16,13 @@ import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorCaretState } from '../../ide/editor/ui/view/caret/state';
 import { MultilineFieldViewport } from '../../ide/editor/ui/inline/multiline_viewport';
 import { drawMultilineField } from '../../ide/editor/ui/inline/multiline_render';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} line edits paint active selection only for their actual focused field`, t => {
 	configureFontVariant(variant);
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {});
 	const first = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => {}), second = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => {});
-	t.after(() => { inputFocus.setTarget(null); first.dispose(); second.dispose(); });
+	afterTest(t, () => { inputFocus.setTarget(null); first.dispose(); second.dispose(); });
 	first.setValue(17); second.setValue(29);
 	first.field.focusTarget.focus(); second.field.focusTarget.focus();
 	assert.notEqual(first.field.selectionAnchor, null); assert.notEqual(second.field.selectionAnchor, null);
@@ -47,7 +48,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} line edits pain
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} a line-edit caret redraws its actual case-preserved glyph`, t => {
 	configureFontVariant(variant);
 	const uppercase = editorRuntimeState.uppercaseDisplay, visible = editorCaretState.cursorVisible;
-	t.after(() => { inputFocus.setTarget(null); editorRuntimeState.uppercaseDisplay = uppercase; editorCaretState.cursorVisible = visible; });
+	afterTest(t, () => { inputFocus.setTarget(null); editorRuntimeState.uppercaseDisplay = uppercase; editorCaretState.cursorVisible = visible; });
 	editorRuntimeState.uppercaseDisplay = true;
 	const field = new TextField(null, { singleLine: true, allowSpace: true });
 	setFieldText(field, 'needle', true); setCursorFromOffset(field, 0); field.focusTarget.focus();
@@ -72,7 +73,7 @@ for (const multiline of [false, true]) test(`${multiline ? 'multiline' : 'single
 	const bounds = { left: 8, top: 24, right: 120, bottom: 56 };
 	setFieldText(field, 'needle', true); field.focusTarget.focus();
 	const visible = editorCaretState.cursorVisible;
-	t.after(() => { inputFocus.setTarget(null); editorCaretState.cursorVisible = visible; });
+	afterTest(t, () => { inputFocus.setTarget(null); editorCaretState.cursorVisible = visible; });
 	t.mock.method(api, 'fill_rect', () => {}); t.mock.method(api, 'fill_rect_color', () => {});
 	t.mock.method(api, 'pushClipRect', () => {}); t.mock.method(api, 'popClipRect', () => {});
 	t.mock.method(api, 'blit_text_inline_with_font', () => {}); t.mock.method(api, 'blit_text_inline_span_with_font', () => {});

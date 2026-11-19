@@ -14,6 +14,7 @@ import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { WORKBENCH_ACTION_BAR_OVERFLOW } from '../../ide/workbench/ui/action_bar';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
 prefab.define({def_id='actor',class=require('cartlib/world/object_2d')})
@@ -141,7 +142,7 @@ test('Add acceptance does not arm or reclaim the canvas after focus return selec
 	const pane = group.panes.activePane; assert.ok(pane instanceof SceneEditorPane);
 	const arm = t.mock.method(pane.control, 'beginAddMember');
 	openAdd(f);
-	t.after(f.picker.field.focusTarget.onDidBlur(() => foreign.activeGroup.focus()));
+	afterTest(t, f.picker.field.focusTarget.onDidBlur(() => foreign.activeGroup.focus()));
 	f.key('Enter');
 	assert.equal(f.picker.visible, false); assert.equal(arm.mock.callCount(), 0);
 	assert.ok(inputFocus.admittedTarget !== null && foreign.scope.contains(inputFocus.admittedTarget.scope));
@@ -175,7 +176,7 @@ function clickViewport(f: Fixture, primary = f.primary): void {
 
 test('Main Add chooses an existing 2D prefab without writing, then the physical canvas click publishes selection and ordinary Undo', async t => {
 	const f = await fixture(t); let changes = 0;
-	t.after(f.model.onDidChangeContent(() => changes++));
+	afterTest(t, f.model.onDidChangeContent(() => changes++));
 	openAdd(f); chooseOther(f);
 	assert.equal(f.picker.visible, false); assert.equal(inputFocus.admittedTarget, f.primary.viewportTarget);
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.dirty, false); assert.equal(f.model.canUndo, false); assert.equal(changes, 0);
@@ -454,7 +455,7 @@ for (const valid of [true, false]) test(`the physical hierarchy Add action ${val
 	assert.equal(target.replaceText(0, target.readText().text.length, valid ? '41.5' : 'not_a_number'), true); f.update();
 	assert.equal(field.pending, true); assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 	let changes = 0;
-	t.after(f.model.onDidChangeContent(() => {
+	afterTest(t, f.model.onDidChangeContent(() => {
 		changes++; assert.equal(f.picker.visible, false, 'command admission publishes the old draft before creating the Add popup');
 	}));
 	// These bounds identify a public action input target; their size and position are not asserted.

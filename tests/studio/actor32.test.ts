@@ -25,6 +25,7 @@ import { readActorMethods } from '../../ide/workbench/contrib/actor_lab/methods'
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { eventHistoryRuntime } from '../helpers/event_history';
 import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { afterTest } from '../helpers/test_cleanup';
 
 const WORLD = `
 local fsm<const> = require('cartlib/fsm/fsm_component')
@@ -70,7 +71,7 @@ for (const optLevel of [0, 3] as const) test(`actor32 O${optLevel}: typed borrow
 		captureInstalledLuaSources(registry, images.cartSymbols!.metadata.compiledModulePaths), TEST_CARTRIDGE_CONTEXT_IDS[0]), null] };
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree();
-	t.after(() => { tree.dispose(); sources.catalog.dispose(); });
+	afterTest(t, () => { tree.dispose(); sources.catalog.dispose(); });
 	const world = runtimeWorld(sources, guest, 0)!;
 	const choices = readActorChoices(sources, guest, 0);
 	const actorHash = choices[1].hashId;
@@ -146,7 +147,7 @@ test('actor32 observes actual cartlib draw returns and command publication with 
 	const guest = new SuspendedGuestSession(runtime);
 	const observation = new ActorRenderObservation(cpu, sources.currentBlua32Media.cartridgeSlots[0]!, 0, guest, { value: 0 });
 	cpu.setInstructionObserver(observation);
-	t.after(() => { cpu.setInstructionObserver(null); sources.catalog.dispose(); });
+	afterTest(t, () => { cpu.setInstructionObserver(null); sources.catalog.dispose(); });
 	const backend = new HeadlessGPUBackend(256, 212, runtime.model.gxGpuVramBytes);
 	for (let tick = 0; tick < 180 && !observation.pages.some(page => page.ready && page.geometry.quads.length >= 5); tick++) {
 		let completed = false;

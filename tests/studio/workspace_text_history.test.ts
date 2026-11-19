@@ -6,10 +6,11 @@ import type { EditorModelEdit, EditorTextModel } from '../../ide/editor/model/te
 import { EditorEditStateType } from '../../ide/editor/model/edit_state';
 import { EditorHistoryConflict, EditorWorkspaceEditConflict } from '../../ide/editor/model/undo_redo_service';
 import { UNDO_HISTORY_LIMIT } from '../../ide/common/constants';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const service = new EditorTextModelService();
-	t.after(() => service.clear());
+	afterTest(t, () => service.clear());
 	const models = ['a.lua', 'b.lua', 'c.lua'].map((path, index) => service.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path,
 		source: { type: 'lua', resid: path } }, 'lua', String(index)));
 	return { service, models, text: () => models.map(model => model.buffer.getText()),

@@ -7,6 +7,7 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { WorkbenchViewportClick } from '../../ide/workbench/ui/viewport_click';
+import { afterTest } from '../helpers/test_cleanup';
 
 const bounds = { left: 0, top: 0, right: 640, bottom: 480 };
 function fixture(t: TestContext) {
@@ -16,7 +17,7 @@ function fixture(t: TestContext) {
 		assert.equal(capture.active, false, 'click execution starts after the gesture releases ownership');
 		clicks.push(button);
 	});
-	control.layout(bounds); t.after(() => control.dispose());
+	control.layout(bounds); afterTest(t, () => control.dispose());
 	const pointer: PointerInputSnapshot = { valid: true, insideViewport: true, viewportX: 200, viewportY: 200,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };
 	const release = () => capture.dispatch({ ...pointer, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 0);
@@ -61,7 +62,7 @@ for (const interruption of ['drag', 'leave', 'chord', 'lost button', 'scope', 'a
 
 test('layout retirement during focus admission cancels the old press', t => {
 	const f = fixture(t); f.parent.focus();
-	const unbind = f.parent.onDidBlur(() => { unbind(); f.control.layout({ ...bounds, right: 800 }); }); t.after(unbind);
+	const unbind = f.parent.onDidBlur(() => { unbind(); f.control.layout({ ...bounds, right: 800 }); }); afterTest(t, unbind);
 	f.control.begin(f.pointer, PointerButton.Primary); f.release();
 	assert.equal(f.clicks.length, 0); assert.equal(f.capture.active, false);
 	f.control.begin(f.pointer, PointerButton.Primary); f.release();

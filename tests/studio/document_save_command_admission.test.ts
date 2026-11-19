@@ -16,13 +16,14 @@ import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function documentFixture(t: TestContext, kind: 'source' | 'scene') {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
 		['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}'],
 	]);
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	f.editor.preferences.fontVariant = 'tiny';
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
@@ -64,7 +65,7 @@ test('a Scene document cannot reacquire retired Save authority after its accepte
 	let replacement: ReturnType<typeof editorTextModelService.retain> | undefined;
 	const release = f.model.onDidChangeContent(() => {
 		release(); editorTextModelService.clear(); replacement = editorTextModelService.retain(f.resource, 'lua', source);
-	}); t.after(release);
+	}); afterTest(t, release);
 	const save = t.mock.method(f.saves, 'save', model => ({ id: 0, snapshot: model.createSnapshot(),
 		completion: new Promise(() => {}), result: undefined }));
 	f.editor.commands.execute('save', target); await setImmediate();
@@ -106,7 +107,7 @@ const TRACKS = "return {{kind='value',interpolation='linear',path={'x'},keys={{t
 async function animationFixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [['animation.lua', ANIMATION], ['tracks.lua', TRACKS]]);
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	f.editor.preferences.fontVariant = 'tiny';
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'animation.lua' })!;
 	const input = f.editor.animations.openResource(f.firstGroup, resource, { pinned: true })!; f.update();

@@ -20,6 +20,7 @@ import type { WorkspaceAutosavePayload } from '../../ide/workbench/workspace/mod
 import { resetNavigationHistoryState } from '../../ide/navigation/navigation_history';
 import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { SceneNavigationLocation } from '../../ide/workbench/contrib/scene_editor/scene_navigation';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('a Scene document retains its viewport reading when its pane detaches and reattaches', t => {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE],
@@ -61,7 +62,7 @@ test('retiring a Scene viewport cannot unregister commands from a reentrant repl
 	const unbind = f.editor.mainWorkspace.onDidChange(() => {
 		if (!reentered && f.editor.mainWorkspace.primary === undefined) { reentered = true; group.activate(second.id); }
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	group.activate(code.id);
 	assert.equal(reentered, true);
 	const current = group.panes.activePane; assert.ok(current instanceof SceneEditorPane && current.input === second);
@@ -502,7 +503,7 @@ test('a closed Scene history occurrence follows the same document when reopened 
 	f.first.focus(); assert.equal(await open(0), true); f.update();
 	const first = f.editor.mainWorkspace.primary!.input; assert.ok(first instanceof SceneEditorInput);
 	const group = f.editor.editorParts.findGroup(first)!, location = new SceneNavigationLocation(first, group, f.editor.sceneEditor);
-	t.after(() => location.dispose());
+	afterTest(t, () => location.dispose());
 	assert.equal(await open(1), true); assert.equal(await group.close(first.id), true);
 	assert.equal(await open(0), true); f.update();
 	const reopened = f.editor.mainWorkspace.primary!.input; assert.ok(reopened instanceof SceneEditorInput);
@@ -555,7 +556,7 @@ test('a closed Scene history occurrence follows its editor group to a window', a
 	f.first.focus(); assert.equal(await open(0), true); f.update();
 	const first = f.editor.mainWorkspace.primary!.input; assert.ok(first instanceof SceneEditorInput);
 	const group = f.editor.editorParts.findGroup(first)!, location = new SceneNavigationLocation(first, group, f.editor.sceneEditor);
-	t.after(() => location.dispose());
+	afterTest(t, () => location.dispose());
 	assert.equal(await open(1), true); assert.equal(await group.close(first.id), true);
 	const second = f.editor.mainWorkspace.primary!.input;
 	assert.equal(f.editor.editorParts.moveGroup(group, { kind: 'window' }), true); f.update();

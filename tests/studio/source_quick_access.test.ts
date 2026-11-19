@@ -24,6 +24,7 @@ import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import type { EditorLuaSymbolEntry } from '../../ide/editor/contrib/intellisense/engine';
 import type { LuaDefinitionTarget } from '../../ide/editor/contrib/definitions/query';
 import { SOURCE_CHOICES_DEFINITIONS, SOURCE_CHOICES_USAGE } from '../fixtures/studio/source_choices';
+import { afterTest } from '../helpers/test_cleanup';
 
 const definitionResource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua' };
 const usageResource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'usage.lua' };
@@ -32,7 +33,7 @@ function referenceFixture(t: TestContext) {
 	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], new EditorTextModelService());
 	project.updateDocuments([{ resource: definitionResource, source: SOURCE_CHOICES_DEFINITIONS },
 		{ resource: usageResource, source: SOURCE_CHOICES_USAGE }]);
-	t.after(() => project.dispose());
+	afterTest(t, () => project.dispose());
 	const snapshot = project.getSnapshot();
 	for (const file of snapshot.files) assert.equal(file.syntaxError, null);
 	const frontend = buildLuaSemanticFrontendFromSnapshot(snapshot);
@@ -49,7 +50,7 @@ function pickerFixture(t: TestContext, height = 288) {
 	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
 	const menu = new ContextMenuController(inputFocus, pointerCapture, menuArea);
 	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
-	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }
 

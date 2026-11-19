@@ -6,6 +6,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const phase of ['source detach', 'destination detach', 'history handoff', 'model publication', 'destination attachment'] as const)
 	test(`whole-group ${phase} preserves a newer concrete sibling control and its routing owner`, t => {
@@ -19,7 +20,7 @@ for (const phase of ['source detach', 'destination detach', 'history handoff', '
 			: phase === 'destination detach' ? target.panes.onDidClearEditor(interact)
 			: phase === 'history handoff' ? source.onDidMoveEditor(interact)
 			: phase === 'model publication' ? target.model.onDidChange(interact) : target.panes.onWillShowEditor(interact);
-		t.after(unbind);
+		afterTest(t, unbind);
 		assert.equal(parts.moveGroup(source, { kind: 'group', group: target }), true);
 		assert.equal(interacted, true); assert.ok(target.model.activeTab === f.firstInput && target.panes.activePane?.input === f.firstInput);
 		assert.ok(inputFocus.target === pane.commandTarget && parts.activePart === f.secondPart && parts.activeGroup === sibling);
@@ -35,7 +36,7 @@ for (const phase of ['source detach', 'destination detach', 'history handoff', '
 			: phase === 'destination detach' ? target.panes.onDidClearEditor(clear)
 			: phase === 'history handoff' ? source.onDidMoveEditor(clear)
 			: phase === 'model publication' ? target.model.onDidChange(clear) : source.onWillDispose(clear);
-		t.after(unbind);
+		afterTest(t, unbind);
 		assert.equal(parts.moveGroup(source, { kind: 'group', group: target }), false);
 		assert.equal(cleared, true); assert.equal(parts.documents.length, 0); assert.equal(parts.groups.length, 1);
 		assert.ok(parts.activePart === parts.main && parts.activeGroup === parts.main.activeGroup);
@@ -47,7 +48,7 @@ for (const phase of ['source detach', 'destination detach', 'history handoff', '
 
 test('whole-group handoff rejects a detached destination while the live source still projects every retained member', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, source = f.firstGroup, target = f.secondGroup;
-	const unbind = source.panes.onDidClearEditor(() => { unbind(); f.secondPart.window!.detach(); }); t.after(unbind);
+	const unbind = source.panes.onDidClearEditor(() => { unbind(); f.secondPart.window!.detach(); }); afterTest(t, unbind);
 	const attach = t.mock.method(target.panes, 'openEditor');
 	assert.equal(parts.moveGroup(source, { kind: 'group', group: target }), false);
 	assert.equal(target.surface.retired, true); assert.equal(attach.mock.callCount(), 0);
@@ -81,7 +82,7 @@ test('a newer Main clear during local relocation retires the removed group witho
 	const reference = parts.splitGroup(source, 'right')!;
 	reference.openEditor(new CodeEditorInput(f.secondInput.workingCopy));
 	let cleared = false;
-	const unbind = main.onDidChangeGroups(() => { unbind(); cleared = true; parts.clear(); }); t.after(unbind);
+	const unbind = main.onDidChangeGroups(() => { unbind(); cleared = true; parts.clear(); }); afterTest(t, unbind);
 	assert.equal(parts.moveGroup(source, { kind: 'split', group: reference, direction: 'down' }), false);
 	assert.equal(cleared, true); assert.equal(main.retired, false); assert.equal(source.surface.retired, true);
 	assert.equal(parts.groups.length, 1); assert.ok(parts.activeGroup === reference);
@@ -103,7 +104,7 @@ test('new-window group publication exposes final topology and every retained inp
 			&& parts.findGroup(f.firstInput) === receiver && parts.findGroup(additional) === receiver && !parts.groups.includes(source)
 			&& !parts.documents.includes(f.firstPart) && parts.groupForModel(source.model) === undefined;
 		parts.clear();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.equal(parts.moveGroup(source, { kind: 'window' }), false);
 	assert.equal(redirected, true); assert.equal(coherent, true); assert.ok(receiver !== undefined);
 	assert.equal(receiver.surface.retired, true); assert.equal(receiver.panes.activePane, null);
@@ -116,7 +117,7 @@ test('a cross-part split reveals its new leaf independently of a newer unrelated
 	main.openEditor(new CodeEditorInput(f.secondInput.workingCopy)); f.update();
 	f.secondPart.arrangement.toggleMaximize(f.secondGroup); f.update(); source.focus();
 	const pane = main.panes.activePane!;
-	const unbind = source.panes.onDidClearEditor(() => { unbind(); pane.focus(); }); t.after(unbind);
+	const unbind = source.panes.onDidClearEditor(() => { unbind(); pane.focus(); }); afterTest(t, unbind);
 	assert.equal(parts.moveGroup(source, { kind: 'split', group: f.secondGroup, direction: 'right' }), true);
 	const receiver = parts.findGroup(f.firstInput);
 	assert.ok(receiver !== undefined && receiver !== f.secondGroup && parts.partForGroup(receiver) === f.secondPart);

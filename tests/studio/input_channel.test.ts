@@ -14,10 +14,11 @@ import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { RuntimeTransport } from '../../ide/runtime/transport';
 import { FrameBitmap } from '../../hosts/common/frame_bitmap';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('focused physical recipients are exclusive; the primary supervisor and host keys remain independent', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	const first = new InputChannel(input), second = new InputChannel(input);
 	const primarySample = createInputControllerSnapshot(), firstSample = createInputControllerSnapshot(), secondSample = createInputControllerSnapshot();
 	input.inputButton('keyboard:0', 'KeyA', true, 1, 0, 1); input.pollInput();
@@ -47,13 +48,13 @@ test('a game viewport focus attachment names its recipient and retains one bound
 	const f = createRuntimeInspectionFixture(createFrameRuntime(), createScenarioTestSourceState([]));
 	const input = f.input;
 	const transport = new RuntimeTransport(f.runtime, f.execution, f.rewind, f.frameNavigation, () => true);
-	t.after(() => { f.frameNavigation.dispose(); f.presenter.dispose(); });
+	afterTest(t, () => { f.frameNavigation.dispose(); f.presenter.dispose(); });
 	const channel = new InputChannel(input), parent = inputFocus.createTarget();
 	const frames = new FrameBitmap();
 	frames.publish(new Uint8Array(4), 1, 1, { presentationSequence: 0, cycles: 0, videoTick: 0 });
 	const presentation = { kind: 'offscreen', frames } as const;
 	const interaction = new InputInteraction(transport), view = new GameInputControl(parent, channel, presentation, interaction);
-	t.after(() => { view.dispose(); frames.dispose(); channel.dispose(); inputFocus.setTarget(null); input.dispose(); });
+	afterTest(t, () => { view.dispose(); frames.dispose(); channel.dispose(); inputFocus.setTarget(null); input.dispose(); });
 	const bounds = { left: 1, top: 2, right: 100, bottom: 80 };
 	view.setInput(bounds); view.focusTarget.focus();
 	assert.equal(interaction.running, false, 'focus does not start playback');

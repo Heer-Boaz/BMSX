@@ -11,6 +11,7 @@ import { dragScrollSpeed } from '../../ide/workbench/ui/drag_scroll';
 import { layoutWorkbenchList } from '../../ide/workbench/ui/list_view';
 import { WorkbenchTreeDrag, type WorkbenchTreeDropPlacement } from '../../ide/workbench/ui/tree_drag';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode, type WorkbenchTreeState } from '../../ide/workbench/ui/tree_view';
+import { afterTest } from '../helpers/test_cleanup';
 
 function pointer(x: number, y: number, pressedButtons: number = PointerButton.Primary, justReleasedButtons = 0, modifiers = KeyModifier.none): PointerInputSnapshot {
 	return { valid: true, insideViewport: true, viewportX: x, viewportY: y, pressedButtons,
@@ -52,7 +53,7 @@ function fixture(t: TestContext, count = 3) {
 		const snapshot = pointer(x, y, 0, PointerButton.Primary, modifiers);
 		capture.dispatch(snapshot, false, now, scope); capture.endRoute(snapshot);
 	};
-	t.after(() => { drag.dispose(); surfaces.dispose(); });
+	afterTest(t, () => { drag.dispose(); surfaces.dispose(); });
 	return { capture, surfaces, owner, area, clip, scope, tree, root, nodes, drag, press, move, release,
 		setCurrent: (value: boolean) => { current = value; }, setAccepted: (value: boolean) => { accepted = value; },
 		onCurrent: (callback: () => void) => { onCurrent = callback; }, onQuery: (callback: () => void) => { onQuery = callback; },

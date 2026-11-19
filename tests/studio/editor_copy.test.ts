@@ -13,6 +13,7 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** An actual source-backed inspector draft, alongside the retained inactive Source tab. */
 function sceneDraft(t: TestContext, text: string) {
@@ -41,7 +42,7 @@ test('copy owner publishes an independent pinned view over the exact sender mode
 	const view = captureCodeEditorView(f.firstInput), text = model.buffer.getText(), version = model.version;
 	const groups = parts.groups.length, documents = parts.documents.length;
 	let coherent = true, publications = 0;
-	t.after(parts.onDidChange(() => {
+	afterTest(t, parts.onDidChange(() => {
 		if (parts.documents.length === documents) return;
 		const receiver = parts.documents[documents].activeGroup;
 		publications++; coherent = coherent && receiver.model.activeTab !== null && receiver.panes.activePane?.input === receiver.model.activeTab;
@@ -100,7 +101,7 @@ for (const draft of ['17', '-']) test(`inactive sender copy command does not pre
 test('accepted sender draft cannot copy a newer attachment selected by its source publication', async t => {
 	const f = sceneDraft(t, '17'), parts = f.editor.editorParts, documents = parts.documents.length, newer = new HostErrorInput('new attachment');
 	const create = t.mock.method(f.scene, 'createView');
-	const unsubscribe = f.scene.workingCopy.onDidChangeContent(() => { unsubscribe(); f.firstGroup.openEditor(newer); }); t.after(unsubscribe);
+	const unsubscribe = f.scene.workingCopy.onDidChangeContent(() => { unsubscribe(); f.firstGroup.openEditor(newer); }); afterTest(t, unsubscribe);
 	assert.equal(await parts.copyEditor(f.firstGroup, f.scene), undefined);
 	assert.equal(create.mock.callCount(), 0); assert.equal(parts.documents.length, documents);
 	assert.ok(f.firstGroup.model.activeTab === newer && f.firstGroup.panes.activePane?.input === newer);

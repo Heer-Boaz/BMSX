@@ -10,12 +10,13 @@ import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const image = linkTestSystemBlua32(compileLuaSource('return nil', 'capture', 0));
 	const f = createRuntimeInspectionFixture(createTestRuntime(image.romBytes), createScenarioTestSourceState([]));
 	f.runtime.machine.cpu.reset();
-	t.after(() => f.presenter.dispose());
+	afterTest(t, () => f.presenter.dispose());
 	f.inspection.pause();
 	const publish = () => {
 		f.runtime.machine.gxGpu.readDeviceOutput().pcrtcScanout.backgroundColor = 0x00332211;
@@ -55,7 +56,7 @@ test('game capture owns pre-overlay native pixels and honest publication metadat
 test('capture admission requires pause, rejects foreign targets and never implicitly resumes', async t => {
 	const f = fixture(t); f.publish();
 	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
-	t.after(() => tools.dispose());
+	afterTest(t, () => tools.dispose());
 	assert.throws(() => tools.execute('studio_capture_game', { target: 'another-machine' }), /not this Studio/);
 	f.execution.requestExecution(true);
 	await assert.rejects(Promise.resolve(tools.execute('studio_capture_game', { target: f.inspection.target })), /paused, idle/);
@@ -106,7 +107,7 @@ for (const outcome of ['captured', 'prompt-cancelled', 'request-cancelled', 'rep
 		const historyError = new Error('history readback failed');
 		f.tasks.schedule(() => pending.promise, error => assert.equal(error, historyError), RuntimeTaskKind.History);
 		const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
-		t.after(() => tools.dispose());
+		afterTest(t, () => tools.dispose());
 		const read = t.mock.method(f.backend, 'readColorTexture');
 		const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes(), f.presenter.gameFrameSequence];
 		const capture = Promise.resolve(tools.execute('studio_capture_game', { target: f.inspection.target }, request.signal));

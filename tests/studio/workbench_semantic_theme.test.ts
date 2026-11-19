@@ -14,13 +14,14 @@ import { drawValueInput } from '../../ide/editor/ui/inline/value_input_render';
 import { applyInlineFieldEditing, setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const variant of ['tiny', 'msx'] as const) for (const kind of ['info', 'success', 'warning', 'error'] as const) {
 	test(`${variant} retained ${kind} feedback resolves its actual status-surface ink after a theme change`, t => {
 		const f = createActualSourcePanes(t); f.editor.preferences.fontVariant = variant;
 		f.host.presenter.setFixedRenderTargetSize(800, 320, 800, 320);
 		const originalTheme = colors.getActiveIdeThemeVariant();
-		t.after(() => { editorFeedbackState.message.visible = false; colors.setIdeThemeVariant(originalTheme); });
+		afterTest(t, () => { editorFeedbackState.message.visible = false; colors.setIdeThemeVariant(originalTheme); });
 		colors.setIdeThemeVariant('light'); showEditorMessage('SEVERITY', kind, 4);
 		assert.equal(editorFeedbackState.message.kind, kind);
 		assert.equal(Object.hasOwn(editorFeedbackState.message, 'color'), false, 'feedback carries intent, not retained theme data');
@@ -44,7 +45,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const kind of ['info', 'suc
 
 for (const theme of ['light', 'dark']) test(`${theme} non-source content and graph ink belongs to its actual surface`, t => {
 	const originalTheme = colors.getActiveIdeThemeVariant();
-	t.after(() => colors.setIdeThemeVariant(originalTheme)); colors.setIdeThemeVariant(theme);
+	afterTest(t, () => colors.setIdeThemeVariant(originalTheme)); colors.setIdeThemeVariant(theme);
 	for (const foreground of [colors.COLOR_CONTENT_PROGRESS_TEXT, colors.COLOR_CONTENT_SUCCESS_TEXT,
 		colors.COLOR_CONTENT_WARNING_TEXT, colors.COLOR_CONTENT_ERROR_TEXT, colors.COLOR_DESCRIPTION_TEXT]) {
 		const ink = resolveThemeTokenColor(foreground), background = resolveThemeTokenColor(colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
@@ -72,7 +73,7 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 	test(`${theme}/${variant} a rejected numeric draft paints input-owned fill, error ink and focus borders`, t => {
 		configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 		const input = new ValueInput(null, INTEGER_INPUT_FORMAT, () => {});
-		t.after(() => { input.field.focusTarget.release(); input.dispose(); editorFeedbackState.message.visible = false; });
+		afterTest(t, () => { input.field.focusTarget.release(); input.dispose(); editorFeedbackState.message.visible = false; });
 		const bounds = { left: 0, top: 0, right: 90, bottom: 20 };
 		input.setValue(7); input.layout(bounds);
 		const fills: number[] = [], borders: number[] = [], glyphs: number[] = [];

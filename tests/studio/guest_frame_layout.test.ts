@@ -12,6 +12,7 @@ import { RuntimeIdeState } from '../../ide/workbench/state';
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const host = createHostFrameFixture();
@@ -22,7 +23,7 @@ function fixture(t: TestContext) {
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 640, height: 480 }) }), new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks,
 		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, { width: 640, height: 480 }, sources, new Map(), unused, unused, unused);
 	editorRuntimeState.active = true;
-	t.after(async () => { inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
+	afterTest(t, async () => { inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
 	return { ...host, ide, editor: ide.editor };
 }
 

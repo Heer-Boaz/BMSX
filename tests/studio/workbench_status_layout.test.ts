@@ -9,6 +9,7 @@ import type { WorkbenchStatusItem } from '../../ide/workbench/common/status_bar'
 import { STATUS_PRIORITY_CONTENT, STATUS_PRIORITY_DETAIL, STATUS_PRIORITY_ERROR, STATUS_PRIORITY_HINT } from '../../ide/workbench/common/status_bar';
 import { getWorkbenchConnectionBounds, getWorkbenchStatusLayout, getWorkbenchWorkArea, refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { STATUS_ITEM_PADDING, WorkbenchStatusItemsLayout } from '../../ide/workbench/ui/status_bar/layout';
+import { afterTest } from '../helpers/test_cleanup';
 
 function item(text: string, alignment: 'left' | 'right', priority = STATUS_PRIORITY_CONTENT,
 	overflow: 'ellipsis' | 'hide' = 'ellipsis'): WorkbenchStatusItem {
@@ -176,7 +177,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} protected shell slots stay disjoint while feedback never changes the workspace height`, t => {
 		configureFontVariant(variant); editorViewState.viewportHeight = 288;
 		editorFeedbackState.message.visible = false;
-		t.after(() => { editorFeedbackState.message.visible = false; });
+		afterTest(t, () => { editorFeedbackState.message.visible = false; });
 		for (const width of [384, 180, 118, 35]) {
 			editorViewState.viewportWidth = width; refreshWorkbenchLayout();
 			const work = { ...getWorkbenchWorkArea() }, connection = getWorkbenchConnectionBounds();

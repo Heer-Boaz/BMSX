@@ -47,6 +47,7 @@ import { presentRuntimeDebuggerStop } from '../../ide/workbench/contrib/debugger
 import { selectScenarioLabTestRow } from '../../ide/workbench/contrib/scenario_lab/navigation';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 	const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'parts.lua'), [],
@@ -72,7 +73,7 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 		new IdeMicrotaskQueue(), { log() {} }, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
 	editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null);
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
@@ -326,7 +327,7 @@ for (const command of ['findLocal', 'lineJump', 'rename'] as const) test(`${comm
 
 for (const command of ['findLocal', 'lineJump', 'rename'] as const) test(`${command} revokes a withheld field gesture, Paste and keyboard admission without editing Source`, async t => {
 	const f = fixture(t, 'local value = 42\n' + '-- retained reading context\n'.repeat(100) + 'return value');
-	t.after(() => pointerCapture.interrupt(false));
+	afterTest(t, () => pointerCapture.interrupt(false));
 	if (command === 'rename') { f.key('End', KeyModifier.ctrl); f.key('ArrowLeft'); }
 	f.editor.commands.execute(command); f.editor.update(0);
 	const field = command === 'findLocal' ? f.pane.find.state.field : command === 'lineJump' ? f.pane.lineJump.state.field : f.pane.rename.getField();
@@ -480,7 +481,7 @@ test('source presentation clears on workbench retirement and last-input close, t
 	assert.equal(focusRuntimeErrorOverlay(f.editor.editorParts.main.activeGroup), false);
 	assert.equal(f.editor.editorParts.main.activeGroup.model.activeTab, null, 'a closed error view cannot regain admission through overlay focus');
 	const reopened = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
-	t.after(() => reopened.dispose());
+	afterTest(t, () => reopened.dispose());
 	assert.equal(reopened.workingCopy, f.model);
 	assert.equal(reopened.context.runtimeErrorOverlay, null);
 	assert.equal(reopened.context.executionStopRow, null);
@@ -553,7 +554,7 @@ test('ordinary inspector return preserves manual Source reading away from its re
 });
 
 test('the actual Problems sash preserves automatic sizing until motion and commits relative movement through final release', t => {
-	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
+	const f = fixture(t); afterTest(t, () => pointerCapture.interrupt(false));
 	f.editor.mainWorkspace.setActivityVisible(true); f.editor.mainWorkspace.regionLayout.activityHeight = undefined; f.editor.update(0);
 	let bounds = f.editor.problems.bounds, x = (bounds.left + bounds.right) / 2;
 	let y = (f.editor.mainWorkspace.regionLayout.activitySashBounds.top + f.editor.mainWorkspace.regionLayout.activitySashBounds.bottom) / 2;
@@ -600,7 +601,7 @@ test('the actual Problems sash preserves automatic sizing until motion and commi
 });
 
 for (const retirement of ['input-cancel', 'deactivate', 'hide', 'zero-width'] as const) test(`Problems sash ${retirement} retires and drains before a fresh Source click`, t => {
-	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
+	const f = fixture(t); afterTest(t, () => pointerCapture.interrupt(false));
 	f.editor.mainWorkspace.setActivityVisible(true); f.editor.mainWorkspace.regionLayout.activityHeight = 73; f.editor.update(0);
 	f.ide.overlayRenderer.beginFrame(); api.beginFrame(f.ide.overlayRenderer);
 	f.editor.draw(); f.ide.overlayRenderer.endFrame();
@@ -640,7 +641,7 @@ for (const retirement of ['input-cancel', 'deactivate', 'hide', 'zero-width'] as
 });
 
 test('retiring Problems does not cancel the actual sibling tab-strip scrollbar gesture', t => {
-	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
+	const f = fixture(t); afterTest(t, () => pointerCapture.interrupt(false));
 	f.editor.mainWorkspace.setActivityVisible(true); f.editor.mainWorkspace.regionLayout.activityHeight = 73;
 	for (let index = 40; index < 48; index++) f.editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
 	f.editor.editorParts.main.activeGroup.activate(f.input.id); f.editor.update(0);
@@ -665,7 +666,7 @@ test('retiring Problems does not cancel the actual sibling tab-strip scrollbar g
 test('an actual Files scrollbar gesture survives sibling editor activation while a source gesture retires and drains', t => {
 	const source = 'local value = 42\n' + 'value = value + 1\n'.repeat(60) + 'return value';
 	const f = fixture(t, source), files = f.editor.resourcePanel;
-	t.after(() => pointerCapture.interrupt(false));
+	afterTest(t, () => pointerCapture.interrupt(false));
 	files.show(); files.queuePendingSelection(f.resource(40)); files.applyPendingSelection();
 	f.editor.update(0); files.prepareLayout();
 	const thumb = f.editor.resourcePanel.resourceVertical.getThumb()!;
@@ -710,7 +711,7 @@ test('an actual Files scrollbar gesture survives sibling editor activation while
 
 test('Files open intent survives whole-Studio suspension without resetting its retained reading owner', t => {
 	const f = fixture(t), panel = f.editor.resourcePanel;
-	t.after(() => pointerCapture.interrupt(false));
+	afterTest(t, () => pointerCapture.interrupt(false));
 	panel.show(); panel.queuePendingSelection(f.resource(40)); panel.applyPendingSelection();
 	panel.navigateFiles('left'); panel.navigateFiles('left');
 	panel.split.moveTo(144);
@@ -896,7 +897,7 @@ test('completion readonly subscription belongs only to the attached canonical mo
 });
 
 test('a stationary captured tab drag advances from the actual host frame without pointer polling or guest execution', t => {
-	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
+	const f = fixture(t); afterTest(t, () => pointerCapture.interrupt(false));
 	for (let index = 40; index < 52; index++) {
 		f.editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
 		f.editor.update(0);

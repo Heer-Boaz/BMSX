@@ -10,6 +10,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { WorkbenchWindowModel, type WindowPlacement } from '../../ide/workbench/ui/window/model';
 import { minimizedWorkbenchWindowCount } from '../../ide/workbench/ui/window/control';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('minimized placement retains normal requested bounds and the independent placement mode', () => {
 	const requested = { left: 70, top: 90, right: 370, bottom: 330 };
@@ -41,7 +42,7 @@ test('document minimization retains actual controls, canonical Source and local 
 	const requested = { ...window.model.requestedBounds }, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	let accepted = 7, cancelled = 0;
 	const draft = new ValueInput(f.second.commandTarget, INTEGER_INPUT_FORMAT, value => { accepted = value; });
-	t.after(() => draft.dispose());
+	afterTest(t, () => draft.dispose());
 	draft.setValue(accepted); draft.layout(f.secondGroup.panes.contentBounds); draft.field.focusTarget.focus();
 	assert.equal(draft.field.focusTarget.textInput!.replaceText(0, 1, '-'), true);
 	const gesture = { handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { cancelled++; } };
@@ -106,7 +107,7 @@ test('a later explicit reveal during minimize blur wins over the pending next-wi
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	f.first.focus();
 	const unbind = f.first.commandTarget.onDidBlur(() => { unbind(); f.firstPart.focus(); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	parts.minimize(f.firstPart);
 	assert.equal(f.firstPart.window!.model.minimized, false); assert.equal(minimizedWorkbenchWindowCount(f.editor.surfaces), 0);
 	assert.ok(parts.activePart === f.firstPart && inputFocus.target === f.first.commandTarget);
@@ -121,13 +122,13 @@ for (const phase of ['blur', 'placement publication'] as const)
 		f.second.focus(); f.first.focus();
 		if (phase === 'blur') {
 			const unbind = f.first.commandTarget.onDidBlur(() => { unbind(); third.focus(); });
-			t.after(unbind);
+			afterTest(t, unbind);
 		} else {
 			const unbind = parts.onDidChange(() => {
 				if (!f.firstPart.window!.model.minimized) return;
 				unbind(); third.focus();
 			});
-			t.after(unbind);
+			afterTest(t, unbind);
 		}
 		parts.minimize(f.firstPart);
 		assert.equal(f.firstPart.window!.model.minimized, true); assert.equal(minimizedWorkbenchWindowCount(f.editor.surfaces), 1);

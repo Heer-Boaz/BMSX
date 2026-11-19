@@ -10,6 +10,7 @@ import { StudioUiService } from '../../ide/workbench/services/assistant/ui_tools
 import { decodeStudioUiRequest } from '../../ide/workbench/services/assistant/ui_tool_protocol';
 import { StudioToolRequests } from '../../ide/workbench/services/assistant/tool_requests';
 import type { WorkspaceToolService } from '../../ide/workbench/services/assistant/tool_service';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const clock = new VirtualHeadlessClock();
@@ -36,7 +37,7 @@ function fixture(t: TestContext) {
 		assert.equal(result.kind, 'image');
 		return (result.data as { capture: string }).capture;
 	};
-	t.after(() => { ui.dispose(); input.dispose(); models.clear(); });
+	afterTest(t, () => { ui.dispose(); input.dispose(); models.clear(); });
 	return { ui, context, input, models, bounds, size, pointer, keys, wheel, tick, capture, signal, reads: () => reads };
 }
 

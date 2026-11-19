@@ -18,6 +18,7 @@ import { SCENE_VIEWPORT_SOURCE, SCENE_VIEWPORT_IMPORTS } from '../fixtures/studi
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { applyWorkspaceAutosavePayload } from '../../ide/workbench/workspace/restore';
 import type { SerializedSceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_serializer';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `${SCENE_VIEWPORT_SOURCE}\nviewport_scenes.register('same', { objects = { { member_id = 'other', definition_id = 'proof.actor', position = { x = 7, y = 8, z = 9 } } } })\n`;
 
@@ -175,7 +176,7 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const)
 		selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
 		const field = client.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 		const release = f.model.onDidChangeContent(() => { release(); client.view.refresh(); selectSceneOutlineRow(client.view.hierarchy, 2); });
-		t.after(release);
+		afterTest(t, release);
 		const navigation = t.mock.method(f.editor.navigation, 'openResource');
 		const groups = [...f.editor.editorParts.groups];
 		f.editor.commands.execute(command, client.commandTarget);
@@ -236,7 +237,7 @@ test('floating editor-part suspension cancels its native draft before blur witho
 	};
 	target.edit = edit;
 	const unbindBlur = target.onDidBlur(() => { edit.commit(); });
-	t.after(() => { unbindBlur(); target.edit = previous; });
+	afterTest(t, () => { unbindBlur(); target.edit = previous; });
 	f.first.focus(); assert.ok(inputFocus.admittedTarget === target);
 	f.firstPart.suspend();
 	assert.equal(cancellations, 1); assert.equal(pending, false); assert.equal(commits, 1);
@@ -283,7 +284,7 @@ test('source model retirement invalidates Main authority without choosing anothe
 
 test('Main Ctrl+S accepts its concrete pending field and saves its own canonical model, not a document MRU model', async t => {
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
 	selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
@@ -343,7 +344,7 @@ for (const route of ['application', 'native'] as const)
 		selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
 		const field = client.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 		const release = f.model.onDidChangeContent(() => { release(); client.view.refresh(); selectSceneOutlineRow(client.view.hierarchy, 2); });
-		t.after(release);
+		afterTest(t, release);
 		if (route === 'application') f.editor.commands.execute('sceneEditor.removeMember', client.commandTarget);
 		else inputFocus.executeCommand('sceneEditor.removeMember', client.commandTarget);
 		assert.equal(f.model.buffer.getText(), SOURCE.replace('position = { x = 11,', 'position = { x = 123,'));
@@ -366,7 +367,7 @@ test('Files primary admission cannot outlive its captured origin generation duri
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const index = new ProjectContentIndex(editorTextModelService, f.sources.catalog,
 		f.editor.behaviorLens.documents.registrations, f.ide.sceneSources);
-	t.after(() => index.dispose()); index.sync();
+	afterTest(t, () => index.dispose()); index.sync();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const entry = index.entriesFor(resource)[0]; assert.ok(entry.kind === 'scene');
 	f.editor.resourcePanel.show(); f.update();
@@ -374,7 +375,7 @@ test('Files primary admission cannot outlive its captured origin generation duri
 	const release = editorTextModelService.onDidAddModel(model => {
 		if (model.identity.path !== resource.path) return;
 		release(); origin.scope.retireContext();
-	}); t.after(release);
+	}); afterTest(t, release);
 	assert.equal(await openProjectScene(f.editor, index, entry, origin), false);
 	assert.ok(origin.scope.contextGeneration !== before);
 	assert.equal(f.editor.mainWorkspace.primary, undefined);

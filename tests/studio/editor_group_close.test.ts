@@ -6,6 +6,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('closing the last tab reclaims its split while the remaining view retains source and Undo', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, part = parts.main, retained = part.activeGroup;
@@ -98,7 +99,7 @@ test('a rejected source draft prevents Close Group without removing its editors 
 	const target = group.panes.activePane!.commandTarget;
 	const draft = { pending: true, commit: () => false, cancel() { this.pending = false; } };
 	target.edit = draft;
-	t.after(() => { target.edit = undefined; });
+	afterTest(t, () => { target.edit = undefined; });
 	const input = group.model.activeTab;
 	assert.equal(await parts.closeGroup(group, target), false);
 	assert.ok(group.model.activeTab === input); assert.equal(group.surface.retired, false); assert.equal(group.openingAdmitted, true);

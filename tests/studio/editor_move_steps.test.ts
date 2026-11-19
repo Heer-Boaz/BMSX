@@ -7,6 +7,7 @@ import type { EditorGroupView } from '../../ide/workbench/services/editor/editor
 import type { EditorMoveDestination } from '../../ide/workbench/services/editor/editor_parts';
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 type Fixture = ReturnType<typeof createActualSourcePanes>;
 type MoveItem = QuickPickItem & {
@@ -101,7 +102,7 @@ test('placement acceptance yields to a new foreground selected during the final 
 	const foreign = parts.createDocument(); foreign.activeGroup.openEditor(new HomeInput(null));
 	f.first.focus(); f.editor.commands.execute('window.moveEditor', f.first.commandTarget);
 	choose(f, item => item.target?.kind === 'group' && item.target.group === f.secondGroup);
-	t.after(picker.field.focusTarget.onDidBlur(() => foreign.activeGroup.focus()));
+	afterTest(t, picker.field.focusTarget.onDidBlur(() => foreign.activeGroup.focus()));
 	choose(f, item => item.destination?.kind === 'group');
 	assert.equal(picker.visible, false); assert.ok(parts.activePart === foreign);
 	assert.ok(parts.findGroup(f.firstInput) === f.firstGroup && f.secondGroup.model.activeTab === f.secondInput);

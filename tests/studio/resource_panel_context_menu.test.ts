@@ -18,6 +18,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SCENES = `local scenes=require('cartlib/world/scene_library')
 scenes.register('same', { objects={} })
@@ -109,7 +110,7 @@ for (const [code, modifiers] of [['ContextMenu', KeyModifier.none], ['F10', KeyM
 
 test('Files default YAML Open selects Map while Open Source retains the same dirty canonical working copy', async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
-	const f = fixture(t); t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	const f = fixture(t); afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const path = 'res/data/castle_map.yaml', source = '1: { map: [".."], objects: [] }\n';
 	f.sources.catalog.registerTextSources(f.sources.systemContextId, [{ type: 'data', resid: 'map', source_path: path, sourcemeta: { text: source } }]);
 	f.panel.toggleFilterMode(); const { node, resource } = reveal(f, path);
@@ -135,7 +136,7 @@ test('changing Files selection while its popup is open never substitutes the cap
 test('a newer foreign control focused during Files menu return aborts the action instead of borrowing its group', t => {
 	const f = fixture(t), { node } = reveal(f, 'folder/third.lua'), open = t.mock.method(f.editor.navigation, 'openResource');
 	secondary(f, node); let redirected = false;
-	const unbind = f.panel.focusTarget.onDidFocus(() => { unbind(); redirected = true; f.second.focus(); }); t.after(unbind);
+	const unbind = f.panel.focusTarget.onDidFocus(() => { unbind(); redirected = true; f.second.focus(); }); afterTest(t, unbind);
 	accept(f, 'resources.open'); assert.equal(redirected, true); assert.equal(open.mock.callCount(), 0);
 	assert.ok(inputFocus.target === f.second.commandTarget && f.secondGroup.model.activeTab === f.secondInput && f.firstGroup.model.activeTab === f.firstInput);
 });
@@ -151,7 +152,7 @@ test('retiring the captured default destination closes Files popup authority bef
 test('retiring a distinct captured Source destination revokes the whole file popup rather than keeping its other action live', async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const f = fixture(t), path = 'res/data/castle_map.yml';
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	f.sources.catalog.registerTextSources(f.sources.systemContextId, [{ type: 'data', resid: 'map', source_path: path,
 		sourcemeta: { text: '1: { map: [".."], objects: [] }\n' } }]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;

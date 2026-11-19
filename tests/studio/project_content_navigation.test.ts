@@ -25,6 +25,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const API_MODULES = [
 	'cartlib/world/scene_library', 'cartlib/behaviour_tree/library', 'cartlib/fsm/library', 'cartlib/actioneffects',
@@ -227,7 +228,7 @@ test('a warmed project panel refresh does no catalog scanning, semantic snapshot
 	const resources = t.mock.method(f.sources.catalog.resourceByIdentity, Symbol.iterator);
 	const iterate = f.sources.catalog.luaResources[Symbol.iterator], luaResources = t.mock.fn(iterate);
 	f.sources.catalog.luaResources[Symbol.iterator] = luaResources;
-	t.after(() => { f.sources.catalog.luaResources[Symbol.iterator] = iterate; });
+	afterTest(t, () => { f.sources.catalog.luaResources[Symbol.iterator] = iterate; });
 	const advance = t.mock.method(editorViewState.font, 'advance');
 	for (let frame = 0; frame < 1000; frame++) { f.panel.refresh(); f.panel.prepareLayout(); }
 	assert.equal(snapshot.mock.callCount(), 0); assert.equal(resources.mock.callCount(), 0); assert.equal(luaResources.mock.callCount(), 0);
@@ -239,7 +240,7 @@ test('a warmed project panel refresh does no catalog scanning, semantic snapshot
 test('file activation still opens Source or the registered YAML Map rather than an authored child', async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const f = fixture(t);
-	t.after(async () => { clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
+	afterTest(t, async () => { clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
 	const navigation = f.editor.navigation, original = navigation.openResource.bind(navigation);
 	let pending: ReturnType<typeof navigation.openResource> | undefined;
 	t.mock.method(navigation, 'openResource', (...args: Parameters<typeof navigation.openResource>) => {

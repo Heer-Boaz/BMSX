@@ -5,6 +5,7 @@ import { LuaSourceReader } from '../../ide/language/lua/source_reader';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const IMPORTS = `local prefab=require('cartlib/world/prefab')
 local models=require('cartlib/component/static_model_component')\n`;
@@ -20,7 +21,7 @@ scenes.register('main',{objects={${members}}})`;
 	]);
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	return { ...f, context, source };
 }
 
@@ -163,7 +164,7 @@ test('model visual source generations remain retained and preserve canonical sou
 	assert.notEqual(after, before); assert.equal(after.models[0].model, 'after'); assert.equal(before.models[0].model, 'before');
 	assert.ok(after.models[0].entry === before.models[0].entry);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
-	const unbound = new SceneAuthoringContext(f.model, f.documents); t.after(() => unbound.dispose());
+	const unbound = new SceneAuthoringContext(f.model, f.documents); afterTest(t, () => unbound.dispose());
 	const document = f.documents.get(f.model), scene = document.scenes[0];
 	unbound.select(document, f.model.version, { kind: 'scene', scene });
 	assert.equal(unbound.visualScene, undefined);

@@ -27,10 +27,11 @@ import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext, source: string, optLevel: 0 | 3, cartSource = "module<entry>\nerror('game entry must not run in a unit target')") {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-test-debugger-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source }], {
 		systemSource: "module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]",
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable' },
@@ -45,7 +46,7 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3, cartSour
 	const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]), result = results.startItem(run, 0, 0);
 	const execution = new TestExecution(target, program, results, result,
 		{ ...DEFAULT_TEST_BUDGETS, phaseCycles: 100_000, quantumCycles: 2048 }, undefined, 'debug');
-	t.after(() => execution.dispose());
+	afterTest(t, () => execution.dispose());
 	const debug = execution.debugger!;
 	const advance = () => {
 		for (let grant = 0; execution.active && !debug.stopped && grant < 10000; grant++) execution.advance();
@@ -76,7 +77,7 @@ end } }`;
 		execute: command => { calls.push(command); },
 	};
 	const control = new WorkbenchActionBarControl(focus, capture, hover, commands, parent, () => parent.focus());
-	t.after(() => { control.dispose(); focus.setTarget(null); });
+	afterTest(t, () => { control.dispose(); focus.setTarget(null); });
 	const show = (model: TestTargetInspectionModel) => {
 		layoutWorkbenchActionBar(model.actionBar, 1200, 0, 20, text => text.length * 5, null, 0);
 		control.setInput(model.actionBar, parent);
@@ -117,7 +118,7 @@ end } }`;
 	debug.resume(Mode.Continue); f.advance(); assert.equal(f.result.state, 'failed');
 	assert.equal(stopped.available, false);
 	const retained = f.execution.inspect(), retainedModel = new TestTargetInspectionModel(retained);
-	t.after(() => retained.dispose());
+	afterTest(t, () => retained.dispose());
 	admitted = true;
 	assert.deepEqual(show(retainedModel), ['scenarioLab.details', 'scenarioLab.closeTarget']);
 	assert.ok(retainedModel.actionBar.items.every(item => !item.visible || item.enabled));
@@ -142,7 +143,7 @@ return { kind = 'unit',
 }`;
 		const f = await fixture(t, source, optLevel), { debug, target, execution } = f;
 		const authoring = new OffscreenMachine(f.media.systemRom, [f.media.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
-		t.after(() => authoring.dispose());
+		afterTest(t, () => authoring.dispose());
 		let authoringStops = 0;
 		authoring.runtime.machine.cpu.setExecutionHook(() => { authoringStops++; return true; }, ALL_EXECUTION_DOMAINS_MASK, 0);
 		const original = captureRuntimeMachineState(authoring.runtime);
@@ -289,7 +290,7 @@ end } }`;
 	const results = new ScenarioResultService(), run = results.beginRun(f.result.test.id, [{ test: f.result.test, source, sourceRevision: 0 }]);
 	const normal = new TestExecution(target, f.program, results, results.startItem(run, 0, 0),
 		{ ...DEFAULT_TEST_BUDGETS, phaseCycles: 100_000, quantumCycles: 2048 });
-	t.after(() => normal.dispose());
+	afterTest(t, () => normal.dispose());
 	assert.equal(normal.debugger, undefined);
 	for (let grant = 0; normal.active && grant < 10000; grant++) normal.advance();
 	assert.equal(normal.result.state, 'passed');

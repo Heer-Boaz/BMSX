@@ -7,6 +7,7 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { fontEmSize, FONT_VARIANTS } from '../../machine/ts/render/shared/bmsx_font';
 import { workbenchPixelsPerUnit } from '../../ide/workbench/common/display_scale';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('font size is stored in pixels, independent of font family and project recovery', () => {
 	const storage = new MemoryStorage(), preferences = new WorkbenchPreferences(storage);
@@ -77,7 +78,7 @@ test('an explicit default-value override remains resettable after reopening pref
 test('font em size resolves to CSS pixels at desktop and compact widths', t => {
 	configureFontVariant('mono');
 	const previous = editorViewState.font;
-	t.after(() => configureFontVariant(previous.variant, previous.sampling, previous.scale));
+	afterTest(t, () => configureFontVariant(previous.variant, previous.sampling, previous.scale));
 	for (const variant of FONT_VARIANTS) for (const width of [1920, 800, 390]) {
 		const density = workbenchPixelsPerUnit(width);
 		configureFontVariant(variant, 'linear', fontScaleForPixelSize(variant, 14, density));

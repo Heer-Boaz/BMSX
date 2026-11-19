@@ -12,6 +12,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { WorkbenchFixedEdgeSplitView, WorkbenchSplitView } from '../../ide/workbench/ui/split_view';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const COMMANDS = ['workspace.resizeViewWidth', 'workspace.resizeViewHeight',
 	'workspace.resetViewWidth', 'workspace.resetViewHeight'] as const;
@@ -173,7 +174,7 @@ for (const admission of ['hidden Activity', 'floating Activity', 'modal', 'guest
 			const area = main.bounds;
 			const modal = editor.surfaces.attach({ role: 'modal', blockedScope: main.surface, presentationParent: null,
 				lifetimeOwner: main.surface, captureScope: Symbol('sizing decision'), isVisible: () => true,
-				getBounds: () => area, getClip: () => area, draw() {} }); t.after(() => modal.dispose());
+				getBounds: () => area, getClip: () => area, draw() {} }); afterTest(t, () => modal.dispose());
 		} else {
 			f.group.openEditor(f.editor.actorLab.resolveInput()); f.update(); f.group.panes.activePane!.focus();
 			f.editor.commands.execute('actorLab.controlGame', f.group.panes.activePane!.commandTarget);

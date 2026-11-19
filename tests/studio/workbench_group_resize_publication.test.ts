@@ -5,6 +5,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import type { SerializedEditorGroupLayout, SerializedEditorParts } from '../../ide/workbench/services/editor/editor_parts_serialization';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('native editor sash drag, reset and keyboard sizing publish their current serializable preference at the part owner', t => {
 	const f = createActualSourcePanes(t), { editor } = f, parts = editor.editorParts, part = parts.main;
@@ -12,7 +13,7 @@ test('native editor sash drag, reset and keyboard sizing publish their current s
 	const group = part.activeGroup; group.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	const added = part.splitGroup(group, 'right'); f.update();
 	const split = part.arrangement.splits[0].split, observations: SerializedEditorParts[] = [];
-	t.after(parts.onDidChange(() => observations.push(parts.serialize(editor.editorInputSerializers))));
+	afterTest(t, parts.onDidChange(() => observations.push(parts.serialize(editor.editorInputSerializers))));
 	const published = () => observations.some(state => state.main.layout.kind === 'split' && state.main.layout.ratio === split.ratio);
 	// The ratio is actual session data; the test does not freeze the rendered sash position.
 	split.moveTo(split.start + (split.end - split.start) * 0.625);
@@ -39,7 +40,7 @@ test('editor sizing observation survives maximize and minimize but ends with dis
 	const group = part.activeGroup; group.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	part.splitGroup(group, 'right'); f.update();
 	const split = part.arrangement.splits[0].split, observations: SerializedEditorParts[] = [];
-	t.after(parts.onDidChange(() => observations.push(parts.serialize(editor.editorInputSerializers))));
+	afterTest(t, parts.onDidChange(() => observations.push(parts.serialize(editor.editorInputSerializers))));
 	const published = () => observations.some(state => {
 		const document = state.documents[parts.documents.indexOf(part)];
 		return document?.layout.kind === 'split' && document.layout.ratio === split.ratio;
@@ -81,7 +82,7 @@ test('a sibling relocation publishes a serialized active-group index consistent 
 		const actual = part.activeGroup.model.serialize(editor.editorInputSerializers);
 		observations.push(isDeepStrictEqual(active.group, actual));
 	});
-	t.after(release);
+	afterTest(t, release);
 	assert.equal(part.relocateGroup(second, first, 'left'), true);
 	release();
 	assert.ok(observations.length > 0);

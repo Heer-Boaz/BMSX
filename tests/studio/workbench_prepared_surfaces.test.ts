@@ -4,6 +4,7 @@ import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { InputFocusScope, InputFocusService } from '../../ide/input/focus';
 import type { WorkbenchSurfacePainter } from '../../ide/workbench/services/windows/model';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { afterTest } from '../helpers/test_cleanup';
 
 const extent = { left: 0, top: 0, right: 300, bottom: 200 };
 const painter: WorkbenchSurfacePainter = { pushClipRect() {}, popClipRect() {} };
@@ -17,7 +18,7 @@ function client(painted: symbol[], onRetire?: () => void) {
 test('prepared native roots retain their attachment identity without painting, input, window discovery or publication', t => {
 	let changes = 0;
 	const surfaces = new WorkbenchSurfaceService(() => { changes++; }), painted: symbol[] = [];
-	t.after(() => surfaces.dispose());
+	afterTest(t, () => surfaces.dispose());
 	const background = surfaces.attach({ ...client(painted), role: 'content' });
 	const published = changes, root = surfaces.prepare({ ...client(painted), role: 'window' });
 	assert.equal(surfaces.findByScope(root.captureScope), root);
@@ -47,7 +48,7 @@ test('prepared native roots retain their attachment identity without painting, i
 test('attached descendants and promoted lifetime-owned windows wait for their prepared native root', t => {
 	let changes = 0;
 	const surfaces = new WorkbenchSurfaceService(() => { changes++; }), painted: symbol[] = [];
-	t.after(() => surfaces.dispose());
+	afterTest(t, () => surfaces.dispose());
 	const root = surfaces.prepare({ ...client(painted), role: 'content' });
 	const child = surfaces.attach({ ...client(painted), role: 'content', lifetimeOwner: root, presentationParent: root });
 	const grandchild = surfaces.attach({ ...client(painted), role: 'content', lifetimeOwner: child, presentationParent: child });
@@ -70,7 +71,7 @@ test('attached descendants and promoted lifetime-owned windows wait for their pr
 test('unrelated native publication cannot retire a prepared promoted transient as an inadmissible live popup', t => {
 	let changes = 0, retired = 0;
 	const surfaces = new WorkbenchSurfaceService(() => { changes++; }), painted: symbol[] = [];
-	t.after(() => surfaces.dispose());
+	afterTest(t, () => surfaces.dispose());
 	const background = surfaces.attach({ ...client(painted), role: 'content' });
 	const root = surfaces.prepare({ ...client(painted), role: 'content' });
 	const published = changes;
@@ -87,7 +88,7 @@ test('unrelated native publication cannot retire a prepared promoted transient a
 test('a prepared promoted modal cannot block a published owner before its own lifetime subtree is published', t => {
 	let changes = 0;
 	const surfaces = new WorkbenchSurfaceService(() => { changes++; }), painted: symbol[] = [];
-	t.after(() => surfaces.dispose());
+	afterTest(t, () => surfaces.dispose());
 	const owner = surfaces.attach({ ...client(painted), role: 'window' });
 	const root = surfaces.prepare({ ...client(painted), role: 'content' });
 	const before = changes;
@@ -103,7 +104,7 @@ test('a prepared promoted modal cannot block a published owner before its own li
 test('publication is per native attachment and repeating an admitted publication cannot expose a separately prepared child', t => {
 	let changes = 0;
 	const surfaces = new WorkbenchSurfaceService(() => { changes++; }), painted: symbol[] = [];
-	t.after(() => surfaces.dispose());
+	afterTest(t, () => surfaces.dispose());
 	const root = surfaces.prepare({ ...client(painted), role: 'window' });
 	const child = surfaces.prepare({ ...client(painted), role: 'content', lifetimeOwner: root, presentationParent: root });
 	surfaces.publish(root);
@@ -120,7 +121,7 @@ test('publication is per native attachment and repeating an admitted publication
 test('aborting an unpublished native subtree retires its retained and promoted attachments without unrelated admission publication', t => {
 	let changes = 0;
 	const surfaces = new WorkbenchSurfaceService(() => { changes++; }), painted: symbol[] = [], retired = new Set<symbol>();
-	t.after(() => surfaces.dispose());
+	afterTest(t, () => surfaces.dispose());
 	const background = surfaces.attach({ ...client(painted), role: 'window' });
 	const root = surfaces.prepare({ ...client(painted), role: 'content' });
 	const child = surfaces.attach({ ...client(painted), role: 'content', lifetimeOwner: root, presentationParent: root });
@@ -142,7 +143,7 @@ test('aborting an unpublished native subtree retires its retained and promoted a
 test('published hidden windows remain discoverable while unpublished hidden windows do not enter the native picker', t => {
 	let changes = 0;
 	const surfaces = new WorkbenchSurfaceService(() => { changes++; }), painted: symbol[] = [];
-	t.after(() => surfaces.dispose());
+	afterTest(t, () => surfaces.dispose());
 	const root = surfaces.prepare({ ...client(painted), role: 'content' });
 	const minimized = surfaces.attach({ ...client(painted), role: 'window', lifetimeOwner: root, isVisible: () => false });
 	assert.equal(changes, 0); assert.deepEqual(surfaces.windowSurfaces, []);
@@ -155,7 +156,7 @@ test('published hidden windows remain discoverable while unpublished hidden wind
 
 for (const role of ['content', 'window'] as const) test(`retiring a published ${role} subtree withdraws its promoted modal and windows before owner callbacks`, t => {
 	const surfaces = new WorkbenchSurfaceService(), painted: symbol[] = [];
-	t.after(() => surfaces.dispose());
+	afterTest(t, () => surfaces.dispose());
 	const outside = surfaces.attach({ ...client(painted), role: 'window' });
 	const focus = new InputFocusService(), target = focus.createTarget(null, new InputFocusScope(outside.captureScope, focus.workbenchScope));
 	focus.bindScopeAdmission(scope => {

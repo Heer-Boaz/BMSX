@@ -26,6 +26,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
 import { discoverWorkspaceSources } from '../../ide/workspace/workspace';
 import { workspaceRecords } from '../../ide/workspace/records';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-boot-'));
@@ -50,7 +51,7 @@ async function fixture(t: TestContext) {
 	const model = models.retain({ contextLabel: 'fixture-source', sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
 	// Same resource/version in a different document owner must not enter this build.
 	editorTextModelService.retain(model.resource, 'lua', 'end end -- foreign workspace');
-	t.after(async () => {
+	afterTest(t, async () => {
 		await service.shutdown();
 		models.clear(); editorTextModelService.clear();
 		clearWorkspaceSourceCaches();

@@ -17,6 +17,7 @@ import type { WorkspaceRecordProvider } from '../../ide/workspace/record_provide
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const files = new MemoryWorkspaceFiles();
@@ -33,7 +34,7 @@ async function fixture(t: TestContext) {
 	const tools = () => {
 		const result = new WorkspaceSourceTools(models, sources.catalog, diagnostics, new AbortController().signal,
 			new BehaviorSourceDocuments(models, sources.catalog), saves, new VirtualHeadlessClock(), sources);
-		t.after(() => result.dispose()); return result;
+		afterTest(t, () => result.dispose()); return result;
 	};
 	const read = async (tools: WorkspaceSourceTools, path = 'cart.lua') => {
 		const catalog = await tools.execute('studio_list_sources', {}); assert.equal(catalog.kind, 'sources');
@@ -41,7 +42,7 @@ async function fixture(t: TestContext) {
 		const read = await tools.execute('studio_read_source', { resource: catalog.data.find(source => source.path === path)!.resource });
 		if (read.kind !== 'source') assert.fail(); return read.data;
 	};
-	t.after(async () => { await saves.shutdown(); diagnostics.dispose(); f.presenter.dispose(); models.clear(); await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await saves.shutdown(); diagnostics.dispose(); f.presenter.dispose(); models.clear(); await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	return { ...f, files, models, storage, clock, saves, model, data, tools, read };
 }
 
@@ -80,7 +81,7 @@ test('an accepted tool Save survives retirement and later typing; newer prompts 
 		async write() { if (delayed) await write.promise; } };
 	await openWorkspaceRecords(provider);
 	delayed = true;
-	t.after(() => write.resolve());
+	afterTest(t, () => write.resolve());
 	f.model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
 	const tools = f.tools(), read = await f.read(tools), signal = new AbortController();
 	const saving = tools.execute('studio_save_source', { receipt: read.receipt }, signal.signal), operation = f.saves.latestOperation(f.model)!;

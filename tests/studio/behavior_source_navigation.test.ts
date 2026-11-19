@@ -15,6 +15,7 @@ import { captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/v
 import { setWorkbenchTreeCollapsed } from '../../ide/workbench/ui/tree_view';
 import { LuaTableFieldKind } from '../../toolchain/ts/lua/syntax/ast';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local effects=require('cartlib/actioneffects')
 local shared = { period_ms = 40, required_tags = { 'alpha', 'beta' } }
@@ -88,7 +89,7 @@ for (const subject of ['selected', 'definition'] as const) for (const placement 
 	test(`Behavior ${subject} ${placement} Source retains an accepted whole-value occurrence`, async t => {
 		const f = fixture(t), intent = f.owner.selectionRevision, definition = f.owner.definitionRevision;
 		const field = f.draft("'accepted much longer tag'");
-		let changes = 0; t.after(f.model.onDidChangeContent(() => { changes++; }));
+		let changes = 0; afterTest(t, f.model.onDidChangeContent(() => { changes++; }));
 		assert.ok(await f.invoke(subject, placement, subject === 'selected') !== undefined);
 		const code = f.editor.editorParts.activeGroup.model.activeTab;
 		assert.ok(code instanceof CodeEditorInput && code.workingCopy === f.model);
@@ -124,7 +125,7 @@ test('Behavior selected retarget during accepted draft cancels Source before que
 	f.draft("'accepted much longer tag'");
 	const read = t.mock.method(f.controller, 'getSourceLocation');
 	const unbind = f.model.onDidChangeContent(() => { unbind(); f.controller.updateView(f.input); f.input.updatePresentation(f.input.view.layout.font!.renderFont()); f.select(false); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.equal(await f.invoke('selected', 'side', true), undefined);
 	assert.equal(read.mock.callCount(), 0); assert.equal(definition.isCurrent!(), true);
 	assert.equal(f.firstPart.groups.length, 1); assert.equal(f.firstGroup.model.activeTab, f.input);
@@ -135,7 +136,7 @@ test('Behavior typed field continuation cannot consume a newer selection created
 	f.draft("'accepted much longer tag'");
 	let newer: ReturnType<typeof f.controller.captureSourceLocation> | undefined;
 	const unbind = f.model.onWillChangeContent(() => { unbind(); f.select(false); newer = f.controller.captureSourceLocation(f.input); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.equal(await f.invoke('selected', 'side', true), undefined);
 	assert.equal(old.isCurrent!(), false); assert.ok(newer !== undefined && newer.isCurrent!());
 	const location = await newer.readLocation(); assert.ok(location?.selection !== undefined);
@@ -159,14 +160,14 @@ test('Behavior source acquisition cannot overwrite a newer reentrant corresponde
 		unbind(); admitted = true;
 		f.controller.updateView(f.input); f.input.updatePresentation(f.input.view.layout.font!.renderFont()); f.select(false);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.model.pushEditOperations([{ offset: SOURCE.indexOf('period_ms'), deleteLength: 0, text: "blocked_tags = require('callbacks'), " }]);
 	const requested = await request.readLocation();
 	assert.equal(admitted, true); assert.ok(requested === undefined);
 	assert.equal(tracking.mock.callCount(), 1, 'reentrant model admission constructs and tracks this source index only once');
 	const location = f.controller.getSourceLocation(f.input); assert.ok(location?.selection !== undefined);
 	assert.equal(f.model.buffer.offsetAt(location.selection.row, location.selection.startColumn), f.model.buffer.getText().indexOf('period_ms'));
-	const copy = f.input.createView!(); t.after(() => copy.dispose());
+	const copy = f.input.createView!(); afterTest(t, () => copy.dispose());
 	assert.equal(copy.view.source, f.input.view.source, 'reentrant admission retains the shared source-index owner');
 });
 
@@ -304,9 +305,9 @@ trees.register('membership', { root = { type = 'sequence', children = { child } 
 	const graph = input.view.presentation, child = graph.viewport.model.nodes[0].children[0].children[0];
 	graph.viewport.selection = graph.viewport.model.edgesBySource.get(child.source.rowKey)!;
 	acceptBehaviorGraphSelection(input.view, graph);
-	const edge = new BehaviorLensNavigationSelection(input); t.after(() => edge.dispose());
+	const edge = new BehaviorLensNavigationSelection(input); afterTest(t, () => edge.dispose());
 	graph.viewport.selection = child; acceptBehaviorGraphSelection(input.view, graph);
-	const node = new BehaviorLensNavigationSelection(input); t.after(() => node.dispose());
+	const node = new BehaviorLensNavigationSelection(input); afterTest(t, () => node.dispose());
 	input.workingCopy.pushEditOperations([{ offset: source.indexOf('children = { child') + 'children = { child'.length,
 		deleteLength: 0, text: ', [slot] = child' }]);
 	f.update();

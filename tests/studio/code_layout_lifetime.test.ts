@@ -7,6 +7,7 @@ import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { CodeDocumentProjections } from '../../ide/editor/ui/code/document_projections';
 import { EditorFont } from '../../ide/editor/ui/view/font';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('Source line pitch retains reading space independently of bitmap glyph metrics after font replacement', t => {
 	const clock = new VirtualHeadlessClock(), models = new EditorTextModelService();
@@ -15,7 +16,7 @@ test('Source line pitch retains reading space independently of bitmap glyph metr
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'reading.lua', location: { kind: 'workspace', path: 'reading.lua' },
 		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'reading.lua', source: { type: 'lua', resid: 'reading' } }, 'lua', 'local value = 1\nreturn value');
 	const code = createTestCodeControl(t, model, documents, clock);
-	t.after(() => { code.dispose(); documents.dispose(); resetSemanticProjects(models); models.clear(); });
+	afterTest(t, () => { code.dispose(); documents.dispose(); resetSemanticProjects(models); models.clear(); });
 	for (const variant of ['tiny', 'msx', 'tiny'] as const) {
 		const font = new EditorFont(variant), glyphPitch = font.lineHeight;
 		code.setFont(font);
@@ -33,7 +34,7 @@ for (const debounce of [0, 200]) {
 			semanticDebounceMs: debounce, getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }) });
 		const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'retired.lua', location: { kind: 'workspace', path: 'retired.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 			path: 'retired.lua', source: { type: 'lua', resid: 'retired' } }, 'lua', 'return 1');
-		t.after(() => { documents.dispose(); resetSemanticProjects(models); });
+		afterTest(t, () => { documents.dispose(); resetSemanticProjects(models); });
 		const scheduled = t.mock.method(clock, 'scheduleOnce');
 		documents.get(model).requestSemanticUpdate();
 		const timer = scheduled.mock.calls[0].result!;
@@ -51,7 +52,7 @@ test('a source edit retires the queued semantic generation and schedules its can
 		semanticDebounceMs: 0, getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }) });
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'generation.lua', location: { kind: 'workspace', path: 'generation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		path: 'generation.lua', source: { type: 'lua', resid: 'generation' } }, 'lua', 'return 1');
-	t.after(() => { documents.dispose(); resetSemanticProjects(models); models.clear(); });
+	afterTest(t, () => { documents.dispose(); resetSemanticProjects(models); models.clear(); });
 	const document = documents.get(model), scheduled = t.mock.method(clock, 'scheduleOnce');
 	createTestCodeControl(t, model, documents, clock);
 	const retired = scheduled.mock.calls[0].result!;
@@ -72,7 +73,7 @@ test('replacing a view font retains the canonical document and its single pendin
 	const code = createTestCodeControl(t, model, documents, clock);
 	const previous = code.layout, timer = scheduled.mock.calls[0].result!;
 	code.setFont(new EditorFont('msx'));
-	t.after(() => { code.layout.dispose(); documents.dispose(); resetSemanticProjects(models); models.clear(); });
+	afterTest(t, () => { code.layout.dispose(); documents.dispose(); resetSemanticProjects(models); models.clear(); });
 	assert.notEqual(code.layout, previous);
 	assert.equal(code.layout.document, document);
 	assert.equal(timer.isActive(), true, 'changing one view cannot retire model-owned semantic work');
@@ -93,7 +94,7 @@ test('detaching either layout retains a shared document job until its model is r
 	const firstControl = createTestCodeControl(t, model, documents, clock, undefined, font, { left: 0, top: 10, right: 112, bottom: 270 });
 	const secondControl = createTestCodeControl(t, model, documents, clock, undefined, font, { left: 112, top: 10, right: 320, bottom: 270 });
 	const first = firstControl.layout, second = secondControl.layout;
-	t.after(() => { first.dispose(); second.dispose(); documents.dispose(); resetSemanticProjects(models); });
+	afterTest(t, () => { first.dispose(); second.dispose(); documents.dispose(); resetSemanticProjects(models); });
 	const timer = scheduled.mock.calls[0].result!;
 	assert.equal(scheduled.mock.callCount(), 1);
 	first.clearDocument();

@@ -8,6 +8,7 @@ import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createFrameRuntime } from '../helpers/frame_runtime';
 import { decodeTerminalToolRequest } from '../../ide/workbench/services/assistant/terminal_tool_protocol';
 import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** Lifecycle tests use a real plan manager; actual guest evaluation is covered in browser/native conformance. */
 function fixture(t: TestContext, running = true) {
@@ -18,7 +19,7 @@ function fixture(t: TestContext, running = true) {
 		operation.status = 'running';
 		f.debuggerState.plans.pushControlPlan(new RuntimeGuestCallPlan(f.runtime, 0, 'completion', true, () => {}), 'workbench');
 	}
-	t.after(() => { f.luaEvaluation.didReplaceMachine(); f.presenter.dispose(); });
+	afterTest(t, () => { f.luaEvaluation.didReplaceMachine(); f.presenter.dispose(); });
 	return { ...f, operation };
 }
 

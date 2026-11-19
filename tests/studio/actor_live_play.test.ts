@@ -10,6 +10,7 @@ import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 
 import { createLiveStudioFixture } from '../helpers/live_studio';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** Ordinary testcart boot, real cartlib and the same physical host phases as Studio.
  * No integration setup, standalone timeline sampler or substituted World. */
@@ -131,7 +132,7 @@ test('a new Pause published while admitting live-follow wins over the completing
 	const release = f.view.interaction.onDidChange(() => {
 		if (f.view.interaction.running) f.controller.viewport.transport.pause();
 	});
-	t.after(release);
+	afterTest(t, release);
 	const operation = f.run(); await f.until(() => operation.result !== undefined);
 	assert.equal(operation.result!.status, 'completed');
 	assert.equal(f.execution.userPaused, true);

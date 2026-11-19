@@ -14,6 +14,7 @@ import { compileCartlibProgram } from '../helpers/cartlib_cpu';
 import { eventHistoryRuntime } from '../helpers/event_history';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { runCompletionClosure } from '../helpers/cpu_test_harness';
+import { afterTest } from '../helpers/test_cleanup';
 
 const ENTRY = `
 local registry<const> = require('cartlib/registry')
@@ -60,7 +61,7 @@ for (const optLevel of [0, 3] as const) test(`behavior32 O${optLevel}: real cart
 	compilerSources.set('entry', { displayPath: 'entry.lua', source: ENTRY });
 	sources.currentBlua32Media = { ...sources.currentBlua32Media, cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols,
 		compiledBlua32Sources(compilerSources), TEST_CARTRIDGE_CONTEXT_IDS[0]), null] };
-	t.after(() => sources.catalog.dispose());
+	afterTest(t, () => sources.catalog.dispose());
 	const guest = new SuspendedGuestSession(runtime);
 	assert.equal(readStateMachineInstances(sources, guest, 0).available, false);
 	assert.equal(readBehaviorDefinitions(sources, guest, 0, 'cartlib/actioneffects/actioneffect_component').available, false);

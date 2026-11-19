@@ -17,6 +17,7 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const source = `return {duration_ms=100,tracks={
 	{kind='value',path={'x'},interpolation='linear',keys={{time_ms=0,value=-10},{time_ms=100,value=25}}},
@@ -35,7 +36,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const controller = new AnimationEditorController(sources.catalog);
 		controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 0);
 		const keys = new AnimationKeyControl(inputFocus.createTarget(), controller, controller.authoring); keys.setInput(input);
-		t.after(() => {
+		afterTest(t, () => {
 			keys.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null);
 			editorViewState.font = previousFont; colors.setIdeThemeVariant(previousTheme);
 		});

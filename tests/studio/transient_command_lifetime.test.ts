@@ -16,6 +16,7 @@ import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	configureFontVariant('tiny');
@@ -43,7 +44,7 @@ function fixture(t: TestContext) {
 	};
 	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
 	const menu = new ContextMenuController(inputFocus, pointerCapture, menuArea), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
-	t.after(() => {
+	afterTest(t, () => {
 		picker.dispose(); menu.dispose(); originGroup.dispose(); siblingGroup.dispose();
 		editorTextModelService.clear(); inputFocus.setTarget(null);
 	});
@@ -61,7 +62,7 @@ for (const transient of ['context menu', 'quick pick'] as const) {
 			unbind();
 			group.openEditor(replacement);
 		});
-		t.after(unbind);
+		afterTest(t, unbind);
 		if (transient === 'context menu') {
 			f.menu.show(0, 0, [{ type: 'command', command: 'editor.source' }], f.commands,
 				{ invocationOrigin: f.origin, commandTarget: f.origin, returnFocus: f.origin, selectFirst: true });
@@ -87,7 +88,7 @@ test('local keyboard commands do not inherit semantic context or focus-return ca
 	field.registerCommand('undo', { isEnabled: () => false, run: () => { localUndo++; } });
 	returnParent.registerCommand('redo', { isEnabled: () => true, run: () => { parent++; } });
 	const unbound = inputFocus.createTarget(returnParent);
-	t.after(() => inputFocus.setTarget(null));
+	afterTest(t, () => inputFocus.setTarget(null));
 	assert.equal(field.getCommand('editor.source'), undefined, 'focus-return ancestry is not command authority');
 	assert.equal(unbound.getCommand('redo'), undefined);
 	field.commandContext = pane;
@@ -129,7 +130,7 @@ test('Palette captures the explicit Source subject while a disabled field Undo c
 	assert.equal(source.target, f.origin);
 	assert.equal(f.picker.invocationOrigin, field.focusTarget);
 	f.picker.model.list.selectionIndex = f.picker.model.list.rows.findIndex(row => items[row.itemIndex].command === 'editor.source');
-	t.after(f.picker.field.focusTarget.onDidBlur(() => laterFocus.focus()));
+	afterTest(t, f.picker.field.focusTarget.onDidBlur(() => laterFocus.focus()));
 	f.picker.accept();
 	assert.deepEqual(executedTargets, [f.origin]);
 	assert.deepEqual(f.executed, [f.original]);

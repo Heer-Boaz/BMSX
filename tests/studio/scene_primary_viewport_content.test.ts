@@ -15,6 +15,7 @@ import { SceneViewportViewState, SCENE_VIEWPORT_POINT_STRIDE } from '../../ide/w
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import type { EditorCommandId } from '../../ide/common/commands';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
 prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
@@ -49,7 +50,7 @@ function fixture(t: TestContext, objects = OBJECTS, attach = true) {
 		assert.equal(context.select(context.document!, f.model.version, { kind: 'member', scene, entry: scene.objects[index], index }), true);
 		control.update();
 	};
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	afterTest(t, () => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, source, context, view, scope, semantic, panel, control, menu, select };
 }
 
@@ -113,7 +114,7 @@ test('retiring a viewport cancels a held navigation button instead of acting on 
 	const down = pointer(x, y, PointerButton.Primary, PointerButton.Primary);
 	pointerCapture.beginRoute(f.scope.surfaceScope, down); f.control.handlePointer(down, true);
 	assert.ok(pointerCapture.active);
-	const next = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => next.dispose());
+	const next = new SceneViewportViewState(f.context, f.sources.catalog); afterTest(t, () => next.dispose());
 	f.control.setView(next, BOUNDS); const reading = next.camera.capture();
 	pointerCapture.dispatch(pointer(x, y, 0, 0, PointerButton.Primary), false, 0, f.scope.surfaceScope);
 	assert.equal(pointerCapture.active, false); assert.deepEqual(next.camera.capture(), reading);
@@ -123,7 +124,7 @@ test('retiring a viewport cancels a held navigation button instead of acting on 
 test('a camera-button activation may retire its own viewport synchronously', t => {
 	const f = fixture(t); f.select(0); f.view.camera.pan(50, 50);
 	const item = f.view.navigationActions.items.find(item => item.command === 'sceneViewport.frameSelection')!;
-	const unbind = f.view.camera.onDidChange(() => f.control.clearView()); t.after(unbind);
+	const unbind = f.view.camera.onDidChange(() => f.control.clearView()); afterTest(t, unbind);
 	const x = (item.bounds.left + item.bounds.right) / 2, y = (item.bounds.top + item.bounds.bottom) / 2;
 	f.control.handlePointer(pointer(x, y, 0, PointerButton.Primary, PointerButton.Primary), true);
 	assert.equal(f.control.canFocus, false); assert.equal(pointerCapture.active, false);
@@ -259,7 +260,7 @@ test('camera framing fits actual image or line extents without imposing the orig
 
 test('camera persisted before first layout retains pending source-derived 3D admission', t => {
 	const objects = `{member_id='mesh',definition_id='node3',position = { x = 70, y = 110, z = 130 }}`;
-	const f = fixture(t, objects, false), restored = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => restored.dispose());
+	const f = fixture(t, objects, false), restored = new SceneViewportViewState(f.context, f.sources.catalog); afterTest(t, () => restored.dispose());
 	const snapshot = f.view.camera.capture(); assert.equal(snapshot.canvas.reading, 'initial');
 	restored.camera.restore(snapshot); f.control.setView(restored, BOUNDS);
 	assert.equal(restored.camera.mode, '3d'); assert.equal(restored.camera.initial, true); assert.equal(restored.entries.length, 1);
@@ -324,7 +325,7 @@ test('empty canvas click cannot override a newer selection admitted by its focus
 	const f = fixture(t); f.select(0); f.semantic.focus();
 	const x = BOUNDS.left + 2, y = BOUNDS.top + 2;
 	assert.equal(f.view.pick(x, y), undefined);
-	const unbind = f.control.focusTarget.onDidFocus(() => f.select(1)); t.after(unbind);
+	const unbind = f.control.focusTarget.onDidFocus(() => f.select(1)); afterTest(t, unbind);
 	f.control.handlePointer(pointer(x, y, PointerButton.Primary, PointerButton.Primary), true);
 	assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry === f.context.subject!.objects[1]);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
@@ -337,7 +338,7 @@ test('empty canvas click does not erase a newer selection admitted while clearin
 	const unbind = f.context.onDidChangeSelection(() => {
 		if (!f.context.hasSelection) { unbind(); f.select(1); }
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.control.handlePointer(pointer(x, y, PointerButton.Primary, PointerButton.Primary), true);
 	assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry === f.context.subject!.objects[1]);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
@@ -346,7 +347,7 @@ test('empty canvas click does not erase a newer selection admitted while clearin
 test('frame commands are disabled for absent or unresolved geometry instead of becoming no-op menu actions', t => {
 	const f = fixture(t); f.select(3);
 	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), false);
-	const empty = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => empty.dispose());
+	const empty = new SceneViewportViewState(f.context, f.sources.catalog); afterTest(t, () => empty.dispose());
 	const g = fixture(t, `{member_id='dynamic',definition_id='node2',transform=runtime_pose()}`);
 	assert.equal(g.panel.getCommand('sceneViewport.frameAll')!.isEnabled(), false);
 });
@@ -358,7 +359,7 @@ test('framing a planar selection retains the orbit view and preserves the indepe
 	assert.equal(camera.mode, '2d', 'selection alone does not override the chosen view');
 	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), true);
 	const changes: ReturnType<WorkbenchViewportCamera['capture']>[] = [];
-	const unsubscribe = camera.onDidChange(() => { changes.push(camera.capture()); }); t.after(unsubscribe);
+	const unsubscribe = camera.onDidChange(() => { changes.push(camera.capture()); }); afterTest(t, unsubscribe);
 	inputFocus.executeCommand('sceneViewport.frameSelection', f.panel);
 	assert.equal(camera.mode, '3d');
 	assert.equal(changes.length, 1, 'mode and framed reading are published together');
@@ -395,7 +396,7 @@ test('explicitly framing a selection adopts its view, but initial framing remain
 	framed.select(0);
 	assert.equal(framed.view.camera.automaticMode, true);
 	let publications = 0;
-	const unsubscribe = framed.view.camera.onDidChange(() => { publications++; }); t.after(unsubscribe);
+	const unsubscribe = framed.view.camera.onDidChange(() => { publications++; }); afterTest(t, unsubscribe);
 	inputFocus.executeCommand('sceneViewport.frameSelection', framed.panel);
 	assert.equal(framed.view.camera.automaticMode, false, 'an explicit frame adopts the current view');
 	assert.equal(publications, 1, 'adopting and framing publish one camera change');
@@ -413,7 +414,7 @@ test('a reentrant selection and camera gesture supersede the frame request', t =
 		unsubscribe();
 		f.select(0); camera.setMode('2d'); camera.pan(19, -13);
 		newer = camera.capture();
-	}); t.after(unsubscribe);
+	}); afterTest(t, unsubscribe);
 	inputFocus.executeCommand('sceneViewport.frameSelection', f.panel);
 	assert.deepEqual(camera.capture(), newer);
 	assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry === f.context.subject!.objects[0]);
@@ -421,14 +422,14 @@ test('a reentrant selection and camera gesture supersede the frame request', t =
 });
 
 test('a reentrant frame notification cannot change a newly attached viewport', t => {
-	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => incoming.dispose());
+	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog); afterTest(t, () => incoming.dispose());
 	f.select(2);
 	let newer: ReturnType<WorkbenchViewportCamera['capture']> | undefined;
 	const unsubscribe = f.view.camera.onDidChange(() => {
 		unsubscribe();
 		f.control.setView(incoming, BOUNDS); incoming.camera.setMode('2d'); incoming.camera.pan(17, -11);
 		newer = incoming.camera.capture();
-	}); t.after(unsubscribe);
+	}); afterTest(t, unsubscribe);
 	inputFocus.executeCommand('sceneViewport.frameSelection', f.panel);
 	assert.ok(f.control.view === incoming); assert.deepEqual(incoming.camera.capture(), newer);
 	assert.equal(f.model.buffer.getText(), f.source);
@@ -567,14 +568,14 @@ test(`${mode} camera chords use both-button pan/zoom and Alt-right dolly without
 });
 
 test('a flight callback may replace the viewport without moving or cancelling its successor', t => {
-	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => incoming.dispose());
+	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog); afterTest(t, () => incoming.dispose());
 	f.view.camera.setMode('3d'); f.control.update(); editorRuntimeState.currentTimeMs = 0;
 	f.control.handlePointer(pointer(200, 120, PointerButton.Secondary, PointerButton.Secondary), true);
 	f.control.focusTarget.handleKeyboard(new KeyInputEvent('KeyW', KeyModifier.none));
 	const release = f.view.camera.onDidChange(() => {
 		release(); f.control.setView(incoming, BOUNDS); incoming.camera.setMode('3d'); f.control.update();
 		f.control.handlePointer(pointer(200, 120, PointerButton.Secondary, PointerButton.Secondary), true);
-	}); t.after(release);
+	}); afterTest(t, release);
 	editorRuntimeState.currentTimeMs = 100;
 	f.control.focusTarget.handleKeyboard(new KeyInputEvent('KeyW', KeyModifier.none, false, false));
 	assert.ok(f.control.view === incoming); assert.equal(pointerCapture.active, true);
@@ -583,10 +584,10 @@ test('a flight callback may replace the viewport without moving or cancelling it
 });
 
 test('an older frame invocation cannot retarget the canvas rebound by source admission', t => {
-	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => incoming.dispose());
+	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog); afterTest(t, () => incoming.dispose());
 	incoming.camera.pan(31, -47); const before = incoming.camera.capture();
 	const invocation = f.panel.getCommand('sceneViewport.frameAll')!.capture!()!;
-	const release = f.context.onDidChangeSpatialGeneration(() => { release(); f.control.setView(incoming, BOUNDS); }); t.after(release);
+	const release = f.context.onDidChangeSpatialGeneration(() => { release(); f.control.setView(incoming, BOUNDS); }); afterTest(t, release);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dependency admission\n' }]);
 	assert.doesNotThrow(() => invocation.run());
 	assert.ok(f.control.view === incoming); assert.deepEqual(incoming.camera.capture(), before);
@@ -601,10 +602,10 @@ test('a captured frame request cannot survive detach/rebind or a newer selection
 
 test('reentrant attachment retirement preserves the newer binding and disposal releases source projections', t => {
 	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog), superseded = new SceneViewportViewState(f.context, f.sources.catalog);
-	t.after(() => { incoming.dispose(); superseded.dispose(); });
-	const release = f.control.focusTarget.scope.onDidRetireContext(() => { release(); f.control.setView(incoming, BOUNDS); }); t.after(release);
+	afterTest(t, () => { incoming.dispose(); superseded.dispose(); });
+	const release = f.control.focusTarget.scope.onDidRetireContext(() => { release(); f.control.setView(incoming, BOUNDS); }); afterTest(t, release);
 	f.control.setView(superseded, BOUNDS); assert.ok(f.control.view === incoming);
-	const retired = f.control.focusTarget.scope.onDidRetireContext(() => { retired(); f.control.setView(superseded, BOUNDS); }); t.after(retired);
+	const retired = f.control.focusTarget.scope.onDidRetireContext(() => { retired(); f.control.setView(superseded, BOUNDS); }); afterTest(t, retired);
 	f.control.dispose(); assert.equal(f.control.canFocus, false);
 	incoming.dispose(); assert.equal(incoming.source, undefined); assert.equal(incoming.selected, undefined); assert.equal(incoming.entries.length, 0);
 });

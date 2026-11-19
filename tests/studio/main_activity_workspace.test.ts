@@ -17,6 +17,7 @@ import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/edito
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 
 function fixture(t: TestContext) {
@@ -300,7 +301,7 @@ for (const publication of ['model activation', 'attachment'] as const)
 		const invoke = () => { release(); f.second.focus(); };
 		const release = publication === 'model activation' ? group.model.onDidChange(change => { if (change === 'active') invoke(); })
 			: group.panes.onWillShowEditor(invoke);
-		t.after(release);
+		afterTest(t, release);
 		f.key('Enter');
 		assert.ok(inputFocus.admittedTarget === f.second.code.focusTarget && f.editor.editorParts.activePart === f.secondPart);
 		assert.ok(f.main.primary === undefined && f.panel.selectedDiagnostic === f.diagnostics[5]);

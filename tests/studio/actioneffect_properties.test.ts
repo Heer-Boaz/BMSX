@@ -27,6 +27,7 @@ import { InputFocusService, inputFocus } from '../../ide/input/focus';
 import { insertValue, selectAll } from '../../ide/editor/ui/inline/text_field';
 import { WorkbenchPropertyEdit } from '../../ide/workbench/ui/property_edit';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0, imports: Readonly<Record<string, string>> = {}) {
 	configureFontVariant('tiny');
@@ -79,7 +80,7 @@ function propertyEditFixture(t: TestContext, f: ReturnType<typeof fixture>, pane
 			fieldRange: locations.range(field.span), expressionRange: locations.range(field.value.span), expressionKind: field.value.kind, expressionOffset: 0, firstTokenOffset: 0 });
 		lifetime.add({ dispose: f.view.source.onDidInvalidate(() => edit.close()) });
 	};
-	t.after(() => { edit.dispose(); inputFocus.setTarget(null); surfaces.dispose(); f.input.dispose(); });
+	afterTest(t, () => { edit.dispose(); inputFocus.setTarget(null); surfaces.dispose(); f.input.dispose(); });
 	return { parent, edit, openProperty, surfaces, owner, root, pane };
 }
 

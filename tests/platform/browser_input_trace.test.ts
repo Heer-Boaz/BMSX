@@ -5,6 +5,7 @@ import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { BrowserInputTraceBuffer } from '../../hosts/browser/input_trace_buffer';
 import { distanceToControl } from './touch_gamepad_geometry_oracle';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('input trace reuses bounded records and preserves errors after overwrite and freeze', () => {
 	const buffer = new BrowserInputTraceBuffer(2);
@@ -67,7 +68,7 @@ export { Input } from './hosts/common/input/manager';`,
 		tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true, acceptDownloads: true });
 	await page.setContent('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>#player-surface{position:fixed;inset:0;touch-action:none}#gamescreen{position:absolute;left:300px;top:100px;width:240px;height:180px}#a,#b{position:absolute;top:200px;width:70px;height:70px}#a{left:570px}#b{left:680px}</style><div id="player-surface"><canvas id="gamescreen"></canvas><div id="a"></div><div id="b"></div></div>');
 	await page.addScriptTag({ content: bootstrap.outputFiles[0].text });
@@ -266,7 +267,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		controls = controls.replace(`@@DPAD_${name.toUpperCase()}@@`, `data:image/png;base64,${(await readFile(`rom/d-pad-${name}.png`)).toString('base64')}`);
 	}
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
 	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${await readFile('gamebase.css', 'utf8')}</style><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div>`);
 	await page.addScriptTag({ content: bootstrap.outputFiles[0].text });
@@ -355,7 +356,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
 	await page.setContent('<canvas id="screen" width="320" height="240" style="position:absolute;left:100px;top:80px;width:640px;height:480px"></canvas>');
 	await page.addScriptTag({ content: fixture.outputFiles[0].text });

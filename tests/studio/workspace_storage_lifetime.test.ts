@@ -10,10 +10,11 @@ import { joinWorkspacePaths } from '../../ide/workspace/path';
 import { WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE, workspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext, size: 14 | 18 = 14) {
 	const admitted = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
-	t.after(() => release.resolve());
+	afterTest(t, () => release.resolve());
 	const f = createActualSourcePanes(t), files = new MemoryWorkspaceFiles('workspace'), storage = new MemoryStorage();
 	f.editor.preferences.fontSize = size;
 	const context = f.sources.catalog.getContext(f.sources.systemContextId).admission, session = 'storage-lifetime';

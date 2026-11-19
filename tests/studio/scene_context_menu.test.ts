@@ -20,6 +20,7 @@ import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studi
 import { createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { WORKBENCH_ACTION_BAR_OVERFLOW } from '../../ide/workbench/ui/action_bar';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', source = SCENE_VIEWPORT_SOURCE, composition = false) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', source], ['cartlib/world/scene_library.lua', 'return {}'],
@@ -191,7 +192,7 @@ for (const invalidation of ['selection', 'source', 'attachment'] as const)
 			else if (invalidation === 'source') f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed\n' }]);
 			else f.pane.control.setView(view, view.bounds);
 		});
-		t.after(release);
+		afterTest(t, release);
 		viewportPointer(f, x, y, 0, 0, PointerButton.Secondary);
 		assert.equal(changed, true); assert.equal(f.editor.contextMenu.visible, false);
 		if (invalidation === 'selection') {
@@ -315,7 +316,7 @@ test('an incoming Scene click cannot replace a newer selection made by its depar
 		const document = f.editor.sceneEditor.documents.get(f.model);
 		assert.equal(input.view.authoring.select(document, f.model.version, { kind: 'scene', scene: document.scenes[0] }), true);
 	});
-	t.after(release);
+	afterTest(t, release);
 	for (const down of [true, false]) {
 		f.host.clock.advance(10);
 		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
@@ -408,7 +409,7 @@ test('secondary click on the Details body accepts a focused field draft without 
 test('Scene menu moves and removes authored members through canonical Undo and Save', async t => {
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
 	const f = fixture(t), before = f.model.buffer.getText();
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	secondary(f, 1);
 	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'sceneEditor.moveMemberUp' || row.command === 'sceneEditor.moveMemberDown'), false,
 		'reordering is a direct hierarchy gesture, not duplicate routine menu entries');
@@ -439,7 +440,7 @@ for (const invalidation of ['selection', 'source', 'equal-source', 'attachment']
 test('Scene menu cannot retarget an accepted remove when focus return selects another occurrence', t => {
 	const f = fixture(t), before = f.model.buffer.getText(); secondary(f, 1);
 	const origin = f.editor.contextMenu.returnFocus!; let changed = false;
-	const unbind = origin.onDidFocus(() => { unbind(); changed = true; selectSceneOutlineRow(f.input.view.hierarchy, 2); }); t.after(unbind);
+	const unbind = origin.onDidFocus(() => { unbind(); changed = true; selectSceneOutlineRow(f.input.view.hierarchy, 2); }); afterTest(t, unbind);
 	accept(f, 'sceneEditor.removeMember'); assert.equal(changed, true); assert.equal(f.editor.contextMenu.visible, false);
 	assert.equal(f.input.view.hierarchy.outline.selectionIndex, 2); assert.equal(f.model.buffer.getText(), before); assert.equal(f.model.canUndo, false);
 });
@@ -451,7 +452,7 @@ for (const change of ['foreign', 'rebind', 'reattach'] as const) test(`Scene phy
 		unbind(); changed = true;
 		if (change === 'foreign') f.second.focus();
 		else { f.firstGroup.openEditor(new HostErrorInput('replacement')); if (change === 'reattach') f.firstGroup.openEditor(f.input); }
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	secondary(f, 2); assert.equal(changed, true); assert.equal(f.editor.contextMenu.visible, false);
 	assert.equal(f.input.view.hierarchy.outline.selectionIndex, 1); assert.equal(f.model.buffer.getText(), before); assert.equal(f.model.canUndo, false);
 	if (change === 'foreign') assert.ok(inputFocus.admittedTarget === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
@@ -459,7 +460,7 @@ for (const change of ['foreign', 'rebind', 'reattach'] as const) test(`Scene phy
 
 test('Scene selection publication describes coherent source bindings and ignores passive refresh or reselection', t => {
 	const f = fixture(t); let changed = 0;
-	t.after(f.input.view.authoring.onDidChangeSelection(() => {
+	afterTest(t, f.input.view.authoring.onDidChangeSelection(() => {
 		changed++; const selection = f.input.view.authoring.selection!;
 		assert.ok(selection.kind === 'member');
 		const range = f.input.view.authoring.document!.analysis.chunk.locations.range(selection.entry.field.span);
@@ -473,7 +474,7 @@ test('Scene selection publication describes coherent source bindings and ignores
 
 test('Scene secondary does not overwrite a newer selection made by its publication listener', t => {
 	const f = fixture(t), before = f.model.buffer.getText();
-	const unbind = f.input.view.authoring.onDidChangeSelection(() => { unbind(); selectSceneOutlineRow(f.input.view.hierarchy, 2); }); t.after(unbind);
+	const unbind = f.input.view.authoring.onDidChangeSelection(() => { unbind(); selectSceneOutlineRow(f.input.view.hierarchy, 2); }); afterTest(t, unbind);
 	secondary(f, 1); assert.equal(f.input.view.hierarchy.outline.selectionIndex, 2); assert.equal(f.editor.contextMenu.visible, false);
 	assert.equal(f.model.buffer.getText(), before); assert.equal(f.model.canUndo, false);
 });
@@ -482,7 +483,7 @@ test('Scene secondary does not overwrite a newer selection made by its publicati
 test('Scene menu retains its exact model mutation without stealing a newer foreign return focus', t => {
 	const f = fixture(t), source = f.model.buffer.getText(), foreign = f.secondInput.workingCopy.buffer.getText(); secondary(f, 1);
 	const origin = f.editor.contextMenu.returnFocus!; let changed = false;
-	const unbind = origin.onDidFocus(() => { unbind(); changed = true; f.second.focus(); }); t.after(unbind);
+	const unbind = origin.onDidFocus(() => { unbind(); changed = true; f.second.focus(); }); afterTest(t, unbind);
 	accept(f, 'sceneEditor.removeMember'); assert.equal(changed, true); assert.equal(f.editor.contextMenu.visible, false);
 	assert.ok(f.model.buffer.getText() !== source && !f.model.buffer.getText().includes("member_id = 'subject'"));
 	assert.equal(f.model.canUndo, true); assert.equal(f.secondInput.workingCopy.buffer.getText(), foreign);
@@ -493,7 +494,7 @@ test('Scene menu retains its exact model mutation without stealing a newer forei
 
 test('Scene secondary consumes selection publication that establishes a newer foreign control', t => {
 	const f = fixture(t), before = f.model.buffer.getText();
-	const unbind = f.input.view.authoring.onDidChangeSelection(() => { unbind(); f.second.focus(); }); t.after(unbind);
+	const unbind = f.input.view.authoring.onDidChangeSelection(() => { unbind(); f.second.focus(); }); afterTest(t, unbind);
 	secondary(f, 1); assert.equal(f.editor.contextMenu.visible, false); assert.equal(f.input.view.hierarchy.outline.selectionIndex, 1);
 	assert.ok(inputFocus.admittedTarget === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
 	assert.equal(f.model.buffer.getText(), before); assert.equal(f.model.canUndo, false);
@@ -507,7 +508,7 @@ for (const rebind of [false, true]) test(`Scene retained member command ${rebind
 	assert.equal(field.replaceText(0, field.readText().text.length, '77'), true); assert.equal(field.focusTarget.edit!.pending, true);
 	let rebound = false;
 	if (rebind) {
-		const unbind = f.model.onDidChangeContent(() => { unbind(); rebound = true; f.firstGroup.openEditor(new HostErrorInput('newer attachment')); }); t.after(unbind);
+		const unbind = f.model.onDidChangeContent(() => { unbind(); rebound = true; f.firstGroup.openEditor(new HostErrorInput('newer attachment')); }); afterTest(t, unbind);
 	}
 	f.editor.commands.execute('sceneEditor.moveMemberDown', commandTarget);
 	const text = f.model.buffer.getText(); assert.equal(field.focusTarget.edit!.pending, false); assert.ok(text.includes('x = 77,'));
@@ -537,14 +538,14 @@ for (const route of ['pointer', 'ContextMenu', 'F10'] as const) test(`document S
 
 for (const operation of ['update', 'setOptions'] as const) test(`Scene ${operation} source rebuild stops its retired pane when selection publication opens another editor`, t => {
 	const f = fixture(t); selectSceneOutlineRow(f.input.view.hierarchy, 1); f.update();
-	const navigation = f.pane.getSelection(); t.after(() => navigation.dispose());
+	const navigation = f.pane.getSelection(); afterTest(t, () => navigation.dispose());
 	const selected = f.input.view.hierarchy.outline.rows[f.input.view.hierarchy.outline.selectionIndex].element;
 	assert.ok(selected.kind === 'member' && selected.entry.kind === 'object');
 	const replacement = new HostErrorInput('replacement'); let publications = 0;
 	const unbind = f.input.view.authoring.onDidChangeSelection(() => {
 		unbind(); publications++;
 		f.firstGroup.openEditor(replacement);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, f.input.view.authoring.document!.analysis.chunk.locations, f.input.view.authoring.document!.analysis.chunk.tokens, selected.entry.field));
 	const edited = f.model.buffer.getText();
 	assert.doesNotThrow(() => {
@@ -562,11 +563,11 @@ test('Scene history capture observes a retired semantic selection without furthe
 	const selected = f.input.view.hierarchy.outline.rows[f.input.view.hierarchy.outline.selectionIndex].element;
 	assert.ok(selected.kind === 'member' && selected.entry.kind === 'object');
 	let publications = 0;
-	t.after(context.onDidChangeSelection(() => { publications++; }));
+	afterTest(t, context.onDidChangeSelection(() => { publications++; }));
 	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, document.analysis.chunk.locations, document.analysis.chunk.tokens, selected.entry.field));
 	const edited = f.model.buffer.getText(), focused = inputFocus.admittedTarget;
 	assert.equal(publications, 1); assert.equal(context.hasSelection, false);
-	const snapshot = f.pane.getSelection(); t.after(() => snapshot.dispose());
+	const snapshot = f.pane.getSelection(); afterTest(t, () => snapshot.dispose());
 	assert.equal(snapshot.snapshot.selected, undefined, 'a collapsed tracked occurrence has no bookmarked selection');
 	assert.equal(publications, 1, 'capturing history does not publish another selection');
 	const retainedInput = f.firstGroup.model.activeTab;
@@ -580,12 +581,12 @@ test('Scene history capture observes a retired semantic selection without furthe
 
 test('Scene history restore stops its retired pane when the restored selection opens another editor', t => {
 	const f = fixture(t), source = f.model.buffer.getText(); selectSceneOutlineRow(f.input.view.hierarchy, 1); f.update();
-	const navigation = f.pane.getSelection(); t.after(() => navigation.dispose());
+	const navigation = f.pane.getSelection(); afterTest(t, () => navigation.dispose());
 	selectSceneOutlineRow(f.input.view.hierarchy, 2); f.update();
 	const replacement = new HostErrorInput('replacement'); let publications = 0;
 	const unbind = f.input.view.authoring.onDidChangeSelection(() => {
 		unbind(); publications++; f.firstGroup.openEditor(replacement);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.doesNotThrow(() => f.pane.setOptions(undefined, navigation));
 	assert.equal(publications, 1); assert.ok(f.firstGroup.model.activeTab === replacement);
 	assert.ok(inputFocus.admittedTarget === f.firstGroup.panes.activePane?.commandTarget);
@@ -628,7 +629,7 @@ test('Scene section presentation cannot overwrite newer foreign focus establishe
 	f.editor.commands.execute('sceneEditor.details', f.primary.hierarchy.control.focusTarget);
 	const field = f.primary.details.control.controls[0].field; field.focusTarget.focus();
 	const source = f.model.buffer.getText(), version = f.model.version;
-	const unbind = field.focusTarget.onDidBlur(() => { unbind(); f.second.focus(); }); t.after(unbind);
+	const unbind = field.focusTarget.onDidBlur(() => { unbind(); f.second.focus(); }); afterTest(t, unbind);
 	f.editor.commands.execute('sceneEditor.outline');
 	assert.ok(inputFocus.admittedTarget === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
 	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
@@ -645,7 +646,7 @@ test('Scene section navigation accepts its exact draft without overwriting forei
 	const range = luaSourceRangeToTextRange(f.model.buffer, f.input.view.authoring.document.analysis.chunk.locations.range((selected.entry.position!.value as LuaTableConstructorExpression).fields[0].value.span));
 	setFieldText(field, '42', true);
 	let publications = 0;
-	const unbind = f.model.onDidChangeContent(() => { unbind(); publications++; f.second.focus(); }); t.after(unbind);
+	const unbind = f.model.onDidChangeContent(() => { unbind(); publications++; f.second.focus(); }); afterTest(t, unbind);
 	f.editor.commands.execute('sceneEditor.outline');
 	// Exact source is the data-integrity contract of the accepted numeric draft.
 	assert.equal(f.model.buffer.getText(), source.slice(0, range.start) + '42' + source.slice(range.end));

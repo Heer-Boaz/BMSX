@@ -9,11 +9,12 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('default YAML navigation keeps Map while Source navigation shares its dirty canonical model and applies the requested text range', async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const f = createActualSourcePanes(t), group = f.firstGroup;
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const source = '1: { map: [".."], objects: [] }\n', path = 'res/data/castle_map.yaml';
 	f.sources.catalog.registerTextSources(f.sources.systemContextId,
 		[{ type: 'data', resid: 'map', source_path: path, sourcemeta: { text: source } }]);
@@ -37,7 +38,7 @@ test('default YAML navigation keeps Map while Source navigation shares its dirty
 test('context Source navigation explicitly opens text for AEM without replacing its default contribution or canonical working copy', async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const f = createActualSourcePanes(t), group = f.firstGroup;
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const path = 'res/data/events.aem.yaml', source = 'events: {}\n';
 	f.sources.catalog.registerTextSources(f.sources.systemContextId,
 		[{ type: 'aem', resid: 'events', source_path: path, sourcemeta: { text: source } }]);
@@ -48,7 +49,7 @@ test('context Source navigation explicitly opens text for AEM without replacing 
 	const unbind = group.panes.onWillShowEditor(() => {
 		const input = group.panes.activePane?.input;
 		if (input instanceof CodeEditorInput && input.resource === resource) shown.resolve();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.editor.navigation.focusChunkSourceForContext(group, resource.contextId, resource.path, { row: 0, startColumn: 0, endColumn: 2 });
 	await shown.promise; unbind();
 	const code = group.model.activeTab;
@@ -62,8 +63,8 @@ test('context Source navigation explicitly opens text for AEM without replacing 
 test('explicit Source options bind the captured group without stealing another control focus or adding departure history', async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const f = createActualSourcePanes(t), group = f.firstGroup;
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
-	resetNavigationHistoryState(); t.after(resetNavigationHistoryState);
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	resetNavigationHistoryState(); afterTest(t, resetNavigationHistoryState);
 	const path = 'res/data/castle_map.yml';
 	f.sources.catalog.registerTextSources(f.sources.systemContextId,
 		[{ type: 'data', resid: 'map', source_path: path, sourcemeta: { text: '1: { map: [".."], objects: [] }\n' } }]);

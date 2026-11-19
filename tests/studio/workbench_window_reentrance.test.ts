@@ -11,6 +11,7 @@ import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const coalesced of [false, true]) for (const phase of ['title focus', 'departing Source blur', 'raise publication'] as const)
 	test(`later minimize from ${phase} revokes an incoming document title ${coalesced ? 'coalesced click' : 'press'}`, t => {
@@ -23,7 +24,7 @@ for (const coalesced of [false, true]) for (const phase of ['title focus', 'depa
 		else unbind = inputFocus.onDidChangeTarget(() => {
 			if (pointerCapture.routeScope === part.scope.surfaceScope) minimize();
 		});
-		t.after(() => unbind());
+		afterTest(t, () => unbind());
 		const header = window.model.header, x = header.left + 16, y = (header.top + header.bottom) / 2;
 		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: coalesced ? 0 : PointerButton.Primary, pressedButtons: PointerButton.Primary,
 			releasedButtons: coalesced ? PointerButton.Primary : 0, cancelledButtons: 0,
@@ -50,7 +51,7 @@ for (const coalesced of [false, true]) for (const phase of ['departing Source bl
 			content: { draw() {} }, layoutContent() {}, retireContentInput() {}, restoreContentInput() {},
 			focusContent: () => window.clientFocusTarget.focus(),
 		});
-		t.after(() => window.dispose());
+		afterTest(t, () => window.dispose());
 		window.show(false); window.layout(editorViewState.font.renderFont(), measureTextRange, measureText); window.update();
 		f.second.focus();
 		let unbind: () => void;
@@ -59,7 +60,7 @@ for (const coalesced of [false, true]) for (const phase of ['departing Source bl
 		else unbind = inputFocus.onDidChangeTarget(() => {
 			if (pointerCapture.routeScope === window.scope.surfaceScope) hide();
 		});
-		t.after(() => unbind());
+		afterTest(t, () => unbind());
 		const action = actionBar.items.find(item => item.command === 'window.maximize')!;
 		const x = (action.bounds.left + action.bounds.right) / 2, y = (action.bounds.top + action.bounds.bottom) / 2;
 		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: coalesced ? 0 : PointerButton.Primary, pressedButtons: PointerButton.Primary,

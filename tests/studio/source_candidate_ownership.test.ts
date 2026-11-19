@@ -8,6 +8,7 @@ import { resolveLuaCodeEditorInput, resolveTextCodeEditorInput } from '../../ide
 import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('a superseded resolved text opening retires only its fresh candidate, not retained views of the same working copy', async t => {
 	const sources = createScenarioTestSourceState([]), group = createTestEditorGroup();
@@ -18,7 +19,7 @@ test('a superseded resolved text opening retires only its fresh candidate, not r
 	const retained = await resolveTextCodeEditorInput(sources.catalog, resource), sibling = await resolveTextCodeEditorInput(sources.catalog, resource);
 	const siblingGroup = new EditorTabGroupModel();
 	group.model.add(retained); group.model.activate(retained); siblingGroup.initialize(sibling);
-	t.after(() => {
+	afterTest(t, () => {
 		group.dispose(); siblingGroup.clear(); editorTextModelService.clear();
 	});
 	const retainedView = retained.context.view, siblingView = sibling.context.view, sourceIdentity = retainedView.editSource;
@@ -60,7 +61,7 @@ test('Source factories and serialization produce group-local views while sharing
 	const first = resolveLuaCodeEditorInput(sources.catalog, resource), second = await resolveTextCodeEditorInput(sources.catalog, resource);
 	const firstGroup = new EditorTabGroupModel(), secondGroup = new EditorTabGroupModel();
 	firstGroup.initialize(first); secondGroup.initialize(second);
-	t.after(() => { firstGroup.clear(); secondGroup.clear(); editorTextModelService.clear(); });
+	afterTest(t, () => { firstGroup.clear(); secondGroup.clear(); editorTextModelService.clear(); });
 	const model = first.workingCopy;
 	assert.equal(model, second.workingCopy); assert.notEqual(first, second); assert.notEqual(first.context, second.context);
 	assert.notEqual(first.context.view.editSource, second.context.view.editSource);
@@ -102,7 +103,7 @@ for (const matchingSource of [true, false]) test(`Source deserialization admits 
 	original.dispose();
 	if (!matchingSource) model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed\n' }]);
 	const restored = await serializer.deserialize(serialized);
-	t.after(() => { restored.dispose(); editorTextModelService.clear(); });
+	afterTest(t, () => { restored.dispose(); editorTextModelService.clear(); });
 	restored.initializeViewState({ cursor: 4, anchor: 1, scrollRow: 77, scrollLeft: 89, wordWrapEnabled: true });
 	assert.equal(restored.context.view.cursorRow, 0); assert.equal(restored.context.view.cursorColumn, matchingSource ? 7 : 0);
 	assert.equal(restored.context.view.scrollRow, matchingSource ? 2.5 : 0);

@@ -16,6 +16,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import { packModelAsset, loadModelFromBuffer } from '../../toolchain/ts/rompack/model_asset';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const BOUNDS = { left: 10, top: 20, right: 650, bottom: 500 };
 const SOURCE = `local scenes=require('cartlib/world/scene_library')
@@ -62,7 +63,7 @@ function fixture(t: TestContext) {
 		return point;
 	};
 	const click = (pointerX = x, pointerY = y) => control.handlePointer(pointer(pointerX, pointerY, PointerButton.Primary, PointerButton.Primary), true);
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	afterTest(t, () => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, assets, asset, provider, context, view, control, x, y, ground, click };
 }
 
@@ -84,7 +85,7 @@ test('3D Add offers only its family and arms the existing packed-model preview w
 
 test('a 3D pointer placement publishes once, retains preview geometry and is removed/restored by one Undo/Redo', t => {
 	const f = fixture(t), request = f.context.captureAddMember('3d')!; let placed = 0, changes = 0;
-	t.after(f.model.onDidChangeContent(() => changes++));
+	afterTest(t, f.model.onDidChangeContent(() => changes++));
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => placed++), true);
 	f.control.handlePointer(pointer(f.x, f.y), false);
 	const expected = f.ground(), ghost = f.view.placementGeometry.scene.instances[0], mesh = ghost.mesh;

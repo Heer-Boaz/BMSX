@@ -14,6 +14,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 function threeSources(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [['third.lua', 'local gamma = 3\nreturn gamma\n']]);
@@ -105,7 +106,7 @@ test('Palette Keep Open pins the inactive focused preview without activating it 
 test('Ctrl+S saves only the inactive focused Source and its canonical Undo remains available after activation', async t => {
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
 	const f = threeSources(t), strip = f.group.tabStrip;
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	f.firstInput.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved active source\n' }]);
 	f.secondSource.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- save this focused source\n' }]);
 	const saved = f.secondSource.workingCopy.buffer.getText(), pane = f.group.panes.activePane;
@@ -189,7 +190,7 @@ test('reentering a tab strip preserves a newer concrete focus published while it
 	const f = threeSources(t), strip = f.group.tabStrip;
 	f.editor.commands.execute('group.focusTabs', f.group.tabFocusTarget); f.key('ArrowRight');
 	let redirected = false;
-	const unbind = strip.focusTarget.scope.onDidRetireContext(() => { unbind(); redirected = true; f.second.focus(); }); t.after(unbind);
+	const unbind = strip.focusTarget.scope.onDidRetireContext(() => { unbind(); redirected = true; f.second.focus(); }); afterTest(t, unbind);
 	assert.equal(strip.focus(), false);
 	assert.equal(redirected, true); assert.ok(inputFocus.target === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
 	assert.ok(f.group.model.activeTab === f.firstInput && f.group.panes.activePane?.input === f.firstInput);
@@ -244,7 +245,7 @@ for (const hiddenBy of ['minimized window', 'maximized sibling'] as const)
 		const index = picker.model.list.rows.findIndex(row => (row.item as CommandQuickPickItem).command === 'group.focusTabs');
 		assert.ok(index >= 0);
 		let contentFocused = 0;
-		const unbind = pane.commandTarget.onDidFocus(() => { contentFocused++; }); t.after(unbind);
+		const unbind = pane.commandTarget.onDidFocus(() => { contentFocused++; }); afterTest(t, unbind);
 		if (sibling === undefined) {
 			parts.minimize(f.firstPart); assert.equal(f.firstPart.window!.model.minimized, true);
 		} else {

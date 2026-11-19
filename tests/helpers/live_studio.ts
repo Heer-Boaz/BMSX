@@ -39,6 +39,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { createLoadedTestRuntimeSourceState } from './runtime_sources';
 import { MemoryWorkspaceFiles } from './workspace_files';
+import { afterTest } from './test_cleanup';
 
 
 /** Ordinary boot and the physical host phases of Studio, shared by live editor regressions. */
@@ -70,7 +71,7 @@ export async function createLiveStudioFixture(t: TestContext, presentation: 'vie
 		hostMenu = new HostOverlayMenu(presenter, runtime, input, rewind, execution,
 			new HostKeyboardInteraction(input, keyboard, presenter, new HostOnScreenKeyboard(presenter, keyboard)));
 	}
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false); editor.editorParts.clear();
 		await editor.shutdown(); clearBackgroundTasks(); editorTextModelService.clear(); sources.catalog.dispose();
 		presenter.dispose(); audio.dispose(); input.dispose(); closeWorkspaceRecords();

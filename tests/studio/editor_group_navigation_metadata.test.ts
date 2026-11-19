@@ -11,6 +11,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { showGroupOpenEditors, showOpenEditors } from '../../ide/workbench/services/editor/open_editors';
 import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
+import { afterTest } from '../helpers/test_cleanup';
 
 type EditorPick = QuickPickItem & { readonly input: EditorInput };
 
@@ -19,7 +20,7 @@ for (const scope of ['workspace', 'group'] as const) {
 		const f = createActualSourcePanes(t), picker = f.editor.quickInput, parts = f.editor.editorParts;
 		const files = new MemoryWorkspaceFiles();
 		await openWorkspaceRecords(files);
-		t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+		afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 		const write = files.write.bind(files);
 		let release!: () => void;
 		const waiting = new Promise<void>(resolve => { release = resolve; });

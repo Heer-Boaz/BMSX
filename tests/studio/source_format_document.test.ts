@@ -10,6 +10,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/quick_pick_provider';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PREFIX = 'do\n  local name = "🦊"   \n  use(name)  \nend\n';
 const FORMATTED_PREFIX = 'do\n\tlocal name = "🦊"\n\tuse(name)\nend\n';
@@ -31,9 +32,9 @@ for (const font of ['tiny', 'msx'] as const) for (const backward of [false, true
 		sibling.nativeText.setSelection(f.original.indexOf('use(') + 4, f.original.indexOf('use(') + 8);
 		const before = captureCodeEditorSelectionSnapshot(code.view), selection = getSelectionText(sibling);
 		const marker = { start, end };
-		t.after(f.model.trackRanges(new Map([['identifier', marker]])));
+		afterTest(t, f.model.trackRanges(new Map([['identifier', marker]])));
 		const cycles = f.host.runtime.machine.scheduler.nowCycles, version = f.model.version;
-		let changes = 0; t.after(f.model.onDidChangeContent(() => { changes++; }));
+		let changes = 0; afterTest(t, f.model.onDidChangeContent(() => { changes++; }));
 		const press = new KeyInputEvent('KeyF', MODIFIERS);
 		assert.equal(f.editor.dispatchKey(press), true); assert.equal(press.consumed, true); f.update();
 		assert.equal(f.model.buffer.getText(), f.formatted); assert.equal(f.model.version, version + 1);

@@ -12,12 +12,13 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const type of ['data', 'aem'] as const) {
 	test(`${type} working copies use packaged authored text, workspace overlays and the same model owner`, async t => {
 		const files = new MemoryWorkspaceFiles(), models = new EditorTextModelService();
 		await openWorkspaceRecords(files);
-		t.after(async () => { models.clear(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
+		afterTest(t, async () => { models.clear(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
 		const sources = createScenarioTestSourceState([]);
 		const original = '# Keep this formatting\r\nvalue: "01"\r\n';
 		const resource: RuntimeResource = { contextLabel: 'Fixture project', sourceFilePath: 'carts/nemesis_s/res/stage.yaml',
@@ -55,7 +56,7 @@ for (const type of ['data', 'aem'] as const) {
 
 test('YAML installed-source equality is independent of saved identity and cached until text or installed metadata changes', t => {
 	const sources = createScenarioTestSourceState([]), models = new EditorTextModelService();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	const source = '# exact authored bytes\r\nvalue: "01"\r\n';
 	const resource: RuntimeResource = { contextLabel: 'Fixture project', sourceFilePath: 'res/stage.yaml', location: { kind: 'workspace' as const, path: 'res/stage.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/stage.yaml',
 		source: { type: 'data', resid: 'stage', sourcemeta: { text: source } } };
@@ -94,7 +95,7 @@ test('YAML source provenance stays context-specific and an empty installed sourc
 	const sources = createTestRuntimeSourceState(createLuaSourceRegistry('system', ''),
 		[createLuaSourceRegistry('first', ''), createLuaSourceRegistry('second', '')], 0);
 	const models = new EditorTextModelService();
-	t.after(() => { models.clear(); sources.catalog.dispose(); });
+	afterTest(t, () => { models.clear(); sources.catalog.dispose(); });
 	const installations = [
 		{ contextId: TEST_SYSTEM_CONTEXT_ID, layer: sources.systemRom, source: '' },
 		{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], layer: sources.cartridgeSlots[0]!.rom, source: 'value: first\n' },
@@ -116,7 +117,7 @@ test('YAML source provenance stays context-specific and an empty installed sourc
 for (const type of ['data', 'aem'] as const) test(`${type} model resolution reads its admitted file address, not its execution domain's root`, async t => {
 	const files = new MemoryWorkspaceFiles(), models = new EditorTextModelService();
 	await openWorkspaceRecords(files);
-	t.after(async () => { models.clear(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
+	afterTest(t, async () => { models.clear(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
 	const sources = createScenarioTestSourceState([]);
 	const sourceFilePath = 'shared/authoring/stage.yaml';
 	const resource: RuntimeResource = { contextLabel: 'Fixture project', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/stage.yaml', sourceFilePath,

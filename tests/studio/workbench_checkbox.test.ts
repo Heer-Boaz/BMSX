@@ -7,6 +7,7 @@ import { EditorFont } from '../../ide/editor/ui/view/font';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { WorkbenchCheckboxControl, type WorkbenchCheckboxInput } from '../../ide/workbench/ui/checkbox_control';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), parent = focus.createTarget();
@@ -25,7 +26,7 @@ function fixture(t: TestContext) {
 			pressedButtons, justPressedButtons, justReleasedButtons };
 		return capture.dispatch(snapshot, false, 0) || control.handlePointer(snapshot);
 	};
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	return { focus, capture, parent, control, input, calls, key, pointer, font, bounds };
 }
 
@@ -110,7 +111,7 @@ for (const change of ['input', 'focus', 'scope'] as const) test(`checkbox pointe
 		else if (change === 'focus') f.parent.focus();
 		else f.parent.scope.retireContext();
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.pointer(PointerButton.Primary, PointerButton.Primary); f.pointer(0, 0, PointerButton.Primary);
 	assert.equal(f.capture.active, false); assert.equal(f.calls.length, 0);
 });

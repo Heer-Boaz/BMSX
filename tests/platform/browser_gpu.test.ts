@@ -4,6 +4,7 @@ import { build } from 'esbuild';
 import { glsl } from 'esbuild-plugin-glsl';
 import { chromium } from 'playwright';
 import type { renderPcrtcBlendCases } from '../helpers/pcrtc_scanout_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 let backendBundle: string;
 before(async () => {
@@ -30,7 +31,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} preserves bitmap fonts an
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
 		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage(), errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><canvas></canvas>' }));
@@ -64,7 +65,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} retains the old workspace
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
 		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage(), errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
@@ -104,7 +105,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} CRT noise uses determinis
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
 		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage(), errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
@@ -123,7 +124,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} and CPU render flat/raw t
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
 		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage(), errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
@@ -154,7 +155,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} consumes every raw draw l
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
 		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage(), errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
@@ -179,7 +180,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish onl
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
 		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage(), errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
@@ -224,7 +225,7 @@ test('GX WebGPU pipelines specialize only the overrides used by each stage', asy
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
 		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage();
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
@@ -283,7 +284,7 @@ test('WebGPU PCRTC constant RGB blend matches software for both AMOD settings an
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
 		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage();
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
@@ -314,7 +315,7 @@ test('the browser selects WebGPU from its capabilities, not URL or page override
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
 		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage();
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
 		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen" data-renderer="webgl2"></canvas>',
@@ -342,7 +343,7 @@ test('WebGPU initialization failure is reported without retrying another rendere
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
 		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage();
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
 		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen"></canvas>',
@@ -368,7 +369,7 @@ test('WebGPU initialization failure is reported without retrying another rendere
 
 test('browsers without a WebGPU API or adapter select WebGL2 before initialization', async t => {
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const page = await browser.newPage();
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
 		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen"></canvas>',

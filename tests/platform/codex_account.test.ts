@@ -11,6 +11,7 @@ import { STUDIO_ACCOUNT_LOGIN_URL } from '../../hosts/common/assistant_protocol'
 
 import { createCodexAccountFixture } from '../helpers/codex_account_fixture';
 import { CODEX_ACCOUNT_FIXTURE, createCodexAccountProxy } from '../helpers/codex_account_proxy';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('real device-code contract polls and cancels without credentials or an OAuth callback listener', { timeout: 15000 }, async t => {
 	const f = await createCodexAccountFixture(t), profile = await CodexProfile.acquire(join(f.root, 'profile'));
@@ -19,7 +20,7 @@ test('real device-code contract polls and cancels without credentials or an OAut
 	// The issuer override exists only in this contract test; production profile.env does not admit it.
 	assert.equal(profile.env.CODEX_APP_SERVER_LOGIN_ISSUER, undefined);
 	const rpc = new CodexStdio(profile.scope, 'codex', policy.args, profile.cwd, { ...profile.env, CODEX_APP_SERVER_LOGIN_ISSUER: f.url }, message => messages.push(message.method!));
-	t.after(async () => { const exit = await rpc.stop(); assert.equal(exit.forced, false); assert.equal(exit.code, 0); await profile.release(); await rm(f.root, { recursive: true }); });
+	afterTest(t, async () => { const exit = await rpc.stop(); assert.equal(exit.forced, false); assert.equal(exit.code, 0); await profile.release(); await rm(f.root, { recursive: true }); });
 	await rpc.request('initialize', { clientInfo: { name: 'bmsx_account_contract', version: '1' }, capabilities: { experimentalApi: true } });
 	rpc.send({ method: 'initialized', params: {} });
 	const login = await rpc.request<CodexLogin>('account/login/start', { type: 'chatgptDeviceCode' });
@@ -38,7 +39,7 @@ async function sessionFixture(t: TestContext, mode: string, authUrl?: string) {
 	const accountChanged = new Promise<void>(resolve => { changed = resolve; });
 	const session = await CodexSession.open({ signal: t.signal, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, executable: f.executable, tools: [],
 		executeTool: async () => assert.fail('No tools in account tests'), onEvent: event => { events.push(event); if (event.type === 'account-changed') changed(); } });
-	t.after(async () => { const exit = await session.close(); assert.equal(exit.forced, false); await rm(f.root, { recursive: true }); });
+	afterTest(t, async () => { const exit = await session.close(); assert.equal(exit.forced, false); await rm(f.root, { recursive: true }); });
 	return { ...f, session, events, accountChanged };
 }
 
@@ -85,7 +86,7 @@ test('early external completion is correlated after its start response in the sa
 
 test('loopback authorization opens an admitted browser URL and completes from the callback the account process owns', { timeout: 30000 }, async t => {
 	let session: CodexSession | undefined;
-	t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
+	afterTest(t, async () => { if (session) assert.equal((await session.close()).forced, false); });
 	const f = await createCodexAccountProxy(t), events: CodexSessionEvent[] = [];
 	const changed = Promise.withResolvers<void>(), quota = Promise.withResolvers<void>();
 	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, tools: [],
@@ -141,7 +142,7 @@ test('an unadmitted authorization URL retires the process instead of forwarding 
 
 test('successful real device-code exchange persists only the private profile and logout revokes it through unchanged TLS URLs', { timeout: 30000 }, async t => {
 	let session: CodexSession | undefined;
-	t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
+	afterTest(t, async () => { if (session) assert.equal((await session.close()).forced, false); });
 	const f = await createCodexAccountProxy(t), events: CodexSessionEvent[] = [];
 	const changed = Promise.withResolvers<void>(), quota = Promise.withResolvers<void>();
 	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, tools: [],
@@ -178,7 +179,7 @@ test('successful real device-code exchange persists only the private profile and
 
 test('unavailable remote quota is reported without revoking a successful account login or inventing an allowance', { timeout: 30000 }, async t => {
 	let session: CodexSession | undefined;
-	t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
+	afterTest(t, async () => { if (session) assert.equal((await session.close()).forced, false); });
 	const f = await createCodexAccountProxy(t, 403), events: CodexSessionEvent[] = [];
 	const unavailable = Promise.withResolvers<void>();
 	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, tools: [],
@@ -197,7 +198,7 @@ test('unavailable remote quota is reported without revoking a successful account
 for (const operation of ['startTurn', 'startLogin', 'signOut'] as const) {
 	test(`account refresh rejects ${operation} before publishing the pending account transition`, { timeout: 30000 }, async t => {
 		let session: CodexSession | undefined, checked = false;
-		t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
+		afterTest(t, async () => { if (session) assert.equal((await session.close()).forced, false); });
 		const f = await createCodexAccountProxy(t), admission = Promise.withResolvers<void>(), changed = Promise.withResolvers<void>();
 		const message = operation === 'startTurn' ? /Finish the current conversation\/account operation/ : operation === 'startLogin'
 			? /Finish the current account\/conversation/ : /Finish or cancel the current operation/;

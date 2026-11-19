@@ -15,6 +15,7 @@ import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/edito
 import { captureWorkbenchTreeView, setWorkbenchTreeCollapsed } from '../../ide/workbench/ui/tree_view';
 import { createTestToolingPackage, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestEditorGroup } from '../helpers/editor_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const RESOURCE = {
 	contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], contextLabel: 'View fixture', sourceFilePath: 'view.lua', path: 'view.lua',
@@ -24,7 +25,7 @@ const RESOURCE = {
 test('fresh Source views share canonical history but independently retain plain reading state and bindings', t => {
 	const source = Array.from({ length: 20 }, (_, row) => `local value_${row} = ${row}`).join('\n');
 	const model = new EditorTextModel(RESOURCE, 'lua', source), input = new CodeEditorInput(model), group = createTestEditorGroup();
-	t.after(() => { group.dispose(); input.dispose(); model.dispose(); });
+	afterTest(t, () => { group.dispose(); input.dispose(); model.dispose(); });
 	input.initializeViewState();
 	Object.assign(input.context.view, { cursorRow: 7, cursorColumn: 6, selectionAnchor: { row: 3, column: 2 },
 		scrollRow: 2.5, scrollLeft: 17.25, desiredColumn: 99, wordWrapEnabled: false });
@@ -63,13 +64,13 @@ const MAPS: readonly { readonly kind: CartMapKind; readonly path: string; readon
 for (const { kind, path, source } of MAPS) test(`fresh ${kind} Map views copy typed selection and viewport without sharing projection state`, t => {
 	const resource: RuntimeResource = { ...RESOURCE, path, sourceFilePath: path, location: { kind: 'workspace', path }, source: { type: 'data', resid: 'map' } };
 	const model = new EditorTextModel(resource, 'yaml', source), input = new CartMapInput(model, kind);
-	t.after(() => { input.dispose(); model.dispose(); });
+	afterTest(t, () => { input.dispose(); model.dispose(); });
 	projectCartMap(input); selectCartMapRow(input, 1);
 	assert.ok(input.selected !== undefined);
 	input.section = 'map'; input.tree.scroll = 1.25;
 	input.grid.restoreView({ x: 0.5, y: 1.25, reveal: { x: 2, y: 1 } });
 	const view = captureCartMapView(input), copy = input.createView();
-	t.after(() => copy.dispose());
+	afterTest(t, () => copy.dispose());
 	assert.ok(copy !== input && copy.workingCopy === model && copy.mapKind === kind);
 	assert.notEqual(copy.editSource, input.editSource);
 	assert.ok(copy.tree !== input.tree && copy.grid !== input.grid && copy.selectionRange !== input.selectionRange);
@@ -92,13 +93,13 @@ for (const format of ['yaml', 'json'] as const) test(`fresh AEM ${format} views 
 		: '{"events":{"story":{"channel":"music","rules":[]},"impact":{"channel":"sfx","rules":[]}}}\n';
 	const resource: RuntimeResource = { ...RESOURCE, path, sourceFilePath: path, location: { kind: 'workspace', path }, source: { type: 'aem', resid: 'events' } };
 	const model = new EditorTextModel(resource, 'aem', source), input = new AemEditorInput(model);
-	t.after(() => { input.dispose(); model.dispose(); });
+	afterTest(t, () => { input.dispose(); model.dispose(); });
 	projectAemSource(input);
 	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.key === '["events","story","channel"]');
 	setWorkbenchTreeCollapsed(input.tree, input.tree.rows.findIndex(row => row.element.key === '["events","impact"]'), true);
 	input.tree.scroll = 1.5; input.status = 'origin status'; input.applyStatus = 'origin installation'; input.applying = true;
 	const view = captureWorkbenchTreeView(input.tree, element => element.key), copy = input.createView();
-	t.after(() => copy.dispose());
+	afterTest(t, () => copy.dispose());
 	assert.ok(copy !== input && copy.workingCopy === model && copy.tree !== input.tree);
 	assert.ok(copy.document !== input.document && copy.tree.roots[0] !== input.tree.roots[0]);
 	assert.deepEqual(captureWorkbenchTreeView(copy.tree, element => element.key), view);
@@ -118,14 +119,14 @@ test('fresh Resource views share catalog/resource identity with independent read
 		programDomain: 'cart', systemContextId: null, luaSources: createLuaSourceRegistry('carts/view', ''), sourceRoots: [],
 		dependencyContextIds: [], previewPackage, previewRom: null,
 		assetSources: [{ type: 'data', resid: 'numbers', source_path: 'res/data/numbers.json' }] });
-	t.after(() => catalog.dispose());
+	afterTest(t, () => catalog.dispose());
 	const resource = catalog.resolveResource({ contextId: context.id, path: 'res/data/numbers.json' })!;
 	previewPackage.data.numbers = { revision: 'before', rows: Array.from({ length: 120 }, (_, index) => index) };
-	const input = new ResourceViewerInput(catalog, resource); t.after(() => input.dispose());
+	const input = new ResourceViewerInput(catalog, resource); afterTest(t, () => input.dispose());
 	input.view.scroll = 4.5;
 	const content = input.view.content;
 	previewPackage.data.numbers = { revision: 'after', rows: Array.from({ length: 120 }, (_, index) => index) };
-	const copy = input.createView(); t.after(() => copy.dispose());
+	const copy = input.createView(); afterTest(t, () => copy.dispose());
 	assert.ok(copy !== input && copy.resource === resource && copy.view !== input.view);
 	assert.equal(copy.view.scroll, 4.5);
 	assert.ok(copy.view.content !== content && input.view.content === content);

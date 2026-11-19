@@ -13,6 +13,7 @@ import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PREFABS = `local prefab = require('cartlib/world/prefab')
 prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
@@ -22,7 +23,7 @@ prefab.define({def_id='body',class=require('cartlib/world/object_2d')})`;
 function fixture(t: TestContext, objects: string, prefabs = PREFABS) {
 	const source = `local scenes = require('cartlib/world/scene_library')\nrequire('prefabs')\nscenes.register('fixture', {objects={\n${objects}\n}})`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', prefabs], ['other.lua', 'return false']]);
-	const context = new SceneAuthoringContext(f.model, f.documents); t.after(() => context.dispose());
+	const context = new SceneAuthoringContext(f.model, f.documents); afterTest(t, () => context.dispose());
 	const select = (id: string) => {
 		const document = f.documents.get(f.model), scene = document.scenes[0];
 		const index = scene.objects.findIndex(entry => entry.kind === 'object' && stringLiteralValue(entry.memberId) === id);
@@ -55,7 +56,7 @@ test('reparent publishes a full affine and parent as one source edit without pre
 	assert.ok(!request.choices.some(choice => choice.label === 'child' || choice.label === 'leaf' || choice.label === 'old'));
 	const roots = request.choices.filter(choice => choice.label === 'Scene Root');
 	assert.equal(roots.length, 2); assert.notEqual(roots[0].description, roots[1].description);
-	let changes = 0; t.after(f.model.onDidChangeContent(() => changes++));
+	let changes = 0; afterTest(t, f.model.onDidChangeContent(() => changes++));
 	assert.equal(request.apply(request.choices.find(choice => choice.label === 'target')!), true);
 	assert.equal(writer.mock.callCount(), 1); assert.equal(changes, 1);
 	assert.deepEqual(f.values('child'), [1, 0, 0, 1, 92, 183]);

@@ -14,6 +14,7 @@ import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/pa
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	configureFontVariant('tiny');
@@ -37,7 +38,7 @@ function fixture(t: TestContext) {
 	controller.setDiagnostics(diagnostics, { ready: 1, pending: 0, unsupported: 0, failed: 0 });
 	const headerBounds = { ...bounds, bottom: bounds.top + mainWorkspaceActivityHeaderHeight(editorViewState.font) };
 	controller.attach(bounds, headerBounds);
-	t.after(() => { controller.dispose(); editorTextModelService.clear(); surfaces.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { controller.dispose(); editorTextModelService.clear(); surfaces.dispose(); inputFocus.setTarget(null); });
 	return { controller, diagnostics, model, bounds, headerBounds, scope, accepted: () => accepted };
 }
 
@@ -87,7 +88,7 @@ test('Problems intrinsic constraints consume the supplied font and available wid
 	assert.ok(narrow.preferredHeight > wide.preferredHeight);
 	assert.equal(narrow.minimumHeight, wide.minimumHeight);
 	assert.ok(alternateFont.minimumHeight > wide.minimumHeight);
-	const previous = editorViewState.viewportHeight; t.after(() => { editorViewState.viewportHeight = previous; });
+	const previous = editorViewState.viewportHeight; afterTest(t, () => { editorViewState.viewportHeight = previous; });
 	editorViewState.viewportHeight = 1;
 	const constrainedHost = { minimumWidth: 0, minimumHeight: 0, preferredHeight: 0 }; panel.measure(tiny, 800, constrainedHost);
 	assert.deepEqual(constrainedHost, wide);

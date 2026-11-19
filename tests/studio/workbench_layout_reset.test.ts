@@ -10,6 +10,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE as SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
@@ -123,7 +124,7 @@ test('reset from floating activity chrome focuses the same retained activity aft
 test('a newer Main allocation published during reset is not replaced by the earlier default request', async t => {
 	const f = await fixture(t), { main } = f;
 	main.setRegionPlacement('hierarchy', 'floatingWindow');
-	const unbind = main.onDidChange(() => { unbind(); main.regionLayout.detailsWidth = 777; }); t.after(unbind);
+	const unbind = main.onDidChange(() => { unbind(); main.regionLayout.detailsWidth = 777; }); afterTest(t, unbind);
 	assert.equal(main.resetLayout(), true);
 	assert.equal(main.regionLayout.detailsWidth, 777, 'the requested allocation belongs to the newer publisher, not a rendered pixel assertion');
 });
@@ -134,7 +135,7 @@ test('a document opened by Main publication supersedes the earlier reset target 
 	const requestedBounds = { left: 20, top: 30, right: 300, bottom: 200 };
 	let opened: ReturnType<typeof f.editor.editorParts.createDocument> | undefined;
 	const unbind = main.onDidChange(() => { unbind(); opened = f.editor.editorParts.createDocument({ requestedBounds, placement: 'maximized' }); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.equal(f.editor.resetLayout(), false);
 	assert.ok(opened !== undefined && f.editor.editorParts.documents.includes(opened));
 	assert.equal(opened.window!.model.placement, 'maximized');
@@ -148,7 +149,7 @@ test('a newer Files allocation published while cancelling keyboard sizing surviv
 	const release = inputFocus.onDidChangeTarget(() => {
 		if (inputFocus.admittedTarget !== files.focusTarget) return;
 		release(); files.split.requestedSize = 140;
-	}); t.after(release);
+	}); afterTest(t, release);
 	assert.equal(f.editor.resetLayout(), false);
 	assert.equal(files.split.requestedSize, 140);
 	assert.ok(inputFocus.admittedTarget === files.focusTarget);
@@ -160,7 +161,7 @@ test('newer placement of a later Main region supersedes the earlier captured res
 	const details = main.regions.details.window.model;
 	const chosen = { left: 50, top: 60, right: 450, bottom: 360 };
 	const unbind = main.regions.hierarchy.window.model.onDidChangePlacement(() => { unbind(); details.setRequestedBounds(chosen, 'maximized'); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.equal(main.resetLayout(), false);
 	assert.equal(main.regions.details.placement, 'floatingWindow'); assert.equal(details.placement, 'maximized');
 	assert.deepEqual(details.requestedBounds, chosen);

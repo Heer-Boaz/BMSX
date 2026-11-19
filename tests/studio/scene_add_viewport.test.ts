@@ -14,6 +14,7 @@ import { SceneViewportControl } from '../../ide/workbench/contrib/scene_editor/v
 import { SceneViewportViewState } from '../../ide/workbench/contrib/scene_editor/viewport/view_state';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const BOUNDS = { left: 10, top: 20, right: 650, bottom: 500 };
 const PREFABS = `local prefab=require('cartlib/world/prefab')
@@ -49,14 +50,14 @@ scenes.register('main',{objects=${objects}})`;
 		assert.equal(context.select(context.document!, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
 		control.update();
 	};
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	afterTest(t, () => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, source, context, view, scope, panel, control, provider, select };
 }
 
 test('Add waits for a primary press, maps the current 2D canvas to integer scene pixels and commits exactly once', t => {
 	const f = fixture(t), request = f.context.captureAddMember('2d')!;
 	assert.ok(request); let placed = 0, changes = 0;
-	t.after(f.model.onDidChangeContent(() => changes++));
+	afterTest(t, f.model.onDidChangeContent(() => changes++));
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => {
 		placed++;
 		assert.equal(f.context.selectedLocalTransform!.ox, -17);
@@ -151,9 +152,9 @@ test('a completion callback can arm the next Add without the first placement ret
 
 test('canonical publication replacing the viewport does not run the detached placement completion', t => {
 	const f = fixture(t), request = f.context.captureAddMember('2d')!; let placed = 0;
-	const incoming = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => incoming.dispose());
+	const incoming = new SceneViewportViewState(f.context, f.sources.catalog); afterTest(t, () => incoming.dispose());
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => placed++), true);
-	const release = f.model.onDidChangeContent(() => { release(); f.control.setView(incoming, BOUNDS); }); t.after(release);
+	const release = f.model.onDidChangeContent(() => { release(); f.control.setView(incoming, BOUNDS); }); afterTest(t, release);
 	f.control.handlePointer(pointer(260, 350, PointerButton.Primary, PointerButton.Primary), true);
 	assert.equal(placed, 0); assert.equal(f.control.view, incoming); assert.equal(f.context.subject!.objects.length, 2);
 	assert.equal(f.model.canUndo, true, 'an already-published canonical edit is not rolled back by presentation retirement');
@@ -162,14 +163,14 @@ test('canonical publication replacing the viewport does not run the detached pla
 
 test('an older layout continuation cannot retire a replacement attachment placement', t => {
 	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog);
-	t.after(() => incoming.dispose());
+	afterTest(t, () => incoming.dispose());
 	let placed = 0;
 	const unbind = f.view.camera.onDidChange(() => {
 		unbind(); f.control.setView(incoming, BOUNDS);
 		const request = f.context.captureAddMember('2d')!;
 		assert.equal(f.control.beginAddMember(request, request.choices[0], () => placed++), true);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.control.layout({ ...BOUNDS, right: 750 });
 	assert.equal(f.control.view, incoming);
 	f.control.handlePointer(pointer(260, 350, PointerButton.Primary, PointerButton.Primary), true);

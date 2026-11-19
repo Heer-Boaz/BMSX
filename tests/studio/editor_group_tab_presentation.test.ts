@@ -6,6 +6,7 @@ import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('single tool pages occupy the tabless client; multiple pages restore navigation without replacing the input', async t => {
 	configureFontVariant('tiny');
@@ -60,7 +61,7 @@ test('hiding a tab strip does not steal a newer focus chosen during its retireme
 	const home = new HomeInput(null), terminal = new TerminalInput();
 	group.openEditor(home); group.openEditor(terminal); group.activate(home.id); f.update();
 	group.focus('tabs');
-	const unbind = group.tabStrip.focusTarget.onDidBlur(() => f.first.focus()); t.after(unbind);
+	const unbind = group.tabStrip.focusTarget.onDidBlur(() => f.first.focus()); afterTest(t, unbind);
 	assert.equal(await group.close(terminal.id), true); f.update();
 	assert.equal(group.tabsVisible, false);
 	assert.ok(inputFocus.admittedTarget === f.first.commandTarget);

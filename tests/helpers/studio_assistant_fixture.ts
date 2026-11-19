@@ -13,6 +13,7 @@ import { STUDIO_TEST_TOOLS } from '../../ide/workbench/services/assistant/test_t
 import { STUDIO_RUNTIME_TOOLS } from '../../ide/workbench/services/assistant/runtime_tool_protocol';
 import { WorkspaceHttpSession, HttpError } from '../../scripts/dev/http_security.mjs';
 import { handleWorkspaceRequest } from '../../scripts/dev/workspace_api.mjs';
+import { afterTest } from './test_cleanup';
 
 /** Isolated authored workspace, real HTTP owners and browser; no product test endpoints or provider knobs. */
 export async function createAssistantStudioFixture(t: TestContext, evidenceName: string, options: Pick<CodexSessionOptions, 'executable' | 'provider'>,
@@ -22,7 +23,7 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	let closeServer: (() => Promise<void>) | undefined;
 	// An enabled plugin feature clones into the profile's .tmp while the process winds down,
 	// so removal races a writer it does not own. Retry rather than fail the finished test.
-	t.after(async () => { await browser?.close(); await closeServer?.();
+	afterTest(t, async () => { await browser?.close(); await closeServer?.();
 		await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); });
 	await build({ entryPoints: ['tests/conformance/runtime_replay/studio_assistant.ts'], bundle: true, platform: 'browser', format: 'esm', target: 'es2020',
 		outfile: join(root, 'test.js'), tsconfig: 'tsconfig.base.json', loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } });

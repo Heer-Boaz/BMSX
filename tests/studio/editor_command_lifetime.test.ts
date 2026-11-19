@@ -3,6 +3,7 @@ import test from 'node:test';
 import { inputFocus } from '../../ide/input/focus';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const retirement of ['suspend', 'detach', 'reattach'] as const)
 	test(`an active Save command cannot survive its invoking attachment's ${retirement} from draft commit`, async t => {
@@ -20,7 +21,7 @@ for (const retirement of ['suspend', 'detach', 'reattach'] as const)
 			inputFocus.setTarget(null);
 			return true;
 		} };
-		t.after(() => { origin.edit = undefined; });
+		afterTest(t, () => { origin.edit = undefined; });
 		f.editor.commands.execute('save', origin, f.firstInput);
 		const operation = f.ide.textFileSaves.latestOperation(model);
 		if (operation !== undefined) await operation.completion;
@@ -38,7 +39,7 @@ test('command activation cannot maximize a group removed by a newer Main-workspa
 	const unbind = parts.onDidChange(() => {
 		if (cleared || parts.activePart !== main || main.activeGroup !== source) return;
 		cleared = true; unbind(); parts.clear();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.editor.commands.execute('group.maximize', source.tabFocusTarget);
 	assert.equal(cleared, true); assert.equal(source.surface.retired, true); assert.equal(main.retired, false);
 	assert.ok(main.arrangement.maximized !== source && main.activeGroup === retained);

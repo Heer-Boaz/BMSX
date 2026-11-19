@@ -21,6 +21,7 @@ import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 const RESIZE_COMMANDS = ['workspace.increaseViewWidth', 'workspace.decreaseViewWidth',
 	'workspace.increaseViewHeight', 'workspace.decreaseViewHeight'] as const satisfies readonly EditorCommandId[];
@@ -30,7 +31,7 @@ const DECISION: ActionPromptRequest = { title: 'Pending source action', message:
 async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const editor = f.editor, parts = editor.editorParts, main = editor.mainWorkspace;
-	t.after(() => updateEditorMessage(editorFeedbackState.message.timer));
+	afterTest(t, () => updateEditorMessage(editorFeedbackState.message.timer));
 	editor.updateViewport({ width: 1600, height: 800 }); editor.preferences.fontVariant = font;
 	parts.minimize(f.firstPart); parts.minimize(f.secondPart);
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
@@ -219,7 +220,7 @@ test('root and local modal admission prevents resize commands from escaping into
 	const right = f.parts.main.splitGroup(group, 'right'); right.openEditor(new CodeEditorInput(f.firstInput.workingCopy)); f.update();
 	group.panes.activePane!.focus(); const document = group.panes.activePane!.commandTarget;
 	const prompt = f.parts.main.actionPrompt, localDecision = prompt.show(DECISION); f.update();
-	t.after(() => prompt.close('cancel', false));
+	afterTest(t, () => prompt.close('cancel', false));
 	const ratio = f.parts.main.arrangement.splits[0].split.ratio;
 	for (const origin of [document, prompt.focusTarget]) for (const command of RESIZE_COMMANDS) {
 		assert.equal(editor.commands.isEnabled(command, origin), false);
@@ -242,9 +243,9 @@ test('a modeless window owned by a modal cannot resize through its borrowed docu
 	const scope = new InputFocusScope(Symbol('resize-sheet-owned-window'), f.group.focusScope);
 	const window = surfaces.attach({ role: 'window', presentationParent: modal, lifetimeOwner: modal, captureScope: scope.surfaceScope,
 		isVisible: () => true, getBounds: () => bounds, getClip: () => bounds, draw() {} });
-	t.after(() => modal.dispose());
+	afterTest(t, () => modal.dispose());
 	const target = inputFocus.createTarget(null, scope); target.canFocus = () => window.visible;
-	t.after(target.bindKeyboard(() => {})); assert.equal(target.focus(), true);
+	afterTest(t, target.bindKeyboard(() => {})); assert.equal(target.focus(), true);
 	const ratios = f.parts.main.arrangement.splits.map(split => split.split.ratio);
 	for (const command of RESIZE_COMMANDS) {
 		assert.equal(f.editor.commands.isEnabled(command, target), false);
@@ -263,7 +264,7 @@ test('an owned floating inspector retains semantic document ancestry without bor
 		focusScope: group.focusScope, focusReturn: group.focusTarget, workArea: f.main.bounds,
 		content: { draw() {} }, layoutContent() {}, retireContentInput() {}, restoreContentInput() {}, focusContent() {},
 	});
-	t.after(() => window.dispose()); window.attach(); window.show(false);
+	afterTest(t, () => window.dispose()); window.attach(); window.show(false);
 	window.layout(editorViewState.font.renderFont(), measureTextRange, measureText); window.clientFocusTarget.focus();
 	const origin = inputFocus.admittedTarget!, ratios = part.arrangement.splits.map(split => split.split.ratio);
 	const bounds = { ...window.model.requestedBounds }, generation = origin.scope.contextGeneration;

@@ -6,6 +6,7 @@ import { STUDIO_TOOL_NAMES } from '../../ide/workbench/services/assistant/tool_c
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { eventHistoryRuntime } from '../helpers/event_history';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const { images } = createCartlibProgramHarness('return true'), { runtime, sources } = eventHistoryRuntime(images);
@@ -16,7 +17,7 @@ function fixture(t: TestContext) {
 		runtime.machine.scheduler.setNowCycles(runtime.machine.scheduler.nowCycles + 10000);
 		for (const word of [0x20000000 | color, 0x00100010, 0x00100020, 0x00200010]) runtime.machine.gxGpu.writeGp0(word);
 	};
-	t.after(() => { lifetime.abort(); f.gpuHistory.dispose(); f.events.dispose(); f.gteHistory.dispose(); f.presenter.dispose(); });
+	afterTest(t, () => { lifetime.abort(); f.gpuHistory.dispose(); f.events.dispose(); f.gteHistory.dispose(); f.presenter.dispose(); });
 	return { ...f, lifetime, tools, triangle, target: f.inspection.target };
 }
 

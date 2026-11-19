@@ -4,6 +4,7 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { EditorTabGroupModel, type EditorTabGroupChange } from '../../ide/workbench/ui/tab/group_model';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function sourceInput(path: string): CodeEditorInput {
 	return new CodeEditorInput(new EditorTextModel({ contextId: TEST_SYSTEM_CONTEXT_ID, contextLabel: 'Fixture', path,
@@ -14,7 +15,7 @@ test('whole-group transfer publishes complete ordered selection and preview stat
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel();
 	const before = sourceInput('before.lua'), preview = sourceInput('preview.lua'), active = sourceInput('active.lua');
 	const inputs = [before, preview, active];
-	t.after(() => { source.clear(); target.clear(); for (const input of inputs) input.workingCopy.dispose(); });
+	afterTest(t, () => { source.clear(); target.clear(); for (const input of inputs) input.workingCopy.dispose(); });
 	source.add(before); source.add(preview, { pinned: false }); source.add(active); source.activate(active);
 	const plan = source.planTransferTo(target), sourceRevision = source.revision, targetRevision = target.revision;
 	assert.ok(plan.entries.every((entry, index) => entry.input === inputs[index] && entry.receiver === inputs[index]));
@@ -41,7 +42,7 @@ test('whole-group merge keeps matching receiver affinity and inserts only new in
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel();
 	const first = sourceInput('first.lua'), shared = sourceInput('shared.lua'), last = sourceInput('last.lua');
 	const left = sourceInput('left.lua'), retained = shared.createView(), right = sourceInput('right.lua');
-	t.after(() => {
+	afterTest(t, () => {
 		source.clear(); target.clear(); shared.dispose();
 		for (const input of [first, shared, last, left, right]) input.workingCopy.dispose();
 	});
@@ -62,7 +63,7 @@ test('whole-group merge keeps matching receiver affinity and inserts only new in
 test('an available destination preview slot retains a newly transferred preview even when it is not active', t => {
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel();
 	const preview = sourceInput('preview.lua'), active = sourceInput('active.lua'), existing = sourceInput('existing.lua');
-	t.after(() => { source.clear(); target.clear(); for (const input of [preview, active, existing]) input.workingCopy.dispose(); });
+	afterTest(t, () => { source.clear(); target.clear(); for (const input of [preview, active, existing]) input.workingCopy.dispose(); });
 	source.add(preview, { pinned: false }); source.add(active); source.activate(active);
 	target.add(existing); target.activate(existing);
 	const transfer = source.transferGroupTo(target, source.planTransferTo(target)); transfer.publish();
@@ -72,7 +73,7 @@ test('an available destination preview slot retains a newly transferred preview 
 
 for (const retainedPreview of [false, true]) test(`coalescence preserves the destination's ${retainedPreview ? 'preview' : 'pinned'} state instead of importing the source's conflicting state`, t => {
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel(), moving = sourceInput('shared.lua'), retained = moving.createView();
-	t.after(() => { source.clear(); target.clear(); moving.dispose(); moving.workingCopy.dispose(); });
+	afterTest(t, () => { source.clear(); target.clear(); moving.dispose(); moving.workingCopy.dispose(); });
 	source.add(moving, { pinned: retainedPreview }); source.activate(moving);
 	target.add(retained, { pinned: !retainedPreview }); target.activate(retained);
 	const transfer = source.transferGroupTo(target, source.planTransferTo(target)); transfer.publish();
@@ -83,7 +84,7 @@ for (const retainedPreview of [false, true]) test(`coalescence preserves the des
 test('the batch consumes active and preview state after admission without vetoing label, dirty or pin publications', t => {
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel();
 	const first = sourceInput('first.lua'), second = sourceInput('second.lua');
-	t.after(() => { source.clear(); target.clear(); first.workingCopy.dispose(); second.workingCopy.dispose(); });
+	afterTest(t, () => { source.clear(); target.clear(); first.workingCopy.dispose(); second.workingCopy.dispose(); });
 	source.add(first); source.add(second, { pinned: false }); source.activate(first);
 	const plan = source.planTransferTo(target);
 	source.activate(second); source.pin(second); first.title = 'changed metadata';
@@ -95,7 +96,7 @@ test('the batch consumes active and preview state after admission without vetoin
 
 test('a representable null source selection remains null instead of choosing a destination or first input', t => {
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel(), incoming = sourceInput('incoming.lua'), existing = sourceInput('existing.lua');
-	t.after(() => { source.clear(); target.clear(); incoming.workingCopy.dispose(); existing.workingCopy.dispose(); });
+	afterTest(t, () => { source.clear(); target.clear(); incoming.workingCopy.dispose(); existing.workingCopy.dispose(); });
 	source.add(incoming, { pinned: false }); target.add(existing); target.activate(existing);
 	const transfer = source.transferGroupTo(target, source.planTransferTo(target)); transfer.publish();
 	assert.equal(transfer.active, null); assert.equal(target.activeTab, null); assert.ok(target.previewTab === incoming);
@@ -104,7 +105,7 @@ test('a representable null source selection remains null instead of choosing a d
 
 test('an empty source group contributes no selection and leaves an occupied receiver active and preview unchanged', t => {
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel(), existing = sourceInput('existing.lua');
-	t.after(() => { source.clear(); target.clear(); existing.workingCopy.dispose(); });
+	afterTest(t, () => { source.clear(); target.clear(); existing.workingCopy.dispose(); });
 	target.add(existing, { pinned: false }); target.activate(existing);
 	const transfer = source.transferGroupTo(target, source.planTransferTo(target)); transfer.publish();
 	assert.ok(transfer.active === existing && transfer.preview === existing);
@@ -114,7 +115,7 @@ test('an empty source group contributes no selection and leaves an occupied rece
 
 test('transferred input metadata and dirty subscriptions belong only to the final receiving model', t => {
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel(), input = sourceInput('source.lua');
-	t.after(() => { source.clear(); target.clear(); input.workingCopy.dispose(); });
+	afterTest(t, () => { source.clear(); target.clear(); input.workingCopy.dispose(); });
 	source.add(input, { pinned: false }); source.activate(input);
 	let sourceChanges = 0, targetChanges = 0;
 	const unbindSource = source.onDidChange(() => { sourceChanges++; }), unbindTarget = target.onDidChange(() => { targetChanges++; });
@@ -126,7 +127,7 @@ test('transferred input metadata and dirty subscriptions belong only to the fina
 
 test('model change tags separate membership, activation, labels, dirty auto-pin and explicit pin without extra revisions', t => {
 	const group = new EditorTabGroupModel(), input = sourceInput('first.lua'), preview = sourceInput('preview.lua');
-	t.after(() => { group.clear(); input.workingCopy.dispose(); preview.workingCopy.dispose(); });
+	afterTest(t, () => { group.clear(); input.workingCopy.dispose(); preview.workingCopy.dispose(); });
 	const changes: EditorTabGroupChange[] = [];
 	let dirtyPublishedFinalPin = true;
 	const unbind = group.onDidChange(kind => {
@@ -146,7 +147,7 @@ test('model change tags separate membership, activation, labels, dirty auto-pin 
 
 test('reorder and retirement publish structural changes while a same-position preview drop publishes only pin', t => {
 	const group = new EditorTabGroupModel(), first = sourceInput('first.lua'), second = sourceInput('second.lua');
-	t.after(() => { group.clear(); first.workingCopy.dispose(); second.workingCopy.dispose(); });
+	afterTest(t, () => { group.clear(); first.workingCopy.dispose(); second.workingCopy.dispose(); });
 	group.add(first, { pinned: false }); group.add(second); group.activate(first);
 	const changes: EditorTabGroupChange[] = [], revision = group.revision;
 	const unbind = group.onDidChange(kind => { changes.push(kind); });
@@ -160,7 +161,7 @@ test('reorder and retirement publish structural changes while a same-position pr
 
 test('single-input handoff keeps paired structural publication ordered around a reentrant receiving label change', t => {
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel(), moving = sourceInput('moving.lua');
-	t.after(() => { source.clear(); target.clear(); moving.workingCopy.dispose(); });
+	afterTest(t, () => { source.clear(); target.clear(); moving.workingCopy.dispose(); });
 	source.add(moving); source.activate(moving);
 	const sourceRevision = source.revision, targetRevision = target.revision;
 	const changes: { owner: 'source' | 'target'; kind: EditorTabGroupChange }[] = [];

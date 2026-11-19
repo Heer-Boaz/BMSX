@@ -10,6 +10,7 @@ import { WorkbenchInteraction } from '../../ide/workbench/services/execution/int
 import { createFrameRuntime } from '../helpers/frame_runtime';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const physical = () => {
@@ -27,7 +28,7 @@ function fixture(t: TestContext) {
 		if (interaction !== null && interaction.transport !== null) scope.runtime = { target, interaction };
 		return target;
 	};
-	t.after(() => {
+	afterTest(t, () => {
 		owner.dispose(); focus.setTarget(null);
 		for (const state of [primary, secondary]) {
 			state.transport.retire(); state.debuggerExecution.dispose(); state.frameNavigation.dispose(); state.presenter.dispose();
@@ -164,7 +165,7 @@ test('a real popup borrows its actual invocation interaction rather than its unr
 	invokingViewport.guestInput = { bounds: { left: 0, top: 0, right: 4, bottom: 3 }, recipient: f.primary.input,
 		presentation: { kind: 'direct', presenter: f.primary.presenter } };
 	const menu = new ContextMenuController(f.focus, new PointerCaptureService(), { left: 0, top: 0, right: 384, bottom: 288 });
-	t.after(() => menu.dispose());
+	afterTest(t, () => menu.dispose());
 	f.owner.setActive(true); authoring.focus();
 	assert.equal(f.primary.execution.paused, true);
 	menu.show(0, 0, [{ type: 'command', command: 'undo' }], { isEnabled: () => true, execute() {} }, {

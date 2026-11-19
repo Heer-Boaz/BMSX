@@ -38,6 +38,7 @@ import { BuildOutputs } from '../../ide/workbench/contrib/builds/output';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import type { StudioBuildJob } from '../../hosts/common/studio_builds';
+import { afterTest } from '../helpers/test_cleanup';
 
 class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	public override get commandTarget() { return this.focusTarget; }
@@ -191,7 +192,7 @@ test('registry measures a retained input with caller font and storage without cr
 		assert.equal(input, offered); assert.equal(measuredFont, font); assert.equal(companionRequested, requested); assert.equal(result, target);
 		measureSourceEditor(input, measuredFont, companionRequested, result);
 	});
-	t.after(() => { harness.group.dispose(); offered.dispose(); offered.workingCopy.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { harness.group.dispose(); offered.dispose(); offered.workingCopy.dispose(); inputFocus.setTarget(null); });
 	harness.group.openEditor(active);
 	const pane = harness.group.panes.activePane, focus = inputFocus.admittedTarget, generation = harness.group.panes.openGeneration;
 	const version = offered.workingCopy.version, text = offered.workingCopy.buffer.getText();
@@ -208,7 +209,7 @@ test('registry measures a retained input with caller font and storage without cr
 
 test('an attached input receives its current layout before its control can acquire focus', t => {
 	const harness = createEditorPanes();
-	t.after(() => { harness.group.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { harness.group.dispose(); inputFocus.setTarget(null); });
 	const presented = new WeakMap<object, EditorInput>();
 	let paneLayouts = 0;
 	t.mock.method(RecordingEditorPane.prototype, 'layout', function (this: RecordingEditorPane<EditorInput>, bounds: Readonly<RectBounds>) {
@@ -227,7 +228,7 @@ test('an attached input receives its current layout before its control can acqui
 		harness.group.panes.layout({ left: 0, top: 10 + presentedLayouts, right: 384, bottom: 270 });
 		presentedLayouts++;
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	harness.group.panes.openEditor(codeInput('code:0\0a.lua'));
 	assert.equal(harness.codePane().focusTarget.hasFocus, true);
 	harness.group.panes.openEditor(resourceInput());
@@ -240,7 +241,7 @@ test('an attached input receives its current layout before its control can acqui
 
 test('Build Output opens the actual request identity once, retains its document, and never reuses a closed transient input', async t => {
 	const harness = createEditorPanes();
-	t.after(() => { harness.group.dispose(); inputFocus.setTarget(null); });
+	afterTest(t, () => { harness.group.dispose(); inputFocus.setTarget(null); });
 	const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'request-42', target: 'nemesis_s', debug: true, optLevel: 0 },
 		state: 'failed', phase: 'compile', acceptedAt: 10, updatedAt: 20, version: { generation: 1, sequence: 2 }, error: 'Compiler error' };
 	const next: StudioBuildJob = { ...job, request: { ...job.request, requestId: 'request-43' } };
@@ -253,7 +254,7 @@ test('Build Output opens the actual request identity once, retains its document,
 		cancel: async () => { throw new Error('Opening output must never cancel a build'); },
 		forget: () => { throw new Error('Opening output must never discard a receipt'); },
 	};
-	const outputs = new BuildOutputs(builds); t.after(() => outputs.dispose());
+	const outputs = new BuildOutputs(builds); afterTest(t, () => outputs.dispose());
 	const first = openBuildLog(harness.group, outputs.get(job));
 	await first.view.result.refresh();
 	assert.equal(first.view.result.requestId, 'request-42'); assert.ok(harness.group.panes.activePane!.input === first);
@@ -346,7 +347,7 @@ test('editor panes retain one lazy pane per input kind and apply the input lifec
 
 test('pane retirement withdraws layout ownership before child teardown publishes layout changes', t => {
 	const harness = createEditorPanes(), first = codeInput('code:0\0a.lua');
-	t.after(() => harness.group.dispose());
+	afterTest(t, () => harness.group.dispose());
 	harness.group.panes.openEditor(first);
 	const pane = harness.codePane(), layout = t.mock.method(pane, 'layout'), clear = pane.clearInput.bind(pane);
 	t.mock.method(pane, 'clearInput', () => {
@@ -382,7 +383,7 @@ test('input blur completes against the old attached resource before the next pan
 test('same-input navigation blurs the old control before changing selection, while tab focus does not reactivate it', t => {
 	const harness = createEditorPanes();
 	const input = codeInput('code:0\0a.lua');
-	t.after(() => { harness.group.dispose(); input.dispose(); input.workingCopy.dispose(); });
+	afterTest(t, () => { harness.group.dispose(); input.dispose(); input.workingCopy.dispose(); });
 	const selection = { row: 2, startColumn: 1, endColumn: 3 };
 	harness.group.panes.openEditor(input, { selection });
 	const pane = harness.codePane();
@@ -393,7 +394,7 @@ test('same-input navigation blurs the old control before changing selection, whi
 		assert.equal(pane.selection, selection);
 		blurs += 1;
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	field.focus();
 	harness.group.panes.openEditor(input);
 	assert.equal(blurs, 1);
@@ -442,7 +443,7 @@ test('editor pane hot paths dispatch directly to the retained active pane', () =
 
 test('concrete groups retain independent controls, focus ancestry and capture lifetimes', t => {
 	const first = createEditorPanes(), second = createEditorPanes();
-	t.after(() => { first.group.dispose(); second.group.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	afterTest(t, () => { first.group.dispose(); second.group.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	const firstInput = resourceInput(), secondInput = resourceInput();
 	first.group.openEditor(firstInput);
 	second.group.openEditor(secondInput);

@@ -11,6 +11,7 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
 import { WorkbenchWindowModel, type WindowPlacement } from '../../ide/workbench/ui/window/model';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** Geometry assertions here exercise the shared keyboard placement algorithm, not a UI layout snapshot. */
 function fixture(t: TestContext, placement: WindowPlacement = 'normal') {
@@ -50,7 +51,7 @@ function fixture(t: TestContext, placement: WindowPlacement = 'normal') {
 		return event;
 	};
 	const start = (operation: 'move' | 'resize') => commands.execute(`window.${operation}`, control.focusTarget);
-	t.after(() => { control.dispose(); contextMenu.dispose(); surfaces.dispose(); unbindAdmission(); unbindPlacement(); focus.setTarget(null); });
+	afterTest(t, () => { control.dispose(); contextMenu.dispose(); surfaces.dispose(); unbindAdmission(); unbindPlacement(); focus.setTarget(null); });
 	return { focus, capture, surfaces, area, parent, model, control, layout, key, start,
 		publications: () => publications, contentFocus: () => contentFocus };
 }
@@ -207,7 +208,7 @@ for (const operation of ['move', 'resize'] as const)
 					unbind(); revoked++; f.control.minimize();
 				});
 			}
-			t.after(() => unbind());
+			afterTest(t, () => unbind());
 			f.start(operation);
 			assert.equal(revoked, 1); assert.equal(f.control.visible, false);
 			assert.deepEqual(f.model.requestedBounds, requested); assert.equal(f.capture.active, false);

@@ -5,6 +5,7 @@ import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 import { roundContactBankWord } from './touch_gamepad_geometry_oracle';
+import { afterTest } from '../helpers/test_cleanup';
 
 function expectedStickAxes(geometry: { padX: number; padY: number; stickTravelRadius: number; neutral: number }, pointer: { x: number; y: number }): [number, number] {
 	const dx = pointer.x - geometry.padX;
@@ -36,7 +37,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	for (const profile of [
 		{ name: 'phone landscape', width: 852, height: 393 },
 		{ name: 'phone portrait', width: 393, height: 852 },

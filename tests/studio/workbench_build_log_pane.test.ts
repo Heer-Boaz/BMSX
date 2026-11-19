@@ -21,6 +21,7 @@ import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const ERROR = 'compiler: first\r\n\t' + 'a_real_long_authored_path/'.repeat(15) + ':1:48: unexpected )\n';
 
@@ -41,7 +42,7 @@ async function fixture(t: TestContext, failed = true, output = '') {
 		getClip: () => bounds, isVisible: () => true, draw() {} });
 	const pane = new BuildLogPane(clipboard, menu, surfaces, owner, bounds, inputFocus.workbenchScope);
 	await result.refresh(); pane.setInput(input, bounds); pane.focus();
-	t.after(() => {
+	afterTest(t, () => {
 		pane.clearInput(); inputFocus.setTarget(null); pane.dispose(); menu.dispose(); input.dispose(); outputs.dispose();
 		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose();
 	});
@@ -125,7 +126,7 @@ for (const restore of [false, true]) test(`diagnostic publication retires an arm
 test('document Find belongs to the document/query leaf and cannot mutate a resource working copy', async t => {
 	const f = await fixture(t);
 	const source = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'owned.lua', location: { kind: 'workspace' as const, path: 'owned.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'owned.lua', source: { type: 'lua', resid: 'owned' } }, 'lua', 'return 1');
-	t.after(() => source.dispose());
+	afterTest(t, () => source.dispose());
 	source.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
 	const text = source.buffer.getText(), version = source.version, dirty = source.dirty;
 	const leaf = inputFocus.target!;
@@ -231,7 +232,7 @@ test('a newer actual provider admitted by output retirement cannot be overwritte
 	editor.builds = firstProvider;
 	const firstStore = editor.buildOutputs!;
 	let admittedStore: BuildOutputs | undefined, retired = 0;
-	t.after(firstStore.get(job).onDidChange(() => { retired++; editor.builds = newerProvider; admittedStore = editor.buildOutputs; }));
+	afterTest(t, firstStore.get(job).onDidChange(() => { retired++; editor.builds = newerProvider; admittedStore = editor.buildOutputs; }));
 	editor.builds = requestedProvider;
 	assert.equal(retired, 1); assert.ok(editor.builds === newerProvider && editor.buildOutputs === admittedStore);
 	assert.ok(editor.buildOutputs !== firstStore && editor.buildOutputs!.get(job).isDisposed === false);
@@ -281,7 +282,7 @@ test('a focused Find return callback can retire the Build pane and keep a newer 
 	const unbind = leaf.onDidFocus(() => {
 		unbind(); returned = true; f.pane.clearInput(); foreign.focus();
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.publish({ ...view.result.job, state: 'completed', error: undefined }); await view.result.refresh();
 	assert.equal(returned, true); assert.equal(f.pane.commandTarget.getCommand('buildLog.refresh')!.isEnabled(), false);
 	assert.ok(inputFocus.admittedTarget === foreign);

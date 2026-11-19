@@ -5,6 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: reviewed source Save has real, separate persistence and installation evidence`, { timeout: 180000 }, async t => {
 	type Body = { input: { type: string; call_id: string; output: string }[] };
@@ -42,8 +43,8 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	await f.page.exposeFunction('armSave', () => { armed = true; });
 	await f.page.exposeFunction('waitForHeldSave', () => held.promise);
 	await f.page.exposeFunction('releaseHeldSave', () => release.resolve());
-	t.after(() => release.resolve());
-	t.after(() => writeFile(join(f.evidence, `source-save-${backend}-requests.json`), JSON.stringify(model.requests)));
+	afterTest(t, () => release.resolve());
+	afterTest(t, () => writeFile(join(f.evidence, `source-save-${backend}-requests.json`), JSON.stringify(model.requests)));
 	const result = await f.page.evaluate(async backend => {
 		const entry = '/test.js', module = await import(entry);
 		return module.runAssistantSourceSave(backend, document.querySelector('canvas'), globalThis.capture, globalThis.armSave, globalThis.waitForHeldSave, globalThis.releaseHeldSave);

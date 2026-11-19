@@ -5,6 +5,7 @@ import { EditorTextModelService, editorTextModelService } from '../../ide/editor
 import { EditorEditStateType } from '../../ide/editor/model/edit_state';
 import { captureCurrentLuaSource, captureLuaTextModelSources } from '../../ide/workbench/services/working_copy/lua_sources';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('source capture uses the operation document owner, not a global document with the same identity', t => {
 	const record = { ...createScenarioTestSourceRecord('entry.lua', 12, 'return "packed"'), sourceKind: 'project' as const, program_module: true };
@@ -14,7 +15,7 @@ test('source capture uses the operation document owner, not a global document wi
 	local.pushEditOperations([{ offset: 0, deleteLength: local.buffer.length, text: 'return "local"' }]);
 	const foreign = editorTextModelService.retain(resource, 'lua', record.src);
 	foreign.pushEditOperations([{ offset: 0, deleteLength: foreign.buffer.length, text: 'return "foreign"' }]);
-	t.after(() => { models.clear(); editorTextModelService.clear(); });
+	afterTest(t, () => { models.clear(); editorTextModelService.clear(); });
 	assert.equal(local.version, foreign.version, 'path and version equality are not document ownership');
 	assert.deepEqual(captureCurrentLuaSource(models, sources.catalog, resource), { source: local.buffer.getText(), revision: local.version });
 	assert.deepEqual(captureLuaTextModelSources(models, sources.catalog), [{ source: local.buffer.getText(), version: local.version,
@@ -26,7 +27,7 @@ test('an unopened source uses its own workspace record even when another workspa
 	const sources = createScenarioTestSourceState([record]), models = new EditorTextModelService();
 	const resource = sources.catalog.luaResources[0];
 	editorTextModelService.retain(resource, 'lua', 'return "other workspace"');
-	t.after(() => { models.clear(); editorTextModelService.clear(); });
+	afterTest(t, () => { models.clear(); editorTextModelService.clear(); });
 	assert.deepEqual(captureCurrentLuaSource(models, sources.catalog, resource), { source: record.src, revision: 12 });
 	assert.deepEqual(captureLuaTextModelSources(models, sources.catalog, true), []);
 });
@@ -36,7 +37,7 @@ test('runtime source capture pins text without splitting the typing Undo sequenc
 	const sources = createScenarioTestSourceState([record]), models = new EditorTextModelService();
 	const model = models.retain(sources.catalog.luaResources[0], 'lua', record.src);
 	const state = new EditorEditStateType<void>();
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	model.prepareUndo('typing', true, 1, state.of(undefined));
 	model.applyUndoableReplace(3, 0, 'X');
 	model.commitEdit(state.of(undefined), null);
@@ -59,7 +60,7 @@ test('runtime source capture during edit admission leaves the pending Undo recor
 	const state = new EditorEditStateType<void>();
 	const captures: string[] = [];
 	model.onWillChangeContent(() => { captures.push(captureLuaTextModelSources(models, sources.catalog)[0].source); });
-	t.after(() => models.clear());
+	afterTest(t, () => models.clear());
 	model.prepareUndo('typing', true, 1, state.of(undefined));
 	model.applyUndoableReplace(3, 0, 'X');
 	assert.equal(model.commitEdit(state.of(undefined), null), true);

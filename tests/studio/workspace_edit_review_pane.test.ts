@@ -34,6 +34,7 @@ import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../h
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const source = `-- retained authoring bytes: λ\n${Array.from({ length: 36 }, (_, i) => `-- captured consumer ${i}`).join('\n')}\nreturn 'before'`;
@@ -55,7 +56,7 @@ function fixture(t: TestContext) {
 		new IdeMicrotaskQueue(), { log() {} }, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
 	editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
-	t.after(async () => { inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
+	afterTest(t, async () => { inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
 	const sourcePane = editor.editorParts.main.activeGroup.panes.getPane('code_editor') as CodeEditorPane;
 	const code = editor.editorParts.main.activeGroup.model.activeTab!, model = sourcePane.code.model!;
@@ -157,7 +158,7 @@ test('the review Source command keeps its picker alive when an unrelated Part cl
 	const origin = f.firstGroup.panes.activePane!.commandTarget;
 	f.second.focus();
 	const pointer = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
-	t.after(() => pointer.release());
+	afterTest(t, () => pointer.release());
 	assert.equal(review.actionBar.items.some(item => item.command === 'workspaceEditReview.source'), false);
 	f.editor.commands.execute('workspaceEditReview.source', origin); f.update();
 	const picker = f.firstPart.quickInput;
@@ -179,12 +180,12 @@ test('the review Source command keeps its picker alive when an unrelated Part cl
 
 test('delayed physical Apply creates and reveals source without taking a newer Part keyboard focus', async t => {
 	const write = Promise.withResolvers<void>(), files = new MemoryWorkspaceFiles();
-	t.after(() => write.resolve());
-	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	afterTest(t, () => write.resolve());
+	await openWorkspaceRecords(files); afterTest(t, closeWorkspaceRecords);
 	const originalWrite = files.write.bind(files);
 	t.mock.method(files, 'write', async (path, record, overwrite) => { await write.promise; await originalWrite(path, record, overwrite); });
 	const f = createActualSourcePanes(t), path = 'created_from_review.lua', contents = 'return 42\n';
-	t.after(() => workspaceCanonicalSourceCache.delete(path));
+	afterTest(t, () => workspaceCanonicalSourceCache.delete(path));
 	const proposal = new WorkspaceEditProposal('Create authored source', new WorkspaceSourceContext(editorTextModelService, f.sources.catalog), {
 		kind: 'create', request: { contextId: f.sources.systemContextId, relativePath: path, contents }, catalog: f.sources.catalog, clock: f.host.clock,
 	});
@@ -192,7 +193,7 @@ test('delayed physical Apply creates and reveals source without taking a newer P
 	f.firstGroup.openEditor(review); f.update();
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const pointer = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
-	t.after(() => pointer.release());
+	afterTest(t, () => pointer.release());
 	const apply = review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!;
 	pointer.apply([{ type: 'pointer', x: (apply.bounds.left + apply.bounds.right) / 2, y: (apply.bounds.top + apply.bounds.bottom) / 2 },
 		{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);

@@ -15,6 +15,7 @@ import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	models.clear(); resetSemanticProjects(models); clearBackgroundTasks();
@@ -24,7 +25,7 @@ function fixture(t: TestContext) {
 
 	const clock = new VirtualHeadlessClock();
 	const service = new ResourceDiagnosticsService(models, sources.catalog, clock);
-	t.after(() => { service.dispose(); resetSemanticProjects(models); models.clear(); clearBackgroundTasks(); });
+	afterTest(t, () => { service.dispose(); resetSemanticProjects(models); models.clear(); clearBackgroundTasks(); });
 	const retain = (contextId: string, path: string, source: string) => models.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId, path,
 		source: { type: 'lua', resid: path } }, 'lua', source);
 	return { service, clock, retain, registries };
@@ -78,7 +79,7 @@ test('resource diagnostics never import matching working copies from another mod
 		createScenarioTestSourceRecord('reader.lua', 1, 'return owned_global')]);
 
 	const service = new ResourceDiagnosticsService(ownedModels, sources.catalog, new VirtualHeadlessClock());
-	t.after(() => { service.dispose(); ownedModels.clear(); });
+	afterTest(t, () => { service.dispose(); ownedModels.clear(); });
 	const reader = ownedModels.retain(sources.catalog.luaResources.find(resource => resource.path === 'reader.lua')!, 'lua', 'return owned_global');
 	service.computePending();
 	assert.equal(service.get(reader)!.status, 'ready');
@@ -208,7 +209,7 @@ test('provider failure is explicit coverage and a later source change can be ana
 test('new retained source pending publication cannot replace the Problems semantic selection with the first resource', t => {
 	const { service, retain } = fixture(t), panel = createProblemsPanelFixture(t).controller;
 	const unsubscribe = service.onDidChange(() => panel.setDiagnostics(service.diagnostics, service.coverage));
-	t.after(unsubscribe);
+	afterTest(t, unsubscribe);
 	retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'cart.lua', '9return 1'); const intro = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'intro.lua', '9return 1');
 	service.computePending(); panel.setSelectionIndex(1);
 	assert.ok(panel.selectedDiagnostic!.model === intro);
@@ -237,7 +238,7 @@ test('canonical row indexes isolate models and are shared by independent views u
 	for (const diagnostic of secondResult.byRow.get(0)!) assert.equal(diagnostic.model, second);
 
 	const firstView = new CodeEditorInput(first), siblingView = new CodeEditorInput(first);
-	t.after(() => siblingView.dispose());
+	afterTest(t, () => siblingView.dispose());
 	assert.notEqual(firstView.context.view, siblingView.context.view);
 	assert.equal(service.get(firstView.workingCopy), service.get(siblingView.workingCopy));
 	firstView.dispose();

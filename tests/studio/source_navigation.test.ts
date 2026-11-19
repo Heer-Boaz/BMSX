@@ -20,6 +20,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [['selected.lua', 'local selected = 3\nreturn selected\n']]);
@@ -34,7 +35,7 @@ function fixture(t: TestContext) {
 test('an already-revoked semantic Source request cannot publish the sender draft', async t => {
 	const f = fixture(t); let accepted = 0, reads = 0;
 	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, value => { accepted = value; });
-	t.after(() => field.dispose()); field.setValue(1);
+	afterTest(t, () => field.dispose()); field.setValue(1);
 	field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
 	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { placement: 'side', source: {
 		isCurrent: () => false, readLocation: () => { reads++; return f.location(); },
@@ -72,7 +73,7 @@ test('a newer Source request started during contribution capture keeps its own n
 
 test('Source navigation produces its location before opening and preserves canonical text and departure history', async t => {
 	const f = fixture(t), generation = f.firstGroup.panes.openGeneration;
-	resetNavigationHistoryState(); t.after(resetNavigationHistoryState);
+	resetNavigationHistoryState(); afterTest(t, resetNavigationHistoryState);
 	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '-- retained draft\n' }]);
 	const text = f.model.buffer.getText(), version = f.model.version, pane = f.firstGroup.panes.activePane;
 	let read = false;
@@ -103,7 +104,7 @@ test('ordinary Source follows an existing foreign text view while explicit side 
 
 for (const placement of ['default', 'side'] as const) test(`${placement} Source overrides YAML's visual editor without replacing its canonical working copy`, async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
-	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const f = fixture(t), path = 'res/data/castle_map.yaml';
 	f.sources.catalog.registerTextSources(f.sources.systemContextId, [{ type: 'data', resid: 'map', source_path: path,
 		sourcemeta: { text: '1: { map: [".."], objects: [] }\n' } }]);
@@ -135,7 +136,7 @@ test('side Source restores the maximized arrangement and reuses the actual same-
 
 test('an invalid sender draft prevents location production and side topology', async t => {
 	const f = fixture(t), control = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {});
-	t.after(() => { control.cancel(); control.dispose(); });
+	afterTest(t, () => { control.cancel(); control.dispose(); });
 	control.setValue(1); control.layout(f.firstGroup.panes.contentBounds); control.field.focusTarget.focus(); setFieldText(control.field, 'invalid', true);
 	let reads = 0;
 	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => { reads++; return f.location(); } }, placement: 'side' }), undefined);
@@ -147,7 +148,7 @@ test('a committed sender may release to its own Source parent before the locatio
 	const f = fixture(t), control = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, value => {
 		control.field.focusTarget.release();
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: `-- accepted ${value}\n` }]);
-	}); t.after(() => control.dispose());
+	}); afterTest(t, () => control.dispose());
 	control.setValue(1); control.layout(f.firstGroup.panes.contentBounds); control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 	let version = -1;
 	await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => { version = f.model.version; return f.location(); } }, placement: 'side' });
@@ -157,7 +158,7 @@ test('a committed sender may release to its own Source parent before the locatio
 
 test('sender draft reentrancy replaces the pane before the lazy producer can run', async t => {
 	const f = fixture(t), newer = new HostErrorInput('newer sender'), control = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT,
-		() => { f.firstGroup.openEditor(newer); }); t.after(() => control.dispose());
+		() => { f.firstGroup.openEditor(newer); }); afterTest(t, () => control.dispose());
 	control.setValue(1); control.layout(f.firstGroup.panes.contentBounds); control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 	let reads = 0;
 	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => { reads++; return f.location(); } }, placement: 'side' }), undefined);
@@ -190,7 +191,7 @@ test('source edits during accepted side publication invalidate the caret but kee
 	const f = fixture(t), location = f.location();
 	const unbind = f.firstPart.onDidChangeGroups(() => {
 		unbind(); f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- publication changed source\n' }]);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => location }, placement: 'side' }), undefined);
 	assert.equal(f.firstPart.groups.length, 2);
 	assert.ok(f.firstPart.groups.find(group => group !== f.firstGroup)!.model.activeTab === null);
@@ -211,7 +212,7 @@ test('the receiver draft cannot apply an obsolete Source caret after accepting i
 	const f = fixture(t), foreign = new CodeEditorInput(f.model); f.secondGroup.openEditor(foreign);
 	const control = new ValueInput(f.second.commandTarget, INTEGER_INPUT_FORMAT, value => {
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: `-- receiver accepted ${value}\n` }]);
-	}); t.after(() => control.dispose());
+	}); afterTest(t, () => control.dispose());
 	control.setValue(1); control.layout(f.secondGroup.panes.contentBounds); control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 	const location = f.location();
 	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => location } }), undefined);
@@ -253,7 +254,7 @@ test('direct opening lifetime is rechecked after the actual destination draft be
 	const f = fixture(t), candidate = new CodeEditorInput(f.model); let current = true, disposed = 0;
 	candidate.onWillDispose(() => { disposed++; });
 	const control = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => { current = false; });
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	control.setValue(1); control.layout(f.firstGroup.panes.contentBounds); control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 	assert.ok(f.firstGroup.openEditor(candidate, { isCurrent: () => current }) === undefined);
 	assert.equal(control.pending, false); assert.equal(disposed, 1);
@@ -274,7 +275,7 @@ for (const publication of ['clear', 'membership'] as const) test(`${publication}
 	};
 	const unbind = publication === 'clear' ? f.firstGroup.panes.onDidClearEditor(edit)
 		: f.firstGroup.model.onDidChange(() => { if (f.firstGroup.model.contains(candidate!)) edit(); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: f.location } });
 	assert.equal(edited, true); assert.ok(candidate !== undefined && cursorAfterEdit !== undefined);
 	assert.ok(f.firstGroup.model.activeTab === candidate);
@@ -294,7 +295,7 @@ test('Lua location certification rejects an AST made stale by canonical model ad
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'selected.lua' })!;
 	const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId); project.synchronizeSources(f.sources.catalog);
 	const file = project.getSnapshot().getFileData(resourceIdentityKey(resource))!;
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource === resource) model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- admitted newer source\n' }]);
 	}));
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);

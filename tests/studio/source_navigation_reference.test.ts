@@ -9,6 +9,7 @@ import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/pri
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { afterTest } from '../helpers/test_cleanup';
 
 // Identity predicates keep failures from inspecting the Studio's machine buffers.
 async function fixture(t: TestContext) {
@@ -70,7 +71,7 @@ test('reusing a third-group Source cannot activate after its separately requeste
 	f.main.focusPrimary('hierarchy');
 	const newer = new HostErrorInput('New reference attachment');
 	let replaced = false;
-	t.after(receiver.panes.onWillShowEditor(() => {
+	afterTest(t, receiver.panes.onWillShowEditor(() => {
 		if (replaced) return;
 		replaced = true;
 		reference.openEditor(newer, { preserveFocus: true });

@@ -15,6 +15,7 @@ import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult as Pointer
 import { appendWorkbenchTreeNode, navigateWorkbenchTree, rebuildWorkbenchTreeRows, WorkbenchTreeNavigationResult as NavigationResult } from '../../ide/workbench/ui/tree_view';
 import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(count = 40, groupDescription = 'A GROUP, NOT A PROPERTY.', property: Partial<WorkbenchPropertyElement> = {}) {
 	const font = new Font({ variant: 'tiny' });
@@ -337,7 +338,7 @@ function feedbackFixture(t: TestContext, property: Partial<WorkbenchPropertyElem
 	const point = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
 		viewportX: f.state.layout.contentLeft + 20, viewportY: f.state.layout.contentTop + f.state.layout.rowHeight + 3 };
 	const move = (delta = 0) => { point.viewportX += delta; hover.beginDispatch(); pointer.handle(point, false, 0); hover.endDispatch(); };
-	t.after(() => { pointer.dispose(); surfaces.dispose(); });
+	afterTest(t, () => { pointer.dispose(); surfaces.dispose(); });
 	return { ...f, surfaces, owner, area, parent, target, pointer, child, texts, paint, point, move };
 }
 

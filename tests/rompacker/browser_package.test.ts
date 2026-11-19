@@ -12,12 +12,13 @@ import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import { PLAYER_INPUT_TRACE_SCRIPT, PLAYER_MANIFEST, renderPlayerPage } from '../../scripts/products/player_page';
 import type { RomArtifact } from '../../toolchain/ts/rompack/build_manifest';
 import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
+import { afterTest } from '../helpers/test_cleanup';
 
 const run = promisify(execFile);
 
 async function fixture(t: TestContext) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-browser-package-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const id = 'a'.repeat(64), store = join(root, 'store'), host = join(root, 'host');
 	const artifactDir = join(store, 'artifacts', id);
 	await mkdir(join(artifactDir, 'system'), { recursive: true });

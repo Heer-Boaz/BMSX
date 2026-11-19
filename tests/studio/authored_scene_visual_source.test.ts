@@ -4,6 +4,7 @@ import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { LuaSourceReader } from '../../ide/language/lua/source_reader';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const IMPORTS = `local prefab=require('cartlib/world/prefab')
 local sprites=require('cartlib/component/sprite_component')
@@ -26,7 +27,7 @@ scenes.register('other',{objects={}})`;
 	]);
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	return { ...f, context, source };
 }
 
@@ -191,7 +192,7 @@ test('dependency generations replace constructor preview once, retain older read
 	assert.notEqual(after, before); assert.ok(after.canvas[0].kind === 'sprite' && before.canvas[0].kind === 'sprite');
 	assert.equal(after.canvas[0].image, 'after'); assert.equal(before.canvas[0].image, 'before');
 	assert.ok(after.canvas[0].entry === before.canvas[0].entry);
-	const unbound = new SceneAuthoringContext(f.model, f.documents); t.after(() => unbound.dispose());
+	const unbound = new SceneAuthoringContext(f.model, f.documents); afterTest(t, () => unbound.dispose());
 	const document = f.documents.get(f.model), scene = document.scenes[0];
 	unbound.select(document, f.model.version, { kind: 'scene', scene });
 	assert.equal(unbound.visualScene, undefined);

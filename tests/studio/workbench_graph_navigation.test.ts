@@ -11,6 +11,7 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, createWorkbenchGraphNode } from '../../ide/workbench/ui/graph/model';
 import { WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../ide/workbench/ui/graph/control';
+import { afterTest } from '../helpers/test_cleanup';
 
 const font = new Font({ variant: 'tiny' });
 function fixture() {
@@ -188,7 +189,7 @@ for (const gesture of ['click', 'drag', 'chord', 'retirement'] as const) test(`g
 	const f = fixture(); f.control.dispose();
 	let menus = 0;
 	const control = new WorkbenchGraphControl(f.focus, f.capture, f.hover, undefined, null, () => menus++);
-	control.setInput(f.view); t.after(() => control.dispose()); f.view.selection = f.other;
+	control.setInput(f.view); afterTest(t, () => control.dispose()); f.view.selection = f.other;
 	const down = { ...f.pointer, justPressedButtons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary };
 	assert.equal(control.handlePointer(down, 0), WorkbenchGraphPointerResult.Handled);
 	assert.equal(f.view.selection, f.other); assert.equal(menus, 0);

@@ -22,6 +22,7 @@ import {
 } from '../../ide/workbench/contrib/gpu_debugger/presentation';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { eventHistoryRuntime } from '../helpers/event_history';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture() {
 	const { images } = createCartlibProgramHarness('return true');
@@ -77,7 +78,7 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`GPU
 	const words = f.input.selected.words.slice(0, f.input.selected.wordCount), replacement = new HostErrorInput('newer GPU-group document');
 	let callbacks = 0;
 	const unbind = f.second.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.firstGroup.openEditor(replacement); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	assert.doesNotThrow(() => f.press(0, button));
 	assert.equal(callbacks, 1); assert.equal(f.input.selected.sequence, selected);
 	assert.equal(f.input.selectionRevision, revision); assert.equal(f.input.following, true);
@@ -96,7 +97,7 @@ test('GPU secondary press rejects a superseded focus request even when blur retu
 		f.second.focus(); assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
 		target.focus(); assert.ok(inputFocus.admittedTarget === target);
 		assert.equal(target.scope.contextGeneration, context); assert.equal(f.input.projection.rows[0], offered);
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.press(0, PointerButton.Secondary);
 	assert.equal(callbacks, 1); assert.ok(inputFocus.admittedTarget === target);
 	assert.equal(target.scope.contextGeneration, context); assert.equal(f.input.projection.rows[0], offered);
@@ -116,7 +117,7 @@ test(`GPU button ${button} rejects its previous attachment when Source blur admi
 			if (admission === 'reattach') f.firstGroup.panes.clearEditor();
 			f.firstGroup.openEditor(replacement);
 		}
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.press(0, button);
 	assert.equal(f.input.selected.sequence, selected); assert.equal(f.input.selectionRevision, revision);
 	assert.equal(f.input.following, true); assert.equal(f.editor.contextMenu.visible, false);
@@ -135,7 +136,7 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`GPU
 	const replacement = new HostErrorInput('unrelated Source document');
 	const unbind = f.second.commandTarget.onDidBlur(() => {
 		unbind(); f.secondGroup.openEditor(replacement, { preserveFocus: true }); f.emit();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.press(0, button);
 	assert.equal(f.input.history.generation, generation); assert.equal(f.input.history.count, 4);
 	assert.equal(f.input.selected.sequence, sequence); assert.equal(f.input.following, false);
@@ -157,7 +158,7 @@ for (const change of ['clear', 'expiry', 'filter'] as const) test(`GPU secondary
 		if (change === 'clear') f.input.history.clear();
 		else if (change === 'expiry') f.emit(f.input.history.capacity);
 		else { f.input.filter = 'no matching observation'; f.input.update(); }
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.press(0, PointerButton.Secondary);
 	assert.equal(f.editor.contextMenu.visible, false); assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
 	assert.equal(f.input.following, true);
@@ -185,7 +186,7 @@ test('GPU scrollbar scrolls without accepting Source focus or pinning evidence',
 	const f = pointerFixture(t); f.emit(80); f.update(); f.second.focus();
 	const selected = f.input.selected.sequence, revision = f.input.selectionRevision, track = f.input.list.scrollbar.getTrack();
 	f.input.list.scrollbar.setScroll(0);
-	let blurs = 0; t.after(f.second.commandTarget.onDidBlur(() => { blurs++; }));
+	let blurs = 0; afterTest(t, f.second.commandTarget.onDidBlur(() => { blurs++; }));
 	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: (track.left + track.right) / 2, y: track.bottom - 2,
 		buttons: 0, pressedButtons: PointerButton.Primary, releasedButtons: PointerButton.Primary, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });

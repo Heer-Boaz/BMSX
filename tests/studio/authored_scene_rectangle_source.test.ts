@@ -5,6 +5,7 @@ import { LuaSourceReader } from '../../ide/language/lua/source_reader';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const IMPORTS = `local prefab=require('cartlib/world/prefab')
 local rectangles=require('cartlib/component/rectangle_component')
@@ -23,7 +24,7 @@ scenes.register('main',{objects={${members}}})`;
 	]);
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	return { ...f, context, source };
 }
 

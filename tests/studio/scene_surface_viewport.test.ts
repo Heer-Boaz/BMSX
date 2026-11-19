@@ -14,6 +14,7 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { createPackedImageFixture } from '../helpers/packed_images';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('authored surfaces retain image, transform, order, visibility and source without inventing missing images', t => {
 	const source = `local scenes=require('cartlib/world/scene_library')
@@ -81,5 +82,5 @@ prefab.define({def_id='zero',class=require('cartlib/world/object_2d'),components
 		colors.push((frame.commandRefs[index] as HostBitmapRenderSubmission).color);
 	assert.deepEqual(colors, [0xffffffff, 0xffffffff, 0xff000000, 0xff123456]);
 	view.dispose();
-	t.after(() => { canvas.dispose(); images.dispose(); context.dispose(); });
+	afterTest(t, () => { canvas.dispose(); images.dispose(); context.dispose(); });
 });

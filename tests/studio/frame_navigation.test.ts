@@ -13,6 +13,7 @@ import { decodeRuntimeToolRequest } from '../../ide/workbench/services/assistant
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createFrameRuntime } from '../helpers/frame_runtime';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext) {
 	const runtime = createFrameRuntime();
@@ -40,7 +41,7 @@ async function fixture(t: TestContext) {
 		assert.ok(operation.result, 'finite navigation must settle through real scheduler progress');
 		return operation.completion;
 	};
-	t.after(() => { navigation.dispose(); presenter.dispose(); });
+	afterTest(t, () => { navigation.dispose(); presenter.dispose(); });
 	await frame();
 	return { ...f, navigation, frame, settle, restores: () => restores };
 }

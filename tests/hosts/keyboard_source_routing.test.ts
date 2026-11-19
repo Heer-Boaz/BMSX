@@ -9,6 +9,7 @@ import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createInputControllerSnapshot, InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture() {
 	const clock = new VirtualHeadlessClock();
@@ -26,7 +27,7 @@ function fixture() {
 }
 
 test('virtual modifiers are typing, not the physical keyboard half of a host control chord', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.physical('ControlRight', true); f.touch('ShiftLeft'); f.touch('KeyQ'); f.poll();
 	assert.equal(f.input.supervisorRequestLineHigh(), false);
 	assert.equal(f.keyboard.getButtonState('lb').pressed, false);
@@ -40,7 +41,7 @@ test('virtual modifiers are typing, not the physical keyboard half of a host con
 });
 
 test('a virtual control modifier cannot open a physical host chord; a true physical chord still can', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.input.setVirtualKeyboardKey('ControlRight', true); f.physical('ShiftLeft', true); f.poll();
 	assert.equal(f.input.supervisorRequestLineHigh(), false);
 	assert.equal(f.pressed('ControlRight'), true); assert.equal(f.pressed('ShiftLeft'), true);
@@ -56,7 +57,7 @@ test('a virtual control modifier cannot open a physical host chord; a true physi
 });
 
 test('virtual Ctrl+S still invokes intentional raw-key editor shortcuts', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	let saves = 0;
 	f.input.getGlobalShortcutRegistry().registerKeyboardShortcut(1, 'KeyS', () => saves++, KeyModifier.ctrl);
 	f.touch('ControlLeft'); const letter = f.touch('KeyS'); f.poll();
@@ -69,7 +70,7 @@ test('virtual Ctrl+S still invokes intentional raw-key editor shortcuts', t => {
 
 for (const code of ['KeyQ', 'ShiftLeft']) {
 	test(`physical devices, virtual contacts, close and disconnect independently own ${code}`, t => {
-		const f = fixture(); t.after(() => f.input.dispose());
+		const f = fixture(); afterTest(t, () => f.input.dispose());
 		f.input.connectInputDevice({ id: 'keyboard:1', kind: 'keyboard' });
 		f.physical(code, true); f.physical(code, true, 'keyboard:1'); f.touch(code); f.poll();
 		assert.equal(f.pressed(code), true);
@@ -83,7 +84,7 @@ for (const code of ['KeyQ', 'ShiftLeft']) {
 }
 
 test('physical-only consumption preserves a complete virtual tap and cannot undo foreground consumption', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.physical('KeyQ', true); f.poll();
 	const contact = f.touch('KeyQ'); f.virtual.releaseSource(contact); f.poll();
 	f.keyboard.consumePhysicalKey('KeyQ');
@@ -97,7 +98,7 @@ test('physical-only consumption preserves a complete virtual tap and cannot undo
 });
 
 test('host UI physical focus and its exit capture never acquire virtual keyboard contacts', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const ui = new HostUiInput(f.input, {} as VideoPresenter);
 	const a = InputControllerGamepadButtonBit.A;
 	const tick = () => { f.poll(); ui.update(f.clock.now()); ui.consume(); };
@@ -115,7 +116,7 @@ test('host UI physical focus and its exit capture never acquire virtual keyboard
 
 for (const physicalFirst of [false, true]) {
 	test(`a touch modifier used by a real keyboard is not an unused sticky tap (hardware first: ${physicalFirst})`, t => {
-		const f = fixture(); t.after(() => f.input.dispose());
+		const f = fixture(); afterTest(t, () => f.input.dispose());
 		if (physicalFirst) f.physical('KeyQ', true);
 		const shift = f.touch('ShiftLeft');
 		if (!physicalFirst) f.physical('KeyQ', true);
@@ -126,7 +127,7 @@ for (const physicalFirst of [false, true]) {
 }
 
 test('hardware chord history survives repeats and device-local cancellation without stealing other sources', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	f.input.connectInputDevice({ id: 'keyboard:1', kind: 'keyboard' });
 	f.physical('KeyQ', true); const generation = f.keyboard.physicalOrdinaryPressGeneration;
 	f.physical('KeyQ', true); f.physical('KeyQ', true, 'keyboard:1');
@@ -144,7 +145,7 @@ test('hardware chord history survives repeats and device-local cancellation with
 });
 
 test('hardware modifiers change virtual legends and feedback only when they reach the typing recipient', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	const digit = ON_SCREEN_KEY_INDEX_BY_CODE.get('Digit1');
 	const shift = ON_SCREEN_KEY_INDEX_BY_CODE.get('ShiftLeft');
 	const before = f.virtual.revision;
@@ -164,7 +165,7 @@ test('hardware modifiers change virtual legends and feedback only when they reac
 });
 
 test('physical host capture precedes editor shortcut routing without hiding a separate virtual modifier', t => {
-	const f = fixture(); t.after(() => f.input.dispose());
+	const f = fixture(); afterTest(t, () => f.input.dispose());
 	let shiftedCommands = 0;
 	f.input.getGlobalShortcutRegistry().registerKeyboardShortcut(1, 'Digit1', () => shiftedCommands++, KeyModifier.shift);
 	f.physical('ControlRight', true); f.physical('ShiftLeft', true); const digit = f.touch('Digit1'); f.poll();

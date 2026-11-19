@@ -10,12 +10,13 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('synchronous model admission cannot replace a newer group opening', t => {
 	const f = createActualSourcePanes(t, false, [['produced.lua', 'return 3\n']]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'produced.lua' })!;
 	const newer = new HostErrorInput('newer opening');
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource === resource) f.firstGroup.openEditor(newer);
 	}));
 	f.first.focus();
@@ -33,7 +34,7 @@ test('synchronous model admission cannot replace a newer group opening', t => {
 test('synchronous model admission preserves newer foreign focus while attaching in the background', t => {
 	const f = createActualSourcePanes(t, false, [['produced.lua', 'return 3\n']]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'produced.lua' })!;
-	t.after(editorTextModelService.onDidAddModel(model => {
+	afterTest(t, editorTextModelService.onDidAddModel(model => {
 		if (model.resource === resource) f.second.focus();
 	}));
 	f.first.focus();
@@ -55,7 +56,7 @@ test('produced openings return the retained coalesced receiver rather than the d
 
 test('undefined production leaves membership and departure history unchanged', t => {
 	const f = createActualSourcePanes(t);
-	f.first.focus(); resetNavigationHistoryState(); t.after(resetNavigationHistoryState);
+	f.first.focus(); resetNavigationHistoryState(); afterTest(t, resetNavigationHistoryState);
 	const generation = f.firstGroup.panes.openGeneration;
 	const result = f.firstGroup.openProducedEditor(() => {
 		assert.ok(f.firstGroup.panes.openGeneration > generation);
@@ -113,7 +114,7 @@ test('the shared asynchronous opening lifetime also preserves a retained input r
 test('produced candidates use normal invalid-draft admission without losing the draft', t => {
 	const f = createActualSourcePanes(t), candidate = new CodeEditorInput(f.secondInput.workingCopy);
 	const control = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {});
-	t.after(() => { control.cancel(); control.dispose(); });
+	afterTest(t, () => { control.cancel(); control.dispose(); });
 	control.setValue(1); control.layout(f.firstGroup.panes.contentBounds);
 	control.field.focusTarget.focus(); setFieldText(control.field, 'invalid', true);
 	let disposed = 0;
@@ -126,7 +127,7 @@ test('produced candidates use normal invalid-draft admission without losing the 
 test('destination draft publication can supersede a produced candidate before attachment', t => {
 	const f = createActualSourcePanes(t), candidate = new CodeEditorInput(f.secondInput.workingCopy), newer = new HostErrorInput('draft-selected opening');
 	const control = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => { f.firstGroup.openEditor(newer); });
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	control.setValue(1); control.layout(f.firstGroup.panes.contentBounds);
 	control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 	let disposed = 0;
@@ -139,7 +140,7 @@ test('destination draft publication can supersede a produced candidate before at
 test('produced openings capture the departing Source location before model admission', t => {
 	const f = createActualSourcePanes(t), candidate = new CodeEditorInput(f.secondInput.workingCopy);
 	f.first.focus(); f.firstInput.context.view.cursorRow = 1; f.firstInput.context.view.cursorColumn = 7;
-	resetNavigationHistoryState(); t.after(resetNavigationHistoryState);
+	resetNavigationHistoryState(); afterTest(t, resetNavigationHistoryState);
 	const result = f.firstGroup.openProducedEditor(() => candidate);
 	assert.ok(result === candidate);
 	assert.equal(navigationState.back.length, 1);

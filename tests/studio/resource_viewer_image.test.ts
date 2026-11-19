@@ -18,6 +18,7 @@ import { encodeDirect16GxTexture } from '../../toolchain/ts/rompack/gx_texture_c
 import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createTestRuntimeSourceState, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {
 	configureFontVariant('tiny');
@@ -66,7 +67,7 @@ function fixture(t: TestContext) {
 		assert.equal(submissions.mock.callCount(), 1, 'the resource image must submit its decoded bitmap, not reserve a blank client');
 		return submissions.mock.calls[0].arguments[0];
 	};
-	t.after(() => { pane.dispose(); menu.dispose(); catalog.dispose(); });
+	afterTest(t, () => { pane.dispose(); menu.dispose(); catalog.dispose(); });
 	return { catalog, pane, resources, expected, draw, commands };
 }
 
@@ -74,7 +75,7 @@ test('resource image rendering consumes the exact admitted source context even w
 	const f = fixture(t), bitmaps: HostBitmap[] = [];
 	for (let index = 0; index < f.resources.length; index++) {
 		const resource = f.resources[index], input = new ResourceViewerInput(f.catalog, resource);
-		t.after(() => input.dispose());
+		afterTest(t, () => input.dispose());
 		f.pane.setInput(input, { left: 0, top: 0, right: 240, bottom: 160 });
 		assert.ok(f.pane.input.resource === resource);
 		const bitmap = f.draw();
@@ -102,7 +103,7 @@ test('a resource image bitmap belongs to its retained input across pane detach a
 });
 
 test('image/info switching, new views and workspace restoration retain independent reading state without decoding hidden views', t => {
-	const f = fixture(t), input = new ResourceViewerInput(f.catalog, f.resources[0]); t.after(() => input.dispose());
+	const f = fixture(t), input = new ResourceViewerInput(f.catalog, f.resources[0]); afterTest(t, () => input.dispose());
 	f.pane.setInput(input, { left: 0, top: 0, right: 240, bottom: 160 }); f.pane.focus();
 	const bitmap = f.draw(), imageTarget = f.pane.commandTarget;
 	f.commands.execute('image.zoomIn', imageTarget);
@@ -110,10 +111,10 @@ test('image/info switching, new views and workspace restoration retain independe
 	f.commands.execute('resourceViewer.info', imageTarget);
 	assert.equal(input.view.contentView, 'info'); assert.ok(input.preview!.bitmap === bitmap);
 	assert.equal(imageTarget.getCommand('image.fit')!.isEnabled(), false);
-	const copy = input.createView(); t.after(() => copy.dispose());
+	const copy = input.createView(); afterTest(t, () => copy.dispose());
 	assert.equal(copy.preview, undefined);
 	const serializers = new ResourceViewerInputSerializer(f.catalog), restored = serializers.deserialize(serializers.serialize(input));
-	t.after(() => restored.dispose());
+	afterTest(t, () => restored.dispose());
 	assert.equal(restored.preview, undefined);
 	for (const view of [copy, restored]) {
 		f.pane.clearInput(); f.pane.setInput(view, { left: 0, top: 0, right: 240, bottom: 160 }); f.pane.focus();
@@ -129,7 +130,7 @@ test('image/info switching, new views and workspace restoration retain independe
 });
 
 test('restored image state remains authoritative while Info is visible, including copy and workspace save before the next Preview', t => {
-	const f = fixture(t), input = new ResourceViewerInput(f.catalog, f.resources[0]); t.after(() => input.dispose());
+	const f = fixture(t), input = new ResourceViewerInput(f.catalog, f.resources[0]); afterTest(t, () => input.dispose());
 	f.pane.setInput(input, { left: 0, top: 0, right: 240, bottom: 160 }); f.pane.focus();
 	f.commands.execute('image.zoomIn', f.pane.commandTarget);
 	f.commands.execute('resourceViewer.info', f.pane.commandTarget);
@@ -142,7 +143,7 @@ test('restored image state remains authoritative while Info is visible, includin
 	assert.equal(f.pane.getSelection().matches(selection), true);
 	const copy = input.createView(), serializer = new ResourceViewerInputSerializer(f.catalog);
 	const restored = serializer.deserialize(serializer.serialize(input));
-	t.after(() => { copy.dispose(); restored.dispose(); });
+	afterTest(t, () => { copy.dispose(); restored.dispose(); });
 	for (const view of [copy, restored]) {
 		assert.equal(view.preview, undefined);
 		assert.equal(view.imagePosition!.scale, 2);
@@ -152,7 +153,7 @@ test('restored image state remains authoritative while Info is visible, includin
 });
 
 test('restoring Preview retires an Info scrollbar gesture without scrolling the hidden reader', t => {
-	const f = fixture(t), input = new ResourceViewerInput(f.catalog, f.resources[0]); t.after(() => input.dispose());
+	const f = fixture(t), input = new ResourceViewerInput(f.catalog, f.resources[0]); afterTest(t, () => input.dispose());
 	const bounds = { left: 0, top: 0, right: 240, bottom: 50 };
 	f.pane.setInput(input, bounds); f.pane.focus();
 	const preview = f.pane.getSelection();
@@ -171,12 +172,12 @@ test('restoring Preview retires an Info scrollbar gesture without scrolling the 
 
 test('resource image retirement cannot clear a newer same-pane attachment installed by its blur callback', t => {
 	const f = fixture(t), first = new ResourceViewerInput(f.catalog, f.resources[0]), next = new ResourceViewerInput(f.catalog, f.resources[1]);
-	t.after(() => { first.dispose(); next.dispose(); });
+	afterTest(t, () => { first.dispose(); next.dispose(); });
 	const bounds = { left: 0, top: 0, right: 240, bottom: 160 };
 	f.pane.setInput(first, bounds); f.pane.focus();
 	const unbind = f.pane.commandTarget.onDidBlur(() => {
 		unbind(); f.pane.clearInput(); f.pane.setInput(next, bounds); f.pane.focus();
-	}); t.after(unbind);
+	}); afterTest(t, unbind);
 	f.pane.clearInput();
 	assert.ok(f.pane.input === next && inputFocus.admittedTarget === f.pane.commandTarget);
 	assert.deepEqual(f.draw().image.pixels, f.expected[1]);

@@ -6,6 +6,7 @@ import type { SceneSourceObject } from '../../ide/workbench/contrib/scene_editor
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PREFABS = `local prefab = require('cartlib/world/prefab')
 prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
@@ -22,7 +23,7 @@ scenes.register('fixture',{objects={${objects}}})`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [
 		['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFABS],
 	]);
-	const context = new SceneAuthoringContext(f.model, f.documents); t.after(() => context.dispose());
+	const context = new SceneAuthoringContext(f.model, f.documents); afterTest(t, () => context.dispose());
 	const scene = () => { context.refresh(); const document = f.documents.get(f.model);
 		return f.documents.getSpatialProjection(f.model, document)!.readScene(document, document.scenes[0]); };
 	const select = (id: string) => {
@@ -61,7 +62,7 @@ test('translation retains exact subtree poses, composes full sheared/reflected a
 	const unknown = original.entries.find(value => stringLiteralValue(value.memberId) === 'unknown')!;
 	assert.equal(worlds.has(unknown), true); assert.equal(worlds.get(unknown), undefined);
 	assert.equal(request.translate(6, 0, 6), true); assert.equal(request.preview.revision, revision + 1);
-	let events = 0; t.after(f.model.onDidChangeContent(() => events++));
+	let events = 0; afterTest(t, f.model.onDidChangeContent(() => events++));
 	assert.equal(request.commit(), true); assert.equal(events, 1); assert.equal(writer.mock.callCount(), 1);
 	assert.equal(request.isCurrent(), false); assert.equal(request.commit(), false); assert.equal(request.translate(1, 2, 3), false);
 	assert.ok(f.model.buffer.getText().includes('parent=parent_alias,transform = { xx = basis, xy = 0, xz = 0, yx = 0, yy = 0, yz = 0, zx = 0, zy = 1, zz = -1, ox = 4, oy = 5, oz = 6 }'));
@@ -155,7 +156,7 @@ test('requests retire on source, dependency, selection, readonly, explicit cance
 test('source admission callbacks cannot revive a cancelled request or retarget an exact occurrence', t => {
 	const f = fixture(t, `{member_id='one',definition_id='node3'},{member_id='two',definition_id='node3'}`);
 	f.select('one'); const request = f.context.captureTranslation()!;
-	t.after(f.context.onDidChangeSpatialGeneration(() => { request.cancel(); f.select('two'); }));
+	afterTest(t, f.context.onDidChangeSpatialGeneration(() => { request.cancel(); f.select('two'); }));
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.resource.contextId, path: 'prefabs.lua' })!);
 	provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dependency\n' }]);

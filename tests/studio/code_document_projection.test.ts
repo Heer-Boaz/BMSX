@@ -6,6 +6,7 @@ import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisens
 import { CodeLayout } from '../../ide/editor/ui/code/layout';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { createTestCodeDocuments } from '../helpers/code_documents';
+import { afterTest } from '../helpers/test_cleanup';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'projection.lua', location: { kind: 'workspace' as const, path: 'projection.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 	path: 'projection.lua', source: { type: 'lua' as const, resid: 'projection' } };
@@ -21,7 +22,7 @@ test('two layouts share source glyphs but retain their own wrapping and injected
 	const first = new CodeLayout(font, { inlineEdit: firstInline, computeWrapWidth: () => firstWidth });
 	const second = new CodeLayout(font, { inlineEdit: secondInline, computeWrapWidth: () => secondWidth });
 	first.attach(document); second.attach(document);
-	t.after(() => { first.dispose(); second.dispose(); });
+	afterTest(t, () => { first.dispose(); second.dispose(); });
 	const read = t.mock.method(model.buffer, 'getLineContent'), measure = t.mock.method(font.renderFont(), 'advance');
 	first.ensureVisualLines(true, 0, 20);
 	const canonical = first.measurements.getLine(0), reads = read.mock.callCount(), measurements = measure.mock.callCount();
@@ -56,7 +57,7 @@ test('font profiles share one model semantic request and detaching one layout le
 	const inlineEdit = { version: 0, active: false, row: 0, startColumn: 0, endColumn: 0, text: '', preserveCase: false };
 	const first = new CodeLayout(new EditorFont('tiny'), { inlineEdit, computeWrapWidth: () => 80 });
 	const second = new CodeLayout(new EditorFont('msx'), { inlineEdit, computeWrapWidth: () => 160 });
-	t.after(() => { first.dispose(); second.dispose(); });
+	afterTest(t, () => { first.dispose(); second.dispose(); });
 	const project = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]), analyze = t.mock.method(project, 'analyzeDocument');
 	const scheduled = t.mock.method(clock, 'scheduleOnce');
 	first.attach(document); second.attach(document);
@@ -88,7 +89,7 @@ test('theme-only tokens preserve canonical and active injected glyph geometry an
 	const projectedAdvances = projected.advancePrefix, projectedInverse = projected.displayToColumn, projectedMap = projected.viewColumnToDisplay;
 	const colors = projected.hi.colors.slice(), segments = layout.getVisualLines().slice();
 	const oldTheme = getActiveIdeThemeVariant();
-	t.after(() => { layout.dispose(); setIdeThemeVariant(oldTheme); });
+	afterTest(t, () => { layout.dispose(); setIdeThemeVariant(oldTheme); });
 	const measure = t.mock.method(font.renderFont(), 'advance'), scheduled = t.mock.method(clock, 'scheduleOnce');
 	setIdeThemeVariant(oldTheme === 'light' ? 'dark' : 'light');
 	layout.ensureVisualLines(true, 0, 20);
@@ -114,7 +115,7 @@ test('equal paths and versions from distinct working-copy owners never share a d
 	const first = new CodeLayout(font, { inlineEdit, computeWrapWidth: () => 160 });
 	const second = new CodeLayout(font, { inlineEdit, computeWrapWidth: () => 160 });
 	first.attach(leftDocument); second.attach(rightDocument);
-	t.after(() => { first.dispose(); second.dispose(); });
+	afterTest(t, () => { first.dispose(); second.dispose(); });
 	assert.ok(first.measurements !== second.measurements);
 	assert.equal(first.getViewLine(0).src, 'return { left = 1 }');
 	assert.equal(second.getViewLine(0).src, 'return { right = 2 }');
@@ -132,7 +133,7 @@ test('dormant document edits retire obsolete work without scheduling a successor
 		computeWrapWidth: () => 160,
 	});
 	layout.attach(document);
-	t.after(() => layout.dispose());
+	afterTest(t, () => layout.dispose());
 	const pending = scheduled.mock.calls[0].result!;
 	layout.clearDocument();
 	assert.equal(pending.isActive(), true, 'detachment alone does not cancel document-owned work');
@@ -163,7 +164,7 @@ test('an attached document refreshes dependency-only semantics without rebuildin
 	const line = layout.getViewLine(0), advances = line.advancePrefix;
 	const segments = layout.getVisualLines().slice(), version = model.version;
 	assert.ok(document.getSemanticFileData() !== null);
-	t.after(() => layout.dispose());
+	afterTest(t, () => layout.dispose());
 	const analyze = t.mock.method(getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]), 'analyzeDocument');
 	const measure = t.mock.method(font, 'advance');
 	dependency.pushEditOperations([{ offset: dependency.buffer.length, deleteLength: 0, text: '\nother = 2' }]);

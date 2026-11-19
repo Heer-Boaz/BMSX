@@ -7,15 +7,16 @@ import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const phase of ['decision', 'Save'] as const)
 	test(`a sibling transfer cannot reopen a group awaiting its own close ${phase}`, async t => {
 		const files = new MemoryWorkspaceFiles('workspace'), writing = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
 		await openWorkspaceRecords(files);
 		// Accepted filesystem work must drain before the real workbench shuts down.
-		t.after(() => release.resolve());
+		afterTest(t, () => release.resolve());
 		const f = createActualSourcePanes(t), parts = f.editor.editorParts, part = parts.main, closing = part.activeGroup;
-		t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+		afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 		const input = new CodeEditorInput(f.firstInput.workingCopy); closing.openEditor(input);
 		assert.equal(await parts.close(f.firstPart), true, 'the closing group is the only owner of this source');
 		const receiver = parts.splitGroup(closing, 'right'); assert.ok(receiver);
@@ -55,9 +56,9 @@ for (const choice of ['Cancel', 'Save'] as const)
 	test(`closing a floating host shares its group's pending ${choice} decision and preserves newer unrelated focus`, async t => {
 		const files = new MemoryWorkspaceFiles('workspace'), writing = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
 		await openWorkspaceRecords(files);
-		t.after(() => release.resolve());
+		afterTest(t, () => release.resolve());
 		const f = createActualSourcePanes(t), parts = f.editor.editorParts, part = f.firstPart, group = f.firstGroup;
-		t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+		afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 		const sibling = parts.splitGroup(group, 'right'); assert.ok(sibling);
 		const retained = new HomeInput(null); sibling.openEditor(retained);
 		const model = f.firstInput.workingCopy;

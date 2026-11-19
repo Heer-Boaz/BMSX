@@ -19,6 +19,7 @@ import { RuntimeTimelineControl } from '../../ide/workbench/ui/runtime_timeline_
 import { createFrameRuntime } from '../helpers/frame_runtime';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 async function fixture(t: TestContext, initiallyVisible = false) {
 	const runtime = createFrameRuntime();
@@ -69,7 +70,7 @@ async function fixture(t: TestContext, initiallyVisible = false) {
 		assert.ok(operation.result, 'the real finite navigation owner settles through host frame progress');
 		return operation.completion;
 	};
-	t.after(() => {
+	afterTest(t, () => {
 		timeline.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); surfaces.dispose();
 		navigation.dispose(); presenter.dispose();
 		editorViewState.font = previousFont; editorViewState.lineHeight = previousLineHeight;
@@ -254,7 +255,7 @@ for (const retirement of ['attachment', 'transport'] as const) test(`Timeline co
 	const replacement = { target: next, interaction: new InputInteraction(transport) };
 	next.scope.runtime = replacement;
 	const unbind = content.onDidFocus(() => timeline.setContext(replacement));
-	t.after(unbind);
+	afterTest(t, unbind);
 	timeline.focus();
 	if (retirement === 'attachment') timeline.setContext(undefined);
 	else interaction.setRuntime(null);

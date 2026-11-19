@@ -8,6 +8,7 @@ import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField } from '../../toolchain/ts/lua/syntax/table_fields';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
 local object_2d=require('cartlib/world/object_2d')
@@ -24,7 +25,7 @@ scenes.register('fixture',{objects={${members}}})`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
 		[['cartlib/world/prefab.lua', 'return {define=function() end}'], ['prefabs.lua', prefabs]]);
 	const context = new SceneAuthoringContext(f.model, f.documents);
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	const select = (id: string) => {
 		context.refresh(); const document = f.documents.get(f.model), scene = document.scenes[0];
 		const index = scene.objects.findIndex(entry => entry.kind === 'object' && stringLiteralValue(entry.memberId) === id);
@@ -192,7 +193,7 @@ test('Delete Member materializes exact sheared survivor poses before editing the
 	const admitted = projection.mock.calls[0].result;
 	for (let index = 0; index < 20; index++) assert.equal(f.context.canRemoveSelectedMember(), true);
 	assert.ok(projection.mock.calls.every(call => call.result === admitted));
-	let changes = 0; t.after(f.model.onDidChangeContent(() => changes++));
+	let changes = 0; afterTest(t, f.model.onDidChangeContent(() => changes++));
 	assert.equal(f.context.removeSelectedMember(), true); assert.equal(changes, 1);
 	f.select('child'); assert.deepEqual(f.context.selectedLocalTransform, expected.get('child'));
 	const next = f.documents.get(f.model), nextScene = next.scenes[0], nextRead = f.documents.getSpatialProjection(f.model, next)!.readScene(next, nextScene);

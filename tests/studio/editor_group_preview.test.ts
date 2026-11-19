@@ -11,6 +11,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { afterTest } from '../helpers/test_cleanup';
 
 function sourceInput(path: string) {
 	const input = new CodeEditorInput(new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'lua', resid: path } }, 'lua', 'return {}'));
@@ -65,7 +66,7 @@ test('already dirty documents cannot become previews; duplicate labels disambigu
 
 test('the authored audio file and its Source view share a working copy but retain distinct compact input labels', t => {
 	const group = new EditorTabGroupModel(), path = 'res/audio/events.aem.yaml';
-	t.after(() => group.clear());
+	afterTest(t, () => group.clear());
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace', path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path,
 		source: { type: 'aem', resid: 'events' } }, 'aem', '# authored\nevents: {}\n');
 	const audio = new AemEditorInput(model), filename = path.slice(path.lastIndexOf('/') + 1);
@@ -87,7 +88,7 @@ test('the authored audio file and its Source view share a working copy but retai
 
 for (const distinction of ['path', 'domain'] as const) test(`same-name audio views disambiguate the entire title group by source directories across ${distinction} changes`, t => {
 	const group = new EditorTabGroupModel(), path = 'res/audio/events.aem.yaml';
-	t.after(() => group.clear());
+	afterTest(t, () => group.clear());
 	const otherPath = distinction === 'path' ? 'res/other/events.aem.yaml' : path;
 	const firstModel = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace', path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path,
 		source: { type: 'aem', resid: 'events' } }, 'aem', 'events: {}\n');
@@ -121,7 +122,7 @@ for (const distinction of ['path', 'domain'] as const) test(`same-name audio vie
 
 test('compact-only metadata changes publish once and title assignment preserves both description forms', t => {
 	const group = new EditorTabGroupModel(), first = sourceInput('first.lua'), second = sourceInput('second.lua');
-	t.after(() => group.clear());
+	afterTest(t, () => group.clear());
 	first.setLabel('shared', 'first/source', 'first'); second.setLabel('shared', 'second/source', 'second');
 	group.add(first); group.add(second, { pinned: false });
 	let inputChanges = 0, groupChanges = 0;
@@ -147,7 +148,7 @@ test('compact-only metadata changes publish once and title assignment preserves 
 
 test('ambiguous compact metadata chooses full metadata for every member rather than introducing mixed-description collisions', t => {
 	const group = new EditorTabGroupModel(), inputs = [sourceInput('first.lua'), sourceInput('second.lua'), sourceInput('third.lua')];
-	t.after(() => group.clear());
+	afterTest(t, () => group.clear());
 	inputs[0].setLabel('shared', 'third-compact', 'ambiguous');
 	inputs[1].setLabel('shared', 'second/full', 'ambiguous');
 	inputs[2].setLabel('shared', 'third/full', inputs[0].description);
@@ -160,7 +161,7 @@ test('ambiguous compact metadata chooses full metadata for every member rather t
 
 test('an intentionally absent compact description keeps the entire duplicate-title group on full metadata', t => {
 	const group = new EditorTabGroupModel(), first = sourceInput('first.lua'), second = sourceInput('second.lua');
-	t.after(() => group.clear());
+	afterTest(t, () => group.clear());
 	first.setLabel('shared', 'first/full', ''); second.setLabel('shared', 'second/full', 'compact');
 	group.add(first); group.add(second);
 	assert.equal(group.getLabel(first), `${first.title} - ${first.description}`);
@@ -169,7 +170,7 @@ test('an intentionally absent compact description keeps the entire duplicate-tit
 
 test('workbench preview replacement detaches the pane before disposal, and history cannot retain a closed preview', t => {
 	const group = createTestEditorGroup();
-	t.after(() => { group.dispose(); });
+	afterTest(t, () => { group.dispose(); });
 	const kept = sourceInput('kept.lua'), first = sourceInput('preview.lua'), next = sourceInput('next.lua');
 	group.openEditor(kept); group.openEditor(first, { pinned: false });
 	let detached = false;
@@ -194,7 +195,7 @@ function createPreviewDraft(t: TestContext) {
 		current.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: `-- value ${value}\n` }]);
 	});
 	control.setValue(1); control.field.focusTarget.focus();
-	t.after(() => {
+	afterTest(t, () => {
 		control.cancel(); inputFocus.setTarget(null); control.dispose(); group.dispose();
 		kept.workingCopy.dispose(); current.workingCopy.dispose();
 	});
@@ -255,7 +256,7 @@ test('direct activation admits the current view draft before switching and leave
 
 test('preserved-focus opens and activations do not publish another group control draft', t => {
 	const f = createPreviewDraft(t), other = createTestEditorGroup();
-	t.after(() => other.dispose());
+	afterTest(t, () => other.dispose());
 	setFieldText(f.control.field, '2', false);
 	const kept = sourceInput('other-kept.lua'), next = sourceInput('other-preview.lua');
 	const keptOpening = other.openEditor(kept, { preserveFocus: true });

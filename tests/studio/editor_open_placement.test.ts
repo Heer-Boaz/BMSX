@@ -20,6 +20,7 @@ import type { EditorOpenDestination } from '../../ide/workbench/services/editor/
 import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 /** A source lease and deferred production, without inventing an attached source editor. */
 function pendingOpening() {
@@ -55,7 +56,7 @@ test('opening publishes the requested tab gap and prepared selection on its exac
 	const home = new HomeInput(null); target.openEditor(home);
 	const candidate = new CodeEditorInput(f.firstInput.workingCopy);
 	let released = 0, observed = 0, coherent = true;
-	t.after(target.model.onDidChange(change => {
+	afterTest(t, target.model.onDidChange(change => {
 		if (change !== 'editors' || !target.model.contains(candidate)) return;
 		observed++; coherent = coherent && target.model.tabs[0] === f.secondInput && target.model.tabs[1] === candidate && target.model.tabs[2] === home;
 	}));
@@ -108,7 +109,7 @@ for (const kind of ['split', 'window'] as const) test(`${kind} opening keeps pro
 	const attach = f.editor.surfaces.attach.bind(f.editor.surfaces);
 	t.mock.method(f.editor.surfaces, 'attach', options => { const surface = attach(options); provisional.push(surface); return surface; });
 	let published = 0, coherent = true;
-	t.after(parts.onDidChange(() => {
+	afterTest(t, parts.onDidChange(() => {
 		if (kind === 'split' ? f.secondPart.groups.length === 1 : parts.documents.length === documents) return;
 		published++;
 		const receiver = request.state.receiver;
@@ -236,7 +237,7 @@ for (const kind of ['split', 'window'] as const) test(`${kind} anchor supersessi
 test('a superseded opening request cannot dispose an input already retained by its different actual receiver', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	let disposed = 0; f.firstInput.onWillDispose(() => { disposed++; });
-	const request = EditorOpeningRequest.begin(f.secondGroup, {})!; t.after(() => request.dispose());
+	const request = EditorOpeningRequest.begin(f.secondGroup, {})!; afterTest(t, () => request.dispose());
 	const newer = new HostErrorInput('newer anchor request'); f.secondGroup.openEditor(newer);
 	assert.ok(request.admit(f.firstInput, undefined, f.firstGroup) === undefined); assert.equal(disposed, 0);
 	assert.ok(parts.findGroup(f.firstInput) === f.firstGroup && f.firstGroup.panes.activePane?.input === f.firstInput);
@@ -270,7 +271,7 @@ test('an asynchronous background attachment preserves the newer sibling maximiza
 test('a destination invalid draft vetoes prospective placement before model production or construction', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, request = pendingOpening();
 	const control = new ValueInput(f.second.commandTarget, INTEGER_INPUT_FORMAT, () => {});
-	t.after(() => { control.cancel(); control.dispose(); });
+	afterTest(t, () => { control.cancel(); control.dispose(); });
 	control.setValue(1); control.layout(f.secondGroup.panes.contentBounds);
 	control.field.focusTarget.focus(); setFieldText(control.field, 'invalid', true);
 	assert.ok(await parts.openAt(request.source, { kind: 'split', group: f.secondGroup, direction: 'right' }) === undefined);
@@ -283,7 +284,7 @@ test('canonical model-add callbacks cannot replace a newer receiver request duri
 	const f = createActualSourcePanes(t, false, [['incoming.lua', 'return 7\n']]), parts = f.editor.editorParts;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'incoming.lua' })!;
 	const newer = new HostErrorInput('model-add newer request'); let disposed = 0;
-	t.after(editorTextModelService.onDidAddModel(model => { if (model.resource === resource) f.secondGroup.openEditor(newer); }));
+	afterTest(t, editorTextModelService.onDidAddModel(model => { if (model.resource === resource) f.secondGroup.openEditor(newer); }));
 	const source: ProspectiveEditorOpenSource = {
 		kind: 'opening', isCurrent: () => true, findExisting: () => undefined,
 		resolve: () => {
@@ -299,7 +300,7 @@ test('raw group admission checks the newer opening published by its predicate af
 	const f = createActualSourcePanes(t), candidate = new CodeEditorInput(f.firstInput.workingCopy), newer = new HostErrorInput('draft-predicate newer request');
 	let armed = false, disposed = 0; candidate.onWillDispose(() => { disposed++; });
 	const control = new ValueInput(f.second.commandTarget, INTEGER_INPUT_FORMAT, () => { armed = true; });
-	t.after(() => { control.cancel(); control.dispose(); });
+	afterTest(t, () => { control.cancel(); control.dispose(); });
 	control.setValue(1); control.layout(f.secondGroup.panes.contentBounds);
 	control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 	assert.ok(f.secondGroup.openEditor(candidate, { isCurrent: () => {
@@ -314,7 +315,7 @@ test('raw group admission preserves foreign focus published by its predicate aft
 	const f = createActualSourcePanes(t), candidate = new CodeEditorInput(f.firstInput.workingCopy);
 	let armed = false;
 	const control = new ValueInput(f.second.commandTarget, INTEGER_INPUT_FORMAT, () => { armed = true; });
-	t.after(() => { control.cancel(); control.dispose(); });
+	afterTest(t, () => { control.cancel(); control.dispose(); });
 	control.setValue(1); control.layout(f.secondGroup.panes.contentBounds);
 	control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 	const opened = f.secondGroup.openEditor(candidate, { isCurrent: () => {
@@ -331,10 +332,10 @@ test('asynchronous opening reports late draft-current background admission witho
 	const f = createActualSourcePanes(t), candidate = new CodeEditorInput(f.firstInput.workingCopy);
 	let armed = false, finish!: (input: CodeEditorInput) => void;
 	const control = new ValueInput(f.second.commandTarget, INTEGER_INPUT_FORMAT, () => { armed = true; });
-	t.after(() => { control.cancel(); control.dispose(); });
+	afterTest(t, () => { control.cancel(); control.dispose(); });
 	control.setValue(1); control.layout(f.secondGroup.panes.contentBounds); f.second.focus();
 	control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
-	resetNavigationHistoryState(); t.after(resetNavigationHistoryState);
+	resetNavigationHistoryState(); afterTest(t, resetNavigationHistoryState);
 	const forward = createNavigationEntry()!; navigationState.forward.push(forward);
 	const pending = f.secondGroup.openResolvedEditor(() => new Promise<CodeEditorInput>(resolve => { finish = resolve; }), {
 		isCurrent: () => { if (armed) { armed = false; f.first.focus(); } return true; },
@@ -349,9 +350,9 @@ test('asynchronous opening reports late draft-current background admission witho
 
 for (const route of ['raw', 'resolved'] as const) test(`${route} opening reports the pane-show listener's background disposition without consuming history`, async t => {
 	const f = createActualSourcePanes(t), candidate = new CodeEditorInput(f.firstInput.workingCopy);
-	f.second.focus(); resetNavigationHistoryState(); t.after(resetNavigationHistoryState);
+	f.second.focus(); resetNavigationHistoryState(); afterTest(t, resetNavigationHistoryState);
 	const forward = createNavigationEntry()!; navigationState.forward.push(forward);
-	t.after(f.secondGroup.panes.onWillShowEditor(() => { f.first.focus(); }));
+	afterTest(t, f.secondGroup.panes.onWillShowEditor(() => { f.first.focus(); }));
 	const opened = route === 'raw' ? f.secondGroup.openEditor(candidate) : await f.secondGroup.openResolvedEditor(async () => candidate);
 	assert.ok(opened !== undefined); assert.equal(opened.activated, false); assert.equal(opened.generation, f.secondGroup.panes.openGeneration);
 	assert.ok(f.secondGroup.panes.activePane?.input === candidate && f.secondGroup.model.activeTab === candidate);
@@ -373,7 +374,7 @@ for (const kind of ['split', 'window'] as const) test(`${kind} opening preserves
 
 test('a physical opening drop reports asynchronous resolver failure through the existing editor feedback owner', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, failure = new Error('workspace resource read denied');
-	editorFeedbackState.message.visible = false; t.after(() => { editorFeedbackState.message.visible = false; });
+	editorFeedbackState.message.visible = false; afterTest(t, () => { editorFeedbackState.message.visible = false; });
 	const bounds = f.secondGroup.panes.contentBounds;
 	const snapshot: PointerInputSnapshot = { viewportX: bounds.left + 1, viewportY: (bounds.top + bounds.bottom) / 2,
 		valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };
@@ -389,7 +390,7 @@ test('a physical opening drop reports asynchronous resolver failure through the 
 test('common opening begin cancels a newer group request published by its entry predicate', t => {
 	const f = createActualSourcePanes(t), newer = new HostErrorInput('begin-predicate newer request');
 	const opening = EditorOpeningRequest.begin(f.secondGroup, { isCurrent: () => { f.secondGroup.openEditor(newer); return true; } });
-	t.after(() => opening?.dispose());
+	afterTest(t, () => opening?.dispose());
 	assert.ok(opening === undefined); assert.ok(f.secondGroup.panes.activePane?.input === newer);
 });
 
@@ -400,7 +401,7 @@ test('common opening begin captures foreign focus intent before its entry predic
 		if (publish) { publish = false; f.first.focus(); }
 		return true;
 	} });
-	t.after(() => opening?.dispose()); assert.ok(opening !== undefined);
+	afterTest(t, () => opening?.dispose()); assert.ok(opening !== undefined);
 	assert.ok(opening.admit(candidate) === candidate && f.secondGroup.panes.activePane?.input === candidate);
 	assert.ok(inputFocus.admittedTarget === f.first.commandTarget && f.editor.editorParts.activePart === f.firstPart);
 });

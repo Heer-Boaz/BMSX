@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { CodexSocket } from '../../hosts/node/codex/socket';
 import type { RpcMessage } from '../../hosts/node/codex/protocol';
+import { afterTest } from './test_cleanup';
 
 /** Actual native multi-client owner in a private home. No managed service or user account changes. */
 export async function createSharedCodexFixture(t: TestContext, providerUrl: string) {
@@ -26,7 +27,7 @@ export async function createSharedCodexFixture(t: TestContext, providerUrl: stri
 	const exited = once(child, 'exit');
 	const kill = () => child.kill('SIGKILL'); t.signal.addEventListener('abort', kill, { once: true });
 	let owner: CodexSocket;
-	t.after(async () => {
+	afterTest(t, async () => {
 		await owner?.stop(); watcher.close(); child.kill('SIGTERM');
 		const [code, signal] = await exited;
 		t.signal.removeEventListener('abort', kill);

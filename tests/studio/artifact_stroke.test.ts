@@ -26,6 +26,7 @@ import { encodeDirect16GxTexture } from '../../toolchain/ts/rompack/gx_texture_c
 import { encodeDirect16GxUpload } from '../../toolchain/ts/rompack/gp0_encode';
 import { encodeCollisionShapeVariants, type CollisionShapeVariant } from '../../toolchain/ts/rompack/collision_shape_codec';
 import { GX_SYSTEM_TEXTURE_ASSET_ID } from '../../toolchain/ts/rompack/system_texture';
+import { afterTest } from '../helpers/test_cleanup';
 
 const header: CartRomHeader = { headerSize: 72, manifestOffset: 72, manifestLength: 0,
 	dataOffset: 72, dataLength: 256, metadataOffset: 328, metadataLength: 0, tocOffset: 328, tocLength: 0,
@@ -116,7 +117,7 @@ for (const scale of [0.5, 1, 4]) test(`artifact stroke widths stay in screen spa
 test('black and white artifact evidence is rendered over arbitrary bitmap colors without reading those pixels', t => {
 	const f = createHostOverlayFixture(64, 48), pixels = new Uint8Array(64 * 48 * 4);
 	for (let y = 0; y < 48; y++) for (let x = 0; x < 64; x++) pixels.set(x < 32 ? [255, 255, 255, 255] : [0, 0, 0, 255], (y * 64 + x) * 4);
-	const bitmap = new HostBitmap({ width: 64, height: 48, pixels }); t.after(() => bitmap.dispose());
+	const bitmap = new HostBitmap({ width: 64, height: 48, pixels }); afterTest(t, () => bitmap.dispose());
 	const output = frame(() => { api.drawBitmap(bitmap, 0, 0, 64, 48); api.outlinedPolyline([4, 20, 60, 20], 0, 0, 0); }, f);
 	const target = new Uint8Array(pixels.length), context = f.backend.hostOverlayContext;
 	beginHeadlessHost2D(context, target, 64, 48, 64, 48);
@@ -132,7 +133,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 	const font = new EditorFont(variant); editorViewState.font = font; editorViewState.lineHeight = font.lineHeight; colors.setIdeThemeVariant(theme);
 	const assets: RomAsset[] = [{ resid: 'one-byte', type: 'bin', start: 128, end: 129 }]; finalizePackedRomAssets(assets);
 	const input = new RomInspectorInput({ domain: 0, sourceContextId: TEST_CARTRIDGE_CONTEXT_IDS[0], label: 'Captured ROM', rom: new Uint8Array(512), header, assets });
-	t.after(() => { input.dispose(); editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; colors.setIdeThemeVariant(previousTheme); });
+	afterTest(t, () => { input.dispose(); editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; colors.setIdeThemeVariant(previousTheme); });
 	input.model.setMode('assets'); input.model.select(input.model.rows.findIndex(row => row.asset === assets[0]));
 	Object.assign(input.layout, { left: 0, top: 10, right: 128, bottom: 120, rowHeight: font.lineHeight, font });
 	write_rect_bounds(input.mapBounds, 4, 40, 104, 46); write_rect_bounds(input.filterBounds, 32, 24, 124, 36);
@@ -166,7 +167,7 @@ test('captured image collision renders both its decoded bounding box and all act
 	finalizePackedRomAssets(assets);
 	const input = new RomInspectorInput({ domain: 0, sourceContextId: TEST_CARTRIDGE_CONTEXT_IDS[0], label: 'Captured image', rom, assets,
 		header: { ...header, dataLength: collisionEnd - 72, metadataOffset: collisionEnd, metadataLength: 16, tocOffset: rom.length } });
-	t.after(() => input.dispose());
+	afterTest(t, () => input.dispose());
 	input.model.select(input.model.rows.findIndex(row => row.asset === assets[1]));
 	const document = input.reader; document.setSubject(input.model.selection); document.setView('preview'); document.preparePreview(); document.showCollision = true;
 	assert.deepEqual(document.collision, shape); assert.deepEqual(document.collisionPaths, [[0, 0, 1, 0, 1, 1, 0, 0]]);

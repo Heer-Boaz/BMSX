@@ -4,6 +4,7 @@ import { getActiveIdeThemeVariant, setIdeThemeVariant } from '../../ide/common/c
 import { ARTWORK_COLORS } from '../../ide/theme/artwork_colors';
 import { resolveThemeTokenColor, THEME_TOKEN_BLACK, THEME_TOKEN_WHITE } from '../../ide/theme/tokens';
 import { contrastRatio } from '../helpers/contrast.mjs';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('the opaque artwork backdrop separates both black and white authored pixels', () => {
 	const background = resolveThemeTokenColor(ARTWORK_COLORS.background);
@@ -30,7 +31,7 @@ test('artwork annotations own a readable opaque fill and distinct cased axes', (
 
 test('switching UI themes does not recolor the artwork viewing roles', t => {
 	const original = getActiveIdeThemeVariant();
-	t.after(() => setIdeThemeVariant(original));
+	afterTest(t, () => setIdeThemeVariant(original));
 	const palette = { ...ARTWORK_COLORS, annotation: { ...ARTWORK_COLORS.annotation }, axes: [...ARTWORK_COLORS.axes] };
 	const roles = [ARTWORK_COLORS.background, ARTWORK_COLORS.annotation.background,
 		ARTWORK_COLORS.annotation.foreground, ARTWORK_COLORS.annotation.warning, ...ARTWORK_COLORS.axes, ARTWORK_COLORS.active];

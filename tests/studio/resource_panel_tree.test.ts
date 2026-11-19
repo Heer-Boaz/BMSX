@@ -30,6 +30,7 @@ import { handleResourcePanelPointer } from '../../ide/input/pointer/resource_pan
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.from({ length: 60 }, (_, index) => createScenarioTestSourceRecord(`directory_${index}/child.lua`, 1)), variant: FontVariant = 'tiny') {
 	configureFontVariant(variant);
@@ -43,7 +44,7 @@ function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.fro
 	group.focus();
 	Object.assign(editor, { navigation }); panel.setFontMetrics(editorViewState.font); panel.show();
 	group.panes.layout({ left: 140, top: 20, right: 384, bottom: 270 });
-	t.after(() => { panel.dispose(); content.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); pointerHover.clear(); });
+	afterTest(t, () => { panel.dispose(); content.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); pointerHover.clear(); });
 	return { panel, sources, group, navigation };
 }
 
@@ -125,7 +126,7 @@ for (const [path, kind, source] of [
 ] as const) test(`Files Enter opens ${path} in its Map contribution and reuses the retained dirty input`, async t => {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const f = fixture(t, []), identity = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path };
-	t.after(async () => { clearWorkspaceSourceCaches(); f.sources.catalog.dispose(); await closeWorkspaceRecords(); });
+	afterTest(t, async () => { clearWorkspaceSourceCaches(); f.sources.catalog.dispose(); await closeWorkspaceRecords(); });
 	f.sources.catalog.registerTextSources(identity.contextId, [{ type: 'data', resid: 'map', source_path: path, sourcemeta: { text: source } }]);
 	f.panel.toggleFilterMode(); f.panel.queuePendingSelection(identity); f.panel.applyPendingSelection(); f.panel.prepareLayout();
 	const selected = f.panel.files.selectedNode!;
@@ -224,7 +225,7 @@ test('clean catalog updates preserve hover and cached measurements; a real publi
 	pointerHover.beginDispatch(); pointerHover.visit(f.panel); pointerHover.endDispatch();
 	const font = editorViewState.font, advance = font.advance; let measures = 0;
 	font.advance = value => { measures++; return advance.call(font, value); };
-	t.after(() => { font.advance = advance; });
+	afterTest(t, () => { font.advance = advance; });
 	for (let frame = 0; frame < 1000; frame++) { f.panel.refresh(); f.panel.prepareLayout(); }
 	assert.equal(measures, 0); assert.equal(f.panel.files.revision, revision);
 	assert.equal(f.panel.hoverIndex, f.panel.selectionIndex);

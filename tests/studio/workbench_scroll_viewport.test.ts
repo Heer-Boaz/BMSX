@@ -11,6 +11,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { WorkbenchScrollViewport } from '../../ide/workbench/ui/scroll_viewport';
 import { WorkbenchScrollControl } from '../../ide/workbench/ui/scroll_control';
+import { afterTest } from '../helpers/test_cleanup';
 
 const PRIMARY = PointerButton.Primary;
 
@@ -19,7 +20,7 @@ test('retiring a focused scroll attachment cannot erase a new input admitted by 
 	next.layout(20, 30, 123, 130, 800);
 	f.control.focusTarget.focus();
 	const unbind = f.control.focusTarget.onDidBlur(() => f.control.setInput(next));
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.control.clearInput();
 	assert.equal(f.control.handleWheel({ valid: true, insideViewport: true, viewportX: 40, viewportY: 50 }, 30), true);
 	assert.equal(next.scrollTop, 30);
@@ -40,7 +41,7 @@ function fixture(t: TestContext) {
 		if (!capture.dispatch(event, blocked, 0) && !blocked) control.handlePointer(event);
 		return event;
 	};
-	t.after(() => control.dispose());
+	afterTest(t, () => control.dispose());
 	return { view, focus, capture, parent, control, pointer };
 }
 

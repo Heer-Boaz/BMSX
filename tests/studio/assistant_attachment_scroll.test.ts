@@ -9,6 +9,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { AssistantAttachments } from '../../ide/workbench/contrib/assistant/attachments';
 import { AssistantAttachmentStrip } from '../../ide/workbench/contrib/assistant/attachment_strip';
 import { ImagePreviewCache } from '../../ide/workbench/ui/image_preview';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('attachment wheel keeps a continuous viewport, leaves selection alone and hit-tests partially visible thumbnails', t => {
 	const attachments = new AssistantAttachments();
@@ -16,7 +17,7 @@ test('attachment wheel keeps a continuous viewport, leaves selection alone and h
 	const cache = new ImagePreviewCache(async () => { throw new Error('pending images must not decode'); });
 	const parent = inputFocus.createTarget();
 	const strip = new AssistantAttachmentStrip(cache, () => { throw new Error('pending images must not open'); }, parent);
-	t.after(() => { strip.clearInput(); cache.dispose(); });
+	afterTest(t, () => { strip.clearInput(); cache.dispose(); });
 	editorViewState.font = new EditorFont('tiny');
 	for (const method of ['blit_rect', 'pushClipRect', 'popClipRect', 'blit_text_inline_with_font'] as const) t.mock.method(api, method, () => {});
 	const fill = t.mock.method(api, 'fill_rect', () => {});

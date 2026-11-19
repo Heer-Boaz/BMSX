@@ -21,6 +21,7 @@ import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import { packModelAsset, loadModelFromBuffer } from '../../toolchain/ts/rompack/model_asset';
 import { createPackedImageFixture } from '../helpers/packed_images';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, family: '2d' | '3d', transform: string, attachment: string, presentation: string) {
 	const module = family === '2d' ? 'sprite_component' : 'static_model_component';
@@ -55,7 +56,7 @@ scenes.register('main',{objects={{member_id='shape',definition_id='shape',transf
 	assets.update(f.model.identity.contextId, new Set(read.models.map(model => model.model)));
 	const canvas = new SceneViewportCanvas(images), models = new SceneViewportGeometry(assets, canvas);
 	canvas.prepare(read); models.prepare(read);
-	t.after(() => { canvas.dispose(); images.dispose(); models.dispose(); assets.dispose(); context.dispose(); });
+	afterTest(t, () => { canvas.dispose(); images.dispose(); models.dispose(); assets.dispose(); context.dispose(); });
 	return { ...f, source, context, read, entry, canvas, models, assets, images };
 }
 
@@ -139,7 +140,7 @@ test('generic model preview borrows main meshes and never owns their cache lifet
 	const choice: SceneAddMemberChoice = { id: 'shape', family: '3d' };
 	const source = { canvas: [], models: f.read.models.map(model => ({ ...model, entry: choice })) };
 	const canvas = new SceneViewportCanvas<SceneAddMemberChoice>(f.images);
-	const ghost = new SceneViewportGeometry<SceneAddMemberChoice>(f.assets, canvas); t.after(() => { ghost.dispose(); canvas.dispose(); });
+	const ghost = new SceneViewportGeometry<SceneAddMemberChoice>(f.assets, canvas); afterTest(t, () => { ghost.dispose(); canvas.dispose(); });
 	ghost.prepare(source); const draw = ghost.scene.instances[0], mesh = draw.mesh;
 	assert.equal(mesh, f.models.scene.instances[0].mesh);
 	const world: SceneSourceAffine = { family: '3d', xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 8, oy: 9, oz: 10 };
@@ -160,7 +161,7 @@ test('generic model preview borrows main meshes and never owns their cache lifet
 test('the Scene viewport shares main and Add model assets while the located ghost remains presentation-only', t => {
 	configureFontVariant('tiny');
 	const f = fixture(t, '3d', 'xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=5,oy=6,oz=7', IDENTITY_3, IDENTITY_3);
-	const view = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => view.dispose());
+	const view = new SceneViewportViewState(f.context, f.sources.catalog); afterTest(t, () => view.dispose());
 	view.layout({ left: 0, top: 0, right: 400, bottom: 300 }, 8); view.refresh();
 	const main = view.geometry.scene.instances[0], mesh = main.mesh;
 	const request = f.context.captureAddMember('3d')!, choice = request.choices[0], source = request.getPreview(choice)!;

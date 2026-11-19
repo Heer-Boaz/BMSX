@@ -3,6 +3,7 @@ import test, { type TestContext } from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 local prefab=require('cartlib/world/prefab')
@@ -19,7 +20,7 @@ function fixture(t: TestContext) {
 	const f = createSceneSourceFixture(t, SOURCE, 'scene.lua', undefined, [['cartlib/world/prefab.lua','return {define=function() end}']]);
 	const { model, documents } = f;
 	const document = documents.get(model), first = new SceneAuthoringContext(model, documents), second = new SceneAuthoringContext(model, documents);
-	t.after(() => { first.dispose(); second.dispose(); });
+	afterTest(t, () => { first.dispose(); second.dispose(); });
 	return { ...f, document, first, second, project: () => documents.get(model) };
 }
 
@@ -112,7 +113,7 @@ test('authoring admission observes provider revocation without a consumer edit o
 	const source = SOURCE.replace("require('cartlib/world/scene_library')", "require('bridge')");
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['bridge.lua', "return require('cartlib/world/scene_library')"]]);
 	const context = new SceneAuthoringContext(f.model, f.documents), original = context.document!;
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	const scene = original.scenes[0];
 	assert.equal(context.select(original, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
 	const providerResource = f.sources.catalog.resolveResource({ contextId: f.model.resource.contextId, path: 'bridge.lua' })!;
@@ -150,7 +151,7 @@ test('member removal preserves a newer selection admitted during canonical conte
 		const current = f.documents.get(f.model);
 		assert.equal(f.first.select(current, f.model.version, { kind: 'scene', scene: current.scenes[1] }), true);
 	});
-	t.after(release);
+	afterTest(t, release);
 	assert.equal(f.first.removeSelectedMember(), true);
 	assert.equal(f.first.selection?.kind, 'scene');
 	assert.equal(f.first.selection?.scene, f.first.document!.scenes[1]);
@@ -161,7 +162,7 @@ for (const change of ['selection', 'source', 'provider'] as const) test(`admissi
 	const source = SOURCE.replace("require('cartlib/world/scene_library')", "require('bridge')");
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['bridge.lua', "return require('cartlib/world/scene_library')"]]);
 	const context = new SceneAuthoringContext(f.model, f.documents), original = context.document!, scene = original.scenes[0];
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	context.select(original, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
 	let admittedSource = '';
 	const release = context.onDidChangeSelection(() => {
@@ -176,7 +177,7 @@ for (const change of ['selection', 'source', 'provider'] as const) test(`admissi
 		}
 		admittedSource = f.model.buffer.getText();
 	});
-	t.after(release);
+	afterTest(t, release);
 	assert.equal(context.removeSelectedMember(), true);
 	assert.notEqual(admittedSource, '', 'the source publication admits the newer selection');
 	assert.equal(f.model.buffer.getText(), admittedSource, 'notification effects are retained without a second stale mutation');
@@ -185,7 +186,7 @@ for (const change of ['selection', 'source', 'provider'] as const) test(`admissi
 function primaryFixture(t: TestContext) {
 	const f = fixture(t), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document: f.document, sourceVersion: f.model.version, scene: f.document.scenes[1] });
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	return { ...f, context };
 }
 
@@ -238,7 +239,7 @@ test('primary admission rejects a stale declaration proof even when its semantic
 	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: SOURCE }]);
 	assert.equal(f.documents.get(f.model), document, 'semantic proof is reused for equal source bytes');
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion, scene: document.scenes[1] });
-	t.after(() => context.dispose());
+	afterTest(t, () => context.dispose());
 	assert.equal(context.availability, 'unavailable');
 	assert.equal(context.scenes.length, 0);
 	assert.equal(context.selection, undefined);

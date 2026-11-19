@@ -13,6 +13,7 @@ import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/pri
 import { SceneEditorNavigationSelection } from '../../ide/workbench/contrib/scene_editor/navigation_selection';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 local prefab=require('cartlib/world/prefab')
@@ -84,7 +85,7 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const) for (co
 			release(); view.authoring.refresh();
 			const document = view.authoring.document!, scene = document.scenes[0];
 			assert.equal(view.authoring.select(document, model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 }), true);
-		}); t.after(release);
+		}); afterTest(t, release);
 		const groups = [...f.editor.editorParts.groups], producer = t.mock.method(view.authoring, 'getSourceLocation');
 		const opening = t.mock.method(f.editor.navigation, 'openResource');
 		f.editor.commands.execute(command, control.commandTarget);
@@ -147,14 +148,14 @@ test('document hierarchy detachment preserves the exact live Details draft throu
 
 test('attached Scene restoration cannot clear a newer member selected by source-retirement publication', async t => {
 	const f = await fixture(t), { control, view, model } = f, context = view.authoring;
-	const navigation = new SceneEditorNavigationSelection(view, undefined, context.captureSelectionRequest()); t.after(() => navigation.dispose());
+	const navigation = new SceneEditorNavigationSelection(view, undefined, context.captureSelectionRequest()); afterTest(t, () => navigation.dispose());
 	let published = false;
 	const release = context.onDidChangeSelection(() => {
 		if (published || context.selection !== undefined) return;
 		published = true;
 		const document = context.document!, scene = document.scenes[0];
 		assert.equal(context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 }), true);
-	}); t.after(release);
+	}); afterTest(t, release);
 	const range = { ...context.selectionRange };
 	model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: 'nil' }]);
 	navigation.restore(view);
@@ -166,7 +167,7 @@ test('attached Scene restoration cannot clear a newer member selected by source-
 
 test('Scene restoration cannot replace the active region chosen by its selection-publication callback', async t => {
 	const f = await fixture(t), { control, view, model } = f, context = view.authoring;
-	const navigation = new SceneEditorNavigationSelection(view); t.after(() => navigation.dispose());
+	const navigation = new SceneEditorNavigationSelection(view); afterTest(t, () => navigation.dispose());
 	f.key('ArrowDown'); assert.equal(control.details.control.focus(), true);
 	let published = false;
 	const release = context.onDidChangeSelection(() => {
@@ -176,7 +177,7 @@ test('Scene restoration cannot replace the active region chosen by its selection
 		const document = context.document!, scene = document.scenes[0];
 		assert.equal(context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 }), true);
 		assert.equal(control.details.control.focus(), true);
-	}); t.after(release);
+	}); afterTest(t, release);
 	navigation.restore(view);
 	assert.equal(published, true);
 	const selected = context.selection;

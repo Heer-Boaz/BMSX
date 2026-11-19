@@ -14,6 +14,7 @@ import { WorkbenchActionBarControl } from '../../ide/workbench/ui/action_bar_con
 import { WorkbenchCompositeMenu, WorkbenchMenu, type WorkbenchMenuDefinition, type WorkbenchMenuProjection } from '../../ide/workbench/ui/menu/model';
 import type { WorkbenchMenuItem } from '../../ide/workbench/ui/menu/registry';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
+import { afterTest } from '../helpers/test_cleanup';
 
 type MenuContext = { showUndo: boolean; showRedo: boolean };
 
@@ -72,7 +73,7 @@ function fixture(t: TestContext, secondary?: readonly WorkbenchMenuItem[] | Work
 		if (!capture.dispatch(snapshot, false, 0)) bar.handlePointer(snapshot);
 		hover.endDispatch();
 	};
-	t.after(() => { bar.dispose(); popup.dispose(); focus.setTarget(null); });
+	afterTest(t, () => { bar.dispose(); popup.dispose(); focus.setTarget(null); });
 	return { context, menu, state, focus, capture, origin, disabled, executed, commands, popup, bar, layout,
 		key, press, pointer, measurements: () => measurements };
 }

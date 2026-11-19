@@ -7,12 +7,13 @@ import { PSX_CPU_FREQ_HZ, PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/mo
 import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from '../helpers/cpu_test_harness';
+import { afterTest } from '../helpers/test_cleanup';
 
 for (const optLevel of [0, 3] as const) {
 	test(`O${optLevel}: offscreen admission preserves exact raw cycle grants without paced clamping`, t => {
 		const system = linkTestSystemBlua32(compileLuaSource('while true do end', 'offscreen_exact_grant', optLevel));
 		const target = new OffscreenMachine(system.romBytes, [null, null], PSX_MACHINE_SPEC, new TestInput());
-		t.after(() => target.dispose());
+		afterTest(t, () => target.dispose());
 		const runtime = target.runtime;
 		assert.equal(target.advanceGame(55), false);
 		assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 55, 'cycle grants do not round-trip through fractional host time');
@@ -42,7 +43,7 @@ for i = 1, 3 do
 end
 while true do end`, 'offscreen_readback_grant', optLevel));
 		const target = new OffscreenMachine(system.romBytes, [null, null], PSX_MACHINE_SPEC, new TestInput());
-		t.after(() => target.dispose());
+		afterTest(t, () => target.dispose());
 		const readback = t.mock.method(target.backend, 'executeGxGpuReadback');
 		for (let grant = 1; grant <= 3; grant++) {
 			assert.equal(target.advanceGame(1000), false);
@@ -59,7 +60,7 @@ while true do end`, 'offscreen_readback_grant', optLevel));
 			const system = linkTestSystemBlua32(compileLuaSource('while true do halt_until_irq end', 'offscreen_same_edge', optLevel));
 			const baseline = new OffscreenMachine(system.romBytes, [null, null], PSX_MACHINE_SPEC, new TestInput());
 			const target = new OffscreenMachine(system.romBytes, [null, null], PSX_MACHINE_SPEC, new TestInput());
-			t.after(() => { baseline.dispose(); target.dispose(); });
+			afterTest(t, () => { baseline.dispose(); target.dispose(); });
 			assert.equal(baseline.advanceGame(baseline.runtime.timing.cycleBudgetPerFrame), true);
 			const edge = baseline.runtime.machine.scheduler.nowCycles;
 			assert.equal(target.advanceGame(edge - 1), false);

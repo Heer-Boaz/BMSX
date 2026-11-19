@@ -17,13 +17,14 @@ import { RenameController } from '../../ide/workbench/contrib/code_editor/rename
 import { CrossFileRenameManager } from '../../ide/workbench/contrib/code_editor/rename/operations';
 import { SourceInlineBars } from '../../ide/workbench/contrib/code_editor/inline_bar/source_inline_bars';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const { models, documents, clock } = createTestCodeDocuments(t);
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'inline.lua', location: { kind: 'workspace', path: 'inline.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'inline.lua',
 		source: { type: 'lua', resid: 'inline' } }, 'lua', '-- source');
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant));
-	t.after(() => inputFocus.setTarget(null));
+	afterTest(t, () => inputFocus.setTarget(null));
 	return code;
 }
 
@@ -33,7 +34,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const code = fixture(t, variant);
 		const field = new TextField(null, { singleLine: true, allowSpace: true }), layout = new InlineBarFieldLayout(code, field);
 		field.focusTarget.canFocus = () => layout.visible;
-		t.after(() => { layout.hide(); inputFocus.setTarget(null); });
+		afterTest(t, () => { layout.hide(); inputFocus.setTarget(null); });
 		const bar = { left: 0, top: 0, right: 180, bottom: 40 };
 		layout.layout(bar, '', '', 2);
 		// The producer's empty-field native origin supplies the current text insets.
@@ -57,7 +58,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const field = new TextField(null, { singleLine: true, allowSpace: true });
 		code.caret.cursorVisible = false; code.caret.blinkTimer = 0.25;
 		const visible = editorCaretState.cursorVisible, timer = editorCaretState.blinkTimer;
-		t.after(() => { editorCaretState.cursorVisible = visible; editorCaretState.blinkTimer = timer; });
+		afterTest(t, () => { editorCaretState.cursorVisible = visible; editorCaretState.blinkTimer = timer; });
 		for (const key of ['Home', 'End', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete', 'KeyA']) {
 			setFieldText(field, 'query', true); setCursorFromOffset(field, 2);
 			editorCaretState.cursorVisible = false; editorCaretState.blinkTimer = 0.49;
@@ -77,7 +78,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const find = new EditorSearchController(code), lineJump = new CodeEditorLineJump(code);
 		const rename = new RenameController(code, sources.catalog, new CrossFileRenameManager(sources.catalog));
 		const bars = new SourceInlineBars(code, find, rename, lineJump);
-		t.after(() => { find.dispose(); rename.dispose(); lineJump.dispose(); });
+		afterTest(t, () => { find.dispose(); rename.dispose(); lineJump.dispose(); });
 		const client = { left: 0, top: 10, right: 384, bottom: 270 };
 		find.state.visible = true;
 		setFieldText(find.state.field, 'query_before_paint', true);

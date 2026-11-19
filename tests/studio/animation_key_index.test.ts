@@ -7,6 +7,7 @@ import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animat
 import { AnimationKeyViewport } from '../../ide/workbench/contrib/animation/key_viewport';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
+import { afterTest } from '../helpers/test_cleanup';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua', source: { resid: 'animation', type: 'lua' as const } };
 
@@ -89,7 +90,7 @@ test('overview visits the visible key interval, keeps spanning tags and performs
 	} });
 	const track = { ...document.tracks[0], keyIndex: { ...document.tracks[0].keyIndex, positions } };
 	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.contextId);
-	t.after(() => { input.dispose(); model.dispose(); });
+	afterTest(t, () => { input.dispose(); model.dispose(); });
 	input.document = { ...document, tracks: [track, document.tracks[1]] };
 	for (const lane of input.document.tracks) input.tracks.rows.push({ track: lane, clip: undefined, frames: false, label: lane.label, preserveCase: lane.preserveCase, text: '' });
 	input.tracks.layout.rowHeight = 18; input.tracks.layout.visibleRowCount = 2;

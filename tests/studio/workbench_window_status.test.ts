@@ -10,6 +10,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { getWorkbenchConnectionBounds, getWorkbenchStatusLayout } from '../../ide/workbench/common/layout';
 import { minimizedWorkbenchWindowCount } from '../../ide/workbench/ui/window/control';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { afterTest } from '../helpers/test_cleanup';
 
 type Fixture = ReturnType<typeof createActualSourcePanes>;
 
@@ -72,7 +73,7 @@ test('choosing a minimized closing document restores its actual retained input a
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained dirty document\n' }]);
 	f.first.focus();
 	const closing = parts.close(f.firstPart);
-	t.after(() => f.firstPart.actionPrompt.close('cancel', false));
+	afterTest(t, () => f.firstPart.actionPrompt.close('cancel', false));
 	assert.equal(f.firstPart.closing, true); assert.equal(f.firstPart.actionPrompt.visible, true);
 	parts.minimize(f.firstPart); f.update();
 	const text = model.buffer.getText(), version = model.version, cycles = f.host.runtime.machine.scheduler.nowCycles;

@@ -8,6 +8,7 @@ import { prepareScenarioLabLayout } from '../../ide/workbench/contrib/scenario_l
 import { scenarioLabCommandEnabled, selectScenarioLabTestRow, updateScenarioLabStatus } from '../../ide/workbench/contrib/scenario_lab/navigation';
 import { createScenarioLabViewState } from '../../ide/workbench/contrib/scenario_lab/view_state';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const BOUNDS = { left: 0, top: 24, right: 384, bottom: 276 };
 
@@ -16,7 +17,7 @@ function fixture(t: TestContext) {
 	editorViewState.font = new EditorFont('tiny');
 	editorViewState.lineHeight = editorViewState.font.lineHeight;
 	editorViewState.charAdvance = editorViewState.font.advance('M');
-	t.after(() => { editorViewState.font = font; editorViewState.lineHeight = lineHeight; editorViewState.charAdvance = charAdvance; });
+	afterTest(t, () => { editorViewState.font = font; editorViewState.lineHeight = lineHeight; editorViewState.charAdvance = charAdvance; });
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 1),
 	]).catalog);

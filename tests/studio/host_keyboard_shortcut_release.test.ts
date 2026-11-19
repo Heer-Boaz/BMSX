@@ -15,6 +15,7 @@ import { HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_q
 import type { HostImageRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { createHostFrameFixture } from '../helpers/host_frame';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SELECT = 1 << InputControllerGamepadButtonBit.Select;
 const X = 1 << InputControllerGamepadButtonBit.X;
@@ -27,7 +28,7 @@ for (const hostHz of [60, 120]) {
 			const device = { id: 'gamepad:0', kind: 'gamepad' as const, gamepadIndex: 0, label: 'PAD',
 				vibrationInitialization: null, supportsVibration: false, setVibration() {} };
 			const input = new Input(clock, { devices: () => [device], subscribe: () => () => {} }, device.gamepadIndex);
-			t.after(() => input.dispose());
+			afterTest(t, () => input.dispose());
 			const queue = new HostOverlayQueue();
 			const presenter = { viewportSize: { x: 256, y: 212 }, displayedViewportSize: { x: 256, y: 212 }, canvasSize: { x: 256, y: 212 },
 		visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
@@ -39,7 +40,7 @@ for (const hostHz of [60, 120]) {
 			const menu = new HostOverlayMenu(presenter, {} as Runtime, input, {} as HostRewind, createHostFrameFixture().execution, keyboardInteraction);
 			const visibilityChanges: boolean[] = [];
 			let visible = keyboardModel.visible;
-			t.after(keyboardModel.subscribe(() => {
+			afterTest(t, keyboardModel.subscribe(() => {
 				if (visible === keyboardModel.visible) return;
 				visible = keyboardModel.visible;
 				visibilityChanges.push(visible);

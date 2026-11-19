@@ -16,6 +16,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { CodeEditorTextInput } from '../../ide/editor/input/native_text';
 import { EditorCompletionController } from '../../ide/workbench/contrib/code_editor/suggest/completion_controller';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, source: string, columnOffset = source.length) {
 	const record = createScenarioTestSourceRecord('inline.lua', 1, source);
@@ -34,7 +35,7 @@ function fixture(t: TestContext, source: string, columnOffset = source.length) {
 		controller.updateAfterEdit(event.editContext);
 	});
 	clock.advance(1000);
-	t.after(() => {
+	afterTest(t, () => {
 		unbindBeforeContent(); unbindContent();
 		controller.dispose(); inputFocus.setTarget(null); input.dispose(); code.detach();
 		resetSemanticProjects(editorTextModelService); editorTextModelService.clear();
@@ -56,7 +57,7 @@ test('real native typing publishes one widget-owned inline edit; reading it does
 	const item = f.controller.session!.filteredItems[f.controller.session!.selectionIndex], insertText = item.insertText;
 	let candidateReads = 0;
 	Object.defineProperty(item, 'insertText', { configurable: true, get() { candidateReads++; return insertText; } });
-	t.after(() => Object.defineProperty(item, 'insertText', { configurable: true, writable: true, value: insertText }));
+	afterTest(t, () => Object.defineProperty(item, 'insertText', { configurable: true, writable: true, value: insertText }));
 	const read = f.model.buffer.getLineContent.bind(f.model.buffer);
 	const sourceReads = t.mock.method(f.model.buffer, 'getLineContent', read);
 	for (let frame = 0; frame < 1000; frame++) assert.equal(f.code.inlineEdit, edit);
@@ -111,7 +112,7 @@ for (const [label, kind, insertion, expectedCaret] of [
 		const observed: Array<{ kind: string; row: number; column: number; anchor: { row: number; column: number } | null }> = [];
 		const unbind = f.model.onDidChangeContent(event => observed.push({ kind: event.kind, row: f.view.cursorRow,
 			column: f.view.cursorColumn, anchor: f.view.selectionAnchor === null ? null : { ...f.view.selectionAnchor } }));
-		t.after(unbind);
+		afterTest(t, unbind);
 		f.controller.applyCompletionItem(context, { label, kind, insertText: label, sortKey: `${kind}:${label}`, detail: '' });
 		assert.equal(f.model.buffer.getText(), insertion); assert.equal(f.view.cursorColumn, expectedCaret);
 		undoSource(f.code); redoSource(f.code);
@@ -137,7 +138,7 @@ test('an actual empty require-path candidate inserts at a zero-width range with 
 		changes++;
 		if (changes === 1) assert.equal(f.view.cursorColumn, column + item.insertText.length);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.controller.applyCompletionItem(candidates.context, item);
 	assert.equal(f.model.buffer.getText(), "local m = require('module/real')"); assert.equal(changes, 1);
 	undoSource(f.code); assert.equal(f.model.buffer.getText(), source); assert.equal(f.view.cursorColumn, column); assert.equal(f.view.selectionAnchor, null);
@@ -202,7 +203,7 @@ test('input retirement clears the published completion before another source att
 	f.controller.clearInput();
 	assert.equal(f.controller.session, null); assert.equal(f.code.inlineEdit.active, false);
 	const other = editorTextModelService.retain({ contextLabel: 'Fixture project', sourceFilePath: 'other.lua', location: { kind: 'workspace' as const, path: 'other.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
-	const otherInput = new CodeEditorInput(other); t.after(() => otherInput.dispose());
+	const otherInput = new CodeEditorInput(other); afterTest(t, () => otherInput.dispose());
 	f.code.attach(other, otherInput.context.view, f.documents.get(other)); f.settle();
 	assert.equal(f.controller.session, null); assert.equal(f.code.inlineEdit.active, false);
 	const tab = new KeyInputEvent('Tab', KeyModifier.none);
@@ -226,7 +227,7 @@ test('source blur retires automatic completion before the incoming control gains
 		assert.equal(f.controller.session, null);
 		assert.equal(f.code.inlineEdit.active, false);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	destination.focus();
 	f.code.focusTarget.focus(); f.settle();
 	assert.equal(f.controller.session, null, 'returning source focus is not a fresh typing trigger');
@@ -300,7 +301,7 @@ test('widget publication is stable across font replacement but retires before so
 	assert.equal(edit.version, version, 'republishing identical intent cannot dirty layout');
 	const other = editorTextModelService.retain({ contextLabel: 'Fixture project', sourceFilePath: 'other.lua', location: { kind: 'workspace' as const, path: 'other.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
 	const otherInput = new CodeEditorInput(other), document = f.documents.get(other);
-	t.after(() => otherInput.dispose());
+	afterTest(t, () => otherInput.dispose());
 	assert.equal(edit.active, true, 'constructing an unrelated input and document does not retire this control');
 	const attach = f.code.layout.attach.bind(f.code.layout);
 	t.mock.method(f.code.layout, 'attach', next => {

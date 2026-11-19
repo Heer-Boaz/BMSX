@@ -11,13 +11,14 @@ import { WORKSPACE_METADATA_DIR, WorkspaceRecords } from '../../ide/workspace/re
 import type { WorkspaceRecordProvider } from '../../ide/workspace/record_provider';
 import { createTestRuntimeSourceState, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, files: WorkspaceRecordProvider = new MemoryWorkspaceFiles('workspace'), projectRoot = 'fixture/project') {
 	const sources = createTestRuntimeSourceState(createLuaSourceRegistry('fixture/system', ''),
 		[createLuaSourceRegistry(projectRoot, ''), null], 0);
 	const records = new WorkspaceRecords(files), model = new WorkspaceDirectoryModel(records, sources.catalog);
 	const root = model.rootForContext(TEST_CARTRIDGE_CONTEXT_IDS[0])!; assert.ok(root !== undefined);
-	t.after(async () => { model.dispose(); sources.catalog.dispose(); await records.close(); });
+	afterTest(t, async () => { model.dispose(); sources.catalog.dispose(); await records.close(); });
 	return { files, records, model, root, catalog: sources.catalog };
 }
 
@@ -64,7 +65,7 @@ test('private workspace metadata remains real provider state but never enters th
 });
 
 test('directory resolve coalesces pending reads and cached observation never repeats I/O', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const files = new MemoryWorkspaceFiles('workspace'); await files.createDirectory('fixture/project/empty');
 	const f = fixture(t, files), reads = t.mock.method(files, 'readDirectory', async path => {
 		await gate.promise; return MemoryWorkspaceFiles.prototype.readDirectory.call(files, path);
@@ -80,7 +81,7 @@ test('directory resolve coalesces pending reads and cached observation never rep
 });
 
 test('two admitted project aliases share one physical read but retain their own projected root identities', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const files = new MemoryWorkspaceFiles('workspace'); await files.createDirectory('fixture/project/empty');
 	const f = fixture(t, files), context = f.catalog.getContext(f.root.contextId);
 	f.catalog.admitContext({ ...context, admission: { id: 'fixture-directory-alias', projectRoot: context.projectRootPath } });
@@ -95,7 +96,7 @@ test('two admitted project aliases share one physical read but retain their own 
 });
 
 test('refresh status does not discard acknowledged directory membership; only a successful observation can remove an entry', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const files = new MemoryWorkspaceFiles('workspace');
 	await files.write('fixture/project/keep.txt', { contents: 'keep', updatedAt: 1 }, false);
 	await files.write('fixture/project/removed.txt', { contents: 'removed later', updatedAt: 1 }, false);
@@ -128,7 +129,7 @@ test('missing and failed directory reads remain distinct from a successfully res
 });
 
 test('a replacement admission at the same project path cannot reuse its retired root or pending observation', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const files = new MemoryWorkspaceFiles('workspace'); await files.write('fixture/project/old.txt', { contents: 'old', updatedAt: 1 }, false);
 	const f = fixture(t, files); let first = true;
 	t.mock.method(files, 'readDirectory', async path => {
@@ -147,7 +148,7 @@ test('a replacement admission at the same project path cannot reuse its retired 
 });
 
 test('only acknowledged namespace mutations refresh a loaded parent; failed creates cannot publish a folder', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const files = new MemoryWorkspaceFiles('workspace'); await files.createDirectory('fixture/project');
 	const f = fixture(t, files); await f.model.resolve(f.root, '');
 	await f.model.resolve(f.root, 'empty'); assert.equal(f.model.get(f.root, 'empty')!.status, 'missing');
@@ -171,7 +172,7 @@ test('only acknowledged namespace mutations refresh a loaded parent; failed crea
 });
 
 test('retiring a directory owner cannot publish an old read into a replacement owner at the same source paths', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const files = new MemoryWorkspaceFiles('workspace'); await files.createDirectory('fixture/project/old');
 	const f = fixture(t, files);
 	t.mock.method(files, 'readDirectory', async path => { await gate.promise; return MemoryWorkspaceFiles.prototype.readDirectory.call(files, path); });
@@ -180,7 +181,7 @@ test('retiring a directory owner cannot publish an old read into a replacement o
 	f.model.dispose(); const retiredPublications = publications;
 	const replacementFiles = new MemoryWorkspaceFiles('workspace'); await replacementFiles.createDirectory('fixture/project/current');
 	const replacementRecords = new WorkspaceRecords(replacementFiles), replacement = new WorkspaceDirectoryModel(replacementRecords, f.catalog);
-	t.after(async () => { replacement.dispose(); await replacementRecords.close(); });
+	afterTest(t, async () => { replacement.dispose(); await replacementRecords.close(); });
 	const root = replacement.rootForContext(f.root.contextId)!;
 	assert.equal(f.model.isCurrent(f.root), false); assert.equal(replacement.isCurrent(f.root), false);
 	await replacement.resolve(root, ''); gate.resolve(); await pending;
@@ -197,8 +198,8 @@ test('a project admitted at the workspace root refreshes its already loaded chil
 });
 
 test('WorkspaceRecords publishes mkdir admission before provider reentrancy and drains accepted work at close', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
-	const files = new MemoryWorkspaceFiles('workspace'), records = new WorkspaceRecords(files); t.after(() => records.close());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
+	const files = new MemoryWorkspaceFiles('workspace'), records = new WorkspaceRecords(files); afterTest(t, () => records.close());
 	let closing: Promise<void> | undefined, closed = false;
 	t.mock.method(files, 'createDirectory', async path => {
 		closing = records.close().then(() => { closed = true; });
@@ -214,7 +215,7 @@ test('WorkspaceRecords publishes mkdir admission before provider reentrancy and 
 });
 
 test('retiring the directory presentation does not cancel an accepted physical folder creation', async t => {
-	const gate = Promise.withResolvers<void>(); t.after(() => gate.resolve());
+	const gate = Promise.withResolvers<void>(); afterTest(t, () => gate.resolve());
 	const files = new MemoryWorkspaceFiles('workspace'), f = fixture(t, files);
 	t.mock.method(files, 'createDirectory', async path => { await gate.promise; await MemoryWorkspaceFiles.prototype.createDirectory.call(files, path); });
 	const creating = f.model.createDirectory(f.model.directory(f.root, ''), 'accepted/empty');
@@ -227,7 +228,7 @@ test('retiring the directory presentation does not cancel an accepted physical f
 
 test('real empty directories survive provider and model reopening, while file/directory collisions and project escapes fail', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-directory-owner-'));
-	t.after(() => rm(directory, { recursive: true, force: true }));
+	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const f = fixture(t, new DiskWorkspaceRecordProvider(directory));
 	const created = await f.model.createDirectory(f.model.directory(f.root, ''), 'empty/nested');
 	assert.equal(created.path, 'empty/nested');
@@ -239,7 +240,7 @@ test('real empty directories survive provider and model reopening, while file/di
 	await assert.rejects(async () => f.model.createDirectory(f.model.directory(f.root, ''), '../outside'));
 	f.model.dispose(); await f.records.close();
 	const records = new WorkspaceRecords(new DiskWorkspaceRecordProvider(directory)), reopened = new WorkspaceDirectoryModel(records, f.catalog);
-	t.after(async () => { reopened.dispose(); await records.close(); });
+	afterTest(t, async () => { reopened.dispose(); await records.close(); });
 	const root = reopened.rootForContext(f.root.contextId)!;
 	await reopened.resolve(root, 'empty'); await reopened.resolve(root, 'empty/nested');
 	assert.deepEqual(reopened.children(root, 'empty')!.map(entry => [entry.path, entry.type]), [['empty/nested', 'directory']]);

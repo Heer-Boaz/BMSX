@@ -13,6 +13,7 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 import { WorkbenchPropertyEdit } from '../../ide/workbench/ui/property_edit';
 import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree, type WorkbenchPropertyElement } from '../../ide/workbench/ui/property_tree';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ide/workbench/ui/tree_view';
+import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 	configureFontVariant(variant);
@@ -35,7 +36,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 		parse: text => text === '-' ? { error: 'Incomplete expression' } : { value: text },
 		apply: text => { applied++; sourceModel.pushEditOperations([{ offset: 7, deleteLength: sourceModel.buffer.length - 7, text }]); },
 	}, '17');
-	t.after(() => { edit.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); surfaces.dispose(); model.dispose(); });
+	afterTest(t, () => { edit.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); surfaces.dispose(); model.dispose(); });
 	const press = (code: string) => { inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, true)); inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, false)); };
 	return { edit, model, tree, row, root, pane, surfaces, owner, guest, parent, open, press, applied: () => applied };
 }
@@ -43,7 +44,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} property input publishes its arranged native caret with its first focus notification before paint`, t => {
 	const f = fixture(t, variant), field = f.edit.control.field;
 	let published: { x: number; y: number; width: number; height: number } | undefined;
-	t.after(inputFocus.onDidChangeTarget(() => {
+	afterTest(t, inputFocus.onDidChangeTarget(() => {
 		if (inputFocus.target === field.focusTarget) published = { ...field.caretRect() };
 	}));
 	f.open();
@@ -143,7 +144,7 @@ for (const writableRoundtrip of [false, true]) test(`readonly source publication
 test('a property popup owns only its attached source readonly subscription', t => {
 	const f = fixture(t), other = new EditorTextModel({ contextLabel: 'Fixture project', ...f.model.resource,
 		location: { kind: 'workspace', path: 'other.lua' }, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'return 17');
-	t.after(() => other.dispose());
+	afterTest(t, () => other.dispose());
 	const firstSubscribe = f.model.onDidChangeReadOnly, nextSubscribe = other.onDidChangeReadOnly;
 	let firstSubscriptions = 0, nextSubscriptions = 0;
 	t.mock.method(f.model, 'onDidChangeReadOnly', listener => {

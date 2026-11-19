@@ -10,6 +10,7 @@ import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/
 import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/details_control';
 import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/details_view';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { afterTest } from '../helpers/test_cleanup';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('checkbox', { objects = {
@@ -48,7 +49,7 @@ function fixture(t: TestContext, source = SOURCE, font: 'tiny' | 'msx' = 'tiny')
 		if (!pointerCapture.dispatch(snapshot, false, 0, details.inputScope.surfaceScope)) details.handlePointer(snapshot, down);
 		pointerCapture.endRoute(snapshot); details.update();
 	};
-	t.after(() => { details.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); unbindParent(); pointerCapture.interrupt(false); });
+	afterTest(t, () => { details.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); unbindParent(); pointerCapture.interrupt(false); });
 	return { ...f, authoring, details, view, entry, checkbox, value, key, pointer };
 }
 
@@ -132,7 +133,7 @@ test('a newer field focus chosen during draft acceptance is not stolen by the ol
 	const f = fixture(t), score = f.value('score'), caption = f.value('caption');
 	score.field.focusTarget.focus(); setFieldText(score.field, '234', true);
 	const unbind = f.model.onDidChangeContent(() => { unbind(); caption.field.focusTarget.focus(); });
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.pointer(true); f.pointer(false);
 	assert.ok(inputFocus.target === caption.field.focusTarget);
 	assert.equal(f.checkbox().input!.checked, true);
@@ -148,7 +149,7 @@ test('a selection made during draft acceptance cannot transfer the old checkbox 
 		const document = f.authoring.document!, scene = document.scenes[0];
 		assert.equal(f.authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 }), true);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.pointer(true); f.pointer(false);
 	assert.equal(f.checkbox().input!.checked, true);
 	assert.equal(f.model.buffer.getText(), SOURCE.replace('score = 7', 'score = 234'));
@@ -162,7 +163,7 @@ test('a checkbox occurrence removed during draft acceptance cannot fall through 
 		const text = f.model.buffer.getText(), offset = text.indexOf('visible = true, ');
 		f.model.pushEditOperations([{ offset, deleteLength: 'visible = true, '.length, text: '' }]);
 	});
-	t.after(unbind);
+	afterTest(t, unbind);
 	f.pointer(true); f.pointer(false);
 	assert.equal(f.model.buffer.getText(), SOURCE.replace('score = 7', 'score = 234').replace('visible = true, ', ''));
 });

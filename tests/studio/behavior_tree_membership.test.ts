@@ -18,6 +18,7 @@ import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavio
 import { acceptBehaviorGraphSelection } from '../../ide/workbench/contrib/behavior_lens/graph_navigation';
 import { selectedBehaviorLensSourceRange } from '../../ide/workbench/contrib/behavior_lens/navigation';
 import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
+import { afterTest } from '../helpers/test_cleanup';
 
 const font = new Font({ variant: 'tiny' });
 function fixture(source = BT_MEMBERSHIP_SOURCE, index = 0) {
@@ -139,7 +140,7 @@ trees.register('attachments', { root = {
 test('nested membership warnings, shared occurrences, hidden edits and Undo use existing source correspondence', t => {
 	const previous = { font: editorViewState.font, viewportWidth: editorViewState.viewportWidth, viewportHeight: editorViewState.viewportHeight,
 		lineHeight: editorViewState.lineHeight, editorAreaTop: editorViewState.editorAreaTop, editorAreaBottom: editorViewState.editorAreaBottom };
-	t.after(() => Object.assign(editorViewState, previous));
+	afterTest(t, () => Object.assign(editorViewState, previous));
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, editorAreaTop: 24, editorAreaBottom: 276 });
 	const f = fixture();
 	const view = createBehaviorLensViewState(f.document, f.model, 'graph', assert.fail);

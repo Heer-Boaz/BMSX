@@ -23,6 +23,7 @@ import { backspace, deleteForward, deleteWordBackward, deleteWordForward, indent
 import { getSingleCursorSelectionRange, setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { undo as undoActiveEdit, redo as redoActiveEdit } from '../../ide/editor/editing/undo_controller';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
+import { afterTest } from '../helpers/test_cleanup';
 
 function luaResource(path: string): RuntimeResource {
 	return { contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path },
@@ -237,7 +238,7 @@ test('two groups own independent Source inputs over one working copy and closing
 	const first = new CodeEditorInput(model), second = new CodeEditorInput(model);
 	const firstGroup = new EditorTabGroupModel(), secondGroup = new EditorTabGroupModel();
 	firstGroup.initialize(first); secondGroup.initialize(second);
-	t.after(() => { firstGroup.clear(); secondGroup.clear(); models.clear(); });
+	afterTest(t, () => { firstGroup.clear(); secondGroup.clear(); models.clear(); });
 	const firstView = first.context.view, secondView = second.context.view;
 	firstView.cursorColumn = 3; firstView.scrollRow = 2.5;
 	secondView.cursorColumn = 5; secondView.scrollRow = 7.25;
@@ -273,7 +274,7 @@ test('retained code inputs track programmatic history independently of the activ
 	const otherInput = new CodeEditorInput(other), otherView = otherInput.context.view;
 	const { documents, clock } = createTestCodeDocuments(t);
 	const code = createTestCodeControl(t, other, documents, clock, otherView);
-	t.after(() => { code.detach(); input.dispose(); otherInput.dispose(); model.dispose(); other.dispose(); });
+	afterTest(t, () => { code.detach(); input.dispose(); otherInput.dispose(); model.dispose(); other.dispose(); });
 	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 3, selectionAnchor: { row: 0, column: 1 } }, view.editSource);
 	const after = codeEditorEditState.of({ ...before.value, cursorColumn: 4 }, view.editSource);
 	model.pushEditOperations([{ offset: 3, deleteLength: 0, text: 'x' }], before, () => after);
@@ -296,7 +297,7 @@ test('same-group matching retires only its offered Source candidate and foreign 
 	const retained = new CodeEditorInput(model), candidate = new CodeEditorInput(model), sibling = new CodeEditorInput(model);
 	const group = new EditorTabGroupModel(), siblingGroup = new EditorTabGroupModel();
 	group.initialize(retained); siblingGroup.initialize(sibling);
-	t.after(() => { group.clear(); siblingGroup.clear(); model.dispose(); });
+	afterTest(t, () => { group.clear(); siblingGroup.clear(); model.dispose(); });
 	const view = retained.context.view, rejectedView = candidate.context.view;
 	view.cursorColumn = 3; rejectedView.cursorColumn = 2;
 	assert.equal(group.add(candidate), retained);
@@ -357,7 +358,7 @@ test('backspace over a selection commits one model-owned undo element', t => {
 	const input = new CodeEditorInput(model), view = input.context.view;
 	view.cursorColumn = 4;
 	view.selectionAnchor = { row: 0, column: 0 };
-	t.after(() => { code.detach(); input.dispose(); });
+	afterTest(t, () => { code.detach(); input.dispose(); });
 	const code = createTestCodeControl(t, model, documents, clock, view, new EditorFont(DEFAULT_FONT_VARIANT));
 
 	backspace(code);
@@ -377,7 +378,7 @@ test('backspace after Shift+End on an empty line publishes a collapsed caret whe
 	view.cursorRow = 1;
 	setSingleCursorSelectionAnchor(view, 1, 0);
 	const code = createTestCodeControl(t, model, documents, clock, view, new EditorFont(DEFAULT_FONT_VARIANT));
-	t.after(() => { input.dispose(); code.detach(); });
+	afterTest(t, () => { input.dispose(); code.detach(); });
 
 	backspace(code);
 	insertText(code, '!');
@@ -414,7 +415,7 @@ test('ordinary text edits publish and retain a collapsed result selection, inclu
 		view.cursorColumn = entry.column;
 		setSingleCursorSelectionAnchor(view, 0, entry.column);
 		const code = createTestCodeControl(t, model, documents, clock, view, new EditorFont(DEFAULT_FONT_VARIANT));
-		t.after(() => { input.dispose(); code.detach(); });
+		afterTest(t, () => { input.dispose(); code.detach(); });
 		let events = 0;
 		model.onDidChangeContent(() => {
 			events += 1;
@@ -440,7 +441,7 @@ test('a local search job cannot continue against another model with the same ver
 	const second = models.retain(luaResource('second.lua'), 'lua', 'needle');
 	const code = createTestCodeControl(t, first, documents, clock);
 	const search = new EditorSearchController(code);
-	t.after(() => { search.dispose(); clearBackgroundTasks(); });
+	afterTest(t, () => { search.dispose(); clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true);
 	search.openSearch(false);
 	code.attach(second, createCodeEditorViewState(), documents.get(second));

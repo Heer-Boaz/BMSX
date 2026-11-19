@@ -15,6 +15,7 @@ import { SourceTableIssue } from '../../ide/workbench/contrib/behavior_lens/sour
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { afterTest } from '../helpers/test_cleanup';
 
 function workspace(files: Record<string, string>) {
 	const [inputs, bindings] = createResourceModuleProjectFixture(Object.entries(files).map(([path, source]) =>
@@ -124,12 +125,12 @@ test('an imported effect owns its list and scalar fields; source edit and Undo r
 	const effect = "return { period_ms = 40, blocked_tags = { 'busy' }, handler = function(owner) owner:act() end }";
 	const models = new Map(Object.entries({ 'main.lua': code, 'definition.lua': effect }).map(([path, source]) =>
 		[resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }), new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'lua', resid: path } }, 'lua', source)]));
-	t.after(() => { for (const model of models.values()) model.dispose(); });
+	afterTest(t, () => { for (const model of models.values()) model.dispose(); });
 	const project = workspace({ 'main.lua': code, 'definition.lua': effect });
 	const mainModel = models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua' }))!, sourceModel = models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definition.lua' }))!;
 	const document = () => buildBehaviorSourceDocument(mainModel.identity, project.getSnapshot());
 	const view = createBehaviorLensViewState(document(), mainModel, 'properties', path => models.get(path)!);
-	t.after(() => view.source.release());
+	afterTest(t, () => view.source.release());
 	const definition = view.document.definitions[0];
 	assert.ok(definition.behaviorKind === 'action_effect' && definition.body !== null);
 	assert.ok(view.presentation.kind === 'properties');

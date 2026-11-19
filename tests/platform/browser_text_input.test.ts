@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { afterTest } from '../helpers/test_cleanup';
 
 test('native text input stays ordered independently of render/input polling', async t => {
 	const fixture = String.raw`export function start() {
@@ -139,7 +140,7 @@ export { setFieldText } from './ide/editor/ui/inline/text_field';` + fixture, lo
 		tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
-	t.after(() => browser.close());
+	afterTest(t, () => browser.close());
 	const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
 	const page = await context.newPage();
 	await page.route('http://localhost:4173/**', route => route.fulfill({ contentType: 'text/html', body:
