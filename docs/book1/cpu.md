@@ -381,10 +381,14 @@ Sequential advancement, WIDE-body addresses, branch targets and conditional
 skips retain the low 32 bits of the calculated address. A misaligned
 fetch records BadAddress and raises `AddressErrorLoad` before attempting a bus
 read. Instruction words may be fetched from system ROM, installed main RAM
-outside the decoded I/O aperture, and cartridge ROM or RAM. The executable
+outside the decoded I/O aperture and below the language-heap floor, and
+cartridge ROM or RAM. The language heap and the runtime management area,
+from the floor to the end of installed RAM, do not supply instructions
+([[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}). The executable
 windows retain their ordinary mapped storage behavior, including zero reads
-outside fitted ROM or card storage. System I/O and cartridge MMIO do not supply
-instructions: a fetch from either is an unmapped U32 bus read, rejected before
+outside fitted ROM or card storage. System I/O, cartridge MMIO and the language-heap
+range do not supply instructions: a fetch from any of them is an unmapped U32
+bus read, rejected before
 the addressed device is read. Ordinary data access to those devices is unchanged.
 A new bus fault reading
 either the first word or the WIDE body raises `InstructionBusError`; the saved
@@ -1895,7 +1899,7 @@ Returning from an NMI-marked exception frame also restores the retained pre-NMI 
 
 Writing `EXEC` supplies a **function-record address**, not an instruction-entry address. The record is read on the CPU bus and must identify a static function; otherwise execution hard-halts.
 
-Before reading the record, `EXEC` sets the language-heap floor from the target image's static storage ([[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}). A record address in system ROM selects the system image, and one in the cartridge window selects the image in the selected socket; a record elsewhere keeps the active image's floor. Lowering the floor always succeeds. If raising it would cover heap storage still in use, `EXEC` first completes a full collection. If storage below the new floor is still in use, execution hard-halts before any instruction of the target runs, so none of its DATA or BSS has been written.
+Before reading the record, `EXEC` sets the language-heap floor from the target image's static storage ([[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}). A record address in system ROM selects the system image, and one in the cartridge window selects the image in the selected socket; a record elsewhere keeps the active image's floor. Lowering the floor always succeeds. If raising it would cover heap storage still in use, `EXEC` first completes a full collection. If storage below the new floor is still in use, execution hard-halts before any instruction of the target runs, so none of its DATA or BSS has been written. A floor change applies to instruction fetch at once: after a lower floor, a fetch from the newly covered range faults; after a higher floor, a fetch from the released range reads the bytes then stored there.
 
 A successful `EXEC` clears the active call stack, selects the function's image, and starts the static function with zero arguments. It clears HALT, retained-interrupt-event, blocked-write and hard-halt state. The new Status is 3 if the selected execution-domain ID is nonnegative, or 1 otherwise. `EXEC` replaces execution: it is neither an ordinary function call with a saved return point nor an exception return.
 

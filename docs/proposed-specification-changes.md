@@ -1907,17 +1907,30 @@ regel is de heap alles boven het hoogste statische byte. Een plaatsing hoog in
 RAM is dus nog steeds geldig, maar laat weinig heap over. De compacte indeling
 blijft de aanbevolen vorm.
 
-**Uitvoerbaar RAM blijft (O1).** Instructies mogen uit het hele geïnstalleerde
-hoofd-RAM buiten de I/O-apertuur blijven komen, ook uit het heapgebied.
-Recordschrijfacties melden hun gewijzigde bereik aan dezelfde
-RAM-schrijfwatches als gewone stores, voor zover ze eerder gedecodeerde code
-kunnen raken. Een aaneengesloten reeks, zoals een kopie of rehash, geeft één
-melding, net als bij DMA.
+**Uitvoerbaar RAM, behalve het heapgebied (O1, herzien 19 november 2026).**
+Code in DATA/BSS en in eigen buffers van een programma blijft uitvoerbaar, met
+de schrijfwatches die gewone stores daar al hebben. Het heapgebied en het
+beheergebied, `[vloer, einde RAM)`, leveren geen instructies. Een fetch daaruit
+is, net als uit system-I/O of cartridge-MMIO, een niet-gemapte U32-busread en
+geeft `InstructionBusError`. Een geldig programma verliest daar niets mee: de
+indeling van het heapgebied is geen programmeerinterface, en eigen code staat
+altijd in de eigen statische opslag (zoals de codearena van BIOS-`load`).
 
-De kosten zijn één bytelezing en een vertakking per recordstore of per reeks.
-Dat is hetzelfde pad als de bestaande `STORE_MEM`-controle. DuckStation
-invalideert vertaalde code op dezelfde manier wanneer een bewaakte RAM-pagina
-wordt beschreven.
+- **Recordwrites.** Een write waarvan het gemaskeerde RAM-adres bewezen in
+  `[vloer, einde RAM)` ligt, slaat de codewatch over. Een write die door een
+  corrupte referentie via de spiegeling onder de vloer belandt (DATA/BSS),
+  meldt zich wel, net als een gewone store. Instructie-fetch blijft daar dus
+  coherent.
+- **Rewind staat los.** Dirty-page-tracking voor rewind is een apart mechanisme
+  en wordt niet door deze uitzondering geraakt.
+- **Vloerwijziging.** Bij elke vloerwijziging vervallen gecachte decode- en
+  JIT-bindingen in het veranderde bereik `[min(oud, nieuw), max(oud, nieuw))`.
+  Een lagere vloer maakt dat bereik niet-uitvoerbaar. Een hogere vloer geeft het
+  weer vrij; een fetch leest dan de bytes die er op dat moment staan.
+
+DuckStation bewaakt op dezelfde manier alleen pagina's met code. Hier sluit het
+contract code in het heapgebied helemaal uit, zodat recordwrites geen
+controle meer nodig hebben.
 
 ### 12.3 De GEO-scratchreservering vervalt
 
@@ -1992,7 +2005,8 @@ de gemapte bus:
 - Ze geven geen busfout.
 - Ze lopen niet via DMA-arbitrage.
 
-Schrijfacties melden zich wel bij de RAM-schrijfwatches (O1, 12.2). Hun kosten
+Schrijfacties binnen het heapgebied melden zich niet bij de codewatches; een
+write die via de spiegeling onder de vloer belandt wel (O1, 12.2). Hun kosten
 zitten in de bestaande instructie- en collectiekosten.
 
 **De bus blijft ongespiegeld.** Voor gewone loads, stores en DMA blijft gelden
@@ -2340,7 +2354,7 @@ Alle beslissingen zijn op 18 november 2026 na de review genomen.
 
 | | Vraag | Besluit |
 |---|---|---|
-| O1 | Instructies uit het heapgebied | **Uitvoerbaar hoofd-RAM blijft.** Recordwrites melden hun gewijzigde bereik aan de RAM-schrijfwatches; een aaneengesloten reeks geeft één melding. Een nieuwe zichtbare `InstructionBusError` alleen om een controle bij tabelstores te besparen, is onvoldoende reden (12.2) |
+| O1 | Instructies uit het heapgebied | **Herzien op 19 november 2026: het heap- en het beheergebied leveren geen instructies** (fetch geeft `InstructionBusError`). DATA/BSS blijft uitvoerbaar en coherent. Recordwrites binnen het heapgebied slaan de codewatch over; gespiegelde writes onder de vloer melden zich wel. Een vloerwijziging laat decode- en JIT-bindingen in het veranderde bereik vervallen. Rewind-tracking staat los (12.2) |
 | O2 | Bezetting en GC-cycli | **Toelating en `count` gebruiken de toegewezen blokgrootte. GC-cycli worden per bewerking geprijsd:** markeren per onderzocht slot, vegen per bezocht blok (12.6) |
 | O3 | Cartridgestrings | **ROM-records, internering eerst RAM, bit 31 kiest de socket.** Dat geldt ook voor ROM-constanten en globale namen (12.9) |
 | O4 | Wie zet de vloer bij EXEC | **De CPU**, bij reset en EXEC, met pagina-uitgifte van boven naar beneden. EXEC wijst een overdracht af vóór de startup als statische opslag een levende pagina overlapt (12.2) |
