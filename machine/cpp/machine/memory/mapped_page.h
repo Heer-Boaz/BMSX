@@ -148,6 +148,7 @@ public:
 	}
 
 	void armCodeRange(size_t first, size_t length);
+	void clearCodeRange(size_t first, size_t length);
 
 	void clear() {
 		for (size_t page = 0; page < m_pageCount; ++page)

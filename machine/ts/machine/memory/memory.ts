@@ -319,6 +319,9 @@ export class Memory {
 	public setRamInstructionEnd(end: number): void {
 		const old = this.instructionEnd;
 		this.instructionEnd = end;
+		// Translation and image-data watches share a bank. The CPU re-arms its
+		// live data ranges after the obsolete fetch watches have been cleared.
+		if (end < old) this.ramPageWriteWatches.clearCodeRange(end - RAM_BASE, old - end);
 		if (old !== end) this.mappedPageInvalidator?.invalidateMappedRange(Math.min(old, end), Math.max(old, end));
 	}
 

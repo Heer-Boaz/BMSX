@@ -641,6 +641,15 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 		if (!image) {
 			continue;
 		}
+		// A shrinking instruction aperture clears shared translation masks.
+		// Global-name remaps and embedded constants remain data dependencies.
+		for (const auto [base, bytes] : {
+			std::pair{image->globalMapBase, static_cast<size_t>(image->globalMapBytes())},
+			std::pair{image->constantBase, image->constantsWatched ? image->constPool.size() * 5u : 0u}}) {
+			const u64 from = std::max(firstKey, static_cast<u64>(base));
+			const u64 to = std::min(endKey, static_cast<u64>(base) + bytes);
+			if (from < to) m_memory.ramWriteWatches().armCodeRange(from - RAM_BASE, to - from);
+		}
 		for (auto& [key, page] : image->decodedPages) {
 			if (key >= invalidationStart && key < endKey) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

@@ -177,6 +177,9 @@ void Memory::clearMappedPageWriteWatches() {
 void Memory::setRamInstructionEnd(u32 end) {
 	const u32 old = m_ramInstructionEnd;
 	m_ramInstructionEnd = end;
+	// Translation masks share their bank with image-data dependencies. Drop
+	// obsolete fetch watches first; the CPU re-arms its still-live data ranges.
+	if (end < old) m_ramPageWriteWatches.clearCodeRange(end - RAM_BASE, old - end);
 	if (old != end && m_mappedPageInvalidator)
 		m_mappedPageInvalidator->invalidateMappedRange(std::min(old, end), std::max(old, end));
 }

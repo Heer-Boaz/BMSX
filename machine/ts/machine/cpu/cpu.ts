@@ -1013,6 +1013,16 @@ export class CPU implements MappedPageInvalidator {
 			if (image === null) {
 				continue;
 			}
+			// Restore only live image-data watches after an aperture shrink clears
+			// their shared bank; descriptor views and history use separate masks.
+			const namesFrom = Math.max(firstKey, image.globalMapBase);
+			const namesTo = Math.min(endKey, image.globalMapBase + 4 * (image.globalNameCount + image.systemNameCount));
+			if (namesFrom < namesTo) this.memory.ramWriteWatches().armCodeRange(namesFrom - RAM_BASE, namesTo - namesFrom);
+			if (image.constantsWatched) {
+				const from = Math.max(firstKey, image.constantBase);
+				const to = Math.min(endKey, image.constantBase + 5 * image.constTags.length);
+				if (from < to) this.memory.ramWriteWatches().armCodeRange(from - RAM_BASE, to - from);
+			}
 			for (const [key, page] of image.decodedPages) {
 				if (key >= invalidationStart && key < endKey) {
 					this.compiledCodeCache.retirePage(page);

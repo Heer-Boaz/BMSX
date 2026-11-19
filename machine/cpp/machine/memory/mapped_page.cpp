@@ -16,6 +16,18 @@ void MappedPageWriteWatches::armCodeRange(size_t first, size_t length) {
 	}
 }
 
+void MappedPageWriteWatches::clearCodeRange(size_t first, size_t length) {
+	const size_t last = first + length - 1u;
+	const size_t firstPage = first >> MAPPED_PAGE_BYTE_SHIFT, lastPage = last >> MAPPED_PAGE_BYTE_SHIFT;
+	for (size_t page = firstPage; page <= lastPage; ++page) {
+		const u32 begin = page == firstPage ? (first & MAPPED_PAGE_BYTE_MASK) >> 2u : 0u;
+		const u32 end = page == lastPage ? (last & MAPPED_PAGE_BYTE_MASK) >> 2u : MAPPED_PAGE_BYTE_MASK >> 2u;
+		const size_t base = page * MAPPED_PAGE_WATCH_GROUP_COUNT;
+		MappedPageWriteWatch watch{m_groups.get() + page, m_words + base, &m_watchedPages, nullptr};
+		watch.consume(begin, end + 1u, false);
+	}
+}
+
 bool MappedPageWriteWatches::historyPageDirty(size_t firstPage, size_t endPage) const {
 	for (size_t page = firstPage; page < endPage; ++page)
 		if ((m_groups[page] & MAPPED_WATCH_HISTORY_CLEAN) == 0u) return true;

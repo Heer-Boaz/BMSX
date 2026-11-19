@@ -85,6 +85,16 @@ export class MappedPageWriteWatches {
 		}
 	}
 
+	public clearCodeRange(first: number, length: number): void {
+		const last = first + length - 1;
+		const firstPage = first >>> MAPPED_PAGE_BYTE_SHIFT, lastPage = last >>> MAPPED_PAGE_BYTE_SHIFT;
+		for (let page = firstPage; page <= lastPage; ++page) {
+			const begin = page === firstPage ? (first & MAPPED_PAGE_BYTE_MASK) >>> 2 : 0;
+			const end = page === lastPage ? (last & MAPPED_PAGE_BYTE_MASK) >>> 2 : MAPPED_PAGE_BYTE_MASK >>> 2;
+			this.consume(page, begin, end + 1, false);
+		}
+	}
+
 	public clear(): void {
 		for (let page = 0; page < this.values.length; ++page) this.values[page] &= HISTORY_CLEAN;
 		this.words.fill(0);
