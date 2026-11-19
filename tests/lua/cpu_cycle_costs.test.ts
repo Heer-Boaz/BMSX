@@ -13,7 +13,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
-import { ThreadField } from '../../machine/ts/machine/cpu/thread';
+import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { valueBool, valueBuiltinFunction, valueInteger, valueNil, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';

@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { compileCoroutineTest, coroutineVectors } from '../helpers/coroutine';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { THREAD_RECORD_KIND, ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
+import { THREAD_RECORD_KIND, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
+import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 
 for (const optLevel of [0, 3] as const) {
 	for (const [name, body] of Object.entries(coroutineVectors)) {

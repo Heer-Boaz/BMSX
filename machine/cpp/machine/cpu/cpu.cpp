@@ -195,7 +195,7 @@ void CPU::reset() {
 	m_executionImagesByDomain[static_cast<size_t>(SYSTEM_EXECUTION_DOMAIN_ID + 1)] =
 		std::move(activatedSystemImage);
 	m_systemExceptionFunctionAddress = systemExceptionFunctionAddress;
-	latchActiveExecutionImage(*m_systemImage);
+	latchActiveExecutionImage(SYSTEM_EXECUTION_DOMAIN_ID, m_systemImage);
 	if (!readFunctionRecord(*m_systemImage, systemResetFunctionAddress, executionBusSignalsForDomain(SYSTEM_EXECUTION_DOMAIN_ID))) {
 		hardHalt();
 		return;
@@ -390,9 +390,28 @@ MappedBusSignals CPU::executionBusSignalsForDomain(ExecutionDomainId executionDo
 		: mappedBusSignalsForCartridgeSlot(static_cast<u32>(executionDomainId));
 }
 
-void CPU::latchActiveExecutionImage(Blua32ExecutionImage& image) {
-	m_activeExecutionImage = &image;
-	m_executionBusSignals = executionBusSignalsForDomain(image.executionDomainId);
+void CPU::latchActiveExecutionImage(ExecutionDomainId domain, Blua32ExecutionImage* image) {
+	m_activeExecutionDomainId = domain;
+	m_activeExecutionImage = image;
+	m_executionBusSignals = executionBusSignalsForDomain(domain);
+}
+
+void CPU::resumeFrameBank() {
+	if (auto* frame = m_activeThread->currentFrame) {
+		const auto domain = frame->savedExecutionBank();
+		if (domain == m_activeExecutionDomainId && frame->executionImage == m_activeExecutionImage) return;
+		auto* image = executionImageForDomain(domain);
+		if (image != frame->executionImage) {
+			frame->executionImage = image;
+			frame->decodedPage = nullptr;
+			frame->decodedPageAddress = 0;
+			frame->compilationEntry = true;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			frame->nativeContinuationCells = {};
+#endif
+		}
+		latchActiveExecutionImage(domain, image);
+	}
 }
 
 void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
@@ -428,8 +447,10 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 			}
 		});
 	}
-	if (m_activeExecutionImage == previousImage.get()) {
-		latchActiveExecutionImage(*activatedImage);
+	if (m_activeExecutionDomainId == activatedImage->executionDomainId) {
+		latchActiveExecutionImage(m_activeExecutionDomainId, activatedImage);
+		auto* frame = m_activeThread->currentFrame;
+		if (frame && !frame->executionImage) frame->executionImage = activatedImage;
 	}
 }
 
@@ -767,7 +788,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	}
 #endif
 	clearCallStack();
-	latchActiveExecutionImage(*m_functionRecordLatch.image);
+	latchActiveExecutionImage(m_functionRecordLatch.image->executionDomainId, m_functionRecordLatch.image);
 	m_programExecutionDomainId = m_functionRecordLatch.image->executionDomainId;
 	m_cop0Words[COP0_STATUS] = m_functionRecordLatch.image->executionDomainId >= 0
 		? CPU_STATUS_CART_ENTRY
@@ -845,7 +866,6 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		for (size_t depth = 0; depth < thread->frameDepth; ++depth, framePtr = framePtr->next) {
 			const CallFrame& frame = *framePtr;
 			CpuFrameState frameState;
-			frameState.executionDomainId = frame.executionImage->executionDomainId;
 
 			frameState.stackCapacity = frame.stackCapacity;
 			frameState.stackBase = frame.stackBase;
@@ -876,7 +896,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 			captureValueState(m_globalValues.get(index)),
 		});
 	}
-	state.executionCartridgeSlot = m_activeExecutionImage->executionDomainId;
+	state.executionCartridgeSlot = m_activeExecutionDomainId;
 	state.programExecutionDomainId = m_programExecutionDomainId;
 	state.completionValues.reserve(m_completionValueCount);
 	for (size_t i = 0; i < m_completionValueCount; ++i) {
@@ -1126,7 +1146,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	}
 	m_systemImage = m_executionImagesByDomain[static_cast<size_t>(SYSTEM_EXECUTION_DOMAIN_ID + 1)].get();
 	Blua32ExecutionImage* executionImage = m_executionImagesByDomain[static_cast<size_t>(state.executionCartridgeSlot + 1)].get();
-	latchActiveExecutionImage(*executionImage);
+	latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
 	for (size_t objectIndex = 0; objectIndex < snapshot.objectCount(); ++objectIndex) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(objectIndex));
@@ -1137,7 +1157,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		thread->stackTop = saved.stackTop;
 		for (const CpuFrameState& frameState : saved.frames) {
 			auto* frame = m_activeThread->acquireFrame();
-			frame->executionImage = executionImageForDomain(frameState.executionDomainId);
+			frame->executionImage = m_executionImagesByDomain[static_cast<size_t>(frame->savedExecutionBank() + 1)].get();
 			frame->stackBase = frameState.stackBase;
 			frame->stackCapacity = frameState.stackCapacity;
 			frame->registers = thread->stack.subspan(frame->stackBase, frame->stackCapacity);
@@ -1147,6 +1167,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		thread->bindStack();
 	}
 	m_activeThread = static_cast<Thread*>(restoredObjects[state.activeThreadRef]);
+	if (auto* current = m_activeThread->currentFrame) current->executionImage = m_activeExecutionImage;
 	m_completionThread = static_cast<Thread*>(restoredObjects[state.completionThreadRef]);
 	m_threadSwitchRequested = false;
 
@@ -1253,7 +1274,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			out.push_back(valueInteger(frame.readControl(FrameField::Pc)));
 			out.push_back(valueInteger(frame.readControl(FrameField::CallSite)));
 			out.push_back(valueBool(frame.hasControlFlag(FRAME_COMPLETION)));
-			out.push_back(valueInteger(static_cast<u32>(frame.executionImage->executionDomainId)));
+			out.push_back(valueInteger(static_cast<u32>(frame.savedExecutionBank())));
 			out.push_back(valueBool(frame.hasControlFlag(FRAME_EXCEPTION)));
 			break;
 		}
@@ -1358,6 +1379,7 @@ void CPU::returnToResumer(int sourceBase, int sourceCount, bool succeeded) {
 	Thread* thread = m_activeThread;
 	Thread* resumer = thread->resumer();
 	m_activeThread = resumer;
+	resumeFrameBank();
 	resumer->setStatus(ThreadStatus::Running);
 	CallFrame& caller = *resumer->currentFrame;
 	const int callBase = resumer->callBase();
@@ -1408,6 +1430,7 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 		pushFrame(caller, target->entry(), base + 2, argc - 1, 0, 0, false, 0);
 		target->setEntry(nullptr);
 	} else {
+		resumeFrameBank();
 		CallFrame& frame = *target->currentFrame;
 		writeReturnValuesFromRegisters(frame, target->callBase(), target->returnCount(), caller, base + 2, argc - 1);
 	}
@@ -1819,6 +1842,7 @@ void CPU::returnFromException(CallFrame& frame) {
 	const u32 returnPc = m_cop0Words[COP0_EPC];
 	instructionBudgetRemaining -= closeUpvalues(frame);
 	m_activeThread->leaveFrame();
+	resumeFrameBank();
 	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_RFE_RESTORE_MASK)
 		| ((m_cop0Words[COP0_STATUS] >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
 	if (m_activeThread->frameDepth != 0) {
@@ -1841,7 +1865,7 @@ CallFrame* CPU::enterException(
 	u32 causeWord,
 	u32 epcWord
 ) {
-	m_exceptionDomainWord = static_cast<u32>(m_activeThread->currentFrame->executionImage->executionDomainId);
+	m_exceptionDomainWord = static_cast<u32>(m_activeExecutionDomainId);
 	m_cop0Words[COP0_EPC] = epcWord;
 	m_cop0Words[COP0_CAUSE] = causeWord;
 	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_MODE_STACK_MASK)
@@ -1943,7 +1967,7 @@ RunResult CPU::runLoop(
 			}
 			frame = thread.currentFrame;
 			image = frame->executionImage;
-			if (image != m_activeExecutionImage) latchActiveExecutionImage(*image);
+			if (image && image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
 			registers = frame->registers;
 			if constexpr (Instrumented) {
 				if (m_nonMaskableInterruptPending) {
@@ -1953,12 +1977,11 @@ RunResult CPU::runLoop(
 				if ((m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 					&& m_irqController.hasAssertedMaskableInterruptLine()) {
 					CallFrame* interruptedFrame = thread.currentFrame;
-					Blua32ExecutionImage* interruptedImage = interruptedFrame->executionImage;
 					if ((hookBinding.preMaskableInterruptDomainMask
-						& executionDomainBit(interruptedImage->executionDomainId)) != 0u
+						& executionDomainBit(m_activeExecutionDomainId)) != 0u
 						&& hookBinding.hook(
 							hookBinding.context,
-							interruptedImage->executionDomainId,
+							m_activeExecutionDomainId,
 							interruptedFrame->readControl(FrameField::Pc)
 						)) {
 						return RunResult::ExecutionStopped;
@@ -1984,14 +2007,19 @@ RunResult CPU::runLoop(
 dispatch_fetch:
 			pc = frame->readControl(FrameField::Pc);
 			if constexpr (Instrumented) {
-				if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
-					&& hookBinding.hook(hookBinding.context, image->executionDomainId, pc)) {
+				if ((hookBinding.domainMask & executionDomainBit(m_activeExecutionDomainId)) != 0u
+					&& hookBinding.hook(hookBinding.context, m_activeExecutionDomainId, pc)) {
 					return RunResult::ExecutionStopped;
 				}
 			}
 			if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) {
 				m_cop0Words[COP0_BAD_ADDRESS] = pc;
 				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
+				continue;
+			}
+			if (!image) {
+				m_cop0Words[COP0_BAD_ADDRESS] = pc;
+				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 				continue;
 			}
 			pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
@@ -2224,6 +2252,7 @@ dispatch_instruction:
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_native_block: {
+				nativeState.frameBank = frameBankWord(IMAGE.executionDomainId);
 				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
 				nativeState.cartridgeRom = m_memory.cartridgeController().romStorage(nativeState.cartridgeSlot);
 				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(nativeState.cartridgeSlot);
@@ -2271,7 +2300,8 @@ dispatch_rebind_frame:
 					&& m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth)) return RunResult::Halted;
 				frame = thread.currentFrame;
 				image = frame->executionImage;
-				if (image != m_activeExecutionImage) latchActiveExecutionImage(*image);
+				if (!image) goto dispatch_continue;
+				if (image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
 				registers = frame->registers;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				pc = frame->readControl(FrameField::Pc);
@@ -2392,13 +2422,15 @@ void CPU::setExecutionHook(ExecutionHookBinding binding) {
 }
 
 void CPU::unwindToDepth(int targetDepth, bool chargeCaptures) {
-	if (static_cast<int>(m_activeThread->frameDepth) > targetDepth) abortStalledMemoryWrite();
+	const bool unwinding = static_cast<int>(m_activeThread->frameDepth) > targetDepth;
+	if (unwinding) abortStalledMemoryWrite();
 	while (static_cast<int>(m_activeThread->frameDepth) > targetDepth) {
 		auto* finished = m_activeThread->currentFrame;
 		const int closed = closeUpvalues(*finished);
 		if (chargeCaptures) instructionBudgetRemaining -= closed;
 		m_activeThread->leaveFrame();
 	}
+	if (unwinding) resumeFrameBank();
 	u32 depth = m_activeThread->protectedDepth();
 	while (depth > 0 && m_activeThread->protectedWord(depth - 1, ProtectedField::Caller) >= m_activeThread->frameDepth) --depth;
 	m_activeThread->setProtectedDepth(depth);
@@ -2421,7 +2453,7 @@ size_t CPU::stepHeap(Value root0, Value root1, Value root2, Thread* growingStack
 }
 
 ExecutionDomainId CPU::readFrameExecutionDomain(int frameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->executionImage->executionDomainId;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->savedExecutionBank();
 }
 
 ExecutionDomainId CPU::readLastExecutionDomain() const {
@@ -2569,6 +2601,8 @@ void CPU::writeFrameExecution(
 	}
 	frame.writeControl(FrameField::Function, functionRecord.address);
 	frame.executionImage = functionRecord.image;
+	frame.saveExecutionBank(executionDomainId);
+	if (&frame == m_activeThread->currentFrame) latchActiveExecutionImage(executionDomainId, frame.executionImage);
 	frame.decodedPage = nullptr;
 	frame.decodedPageAddress = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -2704,7 +2738,8 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	auto* frame = m_activeThread->acquireFrame();
 	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
-	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch,
+	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc,
+		frameBankWord(functionRecord.executionDomainId) | (returnToCompletionLatch ? FRAME_COMPLETION : 0u),
 		varargBase, varargCount, returnBase, returnCount, top, closure->address);
 	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
@@ -2727,6 +2762,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 		+ (sharedStack ? 0 : varargCount);
 	m_activeThread->stackTop = stackBase + frame->stackCapacity;
 	m_activeThread->enterFrame(frame);
+	latchActiveExecutionImage(functionRecord.executionDomainId, frame->executionImage);
 	return frame;
 }
 
@@ -2745,7 +2781,8 @@ CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
 	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true, exception);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
-	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress, returnToCompletionLatch,
+	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress,
+		frameBankWord(functionRecord.executionDomainId) | (returnToCompletionLatch ? FRAME_COMPLETION : 0u),
 		varargBase, varargCount, returnBase, returnCount, top, closure->address);
 	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
@@ -2758,6 +2795,7 @@ CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 	}
 	m_activeThread->stackTop = stackBase + frame->stackCapacity;
 	m_activeThread->enterFrame(frame);
+	latchActiveExecutionImage(functionRecord.executionDomainId, frame->executionImage);
 	return frame;
 }
 

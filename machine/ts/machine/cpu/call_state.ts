@@ -8,6 +8,7 @@ import { writeLE32 } from '../../common/endian';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
 import type { GcHeap } from './gc_heap';
+import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../spec/blua32/execution_domain';
 
 export const enum ProtectedCallKind {
 	PCall,
@@ -21,6 +22,13 @@ const FRAME_WINDOW_MASK = (MAIN_RAM_SIZE >>> 2) - 1;
 const FRAME_COMPLETION = 1;
 const FRAME_EXCEPTION = 2;
 const FRAME_NMI = 4;
+const FRAME_BANK_CART = 1 << 3;
+const FRAME_BANK_SECOND = 1 << 4;
+const FRAME_BANK_MASK = FRAME_BANK_CART | FRAME_BANK_SECOND;
+
+function frameBankWord(domain: ExecutionDomainId): number {
+	return domain === SYSTEM_EXECUTION_DOMAIN_ID ? 0 : FRAME_BANK_CART | (domain << 4);
+}
 
 export class CallFrame {
 	public next: CallFrame | null = null;
@@ -40,15 +48,26 @@ export class CallFrame {
 		this.controlMemory = heap.memory;
 	}
 
+	public get savedExecutionBank(): ExecutionDomainId {
+		const flags = this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Flags);
+		return (flags & FRAME_BANK_CART) === 0 ? SYSTEM_EXECUTION_DOMAIN_ID : ((flags & FRAME_BANK_SECOND) >>> 4) as ExecutionDomainId;
+	}
+	public set savedExecutionBank(domain: ExecutionDomainId) {
+		const bank = frameBankWord(domain);
+		const address = this.controlOffset + FrameField.Flags;
+		this.controlMemory.writeRamRecordWord(address, (this.controlMemory.readRamRecordWord(address) & ~FRAME_BANK_MASK) | bank);
+	}
+
 	public bindControl(offset: number): void { this.controlOffset = offset & RAM_RECORD_WORD_MASK; }
-	public initializeControl(fn: number, pc: number, callSite: number, completion: boolean,
+	public initializeControl(fn: number, pc: number, callSite: number, completion: boolean, domain: ExecutionDomainId,
 		varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number): void {
 		const memory = this.controlMemory, ram = memory.ramData(), offset = this.controlOffset;
 		writeLE32(ram, (offset + FrameField.Function) & RAM_RECORD_WORD_MASK, fn);
 		writeLE32(ram, (offset + FrameField.CallSite) & RAM_RECORD_WORD_MASK, callSite);
 		writeLE32(ram, (offset + FrameField.OpenHead) & RAM_RECORD_WORD_MASK, 0);
 		writeLE32(ram, (offset + FrameField.Protected) & RAM_RECORD_WORD_MASK, -1);
-		writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, completion ? FRAME_COMPLETION : 0);
+		const bank = frameBankWord(domain);
+		writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, bank | (completion ? FRAME_COMPLETION : 0));
 		writeLE32(ram, (offset + FrameField.Pc) & RAM_RECORD_WORD_MASK, pc);
 		writeLE32(ram, (offset + FrameField.VarargBase) & RAM_RECORD_WORD_MASK, varargBase);
 		writeLE32(ram, (offset + FrameField.VarargCount) & RAM_RECORD_WORD_MASK, varargCount);

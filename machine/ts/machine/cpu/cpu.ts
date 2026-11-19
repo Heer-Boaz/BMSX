@@ -143,7 +143,8 @@ import {
 } from './execution_image';
 import { ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, type CallFrame } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
-import { Thread, ThreadStatus, ThreadField, THREAD_HEAP_BYTES, THREAD_INITIAL_BACKING_BYTES } from './thread';
+import { Thread, ThreadStatus, THREAD_HEAP_BYTES, THREAD_INITIAL_BACKING_BYTES } from './thread';
+import { ThreadField } from './thread_record';
 import { LuaHeap, type LuaHeapState } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import {
@@ -163,7 +164,6 @@ import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKin
 
 // These activation fields have not yet moved to the guest stack record.
 export type CpuFrameState = {
-	executionDomainId: ExecutionDomainId;
 	stackBase: number;
 	stackCapacity: number;
 };
@@ -313,6 +313,7 @@ export class CPU implements MappedPageInvalidator {
 		new Array<Blua32ExecutionImage | null>(EXECUTION_DOMAIN_COUNT).fill(null);
 	private systemImage!: Blua32ExecutionImage;
 	private activeExecutionImage!: Blua32ExecutionImage;
+	private activeExecutionDomainId: ExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	private programExecutionDomainId: ExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	private executionBusSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU;
 	private readonly mappedPageBinding: MappedPageBinding = {
@@ -623,7 +624,7 @@ export class CPU implements MappedPageInvalidator {
 		this.systemImage = this.activateExecutionImage(systemBoot);
 		this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1] = this.systemImage;
 		this.systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
-		this.latchActiveExecutionImage(this.systemImage);
+		this.latchActiveExecutionImage(SYSTEM_EXECUTION_DOMAIN_ID, this.systemImage);
 		if (!this.readFunctionRecordOnBus(this.systemImage, systemResetFunctionAddress, this.executionBusSignals)) {
 			this.hardHalt();
 			return;
@@ -845,9 +846,25 @@ export class CPU implements MappedPageInvalidator {
 			: mappedBusSignalsForCartridgeSlot(executionDomainId);
 	}
 
-	private latchActiveExecutionImage(image: Blua32ExecutionImage): void {
-		this.activeExecutionImage = image;
-		this.executionBusSignals = CPU.executionBusSignalsForDomain(image.executionDomainId);
+	private latchActiveExecutionImage(domain: ExecutionDomainId, image: Blua32ExecutionImage | null): void {
+		this.activeExecutionDomainId = domain;
+		this.activeExecutionImage = image!;
+		this.executionBusSignals = CPU.executionBusSignalsForDomain(domain);
+	}
+
+	private resumeFrameBank(): void {
+		const frame = this.activeThread.currentFrame;
+		if (frame === null) return;
+		const domain = frame.savedExecutionBank;
+		if (domain === this.activeExecutionDomainId && frame.executionImage === this.activeExecutionImage) return;
+		const image = this.executionImageForDomain(domain);
+		if (image !== frame.executionImage) {
+			frame.executionImage = image!;
+			frame.decodedPage = null;
+			frame.decodedPageAddress = 0;
+			frame.compilationEntry = true;
+		}
+		this.latchActiveExecutionImage(domain, image);
 	}
 
 	private staticClosureFromLatch(): Closure {
@@ -924,7 +941,11 @@ export class CPU implements MappedPageInvalidator {
 					}
 				});
 			}
-			if (this.activeExecutionImage === previous) this.latchActiveExecutionImage(image);
+			if (this.activeExecutionDomainId === domain) {
+				this.latchActiveExecutionImage(domain, image);
+				const frame = this.activeThread.currentFrame;
+				if (frame !== null && frame.executionImage === null) frame.executionImage = image;
+			}
 		}
 	}
 
@@ -1291,11 +1312,11 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public isCartridgeExecutionActive(): boolean {
-		return this.activeExecutionImage.executionDomainId >= 0;
+		return this.activeExecutionDomainId >= 0;
 	}
 
 	public activeCartridgeSlot(): ExecutionDomainId {
-		return this.activeExecutionImage.executionDomainId;
+		return this.activeExecutionDomainId;
 	}
 
 	public readExecutionBusSignals(): MappedBusSignals {
@@ -1323,7 +1344,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const image = this.functionRecordLatch.image;
 		this.clearCallStack();
-		this.latchActiveExecutionImage(image);
+		this.latchActiveExecutionImage(image.executionDomainId, image);
 		this.programExecutionDomainId = image.executionDomainId;
 		const cartridgeEntry = image.executionDomainId >= 0;
 		this.cop0Words[COP0_STATUS] = cartridgeEntry ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
@@ -1564,6 +1585,7 @@ export class CPU implements MappedPageInvalidator {
 		const caller = frame.previous;
 		this.charge(this.closeUpvalues(frame));
 		frame.thread.leaveFrame();
+		this.resumeFrameBank();
 		this.cop0Words[COP0_STATUS] = ((this.cop0Words[COP0_STATUS] & ~CPU_STATUS_RFE_RESTORE_MASK)
 			| ((this.cop0Words[COP0_STATUS] >> 2) & CPU_STATUS_RFE_RESTORE_MASK)) >>> 0;
 		if (caller) {
@@ -1585,7 +1607,7 @@ export class CPU implements MappedPageInvalidator {
 		causeWord: number,
 		epcWord: number,
 	): CallFrame | null {
-		this.exceptionDomainWord = this.activeThread.currentFrame!.executionImage.executionDomainId >>> 0;
+		this.exceptionDomainWord = this.activeExecutionDomainId >>> 0;
 		this.cop0Words[COP0_EPC] = epcWord >>> 0;
 		this.cop0Words[COP0_CAUSE] = causeWord >>> 0;
 		this.cop0Words[COP0_STATUS] = ((this.cop0Words[COP0_STATUS] & ~CPU_STATUS_MODE_STACK_MASK)
@@ -1651,7 +1673,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const frame = thread.currentFrame!;
 					const image = frame.executionImage;
-					if (this.activeExecutionImage !== image) this.latchActiveExecutionImage(image);
+					if (image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
 					if (this.nonMaskableInterruptPending
 						|| ((this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
 							&& this.irqController.hasAssertedMaskableInterruptLine())
@@ -1663,6 +1685,11 @@ export class CPU implements MappedPageInvalidator {
 					if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
 						this.cop0Words[COP0_BAD_ADDRESS] = pc;
 						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
+						continue;
+					}
+					if (image === null) {
+						this.cop0Words[COP0_BAD_ADDRESS] = pc;
+						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 						continue;
 					}
 					const page = this.decodedPageForFrame(frame, pc);
@@ -1724,7 +1751,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const frame = thread.currentFrame!;
 					const image = frame.executionImage;
-					if (this.activeExecutionImage !== image) this.latchActiveExecutionImage(image);
+					if (image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
 					if (this.nonMaskableInterruptPending) {
 						this.enterPendingInterrupt();
 						continue;
@@ -1732,23 +1759,27 @@ export class CPU implements MappedPageInvalidator {
 					if ((this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
 						&& this.irqController.hasAssertedMaskableInterruptLine()) {
 						const interruptedFrame = thread.currentFrame!;
-						const interruptedImage = interruptedFrame.executionImage;
 						if ((preMaskableInterruptExecutionDomainMask
-							& executionDomainBit(interruptedImage.executionDomainId)) !== 0
-							&& executionHook(interruptedImage.executionDomainId, interruptedFrame.pc)) {
+							& executionDomainBit(this.activeExecutionDomainId)) !== 0
+							&& executionHook(this.activeExecutionDomainId, interruptedFrame.pc)) {
 							return RunResult.ExecutionStopped;
 						}
 						this.enterPendingInterrupt();
 						continue;
 					}
 					const pc = frame.pc;
-					if ((executionDomainMask & executionDomainBit(image.executionDomainId)) !== 0
-						&& executionHook(image.executionDomainId, pc)) {
+					if ((executionDomainMask & executionDomainBit(this.activeExecutionDomainId)) !== 0
+						&& executionHook(this.activeExecutionDomainId, pc)) {
 						return RunResult.ExecutionStopped;
 					}
 					if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
 						this.cop0Words[COP0_BAD_ADDRESS] = pc;
 						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
+						continue;
+					}
+					if (image === null) {
+						this.cop0Words[COP0_BAD_ADDRESS] = pc;
+						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 						continue;
 					}
 					const page = this.decodedPageForFrame(frame, pc);
@@ -1793,13 +1824,15 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private unwindToDepth(targetDepth: number, chargeCaptures: boolean): void {
-		if (this.activeThread.frameDepth > targetDepth) this.abortStalledMemoryWrite();
+		const unwinding = this.activeThread.frameDepth > targetDepth;
+		if (unwinding) this.abortStalledMemoryWrite();
 		while (this.activeThread.frameDepth > targetDepth) {
 			const frame = this.activeThread.currentFrame!;
 			const closed = this.closeUpvalues(frame);
 			if (chargeCaptures) this.charge(closed);
 			frame.thread.leaveFrame();
 		}
+		if (unwinding) this.resumeFrameBank();
 		let depth = this.activeThread.protectedDepth;
 		while (depth > 0 && this.activeThread.protectedWord(depth - 1, ProtectedField.Caller) >= this.activeThread.frameDepth) --depth;
 		this.activeThread.protectedDepth = depth;
@@ -1822,7 +1855,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public readFrameExecutionDomain(frameIndex: number): ExecutionDomainId {
-		return this.activeThread.frameAtDepth(frameIndex).executionImage.executionDomainId;
+		return this.activeThread.frameAtDepth(frameIndex).savedExecutionBank;
 	}
 
 	public readLastExecutionDomain(): ExecutionDomainId {
@@ -1954,6 +1987,8 @@ export class CPU implements MappedPageInvalidator {
 		}
 		frame.functionAddress = functionAddress;
 		frame.executionImage = image;
+		frame.savedExecutionBank = executionDomainId;
+		if (frame === this.activeThread.currentFrame) this.latchActiveExecutionImage(executionDomainId, image);
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
 		frame.compilationEntry = true;
@@ -2130,12 +2165,14 @@ export class CPU implements MappedPageInvalidator {
 		if (frame.protectedContinuationIndex >= 0) {
 			this.finishProtectedCallFromRegisters(frame.protectedContinuationIndex, registers, a, total);
 			frame.thread.leaveFrame();
+			this.resumeFrameBank();
 			return false;
 		}
 		if (frame.returnToCompletionLatch) {
 			this.latchCompletionValues(registers, a, total);
 			this.charge(total);
 			frame.thread.leaveFrame();
+			this.resumeFrameBank();
 			return false;
 		}
 		if (frameIndex === 0 && this.activeThread.resumer !== null) {
@@ -2150,11 +2187,13 @@ export class CPU implements MappedPageInvalidator {
 			this.latchCompletionValues(registers, a, total);
 			this.charge(total);
 			frame.thread.leaveFrame();
+			this.resumeFrameBank();
 			return true;
 		}
 		const caller = frame.previous!;
 		this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, total);
 		frame.thread.leaveFrame();
+		this.resumeFrameBank();
 		return true;
 	}
 
@@ -2535,7 +2574,7 @@ export class CPU implements MappedPageInvalidator {
 				page = block.page;
 				continue;
 			}
-			if (frame.executionImage !== this.activeExecutionImage) return;
+			if (frame.executionImage !== image) return;
 			const pc = frame.pc;
 			if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) return;
 			const lookup = frame.executionImage.compiledCodeLookup;
@@ -2933,7 +2972,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
-		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress, returnToCompletionLatch,
+		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress, returnToCompletionLatch, functionRecord.executionDomainId,
 			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure.address);
 
 		const copiedCount = Math.min(functionRecord.numParams, args.length);
@@ -2949,6 +2988,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		this.activeThread.enterFrame(frame);
+		this.latchActiveExecutionImage(functionRecord.executionDomainId, frame.executionImage);
 		return frame;
 	}
 
@@ -2966,7 +3006,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = this.executionImageForDomain(closure.prototypeRecord.executionDomainId)!;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
-		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch,
+		frame.initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch, functionRecord.executionDomainId,
 			argumentBase + functionRecord.numParams, varargCount, returnBase, returnCount, functionRecord.numParams, closure.address);
 		const copiedCount = Math.min(functionRecord.numParams, argCount);
 		if (vararg || !sharedStack) {
@@ -2984,6 +3024,7 @@ export class CPU implements MappedPageInvalidator {
 		this.charge((vararg || !sharedStack ? functionRecord.numParams : functionRecord.numParams - copiedCount)
 			+ (sharedStack ? 0 : varargCount));
 		this.activeThread.enterFrame(frame);
+		this.latchActiveExecutionImage(functionRecord.executionDomainId, frame.executionImage);
 		return frame;
 	}
 
@@ -3372,6 +3413,7 @@ export class CPU implements MappedPageInvalidator {
 		const thread = this.activeThread;
 		const resumer = thread.resumer!;
 		this.activeThread = resumer;
+		this.resumeFrameBank();
 		resumer.status = ThreadStatus.Running;
 		const caller = resumer.currentFrame!;
 		const callBase = resumer.callBase;
@@ -3425,6 +3467,7 @@ export class CPU implements MappedPageInvalidator {
 			this.pushFrameFromCaller(caller, target.entry!, callBase + 2, argCount - 1, 0, 0, false, 0);
 			target.entry = null;
 		} else {
+			this.resumeFrameBank();
 			const frame = target.currentFrame!;
 			this.writeReturnValuesFromRegisters(frame, target.callBase, target.returnCount, caller.registers, callBase + 2, argCount - 1);
 		}
@@ -3910,7 +3953,6 @@ export class CPU implements MappedPageInvalidator {
 			let frame = thread.firstFrame!;
 			for (let frameIndex = 0; frameIndex < thread.frameDepth; frameIndex += 1, frame = frame.next!) {
 				frames[frameIndex] = {
-					executionDomainId: frame.executionImage.executionDomainId,
 					stackBase: frame.stackBase,
 					stackCapacity: frame.stackCapacity,
 
@@ -4033,7 +4075,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		writer.finish();
 		return {
-			executionCartridgeSlot: this.activeExecutionImage.executionDomainId,
+			executionCartridgeSlot: this.activeExecutionDomainId,
 			programExecutionDomainId: this.programExecutionDomainId,
 			systemGlobals,
 			globalSlots,
@@ -4186,8 +4228,8 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		this.systemImage = this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1]!;
-		const executionImage = this.executionImagesByDomain[state.executionCartridgeSlot + 1]!;
-		this.latchActiveExecutionImage(executionImage);
+		const executionImage = this.executionImagesByDomain[state.executionCartridgeSlot + 1];
+		this.latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
 		for (let objectIndex = 0; objectIndex < snapshot.objectCount; objectIndex += 1) {
 			const offset = snapshot.objectWord(objectIndex);
@@ -4203,13 +4245,14 @@ export class CPU implements MappedPageInvalidator {
 				frame.stackCapacity = frameState.stackCapacity;
 
 				frame.registers.rebind(thread.stackRegisters, frame.stackBase, frame.stackCapacity);
-				frame.executionImage = this.executionImageForDomain(frameState.executionDomainId)!;
+				frame.executionImage = this.executionImagesByDomain[frame.savedExecutionBank + 1]!;
 
 				this.activeThread.enterFrame(frame);
 			}
 			thread.bindStack();
 		}
 		this.activeThread = restoredObjects[state.activeThreadRef] as Thread;
+		if (this.activeThread.currentFrame !== null) this.activeThread.currentFrame.executionImage = this.activeExecutionImage;
 		this.completionThread = restoredObjects[state.completionThreadRef] as Thread;
 		this.threadSwitchRequested = false;
 		reader.readValue(state.stringIndexTable);

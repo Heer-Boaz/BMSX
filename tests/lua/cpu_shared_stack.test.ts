@@ -1,4 +1,4 @@
-import { ThreadField } from '../../machine/ts/machine/cpu/thread';
+import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SHIFT } from '../../machine/ts/machine/memory/mapped_page';
 import { integerConstant } from '../../toolchain/ts/lua/number';

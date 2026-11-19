@@ -163,7 +163,8 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::CallSite), SLJIT_R2, 0, SLJIT_IMM, INSTRUCTION_BYTES);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::OpenHead), SLJIT_IMM, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::Protected), SLJIT_IMM, -1);
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::Flags), SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::Flags),
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeCpuRunState, frameBank));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, functionAddress));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::Function), SLJIT_R2, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, codeAddress));

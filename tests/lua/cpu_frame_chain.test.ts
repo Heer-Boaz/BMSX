@@ -7,9 +7,10 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { FRAME_CONTROL_BYTES, FrameField, ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_CAPTURE_COUNT, CLOSURE_CAPTURE_WORDS, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/closure';
-import { ThreadField, THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
+import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
+import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -39,7 +40,7 @@ test('thread-owned nodes reuse stable identities and trim only the spare tail', 
 	for (let index = 0; index < 8; ++index) {
 		const frame = thread.acquireFrame();
 		thread.reserveFrame(thread.stackRegisters.capacity());
-		frame.initializeControl(0, 0, 0, false, 0, 0, 0, 0, 0, 0);
+		frame.initializeControl(0, 0, 0, false, -1, 0, 0, 0, 0, 0, 0);
 		assert.equal(thread.frameDepth, index, 'preparation does not activate a frame');
 		thread.enterFrame(frame); frames.push(frame);
 		assert.equal(frame.previous, index === 0 ? null : frames[index - 1]);
@@ -86,6 +87,27 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 		cpu.readCompletionValues(values);
 		assert.deepEqual(values, [valueInteger(1)]);
+	});
+
+	test(`RET restores a saved bank even when the selected socket is empty (${backend})`, () => {
+		const { cpu, memory } = createTestSystemCpu(callImage(8, 1), backend);
+		cpu.runUntilDepth(0, 1);
+		const caller = cpu.rootThread.currentFrame!;
+		caller.savedExecutionBank = 1;
+		assert.equal(cpu.activeCartridgeSlot(), -1, 'a saved bank is not the current fetch latch');
+		const checkpoint = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+		memory.restoreSaveState(ram);
+		cpu.restoreRuntimeState(checkpoint);
+		assert.equal(cpu.activeCartridgeSlot(), -1, 'restoring the raw frame does not replace the live bank latch');
+		cpu.runUntilDepth(0, 1);
+		assert.equal(cpu.getFrameDepth(), 2, 'the current BIOS bank still admits CALL');
+		cpu.runUntilDepth(1, 100);
+		assert.equal(cpu.activeCartridgeSlot(), 1, 'RET loads the saved execution bank');
+		const missing = cpu.captureRuntimeState(), missingRam = memory.captureSaveState();
+		memory.restoreSaveState(missingRam); cpu.restoreRuntimeState(missing);
+		cpu.runUntilDepth(0, 1);
+		assert.equal(cpu.readCauseWord() & 0x7c, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR);
+		assert.equal(cpu.readExceptionDomainWord(), 1);
 	});
 
 	test(`GETUP and checkpoint restore read the active closure address from RAM (${backend})`, () => {

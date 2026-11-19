@@ -1,5 +1,5 @@
 import { UPVALUE_ADDRESS_MASK, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './closure';
-import { ThreadField } from './thread';
+import { ThreadField } from './thread_record';
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueTag } from './value';
 import { OpCode } from '../../spec/blua32/opcode';

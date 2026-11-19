@@ -7,6 +7,7 @@
 #include "machine/cpu/closure.h"
 #include "machine/cpu/value_slots.h"
 #include "machine/memory/memory.h"
+#include "spec/blua32/execution_domain.h"
 
 namespace bmsx {
 
@@ -32,6 +33,12 @@ constexpr u32 FRAME_WINDOW_MASK = (MAIN_RAM_SIZE / sizeof(u32)) - 1;
 constexpr u32 FRAME_COMPLETION = 1u;
 constexpr u32 FRAME_EXCEPTION = 2u;
 constexpr u32 FRAME_NMI = 4u;
+constexpr u32 FRAME_BANK_CART = 1u << 3;
+constexpr u32 FRAME_BANK_SECOND = 1u << 4;
+constexpr u32 FRAME_BANK_MASK = FRAME_BANK_CART | FRAME_BANK_SECOND;
+constexpr u32 frameBankWord(ExecutionDomainId domain) {
+	return domain == SYSTEM_EXECUTION_DOMAIN_ID ? 0u : FRAME_BANK_CART | (static_cast<u32>(domain) << 4);
+}
 
 struct CallFrame {
 	Thread* thread = nullptr;
@@ -60,7 +67,14 @@ struct CallFrame {
 	u32 captureCount() const {
 		return controlMemory->readRamRecordWord(readControl(FrameField::Closure) + CLOSURE_CAPTURE_COUNT) & FRAME_WINDOW_MASK;
 	}
-	void initializeControl(u32 function, u32 pc, u32 callSite, bool completion,
+	ExecutionDomainId savedExecutionBank() const {
+		const u32 flags = readControl(FrameField::Flags);
+		return (flags & FRAME_BANK_CART) != 0 ? static_cast<ExecutionDomainId>((flags & FRAME_BANK_SECOND) >> 4) : SYSTEM_EXECUTION_DOMAIN_ID;
+	}
+	void saveExecutionBank(ExecutionDomainId domain) {
+		writeControl(FrameField::Flags, (readControl(FrameField::Flags) & ~FRAME_BANK_MASK) | frameBankWord(domain));
+	}
+	void initializeControl(u32 function, u32 pc, u32 callSite, u32 flags,
 		i32 varargBase, i32 varargCount, i32 returnBase, i32 returnCount, i32 top, u32 closure);
 	bool hasControlFlag(u32 mask) const;
 	void addControlFlags(u32 flags);

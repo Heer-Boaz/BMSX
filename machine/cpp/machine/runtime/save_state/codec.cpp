@@ -7,7 +7,7 @@ namespace bmsx {
 namespace {
 
 // One current internal layout, deliberately without a legacy reader.
-constexpr u32 kSaveStateSignature = 0x42534d42u; // BMSB
+constexpr u32 kSaveStateSignature = 0x43534d42u; // BMSC
 
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1149,14 +1149,12 @@ RuntimeSaveMachineState readRuntimeSaveMachineState(BinaryReader& reader, size_t
 }
 
 template<class Writer> void writeCpuFrameState(Writer& writer, const CpuFrameState& state) {
-	writer.i32(state.executionDomainId);
 	writer.i32(state.stackBase);
 	writer.i32(state.stackCapacity);
 }
 
 CpuFrameState readCpuFrameState(BinaryReader& reader) {
 	CpuFrameState state;
-	state.executionDomainId = reader.i32();
 	state.stackBase = reader.i32();
 	state.stackCapacity = reader.i32();
 	return state;

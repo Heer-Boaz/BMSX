@@ -24,14 +24,14 @@ void CallFrame::addControlFlags(u32 flags) {
 	writeControl(FrameField::Flags, readControl(FrameField::Flags) | flags);
 }
 
-void CallFrame::initializeControl(u32 function, u32 pc, u32 callSite, bool completion,
+void CallFrame::initializeControl(u32 function, u32 pc, u32 callSite, u32 flags,
 	i32 varargBase, i32 varargCount, i32 returnBase, i32 returnCount, i32 top, u32 closure) {
 	auto* ram = controlMemory->ramData();
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::Function)) & RAM_RECORD_WORD_MASK), function);
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::CallSite)) & RAM_RECORD_WORD_MASK), callSite);
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::OpenHead)) & RAM_RECORD_WORD_MASK), 0);
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::Protected)) & RAM_RECORD_WORD_MASK), static_cast<u32>(-1));
-	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::Flags)) & RAM_RECORD_WORD_MASK), completion ? FRAME_COMPLETION : 0);
+	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::Flags)) & RAM_RECORD_WORD_MASK), flags);
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::Pc)) & RAM_RECORD_WORD_MASK), pc);
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::VarargBase)) & RAM_RECORD_WORD_MASK), static_cast<u32>(varargBase));
 	writeLE32(ram + ((controlOffset + static_cast<u32>(FrameField::VarargCount)) & RAM_RECORD_WORD_MASK), static_cast<u32>(varargCount));

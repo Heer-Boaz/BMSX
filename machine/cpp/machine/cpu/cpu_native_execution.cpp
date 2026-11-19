@@ -254,7 +254,14 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		// CALL/RET have already committed the real activation. Rebind its image
 		// and instruction chip-select before looking up a warm receiving body.
-		if (frame->executionImage != cpu.m_activeExecutionImage) cpu.latchActiveExecutionImage(*frame->executionImage);
+		if (!frame->executionImage) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++gateProfile.returns;
+#endif
+			return nullptr;
+		}
+		if (frame->executionImage != cpu.m_activeExecutionImage)
+			cpu.latchActiveExecutionImage(frame->executionImage->executionDomainId, frame->executionImage);
 		const u32 pc = frame->readControl(FrameField::Pc);
 		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -288,6 +295,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		// frame/image. Bind the live physical bank again before native dispatch.
 		run->codeRoot = lookup->root(slot);
 		run->cartridgeSlot = slot;
+		run->frameBank = frameBankWord(frame->executionImage->executionDomainId);
 		run->cartridgeRom = cpu.m_memory.cartridgeController().romStorage(slot);
 		// A pure continuation still owns its descriptor. Cross-page links are
 		// stable except a system-image edge from shared memory into the selectable

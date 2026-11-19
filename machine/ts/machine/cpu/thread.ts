@@ -1,3 +1,4 @@
+import { ThreadField } from './thread_record';
 import { GcObject, GcKind } from './gc_object';
 import { CallFrame, FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { Closure } from './closure';
@@ -16,11 +17,6 @@ export const THREAD_INITIAL_VALUES = 8;
 export const THREAD_INITIAL_FRAMES = 2;
 export const THREAD_INITIAL_BACKING_BYTES = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES + THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
 export const THREAD_RECORD_KIND = 4;
-export const enum ThreadField {
-	Header = 0, Status = 8, Resumer = 12, Entry = 16, StackBlock = 24, StackCapacity = 28,
-	FrameCapacity = 32, ProtectedCapacity = 36, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
-	ProtectedDepth = 60,
-}
 
 // Eighteen count bits cover every 20-byte record that can fit in physical RAM.
 const CONTROL_COUNT_MASK = (1 << 18) - 1;

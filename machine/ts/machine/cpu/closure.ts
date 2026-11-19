@@ -4,7 +4,7 @@ import { ValueTag, valueFromTag, valueTag, valuePayload, type Value } from './va
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { writeLE32 } from '../../common/endian';
 import type { Memory } from '../memory/memory';
-import { ThreadField } from './thread';
+import { ThreadField } from './thread_record';
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 
 export const UPVALUE_HEAP_BYTES = 16;

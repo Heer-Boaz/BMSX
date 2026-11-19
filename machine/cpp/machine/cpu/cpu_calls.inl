@@ -38,6 +38,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 	if (static_cast<i32>(continuation) >= 0) {
 		finishProtectedCall(continuation, frame, a, count);
 		m_activeThread->leaveFrame();
+		resumeFrameBank();
 		return false;
 	}
 	if (frame.hasControlFlag(FRAME_COMPLETION)) {
@@ -46,6 +47,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 		m_completionValueCount = count;
 		instructionBudgetRemaining -= count;
 		m_activeThread->leaveFrame();
+		resumeFrameBank();
 		return false;
 	}
 	if (m_activeThread->frameDepth == 1 && m_activeThread->resumer() != nullptr) {
@@ -66,6 +68,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 		writeReturnValuesFromRegisters(caller, frame.readWindow(FrameField::ReturnBase), frame.readWindow(FrameField::ReturnCount), frame, a, count);
 	}
 	m_activeThread->leaveFrame();
+	resumeFrameBank();
 	return true;
 }
 

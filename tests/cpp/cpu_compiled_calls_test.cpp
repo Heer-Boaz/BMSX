@@ -102,7 +102,7 @@ void reusableFrameChain() {
 		auto* previous = thread.currentFrame;
 		auto* frame = thread.acquireFrame();
 		thread.reserveFrame(thread.stackCapacity);
-		frame->initializeControl(0, 0, 0, false, 0, 0, 0, 0, 0, 0);
+		frame->initializeControl(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 		require(frame->previous == previous && previous->next == frame && frame->thread == &thread,
 			"reusable nodes have stable identity and belong to their thread");
 		thread.enterFrame(frame);

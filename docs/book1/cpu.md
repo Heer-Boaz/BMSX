@@ -1223,7 +1223,13 @@ keeps its value slots, frame controls and protected continuations in one
 separately allocated block. The frame-control area begins at the next
 four-byte boundary after the Value slots, denoted by `round4(5V)`.
 Each active frame records the address of its closure, which supplies
-the references to its captured-variable cells. The saved variable-argument and return windows and the live register
+the references to its captured-variable cells. It also saves its execution
+bank. Resumption restores that bank independently of the current
+cartridge socket selector. An executing activation uses the latched bank
+until control transfers to another activation; modifying its saved bank
+does not switch an instruction fetch already in progress. If there is no
+execution image in the resumed bank, the next instruction fetch raises an
+instruction bus error. The saved variable-argument and return windows and the live register
 frontier use 20-bit slot indices and counts. Their upper bits are not
 decoded. Slot transfers use the main RAM address aperture.
 Protected continuations follow the reserved frame controls. A suspended protected

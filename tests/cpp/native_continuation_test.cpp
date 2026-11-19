@@ -297,6 +297,27 @@ void observationAndLifecycle(int action) {
 	}
 }
 
+void physicalCallerBankDeclinesOldContinuation() {
+	Machine machine;
+	machine.enterWarmChild();
+	auto* parent = machine.cpu.rootThread()->firstFrame;
+	const auto& lookup = *parent->executionImage->nativeCodeLookup;
+	const u32 pc = parent->readControl(FrameField::Pc);
+	auto* previous = lookup.find(pc, 0);
+	auto* marker = lookup.find(machine.markerPc(), 0);
+	const auto word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const auto markerWord = (machine.markerPc() & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(parent->nativeContinuationCells[0] == &previous->nativeCode[word] && marker->nativeCode[markerWord],
+		"the caller has a real warm continuation to withdraw from this RET");
+	previous->nativeCode[word] = marker->nativeCode[markerWord];
+	machine.memory.writeMappedU32LE(RAM_BASE + parent->controlOffset + static_cast<u32>(FrameField::Flags), frameBankWord(1));
+	machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
+	require(machine.cpu.getGlobalByKey(machine.cpu.stringPool().intern("continuationResult")) == valueNil()
+		&& (machine.cpu.readCauseWord() & CPU_CAUSE_CODE_MASK) == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
+		&& machine.cpu.readExceptionDomainWord() == 1,
+		"native RET declines the warm old-bank cell and fetch faults in the missing physical socket");
+}
+
 void physicalCallerPcRedirectsNativeReturn() {
 	Machine machine;
 	machine.enterWarmChild();
@@ -320,6 +341,7 @@ int main() {
 		cartridgeReturnSelectsLiveBank();
 		wideContinuationAcrossPage();
 		physicalCallerPcRedirectsNativeReturn();
+		physicalCallerBankDeclinesOldContinuation();
 		for (int action = 0; action < 5; ++action) observationAndLifecycle(action);
 		std::cout << "Native continuation tests passed; exit_bytes=" << sizeof(NativeBlockExitSite)
 			<< " frame_bytes=" << sizeof(CallFrame) << '\n';

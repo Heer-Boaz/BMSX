@@ -26,6 +26,7 @@ struct NativeCpuRunState {
 	const Span<const u8>* systemRom = nullptr;
 	const Span<const u8>* cartridgeRom = nullptr;
 	u32 cartridgeSlot = 0;
+	u32 frameBank = 0;
 	std::exception_ptr error;
 	bool forceScalar = false;
 };

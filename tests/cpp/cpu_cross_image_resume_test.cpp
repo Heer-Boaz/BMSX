@@ -175,6 +175,31 @@ void shortGrantsAndRestore(const Images& images, u32 slot, bool restore) {
 	generated.completedMarkers(); scalar.completedMarkers();
 }
 
+void returnUsesSavedBank(const Images& images, bool scalar) {
+	Machine machine(images, 0, scalar);
+	machine.stopBeforeReturn();
+	auto* caller = machine.cpu.rootThread()->firstFrame;
+	const u32 flagsAddress = RAM_BASE + caller->controlOffset + static_cast<u32>(FrameField::Flags);
+	const u32 flags = machine.memory.readMappedWord(flagsAddress);
+	machine.memory.writeMappedU32LE(flagsAddress, (flags & ~FRAME_BANK_MASK) | frameBankWord(1));
+	machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
+	const auto stack = machine.memory.captureSaveState();
+	const auto state = machine.cpu.captureRuntimeState();
+	for (const bool restored : {false, true}) {
+		if (restored) {
+			machine.memory.restoreSaveState(stack);
+			machine.cpu.restoreRuntimeState(state);
+		}
+		require(machine.cpu.activeCartridgeSlot() == SYSTEM_EXECUTION_DOMAIN_ID, "a suspended bank write does not change the executing BIOS bank");
+		machine.cpu.runUntilDepth(1, 100);
+		require(machine.cpu.activeCartridgeSlot() == 1 && machine.memory.cartridgeController().selectionWord() == 0,
+			"RET loads the saved socket rather than the live cartridge select");
+		machine.cpu.runUntilDepth(0, 1000);
+		require(machine.global("cartMarker") == valueInteger(505),
+			"the restored return reads the instructions and constant bank of the selected frame");
+	}
+}
+
 void irqInSystemCallee(const Images& images, u32 slot) {
 	Machine generated(images, slot, false), scalar(images, slot, true);
 	for (auto* m : {&generated, &scalar}) {
@@ -223,7 +248,7 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 #endif
 		}, .cpu=&m.cpu, .targetDepth=targetDepth, .codeRoot=sourceImage->nativeCodeLookup->root(sourceSlot),
 		.systemRom=&m.memory.systemRomStorage(), .cartridgeRom=m.memory.cartridgeController().romStorage(sourceSlot),
-		.cartridgeSlot=sourceSlot, .error={}};
+		.cartridgeSlot=sourceSlot, .frameBank=frameBankWord(sourceImage->executionDomainId), .error={}};
 	// No CPU run loop surrounds this call. Only a same-stable-gate resume can
 	// execute the genuine guest marker instructions before the gate returns.
 	using Entry = void (SLJIT_FUNC *)(NativeCpuRunState*, void*);
@@ -259,6 +284,7 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 int main() {
 	try {
 		const Images images;
+		returnUsesSavedBank(images, false); returnUsesSavedBank(images, true);
 		for (u32 slot = 0; slot != 2; ++slot) {
 			shortGrantsAndRestore(images, slot, false); shortGrantsAndRestore(images, slot, true);
 			irqInSystemCallee(images, slot);

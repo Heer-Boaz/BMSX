@@ -104,7 +104,6 @@ struct ExecutionHookBinding {
 
 // These activation fields have not yet moved to the guest stack record.
 struct CpuFrameState {
-	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	int stackBase = 0;
 	int stackCapacity = 0;
 };
@@ -188,8 +187,8 @@ public:
 	void replaceExecutionImage(Blua32ExecutionBoot executionBoot);
 	bool isExecutionDomainResident(ExecutionDomainId executionDomainId) const;
 	void clearExecutionEnvironment();
-	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->executionDomainId >= 0; }
-	ExecutionDomainId activeCartridgeSlot() const { return m_activeExecutionImage->executionDomainId; }
+	bool isCartridgeExecutionActive() const { return m_activeExecutionDomainId >= 0; }
+	ExecutionDomainId activeCartridgeSlot() const { return m_activeExecutionDomainId; }
 	MappedBusSignals readExecutionBusSignals() const { return m_executionBusSignals; }
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
@@ -363,7 +362,8 @@ private:
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot executionBoot, bool restoring = false);
 	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
 	static MappedBusSignals executionBusSignalsForDomain(ExecutionDomainId executionDomainId);
-	void latchActiveExecutionImage(Blua32ExecutionImage& image);
+	void latchActiveExecutionImage(ExecutionDomainId domain, Blua32ExecutionImage* image);
+	void resumeFrameBank();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	void clearNativeContinuationBindings();
 #endif
@@ -502,6 +502,7 @@ private:
 	> m_executionImagesByDomain;
 	Blua32ExecutionImage* m_systemImage = nullptr;
 	Blua32ExecutionImage* m_activeExecutionImage = nullptr;
+	ExecutionDomainId m_activeExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	ExecutionDomainId m_programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	MappedBusSignals m_executionBusSignals = MAPPED_BUS_MASTER_CPU;
 	int m_haltedUntilIrqFrameDepth = -1;
