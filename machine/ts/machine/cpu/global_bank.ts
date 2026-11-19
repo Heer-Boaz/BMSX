@@ -3,7 +3,7 @@ import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
 import type { LuaHeap } from './lua_heap';
 import type { StringId } from './string_pool';
-import { scalarValueHash, valueInteger, valueNil, valueString, type Value } from './value';
+import { scalarValueHash, valueFromTag, valueInteger, valueNil, valuePayload, valueString, valueTag, type Value } from './value';
 import { ValueSlots } from './value_slots';
 
 export type GlobalBankState = { base: number; capacity: number; count: number };
@@ -17,6 +17,15 @@ export class GlobalBank {
 	public readonly slots = new ValueSlots(0);
 
 	public constructor(private readonly memory: Memory, private readonly allocator: HeapAllocator, private readonly heap: LuaHeap) {}
+	public readSlot(slot: number): Value {
+		const word = this.memory.readRamRecordWord(this.base + 12 * this.capacity + 4 * slot);
+		const tag = this.memory.readRamRecordByte(this.base + 16 * this.capacity + slot);
+		return valueFromTag(tag, word);
+	}
+	public writeSlot(slot: number, value: Value): void {
+		this.memory.writeRamRecordWord(this.base + 12 * this.capacity + 4 * slot, valuePayload(value));
+		this.memory.writeRamRecordByte(this.base + 16 * this.capacity + slot, valueTag(value));
+	}
 	public name(slot: number): StringId { return this.memory.readRamRecordWord(this.base + 4 * slot); }
 	public captureState(): GlobalBankState { return { base: this.base, capacity: this.capacity, count: this.count }; }
 

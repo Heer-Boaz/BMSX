@@ -32,10 +32,10 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 
 // The root Thread owns a 64-byte header and a 160-byte allocation for
 // eight Value slots and two reserved activations. The remainder is a
-// Closure, 14 RAM String records, their 16 intern buckets and two global banks.
+// Closure, 14 RAM String records, their 16 intern buckets, two global banks and an 8-byte map (the linker emits unique names).
 const bootThreadBytes = 64 + 160;
 const bootThreadWords = bootThreadBytes / 4;
-const bootBytes = bootThreadBytes + 16 + 16 + 648 + 64 + 2 * 160;
+const bootBytes = bootThreadBytes + 16 + 16 + 648 + 64 + 8 + 2 * 160;
 const bootMarkWork = 2 * bootThreadWords + 3 + 2 * 12 + 14;
 const bootCollectionWork = 4 * bootThreadWords + 3 + 1 + 3 * 12 + 2 * 14 + 16;
 
@@ -135,7 +135,7 @@ test('all activated image constants and unique namespace slots remain priced acr
 	cpu.writeFrameExecution(0, 0, first.cartSymbols.functionAddresses[0], first.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, 1, second.cartSymbols.functionAddresses[0], second.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, first.systemSymbols.functionAddresses[0], first.systemImage.functions[0].codeAddress);
-	cpu.collectTrackedHeapBytes(); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 24 + 8, 'each activated card charges its RAM const bank once');
+	cpu.collectTrackedHeapBytes(); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + (24 + 16) + (8 + 16), 'each card allocates one constant bank and one name-slot map');
 	cpu.instructionBudgetRemaining = 5; cpu.luaHeap.collectRuntime();
 	assert.equal(cpu.instructionBudgetRemaining, 5 - bootCollectionWork - 3 * (2 * 5 + 3 * 2), 'all three root passes include constants and registered names of both activated cards');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);

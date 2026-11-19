@@ -31,7 +31,7 @@ public:
 
 	void clearRomTables();
 	void activateRomTable(ExecutionDomainId domain, u32 address, u32 count);
-	StringId resolveImageRecord(ExecutionDomainId domain, u32 address, bool restoring);
+	StringId resolveImageRecord(ExecutionDomainId domain, u32 address);
 
 	void beginLocalRoots();
 	void endLocalRoots();

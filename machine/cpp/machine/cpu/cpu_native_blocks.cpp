@@ -108,6 +108,10 @@ void CPU::discoverNativeSource(NativeCompilationSource& source, std::vector<u32>
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u
 			|| instruction.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
 			|| !source.canEmit(instruction)) continue;
+		if (instruction.op >= static_cast<u8>(OpCode::GETSYS) && instruction.op <= static_cast<u8>(OpCode::SETGL)) {
+			const auto& bank = instruction.op <= static_cast<u8>(OpCode::SETSYS) ? m_systemGlobalBank : m_globalBank;
+			if (instruction.bx >= bank.capacity()) continue; // The general mirror port is scalar.
+		}
 		if (!roots[cursor] && binding.writeWatch.groups
 			&& page.nativeVisits[cursor] + 1u < NATIVE_BLOCK_COMPILATION_THRESHOLD) continue;
 		available[cursor] = 1;

@@ -1173,7 +1173,8 @@ execution state already consume some of it at cartridge entry.
 The budget covers Table storage, closures and captured-variable cells,
 Threads and their reserved value-slot capacity, RAM Strings and their intern
 index, the two global namespaces, and activated images' decoded constant
-pools. The ROM copies of the constants and names do not consume this budget.
+pools and name-to-slot mappings. The ROM copies of the constants and names
+do not consume this budget.
 Capacity matters as well as visible contents: a Table can reserve more entries
 than it currently contains, and a Thread's reserved slot storage can exceed its
 active argument/local range. Setting one field to nil or returning from one

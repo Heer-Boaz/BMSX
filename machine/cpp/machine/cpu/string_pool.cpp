@@ -154,7 +154,7 @@ u32 StringPool::lookup(u32 hash, std::string_view bytes) const {
 	return 0;
 }
 
-StringId StringPool::resolveImageRecord(ExecutionDomainId domain, u32 address, bool restoring) {
+StringId StringPool::resolveImageRecord(ExecutionDomainId domain, u32 address) {
 	const u32 id = address | slotWord(domain);
 	if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1u)) != 0u
 		|| readWord(id) != (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
@@ -162,7 +162,7 @@ StringId StringPool::resolveImageRecord(ExecutionDomainId domain, u32 address, b
 	}
 	const ByteSpan data = readBytes(id);
 	if (data.backed.size() != data.length) throw BMSX_RUNTIME_ERROR("BLua32 ROM String is truncated.");
-	if (const u32 match = lookup(readWord(id + BLUA32_STRING_HASH_OFFSET), data.backed)) return restoring ? match : retain(match);
+	if (const u32 match = lookup(readWord(id + BLUA32_STRING_HASH_OFFSET), data.backed)) return retain(match);
 	throw BMSX_RUNTIME_ERROR("BLua32 ROM String is missing from its bucket.");
 }
 

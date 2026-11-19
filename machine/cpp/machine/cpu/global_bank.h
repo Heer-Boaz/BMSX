@@ -22,6 +22,16 @@ public:
 	GlobalBank(Memory& memory, HeapAllocator& allocator, LuaHeap& heap)
 		: m_memory(memory), m_allocator(allocator), m_heap(heap) {}
 
+	Value readSlot(u32 slot) const {
+		const u32 word = m_memory.readRamRecordWord(m_state.base + 12u * m_state.capacity + 4u * slot);
+		const auto tag = static_cast<ValueTag>(m_memory.readRamRecordByte(m_state.base + 16u * m_state.capacity + slot));
+		return valueFromTag(tag, word);
+	}
+	void writeSlot(u32 slot, Value value) {
+		m_memory.writeRamRecordWord(m_state.base + 12u * m_state.capacity + 4u * slot, valuePayload(value));
+		m_memory.writeRamRecordByte(m_state.base + 16u * m_state.capacity + slot, static_cast<u8>(valueTag(value)));
+	}
+	u32 capacity() const { return m_state.capacity; }
 	u32 count() const { return m_state.count; }
 	StringId name(u32 slot) const { return m_memory.readRamRecordWord(m_state.base + 4u * slot); }
 	ConstValueSpan values() const { return m_values; }

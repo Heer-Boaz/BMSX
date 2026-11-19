@@ -109,7 +109,7 @@ struct CpuRuntimeState {
 	GlobalBankState systemGlobals;
 	GlobalBankState globals;
 	ExecutionDomainMask executionResidencyMask = 0;
-	std::array<u32, EXECUTION_DOMAIN_COUNT> constantPoolBases{};
+	std::array<u32, EXECUTION_DOMAIN_COUNT> constantPoolBases{}, globalMapBases{};
 	u32 nextObjectHashId = 1;
 	bool hardHalted = false;
 	GcState gc;
@@ -332,16 +332,11 @@ private:
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
 	size_t collectionRootWordCount() const;
 	void decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddress, ValueSpan constants);
-	void releaseConstantPool(const Blua32ExecutionImage& image);
-	void invalidateConstantDependencies(u64 key, u32 firstWord, u32 endWord);
-	std::vector<u32> registerGlobalNames(
-		ExecutionDomainId executionDomainId,
-		u32 tableAddress,
-		u32 nameCount,
-		bool system,
-		bool restoring
-	);
-	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot executionBoot, std::optional<u32> restoredPool = std::nullopt);
+	void releaseImageData(Blua32ExecutionImage& image);
+	void invalidateImageDataDependencies(u64 key, u32 firstWord, u32 endWord);
+	void registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination);
+	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot boot,
+		std::optional<std::array<u32, 2>> restoredBases = std::nullopt);
 	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
 	static MappedBusSignals executionBusSignalsForDomain(ExecutionDomainId executionDomainId);
 	void latchActiveExecutionImage(ExecutionDomainId domain, Blua32ExecutionImage* image);

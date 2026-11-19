@@ -141,7 +141,7 @@ export class StringPool {
 		return this.bucketLookup(this.metadata(table), this.metadata(table + 4), hash, source, offset, length);
 	}
 
-	public resolveImageRecord(domain: ExecutionDomainId, address: number, restoring: boolean): StringId {
+	public resolveImageRecord(domain: ExecutionDomainId, address: number): StringId {
 		const id = (address | slotWord(domain)) >>> 0;
 		if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1)) !== 0
 			|| this.readWord(id) !== (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
@@ -152,7 +152,7 @@ export class StringPool {
 		if (offset + length > rom.length) throw new Error('BLua32 ROM String is truncated.');
 		const match = this.lookup(this.readWord(id + BLUA32_STRING_HASH_OFFSET), rom, offset, length);
 		if (match === 0) throw new Error('BLua32 ROM String is missing from its bucket.');
-		return restoring ? match : this.retain(match);
+		return this.retain(match);
 	}
 
 	public find(value: string): StringId | undefined {

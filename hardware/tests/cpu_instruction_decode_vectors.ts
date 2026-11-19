@@ -9,16 +9,18 @@ const cpu:any=Object.create(CPU.prototype),page=createDecodedInstructionPage(fal
 const code=new Uint8Array(8);
 const globalSlots=new Uint32Array(4096),systemGlobalSlots=new Uint32Array(4096);
 for(let i=0;i<globalSlots.length;i++){globalSlots[i]=(0x12340000+i)>>>0;systemGlobalSlots[i]=(0x56780000+i)>>>0;}
-const frame:any={executionImage:{executionDomainId:0,globalSlots,systemGlobalSlots}};
+const globalMapBase=0x08300000,systemBase=globalMapBase+4*globalSlots.length;
+const frame:any={executionImage:{executionDomainId:0,globalMapBase,globalNameCount:globalSlots.length,systemNameCount:systemGlobalSlots.length}};
 let source=0,body=0,pc=0;cpu.executionBusSignals=0;
-cpu.memory={readBusFaultSequence:()=>0,readMappedBusU32LE:(address:number)=>address===pc?source:body};
+cpu.memory={readBusFaultSequence:()=>0,readMappedBusU32LE:(address:number)=>address===pc?source:body,
+ readRamRecordWord:(address:number)=>address < systemBase ? globalSlots[(address-globalMapBase)>>>2] : systemGlobalSlots[(address-systemBase)>>>2]};
 let seed=0x8ab42c31;function random(){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return seed>>>0;}
 function hex(v:number){return (v>>>0).toString(16).padStart(8,'0');}
 const count=16384;process.stdout.write(`${count}\n`);
 for(let n=0;n<count;n++){
  let op=n&63;const wide=(n>>>6)&1;if(!wide && op===0)op=1;
  body=(random()&~0xfc0000)|(op<<18);source=wide?(random()&~0xfc0000):body;source>>>=0;body>>>=0;
- // Global opcodes bind image-name indices through real slot arrays. Keep
+ // Global opcodes bind image-name indices through the activated map slots. Keep
  // those indices in this fixture's populated range for both instruction widths.
  if(op>=54 && op<=57){body&=0x00ffffff;if(wide)source&=~0xfc0;else source=body;}
  pc=(random()&~0x3ff)>>>0;page.widths[0]=0;cpu.decodeInstruction(frame,page,0,pc,false);

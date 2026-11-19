@@ -538,6 +538,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			cpuState: {
 				executionResidencyMask: 3,
 				constantPoolBases: [0x08080000, 0x08090000, 0],
+				globalMapBases: [0x08080010, 0x08090010, 0],
 				nextObjectHashId: 0xfedcba98,
 				hardHalted: true,
 				gc: { allocations: [0] },

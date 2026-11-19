@@ -79,8 +79,9 @@ export type Blua32ExecutionImage = {
 	constantsWatched: boolean;
 	constTags: Uint8Array;
 	constWords: Uint32Array;
-	globalSlots: Uint32Array;
-	systemGlobalSlots: Uint32Array;
+	globalMapBase: number;
+	globalNameCount: number;
+	systemNameCount: number;
 	decodedPages: Map<number, DecodedInstructionPage>;
 	compiledCodeLookup: CompiledCodeLookup | null;
 };

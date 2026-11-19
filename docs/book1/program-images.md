@@ -399,8 +399,9 @@ these reads do not select I/O or cartridge RAM.
 
 The two name tables establish separate ordinary-global and system-global
 namespaces. Within each namespace an existing name retains its value and a new
-name begins nil. A name-table index selects that name's slot; initial values
-are established by executed instructions.
+name begins nil. Activation installs the name-to-slot mapping in language RAM.
+A name-table index selects that name's slot; initial values are established by
+executed instructions.
 
 ### Function and upvalue records {#sec-memory-function-and-upvalue-records}
 

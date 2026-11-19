@@ -254,6 +254,22 @@ void hotGlobalBanks() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(page.nativeBlocks->entries[entry].get() == block, "guest bank relocation does not invalidate an unrelated compiled instruction page");
 #endif
+	// Change the activated ordinal without modifying the ROM or the namespace.
+	// The second change turns a valid coded index into a mirrored scalar slot.
+	for (const u32 ordinal : {2u, 0x40000002u, 0u}) {
+		for (auto* m : {&native, &scalar}) {
+			auto& cpu = m->cpu;
+			const u32 map = cpu.captureRuntimeState().globalMapBases[SYSTEM_EXECUTION_DOMAIN_ID + 1];
+			cpu.setGlobalByKey(cpu.stringPool().intern("numeric"), valueInteger(97));
+			cpu.setGlobalByKey(cpu.stringPool().intern("shared"), valueInteger(23));
+			m->memory.writeRamRecordWord(map, ordinal);
+			cpu.activeThread()->currentFrame->writeControl(bmsx::FrameField::Pc, m->rom.textAddress);
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, loopCycles);
+		requireParity(native, scalar);
+		require(native.cpu.getSystemGlobalByKey(native.cpu.stringPool().intern("copied"))
+			== valueInteger(ordinal == 0u ? 23 : 97), "decoded and generated globals follow the watched physical slot map");
+	}
 }
 
 void hotUpvalueAlias() {

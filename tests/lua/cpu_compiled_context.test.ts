@@ -73,6 +73,17 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.get(12), 'the checked store commits and resumes');
 	js.restoreRuntimeState(saved);
 	assert.deepEqual(js.captureRuntimeState(), saved, 'retained bank capacity is not serialized as extra globals');
+	// Re-install a hot region after rewind, then change the map, not the ROM.
+	js.runUntilDepth(0, 50 * loopCycles);
+	const map = saved.globalMapBases[SYSTEM_EXECUTION_DOMAIN_ID + 1];
+	for (const slot of [2, 0x40000002, 0]) {
+		js.setGlobalByKey(js.stringPool.find('numeric')!, valueInteger(97));
+		js.setGlobalByKey(js.stringPool.find('shared')!, valueInteger(23));
+		js.memory.writeRamRecordWord(map, slot);
+		js.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
+		js.runUntilDepth(0, loopCycles);
+		assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), valueInteger(slot === 0 ? 23 : 97));
+	}
 });
 
 for (const alias of [false, true]) test(`compiled LOADNIL and LOADKR preserve kinds and raw register indexing (alias=${alias})`, () => {

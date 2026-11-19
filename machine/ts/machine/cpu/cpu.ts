@@ -4,7 +4,7 @@ import { GcKind } from './gc_object';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -170,6 +170,7 @@ export type CpuRuntimeState = {
 	globals: GlobalBankState;
 	executionResidencyMask: ExecutionDomainMask;
 	constantPoolBases: number[];
+	globalMapBases: number[];
 	nextObjectHashId: number;
 	hardHalted: boolean;
 	gc: GcState;
@@ -599,7 +600,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memory.clearMappedPageWriteWatches();
 		this.gc.armThreadStackWatches();
 		if (!this.setProgramHeapFloor(systemBoot.staticEnd)) { this.hardHalt(); return; }
-		for (const image of this.executionImagesByDomain) if (image !== null) this.releaseConstantPool(image);
+		for (const image of this.executionImagesByDomain) if (image !== null) this.releaseImageData(image);
 		this.executionImagesByDomain.fill(null);
 		this.stringPool.clearRomTables();
 		this.systemImage = this.activateExecutionImage(systemBoot);
@@ -682,7 +683,6 @@ export class CPU implements MappedPageInvalidator {
 					constWords[index] = this.stringPool.resolveImageRecord(
 						executionDomainId,
 						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET),
-						false,
 					);
 					break;
 				default:
@@ -691,42 +691,30 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private releaseConstantPool(image: Blua32ExecutionImage): void {
-		if (image.constantBase === 0) return;
-		this.heapAllocator.free(image.constantBase);
-		this.memory.invalidateRamWrite(image.constantBase & RAM_RECORD_WORD_MASK, image.constTags.length * 5);
+	private releaseImageData(image: Blua32ExecutionImage): void {
+		const names = image.globalMapBase, constants = image.constantBase;
+		if (names !== 0) {
+			image.globalMapBase = 0;
+			this.heapAllocator.free(names);
+			this.memory.invalidateRamWrite(names & RAM_RECORD_WORD_MASK, 4 * (image.globalNameCount + image.systemNameCount));
+		}
+		if (constants !== 0) {
+			image.constantsWatched = false;
+			this.heapAllocator.free(constants);
+			this.memory.invalidateRamWrite(constants & RAM_RECORD_WORD_MASK, image.constTags.length * 5);
+		}
 	}
 
-	private registerGlobalNames(
-		executionDomainId: ExecutionDomainId,
-		tableAddress: number,
-		nameCount: number,
-		system: boolean,
-		restoring: boolean,
-	): Uint32Array {
-		const bank = system ? this.systemGlobalBank : this.globalBank;
-		const slots = new Uint32Array(nameCount);
-		if (nameCount === 0) {
-			return slots;
+	private registerGlobalNames(domain: ExecutionDomainId, tableAddress: number, nameCount: number, bank: GlobalBank, destination: number): void {
+		if (nameCount === 0) return;
+		this.executionAddressSpace.bindReadOnlyView(domain, tableAddress,
+			nameCount * BLUA32_GLOBAL_NAME_RECORD_SIZE, this.executionTableView);
+		const { bytes, byteOffset } = this.executionTableView;
+		for (let index = 0; index < nameCount; ++index) {
+			const record = byteOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
+			const key = this.stringPool.resolveImageRecord(domain, readLE32(bytes, record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET));
+			this.memory.writeRamRecordWord(destination + 4 * index, bank.registerName(key));
 		}
-		this.executionAddressSpace.bindReadOnlyView(
-			executionDomainId,
-			tableAddress,
-			nameCount * BLUA32_GLOBAL_NAME_RECORD_SIZE,
-			this.executionTableView,
-		);
-		const bytes = this.executionTableView.bytes;
-		const byteOffset = this.executionTableView.byteOffset;
-		for (let index = 0; index < nameCount; index += 1) {
-			const recordByteOffset = byteOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-			const key = this.stringPool.resolveImageRecord(
-				executionDomainId,
-				readLE32(bytes, recordByteOffset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET),
-				restoring,
-			);
-			slots[index] = restoring ? bank.find(key)! : bank.registerName(key);
-		}
-		return slots;
 	}
 
 	private readExecutionImageHeader(executionBoot: Blua32ExecutionBoot) {
@@ -762,25 +750,25 @@ export class CPU implements MappedPageInvalidator {
 	private materializeExecutionImage(
 		executionBoot: Blua32ExecutionBoot,
 		header: ReturnType<CPU['readExecutionImageHeader']>,
-		restoredPool: number | null = null,
+		restoredConstantBase: number | null = null,
+		restoredMapBase = 0,
 	): Blua32ExecutionImage {
 		const executionDomainId = executionBoot.executionDomainId;
 		const { constantTableAddress, constantCount, globalNameTableAddress, globalNameCount,
 			systemGlobalNameTableAddress, systemGlobalNameCount } = header;
-		const restoring = restoredPool !== null;
-		const globalSlots = this.registerGlobalNames(
-			executionDomainId,
-			globalNameTableAddress,
-			globalNameCount,
-			false, restoring,
-		);
-		const systemGlobalSlots = this.registerGlobalNames(
-			executionDomainId,
-			systemGlobalNameTableAddress,
-			systemGlobalNameCount,
-			true, restoring,
-		);
-		const constantBase = restoring ? restoredPool : constantCount === 0 ? 0
+		const restoring = restoredConstantBase !== null;
+		const mapBytes = 4 * (globalNameCount + systemGlobalNameCount);
+		const globalMapBase = restoring ? restoredMapBase : mapBytes === 0 ? 0
+			: this.luaHeap.allocateRecord(mapBytes, true, 0, 0);
+		if (mapBytes !== 0) {
+			if (!restoring) {
+				this.registerGlobalNames(executionDomainId, globalNameTableAddress, globalNameCount, this.globalBank, globalMapBase);
+				this.registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
+					this.systemGlobalBank, globalMapBase + 4 * globalNameCount);
+			}
+			this.memory.ramWriteWatches().armCodeRange(globalMapBase & RAM_RECORD_WORD_MASK, mapBytes);
+		}
+		const constantBase = restoring ? restoredConstantBase : constantCount === 0 ? 0
 			: this.luaHeap.allocateRecord(constantCount * 5, true, 0, 0);
 		const offset = constantBase & RAM_RECORD_WORD_MASK;
 		const buffer = this.memory.ramData().buffer;
@@ -797,8 +785,7 @@ export class CPU implements MappedPageInvalidator {
 			constantBase, constantsWatched: false,
 			constTags,
 			constWords,
-			globalSlots,
-			systemGlobalSlots,
+			globalMapBase, globalNameCount, systemNameCount: systemGlobalNameCount,
 			decodedPages: new Map(),
 			compiledCodeLookup: null,
 		};
@@ -923,7 +910,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 				});
 			}
-			if (previous !== null) this.releaseConstantPool(previous);
+			if (previous !== null) this.releaseImageData(previous);
 			if (this.activeExecutionDomainId === domain) {
 				this.latchActiveExecutionImage(domain, image);
 				const frame = this.activeThread.currentFrame;
@@ -988,19 +975,29 @@ export class CPU implements MappedPageInvalidator {
 		this.gc.observeStackWrites(key + firstWord * 4, key + endWord * 4);
 	}
 
-	private invalidateConstantDependencies(key: number, firstWord: number, endWord: number): void {
+	private invalidateImageDataDependencies(key: number, firstWord: number, endWord: number): void {
 		const first = key + firstWord * 4, end = key + endWord * 4;
 		for (const image of this.executionImagesByDomain) {
-			if (image === null || !image.constantsWatched) continue;
-			const base = image.constantBase;
-			if (end <= base || first >= base + image.constTags.length * 5) continue;
-			image.constantsWatched = false;
-			for (const page of image.decodedPages.values()) this.compiledCodeCache.retirePage(page);
+			if (image === null) continue;
+			const names = image.globalMapBase, namesEnd = names + 4 * (image.globalNameCount + image.systemNameCount);
+			const remap = names !== 0 && first < namesEnd && end > names;
+			const constants = image.constantBase;
+			const recode = image.constantsWatched && first < constants + 5 * image.constTags.length && end > constants;
+			if (!remap && !recode) continue;
+			if (remap) {
+				const from = Math.max(first, names), to = Math.min(end, namesEnd);
+				this.memory.ramWriteWatches().armCodeRange((from - RAM_BASE) & RAM_RECORD_WORD_MASK, to - from);
+			}
+			if (recode) image.constantsWatched = false;
+			for (const page of image.decodedPages.values()) {
+				this.compiledCodeCache.retirePage(page);
+				if (remap) page.refreshState.fill(DECODED_REFRESH_DECODE);
+			}
 		}
 	}
 
 	public invalidateMappedWords(key: number, firstWord: number, endWord: number): void {
-		this.invalidateConstantDependencies(key, firstWord, endWord);
+		this.invalidateImageDataDependencies(key, firstWord, endWord);
 		this.invalidateDecodedWords(key, firstWord, endWord);
 		if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 			this.invalidateDecodedWords(
@@ -1118,14 +1115,6 @@ export class CPU implements MappedPageInvalidator {
 					case OpCode.KSMI:
 						page.sbx[pageOffset] = signExtend(bx, BASE_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
 						break;
-					case OpCode.GETGL:
-					case OpCode.SETGL:
-						page.bx[pageOffset] = frame.executionImage.globalSlots[bx];
-						break;
-					case OpCode.GETSYS:
-					case OpCode.SETSYS:
-						page.bx[pageOffset] = frame.executionImage.systemGlobalSlots[bx];
-						break;
 					case OpCode.JMP:
 					case OpCode.JMPIF:
 					case OpCode.JMPIFNOT:
@@ -1154,6 +1143,13 @@ export class CPU implements MappedPageInvalidator {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
 				}
 			}
+		}
+		if (op >= OpCode.GETSYS && op <= OpCode.SETGL) {
+			const system = op <= OpCode.SETSYS, image = frame.executionImage;
+			const index = (wideB << BASE_BX_BITS) | (ext << MAX_BX_BITS) | (bodyWord & MAX_LOW_BX);
+			const base = image.globalMapBase + (system ? 4 * image.globalNameCount : 0);
+			instructionCacheable &&= index < (system ? image.systemNameCount : image.globalNameCount);
+			page.bx[pageOffset] = this.memory.readRamRecordWord(base + 4 * index);
 		}
 		page.dispatchOps[pageOffset] = page.ops[pageOffset];
 		page.dispatchCycles[pageOffset] = DECODED_DISPATCH_BASE_CYCLES[page.ops[pageOffset]];
@@ -2350,6 +2346,10 @@ export class CPU implements MappedPageInvalidator {
 			const op = page.ops[cursor];
 			if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0
 				|| page.dispatchOps[cursor] === DecodedDispatchOp.Observe || !compiledBlockSupports(op, page.c[cursor])) continue;
+			if (op >= OpCode.GETSYS && op <= OpCode.SETGL) {
+				const bank = op <= OpCode.SETSYS ? this.systemGlobalBank : this.globalBank;
+				if (page.bx[cursor] >= bank.slots.capacity()) continue;
+			}
 			if (roots[cursor] === 0 && binding.writeWatches !== null && cache.visits[cursor] + 1 < COMPILED_BLOCK_THRESHOLD) continue;
 			available[cursor] = 1;
 			const successor = cursor + page.widths[cursor], successorPc = (pagePc + successor * INSTRUCTION_BYTES) >>> 0;
@@ -2676,18 +2676,18 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.GETSYS:
-					registers.copySlotFrom(this.systemGlobalBank.slots, a, page.bx[pageOffset]);
+					registers.set(a, this.systemGlobalBank.readSlot(page.bx[pageOffset]));
 					this.bumpRegisterTop(frame, a);
 					return;
 				case OpCode.SETSYS:
-					this.systemGlobalBank.slots.copySlotFrom(registers, page.bx[pageOffset], a);
+					this.systemGlobalBank.writeSlot(page.bx[pageOffset], registers.get(a));
 					return;
 				case OpCode.GETGL:
-					registers.copySlotFrom(this.globalBank.slots, a, page.bx[pageOffset]);
+					registers.set(a, this.globalBank.readSlot(page.bx[pageOffset]));
 					this.bumpRegisterTop(frame, a);
 					return;
 				case OpCode.SETGL:
-					this.globalBank.slots.copySlotFrom(registers, page.bx[pageOffset], a);
+					this.globalBank.writeSlot(page.bx[pageOffset], registers.get(a));
 					return;
 				case OpCode.GETI: {
 					const base = registers.get(page.b[pageOffset]), index = page.c[pageOffset];
@@ -4010,11 +4010,13 @@ export class CPU implements MappedPageInvalidator {
 		}
 		let executionResidencyMask = 0;
 		const constantPoolBases = new Array<number>(EXECUTION_DOMAIN_COUNT).fill(0);
+		const globalMapBases = new Array<number>(EXECUTION_DOMAIN_COUNT).fill(0);
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			const image = this.executionImagesByDomain[index];
 			if (image !== null) {
 				executionResidencyMask |= 1 << index;
 				constantPoolBases[index] = image.constantBase;
+				globalMapBases[index] = image.globalMapBase;
 			}
 		}
 		writer.finish();
@@ -4024,7 +4026,7 @@ export class CPU implements MappedPageInvalidator {
 			systemGlobals: this.systemGlobalBank.captureState(),
 			globals: this.globalBank.captureState(),
 			executionResidencyMask,
-			constantPoolBases,
+			constantPoolBases, globalMapBases,
 			nextObjectHashId: this.nextObjectHashId,
 			hardHalted: this.hardHalted,
 			gc,
@@ -4138,7 +4140,7 @@ export class CPU implements MappedPageInvalidator {
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			if ((state.executionResidencyMask & (1 << index)) !== 0) {
 				const boot = this.executionAddressSpace.resolveDomain((index - 1) as ExecutionDomainId)!;
-				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, this.readExecutionImageHeader(boot), state.constantPoolBases[index]);
+				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, this.readExecutionImageHeader(boot), state.constantPoolBases[index], state.globalMapBases[index]);
 			}
 		}
 		this.systemImage = this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1]!;

@@ -187,8 +187,9 @@ struct Blua32ExecutionImage {
 	ValueSlots workerConstants;
 	bool workerConstantsCurrent = false;
 #endif
-	std::vector<u32> globalSlots;
-	std::vector<u32> systemGlobalSlots;
+	u32 globalMapBase = 0;
+	u32 globalNameCount = 0, systemNameCount = 0;
+	u32 globalMapBytes() const { return 4u * (globalNameCount + systemNameCount); }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Dispatch storage outlives the decoded descriptors which borrow its cells.
 	std::unique_ptr<NativeCodeLookup> nativeCodeLookup;

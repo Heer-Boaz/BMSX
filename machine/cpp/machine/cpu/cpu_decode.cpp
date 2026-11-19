@@ -90,16 +90,6 @@ bool CPU::decodeInstructionWords(
 			case OpCode::SETT:
 				decoded.tableCacheSlot = -1;
 				break;
-			case OpCode::GETGL:
-			case OpCode::SETGL:
-				if (compilation && decodedBx >= image.globalSlots.size()) return false;
-				decoded.bx = image.globalSlots[decodedBx];
-				break;
-			case OpCode::GETSYS:
-			case OpCode::SETSYS:
-				if (compilation && decodedBx >= image.systemGlobalSlots.size()) return false;
-				decoded.bx = image.systemGlobalSlots[decodedBx];
-				break;
 			case OpCode::JMP:
 			case OpCode::JMPIF:
 			case OpCode::JMPIFNOT:
@@ -124,6 +114,17 @@ bool CPU::decodeInstructionWords(
 		page.bodyWords[pageOffset] = bodyWord;
 	}
 	DecodedInstruction& decoded = destination;
+	if (op >= static_cast<u8>(OpCode::GETSYS) && op <= static_cast<u8>(OpCode::SETGL)) {
+		const bool system = op <= static_cast<u8>(OpCode::SETSYS);
+		const u32 index = (static_cast<u32>(wideB) << BASE_BX_BITS) | (static_cast<u32>(ext) << MAX_BX_BITS) | (bodyWord & MAX_LOW_BX);
+		const u32 count = system ? image.systemNameCount : image.globalNameCount;
+		// Outside the watched map extent the record port is still defined,
+		// but a cached instruction cannot own the unrelated RAM dependency.
+		instructionCacheable &= index < count;
+		if (compilation && !instructionCacheable) return false;
+		const u32 base = image.globalMapBase + (system ? 4u * image.globalNameCount : 0u);
+		decoded.bx = m_memory.readRamRecordWord(base + 4u * index);
+	}
 	decoded.dispatchOp = decoded.op;
 	decoded.baseCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.op];
 	decoded.dispatchCycles = decoded.baseCycles;
