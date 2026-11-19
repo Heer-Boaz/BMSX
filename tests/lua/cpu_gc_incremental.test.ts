@@ -6,9 +6,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_GC_CONTROL_OFFSET, heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { THREAD_HEAP_BYTES, THREAD_INITIAL_BACKING_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
+import { backingBytes, controlOffset, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { GcPhase, GC_STEP_WORDS, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
-import { ValueTag, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -210,6 +213,63 @@ test('an oversized scan earns actual-work credit, not another assist after 256 b
 	assert.ok(cpu.luaHeap.collectionTarget() > cpu.luaHeap.usedBytes() + 256);
 });
 
+test('a rooted raw Thread frame retains its table edge and is collected without an execution view', () => {
+	const cpu = machine(), { gc, memory } = cpu;
+	const baselineWork = gc.collect(), baselineBytes = cpu.heapAllocator.occupiedBytes();
+	const address = cpu.luaHeap.allocateRecord(THREAD_HEAP_BYTES, false, THREAD_INITIAL_BACKING_BYTES, ThreadField.StackBlock);
+	gc.threads.initializeRecord(address, 0, gc.white());
+	memory.writeRamRecordWord(address + ThreadField.Status, ThreadStatus.Suspended);
+	const wide = 64, wideBytes = backingBytes(wide, THREAD_INITIAL_FRAMES, 0);
+	const block = cpu.heapAllocator.allocate(wideBytes, true);
+	assert.notEqual(block, 0, 'a large unviewed stack fits the test heap');
+	gc.threads.replaceStack(address, block, wide, THREAD_INITIAL_FRAMES, 0);
+	memory.writeRamRecordWord(address + ThreadField.FrameDepth, 1);
+	memory.writeRamRecordWord(address + ThreadField.StackTop, 1);
+	const frame = block + controlOffset(wide);
+	memory.writeRamRecordWord(frame + FrameField.StackCapacity, THREAD_INITIAL_VALUES);
+	memory.writeRamRecordWord(frame + FrameField.Top, 1);
+	const child = cpu.createTable();
+	memory.writeRamRecordWord(block, child);
+	memory.writeRamRecordByte(block + wide * 4, ValueTag.Table);
+	const bytes = THREAD_HEAP_BYTES + heapAllocationBytes(wideBytes);
+	assert.equal(gc.threadRecordAddress(address), address);
+	assert.equal(gc.allocationBytes(address), bytes);
+	assert.equal(cpu.heapAllocator.occupiedBytes(), baselineBytes + bytes + TableRecords.HEADER_BYTES);
+	const liveWork = gc.collect(valueThread(address), valueNil(), valueNil(), address);
+	assert.equal(liveWork, baselineWork + 4 * (bytes >>> 2) + (TableRecords.HEADER_BYTES >>> 2) + 1,
+		'three raw Thread traces and its sweep charge the physical allocation, plus one table trace and visit');
+	assert.equal(gc.threadRecordAddress(address), address);
+	assert.equal(gc.tableRecordAddress(child), child);
+	assert.equal(memory.readRamRecordWord(block), child);
+	assert.equal(gc.collect(valueThread(address), valueNil(), valueNil(), address), liveWork,
+		'repeated collection follows the RAM frame and charges no host attachment work');
+	const shrinkWork = gc.collect(valueThread(address));
+	const reduced = memory.readRamRecordWord(address + ThreadField.StackCapacity);
+	const reducedBlock = memory.readRamRecordWord(address + ThreadField.StackBlock);
+	assert.equal(reduced, wide / 2);
+	assert.notEqual(reducedBlock, block);
+	assert.equal(memory.readRamRecordWord(reducedBlock), child);
+	assert.equal(memory.readRamRecordByte(reducedBlock + reduced * 4), ValueTag.Table);
+	assert.equal(memory.readRamRecordWord(reducedBlock + controlOffset(reduced) + FrameField.Top), 1);
+	const reducedBytes = backingBytes(reduced, THREAD_INITIAL_FRAMES, 0);
+	const allocationBytes = THREAD_HEAP_BYTES + heapAllocationBytes(reducedBytes);
+	assert.equal(shrinkWork, liveWork + 2 * (reducedBytes >>> 2));
+	assert.equal(cpu.heapAllocator.occupiedBytes(), baselineBytes + allocationBytes + TableRecords.HEADER_BYTES);
+	let deadWork = 0;
+	while (gc.phase() !== GcPhase.Sweep) deadWork += gc.step();
+	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	assert.equal(gc.threadAt(address), null, 'restore does not attach a pending sweep victim');
+	assert.equal(gc.threadRecordAddress(address), address, 'the allocator still owns it until sweep');
+	while (gc.active()) deadWork += gc.step();
+	assert.equal(deadWork, baselineWork + (allocationBytes >>> 2) + 1,
+		'removing the raw Thread root leaves only its physical sweep and the table visit');
+	assert.equal(gc.threadRecordAddress(address), 0);
+	assert.equal(gc.tableRecordAddress(child), 0);
+	assert.equal(memory.readRamRecordByte(address), 0);
+	assert.equal(cpu.heapAllocator.occupiedBytes(), baselineBytes);
+});
+
 test('a coroutine header is swept with the object page and its stack is released with it', () => {
 	const text = new Uint8Array(6 * 4);
 	writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
@@ -227,7 +287,7 @@ test('a coroutine header is swept with the object page and its stack is released
 	cpu.runUntilDepth(0, 1000);
 	const { gc } = cpu, frame = cpu.rootThread.currentFrame!;
 	const address = valuePayload(frame.registers.get(0)), thread = gc.threadAt(address)!;
-	const bytes = gc.allocationBytes(thread);
+	const bytes = gc.allocationBytes(address);
 	frame.registers.setClosure(1, thread.entry);
 	frame.top = 2;
 	const sweep = () => {
@@ -271,7 +331,7 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 	frame.controlMemory.writeRamRecordWord(frame.controlOffset + FrameField.StackCapacity, parentCapacity);
 	const grown = 2048;
 	cpu.luaHeap.setCollectionTarget(0);
-	cpu.luaHeap.collectRuntime(valueNil(), valueNil(), valueNil(), thread);
+	cpu.luaHeap.collectRuntime(valueNil(), valueNil(), valueNil(), thread.address);
 	assert.equal(thread.stackRegisters.capacity(), 512, 'growth admission keeps its old allocation size stable');
 	thread.resizeStack(grown);
 	assert.equal(frame.registers.getInteger(0), 456);

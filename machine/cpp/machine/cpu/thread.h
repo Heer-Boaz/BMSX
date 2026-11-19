@@ -1,31 +1,8 @@
 #pragma once
 
-#include "machine/cpu/gc_object.h"
-
-#include "common/endian.h"
-#include "machine/cpu/call_state.h"
-#include "machine/cpu/value.h"
+#include "machine/cpu/thread_record.h"
 
 namespace bmsx {
-
-class GcHeap;
-
-enum class ThreadStatus : u32 { New, Running, Normal, Suspended, Dead, Failed };
-constexpr size_t THREAD_HEAP_BYTES = 64;
-constexpr size_t THREAD_STACK_SLOT_BYTES = 5;
-constexpr u32 THREAD_INITIAL_VALUES = 8;
-constexpr u32 THREAD_INITIAL_FRAMES = 2;
-constexpr u32 THREAD_INITIAL_BACKING_BYTES = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES + THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
-constexpr u32 THREAD_RECORD_KIND = 4u;
-
-enum class ThreadField : u32 {
-	Header = 0, Gray = GC_RECORD_LINK, Status = 8, Resumer = 12, Entry = 16, StackTop = 20, StackBlock = 24, StackCapacity = 28,
-	FrameCapacity = 32, ProtectedCapacity = 36, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
-	FrameDepth = 56, ProtectedDepth = 60
-};
-
-// Eighteen count bits span the largest control reservation in the RAM bank.
-constexpr u32 THREAD_CONTROL_COUNT_MASK = (1u << 18) - 1;
 
 struct Thread {
 	Thread(GcHeap& heap, u32 address);
@@ -57,7 +34,6 @@ struct Thread {
 	bool observeStackWrite();
 	bool observeFrameWindowWrites(u32 first, u32 end);
 	void armFrameWindowWatches();
-	void freeStack();
 	u32 stackOffset() const;
 	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
 	u32 backingByteLength() const { return boundBackingBytes; }
@@ -73,7 +49,6 @@ struct Thread {
 		watches.consumeHistoryWrites(address & RAM_RECORD_WORD_MASK, THREAD_HEAP_BYTES);
 	}
 #endif
-	size_t shrinkStack();
 	u32 protectedDepth() const;
 	void setProtectedDepth(u32 depth);
 	u32 protectedWord(u32 index, ProtectedField field) const;
@@ -85,7 +60,6 @@ struct Thread {
 	static NativeOffsets nativeOffsets();
 #endif
 
-	void initializeRecord(u32 entry);
 	const u32 address;
 	ThreadStatus status() const;
 	void setStatus(ThreadStatus status);
@@ -113,7 +87,6 @@ private:
 	friend class GcHeap;
 	Thread* nextAttached = nullptr;
 	Thread* previousAttached = nullptr;
-	void replaceStack(u32 block, size_t capacity, u32 frames, u32 continuations);
 	u32 frameCapacity() const;
 	u32 protectedCapacity() const;
 	u32 frameControlAddress(u32 index) const;

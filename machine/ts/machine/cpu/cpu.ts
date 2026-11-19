@@ -3366,8 +3366,10 @@ export class CPU implements MappedPageInvalidator {
 	public createThread(entry: number): Thread {
 		const address = this.luaHeap.allocateRecord(THREAD_HEAP_BYTES, false, THREAD_INITIAL_BACKING_BYTES, ThreadField.StackBlock,
 			entry === 0 ? valueNil() : valueClosure(entry));
+		this.gc.threads.initializeRecord(address, entry, this.gc.white());
 		const thread = new Thread(this.gc, address);
-		thread.initializeRecord(entry);
+		thread.bindStack();
+		thread.armStackWatch();
 		this.gc.track(thread);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(valueThread(this.gc.reference(thread)));
 		return thread;
@@ -3963,7 +3965,7 @@ export class CPU implements MappedPageInvalidator {
 			const header = cpu.memory.readRamRecordWord(address);
 			switch (header & 0xff) {
 				case THREAD_RECORD_KIND:
-					if (cpu.gc.threadAt(address) === null) cpu.gc.track(new Thread(cpu.gc, address));
+					if (!cpu.gc.sweepGarbage(address) && cpu.gc.threadAt(address) === null) cpu.gc.track(new Thread(cpu.gc, address));
 					break;
 				case ValueTag.Closure:
 					if ((header & (CLOSURE_CANONICAL << (8 * CLOSURE_BINDING_FLAGS))) !== 0
@@ -3990,11 +3992,8 @@ export class CPU implements MappedPageInvalidator {
 		this.latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
 		this.gc.visitThreads(thread => {
-			if (this.gc.sweepGarbage(thread)) thread.bindStack(); // Needed to charge the remaining sweep.
-			else {
-				this.bindPhysicalFrames(thread);
-				thread.armStackWatch();
-			}
+			this.bindPhysicalFrames(thread);
+			thread.armStackWatch();
 		});
 		this.rootThread = this.gc.threadAt(state.rootThreadAddress)!;
 		this.activeThread = this.gc.threadAt(state.activeThreadAddress)!;
@@ -4159,8 +4158,8 @@ export class CPU implements MappedPageInvalidator {
 			this.stringPool.markReachable(this.globalBank.name(i)); heap.markSlot(this.globalBank.slots, i);
 		}
 		for (const image of this.executionImagesByDomain) if (image !== null) this.markHeapImage(image);
-		heap.markObject(this.rootThread); heap.markObject(this.activeThread); heap.markObject(this.completionThread);
-		heap.markObject(this.haltedUntilIrqThread);
+		heap.markThread(this.rootThread.address); heap.markThread(this.activeThread.address); heap.markThread(this.completionThread.address);
+		heap.markThread(this.haltedUntilIrqThread === null ? 0 : this.haltedUntilIrqThread.address);
 	}
 	public pruneStaticClosures(): void {
 		for (const [address, closures] of this.staticClosuresByAddress) {

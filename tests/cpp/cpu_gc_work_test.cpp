@@ -1,5 +1,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
+#include "machine/cpu/thread_record.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
@@ -9,6 +10,7 @@
 #include <array>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 namespace {
 using namespace bmsx;
@@ -375,6 +377,67 @@ void secondMarkPassAndCredit() {
 	require(target.getInteger(2) == valueTable(late.address()), "final remark retains writes after the second pass");
 }
 
+void collectUnattachedThreadRecord() {
+	Machine machine(image()); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap(); auto& memory = machine.memory;
+	const size_t baselineWork = gc.collect();
+	const size_t baselineBytes = cpu.heapAllocator().occupiedBytes();
+	const u32 address = cpu.luaHeap().allocateRecord(THREAD_HEAP_BYTES, false, THREAD_INITIAL_BACKING_BYTES,
+		static_cast<u32>(ThreadField::StackBlock));
+	ThreadRecord::initialize(gc, address, 0u);
+	ThreadStackLayout wide{0u, 64u, THREAD_INITIAL_FRAMES, 0u};
+	wide.block = cpu.heapAllocator().allocate(wide.byteLength(), true);
+	require(wide.block != 0u, "a large unviewed stack fits the test heap");
+	ThreadRecord::relocateStack(gc, address, ThreadRecord::stackLayout(memory, address), wide);
+	const u32 block = wide.block;
+	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::Status), static_cast<u32>(ThreadStatus::Suspended));
+	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameDepth), 1u);
+	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::StackTop), 1u);
+	const auto layout = ThreadRecord::stackLayout(memory, address);
+	const u32 frame = layout.frameAddress(0);
+	memory.writeRamRecordWord(frame + static_cast<u32>(FrameField::StackCapacity), THREAD_INITIAL_VALUES);
+	memory.writeRamRecordWord(frame + static_cast<u32>(FrameField::Top), 1u);
+	const u32 child = cpu.createTable().address();
+	memory.writeRamRecordWord(block, child);
+	memory.writeRamRecordByte(block + wide.valueCapacity * sizeof(u32), static_cast<u8>(ValueTag::Table));
+	const size_t bytes = THREAD_HEAP_BYTES + heapAllocationBytes(layout.byteLength());
+	require(layout.block == block && gc.threadRecordAddress(address) == address && gc.allocationBytes(address) == bytes,
+		"an issued raw Thread has its physical header and backing without an execution view");
+	require(cpu.heapAllocator().occupiedBytes() == baselineBytes + bytes + TableRecord::HEADER_BYTES,
+		"the raw Thread and its sole table edge own only their guest allocations");
+	const size_t liveWork = gc.collect(valueThread(address), valueNil(), valueNil(), address);
+	require(liveWork == baselineWork + 4 * (bytes / sizeof(u32)) + TableRecord::HEADER_BYTES / sizeof(u32) + 1,
+		"three raw Thread traces and its sweep charge the physical allocation, plus one table trace and visit");
+	require(gc.threadRecordAddress(address) == address && gc.tableRecordAddress(child) == child
+		&& memory.readRamRecordWord(block) == child,
+		"a raw Thread root retains its unviewed frame's table slot");
+	require(gc.collect(valueThread(address), valueNil(), valueNil(), address) == liveWork,
+		"repeated collection follows the same RAM frame and charges no host attachment work");
+	const size_t shrinkWork = gc.collect(valueThread(address));
+	const auto reduced = ThreadRecord::stackLayout(memory, address);
+	const size_t reducedBytes = THREAD_HEAP_BYTES + heapAllocationBytes(reduced.byteLength());
+	require(reduced.valueCapacity == wide.valueCapacity / 2 && reduced.block != block
+		&& reduced.slots(memory).get(0) == valueTable(child)
+		&& memory.readRamRecordWord(reduced.frameAddress(0) + static_cast<u32>(FrameField::Top)) == 1u,
+		"shrinking relocates the frame and its live tagged slot without a host view");
+	require(shrinkWork == liveWork + 2 * (reduced.byteLength() / sizeof(u32))
+		&& cpu.heapAllocator().occupiedBytes() == baselineBytes + reducedBytes + TableRecord::HEADER_BYTES,
+		"relocation charges the new physical copy and releases the old backing");
+	size_t deadWork = 0;
+	while (gc.phase() != GcPhase::Sweep) deadWork += gc.step(valueNil(), valueNil(), valueNil());
+	const auto state = cpu.captureRuntimeState();
+	const auto ram = memory.captureSaveState();
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(state);
+	require(gc.threadAt(address) == nullptr && gc.threadRecordAddress(address) == address,
+		"restore leaves the sweep victim as an issued RAM record without reattaching it");
+	while (gc.active()) deadWork += gc.step(valueNil(), valueNil(), valueNil());
+	require(deadWork == baselineWork + reducedBytes / sizeof(u32) + 1,
+		"removing the raw Thread root leaves only its physical sweep and the table visit");
+	require(gc.threadRecordAddress(address) == 0u && gc.tableRecordAddress(child) == 0u
+		&& memory.readRamRecordByte(address) == 0u && cpu.heapAllocator().occupiedBytes() == baselineBytes,
+		"reclamation releases the unviewed Thread header, its owned backing and its sole child");
+}
+
 void sweepCoroutineRecord() {
 	test::Blua32TestImage program;
 	program.text.resize(6 * INSTRUCTION_BYTES);
@@ -394,7 +457,7 @@ void sweepCoroutineRecord() {
 	const u32 address = valuePayload(frame.registers.get(0));
 	auto* thread = gc.threadAt(address);
 	require(thread != nullptr, "coroutine builtin published a physical Thread reference");
-	const auto bytes = gc.allocationBytes(thread);
+	const auto bytes = gc.allocationBytes(address);
 	frame.registers.set(1, valueClosure(thread->entry()));
 	frame.writeControl(FrameField::Top, 2);
 	const auto sweep = [&] {
@@ -434,7 +497,7 @@ void stackShrinkAndAdmission() {
 	cpu.collectHeap();
 	require(thread->stackCapacity == 512, "all caller windows participate in the shrink hysteresis");
 	thread->leaveFrame(); frame.writeControl(bmsx::FrameField::StackCapacity, 8); thread->setStackTop(8);
-	cpu.luaHeap().collectRuntime(valueNil(), valueNil(), valueNil(), thread);
+	cpu.luaHeap().collectRuntime(valueNil(), valueNil(), valueNil(), thread->address);
 	require(thread->stackCapacity == 512, "growth admission keeps the allocation being grown stable");
 	cpu.luaHeap().setCollectionTarget(0);
 	thread->resizeStack(2048);
@@ -465,12 +528,17 @@ void highRetainedPacing() {
 
 }
 
-int main() {
+int main(int argc, char** argv) {
 	try {
+		if (argc > 1 && std::string_view(argv[1]) == "--raw-thread-only") {
+			collectUnattachedThreadRecord();
+			std::cout << "raw Thread GC work test passed\n";
+			return 0;
+		}
 		canonicalPoolAndRootRanges(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers(); incrementalSharedWeakMode(); consumesSelfLinkedGrayEdge();
-		secondMarkPassAndCredit(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
+		secondMarkPassAndCredit(); collectUnattachedThreadRecord(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;
 	} catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

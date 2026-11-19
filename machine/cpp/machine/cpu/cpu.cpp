@@ -904,7 +904,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		auto& heap = cpu.m_heap;
 		switch (cpu.m_memory.readRamRecordByte(address)) {
 			case THREAD_RECORD_KIND:
-				if (!heap.threadAt(address)) heap.attachThread(address);
+				if (!heap.sweepGarbage(address) && !heap.threadAt(address)) heap.attachThread(address);
 				break;
 			case static_cast<u8>(ValueTag::Closure): {
 				const u8 binding = cpu.m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
@@ -933,11 +933,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
 	m_heap.visitThreads([&](Thread& thread) {
-		if (m_heap.sweepGarbage(thread.address)) thread.bindStack(); // The remaining sweep still charges its storage.
-		else {
-			bindPhysicalFrames(thread);
-			thread.armStackWatch();
-		}
+		bindPhysicalFrames(thread);
+		thread.armStackWatch();
 	});
 	m_rootThread = m_heap.threadAt(state.rootThreadAddress);
 	m_activeThread = m_heap.threadAt(state.activeThreadAddress);
@@ -1126,8 +1123,10 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 Thread* CPU::createThread(u32 entry) {
 	const u32 address = m_luaHeap.allocateRecord(THREAD_HEAP_BYTES, false, THREAD_INITIAL_BACKING_BYTES, static_cast<u32>(ThreadField::StackBlock),
 		entry ? valueClosure(entry) : valueNil());
+	ThreadRecord::initialize(m_heap, address, entry);
 	auto* thread = m_heap.attachThread(address);
-	thread->initializeRecord(entry);
+	thread->bindStack();
+	thread->armStackWatch();
 	trackLocalRoot(valueThread(thread->address));
 	return thread;
 }
@@ -2217,12 +2216,12 @@ size_t CPU::collectionRootWordCount() const {
 	return words;
 }
 
-size_t CPU::collectHeap(Value root0, Value root1, Value root2, Thread* growingStack) {
-	return m_heap.collect(root0, root1, root2, growingStack);
+size_t CPU::collectHeap(Value root0, Value root1, Value root2, u32 growingThread) {
+	return m_heap.collect(root0, root1, root2, growingThread);
 }
 
-size_t CPU::stepHeap(Value root0, Value root1, Value root2, Thread* growingStack) {
-	return m_heap.step(root0, root1, root2, growingStack);
+size_t CPU::stepHeap(Value root0, Value root1, Value root2, u32 growingThread) {
+	return m_heap.step(root0, root1, root2, growingThread);
 }
 
 ExecutionDomainId CPU::readFrameExecutionDomain(int frameIndex) const {
@@ -2819,10 +2818,10 @@ void CPU::markRoots(GcHeap& heap) {
 			heap.markValue(image->constPool.get(index));
 		}
 	}
-	heap.markThread(m_rootThread);
-	heap.markThread(m_activeThread);
-	heap.markThread(m_completionThread);
-	heap.markThread(m_haltedUntilIrqThread);
+	if (m_rootThread) heap.markThread(m_rootThread->address);
+	if (m_activeThread) heap.markThread(m_activeThread->address);
+	if (m_completionThread) heap.markThread(m_completionThread->address);
+	if (m_haltedUntilIrqThread) heap.markThread(m_haltedUntilIrqThread->address);
 }
 
 // end repeated-sequence-acceptable

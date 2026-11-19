@@ -54,11 +54,12 @@ constexpr uint8_t kTableWeakKeys = 1, kTableWeakValues = 2;
 constexpr u8 tableRecordKind = static_cast<u8>(ValueTag::Table);
 constexpr u32 tableSlotClass = heapClassIndex(TableRecord::HEADER_BYTES);
 constexpr u32 cellSlotClass = heapClassIndex(UPVALUE_HEAP_BYTES);
+constexpr u32 threadSlotClass = heapClassIndex(THREAD_HEAP_BYTES);
 }
 bool GcHeap::markValue(Value v) {
 	switch (valueTag(v)) {
 		case ValueTag::Thread:
-			return markThread(asThread(v, *this));
+			return markThread(valuePayload(v));
 		case ValueTag::Table:
 			return markTable(valuePayload(v));
 		case ValueTag::Closure:
@@ -151,7 +152,7 @@ size_t GcHeap::visitList(u32 list, Visitor&& visitor) {
 			if (tableRecordAddress(address) != address) break;
 		} else {
 			static_assert(Kind == THREAD_RECORD_KIND);
-			if (!threadAt(address)) break;
+			if (threadRecordAddress(address) == 0u) break;
 		}
 		const u32 low = memory.readRamRecordWord(address + GC_RECORD_LINK) >> GC_GRAY_INDEX_BITS;
 		index = low | ((meta & VISIT_LINK_HIGH_MASK) << VISIT_LINK_LOW_BITS);
@@ -165,9 +166,19 @@ size_t GcHeap::visitList(u32 list, Visitor&& visitor) {
 	return work;
 }
 
-bool GcHeap::markThread(Thread* thread) {
-	if (!thread || thread->nativeRecord[GC_COLOR_OFFSET] != white()) return false;
-	enqueue(thread->address, GC_RECORD_LINK, GC_TRACE_HEAD);
+u32 GcHeap::threadRecordAddress(u32 address) const {
+	const u32 offset = address & GC_RECORD_MASK;
+	return (offset & (THREAD_HEAP_BYTES - 1u)) == 0u && offset < arena.managementOffset()
+		&& memory.readRamRecordByte(offset) == THREAD_RECORD_KIND
+		&& arena.issuedObjectSlotClass(offset) == threadSlotClass ? RAM_BASE + offset : 0u;
+}
+
+bool GcHeap::markThread(u32 address) {
+	const u32 offset = address & GC_RECORD_MASK;
+	const u32 whiteThread = THREAD_RECORD_KIND | (static_cast<u32>(white()) << (GC_COLOR_OFFSET * 8u));
+	if ((offset & (THREAD_HEAP_BYTES - 1u)) != 0u || offset >= arena.managementOffset()
+		|| (memory.readRamRecordWord(offset) & 0xffffu) != whiteThread || arena.issuedObjectSlotClass(offset) != threadSlotClass) return false;
+	enqueue(RAM_BASE + offset, GC_RECORD_LINK, GC_TRACE_HEAD);
 	return true;
 }
 
@@ -213,7 +224,7 @@ bool GcHeap::markTable(u32 address) {
 size_t GcHeap::markCell(u32 cell) {
 	if (cell == 0u || memory.readRamRecordByte(cell + GC_COLOR_OFFSET) != white()) return 0;
 	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3u);
-	if (Upvalue::isOpen(memory, cell)) markThread(threadAt(memory.readRamRecordWord(cell + UPVALUE_OWNER)));
+	if (Upvalue::isOpen(memory, cell)) markThread(memory.readRamRecordWord(cell + UPVALUE_OWNER));
 	markValue(Upvalue::load(memory, cell));
 	return UPVALUE_HEAP_BYTES / sizeof(u32);
 }
@@ -246,8 +257,8 @@ bool GcHeap::observeStackWrites(u32 first, u32 end, const Thread* active) {
 	return rebound;
 }
 
-size_t GcHeap::allocationBytes(const Thread* thread) const {
-	return THREAD_HEAP_BYTES + heapAllocationBytes(thread->backingByteLength());
+size_t GcHeap::allocationBytes(u32 threadAddress) const {
+	return THREAD_HEAP_BYTES + heapAllocationBytes(ThreadRecord::stackLayout(memory, threadAddress).byteLength());
 }
 uint8_t GcHeap::tableWeakMode(const TableRecord& table) {
 	const u32 meta = table.metatableAddress();
@@ -280,8 +291,8 @@ uint8_t GcHeap::tableWeakMode(const TableRecord& table) {
 bool GcHeap::valueIsAlive(Value value) const {
 	switch (valueTag(value)) {
 		case ValueTag::Thread: {
-			const Thread* thread = asThread(value, *this);
-			return thread && isAlive(thread->address);
+			const u32 address = threadRecordAddress(valuePayload(value));
+			return address != 0u && isAlive(address);
 		}
 		case ValueTag::Table: {
 			const u32 address = tableRecordAddress(valuePayload(value));
@@ -305,7 +316,8 @@ size_t GcHeap::trace(bool atomic) {
 	const bool cell = kind == UPVALUE_RECORD_KIND && (offset & (UPVALUE_HEAP_BYTES - 1u)) == 0u
 		&& arena.issuedObjectSlotClass(offset) == cellSlotClass && !Upvalue::isOpen(memory, address);
 	const bool closure = kind == static_cast<u8>(ValueTag::Closure) && arena.issuedObjectStart(offset);
-	auto* thread = table || cell || closure ? nullptr : threadAt(address);
+	const bool thread = kind == THREAD_RECORD_KIND && (offset & (THREAD_HEAP_BYTES - 1u)) == 0u
+		&& arena.issuedObjectSlotClass(offset) == threadSlotClass;
 	// A link is clocked only by a queued record. Consuming its color bounds
 	// malformed cycles as well as preventing a duplicate scan.
 	if ((!table && !cell && !closure && !thread) || memory.readRamRecordByte(address + GC_COLOR_OFFSET) != 2u) {
@@ -330,31 +342,37 @@ size_t GcHeap::trace(bool atomic) {
 		return work;
 	}
 	size_t cellWork = 0;
-	if (!atomic) appendVisit(GC_THREAD_VISITS, thread->address);
-	markThread(thread->resumer());
-	markClosure(thread->entry());
-	markValue(thread->error());
-	int liveTop = thread->currentFrame ? thread->currentFrame->stackBase()
-		+ std::min(thread->currentFrame->readWindow(FrameField::Top), thread->currentFrame->stackCapacity()) : 0;
-	CallFrame* frame = thread->firstFrame;
-	for (size_t depth = 0; depth < thread->frameDepth(); ++depth, frame = frame->next) {
-		markClosure(frame->closureAddress());
-		u32 address = frame->readControl(FrameField::OpenHead);
-		for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
-			const u32 cell = openCellAddress(address);
+	if (!atomic) appendVisit(GC_THREAD_VISITS, address);
+	markThread(ThreadRecord::read(memory, address, ThreadField::Resumer));
+	markClosure(ThreadRecord::read(memory, address, ThreadField::Entry));
+	markValue(ThreadRecord::error(memory, address));
+	const auto layout = ThreadRecord::stackLayout(memory, address);
+	const u32 depth = ThreadRecord::count(memory, address, ThreadField::FrameDepth);
+	u32 liveTop = 0;
+	if (depth != 0u) {
+		const u32 frame = layout.frameAddress(depth - 1u);
+		const u32 base = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackBase)) & FRAME_WINDOW_MASK;
+		const u32 top = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Top)) & FRAME_WINDOW_MASK;
+		const u32 capacity = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackCapacity)) & FRAME_WINDOW_MASK;
+		liveTop = base + std::min(top, capacity);
+	}
+	u32 frame = layout.frameAddress(0);
+	for (u32 index = 0; index < depth; ++index, frame += FRAME_CONTROL_BYTES) {
+		markClosure(memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Closure)));
+		u32 open = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::OpenHead));
+		for (u32 remaining = UPVALUE_CHAIN_LIMIT; open != 0 && remaining != 0; --remaining) {
+			const u32 cell = openCellAddress(open);
 			if (cell == 0u) break;
 			cellWork += markCell(cell);
 			const u32 slot = memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
-			if (slot < thread->stackCapacity)
-				liveTop = std::max(liveTop, static_cast<int>(slot + 1));
-			address = memory.readRamRecordWord(cell + UPVALUE_NEXT);
+			if (slot < layout.valueCapacity) liveTop = std::max(liveTop, slot + 1u);
+			open = memory.readRamRecordWord(cell + UPVALUE_NEXT);
 		}
 	}
-	for (int slot = 0; slot < liveTop; ++slot) markValue(thread->stack.get(slot));
-	if (static_cast<size_t>(liveTop) < thread->stackCapacity)
-		thread->stack.clear(liveTop, thread->stackCapacity - liveTop);
-	thread->trimFrames();
-	return cellWork + ceilDiv4(static_cast<int>(allocationBytes(thread)));
+	auto slots = layout.slots(memory, liveTop > layout.valueCapacity);
+	for (u32 index = 0; index < liveTop; ++index) markValue(slots.get(index));
+	if (liveTop < layout.valueCapacity) slots.clear(liveTop, layout.valueCapacity - liveTop);
+	return cellWork + ceilDiv4(static_cast<int>(THREAD_HEAP_BYTES + heapAllocationBytes(layout.byteLength())));
 }
 
 size_t GcHeap::traceTable(u32 address) {
@@ -462,23 +480,30 @@ i32 GcHeap::sweepRecord(void* context, u32 address) {
 		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
 		return 1;
 	}
-	auto* thread = heap.threadAt(address);
-	if (!thread) return 1;
-	const i32 work = ceilDiv4(static_cast<int>(heap.allocationBytes(thread)));
-	if (thread->nativeRecord[GC_COLOR_OFFSET] != (sweep.white ^ 1u)) {
+	if (kind != THREAD_RECORD_KIND || heap.threadRecordAddress(address) == 0u) return 1;
+	const auto layout = ThreadRecord::stackLayout(heap.memory, address);
+	const i32 work = ceilDiv4(static_cast<int>(THREAD_HEAP_BYTES + heapAllocationBytes(layout.byteLength())));
+	if (heap.memory.readRamRecordByte(address + GC_COLOR_OFFSET) != (sweep.white ^ 1u)) {
 		heap.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, sweep.white);
-		return work + (thread != sweep.growingStack ? 2 * ceilDiv4(thread->shrinkStack()) : 0);
+		const u32 relocated = address != sweep.growingThread ? ThreadRecord::shrinkStack(heap, address, layout) : 0u;
+		if (auto* view = heap.threadAt(address)) view->trimFrames();
+		return work + 2 * ceilDiv4(relocated);
 	}
 
+	// Retirement of an execution view follows physical reclamation; its
+	// presence never contributes a root or changes the work.
+	auto* view = heap.threadAt(address);
 	heap.threadSlot(address) = nullptr;
-	thread->freeStack();
+	heap.arena.free(layout.block);
 	heap.arena.free(address);
-	heap.unlinkThread(thread);
-	delete thread;
+	if (view) {
+		heap.unlinkThread(view);
+		delete view;
+	}
 	return -work;
 }
 
-size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack) {
+size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);
@@ -531,7 +556,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);
 #endif
-				SweepContext sweep{*this, growingStack, white()};
+				SweepContext sweep{*this, growingThread, white()};
 				work += arena.sweepObjects(GC_STEP_WORDS - work, &sweep, &GcHeap::sweepRecord);
 				if (work < GC_STEP_WORDS && !arena.objectSweepActive()) {
 					memory.writeRamRecordWord(m_controlOffset + GC_CHANGED_HEAD, 0u);
@@ -556,14 +581,14 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 	}
 	return work;
 }
-size_t GcHeap::collect(Value root0, Value root1, Value root2, Thread* growingStack) {
+size_t GcHeap::collect(Value root0, Value root1, Value root2, u32 growingThread) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	++m_cpu.m_diagnosticGcProfile.fullCollections;
 #endif
 	size_t work = 0;
 	// An explicit/full collection also removes floating garbage from an active cycle.
-	while (active()) work += step(root0, root1, root2, growingStack);
-	do { work += step(root0, root1, root2, growingStack); } while (active());
+	while (active()) work += step(root0, root1, root2, growingThread);
+	do { work += step(root0, root1, root2, growingThread); } while (active());
 	return work;
 }
 void GcHeap::discardAttachments(Thread* retainedRoot) {

@@ -1,4 +1,5 @@
-import { ThreadField } from './thread_record';
+import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_CONTROL_COUNT_MASK, controlOffset, backingBytes } from './thread_record';
+export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_BACKING_BYTES, THREAD_RECORD_KIND } from './thread_record';
 import { GC_COLOR_OFFSET } from './gc_object';
 import { CallFrame, FrameField, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { GcHeap } from './gc_heap';
@@ -8,29 +9,6 @@ import { MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/m
 import { ValueSlots } from './value_slots';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SHIFT } from '../memory/mapped_page';
 
-export const enum ThreadStatus { New, Running, Normal, Suspended, Dead, Failed }
-export const THREAD_HEAP_BYTES = 64;
-export const THREAD_STACK_SLOT_BYTES = 5;
-export const THREAD_INITIAL_VALUES = 8;
-export const THREAD_INITIAL_FRAMES = 2;
-export const THREAD_INITIAL_BACKING_BYTES = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES + THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
-export const THREAD_RECORD_KIND = 4;
-
-// Eighteen count bits cover every 20-byte record that can fit in physical RAM.
-const CONTROL_COUNT_MASK = (1 << 18) - 1;
-function controlOffset(values: number): number { return (values * THREAD_STACK_SLOT_BYTES + 3) & ~3; }
-function backingBytes(values: number, frames: number, continuations: number): number {
-	return controlOffset(values) + frames * FRAME_CONTROL_BYTES + continuations * PROTECTED_CALL_BYTES;
-}
-
-function copyStackControl(ram: Uint8Array, destination: number, source: number, bytes: number): void {
-	if (bytes === 0) return;
-	source &= RAM_RECORD_WORD_MASK;
-	const first = Math.min(bytes, MAIN_RAM_SIZE - source);
-	ram.copyWithin(destination, source, source + first);
-	if (first !== bytes) ram.copyWithin(destination + first, 0, bytes - first);
-}
-
 /** Retained language execution state. Physical CPU/IRQ/bus state is not thread-local. */
 export class Thread {
 	public gcNext: Thread | null = null;
@@ -39,7 +17,7 @@ export class Thread {
 	public set gcColor(color: number) { this.heap.memory.writeRamRecordByte(this.address + GC_COLOR_OFFSET, color); }
 	public firstFrame: CallFrame | null = null;
 	public currentFrame: CallFrame | null = null;
-	public get frameDepth(): number { return this.read(ThreadField.FrameDepth) & CONTROL_COUNT_MASK; }
+	public get frameDepth(): number { return this.read(ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK; }
 	public readonly stackRegisters = new ValueSlots(0);
 	public get stackTop(): number { return this.read(ThreadField.StackTop) & FRAME_WINDOW_MASK; }
 	public set stackTop(top: number) { this.write(ThreadField.StackTop, top); }
@@ -52,24 +30,6 @@ export class Thread {
 		this.recordWordOffset = (address & RAM_RECORD_WORD_MASK) >>> 2;
 	}
 
-	public initializeRecord(entry: number): void {
-		const memory = this.heap.memory, offset = this.recordWordOffset * 4;
-		const ram = memory.ramData();
-		const block = this.read(ThreadField.StackBlock);
-		ram.fill(0, offset, offset + THREAD_HEAP_BYTES);
-		writeLE32(ram, offset + ThreadField.Header, THREAD_RECORD_KIND | (this.heap.white() << 8));
-		writeLE32(ram, offset + ThreadField.Entry, entry);
-		writeLE32(ram, offset + ThreadField.StackBlock, block);
-		writeLE32(ram, offset + ThreadField.StackCapacity, THREAD_INITIAL_VALUES);
-		writeLE32(ram, offset + ThreadField.FrameCapacity, THREAD_INITIAL_FRAMES);
-		const control = (block & RAM_RECORD_WORD_MASK) + controlOffset(THREAD_INITIAL_VALUES);
-		ram.fill(0, control, control + THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES);
-		memory.invalidateRamWrite(control, THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES);
-		this.bindStack();
-		memory.invalidateRamWrite(offset, THREAD_HEAP_BYTES);
-		this.stackRegisters.clear(THREAD_INITIAL_VALUES);
-		this.armStackWatch();
-	}
 
 	private read(field: ThreadField): number { return this.heap.memory.ramWords[this.recordWordOffset + (field >>> 2)]; }
 	private write(field: ThreadField, word: number): void { this.heap.memory.writeRamRecordWord(this.address + field, word); }
@@ -97,9 +57,9 @@ export class Thread {
 	public backingByteLength(): number {
 		return this.boundBackingBytes;
 	}
-	private get frameCapacity(): number { return this.read(ThreadField.FrameCapacity) & CONTROL_COUNT_MASK; }
-	private get protectedCapacity(): number { return this.read(ThreadField.ProtectedCapacity) & CONTROL_COUNT_MASK; }
-	public get protectedDepth(): number { return this.read(ThreadField.ProtectedDepth) & CONTROL_COUNT_MASK; }
+	private get frameCapacity(): number { return this.read(ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK; }
+	private get protectedCapacity(): number { return this.read(ThreadField.ProtectedCapacity) & THREAD_CONTROL_COUNT_MASK; }
+	public get protectedDepth(): number { return this.read(ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK; }
 	public set protectedDepth(depth: number) { this.write(ThreadField.ProtectedDepth, depth); }
 	private frameControlAddress(index: number): number {
 		return this.stackOffset() + this.boundFrameOffset + index * FRAME_CONTROL_BYTES;
@@ -128,7 +88,7 @@ export class Thread {
 			const capacity = reserved === 0 ? 1 : reserved * 2;
 			const values = this.stackRegisters.capacity();
 			const frames = this.boundFrameCapacity;
-			const block = this.heap.budget.allocateStack(backingBytes(values, frames, capacity), this, valueNil());
+			const block = this.heap.budget.allocateStack(backingBytes(values, frames, capacity), this.address, valueNil());
 			this.replaceStack(block, values, frames, capacity);
 		}
 		const address = this.protectedAddress(index) & RAM_RECORD_WORD_MASK;
@@ -234,7 +194,7 @@ export class Thread {
 	public resizeStack(capacity: number, root = valueNil()): void {
 		if (capacity === this.stackRegisters.capacity()) return;
 		const frames = this.boundFrameCapacity, continuations = this.boundProtectedCapacity;
-		const block = this.heap.budget.allocateStack(backingBytes(capacity, frames, continuations), this, root);
+		const block = this.heap.budget.allocateStack(backingBytes(capacity, frames, continuations), this.address, root);
 		this.replaceStack(block, capacity, frames, continuations);
 	}
 
@@ -244,62 +204,14 @@ export class Thread {
 		while (frames < wanted) frames *= 2;
 		if (values === this.stackRegisters.capacity() && frames === this.boundFrameCapacity) return;
 		const continuations = this.boundProtectedCapacity;
-		const block = this.heap.budget.allocateStack(backingBytes(values, frames, continuations), this, root);
+		const block = this.heap.budget.allocateStack(backingBytes(values, frames, continuations), this.address, root);
 		this.replaceStack(block, values, frames, continuations);
 	}
 
-	public freeStack(): void { this.heap.arena.free(this.read(ThreadField.StackBlock)); }
 
 	private replaceStack(block: number, capacity: number, frames: number, continuations: number): void {
-		const memory = this.heap.memory, ram = memory.ramData();
-		const oldBlock = this.read(ThreadField.StackBlock);
-		const start = block & (MAIN_RAM_SIZE - 4);
-		const oldFrames = this.frameControlAddress(0), oldProtected = this.protectedAddress(0);
-		const frameOffset = controlOffset(capacity);
-		const records = start + frameOffset, protectedRecords = records + frames * FRAME_CONTROL_BYTES;
-		const frameBytes = Math.min(this.frameDepth, this.boundFrameCapacity, frames) * FRAME_CONTROL_BYTES;
-		const occupied = Math.min(this.protectedDepth, this.boundProtectedCapacity, continuations) * PROTECTED_CALL_BYTES;
-		const bytes = backingBytes(capacity, frames, continuations);
-		this.stackRegisters.bindRam(memory, start, capacity, true);
-		copyStackControl(ram, records, oldFrames, frameBytes);
-		copyStackControl(ram, protectedRecords, oldProtected, occupied);
-		const endOfValues = start + capacity * THREAD_STACK_SLOT_BYTES;
-		ram.fill(0, endOfValues, records);
-		ram.fill(0, records + frameBytes, protectedRecords);
-		ram.fill(0, protectedRecords + occupied, start + bytes);
-		memory.invalidateRamWrite(endOfValues, start + bytes - endOfValues);
-		this.boundFrameOffset = frameOffset;
-		this.boundBackingBytes = bytes;
-		this.boundFrameCapacity = frames;
-		this.boundProtectedCapacity = continuations;
-		const descriptor = (this.address + ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
-		writeLE32(ram, descriptor, block);
-		writeLE32(ram, descriptor + 4, capacity);
-		writeLE32(ram, descriptor + 8, frames);
-		writeLE32(ram, descriptor + 12, continuations);
-		this.bindFrameControls(records);
-		this.rebindFrames();
-		memory.invalidateRamWrite(descriptor, 16, false);
-		this.heap.arena.free(oldBlock);
-
-	}
-
-	public shrinkStack(): number {
-		let used = this.stackTop;
-		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
-			used = Math.max(used, frame.stackBase + frame.stackCapacity);
-		const capacity = this.stackRegisters.capacity(), priorProtected = this.protectedCapacity;
-		const nextProtected = priorProtected > 4 && this.protectedDepth * 3 < priorProtected ? priorProtected >>> 1 : priorProtected;
-		const nextValues = capacity > 16 && used * 3 < capacity ? capacity >>> 1 : capacity;
-		const nextFrames = this.boundFrameCapacity > 4 && this.frameDepth * 3 < this.boundFrameCapacity
-			? this.boundFrameCapacity >>> 1 : this.boundFrameCapacity;
-		if (nextValues === capacity && nextProtected === priorProtected && nextFrames === this.boundFrameCapacity) return 0;
-		const bytes = backingBytes(nextValues, nextFrames, nextProtected);
-		const block = this.heap.arena.allocate(bytes, true);
-		if (block === 0) return 0; // Collection cannot recursively collect for a shrink.
-
-		this.replaceStack(block, nextValues, nextFrames, nextProtected);
-		return bytes;
+		this.heap.threads.replaceStack(this.address, block, capacity, frames, continuations);
+		this.bindStack();
 	}
 
 	/** Prepare the first inactive node; stack growth can collect before entry. */

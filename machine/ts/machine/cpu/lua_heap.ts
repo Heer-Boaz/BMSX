@@ -3,7 +3,6 @@ import { UPVALUE_HEAP_BYTES, initialize as initializeCell } from './upvalue';
 import { HEAP_COLLECTION_TARGET_OFFSET, heapAllocationBytes } from './heap_allocator';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
-import type { Thread } from './thread';
 import { GC_ASSIST_BYTES } from './gc_heap';
 import { shiftRightSigned } from '../common/numeric';
 import { valueNil, type Value } from './value';
@@ -28,16 +27,16 @@ export class LuaHeap {
 	}
 
 	public admit(byteCount: number, root0: Value = valueNil(), root1: Value = valueNil(),
-		root2: Value = valueNil(), growingStack: Thread | null = null): boolean {
+		root2: Value = valueNil(), growingThread = 0): boolean {
 		const capacity = this.capacity();
 		const nextBytes = this.usedBytes() + byteCount;
 		const exhausted = nextBytes > capacity;
 		if (!exhausted && nextBytes <= this.collectionTarget()) return false;
 		if (exhausted) {
-			this.collectRuntime(root0, root1, root2, growingStack);
+			this.collectRuntime(root0, root1, root2, growingThread);
 		} else {
 			const work = this.cpu.gc.step(
-				root0, root1, root2, growingStack);
+				root0, root1, root2, growingThread);
 			this.cpu.instructionBudgetRemaining -= work;
 			this.creditStep(work);
 		}
@@ -48,7 +47,7 @@ export class LuaHeap {
 	public allocateRecord(bytes: number, owned: boolean, backingBytes: number, backingField: number,
 		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {
 		const charged = heapAllocationBytes(bytes) + (backingBytes === 0 ? 0 : heapAllocationBytes(backingBytes));
-		const collected = this.admit(charged, root0, root1, root2, null);
+		const collected = this.admit(charged, root0, root1, root2, 0);
 		const arena = this.cpu.heapAllocator;
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
 			const address = arena.allocate(bytes, owned);
@@ -65,7 +64,7 @@ export class LuaHeap {
 		throw LUA_OUT_OF_MEMORY_SIGNAL;
 	}
 
-	public allocateStack(bytes: number, thread: Thread, root: Value): number {
+	public allocateStack(bytes: number, thread: number, root: Value): number {
 		const charge = heapAllocationBytes(bytes);
 		const collected = this.admit(charge, root, valueNil(), valueNil(), thread);
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
@@ -82,7 +81,7 @@ export class LuaHeap {
 	public allocateClosureRecord(captures: number, latched = false, cells: Uint32Array = NO_NEW_CELLS, newCount = 0): number {
 		const bytes = closureRecordBytes(captures, latched);
 		const charged = heapAllocationBytes(bytes) + newCount * UPVALUE_HEAP_BYTES;
-		const collected = this.admit(charged, valueNil(), valueNil(), valueNil(), null);
+		const collected = this.admit(charged, valueNil(), valueNil(), valueNil(), 0);
 		const arena = this.cpu.heapAllocator;
 		for (let attempt = collected ? 1 : 0; attempt !== 2; ++attempt) {
 			const closure = arena.allocate(bytes, false);
@@ -109,10 +108,10 @@ export class LuaHeap {
 
 	public collectRuntime(
 		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(),
-		growingStack: Thread | null = null,
+		growingThread = 0,
 	): void {
 		this.cpu.instructionBudgetRemaining -= this.cpu.gc.collect(
-			root0, root1, root2, growingStack,
+			root0, root1, root2, growingThread,
 		);
 	}
 

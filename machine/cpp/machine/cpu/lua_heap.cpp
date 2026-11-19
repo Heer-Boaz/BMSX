@@ -31,7 +31,7 @@ size_t LuaHeap::usedBytes() const {
 	return m_cpu.heapAllocator().occupiedBytes();
 }
 
-bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, Thread* growingStack) {
+bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
 #if defined(BMSX_GC_STRESS)
 	stressHeapAllocation(*this);
 #endif
@@ -40,9 +40,9 @@ bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, Thr
 	const bool exhausted = nextBytes > limit;
 	if (!exhausted && nextBytes <= collectionTarget()) return false;
 	if (exhausted) {
-		collectRuntime(root0, root1, root2, growingStack);
+		collectRuntime(root0, root1, root2, growingThread);
 	} else {
-		const size_t work = m_cpu.stepHeap(root0, root1, root2, growingStack);
+		const size_t work = m_cpu.stepHeap(root0, root1, root2, growingThread);
 		m_cpu.instructionBudgetRemaining -= static_cast<int>(work);
 		creditStep(work);
 	}
@@ -53,7 +53,7 @@ bool LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, Thr
 u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backingField,
 	Value root0, Value root1, Value root2) {
 	const size_t charged = heapAllocationBytes(bytes) + (backingBytes ? heapAllocationBytes(backingBytes) : 0u);
-	const bool collected = admit(charged, root0, root1, root2, nullptr);
+	const bool collected = admit(charged, root0, root1, root2, 0u);
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
 		const u32 address = arena.allocate(bytes, owned);
@@ -70,14 +70,14 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool owned, u32 backingBytes, u32 backing
 	throw LuaOutOfMemorySignal{};
 }
 
-u32 LuaHeap::allocateStack(u32 bytes, Thread* thread, Value root) {
+u32 LuaHeap::allocateStack(u32 bytes, u32 threadAddress, Value root) {
 	const auto charge = heapAllocationBytes(bytes);
-	const bool collected = admit(charge, root, valueNil(), valueNil(), thread);
+	const bool collected = admit(charge, root, valueNil(), valueNil(), threadAddress);
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
 		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) {
 			return block;
 		}
-		if (attempt == 0) collectRuntime(root, valueNil(), valueNil(), thread);
+		if (attempt == 0) collectRuntime(root, valueNil(), valueNil(), threadAddress);
 	}
 	throw LuaOutOfMemorySignal{};
 }
@@ -85,7 +85,7 @@ u32 LuaHeap::allocateStack(u32 bytes, Thread* thread, Value root) {
 u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> cells) {
 	const u32 bytes = closureRecordBytes(captures, latched);
 	const size_t charged = heapAllocationBytes(bytes) + cells.size() * UPVALUE_HEAP_BYTES;
-	const bool collected = admit(charged, valueNil(), valueNil(), valueNil(), nullptr);
+	const bool collected = admit(charged, valueNil(), valueNil(), valueNil(), 0u);
 	auto& arena = m_cpu.heapAllocator();
 	for (int attempt = collected ? 1 : 0; attempt != 2; ++attempt) {
 		if (const u32 closure = arena.allocate(bytes, false)) {
@@ -109,8 +109,8 @@ u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> ce
 	throw LuaOutOfMemorySignal{};
 }
 
-void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, Thread* growingStack) {
-	m_cpu.instructionBudgetRemaining -= static_cast<int>(m_cpu.collectHeap(root0, root1, root2, growingStack));
+void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, u32 growingThread) {
+	m_cpu.instructionBudgetRemaining -= static_cast<int>(m_cpu.collectHeap(root0, root1, root2, growingThread));
 }
 
 bool LuaHeap::stepRuntime() {

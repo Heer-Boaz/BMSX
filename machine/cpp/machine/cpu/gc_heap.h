@@ -42,6 +42,7 @@ public:
 	u32 tableRecordAddress(u32 address) const;
 	u32 cellRecordAddress(u32 address) const;
 	u32 closureRecordAddress(u32 address) const;
+	u32 threadRecordAddress(u32 address) const;
 	u32 openCellAddress(u32 address) const;
 	Thread* threadAt(u32 address) const {
 		const u32 offset = address & GC_RECORD_MASK;
@@ -74,13 +75,13 @@ public:
 		return phase() == GcPhase::Sweep && memory.readRamRecordByte(address + GC_COLOR_OFFSET) == (white() ^ 1u);
 	}
 	bool isAlive(u32 address) const { return memory.readRamRecordByte(address + GC_COLOR_OFFSET) != white(); }
-	size_t allocationBytes(const Thread* thread) const;
+	size_t allocationBytes(u32 threadAddress) const;
 	void armThreadStackWatches();
 	bool observeStackWrites(u32 first, u32 end, const Thread* active);
-	size_t step(Value root0, Value root1, Value root2, Thread* growingStack = nullptr);
-	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);
+	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u);
+	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	bool markValue(Value value);
-	bool markThread(Thread* thread);
+	bool markThread(u32 address);
 	void writeBarrier(u32 address, u32 link) {
 		if (memory.readRamRecordByte(address + GC_COLOR_OFFSET) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
 	}
@@ -103,7 +104,7 @@ private:
 	size_t trace(bool atomic);
 	size_t remark(Value root0, Value root1, Value root2);
 	size_t atomic(Value root0, Value root1, Value root2);
-	struct SweepContext { GcHeap& heap; const Thread* growingStack; u8 white; };
+	struct SweepContext { GcHeap& heap; u32 growingThread; u8 white; };
 	static i32 sweepRecord(void* context, u32 address);
 	void unlinkThread(Thread* thread);
 	CPU& m_cpu;

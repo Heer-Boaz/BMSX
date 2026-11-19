@@ -230,8 +230,8 @@ public:
 
 	void setExecutionHook(ExecutionHookBinding binding);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget, const Thread* target = nullptr);
-	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);
-	size_t stepHeap(Value root0, Value root1, Value root2, Thread* growingStack = nullptr);
+	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
+	size_t stepHeap(Value root0, Value root1, Value root2, u32 growingThread = 0u);
 	bool collecting() const { return m_heap.active(); }
 	class LocalRootsScope {
 	public:

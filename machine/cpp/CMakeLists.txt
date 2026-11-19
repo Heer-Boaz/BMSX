@@ -280,6 +280,7 @@ add_library(bmsx_core STATIC
 	machine/cpu/cpu_builtins_leaf.cpp
 	machine/cpu/cpu_decode.cpp
 	machine/cpu/thread.cpp
+	machine/cpu/thread_record.cpp
 	machine/cpu/call_state.cpp
 	machine/cpu/closure.cpp
 	machine/cpu/upvalue.cpp
