@@ -10,7 +10,7 @@ void MappedPageWriteWatches::armCodeRange(size_t first, size_t length) {
 		const u32 end = page == lastPage ? (last & MAPPED_PAGE_BYTE_MASK) >> 2u : MAPPED_PAGE_BYTE_MASK >> 2u;
 		if ((m_groups[page] & MAPPED_WATCH_GROUP_MASK) == 0u) ++m_watchedPages;
 		for (u32 group = begin >> 5u; group <= end >> 5u; ++group) {
-			m_groups[page] |= static_cast<u16>(1u << group);
+			m_groups[page] |= 1u << group;
 			m_words[page * MAPPED_PAGE_WATCH_GROUP_COUNT + group] |= mappedWatchWordMask(group, begin, end);
 		}
 	}
@@ -48,7 +48,7 @@ void MappedPageWriteWatches::invalidateWatchedWrite(
 	for (size_t page = firstPage; page <= lastPage; ++page) {
 		auto& groups = m_groups[page];
 		if (groups & MAPPED_WATCH_HISTORY_CLEAN) groups &= MAPPED_WATCH_GROUP_MASK;
-		if (groups == 0u) continue;
+		if (mappedWatchedGroups(groups, reportViews) == 0u) continue;
 		const auto base = page * MAPPED_PAGE_WATCH_GROUP_COUNT;
 		MappedPageWriteWatch watch{&groups, m_words + base, &m_watchedPages, m_viewWords ? m_viewWords + base : nullptr};
 		const u32 firstByte = page == firstPage ? static_cast<u32>(offset & MAPPED_PAGE_BYTE_MASK) : 0u;

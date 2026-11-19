@@ -1,3 +1,4 @@
+#include "common/endian.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/history/ram_history.h"
 #include "spec/bmsx/model.h"
@@ -35,12 +36,17 @@ int main() {
 	constexpr u32 mirror = DYNAMIC_RAM_BASE - RAM_BASE + 0x71f0u;
 	require(!watches.anyWatched() && !watches.anyWatched(code, 4), "history does not act as a code or view watch");
 	watches.armCodeRange(code, 4);
+	memory.armRamViewWord(code);
 	memory.armRamViewWord(code + 4);
 	memory.writeU32(RAM_BASE + code + 8, 7);
 	require(counter.code == 0 && counter.views == 0, "page write does not consume unrelated watched words");
-	memory.writeU32(RAM_BASE + code, 1);
+	writeLE32(memory.ramData() + code, 1);
+	memory.invalidateRamWrite(code, 4, false);
+	require(counter.code == 1 && counter.views == 0 && !watches.anyWatched(code, 4, false) && watches.anyWatched(code, 4),
+		"owner publication consumes the code word without consuming its armed view");
+	memory.writeRamRecordByte(MAIN_RAM_SIZE + code, 1);
 	memory.writeU32(RAM_BASE + code + 4, 2);
-	require(counter.code == 1 && counter.views == 1 && !watches.anyWatched(), "normal code and view watches still fire");
+	require(counter.code == 1 && counter.views == 2 && !watches.anyWatched(), "normal and mirrored writes still invalidate their exact views");
 	memory.transferDmaBlock(0, RAM_BASE + dma, 2, 4, 4, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
 	memory.writeRamRecordByte(MAIN_RAM_SIZE + mirror, 9);
 	archive.capture(memory, &first, second);
