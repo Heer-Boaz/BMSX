@@ -835,13 +835,10 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 			const CallFrame& frame = *framePtr;
 			CpuFrameState frameState;
 			frameState.closureRef = captureObject(frame.closure);
-			frameState.returnBase = frame.returnBase;
-			frameState.returnCount = frame.returnCount;
-			frameState.top = frame.top;
+
 			frameState.stackCapacity = frame.stackCapacity;
 			frameState.stackBase = frame.stackBase;
-			frameState.varargBase = frame.varargBase;
-			frameState.varargCount = frame.varargCount;
+
 			saved.frames.push_back(std::move(frameState));
 		}
 		saved.stackTop = thread->stackTop;
@@ -1131,14 +1128,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			auto* frame = m_activeThread->acquireFrame();
 			frame->closure = static_cast<Closure*>(restoredObjects[static_cast<size_t>(frameState.closureRef)]);
 			frame->executionImage = executionImageForDomain(frame->closure->prototype->executionDomainId);
-			frame->returnBase = frameState.returnBase;
-			frame->returnCount = frameState.returnCount;
-			frame->varargBase = frameState.varargBase;
-			frame->varargCount = frameState.varargCount;
 			frame->stackBase = frameState.stackBase;
 			frame->stackCapacity = frameState.stackCapacity;
 			frame->registers = thread->stack.subspan(frame->stackBase, frame->stackCapacity);
-			frame->top = frameState.top;
+
 			m_activeThread->enterFrame(frame);
 		}
 		thread->bindStack();
@@ -1367,7 +1360,7 @@ void CPU::returnToResumer(int sourceBase, int sourceCount, bool succeeded) {
 			caller.registers.set(callBase + i + 1, succeeded ? thread->stack.get(sourceBase + i) : thread->error());
 		for (int i = copied + 1; i < count; ++i) caller.registers.set(callBase + i, valueNil());
 	}
-	caller.top = callBase + count;
+	caller.setTop(callBase + count);
 	thread->setResumer(nullptr);
 	m_threadSwitchRequested = true;
 	m_yieldRequested = true;
@@ -1550,7 +1543,7 @@ void CPU::finishProtectedCallWithError(u32 continuationIndex, Value errorValue) 
 			}
 		}
 	}
-	caller.top = callBase + resultCount;
+	caller.setTop(callBase + resultCount);
 	instructionBudgetRemaining -= resultCount;
 	finishProtectedContinuation(continuationIndex, resultCount);
 }
@@ -1571,7 +1564,7 @@ int CPU::writeProtectedResults(u32 continuationIndex, bool prefix, const Value* 
 			registers.set(static_cast<size_t>(callBase + index), valueNil());
 		}
 	}
-	caller.top = callBase + resultCount;
+	caller.setTop(callBase + resultCount);
 	return resultCount;
 }
 
@@ -1591,7 +1584,7 @@ int CPU::writeProtectedResults(u32 continuationIndex, bool prefix, CallFrame& so
 			registers.set(static_cast<size_t>(callBase + index), valueNil());
 		}
 	}
-	caller.top = callBase + resultCount;
+	caller.setTop(callBase + resultCount);
 	return resultCount;
 }
 
@@ -2039,8 +2032,8 @@ dispatch_decode:
 #define SET_REGISTER_FAST(index, valueExpr) do { \
 	registers.set(static_cast<size_t>(index), (valueExpr)); \
 	const int nextTop = (index) + 1; \
-	if (nextTop > FRAME.top) { \
-		FRAME.top = nextTop; \
+	if (nextTop > FRAME.readWindow(FrameField::Top)) { \
+		FRAME.setTop(nextTop); \
 	} \
 } while (0)
 #define SKIP_NEXT_INSTRUCTION() do { \
@@ -2227,7 +2220,7 @@ dispatch_native_block: {
 				nativeState.state = {.registers = registers, .constants = IMAGE.constPool.view(), .frame = frame, .heap = &m_heap,
 					.globalValues = m_globalValues.view(), .systemGlobalValues = m_systemGlobalValues.view(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.capacity()),
-					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top,
+					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.readWindow(FrameField::Top),
 					.ram = m_memory.ramData(), .stackOffset = thread.stackOffset(), .stackBytes = thread.backingByteLength(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 					.diagnosticOpcodes = {},
@@ -2481,7 +2474,7 @@ bool CPU::isNonMaskableExceptionFrame(int frameIndex) const {
 }
 
 int CPU::getFrameRegisterCount(int frameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->top;
+	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->readWindow(FrameField::Top);
 }
 
 Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
@@ -2694,36 +2687,34 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	const bool vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u;
 	const int varargCount = vararg && static_cast<u32>(argCount) > functionRecord.numParams
 		? static_cast<int>(static_cast<u32>(argCount) - functionRecord.numParams) : 0;
+	const int top = static_cast<int>(functionRecord.numParams);
+	const int varargBase = argumentBase + top;
 	const int stackBase = vararg ? argumentBase + argCount : argumentBase;
 	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
 	auto* frame = m_activeThread->acquireFrame();
 	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->closure = closure;
-	frame->returnBase = returnBase;
-	frame->returnCount = returnCount;
-	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch);
-	frame->varargBase = argumentBase + static_cast<int>(functionRecord.numParams);
-	frame->varargCount = varargCount;
+	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, callSitePc, returnToCompletionLatch,
+		varargBase, varargCount, returnBase, returnCount, top);
 	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
 	frame->registers = m_activeThread->stack.subspan(stackBase, frame->stackCapacity);
-	frame->top = static_cast<int>(functionRecord.numParams);
-	const int copiedCount = std::min(frame->top, argCount);
+	const int copiedCount = std::min(top, argCount);
 	if (vararg || !sharedStack) {
 		frame->registers.copyFrom(caller.thread->stack, 0, callerArgBase, copiedCount);
 	}
-	frame->registers.clear(copiedCount, frame->top - copiedCount);
+	frame->registers.clear(copiedCount, top - copiedCount);
 	if (vararg) {
 		if (sharedStack) {
 			// Fixed arguments now live in the relocated working frame. Keep only
 			// the original extra arguments below it, as in a Lua vararg frame.
 			m_activeThread->stack.clear(argumentBase, copiedCount);
 		} else {
-			m_activeThread->stack.copyFrom(caller.thread->stack, frame->varargBase, callerArgBase + frame->top, varargCount);
+			m_activeThread->stack.copyFrom(caller.thread->stack, varargBase, callerArgBase + top, varargCount);
 		}
 	}
-	instructionBudgetRemaining -= (vararg || !sharedStack ? frame->top : frame->top - copiedCount)
+	instructionBudgetRemaining -= (vararg || !sharedStack ? top : top - copiedCount)
 		+ (sharedStack ? 0 : varargCount);
 	m_activeThread->stackTop = stackBase + frame->stackCapacity;
 	m_activeThread->enterFrame(frame);
@@ -2739,25 +2730,23 @@ CallFrame* CPU::pushFrame(Closure* closure, BuiltinArgsView args,
 	const bool vararg = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u;
 	const int varargCount = vararg && argCount > functionRecord.numParams
 		? static_cast<int>(argCount - functionRecord.numParams) : 0;
+	const int top = static_cast<int>(functionRecord.numParams);
+	const int varargBase = argumentBase + top;
 	const int stackBase = vararg ? argumentBase + static_cast<int>(argCount) : argumentBase;
 	const size_t targetCapacity = std::max({functionRecord.maxStack, functionRecord.numParams, 1u});
 	ensureStackSize(static_cast<size_t>(stackBase) + targetCapacity, valueClosure(m_heap.reference(closure)), true, exception);
 	frame->executionImage = executionImageForDomain(functionRecord.executionDomainId);
 	frame->closure = closure;
-	frame->returnBase = returnBase;
-	frame->returnCount = returnCount;
-	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress, returnToCompletionLatch);
-	frame->varargBase = argumentBase + static_cast<int>(functionRecord.numParams);
-	frame->varargCount = varargCount;
+	frame->initializeControl(functionRecord.functionAddress, functionRecord.codeAddress, functionRecord.codeAddress, returnToCompletionLatch,
+		varargBase, varargCount, returnBase, returnCount, top);
 	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
 	frame->registers = m_activeThread->stack.subspan(stackBase, frame->stackCapacity);
-	frame->top = static_cast<int>(functionRecord.numParams);
-	const int copiedCount = std::min(frame->top, static_cast<int>(argCount));
+	const int copiedCount = std::min(top, static_cast<int>(argCount));
 	for (int i = 0; i < copiedCount; ++i) frame->registers.set(i, args[i]);
-	frame->registers.clear(copiedCount, frame->top - copiedCount);
+	frame->registers.clear(copiedCount, top - copiedCount);
 	if (varargCount != 0) {
-		for (int i = 0; i < varargCount; ++i) m_activeThread->stack.set(frame->varargBase + i, args[frame->top + i]);
+		for (int i = 0; i < varargCount; ++i) m_activeThread->stack.set(varargBase + i, args[top + i]);
 	}
 	m_activeThread->stackTop = stackBase + frame->stackCapacity;
 	m_activeThread->enterFrame(frame);
@@ -2773,7 +2762,7 @@ void CPU::writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, 
 		registers.copyFrom(source.registers, base, sourceBase, copiedCount);
 		registers.clear(base + copiedCount, targetCount - copiedCount);
 	}
-	frame.top = base + targetCount;
+	frame.setTop(base + targetCount);
 	instructionBudgetRemaining -= targetCount;
 }
 
@@ -2790,7 +2779,7 @@ void CPU::writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int co
 			registers.set(base + i, valueNil());
 		}
 	}
-	frame.top = base + targetCount;
+	frame.setTop(base + targetCount);
 	instructionBudgetRemaining -= targetCount;
 }
 
@@ -2798,8 +2787,8 @@ void CPU::setRegister(CallFrame& frame, int index, Value value) {
 	ValueSpan registers = ensureRegisterCapacity(frame, index);
 	registers.set(static_cast<size_t>(index), value);
 	const int nextTop = index + 1;
-	if (nextTop > frame.top) {
-		frame.top = nextTop;
+	if (nextTop > frame.readWindow(FrameField::Top)) {
+		frame.setTop(nextTop);
 	}
 }
 

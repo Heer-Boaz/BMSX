@@ -89,6 +89,7 @@ private:
 	static sljit_label* emitReturnGate(sljit_compiler*, sljit_label* cold);
 	// Input: R0 = PC. Output: R3 = live entry; R2 is scratch.
 	static void emitCodeLookup(sljit_compiler*, sljit_label* declined);
+	static void emitPublishFrameTop(sljit_compiler*, sljit_s32 control, sljit_s32 top, sljit_s32 scratch);
 	static void emitFrameEntry(sljit_compiler*, sljit_sw targetSlot);
 
 };

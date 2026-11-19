@@ -43,7 +43,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x5a524d42; // BMRZ
+const SAVE_STATE_SIGNATURE = 0x41534d42; // BMSA
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1121,11 +1121,6 @@ function writeCpuFrameState(writer: BinarySink, state: CpuFrameState): void {
 	writer.i32(state.closureRef);
 	writer.i32(state.stackBase);
 	writer.i32(state.stackCapacity);
-	writer.i32(state.varargBase);
-	writer.i32(state.varargCount);
-	writer.i32(state.returnBase);
-	writer.i32(state.returnCount);
-	writer.i32(state.top);
 }
 
 function readCpuFrameState(reader: BinaryReader): CpuFrameState {
@@ -1133,11 +1128,6 @@ function readCpuFrameState(reader: BinaryReader): CpuFrameState {
 		closureRef: reader.i32(),
 		stackBase: reader.i32(),
 		stackCapacity: reader.i32(),
-		varargBase: reader.i32(),
-		varargCount: reader.i32(),
-		returnBase: reader.i32(),
-		returnCount: reader.i32(),
-		top: reader.i32(),
 	};
 }
 

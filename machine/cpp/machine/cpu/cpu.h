@@ -108,11 +108,6 @@ struct CpuFrameState {
 	int closureRef = -1;
 	int stackBase = 0;
 	int stackCapacity = 0;
-	int varargBase = 0;
-	int varargCount = 0;
-	int returnBase = 0;
-	int returnCount = 0;
-	int top = 0;
 };
 
 struct CpuRootValueState {

@@ -227,11 +227,11 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	}
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu; auto& frame = *cpu.activeThread()->frameAtDepth(0);
-		frame.registers.set(0, valueBool(false)); frame.top = 0;
+		frame.registers.set(0, valueBool(false)); frame.writeControl(bmsx::FrameField::Top, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
 		require(cpu.runUntilDepth(0, 100) == RunResult::Halted, "a native field miss reaches the normal synchronous fault owner");
 		require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NON_TABLE
-			&& cpu.readEpcWord() == machine->rom.textAddress + INSTRUCTION_BYTES && frame.top == 4,
+			&& cpu.readEpcWord() == machine->rom.textAddress + INSTRUCTION_BYTES && static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 4,
 			"a failed field load reports its WIDE prefix and never publishes an unwritten destination top");
 	}
 }
@@ -923,7 +923,7 @@ void returnRangesSurviveCallerStackGrowth() {
 			CallFrame& callee = *cpu.activeThread()->frameAtDepth(1);
 			const Value samples[] = {valueFloatBits(0x80000000u), valueNil(), valueBool(false), valueString(cpu.stringPool().intern("result")), valueTable(cpu.gcHeap().reference(table))};
 			for (int i = 0; i < produced; ++i) callee.registers.set(5 + i, samples[i % 5]);
-			callee.top = 5 + produced;
+			callee.writeControl(bmsx::FrameField::Top, 5 + produced);
 			require(cpu.runUntilDepth(1, 2) == RunResult::Halted && cpu.getFrameDepth() == 1, "RET stops before the caller continuation");
 			const int targetCount = requested == 0 ? produced : requested;
 			require(cpu.getFrameRegisterCount(0) == 2 + targetCount, "result placement sets the exact top, including an empty open range");

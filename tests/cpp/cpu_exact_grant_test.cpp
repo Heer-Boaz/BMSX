@@ -460,7 +460,7 @@ void exactCallVarargSweep() {
 #endif
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 				machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
-			frame->registers.set(0, valueNil()); frame->registers.set(1, valueNil()); frame->top = 11;
+			frame->registers.set(0, valueNil()); frame->registers.set(1, valueNil()); frame->writeControl(bmsx::FrameField::Top, 11);
 			machine->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 		}
 		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
@@ -472,7 +472,7 @@ void exactCallVarargSweep() {
 		if (nativeThread->frameDepth == scalarThread->frameDepth) {
 			for (u32 depth = 0; depth < nativeThread->frameDepth; ++depth) {
 				const auto* a = nativeThread->frameAtDepth(depth); const auto* b = scalarThread->frameAtDepth(depth);
-				equal &= a->readControl(bmsx::FrameField::Pc) == b->readControl(bmsx::FrameField::Pc) && a->top == b->top && a->varargCount == b->varargCount;
+				equal &= a->readControl(bmsx::FrameField::Pc) == b->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(a->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(b->readControl(bmsx::FrameField::Top)) && static_cast<bmsx::i32>(a->readControl(bmsx::FrameField::VarargCount)) == static_cast<bmsx::i32>(b->readControl(bmsx::FrameField::VarargCount));
 				for (int reg = 0; reg < 3; ++reg) {
 					const Value av = a->registers.get(reg), bv = b->registers.get(reg);
 					equal &= av == bv || (valueIsClosure(av) && valueIsClosure(bv));

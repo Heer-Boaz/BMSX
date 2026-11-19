@@ -55,7 +55,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
 	for (size_t i = 0; i < first.frameDepth; ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& x = *firstFrame; const auto& y = *secondFrame;
-		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity,
+		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity,
 			"all live frame boundaries agree");
 	}
 }
@@ -287,12 +287,12 @@ void selfAndNilFaults() {
 		cpu.activeThread()->frameAtDepth(0)->registers.set(9, valueTable(cpu.gcHeap().reference(table))); cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
 		auto* meta = cpu.createTable(0, 1); table->setStringKey(cpu.stringPool().intern("method"), valueNil());
 		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(cpu.gcHeap().reference(table))); table->setMetatable(meta);
-		cpu.activeThread()->frameAtDepth(0)->top = 0;
+		cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Top, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP && native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
-		&& native.cpu.activeThread()->frameAtDepth(0)->top == 8 && native.cpu.readFrameRegister(0, 7) == native.cpu.readFrameRegister(0, 9),
+		&& static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 8 && native.cpu.readFrameRegister(0, 7) == native.cpu.readFrameRegister(0, 9),
 		"SELF publishes its original receiver and top before a failing inherited lookup");
 	require(native.cpu.readFrameRegister(0, 6) == native.cpu.readFrameRegister(0, 9),
 		"failed inherited lookup leaves the method destination unchanged");
@@ -304,7 +304,7 @@ void selfAndNilFaults() {
 	CpuMachine nilNative(image), nilScalar(image, true);
 	for (auto* m : {&nilNative, &nilScalar}) {
 		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers; r.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable(2)))); r.set(1, valueInteger(1)); r.set(2, valueInteger(73));
-		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 504); r.set(1, valueNil()); r.set(3, valueInteger(19)); m->cpu.activeThread()->frameAtDepth(0)->top = 0;
+		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 504); r.set(1, valueNil()); r.set(3, valueInteger(19)); m->cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Top, 0);
 	}
 	nilNative.cpu.runUntilDepth(0, 5); nilScalar.cpu.runUntilDepth(0, 5); requireParity(nilNative, nilScalar);
 	require(nilNative.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NIL
@@ -389,7 +389,9 @@ void wideAllocationFailure() {
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::MOV), 9, 8, 0);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
 	writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 16}, {.firstWord = 32, .wordCount = 1}};
+	// The reserved exception frame also needs one value slot. Requesting 15
+	// registers leaves that slot in the existing 16-slot backing block.
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 15}, {.firstWord = 32, .wordCount = 1}};
 	image.globalNames = {"retained"}; image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
 	for (int visit = 0; visit < NATIVE_WARM_SCALE * 32; ++visit) test::runCpuParity(native.cpu, scalar.cpu, 1);
@@ -402,7 +404,7 @@ void wideAllocationFailure() {
 	require(block && block->terminal.exit == NativeBlockExit::AllocateTable, "the WIDE allocator is a real typed native exit, not interpreter dispatch");
 #endif
 	for (auto* m : {&native, &scalar}) {
-		auto& cpu = m->cpu; auto& root = *cpu.activeThread()->frameAtDepth(0); root.registers.set(8, valueInteger(73)); root.registers.set(9, valueNil()); root.top = 9;
+		auto& cpu = m->cpu; auto& root = *cpu.activeThread()->frameAtDepth(0); root.registers.set(8, valueInteger(73)); root.registers.set(9, valueNil()); root.writeControl(bmsx::FrameField::Top, 9);
 		const auto key = cpu.stringPool().find("retained"); auto* retained = cpu.createTable(690000); cpu.setGlobalByKey(*key, valueTable(cpu.gcHeap().reference(retained)));
 		cpu.collectHeap();
 	}
@@ -415,7 +417,7 @@ void wideAllocationFailure() {
 	require(native.cpu.instructionBudgetRemaining == -gcCycles, "failed NEWT pays prefix/base and pre-admission GC, but no initialization");
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
-		&& native.cpu.readFrameRegister(0, 8) == valueInteger(73) && native.cpu.activeThread()->frameAtDepth(0)->top == 9,
+		&& native.cpu.readFrameRegister(0, 8) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9,
 		"failed allocation retains the precise prefix, original destination and WIDE EPC after collection");
 }
 void stringStoreGrowthRoots(bool generic) {
@@ -445,7 +447,7 @@ void stringStoreGrowthRoots(bool generic) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto& r = frame.registers;
 		auto& strings = m->cpu.stringPool(); auto* retained = m->cpu.createTable(0, 1);
 		retained->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
-		r.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable()))); r.set(9, valueTable(m->cpu.gcHeap().reference(retained))); frame.top = 0;
+		r.set(0, valueTable(m->cpu.gcHeap().reference(m->cpu.createTable()))); r.set(9, valueTable(m->cpu.gcHeap().reference(retained))); frame.writeControl(bmsx::FrameField::Top, 0);
 		const auto heap = m->cpu.captureRuntimeState().luaHeap;
 		m->cpu.luaHeap().restoreState({heap.trackedBytes, heap.trackedBytes});
 	}

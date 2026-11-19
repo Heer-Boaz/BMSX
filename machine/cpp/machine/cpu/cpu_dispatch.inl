@@ -34,8 +34,8 @@ DISPATCH_LABEL(LOADNIL) {
 		registers.clear(a, b);
 		instructionBudgetRemaining -= b;
 		const int nextTop = a + b;
-		if (nextTop > FRAME.top) {
-			FRAME.top = nextTop;
+		if (nextTop > FRAME.readWindow(FrameField::Top)) {
+			FRAME.setTop(nextTop);
 		}
 	}
 	DISPATCH_NEXT();

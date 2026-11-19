@@ -14,7 +14,7 @@ inline void CPU::executeConcat(CallFrame& frame, int destination, int leftOperan
 	instructionBudgetRemaining -= leftCount + rightCount;
 	const StringId id = m_stringPool.intern(text);
 	frame.registers.set(destination, valueString(id));
-	frame.top = std::max(frame.top, destination + 1);
+	frame.setTop(std::max(frame.readWindow(FrameField::Top), destination + 1));
 }
 
 inline void CPU::executeConcatRange(CallFrame& frame, int destination, int base, int count) {
@@ -30,5 +30,5 @@ inline void CPU::executeConcatRange(CallFrame& frame, int destination, int base,
 	instructionBudgetRemaining -= count + byteWork;
 	const StringId id = m_stringPool.intern(text);
 	frame.registers.set(destination, valueString(id));
-	frame.top = std::max(frame.top, destination + 1);
+	frame.setTop(std::max(frame.readWindow(FrameField::Top), destination + 1));
 }

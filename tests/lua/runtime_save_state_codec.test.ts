@@ -673,11 +673,6 @@ test('runtime save-state codec preserves frame datapath metadata', () => {
 		closureRef: 7,
 		stackCapacity: 8,
 		stackBase: 0,
-		varargBase: 0,
-		varargCount: 0,
-		returnBase: 1,
-		returnCount: 0,
-		top: 1,
 	}];
 
 	const decoded = decodeRuntimeSaveState(

@@ -101,7 +101,7 @@ void rebuildWork(bool scalar) {
   const int array = scenario == "array-growth" ? 2 : scenario == "array-to-hash" ? 8 : scenario == "mixed" ? 4 : 0;
   const int hash = scenario == "hash-to-array" || scenario == "mixed" || scenario == "same-capacity" || scenario == "weak-collection" ? 2 : scenario == "failed-growth" ? 1024 : 0;
   auto* table = cpu.createTable(array, hash);
-  r.set(0, valueTable(cpu.gcHeap().reference(table))); r.set(2, valueInteger(73)); frame->top = 5;
+  r.set(0, valueTable(cpu.gcHeap().reference(table))); r.set(2, valueInteger(73)); frame->writeControl(bmsx::FrameField::Top, 5);
   int surcharge = 0;
   size_t capacity = 0;
   if (scenario == "array-growth") {
@@ -177,7 +177,7 @@ void hostGrantScratch(bool scalar) {
  auto* frame = cpu.activeThread()->frameAtDepth(0);
  auto* table = cpu.createTable();
  const Value key = valueString(cpu.stringPool().intern("field"));
- frame->registers.set(0, valueTable(cpu.gcHeap().reference(table))); frame->registers.set(1, key); frame->registers.set(2, valueInteger(91)); frame->top = 3;
+ frame->registers.set(0, valueTable(cpu.gcHeap().reference(table))); frame->registers.set(1, key); frame->registers.set(2, valueInteger(91)); frame->writeControl(bmsx::FrameField::Top, 3);
  cpu.instructionBudgetRemaining = 29; table->set(key, valueInteger(37));
  if (cpu.instructionBudgetRemaining != 27 || scheduler.currentNowCycles() != 73)
   throw std::runtime_error("host storage work must not advance machine time");
@@ -224,7 +224,7 @@ int main() {
     if (cpu.runUntilDepth(0, grant) != RunResult::Yielded
         || cpu.instructionBudgetRemaining != -slots - static_cast<int>(expected.size()))
      throw std::runtime_error("NEXT adds inspected Value slots to its existing primitive and result-placement costs");
-    if (frame->top != static_cast<int>(expected.size()))
+    if (static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) != static_cast<int>(expected.size()))
      throw std::runtime_error("NEXT success returns two values and exhaustion returns one nil");
     int index = 0;
     for (const auto value : expected) {

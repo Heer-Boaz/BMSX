@@ -274,7 +274,7 @@ void observationAndLifecycle(int action) {
 		require(!parent->nativeContinuationCells[0] && !parent->next->nativeContinuationCells[0],
 			"restore reconstructs guest activations without old host continuation metadata");
 		machine.cpu.runUntilDepth(1, 100);
-		require(machine.cpu.getFrameDepth() == 1 && parent->top == 4 && parent->registers.get(1) == callerMarker, "restored return retains the original result contract");
+		require(machine.cpu.getFrameDepth() == 1 && static_cast<bmsx::i32>(parent->readControl(bmsx::FrameField::Top)) == 4 && parent->registers.get(1) == callerMarker, "restored return retains the original result contract");
 	} else if (action == 2) {
 		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.markerPc());
 		require(!parent->nativeContinuationCells[0], "hot-resume invalidates the caller's former continuation binding");

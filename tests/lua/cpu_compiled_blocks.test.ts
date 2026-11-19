@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
@@ -183,7 +184,8 @@ test('open VARARG work is charged before admitting a later compiled allocation',
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		const frame = cpu.rootThread.frameAtDepth(0);
-		frame.varargBase = 0; frame.varargCount = 3;
+		memory.writeRamRecordWord(frame.controlOffset + FrameField.VarargBase, 0);
+		memory.writeRamRecordWord(frame.controlOffset + FrameField.VarargCount, 3);
 		frame.registers.setInteger(0, 11); frame.registers.setInteger(1, 22); frame.registers.setInteger(2, 33);
 		cpu.runUntilDepth(0, 1000);
 	}

@@ -213,7 +213,7 @@ size_t GcHeap::trace(bool atomic) {
 			markObject(thread->entry());
 			markValue(thread->error());
 			int liveTop = thread->currentFrame ? thread->currentFrame->stackBase
-				+ std::min(thread->currentFrame->top, thread->currentFrame->stackCapacity) : 0;
+				+ std::min(thread->currentFrame->readWindow(FrameField::Top), thread->currentFrame->stackCapacity) : 0;
 			CallFrame* frame = thread->firstFrame;
 			for (size_t depth = 0; depth < thread->frameDepth; ++depth, frame = frame->next) {
 				markObject(frame->closure);

@@ -99,14 +99,14 @@ void slidingVarargCall(bool interpreted, bool open) {
 	auto* thread = cpu.activeThread();
 	require(thread->frameDepth == 2, "vararg CALL enters before executing the body");
 	auto* child = thread->currentFrame;
-	require(child->stackBase == 8 && child->varargBase == 6 && child->varargCount == 2, "vararg working registers slide above original arguments");
+	require(child->stackBase == 8 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargBase)) == 6 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargCount)) == 2, "vararg working registers slide above original arguments");
 	require(child->registers.get(0) == valueInteger(37) && thread->stack.get(5) == valueNil(), "fixed parameters move, original copies no longer retain roots");
 	cpu.collectHeap();
 	const auto snapshot = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(snapshot);
 	cpu.runUntilDepth(1, 100);
 	auto* parent = cpu.activeThread()->currentFrame;
-	require(parent->top == 7 && parent->registers.get(4) == valueInteger(1)
+	require(static_cast<bmsx::i32>(parent->readControl(bmsx::FrameField::Top)) == 7 && parent->registers.get(4) == valueInteger(1)
 		&& parent->registers.get(5) == valueBool(false) && parent->registers.get(6) == valueFloatBits(0x80000000u),
 		"fixed and open VARARG/RET retain false and signed zero after parameter mutation and replay");
 }
@@ -129,10 +129,10 @@ void formalReservationRoots(bool interpreted) {
 	auto* parent = cpu.activeThread()->currentFrame;
 	for (int index = 0; index < 6; ++index) parent->registers.set(5 + index, valueInteger(index));
 	auto* table = cpu.createTable(1, 0); table->setInteger(1, valueInteger(73));
-	parent->registers.set(11, valueTable(cpu.gcHeap().reference(table))); parent->top = 12;
+	parent->registers.set(11, valueTable(cpu.gcHeap().reference(table))); parent->writeControl(bmsx::FrameField::Top, 12);
 	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	auto* child = cpu.activeThread()->currentFrame;
-	require(cpu.getFrameDepth() == 2 && child->stackCapacity == 7 && child->top == 7,
+	require(cpu.getFrameDepth() == 2 && child->stackCapacity == 7 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::Top)) == 7,
 		"the formal count owns every argument even when maxStack is smaller");
 	cpu.collectHeap();
 	const auto snapshot = cpu.captureRuntimeState();
@@ -168,7 +168,7 @@ void capturedSlotSurvivesOpenTop(int top) {
 	u32 stopPc = rom.textAddress + 5 * INSTRUCTION_BYTES;
 	cpu.setExecutionHook({[](void* context, ExecutionDomainId, u32 pc) { return pc == *static_cast<u32*>(context); }, &stopPc, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	require(cpu.runUntilDepth(0, 100) == RunResult::ExecutionStopped, "stop after open VARARG changes top");
-	require(cpu.activeThread()->currentFrame->top == top, "raw open VARARG retains its exact top");
+	require(static_cast<bmsx::i32>(cpu.activeThread()->currentFrame->readControl(bmsx::FrameField::Top)) == top, "raw open VARARG retains its exact top");
 	cpu.collectHeap(); cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	require(valueIsTable(cpu.activeThread()->currentFrame->registers.get(2)), "an open capture owns its slot even above lowered top");
 	cpu.setExecutionHook({}); cpu.runUntilDepth(0, 100);

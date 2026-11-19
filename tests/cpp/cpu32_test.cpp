@@ -596,7 +596,7 @@ void typedLoopBoundaries() {
 				for (size_t i = 0; i < completed.size(); ++i)
 					values.push_back(completed.get(i));
 				return std::tuple{result, m.cpu.instructionBudgetRemaining, active ? frame->readControl(bmsx::FrameField::Pc) : 0,
-					active ? frame->top : 0, registers, values, m.cpu.readCauseWord(), m.cpu.readLuaFaultReasonWord(),
+					active ? static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) : 0, registers, values, m.cpu.readCauseWord(), m.cpu.readLuaFaultReasonWord(),
 					m.cpu.lastPc};
 			};
 			const auto expected = execute(scalar), actual = execute(native);

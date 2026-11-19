@@ -78,7 +78,7 @@ struct Machine {
 		frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
 		frame.registers.set(1, invalid ? valueInteger(17) : valueString(cpu.stringPool().intern("Az")));
 		frame.registers.set(2, valueInteger(2));
-		frame.top = 3;
+		frame.writeControl(bmsx::FrameField::Top, 3);
 	}
 	void closure() {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[2], rom.textAddress + MAPPED_PAGE_BYTE_SIZE);
@@ -175,7 +175,7 @@ void builtinPaths() {
 		auto& frame = *machine->cpu.rootThread()->currentFrame;
 		frame.registers.set(0, machine->cpu.createBuiltinFunction(BuiltinFunctionId::Type));
 		frame.registers.set(1, valueInteger(17));
-		frame.top = 2;
+		frame.writeControl(bmsx::FrameField::Top, 2);
 	}
 	parity(generated, scalar, 100);
 	require(generated.cpu.rootThread()->currentFrame->registers.get(0) == valueString(generated.cpu.stringPool().intern("number")),

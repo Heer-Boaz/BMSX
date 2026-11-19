@@ -48,13 +48,13 @@ struct Machine {
 	}
 };
 
-// Thread160 (64-byte header and the 96-byte class for 40 Value bytes plus two 24-byte frames)
+// Thread192 (64-byte header and the 128-byte class for 40 Value bytes plus two 44-byte frames)
 // + Closure16 + 14 machine Strings occupying 648 bytes
 // and their 16 four-byte intern buckets. Each live String marks once,
 // and every issued object block and intern bucket is visited once.
-constexpr int bootBytes = 160 + 16 + 648 + 64;
-constexpr int bootMarkWork = 2 * 40 + 3 + 2 * 12 + 14;
-constexpr int bootCollectionWork = 4 * 40 + 3 + 1 + 3 * 12 + 2 * 14 + 16;
+constexpr int bootBytes = 192 + 16 + 648 + 64;
+constexpr int bootMarkWork = 2 * 48 + 3 + 2 * 12 + 14;
+constexpr int bootCollectionWork = 4 * 48 + 3 + 1 + 3 * 12 + 2 * 14 + 16;
 
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -66,7 +66,7 @@ void canonicalPoolAndRootRanges() {
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(2, 3)))); //32+S(10+56)=112.
 	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
-	frame.top = 2;
+	frame.writeControl(bmsx::FrameField::Top, 2);
 	require(cpu.luaHeap().usedBytes() == bootBytes + 112 + 24, "canonical reserved table capacity and UTF8 text bytes agree");
 	cpu.instructionBudgetRemaining = 7;
 	cpu.luaHeap().collectRuntime();
@@ -92,7 +92,7 @@ void explicitCollectionAndNoReplay() {
 		for (auto* m : {&generated, &scalar}) {
 			auto& frame = *m->cpu.rootThread()->currentFrame;
 			frame.registers.set(0, m->cpu.createBuiltinFunction(BuiltinFunctionId::CollectGarbage));
-			frame.top = 1;
+			frame.writeControl(bmsx::FrameField::Top, 1);
 		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
 			&& generated.cpu.instructionBudgetRemaining == 1 - 32 - 4 - bootCollectionWork,
@@ -188,7 +188,7 @@ void incrementalStateAndBarriers() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto* roots = cpu.createTable(1024, 0);
 	cpu.rootThread()->currentFrame->registers.set(0, valueTable(cpu.gcHeap().reference(roots)));
-	cpu.rootThread()->currentFrame->top = 1;
+	cpu.rootThread()->currentFrame->writeControl(bmsx::FrameField::Top, 1);
 	const auto field = cpu.stringPool().intern("child");
 	for (int i = 1; i <= 1000; ++i) {
 		auto* item = cpu.createTable(1, 1);
@@ -212,7 +212,7 @@ void incrementalStateAndBarriers() {
 		if (state.gc.phase == GcPhase::Sweep && bornId == 0) {
 			auto* born = cpu.createTable(); bornId = born->hashId;
 			auto* frame = cpu.rootThread()->currentFrame;
-			frame->registers.set(1, valueTable(cpu.gcHeap().reference(born))); frame->top = 2;
+			frame->registers.set(1, valueTable(cpu.gcHeap().reference(born))); frame->writeControl(bmsx::FrameField::Top, 2);
 			state = cpu.captureRuntimeState();
 		}
 		const auto ram = cpu.memory().captureSaveState();
@@ -248,7 +248,7 @@ void incrementalSharedWeakMode() {
 	auto* roots = cpu.createTable(1024, 0);
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(cpu.gcHeap().reference(roots)));
-	frame.top = 1;
+	frame.writeControl(bmsx::FrameField::Top, 1);
 	for (int i = 1; i <= 1000; ++i) roots->setInteger(i, valueTable(cpu.gcHeap().reference(cpu.createTable())));
 	const auto modeKey = cpu.stringPool().intern("__mode");
 	auto* metatable = cpu.createTable(0, 1);
@@ -270,7 +270,7 @@ void incrementalSharedWeakMode() {
 void secondMarkPassAndCredit() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(4096, 0)))); frame.top = 1;
+	frame.registers.set(0, valueTable(cpu.gcHeap().reference(cpu.createTable(4096, 0)))); frame.writeControl(bmsx::FrameField::Top, 1);
 	const auto before = cpu.luaHeap().usedBytes();
 	cpu.luaHeap().restoreState({before, before}); cpu.instructionBudgetRemaining = 0;
 	cpu.createTable();
@@ -301,7 +301,7 @@ void stackShrinkAndAdmission() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto* thread = cpu.rootThread(); auto& frame = *thread->currentFrame;
 	thread->resizeStack(1024);
-	frame.registers.set(0, valueInteger(123)); frame.top = 1;
+	frame.registers.set(0, valueInteger(123)); frame.writeControl(bmsx::FrameField::Top, 1);
 	const size_t before = cpu.luaHeap().usedBytes();
 	cpu.collectHeap();
 	require(thread->stackCapacity == 512 && cpu.luaHeap().usedBytes() == before - HEAP_PAGE_SIZE,
@@ -311,7 +311,7 @@ void stackShrinkAndAdmission() {
 	frame.stackCapacity = 200;
 	thread->reserveFrame(thread->stackCapacity);
 	auto* child = thread->acquireFrame();
-	child->stackBase = 2; child->stackCapacity = 8; child->top = 0;
+	child->stackBase = 2; child->stackCapacity = 8; child->writeControl(bmsx::FrameField::Top, 0);
 	child->closure = frame.closure; child->executionImage = frame.executionImage;
 	child->registers = thread->stack.subspan(2, 8);
 	thread->enterFrame(child); thread->stackTop = 10;
@@ -332,7 +332,7 @@ void highRetainedPacing() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto* retained = cpu.createTable(419430, 0);
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(cpu.gcHeap().reference(retained))); frame.top = 1;
+	frame.registers.set(0, valueTable(cpu.gcHeap().reference(retained))); frame.writeControl(bmsx::FrameField::Top, 1);
 	cpu.collectHeap();
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const auto before = cpu.diagnosticGcProfile();

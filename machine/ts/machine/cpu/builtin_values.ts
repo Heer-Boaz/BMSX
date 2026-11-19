@@ -54,13 +54,23 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 // invocation. Neither introduces a second reference representation.
 const EMPTY_VALUE_SLOTS = new ValueSlots(0);
 export class BuiltinArgsView {
+	private readonly aperture = new ValueSlots(0);
 	public registers = EMPTY_VALUE_SLOTS;
 	public base = 0;
 	public length = 0;
 	public bind(registers: ValueSlots, base: number, length: number): void {
-		this.registers = registers; this.base = base; this.length = length;
+		this.length = length;
+		if (base + length > registers.capacity()) {
+			this.aperture.rebind(registers, base, length);
+			this.registers = this.aperture; this.base = 0;
+		} else {
+			this.registers = registers; this.base = base;
+		}
 	}
-	public clear(): void { this.registers = EMPTY_VALUE_SLOTS; this.base = 0; this.length = 0; }
+	public clear(): void {
+		if (this.registers === this.aperture) this.aperture.unbind();
+		this.registers = EMPTY_VALUE_SLOTS; this.base = 0; this.length = 0;
+	}
 }
 export class BuiltinResults {
 	private readonly values = new ValueSlots(8);

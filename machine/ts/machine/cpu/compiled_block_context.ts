@@ -55,10 +55,10 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 			if (b === 0) published = registers.prepareDynamicOverwrite(a, 'n');
 			else registers.discardRange(a, a + b - 1);
 			return `{const n=${b === 0 ? 'frame.varargCount' : b - 1};
-				if(n>0 && ${a}+n>frame.stackCapacity) ${failure}
+				const copied=${b === 0 ? 'n' : 'Math.min(n,frame.varargCount)'},v=frame.varargBase;
+				if((n>0 && ${a}+n>frame.stackCapacity) || (copied>0 && v+copied>frame.stackBase)) ${failure}
 				${b === 0 ? 'budget-=n;' : ''}${published}
-				const copied=Math.min(n,frame.varargCount);
-				r.copyRangeFrom(frame.thread.stackRegisters,${a},frame.varargBase,copied);
+				r.copyRangeFrom(frame.thread.stackRegisters,${a},v,copied);
 				r.clear(n-copied,${a}+copied);
 				${b === 0 ? `frame.top=${a}+n;` : ''}${registers.reloadRange(a, b === 0 ? Infinity : a + b - 1)}}`;
 		}

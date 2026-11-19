@@ -248,10 +248,10 @@ void emptySocketsAndCrossRegionDoubles() {
 		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
 		machine.cpu.runUntilDepth(0, 11);
 		require(frame.registers.get(0) == valueFloat(1), "F64 executes two ordered words across ROM and RAM rather than returning a whole-region zero");
-		frame.registers.set(0, valueInteger(73)); frame.registers.set(1, valueInteger(SYSTEM_ROM_SIZE - 4u)); frame.top = 0;
+		frame.registers.set(0, valueInteger(73)); frame.registers.set(1, valueInteger(SYSTEM_ROM_SIZE - 4u)); frame.writeControl(bmsx::FrameField::Top, 0);
 		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
 		require(machine.cpu.runUntilDepth(0, 20) == RunResult::Halted && frame.registers.get(0) == valueInteger(73)
-			&& frame.top == 0 && machine.cpu.readEpcWord() == rom.textAddress,
+			&& static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 0 && machine.cpu.readEpcWord() == rom.textAddress,
 			"a high-half system-ROM boundary fault preserves the load destination and WIDE prefix EPC");
 	}
 }
@@ -350,7 +350,7 @@ void warmContinuationsFollowInBlockMuxWrites() {
 		}
 		const auto& a = *native.cpu.activeThread()->frameAtDepth(0); const auto& b = *scalar.cpu.activeThread()->frameAtDepth(0);
 		require(native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
-			&& a.top == b.top && a.readControl(bmsx::FrameField::Pc) == b.readControl(bmsx::FrameField::Pc), "native socket changes retain scalar PC and register-top publication");
+			&& static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::Top)) && a.readControl(bmsx::FrameField::Pc) == b.readControl(bmsx::FrameField::Pc), "native socket changes retain scalar PC and register-top publication");
 		for (int reg = 0; reg < a.stackCapacity; ++reg) require(a.registers.get(reg) == b.registers.get(reg), "all socket-switch registers agree");
 	}
 	const auto* page = lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, 1);
@@ -570,7 +570,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 			const auto& a = *first.frameAtDepth(depth); const auto& b = *second.frameAtDepth(depth);
 			require(a.executionImage->executionDomainId == b.executionImage->executionDomainId && a.readControl(bmsx::FrameField::Pc) == b.readControl(bmsx::FrameField::Pc)
 				&& a.readControl(FrameField::Function) == b.readControl(FrameField::Function) && a.stackCapacity == b.stackCapacity && a.stackBase == b.stackBase
-				&& a.top == b.top && a.returnBase == b.returnBase && a.returnCount == b.returnCount && a.readControl(FrameField::CallSite) == b.readControl(FrameField::CallSite),
+				&& static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::Top)) && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::ReturnBase)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::ReturnBase)) && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::ReturnCount)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::ReturnCount)) && a.readControl(FrameField::CallSite) == b.readControl(FrameField::CallSite),
 				"record selection and activation windows agree at each call boundary");
 			for (int reg = 0; reg < a.stackCapacity; ++reg) {
 				const Value left = a.registers.get(reg), right = b.registers.get(reg);

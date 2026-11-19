@@ -69,7 +69,7 @@ struct Machine {
 		auto* frame = cpu.rootThread()->currentFrame; auto r = frame->registers;
 		r.set(0, cpu.createBuiltinFunction(id));
 		require(asBuiltinFunctionId(r.get(0)) == id, "the actual runtime callee carries its raw builtin ID");
-		r.set(12, valueFloat(99.75f)); r.set(11, valueInteger(DYNAMIC_RAM_BASE + 0x4000)); frame->top = 3;
+		r.set(12, valueFloat(99.75f)); r.set(11, valueInteger(DYNAMIC_RAM_BASE + 0x4000)); frame->writeControl(bmsx::FrameField::Top, 3);
 		if (id == BuiltinFunctionId::StringByte) {
 			r.set(1, mode == 2 ? valueInteger(17) : valueString(cpu.stringPool().intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9))));
 			r.set(2, mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueFloat(position));
@@ -116,7 +116,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	caller->terminal.continuationCells[0] = &marker;
 	const auto& gate = nativeBlockGate();
 	NativeCpuRunState run{.state={.registers=frame->registers, .constants=owner->constPool.view(), .frame=frame, .heap=&machine.cpu.gcHeap(),
-		.constantCount=static_cast<u32>(owner->constPool.capacity()), .remainingCycles=grant, .registerTop=frame->top, .exitCode=gate.dispatch,
+		.constantCount=static_cast<u32>(owner->constPool.capacity()), .remainingCycles=grant, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)), .exitCode=gate.dispatch,
 		.ram=machine.memory.ramData(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 		.diagnosticOpcodes={},
@@ -152,7 +152,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	}
 	if (id == BuiltinFunctionId::SetMetatable && mode == 1) require(machine.target->metatable() == nullptr, "discard and receiving forms still perform the real metatable removal");
 	require(frame->registers.get(7) == valueFloat(99.75f), "the cached numeric prefix survives the returning helper ABI");
-	require(frame->top == receiving && machine.cpu.getFrameDepth() == 1 && frame->next == nullptr, "builtin completion owns exact top without a child frame");
+	require(static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) == receiving && machine.cpu.getFrameDepth() == 1 && frame->next == nullptr, "builtin completion owns exact top without a child frame");
 	if (receiving) require(frame->registers.get(0) == machine.expected, "the raw native result equals the primitive contract");
 }
 #endif
@@ -165,7 +165,7 @@ void ordinaryCases() {
 		for (const int grant : {0, 1, 2, 1, 3, 4, 16}) { test::runCpuParity(native.cpu, scalar.cpu, grant); parity(native, scalar); }
 		require(native.cpu.readCauseWord() == 0 && native.cpu.isHaltedUntilIrq(), "the ordinary route completes the actual builtin exactly once");
 		const int receiving = results == 0 ? 1 : results - 1;
-		require(native.cpu.rootThread()->currentFrame->top == receiving, "open, discard, fixed and padded receiving counts retain exact top");
+		require(static_cast<bmsx::i32>(native.cpu.rootThread()->currentFrame->readControl(bmsx::FrameField::Top)) == receiving, "open, discard, fixed and padded receiving counts retain exact top");
 		if (receiving) require(native.cpu.readFrameRegister(0, 0) == native.expected, "ordinary raw builtin result is exact");
 		if (id == BuiltinFunctionId::SetMetatable) {
 			native.target->setStringKey(native.cpu.stringPool().intern("local"), valueInteger(9));
@@ -178,7 +178,7 @@ void ordinaryCases() {
 	for (const int args : {0, 2, 3}) {
 		const auto rom = image(2, args); Machine native(rom, false), scalar(rom, true);
 		native.seed(BuiltinFunctionId::StringByte, 1); scalar.seed(BuiltinFunctionId::StringByte, 1);
-		if (args == 0) { native.cpu.rootThread()->currentFrame->top = 2; scalar.cpu.rootThread()->currentFrame->top = 2; }
+		if (args == 0) { native.cpu.rootThread()->currentFrame->writeControl(bmsx::FrameField::Top, 2); scalar.cpu.rootThread()->currentFrame->writeControl(bmsx::FrameField::Top, 2); }
 		test::runCpuParity(native.cpu, scalar.cpu, 32); parity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 0) == valueInteger(65), "missing, explicit nil and open arguments preserve StringByte default position");
 	}

@@ -40,7 +40,7 @@ struct CpuMachine {
 void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto& first = *native.cpu.activeThread()->frameAtDepth(0);
 	const auto& second = *scalar.cpu.activeThread()->frameAtDepth(0);
-	require(first.readControl(bmsx::FrameField::Pc) == second.readControl(bmsx::FrameField::Pc) && first.top == second.top
+	require(first.readControl(bmsx::FrameField::Pc) == second.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(first.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(second.readControl(bmsx::FrameField::Top))
 		&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
 		&& native.cpu.lastPc == scalar.cpu.lastPc,
 		"linked blocks publish the same PC, WIDE body, register extent and cycle boundary as scalar instructions");
@@ -172,7 +172,7 @@ void grantsAndTargetRetirement(bool inRam) {
 #endif
 	for (const Value flag : {valueBool(true), valueBool(false), valueInteger(0), valueFloatBits(0x7fc00000u)}) for (int grant = 1; grant <= 96; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
-			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.registers.set(2, flag); frame.top = 0;
+			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.registers.set(2, flag); frame.writeControl(bmsx::FrameField::Top, 0);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], startPc);
 		}
 		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded, "each short grant completes its admitted segment");

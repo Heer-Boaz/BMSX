@@ -11,11 +11,11 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 	Closure* closure = createClosure(frame);
 	if (!closure) return;
 	frame.registers.set(destination, valueClosure(m_heap.reference(closure)));
-	frame.top = std::max(frame.top, destination + 1);
+	frame.setTop(std::max(frame.readWindow(FrameField::Top), destination + 1));
 }
 
 inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
-	const int argCount = decodeValueCount(b, std::max(frame.top - a - 1, 0));
+	const int argCount = decodeValueCount(b, std::max(frame.readWindow(FrameField::Top) - a - 1, 0));
 	const Value callee = frame.registers.get(a);
 	if (valueIsClosure(callee)) {
 		Closure* closure = asClosure(callee, m_heap);
@@ -32,7 +32,7 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
 }
 
 inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
-	const int count = decodeValueCount(b, std::max(frame.top - a, 0));
+	const int count = decodeValueCount(b, std::max(frame.readWindow(FrameField::Top) - a, 0));
 	instructionBudgetRemaining -= closeUpvalues(frame);
 	const u32 continuation = frame.readControl(FrameField::Protected);
 	if (static_cast<i32>(continuation) >= 0) {
@@ -63,21 +63,21 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 		instructionBudgetRemaining -= count;
 	} else {
 		CallFrame& caller = *frame.previous;
-		writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, frame, a, count);
+		writeReturnValuesFromRegisters(caller, frame.readWindow(FrameField::ReturnBase), frame.readWindow(FrameField::ReturnCount), frame, a, count);
 	}
 	m_activeThread->leaveFrame();
 	return true;
 }
 
 inline void CPU::executeVararg(CallFrame& frame, int a, int b) {
-	const int count = decodeValueCount(b, frame.varargCount);
+	const int count = decodeValueCount(b, frame.readWindow(FrameField::VarargCount));
 	if (count != 0) {
 		ValueSpan registers = ensureRegisterCapacity(frame, a + count - 1);
-		const int copied = std::min(count, frame.varargCount);
-		registers.copyFrom(m_activeThread->stack, a, frame.varargBase, copied);
+		const int copied = std::min(count, frame.readWindow(FrameField::VarargCount));
+		registers.copyFrom(m_activeThread->stack, a, frame.readWindow(FrameField::VarargBase), copied);
 		registers.clear(a + copied, count - copied);
 	}
 	instructionBudgetRemaining -= count;
-	if (b == 0) frame.top = a + count;
-	else if (count != 0) frame.top = std::max(frame.top, a + count);
+	if (b == 0) frame.setTop(a + count);
+	else if (count != 0) frame.setTop(std::max(frame.readWindow(FrameField::Top), a + count));
 }

@@ -66,7 +66,7 @@ NativeBuiltinCallOutcome CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, co
 		return completion;
 	}
 	CallFrame& frame = *state.frame;
-	frame.top = state.registerTop;
+	frame.setTop(state.registerTop);
 	frame.writeControl(FrameField::Pc, exit->nextPc);
 	frame.compilationEntry = true;
 	cpu.m_currentInstructionPc = exit->currentPc;
@@ -96,7 +96,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	if (exit->exit == NativeBlockExit::ScalarBoundary) {
 		cpu.instructionBudgetRemaining = state.remainingCycles;
 		frame->writeControl(FrameField::Pc, state.scalarPc);
-		frame->top = state.registerTop;
+		frame->setTop(state.registerTop);
 		run->forceScalar = true;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		++gateProfile.returns;
@@ -108,7 +108,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	cpu.instructionBudgetRemaining = state.remainingCycles;
 	frame->writeControl(FrameField::Pc, exit->nextPc);
 	frame->compilationEntry = true;
-	frame->top = state.registerTop;
+	frame->setTop(state.registerTop);
 	cpu.m_currentInstructionPc = exit->currentPc;
 	cpu.m_lastExecutionDomainId = frame->executionImage->executionDomainId;
 	cpu.lastPc = exit->lastPc;
@@ -203,7 +203,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			auto* table = cpu.createTable(exit->exitB, exit->exitC);
 			frame->registers.set(a, valueTable(cpu.m_heap.reference(table)));
 			cpu.instructionBudgetRemaining -= 2 * static_cast<int>(table->storedSlotCount()) - exit->exitB;
-			frame->top = std::max(frame->top, a + 1);
+			frame->setTop(std::max(frame->readWindow(FrameField::Top), a + 1));
 			break;
 		}
 		default:
@@ -245,7 +245,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			state.globalValues = cpu.m_globalValues.view();
 			state.systemGlobalValues = cpu.m_systemGlobalValues.view();
 			state.remainingCycles = cpu.instructionBudgetRemaining;
-			state.registerTop = frame->top;
+			state.registerTop = frame->readWindow(FrameField::Top);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			if (*continuation) ++gateProfile.resumes;
 			else ++gateProfile.returns;
@@ -308,7 +308,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			state.constantCount = static_cast<u32>(frame->executionImage->constPool.capacity());
 		}
 		state.remainingCycles = cpu.instructionBudgetRemaining;
-		state.registerTop = frame->top;
+		state.registerTop = frame->readWindow(FrameField::Top);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		++gateProfile.resumes;
 #endif

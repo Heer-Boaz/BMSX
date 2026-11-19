@@ -116,22 +116,28 @@ export class ValueSlots implements ValueWriteTarget {
 		this.reportWrite(dst, 1);
 	}
 	public copyRangeFrom(source: ValueSlots, destination: number, first: number, count: number): void {
-		if (this.mirrored || source.mirrored) {
-			const delta = this.ram !== null && this.ram === source.ram
-				? (this.wordAddress + (this.base + destination) * 4 - source.wordAddress - (source.base + first) * 4) & (MAIN_RAM_SIZE - 4)
-				: 0;
-			if (delta > 0 && (delta >>> 2) < count)
-				for (let i = count; i-- > 0;) this.setEncoded(destination + i, source.getTag(first + i), source.getPayload(first + i));
-			else
-				for (let i = 0; i < count; ++i) this.setEncoded(destination + i, source.getTag(first + i), source.getPayload(first + i));
+		const dst = this.base + destination, src = source.base + first;
+		const dstPort = this.mirrored || (destination + count > this.size && this.ram !== null);
+		const srcPort = source.mirrored || (first + count > source.size && source.ram !== null);
+		if (dstPort || srcPort) {
+			const dstWord = this.wordAddress + dst * 4, srcWord = source.wordAddress + src * 4;
+			const dstTag = this.tagAddress + dst, srcTag = source.tagAddress + src;
+			const delta = (dstWord - srcWord) & (MAIN_RAM_SIZE - 4);
+			const backward = this.ram === source.ram && delta > 0 && (delta >>> 2) < count;
+			for (let i = backward ? count - 1 : 0, end = backward ? -1 : count, step = backward ? -1 : 1; i !== end; i += step) {
+				const word = srcPort ? source.ram!.readRamRecordWord(srcWord + i * 4) : source.words[src + i];
+				const tag = srcPort ? source.ram!.readRamRecordByte(srcTag + i) : source.tags[src + i];
+				if (dstPort) {
+					this.ram!.writeRamRecordWord(dstWord + i * 4, word);
+					this.ram!.writeRamRecordByte(dstTag + i, tag);
+				} else this.setEncoded(destination + i, tag, word);
+			}
 			return;
 		}
 		if (this.words === source.words) {
-			const dst = this.base + destination, src = source.base + first;
 			this.words.copyWithin(dst, src, src + count); this.tags.copyWithin(dst, src, src + count);
 			this.reportWrite(dst, count);
 		} else {
-			const dst = this.base + destination, src = source.base + first;
 			for (let i = 0; i < count; ++i) {
 				this.words[dst + i] = source.words[src + i]; this.tags[dst + i] = source.tags[src + i];
 			}

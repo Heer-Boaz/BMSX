@@ -64,7 +64,7 @@ void liveReferencesAndReuse() {
 	require(cpu.gcHeap().closureAt(cell->address) == nullptr, "a cell address cannot resolve to a closure");
 	checkReferences(cpu);
 	auto* roots = cpu.createTable(512);
-	frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.top = 2;
+	frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.writeControl(bmsx::FrameField::Top, 2);
 	ValueStorage slots(400);
 	for (size_t i = 0; i < slots.capacity(); ++i) {
 		auto* table = cpu.createTable(); roots->setInteger(static_cast<int>(i + 1), valueTable(cpu.gcHeap().reference(table)));
@@ -79,13 +79,13 @@ void liveReferencesAndReuse() {
 	auto* replacement = cpu.createTable();
 	require(cpu.gcHeap().reference(replacement) == freeId && replacement->hashId != hash, "allocator reuses the record address; collector ordinals remain distinct");
 	require(cpu.gcHeap().tableAt(freeId) == replacement, "recycled ids resolve the replacement object");
-	frame.registers.set(2,valueTable(cpu.gcHeap().reference(replacement))); frame.top = 3;
+	frame.registers.set(2,valueTable(cpu.gcHeap().reference(replacement))); frame.writeControl(bmsx::FrameField::Top, 3);
 }
 
 void restoreRebindsWithoutRetainingDiscardedFutures() {
 	Machine machine; auto& cpu = machine.cpu;
 	auto& frame = *cpu.rootThread()->currentFrame;
-	auto* roots = cpu.createTable(4); frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.top = 2;
+	auto* roots = cpu.createTable(4); frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.writeControl(bmsx::FrameField::Top, 2);
 	for (int i = 1; i <= 4; ++i) roots->setInteger(i, valueTable(cpu.gcHeap().reference(cpu.createTable())));
 	// Leave holes before saving, then consume them on a discarded timeline.
 	cpu.createTable();
@@ -124,7 +124,7 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 
 void incrementalRestore() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
-	auto* roots = cpu.createTable(1024); frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.top = 2;
+	auto* roots = cpu.createTable(1024); frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.writeControl(bmsx::FrameField::Top, 2);
 	for (int i = 1; i <= 1000; ++i) {
 		roots->setInteger(i, valueTable(cpu.gcHeap().reference(cpu.createTable(1, 1))));
 		auto* dead = cpu.createTable(1); dead->setInteger(1, valueTable(cpu.gcHeap().reference(cpu.createTable())));
@@ -148,7 +148,7 @@ void incrementalRestore() {
 void builtinIdentitiesStayOutsideTheGcHeap() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
 	auto* functions = cpu.createTable(BUILTIN_FUNCTION_COUNT);
-	frame.registers.set(0,valueTable(cpu.gcHeap().reference(functions))); frame.top = 2;
+	frame.registers.set(0,valueTable(cpu.gcHeap().reference(functions))); frame.writeControl(bmsx::FrameField::Top, 2);
 	const auto before = cpu.gcHeap().captureState([&](const GCObject* object) { return cpu.gcHeap().reference(object); });
 	for (size_t i = 0; i < BUILTIN_FUNCTION_COUNT; ++i)
 		functions->setInteger(static_cast<int>(i + 1), cpu.createBuiltinFunction(static_cast<BuiltinFunctionId>(i)));

@@ -61,7 +61,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto& left = *native.cpu.activeThread(); const auto& right = *scalar.cpu.activeThread();
 	const CallFrame* x = left.firstFrame; const CallFrame* y = right.firstFrame;
 	require(left.frameDepth == right.frameDepth, "frame depths agree");
-	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && x->top == y->top
+	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y->readControl(bmsx::FrameField::Top))
 		&& x->stackBase == y->stackBase && x->stackCapacity == y->stackCapacity, "live frame extents agree");
 }
 
@@ -185,12 +185,12 @@ void plainSpansAndCycles(int count, bool displaced) {
 	for (Value value : values) for (int grant : {1, 3, 4, 5, 5 + surcharge, 6 + surcharge, 7 + surcharge, 4 * (7 + surcharge)}) {
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(12, value); frame.top = 0;
+			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(12, value); frame.writeControl(bmsx::FrameField::Top, 0);
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		requireParity(native, scalar); require(std::equal(native.memory.ramData(), native.memory.ramData() + PSX_MACHINE_SPEC.ramBytes, scalar.memory.ramData()), "all plain-RAM bytes agree at every short grant");
 	}
-	require(native.cpu.activeThread()->frameAtDepth(0)->top == 10 && native.cpu.readFrameRegister(0, 7) == valueInteger(2), "source ranges never inflate top and clean cached values remain live after the native call");
+	require(static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 10 && native.cpu.readFrameRegister(0, 7) == valueInteger(2), "source ranges never inflate top and clean cached values remain live after the native call");
 }
 
 void invalidWordAfterCommittedPrefix() {
@@ -242,7 +242,7 @@ void wideConstantAddress() {
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->sideExits[0].exitA == 512 && block->sideExits[0].exitB == -1 && block->sideExits[0].exitC == 513, "the native descriptor preserves the complete WIDE register range and signed RK address");
 #endif
-	require(native.memory.readMappedWord(target) == 0xffffffffu && native.memory.readMappedWord(target + 512u * 4u) == 511u && native.cpu.activeThread()->frameAtDepth(0)->top == 0,
+	require(native.memory.readMappedWord(target) == 0xffffffffu && native.memory.readMappedWord(target + 512u * 4u) == 511u && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 0,
 		"wide sources are converted as unsigned words without extending top");
 }
 
@@ -383,10 +383,10 @@ void previousChargesSurviveLaterExit(bool blocked) {
 	for (auto* m : {&native, &scalar}) {
 		m->memory.mapIoWrite(IO_BASE + 0x5000u, nullptr, [](void*, u32, u32, MappedBusSignals) { throw std::runtime_error("not ready"); });
 		m->memory.mapIoWriteReady(IO_BASE + 0x5000u, [](void*, u32, MappedBusSignals) { return false; });
-		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.top = 0; frame.registers.set(1, valueInteger(blocked ? IO_BASE + 0x5000u : RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u));
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.writeControl(bmsx::FrameField::Top, 0); frame.registers.set(1, valueInteger(blocked ? IO_BASE + 0x5000u : RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u));
 		frame.registers.set(7, valueInteger(99)); frame.registers.set(20, valueInteger(73));
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress); m->cpu.runUntilDepth(0, 20);
-		require(frame.registers.get(7) == valueInteger(99) && frame.top == 7, "the failing second store does not execute or publish a later definition");
+		require(frame.registers.get(7) == valueInteger(99) && static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 7, "the failing second store does not execute or publish a later definition");
 		if (blocked) require(m->cpu.instructionBudgetRemaining == 7, "a later blocked preflight excludes only its own surcharge");
 		else require(m->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR && m->memory.readMappedWord(RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u) == 73u, "a later fault keeps its committed word");
 	}

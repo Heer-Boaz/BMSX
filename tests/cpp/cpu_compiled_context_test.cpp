@@ -51,8 +51,42 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
 	for (size_t i = 0; i < first.frameDepth; ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& x = *firstFrame; const auto& y = *secondFrame;
-		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity
-			&& x.varargBase == y.varargBase && x.varargCount == y.varargCount, "all live frame ranges agree after relocation");
+		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity
+			&& static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::VarargBase)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::VarargBase)) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::VarargCount)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::VarargCount)), "all live frame ranges agree after relocation");
+	}
+}
+
+void physicalVarargWindow() {
+	test::Blua32TestImage image; image.text.resize(3 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::KSMI), 0, 0, 7);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::VARARG), 1, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8, .isVararg = true}};
+	for (const bool mirrored : {false, true}) {
+		CpuMachine native(image), scalar(image, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		native.cpu.prepareSystemNativeCode();
+#endif
+		for (auto* machine : {&native, &scalar}) {
+			auto* thread = machine->cpu.activeThread();
+			auto& frame = *thread->currentFrame;
+			const u32 control = RAM_BASE + frame.controlOffset;
+			const u32 source = mirrored ? ((MAIN_RAM_SIZE - thread->stackOffset() + 0x1000u) / 4u) : 0u;
+			machine->memory.writeMappedU32LE(control + static_cast<u32>(FrameField::VarargBase), 0xb0000000u | source);
+			machine->memory.writeMappedU32LE(control + static_cast<u32>(FrameField::VarargCount), 0xa0000001u);
+			machine->memory.writeMappedU32LE(control + static_cast<u32>(FrameField::Top), 0xc0000000u);
+			if (mirrored) {
+				machine->memory.writeRamRecordWord(thread->stackOffset() + source * 4u, 73);
+				machine->memory.writeRamRecordByte(thread->stack.tagAddress() + source, static_cast<u8>(ValueTag::Integer));
+			}
+		}
+		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + BASE_CYCLES[static_cast<u8>(OpCode::VARARG)] + 2;
+		test::runCpuParity(native.cpu, scalar.cpu, grant);
+		requireParity(native, scalar);
+		const auto& frame = *native.cpu.activeThread()->currentFrame;
+		require(frame.registers.get(1) == valueInteger(mirrored ? 73 : 7)
+			&& frame.readControl(FrameField::Top) == 0xc0000002u,
+			"VARARG copies the current physical source, including a register alias or folded address, without replacing top high bits");
 	}
 }
 
@@ -76,7 +110,7 @@ void hotVarargFrames(int fixed) {
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.runUntilDepth(0, 2); m->cpu.activeThread()->frameAtDepth(0)->top = 1;
+		m->cpu.runUntilDepth(0, 2); m->cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Top, 1);
 		m->cpu.runUntilDepth(0, 9002);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -96,8 +130,8 @@ void hotVarargFrames(int fixed) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + 3u * INSTRUCTION_BYTES);
 			root.registers.set(0, valueClosure(cpu.gcHeap().reference(closure)));
 			for (int i = 0; i < count; ++i) root.registers.set(i + 1, i == 0 ? valueBool(false) : i == count - 1 ? valueNil() : valueInteger(i));
-			root.top = count + 1;
-			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && thread->frameAtDepth(1)->varargCount == count,
+			root.writeControl(bmsx::FrameField::Top, count + 1);
+			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && static_cast<bmsx::i32>(thread->frameAtDepth(1)->readControl(bmsx::FrameField::VarargCount)) == count,
 				"a new frame binds its current saved-argument range before entering hot code");
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 9);
@@ -114,7 +148,7 @@ void hotVarargFrames(int fixed) {
 		}
 		require(native.cpu.readFramePc(1) == native.rom.textAddress + 22u * INSTRUCTION_BYTES,
 			"short grants reach the instruction after the final VARARG");
-		require(native.cpu.activeThread()->frameAtDepth(1)->top == count, "the final open VARARG replaces the former top exactly");
+		require(static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(1)->readControl(bmsx::FrameField::Top)) == count, "the final open VARARG replaces the former top exactly");
 		if (count == 63) require(native.cpu.activeThread()->frameAtDepth(1)->stackCapacity > 16, "the hot capacity exit grows the real stack");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		require(page.nativeBlocks->entries[entry].get() == block, "the compiled varargs body survives frame and stack replacement");
@@ -127,8 +161,8 @@ void hotVarargFrames(int fixed) {
 	require(test::runCpuParity(native.cpu, scalar.cpu, 1, 1) == RunResult::Halted, "open return reaches the caller");
 	requireParity(native, scalar);
 	const auto& caller = *native.cpu.activeThread()->currentFrame;
-	require(caller.top == 63, "open CALL receives exactly the range selected by VARARG and RET");
-	for (int i = 0; i < caller.top; ++i)
+	require(static_cast<bmsx::i32>(caller.readControl(bmsx::FrameField::Top)) == 63, "open CALL receives exactly the range selected by VARARG and RET");
+	for (int i = 0; i < static_cast<bmsx::i32>(caller.readControl(bmsx::FrameField::Top)); ++i)
 		require(caller.registers.get(i) == (i == 0 ? valueBool(false) : i == 62 ? valueNil() : valueInteger(i)),
 			"open return preserves every argument, including trailing nil");
 }
@@ -144,7 +178,7 @@ void hotEmptyVararg() {
 	}
 	requireParity(native, scalar);
 	const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
-	require(frame.top == 31 && frame.stackCapacity == 4 && frame.registers.get(0) == valueInteger(73),
+	require(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 31 && frame.stackCapacity == 4 && frame.registers.get(0) == valueInteger(73),
 		"zero saved varargs change top without forming an out-of-range host slot or extending capacity");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::waitForNativeEntry(native.cpu, *frame.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
@@ -165,7 +199,7 @@ void hotConstantTrap() {
 		for (auto* m : {&native, &scalar}) {
 			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(513, valueInteger(0));
 			m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
-			frame.registers.set(513, bad); frame.registers.set(256, valueInteger(73)); frame.top = 0;
+			frame.registers.set(513, bad); frame.registers.set(256, valueInteger(73)); frame.writeControl(bmsx::FrameField::Top, 0);
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
@@ -177,7 +211,7 @@ void hotConstantTrap() {
 		require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
 			&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
 			&& native.cpu.activeThread()->frameAtDepth(0)->registers.get(256) == valueInteger(73)
-			&& native.cpu.activeThread()->frameAtDepth(0)->top == 8, "a WIDE load traps after its prefix, without writing its destination or top");
+			&& static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 8, "a WIDE load traps after its prefix, without writing its destination or top");
 	}
 }
 
@@ -215,7 +249,7 @@ void hotGlobalBanks() {
 		requireParity(native, scalar);
 		require(native.cpu.getSystemGlobalByKey(native.cpu.stringPool().intern("copied")) == value
 			&& native.cpu.getGlobalByKey(native.cpu.stringPool().intern("copied")) == valueInteger(73)
-			&& native.cpu.activeThread()->frameAtDepth(0)->top == 3, "grown global banks remain live, distinct and do not extend top on stores");
+			&& static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 3, "grown global banks remain live, distinct and do not extend top on stores");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(page.nativeBlocks->entries[entry].get() == block, "host bank relocation does not invalidate an unrelated compiled instruction page");
@@ -261,7 +295,7 @@ void hotUpvalueAlias() {
 		test::runCpuParity(native.cpu, scalar.cpu, loopCycles); requireParity(native, scalar);
 		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 		require(frame.registers.get(3) == valueInteger(10) && frame.registers.get(4) == valueInteger(9)
-			&& frame.registers.get(6) == value && frame.top == 7, "a self-alias side exit writes the actual cell without losing live values or extending top");
+			&& frame.registers.get(6) == value && static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 7, "a self-alias side exit writes the actual cell without losing live values or extending top");
 	}
 }
 
@@ -390,11 +424,12 @@ void rawContextValues(CpuMachine& machine) {
 
 void varargAliasesAndSideExits(CpuMachine& machine) {
 	ValueSlots stack(48); CallFrame frame; frame.stackBase = 16; frame.registers = stack.view().subspan(16, 32);
+	frame.bindControl(machine.memory, DYNAMIC_RAM_BASE - RAM_BASE + 0x700);
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(0),
 		valueTable(machine.cpu.gcHeap().reference(machine.cpu.createTable())), valueThread(machine.cpu.gcHeap().reference(machine.cpu.activeThread()))};
 	ContextBlock empty(machine, {{OpCode::VARARG, 31, 0}, {OpCode::JMP}});
-	frame.varargCount = 0; frame.stackCapacity = 16;
+	frame.writeControl(bmsx::FrameField::VarargCount, 0); frame.stackCapacity = 16;
 	for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
 	NativeBlockRunState zero{.registers = frame.registers, .frame = &frame, .remainingCycles = 100, .registerTop = 48};
 	require(empty.block->run(zero) == &empty.block->terminal && zero.registerTop == 31,
@@ -402,7 +437,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 	for (size_t i = 0; i < stack.capacity(); ++i) require(stack.get(i) == valueInteger(73), "empty window leaves both planes unchanged");
 	// The fixed form charges requested slots (also nil padding), never available slots.
 	// B=1 performs no copy and leaves top alone even when A is beyond capacity.
-	frame.varargBase = 14; frame.varargCount = 2;
+	frame.writeControl(bmsx::FrameField::VarargBase, 14); frame.writeControl(bmsx::FrameField::VarargCount, 2);
 	stack.set(14, valueString(machine.cpu.stringPool().intern("vararg"))); stack.set(15, valueFloatBits(0xffa12345));
 	for (const int count : {0, 1, 5}) {
 		const u16 first = count ? 6 : 31;
@@ -421,9 +456,9 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 		second.block->linkFrom(first.block->terminal);
 		for (const int count : {0, 2, 8}) {
 			for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
-			frame.varargCount = count; frame.stackCapacity = 16;
-			frame.varargBase = frame.stackBase - count;
-			for (int i = 0; i < count; ++i) stack.set(frame.varargBase + i, values[i]);
+			frame.writeControl(bmsx::FrameField::VarargCount, count); frame.stackCapacity = 16;
+			frame.writeControl(bmsx::FrameField::VarargBase, frame.stackBase - count);
+			for (int i = 0; i < count; ++i) stack.set(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::VarargBase)) + i, values[i]);
 			frame.registers.set(14, valueInteger(1));
 			NativeBlockRunState state{.registers = frame.registers, .frame = &frame, .remainingCycles = 100, .registerTop = 16};
 			require(first.block->run(state) == &second.block->sideExits[1] && state.registerTop == count,
@@ -433,9 +468,9 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 				"a word consumer sees the overwritten vararg kind, not a cached literal fact; fixed ranges retain untouched facts");
 		}
 		for (size_t i = 0; i < stack.capacity(); ++i) stack.set(i, valueInteger(73));
-		frame.varargCount = 8; frame.stackCapacity = 8;
-		frame.varargBase = frame.stackBase - 8;
-		for (int i = 0; i < 8; ++i) stack.set(frame.varargBase + i, values[i]);
+		frame.writeControl(bmsx::FrameField::VarargCount, 8); frame.stackCapacity = 8;
+		frame.writeControl(bmsx::FrameField::VarargBase, frame.stackBase - 8);
+		for (int i = 0; i < 8; ++i) stack.set(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::VarargBase)) + i, values[i]);
 		// Only the open first copy exceeds this capacity.
 		if (fixed == 0) {
 			NativeBlockRunState state{.registers = frame.registers, .frame = &frame, .remainingCycles = 100};
@@ -450,7 +485,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 
 int main() {
 	try {
-		hotVarargFrames(0); hotVarargFrames(5); hotEmptyVararg(); hotConstantTrap(); hotUpvalueAlias(); hotGlobalBanks();
+		physicalVarargWindow(); hotVarargFrames(0); hotVarargFrames(5); hotEmptyVararg(); hotConstantTrap(); hotUpvalueAlias(); hotGlobalBanks();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		test::Blua32TestImage image; image.text.resize(INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0); image.functions = {{.firstWord = 0, .wordCount = 1}};

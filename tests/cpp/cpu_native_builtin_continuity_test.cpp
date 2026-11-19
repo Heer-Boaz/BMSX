@@ -67,7 +67,7 @@ struct Machine {
 		auto* frame = cpu.rootThread()->currentFrame; auto r = frame->registers;
 		r.set(0, valueInteger(-11)); r.set(1, valueBool(false)); r.set(2, valueBool(false));
 		r.set(7, valueInteger(-7)); r.set(8, valueInteger(-8)); r.set(9, valueInteger(-9));
-		r.set(12, cpu.createBuiltinFunction(id)); r.set(15, valueFloat(99.75f)); frame->top = 3;
+		r.set(12, cpu.createBuiltinFunction(id)); r.set(15, valueFloat(99.75f)); frame->writeControl(bmsx::FrameField::Top, 3);
 		if (id == BuiltinFunctionId::StringByte) {
 			r.set(13, mode == 2 ? valueInteger(17) : valueString(cpu.stringPool().intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9))));
 			r.set(14, mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueFloat(position));
@@ -122,7 +122,7 @@ void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float positi
 	auto* caller = preparedCaller(machine);
 	machine.cpu.instructionBudgetRemaining = 12345;
 	NativeBlockRunState state{.registers=frame->registers, .constants=frame->executionImage->constPool.view(), .frame=frame,
-		.constantCount=static_cast<u32>(frame->executionImage->constPool.capacity()), .remainingCycles=64, .registerTop=frame->top};
+		.constantCount=static_cast<u32>(frame->executionImage->constPool.capacity()), .remainingCycles=64, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 	const auto* exit = caller->run(state);
 	// Base NativeBlock::run deliberately has no NativeCpuRunState tail or C++
 	// dispatcher. Only a real body-internal completed CALL can reach this HALT.
@@ -134,7 +134,7 @@ void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float positi
 		"dirty cached values not consumed by the leaf survive its host-call ABI");
 	require(frame->registers.get(8) == (receiving ? machine.expected : frame->registers.get(12)),
 		"the successor consumes the new result, or the retained callee when results are discarded");
-	require(machine.cpu.instructionBudgetRemaining == 12345 && frame->readControl(bmsx::FrameField::Pc) == rom.textAddress && frame->top == 3,
+	require(machine.cpu.instructionBudgetRemaining == 12345 && frame->readControl(bmsx::FrameField::Pc) == rom.textAddress && static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) == 3,
 		"the base native ABI updates its own state, never hidden CPU/frame copies behind live native registers");
 	if (id == BuiltinFunctionId::SetMetatable) require(machine.target->metatable() == (mode == 1 ? nullptr : machine.meta),
 		"the inline route performs the real table mutation");
@@ -147,7 +147,7 @@ void rawDeclines() {
 		if (variant == 3) machine.selectClosure();
 		auto* frame = machine.cpu.rootThread()->currentFrame;
 		NativeBlockRunState state{.registers=frame->registers, .constants=frame->executionImage->constPool.view(), .frame=frame,
-			.constantCount=static_cast<u32>(frame->executionImage->constPool.capacity()), .remainingCycles=64, .registerTop=frame->top};
+			.constantCount=static_cast<u32>(frame->executionImage->constPool.capacity()), .remainingCycles=64, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* exit = preparedCaller(machine)->run(state);
 		require(exit->exit == NativeBlockExit::Call && state.remainingCycles == 64 - 4 * BASE_CYCLES[static_cast<u8>(OpCode::MOV)] - BASE_CYCLES[static_cast<u8>(OpCode::CALL)],
 			"padding, unsupported primitive, bad arguments and a real Closure preserve the ordinary unexecuted CALL boundary");
@@ -163,7 +163,7 @@ void completedDebtDoesNotRunTheSuccessor() {
 		auto* frame=machine.cpu.rootThread()->currentFrame;
 		const int prefix=4*BASE_CYCLES[static_cast<u8>(OpCode::MOV)]+BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
 		NativeBlockRunState state{.registers=frame->registers,.constants=frame->executionImage->constPool.view(),.frame=frame,
-			.constantCount=static_cast<u32>(frame->executionImage->constPool.capacity()),.remainingCycles=prefix,.registerTop=frame->top};
+			.constantCount=static_cast<u32>(frame->executionImage->constPool.capacity()),.remainingCycles=prefix,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* caller=preparedCaller(machine);const auto* exit=caller->run(state);const int receiving=results==1?0:1;
 		require(exit->exit!=NativeBlockExit::Call && exit->cycles==0 && exit->nextPc==caller->terminal.nextPc,
 			"an exhausting successful leaf returns its completed successor frontier, never the original CALL");
@@ -180,14 +180,14 @@ void mutableCalleesUseTheirCurrentIdentity() {
 	for(const auto id:{BuiltinFunctionId::StringByte,BuiltinFunctionId::GetMetatable,BuiltinFunctionId::SetMetatable,BuiltinFunctionId::Type}) {
 		machine.seed(id);auto* frame=machine.cpu.rootThread()->currentFrame;
 		NativeBlockRunState state{.registers=frame->registers,.constants=frame->executionImage->constPool.view(),.frame=frame,
-			.constantCount=static_cast<u32>(frame->executionImage->constPool.capacity()),.remainingCycles=64,.registerTop=frame->top};
+			.constantCount=static_cast<u32>(frame->executionImage->constPool.capacity()),.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* exit=caller->run(state);
 		if(id==BuiltinFunctionId::Type) require(exit->exit==NativeBlockExit::Call,"a reused callsite does not retain an earlier supported builtin ID");
 		else require(exit->exit==NativeBlockExit::Halt && frame->registers.get(8)==machine.expected,"one published callsite observes each actual supported primitive ID");
 	}
 	machine.seed(BuiltinFunctionId::StringByte);machine.selectClosure();auto* frame=machine.cpu.rootThread()->currentFrame;
 	NativeBlockRunState state{.registers=frame->registers,.constants=frame->executionImage->constPool.view(),.frame=frame,
-		.constantCount=static_cast<u32>(frame->executionImage->constPool.capacity()),.remainingCycles=64,.registerTop=frame->top};
+		.constantCount=static_cast<u32>(frame->executionImage->constPool.capacity()),.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 	require(caller->run(state)->exit==NativeBlockExit::Call && valueIsClosure(frame->registers.get(0)),
 		"a real Closure replacing a formerly hot primitive retains normal activation semantics");
 }
@@ -207,7 +207,7 @@ void inlineInterruptStop(bool nmi, bool wide) {
 	auto* caller=preparedCaller(machine);auto* owner=frame->executionImage;auto* page=owner->nativeCodeLookup->find(rom.textAddress,0);
 	const auto& gate=nativeBlockGate();
 	NativeCpuRunState run{.state={.registers=frame->registers,.constants=owner->constPool.view(),.frame=frame,
-		.constantCount=static_cast<u32>(owner->constPool.capacity()),.remainingCycles=64,.registerTop=frame->top,.exitCode=gate.dispatch,.ram=machine.memory.ramData()},
+		.constantCount=static_cast<u32>(owner->constPool.capacity()),.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),.exitCode=gate.dispatch,.ram=machine.memory.ramData()},
 		.cpu=&machine.cpu,.targetDepth=0,.codeRoot=owner->nativeCodeLookup->root(0),.systemRom=&machine.memory.systemRomStorage(),
 		.cartridgeRom=machine.memory.cartridgeController().romStorage(0),.cartridgeSlot=0,.error={}};
 	// The typed gate is an already-admitted native segment, not a fresh outer
@@ -217,7 +217,7 @@ void inlineInterruptStop(bool nmi, bool wide) {
 	reinterpret_cast<Entry>(gate.entry)(&run,page->nativeCode[(rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES]);
 	if(run.error) std::rethrow_exception(run.error);
 	require(frame->registers.get(0)==machine.expected && frame->registers.get(8)==valueInteger(-8)
-		&& frame->readControl(bmsx::FrameField::Pc)==caller->terminal.nextPc && frame->top==1,
+		&& frame->readControl(bmsx::FrameField::Pc)==caller->terminal.nextPc && static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))==1,
 		"positive-grant IRQ/NMI stops AFTER completed leaf, before its actual internal successor");
 	require(run.state.remainingCycles==64-4*BASE_CYCLES[static_cast<u8>(OpCode::MOV)]-BASE_CYCLES[static_cast<u8>(OpCode::CALL)]-3
 		&& machine.cpu.instructionBudgetRemaining==run.state.remainingCycles,
@@ -239,7 +239,7 @@ void unboundStandaloneStillReturnsCall() {
 	auto blocks=NativeBlock::compileRegion(plans,{},NativeCodeBindings(machine.memory,machine.cpu.stringPool(),machine.cpu.stringPool().intern("__index")));
 	size_t bytes=0; blocks.front()->region->publish(bytes);
 	auto* frame=machine.cpu.rootThread()->currentFrame;
-	NativeBlockRunState state{.registers=frame->registers,.remainingCycles=64,.registerTop=frame->top};
+	NativeBlockRunState state{.registers=frame->registers,.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 	require(blocks.front()->run(state)==&blocks.front()->terminal && state.remainingCycles==64-BASE_CYCLES[static_cast<u8>(OpCode::MOV)]-BASE_CYCLES[static_cast<u8>(OpCode::CALL)],
 		"default standalone bindings do not acquire a CPU or execute builtin CALLs");
 }

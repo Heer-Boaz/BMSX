@@ -59,7 +59,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* x = left.firstFrame; const CallFrame* y = right.firstFrame;
 	require(left.frameDepth == right.frameDepth, "control transitions preserve frame depth");
 	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) {
-		require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && x->top == y->top && x->stackBase == y->stackBase
+		require(x->readControl(bmsx::FrameField::Pc) == y->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y->readControl(bmsx::FrameField::Top)) && x->stackBase == y->stackBase
 			&& x->stackCapacity == y->stackCapacity && x->hasControlFlag(FRAME_EXCEPTION) == y->hasControlFlag(FRAME_EXCEPTION)
 			&& x->hasControlFlag(FRAME_NMI) == y->hasControlFlag(FRAME_NMI), "all live frame boundaries agree");
 	}
@@ -102,13 +102,13 @@ void rawReadsRetainFullWords() {
 		for (auto* m : {&native, &scalar}) {
 			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + 32u * INSTRUCTION_BYTES);
-			m->cpu.runUntilDepth(0, 1); frame.registers.set(0, valueInteger(73)); frame.registers.set(8, valueInteger(73)); frame.top = 0;
+			m->cpu.runUntilDepth(0, 1); frame.registers.set(0, valueInteger(73)); frame.registers.set(8, valueInteger(73)); frame.writeControl(bmsx::FrameField::Top, 0);
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 			m->cpu.runUntilDepth(0, 18);
 		}
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 0) == valueInteger(73) && native.cpu.readFrameRegister(0, 8) == valueInteger(1)
-			&& native.cpu.activeThread()->frameAtDepth(0)->top == 9 && native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES,
+			&& static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9 && native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES,
 			"a hot valid MFC0's privilege exit publishes its pending K1 prefix, not the unexecuted destination");
 	}
 }
@@ -145,7 +145,7 @@ void writesConvertWithoutChangingSources() {
 		requireParity(native, scalar);
 		require(native.cpu.readEpcWord() == word && native.cpu.readCauseWord() == 0
 			&& native.cpu.readFrameRegister(0, 5) == valueInteger(word) && native.cpu.readFrameRegister(0, 6) == result
-			&& native.cpu.readFrameRegister(0, 0) == source && native.cpu.activeThread()->currentFrame->top == 7,
+			&& native.cpu.readFrameRegister(0, 0) == source && static_cast<bmsx::i32>(native.cpu.activeThread()->currentFrame->readControl(bmsx::FrameField::Top)) == 7,
 			"MTC0 converts the word without rewriting its numeric source, and ignored writes retain Cause");
 	}
 }
@@ -193,7 +193,7 @@ void statusWriteRechecksInterrupts() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(0)); frame.registers.set(1, valueInteger(0));
-		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400); frame.top = 0; frame.registers.set(0, valueInteger(1)); frame.registers.set(6, valueInteger(73));
+		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400); frame.writeControl(bmsx::FrameField::Top, 0); frame.registers.set(0, valueInteger(1)); frame.registers.set(6, valueInteger(73));
 		m->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK); m->irq.raise(IRQ_VBLANK);
 		require(m->cpu.runUntilDepth(0, 32) == RunResult::Halted && m->cpu.isExceptionFrame(1),
 			"enabling interrupts enters the IRQ handler before the successor instruction");
@@ -237,7 +237,7 @@ void unknownFieldStillFaultsAfterAnEarlierGuard() {
 	requireParity(native, scalar);
 	require(native.cpu.readCurrentInstructionPc() == native.rom.textAddress + 3u * INSTRUCTION_BYTES
 		&& native.cpu.readFrameRegister(0, 6) == valueInteger(native.rom.textAddress + 2u * INSTRUCTION_BYTES)
-		&& valueIsTable(native.cpu.readFrameRegister(0, 12)) && native.cpu.activeThread()->frameAtDepth(0)->top == 7,
+		&& valueIsTable(native.cpu.readFrameRegister(0, 12)) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 7,
 		"the later sparse fault edge publishes the successful CP0-read prefix, not the rejected destination");
 }
 
@@ -282,7 +282,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 	}
 	requireParity(native, scalar);
 	require(native.cpu.captureRuntimeState().hardHalted && native.cpu.readCauseWord() == CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE
-		&& (op == OpCode::MTC0 ? native.cpu.readFrameRegister(0, 12) == valueInteger(-1) : valueIsTable(native.cpu.readFrameRegister(0, 12))) && native.cpu.activeThread()->frameAtDepth(0)->top == 4,
+		&& (op == OpCode::MTC0 ? native.cpu.readFrameRegister(0, 12) == valueInteger(-1) : valueIsTable(native.cpu.readFrameRegister(0, 12))) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 4,
 		"a rejected control operation preserves Cause, its unwritten destination and prefix top");
 }
 

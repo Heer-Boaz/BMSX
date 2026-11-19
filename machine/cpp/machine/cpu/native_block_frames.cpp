@@ -59,6 +59,12 @@ void NativeBlockAbi::emitFramePlacement(sljit_compiler* compiler, bool moveForma
 	sljit_set_label(full, sljit_emit_label(compiler));
 }
 
+void NativeBlockGate::emitPublishFrameTop(sljit_compiler* compiler, sljit_s32 control, sljit_s32 top, sljit_s32 scratch) {
+	const auto offset = static_cast<u32>(FrameField::Top);
+	sljit_emit_op2(compiler, SLJIT_AND32, scratch, 0, SLJIT_MEM1(control), offset, SLJIT_IMM, ~FRAME_WINDOW_MASK);
+	sljit_emit_op2(compiler, SLJIT_OR32, SLJIT_MEM1(control), offset, scratch, 0, top, 0);
+}
+
 void NativeBlockGate::emitFrameEntry(sljit_compiler* compiler, sljit_sw targetSlot) {
 	constexpr auto state = NativeBlockAbi::state;
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(state), offsetof(NativeBlockRunState, frame), SLJIT_R2, 0);
@@ -67,8 +73,9 @@ void NativeBlockGate::emitFrameEntry(sljit_compiler* compiler, sljit_sw targetSl
 		sljit_emit_op1(compiler, SLJIT_MOV, reg, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, registers) + offset);
 		sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_MEM1(state), offsetof(NativeBlockRunState, registers) + offset, reg, 0);
 	}
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerTop),
-		SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, top));
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, nativeControl));
+	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerTop),
+		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(FrameField::Top), SLJIT_IMM, FRAME_WINDOW_MASK);
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_MEM1(SLJIT_SP), targetSlot);
 }
 

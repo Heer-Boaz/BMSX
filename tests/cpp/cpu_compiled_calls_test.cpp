@@ -45,9 +45,9 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
 	for (size_t index = 0; index < first.frameDepth; ++index, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& a = *firstFrame; const auto& b = *secondFrame;
-		require(a.readControl(bmsx::FrameField::Pc) == b.readControl(bmsx::FrameField::Pc) && a.top == b.top && a.readControl(FrameField::Function) == b.readControl(FrameField::Function) && a.stackCapacity == b.stackCapacity
-			&& a.stackBase == b.stackBase && a.varargBase == b.varargBase && a.varargCount == b.varargCount
-			&& a.returnBase == b.returnBase && a.returnCount == b.returnCount && a.readControl(FrameField::CallSite) == b.readControl(FrameField::CallSite),
+		require(a.readControl(bmsx::FrameField::Pc) == b.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::Top)) && a.readControl(FrameField::Function) == b.readControl(FrameField::Function) && a.stackCapacity == b.stackCapacity
+			&& a.stackBase == b.stackBase && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::VarargBase)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::VarargBase)) && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::VarargCount)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::VarargCount))
+			&& static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::ReturnBase)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::ReturnBase)) && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::ReturnCount)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::ReturnCount)) && a.readControl(FrameField::CallSite) == b.readControl(FrameField::CallSite),
 			"both executions retain the same caller, callee and result ranges after stack growth");
 		for (int reg = 0; reg < a.stackCapacity; ++reg) {
 			const Value left = a.registers.get(reg), right = b.registers.get(reg);
@@ -102,7 +102,7 @@ void reusableFrameChain() {
 		auto* previous = thread.currentFrame;
 		auto* frame = thread.acquireFrame();
 		thread.reserveFrame(thread.stackCapacity);
-		frame->initializeControl(0, 0, 0, false);
+		frame->initializeControl(0, 0, 0, false, 0, 0, 0, 0, 0);
 		require(frame->previous == previous && previous->next == frame && frame->thread == &thread,
 			"reusable nodes have stable identity and belong to their thread");
 		thread.enterFrame(frame);
@@ -453,7 +453,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		valueFloatBits(0xffa12345), valueBool(true), valueFloatBits(0x80000000)};
 	for (int index = 0; index < args; ++index) caller->registers.set(base + 1 + index, payloads[index]);
 
-	caller->top = open ? base + 1 + args : caller->stackCapacity;
+	caller->writeControl(bmsx::FrameField::Top, open ? base + 1 + args : caller->stackCapacity);
 	if (ramRecord) {
 		// The cross-page record can change after closure creation without
 		// changing the reserved frame or native call target.
@@ -472,7 +472,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	// raw CALL gate can follow this independently redirected code word.
 	calleePage->nativeCode[word] = coldTarget ? nullptr : alternate->nativeCode[markerWord];
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress + 2 * INSTRUCTION_BYTES);
-	const int callerTop = caller->top;
+	const int callerTop = static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top));
 	const int placed = vararg ? params : std::max(params - args, 0);
 	const int callPrefix = BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
 	if (grant < 0) grant = callPrefix + placed + 1;
@@ -500,17 +500,17 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	const Value first = params > 0 ? (args > 0 ? payloads[0] : valueNil()) : valueInteger(63);
 	require(machine.cpu.getGlobalByKey(marker) == first && thread->currentFrame == spare && thread->frameDepth == 2,
 		"warm CALL tail-jumps through the raw native entry without the C++ CALL handler");
-	require(caller->readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 4 * INSTRUCTION_BYTES && caller->top == callerTop
+	require(caller->readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 4 * INSTRUCTION_BYTES && static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top)) == callerTop
 		&& spare->readControl(FrameField::CallSite) == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
-		&& spare->returnBase == base && spare->returnCount == 2 && !spare->hasControlFlag(FRAME_COMPLETION),
+		&& static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::ReturnBase)) == base && static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::ReturnCount)) == 2 && !spare->hasControlFlag(FRAME_COMPLETION),
 		"native CALL publishes exact caller continuation and callee result obligations");
-	require(spare->varargBase == base + 1 + params && spare->varargCount == count
-		&& spare->stackBase == calleeBase && spare->top == params
+	require(static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::VarargBase)) == base + 1 + params && static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::VarargCount)) == count
+		&& spare->stackBase == calleeBase && static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::Top)) == params
 		&& spare->stackCapacity == capacity,
 		"bound record fields govern shared argument and working windows, including formal parameters beyond maxStack");
 	for (int index = 0; index < params; ++index) require(spare->registers.get(index) == (index < args ? payloads[index] : valueNil()),
 		"fixed arguments retain raw Value bits and missing arguments are nil");
-	for (int index = 0; index < count; ++index) require(thread->stack.get(spare->varargBase + index) == payloads[params + index],
+	for (int index = 0; index < count; ++index) require(thread->stack.get(static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::VarargBase)) + index) == payloads[params + index],
 		"varargs retain their ordered original argument slots below the working frame");
 }
 
@@ -576,8 +576,10 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	const std::array<Value, 6> payloads{valueNil(), valueBool(false), valueFloatBits(0x80000000),
 		valueString(machine.cpu.stringPool().intern("native-return-payload")), caller->registers.get(4), valueFloatBits(0xffa12345)};
 	for (int index = 0; index < produced; ++index) callee->registers.set(1 + index, payloads[index]);
-	callee->top = 1 + produced;
-	callee->returnBase = base; callee->returnCount = wanted == 0 ? 0 : wanted + 1;
+	const u32 control = RAM_BASE + callee->controlOffset;
+	machine.memory.writeMappedU32LE(control + static_cast<u32>(FrameField::Top), 0xab000000u | static_cast<u32>(1 + produced));
+	machine.memory.writeMappedU32LE(control + static_cast<u32>(FrameField::ReturnBase), 0xc0000000u | static_cast<u32>(base));
+	machine.memory.writeMappedU32LE(control + static_cast<u32>(FrameField::ReturnCount), 0xd0000000u | static_cast<u32>(wanted == 0 ? 0 : wanted + 1));
 	if (exceptionFrame) callee->addControlFlags(FRAME_EXCEPTION | FRAME_NMI);
 	caller->registers.set(6, valueInteger(-7));
 	caller->registers.set(7, valueInteger(99));
@@ -611,7 +613,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	const auto routeResult = machine.cpu.runUntilDepth(0, grant);
 	require(routeResult == RunResult::Yielded && thread->currentFrame == caller
 		&& thread->frameDepth == 2 && thread->protectedDepth() == 1, "ordinary native return retains its protected parent and exact grant boundary");
-	require(caller->top == base + count, "fixed, open and empty returns assign exact caller top even after a late cold exit");
+	require(static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top)) == base + count, "fixed, open and empty returns assign exact caller top even after a late cold exit");
 	for (int index = 0; index < copied; ++index) require(caller->registers.get(base + index) == payloads[index],
 		"native and late-cold result movement preserve every raw tagged and numeric bit");
 	for (int index = copied; index < count; ++index) require(caller->registers.get(base + index) == valueNil(), "fixed results nil-pad only the requested suffix");
@@ -629,7 +631,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 			&& callee->registers.tags() == thread->stack.tags() + callee->stackBase && callee->hasControlFlag(FRAME_COMPLETION)
 		&& callee->readControl(FrameField::Protected) == static_cast<u32>(-1) && !callee->hasControlFlag(FRAME_EXCEPTION) && !callee->hasControlFlag(FRAME_NMI),
 		"a real activation rebinds the retired native node without inheriting protection or exception state");
-	callee->registers.set(1, valueInteger(17)); callee->top = 2;
+	callee->registers.set(1, valueInteger(17)); callee->writeControl(bmsx::FrameField::Top, 2);
 	require(machine.cpu.runUntilDepth(2, returnBase + 1) == RunResult::Halted && thread->currentFrame == caller
 		&& thread->protectedDepth() == 1 && machine.cpu.instructionBudgetRemaining == 0,
 		"the reused node returns once without completing its protected parent or resuming the redirected continuation");
@@ -679,14 +681,14 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 		const int count = vararg ? std::max(args - params, 0) : 0;
 		const int capacity = std::max({maxStack, params, 1});
 		require(thread->frameDepth == 2 && callee->readControl(bmsx::FrameField::Pc) == machine->rom.textAddress + 5 * INSTRUCTION_BYTES
-			&& callee->stackCapacity == capacity && callee->top == params && callee->varargCount == count,
+			&& callee->stackCapacity == capacity && static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::Top)) == params && static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::VarargCount)) == count,
 			"CALL exposes exact fixed-parameter and reserved-capacity counts at its exhausted grant");
 		const std::array<Value, 5> payloads{valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueBool(true),
 			valueString(machine->cpu.stringPool().intern("frame-argument")), valueInteger(99)};
 		for (int index = 0; index < params; ++index) require(callee->registers.get(index)
 			== (index < args ? alias ? valueInteger(71 + index) : payloads[index] : valueNil()),
 			"supplied raw arguments survive and missing fixed formals are nil, inside the owned formal reservation");
-		for (int index = 0; index < count; ++index) require(thread->stack.get(callee->varargBase + index)
+		for (int index = 0; index < count; ++index) require(thread->stack.get(static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::VarargBase)) + index)
 			== (alias ? valueInteger(71 + params + index) : payloads[params + index]),
 			"saved varargs remain in their original slots below relocated fixed parameters");
 	}
@@ -703,11 +705,11 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 			valueString(machine->cpu.stringPool().intern("frame-argument")), valueInteger(99)};
 		machine->cpu.beginCompletionCall(*asClosure(caller->registers.get(6), machine->cpu.gcHeap()), BuiltinArgsView(payloads.data(), args));
 		auto* callee = thread->currentFrame;
-		require(callee->stackCapacity == std::max({maxStack, params, 1}) && callee->top == params && callee->hasControlFlag(FRAME_COMPLETION),
+		require(callee->stackCapacity == std::max({maxStack, params, 1}) && static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::Top)) == params && callee->hasControlFlag(FRAME_COMPLETION),
 			"raw argument calls retain the same frame sizing and completion owner");
 		for (int index = 0; index < params; ++index) require(callee->registers.get(index) == (index < args ? payloads[index] : valueNil()),
 			"raw argument admission preserves supplied bits and initializes only the missing formal tail");
-		for (int index = 0; index < callee->varargCount; ++index) require(thread->stack.get(callee->varargBase + index) == payloads[params + index],
+		for (int index = 0; index < static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::VarargCount)); ++index) require(thread->stack.get(static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::VarargBase)) + index) == payloads[params + index],
 			"raw argument varargs retain their separate ordered window");
 	}
 	requireParity(native, scalar);
@@ -731,13 +733,13 @@ void returnGrowthCollection() {
 		auto* callee = machine.cpu.activeThread()->currentFrame;
 		const Value result = valueString(machine.cpu.stringPool().intern("retained-only-by-returning-frame"));
 		callee->registers.set(0, result);
-		callee->top = 1;
+		callee->writeControl(bmsx::FrameField::Top, 1);
 		const auto heap = machine.cpu.luaHeap().captureState();
 		machine.cpu.luaHeap().restoreState({heap.trackedBytes, heap.trackedBytes});
 		require(machine.cpu.runUntilDepth(1, 100) == RunResult::Halted, "return stops at the caller depth after growing its window");
 		require(machine.cpu.collecting(), "return window growth triggers an allocation assist");
 		require(machine.cpu.stringPool().find("retained-only-by-returning-frame") == asStringId(result)
-			&& caller->registers.get(0) == result && caller->stackCapacity == 64 && caller->top == 62,
+			&& caller->registers.get(0) == result && caller->stackCapacity == 64 && static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top)) == 62,
 			"return values remain rooted across collection and caller/callee window relocation");
 		for (int index = 1; index < 62; ++index) require(caller->registers.get(index) == valueNil(), "missing fixed returns are nil");
 		require(machine.cpu.activeThread()->currentFrame == caller && caller->next == callee,
@@ -809,7 +811,7 @@ void returnPlacementCycles() {
 			require(machine.cpu.runUntilDepth(1, grant) == RunResult::Halted, "RET finishes at the caller depth");
 			require(machine.cpu.instructionBudgetRemaining == grant - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - placed, "RET charges base plus selected range, even beyond the grant");
 			const auto* caller = machine.cpu.activeThread()->currentFrame;
-			require(caller->readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 6 * INSTRUCTION_BYTES && caller->top == 4 + placed,
+			require(caller->readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 6 * INSTRUCTION_BYTES && static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top)) == 4 + placed,
 				"RET consumes no receiving instruction and selects the exact top");
 			for (int i = 0; i < placed; ++i) require(caller->registers.get(4 + i) == (i < produced ? valueInteger(i == 0 ? 17 : 29) : valueNil()),
 				"copied and nil-filled receiving slots are both charged");
@@ -903,7 +905,7 @@ void rootReturnPlacementCycles() {
 		image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 2}};
 		CpuMachine machine(image, scalar);
 		auto* frame = machine.cpu.activeThread()->currentFrame;
-		frame->registers.set(0, valueInteger(17)); frame->registers.set(1, valueInteger(29)); frame->top = 2;
+		frame->registers.set(0, valueInteger(17)); frame->registers.set(1, valueInteger(29)); frame->writeControl(bmsx::FrameField::Top, 2);
 		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Halted, "root RET completes");
 		const int count = producedOperand == 0 ? 2 : producedOperand - 1;
 		require(machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - count && machine.cpu.readCompletionValues().size() == static_cast<size_t>(count),

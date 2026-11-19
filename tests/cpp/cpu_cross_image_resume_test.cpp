@@ -154,8 +154,8 @@ void parity(Machine& generated, Machine& scalar) {
 		const auto& x = *generated.cpu.activeThread()->frameAtDepth(depth);
 		const auto& y = *scalar.cpu.activeThread()->frameAtDepth(depth);
 		require(x.executionImage->executionDomainId == y.executionImage->executionDomainId && x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc)
-			&& x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity
-			&& x.returnBase == y.returnBase && x.returnCount == y.returnCount && x.readControl(FrameField::CallSite) == y.readControl(FrameField::CallSite),
+			&& static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity
+			&& static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::ReturnBase)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::ReturnBase)) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::ReturnCount)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::ReturnCount)) && x.readControl(FrameField::CallSite) == y.readControl(FrameField::CallSite),
 			"each live frame retains its own image and exact argument/result window");
 	}
 }
@@ -216,7 +216,7 @@ void oneStableGate(const Images& images, u32 slot, bool returning, bool cold, bo
 	const auto& gate = nativeBlockGate();
 	NativeCpuRunState run{.state={.registers=frame->registers, .constants=sourceImage->constPool.view(), .frame=frame, .heap=&m.cpu.gcHeap(),
 		.globalValues=decoyGlobals.view(), .systemGlobalValues=decoyGlobals.view(), .cop0Words=decoyCp0.data(),
-		.constantCount=static_cast<u32>(sourceImage->constPool.capacity()), .remainingCycles=grant, .registerTop=frame->top,
+		.constantCount=static_cast<u32>(sourceImage->constPool.capacity()), .remainingCycles=grant, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)),
 		.exitCode=gate.dispatch, .ram=m.memory.ramData(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 		.diagnosticOpcodes={},

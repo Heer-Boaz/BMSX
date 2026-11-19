@@ -11,7 +11,7 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -38,7 +38,7 @@ test('thread-owned nodes reuse stable identities and trim only the spare tail', 
 	for (let index = 0; index < 8; ++index) {
 		const frame = thread.acquireFrame();
 		thread.reserveFrame(thread.stackRegisters.capacity());
-		frame.initializeControl(0, 0, 0, false);
+		frame.initializeControl(0, 0, 0, false, 0, 0, 0, 0, 0);
 		assert.equal(thread.frameDepth, index, 'preparation does not activate a frame');
 		thread.enterFrame(frame); frames.push(frame);
 		assert.equal(frame.previous, index === 0 ? null : frames[index - 1]);
@@ -85,6 +85,49 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 		cpu.readCompletionValues(values);
 		assert.deepEqual(values, [valueInteger(1)]);
+	});
+
+	test(`VARARG reads the physical source after a frame-word write (${backend})`, () => {
+		const text = new Uint8Array(3 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.KSMI, 0, 0, 7);
+		writeInstruction(text, 1, OpCode.VARARG, 1, 0, 0);
+		writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8, isVararg: true }] });
+		for (const mirrored of [false, true]) {
+			const { cpu, memory } = createTestSystemCpu(image, backend);
+			const thread = cpu.rootThread, frame = thread.currentFrame!;
+			const entryPc = frame.pc;
+			cpu.runUntilDepth(0, 1200);
+			const stack = thread.stackOffset();
+			const source = mirrored ? (MAIN_RAM_SIZE - stack + 0x1000) >>> 2 : 0;
+			cpu.writeFrameExecution(0, frame.executionImage.executionDomainId, frame.functionAddress, entryPc);
+			memory.writeRamRecordWord(frame.controlOffset + FrameField.VarargBase, 0xb0000000 | source);
+			memory.writeRamRecordWord(frame.controlOffset + FrameField.VarargCount, 0xa0000001);
+			memory.writeRamRecordWord(frame.controlOffset + FrameField.Top, 0xc0000000);
+			if (mirrored) {
+				memory.writeRamRecordWord(stack + source * 4, 73);
+				memory.writeRamRecordByte(stack + thread.stackRegisters.capacity() * 4 + source, ValueTag.Integer);
+			}
+			cpu.runUntilDepth(0, 10);
+			assert.equal(frame.registers.get(1), valueInteger(mirrored ? 73 : 7));
+			assert.equal(memory.readRamRecordWord(frame.controlOffset + FrameField.Top), 0xc0000002);
+		}
+	});
+
+	test(`open RET uses the physical value frontier (${backend})`, () => {
+		const text = new Uint8Array(INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.RET, 0, 0, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }] });
+		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const frame = cpu.rootThread.currentFrame!;
+		frame.registers.setInteger(0, 7);
+		frame.registers.setInteger(1, 14);
+		frame.registers.setInteger(2, 21);
+		memory.writeRamRecordWord(frame.controlOffset + FrameField.Top, 0x80000002);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		const values: Value[] = [];
+		cpu.readCompletionValues(values);
+		assert.deepEqual(values, [valueInteger(7), valueInteger(14)]);
 	});
 
 	test(`only the protected target owns completion, including after snapshot restore (${backend})`, () => {

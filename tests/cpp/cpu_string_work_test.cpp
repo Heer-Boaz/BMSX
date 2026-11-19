@@ -86,7 +86,7 @@ void selectAndChar(bool scalar) {
 				if (wanted != 1 && !(wanted == 0 && selector == 33)) require(frame.registers.get(0) == expected, "negative select clips to valid argument storage even at INT_MIN");
 				const int available = selector == 33 ? 0 : selector == -1 || selector == 32 ? 1 : 32;
 				const int placed = wanted == 0 ? available : wanted - 1;
-				require(frame.top == placed, "select preserves open and fixed receiving ranges");
+				require(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == placed, "select preserves open and fixed receiving ranges");
 				for (int i = available; i < placed; ++i) require(frame.registers.get(i) == valueNil(), "select retains requested nil padding");
 			}
 		} else {

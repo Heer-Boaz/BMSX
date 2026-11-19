@@ -194,12 +194,12 @@ void generatedMemoryBoundaries() {
 		}
 		for (auto* machine : {&native, &scalar}) {
 			auto& current = *machine->cpu.activeThread()->frameAtDepth(0);
-			current.top = 0;
+			current.writeControl(bmsx::FrameField::Top, 0);
 			current.registers.set(1, valueInteger(0xfffffffc - (displaced ? 1020u : 0u)));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
 			require(machine->cpu.runUntilDepth(0, 20) == RunResult::Halted, "a generated memory fault reaches the ordinary exception owner");
 			require(machine->cpu.readEpcWord() == machine->rom.textAddress + INSTRUCTION_BYTES
-				&& current.top == 5 && machine->memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == 0xfffffffcu,
+				&& static_cast<bmsx::i32>(current.readControl(bmsx::FrameField::Top)) == 5 && machine->memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == 0xfffffffcu,
 				"failed memory instructions retain prefix EPC, committed register top and first fault address");
 			require(current.registers.get(0) == valueFloat(3.25f), "a fault does not publish a failed load result");
 			require(machine->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR, "memory side exits preserve bus exceptions");
@@ -367,10 +367,10 @@ void generatedBusOrdering() {
 			++static_cast<Device*>(context)->writes;
 		});
 		machine.memory.mapIoWriteReady(port, [](void* context, u32, MappedBusSignals) { return static_cast<Device*>(context)->ready; });
-		frame.top = 0; frame.registers.set(1, valueInteger(port));
+		frame.writeControl(bmsx::FrameField::Top, 0); frame.registers.set(1, valueInteger(port));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
 		require(cpu.runUntilDepth(0, 20) == RunResult::Halted && cpu.captureRuntimeState().memoryWriteBlocked
-			&& machine.memory.readBusFaultSequence() == 0u && frame.top == 5 && device.writes == 0,
+			&& machine.memory.readBusFaultSequence() == 0u && static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 5 && device.writes == 0,
 			"a not-ready MMIO store blocks before width validation or any write");
 		device.ready = true; cpu.resumeMemoryWrite(port);
 		require(cpu.runUntilDepth(0, 20) == RunResult::Halted && machine.memory.readBusFaultSequence() == 1u && device.writes == 0,
@@ -424,13 +424,13 @@ void generatedMemoryMayRetireExecutingSource() {
 			source.memory.writeBytes(DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES, source.replacement.data(), source.replacement.size());
 			return 11;
 		});
-		frame.top = 0;
+		frame.writeControl(bmsx::FrameField::Top, 0);
 		frame.registers.set(0, valueInteger(readLE32(source.replacement.data())));
 		frame.registers.set(1, valueInteger(load ? port : DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		require(cpu.runUntilDepth(0, grant) == RunResult::Yielded
 			&& frame.readControl(bmsx::FrameField::Pc) == DYNAMIC_RAM_BASE + (grant == 5 ? 3u * INSTRUCTION_BYTES : 0u)
-			&& frame.top == (grant == 5 ? 5 : 7)
+			&& static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == (grant == 5 ? 5 : 7)
 			&& frame.registers.get(6) == valueInteger(grant == 5 ? 7 : load ? 11 : readLE32(source.replacement.data())),
 			"a retiring transfer can resume its hot continuation without returning through retired source code");
 		if (!scalar) require(!page.nativeBlocks || !page.nativeBlocks->entries[0], "the current memory entry was retired");
@@ -486,13 +486,13 @@ void fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding() {
 			if (port.fail) throw ReadFailure{73};
 			return 11;
 		});
-		frame.top = 0; frame.registers.set(1, valueInteger(address));
+		frame.writeControl(bmsx::FrameField::Top, 0); frame.registers.set(1, valueInteger(address));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
 		bool caught = false;
 		try { cpu.runUntilDepth(0, 9); }
 		catch (const ReadFailure& error) { caught = error.code == 73; }
 		require(caught && port.reads == 1 && frame.readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 3u * INSTRUCTION_BYTES
-			&& frame.top == 5 && frame.registers.get(0) == valueInteger(7) && frame.registers.get(6) == valueInteger(7)
+			&& static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 5 && frame.registers.get(0) == valueInteger(7) && frame.registers.get(6) == valueInteger(7)
 			&& cpu.instructionBudgetRemaining == 4,
 			"the actual host exception reaches a registered caller with the completed prefix, without retrying the IO read");
 		port.fail = false;
@@ -585,11 +585,11 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 			&& current.registers.get(9) == valueInteger(23) && current.registers.get(11) == valueFloatBits(0x7fc00000)
 			&& current.registers.get(0) == current.registers.get(1) && current.registers.get(8) == current.registers.get(1),
 			"register pressure and pure conversion calls preserve raw references, dependent values and aliases");
-		current.registers.set(1, valueInteger(5)); current.top = 0;
+		current.registers.set(1, valueInteger(5)); current.writeControl(bmsx::FrameField::Top, 0);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
 		require(machine->cpu.runUntilDepth(0, 100) == RunResult::Halted
 			&& current.registers.get(0) == valueInteger(5) && current.registers.get(2) == valueInteger(22)
-			&& current.top == 1 && machine->cpu.readEpcWord() == machine->rom.textAddress + INSTRUCTION_BYTES,
+			&& static_cast<bmsx::i32>(current.readControl(bmsx::FrameField::Top)) == 1 && machine->cpu.readEpcWord() == machine->rom.textAddress + INSTRUCTION_BYTES,
 			"a field side exit publishes the current cached tag and prefix without committing the failed destination");
 	}
 }
@@ -637,7 +637,7 @@ void wordProducerBoundariesMatchCompleteScalarState() {
 					machine->rom.textAddress + entry * INSTRUCTION_BYTES);
 				auto& frame = *machine->cpu.activeThread()->currentFrame;
 				for (int i = 0; i < 13; ++i) frame.registers.set(i, incoming);
-				frame.registers.set(15, valueBool((grant & 1) != 0)); frame.top = 0;
+				frame.registers.set(15, valueBool((grant & 1) != 0)); frame.writeControl(bmsx::FrameField::Top, 0);
 				machine->memory.writeMappedWord(inputAddress, (entry & 1) == 0 ? 0xffffffffu : 0x80000000u);
 			}
 			test::runCpuParity(native.cpu, scalar.cpu, grant);

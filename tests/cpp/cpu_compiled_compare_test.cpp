@@ -144,11 +144,11 @@ void changingSkippedBytesRetireResolvedEdges() {
 		writeInstruction(replacement, 0, static_cast<u8>(wide ? OpCode::WIDE : OpCode::K0), 0, 0, 0);
 		for (auto* machine : {&native, &scalar}) {
 			machine->memory.writeBytes(DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES, replacement.data(), replacement.size());
-			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.top = 0; frame.registers.set(2, valueInteger(73));
+			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.writeControl(bmsx::FrameField::Top, 0); frame.registers.set(2, valueInteger(73));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 			machine->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::EQ)]);
 			require(frame.readControl(bmsx::FrameField::Pc) == DYNAMIC_RAM_BASE + (wide ? 4u : 3u) * INSTRUCTION_BYTES
-				&& frame.registers.get(2) == valueInteger(73) && frame.registers.get(3) == valueInteger(2) && frame.top == 4,
+				&& frame.registers.get(2) == valueInteger(73) && frame.registers.get(3) == valueInteger(2) && static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 4,
 				"only a taken comparison skip decodes the current complete successor without executing it");
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

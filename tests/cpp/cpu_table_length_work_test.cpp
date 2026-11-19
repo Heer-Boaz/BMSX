@@ -156,7 +156,7 @@ void oneGateFrontier() {
 	const auto& block=page->nativeBlocks->entries[(m.rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES];
 	NativeBlockRunState state{};
 	state.registers = r; state.constants = frame->executionImage->constPool.view();
-	state.frame = frame; state.heap = &m.cpu.gcHeap(); state.remainingCycles = 18; state.registerTop = frame->top;
+	state.frame = frame; state.heap = &m.cpu.gcHeap(); state.remainingCycles = 18; state.registerTop = static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top));
 	const auto* exit=block->run(state);
 	require(exit->exit==NativeBlockExit::Continue&&exit->nextPc==m.rom.textAddress+program.starts[3]*INSTRUCTION_BYTES&&state.remainingCycles==-145,
 		"one actual gate invocation returns completed LEN debt before any outer CPU loop can intervene");

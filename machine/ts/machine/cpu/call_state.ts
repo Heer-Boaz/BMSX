@@ -14,8 +14,9 @@ export const enum ProtectedCallKind {
 	XPCallHandler,
 }
 
-export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20 }
-export const FRAME_CONTROL_BYTES = 24;
+export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40 }
+export const FRAME_CONTROL_BYTES = 44;
+const FRAME_WINDOW_MASK = (MAIN_RAM_SIZE >>> 2) - 1;
 const FRAME_COMPLETION = 1;
 const FRAME_EXCEPTION = 2;
 const FRAME_NMI = 4;
@@ -29,20 +30,16 @@ export class CallFrame {
 	public decodedPageBusSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU;
 	/** Host translation admission for the next PC, not checkpoint state. */
 	public compilationEntry = true;
-	public varargBase = 0;
-	public varargCount = 0;
 	public stackBase = 0;
 	public stackCapacity = 0;
 	public closure: Closure = null!;
-	public returnBase = 0;
-	public returnCount = 0;
-	public top = 0;
 	public controlOffset = 0;
 
 	public constructor(public readonly thread: Thread, public previous: CallFrame | null, public readonly controlMemory: Memory) {}
 
 	public bindControl(offset: number): void { this.controlOffset = offset & RAM_RECORD_WORD_MASK; }
-	public initializeControl(fn: number, pc: number, callSite: number, completion: boolean): void {
+	public initializeControl(fn: number, pc: number, callSite: number, completion: boolean,
+		varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number): void {
 		const memory = this.controlMemory, ram = memory.ramData(), offset = this.controlOffset;
 		writeLE32(ram, (offset + FrameField.Function) & RAM_RECORD_WORD_MASK, fn);
 		writeLE32(ram, (offset + FrameField.CallSite) & RAM_RECORD_WORD_MASK, callSite);
@@ -50,9 +47,23 @@ export class CallFrame {
 		writeLE32(ram, (offset + FrameField.Protected) & RAM_RECORD_WORD_MASK, -1);
 		writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, completion ? FRAME_COMPLETION : 0);
 		writeLE32(ram, (offset + FrameField.Pc) & RAM_RECORD_WORD_MASK, pc);
+		writeLE32(ram, (offset + FrameField.VarargBase) & RAM_RECORD_WORD_MASK, varargBase);
+		writeLE32(ram, (offset + FrameField.VarargCount) & RAM_RECORD_WORD_MASK, varargCount);
+		writeLE32(ram, (offset + FrameField.ReturnBase) & RAM_RECORD_WORD_MASK, returnBase);
+		writeLE32(ram, (offset + FrameField.ReturnCount) & RAM_RECORD_WORD_MASK, returnCount);
+		writeLE32(ram, (offset + FrameField.Top) & RAM_RECORD_WORD_MASK, top);
 		const first = Math.min(FRAME_CONTROL_BYTES, MAIN_RAM_SIZE - offset);
 		memory.invalidateRamWrite(offset, first);
 		if (first !== FRAME_CONTROL_BYTES) memory.invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
+	}
+	public get varargBase(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.VarargBase) & FRAME_WINDOW_MASK; }
+	public get varargCount(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.VarargCount) & FRAME_WINDOW_MASK; }
+	public get returnBase(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.ReturnBase) & FRAME_WINDOW_MASK; }
+	public get returnCount(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.ReturnCount) & FRAME_WINDOW_MASK; }
+	public get top(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Top) & FRAME_WINDOW_MASK; }
+	public set top(word: number) {
+		const address = this.controlOffset + FrameField.Top;
+		this.controlMemory.writeRamRecordWord(address, (this.controlMemory.readRamRecordWord(address) & ~FRAME_WINDOW_MASK) | word);
 	}
 	public get pc(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Pc); }
 	public set pc(word: number) { this.controlMemory.writeRamRecordWord(this.controlOffset + FrameField.Pc, word); }

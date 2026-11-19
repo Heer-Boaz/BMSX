@@ -78,6 +78,14 @@ public:
 	}
 	void copyFrom(BasicValueSpan<true> source, size_t destination, size_t first, size_t count) requires (!Constant) {
 		if (count == 0) return;
+		if (!m_mirrored && m_ram && destination + count > m_size) {
+			subspan(destination, count).copyFrom(source, 0, first, count);
+			return;
+		}
+		if (!source.mirrored() && source.ram() && first + count > source.size()) {
+			source = source.subspan(first, count);
+			first = 0;
+		}
 		if (m_mirrored || source.mirrored()) {
 			// Within a bank the source/destination ordering is the logical
 			// payload displacement, including windows straddling RAM's end.
