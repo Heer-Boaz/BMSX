@@ -113,7 +113,7 @@ import {
 	EMPTY_CALL_ARGS,
 	ValueTag,
 	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToString,
-	valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread,
+	valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread, asThread,
 	valueTag, valueToInteger,
 	valueTypeNameForLuaTag,
 	type Value,
@@ -2137,9 +2137,11 @@ export class CPU implements MappedPageInvalidator {
 				this.runBuiltinFunction(registers.getBuiltinFunctionId(a), frame, a, c, argCount);
 				return false;
 			case ValueTag.Closure: {
+				const closure = this.gc.closureAt(registers.getPayload(a));
+				if (closure === null) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 				const pushed = this.pushFrameFromCaller(
 					frame,
-					registers.getClosure(a, this.gc),
+					closure,
 					a + 1,
 					argCount,
 					a,
@@ -3346,10 +3348,13 @@ export class CPU implements MappedPageInvalidator {
 				}
 				this.stringIndexTable = args.registers.get(args.base);
 				break;
-			case BuiltinFunctionId.CoroutineCreate:
-				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Closure) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				out.push(valueThread(this.gc.reference(this.createThread(args.registers.getClosure(args.base, this.gc)))));
+			case BuiltinFunctionId.CoroutineCreate: {
+				const closure = args.length !== 0 && args.registers.getTag(args.base) === ValueTag.Closure
+					? this.gc.closureAt(args.registers.getPayload(args.base)) : null;
+				if (closure === null) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				out.push(valueThread(this.gc.reference(this.createThread(closure))));
 				break;
+			}
 			case BuiltinFunctionId.CoroutineRunning:
 				out.push(valueThread(this.gc.reference(this.activeThread)));
 				out.push(valueBool(this.activeThread === this.rootThread));
@@ -3588,9 +3593,11 @@ export class CPU implements MappedPageInvalidator {
 			: ValueTag.Nil;
 		switch (targetTag) {
 			case ValueTag.Closure: {
+				const closure = this.gc.closureAt(targetRegisters.getPayload(targetRegister));
+				if (closure === null) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 				const frame = this.pushFrameFromCaller(
 					caller,
-					targetRegisters.getClosure(targetRegister, this.gc),
+					closure,
 					argumentBase,
 					argumentCount,
 					0,
@@ -3955,7 +3962,6 @@ export class CPU implements MappedPageInvalidator {
 		const writeValue: CpuSnapshotValueWriter = (offset, value): void => {
 			const tag = valueTag(value); let word = valuePayload(value);
 			switch (tag) {
-				case ValueTag.Closure: word = captureObject(this.gc.object(word) as Closure, CpuSnapshotObjectKind.Closure); break;
 				case ValueTag.Thread: word = captureObject(this.gc.object(word) as Thread, CpuSnapshotObjectKind.Thread); break;
 			}
 			writer.setWord(offset, tag); writer.setWord(offset + 1, word);
@@ -4444,7 +4450,10 @@ export class CPU implements MappedPageInvalidator {
 			if (tag === ValueTag.Table) {
 				const table = this.gc.tableAt(valuePayload(value));
 				if (table !== null) objects.push(table);
-			} else if (tag === ValueTag.Closure || tag === ValueTag.Thread) objects.push(this.gc.object(valuePayload(value)) as Closure | Thread);
+			} else if (tag === ValueTag.Closure) {
+				const closure = this.gc.closureAt(valuePayload(value));
+				if (closure !== null) objects.push(closure);
+			} else if (tag === ValueTag.Thread) objects.push(asThread(value, this.gc));
 		};
 		const addSlots = (slots: ValueSlots, count: number): void => {
 			for (let index = 0; index < count; index += 1) add(slots.get(index));
@@ -4456,13 +4465,7 @@ export class CPU implements MappedPageInvalidator {
 		objects.push(this.rootThread, this.activeThread, this.completionThread);
 		if (this.haltedUntilIrqThread !== null) objects.push(this.haltedUntilIrqThread);
 		for (const versions of this.staticClosuresByAddress.values()) objects.push(...versions);
-		for (const value of this.localRoots) {
-			const tag = valueTag(value);
-			if (tag === ValueTag.Table) {
-				const table = this.gc.tableAt(valuePayload(value));
-				if (table !== null) objects.push(table);
-			} else if (tag === ValueTag.Closure || tag === ValueTag.Thread) objects.push(this.gc.object(valuePayload(value)) as Closure | Thread);
-		}
+		for (const value of this.localRoots) add(value);
 		for (let index = 0; index < this.builtinResultsScratchIndex; index += 1) {
 			const slots = this.builtinResultsScratch.peek(index);
 			for (let valueIndex = 0; valueIndex < slots.length; valueIndex += 1) add(slots.get(valueIndex));

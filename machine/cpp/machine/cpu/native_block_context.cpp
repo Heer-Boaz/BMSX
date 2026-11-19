@@ -55,14 +55,26 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 	// aliases a host frame; every other address uses the aligned RAM ports.
 	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_IMM, MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), GcHeap::nativeCellRecordsOffset());
-	sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R2, 0, SLJIT_R3, 0, SLJIT_IMM, std::countr_zero(UPVALUE_HEAP_BYTES));
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R2), std::countr_zero(sizeof(void*)));
+	emitPhysicalRecordPointer(m_compiler, SLJIT_R3, SLJIT_R2, SLJIT_R0);
 	const auto fields = Upvalue::nativeOffsets();
 	auto* unattached = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), offsetof(GCObject, type));
+	auto* otherRecord = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
+		SLJIT_IMM, static_cast<u8>(ObjType::Upvalue));
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), fields.open);
 	auto* open = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
-	sljit_set_label(unattached, sljit_emit_label(m_compiler));
+	if (instruction.op == static_cast<u8>(OpCode::SETUP)) {
+		auto* closed = sljit_emit_jump(m_compiler, SLJIT_JUMP);
+		sljit_set_label(otherRecord, sljit_emit_label(m_compiler));
+		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, 0);
+		auto* rawCell = sljit_emit_label(m_compiler);
+		sljit_set_label(closed, rawCell);
+		sljit_set_label(unattached, rawCell);
+	} else {
+		auto* rawCell = sljit_emit_label(m_compiler);
+		sljit_set_label(otherRecord, rawCell);
+		sljit_set_label(unattached, rawCell);
+	}
 	if (instruction.op == static_cast<u8>(OpCode::SETUP)) {
 		fault(open, *openWrite, m_cache.state());
 		// The complete aligned cell is on one page. A watch takes the existing

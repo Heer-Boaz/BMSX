@@ -35,24 +35,33 @@ struct Machine {
 	Machine() { cpu.reset(); require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "fixture reaches HALT"); }
 };
 
-u32 checkReferences(CPU& cpu) {
-	const auto state = cpu.gcHeap().captureState([&](const GCObject* object) { return cpu.gcHeap().reference(object); });
-	std::unordered_set<u32> ids;
-	u32 highest = 0;
-	for (u32 id : state.allocations) {
-		require(id != 0 && ids.insert(id).second, "every allocation has one nonzero reference");
-		require(cpu.gcHeap().reference(id >= RAM_BASE ? static_cast<GCObject*>(cpu.gcHeap().tableAt(id)) : cpu.gcHeap().object(id)) == id, "reference round-trips its live allocation");
-		highest = std::max(highest, id);
-	}
-	return highest;
+void checkReferences(CPU& cpu) {
+	auto& heap = cpu.gcHeap();
+	const auto state = heap.captureState([&](const GCObject* object) {
+		const u32 id = heap.reference(object);
+		require(id != 0, "every allocation has a nonzero reference");
+		switch (object->type) {
+			case ObjType::Table: require(heap.tableAt(id) == object, "table address round-trips"); break;
+			case ObjType::Closure: require(heap.closureAt(id) == object, "closure address round-trips"); break;
+			case ObjType::Upvalue: require(heap.cellAt(id) == object, "cell address round-trips"); break;
+			default: require(heap.object(id) == object, "host reference round-trips"); break;
+		}
+		return id;
+	});
+	require(std::unordered_set<u32>(state.allocations.begin(), state.allocations.end()).size() == state.allocations.size(),
+		"each allocation has a distinct reference");
 }
 
 void liveReferencesAndReuse() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
 	static_assert(sizeof(decltype(cpu.gcHeap().reference(cpu.rootThread()))) == sizeof(u32));
-	for (auto* object : {static_cast<GCObject*>(cpu.rootThread()), static_cast<GCObject*>(frame.closure),
-		static_cast<GCObject*>(asClosure(frame.registers.get(1),cpu.gcHeap())), static_cast<GCObject*>(cpu.gcHeap().cellAt(asClosure(frame.registers.get(1),cpu.gcHeap())->captureAddress(0)))})
-		require(cpu.gcHeap().object(cpu.gcHeap().reference(object)) == object, "threads, closures and upvalues have references at construction");
+	const Value captured = frame.registers.get(1);
+	auto* closure = asClosure(captured, cpu.gcHeap());
+	auto* cell = cpu.gcHeap().cellAt(closure->captureAddress(0));
+	require(valuePayload(captured) == closure->address, "the register contains the raw closure address");
+	require(closure->referenceId == 0 && cell->referenceId == 0, "closures and cells have no directory slot");
+	require(cpu.gcHeap().closureAt(cell->address) == nullptr, "a cell address cannot resolve to a closure");
+	checkReferences(cpu);
 	auto* roots = cpu.createTable(512);
 	frame.registers.set(0,valueTable(cpu.gcHeap().reference(roots))); frame.top = 2;
 	ValueStorage slots(400);
@@ -85,8 +94,8 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 	const auto ram = cpu.memory().captureSaveState();
 	const u32 rootsRef = cpu.gcHeap().reference(roots);
 	const Value fourth = roots->getInteger(4);
-	require(std::count(saved.gc.references.begin(), saved.gc.references.end(), 0) == 5,
-		"the five physical tables do not consume directory slots");
+	require(std::count(saved.gc.references.begin(), saved.gc.references.end(), 0) == 8,
+		"physical tables, closures and cells do not consume directory slots");
 	for (int iteration = 0; iteration < 64; ++iteration) {
 		std::array<u32, 12> future{};
 		for (auto& address : future) address = cpu.createTable()->address();

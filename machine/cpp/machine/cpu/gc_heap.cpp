@@ -74,9 +74,6 @@ void GcHeap::reserveReference() {
 	// directory slot and binding a constructed object do not allocate.
 	if (m_freeReference == 0 && m_references.size() == m_references.capacity()) {
 		m_references.reserve(std::max(size_t{64}, m_references.capacity() * 2));
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		m_referenceBase = m_references.data();
-#endif
 	}
 }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -84,12 +81,7 @@ void GcHeap::reserveReference() {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
-size_t GcHeap::nativeReferencesOffset() {
-	static_assert(sizeof(ReferenceSlot) == sizeof(void*));
-	return offsetof(GcHeap, m_referenceBase);
-}
-size_t GcHeap::nativeTableRecordsOffset() { return offsetof(GcHeap, m_tableRecordBase); }
-size_t GcHeap::nativeCellRecordsOffset() { return offsetof(GcHeap, m_cellRecordBase); }
+size_t GcHeap::nativePhysicalRecordsOffset() { return offsetof(GcHeap, m_recordBase); }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -101,13 +93,9 @@ void GcHeap::releaseReference(GCObject* object) {
 	object->referenceId = 0;
 }
 void GcHeap::track(GCObject* object) {
-	if (object->type == ObjType::Upvalue) {
-		auto* cell = static_cast<Upvalue*>(object);
-		m_cellRecords[(cell->address & (MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES)) / UPVALUE_HEAP_BYTES] = cell;
-	}
-	if (object->type == ObjType::Table) {
-		auto* table = static_cast<Table*>(object);
-		m_tableRecords[(table->address() & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES] = table;
+	const u32 address = physicalAddress(object);
+	if (address != 0) {
+		physicalSlot(address) = object;
 	} else if (m_freeReference != 0) {
 		object->referenceId = m_freeReference;
 		m_freeReference = m_references[m_freeReference].nextFree;
@@ -127,7 +115,6 @@ void GcHeap::track(GCObject* object) {
 	m_objects = object;
 }
 Closure* GcHeap::bindClosureRecord(u32 address, const FunctionPrototype& prototype, u32 count, bool canonical) {
-	reserveReference();
 	const auto entry = m_prototypes.try_emplace(prototype, 0u).first;
 	auto* closure = new Closure(memory, address, count, entry->first, canonical);
 	++entry->second;
@@ -330,7 +317,7 @@ void GcHeap::unlink(GCObject* object) {
 	if (object->next) object->next->previous = object->previous;
 }
 void GcHeap::destroyObject(GCObject* object) {
-	if (object->type != ObjType::Table) releaseReference(object);
+	if (object->referenceId != 0) releaseReference(object);
 	switch (object->type) {
 		case ObjType::Garbage:
 			budget.release(static_cast<GarbageAllocation*>(object)->bytes);
@@ -369,7 +356,7 @@ bool GcHeap::sweepRecord(void* context, u32 address) {
 		return false;
 	}
 	if (heap.m_sweep == table) heap.m_sweep = table->next;
-	heap.m_tableRecords[(address & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES] = nullptr;
+	heap.physicalSlot(address) = nullptr;
 	table->freeRecord();
 	heap.unlink(table);
 	heap.destroyObject(table);
@@ -434,10 +421,14 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 					if (sweepGarbage(object)) {
 						if (object->type == ObjType::Upvalue) {
 							const u32 address = static_cast<Upvalue*>(object)->address;
-							m_cellRecords[(address & (MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES)) / UPVALUE_HEAP_BYTES] = nullptr;
+							physicalSlot(address) = nullptr;
 							arena.free(address);
 						}
-						if (object->type == ObjType::Closure) arena.free(static_cast<Closure*>(object)->address);
+						if (object->type == ObjType::Closure) {
+							const u32 address = static_cast<Closure*>(object)->address;
+							physicalSlot(address) = nullptr;
+							arena.free(address);
+						}
 						unlink(object); destroyObject(object);
 					}
 					else {
@@ -493,13 +484,11 @@ void GcHeap::bindRestoredReferences(const GcState& state, const std::vector<GCOb
 	// The old references are retired. Install the saved slots before resolving
 	// any Value or upvalue edge in the newly constructed object graph.
 	m_references.resize(1u + state.freeReferences.size() + std::count_if(state.references.begin(), state.references.end(), [](u32 slot) { return slot != 0; }));
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	m_referenceBase = m_references.data();
-#endif
 	for (size_t i = 0; i < state.references.size(); ++i) {
 		auto* object = objects[state.allocations[i]];
 		object->referenceId = state.references[i];
-		if (object->type != ObjType::Table) m_references[object->referenceId].object = object;
+		if (object->referenceId != 0) m_references[object->referenceId].object = object;
+		else physicalSlot(physicalAddress(object)) = object;
 	}
 	m_freeReference = 0;
 	for (auto it = state.freeReferences.rbegin(); it != state.freeReferences.rend(); ++it) {

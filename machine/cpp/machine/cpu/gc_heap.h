@@ -22,6 +22,10 @@ struct GcState {
 	std::vector<u32> allocations, colors, gray, grayAgain, threads, weak, references, freeReferences;
 };
 
+// Physical records start on an eight-byte boundary, including size-class slots.
+inline constexpr u32 GC_RECORD_ALIGNMENT = 8;
+inline constexpr u32 GC_RECORD_MASK = MAIN_RAM_SIZE - GC_RECORD_ALIGNMENT;
+
 class GcHeap {
 public:
 	GcHeap(CPU& cpu, LuaHeap& budget, Memory& memory, HeapAllocator& arena, StringPool& strings, StringId modeKey)
@@ -30,14 +34,12 @@ public:
 	LuaHeap& budget;
 	Memory& memory;
 	HeapAllocator& arena;
-	Table* tableAt(u32 address) const { return m_tableRecords[(address & RAM_RECORD_WORD_MASK) / Table::HEADER_BYTES]; }
-	Upvalue* cellAt(u32 address) const { return m_cellRecords[(address & (MAIN_RAM_SIZE - UPVALUE_HEAP_BYTES)) / UPVALUE_HEAP_BYTES]; }
-	void forgetPhysicalRecords() {
-		std::fill(m_tableRecords.begin(), m_tableRecords.end(), nullptr);
-		std::fill(m_cellRecords.begin(), m_cellRecords.end(), nullptr);
-	}
+	Table* tableAt(u32 address) const { return attachedRecord<Table, ObjType::Table>(address & ~(Table::HEADER_BYTES - 1)); }
+	Upvalue* cellAt(u32 address) const { return attachedRecord<Upvalue, ObjType::Upvalue>(address & ~(UPVALUE_HEAP_BYTES - 1)); }
+	Closure* closureAt(u32 address) const { return attachedRecord<Closure, ObjType::Closure>(address); }
+	void forgetPhysicalRecords() { std::fill(m_records.begin(), m_records.end(), nullptr); }
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
-		if constexpr (!std::is_same_v<T, Table>) reserveReference();
+		if constexpr (!std::is_same_v<T, Table> && !std::is_same_v<T, Upvalue>) reserveReference();
 		T* object;
 		if constexpr (std::is_same_v<T, Table>) object = m_tables.construct(std::forward<Args>(args)...);
 		else object = new T(std::forward<Args>(args)...);
@@ -50,19 +52,20 @@ public:
 	u32 nextObjectHashId() const { return m_nextObjectHashId; }
 	// Only the host-backed allocations still use directory slots.
 	u32 reference(const GCObject* object) const {
-		return object->type == ObjType::Table ? static_cast<const Table*>(object)->address() : object->referenceId;
+		const u32 address = physicalAddress(object);
+		return address != 0 ? address : object->referenceId;
 	}
 	u32 reference(const Table* table) const { return table->address(); }
+	u32 reference(const Closure* closure) const { return closure->address; }
 	GCObject* object(u32 reference) const { return m_references[reference].object; }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	static size_t nativeReferencesOffset();
-	static size_t nativeTableRecordsOffset();
-	static size_t nativeCellRecordsOffset();
+	static size_t nativePhysicalRecordsOffset();
 #endif
 	uint32_t hash(Value value) const {
 		switch (valueTag(value)) {
-			case ValueTag::Table: return scalarValueHash(valueInteger(static_cast<i32>(valuePayload(value))));
-			case ValueTag::Closure: case ValueTag::Thread:
+			case ValueTag::Table: case ValueTag::Closure:
+				return scalarValueHash(valueInteger(static_cast<i32>(valuePayload(value))));
+			case ValueTag::Thread:
 				return object(valuePayload(value))->hashId * 2654435761u;
 			default: return scalarValueHash(value);
 		}
@@ -100,6 +103,19 @@ public:
 	bool markValue(Value value);
 	bool markObject(GCObject* object);
 private:
+	static u32 physicalAddress(const GCObject* object) {
+		switch (object->type) {
+			case ObjType::Table: return static_cast<const Table*>(object)->address();
+			case ObjType::Closure: return static_cast<const Closure*>(object)->address;
+			case ObjType::Upvalue: return static_cast<const Upvalue*>(object)->address;
+			default: return 0;
+		}
+	}
+	GCObject*& physicalSlot(u32 address) { return m_records[(address & GC_RECORD_MASK) / GC_RECORD_ALIGNMENT]; }
+	template<class T, ObjType kind> T* attachedRecord(u32 address) const {
+		auto* object = m_records[(address & GC_RECORD_MASK) / GC_RECORD_ALIGNMENT];
+		return object && object->type == kind ? static_cast<T*>(object) : nullptr;
+	}
 	union ReferenceSlot {
 		GCObject* object;
 		u32 nextFree;
@@ -130,23 +146,18 @@ private:
 	ObjectStoragePool<Table> m_tables;
 	// Map nodes are stable across rehash; erasure is tied to the last closure.
 	std::unordered_map<FunctionPrototype, size_t, FunctionPrototypeHash> m_prototypes;
-	std::vector<Table*> m_tableRecords = std::vector<Table*>(MAIN_RAM_SIZE / Table::HEADER_BYTES);
-	std::vector<Upvalue*> m_cellRecords = std::vector<Upvalue*>(MAIN_RAM_SIZE / UPVALUE_HEAP_BYTES);
+	std::vector<GCObject*> m_records = std::vector<GCObject*>(MAIN_RAM_SIZE / GC_RECORD_ALIGNMENT);
 	std::vector<ReferenceSlot> m_references{{.object = nullptr}};
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	// Published address of this owner's current directory allocation. Native
-	// code reloads it; reserve/restore never leave cached directory pointers.
-	ReferenceSlot* m_referenceBase = m_references.data();
-	Table* const* const m_tableRecordBase = m_tableRecords.data();
-	Upvalue* const* const m_cellRecordBase = m_cellRecords.data();
+	GCObject* const* const m_recordBase = m_records.data();
 #endif
 	u32 m_freeReference = 0;
 };
 
 inline Table* asTable(Value value, const GcHeap& heap) { return heap.tableAt(valuePayload(value)); }
-inline Closure* asClosure(Value value, const GcHeap& heap) { return static_cast<Closure*>(heap.object(valuePayload(value))); }
+inline Closure* asClosure(Value value, const GcHeap& heap) { return heap.closureAt(valuePayload(value)); }
 inline Thread* asThread(Value value, const GcHeap& heap) { return static_cast<Thread*>(heap.object(valuePayload(value))); }
 inline uint32_t valueObjectHashId(Value value, const GcHeap& heap) {
-	return valueIsTable(value) ? valuePayload(value) : heap.object(valuePayload(value))->hashId;
+	return valueIsTable(value) || valueIsClosure(value) ? valuePayload(value) : heap.object(valuePayload(value))->hashId;
 }
 } // namespace bmsx

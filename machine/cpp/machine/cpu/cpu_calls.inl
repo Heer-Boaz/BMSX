@@ -18,7 +18,9 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
 	const int argCount = decodeValueCount(b, std::max(frame.top - a - 1, 0));
 	const Value callee = frame.registers.get(a);
 	if (valueIsClosure(callee)) {
-		CallFrame* pushed = pushFrame(frame, asClosure(callee, m_heap), a + 1, argCount, a, c, false,
+		Closure* closure = asClosure(callee, m_heap);
+		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
+		CallFrame* pushed = pushFrame(frame, closure, a + 1, argCount, a, c, false,
 			frame.pc - INSTRUCTION_BYTES);
 		return pushed != nullptr;
 	}

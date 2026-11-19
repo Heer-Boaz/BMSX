@@ -65,13 +65,13 @@ return function() return root end
 	const result = state.completionValues[0];
 	const graph = state.snapshot;
 	assert.equal(graph.word(result), ValueTag.Closure);
-	const closure = graph.objectWord(graph.word(result + 1));
-	assert.equal(graph.word(closure), CpuSnapshotObjectKind.Closure);
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
 	const descriptor = asClosure(values[0], cpu.gc);
-	assert.equal(graph.word(closure + CpuSnapshotClosure.Record), descriptor.address);
-	assert.equal(cpu.gc.cellAt(descriptor.captureAddress(0)).hashId, descriptor.hashId + 1);
+	assert.equal(graph.word(result + 1), descriptor.address);
+	assert.ok(graph.objectWords.some(offset => graph.word(offset) === CpuSnapshotObjectKind.Closure
+		&& graph.word(offset + CpuSnapshotClosure.Record) === descriptor.address));
+	assert.equal(cpu.gc.cellAt(descriptor.captureAddress(0))!.hashId, descriptor.hashId + 1);
 });
 
 test('repeated restore replays the full CPU state independently of fresh execution grants', () => {

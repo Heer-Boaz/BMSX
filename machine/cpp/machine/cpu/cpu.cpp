@@ -818,7 +818,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		const auto tag = valueTag(value);
 		u32 payload = valuePayload(value);
 		switch (tag) {
-			case ValueTag::Thread: case ValueTag::Closure:
+			case ValueTag::Thread:
 				payload = captureObject(m_heap.object(payload)); break;
 			default: break;
 		}
@@ -1376,10 +1376,12 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			}
 			m_stringIndexTable = args[0];
 			break;
-		case BuiltinFunctionId::CoroutineCreate:
-			if (args.empty() || !valueIsClosure(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			out.push_back(valueThread(m_heap.reference(createThread(asClosure(args[0], m_heap)))));
+		case BuiltinFunctionId::CoroutineCreate: {
+			Closure* closure = !args.empty() && valueIsClosure(args[0]) ? asClosure(args[0], m_heap) : nullptr;
+			if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			out.push_back(valueThread(m_heap.reference(createThread(closure))));
 			break;
+		}
 		case BuiltinFunctionId::CoroutineRunning:
 			out.push_back(valueThread(m_heap.reference(m_activeThread)));
 			out.push_back(valueBool(m_activeThread == m_rootThread));
@@ -1582,7 +1584,9 @@ void CPU::invokeProtectedTarget(size_t continuationIndex, Value target, int argu
 	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 	CallFrame& caller = *continuation.caller;
 	if (valueIsClosure(target)) {
-		auto* frame = pushFrame(caller, asClosure(target, m_heap), argumentBase, argumentCount, 0, 0, false, caller.pc - INSTRUCTION_BYTES);
+		Closure* closure = asClosure(target, m_heap);
+		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
+		auto* frame = pushFrame(caller, closure, argumentBase, argumentCount, 0, 0, false, caller.pc - INSTRUCTION_BYTES);
 		if (frame) frame->protectedContinuationIndex = static_cast<i32>(continuationIndex);
 		return;
 	}

@@ -1,17 +1,19 @@
-import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { MAIN_RAM_SIZE } from '../../spec/bmsx/memory_map';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
 import { GcObject, GcKind, GarbageAllocation } from './gc_object';
-import { Closure, Upvalue, UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, FunctionPrototypePool, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
+import { type Closure, type Upvalue, UPVALUE_HEAP_BYTES, UPVALUE_ADDRESS_MASK, FunctionPrototypePool, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
 import { Table, TableRecords } from './table';
 import { Thread, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
-import { ValueTag, valueTag, valuePayload, scalarValueHash, valueInteger, valueIsTable, valueNil, type Value } from './value';
+import { ValueTag, valueTag, valuePayload, scalarValueHash, valueInteger, valueNil, type Value } from './value';
 import { ValueSlots } from './value_slots';
 import type { LuaHeap } from './lua_heap';
 import { ceilDiv4 } from '../common/numeric';
 import type { GcDiagnostics } from './gc_diagnostics';
 
+const GC_RECORD_ALIGNMENT = 8;
+const GC_RECORD_MASK = MAIN_RAM_SIZE - GC_RECORD_ALIGNMENT;
 export const GC_STEP_WORDS = 4096;
 export const GC_ASSIST_BYTES = 256;
 export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
@@ -46,7 +48,8 @@ export class GcHeap {
 		const tag = valueTag(value);
 		switch (tag) {
 			case ValueTag.Table: return this.isAlive(this.tableAt(valuePayload(value)));
-			case ValueTag.Closure: case ValueTag.Thread: return this.isAlive(this.object(valuePayload(value)));
+			case ValueTag.Closure: return this.isAlive(this.closureAt(valuePayload(value)));
+			case ValueTag.Thread: return this.isAlive(this.object(valuePayload(value)));
 			default: return true;
 		}
 	};
@@ -59,35 +62,54 @@ export class GcHeap {
 	};
 	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory, public readonly arena: HeapAllocator, private readonly modeKey: number) {}
 	public readonly tables = new TableRecords(this);
-	private readonly tableRecords = new Array<Table | null>(MAIN_RAM_SIZE / TableRecords.HEADER_BYTES).fill(null);
-	public tableAt(address: number): Table | null {
-		return this.tableRecords[(address & RAM_RECORD_WORD_MASK) >>> 5];
+	// Host attachments share one position for each aligned physical record start.
+	private readonly records = new Array<GcObject | null>(MAIN_RAM_SIZE / GC_RECORD_ALIGNMENT).fill(null);
+	private physicalAddress(object: GcObject): number {
+		switch (object.gcKind) {
+			case GcKind.Table: return (object as Table).address;
+			case GcKind.Closure: return (object as Closure).address;
+			case GcKind.Upvalue: return (object as Upvalue).address;
+			default: return 0;
+		}
 	}
-	private readonly cellRecords = new Array<Upvalue | null>(MAIN_RAM_SIZE / UPVALUE_HEAP_BYTES).fill(null);
-	public cellAt(address: number): Upvalue | null { return this.cellRecords[(address & UPVALUE_ADDRESS_MASK) >>> 4]; }
-	public forgetPhysicalRecords(): void { this.tableRecords.fill(null); this.cellRecords.fill(null); }
-	public reference(object: GcObject): number { return object.gcKind === GcKind.Table ? (object as Table).address : object.referenceId; }
+	public tableAt(address: number): Table | null {
+		const object = this.records[(address & (MAIN_RAM_SIZE - TableRecords.HEADER_BYTES)) >>> 3];
+		return object?.gcKind === GcKind.Table ? object as Table : null;
+	}
+	public cellAt(address: number): Upvalue | null {
+		const object = this.records[(address & UPVALUE_ADDRESS_MASK) >>> 3];
+		return object?.gcKind === GcKind.Upvalue ? object as Upvalue : null;
+	}
+	public closureAt(address: number): Closure | null {
+		const object = this.records[(address & GC_RECORD_MASK) >>> 3];
+		return object?.gcKind === GcKind.Closure ? object as Closure : null;
+	}
+	public forgetPhysicalRecords(): void { this.records.fill(null); }
+	public reference(object: GcObject): number {
+		const address = this.physicalAddress(object);
+		return address !== 0 ? address : object.referenceId;
+	}
 	/** Consumes a live id produced by this heap; the Value tag supplies its kind. */
 	public object(reference: number): GcObject { return this.references[reference] as GcObject; }
 	public hash(value: Value): number {
 		switch (valueTag(value)) {
-			case ValueTag.Table: return scalarValueHash(valueInteger(valuePayload(value)));
-			case ValueTag.Closure: case ValueTag.Thread:
+			case ValueTag.Table: case ValueTag.Closure: return scalarValueHash(valueInteger(valuePayload(value)));
+			case ValueTag.Thread:
 				return Math.imul(this.object(valuePayload(value)).hashId, 2654435761) >>> 0;
 			default: return scalarValueHash(value);
 		}
 	}
-	public keyIdentity(value: Value): number { return valueIsTable(value) ? valuePayload(value) : this.object(valuePayload(value)).hashId; }
+	public keyIdentity(value: Value): number {
+		const tag = valueTag(value);
+		return tag === ValueTag.Table || tag === ValueTag.Closure ? valuePayload(value) : this.object(valuePayload(value)).hashId;
+	}
 	public track(object: GcObject): void {
-		if (object.gcKind === GcKind.Upvalue) {
-			const cell = object as Upvalue;
-			this.cellRecords[(cell.address & UPVALUE_ADDRESS_MASK) >>> 4] = cell;
-		}
 		if (object.gcKind === GcKind.Closure) {
 			const closure = object as Closure;
 			closure.prototypeRecord = this.prototypes.retain(closure.prototypeRecord);
 		}
-		if (object.gcKind === GcKind.Table) this.tableRecords[((object as Table).address & RAM_RECORD_WORD_MASK) >>> 5] = object as Table;
+		const address = this.physicalAddress(object);
+		if (address !== 0) this.records[(address & GC_RECORD_MASK) >>> 3] = object;
 		else if (this.freeReference !== 0) {
 			object.referenceId = this.freeReference;
 			this.freeReference = this.references[this.freeReference] as number;
@@ -108,12 +130,14 @@ export class GcHeap {
 		this.memory.writeRamRecordWord(closure.address + CLOSURE_PROTOTYPE_ADDRESS, record.functionAddress);
 		this.prototypes.release(previous);
 	}
-	private releaseReference(object: GcObject): void {
+	private releaseHostMetadata(object: GcObject): void {
 		if (object.gcKind === GcKind.Closure) this.prototypes.release((object as Closure).prototypeRecord);
 		const reference = object.referenceId;
-		this.references[reference] = this.freeReference;
-		this.freeReference = reference;
-		object.referenceId = 0;
+		if (reference !== 0) {
+			this.references[reference] = this.freeReference;
+			this.freeReference = reference;
+			object.referenceId = 0;
+		}
 	}
 	private unlink(object: GcObject): void {
 		if (object.gcPrevious !== null) object.gcPrevious.gcNext = object.gcNext;
@@ -134,7 +158,8 @@ export class GcHeap {
 	public markValue(value: Value): boolean {
 		switch (valueTag(value)) {
 			case ValueTag.Table: return this.markObject(this.tableAt(valuePayload(value)));
-			case ValueTag.Closure: case ValueTag.Thread: return this.markObject(this.object(valuePayload(value)));
+			case ValueTag.Closure: return this.markObject(this.closureAt(valuePayload(value)));
+			case ValueTag.Thread: return this.markObject(this.object(valuePayload(value)));
 			case ValueTag.String: this.cpu.stringPool.markReachable(valuePayload(value)); break;
 		}
 		return false;
@@ -258,7 +283,7 @@ export class GcHeap {
 		}
 		if (this.sweep === table) this.sweep = table.gcNext;
 		const bytes = this.tables.getTrackedHeapBytes(table.address);
-		this.tableRecords[(address & RAM_RECORD_WORD_MASK) >>> 5] = null;
+		this.records[(address & GC_RECORD_MASK) >>> 3] = null;
 		this.tables.freeRecord(table.address);
 		this.unlink(table);
 		this.budget.release(bytes);
@@ -311,12 +336,16 @@ export class GcHeap {
 						if (this.sweepGarbage(object)) {
 							if (object.gcKind === GcKind.Upvalue) {
 								const address = (object as Upvalue).address;
-								this.cellRecords[(address & UPVALUE_ADDRESS_MASK) >>> 4] = null;
+								this.records[(address & GC_RECORD_MASK) >>> 3] = null;
 								this.arena.free(address);
 							}
-							if (object.gcKind === GcKind.Closure) this.arena.free((object as Closure).address);
+							if (object.gcKind === GcKind.Closure) {
+								const address = (object as Closure).address;
+								this.records[(address & GC_RECORD_MASK) >>> 3] = null;
+								this.arena.free(address);
+							}
 							this.unlink(object);
-							this.releaseReference(object);
+							this.releaseHostMetadata(object);
 							this.budget.release(bytes);
 						} else {
 							object.gcColor = this.white;
@@ -366,7 +395,7 @@ export class GcHeap {
 			if (object.restored) object.restored = false;
 			else {
 				this.unlink(object);
-				if (object.gcKind !== GcKind.Table) this.releaseReference(object);
+				this.releaseHostMetadata(object);
 			}
 			object = next;
 		}
@@ -377,7 +406,8 @@ export class GcHeap {
 		for (let i = 0; i < state.references.length; ++i) {
 			const object = objects[state.allocations[i]];
 			object.referenceId = state.references[i];
-			if (object.gcKind !== GcKind.Table) this.references[object.referenceId] = object;
+			if (object.referenceId !== 0) this.references[object.referenceId] = object;
+			else this.records[(this.physicalAddress(object) & GC_RECORD_MASK) >>> 3] = object;
 		}
 		this.freeReference = 0;
 		for (let i = state.freeReferences.length - 1; i >= 0; --i) {

@@ -1,4 +1,4 @@
-import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { CLOSURE_CAPTURE_WORDS, closureRecordBytes, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, Upvalue } from '../../machine/ts/machine/cpu/closure';
@@ -6,6 +6,7 @@ import { asClosure, valueFloatBits, valueInteger, valueNil } from '../../machine
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { test } from 'node:test';
 import { heapAllocationBytes } from '../../machine/ts/machine/cpu/heap_allocator';
+import { GcKind } from '../../machine/ts/machine/cpu/gc_object';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
 import { asTable, valueTable, valueBuiltinFunction, ValueTag } from '../../machine/ts/machine/cpu/value';
@@ -29,18 +30,31 @@ function machine(): CPU {
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	return cpu;
 }
-function checkDirectory(cpu: CPU): number {
-	const ids = cpu.gc.captureState(object => cpu.gc.reference(object)).allocations;
+function checkReferences(cpu: CPU): void {
+	const { gc } = cpu;
+	const ids = gc.captureState(object => {
+		const id = gc.reference(object);
+		assert.notEqual(id, 0);
+		switch (object.gcKind) {
+			case GcKind.Table: assert.equal(gc.tableAt(id), object); break;
+			case GcKind.Closure: assert.equal(gc.closureAt(id), object); break;
+			case GcKind.Upvalue: assert.equal(gc.cellAt(id), object); break;
+			default: assert.equal(gc.object(id), object); break;
+		}
+		return id;
+	}).allocations;
 	assert.equal(new Set(ids).size, ids.length);
-	for (const id of ids) { assert.notEqual(id, 0); assert.equal(cpu.gc.reference(id >= RAM_BASE ? cpu.gc.tableAt(id)! : cpu.gc.object(id)), id); }
-	return Math.max(...ids);
 }
 
 test('32-bit object payloads survive directory growth and collection', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	const captured = frame.registers.getClosure(1, cpu.gc);
-	for (const object of [cpu.rootThread, frame.closure, captured, cpu.gc.cellAt(captured.captureAddress(0))])
-		assert.equal(cpu.gc.object(cpu.gc.reference(object)), object);
+	const cell = cpu.gc.cellAt(captured.captureAddress(0))!;
+	assert.equal(frame.registers.getPayload(1), captured.address);
+	assert.equal(captured.referenceId, 0);
+	assert.equal(cell.referenceId, 0);
+	assert.equal(cpu.gc.closureAt(cell.address), null);
+	checkReferences(cpu);
 	const roots = cpu.createTable(512), slots = new ValueStorage(400);
 	frame.registers.setTable(0, cpu.gc.reference(roots)); frame.top = 2;
 	for (let i = 0; i < slots.capacity; ++i) {
@@ -49,7 +63,7 @@ test('32-bit object payloads survive directory growth and collection', () => {
 	}
 	cpu.collectTrackedHeapBytes();
 	for (let i = 0; i < slots.capacity; ++i) assert.equal(cpu.gc.tableAt(slots.words[i]), asTable(roots.records.getInteger(roots.address, i + 1), cpu.gc));
-	checkDirectory(cpu);
+	checkReferences(cpu);
 });
 
 test('freed ids recycle without reusing the hash identity or retaining the old object', () => {
@@ -78,7 +92,7 @@ test('restore registers identities before edges and releases discarded future id
 	const saved = cpu.captureRuntimeState(), thread = cpu.gc.reference(cpu.rootThread), canonical = cpu.gc.reference(frame.closure);
 	const root = frame.registers.get(0), fourth = roots.records.getInteger(roots.address, 4);
 	const ram = cpu.memory.captureSaveState();
-	assert.equal(saved.gc.references.filter(id => id === 0).length, 5, "physical tables have no directory slots");
+	assert.equal(saved.gc.references.filter(id => id === 0).length, 8, "physical tables, closures and cells have no directory slots");
 	for (let iteration = 0; iteration < 64; ++iteration) {
 		const future = Array.from({ length: 12 }, () => cpu.createTable());
 		cpu.memory.restoreSaveState(ram);
@@ -88,7 +102,7 @@ test('restore registers identities before edges and releases discarded future id
 		assert.equal(cpu.rootThread.currentFrame!.registers.get(0), root);
 		assert.equal(cpu.gc.tables.getInteger(tableAddressPayload(root), 4), fourth);
 		for (const object of future) assert.equal(object.referenceId, 0);
-		checkDirectory(cpu);
+		checkReferences(cpu);
 		assert.deepEqual(cpu.captureRuntimeState(), saved);
 		assert.deepEqual([cpu.createTable().address, cpu.createTable().address], future.slice(0, 2).map(table => table.address));
 		cpu.memory.restoreSaveState(ram);
@@ -105,9 +119,9 @@ test('incremental GC and phase-preserving restore keep the directory synchronize
 	}
 	const phases = new Set<GcPhase>();
 	for (let step = 0; step < 1000; ++step) {
-		cpu.gc.step(); checkDirectory(cpu);
+		cpu.gc.step(); checkReferences(cpu);
 		const saved = cpu.captureRuntimeState(); phases.add(saved.gc.phase);
-		cpu.restoreRuntimeState(saved); checkDirectory(cpu);
+		cpu.restoreRuntimeState(saved); checkReferences(cpu);
 		assert.deepEqual(cpu.captureRuntimeState(), saved);
 		if (!cpu.gc.active()) break;
 	}
