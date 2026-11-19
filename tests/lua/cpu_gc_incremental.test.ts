@@ -3,6 +3,8 @@ import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
+import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
+import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GcPhase, GC_STEP_WORDS } from '../../machine/ts/machine/cpu/gc_heap';
 import { ValueTag, asTable, valueBool, valueInteger, valueNil, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -26,8 +28,10 @@ test('incremental marking preserves changed table edges, metatables and final re
 	const target = asTable(roots.records.getInteger(roots.address, 1000), cpu.gc);
 	const firstWork = cpu.gc.step();
 	assert.ok(firstWork >= GC_STEP_WORDS);
-	assert.equal(cpu.captureRuntimeState().gc.phase, GcPhase.Mark);
+	assert.equal(cpu.gc.phase(), GcPhase.Mark);
 	assert.equal(target.gcColor, 3, 'the mutation really targets an already traced allocation');
+	assert.equal(cpu.memory.readRamRecordByte(target.address + GC_COLOR_OFFSET), 3);
+	assert.equal(cpu.memory.readRamRecordByte(cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET), GcPhase.Mark);
 	const arrayChild = cpu.createTable(), fieldChild = cpu.createTable(), metatable = cpu.createTable();
 	target.records.setInteger(target.address, 1, valueTable(cpu.gc.reference(arrayChild)));
 	target.records.setStringKey(target.address, field, valueTable(cpu.gc.reference(fieldChild)));
@@ -64,8 +68,8 @@ test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing
 	for (let step = 0; step < 1000; ++step) {
 		cpu.gc.step();
 		let state = cpu.captureRuntimeState();
-		phases.add(state.gc.phase);
-		if (state.gc.phase === GcPhase.Sweep && bornDuringSweep === 0) {
+		phases.add(cpu.gc.phase());
+		if (cpu.gc.phase() === GcPhase.Sweep && bornDuringSweep === 0) {
 			const born = cpu.createTable(); bornDuringSweep = born.hashId;
 			const frame = cpu.rootThread.currentFrame!;
 			frame.registers.setTable(1, cpu.gc.reference(born)); frame.top = 2;
@@ -93,7 +97,7 @@ test('allocation assists debit one bounded graph step and retain the pending req
 	cpu.luaHeap.setCollectionTarget(before);
 	cpu.instructionBudgetRemaining = 1;
 	const pending = cpu.createTable();
-	assert.equal(cpu.captureRuntimeState().gc.phase, GcPhase.Mark);
+	assert.equal(cpu.gc.phase(), GcPhase.Mark);
 	assert.ok(cpu.instructionBudgetRemaining < 0);
 	assert.ok(cpu.instructionBudgetRemaining > -2 * GC_STEP_WORDS, 'one large root is indivisible, not the entire graph');
 	assert.equal(cpu.luaHeap.usedBytes(), before + 32);
@@ -119,7 +123,7 @@ test('final remark observes weak-to-strong changes through a shared metatable', 
 	const child = cpu.createTable();
 	weak.records.setInteger(weak.address, 1, valueTable(cpu.gc.reference(child)));
 	cpu.gc.step();
-	assert.equal(cpu.captureRuntimeState().gc.phase, GcPhase.Mark);
+	assert.equal(cpu.gc.phase(), GcPhase.Mark);
 	assert.equal(weak.gcColor, 3);
 	assert.equal(weak.gcWeakListed, true);
 	assert.notEqual(child.gcColor, 3, 'the weak entry has not retained its child');
@@ -141,11 +145,11 @@ test('changed objects wait for a finite second pass and retain later writes acro
 		const target = cpu.rootThread.currentFrame!.registers.getTable(0, cpu.gc);
 		target.records.setInteger(target.address, 1, valueInteger(i));
 		cpu.gc.step();
-		const state = cpu.captureRuntimeState(); phases.add(state.gc.phase);
+		const state = cpu.captureRuntimeState(); phases.add(cpu.gc.phase());
 		const ram = cpu.memory.captureSaveState();
 		cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 		assert.deepEqual(cpu.captureRuntimeState(), state);
-		if (state.gc.phase === GcPhase.Atomic) break;
+		if (cpu.gc.phase() === GcPhase.Atomic) break;
 	}
 	assert.ok(phases.has(GcPhase.MarkAgain));
 	assert.ok(phases.has(GcPhase.Atomic), 'continuous writes cannot restart the first or second pass indefinitely');

@@ -149,9 +149,9 @@ export class Closure extends GcObject {
 		super(GcKind.Closure);
 	}
 	public get heapBytes(): number { return heapAllocationBytes(closureRecordBytes(this.upvalueCount)); }
-	public initializeRecord(): void {
+	public initializeRecord(white: number): void {
 		const flags = (this.prototypeRecord.executionDomainId + 1) | (this.canonical ? 4 : 0);
-		this.memory.writeRamRecordWord(this.address, ValueTag.Closure | (flags << 16));
+		this.memory.writeRamRecordWord(this.address, ValueTag.Closure | (white << 8) | (flags << 16));
 		this.memory.writeRamRecordWord(this.address + CLOSURE_CAPTURE_COUNT, this.upvalueCount);
 		this.memory.writeRamRecordWord(this.address + CLOSURE_PROTOTYPE_ADDRESS, this.prototypeRecord.functionAddress);
 	}

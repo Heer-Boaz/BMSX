@@ -26,7 +26,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	cpu.gc.track(upvalue);
 	const bound = frame.closure;
 	const replacement = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(1), bound.prototypeRecord, 1, false);
-	replacement.initializeRecord();
+	replacement.initializeRecord(cpu.gc.white());
 	replacement.setCaptureAddress(0, upvalue.address);
 	cpu.gc.track(replacement);
 	frame.closureAddress = replacement.address;

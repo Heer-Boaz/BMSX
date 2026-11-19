@@ -142,7 +142,7 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 Closure* CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool canonical, std::span<u32> cells) {
 	const u32 address = m_luaHeap.allocateClosureRecord(count, cells);
 	Closure* closure = m_heap.bindClosureRecord(address, prototype, count, canonical);
-	closure->initializeRecord();
+	closure->initializeRecord(m_heap.white());
 	return closure;
 }
 

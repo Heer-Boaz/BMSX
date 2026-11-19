@@ -124,7 +124,7 @@ void rebuildWork(bool scalar) {
    mode->setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v"))); table->setMetatable(mode);
    table->set(field, valueTable(cpu.gcHeap().reference(cpu.createTable()))); table->set(other, valueTable(cpu.gcHeap().reference(cpu.createTable())));
    r.set(1, valueString(cpu.stringPool().intern("third")));
-   while (cpu.captureRuntimeState().gc.phase != GcPhase::Atomic) cpu.stepHeap(valueNil(), valueNil(), valueNil());
+   while (cpu.gcHeap().phase() != GcPhase::Atomic) cpu.stepHeap(valueNil(), valueNil(), valueNil());
    const auto bytes = cpu.luaHeap().usedBytes();
    cpu.luaHeap().setCollectionTarget(bytes);
    surcharge = 16; capacity = 4;

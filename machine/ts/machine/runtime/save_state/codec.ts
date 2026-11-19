@@ -42,7 +42,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 
 // One current internal layout, deliberately without a legacy reader.
-const SAVE_STATE_SIGNATURE = 0x46534d42; // BMSF
+const SAVE_STATE_SIGNATURE = 0x47534d42; // BMSG
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1284,13 +1284,9 @@ function readApuOutputState(reader: BinaryReader): ApuOutputState {
 }
 
 function writeGcState(writer: BinarySink, state: GcState): void {
-	writer.u32(state.phase);
-	writer.u32(state.white);
 	writer.i32(state.sweep);
 	writer.u32(state.allocations.length);
 	writer.u32s(state.allocations);
-	writer.u32(state.colors.length);
-	writer.u32s(state.colors);
 	writer.u32(state.gray.length);
 	writer.u32s(state.gray);
 	writer.u32(state.grayAgain.length);
@@ -1306,8 +1302,7 @@ function writeGcState(writer: BinarySink, state: GcState): void {
 }
 function readGcState(reader: BinaryReader): GcState {
 	return {
-		phase: reader.u32(), white: reader.u32(), sweep: reader.i32(),
-		allocations: Array.from(reader.u32s(reader.u32())), colors: Array.from(reader.u32s(reader.u32())),
+		sweep: reader.i32(), allocations: Array.from(reader.u32s(reader.u32())),
 		gray: Array.from(reader.u32s(reader.u32())), grayAgain: Array.from(reader.u32s(reader.u32())),
 		threads: Array.from(reader.u32s(reader.u32())),
 		weak: Array.from(reader.u32s(reader.u32())),

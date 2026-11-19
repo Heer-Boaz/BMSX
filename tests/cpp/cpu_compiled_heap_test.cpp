@@ -270,7 +270,7 @@ void allocationRoots(bool closure) {
 	for (auto* m : {&native, &scalar}) {
 		auto& strings = m->cpu.stringPool();
 		auto r = m->cpu.activeThread()->frameAtDepth(0)->registers; Table* retained = asTable(r.get(7), m->cpu.gcHeap());
-		require(m->cpu.collecting() && retained->gcColor == 3, "the allocation assist traced the moved reference before returning");
+		require(m->cpu.collecting() && retained->gcColor() == 3, "the allocation assist traced the moved reference before returning");
 		m->cpu.collectHeap();
 		require(retained->getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")), "a moved reference remains rooted across allocation");
 		if (closure) require(m->cpu.readClosureUpvalue(asClosure(r.get(0), m->cpu.gcHeap()), 0) == r.get(7), "capture observes the published reference value");

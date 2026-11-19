@@ -97,7 +97,7 @@ u32 LuaHeap::allocateClosureRecord(u32 captures, std::span<u32> cells) {
 			if (count == cells.size()) {
 				auto& memory = m_cpu.memory();
 				for (u32 cell : cells) {
-					memory.writeRamRecordWord(cell, UPVALUE_RECORD_KIND);
+					memory.writeRamRecordWord(cell, UPVALUE_RECORD_KIND | (static_cast<u32>(m_cpu.gcHeap().white()) << 8u));
 					memory.writeRamRecordWord(cell + 4u, 0u);
 					memory.writeRamRecordWord(cell + 8u, 0u);
 					memory.writeRamRecordWord(cell + 12u, 0u);

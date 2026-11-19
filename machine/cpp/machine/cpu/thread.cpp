@@ -28,7 +28,7 @@ void Thread::initializeRecord(Closure* entry) {
 	auto* record = heap.memory.ramData() + offset;
 	const u32 block = read(ThreadField::StackBlock);
 	std::fill_n(record, THREAD_HEAP_BYTES, u8{0});
-	writeLE32(record, THREAD_RECORD_KIND);
+	writeLE32(record, THREAD_RECORD_KIND | (static_cast<u32>(heap.white()) << 8u));
 	writeLE32(record + static_cast<u32>(ThreadField::Entry), entry ? entry->address : 0u);
 	writeLE32(record + static_cast<u32>(ThreadField::StackBlock), block);
 	writeLE32(record + static_cast<u32>(ThreadField::StackCapacity), THREAD_INITIAL_VALUES);

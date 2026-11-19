@@ -197,7 +197,7 @@ void incrementalStateAndBarriers() {
 	}
 	for (int i = 0; i < 4200; ++i) cpu.stringPool().intern("dead-" + std::to_string(i) + std::string(16, 'x'));
 	auto* target = asTable(roots->getInteger(1000), cpu.gcHeap());
-	require(cpu.stepHeap(valueNil(), valueNil(), valueNil()) >= GC_STEP_WORDS && target->gcColor == 3,
+	require(cpu.stepHeap(valueNil(), valueNil(), valueNil()) >= GC_STEP_WORDS && target->gcColor() == 3,
 		"mutations target a black allocation while marking is incomplete");
 	auto* child = cpu.createTable();
 	target->setInteger(1, valueTable(cpu.gcHeap().reference(child)));
@@ -207,8 +207,8 @@ void incrementalStateAndBarriers() {
 	u32 phases = 0, bornId = 0;
 	for (int step = 0; step < 1000; ++step) {
 		auto state = cpu.captureRuntimeState();
-		phases |= 1u << static_cast<u32>(state.gc.phase);
-		if (state.gc.phase == GcPhase::Sweep && bornId == 0) {
+		phases |= 1u << static_cast<u32>(cpu.gcHeap().phase());
+		if (cpu.gcHeap().phase() == GcPhase::Sweep && bornId == 0) {
 			auto* born = cpu.createTable(); bornId = born->hashId;
 			auto* frame = cpu.rootThread()->currentFrame;
 			frame->registers.set(1, valueTable(cpu.gcHeap().reference(born))); frame->writeControl(bmsx::FrameField::Top, 2);
@@ -218,12 +218,12 @@ void incrementalStateAndBarriers() {
 		cpu.memory().restoreSaveState(ram); cpu.restoreRuntimeState(state);
 		const auto after = cpu.captureRuntimeState();
 		require(std::ranges::equal(state.snapshot.words(), after.snapshot.words())
-			&& state.gc.phase == after.gc.phase && state.gc.white == after.gc.white
 			&& state.gc.sweep == after.gc.sweep && state.gc.allocations == after.gc.allocations
-			&& state.gc.colors == after.gc.colors && state.gc.gray == after.gc.gray
+			&& state.gc.gray == after.gc.gray
 			&& state.gc.grayAgain == after.gc.grayAgain
 			&& state.gc.threads == after.gc.threads && state.gc.weak == after.gc.weak,
 			"restore preserves collector cursors, queues and dead allocation work, not dead graph pointers");
+		require(cpu.memory().captureSaveState().ram == ram.ram, "restoration never rewrites raw mark colors or phase");
 		if (!cpu.collecting()) break;
 		cpu.stepHeap(valueNil(), valueNil(), valueNil());
 	}
@@ -257,8 +257,8 @@ void incrementalSharedWeakMode() {
 	auto* child = cpu.createTable();
 	weak->setInteger(1, valueTable(cpu.gcHeap().reference(child)));
 	cpu.stepHeap(valueNil(), valueNil(), valueNil());
-	require(cpu.captureRuntimeState().gc.phase == GcPhase::Mark && weak->gcColor == 3
-		&& weak->gcWeakListed && child->gcColor != 3, "weak entry has not retained its child before the mode change");
+	require(cpu.gcHeap().phase() == GcPhase::Mark && weak->gcColor() == 3
+		&& weak->gcWeakListed && child->gcColor() != 3, "weak entry has not retained its child before the mode change");
 	metatable->setStringKey(modeKey, valueNil());
 	while (cpu.collecting()) cpu.stepHeap(valueNil(), valueNil(), valueNil());
 	require(weak->getInteger(1) == valueTable(cpu.gcHeap().reference(child)), "atomic remark observes the shared metatable change");
@@ -281,13 +281,13 @@ void secondMarkPassAndCredit() {
 		auto* target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
 		target->setInteger(1, valueInteger(i));
 		cpu.stepHeap(valueNil(), valueNil(), valueNil());
-		const auto state = cpu.captureRuntimeState(); phases |= 1u << static_cast<u32>(state.gc.phase);
+		const auto state = cpu.captureRuntimeState(); phases |= 1u << static_cast<u32>(cpu.gcHeap().phase());
 		const auto ram = cpu.memory().captureSaveState();
 		cpu.memory().restoreSaveState(ram); cpu.restoreRuntimeState(state);
 		const auto after = cpu.captureRuntimeState();
 		require(state.gc.gray == after.gc.gray && state.gc.grayAgain == after.gc.grayAgain,
 			"both distinct gray queues survive restore");
-		if (state.gc.phase == GcPhase::Atomic) break;
+		if (cpu.gcHeap().phase() == GcPhase::Atomic) break;
 	}
 	require((phases & 12u) == 12u, "continuous stores do not restart either incremental mark pass indefinitely");
 	auto* target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());

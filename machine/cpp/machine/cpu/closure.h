@@ -71,7 +71,7 @@ struct Closure : GCObject {
 	const FunctionPrototype* prototype;
 	const u32 upvalueCount;
 	const bool canonical;
-	void initializeRecord();
+	void initializeRecord(u8 white);
 	static constexpr u32 captureWordAddress(u32 address, u32 index) {
 		return address + CLOSURE_CAPTURE_WORDS + index * sizeof(u32);
 	}

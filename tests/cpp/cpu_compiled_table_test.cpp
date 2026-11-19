@@ -462,7 +462,7 @@ void stringStoreGrowthRoots(bool generic) {
 	for (auto* m : {&native, &scalar}) {
 		auto& strings = m->cpu.stringPool();
 		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers; auto* retained = asTable(r.get(7), m->cpu.gcHeap());
-		require(m->cpu.collecting() && retained->gcColor == 3, "the hash growth assist traced the moved reference");
+		require(m->cpu.collecting() && retained->gcColor() == 3, "the hash growth assist traced the moved reference");
 		m->cpu.collectHeap();
 		require(retained->getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")),
 			"growth sees all reference roots published by the completed native prefix");

@@ -132,12 +132,12 @@ void incrementalRestore() {
 	std::unordered_set<GcPhase> phases;
 	for (int step = 0; step < 1000; ++step) {
 		cpu.gcHeap().step(valueNil(), valueNil(), valueNil()); checkReferences(cpu);
-		const auto saved = cpu.captureRuntimeState(); phases.insert(saved.gc.phase);
+		const auto saved = cpu.captureRuntimeState(); phases.insert(cpu.gcHeap().phase());
 		cpu.restoreRuntimeState(saved); checkReferences(cpu);
 		const auto restored = cpu.captureRuntimeState();
 		require(std::ranges::equal(saved.snapshot.words(), restored.snapshot.words())
 			&& std::ranges::equal(saved.snapshot.objectWords(), restored.snapshot.objectWords())
-			&& saved.gc.allocations == restored.gc.allocations && saved.gc.colors == restored.gc.colors,
+			&& saved.gc.allocations == restored.gc.allocations,
 			"restoring a partial collection preserves graph and allocation order");
 		if (!cpu.gcHeap().active()) break;
 	}
@@ -220,7 +220,7 @@ void closureAndCellPagesChargeVacantSlots() {
 	const u32 closureAddress = closure->address;
 	const u32 cellAddress = closure->captureAddress(0);
 	const auto sweep = [&]() {
-		while (heap.captureState([](const GCObject*) { return 0u; }).phase != GcPhase::Sweep)
+		while (heap.phase() != GcPhase::Sweep)
 			heap.step(valueNil(), valueNil(), valueNil());
 		const auto work = heap.step(valueNil(), valueNil(), valueNil());
 		while (heap.active()) heap.step(valueNil(), valueNil(), valueNil());

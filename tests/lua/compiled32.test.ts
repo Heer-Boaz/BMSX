@@ -20,7 +20,7 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 	cpu.reset();
 	const firstFrame = cpu.activeThread.currentFrame!, owner = firstFrame.executionImage;
 	const closure = new Closure(memory, cpu.luaHeap.allocateClosureRecord(1), firstFrame.closure.prototypeRecord, 1, false);
-	closure.initializeRecord(); cpu.gc.track(closure);
+	closure.initializeRecord(cpu.gc.white()); cpu.gc.track(closure);
 	firstFrame.closureAddress = closure.address;
 	const table = cpu.createTable(1, 1), field = cpu.stringPool.find('field')!;
 	const upvalue = new Upvalue(cpu.memory, cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0));cpu.gc.track(upvalue);closure.setCaptureAddress(0, upvalue.address);

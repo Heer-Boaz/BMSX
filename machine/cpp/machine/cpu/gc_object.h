@@ -3,6 +3,8 @@
 #include <cstdint>
 
 namespace bmsx {
+class Memory;
+inline constexpr uint32_t GC_COLOR_OFFSET = 1;
 enum class ObjType : uint8_t {
 	Table,
 	Closure,
@@ -12,8 +14,11 @@ enum class ObjType : uint8_t {
 
 struct GCObject {
 	ObjType type;
-	// 0/1 alternate white generations; 2 is queued gray, 3 is scanned black.
-	uint8_t gcColor = 0;
+	// The second byte of the guest header, not a copy of its mark bits.
+	uint8_t* gcRecord = nullptr;
+	Memory* gcMemory = nullptr;
+	uint8_t gcColor() const { return gcRecord[GC_COLOR_OFFSET]; }
+	void setGcColor(uint8_t color);
 	bool restored = false;
 	uint32_t hashId = 0;
 	// Heap-local slot; no host pointer is carried in a Value word.
@@ -22,12 +27,7 @@ struct GCObject {
 	GCObject* previous = nullptr;
 	GCObject* grayNext = nullptr;
 	GCObject** grayHead = nullptr;
-	void writeBarrier() {
-		if (gcColor != 3) return;
-		gcColor = 2;
-		grayNext = *grayHead;
-		*grayHead = this;
-	}
+	void writeBarrier();
 };
 
 // A sweep snapshot keeps the allocation's retirement work, not dead pointers.

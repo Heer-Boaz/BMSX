@@ -49,7 +49,7 @@ export class Thread extends GcObject {
 		const ram = memory.ramData();
 		const block = this.read(ThreadField.StackBlock);
 		ram.fill(0, offset, offset + THREAD_HEAP_BYTES);
-		writeLE32(ram, offset + ThreadField.Header, THREAD_RECORD_KIND);
+		writeLE32(ram, offset + ThreadField.Header, THREAD_RECORD_KIND | (this.heap.white() << 8));
 		writeLE32(ram, offset + ThreadField.Entry, entry === null ? 0 : entry.address);
 		writeLE32(ram, offset + ThreadField.StackBlock, block);
 		writeLE32(ram, offset + ThreadField.StackCapacity, THREAD_INITIAL_VALUES);

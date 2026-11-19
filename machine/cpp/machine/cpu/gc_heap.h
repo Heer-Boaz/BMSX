@@ -16,10 +16,8 @@ inline constexpr size_t GC_STEP_WORDS = 4096;
 inline constexpr size_t GC_ASSIST_BYTES = 256;
 enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
 struct GcState {
-	GcPhase phase = GcPhase::Pause;
-	u32 white = 0;
 	int sweep = -1;
-	std::vector<u32> allocations, colors, gray, grayAgain, threads, weak, references, freeReferences;
+	std::vector<u32> allocations, gray, grayAgain, threads, weak, references, freeReferences;
 };
 
 // Physical records start on an eight-byte boundary, including size-class slots.
@@ -29,7 +27,8 @@ inline constexpr u32 GC_RECORD_MASK = MAIN_RAM_SIZE - GC_RECORD_ALIGNMENT;
 class GcHeap {
 public:
 	GcHeap(CPU& cpu, LuaHeap& budget, Memory& memory, HeapAllocator& arena, StringPool& strings, StringId modeKey)
-		: budget(budget), memory(memory), arena(arena), m_cpu(cpu), m_modeKey(modeKey), m_stringPool(strings) {}
+		: budget(budget), memory(memory), arena(arena), m_cpu(cpu), m_modeKey(modeKey), m_stringPool(strings),
+		  m_controlOffset(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET) {}
 	~GcHeap();
 	LuaHeap& budget;
 	Memory& memory;
@@ -79,10 +78,9 @@ public:
 	}
 	template<class Ref> GcState captureState(Ref&& ref) const {
 		GcState state;
-		state.phase = m_phase; state.white = m_white;
 		state.sweep = m_sweep ? static_cast<int>(ref(m_sweep)) : -1;
 		for (auto* object = m_objects; object; object = object->next) {
-			state.allocations.push_back(ref(object)); state.colors.push_back(object->gcColor);
+			state.allocations.push_back(ref(object));
 			state.references.push_back(object->referenceId);
 		}
 		for (u32 slot = m_freeReference; slot != 0; slot = m_references[slot].nextFree)
@@ -95,11 +93,18 @@ public:
 	}
 	void restoreState(const GcState& state, const std::vector<GCObject*>& objects);
 	void bindRestoredReferences(const GcState&, const std::vector<GCObject*>& objects, u32 nextHashId);
-	bool active() const { return m_phase != GcPhase::Pause; }
-	bool sweepGarbage(const GCObject* object) const {
-		return m_phase == GcPhase::Sweep && object->gcColor == (m_white ^ 1u);
+	GcPhase phase() const {
+		// Two unconnected selector inputs do not clock the collector.
+		constexpr std::array phases{GcPhase::Pause, GcPhase::Mark, GcPhase::MarkAgain, GcPhase::Atomic,
+			GcPhase::Sweep, GcPhase::Strings, GcPhase::Pause, GcPhase::Pause};
+		return phases[memory.readRamRecordByte(m_controlOffset) & 7u];
 	}
-	bool isAlive(const GCObject* object) const { return object && object->gcColor != m_white; }
+	u8 white() const { return memory.readRamRecordByte(m_controlOffset + 1u) & 1u; }
+	bool active() const { return phase() != GcPhase::Pause; }
+	bool sweepGarbage(const GCObject* object) const {
+		return phase() == GcPhase::Sweep && object->gcColor() == (white() ^ 1u);
+	}
+	bool isAlive(const GCObject* object) const { return object && object->gcColor() != white(); }
 	size_t allocationBytes(const GCObject* object) const;
 	void armThreadStackWatches();
 	bool observeStackWrites(u32 first, u32 end, const Thread* active);
@@ -145,10 +150,10 @@ private:
 	std::vector<Thread*> m_threads;
 	std::vector<Table*> m_weakTables;
 	u32 m_nextObjectHashId = 1;
-	uint8_t m_white = 0;
-	GcPhase m_phase = GcPhase::Pause;
+	void setPhase(GcPhase phase) { memory.writeRamRecordByte(m_controlOffset, static_cast<u8>(phase)); }
 	StringId m_modeKey;
 	StringPool& m_stringPool;
+	const u32 m_controlOffset;
 	ObjectStoragePool<Table> m_tables;
 	// Map nodes are stable across rehash; erasure is tied to the last closure.
 	std::unordered_map<FunctionPrototype, size_t, FunctionPrototypeHash> m_prototypes;

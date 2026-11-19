@@ -300,13 +300,13 @@ void closedBarrierAndDirectoryGrowth() {
 		auto* upvalue = static_cast<Upvalue*>(m.cpu.gcHeap().cellAt(closure->captureAddress(0)));
 		upvalues[i] = upvalue;
 		m.cpu.gcHeap().step(valueNil(), valueNil(), valueNil());
-		require(upvalue->gcColor == 3, "collector has scanned the closed cell before mutation");
+		require(upvalue->gcColor() == 3, "collector has scanned the closed cell before mutation");
 		m.cpu.activeThread()->currentFrame->registers.set(0, valueTable(m.cpu.gcHeap().reference(child)));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 1);
 	parity(native, scalar);
 	for (auto* cell : upvalues)
-		require(cell->gcColor == 2, "closed native write queues the scanned cell again");
+		require(cell->gcColor() == 2, "closed native write queues the scanned cell again");
 	test::runCpuParity(native.cpu, scalar.cpu, 100);
 	parity(native, scalar);
 	requireNative(native.cpu,2);

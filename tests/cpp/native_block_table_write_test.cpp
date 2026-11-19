@@ -203,12 +203,23 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 		if (generic) {
 			auto* child = cpu.createTable();
 			cpu.gcHeap().step(ref, valueTable(cpu.gcHeap().reference(model)), valueNil());
-			require(table->gcColor == 3, "array receiver was actually scanned before inserting the new edge");
+			require(table->gcColor() == 3, "array receiver was actually scanned before inserting the new edge");
 			registers.set(1, valueInteger(1));
 			registers.set(2, valueTable(cpu.gcHeap().reference(child)));
+			const Value previous = table->getInteger(1);
+			const u32 header = table->address();
+			const u32 markWord = (header & MAPPED_PAGE_BYTE_MASK) / sizeof(u32);
+			MappedPageBinding binding{};
+			memory.bindMappedPage(header & ~MAPPED_PAGE_BYTE_MASK, MAPPED_BUS_MASTER_CPU, binding);
+			binding.writeWatch.armWord(markWord);
 			state.remainingCycles = 100;
-			require(block->run(state) == &block->terminal && table->gcColor == 2,
-				"a native array hit requeues a scanned table in the incremental collector");
+			require(block->run(state) == &block->sideExits.front()
+				&& table->getInteger(1) == previous && memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 3,
+				"a watched color word stops the inline store before either the value or the barrier changes");
+			require(binding.writeWatch.consume(markWord, markWord + 1), "the declined operation left the watch armed");
+			state.remainingCycles = 100;
+			require(block->run(state) == &block->terminal && memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 2,
+				"a native array hit requeues a scanned table by changing its raw mark lane");
 		}
 		if (generic) for (Value k : {valueInteger(0), valueInteger(-1), valueInteger(5), valueFloat(1), valueBool(true)}) {
 			registers.set(1, k);

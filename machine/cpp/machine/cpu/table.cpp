@@ -18,7 +18,7 @@ TableRecord::TableRecord(GcHeap& heap, u32 address)
 }
 
 void TableRecord::initialize(size_t array, size_t hash) {
-	writeHeader(TableHeader::Kind, static_cast<u32>(ValueTag::Table));
+	writeHeader(TableHeader::Kind, static_cast<u32>(ValueTag::Table) | (static_cast<u32>(m_heap.white()) << 8u));
 	writeHeader(TableHeader::Gray, 0);
 	writeHeader(TableHeader::Metatable, 0);
 	writeHeader(TableHeader::Length, 0);

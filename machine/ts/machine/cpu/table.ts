@@ -31,7 +31,7 @@ export class TableRecords {
 	static readonly HEADER_BYTES = 32;
 	public constructor(private readonly heap: GcHeap) {}
 	public initialize(record: number, array: number, hash: number): void {
-		this.writeHeader(record, TableHeader.Kind, ValueTag.Table);
+		this.writeHeader(record, TableHeader.Kind, ValueTag.Table | (this.heap.white() << 8));
 		this.writeHeader(record, TableHeader.Gray, 0);
 		this.writeHeader(record, TableHeader.Metatable, 0);
 		this.writeHeader(record, TableHeader.Length, 0);

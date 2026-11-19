@@ -867,7 +867,7 @@ export class CPU implements MappedPageInvalidator {
 			if (match !== null) return match;
 		}
 		const closure = new Closure(this.memory, this.luaHeap.allocateClosureRecord(0), record, 0, true);
-		closure.initializeRecord();
+		closure.initializeRecord(this.gc.white());
 		closure.hashId = this.allocateObjectHashId();
 		this.gc.track(closure);
 		closures = this.staticClosuresByAddress.get(record.functionAddress);
@@ -3058,7 +3058,7 @@ export class CPU implements MappedPageInvalidator {
 		if (this.captureAddresses.length < newUpvalueCount) this.captureAddresses = new Uint32Array(newUpvalueCount);
 		const address = this.luaHeap.allocateClosureRecord(count, this.captureAddresses, newUpvalueCount);
 		const closure = new Closure(this.memory, address, functionRecord, count, false);
-		closure.initializeRecord();
+		closure.initializeRecord(this.gc.white());
 		closure.hashId = this.allocateObjectHashId();
 		this.gc.track(closure);
 		let nextCell = 0;

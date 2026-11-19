@@ -121,7 +121,7 @@ test('incremental GC and phase-preserving restore keep the directory synchronize
 	const phases = new Set<GcPhase>();
 	for (let step = 0; step < 1000; ++step) {
 		cpu.gc.step(); checkReferences(cpu);
-		const saved = cpu.captureRuntimeState(); phases.add(saved.gc.phase);
+		const saved = cpu.captureRuntimeState(); phases.add(cpu.gc.phase());
 		cpu.restoreRuntimeState(saved); checkReferences(cpu);
 		assert.deepEqual(cpu.captureRuntimeState(), saved);
 		if (!cpu.gc.active()) break;
@@ -197,7 +197,7 @@ test('a vacant closure slot costs a visit while its object page remains in use',
 	const closure = frame.registers.getClosure(1, gc);
 	const cellAddress = closure.captureAddress(0);
 	const sweep = () => {
-		while (gc.captureState(() => 0).phase !== GcPhase.Sweep) gc.step();
+		while (gc.phase() !== GcPhase.Sweep) gc.step();
 		const work = gc.step();
 		while (gc.active()) gc.step();
 		return work;

@@ -51,6 +51,17 @@ private:
 
 constexpr uint8_t kTableWeakKeys = 1, kTableWeakValues = 2;
 }
+void GCObject::setGcColor(uint8_t color) {
+	gcMemory->writeRamRecordByte(static_cast<u32>(gcRecord - gcMemory->ramData()) + GC_COLOR_OFFSET, color);
+}
+
+void GCObject::writeBarrier() {
+	if (gcColor() != 3) return;
+	setGcColor(2);
+	grayNext = *grayHead;
+	*grayHead = this;
+}
+
 bool GcHeap::markValue(Value v) {
 	switch (valueTag(v)) {
 		case ValueTag::Thread:
@@ -104,7 +115,8 @@ void GcHeap::track(GCObject* object) {
 		object->referenceId = static_cast<u32>(m_references.size());
 		m_references.push_back({.object = object});
 	}
-	object->gcColor = m_white;
+	object->gcRecord = memory.ramData() + (address & GC_RECORD_MASK);
+	object->gcMemory = &memory;
 	object->restored = false;
 	object->grayHead = &m_grayAgain;
 	object->grayNext = nullptr;
@@ -128,8 +140,8 @@ GcHeap::~GcHeap() {
 	}
 }
 bool GcHeap::markObject(GCObject* object) {
-	if (!object || object->gcColor != m_white) return false;
-	object->gcColor = 2;
+	if (!object || object->gcColor() != white()) return false;
+	object->setGcColor(2);
 	object->grayNext = m_gray; m_gray = object;
 	return true;
 }
@@ -220,7 +232,7 @@ size_t GcHeap::trace(bool atomic) {
 	GCObject* obj = m_gray;
 	m_gray = obj->grayNext;
 	obj->grayNext = nullptr;
-	obj->gcColor = 3;
+	obj->setGcColor(3);
 	switch (obj->type) {
 		case ObjType::Thread: {
 			auto* thread = static_cast<Thread*>(obj);
@@ -349,10 +361,10 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 	}
 	m_cpu.pruneStaticClosures();
 	m_weakTables.clear(); m_threads.clear();
-	m_white ^= 1u;
+	memory.writeRamRecordByte(m_controlOffset + 1u, white() ^ 1u);
 	m_sweep = m_objects;
 	arena.beginObjectSweep();
-	m_phase = GcPhase::Sweep;
+	setPhase(GcPhase::Sweep);
 	return work + m_stringPool.takeMarkWork();
 }
 void GcHeap::unlink(GCObject* object) {
@@ -392,7 +404,7 @@ bool GcHeap::sweepRecord(void* context, u32 address) {
 	auto* object = slot;
 	if (!object) return false;
 	if (!heap.sweepGarbage(object)) {
-		object->gcColor = heap.m_white;
+		object->setGcColor(heap.white());
 		return false;
 	}
 	if (heap.m_sweep == object) heap.m_sweep = object->next;
@@ -412,15 +424,15 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 	GcStepMeasurement total(profile);
 #endif
 	size_t work = 0;
-	if (m_phase == GcPhase::Pause || m_phase == GcPhase::Mark || m_phase == GcPhase::MarkAgain) {
+	if (phase() == GcPhase::Pause || phase() == GcPhase::Mark || phase() == GcPhase::MarkAgain) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 		GcPhaseMeasurement roots(profile.rootsNanoseconds);
 #endif
-		if (m_phase == GcPhase::Pause) {
+		if (phase() == GcPhase::Pause) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 			++profile.collections;
 #endif
-			m_phase = GcPhase::Mark;
+			setPhase(GcPhase::Mark);
 			m_stringPool.beginReachabilityEpoch();
 			m_stringPool.markReachable(m_modeKey);
 			m_cpu.markRoots(*this);
@@ -431,12 +443,12 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 		work += m_stringPool.takeMarkWork();
 	}
 	while (work < GC_STEP_WORDS && active()) {
-		switch (m_phase) {
+		switch (phase()) {
 			case GcPhase::Mark:
 			case GcPhase::MarkAgain: {
 				{
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-					GcPhaseMeasurement traceTime(m_phase == GcPhase::Mark ? profile.traceNanoseconds : profile.markAgainNanoseconds);
+					GcPhaseMeasurement traceTime(phase() == GcPhase::Mark ? profile.traceNanoseconds : profile.markAgainNanoseconds);
 #endif
 					while (m_gray && work < GC_STEP_WORDS) {
 						work += trace(false);
@@ -444,11 +456,11 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 					}
 				}
 				if (work < GC_STEP_WORDS) {
-					if (m_phase == GcPhase::Mark) {
+					if (phase() == GcPhase::Mark) {
 						work += remark(root0, root1, root2);
-						m_phase = GcPhase::MarkAgain;
+						setPhase(GcPhase::MarkAgain);
 					} else {
-						m_phase = GcPhase::Atomic;
+						setPhase(GcPhase::Atomic);
 						return work;
 					}
 				}
@@ -477,7 +489,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 						unlink(object); destroyObject(object);
 					}
 					else {
-						object->gcColor = m_white;
+						object->setGcColor(white());
 						if (object->type == ObjType::Thread && object != growingStack) {
 							auto* thread = static_cast<Thread*>(object);
 							work += 2 * ceilDiv4(thread->shrinkStack());
@@ -486,7 +498,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 				}
 				if (!m_sweep && work < GC_STEP_WORDS && !arena.objectSweepActive()) {
 					m_grayAgain = nullptr;
-					m_phase = GcPhase::Strings;
+					setPhase(GcPhase::Strings);
 					m_stringPool.beginSweep();
 				}
 				break;
@@ -497,7 +509,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 #endif
 				work += m_stringPool.sweepStep(GC_STEP_WORDS - work);
 				if (!m_stringPool.sweeping()) {
-					m_phase = GcPhase::Pause;
+					setPhase(GcPhase::Pause);
 					budget.finishCollection();
 				}
 				break;
@@ -541,12 +553,10 @@ void GcHeap::bindRestoredReferences(const GcState& state, const std::vector<GCOb
 	m_nextObjectHashId = nextHashId;
 }
 void GcHeap::restoreState(const GcState& state, const std::vector<GCObject*>& objects) {
-	m_phase = state.phase; m_white = static_cast<uint8_t>(state.white);
 	m_objects = nullptr;
 	GCObject* previous = nullptr;
 	for (size_t i = 0; i < state.allocations.size(); ++i) {
 		auto* object = objects[state.allocations[i]];
-		object->gcColor = static_cast<uint8_t>(state.colors[i]);
 		object->previous = previous; object->next = nullptr; object->grayNext = nullptr;
 		object->grayHead = &m_grayAgain;
 		if (previous) previous->next = object; else m_objects = object;

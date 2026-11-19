@@ -66,9 +66,9 @@ void Upvalue::store(Memory& memory, u32 address, Value value) {
 	memory.writeRamRecordByte(ports.tag, static_cast<u8>(valueTag(value)));
 }
 
-void Closure::initializeRecord() {
+void Closure::initializeRecord(u8 white) {
 	const u32 flags = static_cast<u32>(prototype->executionDomainId + 1) | (canonical ? 4u : 0u);
-	memory.writeRamRecordWord(address, static_cast<u32>(ValueTag::Closure) | (flags << 16));
+	memory.writeRamRecordWord(address, static_cast<u32>(ValueTag::Closure) | (static_cast<u32>(white) << 8) | (flags << 16));
 	memory.writeRamRecordWord(address + CLOSURE_CAPTURE_COUNT, upvalueCount);
 	memory.writeRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS, prototype->functionAddress);
 }

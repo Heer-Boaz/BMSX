@@ -96,7 +96,7 @@ export class LuaHeap {
 					const memory = this.cpu.memory;
 					for (let index = 0; index < newCount; ++index) {
 						const cell = cells[index];
-						memory.writeRamRecordWord(cell, UPVALUE_RECORD_KIND);
+						memory.writeRamRecordWord(cell, UPVALUE_RECORD_KIND | (this.cpu.gc.white() << 8));
 						memory.writeRamRecordWord(cell + 4, 0);
 						memory.writeRamRecordWord(cell + 8, 0);
 						memory.writeRamRecordWord(cell + 12, 0);

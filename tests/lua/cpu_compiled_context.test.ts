@@ -148,7 +148,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		cpu.gc.track(open); cpu.gc.track(closed);
 		const bound = frame.closure;
 		const replacement = new Closure(cpu.memory, cpu.luaHeap.allocateClosureRecord(2), bound.prototypeRecord, 2, false);
-		replacement.initializeRecord();
+		replacement.initializeRecord(cpu.gc.white());
 		replacement.setCaptureAddress(0, open.address);
 		replacement.setCaptureAddress(1, closed.address);
 		cpu.gc.track(replacement);

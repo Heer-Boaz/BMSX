@@ -256,7 +256,7 @@ return true`, 3);
     mode.records.setStringKey(mode.address, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v'))); table.metatable = mode;
     table.records.set(table.address, field, valueTable(cpu.gc.reference(cpu.createTable()))); table.records.set(table.address, other, valueTable(cpu.gc.reference(cpu.createTable())));
     r.set(1, valueString(cpu.stringPool.intern('third')));
-    while (cpu.captureRuntimeState().gc.phase !== GcPhase.Atomic) cpu.gc.step();
+    while (cpu.gc.phase() !== GcPhase.Atomic) cpu.gc.step();
     const trackedBytes = cpu.luaHeap.usedBytes();
     cpu.luaHeap.setCollectionTarget(trackedBytes);
     surcharge = 16; capacity = 4;

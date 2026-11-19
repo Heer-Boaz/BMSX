@@ -23,21 +23,6 @@ constexpr auto result = scratch + offsetof(TableScratch, result);
 constexpr auto transport = scratch + offsetof(TableScratch, transport);
 static_assert(scratch + sizeof(TableScratch) <= NativeBlockAbi::stackBytes);
 
-// A raw record needs a host descriptor only for the interim collector barrier.
-void emitTableWriteBarrier(sljit_compiler* compiler) {
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), receiver);
-	sljit_emit_op2(compiler, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, MAIN_RAM_SIZE - Table::HEADER_BYTES);
-	emitPhysicalRecordPointer(compiler, SLJIT_R0, SLJIT_R0, SLJIT_R2);
-	auto* unattached = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), offsetof(GCObject, type));
-	auto* otherRecord = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
-		SLJIT_IMM, static_cast<u8>(ObjType::Table));
-	emitGcWriteBarrier(compiler, SLJIT_R0, SLJIT_R2, SLJIT_R3);
-	auto* done = sljit_emit_label(compiler);
-	sljit_set_label(unattached, done);
-	sljit_set_label(otherRecord, done);
-}
 } // namespace
 
 // R0 addresses the aligned table header; R1 is the slot. The stored backing
@@ -79,6 +64,32 @@ void NativeBlockCompiler::emitTableWriteWatch(NativeBlockExitSite& exit, bool ar
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, 0);
 		emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, SLJIT_R3);
 	}
+
+	// All potential exits precede the actual slot store. A backward barrier
+	// only enqueues work, so it may publish before the value reaches its lane.
+	auto* c = m_compiler;
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), GC_COLOR_OFFSET);
+	auto* notBlack = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 3);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), receiver,
+		SLJIT_IMM, MAIN_RAM_SIZE - Table::HEADER_BYTES);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, 0);
+	emitRamWordWriteWatch(exit, SLJIT_MEM1(SLJIT_SP), slot, SLJIT_R2, SLJIT_R3);
+
+	// Only the scanned-record path needs a host attachment until gray-again
+	// links also live in RAM. R1 is still the destination slot.
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), slot);
+	emitPhysicalRecordPointer(c, SLJIT_R0, SLJIT_R0, SLJIT_R2);
+	auto* unattached = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), offsetof(GCObject, type));
+	auto* otherRecord = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, static_cast<u8>(ObjType::Table));
+	emitGcWriteBarrier(c, SLJIT_R0, SLJIT_R2, SLJIT_R3);
+	auto* restore = sljit_emit_label(c);
+	sljit_set_label(unattached, restore);
+	sljit_set_label(otherRecord, restore);
+	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), slot);
+	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
+	sljit_set_label(notBlack, sljit_emit_label(c));
 }
 
 void NativeBlockCompiler::emitTableSlotTransfer(bool load, int value) {
@@ -141,7 +152,7 @@ void NativeBlockCompiler::emitArraySlot(bool load, int value, NativeBlockExitSit
 	for (auto* edge : {retained, advanced, unchanged})
 		if (edge)
 			sljit_set_label(edge, done);
-	emitTableWriteBarrier(m_compiler);
+
 }
 
 // Hash keys start after the array; hash values start after all hash keys.
@@ -174,7 +185,7 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, NativeBlockExitSi
 			misses[n++] = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		emitTableWriteWatch(exit, false);
 		emitTableSlotTransfer(false, value);
-		emitTableWriteBarrier(m_compiler);
+
 	} else {
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R2, 0);
 		emitTableSlotLoad(SLJIT_R2, true);
