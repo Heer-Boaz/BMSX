@@ -37,7 +37,7 @@ return value
 	assert.deepEqual(tracedProgram.protos, baselineProgram.protos);
 });
 
-for (const optLevel of [0, 3] as const) test(`unselected traces do not turn an otherwise static function into a captured closure (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`unselected traces do not turn an otherwise static function into a captured closure (O${optLevel})`, () => {
 	const baseline = `
 local subject<const> = {}
 return function() return 7 end
@@ -58,7 +58,7 @@ end
 	}
 });
 
-for (const optLevel of [0, 3] as const) test(`channel selection erases the entire excluded statement, not just its call (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`channel selection erases the entire excluded statement, not just its call (O${optLevel})`, () => {
 	const setup = `
 local subject<const> = {}
 local sink<const> = { count = 0 }

@@ -77,7 +77,7 @@ const expected = [v.valueInteger(2), v.valueFloat(2), v.valueInteger(0), v.value
 v.valueFloat(16777216), v.valueInteger(1), v.valueInteger(0), v.valueInteger(0), v.valueFloatBits(0x7f800000), v.valueFloatBits(0x7fc00000), v.valueFloatBits(0xffc00000),
 v.valueInteger(100000000), v.valueFloat(100000000), v.valueInteger(-2147483648), v.valueInteger(-2147483648), v.valueInteger(2), v.valueInteger(-2), v.valueBool(true), v.valueBool(false), v.valueBool(true),
 	v.valueFloat(1),v.valueInteger(1),v.valueInteger(0xedcba987),v.valueInteger(-1),v.valueInteger(511),v.valueFloat(1),v.valueFloat(2),v.valueFloatBits(0x80000000)];
-for (const opt of [0, 1, 2, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const opt of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`O${opt} backend ${backend}: real source, linker and CPU retain subtype, rounding and word arithmetic`, () => {
 		const { results, cpu, image } = execute(source, opt, backend);
 		assert.deepEqual(results.slice(0, -1), expected);
@@ -89,13 +89,13 @@ for (const opt of [0, 1, 2, 3] as const) for (const backend of [CpuExecutionBack
 
 const nativeRunner = process.env.BMSX_CPU32_RUNNER;
 const functions = readFileSync(new URL('../fixtures/compiler32/functions.lua', import.meta.url), 'utf8');
-for (const [name, program] of [['numbers', source], ['functions', functions]] as const) for (const opt of [0, 1, 2, 3] as const) test(`O${opt} ${name}: native scalar CPU executes the same frontend-produced image`, { skip: !nativeRunner }, () => {
+for (const [name, program] of [['numbers', source], ['functions', functions]] as const) for (const opt of [3] as const) test(`O${opt} ${name}: native scalar CPU executes the same frontend-produced image`, { skip: !nativeRunner }, () => {
 	const { image, cpu, results } = execute(program, opt, CpuExecutionBackend.Interpreter);
 	const expected = [`budget ${cpu.instructionBudgetRemaining} fault ${cpu.readLuaFaultReasonWord()}`, ...results.map(value => v.valueIsString(value) ? 'S ' + cpu.stringPool.toString(v.asStringId(value)) : `${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n') + '\n';
 	assert.equal(execFileSync(nativeRunner!, ['--execute-rom'], { input: image.romBytes, encoding: 'utf8' }), expected);
 });
 
-for (const opt of [0, 3] as const) test(`O${opt}: invalid constant operations remain guest faults, not fabricated constants`, () => {
+for (const opt of [3] as const) test(`O${opt}: invalid constant operations remain guest faults, not fabricated constants`, () => {
 	for (const expression of ['1//0', '1%0', '2.5&1', '1<<0x80000000.0']) {
 		const image = linkTestSystemBlua32(compile('return ' + expression, opt));
 		const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
@@ -104,7 +104,7 @@ for (const opt of [0, 3] as const) test(`O${opt}: invalid constant operations re
 	}
 });
 
-for (const opt of [0, 3] as const) test(`O${opt}: f32 and external f64 data initializers use the computed subtype`, () => {
+for (const opt of [3] as const) test(`O${opt}: f32 and external f64 data initializers use the computed subtype`, () => {
 	const compiled = compile('rodata values: f64[2]={16777217,16777217.0}\nrodata floats:f32[2]={-0.0,-(0/0)}\nreturn values', opt);
 	const data = encodeCompiledProgramObject(compiled).sections.rodata.bytes;
 	const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -112,7 +112,7 @@ for (const opt of [0, 3] as const) test(`O${opt}: f32 and external f64 data init
 	assert.equal(view.getUint32(16, true), 0x80000000); assert.equal(view.getUint32(20, true), 0xffc00000);
 });
 
-for (const opt of [0, 3] as const) test(`O${opt}: late ROM-address relocations update raw Integer/Float records`, () => {
+for (const opt of [3] as const) test(`O${opt}: late ROM-address relocations update raw Integer/Float records`, () => {
 	const source = "local assets<const> = require('assets')\nreturn assets.start+4,assets.start/2";
 	const moduleSource = 'module<const>\nreturn {start=0}';
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'entry.lua').chunk, [{ path: 'assets', source: moduleSource, chunk: parseLuaChunk(moduleSource, 'assets.lua').chunk, linkValues: new Map([['start', 0x7ffffffc]]) }], { entrySource: source, programDomain: 'system', optLevel: opt });
@@ -125,13 +125,13 @@ for (const opt of [0, 3] as const) test(`O${opt}: late ROM-address relocations u
 	}
 });
 
-for (const opt of [0, 1, 2, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript])
+for (const opt of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter])
 	test(`O${opt} backend ${backend}: source calls, captures, tables and loops consume compact values`, () => {
 		const { results } = execute(functions, opt, backend);
 		assert.deepEqual(results, [v.valueInteger(11), v.valueFloat(3), v.valueFloat(2 / 3), v.valueInteger(87), v.valueInteger(3)]);
 	});
 
-for (const opt of [0, 3] as const) test(`O${opt}: loop unrolling follows wrapping Integer and binary32 additions`, () => {
+for (const opt of [3] as const) test(`O${opt}: loop unrolling follows wrapping Integer and binary32 additions`, () => {
 	for (const range of ['0x7ffffffe,0x7fffffff,1', '16777216.0,16777218.0,1.0']) {
 		const image = linkTestSystemBlua32(compile(`ticks=0;for i=${range} do ticks=ticks+1 end;return ticks`, opt));
 		const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);

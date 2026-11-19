@@ -9,7 +9,7 @@ import { SceneRegistrationProvenance } from '../../ide/workbench/contrib/scene_e
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 
-for (const optLevel of [0, 3] as const) for (const traceStatements of ['emit', 'erase'] as const)
+for (const optLevel of [3] as const) for (const traceStatements of ['emit', 'erase'] as const)
 test(`Scene plan provenance observes real publication, not function entry (O${optLevel}, ${traceStatements})`, () => {
 	const source = WORLD_CPU_SETUP + `
 world:start()

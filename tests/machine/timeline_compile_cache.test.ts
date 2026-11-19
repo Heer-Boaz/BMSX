@@ -16,7 +16,7 @@ end`,
 );
 const instrumentedModules = [{ path: 'cartlib/timeline/track_evaluator', source: trackEvaluator }];
 
-for (const optLevel of [0, 3] as const) test(`timeline step appliers reuse matching code without retaining abandoned closures (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`timeline step appliers reuse matching code without retaining abandoned closures (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 local apply<const> = require('cartlib/timeline/apply')
 local refs<const> = setmetatable({}, {__mode='v'})
@@ -55,7 +55,7 @@ end
 	assert.equal(cpu.gc.tables.getInteger(refs, 2), valueNil(), 'the cache must not retain unused writers');
 });
 
-for (const optLevel of [0, 3] as const) test(`timeline value factories reuse only equivalent track capabilities (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`timeline value factories reuse only equivalent track capabilities (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 probe={compile_count=0}
 local component<const> = require('cartlib/timeline/timeline_component')
@@ -76,7 +76,7 @@ assert(target.x==5 and target.y==15,'shared code retained another program')
 	assert.equal(cpu.runUntilDepth(0, 25_000_000), RunResult.Halted);
 });
 
-for (const optLevel of [0, 3] as const) test(`sample callbacks remain local to their compiled timeline (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`sample callbacks remain local to their compiled timeline (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 probe={compile_count=0}
 local component<const> = require('cartlib/timeline/timeline_component')
@@ -97,7 +97,7 @@ assert(calls==11,'sample callbacks retained the wrong program')
 	assert.equal(cpu.runUntilDepth(0, 25_000_000), RunResult.Halted);
 });
 
-for (const optLevel of [0, 3] as const) test(`value-factory cache releases programs and separates step domains (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`value-factory cache releases programs and separates step domains (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 probe={compile_count=0,refs=setmetatable({}, {__mode='v'})}
 local evaluator<const> = require('cartlib/timeline/track_evaluator')

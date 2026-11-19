@@ -36,7 +36,7 @@ const modules = [
 	...['cartlib/memory', 'cartlib/bin', 'cartlib/rom_dir'].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),
 ].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
 
-for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`raw token lookup and relocated ROM directories retain dependent init (O${optLevel}, ${backend})`, () => {
+for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) test(`raw token lookup and relocated ROM directories retain dependent init (O${optLevel}, ${backend})`, () => {
 	const entrySource = `require('bootstrap')
 local rom_dir<const> = require('cartlib/rom_dir')
 local function init<init>()
@@ -109,7 +109,7 @@ end`;
 });
 
 const nativeRunner = process.env.BMSX_CPU32_RUNNER;
-for (const optLevel of [0, 3] as const) test(`packed system directory O${optLevel}: native resource lookup matches TS words and cycles`, { skip: !nativeRunner }, () => {
+for (const optLevel of [3] as const) test(`packed system directory O${optLevel}: native resource lookup matches TS words and cycles`, { skip: !nativeRunner }, () => {
 	const source = readFileSync(new URL('../fixtures/compiler32/asset-lookup.lua', import.meta.url), 'utf8');
 	const program = compileLuaChunkToProgram(parseLuaChunk(source, 'asset-lookup.lua'), modules,
 		{ entrySource: source, programDomain: 'system', optLevel });

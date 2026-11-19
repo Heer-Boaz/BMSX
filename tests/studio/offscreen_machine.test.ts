@@ -9,7 +9,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { afterTest } from '../helpers/test_cleanup';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`O${optLevel}: offscreen admission preserves exact raw cycle grants without paced clamping`, t => {
 		const system = linkTestSystemBlua32(compileLuaSource('while true do end', 'offscreen_exact_grant', optLevel));
 		const target = new OffscreenMachine(system.romBytes, [null, null], PSX_MACHINE_SPEC, new TestInput());

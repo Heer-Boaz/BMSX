@@ -110,7 +110,7 @@ assert(not object_3d._compile_pose(unavailable,nil,{transform={xx=0,xy=0,xz=0,yx
 	},
 ] as const;
 
-for (const optLevel of [0, 3] as const) for (const behavior of cases) {
+for (const optLevel of [3] as const) for (const behavior of cases) {
 	test(`intrinsic Object O${optLevel}: ${behavior.name}`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
 world:start()

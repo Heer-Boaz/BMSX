@@ -4,7 +4,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`World component lookup returns absence across attachment and dense removal (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 world:start()

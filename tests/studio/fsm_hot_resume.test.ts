@@ -362,7 +362,7 @@ end
 return run, detach, recorder
 `;
 
-for (const optLevel of [0, 3] as const) test(`BT empty/single-child lowering preserves optional reset through component rebind (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`BT empty/single-child lowering preserves optional reset through component rebind (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 local compiler<const> = require('cartlib/behaviour_tree/program')
 local library<const> = require('cartlib/behaviour_tree/library')

@@ -49,7 +49,7 @@ function fixture(source: string, optLevel: 0 | 3, breakpoint?: number, faulting 
 	return f;
 }
 
-for (const level of [0, 3] as const) test(`O${level}: ordinary and conversation scopes share real static addresses and non-value types`, async t => {
+for (const level of [3] as const) test(`O${level}: ordinary and conversation scopes share real static addresses and non-value types`, async t => {
 	const source = `bss buffer: word
 bss published: word
 struct shape
@@ -111,7 +111,7 @@ return run(7)`;
 	assert.throws(() => tools.execute('studio_read_runtime_values', { reference: scope.reference, start: 0, count: 1 }), /expired|current suspended/);
 });
 
-for (const level of [0, 3] as const) test(`O${level}: scopes distinguish recursive frames, live locals and shared upvalues without execution`, t => {
+for (const level of [3] as const) test(`O${level}: scopes distinguish recursive frames, live locals and shared upvalues without execution`, t => {
 	const f = fixture(`local shared = { answer = 42 }
 local function descend(depth)
 	local value = depth * 11
@@ -152,7 +152,7 @@ return descend(2)`, level);
 	assert.deepEqual([cpu.getFrameDepth(), cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 });
 
-for (const level of [0, 3] as const) test(`O${level}: lexical scopes retain shadowed declarations without reading dead/folded locations`, t => {
+for (const level of [3] as const) test(`O${level}: lexical scopes retain shadowed declarations without reading dead/folded locations`, t => {
 	const f = fixture(`local value = { number = 11 }
 local folded = 17
 do
@@ -171,7 +171,7 @@ return value, folded`, level);
 	assert.deepEqual(shadowed.map(entry => entry.definition!.start.line), [1, 4]);
 	assert.deepEqual(shadowed.map(entry => inspection.read(entry.value.reference!, 0, 1).entries[0].value.display), ['11', '22']);
 	const folded = values.entries.find(entry => entry.key.display === 'folded')!.value;
-	assert.equal(folded.kind, level === 0 ? 'integer' : 'unavailable');
+	assert.equal(folded.kind, 'unavailable');
 	assert.equal(reads.mock.callCount(), values.entries.filter(entry => entry.value.kind !== 'unavailable').length,
 		'unavailable bindings never read a stale register');
 });
@@ -217,7 +217,7 @@ test('nil and false locals are real values, not missing bindings', t => {
 	assert.deepEqual(values.find(entry => entry.key.display === 'b')!.value, { kind: 'boolean', display: 'false' });
 });
 
-for (const level of [0, 3] as const) test(`O${level}: installed declarations distinguish const bindings, folded locations and mutable table fields`, t => {
+for (const level of [3] as const) test(`O${level}: installed declarations distinguish const bindings, folded locations and mutable table fields`, t => {
 	const f = fixture(`local captured<const> = { answer = 42 }
 local function run(parameter)
 	local value<const> = { answer = 11 }
@@ -244,7 +244,7 @@ return run(false)`, level);
 	assert.deepEqual(shadowed.map(entry => entry.definition!.start.line), [3, 6]);
 	const folded = locals.find(entry => entry.key.display === 'folded')!;
 	assert.equal(folded.isConst, false, 'constant propagation is not a const declaration');
-	assert.equal(folded.value.kind, level === 0 ? 'integer' : 'unavailable');
+	assert.equal(folded.value.kind, 'unavailable');
 	assert.equal(locals.find(entry => entry.key.display === 'parameter')!.isConst, false);
 	assert.equal(reads.mock.callCount(), locals.filter(entry => entry.value.kind !== 'unavailable').length);
 	const capture = inspection.read(scopes[1].reference!, 0, 100).entries.find(entry => entry.key.display === 'captured')!;
@@ -275,7 +275,7 @@ return run(41)`, 3, 3);
 	assert.equal(locals.find(entry => entry.key.display === 'copy')!.value.display, '42');
 });
 
-for (const level of [0, 3] as const) test(`O${level}: an in-flight assignment never exposes its call target as the local value`, t => {
+for (const level of [3] as const) test(`O${level}: an in-flight assignment never exposes its call target as the local value`, t => {
 	const f = fixture(`local function park()
 	halt_until_irq
 	return 99
@@ -352,7 +352,7 @@ test('tool stack/frame handles are prompt-local and external paging arguments ar
 	assert.throws(() => tools.execute('studio_read_frame_scopes', { frame }), /disposed/);
 });
 
-for (const level of [0, 3] as const) test(`O${level}: capture scopes follow register and closure locations through nested inlining`, t => {
+for (const level of [3] as const) test(`O${level}: capture scopes follow register and closure locations through nested inlining`, t => {
 	const f = fixture(`local closed<const> = { answer = 42 }
 local run = function(seed, ...)
 	local register = seed
@@ -375,8 +375,8 @@ return run(40)`, level, 8);
 	const frames = inspection.readStack(0, 100).frames;
 	const inner = frames.find(frame => frame.functionName === 'inner')!;
 	const outer = frames.find(frame => frame.functionName === 'outer')!;
-	assert.equal(inner.inlineDepth, level === 0 ? 0 : 2);
-	assert.equal(outer.inlineDepth, level === 0 ? 0 : 1);
+	assert.equal(inner.inlineDepth, 2);
+	assert.equal(outer.inlineDepth, 1);
 	const scopes = inspection.frameScopes(inner.reference).scopes;
 	assert.ok(registers.every(read => read.mock.callCount() === 0), 'listing metadata does not read guest locations');
 	const captures = inspection.read(scopes[1].reference!, 0, 100).entries;

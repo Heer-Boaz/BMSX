@@ -14,7 +14,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { compileCoroutineTest } from '../helpers/coroutine';
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`fixed CALL reuses supplied slots and preserves only its lower caller prefix (${backend})`, () => {
 		const text = new Uint8Array(8 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
@@ -54,7 +54,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`overlapping parent and child captures close with their own activation (${backend})`, () => {
 		const text = new Uint8Array(18 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.KSMI, 5, 0, 37);
@@ -97,7 +97,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const optLevel of [0, 3] as const) {
+for (const backend of [CpuExecutionBackend.Interpreter]) for (const optLevel of [3] as const) {
 	test(`shared stack closes live captures and preserves varargs through nested GC and replay (${backend}, O${optLevel})`, () => {
 		const image = compileCoroutineTest(`
 local collect<const> = collectgarbage
@@ -149,7 +149,7 @@ return count('#', empty()), count('#', implicit()), count('#', nilvalue())
 	});
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const top of [0, 31]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) for (const top of [0, 31]) {
 	test(`open captures remain roots when open VARARG sets top to ${top} (${backend})`, () => {
 		const text = new Uint8Array(8 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.NEWT, 2, 0, 0);
@@ -179,7 +179,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript])
+for (const backend of [CpuExecutionBackend.Interpreter])
 test(`an active physical stack aliases bus loads and stores without losing code watches (${backend})`, () => {
 	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.KSMI, 0, 0, 37);

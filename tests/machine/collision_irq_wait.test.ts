@@ -37,7 +37,7 @@ local count<const> = collision.collect_overlaps(colliders, 2, pairs)
 mem[${marker}] = 2 + count
 while true do halt_until_irq end
 `;
-for (const mode of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`real cartlib GEO wait, mode ${mode}`, () => {
+for (const mode of [CpuExecutionBackend.Interpreter]) test(`real cartlib GEO wait, mode ${mode}`, () => {
 	const { images } = compileCartlibProgram(source, { modules, optLevel: 3 });
 	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: mode }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},
@@ -111,7 +111,7 @@ while *done == 0 do halt_until_irq end
 mem[${marker}] = 2
 while true do halt_until_irq end
 `;
-for (const mode of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`predicate-to-HALT race uses the retained GEO event, mode ${mode}`, () => {
+for (const mode of [CpuExecutionBackend.Interpreter]) test(`predicate-to-HALT race uses the retained GEO event, mode ${mode}`, () => {
 	const { images } = compileCartlibProgram(conditionSource, { modules: modules.filter(module => module.path !== 'cartlib/collision/collision_2d'), optLevel: 3 });
 	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: mode }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},

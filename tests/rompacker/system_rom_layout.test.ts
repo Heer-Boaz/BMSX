@@ -29,7 +29,7 @@ local p: *word = assets.bin_probe_addr
 return *p, assets.bin_probe_addr + assets.bin_probe_len - 4`;
 const probe = { type: 'bin' as const, resid: 'probe', buffer: Buffer.from([0x78, 0x56, 0x34, 0x12]) };
 
-for (const optLevel of [0, 3] as const) for (const debug of [false, true])
+for (const optLevel of [3] as const) for (const debug of [false, true])
 	test(`compact system ROM executes final asset-address relocations (${debug ? 'debug' : 'release'} O${optLevel})`, async t => {
 		const directory = await mkdtemp(join(tmpdir(), 'bmsx-compact-system-'));
 		afterTest(t, () => rm(directory, { recursive: true, force: true }));

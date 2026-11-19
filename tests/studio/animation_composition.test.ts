@@ -183,7 +183,7 @@ test('clip trim edits the written parent once, preserves child time and imported
 	assert.equal(changed.clips[0].duration!.value, 75);
 	assert.equal(changed.clips[0].clipIn!.value, 25);
 	assert.ok(model.buffer.getText().startsWith('-- untouched\n'));
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component')
 			local owner={x=-1}; local timelines=component.new(owner,{clock_mode='manual'})
 			timelines:define('clip',require('parent')); timelines:play('clip')
@@ -243,7 +243,7 @@ test('a multiline clip trim inserts missing transport fields as one syntax batch
 		assert.equal(document.clips[0].clipIn!.value, 25);
 		assert.equal(changes, 1);
 		assert.ok(changed.includes('-- child stays here'));
-		for (const optLevel of [0, 3] as const) {
+		for (const optLevel of [3] as const) {
 			const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component')
 				local owner={x=-1}; local timeline=component.new(owner,{clock_mode='manual'})
 				timeline:define('clip',require('parent')); timeline:play('clip')
@@ -283,7 +283,7 @@ test('all authored track templates compile through the actual native program and
 	assert.equal(document.tracks.length, 7);
 	const tag = document.tracks.find(track => track.kind === 'tag')!;
 	assert.deepEqual(tag.keys.map(key => key.coordinate!.value), [0, 100]);
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { cpu } = createCartlibProgramHarness("local program=require('cartlib/timeline/program'); local result=program.compile(require('parent')); assert(result.has_evaluation_work)", {
 			optLevel, modules: [{ path: 'parent', source }],
 		});

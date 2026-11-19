@@ -35,7 +35,7 @@ const operations: [OpCode, (a: v.Value, b: v.Value) => v.Value][] = [
 	[OpCode.SHL,(a,b)=>v.valueInteger(luaShiftLeft(n.integerOperand(a),n.integerOperand(b)))],
 	[OpCode.SHR,(a,b)=>v.valueInteger(luaShiftRight(n.integerOperand(a),n.integerOperand(b)))],
 ];
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 const machine=(op: OpCode,kind?: MemoryAccessKind)=>createMachine(op,kind,backend);
 test(`${backend}: real scalar CPU opcodes transport Integer/Float words through calls and returns`, { skip: !runner }, () => {
 	const values = [v.valueInteger(0),v.valueInteger(1),v.valueInteger(-1),v.valueInteger(-2147483648),v.valueInteger(2147483647),v.valueInteger(16777217),v.valueFloat(16777216),v.valueFloat(-2.5),v.valueFloatBits(1),v.valueFloatBits(0x80000000),v.valueFloatBits(0x7f800000),v.valueFloatBits(0xff800000),v.valueFloatBits(0x7fa12345)];

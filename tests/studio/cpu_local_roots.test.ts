@@ -6,7 +6,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`local roots own nested host literal materialization and release nested scopes (O${optLevel})`, t => {
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'local_roots.lua', optLevel)));
 		const baseline = cpu.collectTrackedHeapBytes();

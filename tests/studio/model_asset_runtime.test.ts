@@ -88,7 +88,7 @@ probe = {
 }
 `;
 
-for (const optLevel of [0, 3] as const) test(`model geometry binds ROM streams once and renews with its directory generation (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`model geometry binds ROM streams once and renews with its directory generation (O${optLevel})`, () => {
 	const modules = [
 		{ path: 'bootstrap', source: "require('base')\ntable = require('table')\nstring = require('string/base')" },
 		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },

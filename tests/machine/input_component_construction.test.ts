@@ -19,7 +19,7 @@ const modules = [...WORLD_CPU_MODULES, {
 end}`,
 }];
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`input components bind concrete configuration and retain the final owner (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
 world:start()

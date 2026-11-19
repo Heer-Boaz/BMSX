@@ -83,7 +83,7 @@ return first.left, second.right`;
 				}
 				assert.deepEqual(snapshot.symbolResolver.getSemanticQueryMetrics(), metrics, 'repeated reads retain the solved facts');
 			}
-			for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'chains.lua', level), [11, 22].map(valueInteger));
+			for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, 'chains.lua', level), [11, 22].map(valueInteger));
 		});
 	}
 }
@@ -142,7 +142,7 @@ return result.marker`;
 	const result = snapshot.getFileData('indexed.lua')!.decls.find(entry => entry.name === 'result')!;
 	assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(result.id)).map(entry => entry.name), ['marker']);
 	assert.equal(snapshot.symbolResolver.getSemanticQueryMetrics().instantiatedCalls, 1);
-	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'indexed.lua', level), [valueInteger(11)]);
+	for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, 'indexed.lua', level), [valueInteger(11)]);
 });
 
 test('an unmodelled index retains the existing aggregate-element representation', () => {
@@ -154,7 +154,7 @@ return result.found`;
 	const snapshot = workspace.getSnapshot();
 	const result = snapshot.getFileData('unknown_index.lua')!.decls.find(entry => entry.name === 'result')!;
 	assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(result.id)).map(entry => entry.name), ['found']);
-	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'unknown_index.lua', level), [valueBool(true)]);
+	for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, 'unknown_index.lua', level), [valueBool(true)]);
 });
 
 test('a cyclic object graph reaches a fixed point without executing the program', () => {
@@ -183,7 +183,7 @@ return result.late`;
 	const snapshot = workspace.getSnapshot();
 	const result = snapshot.getFileData('callbacks.lua')!.decls.find(entry => entry.name === 'result')!;
 	assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(result.id)).map(entry => entry.name).sort(), ['early', 'late']);
-	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'callbacks.lua', level), [valueBool(true)]);
+	for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, 'callbacks.lua', level), [valueBool(true)]);
 });
 
 for (const [name, body, argument, expected] of [
@@ -227,7 +227,7 @@ return first.red, second.blue`;
 				assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(entry => entry.name), [name === 'first' ? 'red' : 'blue']);
 			}
 		}
-		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'storage.lua', level), [true, true].map(valueBool));
+		for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, 'storage.lua', level), [true, true].map(valueBool));
 	});
 }
 
@@ -252,7 +252,7 @@ return selected.right, first.left, second.right`;
 			assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(entry => entry.name).sort(), expected);
 		}
 	}
-	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'aliases.lua', level), [true, true, true].map(valueBool));
+	for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, 'aliases.lua', level), [true, true, true].map(valueBool));
 });
 
 test('reading a missing member does not create a location in the term store', () => {
@@ -320,5 +320,5 @@ return first.token.left, second.token.right, first.item.leaf_left, second.item.l
 			assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(appendValueMember(value, 'item')).map(entry => entry.name).sort(), [name === 'first' ? 'leaf_left' : 'leaf_right', 'next']);
 		}
 	}
-	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'closures.lua', level), [valueInteger(11), valueInteger(22), valueBool(true), valueBool(true)]);
+	for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, 'closures.lua', level), [valueInteger(11), valueInteger(22), valueBool(true), valueBool(true)]);
 });

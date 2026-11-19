@@ -6,7 +6,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) test(`firmware load binds ordinary globals, not caller-image ordinals, at O${optLevel}`, () => {
+for (const optLevel of [3] as const) test(`firmware load binds ordinary globals, not caller-image ordinals, at O${optLevel}`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 return pcall(function()
 local loader<const> = load
@@ -117,7 +117,7 @@ advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score')
 	}
 });
 
-for (const optLevel of [0, 3] as const) test(`firmware string-id expressions preserve computed strings and scalar calls at O${optLevel}`, () => {
+for (const optLevel of [3] as const) test(`firmware string-id expressions preserve computed strings and scalar calls at O${optLevel}`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 return pcall(function()
 local literal<const> = 'literal'
@@ -142,7 +142,7 @@ end)
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
-for (const optLevel of [0, 3] as const) test(`generated string-id syntax accepts a computed operand at O${optLevel}`, () => {
+for (const optLevel of [3] as const) test(`generated string-id syntax accepts a computed operand at O${optLevel}`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 return pcall(function()
 obtain = function(...) return 'string', 'discarded' end

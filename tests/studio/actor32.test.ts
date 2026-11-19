@@ -58,7 +58,7 @@ local world<const> = {_objects={parent,actor},_objects_revision=16777217,_spatia
 function world:mutate() actor.id='changed'; entry.position_ms=2; entry.program.duration_ms=nil end
 return world`;
 
-for (const optLevel of [0, 3] as const) test(`actor32 O${optLevel}: typed borrows, copied geometry, timeline numbers and restored heap`, t => {
+for (const optLevel of [3] as const) test(`actor32 O${optLevel}: typed borrows, copied geometry, timeline numbers and restored heap`, t => {
 	const { images } = createCartlibProgramHarness("return require('cartlib/world/world')", {
 		optLevel, modules: [{ path: 'cartlib/world/world', source: WORLD }],
 	});

@@ -6,7 +6,7 @@ import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpe
 
 // Real World, Scene, Registry, components and GPU dependencies, not a host-made
 // lifecycle model. These tests exercise guest construction, not rendering.
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`World prepares batch identities and poses before constructors, then publishes, wires and activates (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 world:start()

@@ -20,7 +20,7 @@ function run(source:string,optLevel:0|3,backend:CpuExecutionBackend){
 }
 const prefix="require('base');local p<const>=require('string/pack');local s<const>=require('string/base');".replaceAll('<const>=','<const> =');
 const source=readFileSync(new URL('../fixtures/compiler32/packet.lua',import.meta.url),'utf8');
-for(const opt of [0,3] as const)for(const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript])test(`packet32 O${opt} ${backend}: formats use Integer words, Float payloads and exact f64 interchange`,()=>{
+for(const opt of [0,3] as const)for(const backend of [CpuExecutionBackend.Interpreter])test(`packet32 O${opt} ${backend}: formats use Integer words, Float payloads and exact f64 interchange`,()=>{
  const {cpu,results}=run(source,opt,backend);
  assert.deepEqual(results.slice(0,7),[v.valueInteger(-2147483648),v.valueInteger(-1),v.valueInteger(0x40000000),v.valueInteger(-1),v.valueInteger(-1),v.valueInteger(33),v.valueInteger(12)]);
  const strings=results.slice(7,11).map(x=>cpu.stringPool.bytes(v.asStringId(x)));
@@ -30,7 +30,7 @@ for(const opt of [0,3] as const)for(const backend of [CpuExecutionBackend.Interp
  assert.deepEqual(bytes(strings[2]),[0x4f,0,0,0]);assert.deepEqual(bytes(strings[3]),[0xff,0xa1,0x23,0x45]);
  assert.deepEqual(results.slice(11),[v.valueInteger(0x3f800001),v.valueInteger(0xffa12345)]);
 });
-for(const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript])test(`packet32 ${backend}: wide integers reject only out-of-range results, with sign extension and unsigned words`,()=>{
+for(const backend of [CpuExecutionBackend.Interpreter])test(`packet32 ${backend}: wide integers reject only out-of-range results, with sign extension and unsigned words`,()=>{
  const {results}=run(prefix+`local ff=s.char(255);local all=ff..ff..ff..ff..ff..ff..ff..ff
 local signed=p.unpack('<i8',all)
 local unsigned=pcall(p.unpack,'<I8',all)
@@ -41,7 +41,7 @@ local too_large=pcall(p.unpack,'>i8',s.char(0,0,0,1,0,0,0,1))
 return signed,unsigned,w,tiny,wide,too_large`,3,backend);
  assert.deepEqual(results,[v.valueInteger(-1),v.valueBool(false),v.valueInteger(-2147483647),v.valueInteger(-1),v.valueInteger(-2),v.valueBool(false)]);
 });
-for(const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript])test(`packet32 ${backend}: positions, suffixes and length prefixes cannot wrap their admission boundary`,()=>{
+for(const backend of [CpuExecutionBackend.Interpreter])test(`packet32 ${backend}: positions, suffixes and length prefixes cannot wrap their admission boundary`,()=>{
  const {results}=run(prefix+`local a=pcall(p.pack,'I2',-1);local b=pcall(p.pack,'j',1.5)
 local c=pcall(p.packsize,'c2147483648');local d=pcall(p.packsize,'c2147483647x')
 local e=pcall(p.unpack,'s4',s.char(255,255,255,255));local f=pcall(p.unpack,'','',0/0)

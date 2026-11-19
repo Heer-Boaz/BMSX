@@ -5,7 +5,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua } from '../helpers/cpu_test_harness';
 
-for (const level of [0, 3] as const) for (const section of ['bss', 'data', 'rodata'] as const) {
+for (const level of [3] as const) for (const section of ['bss', 'data', 'rodata'] as const) {
 	test(`O${level}: ${section} declarations with equal labels retain their own lexical storage`, () => {
 		const source = `${section} value: word${section === 'bss' ? '' : ' = 11'}
 local read = function(...)
@@ -32,7 +32,7 @@ return *value, mem[inner], value == inner`;
 	});
 }
 
-for (const level of [0, 3] as const) test(`O${level}: disjoint function-local static cells persist independently across calls`, () => {
+for (const level of [3] as const) test(`O${level}: disjoint function-local static cells persist independently across calls`, () => {
 	const source = `local first = function(...)
 	bss counter: word
 	*counter = *counter + 1

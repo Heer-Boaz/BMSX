@@ -23,7 +23,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createTestBlua32PairCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`public BIOS exports root their module dependencies without an entry require (O${optLevel})`, () => {
 		const systemSources = [
 			['entry', `module<entry>

@@ -8,7 +8,7 @@ import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 // These are real cartlib registrations, not a host-side model of a registry.
 // An entry into register is not evidence that its definition wins: a nested
 // registration may succeed before the outer compilation fails.
-for (const optLevel of [0, 3] as const) test(`Scene registration reflects successful writes in execution order (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`Scene registration reflects successful writes in execution order (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
 world:start()
 

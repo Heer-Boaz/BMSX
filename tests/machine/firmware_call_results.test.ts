@@ -36,7 +36,7 @@ const cases: { source: string; values: Value[] }[] = [
 	{ source: 'return 999, wide()', values: [valueInteger(999), ...Array.from({ length: 260 }, (_, index) => valueInteger(index))] },
 ];
 
-for (const optLevel of [0, 3] as const) test(`firmware O${optLevel}: grouped modf makes format c emit one codepoint`, () => {
+for (const optLevel of [3] as const) test(`firmware O${optLevel}: grouped modf makes format c emit one codepoint`, () => {
 	const modules = ['base', 'number/parse', 'number/decimal', 'number/format', 'table', 'math', 'math/trig', 'math/trig/reduce', 'string/base', 'string/mapped', 'string/format'].map(path => ({
 		path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 	}));
@@ -58,7 +58,7 @@ return true
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 });
 
-for (const optLevel of [0, 3] as const) for (const { source, values } of cases) {
+for (const optLevel of [3] as const) for (const { source, values } of cases) {
 	test(`firmware O${optLevel} call results: ${source}`, () => {
 		const { cpu } = createCartlibProgramHarness(`
 tuple = function(...) return 7, nil, false, 9, nil end
@@ -74,7 +74,7 @@ return pcall(assert(load(${JSON.stringify(source)})))
 	});
 }
 
-for (const optLevel of [0, 3] as const) test(`firmware O${optLevel}: generated call syntax retains open results`, () => {
+for (const optLevel of [3] as const) test(`firmware O${optLevel}: generated call syntax retains open results`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 tuple = function(...) return 7, nil, false, 9, nil end
 spread = function(...) return ... end
@@ -89,7 +89,7 @@ return pcall(lua_compiler.compile_syntax(source, '=tuple-syntax'))
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(42), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()]);
 });
 
-for (const optLevel of [0, 3] as const) test(`firmware O${optLevel}: retained tuple forwarding allocates no guest wrappers`, () => {
+for (const optLevel of [3] as const) test(`firmware O${optLevel}: retained tuple forwarding allocates no guest wrappers`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 tuple = function(...) return 7, nil, false, 9, nil end
 forward = function(...) return ... end

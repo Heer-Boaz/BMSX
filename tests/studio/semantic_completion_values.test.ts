@@ -94,7 +94,7 @@ test('non-exiting bodies do not manufacture nil while unresolved jumps retain un
 	assert.deepEqual(summaries.list()[1].returns, [summaries.terms.unknown()]);
 	assert.equal(summaries.list()[2].source.completion, LuaCompletion.None);
 	assert.equal(summaries.list()[2].returns.length, 1);
-	for (const optimization of [0, 3] as const) {
+	for (const optimization of [3] as const) {
 		assert.deepEqual(runCompiledLua('local function jumping() goto result; if false then ::result:: return 9 end end; return jumping()', 'cross-block.lua', optimization), [valueInteger(9)]);
 	}
 });

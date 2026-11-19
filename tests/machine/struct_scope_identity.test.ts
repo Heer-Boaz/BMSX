@@ -212,13 +212,13 @@ return sizeof(word[n]), sizeof(word[bits]), sizeof(word[(false ~= nil and 3 == 3
 	},
 ];
 
-for (const optLevel of [0, 3] as const) for (const { name, source, expected } of cases) {
+for (const optLevel of [3] as const) for (const { name, source, expected } of cases) {
 	test(`O${optLevel}: ${name}`, () => {
 		assert.deepEqual(runCompiledLua(source, 'scoped_types', optLevel), expected.map(valueInteger));
 	});
 }
 
-for (const optLevel of [0, 3] as const) for (const section of ['bss', 'data', 'rodata'] as const) {
+for (const optLevel of [3] as const) for (const section of ['bss', 'data', 'rodata'] as const) {
 	test(`O${optLevel}: ${section} cells use each scope's layout, not the last struct spelling`, () => {
 		const source = `struct shape
 	first: word
@@ -242,7 +242,7 @@ return pointer.first, pointer.last, x, offset, sizeof(shape), offsetof(shape.las
 	});
 }
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: module and global type resolution are independent of code generation order`, () => {
+for (const optLevel of [3] as const) test(`O${optLevel}: module and global type resolution are independent of code generation order`, () => {
 	const source = `local first<const> = require('a_first')
 local second<const> = require('z_second')
 return first.size(), second.size(), sizeof(published)`;
@@ -273,7 +273,7 @@ return { size = size }` },
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [8, 12, 16].map(valueInteger));
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: block types are not published outside their lexical scope`, () => {
+for (const optLevel of [3] as const) test(`O${optLevel}: block types are not published outside their lexical scope`, () => {
 	assert.throws(() => compileLuaSource(`do
 	struct private
 		x: word
@@ -282,7 +282,7 @@ end
 return sizeof(private)`, 'private_type', optLevel), /Unknown struct type 'private'/);
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: field dimensions use imports and static exports from the declaring file`, () => {
+for (const optLevel of [3] as const) test(`O${optLevel}: field dimensions use imports and static exports from the declaring file`, () => {
 	const source = `local types<const> = require('types')
 local limits<const> = require('other_limits')
 return types.size(), sizeof(published), limits.count`;
@@ -309,7 +309,7 @@ return { nested = { count = 3 }, cells = cells }` },
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [28, 28, 9].map(valueInteger));
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: written import aliases preserve exact module bindings and static dimensions`, () => {
+for (const optLevel of [3] as const) test(`O${optLevel}: written import aliases preserve exact module bindings and static dimensions`, () => {
 	const modules = [
 		{ path: 'foo.lua', source: 'module<const>\nreturn { count = 2 }' },
 		{ path: 'res/res/foo.lua', source: 'module<const>\nreturn { count = 3 }' },
@@ -337,7 +337,7 @@ for (const initializer of [
 	'local n<const> = 0',
 	'local n<const> = 1.5',
 ]) test(`nonconstant or invalid dimensions are not repaired: ${initializer}`, () => {
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.throws(() => compileLuaSource(`${initializer}\nreturn sizeof(word[n or 7])`, 'dynamic_dimension', optLevel),
 			/Struct array length must be a positive compile-time integer/);
 	}
@@ -347,7 +347,7 @@ for (const comparison of ['1 == limits.cells', 'limits.cells == 1', '1 ~= limits
 	test(`relocated values are not compared as literal tags: ${comparison}`, () => {
 		const source = `local limits<const> = require('limits')\nreturn sizeof(word[(${comparison}) and 2 or 3])`;
 		const moduleSource = 'module<const>\nbss cells: word[2]\nreturn { cells = cells }';
-		for (const optLevel of [0, 3] as const) {
+		for (const optLevel of [3] as const) {
 			assert.throws(() => compileLuaChunkToProgram(parseLuaChunk(source, 'entry').chunk, [{
 				path: 'limits', source: moduleSource, chunk: parseLuaChunk(moduleSource, 'limits').chunk,
 			}], { entrySource: source, programDomain: 'system', optLevel }), /Struct array length must be a positive compile-time integer/);

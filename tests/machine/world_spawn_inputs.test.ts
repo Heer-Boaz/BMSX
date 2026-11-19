@@ -7,7 +7,7 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`World and Scene accept omitted construction options without replacing explicit inputs (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 world:start()

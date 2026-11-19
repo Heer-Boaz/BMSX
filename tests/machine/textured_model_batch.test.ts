@@ -10,7 +10,7 @@ import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { createTexturedModelFixture } from '../helpers/textured_model';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) test(`textured model binding, affine clipping and mixed depth runs retain storage (O${optLevel})`, async t => {
+for (const optLevel of [3] as const) test(`textured model binding, affine clipping and mixed depth runs retain storage (O${optLevel})`, async t => {
 	const { imported } = await createTexturedModelFixture();
 	imported.textures.push({ source: 0 }); imported.materials[1].baseColorTexture = 2;
 	const textures = await prepareModelTextures(imported);

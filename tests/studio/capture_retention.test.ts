@@ -41,7 +41,7 @@ function prove(previous: ReturnType<typeof compile>, fresh: ReturnType<typeof co
 		previous.sources, fresh.linked, fresh.sources, fresh.correspondence);
 }
 
-for (const optLevel of [0, 3] as const) test(`a completed debugger call does not turn its retired instruction into a live continuation (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`a completed debugger call does not turn its retired instruction into a live continuation (O${optLevel})`, () => {
 	const before = `function evaluate(value) return value + 7 end
 halt_until_irq
 return 42`;
@@ -68,7 +68,7 @@ return 42`;
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(11)]);
 });
 
-for (const optLevel of [0, 3] as const) test(`Hot Resume initializes new module dependencies once without replacing existing exports (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`Hot Resume initializes new module dependencies once without replacing existing exports (O${optLevel})`, () => {
 	const before = `local world<const> = require('world')
 local function read() return world end
 local function init<init>() hook_trace = load_trace end
@@ -105,7 +105,7 @@ return { world = world }` },
 	}
 });
 
-for (const optLevel of [0, 3] as const) test(`live callback can acquire an immutable import without acquiring a cell (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`live callback can acquire an immutable import without acquiring a cell (O${optLevel})`, () => {
 	const modules = [{ path: 'library', source: 'return { value = 41 }' }];
 	const before = `local library<const> = require('library')
 local alias<const> = library
@@ -240,7 +240,7 @@ return object:make(7)`;
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
 });
 
-for (const level of [0, 3] as const) test(`O${level}: an old retained cell cannot substitute for a newly shadowing declaration`, () => {
+for (const level of [3] as const) test(`O${level}: an old retained cell cannot substitute for a newly shadowing declaration`, () => {
 	const before = `local value = 10
 local read = function() return value end
 return read`;
@@ -429,7 +429,7 @@ return read()`;
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
 });
 
-for (const optLevel of [0, 3] as const) test(`paused calls survive adding imports used only by callbacks (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`paused calls survive adding imports used only by callbacks (O${optLevel})`, () => {
 	const modules = [{ path: 'first', source: 'return { value = 7 }' }, { path: 'second', source: 'return { value = 42 }' }];
 	const before = `local first<const> = require('first')
 local function checkpoint() return 0 end

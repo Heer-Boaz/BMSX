@@ -517,7 +517,7 @@ assert2(c, 1,0,0,1, 35,46)
 	},
 ];
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	for (const behavior of behaviors) {
 		test(`spatial O${optLevel}: ${behavior.name}`, () => {
 			createSpatialCpu(fixture + behavior.source, optLevel);

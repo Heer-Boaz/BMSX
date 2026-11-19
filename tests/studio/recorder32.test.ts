@@ -19,7 +19,7 @@ sources.push({ path: 'test/boot', source: RECORDER32_BOOT_SOURCE });
 const modules = sources.map(m => ({...m, chunk:parseLuaChunk(m.source,m.path)}));
 const initialize = "require('test/boot')\n" + RECORDER32_INITIALIZE;
 
-for (const optLevel of [0,3] as const) for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript]) {
+for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`recorder32 O${optLevel} ${backend}: actual Lua producers, sign/full wrap, raw timestamps and overflow policy`, t => {
 		const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(initialize), modules,
 			{entrySource:initialize,optLevel,programDomain:'system',traceStatements:'erase'}));

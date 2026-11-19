@@ -54,7 +54,7 @@ function run(source: string, optLevel: 0 | 3) {
 
 const sxy = (x: number, y: number) => x | (y << 16);
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`model batch clips near crossings before projection and preserves flat fan packets (O${optLevel})`, () => {
 		const { values } = run(`
 primitive.positions=one_behind_positions

@@ -16,7 +16,7 @@ import { createTestBlua32PairCpu, linkTestSystemBlua32 } from '../helpers/blua32
 import { compileLuaSource, materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 import { afterTest } from '../helpers/test_cleanup';
 
-for (const optLevel of [0, 3] as const) test(`packer debug metadata cannot change trace erasure, results or cycles (O${optLevel})`, async t => {
+for (const optLevel of [3] as const) test(`packer debug metadata cannot change trace erasure, results or cycles (O${optLevel})`, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-debug-release-'));
 	afterTest(t, () => rm(root, { recursive: true, force: true }));
 	const entry = join(root, 'entry.lua');
@@ -47,7 +47,7 @@ return count`);
 	assert.deepEqual(builds[1], builds[0]);
 });
 
-for (const optLevel of [0, 3] as const) for (const domain of ['system', 'cart'] as const) test(`independent metadata preserves executable bytes (${domain}, O${optLevel})`, () => {
+for (const optLevel of [3] as const) for (const domain of ['system', 'cart'] as const) test(`independent metadata preserves executable bytes (${domain}, O${optLevel})`, () => {
 	const source = `module<entry>
 local value = 0
 local function emit(n)

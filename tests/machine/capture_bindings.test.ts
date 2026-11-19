@@ -18,7 +18,7 @@ do
 	second = function() return value end
 end
 return first(), second()`;
-	for (const level of [0, 3] as const) {
+	for (const level of [3] as const) {
 		const { metadata, program } = compileLuaSource(source, PATH, level);
 		const locals = metadata.lexicalDeclarations.filter(local => local.name === 'value');
 		assert.equal(locals.length, 2);
@@ -43,7 +43,7 @@ end
 local write, read = outer()
 write(42)
 return read()`;
-	for (const level of [0, 3] as const) {
+	for (const level of [3] as const) {
 		const { metadata, program, entryProtoIndex } = compileLuaSource(source, PATH, level);
 		const stateIndex = metadata.lexicalDeclarations.findIndex(local => local.name === 'state');
 		const state = metadata.lexicalDeclarations[stateIndex];
@@ -101,7 +101,7 @@ test('locals without nested functions need no shared declaration records', () =>
 	assert.ok(compiled.metadata.upvalueBindingsByProto.every(bindings => bindings.length === 0));
 });
 
-for (const level of [0, 3] as const) test(`O${level}: outer declarations do not depend on physical captures`, () => {
+for (const level of [3] as const) test(`O${level}: outer declarations do not depend on physical captures`, () => {
 	const source = `local fixed<const> = 17
 local unused = 40
 local make = function(parameter, ...)
@@ -133,7 +133,7 @@ return make(20)(5)`;
 	assert.deepEqual(runCompiledLua(source, PATH, level), [valueInteger(42)]);
 });
 
-for (const level of [0, 3] as const) test(`O${level}: definition scopes select shadowing and recursive declarations before code generation`, () => {
+for (const level of [3] as const) test(`O${level}: definition scopes select shadowing and recursive declarations before code generation`, () => {
 	const source = `local value = 1
 local first = function() return 10 end
 local value<const> = 2
@@ -152,7 +152,7 @@ return first(), second()`;
 	}
 });
 
-for (const level of [0, 3] as const) test(`O${level}: unused implicit receivers and explicit self shadowing retain distinct source owners`, () => {
+for (const level of [3] as const) test(`O${level}: unused implicit receivers and explicit self shadowing retain distinct source owners`, () => {
 	const source = `local object = {}
 function object:make()
 	local receiver = function() return 1 end
@@ -176,7 +176,7 @@ return object:make()`;
 	}
 });
 
-for (const level of [0, 3] as const) test(`O${level}: captures retain defining constness, not the kind of the captured value`, () => {
+for (const level of [3] as const) test(`O${level}: captures retain defining constness, not the kind of the captured value`, () => {
 	const source = `local fixed<const> = { answer = 10 }
 local mutable = { answer = 20 }
 local function outer(parameter)

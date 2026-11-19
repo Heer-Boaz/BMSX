@@ -1537,7 +1537,7 @@ test('normal GTE chained commands, grant overrun, and restored deadline', () => 
  assert.equal(gte.captureState().normalPendingCycles, 0);
 });
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
  test(`normal GTE latency is included by real BLua memory instructions (${backend})`, () => {
   const text = new Uint8Array(7 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);

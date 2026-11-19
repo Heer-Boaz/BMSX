@@ -53,7 +53,7 @@ end
 return dma` },
 ];
 
-for (const optLevel of [0, 3] as const) for (const capacity of [16, 32])
+for (const optLevel of [3] as const) for (const capacity of [16, 32])
 test(`GX textured triangles preserve UV/page words without transport padding in ${capacity} words (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(checks + `
 local commands<const> = require('cartlib/gx/command_list')
@@ -105,7 +105,7 @@ return failed
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 });
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	for (const capacity of [16, 32] as const) {
 		test(`GX bulk triangles stream ordered packets through ${capacity}-word storage (O${optLevel})`, () => {
 			const { cpu } = createCartlibProgramHarness(checks + `

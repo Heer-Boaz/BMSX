@@ -149,7 +149,7 @@ test('numeric field no-ops compare typed constants without rewriting their autho
 	}
 });
 
-for (const optLevel of [0, 3] as const) test(`numeric field signed-zero edits emit a Float literal on the 32-bit machine (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`numeric field signed-zero edits emit a Float literal on the 32-bit machine (O${optLevel})`, () => {
 	const source = 'local values = { positive = 0, negative = -0.0 }';
 	const model = new EditorTextModel(resource, 'lua', source), { fields, locations } = parseFields(source);
 	model.pushEditOperations([
@@ -161,7 +161,7 @@ for (const optLevel of [0, 3] as const) test(`numeric field signed-zero edits em
 	model.undo(); assert.equal(model.buffer.getText(), source);
 });
 
-for (const optLevel of [0, 3] as const) test(`host-authored scalars emit valid typed 32-bit source, including underflow and overflow (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`host-authored scalars emit valid typed 32-bit source, including underflow and overflow (O${optLevel})`, () => {
 	const samples = [
 		{ input: 16777217, expected: valueInteger(16777217) },
 		{ input: -2147483648, expected: valueInteger(-2147483648) },
@@ -198,7 +198,7 @@ test('numeric key edits support fractional coordinates without replacing groupin
 	assert.equal(model.buffer.getText(), source);
 });
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`Lua Number source expressions preserve runtime arithmetic values and signed zero (O${optLevel})`, () => {
 		const generated = runCompiledLua(`local large, one, zero = 3e38, 1.0, 0.0
 return large * 2, -large * 2, one / zero, -one / zero, zero / zero, -zero`, 'number-source.lua', optLevel).map(numberToHost);

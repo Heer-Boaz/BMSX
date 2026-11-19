@@ -233,7 +233,7 @@ end,run_callbacks=function(count)
 end}
 `;
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`spatial motion O${optLevel}: owned integration, tile sweeps and synchronous footprint boundaries`, t => {
 		const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);

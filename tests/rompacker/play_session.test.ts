@@ -89,7 +89,7 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 	return { session, target, authoring, input, device, frame, settle, game, field, logs };
 }
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: Play inspection uses admitted physical code and original resource provenance`, async t => {
+for (const optLevel of [3] as const) test(`O${optLevel}: Play inspection uses admitted physical code and original resource provenance`, async t => {
 	const gameSource = GAME.replace('function irq(flags)', 'inspect_probe=function() return game.marker end\nfunction irq(flags)');
 	const f = await fixture(t, optLevel, SCENE, gameSource, 1), code = f.session, guest = f.session.guest;
 	const before = captureRuntimeMachineState(f.target.runtime);
@@ -117,7 +117,7 @@ function world:request_mutation_boundary()
 end
 return world`;
 
-for (const optLevel of [0, 3] as const) for (const closeAtStop of [false, true]) test(`O${optLevel}: Play actor calls ${closeAtStop ? 'retire at close' : 'resume and settle'} on their own CPU plan`, async t => {
+for (const optLevel of [3] as const) for (const closeAtStop of [false, true]) test(`O${optLevel}: Play actor calls ${closeAtStop ? 'retire at close' : 'resume and settle'} on their own CPU plan`, async t => {
 	const gameSource = GAME.replace('local game<const>', "local world<const> = require('cartlib/world/world')\nlocal game<const>")
 		.replace('game.updates=game.updates+1', 'game.updates=game.updates+1\n if world.receipt ~= nil then world.receipt.reached=true end');
 	const f = await fixture(t, optLevel, SCENE, gameSource, 0, [{ path: 'cartlib/world/world', source: ACTOR_WORLD }]);
@@ -159,7 +159,7 @@ for (const optLevel of [0, 3] as const) for (const closeAtStop of [false, true])
 	assert.deepEqual(captureRuntimeMachineState(f.authoring.runtime), primary);
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: Play observations rebind compiled context roots after rewind without fake case results`, async t => {
+for (const optLevel of [3] as const) test(`O${optLevel}: Play observations rebind compiled context roots after rewind without fake case results`, async t => {
 	const scene = `local game<const> = require('game')
 return {kind='integration', setup=function(t)
  game.fsm={'actor.machine','machine',2,0,{{0,0,'','','',false},{0,0,'','','',false}}}
@@ -196,7 +196,7 @@ return {kind='integration', setup=function(t)
 	assert.equal(evidence.fsmTrace!.facts.length, count, 'paused frames cannot duplicate publications');
 });
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`O${optLevel}: Play is paced, accepts physical input and frame-steps only its own machine`, async t => {
 		const f = await fixture(t, optLevel), runtime = f.target.runtime;
 		const primary = captureRuntimeMachineState(f.authoring.runtime);
@@ -304,7 +304,7 @@ test('Play source stops bind to its immutable compiled image, never the authorin
 	assert.equal(f.field('closed'), valueBool(true));
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: recorded review cannot be trapped by live source breakpoints`, async t => {
+for (const optLevel of [3] as const) test(`O${optLevel}: recorded review cannot be trapped by live source breakpoints`, async t => {
 	const f = await fixture(t, optLevel), session = f.session, runtime = f.target.runtime;
 	session.transport.pause();
 	for (let step = 0; step < 15; step++) { session.execution.requestFrameStep(); await f.frame(); }

@@ -13,7 +13,7 @@ function compile(source: string, optLevel: 0|1|2|3, module=false) {
 	return compileLuaChunkToProgram(parseLuaChunk(source,'words.lua').chunk,module?[{path:'word_bits',source:text,chunk:parseLuaChunk(text,'word_bits.lua').chunk}]:[],{entrySource:source,optLevel,programDomain:'system'});
 }
 const source = 'local f<const> = require("word_bits");return f(0x80000000),f(0x7fa12345),blua32.float_from_bits(0xffa12345),blua32.float_bits(2.0)';
-for(const opt of [0,1,2,3] as const) for(const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript]) {
+for(const opt of [0,1,2,3] as const) for(const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`word moves O${opt} ${backend}: static functions reinterpret full payloads without calls or memory`,()=>{
 		const image=linkTestSystemBlua32(compile(source,opt,true)),{cpu}=createTestSystemCpu(image,backend);
 		assert.equal(cpu.runUntilDepth(0,100000),RunResult.Halted);

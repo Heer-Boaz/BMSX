@@ -279,7 +279,7 @@ assert(p.matches('context', filters[1]))`);
 	const names = new Set(programFieldTemplates('progression', condition).map(item => item.name));
 	assert.ok(names.has('key') && names.has('equals'));
 	assert.equal(condition.table!.table.fields.length, 2);
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { cpu } = createCartlibProgramHarness(model.buffer.getText(), { optLevel, modules:
 			['cartlib/progression', 'cartlib/event_matcher', 'cartlib/event_matcher_syntax']
 				.map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })) });

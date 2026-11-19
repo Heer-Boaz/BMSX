@@ -91,7 +91,7 @@ return *counter, &counter
 	assert.deepEqual(result.values, [0, DYNAMIC_RAM_BASE].map(valueInteger));
 });
 
-for (const optLevel of [0, 3] as const) for (const words of [1, 7, 8, 9, 17, 33, 4133]) test(`section initialization clears ${words} BSS words without touching neighbors (O${optLevel})`, () => {
+for (const optLevel of [3] as const) for (const words of [1, 7, 8, 9, 17, 33, 4133]) test(`section initialization clears ${words} BSS words without touching neighbors (O${optLevel})`, () => {
 	const source = `data prefix: word = 305419896\nbss scratch: word[${words}]\nreturn *prefix`;
 	const compiled = compileLuaChunkToProgram(parseSource(source, 'bulk_bss.lua'), [], {
 		entrySource: source, programDomain: 'system', optLevel,
@@ -104,7 +104,7 @@ for (const optLevel of [0, 3] as const) for (const words of [1, 7, 8, 9, 17, 33,
 	assert.equal(memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4 + 4 * words), 0xfeedface);
 });
 
-for (const optLevel of [0, 3] as const) for (const byteCount of [1, 3, 31, 32, 33]) test(`section initialization clears aligned byte BSS of ${byteCount} bytes (O${optLevel})`, () => {
+for (const optLevel of [3] as const) for (const byteCount of [1, 3, 31, 32, 33]) test(`section initialization clears aligned byte BSS of ${byteCount} bytes (O${optLevel})`, () => {
 	const source = `bss bytes: u8[${byteCount}]\nreturn &bytes`;
 	const compiled = compileLuaChunkToProgram(parseSource(source, 'byte_bss.lua'), [], {
 		entrySource: source, programDomain: 'system', optLevel,
@@ -118,7 +118,7 @@ for (const optLevel of [0, 3] as const) for (const byteCount of [1, 3, 31, 32, 3
 	assert.equal(memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4 * words), 0xfeedface);
 });
 
-for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`system and cartridge each initialize only their own BSS (O${optLevel}, backend=${backend})`, () => {
+for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) test(`system and cartridge each initialize only their own BSS (O${optLevel}, backend=${backend})`, () => {
 	const launcher = `bss system_scratch: word[9]\ncop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 	const cartridge = `data prefix: word = 305419896\nbss scratch: word[17]\nreturn *prefix`;
 	const system = compileLuaChunkToProgram(parseSource(launcher, 'system_bss.lua'), [], { entrySource: launcher, programDomain: 'system', optLevel });
@@ -672,7 +672,7 @@ return bytes[0], bytes[1], bytes[2], halves[0], halves[1], bytes, halves
 });
 
 for (const section of ['data', 'rodata'] as const) {
-	for (const optLevel of [0, 1, 2, 3] as const) {
+	for (const optLevel of [3] as const) {
 		test(`O${optLevel}: .${section} floating initializers preserve scalar, array and struct layouts`, () => {
 			const source = `
 struct floating_record

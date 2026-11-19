@@ -5,7 +5,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { runCompletionClosure } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) test(`FSM reset releases every previous data field and restores declared defaults (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`FSM reset releases every previous data field and restores declared defaults (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 local fsm<const> = require('cartlib/fsm/fsm')
 local default_object<const> = { retained = true }

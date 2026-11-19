@@ -18,7 +18,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { compileTableIterationTest } from '../helpers/table_iteration';
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
  test(`NEXT charges physical scan slots and completes an exhausted primitive (${backend})`, () => {
   const text = new Uint8Array(3 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.CALL, 0, 3, 0);

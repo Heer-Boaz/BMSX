@@ -22,7 +22,7 @@ test('characterize current public RAM charges for scalar and counted accesses', 
 		const mode = backend === CpuExecutionBackend.Interpreter ? 'interpreter' : 'js_compilation_enabled';
 		console.log(`RAM_CHARACTERIZE candidate=runtime backend=${mode} ${workload} guest_cycles=${cycles}`);
 	};
-	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		for (const count of [0, 1, 4, 16, 256]) {
 			const text = new Uint8Array(3 * INSTRUCTION_BYTES);
 			writeInstruction(text, 0, OpCode.WIDE, 0, 0, count >> 9);

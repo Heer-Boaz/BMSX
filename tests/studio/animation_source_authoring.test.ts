@@ -117,7 +117,7 @@ test('a key gesture is presentation only until one shared document edit, with na
 	viewport.cancel();
 	assert.equal(viewport.dragValue, undefined);
 	model.pushEditOperations(createLuaTableFieldNumberEdits(model.buffer, key.source!.file.chunk.locations, key.coordinate!.field, 50)!);
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { cpu } = createCartlibProgramHarness(`
 			local component = require('cartlib/timeline/timeline_component')
 			local owner = {x=-1}

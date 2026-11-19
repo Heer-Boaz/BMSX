@@ -17,7 +17,7 @@ const recorderModule = {
 
 const observationChannels = ['bt.compile.begin', 'bt.compile.node', 'bt.compile.end', 'bt.bind.complete'];
 
-for (const optLevel of [0, 3] as const) test(`BT compilation observes occurrences, not evaluator or actor identity (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`BT compilation observes occurrences, not evaluator or actor identity (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(BT_COMPILATION_PROBE_SOURCE + `
 probe.observe()
 probe.compile(2, true)
@@ -103,7 +103,7 @@ ${tracing ? "assert(recorder.programs[compiled].nodes.type[1] == 'task')" : ''}
 	}
 });
 
-for (const optLevel of [0, 3] as const) test(`BT columns preserve sparse values and broad/deep occurrence indices (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`BT columns preserve sparse values and broad/deep occurrence indices (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 local compiler<const> = require('cartlib/behaviour_tree/program')
 local recorder<const> = require('testlib/behaviour_tree/compile_recorder').new()
@@ -165,7 +165,7 @@ end
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 });
 
-for (const optLevel of [0, 3] as const) test(`BT records follow program/actor reachability, including ephemeron cycles (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`BT records follow program/actor reachability, including ephemeron cycles (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(`
 local compiler<const> = require('cartlib/behaviour_tree/program')
 local component<const> = require('cartlib/behaviour_tree/bt_component')

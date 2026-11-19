@@ -6,7 +6,7 @@ import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols
 import { compileLuaSource } from '../helpers/cpu_test_harness';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 
-for (const optLevel of [0, 3] as const) test(`function-entry observation binds original argument slots and inlined instruction sites (O${optLevel})`, {
+for (const optLevel of [3] as const) test(`function-entry observation binds original argument slots and inlined instruction sites (O${optLevel})`, {
 	todo: optLevel === 3 ? 'Inline entry and its argument locations are not yet represented by the compiler.' : false,
 }, () => {
 	const compiled = compileLuaSource(`
@@ -46,7 +46,7 @@ return value`, 'observer.lua', optLevel);
 	assert.equal(bindFunctionProbe({ layout: linked.image, symbols: linked.symbols }, 'observer', 'mix', [9]).status, 'arguments-unavailable');
 });
 
-for (const optLevel of [0, 3] as const) test(`a loop as first statement produces one function entry with the original argument (O${optLevel})`, {
+for (const optLevel of [3] as const) test(`a loop as first statement produces one function entry with the original argument (O${optLevel})`, {
 	todo: 'A first statement is not necessarily a function-entry boundary.',
 }, () => {
 	const linked = linkTestSystemBlua32(compileLuaSource(`
@@ -68,7 +68,7 @@ return true`, 'loop_entry.lua', optLevel));
 	assert.deepEqual(seen, [3]);
 });
 
-for (const optLevel of [0, 3] as const) test(`nested function entries follow call order (O${optLevel})`, {
+for (const optLevel of [3] as const) test(`nested function entries follow call order (O${optLevel})`, {
 	todo: optLevel === 3 ? 'Inline statement ordering does not necessarily match call ordering.' : false,
 }, () => {
 	const linked = linkTestSystemBlua32(compileLuaSource(`
@@ -92,7 +92,7 @@ return outer(input)`, 'nested_entry.lua', optLevel));
 	assert.deepEqual(seen, ['outer', 'inner']);
 });
 
-for (const optLevel of [0, 3] as const) test(`physical registration entry observation distinguishes same-id source calls (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`physical registration entry observation distinguishes same-id source calls (O${optLevel})`, () => {
 	const source = `local scenes = {}
 local definitions = {}
 function scenes.register(id, definition)

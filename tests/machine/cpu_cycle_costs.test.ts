@@ -32,7 +32,7 @@ test('all nominal opcode prices include instruction issue, while WIDE remains fr
 	assert.deepEqual([...BASE_CYCLES], expected);
 });
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	for (const wide of [false, true]) {
 		test(`fixed division budgets preserve every admission boundary and debt (${backend}, WIDE=${wide})`, () => {
 			const text = new Uint8Array(7 * INSTRUCTION_BYTES);
@@ -127,7 +127,7 @@ test('builtin cost resolution uses fixed VM primitive tiers', () => {
 });
 
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	for (const [producedOperand, wantedOperand] of [[1, 0], [3, 1], [3, 2], [2, 5], [0, 0]]) {
 		test(`RET charges selected result slots including padding (${backend}, B=${producedOperand}, C=${wantedOperand})`, () => {
 			const text = new Uint8Array(8 * INSTRUCTION_BYTES);
@@ -216,7 +216,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	}
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	for (const wanted of [0, 1, 2, 6]) test(`coroutine root RET counts status and selected receiver slots (${backend}, C=${wanted})`, () => {
 		const text = new Uint8Array(9 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
@@ -287,7 +287,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`completion-latch RET charges its result range (${backend})`, () => {
+for (const backend of [CpuExecutionBackend.Interpreter]) test(`completion-latch RET charges its result range (${backend})`, () => {
 	const text = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);

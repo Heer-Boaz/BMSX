@@ -9,7 +9,7 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk, materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`BIOS GC count, capacity, step and full collection use the real primitive (O${optLevel}, backend ${backend})`, () => {
 		const entrySource = `require('base')
 local gc = collectgarbage

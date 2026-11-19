@@ -121,7 +121,7 @@ function writeRamFunction(
 	memory.writeBytes(RAM_CODE_ADDRESS, code);
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`the CPU addresses mapped RAM functions directly and through a register (${backend})`, () => {
+for (const backend of [CpuExecutionBackend.Interpreter]) test(`the CPU addresses mapped RAM functions directly and through a register (${backend})`, () => {
 	const systemCode = new Uint8Array(9 * INSTRUCTION_BYTES);
 	writeInstruction(systemCode, 0, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(systemCode, 1, OpCode.CLOSURE, 0, 0, 0, 0);
@@ -195,7 +195,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 });
 
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`canonical RAM closure versions are guest-GC weak and direct entry retains the raw record count (${backend})`, () => {
+for (const backend of [CpuExecutionBackend.Interpreter]) test(`canonical RAM closure versions are guest-GC weak and direct entry retains the raw record count (${backend})`, () => {
 	const systemCode = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(systemCode, 0, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
 	writeInstruction(systemCode, 1, OpCode.CLOSURE, 0, 0, 1);

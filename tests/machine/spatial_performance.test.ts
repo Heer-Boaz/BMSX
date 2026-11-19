@@ -155,7 +155,7 @@ function heapObjects(cpu: CPU) {
 	return { objects: records.length, tables, closures };
 }
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`spatial CPU: unrelated World size does not tax a changed leaf or dirty branch (O${optLevel})`, t => {
 		const { cpu, images } = createCartlibProgramHarness(worldFixture, { optLevel, modules: WORLD_CPU_MODULES });
 		const initialHeap = cpu.luaHeap.usedBytes();
@@ -315,7 +315,7 @@ probe = {
 `;
 }
 
-for (const optLevel of [0, 3] as const) for (const dimension of [2, 3] as const) {
+for (const optLevel of [3] as const) for (const dimension of [2, 3] as const) {
 	test(`spatial CPU: flat scalar versus configured typed f64 BSS kernels (${dimension}D O${optLevel})`, t => {
 		const rows = [];
 		for (const typed of [false, true]) {

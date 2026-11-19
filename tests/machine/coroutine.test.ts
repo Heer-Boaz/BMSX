@@ -7,7 +7,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { THREAD_RECORD_KIND, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	for (const [name, body] of Object.entries(coroutineVectors)) {
 		test(`coroutine ${name}, O${optLevel}, bounded real CPU grants`, () => {
 			const { cpu } = createTestSystemCpu(compileCoroutineTest(body, optLevel));

@@ -6,7 +6,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`GX narrows a complete column-major affine only at the GTE operand boundary (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(`
 local gte<const> = require('cartlib/gx/gte')

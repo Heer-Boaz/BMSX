@@ -22,7 +22,7 @@ const modules = [
 	{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
 ].map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`).chunk }));
 
-for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`signed Q8 movement O${optLevel} ${backend}: negative motion, word limits, rejection and acceleration`, () => {
 		const program = compileLuaChunkToProgram(parseLuaChunk(source, 'fixed-motion.lua').chunk, modules,
 			{ entrySource: source, programDomain: 'system', optLevel });

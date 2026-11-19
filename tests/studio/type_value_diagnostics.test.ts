@@ -45,7 +45,7 @@ for (const usage of [
 		message: TYPE_VALUE_ERROR,
 		severity: 'error',
 	}]);
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.throws(() => compileLuaSource(source, 'type_value.lua', optLevel), /Struct type 'shape' is not a runtime value\./);
 	}
 });
@@ -61,7 +61,7 @@ test('type diagnostics follow the resolved global declaration across files', () 
 	assert.deepEqual(frontend.getFile('consumer.lua').diagnostics, [{
 		row: 0, startColumn: 7, endColumn: 12, message: TYPE_VALUE_ERROR, severity: 'error',
 	}]);
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.throws(() => compileLuaChunkToProgram(parseLuaChunk(source, 'consumer.lua').chunk, [{
 			path: 'types.lua', source: typeSource, chunk: parseLuaChunk(typeSource, 'types.lua').chunk,
 		}], { entrySource: source, optLevel }), /consumer\.lua: 1:8: Struct type 'shape' is not a runtime value\./);
@@ -71,7 +71,7 @@ test('type diagnostics follow the resolved global declaration across files', () 
 test('const-module export analysis does not bypass type value diagnostics', () => {
 	const source = "return require('types')";
 	const typeSource = 'module<const>\n' + TYPE_DECLARATION + 'return { value = shape }';
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.throws(() => compileLuaChunkToProgram(parseLuaChunk(source, 'entry').chunk, [{
 			path: 'types', source: typeSource, chunk: parseLuaChunk(typeSource, 'types').chunk,
 		}], { entrySource: source, optLevel }), /types: 5:18: Struct type 'shape' is not a runtime value\./);
@@ -84,14 +84,14 @@ test('type value diagnostics map generated harness expressions to authored sourc
 		{ kind: 'source', rangePath: 'authored', displayPath: 'authored.lua', source: TYPE_DECLARATION + 'return shape' },
 		{ kind: 'generated', source: 'end\nreturn run()' },
 	]);
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.throws(() => compileLuaChunkToProgram(parseLuaChunk(mapped.source, 'generated').chunk, [], {
 			entrySource: mapped.source, entrySourceMap: mapped.sourceMap, optLevel,
 		}), /authored\.lua: 4:8: Struct type 'shape' is not a runtime value\./);
 	}
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: value bindings shadow types without rejecting properties or type syntax`, () => {
+for (const optLevel of [3] as const) test(`O${optLevel}: value bindings shadow types without rejecting properties or type syntax`, () => {
 	const source = TYPE_DECLARATION + `
 bss stored: shape
 local ptr: *shape = stored

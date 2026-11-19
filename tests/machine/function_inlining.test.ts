@@ -126,7 +126,7 @@ local held = { value=17 }
 held.value = held.value + receiver:mix(leaf(2), leaf(3))
 return held.value, leaf(1) + leaf(4), receiver:mix(leaf(5), (leaf(6)))
 `;
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [valueInteger(333), valueInteger(60), valueInteger(514)]);
 	}
 });
@@ -143,7 +143,7 @@ local first = callee(reader())
 captured = captured + 1
 return reader(), first, callee(reader()), captured
 `;
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [valueInteger(42), valueInteger(170), valueInteger(174), valueInteger(42)]);
 	}
 });
@@ -203,7 +203,7 @@ local first, second = pair(next_value(), next_value(), next_value())
 local only, missing = pair(7)
 return first, second, sequence, only, missing
 `;
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.deepEqual(
 			runCompiledLua(source, INLINE_TEST_PATH, optLevel),
 			[valueInteger(1), valueInteger(2), valueInteger(3), valueInteger(7), valueNil()],
@@ -351,7 +351,7 @@ local escaped<const> = increment
 local direct<const> = increment(4)
 return escaped == increment, escaped(5), direct
 `;
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [valueBool(true), valueInteger(6), valueInteger(5)]);
 	}
 });

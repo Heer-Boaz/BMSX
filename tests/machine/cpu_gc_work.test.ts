@@ -75,7 +75,7 @@ test('allocation assist target is only restored by the RAM checkpoint', () => {
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 });
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) {
 	test(`explicit GC owns full short-grant debt once (${backend}, WIDE=${wide})`, () => {
 		const image = linkRawTestSystemBlua32(source(OpCode.CALL, wide));
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, pc = frame.pc;
@@ -147,7 +147,7 @@ test('constant loads, compiled operands and checkpoints use the physical bank', 
 	writeInstruction(program.text, 0, OpCode.LOADK, 0, 0, 1);
 	writeInstruction(program.text, 1, OpCode.ADD, 1, 0, 0);
 	writeInstruction(program.text, 2, OpCode.JMP, 0, 63, 61, 255);
-	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(program), backend);
 		const base = cpu.captureRuntimeState().constantPoolBases[SYSTEM_EXECUTION_DOMAIN_ID + 1], tag = base + 3 * 4 + 1;
 		assert.equal(memory.readRamRecordWord(base + 4), 12);

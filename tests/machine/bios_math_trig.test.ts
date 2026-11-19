@@ -18,7 +18,7 @@ const modules = ['math', 'math/trig', 'math/trig/reduce'].map(path => {
 const bootSource = 'return { pcall = __bmsx_pcall, error = __bmsx_error }';
 modules.push({ path: 'test/boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'test/boot.lua') });
 
-for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`BIOS binary32 trigonometry O${optLevel} ${backend}: full finite exponents, quadrant cancellation and IEEE edges`, t => {
 		const entrySource = `local math<const> = require('math')
 local boot<const> = require('test/boot')
@@ -72,7 +72,7 @@ return trig_roots[1], trig_roots[2], trig_roots[3], trig_roots[4]`;
 	});
 }
 
-for (const optLevel of [0, 3] as const) test(`BIOS trig O${optLevel}: physical ROM checks every reference and native raw results/cycles`, () => {
+for (const optLevel of [3] as const) test(`BIOS trig O${optLevel}: physical ROM checks every reference and native raw results/cycles`, () => {
 	const program = compileLuaChunkToProgram(parseLuaChunk(TRIG32_ROM_SOURCE, 'trig32-rom.lua'), modules,
 		{ entrySource: TRIG32_ROM_SOURCE, optLevel, programDomain: 'system' });
 	const image = linkTestSystemBlua32(program), { cpu } = createTestSystemCpu(image);

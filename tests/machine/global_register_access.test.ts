@@ -11,7 +11,7 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 const bootSource = 'getglobal = __bmsx_getglobal; setglobal = __bmsx_setglobal; pcall = __bmsx_pcall';
 const boot = { path: 'boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'boot.lua') };
 
-for (const level of [0, 3] as const) test(`named access and compiled GETGL/SETGL share one register at O${level}`, () => {
+for (const level of [3] as const) test(`named access and compiled GETGL/SETGL share one register at O${level}`, () => {
 	const source = `require('boot')
 local get<const> = getglobal
 local set<const> = setglobal

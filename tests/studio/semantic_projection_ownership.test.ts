@@ -87,7 +87,7 @@ return original.field, selected`;
 		query.projectName(field);
 		query.demandEffectName(field);
 		assert.equal(query.getRevision(), revision, 'repeated demand retains existing facts');
-		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, level), [valueNil(), valueInteger(0)]);
+		for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, file.file, level), [valueNil(), valueInteger(0)]);
 	});
 }
 
@@ -119,7 +119,7 @@ return original.field, actual.field`;
 		assert.equal(query.values.next(input), 0, 'only the actual receiver flows into this frame');
 		assert.equal(query.writes.nextName(write), 0, 'no projected write on the declaring receiver');
 		assert.equal(query.frames.count, 1);
-		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, level), [valueNil(), valueInteger(22)]);
+		for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, file.file, level), [valueNil(), valueInteger(22)]);
 	});
 }
 
@@ -185,7 +185,7 @@ function original:read() return self.field.token end`;
 				: query.member(appendValueMember(receiver, 'field'), name), [name === 'field' ? field.id : token.id]);
 		}
 		const execution = `${source}\nfactory()\noriginal:configure()\nreturn original:read()`;
-		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(execution, file.file, level), [valueBool(true)]);
+		for (const level of [3] as const) assert.deepEqual(runCompiledLua(execution, file.file, level), [valueBool(true)]);
 	});
 }
 

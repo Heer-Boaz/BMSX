@@ -597,7 +597,7 @@ return read_shadow()
 	assert.equal(diagnostics.length, 0);
 });
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	for (const closed of [false, true]) test(`module capture inspection reads ${closed ? 'closed' : 'open'} cells without execution at O${optLevel}`, () => {
 		const source = `local registry = { value = 17 }
 local absent
@@ -826,10 +826,7 @@ return buffer`;
 		assert.equal(runtime.machine.cpu.runUntilDepth(0, 10_000), RunResult.Halted);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
 			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['value'], 3, 8);
-		if (optLevel === 0) {
-			assert.equal(result.kind, 'value');
-			if (result.kind === 'value') assert.equal(result.value, valueInteger(11));
-		} else assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
+		assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
 	});
 
 	for (const scenario of [

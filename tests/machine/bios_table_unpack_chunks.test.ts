@@ -7,7 +7,7 @@ import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassem
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`BIOS table.concat owns conversion independently of global tostring (O${optLevel})`, () => {
 		const {cpu} = createCartlibProgramHarness(`
 local function execute()

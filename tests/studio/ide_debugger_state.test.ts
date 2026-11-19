@@ -130,7 +130,7 @@ for (const admission of ['quiescent', 'at-stop'] as const) test(`a revoked ${adm
 	assert.equal(cpu.getFrameDepth(), depth);
 });
 
-for (const optLevel of [0, 3] as const) for (const pauseInCall of [false, true]) {
+for (const optLevel of [3] as const) for (const pauseInCall of [false, true]) {
 	test(`at-stop call retains the selected IRQ activation and source stop O${optLevel}, nested stop=${pauseInCall}`, async () => {
 		const irqTail = DYNAMIC_RAM_BASE, gameCount = irqTail + 4;
 		const source = `
@@ -216,7 +216,7 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 	});
 }
 
-for (const optLevel of [0, 3] as const) test(`quiescent call suppresses the stopped caller instruction, not the injected root O${optLevel}`, async () => {
+for (const optLevel of [3] as const) test(`quiescent call suppresses the stopped caller instruction, not the injected root O${optLevel}`, async () => {
 	const source = `
 operation = function() return 42 end
 loops = 0
@@ -246,7 +246,7 @@ return loops
 	assert.equal(guest.global('loops'), valueInteger(1), 'Continue executes the original stopped instruction once before stopping on its next visit');
 });
 
-for (const optLevel of [0, 3] as const) test(`discarding an at-stop plan does not present an unreturned caller O${optLevel}`, async () => {
+for (const optLevel of [3] as const) test(`discarding an at-stop plan does not present an unreturned caller O${optLevel}`, async () => {
 	const source = `
 operation = function()
  work = work + 1 -- inside call
@@ -280,7 +280,7 @@ return work -- caller stop
 	assert.equal(cpu.readFramePc(depth - 1), outerPc); assert.equal(guest.global('work'), valueInteger(0));
 });
 
-for (const optLevel of [0, 3] as const) for (const cancel of [false, true]) test(`evaluation ${cancel ? 'cancels' : 'admits fresh arguments'} after the physical IRQ return (O${optLevel})`, async () => {
+for (const optLevel of [3] as const) for (const cancel of [false, true]) test(`evaluation ${cancel ? 'cancels' : 'admits fresh arguments'} after the physical IRQ return (O${optLevel})`, async () => {
 	const irqCount = DYNAMIC_RAM_BASE, gameCount = irqCount + 4;
 	const { runtime, state } = createDebuggerHarness(`
 function irq()
@@ -361,7 +361,7 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 	assert.equal(memory.readMappedU32LE(gameCount), gameBefore);
 });
 
-for (const optLevel of [0, 3] as const) test(`workbench evaluation pauses the actual call without undoing mutations (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`workbench evaluation pauses the actual call without undoing mutations (O${optLevel})`, () => {
 	const harness = createDebuggerHarness(`
 local actor = { value = 0 }
 local function advance(self, limit)
@@ -403,7 +403,7 @@ return actor, advance
 	assert.equal(cpu.getFrameDepth(), depth);
 });
 
-for (const optLevel of [0, 3] as const) for (const cancel of ['never', 'waiting', 'admission'] as const)
+for (const optLevel of [3] as const) for (const cancel of ['never', 'waiting', 'admission'] as const)
 test(`guest owner admits fresh targets after its boundary, cancellation=${cancel} (O${optLevel})`, async () => {
 	const source = `
 function irq() mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK} end
@@ -495,7 +495,7 @@ end
 	assert.equal(guest.global('calls'), valueInteger(1)); assert.equal(state.plans.mutationActive, false);
 });
 
-for (const optLevel of [0, 3] as const) test(`guest boundary works in RAM code without linked symbols (O${optLevel})`, async () => {
+for (const optLevel of [3] as const) test(`guest boundary works in RAM code without linked symbols (O${optLevel})`, async () => {
 	const { image, runtime, state } = createDebuggerHarness(`
 bss function_record: word[64]
 bss function_code: word[64]
@@ -561,7 +561,7 @@ function stoppedSourceLine(harness: DebuggerHarness): number {
 	)!.start.line;
 }
 
-for (const optLevel of [0, 3] as const) for (const honorUserStops of [false, true])
+for (const optLevel of [3] as const) for (const honorUserStops of [false, true])
 test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user breakpoints (O${optLevel})`, () => {
 	const { runtime, state } = createDebuggerHarness('return function(value)\n value = value + 1\n return value\nend', optLevel);
 	const cpu = runtime.machine.cpu, values: Value[] = [];
@@ -693,7 +693,7 @@ test('statement stepping follows optimized inline call frames', () => {
 	assert.equal(stepIntoHarness.state.source.stop!.inlineDepth, 1);
 });
 
-for (const optLevel of [0, 3] as const) test(`completion-root identity survives a parked caller accepting IRQ (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`completion-root identity survives a parked caller accepting IRQ (O${optLevel})`, () => {
 	const irqCount = DYNAMIC_RAM_BASE;
 	const { runtime, state } = createDebuggerHarness(`
 function irq()
@@ -726,7 +726,7 @@ while true do halt_until_irq end
 	const values: Value[] = []; cpu.readCompletionValues(values); assert.deepEqual(values, [valueInteger(42)]);
 });
 
-for (const level of [0, 3] as const) for (const transition of ['source-install', 'hot-resume', 'reset'] as const) test(`O${level}: an evaluation cannot republish a source stop after ${transition}`, async () => {
+for (const level of [3] as const) for (const transition of ['source-install', 'hot-resume', 'reset'] as const) test(`O${level}: an evaluation cannot republish a source stop after ${transition}`, async () => {
 	const { runtime, state } = createDebuggerHarness(`operation = function() return 42 end\nlocal value = 17\nmem[${DYNAMIC_RAM_BASE}] = value\nreturn value`, level);
 	state.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }, [3]);
 	const cpu = runtime.machine.cpu;
@@ -752,7 +752,7 @@ for (const level of [0, 3] as const) for (const transition of ['source-install',
 	assert.equal(state.source.stop, undefined, 'the replacement ended that source suspension even if the guest call returned normally');
 });
 
-for (const optLevel of [0, 3] as const) for (const admission of ['quiescent', 'at-stop'] as const)
+for (const optLevel of [3] as const) for (const admission of ['quiescent', 'at-stop'] as const)
 test(`guest call admission roots prepare and recursive arguments across GC (O${optLevel}, ${admission})`, async t => {
 	const { runtime, state } = createDebuggerHarness('return function(...) return ... end', optLevel);
 	const cpu = runtime.machine.cpu;

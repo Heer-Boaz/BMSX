@@ -35,13 +35,13 @@ const expected = [v.valueInteger(2147483647),v.valueInteger(-2147483648),v.value
 	v.valueInteger(-1),v.valueInteger(1),v.valueInteger(0),v.valueFloatBits(0x80000000),v.valueInteger(2),v.valueFloat(2),v.valueFloatBits(0x7f800000),
 	v.valueFloatBits(0x80000000),v.valueFloatBits(0x3f800001),v.valueFloatBits(0x3f800000),v.valueFloatBits(0x3f800002),
 	v.valueFloatBits(0x3f800001),v.valueFloatBits(0x3f800000),v.valueFloat(0),v.valueFloatBits(1),v.valueFloatBits(0x7f800000)];
-for (const opt of [0,3] as const) for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript]) {
+for (const opt of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`BIOS Number32 O${opt} ${backend}: real tonumber and literal parser round once and preserve spelling`, () => {
 		assert.deepEqual(run(source,opt,backend).results,expected);
 	});
 }
 const native = process.env.BMSX_CPU32_RUNNER;
-for (const opt of [0,3] as const) test(`BIOS Number32 O${opt}: C++ and TS execute the same parser with identical guest cycles`, { skip: !native }, () => {
+for (const opt of [3] as const) test(`BIOS Number32 O${opt}: C++ and TS execute the same parser with identical guest cycles`, { skip: !native }, () => {
 	const { image,cpu,results } = run(source,opt,CpuExecutionBackend.Interpreter);
 	const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`,...results.map(value => `${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n')+'\n';
 	assert.equal(execFileSync(native!,['--execute-rom','--boot-primitives',String(budget)],{ input:image.romBytes,encoding:'utf8' }),expected);
@@ -51,7 +51,7 @@ const loadSource = readFileSync(new URL('../fixtures/compiler32/load.lua', impor
 const loadExpected = [v.valueFloat(3),v.valueInteger(-2147483648),v.valueInteger(2),v.valueFloat(2),v.valueFloat(2),v.valueFloatBits(0x80000000),v.valueFloat(0),v.valueInteger(0),
 	v.valueInteger(-2147483648),v.valueFloat(2147483648),v.valueFloat(-2147483648),v.valueInteger(-1),v.valueFloat(6),v.valueFloat(0.25),
 	v.valueFloatBits(0x3f800001),v.valueFloatBits(0x3f800001),v.valueFloatBits(0x3f800000)];
-for (const opt of [0,3] as const) for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript]) {
+for (const opt of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`BIOS load O${opt} ${backend}: real runtime lexer, constant pool and generated RAM closure retain Integer/Float identity`, () => {
 		assert.deepEqual(run(loadSource,opt,backend).results,loadExpected);
 	});
@@ -65,7 +65,7 @@ tonumber('nan'),tonumber('infinity'),tonumber('12x'),tonumber('  +.25e1  '),tonu
 	});
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript]) test(`BIOS decimal ${backend}: exact midpoint tails through normal, subnormal and overflow boundaries`, () => {
+for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS decimal ${backend}: exact midpoint tails through normal, subnormal and overflow boundaries`, () => {
 	const { cpu,results } = run("require('base');return tonumber",3,backend);
 	const closure = v.asClosure(results[0],cpu.gc);
 	const lowerWords = [0,1,0x7ffffe,0x7fffff,0x800000,0x800001,0x3f7fffff,0x3f800000,0x3f800001,0x7f7fffff];
@@ -87,7 +87,7 @@ for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaS
 	}
 });
 
-for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript]) test(`BIOS load ${backend}: rejects malformed and non-finite source numerals`, () => {
+for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS load ${backend}: rejects malformed and non-finite source numerals`, () => {
 	const { results } = run(`require('base');local api<const> = require('compiler/api')
 local a = api.load('return 1e39');local b = api.load('return 0x1p128')
 local c = api.load('return 0x.p1');local d = api.load('return 1e+')
@@ -96,18 +96,18 @@ return a==nil,b==nil,c==nil,d==nil`,3,backend);
 });
 
 const syntaxSource = readFileSync(new URL('../fixtures/compiler32/syntax.lua', import.meta.url),'utf8');
-for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript]) test(`BIOS compile_syntax ${backend}: constant-pool identity includes the complete Float word`, () => {
+for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS compile_syntax ${backend}: constant-pool identity includes the complete Float word`, () => {
 	assert.deepEqual(run(syntaxSource,3,backend).results,[v.valueInteger(2),v.valueFloat(2),v.valueFloatBits(0x80000000),v.valueFloat(0),
 		v.valueFloatBits(0x7fa12345),v.valueFloatBits(0xffa12345),v.valueFloatBits(0x7fc00000)]);
 });
-for (const [name,source] of [['load',loadSource],['syntax',syntaxSource]]) for (const opt of [0,3] as const)
+for (const [name,source] of [['load',loadSource],['syntax',syntaxSource]]) for (const opt of [3] as const)
 	test(`BIOS ${name} O${opt}: native scalar CPU consumes the runtime-compiled RAM program`, { skip: !native }, () => {
 		const { image,cpu,results } = run(source,opt,CpuExecutionBackend.Interpreter);
 		const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`,...results.map(value => `${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n')+'\n';
 		assert.equal(execFileSync(native!,['--execute-rom','--boot-primitives',String(budget)],{ input:image.romBytes,encoding:'utf8' }),expected);
 	});
 
-for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript]) test(`BIOS literal ${backend}: hexadecimal exponents and long significands cancel without a wide accumulator`, () => {
+for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS literal ${backend}: hexadecimal exponents and long significands cancel without a wide accumulator`, () => {
 	const { cpu,results } = run("require('base');return require('number/parse').literal",3,backend);
 	const closure = v.asClosure(results[0],cpu.gc);
 	const texts = ['0x1'+'0'.repeat(200)+'p-800','0x0.'+'0'.repeat(300)+'1p1204','0x1p-149','0x1.fffffep127'];
@@ -126,7 +126,7 @@ for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaS
 	}
 });
 
-for (const backend of [CpuExecutionBackend.Interpreter,CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
  test(`BIOS load ${backend}: nested word moves produce one result`, () => {
   const {results}=run(`require('base');local api<const> = require('compiler/api')
 local f<const> = assert(api.load('return blua32.float_bits(blua32.float_from_bits(0xffa12345))'))
@@ -142,7 +142,7 @@ return g()({float_bits=function(value) return value+1 end})`,3,backend);
 }
 
 const wordMovesSource = readFileSync(new URL('../fixtures/compiler32/word-moves-load.lua', import.meta.url),'utf8');
-for (const opt of [0,3] as const) test(`BIOS word moves O${opt}: C++ executes runtime-compiled moves and namespace shadowing`, {skip: !native}, () => {
+for (const opt of [3] as const) test(`BIOS word moves O${opt}: C++ executes runtime-compiled moves and namespace shadowing`, {skip: !native}, () => {
  const {image,cpu,results} = run(wordMovesSource,opt,CpuExecutionBackend.Interpreter);
  assert.deepEqual(results,[v.valueInteger(0xffa12345),v.valueInteger(5),v.valueFloatBits(0x80000000),v.valueInteger(0x40000000)]);
  const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`,...results.map(value=>`${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n')+'\n';

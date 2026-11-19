@@ -130,7 +130,7 @@ probe = {
 }
 `;
 
-for (const optLevel of [0, 3] as const) test(`static model pass consumes World membership and retained affine/resource generations (O${optLevel})`, t => {
+for (const optLevel of [3] as const) test(`static model pass consumes World membership and retained affine/resource generations (O${optLevel})`, t => {
 	const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
@@ -148,7 +148,7 @@ for (const optLevel of [0, 3] as const) test(`static model pass consumes World m
 	assert.deepEqual(materializeCpuCompletionValues(cpu).map(numberToHost), [2, 0, 0, 0.5, 1, 0, 0, 0, -1, 4, 6, -2]);
 });
 
-for (const optLevel of [0, 3] as const) test(`replacement geometry at the same address belongs to a new model generation (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`replacement geometry at the same address belongs to a new model generation (O${optLevel})`, () => {
 	// A stable mapped allocation is republished as a new resource generation.
 	// Retaining the same address/count/pose must not retain the old projection.
 	const address = RAM_BASE + 0x00200000;

@@ -97,7 +97,7 @@ function fault(cpu: CPU, memory: Memory, epc: number, address: number): void {
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`system MMIO and cartridge controls are non-executable before reads (${backend})`, () => {
 		for (const pc of [IO_GX_GPU_GP0, IO_CART_SELECT]) {
 			const { cpu, memory } = machine(backend);

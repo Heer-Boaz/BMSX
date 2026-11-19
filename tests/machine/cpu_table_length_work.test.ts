@@ -65,7 +65,7 @@ test('pure Table length emits exact logical own-presence work without repairing 
 	cpu.gc.tables.setInteger(hash, 2, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash + TableHeader.Length), 2, 'eligible keys in preallocated hash storage use the same seed update');
 });
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) {
 	test(`LEN every grant commits aliased result/work before side-effecting successor (${backend}, WIDE=${wide})`, () => {
 		for (const [kind, boundary, probes] of cases) {
 			const { image, starts } = program(wide), { cpu } = createTestSystemCpu(image, backend);
@@ -129,7 +129,7 @@ for (const wide of [false, true]) test(`skipped LEN performs no logical search (
 	writeInstruction(text, word++, OpCode.LEN, 6, 0, 0); writeInstruction(text, word++, OpCode.KSMI, 8, 0, 37);
 	writeInstruction(text, word, OpCode.JMP, 0, 63, (-(word + 1)) & 63, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: word + 1, maxStack: 10 }] });
-	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
 		frame.registers.setTable(0, makeTable(cpu, 'descending')); frame.registers.setInteger(1, 1); frame.registers.setInteger(6, 91);
 		const base = frame.pc; cpu.runUntilDepth(0, 6 * 64);

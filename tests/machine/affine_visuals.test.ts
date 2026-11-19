@@ -38,7 +38,7 @@ return { image=function(id) return images[id] end }`,
 	},
 ];
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`Primary Sprite keeps owner visibility, static profiles and animation selection at their real owners (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
 world:start()

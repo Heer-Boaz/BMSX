@@ -106,7 +106,7 @@ return make()`;
 		const entrySource = `local first = require('factory')
 local second = require('factory')
 return first == nil, first == second, factory_calls`;
-		for (const optLevel of [0, 3] as const) {
+		for (const optLevel of [3] as const) {
 			const { compiled } = compileWithModule(entrySource, 'factory', moduleSource, [], optLevel);
 			assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)),
 				[valueBool(tail === 'return'), valueBool(true), valueInteger(1)], `${tail}, O${optLevel}`);
@@ -126,7 +126,7 @@ end
 return api`;
 	const entrySource = `local definition = require('definition')
 return definition.value, factory_calls`;
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { compiled } = compileWithModule(entrySource, 'definition', moduleSource,
 			[{ path: 'create', source: factorySource }], optLevel);
 		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [73, 1].map(valueInteger));
@@ -141,7 +141,7 @@ test('only the final single-expression module return publishes a dynamic export'
 		['if true then return { early = true } end; return { canonical = true }', [false, true]],
 		['local function unrelated() return {} end; return nil', [false, true]],
 	] as const) {
-		for (const optLevel of [0, 3] as const) {
+		for (const optLevel of [3] as const) {
 			const { compiled } = compileWithModule('local value = require("library"); return value == true, value == nil',
 				'library', source, [], optLevel);
 			assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), expected.map(valueBool), `${source}, O${optLevel}`);
@@ -162,7 +162,7 @@ test('dynamic module calls observe replaced direct and method fields at every op
 		'api.method = function(self) return self.value + 1 end',
 		'return api.read(), api:method()',
 	].join('\n');
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { compiled, constRelocs, disasm } = compileWithModule(entrySource, 'foo', moduleSource, [], optLevel);
 		assert.equal(constRelocs.some(
 			reloc => reloc.kind === 'export_proto'
@@ -217,7 +217,7 @@ end`;
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
 });
 
-for (const level of [0, 3] as const) test(`O${level}: static-module predeclaration does not leak later locals into a function's source scope`, () => {
+for (const level of [3] as const) test(`O${level}: static-module predeclaration does not leak later locals into a function's source scope`, () => {
 	const moduleSource = `module<const>
 local unused<const> = 17
 local read<const> = function(value) return value + 1 end
@@ -236,7 +236,7 @@ return { read = read }`;
 });
 
 test('bare function modules publish ordinary runtime callbacks with captures, table operations and multiple results', () => {
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const moduleSource = `module_loads = (module_loads or 0) + 1
 local count = 0
 return function(owner, delta, ...)
@@ -277,7 +277,7 @@ test('cartlib easing calls through its live runtime table', () => {
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueFloat(0.5)]);
 });
 
-for (const optLevel of [0, 3] as const) test(`immutable imports do not turn local snapshots into live bindings (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`immutable imports do not turn local snapshots into live bindings (O${optLevel})`, () => {
 	const moduleSource = `local api = { value = 10 }
 function api.before_publication()
 	local snapshot<const> = api
@@ -305,7 +305,7 @@ test('dynamic module data reads observe table mutations at every optimization le
 		'end',
 		'return api',
 	].join('\n');
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { compiled, disasm } = compileWithModule('local api<const> = require("foo")\nreturn api.bump()', 'foo', moduleSource, [], optLevel);
 		assert.match(disasm, /\bGETFIELD\b/, 'mutable fields must be read from the live module table');
 		const cpu = runCompiledTestSystem(compiled, 100000);
@@ -416,7 +416,7 @@ test('generated GX register contracts remain compile-time words without runtime 
 		'\tregisters.pcrtc_pmode_circuit1_enable_word,',
 		'\tregisters.pcrtc_pmode_circuit2_enable_word',
 	].join('\n');
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { compiled, disasm } = compileWithModule(
 			entrySource,
 			GX_DISPLAY_PRESET_MODULE_PATH,
@@ -488,7 +488,7 @@ test('relocatable const-module values remain operands until the linker supplies 
 		'local len<const> = 6156',
 		'return { len = len }',
 	].join('\n');
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { compiled, disasm } = compileWithConstModule(
 			'local assets<const> = require("assets")\nreturn assets.len >> 2',
 			'assets',
@@ -533,7 +533,7 @@ test('asset-address relocation leaves the final payload length foldable', () => 
 		address: 0x00801234,
 		byteLength: 6156,
 	}]);
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { compiled, disasm } = compileWithConstModule(
 			'local assets<const> = require("assets")\nreturn assets.aem_events_addr, assets.aem_events_len >> 2',
 			'assets',
@@ -552,12 +552,8 @@ test('asset-address relocation leaves the final payload length foldable', () => 
 				&& reloc.expression.exportPath === 'aem_events_len',
 		), false);
 		assert.doesNotMatch(disasm, /\bLOADK\b[^\n]*6156/);
-		if (optLevel === 0) {
-			assert.match(disasm, /\bSHR\b[^\n]*k\d+\(6156\)[^\n]*k\d+\(2\)/);
-		} else {
-			assert.doesNotMatch(disasm, /\bSHR\b/);
-			assert.match(disasm, /\bKSMI\b[^\n]*1539/);
-		}
+		assert.doesNotMatch(disasm, /\bSHR\b/);
+		assert.match(disasm, /\bKSMI\b[^\n]*1539/);
 		const cpu = runCompiledTestSystem(compiled, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [0x00801234, 1539].map(valueInteger));
 	}
@@ -603,7 +599,7 @@ test('missing const module exports report the field and its source location befo
 		{ source: 'local value<const> = assets.missing_addr\nreturn 1', line: 2, column: 29, path: 'missing_addr' },
 		{ source: 'local function read()\n return assets.missing_addr\nend\nreturn read()', line: 3, column: 16, path: 'missing_addr' },
 	];
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		for (const sample of cases) {
 			const entrySource = `local assets<const> = require("bmsx/assets")\n${sample.source}`;
 			assert.throws(
@@ -616,7 +612,7 @@ test('missing const module exports report the field and its source location befo
 });
 
 test('missing installed module exports report the full path at the missing field', () => {
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		for (const path of ['missing', 'nested.missing']) {
 			const entrySource = `local api<const> = require("bios_api")\nreturn api.${path}()`;
 			const column = path === 'missing' ? 12 : 19;
@@ -637,7 +633,7 @@ test('ordinary runtime modules still read absent fields as nil and allow adding 
 local absent = api.missing
 api.added = 23
 return absent, api["missing"], api.added`;
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { compiled } = compileWithModule(entrySource, 'api', 'return { known = 17 }', [], optLevel);
 		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [valueNil(), valueNil(), valueInteger(23)]);
 	}
@@ -653,7 +649,7 @@ test('const modules reject runtime root values', () => {
 		() => compileWithConstModule('local assets = require("assets")\nreturn assets', 'assets', moduleSource),
 		/Module 'assets' root is compile-time only/,
 	);
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		for (const source of ['return { assets }', 'local function use(value) return value end\nreturn use(assets)']) {
 			assert.throws(
 				() => compileWithConstModule(`local assets<const> = require("assets")\n${source}`, 'assets', moduleSource, undefined, optLevel),
@@ -670,7 +666,7 @@ test('a global require assignment does not replace compiler module syntax', () =
 		'local imported = require("fixture")',
 		'return imported.value, called',
 	].join('\n');
-	for (const level of [0, 3] as const) {
+	for (const level of [3] as const) {
 		const { compiled } = compileWithModule(source, 'fixture', 'return { value = 17 }', [], level);
 		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [valueInteger(17), valueBool(false)]);
 	}

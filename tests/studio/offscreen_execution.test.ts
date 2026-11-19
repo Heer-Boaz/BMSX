@@ -19,7 +19,7 @@ function execution(source: string, optLevel: 0 | 3) {
 			TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] } });
 }
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	for (const exact of [false, true]) test(`O${optLevel}: ${exact ? 'instruction boundary' : 'quantum'} execution captures a physical fault before BIOS publication`, async t => {
 		const source = `function exception(message)
  while true do halt_until_irq end

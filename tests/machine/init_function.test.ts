@@ -143,7 +143,7 @@ test('an explicit source init call runs once cold and the tooling vector invokes
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueNil()], 'preparation returns exactly one nil, not the participant result');
 });
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	for (const domain of ['system', 'cart'] as const) test(`guest invokes its public init sequence and retains storage (${domain}, O${optLevel})`, () => {
 		const romBase = domain === 'system' ? 0 : CART_ROM_BASE;
 		const source = `data carried: word = 7

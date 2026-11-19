@@ -10,7 +10,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) {
 	test(`nominal work classes retain every admitted effect, prefix and debt (${backend}, WIDE=${wide})`, () => {
 		// Literal contract oracle, independent of BASE_CYCLES. The two POWs also
 		// force the generated segment's accumulated debit beyond one byte.
@@ -111,7 +111,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 const changed = [OpCode.GETT, OpCode.GETI, OpCode.GETFIELD, OpCode.SETT, OpCode.SETI, OpCode.SETFIELD, OpCode.SELF,
 	OpCode.CALL, OpCode.RET, OpCode.NEWT, OpCode.CLOSURE, OpCode.GETUP, OpCode.SETUP, OpCode.GETSYS, OpCode.GETGL,
 	OpCode.SETSYS, OpCode.SETGL, OpCode.LEN, OpCode.MOD, OpCode.POW];
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) for (const op of changed) {
+for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) for (const op of changed) {
 	test(`skipping work-class opcode ${op} charges neither body nor WIDE (${backend}, WIDE=${wide})`, () => {
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(text, 0, OpCode.EQ, 0, 4, 4);

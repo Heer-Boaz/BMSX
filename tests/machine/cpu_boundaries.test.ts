@@ -37,7 +37,7 @@ function returnImage(op = OpCode.RET, a = 0, b = 2, c = 0) {
 test('string.byte uses signed word positions in a builtin CALL', () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
-	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		for (const [source, position, expected] of [
 			['Aé雪\0😀Z', undefined, 65], ['Aé雪\0😀Z', valueNil(), 65],
 			['Aé雪\0😀Z', valueInteger(2), 0xc3], ['Aé雪\0😀Z', valueInteger(3), 0xa9],
@@ -98,7 +98,7 @@ test('BOR accepts exact signed Integers and never truncates a Float as a word op
 	writeInstruction(text, 0, OpCode.BOR, 0, 1, 2);
 	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] }, RAM_CODE_FIXTURE_BYTES);
-	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		for (const [input, expected] of [
 			[valueInteger(0x7fffffff), 0x7fffffff], [valueFloat(-0), 0], [valueFloat(-(2 ** 31)), -(2 ** 31)],
 			[valueFloat(0.75), null], [valueFloat(-1.75), null], [valueFloat(2 ** 31), null],

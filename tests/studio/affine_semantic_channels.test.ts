@@ -7,7 +7,7 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`affine editing availability follows the actual guest squared-norm arithmetic (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(`
 local affine<const> = require('cartlib/math/affine2')

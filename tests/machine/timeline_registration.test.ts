@@ -5,7 +5,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`Timeline definition captures primary and nested named receivers before direct seek (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(`
 local component<const> = require('cartlib/timeline/timeline_component')

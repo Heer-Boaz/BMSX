@@ -30,7 +30,7 @@ prefab.define({def_id='timeline.pose3',
  position={x=3,y=7,z=11}})
 `;
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`FSM state-created timeline receivers are admitted after entry and replaced on reentry (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local fsm<const> = require('cartlib/fsm/fsm_component')

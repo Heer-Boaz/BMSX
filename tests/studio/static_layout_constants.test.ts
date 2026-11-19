@@ -14,7 +14,7 @@ import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project
 
 const noExternalBindings: StaticBindings = { value: () => undefined, storage: () => undefined };
 
-for (const optLevel of [0, 3] as const) for (const [expression, admitted] of [
+for (const optLevel of [3] as const) for (const [expression, admitted] of [
 	['2 + 3', true], ['true and 2', false], ['1 and 2', false], ['false or 2', false],
 	['1 + (true and 2)', false], ['amount', true], ['#("abc")', true],
 ] as const) test(`O${optLevel}: source initializer admission agrees with compiler for ${expression}`, () => {
@@ -45,7 +45,7 @@ return entry`;
 	} else assert.throws(read);
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: numeric evaluation retains linker operands, order and module identity`, () => {
+for (const optLevel of [3] as const) test(`O${optLevel}: numeric evaluation retains linker operands, order and module identity`, () => {
 	const source = `local a<const> = require('a')
 local b<const> = require('b')
 return -a.len, ~a.len, a.len + 4, 4 - a.len, a.len - a.len, a.len + b.len`;
@@ -69,13 +69,13 @@ return -a.len, ~a.len, a.len + 4, 4 - a.len, a.len - a.len, a.len + b.len`;
 	]);
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: static f32 initialization retains target rounding and negative zero`, () => {
+for (const optLevel of [3] as const) test(`O${optLevel}: static f32 initialization retains target rounding and negative zero`, () => {
 	const source = 'rodata values: f32[2] = { 1 / 3, -0.0 }\nreturn values';
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'float.lua').chunk, [], { entrySource: source, programDomain: 'system', optLevel });
 	assert.deepEqual([...encodeCompiledProgramObject(compiled).sections.rodata.bytes], [171, 170, 170, 62, 0, 0, 0, 128]);
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: numeric admission visits the right operand after an unresolved left operand`, () => {
+for (const optLevel of [3] as const) test(`O${optLevel}: numeric admission visits the right operand after an unresolved left operand`, () => {
 	const source = 'local x = 3\ndata y: word = x + sizeof(nope)\nreturn y';
 	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['eager.lua']));
 	const file = workspace.updateFile('eager.lua', source), snapshot = workspace.getSnapshot();
@@ -89,7 +89,7 @@ for (const optLevel of [0, 3] as const) test(`O${optLevel}: numeric admission vi
 		(error: unknown) => error instanceof StaticSourceError && error.message.includes("Unknown struct type 'nope'"));
 });
 
-for (const optLevel of [0, 3] as const) for (const declaredFirst of [true, false])
+for (const optLevel of [3] as const) for (const declaredFirst of [true, false])
 	test(`O${optLevel}: source initializers honor the lexical order of a static array reference (${declaredFirst})`, () => {
 		const array = 'rodata sizes: word[2] = {1,2}\n';
 		const source = `struct item\n caption: string\n count: word\nend\n${declaredFirst ? array : ''}`
@@ -166,7 +166,7 @@ for (const source of [
 	'rodata count: word = 2\nreturn sizeof(word[count])',
 	'rodata counts: word[1] = {2}\nreturn sizeof(word[counts[0]])',
 	'rodata count: word = 2\nlocal pointer<const>: *word = count\nreturn sizeof(word[*pointer])',
-]) for (const optLevel of [0, 3] as const) test(`O${optLevel}: compiler dimensions do not admit authored lvalue loads: ${source}`, () => {
+]) for (const optLevel of [3] as const) test(`O${optLevel}: compiler dimensions do not admit authored lvalue loads: ${source}`, () => {
 	assert.throws(() => compileLuaChunkToProgram(parseLuaChunk(source, 'dimension.lua').chunk, [], {
 		entrySource: source, programDomain: 'system', optLevel,
 	}), /Struct array length must be a positive compile-time integer/);

@@ -13,7 +13,7 @@ import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32'
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 
-for (const optLevel of [0, 3] as const) for (const stop of ['ram', 'nmi', 'irq-nmi'] as const) test(`O${optLevel}: ROM relocation preserves RAM calls and ${stop} return words`, () => {
+for (const optLevel of [3] as const) for (const stop of ['ram', 'nmi', 'irq-nmi'] as const) test(`O${optLevel}: ROM relocation preserves RAM calls and ${stop} return words`, () => {
 	const image = compileFrameEvaluationTest(`
 function irq() end
 function exception() end

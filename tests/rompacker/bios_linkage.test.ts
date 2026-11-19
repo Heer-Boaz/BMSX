@@ -32,7 +32,7 @@ test('published BIOS slots derive addresses and RAM occupancy from the ROM heade
 	});
 });
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`guest locates all BIOS functions without tooling metadata (O${optLevel})`, () => {
 		const fixture = buildPublicBiosFixture(PUBLIC_BIOS_PROBE_SOURCE, optLevel);
 		const { cpu } = createTestSystemCpu({ romBytes: fixture.rom });

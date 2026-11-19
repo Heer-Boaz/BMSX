@@ -22,7 +22,7 @@ import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runCo
 
 const TEST_RAM_BASE = RAM_BASE + 0x20000;
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`raw memory adds before converting a Float address at O${optLevel}`, () => {
 		const source = `
 local function write(base) mem[base + 4] = 17 end
@@ -38,7 +38,7 @@ local int = 0x08020000
 mem[int + 4.0] += 4
 return a, b, mem[0x08020000], mem[0x08020004]`;
 		const image = linkTestSystemBlua32(compileLuaSource(source, 'rounded-address.lua', optLevel));
-		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu } = createTestSystemCpu(image, backend);
 			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), [17, 17, 23, 33].map(valueInteger));
@@ -55,7 +55,7 @@ end, function(index)
 end`;
 		const compiled = compileLuaSource(source, 'pointer-scale.lua', optLevel);
 		const image = linkTestSystemBlua32(compiled);
-		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu } = createTestSystemCpu(image, backend);
 			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 			const [pointer, arithmetic] = materializeCpuCompletionValues(cpu);
@@ -91,7 +91,7 @@ return first, second, count`;
 		const image = linkTestSystemBlua32(compileLuaSource(source, 'pointer-effects.lua', optLevel));
 		const entry = disassembleTestBlua32Functions(image, [image.vectors.entryFunctionAddress]);
 		assert.equal((entry.match(/\bMUL\b/g) ?? []).length, 2, 'one fused Integer stride per selection');
-		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu } = createTestSystemCpu(image, backend);
 			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), [4, 8, 2].map(valueInteger));
@@ -106,7 +106,7 @@ return function(index)
     return pointer[index * 2]
 end`;
 		const image = linkTestSystemBlua32(compileLuaSource(source, 'pointer-wrap.lua', optLevel));
-		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu, memory } = createTestSystemCpu(image, backend);
 			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 			const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);

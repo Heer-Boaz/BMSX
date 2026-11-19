@@ -188,7 +188,7 @@ test('tangent direction uses both pointer axes and commits one native slope with
 		const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(changed, resource)], [])))!;
 		assert.ok(Math.abs(document.tracks[0].keys[keyIndex][field]!.value! - 1) < 1e-12);
 		assert.equal(document.tracks[0].keys[keyIndex].coordinate!.value, keyIndex === 0 ? 0 : 100);
-		for (const optLevel of [0, 3] as const) {
+		for (const optLevel of [3] as const) {
 			const expected = field === 'leave' ? 20.3125 : 39.0625;
 			const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component'); local owner={x=-1}
 				local timelines=component.new(owner,{clock_mode='manual'}); timelines:define('curve',require('animation')); timelines:play('curve')

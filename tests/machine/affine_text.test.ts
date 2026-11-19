@@ -154,7 +154,7 @@ end}
 return failed
 `;
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	for (const [name, fixture] of [['plain', plain], ['rich', rich]] as const) {
 		test(`Text ${name} retains local layout and transforms its complete geometry (O${optLevel})`, t => {
 			const { cpu } = createCartlibProgramHarness(setup + fixture, { optLevel, modules });

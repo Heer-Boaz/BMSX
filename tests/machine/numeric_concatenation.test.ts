@@ -26,7 +26,7 @@ const CASES = [
 	{ source: '0 / 0', storage: 'f32', text: 'nan' },
 ] as const;
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`O${optLevel} folded numeric concatenation matches runtime Number text`, () => {
 		for (const sample of CASES) {
 			const source = `

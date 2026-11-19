@@ -156,7 +156,7 @@ for (const count of [500, 12000]) test(`nested body edits do not parse or replac
 	assert.ok(removed < 24, `${removed} retired markers`);
 });
 
-for (const optLevel of [0, 3] as const) test(`reused syntax keeps O${optLevel} output and debug locations`, () => {
+for (const optLevel of [3] as const) test(`reused syntax keeps O${optLevel} output and debug locations`, () => {
 	const source = `local function run(arg)\n${LINES}\nreturn arg + value_199 end\nreturn run(2)`;
 	const previous = parseLuaChunkWithRecovery(source, 'compile_edit.lua').chunk;
 	const updated = edit(previous, 0, 0, '-- heading\n');

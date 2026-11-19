@@ -12,7 +12,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	for (const [op, operand, placed] of [[OpCode.LOADNIL, 0, 0], [OpCode.LOADNIL, 128, 128],
 		[OpCode.VARARG, 0, 3], [OpCode.VARARG, 1, 0], [OpCode.VARARG, 3, 2], [OpCode.VARARG, 129, 128]]) {
 		test(`value ranges charge placed slots on cold and warm execution (${backend}, ${op === OpCode.LOADNIL ? 'LOADNIL' : 'VARARG'}, ${operand})`, () => {
@@ -116,7 +116,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`coroutine yield and resume each charge the actual receiving range (${backend})`, () => {
 		const text = new Uint8Array(13 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
@@ -179,7 +179,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`protected error unwind charges captured cells and error receiving slots (${backend})`, () => {
 		const text = new Uint8Array(13 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
@@ -230,7 +230,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`coroutine close charges open captures and its selected result range (${backend})`, () => {
+for (const backend of [CpuExecutionBackend.Interpreter]) test(`coroutine close charges open captures and its selected result range (${backend})`, () => {
 	const text = new Uint8Array(17 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);

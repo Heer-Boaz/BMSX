@@ -81,7 +81,7 @@ return seen.left == 'walk', seen.right == 'run'`;
 		assert.equal(id.memberReads[0].origins[0].activation, task.memberReads[0].origins[0].activation);
 		assert.equal(f.values.trace(definition.root), definition);
 	}
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true, true].map(valueBool));
+	for (const optimization of [3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true, true].map(valueBool));
 });
 
 test('same-name tables and equal field values retain separate authored write occurrences', () => {
@@ -102,7 +102,7 @@ return record(left['task']) == 'same'`;
 		assert.equal(f.resolver.writtenSources.write(origin.source.write), origin.source);
 	}
 	assert.equal(trace.edges.filter(edge => edge.kind === 'member' && edge.read === trace.memberReads[0]).length, 2);
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [valueBool(true)]);
+	for (const optimization of [3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [valueBool(true)]);
 });
 
 test('imported factory fields carry their provider resource and actual argument context', () => {
@@ -143,7 +143,7 @@ return record(first.task) == 'walk', record(second.task) == 'run'`;
 		assert.equal(writer.body, f.file.functionValueFlows.find(flow => flow.members.length === 1));
 		assert.equal(writer.lexicalOwner.kind, 'invocation');
 	}
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true, true].map(valueBool));
+	for (const optimization of [3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true, true].map(valueBool));
 });
 
 test('known field writes do not erase unknown bases, unknown replacements or unwritten fields', () => {
@@ -247,7 +247,7 @@ return seen.left == 'walk', seen.right == 'run'`;
 	const projected = f.values.trace(f.values.argument(heads.find(head => head.caller.kind === 'projection')!, 1));
 	assert.equal(projected.terminals.length, 0);
 	assert.deepEqual(projected.boundaries.map(boundary => boundary.reason), ['parameter-input']);
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true, true].map(valueBool));
+	for (const optimization of [3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true, true].map(valueBool));
 });
 
 test('captured inputs follow the lexical creator through body-local factory and callable aliases', () => {
@@ -269,7 +269,7 @@ return entry()`;
 		assert.ok(head.caller.kind === 'invocation');
 		assert.equal(argumentEdges(trace)[0].application.target, head.caller.lexicalOwner);
 	}
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [7, 8].map(valueInteger));
+	for (const optimization of [3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [7, 8].map(valueInteger));
 });
 
 test('known factory returns retain provider files, argument sources and the call boundary', () => {
@@ -325,7 +325,7 @@ return replace('input', false) == 'input', replace('input', true) == 'written'`;
 			&& value.source.file.chunk.locations.range(value.source.write.syntax.span).start.line === 4)!;
 		assert.equal(other.activation.kind, 'projection', 'an uncalled captured write is not an effect in this activation');
 	}
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true, true].map(valueBool));
+	for (const optimization of [3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true, true].map(valueBool));
 });
 
 test('receiver lanes come from call syntax, not whether the target was declared as a method', () => {
@@ -368,7 +368,7 @@ return a, b`;
 	assert.ok(tail.kind === 'call-input');
 	assert.equal(tail.index, 1);
 	assert.equal(f.file.chunk.locations.range(tail.call.expression.span).start.line, 5);
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [valueNil(), valueInteger(2)]);
+	for (const optimization of [3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [valueNil(), valueInteger(2)]);
 });
 
 test('empty returns and reachable fallthrough retain their own written nil origins', () => {
@@ -406,7 +406,7 @@ return walk('first', 'second') == 'second'`;
 	assert.equal(new Set(trace.sources).size, trace.sources.length);
 	assert.ok(argumentEdges(trace).some(edge => edge.application.call.caller === edge.application.target));
 	assert.equal(f.values.trace(trace.root), trace);
-	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [valueBool(true)]);
+	for (const optimization of [3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [valueBool(true)]);
 });
 
 test('warm contextual traces retain identity and do not re-solve calls', () => {

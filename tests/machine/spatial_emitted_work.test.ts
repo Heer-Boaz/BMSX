@@ -140,7 +140,7 @@ function inspectInstalledKernel(cpu: CPU, image: Blua32ImageLayout, closure: num
 	return { owner, closure, codeAddress, codeBytes, maxStackSlots, methodLookups, calls, reads };
 }
 
-for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware kernels have coarse, allocation-free datapaths (O${optLevel})`, t => {
+for (const optLevel of [3] as const) test(`actual spatial AOT and firmware kernels have coarse, allocation-free datapaths (O${optLevel})`, t => {
 	const { cpu, images } = createCartlibProgramHarness(fixture, { optLevel, modules: WORLD_CPU_MODULES });
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));

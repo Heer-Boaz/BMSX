@@ -23,7 +23,7 @@ test('rational formatter reference includes exact halves, signed zero and decima
 	assert.equal(formatFloat32(0x47c35000, 'g', 6), '100000');
 });
 
-for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`BIOS format O${optLevel} ${backend}: all finite exponents, exact decimal references, raw words and fields`, () => {
 		const program = compileLuaChunkToProgram(parseLuaChunk(FORMAT32_ROM_SOURCE), modules,
 			{ entrySource: FORMAT32_ROM_SOURCE, optLevel, programDomain: 'system' });

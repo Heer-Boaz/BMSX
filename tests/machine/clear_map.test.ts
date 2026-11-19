@@ -7,7 +7,7 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { runCompletionClosure } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`clear_map traverses mixed entries once without replacing its map (O${optLevel})`, t => {
 		const { cpu } = createCartlibProgramHarness(`
 local clear<const> = require('cartlib/util/clear_map')

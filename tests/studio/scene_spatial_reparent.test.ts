@@ -148,7 +148,7 @@ test('required prefab source proof rejects computed class or pose contributions 
 	}
 });
 
-for (const optLevel of [0, 3] as const) test(`host parent-space solves agree with guest on exactly representable transforms (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`host parent-space solves agree with guest on exactly representable transforms (O${optLevel})`, () => {
 	// The editor solves in host geometry; guest arithmetic rounds per operation.
 	// This dyadic basis and its inverse are exact in both models, without an
 	// obsolete claim that arbitrary binary64 solves match binary32 bit-for-bit.

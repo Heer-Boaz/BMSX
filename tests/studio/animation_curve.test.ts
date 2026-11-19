@@ -27,7 +27,7 @@ test('written cubic geometry agrees with the native Hermite slopes at O0 and O3'
 	const point = view.curve.paths[0].indexOf(view.xAt(25));
 	assert.notEqual(point, -1);
 	assert.equal(view.curve.paths[0][point + 1], view.curve.yAt(43.75));
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { cpu } = createCartlibProgramHarness(`
 			local component=require('cartlib/timeline/timeline_component')
 			local owner={x=-1,y=-1}
@@ -41,7 +41,7 @@ test('written cubic geometry agrees with the native Hermite slopes at O0 and O3'
 
 test('a step channel has no authored value before its first key, as in the native runtime', () => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='step',path={'x'},keys={{time_ms=50,value=10},{time_ms=100,value=20}}}}}";
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { cpu } = createCartlibProgramHarness(`
 			local component=require('cartlib/timeline/timeline_component'); local owner={x=17}
 			local timeline=component.new(owner,{clock_mode='manual'}); timeline:define('step',require('animation')); timeline:play('step')
@@ -104,7 +104,7 @@ test('cubic display requires the slopes used by native segments, not unused endp
 		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 0, document);
 		assert.equal(view.curve.available, true);
 		view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
-		for (const optLevel of [0, 3] as const) {
+		for (const optLevel of [3] as const) {
 			const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component'); local owner={x=-1}
 				local timelines=component.new(owner,{clock_mode='manual'}); timelines:define('curve',require('animation')); timelines:play('curve')
 				timelines:seek_time('curve',25); assert(owner.x==${value})

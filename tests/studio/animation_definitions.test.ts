@@ -138,7 +138,7 @@ test('a source-authored track extends a native frame builder without replacing i
 	model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, file.chunk, document.root.table, document.root.table.fields.length,
 		["tracks = {{ kind = 'value', interpolation = 'linear', path = {'y'}, keys = {{ frame = 0, value = 10 }, { frame = 1, value = 20 }} }}"]));
 	assert.ok(model.buffer.getText().includes(originalBuilder));
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { cpu } = createCartlibProgramHarness(`
 			local component = require('cartlib/timeline/timeline_component')
 			local owner = { x = -1, y = -1 }

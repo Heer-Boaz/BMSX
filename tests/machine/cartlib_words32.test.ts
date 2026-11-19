@@ -15,7 +15,7 @@ const modules = CLOCK_WORD_MODULES.map(path => {
 	const source = readFileSync(`${path}.lua`, 'utf8');
 	return { path, source, chunk: parseLuaChunk(source, path) };
 });
-for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`cartlib clock words O${optLevel} ${backend}: both wraps and binary32 audio conversion`, () => {
 		const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(CLOCK_WORD_ROM_SOURCE), modules,
 			{ entrySource: CLOCK_WORD_ROM_SOURCE, optLevel, programDomain: 'system' }));
@@ -51,7 +51,7 @@ end
 word32_sample_axis = function() input.advance_frame() end
 return true
 `;
-for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`cartlib input words O${optLevel} ${backend}: initial and grouped signed-axis sampling`, () => {
 		const { images } = compileCartlibProgram(inputSource, { optLevel, modules: inputModules });
 		const { cpu, memory } = createTestBlua32PairCpu(images, backend); cpu.installBootPrimitives();

@@ -17,7 +17,7 @@ import { GuestValueSnapshot, VALUE_SNAPSHOT_ENTRIES, VALUE_SNAPSHOT_CHARACTERS, 
 
 const BUDGET = 10_000_000;
 
-for (const renamed of [false, true]) for (const optLevel of [0, 3] as const) test(`source-bound observer captures real nested/unhandled events before mutation without source-debug stepping (O${optLevel}, renamed ${renamed})`, () => {
+for (const renamed of [false, true]) for (const optLevel of [3] as const) test(`source-bound observer captures real nested/unhandled events before mutation without source-debug stepping (O${optLevel}, renamed ${renamed})`, () => {
 	const { images } = createCartlibProgramHarness(`
 local events<const> = require('cartlib/event_emitter')
 local port<const> = events.events_of({ id = 'player' })

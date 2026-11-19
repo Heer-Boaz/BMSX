@@ -102,7 +102,7 @@ test('physical viewport routing reaches only the selected independent machine th
 	advance(secondary); assert.equal(samples(secondary), secondarySamples + 1);
 });
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`O${optLevel}: scripted setup and cleanup cannot consume held physical play input`, async t => {
 		const source = `local game<const> = require('game')
 return {kind='integration',

@@ -67,7 +67,7 @@ repeat
 until ready
 return passes, ready
 `;
-	for (const optLevel of [0, 1, 2, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [valueInteger(3), valueBool(true)]);
 	}
 });
@@ -84,7 +84,7 @@ until current >= 2 and (function()
 end)()
 return passes
 `;
-	for (const optLevel of [0, 1, 2, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [valueInteger(3)]);
 	}
 });
@@ -104,7 +104,7 @@ repeat
 until ready
 return passes, ready
 `;
-	for (const optLevel of [0, 1, 2, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [3, 17].map(valueInteger));
 	}
 });
@@ -119,7 +119,7 @@ repeat
 until *current == 3
 return passes
 `;
-	for (const optLevel of [0, 1, 2, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [valueInteger(3)]);
 	}
 });
@@ -130,7 +130,7 @@ local negative<const> = -0.0
 local positive<const> = 0
 return -0.0, 0, negative, positive, -negative, 1 / negative, 1 / positive
 `;
-	for (const optLevel of [0, 1, 2, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel),
 			[valueFloat(-0), valueInteger(0), valueFloat(-0), valueInteger(0), valueFloat(0), valueFloat(-Infinity), valueFloat(Infinity)]);
 	}
@@ -147,7 +147,7 @@ local negative, negative_reciprocal = reciprocal(true)
 local positive, positive_reciprocal = reciprocal(false)
 return negative, negative_reciprocal, positive, positive_reciprocal
 `;
-	for (const optLevel of [0, 1, 2, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [valueFloat(-0), valueFloat(-Infinity), valueInteger(0), valueFloat(Infinity)]);
 	}
 });

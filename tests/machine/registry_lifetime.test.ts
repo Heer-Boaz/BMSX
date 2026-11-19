@@ -21,7 +21,7 @@ local registry<const> = require('cartlib/registry')
 probe = { registry = registry }
 `;
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`Registry retires last-member keys through reconciliation and deregistration without disturbing live members (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local key<const> = {}

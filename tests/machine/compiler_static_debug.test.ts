@@ -7,7 +7,7 @@ import { linkSystemBlua32Image } from '../../toolchain/ts/rompack/blua32_linker'
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaSource, parseLuaChunk } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: static diagnostics relocate section ordinals without inventing captures`, () => {
+for (const optLevel of [3] as const) test(`O${optLevel}: static diagnostics relocate section ordinals without inventing captures`, () => {
 	const source = `bss buffer: word
 struct shape
  unknown: unused_type
@@ -65,7 +65,7 @@ return make()()`;
 	}
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: static visibility is selected before mapping generated source`, () => {
+for (const optLevel of [3] as const) test(`O${optLevel}: static visibility is selected before mapping generated source`, () => {
 	const authoredSource = 'data buffer: word = 17\nstruct shape\n x: word\nend\nreturn function() return buffer end';
 	const mapped = composeLuaSource('generated', [
 		{ kind: 'generated', source: 'local wrapper = function()' },

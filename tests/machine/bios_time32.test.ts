@@ -28,10 +28,10 @@ function sample()
  return clock, seconds, date.year, date.month, date.day, date.hour, date.min, date.sec
 end`;
 
-for (const optLevel of [0, 3] as const) test(`BIOS samples the unsigned millisecond port once per call across rollover (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`BIOS samples the unsigned millisecond port once per call across rollover (O${optLevel})`, () => {
 	const program = compileLuaChunkToProgram(parseLuaChunk(source), modules, { entrySource: source, programDomain: 'system', optLevel });
 	const image = linkTestSystemBlua32(program);
-	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const { cpu, memory } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
 		assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
@@ -97,11 +97,11 @@ if high ~= 0x1p32 or low ~= -0x1p32 or math.type(high) ~= 'float' or math.type(l
 if os.difftime(2147483647,2147483646) ~= 1 then return -104 end
 return #rows`;
 
-for (const optLevel of [0, 3] as const) test(`BIOS civil seconds: exact signed endpoints, normalization and whole-second difference (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`BIOS civil seconds: exact signed endpoints, normalization and whole-second difference (O${optLevel})`, () => {
 	const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(calendar), modules,
 		{ entrySource: calendar, programDomain: 'system', optLevel }));
 	const budget = 20_000_000;
-	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
 		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);

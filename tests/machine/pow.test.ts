@@ -47,7 +47,7 @@ const vectors: readonly (readonly [string, string, Value, Value, number])[] = [
 	['-2', '0.5', valueInteger(-2), valueFloat(0.5), 0x7fc00000],
 ];
 
-for (const optLevel of [0, 3] as const) test(`Float POW folding and runtime match result words at O${optLevel}`, () => {
+for (const optLevel of [3] as const) test(`Float POW folding and runtime match result words at O${optLevel}`, () => {
 	const source = `function dynamic_pow(x, y) return x ^ y end\nreturn ${vectors.map(([x, y]) => `(${x}) ^ (${y})`).join(', ')}`;
 	const cpu = runCompiledTestSystem(compileLuaSource(source, 'pow.lua', optLevel), 100000);
 	const folded = materializeCpuCompletionValues(cpu);

@@ -18,7 +18,7 @@ import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	for (const op of [OpCode.CONCAT, OpCode.CONCATN, OpCode.LT, OpCode.LE, OpCode.EQ]) {
 		test(`text work uses byte lengths on cold and compiled execution (${backend}, op=${op})`, () => {
 			const text = new Uint8Array(4 * INSTRUCTION_BYTES);

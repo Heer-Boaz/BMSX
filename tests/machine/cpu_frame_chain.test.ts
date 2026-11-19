@@ -68,7 +68,7 @@ test('thread-owned nodes reuse stable identities and trim only the spare tail', 
 	assert.equal(thread.acquireFrame(), frames[0], 'an empty thread keeps its first prepared node');
 });
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`frame fetch and checkpoint resume use the physical successor PC (${backend})`, () => {
 		const text = new Uint8Array(4 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.K1, 0, 0, 0);

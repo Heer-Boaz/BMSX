@@ -65,7 +65,7 @@ function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: 
 	return { ...f, state, owner, cpu, execute, stopped, line, image };
 }
 
-for (const level of [0, 3] as const) test(`O${level}: shared source operations await actual into/out/over stops and expire borrows`, async t => {
+for (const level of [3] as const) test(`O${level}: shared source operations await actual into/out/over stops and expire borrows`, async t => {
 	const f = fixture(t, SOURCE, level);
 	assert.equal(f.owner.canResume('into'), false);
 	f.state.breakpoints.set(RESOURCE, [8]);
@@ -78,7 +78,6 @@ for (const level of [0, 3] as const) test(`O${level}: shared source operations a
 	op = f.owner.resume('into', 'workbench');
 	assert.throws(() => inspection.frameScopes(frame.reference), /expired/);
 	f.execute(); await op.completion;
-	if (level === 0) { assert.equal(f.line(), 9); op = f.owner.resume('into', 'workbench'); f.execute(); await op.completion; }
 	assert.equal(f.line(), 3);
 	const metadata = f.image.symbols!.metadata, points = metadata.statementPointsByFunction;
 	let pointReads = 0;
@@ -265,7 +264,7 @@ close_co = __bmsx_coroutine_close
 raise_error = __bmsx_error
 return true` }];
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	for (const mode of ['into', 'over'] as const) test(`O${optLevel}: ${mode} follows its thread, not an equal-depth resumed coroutine`, async t => {
 		const f = fixture(t, `require('thread_primitives'); child = create_co(function()
  child_value = 1

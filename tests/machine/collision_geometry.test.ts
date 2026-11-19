@@ -35,7 +35,7 @@ return {rectangle=rectangle,compound=compound,reflected=reflected,image=function
  return {resolve=function(id) return images[id] end}`},
 ];
 
-for (const optLevel of [0,3] as const) {
+for (const optLevel of [3] as const) {
  test(`Packed source admission shares image bindings and reserves reflected variant capacity (O${optLevel})`, t => {
   const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
 world:start()

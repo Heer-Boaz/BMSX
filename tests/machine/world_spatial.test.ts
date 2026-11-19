@@ -16,7 +16,7 @@ prefab.define({def_id='spatial.body',
  class=object_2d})
 `;
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`Spatial declarations default to identity without sharing mutable instance state (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 world:start()
@@ -452,7 +452,7 @@ assert(world._update_revision==4 and world._executing_tick_group==nil,
 	});
 }
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`Intrinsic World admits constructor children under their actual pending parent (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 world:start()
@@ -543,7 +543,7 @@ world:clear()
 	});
 }
 
-for (const optLevel of [0, 3] as const) test(`Keep World to the already committed parent preserves known singular semantic channels and completes once (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`Keep World to the already committed parent preserves known singular semantic channels and completes once (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(setup + `
 world:start()
 

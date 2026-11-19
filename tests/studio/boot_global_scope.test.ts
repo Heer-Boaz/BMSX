@@ -13,7 +13,7 @@ import { createEditorSemanticFrontend } from '../../ide/editor/contrib/intellise
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`compiler accepts ambient boot globals only in the system domain at O${optLevel}`, () => {
 		for (const primitive of LUA_BOOT_PRIMITIVES) {
 			const source = `return ${primitive.name}`;

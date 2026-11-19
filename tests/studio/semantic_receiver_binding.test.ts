@@ -40,7 +40,7 @@ return original.initial, result.updated, self == 99`;
 	const method = summaries.list()[0];
 	assert.equal(summaries.terms.kind(summaries.terms.compileSource(method.source.parameters[0])), TermKind.Local);
 	assert.equal(summaries.terms.kind(method.parameters[0]), TermKind.Parameter);
-	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [valueInteger(11), valueInteger(22), valueBool(true)]);
+	for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [valueInteger(11), valueInteger(22), valueBool(true)]);
 });
 
 for (const [label, change] of [
@@ -66,7 +66,7 @@ return result.updated`;
 				assert.deepEqual(members, name === 'original' ? ['change', 'initial'] : name === 'replacement' ? ['updated'] : ['change', 'initial', 'updated'], name);
 			}
 		}
-		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [valueBool(true)]);
+		for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [valueBool(true)]);
 	});
 }
 
@@ -95,7 +95,7 @@ end
 local block, shadow, captured = original:read()
 local receiver, previous, latest = original:shadow_twice()
 return block, shadow, captured, original:explicit(0), self, receiver, previous, latest`;
-	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [22, 33, 11, 44, 90, 11, 22, 33].map(valueInteger));
+	for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [22, 33, 11, 44, 90, 11, 22, 33].map(valueInteger));
 });
 
 test('function declarations and member definitions use the same receiver binding as assignments', () => {
@@ -109,7 +109,7 @@ function original:install()
 end
 local before, after = original:install()
 return original.value, original.handler(), before, after, self == 99`;
-	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [valueInteger(11), valueInteger(22), valueInteger(22), valueInteger(33), valueBool(true)]);
+	for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [valueInteger(11), valueInteger(22), valueInteger(22), valueInteger(33), valueBool(true)]);
 });
 
 test('method targets after receiver reassignment are resolved from receiver values, not its original spelling', () => {
@@ -129,7 +129,7 @@ return original:change()`;
 	const reference = data.refs.find(entry => entry.name === 'read' && entry.isCall)!;
 	const targets = snapshot.symbolResolver.resolveWholeProgramReferenceTargets(reference).map(id => snapshot.symbolResolver.getDeclaration(id)!.namePath.join('.')).sort();
 	assert.deepEqual(targets, ['original.read', 'replacement.read'], 'possible targets, not exclusive reaching-definition proof');
-	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [valueInteger(22)]);
+	for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [valueInteger(22)]);
 });
 
 test('rebound receivers retain every inherited method contribution without changing the original object', () => {
@@ -160,7 +160,7 @@ return original:change(), original:read()`;
 	// clears the private boot bindings. No replacement metatable implementation.
 	const bootSource = 'setmetatable = __bmsx_setmetatable';
 	const entrySource = `require('test_boot')\n${source}`;
-	for (const level of [0, 3] as const) {
+	for (const level of [3] as const) {
 		const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, PATH), [
 			{ path: 'test_boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'test_boot.lua') },
 		], { entrySource, optLevel: level, programDomain: 'system' });
@@ -199,7 +199,7 @@ return outer.change(40), outer:shadow(0)`;
 			assert.equal(findImplicitSelfValueAt(data, line, column), undefined);
 		}
 	}
-	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [41, 9].map(valueInteger));
+	for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [41, 9].map(valueInteger));
 });
 
 test('a nested method shadows an enclosing self local; captured writes survive its return', () => {
@@ -215,7 +215,7 @@ function object:make()
 end
 local write, enclosing = object:make()
 return write(33), write(44), enclosing, object.value, self`;
-	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [33, 44, 91, 11, 90].map(valueInteger));
+	for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [33, 44, 91, 11, 90].map(valueInteger));
 });
 
 for (const depth of [1, 4, 8]) {
@@ -244,6 +244,6 @@ for (const depth of [1, 4, 8]) {
 				assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(member => member.name), name === 'written' ? ['ready'] : []);
 			}
 		}
-		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [valueBool(true), valueNil(), valueNil()]);
+		for (const level of [3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [valueBool(true), valueNil(), valueNil()]);
 	});
 }

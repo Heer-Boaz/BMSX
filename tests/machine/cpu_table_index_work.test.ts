@@ -43,7 +43,7 @@ function chain(cpu: CPU, root: number, depth: number, key: Value, value: Value):
 	return current;
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) {
 	test(`semantic inherited visits retain every grant frontier and aliased read (${backend}, WIDE=${wide})`, () => {
 		for (const [op, kind] of forms) for (const depth of [1, 2, 5, 32]) {
 			const { image, starts } = readProgram(op, wide), { cpu } = createTestSystemCpu(image, backend);

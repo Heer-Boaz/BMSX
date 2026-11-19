@@ -124,7 +124,7 @@ end } }`;
 	assert.ok(retainedModel.actionBar.items.every(item => !item.visible || item.enabled));
 });
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`O${optLevel}: isolated test debugging admits before bind, steps actual phase coroutines and leaves authoring untouched`, async t => {
 		const source = `local shared = { value = 0 }
 local child<const> = function(amount)

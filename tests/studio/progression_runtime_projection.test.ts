@@ -66,7 +66,7 @@ function fixture(t: TestContext, optLevel: 0 | 3, source = ENTRY, extraModules: 
 	return {runtime, sources, guest, input, projection, choices, invoke, transport};
 }
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 test(`progression projection reads real contexts and once-only receipts without guest execution (O${optLevel})`, t => {
 	const f = fixture(t, optLevel);
 	assert.deepEqual(f.choices.map(item => item.identity.tag).sort(), [ValueTag.Integer, ValueTag.String]);

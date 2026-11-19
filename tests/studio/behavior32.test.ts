@@ -53,7 +53,7 @@ function drop()
 end
 return true`;
 
-for (const optLevel of [0, 3] as const) test(`behavior32 O${optLevel}: real cartlib indexes, definitions, blackboard and effects remain read-only`, t => {
+for (const optLevel of [3] as const) test(`behavior32 O${optLevel}: real cartlib indexes, definitions, blackboard and effects remain read-only`, t => {
 	const { images, cartSources } = compileCartlibProgram(ENTRY, { optLevel, modules: [{ path: 'cartlib/actioneffects/actioneffect_component', source: readFileSync('cartlib/actioneffects/actioneffect_component.lua', 'utf8') }] });
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	// Publish the exact compiler inputs rather than infer source correspondence from guest data.

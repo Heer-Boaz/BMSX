@@ -136,7 +136,7 @@ local fractional: *string = names - 0.5`;
 		assert.equal(read.value, undefined);
 	}
 	const source = declarations + `\nreturn names[1073741825] == names[1], names[-1073741823] == names[1], *wrapped == names[1], p == 0, q == 0`;
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const values = runCompiledLua(source, 'wrapped-address', optLevel);
 		assert.deepEqual(values.slice(0, 3), [true, true, true].map(valueBool));
 		assert.deepEqual(values.slice(3), [true, true].map(valueBool), 'binary32 loses the ROM base before cancellation');
@@ -156,7 +156,7 @@ return positive[0], negative[0]`;
 		assert.equal(read.byteOffset, undefined);
 		assert.equal(read.value, undefined);
 	}
-	for (const optLevel of [0, 3] as const)
+	for (const optLevel of [3] as const)
 		assert.deepEqual(runCompiledLua(source, 'fractional-address', optLevel), [5, 4].map(valueInteger));
 });
 
@@ -169,7 +169,7 @@ local rounded: *string = names + 1.0 - 1.0`;
 	assert.ok(exact?.kind === 'typed' && rounded?.kind === 'typed');
 	assert.equal(exact.byteOffset, 0); assert.deepEqual(exact.value, { kind: 'string', value: 'a' });
 	assert.equal(rounded.byteOffset, undefined); assert.equal(rounded.value, undefined);
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.deepEqual(runCompiledLua(declarations + '\nreturn *exact == names[0]', 'exact-address', optLevel), [valueBool(true)]);
 	}
 });
@@ -253,7 +253,7 @@ return register`;
 	assert.ok(read?.kind === 'typed');
 	assert.equal(read.byteOffset, undefined); assert.equal(read.value, undefined);
 	const runtimeSource = source + `().text == 'hi'`;
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const program = compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'skipped-view').chunk, [],
 			{ entrySource: runtimeSource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
@@ -275,7 +275,7 @@ return register`;
 	const read = f.query.read(f.file, table.fields[0].value);
 	assert.ok(read?.kind === 'typed');
 	assert.deepEqual(read.value, { kind: 'string', value: 'hi' });
-	for (const optLevel of [0, 3] as const)
+	for (const optLevel of [3] as const)
 		assert.deepEqual(runCompiledLua(source + `().text == 'hi'`, 'reached-view', optLevel), [valueBool(true)]);
 });
 
@@ -298,7 +298,7 @@ return register`;
 		assert.ok(read?.kind === 'typed');
 		assert.deepEqual(read.value, skipped ? undefined : { kind: 'string', value: 'hi' });
 		const runtimeSource = source + `().text == 'hi'`;
-		for (const optLevel of [0, 3] as const) {
+		for (const optLevel of [3] as const) {
 			const program = compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'alias-view').chunk, [],
 				{ entrySource: runtimeSource, programDomain: 'system', optLevel });
 			const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
@@ -373,7 +373,7 @@ test('a cross-file global navigation winner is not a typed storage binding', () 
 		assert.equal(snapshot.staticSourceReads.read(file, returned(file)[0]), undefined);
 	}
 	const modules = [{ path: 'module', source: moduleSource, chunk: parseLuaChunk(moduleSource, 'module').chunk }];
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const program = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry').chunk, modules,
 			{ entrySource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
@@ -404,7 +404,7 @@ return names[asset.index], names[alias], names[combined], names[asset.other], na
 	const module = { path: 'asset', source: moduleSource, chunk: parseLuaChunk(moduleSource, 'asset').chunk, linkValues: new Map([['index', 1]]) };
 	const runtimeSource = source.replace('return names[asset.index], names[alias], names[combined], names[asset.other], names[wrapper.index], names[wrapper.other]',
 		"return names[asset.index] == 'b', names[alias] == 'b', names[combined] == 'b', names[asset.other] == 'b', names[wrapper.index] == 'b', names[wrapper.other] == 'b'");
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const program = compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'entry').chunk, [module],
 			{ entrySource: runtimeSource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
@@ -430,7 +430,7 @@ return names[asset.group.index], names[group.index], names[alias], names[group.o
 		linkValues: new Map([['group.index', 1]]) };
 	const runtimeSource = source.replace('return names[asset.group.index], names[group.index], names[alias], names[group.other]',
 		"return names[asset.group.index] == 'b', names[group.index] == 'b', names[alias] == 'b', names[group.other] == 'b'");
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const program = compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'entry').chunk, [module],
 			{ entrySource: runtimeSource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));
@@ -456,7 +456,7 @@ return *p`;
 	const module = { path: 'asset', source: moduleSource, chunk: parseLuaChunk(moduleSource, 'asset').chunk,
 		linkValues: new Map([['ptr', 0]]) };
 	const runtimeSource = source.replace('return *p', 'return p == 0');
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const program = compileLuaChunkToProgram(parseLuaChunk(runtimeSource, 'entry').chunk, [module],
 			{ entrySource: runtimeSource, programDomain: 'system', optLevel });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(program));

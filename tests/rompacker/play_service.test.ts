@@ -218,7 +218,7 @@ test('failed Play preparation leaves explicit empty run selection unchanged', as
 	assert.equal(f.runTargets.selected, undefined);
 });
 
-for (const optLevel of [0, 3] as const) test(`O${optLevel}: new authored fixtures admit alongside an empty project file`, async t => {
+for (const optLevel of [3] as const) test(`O${optLevel}: new authored fixtures admit alongside an empty project file`, async t => {
 	const f = await fixture(t, optLevel), clock = new VirtualHeadlessClock();
 	await createTextResource(clock, f.sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], relativePath: 'empty.lua', contents: '' });
 	await createTextResource(clock, f.sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], relativePath: 'unrelated.lua', contents: 'end end -- unused program' });

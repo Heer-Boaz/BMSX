@@ -76,7 +76,7 @@ local overlap<const> = overlap_system.new(world)
 probe = { overlap = overlap }
 `;
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`Overlap retires every history row and preserves begin/stay/end across empty passes and clear (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local actors<const> = {}

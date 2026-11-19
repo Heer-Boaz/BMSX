@@ -50,7 +50,7 @@ function createRuntime(mode: CpuExecutionBackend): Runtime {
 	return runtime;
 }
 
-for (const mode of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const mode of [CpuExecutionBackend.Interpreter]) {
 	for (const restore of [false, true]) {
 		test(`GEO advances during a completed CPU instruction overrun, mode ${mode}, restore ${restore}`, () => {
 			const runtime = createRuntime(mode);

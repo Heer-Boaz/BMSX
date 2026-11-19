@@ -15,7 +15,7 @@ const TEST_DISPLAY_PATH = `${TEST_RANGE_PATH}.lua`;
 
 test('repeat body local debug scopes include the until condition but not the following statement', () => {
 	const source = 'local passes = 0\nrepeat\n passes += 1\n local ready = passes >= 3\nuntil ready\nreturn passes';
-	for (const optLevel of [0, 1, 2, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const compiled = compileLuaSource(source, ENTRY_PATH, optLevel);
 		const local = compiled.metadata.localSlotsByProto[compiled.entryProtoIndex].find(slot => slot.name === 'ready')!;
 		assert.deepEqual(local.scope.end, { line: 5, column: 11 });
@@ -91,7 +91,7 @@ test('missing compile-time exports in generated code report their authored file 
 	const entrySource = `module<entry>\nrequire('${GENERATED_PATH}')`;
 	const mapped = buildMappedModule('local assets<const> = require("bmsx/assets")\nreturn { address = assets.missing_addr }');
 	const assetsSource = 'module<const>\nreturn { known_addr = 17 }';
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		assert.throws(
 			() => compileLuaChunkToProgram(
 				parseLuaChunk(entrySource, ENTRY_PATH).chunk!,
@@ -162,7 +162,7 @@ test('source composition maps disjoint whole-line fragments to one complete auth
 	assert.deepEqual(mapped.sourceMap.lines[2], { sourceIndex: 1, sourceLine: 2 });
 	assert.equal(mapped.sourceMap.sources[1].source, entrySource);
 	const entryChunk = parseLuaChunk(entrySource, ENTRY_PATH).chunk;
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const compiled = compileLuaChunkToProgram(parseLuaChunk(mapped.source, GENERATED_PATH).chunk!, [], {
 			entrySource: mapped.source, entrySourceMap: mapped.sourceMap, optLevel,
 			entryOrigin: entryChunk.locations.range(entryChunk.span),

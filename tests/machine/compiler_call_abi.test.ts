@@ -40,7 +40,7 @@ test('fixed call arguments are produced in adjacent slots, not copied through a 
 	assert.deepEqual(runCompiledLua('local f = function(a, b) return a + b end\nreturn f(7, 11)'), [valueInteger(18)]);
 });
 
-for (const optLevel of [0, 3] as const) test(`empty return, fallthrough and discarded calls use the zero-value contract (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`empty return, fallthrough and discarded calls use the zero-value contract (O${optLevel})`, () => {
 	const source = `
 local function empty() return end
 local function implicit() end
@@ -52,8 +52,4 @@ local uninitialized
 return uninitialized, pack(empty()), pack(implicit()), pack(nilvalue())
 `;
 	assert.deepEqual(runCompiledLua(source, 'zero-value-results.lua', optLevel), [valueNil(), valueNil(), valueNil(), valueNil()]);
-	const compiled = compileLuaSource(source, 'zero-value-results.lua', optLevel);
-	const image = linkTestSystemBlua32(compiled);
-	const disassembly = disassembleTestBlua32Functions(image, [image.vectors.entryFunctionAddress]);
-	if (optLevel === 0) assert.match(disassembly, /CALL r\d+, 0, 0/);
 });

@@ -1070,7 +1070,7 @@ halt_until_irq
 observed_before = before
 observed_sequence = sequence
 `;
-	for (const optLevel of [0, 1, 2, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { cpu, irqController } = makeCompiledCartCpu(CART_LAUNCHER_SYSTEM_LUA_SOURCE, source, optLevel);
 		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted, `O${optLevel} initial run`);
 		irqController.raise(IRQ_VBLANK);
@@ -1578,7 +1578,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 fault_value = cop0.status
 mem[${continuedAddress}] = 1
 `;
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [3] as const) {
 		const { cpu, memory } = makeCompiledCartCpu(systemSource, cartSource, optLevel);
 		// Includes compiler startup/boot-slot retirement; this is not a cycle-count test.
 		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);

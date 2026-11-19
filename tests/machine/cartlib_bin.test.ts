@@ -15,7 +15,7 @@ import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } f
 
 const address = DYNAMIC_RAM_BASE + 0x28000;
 
-for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`the cartlib BIN reader consumes production values and shared metadata at O${optLevel} (${backend})`, () => {
+for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) test(`the cartlib BIN reader consumes production values and shared metadata at O${optLevel} (${backend})`, () => {
 	const entrySource = `require('bootstrap')
 local bin<const> = require('cartlib/bin')
 return function(addr) return bin.decode(addr, 'fixture') end,

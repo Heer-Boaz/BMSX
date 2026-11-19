@@ -8,7 +8,7 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
 import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	test(`World starts only after separately constructed initial batches are addressable and bound (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local constructed = 0

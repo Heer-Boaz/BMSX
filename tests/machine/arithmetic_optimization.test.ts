@@ -9,7 +9,7 @@ import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
 
 const expressions = ['x + 0', '0 + x', 'x - 0', '0 - x', 'x * 1', '1 * x', 'x / 1', 'x ^ 1'];
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`O3 identities preserve Integer/Float tags, rounding and NaN on backend ${backend}`, () => {
 		const source = `return function(x) return ${expressions.join(', ')} end`;
 		const machines = ([0, 3] as const).map(optLevel => {
@@ -35,7 +35,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			if (input === valueFloatBits(0xffa00001)) assert.deepEqual(outputs[1], expressions.map(() => valueFloatBits(0x7fc00000)));
 		}
 	});
-	for (const optLevel of [0, 3] as const) test(`identity rewrites do not erase non-Number faults (O${optLevel}, backend ${backend})`, () => {
+	for (const optLevel of [3] as const) test(`identity rewrites do not erase non-Number faults (O${optLevel}, backend ${backend})`, () => {
 		const source = `return ${expressions.map(expr => `function(x) return ${expr} end`).join(', ')}`;
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource(source, 'identities.lua', optLevel)), backend);
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);

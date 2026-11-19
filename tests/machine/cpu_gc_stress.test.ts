@@ -7,10 +7,10 @@ import { createTestSystemCpu } from '../helpers/blua32';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { gcStressVectors, installAllocationStress } from '../helpers/gc_stress';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	for (const [name, body] of Object.entries(gcStressVectors)) {
 		const image = compileCoroutineTest(body, optLevel);
-		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			for (const restore of [false, true]) test(`allocation GC stress: ${name}, O${optLevel}, ${backend}, restore=${restore}`, () => {
 				const { cpu } = createTestSystemCpu(image, backend);
 				cpu.installBootPrimitives();

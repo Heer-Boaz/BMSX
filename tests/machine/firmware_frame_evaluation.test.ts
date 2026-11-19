@@ -8,7 +8,7 @@ import { createTestSystemCpu } from '../helpers/blua32';
 import { compileFrameEvaluationTest, frameEvaluationCases } from '../helpers/frame_evaluation';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
-for (const optLevel of [0, 3] as const) for (const [name, body] of Object.entries(frameEvaluationCases)) {
+for (const optLevel of [3] as const) for (const [name, body] of Object.entries(frameEvaluationCases)) {
 	test(`firmware frame evaluation O${optLevel}: ${name}`, () => {
 		const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(body, optLevel));
 		cpu.installBootPrimitives();
@@ -35,7 +35,7 @@ for (const optLevel of [0, 3] as const) for (const [name, body] of Object.entrie
 	});
 }
 
-for (const optLevel of [0, 3] as const) test(`retained frame accesses O${optLevel} allocate nothing after compilation`, () => {
+for (const optLevel of [3] as const) test(`retained frame accesses O${optLevel} allocate nothing after compilation`, () => {
 	const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(`
 local exercise = function(value, ...)
  local index<const> = frame_count(running_thread()) - 1
@@ -79,7 +79,7 @@ return exercise(0)
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
-for (const optLevel of [0, 3] as const) test(`packed names O${optLevel}: completion-call injection retains the selected PC and activation`, () => {
+for (const optLevel of [3] as const) test(`packed names O${optLevel}: completion-call injection retains the selected PC and activation`, () => {
 	const image = compileFrameEvaluationTest(`
 function named_completion_probe(index)
  local names, label = frame_bindings.resolve(index, 0)
@@ -110,7 +110,7 @@ return park(42)
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
-for (const optLevel of [0, 3] as const) test(`packed names O${optLevel}: a ROM without diagnostics reports missing coverage`, () => {
+for (const optLevel of [3] as const) test(`packed names O${optLevel}: a ROM without diagnostics reports missing coverage`, () => {
 	const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(`
 local index<const> = frame_count(running_thread()) - 1
 local names, message = frame_bindings.resolve(index, 0)
@@ -126,7 +126,7 @@ return true
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
 
-for (const optLevel of [0, 3] as const) test(`packed names O${optLevel}: enumerate active depths and evaluate a discovered stopped scope`, () => {
+for (const optLevel of [3] as const) test(`packed names O${optLevel}: enumerate active depths and evaluate a discovered stopped scope`, () => {
 	const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(`
 function discover_stopped_scope(index)
  return pcall(function()

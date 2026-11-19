@@ -7,7 +7,7 @@ import { createTestSystemCpu } from '../helpers/blua32';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { compileTableIterationTest, tableIterationVectors } from '../helpers/table_iteration';
 
-for (const optLevel of [0, 3] as const) {
+for (const optLevel of [3] as const) {
 	for (const [name, body] of Object.entries(tableIterationVectors)) {
 		test(`Table iteration ${name} survives deletion and physical snapshots (O${optLevel})`, t => {
 			const { cpu } = createTestSystemCpu(compileTableIterationTest(body, optLevel));

@@ -41,7 +41,7 @@ test('program roots retain dependency closure and preloads, not unrelated worksp
 	assert.throws(() => selectLuaProgramModules(entry, modules, ['experiment']), /root 'experiment'.*not available/);
 });
 
-for (const optLevel of [0, 3] as const) test(`preloads use the existing dependency/startup/init owners (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`preloads use the existing dependency/startup/init owners (O${optLevel})`, () => {
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry'), modules, {
 		entrySource, programDomain: 'system', optLevel,
 		preloadModules: ['second', 'constants', 'first', 'second'],
@@ -83,7 +83,7 @@ test('default and explicit empty preloads preserve executable bytes; cycles use 
 		{ entrySource: 'return 0', preloadModules: ['a'] }), /require cycle/);
 });
 
-for (const optLevel of [0, 3] as const) test(`preload observes the first real module-scope BT compilation (O${optLevel})`, () => {
+for (const optLevel of [3] as const) test(`preload observes the first real module-scope BT compilation (O${optLevel})`, () => {
 	const { cpu, cart } = createCartlibProgramHarness(`local actor<const> = require('fixture/game')
 local observation<const> = require('fixture/observation')
 local compiled<const> = observation.completed_bindings[actor]

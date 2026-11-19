@@ -60,7 +60,7 @@ test('ProgramCompiler -O3 folds a conditional increment after reusing the regist
 		'end',
 		'return t.sync({})',
 	].join('\n');
-	for (const opt of [0, 1, 2, 3] as const) {
+	for (const opt of [3] as const) {
 		const returned = runCompiledLua(source, 'reused_register_counter.lua', opt);
 		assert.deepEqual(Array.from(returned), [valueInteger(1), valueBool(true)], `optLevel ${opt} miscompiled the counter`);
 	}

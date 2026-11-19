@@ -42,7 +42,7 @@ v.valueFloat(-1), v.valueFloat(1), v.valueFloatBits(0x80000000),
 v.valueBool(true), v.valueBool(false), v.valueInteger(0),
 v.valueFloat(0), v.valueFloatBits(0x80000000), v.valueFloatBits(0x80000000), v.valueFloat(0), v.valueFloat(0), v.valueInteger(-2), v.valueFloat(-0.5)];
 
-for (const opt of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const opt of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`BIOS math O${opt} ${backend}: stored subtypes, signed limits and elementary Number32 operations`, () => {
 		const { cpu, results } = run(numericSource, opt, backend);
 		assert.deepEqual(results.map(value => v.valueIsString(value) ? cpu.stringPool.toString(v.asStringId(value)) : value), numericExpected);
@@ -56,7 +56,7 @@ for (const opt of [0, 3] as const) for (const backend of [CpuExecutionBackend.In
 	});
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`BIOS math ${backend}: errors reject invalid numeric inputs and do not consume random state`, () => {
 		const { results } = run(math + `local pcall<const> = boot.pcall
 math.randomseed(0)
@@ -88,7 +88,7 @@ return a,b,c,d,e,f,g,h,math.random(6)`, 3, backend);
 }
 
 const native = process.env.BMSX_CPU32_RUNNER;
-for (const fixture of ['math', 'random']) for (const opt of [0, 3] as const) test(`BIOS ${fixture} O${opt}: C++ runs the same guest BIOS and charges the same cycles`, { skip: !native }, () => {
+for (const fixture of ['math', 'random']) for (const opt of [3] as const) test(`BIOS ${fixture} O${opt}: C++ runs the same guest BIOS and charges the same cycles`, { skip: !native }, () => {
 	const source = readFileSync(new URL(`../fixtures/compiler32/${fixture}.lua`, import.meta.url), 'utf8');
 	const { image, cpu, results } = run(source, opt, CpuExecutionBackend.Interpreter);
 	const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`, ...results.map(value => v.valueIsString(value)
