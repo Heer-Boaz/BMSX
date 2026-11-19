@@ -80,13 +80,6 @@ bool GcHeap::markValue(Value v) {
 	}
 }
 
-void GcHeap::reserveReference() {
-	// Admit directory growth before constructing the object. Recycling a
-	// directory slot and binding a constructed object do not allocate.
-	if (m_freeReference == 0 && m_references.size() == m_references.capacity()) {
-		m_references.reserve(std::max(size_t{64}, m_references.capacity() * 2));
-	}
-}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -97,24 +90,9 @@ size_t GcHeap::nativePhysicalRecordsOffset() { return offsetof(GcHeap, m_recordB
 #pragma GCC diagnostic pop
 #endif
 #endif
-void GcHeap::releaseReference(GCObject* object) {
-	const u32 reference = object->referenceId;
-	m_references[reference].nextFree = m_freeReference;
-	m_freeReference = reference;
-	object->referenceId = 0;
-}
 void GcHeap::track(GCObject* object) {
 	const u32 address = physicalAddress(object);
-	if (address != 0) {
-		physicalSlot(address) = object;
-	} else if (m_freeReference != 0) {
-		object->referenceId = m_freeReference;
-		m_freeReference = m_references[m_freeReference].nextFree;
-		m_references[object->referenceId].object = object;
-	} else {
-		object->referenceId = static_cast<u32>(m_references.size());
-		m_references.push_back({.object = object});
-	}
+	physicalSlot(address) = object;
 	object->gcRecord = memory.ramData() + (address & GC_RECORD_MASK);
 	object->gcMemory = &memory;
 	object->restored = false;
@@ -362,7 +340,6 @@ size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 	m_cpu.pruneStaticClosures();
 	m_weakTables.clear(); m_threads.clear();
 	memory.writeRamRecordByte(m_controlOffset + 1u, white() ^ 1u);
-	m_sweep = m_objects;
 	arena.beginObjectSweep();
 	setPhase(GcPhase::Sweep);
 	return work + m_stringPool.takeMarkWork();
@@ -373,7 +350,6 @@ void GcHeap::unlink(GCObject* object) {
 	if (object->next) object->next->previous = object->previous;
 }
 void GcHeap::destroyObject(GCObject* object) {
-	if (object->referenceId != 0) releaseReference(object);
 	switch (object->type) {
 		case ObjType::Thread:
 
@@ -398,24 +374,29 @@ void GcHeap::destroyObject(GCObject* object) {
 	}
 }
 
-bool GcHeap::sweepRecord(void* context, u32 address) {
-	auto& heap = *static_cast<GcHeap*>(context);
+i32 GcHeap::sweepRecord(void* context, u32 address) {
+	const auto& sweep = *static_cast<SweepContext*>(context);
+	auto& heap = sweep.heap;
 	auto& slot = heap.physicalSlot(address);
 	auto* object = slot;
-	if (!object) return false;
-	if (!heap.sweepGarbage(object)) {
-		object->setGcColor(heap.white());
-		return false;
+	if (!object) return 1;
+	auto* thread = object->type == ObjType::Thread ? static_cast<Thread*>(object) : nullptr;
+	const i32 work = thread ? ceilDiv4(static_cast<int>(heap.allocationBytes(thread))) : 1;
+	if (object->gcColor() != (sweep.white ^ 1u)) {
+		object->setGcColor(sweep.white);
+		return work + (thread && thread != sweep.growingStack ? 2 * ceilDiv4(thread->shrinkStack()) : 0);
 	}
-	if (heap.m_sweep == object) heap.m_sweep = object->next;
+
 	slot = nullptr;
-	if (object->type == ObjType::Table)
+	if (object->type == ObjType::Table) {
 		static_cast<Table*>(object)->freeRecord();
-	else
+	} else {
+		if (thread) thread->freeStack();
 		heap.arena.free(address);
+	}
 	heap.unlink(object);
 	heap.destroyObject(object);
-	return true;
+	return -work;
 }
 
 size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack) {
@@ -471,32 +452,9 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack)
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);
 #endif
-				work += arena.sweepObjects(GC_STEP_WORDS - work, this, &GcHeap::sweepRecord);
-				while (m_sweep && work < GC_STEP_WORDS) {
-					auto* object = m_sweep;
-					m_sweep = object->next;
-					// The allocator has already visited (or will visit) every physical record.
-					if (object->referenceId == 0 && object->type != ObjType::Thread) continue;
-					work += ceilDiv4(static_cast<int>(allocationBytes(object)));
-					if (sweepGarbage(object)) {
-						if (object->type == ObjType::Thread) {
-							auto* thread = static_cast<Thread*>(object);
-							const u32 address = thread->address;
-							thread->freeStack();
-							physicalSlot(address) = nullptr;
-							arena.free(address);
-						}
-						unlink(object); destroyObject(object);
-					}
-					else {
-						object->setGcColor(white());
-						if (object->type == ObjType::Thread && object != growingStack) {
-							auto* thread = static_cast<Thread*>(object);
-							work += 2 * ceilDiv4(thread->shrinkStack());
-						}
-					}
-				}
-				if (!m_sweep && work < GC_STEP_WORDS && !arena.objectSweepActive()) {
+				SweepContext sweep{*this, growingStack, white()};
+				work += arena.sweepObjects(GC_STEP_WORDS - work, &sweep, &GcHeap::sweepRecord);
+				if (work < GC_STEP_WORDS && !arena.objectSweepActive()) {
 					m_grayAgain = nullptr;
 					setPhase(GcPhase::Strings);
 					m_stringPool.beginSweep();
@@ -529,26 +487,16 @@ size_t GcHeap::collect(Value root0, Value root1, Value root2, Thread* growingSta
 	do { work += step(root0, root1, root2, growingStack); } while (active());
 	return work;
 }
-void GcHeap::bindRestoredReferences(const GcState& state, const std::vector<GCObject*>& objects, u32 nextHashId) {
+void GcHeap::bindRestoredRecords(const GcState& state, const std::vector<GCObject*>& objects, u32 nextHashId) {
 	for (auto* object = m_objects; object;) {
 		auto* next = object->next;
 		if (object->restored) object->restored = false;
 		else { unlink(object); destroyObject(object); }
 		object = next;
 	}
-	// The old references are retired. Install the saved slots before resolving
-	// any Value or upvalue edge in the newly constructed object graph.
-	m_references.resize(1u + state.freeReferences.size() + std::count_if(state.references.begin(), state.references.end(), [](u32 slot) { return slot != 0; }));
-	for (size_t i = 0; i < state.references.size(); ++i) {
-		auto* object = objects[state.allocations[i]];
-		object->referenceId = state.references[i];
-		if (object->referenceId != 0) m_references[object->referenceId].object = object;
-		else physicalSlot(physicalAddress(object)) = object;
-	}
-	m_freeReference = 0;
-	for (auto it = state.freeReferences.rbegin(); it != state.freeReferences.rend(); ++it) {
-		m_references[*it].nextFree = m_freeReference;
-		m_freeReference = *it;
+	for (u32 index : state.allocations) {
+		auto* object = objects[index];
+		physicalSlot(physicalAddress(object)) = object;
 	}
 	m_nextObjectHashId = nextHashId;
 }
@@ -575,6 +523,5 @@ void GcHeap::restoreState(const GcState& state, const std::vector<GCObject*>& ob
 	for (auto ref : state.weak) {
 		auto* table = static_cast<Table*>(objects[ref]); table->gcWeakListed = true; m_weakTables.push_back(table);
 	}
-	m_sweep = state.sweep < 0 ? nullptr : objects[state.sweep];
 }
 } // namespace bmsx

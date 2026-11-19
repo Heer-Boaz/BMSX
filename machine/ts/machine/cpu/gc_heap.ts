@@ -22,16 +22,13 @@ export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
 const GC_PHASE_SELECTOR = [GcPhase.Pause, GcPhase.Mark, GcPhase.MarkAgain, GcPhase.Atomic,
 	GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause, GcPhase.Pause];
 export type GcState = {
-	sweep: number;
 	allocations: number[]; gray: number[]; grayAgain: number[]; threads: number[]; weak: number[];
-	references: number[]; freeReferences: number[];
 };
 export class GcHeap {
 	public diagnostics: GcDiagnostics | null = null;
 	public gray: GcObject | null = null;
 	public grayAgain: GcObject | null = null;
 	private objects: GcObject | null = null;
-	private sweep: GcObject | null = null;
 	private readonly controlOffset: number;
 	public phase(): GcPhase {
 		return GC_PHASE_SELECTOR[this.memory.readRamRecordByte(this.controlOffset) & 7];
@@ -40,10 +37,6 @@ export class GcHeap {
 	private setPhase(phase: GcPhase): void { this.memory.writeRamRecordByte(this.controlOffset, phase); }
 	private readonly threads: Thread[] = [];
 	private readonly weak: Table[] = [];
-	// An occupied entry holds its object; a free entry holds the next free id.
-	// The single directory belongs to the heap, never to an individual Value.
-	private readonly references: (GcObject | number)[] = [0];
-	private freeReference = 0;
 	private readonly prototypes = new FunctionPrototypePool();
 	private readonly scratch = new ValueSlots(1);
 	private mode = 0;
@@ -74,15 +67,6 @@ export class GcHeap {
 	public readonly tables = new TableRecords(this);
 	// Host attachments share one position for each aligned physical record start.
 	private readonly records = new Array<GcObject | null>(MAIN_RAM_SIZE / GC_RECORD_ALIGNMENT).fill(null);
-	private physicalAddress(object: GcObject): number {
-		switch (object.gcKind) {
-			case GcKind.Table: return (object as Table).address;
-			case GcKind.Closure: return (object as Closure).address;
-			case GcKind.Upvalue: return (object as Upvalue).address;
-			case GcKind.Thread: return (object as Thread).address;
-			default: return 0;
-		}
-	}
 	public tableAt(address: number): Table | null {
 		const object = this.records[(address & (MAIN_RAM_SIZE - TableRecords.HEADER_BYTES)) >>> 3];
 		return object?.gcKind === GcKind.Table ? object as Table : null;
@@ -104,12 +88,7 @@ export class GcHeap {
 		return object?.gcKind === GcKind.Thread ? object as Thread : null;
 	}
 	public forgetPhysicalRecords(): void { this.records.fill(null); }
-	public reference(object: GcObject): number {
-		const address = this.physicalAddress(object);
-		return address !== 0 ? address : object.referenceId;
-	}
-	/** Consumes a live id produced by this heap; the Value tag supplies its kind. */
-	public object(reference: number): GcObject { return this.references[reference] as GcObject; }
+	public reference(object: GcObject): number { return object.address; }
 	public hash(value: Value): number {
 		switch (valueTag(value)) {
 			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return scalarValueHash(valueInteger(valuePayload(value)));
@@ -121,16 +100,7 @@ export class GcHeap {
 			const closure = object as Closure;
 			closure.prototypeRecord = this.prototypes.retain(closure.prototypeRecord);
 		}
-		const address = this.physicalAddress(object);
-		if (address !== 0) this.records[(address & GC_RECORD_MASK) >>> 3] = object;
-		else if (this.freeReference !== 0) {
-			object.referenceId = this.freeReference;
-			this.freeReference = this.references[this.freeReference] as number;
-			this.references[object.referenceId] = object;
-		} else {
-			object.referenceId = this.references.length;
-			this.references.push(object);
-		}
+		this.records[(object.address & GC_RECORD_MASK) >>> 3] = object;
 		object.restored = false;
 		object.gcOwner = this; object.gcGrayNext = null;
 		object.gcPrevious = null; object.gcNext = this.objects;
@@ -145,12 +115,6 @@ export class GcHeap {
 	}
 	private releaseHostMetadata(object: GcObject): void {
 		if (object.gcKind === GcKind.Closure) this.prototypes.release((object as Closure).prototypeRecord);
-		const reference = object.referenceId;
-		if (reference !== 0) {
-			this.references[reference] = this.freeReference;
-			this.freeReference = reference;
-			object.referenceId = 0;
-		}
 	}
 	private unlink(object: GcObject): void {
 		if (object.gcPrevious !== null) object.gcPrevious.gcNext = object.gcNext;
@@ -313,26 +277,32 @@ export class GcHeap {
 			this.tables.forEachStoredEntry(table.address, this.weakStrings); table.gcWeakListed = false;
 		}
 		this.cpu.pruneStaticClosures(); this.threads.length = 0; this.weak.length = 0;
-		this.memory.writeRamRecordByte(this.controlOffset + 1, this.white() ^ 1); this.sweep = this.objects;
+		this.memory.writeRamRecordByte(this.controlOffset + 1, this.white() ^ 1);
 		this.arena.beginObjectSweep(); this.setPhase(GcPhase.Sweep);
 		return work + this.cpu.stringPool.takeMarkWork();
 	}
-	private readonly sweepRecord = (address: number): boolean => {
+	private readonly sweepRecord = (growingStack: Thread | null, address: number): number => {
 		const index = (address & GC_RECORD_MASK) >>> 3;
 		const object = this.records[index];
-		if (object === null) return false;
-		if (!this.sweepGarbage(object)) {
-			object.gcColor = this.white();
-			return false;
+		if (object === null) return 1;
+		const thread = object.gcKind === GcKind.Thread ? object as Thread : null;
+		const work = thread !== null ? ceilDiv4(this.allocationBytes(thread)) : 1;
+		const white = this.white();
+		if (object.gcColor !== (white ^ 1)) {
+			object.gcColor = white;
+			return work + (thread !== null && thread !== growingStack ? 2 * ceilDiv4(thread.shrinkStack()) : 0);
 		}
-		if (this.sweep === object) this.sweep = object.gcNext;
+
 		this.records[index] = null;
-		if (object.gcKind === GcKind.Table) this.tables.freeRecord(address);
-		else this.arena.free(address);
+		if (object.gcKind === GcKind.Table) {
+			this.tables.freeRecord(address);
+		} else {
+			if (thread !== null) thread.freeStack();
+			this.arena.free(address);
+		}
 		this.unlink(object);
 		this.releaseHostMetadata(object);
-
-		return true;
+		return -work;
 	};
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingStack: Thread | null = null): number {
 		this.diagnostics?.beginStep();
@@ -373,32 +343,8 @@ export class GcHeap {
 					return this.atomic(t0, t1, t2);
 				case GcPhase.Sweep:
 					this.diagnostics?.phase('sweepNanoseconds');
-					work += this.arena.sweepObjects(GC_STEP_WORDS - work, this.sweepRecord);
-					while (this.sweep !== null && work < GC_STEP_WORDS) {
-						const object = this.sweep; this.sweep = object.gcNext;
-						if (object.referenceId === 0 && object.gcKind !== GcKind.Thread) continue;
-						const bytes = this.allocationBytes(object);
-						work += ceilDiv4(bytes);
-						if (this.sweepGarbage(object)) {
-							if (object.gcKind === GcKind.Thread) {
-								const thread = object as Thread;
-								const address = thread.address;
-								thread.freeStack();
-								this.records[(address & GC_RECORD_MASK) >>> 3] = null;
-								this.arena.free(address);
-							}
-							this.unlink(object);
-							this.releaseHostMetadata(object);
-
-						} else {
-							object.gcColor = this.white();
-							if (object.gcKind === GcKind.Thread && object !== growingStack) {
-								const thread = object as Thread;
-								work += 2 * ceilDiv4(thread.shrinkStack());
-							}
-						}
-					}
-					if (this.sweep === null && work < GC_STEP_WORDS && !this.arena.objectSweepActive()) { this.grayAgain = null; this.setPhase(GcPhase.Strings); this.cpu.stringPool.beginSweep(); }
+					work += this.arena.sweepObjects(GC_STEP_WORDS - work, growingStack, this.sweepRecord);
+					if (work < GC_STEP_WORDS && !this.arena.objectSweepActive()) { this.grayAgain = null; this.setPhase(GcPhase.Strings); this.cpu.stringPool.beginSweep(); }
 					break;
 				case GcPhase.Strings:
 					this.diagnostics?.phase('stringReclaimNanoseconds');
@@ -419,18 +365,15 @@ export class GcHeap {
 		return work;
 	}
 	public captureState(ref: (object: GcObject) => number): GcState {
-		const state: GcState = { sweep: this.sweep === null ? -1 : ref(this.sweep), allocations: [], gray: [], grayAgain: [], threads: [], weak: [], references: [], freeReferences: [] };
-		for (let object = this.objects; object !== null; object = object.gcNext) { state.allocations.push(ref(object)); state.references.push(object.referenceId); }
-		for (let slot = this.freeReference; slot !== 0; slot = this.references[slot] as number) {
-			state.freeReferences.push(slot);
-		}
+		const state: GcState = { allocations: [], gray: [], grayAgain: [], threads: [], weak: [] };
+		for (let object = this.objects; object !== null; object = object.gcNext) state.allocations.push(ref(object));
 		for (let object = this.gray; object !== null; object = object.gcGrayNext) state.gray.push(ref(object));
 		for (let object = this.grayAgain; object !== null; object = object.gcGrayNext) state.grayAgain.push(ref(object));
 		for (const object of this.threads) state.threads.push(ref(object));
 		for (const object of this.weak) state.weak.push(ref(object));
 		return state;
 	}
-	public bindRestoredReferences(state: GcState, objects: readonly GcObject[]): void {
+	public bindRestoredRecords(state: GcState, objects: readonly GcObject[]): void {
 		for (let object = this.objects; object !== null;) {
 			const next = object.gcNext;
 			if (object.restored) object.restored = false;
@@ -440,21 +383,9 @@ export class GcHeap {
 			}
 			object = next;
 		}
-		// Restore the saved slots before decoding any graph edge.
-		let slots = 1 + state.freeReferences.length;
-		for (const reference of state.references) slots += reference !== 0 ? 1 : 0;
-		this.references.length = slots;
-		for (let i = 0; i < state.references.length; ++i) {
-			const object = objects[state.allocations[i]];
-			object.referenceId = state.references[i];
-			if (object.referenceId !== 0) this.references[object.referenceId] = object;
-			else this.records[(this.physicalAddress(object) & GC_RECORD_MASK) >>> 3] = object;
-		}
-		this.freeReference = 0;
-		for (let i = state.freeReferences.length - 1; i >= 0; --i) {
-			const slot = state.freeReferences[i];
-			this.references[slot] = this.freeReference;
-			this.freeReference = slot;
+		for (const index of state.allocations) {
+			const object = objects[index];
+			this.records[(object.address & GC_RECORD_MASK) >>> 3] = object;
 		}
 	}
 	public restoreState(state: GcState, objects: GcObject[]): void {
@@ -478,6 +409,5 @@ export class GcHeap {
 		this.threads.length = 0; this.weak.length = 0;
 		for (const ref of state.threads) this.threads.push(objects[ref] as Thread);
 		for (const ref of state.weak) { const table = objects[ref] as Table; table.gcWeakListed = true; this.weak.push(table); }
-		this.sweep = state.sweep < 0 ? null : objects[state.sweep];
 	}
 }

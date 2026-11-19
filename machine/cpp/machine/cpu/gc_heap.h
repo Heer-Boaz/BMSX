@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <vector>
+#include "common/compiler.h"
 #include "common/object_storage_pool.h"
 #include "machine/cpu/heap_allocator.h"
 #include "machine/cpu/table.h"
@@ -16,8 +17,7 @@ inline constexpr size_t GC_STEP_WORDS = 4096;
 inline constexpr size_t GC_ASSIST_BYTES = 256;
 enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
 struct GcState {
-	int sweep = -1;
-	std::vector<u32> allocations, gray, grayAgain, threads, weak, references, freeReferences;
+	std::vector<u32> allocations, gray, grayAgain, threads, weak;
 };
 
 // Physical records start on an eight-byte boundary, including size-class slots.
@@ -43,7 +43,6 @@ public:
 	Thread* threadAt(u32 address) const { return attachedRecord<Thread, ObjType::Thread>(address); }
 	void forgetPhysicalRecords() { std::fill(m_records.begin(), m_records.end(), nullptr); }
 	template<class T, class... Args> T* allocate(ObjType type, Args&&... args) {
-		if constexpr (!std::is_same_v<T, Table> && !std::is_same_v<T, Upvalue> && !std::is_same_v<T, Thread>) reserveReference();
 		T* object;
 		if constexpr (std::is_same_v<T, Table>) object = m_tables.construct(std::forward<Args>(args)...);
 		else object = new T(std::forward<Args>(args)...);
@@ -54,14 +53,9 @@ public:
 	Closure* bindClosureRecord(u32 address, const FunctionPrototype&, u32 count, bool canonical);
 	u32 allocateHashId() { return m_nextObjectHashId++; }
 	u32 nextObjectHashId() const { return m_nextObjectHashId; }
-	// Only the host-backed allocations still use directory slots.
-	u32 reference(const GCObject* object) const {
-		const u32 address = physicalAddress(object);
-		return address != 0 ? address : object->referenceId;
-	}
+	u32 reference(const GCObject* object) const { return physicalAddress(object); }
 	u32 reference(const Table* table) const { return table->address(); }
 	u32 reference(const Closure* closure) const { return closure->address; }
-	GCObject* object(u32 reference) const { return m_references[reference].object; }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static size_t nativePhysicalRecordsOffset();
 #endif
@@ -78,13 +72,7 @@ public:
 	}
 	template<class Ref> GcState captureState(Ref&& ref) const {
 		GcState state;
-		state.sweep = m_sweep ? static_cast<int>(ref(m_sweep)) : -1;
-		for (auto* object = m_objects; object; object = object->next) {
-			state.allocations.push_back(ref(object));
-			state.references.push_back(object->referenceId);
-		}
-		for (u32 slot = m_freeReference; slot != 0; slot = m_references[slot].nextFree)
-			state.freeReferences.push_back(slot);
+		for (auto* object = m_objects; object; object = object->next) state.allocations.push_back(ref(object));
 		for (auto* object = m_gray; object; object = object->grayNext) state.gray.push_back(ref(object));
 		for (auto* object = m_grayAgain; object; object = object->grayNext) state.grayAgain.push_back(ref(object));
 		for (auto* object : m_threads) state.threads.push_back(ref(object));
@@ -92,7 +80,7 @@ public:
 		return state;
 	}
 	void restoreState(const GcState& state, const std::vector<GCObject*>& objects);
-	void bindRestoredReferences(const GcState&, const std::vector<GCObject*>& objects, u32 nextHashId);
+	void bindRestoredRecords(const GcState&, const std::vector<GCObject*>& objects, u32 nextHashId);
 	GcPhase phase() const {
 		// Two unconnected selector inputs do not clock the collector.
 		constexpr std::array phases{GcPhase::Pause, GcPhase::Mark, GcPhase::MarkAgain, GcPhase::Atomic,
@@ -119,20 +107,14 @@ private:
 			case ObjType::Closure: return static_cast<const Closure*>(object)->address;
 			case ObjType::Upvalue: return static_cast<const Upvalue*>(object)->address;
 			case ObjType::Thread: return static_cast<const Thread*>(object)->address;
-			default: return 0;
 		}
+		BMSX_UNREACHABLE();
 	}
 	GCObject*& physicalSlot(u32 address) { return m_records[(address & GC_RECORD_MASK) / GC_RECORD_ALIGNMENT]; }
 	template<class T, ObjType kind> T* attachedRecord(u32 address) const {
 		auto* object = m_records[(address & GC_RECORD_MASK) / GC_RECORD_ALIGNMENT];
 		return object && object->type == kind ? static_cast<T*>(object) : nullptr;
 	}
-	union ReferenceSlot {
-		GCObject* object;
-		u32 nextFree;
-	};
-	void reserveReference();
-	void releaseReference(GCObject* object);
 	void track(GCObject* object);
 	uint8_t tableWeakMode(const Table& table) const;
 	bool valueIsAlive(Value value) const;
@@ -140,13 +122,13 @@ private:
 	size_t remark(Value root0, Value root1, Value root2);
 	size_t atomic(Value root0, Value root1, Value root2);
 	void destroyObject(GCObject* object);
-	static bool sweepRecord(void* context, u32 address);
+	struct SweepContext { GcHeap& heap; const Thread* growingStack; u8 white; };
+	static i32 sweepRecord(void* context, u32 address);
 	void unlink(GCObject* object);
 	CPU& m_cpu;
 	GCObject* m_objects = nullptr;
 	GCObject* m_gray = nullptr;
 	GCObject* m_grayAgain = nullptr;
-	GCObject* m_sweep = nullptr;
 	std::vector<Thread*> m_threads;
 	std::vector<Table*> m_weakTables;
 	u32 m_nextObjectHashId = 1;
@@ -158,11 +140,9 @@ private:
 	// Map nodes are stable across rehash; erasure is tied to the last closure.
 	std::unordered_map<FunctionPrototype, size_t, FunctionPrototypeHash> m_prototypes;
 	std::vector<GCObject*> m_records = std::vector<GCObject*>(MAIN_RAM_SIZE / GC_RECORD_ALIGNMENT);
-	std::vector<ReferenceSlot> m_references{{.object = nullptr}};
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	GCObject* const* const m_recordBase = m_records.data();
 #endif
-	u32 m_freeReference = 0;
 };
 
 inline Table* asTable(Value value, const GcHeap& heap) { return heap.tableAt(valuePayload(value)); }

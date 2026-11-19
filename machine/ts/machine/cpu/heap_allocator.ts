@@ -133,7 +133,8 @@ export class HeapAllocator {
 		return this.memory.readRamRecordWord(this.management + SWEEP_PAGE) < this.pageLimit;
 	}
 
-	public sweepObjects(allowance: number, visit: (address: number) => boolean): number {
+	// The visitor returns charged work, negated when it releases the record.
+	public sweepObjects<Context>(allowance: number, context: Context, visit: (context: Context, address: number) => number): number {
 		const cursor = this.management + SWEEP_PAGE;
 		let page = this.memory.readRamRecordWord(cursor);
 		if (page >= this.pageLimit) return 0;
@@ -145,9 +146,8 @@ export class HeapAllocator {
 			++page;
 			switch (info & 0xff) {
 				case PageKind.ObjectRun:
-					++work;
 					page += Math.min((this.memory.readRamRecordWord(pageEntry + 4) - 1) >>> 0, this.pageLimit - page);
-					if (this.memory.readRamRecordByte(base) !== 0) visit(base);
+					work += this.memory.readRamRecordByte(base) !== 0 ? Math.abs(visit(context, base)) : 1;
 					break;
 				case PageKind.ObjectSlots: {
 					const classIndex = (info >>> 8) & 0xff;
@@ -157,9 +157,10 @@ export class HeapAllocator {
 					const end = Math.min((this.memory.readRamRecordWord(pageEntry + 8) & LINK_MASK) << BUMP_SHIFT, HEAP_PAGE_SIZE);
 					let live = info >>> 16;
 					for (let slot = 0; slot + stride <= end; slot += stride) {
-						++work;
 						const address = base + slot;
-						if (this.memory.readRamRecordByte(address) !== 0 && visit(address) && --live === 0) break;
+						const visited = this.memory.readRamRecordByte(address) !== 0 ? visit(context, address) : 1;
+						work += Math.abs(visited);
+						if (visited < 0 && --live === 0) break;
 					}
 					break;
 				}

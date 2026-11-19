@@ -40,20 +40,17 @@ function checkReferences(cpu: CPU): void {
 			case GcKind.Closure: assert.equal(gc.closureAt(id), object); break;
 			case GcKind.Upvalue: assert.equal(gc.cellAt(id), object); break;
 			case GcKind.Thread: assert.equal(gc.threadAt(id), object); break;
-			default: assert.equal(gc.object(id), object); break;
 		}
 		return id;
 	}).allocations;
 	assert.equal(new Set(ids).size, ids.length);
 }
 
-test('32-bit object payloads survive directory growth and collection', () => {
+test('32-bit object payloads survive heap growth and collection', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	const captured = frame.registers.getClosure(1, cpu.gc);
 	const cell = cpu.gc.cellAt(captured.captureAddress(0))!;
 	assert.equal(frame.registers.getPayload(1), captured.address);
-	assert.equal(captured.referenceId, 0);
-	assert.equal(cell.referenceId, 0);
 	assert.equal(cpu.gc.closureAt(cell.address), null);
 	checkReferences(cpu);
 	const roots = cpu.createTable(512), slots = new ValueStorage(400);
@@ -71,13 +68,13 @@ test('freed ids recycle without reusing the hash identity or retaining the old o
 	const cpu = machine(); cpu.collectTrackedHeapBytes();
 	const dead = cpu.createTable(), id = cpu.gc.reference(dead), hash = dead.hashId;
 	cpu.collectTrackedHeapBytes();
-	assert.equal(dead.referenceId, 0);
+	assert.equal(cpu.gc.tableAt(id), null);
 	const next = cpu.createTable();
 	assert.equal(cpu.gc.reference(next), id); assert.notEqual(next.hashId, hash);
 	assert.equal(cpu.gc.tableAt(id), next);
 });
 
-test('equally initialized CPUs have independent object directories', () => {
+test('equally initialized CPUs have independent address spaces', () => {
 	const first = machine(), second = machine(), a = first.createTable(), b = second.createTable();
 	assert.equal(first.gc.reference(a), second.gc.reference(b)); assert.notEqual(a, b);
 	assert.equal(first.gc.tableAt(first.gc.reference(a)), a); assert.equal(second.gc.tableAt(second.gc.reference(b)), b);
@@ -93,7 +90,6 @@ test('restore registers identities before edges and releases discarded future id
 	const saved = cpu.captureRuntimeState(), thread = cpu.gc.reference(cpu.rootThread), canonical = cpu.gc.reference(frame.closure);
 	const root = frame.registers.get(0), fourth = roots.records.getInteger(roots.address, 4);
 	const ram = cpu.memory.captureSaveState();
-	assert.equal(saved.gc.references.filter(id => id !== 0).length, 0, "physical guest objects have no directory slots");
 	for (let iteration = 0; iteration < 64; ++iteration) {
 		const future = Array.from({ length: 12 }, () => cpu.createTable());
 		cpu.memory.restoreSaveState(ram);
@@ -102,7 +98,7 @@ test('restore registers identities before edges and releases discarded future id
 		assert.equal(cpu.gc.reference(cpu.rootThread.currentFrame!.closure), canonical);
 		assert.equal(cpu.rootThread.currentFrame!.registers.get(0), root);
 		assert.equal(cpu.gc.tables.getInteger(tableAddressPayload(root), 4), fourth);
-		for (const object of future) assert.equal(object.referenceId, 0);
+		for (const object of future) assert.equal(cpu.gc.tableAt(object.address), null);
 		checkReferences(cpu);
 		assert.deepEqual(cpu.captureRuntimeState(), saved);
 		assert.deepEqual([cpu.createTable().address, cpu.createTable().address], future.slice(0, 2).map(table => table.address));
@@ -111,7 +107,7 @@ test('restore registers identities before edges and releases discarded future id
 	}
 });
 
-test('incremental GC and phase-preserving restore keep the directory synchronized', () => {
+test('incremental GC and phase-preserving restore keep physical attachments synchronized', () => {
 	const cpu = machine(), roots = cpu.createTable(1024), frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, cpu.gc.reference(roots)); frame.top = 2;
 	for (let i = 1; i <= 1000; ++i) {
@@ -130,7 +126,7 @@ test('incremental GC and phase-preserving restore keep the directory synchronize
 });
 
 
-test('builtin functions retain their own ids outside the GC directory', () => {
+test('builtin functions retain their own ids outside the GC heap', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, functions = cpu.createTable(BUILTIN_FUNCTIONS.length);
 	frame.registers.setTable(0, cpu.gc.reference(functions)); frame.top = 2;
 	const before = cpu.gc.captureState(object => cpu.gc.reference(object));

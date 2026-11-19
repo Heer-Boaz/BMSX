@@ -1070,7 +1070,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			}
 		}
 	}
-	m_heap.bindRestoredReferences(state.gc, restoredObjects, state.nextObjectHashId);
+	m_heap.bindRestoredRecords(state.gc, restoredObjects, state.nextObjectHashId);
 	const CpuSnapshotReader reader(snapshot);
 	m_memory.clearMappedPageWriteWatches();
 	m_heap.armThreadStackWatches();
@@ -1296,7 +1296,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 }
 
 Thread* CPU::createThread(Closure* entry) {
-	const u32 address = m_luaHeap.allocateRecord(THREAD_HEAP_BYTES, true, THREAD_INITIAL_BACKING_BYTES, static_cast<u32>(ThreadField::StackBlock),
+	const u32 address = m_luaHeap.allocateRecord(THREAD_HEAP_BYTES, false, THREAD_INITIAL_BACKING_BYTES, static_cast<u32>(ThreadField::StackBlock),
 		entry ? valueClosure(entry->address) : valueNil());
 	auto* thread = m_heap.allocate<Thread>(ObjType::Thread, m_heap, address);
 	thread->initializeRecord(entry);

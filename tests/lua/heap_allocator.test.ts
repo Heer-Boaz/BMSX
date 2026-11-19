@@ -92,9 +92,12 @@ test('object sweep resumes from RAM, visits vacant issued slots and skips owned 
 	heap.free(vacant);
 
 	const visits: number[] = [];
-	const retire = (address: number) => { visits.push(address); heap.free(address); return true; };
+	const retire = (allocator: HeapAllocator, address: number) => {
+		visits.push(address); allocator.free(address);
+		return visits.length === 1 ? -5 : -1;
+	};
 	heap.beginObjectSweep();
-	assert.equal(heap.sweepObjects(1, retire), 1, 'the run counts once and is now free');
+	assert.equal(heap.sweepObjects(1, heap, retire), 5, 'the run contributes the charge of one visit');
 	assert.deepEqual(visits, [run]);
 	assert.ok(heap.objectSweepActive());
 	const midSweep = memory.captureSaveState();
@@ -102,7 +105,7 @@ test('object sweep resumes from RAM, visits vacant issued slots and skips owned 
 	for (let replay = 0; replay < 2; ++replay) {
 		memory.restoreSaveState(midSweep);
 		visits.length = 0;
-		assert.equal(heap.sweepObjects(1, retire), 3, 'sweep finishes the issued slots in the page including the hole');
+		assert.equal(heap.sweepObjects(1, heap, retire), 7, 'sweep finishes the issued slots in the page including the hole');
 		assert.deepEqual(visits, [first, last]);
 		assert.equal(heap.occupiedBytes(), HEAP_PAGE_SIZE * 2);
 		assert.equal(memory.readRamRecordWord(owned), 1);

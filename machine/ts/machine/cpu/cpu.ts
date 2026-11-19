@@ -3373,7 +3373,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public createThread(entry: Closure | null): Thread {
-		const address = this.luaHeap.allocateRecord(THREAD_HEAP_BYTES, true, THREAD_INITIAL_BACKING_BYTES, ThreadField.StackBlock,
+		const address = this.luaHeap.allocateRecord(THREAD_HEAP_BYTES, false, THREAD_INITIAL_BACKING_BYTES, ThreadField.StackBlock,
 			entry === null ? valueNil() : valueClosure(entry.address));
 		const thread = new Thread(this.gc, address);
 		thread.initializeRecord(entry);
@@ -4143,7 +4143,7 @@ export class CPU implements MappedPageInvalidator {
 					break;
 			}
 		}
-		this.gc.bindRestoredReferences(state.gc, restoredObjects);
+		this.gc.bindRestoredRecords(state.gc, restoredObjects);
 		const reader = new CpuSnapshotReader(snapshot);
 		// Constant/string and global-slot caches must not retain entries first
 		// encountered in the discarded future. Rebuild from the same media.

@@ -539,7 +539,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				executionResidencyMask: 3,
 				nextObjectHashId: 0xfedcba98,
 				hardHalted: true,
-				gc: { sweep: 0, allocations: [0], gray: [], grayAgain: [], threads: [], weak: [], references: [1], freeReferences: [] },
+				gc: { allocations: [0], gray: [], grayAgain: [], threads: [], weak: [] },
 				executionCartridgeSlot: 0,
 				programExecutionDomainId: 0,
 				systemGlobals: [

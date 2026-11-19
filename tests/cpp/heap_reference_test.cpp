@@ -45,7 +45,6 @@ void checkReferences(CPU& cpu) {
 			case ObjType::Closure: require(heap.closureAt(id) == object, "closure address round-trips"); break;
 			case ObjType::Upvalue: require(heap.cellAt(id) == object, "cell address round-trips"); break;
 			case ObjType::Thread: require(heap.threadAt(id) == object, "thread address round-trips"); break;
-			default: require(heap.object(id) == object, "host reference round-trips"); break;
 		}
 		return id;
 	});
@@ -60,7 +59,6 @@ void liveReferencesAndReuse() {
 	auto* closure = asClosure(captured, cpu.gcHeap());
 	auto* cell = cpu.gcHeap().cellAt(closure->captureAddress(0));
 	require(valuePayload(captured) == closure->address, "the register contains the raw closure address");
-	require(closure->referenceId == 0 && cell->referenceId == 0, "closures and cells have no directory slot");
 	require(cpu.gcHeap().closureAt(cell->address) == nullptr, "a cell address cannot resolve to a closure");
 	checkReferences(cpu);
 	auto* roots = cpu.createTable(512);
@@ -95,8 +93,6 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 	const auto ram = cpu.memory().captureSaveState();
 	const u32 rootsRef = cpu.gcHeap().reference(roots);
 	const Value fourth = roots->getInteger(4);
-	require(std::ranges::all_of(saved.gc.references, [](u32 id) { return id == 0; }),
-		"every live guest object has a physical address rather than a directory slot");
 	for (int iteration = 0; iteration < 64; ++iteration) {
 		std::array<u32, 12> future{};
 		for (auto& address : future) address = cpu.createTable()->address();
@@ -106,13 +102,13 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 		require(valuePayload(restoredRoots) == rootsRef &&
 			asTable(restoredRoots, cpu.gcHeap())->getInteger(4) == fourth,
 			"raw reference words still bind the restored table and its entries");
+		for (const u32 address : future) require(cpu.gcHeap().tableAt(address) == nullptr, "discarded addresses have no attachment");
 		checkReferences(cpu);
 		const auto restored = cpu.captureRuntimeState();
 		require(std::ranges::equal(saved.snapshot.words(), restored.snapshot.words())
 			&& std::ranges::equal(saved.snapshot.objectWords(), restored.snapshot.objectWords())
-			&& saved.gc.references == restored.gc.references
-			&& saved.gc.freeReferences == restored.gc.freeReferences,
-			"restore preserves slot identities and the directory allocation order");
+			&& saved.gc.allocations == restored.gc.allocations,
+			"restore preserves physical record identities");
 		auto* first = cpu.createTable();
 		auto* second = cpu.createTable();
 		require(first->address() == future[0] && second->address() == future[1],
@@ -240,7 +236,7 @@ void isolatedHeaps() {
 	auto* a = first.cpu.createTable(); auto* b = second.cpu.createTable();
 	const u32 ar = first.cpu.gcHeap().reference(a), br = second.cpu.gcHeap().reference(b);
 	require(a != b, "concurrent CPUs own distinct allocations");
-	require(ar == br, "directory slots are local to equally initialized heaps");
+	require(ar == br, "equally initialized heaps allocate the same guest addresses");
 	require(first.cpu.gcHeap().tableAt(ar) == a && second.cpu.gcHeap().tableAt(br) == b,
 		"each CPU resolves its own object references");
 }

@@ -21,15 +21,11 @@ struct GCObject {
 	void setGcColor(uint8_t color);
 	bool restored = false;
 	uint32_t hashId = 0;
-	// Heap-local slot; no host pointer is carried in a Value word.
-	uint32_t referenceId = 0;
 	GCObject* next = nullptr;
 	GCObject* previous = nullptr;
 	GCObject* grayNext = nullptr;
 	GCObject** grayHead = nullptr;
 	void writeBarrier();
 };
-
-// A sweep snapshot keeps the allocation's retirement work, not dead pointers.
 
 } // namespace bmsx

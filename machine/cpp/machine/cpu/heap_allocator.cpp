@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstdlib>
 #include <cstring>
 
 #include "machine/memory/memory.h"
@@ -123,9 +124,8 @@ size_t HeapAllocator::sweepObjects(size_t allowance, void* context, SweepVisitor
 		++page;
 		switch (info & 0xffu) {
 			case ObjectRun:
-				++work;
 				page += std::min(m_memory.readRamRecordWord(pageEntry + 4u) - 1u, m_pageLimit - page);
-				if (m_memory.readRamRecordByte(base) != 0u) visit(context, base);
+				work += m_memory.readRamRecordByte(base) != 0u ? std::abs(visit(context, base)) : 1;
 				break;
 			case ObjectSlots: {
 				const u32 classIndex = (info >> 8) & 0xffu;
@@ -135,10 +135,10 @@ size_t HeapAllocator::sweepObjects(size_t allowance, void* context, SweepVisitor
 				const u32 end = std::min((m_memory.readRamRecordWord(pageEntry + 8u) & LINK_MASK) << BUMP_SHIFT, HEAP_PAGE_SIZE);
 				u32 live = info >> 16;
 				for (u32 slot = 0; slot + stride <= end; slot += stride) {
-					++work;
 					const u32 address = base + slot;
-					if (m_memory.readRamRecordByte(address) != 0u && visit(context, address) && --live == 0u)
-						break; // The allocator released the page.
+					const i32 visited = m_memory.readRamRecordByte(address) != 0u ? visit(context, address) : 1;
+					work += std::abs(visited);
+					if (visited < 0 && --live == 0u) break; // The allocator released the page.
 				}
 				break;
 			}

@@ -1,15 +1,16 @@
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
-import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { HEAP_PAGE_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GcPhase, GC_STEP_WORDS } from '../../machine/ts/machine/cpu/gc_heap';
-import { ValueTag, asTable, valueBool, valueInteger, valueNil, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, asTable, valueBuiltinFunction, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function machine() {
 	const text = new Uint8Array(4);
@@ -171,6 +172,42 @@ test('an oversized scan earns actual-work credit, not another assist after 256 b
 	assert.ok(work > GC_STEP_WORDS);
 	assert.equal(cpu.luaHeap.collectionTarget(), before + (work >>> 4));
 	assert.ok(cpu.luaHeap.collectionTarget() > cpu.luaHeap.usedBytes() + 256);
+});
+
+test('a coroutine header is swept with the object page and its stack is released with it', () => {
+	const text = new Uint8Array(6 * 4);
+	writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
+	writeInstruction(text, 3, OpCode.CALL, 0, 2, 2);
+	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
+	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({
+		text, systemGlobalNames: ['create'],
+		functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }, { firstWord: 5, wordCount: 1, maxStack: 2 }],
+		closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }],
+	}));
+	cpu.setSystemGlobalByKey(cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
+	cpu.runUntilDepth(0, 1000);
+	const { gc } = cpu, frame = cpu.rootThread.currentFrame!;
+	const address = valuePayload(frame.registers.get(0)), thread = gc.threadAt(address)!;
+	const bytes = gc.allocationBytes(thread);
+	frame.registers.setClosure(1, thread.entry!.address);
+	frame.top = 2;
+	const sweep = () => {
+		while (gc.phase() !== GcPhase.Sweep) gc.step();
+		let work = 0;
+		while (gc.active()) work += gc.step();
+		return work;
+	};
+	const liveWork = sweep(), occupied = cpu.heapAllocator.occupiedBytes();
+	assert.equal(gc.threadAt(address), thread);
+	frame.registers.setNil(0);
+	assert.equal(sweep(), liveWork, 'an occupied Thread slot has the same visit charge whether retained or released');
+	assert.equal(gc.threadAt(address), null);
+	assert.equal(cpu.memory.readRamRecordByte(address), 0);
+	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - bytes);
+	assert.equal(sweep(), liveWork - ((bytes >>> 2) - 1), 'the root Thread keeps the page, and the vacant slot still costs a visit');
 });
 
 test('sweep shrinks cold stacks with hysteresis, preserves caller windows and rebinds views', () => {

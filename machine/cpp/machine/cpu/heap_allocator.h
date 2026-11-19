@@ -48,7 +48,8 @@ public:
 
 	// Sweep only independently allocated records. Each issued slot is a visit,
 	// including a vacant one. Owned blocks are released by their record.
-	using SweepVisitor = bool (*)(void*, u32);
+	// The visitor returns charged work, negated when it releases the record.
+	using SweepVisitor = i32 (*)(void*, u32);
 	void beginObjectSweep();
 	bool objectSweepActive() const;
 	size_t sweepObjects(size_t allowance, void* context, SweepVisitor visit);

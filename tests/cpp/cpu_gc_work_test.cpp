@@ -218,7 +218,7 @@ void incrementalStateAndBarriers() {
 		cpu.memory().restoreSaveState(ram); cpu.restoreRuntimeState(state);
 		const auto after = cpu.captureRuntimeState();
 		require(std::ranges::equal(state.snapshot.words(), after.snapshot.words())
-			&& state.gc.sweep == after.gc.sweep && state.gc.allocations == after.gc.allocations
+			&& state.gc.allocations == after.gc.allocations
 			&& state.gc.gray == after.gc.gray
 			&& state.gc.grayAgain == after.gc.grayAgain
 			&& state.gc.threads == after.gc.threads && state.gc.weak == after.gc.weak,
@@ -296,6 +296,44 @@ void secondMarkPassAndCredit() {
 	require(target->getInteger(2) == valueTable(cpu.gcHeap().reference(late)), "final remark retains writes after the second pass");
 }
 
+void sweepCoroutineRecord() {
+	test::Blua32TestImage program;
+	program.text.resize(6 * INSTRUCTION_BYTES);
+	writeInstruction(program.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
+	writeInstruction(program.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(program.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
+	writeInstruction(program.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 2);
+	writeInstruction(program.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(program.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	program.functions = {{.firstWord=0, .wordCount=5, .maxStack=8}, {.firstWord=5, .wordCount=1, .maxStack=2}};
+	program.systemGlobalNames = {"create"};
+	program.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	Machine machine(program); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap();
+	cpu.setSystemGlobalByKey(cpu.stringPool().intern("create"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
+	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "coroutine fixture reaches HALT");
+	auto& frame = *cpu.rootThread()->currentFrame;
+	const u32 address = valuePayload(frame.registers.get(0));
+	auto* thread = gc.threadAt(address);
+	require(thread != nullptr, "coroutine builtin published a physical Thread reference");
+	const auto bytes = gc.allocationBytes(thread);
+	frame.registers.set(1, valueClosure(thread->entry()->address));
+	frame.writeControl(FrameField::Top, 2);
+	const auto sweep = [&] {
+		while (gc.phase() != GcPhase::Sweep) gc.step(valueNil(), valueNil(), valueNil());
+		size_t work = 0;
+		while (gc.active()) work += gc.step(valueNil(), valueNil(), valueNil());
+		return work;
+	};
+	const auto liveWork = sweep();
+	const auto occupied = cpu.heapAllocator().occupiedBytes();
+	require(gc.threadAt(address) == thread, "reachable coroutine survives a page sweep");
+	frame.registers.set(0, valueNil());
+	require(sweep() == liveWork, "an occupied Thread slot has the same visit charge whether retained or released");
+	require(gc.threadAt(address) == nullptr && cpu.memory().readRamRecordByte(address) == 0
+		&& cpu.heapAllocator().occupiedBytes() == occupied - bytes, "sweep frees both the coroutine slot and its owned stack");
+	require(sweep() == liveWork - (bytes / sizeof(u32) - 1), "root Thread keeps the page and a vacant Thread slot still costs one visit");
+}
+
 void stackShrinkAndAdmission() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto* thread = cpu.rootThread(); auto& frame = *thread->currentFrame;
@@ -353,7 +391,7 @@ int main() {
 		canonicalPoolAndRootRanges(); explicitCollectionAndNoReplay();
 		allocationCollectionAndFailure(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers(); incrementalSharedWeakMode();
-		secondMarkPassAndCredit(); stackShrinkAndAdmission(); highRetainedPacing();
+		secondMarkPassAndCredit(); sweepCoroutineRecord(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;
 	} catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

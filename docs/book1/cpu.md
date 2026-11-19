@@ -1283,8 +1283,8 @@ Collection work consumes cycles as follows:
 | Scan a closure | `3 + U` |
 | Scan a Thread | `ceil(occupied allocation bytes / 4)` |
 | Scan a captured-variable cell | `4` |
-| Examine Table, closure, captured-variable and String storage for reclamation | `1` per visited block in an object page, including a free slot; a page run is one block |
-| Examine a Thread for reclamation | `ceil(occupied allocation bytes / 4)` |
+| Examine an object slot or run for reclamation, except an occupied Thread slot | `1` per visited block, including a free slot; a page run is one block |
+| Examine an occupied Thread slot for reclamation | `ceil(occupied allocation bytes / 4)` |
 | Read the constant and global root ranges | `2C + 3(S + G)` per pass |
 | Examine a weak-key Table in one dependency-convergence pass | `A + 2H` |
 | Clear weak entries and retain surviving String entries in one weak Table | `A + 2H` |

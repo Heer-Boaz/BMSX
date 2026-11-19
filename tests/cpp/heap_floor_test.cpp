@@ -114,22 +114,22 @@ void objectSweepResumesFromRam() {
 	for (const u32 address : {first, vacant, last, owned, run}) memory.writeRamRecordWord(address, 1);
 	heap.free(vacant);
 	struct Visits { HeapAllocator& heap; std::vector<u32> addresses; } visits{heap, {}};
-	auto retire = +[](void* context, u32 address) -> bool {
+	auto retire = +[](void* context, u32 address) -> i32 {
 		auto& sweep = *static_cast<Visits*>(context);
 		sweep.addresses.push_back(address);
 		sweep.heap.free(address);
-		return true;
+		return sweep.addresses.size() == 1 ? -5 : -1;
 	};
 
 	heap.beginObjectSweep();
-	require(heap.sweepObjects(1, &visits, retire) == 1 && visits.addresses == std::vector<u32>{run},
-		"an object run counts once");
+	require(heap.sweepObjects(1, &visits, retire) == 5 && visits.addresses == std::vector<u32>{run},
+		"an object run contributes the charge of one visit");
 	require(heap.objectSweepActive(), "the sweep still has object pages to visit");
 	const auto midSweep = memory.captureSaveState();
 	for (int replay = 0; replay < 2; ++replay) {
 		memory.restoreSaveState(midSweep);
 		visits.addresses.clear();
-		require(heap.sweepObjects(1, &visits, retire) == 3 && visits.addresses == std::vector<u32>{first, last},
+		require(heap.sweepObjects(1, &visits, retire) == 7 && visits.addresses == std::vector<u32>{first, last},
 			"the current page is indivisible, including its vacant issued slot");
 		require(heap.occupiedBytes() == 2u * HEAP_PAGE_SIZE && memory.readRamRecordWord(owned) == 1
 			&& !heap.objectSweepActive(), "the owner retains its block and the cursor reaches the end");
