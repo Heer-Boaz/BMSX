@@ -37,7 +37,7 @@ const cases: { source: string; values: Value[] }[] = [
 ];
 
 for (const optLevel of [0, 3] as const) test(`firmware O${optLevel}: grouped modf makes format c emit one codepoint`, () => {
-	const modules = ['base', 'number/parse', 'number/decimal', 'number/format', 'table', 'math', 'math/trig', 'math/trig/reduce', 'string/base', 'string/utf8', 'string/format'].map(path => ({
+	const modules = ['base', 'number/parse', 'number/decimal', 'number/format', 'table', 'math', 'math/trig', 'math/trig/reduce', 'string/base', 'string/mapped', 'string/format'].map(path => ({
 		path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 	}));
 	modules.push({ path: 'format_char_assert', source: readFileSync('tests/carts/bios_format_manual/format_char_assert.lua', 'utf8') });

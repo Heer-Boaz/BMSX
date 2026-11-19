@@ -3,13 +3,13 @@ module<entry>
 local state<const> = require('results')
 local result<const>: *bios_pattern_manual_result = state.result
 
--- The fourth argument chooses a literal dot instead of the any-codepoint atom.
+-- The fourth argument chooses a literal dot instead of the any-byte atom.
 result.plain_start, result.plain_end = string.find('a.b', '.', 1, true)
 result.pattern_start, result.pattern_end = string.find('a.b', '.', 1, false)
 result.negative_start = string.find('abcabc', 'a', -3, true)
-local unicode<const> = string.char(233) .. '.' .. string.char(128640)
+local unicode<const> = 'é.🚀'
 result.unicode_start, result.unicode_end =
-	string.find(unicode, string.char(128640), 1, true)
+	string.find(unicode, '🚀', 1, true)
 print('Pattern positions', result.plain_start, result.plain_end,
 	result.pattern_start, result.pattern_end,
 	result.negative_start, result.unicode_start, result.unicode_end)
@@ -83,7 +83,7 @@ local changed<const>, changed_count<const> =
 result.callback_replacement_match = changed == 'red B' and 1 or 0
 result.callback_replacement_count = changed_count
 result.callback_calls = callback_calls
--- Empty matches advance past source codepoints without copying them.
+-- Empty matches advance past source bytes without copying them.
 local empty_changed<const>, empty_count<const> = string.gsub('abc', '', '_')
 result.empty_substitution_match = empty_changed == '____' and 1 or 0
 result.empty_substitution_count = empty_count

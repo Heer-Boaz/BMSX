@@ -1,3 +1,4 @@
+import { byteStringToText } from '../../../../machine/ts/common/byte_string';
 import { LuaSyntaxKind, LuaTableFieldKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import { luaFloorDivide } from '../../../../machine/ts/spec/blua32/numeric';
@@ -53,7 +54,7 @@ export function readSceneTextInputs(reader: LuaSourceReader, fonts: SceneFontSou
 				const line = reader.stringValue(text!.file, field.value);
 				if (line === undefined) return;
 				// Array rows are already composed: embedded LF is an ordinary glyph.
-				lines.push(Uint32Array.from(line, character => character.codePointAt(0)!));
+				lines.push(Uint32Array.from(byteStringToText(line), character => character.codePointAt(0)!));
 			}
 		}
 	}
@@ -69,7 +70,7 @@ export function readSceneTextInputs(reader: LuaSourceReader, fonts: SceneFontSou
 
 /** cartlib's word-wrap contract over codepoints; slices borrow one decoded source string. */
 function appendStringLines(lines: Uint32Array[], value: string, wrap: number | undefined): void {
-	const text = Uint32Array.from(value, character => character.codePointAt(0)!);
+	const text = Uint32Array.from(byteStringToText(value), character => character.codePointAt(0)!);
 	const wrapping = wrap !== undefined && wrap > 0;
 	if (wrapping && text.length === 0) return;
 	let first = 0;

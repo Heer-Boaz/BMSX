@@ -73,7 +73,7 @@ struct Machine {
 		if (id == BuiltinFunctionId::StringByte) {
 			r.set(1, mode == 2 ? valueInteger(17) : valueString(cpu.stringPool().intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9))));
 			r.set(2, mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueFloat(position));
-			expected = mode == 1 ? valueInteger(65) : position == 3 ? valueInteger(128512) : position == 2 ? valueInteger(233) : valueNil();
+			expected = mode == 1 ? valueInteger(65) : position == 3 ? valueInteger(169) : position == 2 ? valueInteger(195) : valueNil();
 		} else {
 			target = cpu.createTable(0, 1); meta = cpu.createTable(0, 1);
 			meta->setStringKey(cpu.stringPool().intern("field"), valueInteger(71));
@@ -186,9 +186,9 @@ void ordinaryCases() {
 		const auto rom = image(2, 3); Machine native(rom, false), scalar(rom, true); native.seed(BuiltinFunctionId::StringByte, 0, position); scalar.seed(BuiltinFunctionId::StringByte, 0, position);
 		test::runCpuParity(native.cpu, scalar.cpu, 32); parity(native, scalar);
 		if (position == 2.9f)
-			require(native.cpu.readCauseWord() == 0 && native.cpu.readFrameRegister(0, 0) == valueInteger(233), "StringByte truncates a finite fractional word position before indexing");
+			require(native.cpu.readCauseWord() == 0 && native.cpu.readFrameRegister(0, 0) == valueInteger(195), "StringByte truncates a finite fractional word position before indexing");
 		else if (position == 0 || position == -1 || position == 2 || position == 0x1p32f)
-			require(native.cpu.readFrameRegister(0, 0) == native.expected && native.cpu.readCauseWord() == 0, "word position selects the Unicode codepoint or nil after wrapping");
+			require(native.cpu.readFrameRegister(0, 0) == native.expected && native.cpu.readCauseWord() == 0, "word position selects the byte or nil after wrapping");
 		else
 			require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT,
 				"nonfinite Float positions fault through the ordinary builtin");

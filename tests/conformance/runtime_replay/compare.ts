@@ -6,6 +6,8 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 
 const [tsPrefix, cppPrefix] = process.argv.slice(2);
 const requireBadpPlayback = process.argv[4] === '--require-badp-playback';
+const requireRawByteString = process.argv[4] === '--require-raw-byte-string';
+const packet = '\x00\xff\xc0\x80A';
 for (const checkpointTick of [2, 400, 1200]) {
 	const ts = decodeRuntimeSaveState(
 		readFileSync(`${tsPrefix}-${checkpointTick}.state`),
@@ -22,6 +24,8 @@ for (const checkpointTick of [2, 400, 1200]) {
 	if (checkpointTick === 1200) {
 		assert.equal(ts.cpuState.executionCartridgeSlot, 0, 'the real game must be executing');
 		assert.ok(ts.machineState.machine.gxGpu.vramBytes.some(byte => byte !== 0), 'game VRAM must contain pixels');
+		if (requireRawByteString) assert.ok(ts.machineState.machine.stringPool.entries.some(entry => entry.tracked && entry.value === packet),
+			'the live packet still contains each original byte after serialization and replay');
 		if (requireBadpPlayback) {
 			assert.ok(ts.machineState.machine.audio.output.voices.some(voice => voice.badp.nextFrame > 0), 'BADP playback must be active');
 		}

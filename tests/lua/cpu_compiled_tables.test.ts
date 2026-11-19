@@ -1,6 +1,6 @@
+import { textToByteString } from '../../machine/ts/common/byte_string';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { utf8ByteLength } from '../../machine/ts/common/utf8';
 import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -118,7 +118,7 @@ test('compiled array stores retain hints and length searches preserve live regis
 	}
 });
 
-test('compiled UTF-8 length retains live definitions and destination/source aliases', () => {
+test('compiled byte length retains live definitions and destination/source aliases', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.KSMI, 4, 0, 7);
 	writeInstruction(text, 1, OpCode.MOV, 2, 1, 0);
@@ -128,10 +128,10 @@ test('compiled UTF-8 length retains live definitions and destination/source alia
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 5 }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		cpu.rootThread.frameAtDepth(0).registers.setString(1, cpu.stringPool.intern('Aé雪\0😀')); cpu.runUntilDepth(0, 500);
+		cpu.rootThread.frameAtDepth(0).registers.setString(1, cpu.stringPool.intern(textToByteString('Aé雪\0😀'))); cpu.runUntilDepth(0, 500);
 	}
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
-	assert.equal(js.readFrameRegister(0, 2), valueInteger(5)); assert.equal(js.readFrameRegister(0, 3), valueInteger(12));
+	assert.equal(js.readFrameRegister(0, 2), valueInteger(11)); assert.equal(js.readFrameRegister(0, 3), valueInteger(18));
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 5);
 });
@@ -248,9 +248,9 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 	}
 	const strings = js.stringPool.captureState();
 	// All allocated objects are live: mark+sweep, two Thread remarks and three global-root passes.
-	const gcCycles = (8 + 690000) + 1 + 2 * 4
+	const gcCycles = (8 + 690000) + 1 + 4
 		+ 4 * ceilDiv4(64 + js.rootThread.stackRegisters.capacity() * 5) + 9 + strings.slots
-		+ strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
+		+ strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(entry.value.length) : 0), 0);
 	runCpuParity(js, ref, BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.NEWT]);
 	assert.equal(js.instructionBudgetRemaining, -gcCycles, 'failed NEWT pays prefix/base and collection, but no initialization');
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));

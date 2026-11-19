@@ -15,7 +15,7 @@ else if(l===r0)matched=l<=${ValueTag.True}||${registers.wordOperand(left)}===${r
 	} else {
 		const operator = page.ops[word] === OpCode.LT ? '<' : '<=';
 		source += `if(${numeric}) matched=${registers.numberOperand(left)}${operator}${registers.numberOperand(right)};
-else if(l===${ValueTag.String}&&r0===${ValueTag.String}) {const leftId=${registers.wordOperand(left)},rightId=${registers.wordOperand(right)};budget-=Math.min(q.codepointCount(leftId),q.codepointCount(rightId));matched=q.compare(leftId,rightId)${operator}0;}`;
+else if(l===${ValueTag.String}&&r0===${ValueTag.String}) {const leftId=${registers.wordOperand(left)},rightId=${registers.wordOperand(right)};budget-=Math.min(q.byteLength(leftId),q.byteLength(rightId));matched=q.compare(leftId,rightId)${operator}0;}`;
 	}
 	return `${source}if(matched){${yes}}else{${no}}}`;
 }

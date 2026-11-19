@@ -111,13 +111,17 @@ export function valueTypeNameForLuaTag(tag: ValueTag): string {
 	}
 }
 export function valueToString(value: Value, strings: StringPool): string {
+	return valueIsString(value) ? strings.toString(asStringId(value)) : valueToByteString(value, strings);
+}
+
+export function valueToByteString(value: Value, strings: StringPool): string {
 	switch (valueTag(value)) {
 		case ValueTag.Nil: return 'nil';
 		case ValueTag.False: return 'false';
 		case ValueTag.True: return 'true';
 		case ValueTag.Integer: return formatInteger(asInteger(value));
 		case ValueTag.Float: return formatFloat(asFloat(value));
-		case ValueTag.String: return strings.toString(asStringId(value));
+		case ValueTag.String: return strings.bytes(asStringId(value));
 		case ValueTag.Table: return 'table';
 		case ValueTag.Thread: return 'thread';
 		case ValueTag.Closure: case ValueTag.BuiltinFunction: return 'function';

@@ -7,7 +7,7 @@ return recorder.new()
 local component<const> = require('cartlib/behaviour_tree/bt_component')
 local registry<const> = require('cartlib/registry')
 local result<const> = require('cartlib/behaviour_tree/result')
-local game<const> = { registrations = 0, ticks = 0 }
+local game<const> = { registrations = 0, ticks = 0, packet = string.char(0, 255, 192, 128, 65) }
 local task<const> = { execute = function(target) target.executions = target.executions + 1; return result.success end }
 local function configure<init>()
 	game.registrations = game.registrations + 1

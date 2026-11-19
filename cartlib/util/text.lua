@@ -1,4 +1,6 @@
-local wrap_whitespace_chars<const> = { [' '] = true, ['\t'] = true }
+local utf8_text<const> = utf8
+local byte<const> = string.byte
+local wrap_whitespace_bytes<const> = { [32] = true, [9] = true }
 local find<const> = string.find
 
 local count_lines<const> = function(text)
@@ -28,8 +30,8 @@ local wrap_text_lines<const> = function(text, max_chars, first_prefix, next_pref
 	if next_prefix ~= nil then
 		next_output_prefix = next_prefix
 	end
-	local output_prefix_length = #output_prefix
-	local next_output_prefix_length<const> = #next_output_prefix
+	local output_prefix_length = utf8_text.count(output_prefix)
+	local next_output_prefix_length<const> = utf8_text.count(next_output_prefix)
 	local line_start = 1
 	local logical_line_index = 1
 	while true do
@@ -51,25 +53,32 @@ local wrap_text_lines<const> = function(text, max_chars, first_prefix, next_pref
 				if available <= 0 then
 					error('wrap_text_lines prefix exceeds max_chars.')
 				end
-				if line_length - start_index + 1 <= available then
+				local cursor = start_index
+				local break_index = 0
+				for _ = 1, available do
+					if cursor > line_length then break end
+					local lead<const> = byte(logical_line, cursor)
+					if wrap_whitespace_bytes[lead] then break_index = cursor end
+					if lead < 0x80 then
+						cursor = cursor + 1
+					else
+						local _<const>, next_cursor<const> = utf8_text.read(logical_line, cursor, line_length)
+						cursor = next_cursor
+					end
+				end
+				if cursor > line_length then
 					lines[#lines + 1] = output_prefix .. string.sub(logical_line, start_index)
 					line_map[#line_map + 1] = logical_line_index
 					output_prefix = next_output_prefix
 					output_prefix_length = next_output_prefix_length
 					break
 				end
-				local limit<const> = start_index + available - 1
-				local break_index = 0
-				-- The separator itself is not part of the emitted line. Inspect the
-				-- next character so a word ending exactly at max_chars still fits.
-				for index = start_index, limit + 1 do
-					if wrap_whitespace_chars[string.sub(logical_line, index, index)] then
-						break_index = index
-					end
-				end
+				-- A separator just beyond the width does not take a glyph slot.
+				if wrap_whitespace_bytes[byte(logical_line, cursor)] then break_index = cursor end
+				local limit<const> = cursor - 1
 				if break_index > start_index then
 					local end_index = break_index
-					while end_index > start_index and wrap_whitespace_chars[string.sub(logical_line, end_index - 1, end_index - 1)] do
+					while end_index > start_index and wrap_whitespace_bytes[byte(logical_line, end_index - 1)] do
 						end_index = end_index - 1
 					end
 					lines[#lines + 1] = output_prefix .. string.sub(logical_line, start_index, end_index - 1)
@@ -77,7 +86,7 @@ local wrap_text_lines<const> = function(text, max_chars, first_prefix, next_pref
 					output_prefix = next_output_prefix
 					output_prefix_length = next_output_prefix_length
 					start_index = break_index + 1
-					while start_index <= line_length and wrap_whitespace_chars[string.sub(logical_line, start_index, start_index)] do
+					while start_index <= line_length and wrap_whitespace_bytes[byte(logical_line, start_index)] do
 						start_index = start_index + 1
 					end
 				else

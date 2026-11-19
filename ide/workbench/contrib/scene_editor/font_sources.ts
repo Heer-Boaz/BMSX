@@ -1,3 +1,4 @@
+import { byteStringToText } from '../../../../machine/ts/common/byte_string';
 import { LuaSyntaxKind, LuaTableFieldKind, type LuaExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { getLuaModuleAliasTarget, type LuaModuleImportTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
@@ -165,7 +166,7 @@ export class SceneFontSources {
 			// Literal table writes settle before pairs visits the final keys.
 			// Different keys sharing a first codepoint need the same image;
 			// otherwise their pairs order has no proved winner.
-			const codepoint = key.codePointAt(0)!;
+			const codepoint = byteStringToText(key).codePointAt(0)!;
 			if (glyphs.has(codepoint) && glyphs.get(codepoint) !== image) return;
 			glyphs.set(codepoint, image);
 		}

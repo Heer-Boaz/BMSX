@@ -1,3 +1,4 @@
+import { byteStringFromBytes } from '../../common/byte_string';
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
 import { GcHeap, type GcState } from './gc_heap';
 import { GarbageAllocation, GcKind } from './gc_object';
@@ -112,7 +113,7 @@ import { BuiltinFunctionId, GarbageCollectionOperation, LUA_BOOT_PRIMITIVES } fr
 import {
 	EMPTY_CALL_ARGS,
 	ValueTag,
-	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToString,
+	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToByteString,
 	valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread, asThread,
 	valueTag, valueToInteger,
 	valueTypeNameForLuaTag,
@@ -155,7 +156,6 @@ import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKin
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
 
-const executionStringDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 
 // Saved values are u32 offsets into the snapshot word arena. Object references
@@ -707,10 +707,7 @@ export class CPU implements MappedPageInvalidator {
 			this.executionReadView,
 		);
 		return this.stringPool.intern(
-			executionStringDecoder.decode(this.executionReadView.bytes.subarray(
-				this.executionReadView.byteOffset,
-				this.executionReadView.byteOffset + this.executionReadView.byteLength,
-			)),
+			byteStringFromBytes(this.executionReadView.bytes, this.executionReadView.byteOffset, byteLength),
 			false,
 		);
 	}
@@ -2092,19 +2089,17 @@ export class CPU implements MappedPageInvalidator {
 
 	private executeConcat(frame: CallFrame, a: number, rkB: number, rkC: number): void {
 		const left = this.readRKValue(frame, rkB), right = this.readRKValue(frame, rkC);
-		const l = valueToString(left, this.stringPool), r = valueToString(right, this.stringPool);
-		const count = (valueTag(left) === ValueTag.String ? this.stringPool.codepointCount(valuePayload(left)) : l.length)
-			+ (valueTag(right) === ValueTag.String ? this.stringPool.codepointCount(valuePayload(right)) : r.length);
-		this.charge(count);
+		const l = valueToByteString(left, this.stringPool), r = valueToByteString(right, this.stringPool);
+		this.charge(l.length + r.length);
 		this.setRegisterStringFast(frame, frame.registers, a, this.stringPool.intern(l + r));
 	}
 	private executeConcatRange(frame: CallFrame, a: number, b: number, c: number): void {
-		let text = '', codepoints = 0;
+		let text = '', byteWork = 0;
 		for (let i = 0; i < c; ++i) {
-			const value = frame.registers.get(b + i), part = valueToString(value, this.stringPool);
-			text += part; codepoints += valueTag(value) === ValueTag.String ? this.stringPool.codepointCount(valuePayload(value)) : part.length;
+			const part = valueToByteString(frame.registers.get(b + i), this.stringPool);
+			text += part; byteWork += part.length;
 		}
-		this.charge(c + codepoints);
+		this.charge(c + byteWork);
 		this.setRegisterStringFast(frame, frame.registers, a, this.stringPool.intern(text));
 	}
 
@@ -2768,7 +2763,7 @@ export class CPU implements MappedPageInvalidator {
 					const b = page.b[pageOffset];
 					switch (registers.getTag(b)) {
 						case ValueTag.String: {
-							const cp = this.stringPool.codepointCount(registers.getStringId(b));
+							const cp = this.stringPool.byteLength(registers.getStringId(b));
 							this.setRegisterIntegerFast(frame, registers, a, cp);
 							return;
 						}
@@ -2802,7 +2797,7 @@ export class CPU implements MappedPageInvalidator {
 					if (valueIsNumber(left) && valueIsNumber(right)) ok = compareNumbers(left, right) === NumericOrder.Less;
 					else if (valueTag(left) === ValueTag.String && valueTag(right) === ValueTag.String) {
 						const l = valuePayload(left), r = valuePayload(right);
-						this.charge(Math.min(this.stringPool.codepointCount(l), this.stringPool.codepointCount(r)));
+						this.charge(Math.min(this.stringPool.byteLength(l), this.stringPool.byteLength(r)));
 						ok = this.stringPool.compare(l, r) < 0;
 					}
 					if (ok !== (a !== 0)) this.skipNextInstruction(frame); return;
@@ -2860,7 +2855,7 @@ export class CPU implements MappedPageInvalidator {
 					if (valueIsNumber(left) && valueIsNumber(right)) ok = compareNumbers(left, right) <= NumericOrder.Equal;
 					else if (valueTag(left) === ValueTag.String && valueTag(right) === ValueTag.String) {
 						const l = valuePayload(left), r = valuePayload(right);
-						this.charge(Math.min(this.stringPool.codepointCount(l), this.stringPool.codepointCount(r)));
+						this.charge(Math.min(this.stringPool.byteLength(l), this.stringPool.byteLength(r)));
 						ok = this.stringPool.compare(l, r) <= 0;
 					}
 					if (ok !== (a !== 0)) this.skipNextInstruction(frame); return;
@@ -3883,7 +3878,7 @@ export class CPU implements MappedPageInvalidator {
 		const base = args.base;
 		const count = args.length - 1;
 		const selector = args.length > 0 ? registers.get(base) : valueNil();
-		if (valueTag(selector) === ValueTag.String && this.stringPool.toString(valuePayload(selector)) === '#') {
+		if (valueTag(selector) === ValueTag.String && this.stringPool.bytes(valuePayload(selector)) === '#') {
 			out.push(valueInteger(count)); return;
 		}
 		const startSelector = integerOperand(selector);
@@ -3911,11 +3906,11 @@ export class CPU implements MappedPageInvalidator {
 				position = wordOperand(registers.get(positionIndex)) | 0;
 			}
 		}
-		if (position < 1 || position > this.stringPool.codepointCount(sourceId)) {
+		if (position < 1 || position > this.stringPool.byteLength(sourceId)) {
 			out.push(valueNil());
 			return;
 		}
-		out.push(valueInteger(this.stringPool.codepointAt(sourceId, position - 1)));
+		out.push(valueInteger(this.stringPool.byteAt(sourceId, position - 1)));
 	}
 
 	private runBuiltinStringChar(args: BuiltinArgsView, out: BuiltinResults): void {
@@ -3924,11 +3919,9 @@ export class CPU implements MappedPageInvalidator {
 		let result = '';
 		for (let index = 0; index < args.length; index += 1) {
 			const valueIndex = args.base + index;
-			const codepoint = wordOperand(registers.get(valueIndex));
-			if (codepoint > 0x10ffff || (codepoint >= 0xd800 && codepoint <= 0xdfff)) {
-				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			}
-			result += String.fromCodePoint(codepoint);
+			const byte = wordOperand(registers.get(valueIndex));
+			if (byte > 0xff) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			result += String.fromCharCode(byte);
 		}
 		out.push(valueString(this.stringPool.intern(result)));
 	}

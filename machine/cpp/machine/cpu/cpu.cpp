@@ -16,7 +16,6 @@
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/image_format.h"
 #include "machine/memory/memory.h"
-#include "common/utf8.h"
 #include <algorithm>
 #include <cctype>
 #include <stdexcept>
@@ -227,7 +226,7 @@ StringId CPU::internExecutionString(
 		m_executionReadView
 	);
 	return m_stringPool.intern(
-		scalarUtf8Text({m_executionReadView.data(), m_executionReadView.size()}),
+		std::string_view(reinterpret_cast<const char*>(m_executionReadView.data()), m_executionReadView.size()),
 		false
 	);
 }
@@ -1802,11 +1801,9 @@ void CPU::runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out) {
 		if (!valueIsNumber(arg)) {
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
-		const uint32_t codepoint = wordOperand(arg);
-		if (codepoint > 0x10ffffu || (codepoint >= 0xd800u && codepoint <= 0xdfffu)) {
-			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		}
-		appendUtf8Codepoint(result, codepoint);
+		const u32 byte = wordOperand(arg);
+		if (byte > 0xffu) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		result.push_back(static_cast<char>(static_cast<u8>(byte)));
 	}
 	out.push_back(valueString(m_stringPool.internOwned(std::move(result))));
 }

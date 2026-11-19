@@ -4,7 +4,7 @@ local table<const> = require('table')
 local concat<const> = table.concat
 local string<const> = {}
 
-string.from_utf8 = require('string/utf8').decode
+string.from_bytes = require('string/mapped').from_bytes
 
 local ascii_upper_a<const> = 65
 local ascii_upper_z<const> = 90

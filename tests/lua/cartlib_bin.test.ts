@@ -1,3 +1,4 @@
+import { textToByteString } from '../../machine/ts/common/byte_string';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -24,7 +25,7 @@ function(addr)
 end`;
 	const modules = [
 		{ path: 'bootstrap', source: "require('base')\ntable = require('table')\nstring = require('string/base')" },
-		...['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/utf8', 'string/float/decode'].map(path => ({
+		...['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/mapped', 'string/float/decode'].map(path => ({
 			path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 		})),
 		...['cartlib/memory', 'cartlib/bin'].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),
@@ -98,7 +99,7 @@ end`;
 	const root = v.asTable(rootValue, cpu.gc);
 	assert.equal(headerLength, v.valueInteger(section.header.length), 'the first payload starts immediately after the shared names');
 	assert.equal(root.records.getStringKey(root.address, cpu.stringPool.intern('tail')), v.valueInteger(-0x80000000));
-	const object = v.asTable(root.records.getStringKey(root.address, cpu.stringPool.intern(key)), cpu.gc);
+	const object = v.asTable(root.records.getStringKey(root.address, cpu.stringPool.intern(textToByteString(key))), cpu.gc);
 	assert.equal(object.records.getStringKey(object.address, cpu.stringPool.intern('count')), v.valueInteger(0x7fffffff));
 	const nested = v.asTable(object.records.getStringKey(object.address, cpu.stringPool.intern('nested')), cpu.gc);
 	assert.equal(nested.records.getInteger(nested.address, 1), v.valueBool(true));

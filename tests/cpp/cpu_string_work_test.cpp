@@ -46,12 +46,12 @@ void logicalStringWork(bool scalar, OpCode op) {
 		frame.registers.set(1, valueString(machine.cpu.stringPool().intern(left)));
 		frame.registers.set(2, valueString(machine.cpu.stringPool().intern(right)));
 		machine.cpu.runUntilDepth(0, 1);
-		const int leftCount = repeat % 3 == 2 ? 4 : 3;
+		const int leftCount = static_cast<int>(left.size());
 		const int cycles = BASE_CYCLES[static_cast<u8>(op)]
-			+ (op == OpCode::CONCAT ? 4 + leftCount : op == OpCode::CONCATN ? 6 + leftCount : op == OpCode::EQ ? 0 : leftCount);
+			+ (op == OpCode::CONCAT ? 9 + leftCount : op == OpCode::CONCATN ? 11 + leftCount : op == OpCode::EQ ? 0 : leftCount);
 		require(machine.cpu.instructionBudgetRemaining == 1 - cycles, "logical text work charges agree on cold and warm native paths");
 		if (op == OpCode::CONCAT || op == OpCode::CONCATN) {
-			require(machine.cpu.stringPool().toString(asStringId(frame.registers.get(0))) == left + right, "concatenation preserves complete Unicode and zero codepoints");
+			require(machine.cpu.stringPool().toString(asStringId(frame.registers.get(0))) == left + right, "concatenation preserves all input bytes, including NUL");
 		} else {
 			const bool matched = op == OpCode::LT ? left < right : op == OpCode::LE ? left <= right : left == right;
 			const int words = matched ? 2 : 1;
@@ -94,10 +94,10 @@ void selectAndChar(bool scalar) {
 				auto& frame = machine.restart();
 				frame.registers.set(0, machine.cpu.createBuiltinFunction(builtin));
 				frame.registers.set(1, valueInteger(invalid ? -1 : 65));
-				frame.registers.set(2, valueInteger(0)); frame.registers.set(3, valueInteger(0x1f600));
+				frame.registers.set(2, valueInteger(0)); frame.registers.set(3, valueInteger(0xff));
 				machine.cpu.runUntilDepth(0, 1);
 				if (invalid) require(machine.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT, "discarding char results must not discard validation");
-				require(machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 5, "char charges all supplied codepoints, including argument faults");
+				require(machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 5, "char charges all supplied byte arguments, including argument faults");
 			}
 		}
 	}

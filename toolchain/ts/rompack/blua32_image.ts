@@ -1,3 +1,4 @@
+import { byteStringFromBytes, byteStringToText } from '../../../machine/ts/common/byte_string';
 import type { ProgramConstant } from '../lua/compiler/program';
 import { integerConstant } from '../lua/number';
 import { readLE32 } from '../../../machine/ts/common/endian';
@@ -174,7 +175,6 @@ export function blua32FunctionIndexAtAddress(image: Blua32ImageLayout, functionA
 	return tableOffset / BLUA32_FUNCTION_RECORD_SIZE;
 }
 
-const stringDecoder = new TextDecoder('utf-8', { fatal: true });
 
 function imageOffset(address: number, byteCount: number, imageAddress: number, imageByteCount: number): number {
 	if (address < imageAddress || byteCount > imageByteCount - (address - imageAddress)) {
@@ -288,7 +288,7 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 			throw new Error('BLua32 string record points outside the string table.');
 		}
 		const offset = stringOffset + address - header.stringAddress;
-		return stringDecoder.decode(bytes.subarray(offset, offset + byteCount));
+		return byteStringFromBytes(bytes, offset, byteCount);
 	};
 
 	const constantTableOffset = header.constantTableAddress - imageAddress;
@@ -328,10 +328,10 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 		const names = new Array<string>(count);
 		for (let index = 0; index < count; index += 1) {
 			const offset = tableOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-			names[index] = decodeString(
+			names[index] = byteStringToText(decodeString(
 				view.getUint32(offset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, true),
 				view.getUint32(offset + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET, true),
-			);
+			));
 		}
 		return names;
 	};

@@ -68,3 +68,15 @@ test('integer counter I/O preserves the full exact number range without BigInt c
 	for (const value of values) assert.equal(reader.i64(), value);
 	reader.finish();
 });
+
+test('a length-prefixed machine byte string can contain NUL and invalid UTF-8', () => {
+	const value = '\x00\xff\xc0\x80A';
+	const size = new BinarySize();
+	size.byteString(value);
+	const output = new Uint8Array(size.length);
+	new BinaryWriter(output).byteString(value);
+	assert.deepEqual(output, Uint8Array.of(5, 0, 0, 0, 0, 255, 192, 128, 65));
+	const reader = new BinaryReader(output);
+	assert.equal(reader.byteString(), value);
+	reader.finish();
+});

@@ -203,7 +203,7 @@ function readIrqControllerState(reader: BinaryReader): IrqControllerState {
 
 function writeStringPoolStateEntry(writer: BinarySink, state: StringPoolStateEntry): void {
 	writer.u32(state.id);
-	writer.string(state.value);
+	writer.byteString(state.value);
 	writer.bool(state.tracked);
 	writer.bool(state.reachable);
 }
@@ -211,7 +211,7 @@ function writeStringPoolStateEntry(writer: BinarySink, state: StringPoolStateEnt
 function readStringPoolStateEntry(reader: BinaryReader): StringPoolStateEntry {
 	return {
 		id: reader.u32(),
-		value: reader.string(),
+		value: reader.byteString(),
 		tracked: reader.bool(),
 		reachable: reader.bool(),
 	};

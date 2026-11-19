@@ -1,3 +1,4 @@
+import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
@@ -12,7 +13,7 @@ import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32'
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 	for (const op of [OpCode.CONCAT, OpCode.CONCATN, OpCode.LT, OpCode.LE, OpCode.EQ]) {
-		test(`text work uses logical lengths on cold and compiled execution (${backend}, op=${op})`, () => {
+		test(`text work uses byte lengths on cold and compiled execution (${backend}, op=${op})`, () => {
 			const text = new Uint8Array(4 * INSTRUCTION_BYTES);
 			writeInstruction(text, 0, op, 0, 1, 2);
 			for (let i = 1; i < 4; ++i) writeInstruction(text, i, OpCode.JMP, 0, 63, 63, 255);
@@ -23,15 +24,15 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				const frame = cpu.rootThread.currentFrame!;
 				// Alternating unequal/equal interned operands also proves that intern
 				// hits and comparison early-outs do not determine the cycle debit.
-				const right = 'a😀雪\0';
-				const left = repeat % 3 === 2 ? right : repeat % 3 === 1 ? 'a😀雪' : 'z😀雪';
+				const right = textToByteString('a😀雪\0');
+				const left = repeat % 3 === 2 ? right : textToByteString(repeat % 3 === 1 ? 'a😀雪' : 'z😀雪');
 				frame.registers.setString(1, cpu.stringPool.intern(left));
 				frame.registers.setString(2, cpu.stringPool.intern(right));
 				cpu.runUntilDepth(0, 1);
-				const length = Array.from(left).length + Array.from(right).length;
-				const cycles = BASE_CYCLES[op] + (op === OpCode.CONCAT ? length : op === OpCode.CONCATN ? 2 + length : op === OpCode.EQ ? 0 : Math.min(Array.from(left).length, Array.from(right).length));
+				const length = left.length + right.length;
+				const cycles = BASE_CYCLES[op] + (op === OpCode.CONCAT ? length : op === OpCode.CONCATN ? 2 + length : op === OpCode.EQ ? 0 : Math.min(left.length, right.length));
 				assert.equal(cpu.instructionBudgetRemaining, 1 - cycles);
-				if (op === OpCode.CONCAT || op === OpCode.CONCATN) assert.equal(cpu.stringPool.toString(frame.registers.getStringId(0)), left + right);
+				if (op === OpCode.CONCAT || op === OpCode.CONCATN) assert.equal(cpu.stringPool.bytes(frame.registers.getStringId(0)), left + right);
 				else {
 					const matched = op === OpCode.LT ? left < right : op === OpCode.LE ? left <= right : left === right;
 					assert.equal(frame.pc, image.image.functions[0].codeAddress + (matched ? 2 : 1) * INSTRUCTION_BYTES);
@@ -92,16 +93,16 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		else assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 	});
 
-	for (const invalid of [false, true]) test(`string.char charges supplied codepoints even when results are ignored (${backend}, invalid=${invalid})`, () => {
+	for (const invalid of [false, true]) test(`string.char charges supplied byte arguments even when results are ignored (${backend}, invalid=${invalid})`, () => {
 		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.CALL, 0, 4, 1);
 		writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }] });
 		const { cpu } = createTestSystemCpu(image, backend), r = cpu.rootThread.currentFrame!.registers;
 		r.setBuiltinFunction(0, BuiltinFunctionId.StringChar);
-		r.setInteger(1, invalid ? -1 : 65); r.setInteger(2, 0); r.setInteger(3, 0x1f600);
+		r.setInteger(1, invalid ? -1 : 65); r.setInteger(2, 0); r.setInteger(3, 0xff);
 		cpu.runUntilDepth(0, 1);
 		if (invalid) assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 3, 'CALL base + builtin 2 + three supplied codepoints');
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 3, 'CALL base + builtin 2 + three supplied byte arguments');
 	});
 }

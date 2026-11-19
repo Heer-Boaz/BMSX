@@ -3,6 +3,7 @@ local image<const> = require('cartlib/gx/image')
 local command_list<const> = require('cartlib/gx/command_list')
 local atlas<const> = require('cartlib/gx/atlas')
 local byte<const> = string_lib.byte
+local read_utf8<const> = utf8.read
 
 local font_catalog<const> = {}
 
@@ -30,7 +31,7 @@ local build_resolved_font<const> = function(id, definition)
 	local uniform_size_word
 	for glyph, imgid in pairs(definition.glyphs) do
 		local source<const> = image.resolve(imgid)
-		local codepoint<const> = byte(glyph)
+		local codepoint<const> = read_utf8(glyph, 1, #glyph)
 		items[codepoint] = source
 		advances[codepoint] = source.width + advance_padding
 		source_count = source_count + 1
@@ -101,7 +102,6 @@ function font_catalog.write_glyph_range(resolved_font, text, first_byte, last_by
 	local advances<const> = resolved_font.advances
 	local fallback<const> = items[0x3f]
 	local fallback_advance<const> = advances[0x3f]
-	local length<const> = last_byte - first_byte + 1
 	local x_offsets = target.x_offsets
 	if x_offsets == nil then
 		x_offsets = {}
@@ -111,8 +111,17 @@ function font_catalog.write_glyph_range(resolved_font, text, first_byte, last_by
 	local geometry_left = 0
 	local geometry_right = 0
 	local geometry_bottom = 0
-	for index = 1, length do
-		local codepoint<const> = byte(text, first_byte + index - 1)
+	local length = 0
+	local position = first_byte
+	while position <= last_byte do
+		local codepoint = byte(text, position)
+		if codepoint < 0x80 then
+			position = position + 1
+		else
+			codepoint, position = read_utf8(text, position, last_byte)
+		end
+		length = length + 1
+		local index<const> = length
 		local glyph<const> = items[codepoint] or fallback
 		target[index] = glyph
 		x_offsets[index] = width

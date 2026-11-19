@@ -1,5 +1,4 @@
-import { utf8ByteLength, utf8CodepointCount, utf8Compare } from '../../common/utf8';
-import { nextCodePointOffset } from '../../common/utf16';
+import { byteStringToText } from '../../common/byte_string';
 import type { LuaHeap } from './lua_heap';
 import { ceilDiv4 } from '../common/numeric';
 import { valueString } from './value';
@@ -25,8 +24,6 @@ export type StringPoolState = {
 export class StringPool {
 	private readonly byText = new Map<string, number>();
 	private readonly values: (string | undefined)[] = [];
-	private readonly codepointCounts: number[] = [];
-	private readonly codepointBlockOffsets: (Uint32Array | undefined)[] = [];
 	private readonly trackedByteLengths: number[] = [];
 	private readonly freeIds: StringId[] = [];
 	private readonly localRoots: StringId[] = [];
@@ -44,14 +41,14 @@ export class StringPool {
 			const existing = interned - 1;
 			this.markReachable(existing);
 			if (tracked && this.trackedByteLengths[existing] === 0) {
-				const byteLength = utf8ByteLength(this.values[existing]!);
+				const byteLength = this.values[existing]!.length;
 				this.luaHeap.reserve(byteLength, valueString(existing));
 				this.trackStringEntry(existing, byteLength);
 			}
 			if (this.localRootBases.length !== 0) this.localRoots.push(existing);
 			return existing;
 		}
-		const byteLength = tracked ? utf8ByteLength(value) : 0;
+		const byteLength = tracked ? value.length : 0;
 		if (tracked) {
 			this.luaHeap.reserve(byteLength);
 		}
@@ -68,31 +65,18 @@ export class StringPool {
 		return interned ? interned - 1 : undefined;
 	}
 
-	public toString(id: StringId): string {
-		return this.values[id]!;
-	}
+	public bytes(id: StringId): string { return this.values[id]!; }
+
+	public toString(id: StringId): string { return byteStringToText(this.values[id]!); }
 
 	public compare(left: StringId, right: StringId): number {
-		return utf8Compare(this.values[left]!, this.values[right]!);
+		const a = this.values[left]!, b = this.values[right]!;
+		return a < b ? -1 : a > b ? 1 : 0;
 	}
 
-	public codepointCount(id: StringId): number {
-		return this.codepointCounts[id];
-	}
+	public byteLength(id: StringId): number { return this.values[id]!.length; }
 
-	/** index is a zero-based codepoint index below codepointCount(id). */
-	public codepointAt(id: StringId, index: number): number {
-		const text = this.values[id]!;
-		if (this.codepointCounts[id] === text.length) {
-			return text.charCodeAt(index);
-		}
-		const block = index >>> 5;
-		let offset = block === 0 ? 0 : this.codepointBlockOffsets[id]![block - 1];
-		for (let current = block << 5; current < index; current += 1) {
-			offset = nextCodePointOffset(text, offset);
-		}
-		return text.codePointAt(offset)!;
-	}
+	public byteAt(id: StringId, index: number): number { return this.values[id]!.charCodeAt(index); }
 
 	public trackedLuaHeapBytes(): number {
 		return this.trackedBytes;
@@ -125,8 +109,7 @@ export class StringPool {
 			work += ceilDiv4(this.trackedByteLengths[id]);
 			if (this.reachable[id] !== 0) continue;
 			this.byText.delete(value);
-			this.values[id] = undefined; this.codepointCounts[id] = 0;
-			this.codepointBlockOffsets[id] = undefined;
+			this.values[id] = undefined;
 			reclaimed += this.trackedByteLengths[id]; this.trackedByteLengths[id] = 0;
 			this.freeIds.push(id);
 		}
@@ -148,8 +131,6 @@ export class StringPool {
 		const previousBytes = this.trackedBytes;
 		this.byText.clear();
 		this.values.length = 0;
-		this.codepointCounts.length = 0;
-		this.codepointBlockOffsets.length = 0;
 		this.trackedByteLengths.length = 0;
 		this.freeIds.length = 0;
 		this.trackedBytes = 0;
@@ -158,14 +139,13 @@ export class StringPool {
 			this.insert(stateEntry.id, stateEntry.value);
 			this.reachable[stateEntry.id] = stateEntry.reachable ? 1 : 0;
 			if (stateEntry.tracked) {
-				const byteLength = utf8ByteLength(stateEntry.value);
+				const byteLength = stateEntry.value.length;
 				this.trackedByteLengths[stateEntry.id] = byteLength;
 				this.trackedBytes += byteLength;
 			}
 		}
 		this.values.length = state.slots; this.reachable.length = state.slots;
-		this.codepointCounts.length = state.slots; this.trackedByteLengths.length = state.slots;
-		this.codepointBlockOffsets.length = state.slots;
+		this.trackedByteLengths.length = state.slots;
 		this.freeIds.length = 0; for (const id of state.freeIds) this.freeIds.push(id);
 		this.sweep = state.sweep; this.sweepEnd = state.sweepEnd;
 		this.luaHeap.adjustForRestore(previousBytes, this.trackedBytes);
@@ -174,24 +154,10 @@ export class StringPool {
 	private insert(id: StringId, value: string): StringId {
 		for (let vacant = this.values.length; vacant < id; vacant += 1) {
 			this.freeIds.push(vacant);
-			this.codepointCounts[vacant] = 0;
 			this.trackedByteLengths[vacant] = 0;
 		}
 		this.reachable[id] = 1;
 		this.values[id] = value;
-		const count = utf8CodepointCount(value);
-		this.codepointCounts[id] = count;
-		// Host indexing metadata is derived, not guest RAM or serialized state.
-		let offsets: Uint32Array | undefined;
-		if (count !== value.length && count > 32) {
-			offsets = new Uint32Array((count - 1) >>> 5);
-			let offset = 0;
-			for (let index = 0; index < count; index += 1) {
-				if (index !== 0 && (index & 31) === 0) offsets[(index >>> 5) - 1] = offset;
-				offset = nextCodePointOffset(value, offset);
-			}
-		}
-		this.codepointBlockOffsets[id] = offsets;
 		this.trackedByteLengths[id] = 0;
 		this.byText.set(value, id + 1);
 		return id;

@@ -16,7 +16,7 @@ local function execute()
  tostring = function() calls = calls + 1; return 'changed' end
  assert(table.concat({'é',12,nil,false},'|',1,4) == 'é|12||false')
  assert(table.concat({true,{}},false,1,2) == 'truefalsetable')
- assert(string.sub('éabc',1,3) == 'éab')
+ assert(string.sub('éabc',1,4) == 'éab')
  assert(calls == 0, 'implicit tostring calls')
  assert(tostring(12) == 'changed')
  assert(calls == 1, 'explicit tostring conversion')
@@ -105,22 +105,32 @@ unpack_ok,unpack_error=pcall(table.unpack,faulting,1,12)
 		assert.equal(cpu.stringPool.toString(asStringId(error)), 'Metatable __index loop detected.');
 	});
 
-	test(`BIOS UTF-8 decode keeps Unicode, boundary and malformed-input behavior (O${optLevel})`, () => {
+	test(`BIOS mapped byte spans preserve raw bytes and stop at the supplied length (O${optLevel})`, () => {
 		const {cpu} = createCartlibProgramHarness(`
 rodata text: u8[8] = {0x41,0xc3,0xa9,0,0xf0,0x9f,0x99,0x82}
 rodata overlong: u8[2] = {0xc0,0xaf}
 rodata surrogate: u8[3] = {0xed,0xa0,0x80}
 bss long_ascii: u8[257]
-local value<const> = string.from_utf8(text,8)
-assert(#value==4 and string.byte(value,1)==65 and string.byte(value,2)==233
- and string.byte(value,3)==0 and string.byte(value,4)==0x1f642, 'Unicode scalars')
-assert(string.from_utf8(text,0)=='', 'zero-byte span')
-assert(string.from_utf8(text+1,1)==string.char(233), 'continuation beyond declared span')
-assert(string.from_utf8(overlong,2)=='/', 'overlong sequence follows existing semantics')
-local ok<const> = pcall(string.from_utf8,surrogate,3)
-assert(not ok, 'surrogate remains an invalid string.char argument')
+local value<const> = string.from_bytes(text,8)
+assert(#value==8 and string.byte(value,1)==65 and string.byte(value,2)==195
+ and string.byte(value,4)==0 and string.byte(value,8)==130, 'binary bytes')
+assert(string.from_bytes(text,0)=='', 'zero-byte span')
+assert(string.from_bytes(text+1,1)==string.char(195), 'no continuation read beyond supplied span')
+assert(string.from_bytes(overlong,2)==string.char(192,175), 'retain noncanonical bytes')
+assert(string.from_bytes(surrogate,3)==string.char(237,160,128), 'retain even invalid UTF-8')
+assert(utf8.char(65,233,0,0x1f642)==value, 'Unicode encoding is explicit')
+local raw<const> = '\\xff\\xc0\\x80\\x00'
+assert(raw==string.char(255,192,128,0), 'ROM literals retain arbitrary bytes')
+assert(#'é'==2 and '\\xc3\\xa9'=='é' and '\\xe9'~='é', 'only source text is encoded as UTF-8')
+local chunk<const> = assert(load([[return '\\255\\192\\128\\000']]))
+assert(chunk()==raw, 'the firmware lexer reads the same bytes')
+local letters<const> = {}
+for code=0,255 do letters[code+1]=string.char(code) end
+local all<const> = table.concat(letters)
+assert(#all==256)
+for code=0,255 do assert(string.byte(all,code+1)==code) end
 for i=0,256 do long_ascii[i]=65 end
-local long<const> = string.from_utf8(long_ascii,257)
+local long<const> = string.from_bytes(long_ascii,257)
 assert(#long==257 and string.byte(long,1)==65 and string.byte(long,256)==65 and string.byte(long,257)==65,
  'chunk boundary')
 `, {optLevel});

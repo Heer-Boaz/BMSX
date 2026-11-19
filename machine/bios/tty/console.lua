@@ -1,6 +1,7 @@
 local terminal<const> = require('tty/terminal')
 
 local byte<const> = __bmsx_string_byte
+local read_utf8<const> = require('utf8').read
 local console<const> = {}
 
 local system_print_char<const>: *word = 0x08010230
@@ -21,8 +22,11 @@ function console.write(text)
 	local read_index = *console_history_read_index
 	local count = *console_history_byte_count
 	local index = 1
-	local code = byte(text, index)
-	while code ~= nil do
+	local last<const> = #text
+	while index <= last do
+		local code = byte(text, index)
+		if code < 0x80 then index = index + 1
+		else code, index = read_utf8(text, index, last) end
 		if count == history_capacity then
 			read_index = (read_index + 1) & history_mask
 			count = count - 1
@@ -30,8 +34,6 @@ function console.write(text)
 		history[(read_index + count) & history_mask] = code <= 0xff and code or replacement_glyph
 		count = count + 1
 		*system_print_char = code
-		index = index + 1
-		code = byte(text, index)
 	end
 	*console_history_read_index = read_index
 	*console_history_byte_count = count
@@ -66,12 +68,13 @@ end
 
 function console.write_line(text, palette)
 	local index = 1
-	local code = byte(text, index)
-	while code ~= nil do
+	local last<const> = #text
+	while index <= last do
+		local code = byte(text, index)
+		if code < 0x80 then index = index + 1
+		else code, index = read_utf8(text, index, last) end
 		*system_print_char = code
 		terminal.write_code(code <= 0xff and code or replacement_glyph, palette)
-		index = index + 1
-		code = byte(text, index)
 	end
 	*system_print_flush = 1
 	terminal.write_code(ascii_newline, palette)

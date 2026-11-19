@@ -14,17 +14,16 @@ The program demonstrates:
   On-console source loading is a distinct producer, not covered by that result.
 - An ordinary table alias, one-based table construction versus typed zero-based
   storage, and a returned closure that retains a changing captured value.
-- Eight actual UTF-8 bytes decoded through `string.from_utf8` into four
-  codepoints, including a zero and a supplementary scalar. `#text` and
-  `string.byte` observe codepoints, not encoded bytes.
-- Character construction versus literal `\xc3\xa9`, which is two codepoints,
-  not an instruction to decode a UTF-8 byte sequence.
+- Eight mapped bytes copied by `string.from_bytes`, including NUL. `#text`
+  and `string.byte` observe the same bytes, and `utf8.char` explicitly encodes
+  the matching Unicode scalars.
+- Numeric escapes carry bytes: `\xc3\xa9` is the UTF-8 encoding of é.
 - A real imported `gpu/system_vram_region` BIOS call with its two current
   result words, not a cast of a numeric function address.
 
 Static packets, registers and payloads remain raw typed storage. The example
 adds no encoder, string-pointer ABI, language wrapper, allocator or runtime API.
-The existing BIOS function/typed-view and `string/utf8.lua` producers are the
+The existing BIOS function/typed-view and `string/mapped.lua` producers are the
 programming precedents. Dynamic objects are created only for the one-time
 language observations; the final loop halts without recreating them.
 

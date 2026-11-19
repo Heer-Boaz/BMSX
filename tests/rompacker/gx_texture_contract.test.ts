@@ -241,7 +241,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			['tty/console', 'return { write = function() end, end_line = function() end }'],
 			['table', readFileSync('machine/bios/table.lua', 'utf8')],
 			['string/base', readFileSync('machine/bios/string/base.lua', 'utf8')],
-			['string/utf8', readFileSync('machine/bios/string/utf8.lua', 'utf8')],
+			['string/mapped', readFileSync('machine/bios/string/mapped.lua', 'utf8')],
 			['math/sin', readFileSync('machine/bios/math/sin.lua', 'utf8')],
 			['string/float/decode', readFileSync('machine/bios/string/float/decode.lua', 'utf8')],
 			['gpu/system_vram_region', readFileSync('machine/bios/gpu/system_vram_region.lua', 'utf8')],

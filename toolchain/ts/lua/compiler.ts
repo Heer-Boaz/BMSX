@@ -124,7 +124,6 @@ import {
 } from './compiler/target_semantics';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { getMemoryAccessKindForName } from './memory_access_syntax';
-import { utf8CodepointCount } from '../../../machine/ts/common/utf8';
 import { StructTypes, indexedStructType, type StructResolvedType } from './static/struct_types';
 import { evaluateStaticNumeric, type StaticNumericContext, type StaticNumericValue } from './static/numeric';
 import { visitStaticStorageShape } from './static/initializers';
@@ -3354,7 +3353,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				}
 				return this.evaluateCompileTimeExpression(expression.operand)
 					&& typeof this.compileTimeValue === 'string'
-					&& this.setCompileTimeNumberValue(integerConstant(utf8CodepointCount(this.compileTimeValue)));
+					&& this.setCompileTimeNumberValue(integerConstant(this.compileTimeValue.length));
 			}
 			case LuaUnaryOperator.BitwiseNot: {
 				const value = evaluateStaticNumeric(this, undefined, expression);
@@ -3386,7 +3385,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const length = this.resolveStaticStorageArrayLength(expression);
 		if (length !== undefined) return length;
 		return this.evaluateCompileTimeExpression(expression) && typeof this.compileTimeValue === 'string'
-			? utf8CodepointCount(this.compileTimeValue) : undefined;
+			? this.compileTimeValue.length : undefined;
 	}
 
 	public numericSize(_scope: void, expression: LuaSizeOfExpression): number {

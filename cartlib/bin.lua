@@ -1,7 +1,7 @@
 local bin<const> = {}
 local read_u32le<const> = require('cartlib/memory').read_u32le
 local decode_float<const> = require('string/float/decode')
-local from_utf8<const> = string.from_utf8
+local from_bytes<const> = string.from_bytes
 
 local tag_null<const> = 0
 local tag_true<const> = 1
@@ -65,7 +65,7 @@ local read_string<const> = function(reader)
 	end
 	local source<const>: *u8 = reader.pos
 	reader.pos = source + length
-	return from_utf8(source, length)
+	return from_bytes(source, length)
 end
 
 local read_prop_names<const> = function(reader)

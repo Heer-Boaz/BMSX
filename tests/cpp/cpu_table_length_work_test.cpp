@@ -117,7 +117,7 @@ void everyGrant() {
 			m->cpu.restoreRuntimeState(before);m->cpu.runUntilDepth(0,5);require(m->cpu.instructionBudgetRemaining==debt,"restored seed repeats exact logical work");sameSnapshot(m->cpu.captureRuntimeState(),after);
 			auto r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueString(m->cpu.stringPool().intern("é😀\0"sv)));
 			m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);m->cpu.runUntilDepth(0,5);
-			require(m->cpu.instructionBudgetRemaining==-2&&m->cpu.readFrameRegister(0,6)==valueInteger(3),"String LEN ignores stale Table probe work and remains base3");
+			require(m->cpu.instructionBudgetRemaining==-2&&m->cpu.readFrameRegister(0,6)==valueInteger(7),"String LEN ignores stale Table probe work and remains base3");
 			r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueBool(true));r.set(8, valueNil());
 			m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);m->cpu.runUntilDepth(0,5);
 			require(m->cpu.instructionBudgetRemaining==-2&&(m->cpu.readCauseWord()&0x7c)==CPU_CAUSE_CODE_TRAP

@@ -46,8 +46,8 @@ return {
 			assert(result.invalid_pattern_error == 1)
 			assert(result.invalid_capture_error == 1)
 			assert(result.invalid_replacement_error == 1)
-			assert(result.unicode_start == 3)
-			assert(result.unicode_end == 3)
+			assert(result.unicode_start == 4)
+			assert(result.unicode_end == 7)
 		end,
 	},
 }

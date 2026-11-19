@@ -3,7 +3,6 @@ import { LuaBinaryOperator, LuaSyntaxKind, LuaUnaryOperator, type LuaExpression 
 import type { Decl, FileSemanticData, LuaSemanticWorkspaceSnapshot, SymbolID } from '../semantic/model';
 import { writtenSourceExpression } from '../semantic/written_sources';
 import { StaticSourceError } from './errors';
-import { utf8CodepointCount } from '../../../../machine/ts/common/utf8';
 import { evaluateStaticNumeric, type StaticNumericContext, type StaticNumericValue } from './numeric';
 import {
 	evaluateStaticBinaryOperator,
@@ -85,7 +84,7 @@ export class StaticConstants implements StaticNumericContext<FileSemanticData, E
 		const count = this.storageLength(file, expression);
 		if (count !== undefined) return count;
 		const value = this.evaluate(file, expression);
-		return value?.kind === 'string' ? utf8CodepointCount(value.value) : undefined;
+		return value?.kind === 'string' ? value.value.length : undefined;
 	}
 	public numericSize(file: FileSemanticData, expression: LuaSizeOfExpression): number {
 		return this.types.resolve(file.file, expression.typeRef).size;

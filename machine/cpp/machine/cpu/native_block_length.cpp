@@ -6,7 +6,7 @@ namespace bmsx {
 namespace {
 u32 lengthKernel(NativeBlockRunState* state, const StringPool* strings, GcHeap* heap, Value* value) noexcept {
 	if (valueIsString(*value)) {
-		*value = valueInteger(static_cast<i32>(strings->codepointCount(asStringId(*value))));
+		*value = valueInteger(static_cast<i32>(strings->byteLength(asStringId(*value))));
 		return 1;
 	}
 	if (valueIsTable(*value)) {

@@ -1,3 +1,4 @@
+import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
@@ -13,20 +14,20 @@ function createCpu(): CPU {
 	return new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 }
 
-test('codepoint indexing uses the host representation without changing Unicode positions or snapshot state', () => {
+test('all byte values survive intern, indexing and snapshot restore', () => {
 	const pool = createCpu().stringPool;
-	for (const text of [Array.from({ length: 128 }, (_, code) => String.fromCharCode(code)).join(''),
-		'Aé雪\0Z', 'β😀A🚀\0é', '😀', 'a'.repeat(4096), '雪'.repeat(65), 'β😀A🚀\0é'.repeat(23)]) {
+	for (const text of [Array.from({ length: 256 }, (_, code) => String.fromCharCode(code)).join(''),
+		...['Aé雪\0Z', 'β😀A🚀\0é', '😀', 'a'.repeat(4096), '雪'.repeat(65), 'β😀A🚀\0é'.repeat(23)].map(textToByteString)]) {
 		const id = pool.intern(text);
-		const expected = Array.from(text, char => char.codePointAt(0)!);
+		const expected = Array.from(text, char => char.charCodeAt(0));
 		const state = pool.captureState();
 		for (let index = expected.length - 1; index >= 0; index -= 1) {
-			assert.equal(pool.codepointAt(id, index), expected[index]);
+			assert.equal(pool.byteAt(id, index), expected[index]);
 		}
 		assert.deepEqual(pool.captureState(), state);
 		pool.restoreState(state);
 		for (let index = 0; index < expected.length; index += 1) {
-			assert.equal(pool.codepointAt(id, index), expected[index]);
+			assert.equal(pool.byteAt(id, index), expected[index]);
 		}
 	}
 });
@@ -46,7 +47,7 @@ test('collection removes unreachable text from the intern index and snapshots wi
 	}
 });
 
-test('untracked literals and empty strings are collectible; recycled slots publish new Unicode metadata', () => {
+test('untracked literals and empty strings are collectible; recycled slots publish new byte sequences', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	const baselineTracked = pool.trackedLuaHeapBytes();
 	const old = pool.intern('retired literal', false);
@@ -54,12 +55,12 @@ test('untracked literals and empty strings are collectible; recycled slots publi
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.find('retired literal'), undefined);
 	assert.equal(pool.find(''), undefined);
-	const replacement = pool.intern('β😀');
+	const replacement = pool.intern(textToByteString('β😀'));
 	assert.equal(replacement, empty, 'sweep returns freed IDs in directory order; the last returned slot is reused first');
 	assert.equal(pool.toString(replacement), 'β😀');
-	assert.equal(pool.codepointCount(replacement), 2);
-	assert.equal(pool.codepointAt(replacement, 0), 0x3b2);
-	assert.equal(pool.codepointAt(replacement, 1), 0x1f600);
+	assert.equal(pool.byteLength(replacement), 6);
+	assert.equal(pool.byteAt(replacement, 0), 0xce);
+	assert.equal(pool.byteAt(replacement, 5), 0x80);
 	assert.equal(pool.trackedLuaHeapBytes(), baselineTracked + 6);
 	assert.equal(pool.intern('second replacement'), old);
 });
@@ -143,20 +144,20 @@ test('reusing an unreachable deleted string-key ID cannot resurrect its old mapp
 });
 
 
-test('sparse codepoint indexes are reclaimed with their strings and rebuilt on ID reuse', () => {
+test('long byte strings are reclaimed before an ID is reused', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	cpu.collectTrackedHeapBytes();
 	const baseline = pool.trackedLuaHeapBytes();
-	const text = 'β😀A🚀\0é'.repeat(23);
+	const text = textToByteString('β😀A🚀\0é'.repeat(23));
 	const old = pool.intern(text);
-	assert.equal(pool.trackedLuaHeapBytes(), baseline + 14 * 23, 'only encoded guest payload is charged, not the host stride index');
-	assert.equal(pool.codepointAt(old, 128), 'A'.codePointAt(0));
+	assert.equal(pool.trackedLuaHeapBytes(), baseline + 14 * 23, 'only payload bytes are charged');
+	assert.equal(pool.byteAt(old, 128), text.charCodeAt(128));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.trackedLuaHeapBytes(), baseline);
-	const id = pool.intern('😀'.repeat(65));
+	const id = pool.intern(textToByteString('😀'.repeat(65)));
 	assert.equal(id, old);
-	assert.equal(pool.codepointAt(id, 64), 0x1f600);
+	assert.equal(pool.byteAt(id, 64), 0xf0);
 	cpu.collectTrackedHeapBytes();
 	assert.equal(pool.intern('ascii'), old);
-	assert.equal(pool.codepointAt(old, 4), 105);
+	assert.equal(pool.byteAt(old, 4), 105);
 });

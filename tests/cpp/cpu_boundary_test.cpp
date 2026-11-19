@@ -388,7 +388,7 @@ void nativeWarmAdmitsAllocatingBodies() {
 	CpuMachine machine(image);
 	auto& cpu = machine.cpu;
 	cpu.setNativeCompilationProfiling(true);
-	// CONCAT additionally charges the two codepoints in its "11" result.
+	// CONCAT additionally charges the two bytes in its "11" result.
 	const int loopCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::CONCAT)]
 		+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)] + 2;
 	require(cpu.runUntilDepth(0, (NATIVE_BLOCK_COMPILATION_THRESHOLD - 1) * loopCycles) == RunResult::Yielded, "a mixed loop warms without compiling yet");
@@ -817,12 +817,13 @@ void stringBytePositions() {
 		for (const Case& testCase : {
 			Case{unicode, valueNil(), 1, valueInteger(65)},
 			Case{unicode, valueNil(), 2, valueInteger(65)},
-			Case{unicode, valueInteger(2), 2, valueInteger(233)},
-			Case{unicode, valueInteger(3), 2, valueInteger(0x96ea)},
-			Case{unicode, valueInteger(4), 2, valueInteger(0)},
-			Case{unicode, valueInteger(5), 2, valueInteger(0x1f600)},
-			Case{unicode, valueInteger(6), 2, valueInteger(90)},
-			Case{unicode, valueInteger(7), 2, valueNil()},
+			Case{unicode, valueInteger(2), 2, valueInteger(0xc3)},
+			Case{unicode, valueInteger(3), 2, valueInteger(0xa9)},
+			Case{unicode, valueInteger(4), 2, valueInteger(0xe9)},
+			Case{unicode, valueInteger(7), 2, valueInteger(0)},
+			Case{unicode, valueInteger(8), 2, valueInteger(0xf0)},
+			Case{unicode, valueInteger(12), 2, valueInteger(90)},
+			Case{unicode, valueInteger(13), 2, valueNil()},
 			Case{"", valueNil(), 1, valueNil()},
 			Case{"abc", valueInteger(0), 2, valueNil()},
 			Case{"abc", valueInteger(-1), 2, valueNil()},
@@ -849,7 +850,7 @@ void stringBytePositions() {
 			if (testCase.faults) require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
 				&& cpu.readEpcWord() == machine.rom.textAddress, "nonfinite position faults at CALL");
 			else require(cpu.readCauseWord() == 0 && cpu.readFrameRegister(0, 0) == testCase.expected,
-				"string.byte preserves scalar, default and signed-word position semantics");
+				"string.byte preserves byte, default and signed-word position semantics");
 		}
 	}
 }
@@ -1713,9 +1714,11 @@ void imageTextImport() {
 		IrqController irq(memory);
 		ExecutionAddressSpace addressSpace(memory);
 		CPU cpu(memory, irq, addressSpace);
-		bool rejected = false;
-		try { cpu.reset(); } catch (const std::runtime_error&) { rejected = true; }
-		require(rejected, "external malformed UTF8 image text is rejected");
+		cpu.reset();
+		cpu.runUntilDepth(0, 100);
+		const auto& value = cpu.stringPool().toString(asStringId(cpu.readCompletionValues().get(0)));
+		require(value == std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()),
+			"the activated image preserves bytes that are not valid UTF-8");
 	}
 }
 

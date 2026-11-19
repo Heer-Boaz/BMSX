@@ -39,9 +39,9 @@ public:
 	StringId intern(std::string_view value, bool tracked);
 	std::optional<StringId> find(std::string_view value) const;
 	const std::string& toString(StringId id) const;
-	int codepointCount(StringId id) const;
-	// index is a zero-based codepoint index below codepointCount(id).
-	uint32_t codepointAt(StringId id, size_t index) const;
+	int byteLength(StringId id) const;
+	// index is a zero-based byte index below byteLength(id).
+	uint32_t byteAt(StringId id, size_t index) const;
 	size_t trackedLuaHeapBytes() const { return m_trackedBytes; }
 	StringPoolState captureState() const;
 	void restoreState(const StringPoolState& state);
@@ -65,8 +65,6 @@ private:
 	struct InternedString {
 		StringId id = 0;
 		std::string value;
-		int codepointCount = 0;
-		std::unique_ptr<uint32_t[]> codepointBlockOffsets;
 		size_t trackedByteLength = 0;
 	};
 
@@ -104,7 +102,5 @@ private:
 };
 
 int compareStringIds(const StringPool* pool, StringId left, StringId right, int* remainingCycles);
-// C ABI entry for generated code; no allocation or guest execution.
-int stringCodepointCount(const StringPool* pool, StringId id) noexcept;
 
 } // namespace bmsx

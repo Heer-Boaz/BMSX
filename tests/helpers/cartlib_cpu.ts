@@ -20,7 +20,8 @@ type CartlibProgramOptions = {
 const SYSTEM_MODULE_FILES = [
 	['table', 'machine/bios/table.lua'],
 	['string/base', 'machine/bios/string/base.lua'],
-	['string/utf8', 'machine/bios/string/utf8.lua'],
+	['string/mapped', 'machine/bios/string/mapped.lua'],
+	['utf8', 'machine/bios/utf8.lua'],
 	['string/pattern', 'machine/bios/string/pattern.lua'],
 	['compiler/api', 'machine/bios/compiler/api.lua'],
 	['compiler/arena', 'machine/bios/compiler/arena.lua'],
@@ -149,6 +150,7 @@ require('base')
 coroutine = require('coroutine')
 table = require('table')
 string = require('string/base')
+utf8 = require('utf8')
 string.find = require('string/pattern').find
 lua_compiler = require('compiler/api')
 load = lua_compiler.load

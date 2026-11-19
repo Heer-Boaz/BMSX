@@ -603,14 +603,14 @@ Thus `−8 >> 1` is 2147483644, `8 << −1` is 4, and `1 << 32` is zero.
 
 Only nil and false are falsey. Every other value is truthy, including Number 0, Number NaN, and an empty String. NOT writes a boolean, not a Number. In particular, negating the truth of zero produces false.
 
-LEN returns a Number. A String's length is its stored Unicode codepoint count, not its byte count. A Table's length is a boundary in its own positive integer keys. LEN on any other value kind faults; it does not invoke a metatable length operation.
+LEN returns a Number. A String's length is its byte count. Bytes may contain NUL or sequences that are not valid UTF-8. A Table's length is a boundary in its own positive integer keys. LEN on any other value kind faults; it does not invoke a metatable length operation.
 
 
 Concatenation uses language value-to-string conversion rather than accepting only strings and Numbers. CONCAT joins its two RK operands in B-then-C order. CONCATN joins exactly C consecutive registers starting at R[B], in increasing register order. All CONCATN sources are read before the result is written, so the destination may overlap the input range. A zero CONCATN count produces the empty String.
 
-CONCAT adds one cycle per codepoint in the converted, combined result. CONCATN
-adds C cycles for its supplied source range and one cycle per codepoint in the
-combined result. The result length includes zero codepoints and the text of
+CONCAT adds one cycle per byte in the converted, combined result. CONCATN
+adds C cycles for its supplied source range and one cycle per byte in the
+combined result. The result length includes zero bytes and the text of
 converted non-String values. These charges apply even when an identical String
 already exists. They are debited after conversion, before result allocation;
 an allocation fault retains the charge. A zero-count CONCATN therefore costs
@@ -621,7 +621,7 @@ only its three base cycles.
 | CONCAT | `1DH` | RK(B), then RK(C); every language value kind has the conversion shown below | Combined String | 2 |
 | CONCATN | `1EH` | B first register; C register count; neither B nor C is RK | String formed from `R[B]` through `R[B+C−1]`; empty String when C=0 | 3 |
 | NOT | `20H` | R[B], not RK(B); C unused | Boolean true for nil or false; boolean false for every other kind | 2 |
-| LEN | `21H` | R[B], not RK(B); C unused; String or Table | Number equal to the String codepoint count or Table array length; other kinds fault | 3 |
+| LEN | `21H` | R[B], not RK(B); C unused; String or Table | Number equal to the String byte count or Table array length; other kinds fault | 3 |
 
 
 
@@ -669,9 +669,9 @@ successful instruction reads. LT itself never writes R0; its A=1 is the
 expected truth, not register R1. The [branch reference](#sec-cpu-branches)
 defines the word-relative offsets used by the two jumps.
 
-When both operands of LT or LE are Strings, add one cycle for each codepoint
+When both operands of LT or LE are Strings, add one cycle for each byte
 in the shorter operand. This charge depends only on the two lengths, including
-zero codepoints; it does not depend on the position of the first difference or
+zero bytes; it does not depend on the position of the first difference or
 whether the operands are the same String. EQ and comparisons involving other
 value kinds have no text-length surcharge. The comparison completes, including
 its skip decision, before the CPU accepts a pending interrupt.
@@ -690,7 +690,7 @@ Equality respects value kinds. Different kinds are unequal; there is no numeric-
 
 
 
-Ordering is defined for two Numbers or two Strings. Numbers use numeric less-than or less-than-or-equal comparison. A mixed Integer/Float comparison compares their exact represented values: it does not first round the Integer to binary32. Thus Integer 16777217 is greater than Float 16777216.0. NaN is unordered. Strings use lexical UTF-8 order. Mixed value kinds and all other kind combinations produce a false predicate rather than a comparison type fault. Equality of Tables can therefore test whether two values refer to the same Table, but LT and LE do not provide an ordering of Tables.
+Ordering is defined for two Numbers or two Strings. Numbers use numeric less-than or less-than-or-equal comparison. A mixed Integer/Float comparison compares their exact represented values: it does not first round the Integer to binary32. Thus Integer 16777217 is greater than Float 16777216.0. NaN is unordered. Strings are ordered lexicographically by unsigned byte values. Mixed value kinds and all other kind combinations produce a false predicate rather than a comparison type fault. Equality of Tables can therefore test whether two values refer to the same Table, but LT and LE do not provide an ordering of Tables.
 
 | Mnemonic | Opcode | Operands | Predicate and control effect | Nominal cycles |
 |---|---:|---|---|---:|
@@ -1101,7 +1101,7 @@ Each evaluated own-presence test above counts once, including an absent
 result. Let that count be `P`. A Table `LEN` costs **`3 + 6 × P` cycles**.
 The six-cycle test work does not fetch another instruction and does not
 count hash probes, inherited entries or earlier cache accesses. A String
-`LEN` remains 3 cycles using its stored codepoint count. Examples:
+`LEN` remains 3 cycles using its stored byte count. Examples:
 
 | Table state | `P` | Table `LEN` cost |
 | --- | ---: | ---: |
@@ -1208,7 +1208,7 @@ The occupied-byte counts used for admission are:
 | Closure with `U` captured-variable references | `S(12 + 4U)` |
 | Captured-variable cell | `16` |
 | Thread with `V` reserved Value slots | `64 + 5V` |
-| Allocated String text | UTF-8 byte length |
+| Allocated String bytes | Byte length |
 
 A Table's slots and links occupy one block in the language heap. A closure's header and capture references occupy one block. `S(0) = 0`;
 there is no block for an empty layout. Up to 64 bytes, round up to a multiple

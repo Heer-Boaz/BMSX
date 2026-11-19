@@ -1,3 +1,4 @@
+import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/machine/cpu/compiled_block';
@@ -36,7 +37,7 @@ test('runtime GC bills actual canonical scans, reclamation and three unique root
 	assert.equal(cpu.luaHeap.usedBytes(), 133, 'ROM-backed strings and host object shapes are not pool text bytes');
 	const frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, cpu.gc.reference(cpu.createTable(2, 3))); //32+S(10+4×14)=112.
-	frame.registers.setString(1, cpu.stringPool.intern('é😀')); //6 canonical UTF8 bytes, not3 UTF16 units.
+	frame.registers.setString(1, cpu.stringPool.intern(textToByteString('é😀'))); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
 	assert.equal(cpu.luaHeap.usedBytes(), 251);
 	cpu.instructionBudgetRemaining = 7; cpu.luaHeap.collectRuntime();
@@ -120,7 +121,7 @@ test('all activated image constants and unique namespace slots remain priced acr
 
 test('temporary roots survive charged steps; unreachable allocations pay reclamation but no mark scan', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
-	const table = cpu.createTable(), id = cpu.stringPool.intern('é😀');
+	const table = cpu.createTable(), id = cpu.stringPool.intern(textToByteString('é😀'));
 	const heap = cpu.luaHeap.captureState(); assert.equal(heap.trackedBytes, 171);
 	cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: 0 }); cpu.instructionBudgetRemaining = 1;
 	cpu.luaHeap.reserve(0, valueTable(cpu.gc.reference(table)), valueString(id));

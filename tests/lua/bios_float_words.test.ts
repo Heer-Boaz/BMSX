@@ -20,7 +20,7 @@ return function(mode, a, b, c)
  local decoded<const>, position<const> = fields.unpack(format, packed)
  return decoded, position, packed
 end`;
-const modules = ['base', 'number/decimal', 'number/parse', 'table', 'string/base', 'string/utf8',
+const modules = ['base', 'number/decimal', 'number/parse', 'table', 'string/base', 'string/mapped',
  'string/pack', 'string/float/encode', 'string/float/decode'].map(path => {
  const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
  return { path, source, chunk: parseLuaChunk(source, `${path}.lua`) };

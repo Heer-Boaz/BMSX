@@ -112,9 +112,9 @@ if format('%+06d/%#08x/%*.*f/%*s/%.0d/%#.0o',42,42,8,2,1.25,-5,'go',0,0) ~= '+00
 if format('%.3g/%.3g/%.3g', 999.5, 0.000099999997, 100.0) ~= '1e+03/0.0001/100' then boot.error('rounded general exponent') end
 if format('%.2147483647g/%.2147483647s', 1.25, 'x') ~= '1.25/x' then boot.error('large precision without padding') end
 if format('%g/%.0g/%#.0g', 100000.0, 1.25, 1.25) ~= '100000/1/1.' then boot.error('general zeros') end
-if format('%.*s/%*s/%.1d', -1, 'éclair', -4.75, 'é', -12.75) ~= 'éclair/é   /-12' then boot.error('truncation or codepoint width') end
+if format('%.*s/%*s/%.1d', -1, 'éclair', -4.75, 'é', -12.75) ~= 'éclair/é  /-12' then boot.error('truncation or byte width') end
 local nul<const> = string.char(0)
-if format('é' .. nul .. '%%|%3c|%.1s|%q', 65.75, 'éx', 'A' .. nul) ~= 'é' .. nul .. '%|  A|é|"A\\\\000"' then boot.error('text codepoints') end
+if format('é' .. nul .. '%%|%3c|%.2s|%q', 65.75, 'éx', 'A' .. nul) ~= 'é' .. nul .. '%|  A|é|"A\\\\000"' then boot.error('text bytes') end
 local errors = 0
 local reject<const> = function(...)
  local ok<const> = boot.pcall(format, ...)
@@ -141,4 +141,4 @@ end)
 `;
 
 export const FORMAT32_MODULES = ['base', 'number/parse', 'number/decimal', 'number/format',
-	'table', 'math', 'math/trig', 'math/trig/reduce', 'string/base', 'string/utf8', 'string/format'];
+	'table', 'math', 'math/trig', 'math/trig/reduce', 'string/base', 'string/mapped', 'string/format'];

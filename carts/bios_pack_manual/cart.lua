@@ -77,10 +77,9 @@ print('Pack text', result.payload_length, result.payload_zero_codepoint,
 	result.payload_match, status, result.fixed_length,
 	result.fixed_padding_codepoint, result.fixed_match, result.fixed_next)
 
--- Text copying is codepoint-based, not an octet restriction. c1 preserves
--- codepoint 256. Integer reads use that codepoint directly: B yields 256,
--- whereas b subtracts 256 once and yields zero. Do not use this as a byte ABI.
-local copied_wide<const> = string.pack('c1', string.char(256))
+-- c1 preserves an arbitrary byte. B and b interpret the same word as
+-- unsigned or signed respectively.
+local copied_wide<const> = string.pack('c1', string.char(255))
 result.wide_unsigned, result.wide_unsigned_next = string.unpack('B', copied_wide)
 result.wide_signed, result.wide_signed_next = string.unpack('b', copied_wide)
 result.wide_length = #copied_wide
@@ -89,8 +88,7 @@ print('Pack codepoints', result.wide_length, result.wide_copied_codepoint,
 	result.wide_unsigned, result.wide_signed, result.wide_unsigned_next,
 	result.wide_signed_next)
 
--- B packing still enforces its numeric width range; it is not the same path
--- as reading an unconstrained source codepoint. z rejects embedded NULs.
+-- B packing enforces its numeric width range. z rejects embedded NULs.
 -- packsize computes fixed headers, but cannot size a format containing s/z.
 local integer_ok<const>, integer_error<const> =
 	pcall(string.pack, 'B', 256)

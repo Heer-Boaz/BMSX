@@ -1,3 +1,4 @@
+import { textToByteString } from '../../machine/ts/common/byte_string';
 import { numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import { utf8ByteLength } from '../../machine/ts/common/utf8';
 import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
@@ -51,7 +52,7 @@ for (const destination of [0, 1, 2]) test(`compiled CONCAT converts every value 
 			const root = cpu.rootThread.frameAtDepth(0), r = root.registers; root.top = 0;
 			if (kind < primitives.length) r.set(0, primitives[kind][0]);
 			else switch (kind - primitives.length) {
-				case 0: r.setString(0, cpu.stringPool.intern('λ\0🍻')); break;
+				case 0: r.setString(0, cpu.stringPool.intern(textToByteString('λ\0🍻'))); break;
 				case 1: r.setTable(0, cpu.gc.reference(cpu.createTable(0, 0))); break;
 				case 2: r.setClosure(0, cpu.gc.reference(root.closure)); break;
 				case 3: r.setThread(0, cpu.gc.reference(cpu.rootThread)); break;

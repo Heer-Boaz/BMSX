@@ -1,5 +1,4 @@
 import { integerConstant, numberConstantValue, numberConstantText, evaluateNumberBinary, evaluateNumberUnary, type NumberConstant } from '../number';
-import { utf8CodepointCount } from '../../../../machine/ts/common/utf8';
 import { LuaBinaryOperator, LuaUnaryOperator } from '../syntax/ast';
 
 export type StaticScalar =
@@ -30,7 +29,7 @@ export function evaluateStaticUnaryOperator(operator: LuaUnaryOperator, operand:
 		case LuaUnaryOperator.Not:
 			return { kind: 'boolean', value: isStaticFalsey(operand) };
 		case LuaUnaryOperator.Length:
-			return operand.kind === 'string' ? { kind: 'number', value: integerConstant(utf8CodepointCount(operand.value)) } : undefined;
+			return operand.kind === 'string' ? { kind: 'number', value: integerConstant(operand.value.length) } : undefined;
 		case LuaUnaryOperator.StringId:
 			return operand.kind === 'string' ? operand : undefined;
 		default: return undefined;

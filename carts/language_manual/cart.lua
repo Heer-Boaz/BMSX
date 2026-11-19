@@ -54,19 +54,19 @@ local advance<const> = make_counter(10)
 result.counter_values[0] = advance(2)
 result.counter_values[1] = advance(3)
 
--- Decode a complete mapped UTF-8 span with the installed string library.
-local text<const> = string.from_utf8(utf8_bytes, #utf8_bytes)
+-- Read a complete mapped byte span with the installed string library.
+local text<const> = string.from_bytes(utf8_bytes, #utf8_bytes)
 result.utf8_byte_count = #utf8_bytes
 result.text_length = #text
 for index = 0, 3 do
 	result.codepoints[index] = string.byte(text, index + 1)
 end
-result.constructed_matches = string.char(0x41, 0xe9, 0, 0x1f642) == text and 1 or 0
+result.constructed_matches = utf8.char(0x41, 0xe9, 0, 0x1f642) == text and 1 or 0
 local escaped<const> = '\xc3\xa9'
 result.escape_length = #escaped
 result.escape_codepoints[0] = string.byte(escaped, 1)
 result.escape_codepoints[1] = string.byte(escaped, 2)
-result.past_end_is_nil = string.byte(text, 5) == nil and 1 or 0
+result.past_end_is_nil = string.byte(text, 9) == nil and 1 or 0
 result.zero_index_is_nil = string.byte(text, 0) == nil and 1 or 0
 
 -- A linked BIOS call returns values; it is not a raw function-pointer cast.

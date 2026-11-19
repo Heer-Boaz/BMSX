@@ -360,7 +360,7 @@ DISPATCH_LABEL(LEN) {
 	const int b = decoded->b;
 	const Value& val = REG(b);
 	if (valueIsString(val)) {
-		int cp = static_cast<int>(m_stringPool.codepointCount(asStringId(val)));
+		int cp = static_cast<int>(m_stringPool.byteLength(asStringId(val)));
 		SET_REGISTER_FAST(a, valueInteger(cp));
 		DISPATCH_NEXT();
 	}

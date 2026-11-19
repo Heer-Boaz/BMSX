@@ -93,7 +93,7 @@ for (const optLevel of [0, 3] as const) test(`model geometry binds ROM streams o
 		{ path: 'bootstrap', source: "require('base')\ntable = require('table')\nstring = require('string/base')" },
 		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
 		...BASE_FIRMWARE_MODULES,
-		...['table', 'string/base', 'string/utf8', 'string/float/decode'].map(path => ({
+		...['table', 'string/base', 'string/mapped', 'string/float/decode'].map(path => ({
 			path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 		})),
 		...['cartlib/memory', 'cartlib/bin', 'cartlib/rom_dir', 'cartlib/gx/model_asset'].map(path => ({

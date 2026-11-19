@@ -25,9 +25,9 @@ inline void CPU::executeConcatRange(CallFrame& frame, int destination, int base,
 	}
 	std::string text;
 	text.reserve(stringByteCount);
-	int codepoints = 0;
-	for (int index = 0; index < count; ++index) codepoints += appendValueString(text, frame.registers.get(base + index), m_stringPool);
-	instructionBudgetRemaining -= count + codepoints;
+	int byteWork = 0;
+	for (int index = 0; index < count; ++index) byteWork += appendValueString(text, frame.registers.get(base + index), m_stringPool);
+	instructionBudgetRemaining -= count + byteWork;
 	const StringId id = m_stringPool.internOwned(std::move(text));
 	frame.registers.set(destination, valueString(id));
 	frame.top = std::max(frame.top, destination + 1);

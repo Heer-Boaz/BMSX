@@ -180,7 +180,7 @@ export class GcHeap {
 		this.tables.loadStringKey(meta, this.modeKey, this.scratch, 0);
 		let mode = 0;
 		if (this.scratch.getTag(0) === ValueTag.String) {
-			const text = this.cpu.stringPool.toString(this.scratch.getStringId(0));
+			const text = this.cpu.stringPool.bytes(this.scratch.getStringId(0));
 			for (let i = 0; i < text.length; ++i) {
 				if (text.charCodeAt(i) === 107) mode |= 1;
 				if (text.charCodeAt(i) === 118) mode |= 2;

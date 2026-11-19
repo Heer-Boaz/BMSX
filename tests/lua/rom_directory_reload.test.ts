@@ -30,7 +30,7 @@ function directory(bytes: Uint8Array, offset: number, entries: RomAsset[]): Uint
 const modules = [
 	{ path: 'bootstrap', source: "require('base')\ntable = require('table')\nstring = require('string/base')" },
 	{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
-	...['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/utf8', 'string/float/decode'].map(path => ({
+	...['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/mapped', 'string/float/decode'].map(path => ({
 		path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 	})),
 	...['cartlib/memory', 'cartlib/bin', 'cartlib/rom_dir'].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),

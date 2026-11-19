@@ -40,26 +40,25 @@ struct PoolMachine {
 	CPU cpu{memory, irq, addresses};
 };
 
-void indexCodepointsAcrossRepresentations() {
+void indexBytesAcrossRestore() {
 	PoolMachine machine;
 	auto& pool = machine.cpu.stringPool();
 	std::string ascii;
-	for (int code = 0; code < 128; ++code) ascii.push_back(static_cast<char>(code));
+	for (int code = 0; code < 256; ++code) ascii.push_back(static_cast<char>(code));
 	std::string unicode;
 	for (int i = 0; i < 23; ++i) unicode += std::string("β😀A🚀\0é", 14);
 	for (const auto& text : {ascii, std::string("Aé雪\0Z", 8),
 		std::string("β😀A🚀\0é", 14), std::string("😀"), std::string(4096, 'a'), unicode}) {
 		const auto id = pool.intern(text);
-		std::vector<u32> expected;
-		for (size_t offset = 0; offset < text.size();) expected.push_back(readUtf8Codepoint(text, offset));
+		require(pool.byteLength(id) == static_cast<int>(text.size()), "the byte count includes zero and invalid UTF-8");
 		const auto state = pool.captureState();
-		for (size_t index = expected.size(); index > 0; --index) {
-			require(pool.codepointAt(id, index - 1u) == expected[index - 1u], "random indexing preserves complete Unicode scalars");
+		for (size_t index = text.size(); index > 0; --index) {
+			require(pool.byteAt(id, index - 1u) == static_cast<u8>(text[index - 1u]), "indexing preserves exact bytes");
 		}
 		requireSameSnapshot(pool.captureState(), state);
 		pool.restoreState(state);
-		for (size_t index = 0; index < expected.size(); ++index) {
-			require(pool.codepointAt(id, index) == expected[index], "indexing survives snapshot restore");
+		for (size_t index = 0; index < text.size(); ++index) {
+			require(pool.byteAt(id, index) == static_cast<u8>(text[index]), "indexing survives snapshot restore");
 		}
 	}
 }
@@ -81,7 +80,7 @@ void reclaimTextAndSnapshotStorage() {
 	}
 }
 
-void recycleUnicodeAndUntrackedStrings() {
+void recycleBytesAndUntrackedStrings() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
 	auto& pool = cpu.stringPool();
@@ -92,13 +91,13 @@ void recycleUnicodeAndUntrackedStrings() {
 	require(!pool.find("retired literal") && !pool.find(""), "ROM accounting and empty payloads do not imply immortality");
 	const auto replacement = pool.intern("β😀");
 	require(replacement == empty, "sweep returns directory IDs in order, reused in LIFO order");
-	require(pool.toString(replacement) == "β😀" && pool.codepointCount(replacement) == 2, "recycled slots publish the new Unicode metadata");
-	require(pool.codepointAt(replacement, 0) == 0x3b2u && pool.codepointAt(replacement, 1) == 0x1f600u, "recycled IDs index the new content");
+	require(pool.toString(replacement) == "β😀" && pool.byteLength(replacement) == 6, "recycled slots publish the new byte sequence");
+	require(pool.byteAt(replacement, 0) == 0xceu && pool.byteAt(replacement, 5) == 0x80u, "recycled IDs index the new content");
 	require(pool.trackedLuaHeapBytes() == baselineTracked + 6, "new runtime text owns its actual UTF-8 payload bytes");
 	require(pool.intern("second replacement") == old, "other vacant IDs are reused before extending the directory");
 }
 
-void reclaimCodepointIndexes() {
+void reclaimLongByteStrings() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu; auto& pool = cpu.stringPool();
 	cpu.collectHeap();
@@ -106,15 +105,15 @@ void reclaimCodepointIndexes() {
 	std::string text;
 	for (int i = 0; i < 23; ++i) text += std::string("β😀A🚀\0é", 14);
 	const auto old = pool.intern(text);
-	require(pool.trackedLuaHeapBytes() == baseline + 14 * 23, "host stride metadata does not debit guest RAM");
-	require(pool.codepointAt(old, 128) == 'A', "long indexes address the correct stride");
+	require(pool.trackedLuaHeapBytes() == baseline + 14 * 23, "only payload bytes are charged");
+	require(pool.byteAt(old, 128) == static_cast<u8>(text[128]), "long indexes address the exact byte");
 	cpu.collectHeap();
 	require(pool.trackedLuaHeapBytes() == baseline, "GC releases the long Unicode payload");
 	text.clear(); for (int i = 0; i < 65; ++i) text += "😀";
 	const auto id = pool.intern(text);
-	require(id == old && pool.codepointAt(id, 64) == 0x1f600, "reused IDs build the new sparse index");
+	require(id == old && pool.byteAt(id, 64) == 0xf0, "reused IDs publish replacement bytes");
 	cpu.collectHeap();
-	require(pool.intern("ascii") == old && pool.codepointAt(old, 4) == 'i', "directly indexed strings do not reuse stale offsets");
+	require(pool.intern("ascii") == old && pool.byteAt(old, 4) == 'i', "short replacement publishes its own bytes");
 }
 
 void promoteAcrossReservationCollection() {
@@ -251,10 +250,10 @@ void admitExternalArgumentsAcrossStackGrowth() {
 
 int main() {
 	try {
-		indexCodepointsAcrossRepresentations();
+		indexBytesAcrossRestore();
 		reclaimTextAndSnapshotStorage();
-		recycleUnicodeAndUntrackedStrings();
-		reclaimCodepointIndexes();
+		recycleBytesAndUntrackedStrings();
+		reclaimLongByteStrings();
 		promoteAcrossReservationCollection();
 		retainNestedMaterializationRoots();
 		replaySparseAllocationOrder();

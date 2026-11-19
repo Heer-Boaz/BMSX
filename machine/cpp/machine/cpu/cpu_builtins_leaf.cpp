@@ -43,8 +43,8 @@ bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& 
 			}
 		}
 		const StringId sourceId = asStringId(sourceValue);
-		result = position < 1 || position > m_stringPool.codepointCount(sourceId) ? valueNil()
-			: valueInteger(static_cast<i32>(m_stringPool.codepointAt(sourceId, static_cast<size_t>(position - 1))));
+		result = position < 1 || position > m_stringPool.byteLength(sourceId) ? valueNil()
+			: valueInteger(static_cast<i32>(m_stringPool.byteAt(sourceId, static_cast<size_t>(position - 1))));
 		return true;
 	}
 	default:

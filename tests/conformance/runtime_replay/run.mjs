@@ -23,7 +23,7 @@ try {
 	run('npx', ['tsx', 'tests/conformance/runtime_replay/preload_cartridge.ts', directory, media[0]]);
 	for (const [name, cartridge, assertions] of [
 		[cart, media[1], ['--require-badp-playback']],
-		['preload', join(directory, 'cart.rom'), []],
+		['preload', join(directory, 'cart.rom'), ['--require-raw-byte-string']],
 	]) {
 		const tsPrefix = join(directory, `${name}-ts`);
 		const cppPrefix = join(directory, `${name}-cpp`);

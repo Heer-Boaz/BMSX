@@ -1,6 +1,5 @@
 #include "machine/cpu/string_pool.h"
 
-#include "common/utf8.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/lua_heap.h"
 
@@ -10,12 +9,8 @@
 namespace bmsx {
 
 int compareStringIds(const StringPool* pool, StringId left, StringId right, int* remainingCycles) {
-	*remainingCycles -= std::min(pool->codepointCount(left), pool->codepointCount(right));
+	*remainingCycles -= std::min(pool->byteLength(left), pool->byteLength(right));
 	return pool->toString(left).compare(pool->toString(right));
-}
-
-int stringCodepointCount(const StringPool* pool, StringId id) noexcept {
-	return pool->codepointCount(id);
 }
 
 StringPool::StringPool(LuaHeap& luaHeap)
@@ -43,14 +38,14 @@ StringId StringPool::internText(Text&& value, bool tracked) {
 		markReachable(id);
 		InternedString& stringEntry = *m_entries[static_cast<size_t>(id)];
 		if (tracked && stringEntry.trackedByteLength == 0) {
-			const size_t byteLength = utf8ByteLength(stringEntry.value);
+			const size_t byteLength = stringEntry.value.size();
 			m_luaHeap.reserve(byteLength, valueString(id));
 			trackStringEntry(stringEntry, byteLength);
 		}
 		if (!m_localRootBases.empty()) m_localRoots.push_back(id);
 		return id;
 	}
-	const size_t byteLength = tracked ? utf8ByteLength(value) : 0;
+	const size_t byteLength = tracked ? value.size() : 0;
 	if (tracked) {
 		m_luaHeap.reserve(byteLength);
 	}
@@ -90,22 +85,12 @@ const std::string& StringPool::toString(StringId id) const {
 	return entry(id).value;
 }
 
-int StringPool::codepointCount(StringId id) const {
-	return entry(id).codepointCount;
+int StringPool::byteLength(StringId id) const {
+	return static_cast<int>(entry(id).value.size());
 }
 
-uint32_t StringPool::codepointAt(StringId id, size_t index) const {
-	const InternedString& stringEntry = entry(id);
-	const std::string& text = stringEntry.value;
-	if (static_cast<size_t>(stringEntry.codepointCount) == text.size()) {
-		return utf8ByteAt(text, index);
-	}
-	const size_t block = index >> 5u;
-	size_t byteIndex = block == 0u ? 0u : stringEntry.codepointBlockOffsets[block - 1u];
-	for (size_t current = block << 5u; current < index; ++current) {
-		byteIndex = nextUtf8Index(text, byteIndex);
-	}
-	return readUtf8Codepoint(text, byteIndex);
+uint32_t StringPool::byteAt(StringId id, size_t index) const {
+	return static_cast<unsigned char>(entry(id).value[index]);
 }
 
 StringPoolState StringPool::captureState() const {
@@ -130,7 +115,7 @@ void StringPool::restoreState(const StringPoolState& state) {
 		InternedString& stringEntry = insert(stateEntry.id, stateEntry.value);
 		m_reachable[stateEntry.id] = stateEntry.reachable;
 		if (stateEntry.tracked) {
-			stringEntry.trackedByteLength = utf8ByteLength(stringEntry.value);
+			stringEntry.trackedByteLength = stringEntry.value.size();
 			m_trackedBytes += stringEntry.trackedByteLength;
 		}
 	}
@@ -190,16 +175,6 @@ StringPool::InternedString& StringPool::insert(StringId id, Text&& value) {
 	auto stringEntry = std::make_unique<InternedString>();
 	stringEntry->id = id;
 	stringEntry->value = std::forward<Text>(value);
-	stringEntry->codepointCount = utf8CodepointCount(stringEntry->value);
-	// Host indexing metadata is derived, not guest RAM or serialized state.
-	if (static_cast<size_t>(stringEntry->codepointCount) != stringEntry->value.size() && stringEntry->codepointCount > 32) {
-		stringEntry->codepointBlockOffsets = std::make_unique<uint32_t[]>((stringEntry->codepointCount - 1) >> 5);
-		size_t offset = 0;
-		for (int index = 0; index < stringEntry->codepointCount; ++index) {
-			if (index != 0 && (index & 31) == 0) stringEntry->codepointBlockOffsets[(index >> 5) - 1] = static_cast<uint32_t>(offset);
-			offset = nextUtf8Index(stringEntry->value, offset);
-		}
-	}
 	InternedString& inserted = *stringEntry;
 	insertEntry(std::move(stringEntry));
 	return inserted;

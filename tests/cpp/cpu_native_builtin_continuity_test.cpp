@@ -71,8 +71,8 @@ struct Machine {
 		if (id == BuiltinFunctionId::StringByte) {
 			r.set(13, mode == 2 ? valueInteger(17) : valueString(cpu.stringPool().intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9))));
 			r.set(14, mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueFloat(position));
-			expected = mode == 1 ? valueInteger(65) : position == 3 ? valueInteger(128512)
-				: (position == 2 || position == 2.9f) ? valueInteger(233) : valueNil();
+			expected = mode == 1 ? valueInteger(65) : position == 3 ? valueInteger(169)
+				: (position == 2 || position == 2.9f) ? valueInteger(195) : valueNil();
 		} else if (id == BuiltinFunctionId::ToInteger) {
 			r.set(13, valueFloat(position));
 			expected = position == 3 ? valueInteger(3) : valueNil();

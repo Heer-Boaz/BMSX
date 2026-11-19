@@ -85,47 +85,30 @@ local pack_write_int<const> = function(out, raw_value, size, signed, little_endi
 	pack_write_word(out, value, size, little_endian, signed and value < 0 and 255 or 0)
 end
 
--- Codepoints are base-256 digits, not necessarily octets. Up to eight such
--- digits need three words. Half-word carries stay within one signed Integer;
--- no overflow is discarded until a consumer explicitly selects a raw word.
 local pack_read_words<const> = function(source, offset, size, little_endian)
-	local low = 0
-	local high = 0
-	local top = 0
+	local low, high = 0, 0
 	local index = little_endian and size or 1
 	local step<const> = little_endian and -1 or 1
 	for _ = 1, size do
-		local digit<const> = byte(source, offset + index)
-		local low_half<const> = (low & 0xffff) * 256 + digit
-		local low_upper<const> = (low >> 16) * 256 + (low_half >> 16)
-		low = (low_upper << 16) | (low_half & 0xffff)
-		local high_half<const> = (high & 0xffff) * 256 + (low_upper >> 16)
-		local high_upper<const> = (high >> 16) * 256 + (high_half >> 16)
-		high = (high_upper << 16) | (high_half & 0xffff)
-		top = (top << 8) + (high_upper >> 16)
+		high = (high << 8) | ((low >> 24) & 0xff)
+		low = (low << 8) | byte(source, offset + index)
 		index = index + step
 	end
-	return low, high, top
+	return low, high
 end
 
 local pack_read_int<const> = function(source, offset, size, signed, little_endian)
-	local low<const>, high<const>, top<const> = pack_read_words(source, offset, size, little_endian)
+	local low<const>, high<const> = pack_read_words(source, offset, size, little_endian)
 	if not signed then
-		if high == 0 and top == 0 then return low end
+		if high == 0 then return low end
 	elseif size < 4 then
-		if high == 0 and top == 0 then
-			local width<const> = 1 << (size * 8)
-			if low < 0 or low >= (width >> 1) then
-				if (low ~ 0x80000000) <= ((max_size + width) ~ 0x80000000) then return low - width end
-			else return low end
-		end
+		local sign<const> = 1 << (size * 8 - 1)
+		return (low ~ sign) - sign
+	elseif low >= 0 then
+		if high == 0 then return low end
 	else
-		if low >= 0 and high == 0 and top == 0 then return low end
-		local width_high = 0
-		local width_top = 1
-		if size < 8 then width_high = 1 << ((size - 4) * 8); width_top = 0 end
-		if low < 0 and high == width_high - 1 and top == 0 then return low end
-		if low >= 0 and high == width_high and top == width_top then return low end
+		local extension<const> = size == 8 and -1 or (1 << ((size - 4) * 8)) - 1
+		if high == extension then return low end
 	end
 	error('string.unpack integer exceeds safe integer range.')
 end

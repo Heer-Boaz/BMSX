@@ -365,12 +365,10 @@ Both name tables use the same layout. Name record `i` begins at `tableAddress + 
 
 Text lengths count **bytes**, not codepoints. Reads consume the specified span, not a NUL-terminated sequence. A zero byte within the span is part of the text. A zero byte count produces empty text without reading the address.
 
-Constant text and names use complete, shortest-form UTF-8 encodings of Unicode
-scalar values. Invalid leading or continuation bytes, truncated sequences,
-overlong encodings, surrogate values D800H–DFFFH and values above 10FFFFH make
-image activation fail. An initial `EF BB BF` encodes the ordinary character
-U+FEFF; it is retained rather than removed as a byte-order marker. A string
-beginning with U+FEFF therefore differs from the string without that character.
+String constants carry their bytes unchanged, including NUL and sequences that
+are not valid UTF-8. Source text and spelled names normally use UTF-8. The
+record's explicit byte count determines its contents; no terminator or
+character decoding is used.
 
 The two name tables establish separate ordinary-global and system-global
 namespaces. Within each namespace an existing name retains its value and a new

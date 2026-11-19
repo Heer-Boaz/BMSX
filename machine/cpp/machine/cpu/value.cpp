@@ -10,7 +10,7 @@ int appendValueString(std::string& out, Value value, const StringPool& strings) 
 		case ValueTag::Nil: out.append("nil"); break;
 		case ValueTag::False: out.append("false"); break;
 		case ValueTag::True: out.append("true"); break;
-		case ValueTag::String: out.append(strings.toString(asStringId(value))); return strings.codepointCount(asStringId(value));
+		case ValueTag::String: out.append(strings.toString(asStringId(value))); return strings.byteLength(asStringId(value));
 		case ValueTag::Table: out.append("table"); break;
 		case ValueTag::Thread: out.append("thread"); break;
 		case ValueTag::Closure: case ValueTag::BuiltinFunction: out.append("function"); break;

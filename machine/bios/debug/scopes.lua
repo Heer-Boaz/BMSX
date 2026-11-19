@@ -1,5 +1,5 @@
 -- Packed installed scope metadata. Offsets mirror spec/blua32/diagnostics.
-local decode_utf8<const> = require('string/utf8').decode
+local from_bytes<const> = require('string/mapped').from_bytes
 local scopes<const> = {}
 
 local directory_header_index<const> = 15
@@ -36,7 +36,7 @@ local decode_binding<const> = function(base, binding_table, slot, interval_addre
 	local bindings<const>: *word = binding_table
 	local flags<const> = bindings[slot + 2]
 	local address<const> = flags & binding_address ~= 0
-	return decode_utf8(base + bindings[slot], bindings[slot + 1]), {
+	return from_bytes(base + bindings[slot], bindings[slot + 1]), {
 		index = bindings[slot + 3],
 		upvalue = flags & binding_upvalue ~= 0,
 		is_const = flags & binding_const ~= 0,
@@ -89,7 +89,7 @@ function scopes.list(rom_base, function_address, pc)
 		local at<const> = frame_index * frame_words
 		if contains(intervals, frames[at + 3], frames[at + 4], word) then
 			list[#list + 1] = frames[at]
-			list[#list + 1] = decode_utf8(base + frames[at + 1], frames[at + 2])
+			list[#list + 1] = from_bytes(base + frames[at + 1], frames[at + 2])
 		end
 	end
 	if #list == 0 then
@@ -112,7 +112,7 @@ function scopes.resolve(rom_base, function_address, pc, inline_depth)
 	for frame_index = frame_start, frame_end - 1 do
 		local at<const> = frame_index * frame_words
 		if frames[at] == inline_depth and contains(intervals, frames[at + 3], frames[at + 4], word) then
-			local name<const> = decode_utf8(base + frames[at + 1], frames[at + 2])
+			local name<const> = from_bytes(base + frames[at + 1], frames[at + 2])
 			local bindings<const>: *word = base + directory[binding_table_index]
 			local binding_start<const> = frames[at + 5]
 			local binding_end<const> = binding_start + frames[at + 6]

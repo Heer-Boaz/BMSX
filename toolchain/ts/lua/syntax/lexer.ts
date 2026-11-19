@@ -1,3 +1,4 @@
+import { textToByteString } from '../../../../machine/ts/common/byte_string';
 import { parseNumberConstant } from '../number';
 import { OwnedSourceText } from '../../text/owned_source_text';
 import { LuaSourceLocations } from './source_locations';
@@ -314,26 +315,22 @@ export class LuaLexer {
 
 	private scanString(delimiter: string): void {
 		let value = '';
-		let terminated = false;
+		let start = this.currentIndex;
 		while (!this.isAtEnd()) {
 			const char = this.advance();
-			if (char === delimiter) {
-				terminated = true;
-				break;
-			}
-			if (char === '\n') {
+			if (char === delimiter || char === '\\') {
+				value += textToByteString(this.source.slice(start, this.currentIndex - 1));
+				if (char === delimiter) {
+					this.pushToken(LuaTokenType.String, value);
+					return;
+				}
+				value += this.translateEscape();
+				start = this.currentIndex;
+			} else if (char === '\n') {
 				throw new LuaLexicalError('[LuaLexer] Unterminated string literal.');
 			}
-			if (char === '\\') {
-				value += this.translateEscape();
-				continue;
-			}
-			value += char;
 		}
-		if (!terminated) {
-			throw new LuaLexicalError('[LuaLexer] Unterminated string literal.');
-		}
-		this.pushToken(LuaTokenType.String, value);
+		throw new LuaLexicalError('[LuaLexer] Unterminated string literal.');
 	}
 
 	private translateEscape(): string {
@@ -484,14 +481,14 @@ export class LuaLexer {
 
 	private readLongString(level: number): string {
 		this.consumeOptionalLineBreak();
-		let value = '';
+		const start = this.currentIndex;
 		while (!this.isAtEnd()) {
-				const char = this.advance();
-				if (char === ']' && this.checkLongBracketClose(level)) {
-					this.consumeLongBracketDelimiterTail(level, ']');
-					return value;
-				}
-			value += char;
+			const char = this.advance();
+			if (char === ']' && this.checkLongBracketClose(level)) {
+				const end = this.currentIndex - 1;
+				this.consumeLongBracketDelimiterTail(level, ']');
+				return textToByteString(this.source.slice(start, end));
+			}
 		}
 		throw new LuaLexicalError('[LuaLexer] Unterminated long string literal.');
 	}

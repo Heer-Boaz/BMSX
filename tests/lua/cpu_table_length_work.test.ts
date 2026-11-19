@@ -1,3 +1,4 @@
+import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
@@ -92,9 +93,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			cpu.restoreRuntimeState(before); cpu.runUntilDepth(0, 5); frame = cpu.rootThread.currentFrame!;
 			assert.equal(cpu.instructionBudgetRemaining, debt); assert.ok(isDeepStrictEqual(cpu.captureRuntimeState(), after));
 			// String LEN must ignore any previous Table probe output.
-			frame.registers.set(0, valueString(cpu.stringPool.intern('é😀\0')));
+			frame.registers.set(0, valueString(cpu.stringPool.intern(textToByteString('é😀\0'))));
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
-			cpu.runUntilDepth(0, 5); assert.equal(cpu.instructionBudgetRemaining, -2); assert.equal(frame.registers.getInteger(6), 3);
+			cpu.runUntilDepth(0, 5); assert.equal(cpu.instructionBudgetRemaining, -2); assert.equal(frame.registers.getInteger(6), 7);
 			frame.registers.setBoolean(0, true); frame.registers.setNil(8);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
 			cpu.runUntilDepth(0, 5); assert.equal(cpu.instructionBudgetRemaining, -2);

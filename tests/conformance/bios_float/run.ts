@@ -19,7 +19,7 @@ for (const [command, args] of [
 	['cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_frame_evaluation_runner', '--parallel', '2']],
 ] as const) assert.equal(spawnSync(command, args, { stdio: 'inherit' }).status, 0);
 
-const modules = ['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/utf8', 'string/pack', 'string/float/encode', 'string/float/decode'].map(path => {
+const modules = ['base', 'number/parse', 'number/decimal', 'table', 'string/base', 'string/mapped', 'string/pack', 'string/float/encode', 'string/float/decode'].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 	return { path, source, chunk: parseLuaChunk(source, `${path}.lua`) };
 });

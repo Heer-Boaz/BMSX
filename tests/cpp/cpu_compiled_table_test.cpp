@@ -269,8 +269,8 @@ void boundaryLengthAndUtf8() {
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 500);
 	}
 	requireParity(textNative, textScalar);
-	require(textNative.cpu.readFrameRegister(0, 2) == valueInteger(5) && textNative.cpu.readFrameRegister(0, 3) == valueInteger(12),
-		"the string-count native ABI retains pending values and UTF-8 codepoint semantics including NUL");
+	require(textNative.cpu.readFrameRegister(0, 2) == valueInteger(11) && textNative.cpu.readFrameRegister(0, 3) == valueInteger(18),
+		"the string-count native ABI retains pending values and byte counts including NUL");
 }
 
 void selfAndNilFaults() {

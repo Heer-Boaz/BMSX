@@ -1,3 +1,4 @@
+import { byteStringFromBytes, writeByteString } from '../byte_string';
 import { readI64LE, readLE64, writeLE64 } from '../endian';
 import { utf8ByteLength } from '../utf8';
 
@@ -18,6 +19,7 @@ export interface BinarySink {
 	u32s(value: ArrayLike<number>): void;
 	i32s(value: ArrayLike<number>): void;
 	string(value: string): void;
+	byteString(value: string): void;
 }
 
 export class BinarySize implements BinarySink {
@@ -36,6 +38,7 @@ export class BinarySize implements BinarySink {
 	public u32s(value: ArrayLike<number>): void { this.length += value.length * 4; }
 	public i32s(value: ArrayLike<number>): void { this.length += value.length * 4; }
 	public string(value: string): void { this.length += 4 + utf8ByteLength(value); }
+	public byteString(value: string): void { this.length += 4 + value.length; }
 }
 
 const encoder = new TextEncoder();
@@ -65,6 +68,11 @@ export class BinaryWriter implements BinarySink {
 	}
 	public i32s(value: ArrayLike<number>): void {
 		for (let index = 0; index < value.length; ++index) this.i32(value[index]);
+	}
+	public byteString(value: string): void {
+		this.u32(value.length);
+		writeByteString(this.output, this.length, value);
+		this.length += value.length;
 	}
 	public string(value: string): void {
 		// encodeInto writes into the final buffer, not a temporary UTF-8 payload.
@@ -124,6 +132,10 @@ export class BinaryReader {
 		const values = new Uint32Array(count);
 		for (let index = 0; index < count; ++index) values[index] = this.view.getUint32(offset + index * 4, true);
 		return values;
+	}
+	public byteString(): string {
+		const count = this.u32();
+		return byteStringFromBytes(this.input, this.take(count), count);
 	}
 	public string(): string {
 		const count = this.u32();

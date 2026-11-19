@@ -11,7 +11,7 @@ import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
 
-const sources = ['os', 'math', 'math/trig', 'math/trig/reduce', 'string', 'string/base', 'string/utf8',
+const sources = ['os', 'math', 'math/trig', 'math/trig/reduce', 'string', 'string/base', 'string/mapped',
 	'string/pattern', 'string/format', 'number/format', 'string/pack', 'string/float/decode',
 	'string/float/encode', 'table'].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');

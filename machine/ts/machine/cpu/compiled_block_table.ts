@@ -19,7 +19,7 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 		const value = `v${word}`;
 		return `const ${tag}=${r.tagOperand(b)};if(${tag}!==${ValueTag.Table}&&${tag}!==${ValueTag.String}) ${failure}
 			let ${value};if(${tag}===${ValueTag.Table}){${value}=h.tables.length(${r.wordOperand(b)},state.lengthWork);
-			budget-=state.lengthWork.probes*${TABLE_LENGTH_PROBE_CYCLES};}else{${value}=q.codepointCount(${r.wordOperand(b)});}
+			budget-=state.lengthWork.probes*${TABLE_LENGTH_PROBE_CYCLES};}else{${value}=q.byteLength(${r.wordOperand(b)});}
 			${r.writeInteger(a, value)}`;
 	}
 	const load = op === OpCode.GETT || op === OpCode.GETI || op === OpCode.GETFIELD || op === OpCode.SELF;

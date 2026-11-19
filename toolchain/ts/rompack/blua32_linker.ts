@@ -1,3 +1,4 @@
+import { byteStringToBytes, textToByteString } from '../../../machine/ts/common/byte_string';
 import { integerConstant, type NumberConstant } from '../lua/number';
 import type { ProgramConstant } from '../lua/compiler/program';
 import { inlineCallSiteChainsEqual } from '../lua/compiler/inline_debug';
@@ -178,7 +179,6 @@ type StringRecord = {
 	bytes: Uint8Array;
 };
 
-const stringEncoder = new TextEncoder();
 
 function hashInlineCallSiteChain(
 	chain: ReadonlyArray<Blua32InlineCallSite>,
@@ -769,7 +769,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		if (existing !== undefined) {
 			return existing;
 		}
-		const record = { offset: stringByteCount, bytes: stringEncoder.encode(value) };
+		const record = { offset: stringByteCount, bytes: byteStringToBytes(value) };
 		stringByteCount += record.bytes.byteLength;
 		stringRecordByValue.set(value, record);
 		stringRecords.push(record);
@@ -782,10 +782,10 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		}
 	}
 	for (let index = 0; index < globalNameLayout.names.length; index += 1) {
-		internString(globalNameLayout.names[index]);
+		internString(textToByteString(globalNameLayout.names[index]));
 	}
 	for (let index = 0; index < systemGlobalNameLayout.names.length; index += 1) {
-		internString(systemGlobalNameLayout.names[index]);
+		internString(textToByteString(systemGlobalNameLayout.names[index]));
 	}
 
 	const stringTableOffset = offset;
@@ -947,7 +947,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 
 	const writeNames = (tableOffset: number, names: ReadonlyArray<string>): void => {
 		for (let index = 0; index < names.length; index += 1) {
-			const stringRecord = stringRecordByValue.get(names[index]) as StringRecord;
+			const stringRecord = stringRecordByValue.get(textToByteString(names[index])) as StringRecord;
 			const recordOffset = tableOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 			writeLE32(bytes, recordOffset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, stringAddress + stringRecord.offset);
 			writeLE32(bytes, recordOffset + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET, stringRecord.bytes.byteLength);
