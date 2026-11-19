@@ -6,7 +6,7 @@ import type { Memory } from '../memory/memory';
 import { compiledArithmeticSupports, emitArithmetic } from './compiled_block_arithmetic';
 import { MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { emitMemoryAccess, emitWordStores } from './compiled_block_memory';
-import { JavaScriptRegisterCache } from './compiled_block_registers';
+import { JavaScriptRegisterCache, type CompiledExitWriteBacks } from './compiled_block_registers';
 import { emitComparison } from './compiled_block_compare';
 import type { CompiledRegion } from './compiled_region';
 import { compiledContextSupports, emitContext } from './compiled_block_context';
@@ -211,12 +211,13 @@ export type EmittedJavaScriptBlock = {
 export function emitJavaScriptBlock(
 	page: DecodedInstructionPage, plan: CompiledBlockSource,
 	image: Blua32ExecutionImage, memory: Memory, exits: CompiledBlockExitSite[], residents: ReadonlyMap<number, boolean>, outputs: ReadonlySet<number>,
+	writeBacks: CompiledExitWriteBacks,
 ): EmittedJavaScriptBlock {
 	const { firstWord, endWord, skippedInstructionWidth } = plan;
 	let pc = plan.pc;
 	const firstExit = exits.length;
 	const source: string[] = [];
-	const registers = new JavaScriptRegisterCache(image, residents, outputs);
+	const registers = new JavaScriptRegisterCache(image, residents, outputs, writeBacks);
 	let cycles = 0;
 	let openVarargs = 0;
 	let admissionCycles = 0;

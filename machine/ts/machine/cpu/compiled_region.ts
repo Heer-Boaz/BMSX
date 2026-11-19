@@ -9,6 +9,7 @@ import type { Memory } from '../memory/memory';
 import type { StringPool } from './string_pool';
 import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_image';
 import { planRegionRegisters } from './compiled_register_plan';
+import { CompiledExitWriteBacks } from './compiled_block_registers';
 import { luaPow } from '../../spec/blua32/pow';
 import { CompiledBlockExit, emitJavaScriptBlock, finishJavaScriptBlock,
 	type CompiledBlock, type CompiledBlockExitSite, type CompiledBlockSource } from './compiled_block';
@@ -30,10 +31,11 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 	const exits: CompiledBlockExitSite[] = [];
 	const registers = planRegionRegisters(page, plans), residents = registers.map(plan => plan.entry);
 	const blocks: ReturnType<typeof emitJavaScriptBlock>[] = [];
+	const writeBacks = new CompiledExitWriteBacks();
 	for (let index = 0; index < plans.length; ++index) {
 		// Helper-success spans inherit all actual definitions and no new admission.
 		if (index !== 0 && plans[index - 1].fallthrough) residents[index] = blocks[index - 1].registers.residents;
-		blocks.push(emitJavaScriptBlock(page, plans[index], image, memory, exits, residents[index], registers[index].outputs));
+		blocks.push(emitJavaScriptBlock(page, plans[index], image, memory, exits, residents[index], registers[index].outputs, writeBacks));
 	}
 	for (let index = blocks.length - 1; index >= 0; --index) {
 		if (plans[index].fallthrough) {
@@ -50,9 +52,13 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 	}
 	const entries = new Map(plans.map((plan, index) => [plan.pc, index]));
 	const bindings = new Set(blocks.flatMap(block => [...block.registers.residents.keys()]));
+	// Block locals live at function scope so the shared exit epilogue can
+	// store them. Each block assigns a local before any read of it.
+	const locals = Math.max(0, ...blocks.map(block => block.registers.localCount));
 	const source = ['"use strict"; return function(r,k,p,frame,entry,state){',
 		'let budget=state.remainingCycles,top=state.registerTop,exit;',
 		...[...bindings].map(register => `let rt${register},rw${register};`),
+		...Array.from({ length: locals }, (_, index) => `let t${index},w${index};`),
 		'switch(entry){'];
 	// Entries with the same live-in registers share one load sequence.
 	const prologues = new Map<string, number[]>();
@@ -75,10 +81,10 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 					: exit.registerTop === 0 ? '' : `if(top<${exit.registerTop})top=${exit.registerTop};`;
 				const required = admissionVarargs[target] === 0 ? `${admissionCycles[target]}`
 					: `${admissionCycles[target]}+${admissionVarargs[target]}*frame.varargCount`;
-				return `if(budget-${exit.cycles}>${required}){budget-=${exit.cycles};${top}${block.registers.transferResidents(residents[target])}entry=${target};continue region;}${block.registers.writeResidents()}exit=${index};break region;`;
+				return `if(budget-${exit.cycles}>${required}){budget-=${exit.cycles};${top}${block.registers.transferResidents(residents[target])}entry=${target};continue region;}${block.registers.leaveResidents(index)}`;
 			}
 		}
-		return `${block.registers.writeResidents()}exit=${index};break region;`;
+		return block.registers.leaveResidents(index);
 	};
 	for (let index = 0; index < blocks.length; ++index) {
 		const block = blocks[index];
@@ -91,11 +97,11 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 			const required = admissionVarargs[index + 1] === 0 ? `${admissionCycles[index + 1]}`
 				: `${admissionCycles[index + 1]}+${admissionVarargs[index + 1]}*frame.varargCount`;
 			const frontier = (page.ops[block.finalWord] === OpCode.LEN || block.formatCycles !== 0)
-				? `if(budget-${exit.cycles}<=${required}){${block.registers.writeResidents()}exit=${block.terminalIndex};break region;}` : '';
-			source.push(`case ${index}:{${block.registers.declarations()}${block.body}\n${frontier}budget-=${exit.cycles};${top}}`);
-		} else source.push(`case ${index}:{${block.registers.declarations()}${block.body}\n${finishJavaScriptBlock(page, block, index => transfer(block, index))}}`);
+				? `if(budget-${exit.cycles}<=${required}){${block.registers.leaveResidents(block.terminalIndex)}}` : '';
+			source.push(`case ${index}:{${block.body}\n${frontier}budget-=${exit.cycles};${top}}`);
+		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(page, block, index => transfer(block, index))}}`);
 	}
-	source.push('}}const e=x[exit];state.remainingCycles=budget-e.cycles;',
+	source.push('}}', writeBacks.epilogue(), 'const e=x[exit];state.remainingCycles=budget-e.cycles;',
 		'state.registerTop=Math.max(e.resetsRegisterTop?frame.top:top,e.registerTop);return exit;}');
 	const functionSource = source.join('\n');
 	const cartridges = memory.cartridgeController;

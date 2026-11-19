@@ -3,6 +3,37 @@ import { ValueTag } from './value';
 
 type LocalValue = { readonly tag: string; readonly word: string };
 
+/**
+ * Region exits store their dirty registers once, after the region loop. Every
+ * site that leaves through the same exit with the same stores shares that
+ * code; a site with different stores gets a negative alias that the epilogue
+ * maps back to its exit.
+ */
+export class CompiledExitWriteBacks {
+	private readonly stores = new Map<number, string>();
+	private readonly aliases: { readonly index: number; readonly stores: string }[] = [];
+
+	public leave(index: number, stores: string): string {
+		const shared = this.stores.get(index);
+		if (shared === undefined) this.stores.set(index, stores);
+		else if (shared !== stores) {
+			let alias = this.aliases.findIndex(entry => entry.index === index && entry.stores === stores);
+			if (alias < 0) alias = this.aliases.push({ index, stores }) - 1;
+			return `exit=${-1 - alias};break region;`;
+		}
+		return `exit=${index};break region;`;
+	}
+	public epilogue(): string {
+		const labels = new Map<string, string>();
+		for (const [index, stores] of this.stores) if (stores !== '') labels.set(stores, `${labels.get(stores) ?? ''}case ${index}:`);
+		let source = '';
+		for (const [stores, cases] of labels) source += `${cases}${stores}break;`;
+		for (let alias = 0; alias < this.aliases.length; ++alias)
+			source += `case ${-1 - alias}:${this.aliases[alias].stores}exit=${this.aliases[alias].index};break;`;
+		return source === '' ? '' : `switch(exit){${source}}`;
+	}
+}
+
 /** Locals carry the same tag/word pair as storage, never decoded host objects. */
 export class JavaScriptRegisterCache {
 	private readonly locals = new Map<number, LocalValue>();
@@ -11,7 +42,7 @@ export class JavaScriptRegisterCache {
 	public readonly residents: Map<number, boolean>;
 
 	public constructor(private readonly image: Blua32ExecutionImage, residents: ReadonlyMap<number, boolean>,
-		private readonly outputs: ReadonlySet<number>) {
+		private readonly outputs: ReadonlySet<number>, private readonly exits: CompiledExitWriteBacks) {
 		this.residents = new Map(residents);
 	}
 	public tagOperand(selector: number): string {
@@ -111,8 +142,7 @@ export class JavaScriptRegisterCache {
 		}
 		return source;
 	}
-	public declarations(): string {
-		return Array.from({ length: this.localCount }, (_, index) => `let t${index},w${index};`).join('');
-	}
-	public exit(index: number): string { return `{${this.writeBack(true)}exit=${index};break region;}`; }
+	public exit(index: number): string { return `{${this.exits.leave(index, this.writeBack(true))}}`; }
+	/** Leave after the block body has already stored its non-resident locals. */
+	public leaveResidents(index: number): string { return this.exits.leave(index, this.writeResidents()); }
 }
